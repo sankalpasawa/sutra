@@ -275,6 +275,46 @@ function usageUntil(epoch){
    at a different point than the hook fires would be worse than no chip. */
 function usageSev(pct){ return pct >= 80 ? "p-block" : pct >= 70 ? "p-warn" : "p-ok"; }
 
+/* ── DeepSeek balance ─────────────────────────────────────────────────────────
+   Pay-as-you-go: no five-hour/weekly window, no percentage, no reset time --
+   the account fact is a USD balance, and severity is "is it running low", not
+   "what fraction of a window is spent". */
+// PLACEHOLDER -- not a measured or founder-approved number. Needs a product
+// decision (open question #2, plan turn 2026-09-01): below what balance does
+// the panel warn, and below what does it read as exhausted? $1 / $0.20 are
+// guesses picked only so the UI has *a* shape to review, not a recommendation.
+const DEEPSEEK_LOW_BALANCE_USD = { warn: 1.00, block: 0.20 };   // TODO(product): confirm thresholds
+function deepseekSev(totalBalance){
+  const n = Number(totalBalance);
+  if (!Number.isFinite(n)) return "p-mut";
+  if (n <= DEEPSEEK_LOW_BALANCE_USD.block) return "p-block";
+  if (n <= DEEPSEEK_LOW_BALANCE_USD.warn) return "p-warn";
+  return "p-ok";
+}
+function deepseekBalanceRowsHtml(u){
+  const rows = (u && u.balances) || [];
+  if (!rows.length) return `<p style="color:var(--faint);margin:0">The endpoint
+    returned no balance rows for this account.</p>`;
+  return rows.map(r => `<div class="urow">
+      <div class="uhead">
+        <span class="ulabel">Balance</span>
+        <span class="upct ${deepseekSev(r.total_balance)}">${esc(r.currency||"")} ${esc(r.total_balance ?? "—")}</span>
+      </div>
+    </div>`).join("");
+}
+function deepseekTokensHtml(sid){
+  const t = sid ? deepseekTokensFor(sid) : null;
+  if (!t) return `<p style="color:var(--faint);margin:0">No DeepSeek turns yet
+    in this session.</p>`;
+  return `<div class="urow">
+      <div class="uhead"><span class="ulabel">Tokens this session</span>
+        <span class="ureset">${t.turns} turn${t.turns===1?"":"s"}</span></div>
+      <div class="uhead" style="margin-top:2px">
+        <span class="ureset">in ${t.input_tokens.toLocaleString()} · out ${t.output_tokens.toLocaleString()}</span>
+      </div>
+    </div>`;
+}
+
 /* The window the operator is actually being metered by. `is_active` is the
    server's own flag; the first row is the fallback so a payload that marks
    nothing active still yields a number rather than a blank chip. */
@@ -437,9 +477,43 @@ function usageChipHtml(){
     </button>`;
 }
 
-/* The popover. Anchored above the composer, same rows as the screen. */
+/* The popover. Anchored above the composer, same rows as the screen.
+
+   DeepSeek branch: two different facts, not one payload -- the balance is
+   account-wide (S.deepseekUsage, from GET /api/deepseek/usage) and the token
+   count is THIS PANE's session, summed client-side from "done" frames (see
+   deepseekTokensFor, 01-state.js). Nothing here claims a rate-limit window,
+   because DeepSeek's account has none. */
 function usagePopHtml(){
   if (!S.usagePop) return "";
+  if (SETTINGS && SETTINGS.provider === "deepseek"){
+    const u = S.deepseekUsage;
+    const body = !u
+      ? `<p style="color:var(--faint);margin:0">Reading balance…</p>`
+      : !u.available
+        ? `<p style="margin:0">${esc(u.reason||"No balance data.")}</p>
+           <p style="margin:6px 0 0;font-size:10.5px;color:var(--faint)">This reads
+           <code>GET /user/balance</code> from the DeepSeek API, using the key in
+           the server environment.</p>`
+        : deepseekBalanceRowsHtml(u) + deepseekTokensHtml(S.usagePop);
+    const stale = u && u.source === "stale-cache"
+      ? `<div class="upopnote w">Endpoint unreachable — cached figure, up to 10 min old.</div>` : "";
+    return `<div class="upop" role="dialog" aria-label="DeepSeek usage">
+        <div class="upophead">
+          <b>DeepSeek usage</b>
+          <button class="ib" type="button" data-usageclose="1" aria-label="Close">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        ${stale}
+        <div class="upopbody">${body}</div>
+        <div class="upopnote">DeepSeek is pay-as-you-go — there is no rate-limit
+          window, no percentage-used figure, and no reset time. Token counts are
+          reported per turn and summed here for this session only; reloading the
+          panel resets the count, not the balance.</div>
+      </div>`;
+  }
   const u = S.usage;
   const body = !u
     ? `<p style="color:var(--faint);margin:0">Reading usage…</p>`
@@ -554,7 +628,44 @@ function accountFold(){
   return fold("usage.account", "Account", summary, accountHtml());
 }
 
+/* DeepSeek's Usage screen. No account fold -- this build found no whoami-shaped
+   DeepSeek endpoint, so there is nothing true to put in one; showing "not
+   reported" rows for a card that structurally does not apply would be worse
+   than omitting it (same reasoning as accountFold, applied to its absence).
+   No per-session token total here either: this screen has no single session
+   in scope (it is opened from the rail, not a chat pane) -- that figure lives
+   in the composer's Usage popover (usagePopHtml), which does. */
+function deepseekUsageScreen(){
+  if (S.deepseekUsageError) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(S.deepseekUsageError)}</p></div>`;
+  if (!S.deepseekUsage) return `<div class="zero"><h4>Reading balance…</h4></div>`;
+  const u = S.deepseekUsage;
+  if (!u.available) return `<div class="zero"><h4>Usage unavailable</h4>
+    <p>${esc(u.reason || "no balance data")}</p>
+    <p style="font-size:11px;color:var(--faint)">This reads <code>GET
+    /user/balance</code> from the DeepSeek API, using <code>DEEPSEEK_API_KEY</code>
+    in the server environment. The key never reaches this panel.</p></div>`;
+
+  const age = u.source === "stale-cache"
+    ? `<div class="note w" style="margin-bottom:9px">The balance endpoint could not
+       be reached just now. This figure comes from a cached response and may be up
+       to 10 minutes old.</div>` : "";
+
+  return `${age}
+    ${fold("usage.deepseek-balance", "Balance", (u.balances||[]).length + " row" + ((u.balances||[]).length===1?"":"s"), deepseekBalanceRowsHtml(u))}
+
+    <p class="why" style="margin-top:9px">DeepSeek is pay-as-you-go — there is no
+      rate-limit window and no percentage-used figure the way Claude's plan
+      reports one. Per-turn token counts (input/output) are shown on each reply
+      and summed per chat session in that session's Usage popover, not here.</p>
+    <p class="why" style="margin-top:6px;color:var(--faint)">Low-balance warn/block
+      thresholds shown by the severity color are a placeholder
+      ($${DEEPSEEK_LOW_BALANCE_USD.warn.toFixed(2)} / $${DEEPSEEK_LOW_BALANCE_USD.block.toFixed(2)}) —
+      not yet a confirmed product decision.</p>`;
+}
+
 SCREENS.usage = () => {
+  if (SETTINGS && SETTINGS.provider === "deepseek") return deepseekUsageScreen();
   const acct = accountFold();
   if (S.usageError) return `${acct}<div class="zero"><h4>Usage unavailable</h4>
     <p>${esc(S.usageError)}</p></div>`;

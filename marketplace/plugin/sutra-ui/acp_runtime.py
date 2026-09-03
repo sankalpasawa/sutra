@@ -81,6 +81,43 @@ _REJECT_KINDS = ("reject_once", "reject_always")
 _SUTRA_MCP_TITLE_SUFFIX = " (sutra MCP Server)"
 
 
+def _extract_quota(result):
+    """This turn's token usage, or None. Verified live against
+    @sluisr/deepseek-cli's session/prompt response: `_meta.quota.token_count`
+    carries {input_tokens, output_tokens} and `_meta.quota.model_usage` a
+    per-model breakdown -- PER TURN, not a running total (unlike Claude's
+    utilization percentage, nothing here is cumulative across the session on
+    the server side; a client that wants a session total has to add these up
+    itself, turn by turn).
+
+    Extracted field-by-field rather than forwarding `_meta.quota` verbatim --
+    same reasoning as sanitize() in deepseek_usage.py: a key this build has
+    not been taught to read must not reach a client frame just because the
+    CLI happened to add it.
+    """
+    meta = result.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    quota = meta.get("quota")
+    if not isinstance(quota, dict):
+        return None
+    tc = quota.get("token_count")
+    tokens = None
+    if isinstance(tc, dict):
+        inp, out = tc.get("input_tokens"), tc.get("output_tokens")
+        if isinstance(inp, (int, float)) or isinstance(out, (int, float)):
+            tokens = {"input_tokens": inp, "output_tokens": out}
+    models = []
+    for m in quota.get("model_usage") or []:
+        if not isinstance(m, dict):
+            continue
+        models.append({k: m.get(k) for k in
+                        ("model", "input_tokens", "output_tokens") if k in m})
+    if tokens is None and not models:
+        return None
+    return {"token_count": tokens, "model_usage": models}
+
+
 def _choose_permission_option(effective_permission_mode, tool_kind, options,
                               tool_title=None):
     """One offered option's optionId to answer `session/request_permission`
@@ -564,6 +601,7 @@ class AcpRuntime:
                     "duration_ms": None,   # ACP does not report this
                     "num_turns": None,
                     "cost_usd": None,      # DeepSeek's usage block has no dollar figure
+                    "quota": _extract_quota(result),
                 })
 
         # Single state-reset guard, mirroring the "active" one above -- the
