@@ -99,7 +99,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     health: null, knowledge: null, memory: null, library: null, tools: null, conns: null,
     pages: null, pageQ: "", pageType: "", map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
@@ -621,7 +621,39 @@ function agResearchHtml(r){
     ${r.evidence_count != null || r.ownpage_count != null ? agBlock("Evidence gathered", `<div class="ag-nums"><div class="ag-num"><b>${agEsc(agNum(r.evidence_count))}</b><span>facts with sources</span></div><div class="ag-num"><b>${agEsc(agNum(r.ownpage_count))}</b><span>of your pages found</span></div>${r.cost_usd != null ? `<div class="ag-num"><b>$${agEsc(Number(r.cost_usd).toFixed(2))}</b><span>DataForSEO spent</span></div>` : ""}</div>`) : ""}
     ${r.reuse && r.reuse.verdict ? agBlock("Do you already have this?", `<p class="ag-p"><b>${agEsc(r.reuse.verdict)}.</b> ${agEsc(r.reuse.why || "")}</p>${agUl(r.reuse.chosen_links, u => `<a href="${agEsc(u)}" target="_blank" rel="noopener">${agEsc(agPath(u))}</a>`)}`) : ""}
     ${r.persona && r.persona.name ? agBlock("Written for", `<p class="ag-p"><b>${agEsc(r.persona.name)}.</b> ${agEsc(r.persona.lens || r.persona.why || "")}</p>`) : ""}
+    ${agResearchTeamHtml(r)}
+    ${agTrailHtml(r)}
     ${(r.notes || []).length ? agBlock("Notes", agUl(r.notes)) : ""}`;
+}
+
+/* who researched this and what they asked. Empty for a run from before the research team. */
+function agResearchTeamHtml(r){
+  const ev = r.evidence || {};
+  const team = ev.team || [];
+  if (!team.length) return "";
+  const turns = ev.turns || [];
+  return agBlock("Who researched this",
+    `<div class="ag-sub">${agEsc(team.length)} researchers asked ${agEsc(ev.questions || turns.length)} questions across ${agEsc(ev.searches || 0)} searches${ev.dossier_words ? `, then wrote a ${agEsc(agNum(ev.dossier_words))}-word dossier the facts were lifted from` : ""}.</div>
+     <ul class="ag-ul">${team.map(t => `<li><b>${agEsc(t.role)}</b>${t.focus ? " — " + agEsc(t.focus) : ""}</li>`).join("")}</ul>
+     ${turns.length ? `<div class="ag-qs">${turns.slice(0, 12).map(t => `<div class="ag-q"><span class="who">${agEsc(t.persona)}</span>${agEsc(t.question)}</div>`).join("")}${turns.length > 12 ? `<div class="ag-sub">and ${agEsc(turns.length - 12)} more</div>` : ""}</div>` : ""}`);
+}
+
+/* every step of the research kept its own file; this is how a person opens one */
+function agTrailHtml(r){
+  const a = agS(); if (!a) return "";
+  const rows = a.trail || [];
+  if (!rows.length) return "";
+  return agBlock("The evidence trail",
+    `<div class="ag-sub">Every step kept its own file. Open any of them to see exactly what it did.</div>
+     <div class="ag-trail">${rows.map(x => `<button class="ag-trailrow" type="button" data-ag="work" data-arg="${agEsc(x.file)}">
+        <b>${agEsc(x.label)}</b><span class="n">${agEsc(x.note)}</span><span class="b">${agEsc(agBytes(x.bytes))}</span>
+      </button>`).join("")}</div>
+     ${a.workOpen ? `<div class="ag-workfile"><div class="h"><b>${agEsc(a.workOpen.label)}</b><button class="ag-more" type="button" data-ag="workclose">Close</button></div><pre>${agEsc(JSON.stringify(a.workOpen.data, null, 2).slice(0, 24000))}</pre></div>` : ""}`);
+}
+
+function agBytes(n){
+  n = Number(n) || 0;
+  return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
 }
 
 function agBlueprintHtml(bp, edit, checks){
@@ -1226,12 +1258,18 @@ async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null;
+  a.trail = []; a.workOpen = null;
   agDraw();
   try {
     const d = await agApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/artifact/${encodeURIComponent(name)}`);
     if (a.panel && a.panel.name === name){ a.panel.data = d; a.panel.loading = false; }
     if (view === "topic_list" && !a.picked && d && d.topics){
       const rec = d.topics.find(t => t.recommended); a.picked = rec ? rec.id : null;
+    }
+    if (view === "research_brief" && a.panel && a.panel.name === name){
+      /* every step of the research kept its own file; the panel lists them so one can be opened */
+      const t = await agApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/trail`).catch(() => null);
+      a.trail = (t && t.rows) || [];
     }
     if (view === "article" && a.panel && a.panel.name === name){
       /* the receipts beside the draft: which links were laid in, and the coverage counts */
@@ -1321,6 +1359,16 @@ async function agAction(act, el){
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));
       await agLoadChat(a.chatId, true); break; }
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
+    case "work": {
+      const p = a.panel; if (!p) break;
+      a.workOpen = { label: arg, data: { loading: true } }; agDraw();
+      try {
+        const r = await agApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(p.run_id)}/work/${encodeURIComponent(arg)}`);
+        a.workOpen = { label: r.label || arg, data: r.data };
+      } catch (e) { a.workOpen = { label: arg, data: { error: String(e && e.message || e) } }; }
+      agDraw(); break;
+    }
+    case "workclose": a.workOpen = null; agDraw(); break;
     case "stageopen": {
       /* the default is computed, so record the opposite of what is on screen right now */
       const now = el.getAttribute("aria-expanded") === "true";

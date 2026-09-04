@@ -256,6 +256,45 @@ test("a stage the user opened stays open, and its rows come back", () => {
   assert((open.match(/class="ag-stagebody" hidden/g) || []).length === 0, "nothing hidden once both are open");
 });
 
+test("the research brief lists who researched it and every step's own file", () => {
+  const r = {
+    topic: "Cost per hire", keywords: { primary: { keyword: "cost per hire", volume: 210, kd: 7 } },
+    evidence: { cards: 483, questions: 16, searches: 48, dossier_words: 14856,
+                team: [{ role: "The Builder", focus: "how it is done" },
+                       { role: "The Sceptic", focus: "what it costs" }],
+                turns: [{ persona: "The Builder", question: "Which hires count toward the denominator?" }] },
+  };
+  A.S.ag.trail = [{ file: "curate.json", label: "The research conversation", note: "every question asked", bytes: 91234 },
+                  { file: "winners.json", label: "What the winners cover", note: "their common headings", bytes: 4096 }];
+  A.S.ag.workOpen = null;
+  const html = A.agResearchHtml(r);
+  assert(html.indexOf("Who researched this") !== -1, "the team has its own block");
+  assert(html.indexOf("The Builder") !== -1 && html.indexOf("The Sceptic") !== -1, "every researcher is named");
+  assert(/2 researchers asked 16 questions across 48 searches/.test(html), "and what they did: " + html.slice(html.indexOf("researchers") - 40, html.indexOf("researchers") + 80));
+  assert(html.indexOf("14,856-word dossier") !== -1, "the dossier is named with its size");
+  assert(html.indexOf("Which hires count toward the denominator?") !== -1, "a real question is shown");
+
+  assert(html.indexOf("The evidence trail") !== -1, "the trail has its own block");
+  assert(html.indexOf("The research conversation") !== -1 && html.indexOf("What the winners cover") !== -1,
+         "each file is named in plain English, never by filename alone");
+  assert(html.indexOf('data-ag="work" data-arg="curate.json"') !== -1, "and each row is clickable");
+  assert(html.indexOf("89 KB") !== -1, "sizes are human: " + (html.match(/\d+ [KM]?B/g) || []).join(","));
+
+  A.S.ag.workOpen = { label: "What the winners cover", data: { gaps_to_own: ["the formula"] } };
+  const open = A.agResearchHtml(r);
+  assert(open.indexOf("gaps_to_own") !== -1, "an opened file shows its real content");
+  assert(open.indexOf('data-ag="workclose"') !== -1, "and can be closed");
+  A.S.ag.trail = []; A.S.ag.workOpen = null;
+  assert(A.agResearchHtml(r).indexOf("The evidence trail") === -1, "no trail, no block");
+});
+
+test("a brief from before the research team shows no team block and never breaks", () => {
+  A.S.ag.trail = []; A.S.ag.workOpen = null;
+  const html = A.agResearchHtml({ topic: "Old run", primary_keyword: { keyword: "x" }, evidence_count: 12 });
+  assert(html.indexOf("Who researched this") === -1, "no team, no block");
+  assert(html.indexOf("Old run") !== -1 || html.indexOf("x") !== -1, "the old brief still renders");
+});
+
 test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
   assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 5);

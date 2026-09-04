@@ -187,6 +187,39 @@ def api_events(chat_id: str, run_id: str, since: int = 0):
     return {"events": evs, "next": since + len(evs), "state": store.get_state(chat_id, run_id)}
 
 
+@router.get("/runs/{chat_id}/{run_id}/trail")
+def api_trail(chat_id: str, run_id: str):
+    """The research evidence trail: every step's own working file, named in plain English.
+
+    The port of the original's numbered proof/ folder. Without this the only way to check a
+    research run was to read raw JSON off disk.
+    """
+    if not _ok_id(chat_id, run_id):
+        return _bad("bad id")
+    try:
+        from seo_agent.research import render
+        return {"rows": render.trail(chat_id, run_id, store)}
+    except Exception as e:  # noqa: BLE001
+        return {"rows": [], "error": str(e)[:200]}
+
+
+@router.get("/runs/{chat_id}/{run_id}/work/{name}")
+def api_work_file(chat_id: str, run_id: str, name: str):
+    """One working file from the trail. Read only, and only files the trail itself names, so a
+    path can never be used to reach outside the run."""
+    if not _ok_id(chat_id, run_id) or not _NAME.match(name or ""):
+        return _bad("bad name")
+    from seo_agent.research import render
+    if name not in {f for f, _l, _n in render.TRAIL}:
+        return _bad("not a trail file", 404)
+    data = store.load_artifact(chat_id, run_id, "_work/" + name)
+    if data is None:
+        return _bad("not found", 404)
+    label = next((l for f, l, _n in render.TRAIL if f == name), name)
+    return {"name": name, "label": label,
+            "data": data if isinstance(data, (dict, list)) else {"text": data}}
+
+
 @router.get("/runs/{chat_id}/{run_id}/artifact/{name}")
 def api_artifact(chat_id: str, run_id: str, name: str):
     if not _ok_id(chat_id, run_id) or not _NAME.match(name or ""):

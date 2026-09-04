@@ -228,25 +228,25 @@ cares what a tool does inside itself.
 
 ### The rules
 
-8. **The registry is the truth about tools, and the Tools screen is the registry.**
+7. **The registry is the truth about tools, and the Tools screen is the registry.**
    Every tool has a `plain` row: what it does, when it runs, what it needs, how
    long it takes. The model sees name, description and inputs, never cost or gate.
    The person sees the plain row. One list, two audiences, no second copy to drift.
 
-9. **Every step that touches the network goes through one helper.** The SEO Writer
+8. **Every step that touches the network goes through one helper.** The SEO Writer
    learned to read a site behind a bot wall in its crawler and still failed in two
    other readers that fetched on their own, so every own-site source in the article
    came back unreadable on a site we had already read. One fetch helper, one
    fallback, called from everywhere. The same holds for one paid-API client and one
    model caller.
 
-10. **Paid steps check the balance first and say plainly when they skipped.** No
+9. **Paid steps check the balance first and say plainly when they skipped.** No
     credit gates, no approvals for money. The pre-flight is code; the message is
     plain English; the run continues with whatever the step could do. On the live
     run the balance was below zero, so the numbers came from demo data, labelled
     demo at every step that touched them, and the article still finished.
 
-11. **Nothing is invented. Code counts, an AI judges, a source backs every number.**
+10. **Nothing is invented. Code counts, an AI judges, a source backs every number.**
     - Code counts: word counts, link counts, similarity scores, page lists. Never
       ask a model to count; it approximates.
     - An AI judges: relevance, quality, fit. Once, with the criteria in front of it.
@@ -256,7 +256,7 @@ cares what a tool does inside itself.
       and after, and an edit that introduced one is rejected and retried. It fired
       on the live run (invented 14,000 and 4,000), and the retry was clean.
 
-12. **Filter at the smallest unit, and protect what carries hard value.** The
+11. **Filter at the smallest unit, and protect what carries hard value.** The
     blueprint's card filter is the worked example, and it is a step inside
     `build_blueprint`, not a tool of its own:
     - The unit is one card, one fact. Never a section: a good fact hides inside a
@@ -282,20 +282,20 @@ cares what a tool does inside itself.
 Knowledge is what the agent learned about this company once and keeps. It is
 distinct from Memory, which is what the person told it to do.
 
-13. **Setup runs once per company and is resumable.** Setup is expensive: about an
+12. **Setup runs once per company and is resumable.** Setup is expensive: about an
     hour for a 400-page site. Every stage writes its own named file (the sitemap
     list, the archive list, the settled page list, the extracted text), and a rerun
     checks for that file first, reuses it, and says "reused from the last run". A
     crash costs only the stage that was running. A rebuild is an explicit request,
     never a side effect of a new conversation.
 
-14. **Knowledge is built from the company's own material by the same process every
+13. **Knowledge is built from the company's own material by the same process every
     time.** The brand files are not written from the model's general knowledge; they
     are built by twelve builders reading the catalogued pages. Each is a file the
     person can open, read and edit in the app, and the edited version is the truth
     from then on. Nothing overwrites a file a person has touched.
 
-15. **Meaning is indexed, not matched by words.** Anything the agent must find "the
+14. **Meaning is indexed, not matched by words.** Anything the agent must find "the
     right one of" (a page to link, a passage to cite, a product to name) is embedded
     once and searched by vector, then re-ranked on the full text. Word overlap was
     measured in the original workflow and thrown out: "work sample test" matched a
@@ -303,7 +303,7 @@ distinct from Memory, which is what the person told it to do.
     1,050 body passages. The live article searched 31 candidate pages by meaning and
     placed 6, each shown with its match score.
 
-16. **Knowledge is visible.** The company record the person can edit, the catalogue
+15. **Knowledge is visible.** The company record the person can edit, the catalogue
     with its coverage gates and a search box, the index and its map, and every built
     file. If the agent knows it, the person can open it. There is no hidden state.
 
@@ -311,7 +311,7 @@ distinct from Memory, which is what the person told it to do.
 
 ## Memory
 
-17. **Memory is a short list of standing rules, and it reaches the work.** A rule
+16. **Memory is a short list of standing rules, and it reaches the work.** A rule
     the person saves once ("never open with a question", "British spelling") is
     rendered into the system prompt and into every prompt that shapes or writes
     prose, and into the research prompts that decide topic, angle, persona and which
@@ -320,7 +320,7 @@ distinct from Memory, which is what the person told it to do.
     separate model call, has never heard of it. A rule that only reaches the chat is
     not a rule.
 
-18. **Memory is toggled, never silently dropped.** The list is visible, each rule
+17. **Memory is toggled, never silently dropped.** The list is visible, each rule
     can be switched off, and only active rules are rendered.
 
 ### How a saved rule actually reaches a prompt, and what that mechanism is not
@@ -362,7 +362,7 @@ way the invented-number check works. That is what turns it into a real rule.
 
 ## The run folder
 
-19. **The folder is the whole truth.** One job, one folder. Beside the three files
+18. **The folder is the whole truth.** One job, one folder. Beside the three files
     described under "The loop" sit `artifacts/` (the outputs the person reviews: the
     brief, the plan, the draft, the links report) and `artifacts/_work/` (every
     intermediate, one named file per step: 23 of them on the live run, from `seeds`
@@ -372,14 +372,14 @@ way the invented-number check works. That is what turns it into a real rule.
     The same files are what make a rerun cheap, because each step checks its own
     file first.
 
-20. **Every write is atomic.** Temp file in the same directory, then rename over the
+19. **Every write is atomic.** Temp file in the same directory, then rename over the
     target. The rename cannot half-happen, so the file is either the old complete
     one or the new complete one. This is load-bearing because resume trusts "the
     file exists, therefore that step finished". Without it a crash mid-write leaves
     a half-file that the next run reads as finished: silent corruption, the worst
     kind.
 
-21. **Artifacts are the unit of review and the unit of testing.** The screen renders
+20. **Artifacts are the unit of review and the unit of testing.** The screen renders
     them; the tests render them from fixtures captured from a real run. Add a field
     to the screen that the artifact does not carry and the test fails at once,
     instead of the person finding a blank box in the app.
@@ -388,7 +388,7 @@ way the invented-number check works. That is what turns it into a real rule.
 
 ## Checkpoints
 
-22. **Few, fixed, and the stop is enforced by the loop.** One in setup (the brand
+21. **Few, fixed, and the stop is enforced by the loop.** One in setup (the brand
     pack), four per job (topic, brief, plan, draft). Few on purpose: too many and
     the person stops reading them, which is worse than none.
 
@@ -404,13 +404,13 @@ way the invented-number check works. That is what turns it into a real rule.
       stage whose predecessor was not approved is about ten lines, and until it is
       written this rule is half prompt.
 
-23. **Approve, edit, or send back, in the panel.** When the person edits the
+22. **Approve, edit, or send back, in the panel.** When the person edits the
     artifact and approves, the loop reads **the file on disk** and hands the model
     that, not what the model remembers writing. The person's edit is the truth.
     "Ask for changes" carries their words back as the next instruction and the step
     is redone.
 
-24. **The agent may ask one question of its own when it sees a real problem.** On
+23. **The agent may ask one question of its own when it sees a real problem.** On
     the live run the blueprint came out with no formula section for an article about
     calculating a formula, and the agent asked before starting a forty-minute write.
     Good question: it saved real work and no person would have caught it without
@@ -428,7 +428,7 @@ way the invented-number check works. That is what turns it into a real rule.
     exposed, still unbuilt, is that nothing checks the plan still answers the
     question the primary keyword asks. Only the model noticing caught it.
 
-25. **Approval is an action, not a message.** If a click is meant to make something
+24. **Approval is an action, not a message.** If a click is meant to make something
     happen, the code does it, and the model is informed afterwards.
 
     The bug that produced this rule: approving the draft used to tell the model
@@ -441,25 +441,48 @@ way the invented-number check works. That is what turns it into a real rule.
 
 ## The screen
 
-26. **The screen projects the folder and holds no state.** All state lives in one
+25. **The screen projects the folder and holds no state.** All state lives in one
     object read from the API. Close the app mid-run and reopen it and the picture is
     the same, because the picture was never in the app. The rule while building: if
     you find yourself storing something in the screen, it belongs in the folder.
 
-27. **Plain English everywhere the person reads.** Step labels, tool rows, error
+26. **Plain English everywhere the person reads.** Step labels, tool rows, error
     messages, checkpoint prompts. Not "HTTP 429" but "the site refused the crawler,
     so I am reading it through the app's browser". Not `build_page_index` but
     "indexing the meaning of every page so I can find your own pages to link to
     later". Errors most of all: that is the moment the person most needs to
     understand what happened.
 
-28. **Honest numbers, visibly labelled.** No number may look more solid than it is.
+27. **Honest numbers, visibly labelled.** No number may look more solid than it is.
     On the live demo run every step that touched a fake figure said so ("using demo
     traffic", "no DataForSEO login, so none of these numbers are real"), and the
     brief carried the warning at the top. The same for checks: one that could not
     run says "not checked: <why>" rather than passing or failing. A coverage gate
     used to fail on every demo run because demo traffic invents pages; it now says
     "not checked: the traffic is demo data".
+
+28. **A cache key must carry every parameter that shaped the file.** The catalogue's stage reuse
+    compared only the domain, so a run capped at 400 pages by the user froze every later run at
+    400, and the report said "11,517 URLs found but not read" beside "all 4 checks passed".
+    If a parameter changes the output, it belongs in the key.
+
+29. **A partial result must fail its check, not pass with a footnote.** The original's own plan
+    says it: a short catalogue must never look like success. Reporting a shortfall in the detail
+    line while ticking the box is the same as hiding it.
+
+30. **Reuse must check coverage, not existence.** The title index asked "does my file exist"
+    rather than "does it cover the pages we have", so a catalogue that grew from 400 to 11,703
+    kept a 400-page index and an internal link could only ever match the first 400 titles.
+
+31. **Research is asking questions, not looking up keywords.** A lookup can only return a sentence
+    that already exists on one page. A team of mixed researchers interviewing an expert, each
+    question seeing the last answer, produces claims that no single source states. Measured on the
+    same topic: 7 keyword searches became 16 questions, and 256 of 483 facts cite two or more
+    sources.
+
+32. **A run should end in documents, not only data.** If the only way to check what happened is to
+    read JSON off disk, nobody checks. Every step keeps its own file, and something names those
+    files in plain English so a person can open one.
 
 ---
 

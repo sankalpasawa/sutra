@@ -139,6 +139,23 @@
 /* a summary is a line, not a paragraph: the detail is one click away inside the stage */
 .ag-step.ok .ag-body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
+/* the research conversation and the evidence trail, in the brief panel */
+.ag-qs{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.ag-q{font-size:11.5px;line-height:1.5;color:var(--muted);padding-left:10px;border-left:2px solid var(--line)}
+.ag-q .who{display:block;font:600 10px/1.4 var(--mono);color:var(--faint);letter-spacing:.03em;text-transform:uppercase}
+.ag-trail{margin-top:8px;display:flex;flex-direction:column;gap:2px}
+.ag-trailrow{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;border-radius:6px;padding:5px 8px;color:var(--ink);font:12px/1.4 var(--sans);min-width:0}
+.ag-trailrow:hover{background:var(--inset)}
+.ag-trailrow b{flex:none;font-weight:600}
+.ag-trailrow .n{flex:1;min-width:0;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-trailrow .b{flex:none;font:500 10px/1 var(--mono);color:var(--faint)}
+.ag-workfile{margin-top:8px;border:1px solid var(--line);border-radius:8px;background:var(--inset);overflow:hidden}
+.ag-workfile .h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;
+  border-bottom:1px solid var(--line-soft);font-size:12px}
+.ag-workfile pre{margin:0;padding:9px 11px;font:11px/1.5 var(--mono);color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+
 /* a question, an approval, a checkpoint — the cards where the agent waits */
 .ag-card{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--inset);padding:11px 13px;max-width:60ch}
 .ag-card.live{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
