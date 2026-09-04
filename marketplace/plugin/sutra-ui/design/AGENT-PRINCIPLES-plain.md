@@ -181,32 +181,89 @@ real article run.
 
 ## The tools
 
-7. **A tool does one thing and reports as it goes.** While it works, it writes
-   short lines into the log: what it did and what it found. The log reads like a
-   person describing their work.
+### What a tool is
 
-8. **The Tools screen is the tool list.** Every tool has a plain row: what it does,
+A tool is a function. It takes some inputs, does one job, and hands back a short
+summary. While it works it writes short lines into the log, like "reading the site
+catalogue, 400 pages with text". That is why the log reads like a person talking
+instead of a progress bar.
+
+The seven tools of the SEO Writer. Nothing else is a tool:
+
+| Tool | What it does |
+|---|---|
+| Read the website | Every page: the CMS, the sitemaps, the web archive, a crawl, with coverage checks |
+| Index by meaning | Turns those pages into numbers that capture meaning |
+| Learn the brand | Builds the brand files from those pages |
+| Suggest topics | Proposes what to write about |
+| Research | Researches one topic and gathers the facts |
+| Build the plan | Turns the research into an outline with links attached |
+| Write the article | Writes it, edits it, places the internal links |
+
+Next to those are four things the loop handles itself, which never count as work:
+ask you a question, show you something, narrate a step, save a rule you gave.
+
+### Where rules live: three different things get called "rule"
+
+| Kind | Lives in | About | Example |
+|---|---|---|---|
+| Loop rules | the loop, one file | the order of things | stop at a checkpoint, count the steps, save after each one |
+| Tool rules | inside each tool | the work itself | the coverage checks when reading a site, the made-up-number check when writing, the protect list when filtering |
+| Your rules | plain text, not code | your standing preferences | "British spelling" |
+
+A rule that would apply to any agent goes in the loop. A rule about this particular
+job goes inside that particular tool. The loop does not know or care what a tool
+does inside itself.
+
+### The rules
+
+8. **The tool list is the Tools screen.** Every tool has a plain row: what it does,
    when it runs, what it needs, how long it takes. That row is the only description
-   anywhere.
+   of it anywhere. The AI gets a shorter view with no mention of cost. One list,
+   two audiences, nothing to drift out of date.
 
-9. **Anything that touches the internet goes through one door.** We fixed a
-   blocked website in the crawler and it was still blocked in two other places that
-   fetched pages on their own. Now there is one helper and everything uses it. Same
-   for paid services and for calling the AI.
+9. **Anything that touches the internet goes through one door.** We fixed a blocked
+   website in the crawler and it stayed broken in two other places that fetched
+   pages on their own, so every source in the article came back unreadable on a site
+   we had already read successfully. Now there is one helper and everything uses it.
+   Same for anything paid, and for calling the AI.
 
-10. **Paid steps check the balance first and say when they skipped.** No stopping
-    to ask about credits. The check is code, the message is plain English, and the
-    job carries on with what it could do.
+10. **Paid steps check the balance first and say when they skipped.** No stopping to
+    ask about credits. If there is not enough, the step skips that bit, says so in
+    plain English, and the job carries on. On the live run the balance was below
+    zero, so it used demo numbers, labelled them demo everywhere they appeared, and
+    still finished the article.
 
-11. **Nothing is made up. Code counts, the AI judges, a source backs every
-    number.** Word counts, link counts and page lists come from code. The AI decides
-    what is relevant or good, once, with the criteria in front of it. Every number in
-    the output traces to a page the agent read, or it is cut. If an edit slips in a
-    number that was not there before, the edit is rejected and redone.
+11. **Nothing is made up. Code counts, the AI judges, a source backs every number.**
+    - Code counts. Word counts, link counts, page lists, match scores. Never ask the
+      AI to count. It approximates.
+    - The AI judges. Is this relevant, is this good, does this fit. Real judgement,
+      decided once, with the criteria in front of it.
+    - Sources back numbers. Every figure traces to a page the agent actually read,
+      or it gets cut.
+    - Plus a guard: after any editing pass the code compares the numbers before and
+      after, and rejects an edit that introduced a new one. It fired on the live run
+      when the editor invented 14,000 and 4,000. The retry was clean.
 
-12. **Cut at the smallest piece and protect the valuable ones.** Drop single facts,
-    not whole sections. A statistic or a number is never dropped for being
-    "off-topic". Every drop is written to an audit file with the reason.
+12. **Cut the smallest piece, and protect the valuable ones.** The plan's filter is
+    the example, and it is a step inside the plan-building tool, not a tool of its
+    own:
+    - The unit is one fact, never a section. A good fact hides inside a bad section,
+      and cutting the section throws it away too.
+    - The AI scores each fact 0 to 5 on one question: does this serve the article's
+      argument. It also marks each one protected or not. **Then the code does the
+      cutting.** Low score and not protected means gone. The AI never gets to say
+      "keep this one anyway".
+    - Protected beats the score every time: anything with a number, a percentage, a
+      threshold or a statistic, and anything an earlier step tagged as a gap or a
+      competitor. Eight facts were protected on the live run.
+    - A fact the AI failed to score is kept. Silence never deletes anything.
+    - If the scorer crashes, the whole step stops. It does not fall back to keeping
+      everything, because a broken run that quietly kept all 327 facts would produce
+      a bloated plan that looks exactly like a good one.
+    - Every dropped fact is written to a file with the reason, and dropping more
+      than 60% raises a flag. The live run dropped 93.9%, flagged it, and told me to
+      look. I looked: every dropped fact was demo junk and all 20 kept were real.
 
 ---
 

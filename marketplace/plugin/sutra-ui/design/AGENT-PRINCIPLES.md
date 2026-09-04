@@ -192,34 +192,88 @@ The article run of 2026-09-04, through the branches above:
 
 ## The tools
 
-7. **A tool is a function that returns a dict and reports its own progress.**
-   `run(ctx, **kw) -> {"summary", ...}`. Inside, it emits sub-steps with a plain
-   label and a note, so the run log reads like a person describing their work.
+### What a tool is
+
+A tool is a function: `run(ctx, **kw) -> {"summary", ...}`. It takes inputs, does a
+job, returns a short summary, and while it works it emits sub-steps with a plain
+label and a note, so the run log reads like a person describing their work
+("Reading the site catalogue, 400 pages with text").
+
+The seven work tools of the SEO Writer. Nothing else is a tool:
+
+| Tool | What it does |
+|---|---|
+| `index_site` | Reads every page of the site: CMS API, sitemaps, web archive, crawl, with coverage gates |
+| `build_page_index` | Turns those pages into meaning vectors, one per title and many per body |
+| `learn_brand` | Builds the brand files from those pages, twelve builders |
+| `suggest_topics` | Proposes what to write about |
+| `run_research` | Researches one topic into a brief plus evidence cards |
+| `build_blueprint` | Turns the research into a plan: filter, cluster, name, order, attach links |
+| `write_article` | Writes the draft, edits it, places internal links, assembles it |
+
+Beside them sit four the loop handles itself and never counts as work: ask the
+person a question, show them an artifact, narrate a step, save a memory rule.
+
+### Where the rules live: three different things called "rule"
+
+| Kind | Lives in | About | Example |
+|---|---|---|---|
+| Loop rules | `loop.py`, one file | the sequence | stop on a checkpoint; count the moves; save after every step |
+| Tool rules | inside each tool | the work itself | the coverage gates in `index_site`; the invented-number check in `write_article`; the PROTECT list in `build_blueprint` |
+| Memory rules | text, not code | the person's standing preferences | "British spelling" |
+
+A rule that would apply to any agent belongs in the loop. A rule about this
+particular work belongs inside that particular tool. The loop neither knows nor
+cares what a tool does inside itself.
+
+### The rules
 
 8. **The registry is the truth about tools, and the Tools screen is the registry.**
    Every tool has a `plain` row: what it does, when it runs, what it needs, how
-   long it takes. The model sees name, description and inputs. The person sees the
-   plain row. Nothing else is described anywhere.
+   long it takes. The model sees name, description and inputs, never cost or gate.
+   The person sees the plain row. One list, two audiences, no second copy to drift.
 
 9. **Every step that touches the network goes through one helper.** The SEO Writer
    learned to read a site behind a bot wall in its crawler and still failed in two
-   other readers that fetched on their own. One fetch helper, one fallback, called
-   from everywhere. The same holds for one paid-API client and one model caller.
+   other readers that fetched on their own, so every own-site source in the article
+   came back unreadable on a site we had already read. One fetch helper, one
+   fallback, called from everywhere. The same holds for one paid-API client and one
+   model caller.
 
 10. **Paid steps check the balance first and say plainly when they skipped.** No
     credit gates, no approvals for money. The pre-flight is code; the message is
-    plain English; the run continues with whatever the step could do.
+    plain English; the run continues with whatever the step could do. On the live
+    run the balance was below zero, so the numbers came from demo data, labelled
+    demo at every step that touched them, and the article still finished.
 
 11. **Nothing is invented. Code counts, an AI judges, a source backs every number.**
-    Word counts, link counts, similarity scores and page lists come from code. An
-    AI decides relevance, quality and fit, and it only decides once, with the
-    criteria in front of it. Any number in the output traces to a source page the
-    tool read, or it is cut. An edit that introduces a number the original did not
-    have is rejected and retried.
+    - Code counts: word counts, link counts, similarity scores, page lists. Never
+      ask a model to count; it approximates.
+    - An AI judges: relevance, quality, fit. Once, with the criteria in front of it.
+    - Sources back numbers: any figure in the output traces to a page a tool read,
+      or it is cut.
+    - And a guard on top: after an editing pass the code diffs the numbers before
+      and after, and an edit that introduced one is rejected and retried. It fired
+      on the live run (invented 14,000 and 4,000), and the retry was clean.
 
-12. **Filter at the smallest unit, and protect what carries hard value.** Cut
-    cards, not sections. A statistic, a threshold or a user-authored tag is never
-    dropped by a relevance score. Every drop goes to an audit file with its reason.
+12. **Filter at the smallest unit, and protect what carries hard value.** The
+    blueprint's card filter is the worked example, and it is a step inside
+    `build_blueprint`, not a tool of its own:
+    - The unit is one card, one fact. Never a section: a good fact hides inside a
+      bad section, and cutting the section takes it too.
+    - The AI scores each card 0 to 5 against one question, does this serve the
+      spine, and marks it protected or not. **The code does the cutting**: score at
+      or below the threshold and not protected means dropped.
+    - PROTECT overrides the score entirely: a number, a percentage, a threshold, a
+      statistic, a sample item, or a card the earlier steps tagged `gap` or
+      `competitor`. Eight cards were protected on the live run.
+    - An unscored card is KEPT. Silence never deletes.
+    - A scorer that crashes ABORTS the step (fail closed). It must never default to
+      keeping everything: a broken run that kept all 327 cards would produce a
+      bloated plan indistinguishable from a good one.
+    - Every drop goes to an audit file with its reason, and dropping more than 60%
+      raises a flag. The live run dropped 93.9%, flagged, and the audit showed the
+      filter was right: every dropped card was demo text, all 20 kept were real.
 
 ---
 
