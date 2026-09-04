@@ -62,6 +62,47 @@ t("cmpVersion orders numerically, not lexically (2.64.0 > 2.9.0)", () => {
 });
 
 /* ── runtime resolution ─────────────────────────────────────────────────── */
+t("missingDeps names every library the runtime cannot import, with what it is for", () => {
+  const py = (bin, args) => JSON.stringify(["bs4"]);
+  const m = P.missingDeps("python3", py);
+  assert(m.length === 1 && m[0][0] === "bs4", "just the missing one");
+  assert(/beautifulsoup4/.test(m[0][1]), "and says what it is for: " + m[0][1]);
+  assert(P.missingDeps("python3", () => "[]").length === 0, "nothing missing, nothing reported");
+});
+
+t("a python that cannot even be asked is not reported as missing libraries", () => {
+  const boom = () => { throw new Error("no such file"); };
+  assert(P.missingDeps("nope", boom).length === 0, "that is a different failure");
+});
+
+t("repairDeps installs requirements into a STAGED runtime and never into a bundled one", () => {
+  const root = fs.mkdtempSync(path.join(TMPROOT, "repair-"));
+  const appDir = path.join(root, "plugin", "sutra-ui");
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(appDir, "requirements.txt"), "beautifulsoup4==4.15.0\n");
+  const calls = [];
+  let installed = false;
+  const run = (bin, args) => {
+    if (args[0] === "-c") return installed ? "[]" : JSON.stringify(["bs4"]);
+    installed = true; calls.push(args.join(" ")); return "";
+  };
+  const staged = { kind: "staged", appDir, python: "py" };
+  const okr = P.repairDeps(staged, { execFileSync: run });
+  assert(okr.ok, "a staged runtime is repaired: " + okr.why);
+  assert(/pip install .*requirements.txt/.test(calls[0]), "from its own requirements: " + calls[0]);
+
+  const bundled = { kind: "bundled", appDir, python: "py" };
+  const no = P.repairDeps(bundled, { execFileSync: run });
+  assert(!no.ok && /staged/.test(no.why), "a bundled payload is never written to: " + no.why);
+});
+
+t("depsMessage tells a person what is missing and what to do, in plain words", () => {
+  const msg = P.depsMessage([["bs4", "reading the HTML of a page (beautifulsoup4)"]]);
+  assert(msg.indexOf("bs4") !== -1 && msg.indexOf("reading the HTML") !== -1, "names it and its job");
+  assert(/latest Sutra DMG/.test(msg), "and the fix");
+  assert(msg.indexOf("Traceback") === -1 && msg.indexOf("ModuleNotFound") === -1, "no stack trace");
+});
+
 t("resolveRuntime finds the BUNDLED runtime and prefers it over a staged one", () => {
   const root = fs.mkdtempSync(path.join(TMPROOT, "res-"));
   const res = path.join(root, "Resources");
