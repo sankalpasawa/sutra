@@ -170,5 +170,205 @@ class BinaryPathOverride(unittest.TestCase):
         providers.load_settings()          # would blow the stack if it recursed
 
 
+class CodexStatusParse(unittest.TestCase):
+    """The one line `codex login status` answers with.
+
+    Verified against codex-cli 0.153.2 on 2026-09-04. The stakes are not
+    cosmetic: subscription auth and an API key cost the operator completely
+    different amounts for identical output, so a mode read wrongly here tells
+    someone paying per token that their usage is included in a plan.
+    """
+
+    def test_chatgpt(self):
+        self.assertEqual(providers._parse_codex_status("Logged in using ChatGPT"),
+                         ("chatgpt", ""))
+
+    def test_api_key_with_the_masked_stub(self):
+        """The stub comes back in the CLI's own output. It is DISPLAYED and
+        never stored -- there is no settings key for a Codex credential."""
+        self.assertEqual(
+            providers._parse_codex_status(
+                "Logged in using an API key - sk-proj-***SMnIA"),
+            ("api_key", "sk-proj-***SMnIA"))
+
+    def test_an_em_dash_separator_is_still_an_api_key(self):
+        """A cosmetic change upstream must not downgrade the MODE to unknown."""
+        state, key = providers._parse_codex_status(
+            "Logged in using an API key \u2014 sk-proj-***SMnIA")
+        self.assertEqual((state, key), ("api_key", "sk-proj-***SMnIA"))
+
+    def test_api_key_with_no_stub_is_still_an_api_key(self):
+        """Losing the stub is cosmetic; losing the mode is a billing lie."""
+        self.assertEqual(providers._parse_codex_status("Logged in using an API key"),
+                         ("api_key", ""))
+
+    def test_logged_out(self):
+        self.assertEqual(providers._parse_codex_status("Not logged in"),
+                         ("logged_out", ""))
+
+    def test_empty_output_is_unknown_not_a_mode(self):
+        self.assertEqual(providers._parse_codex_status(""), ("unknown", ""))
+        self.assertEqual(providers._parse_codex_status("   \n "), ("unknown", ""))
+
+    def test_unrelated_text_is_unknown_not_a_mode(self):
+        for junk in ("error: could not read config",
+                     "codex-cli 0.153.2",
+                     "Usage: codex login [OPTIONS]"):
+            self.assertEqual(providers._parse_codex_status(junk), ("unknown", ""),
+                             "%r was read as a login state" % junk)
+
+
+class CodexAuthProbe(unittest.TestCase):
+    """codex_auth() around the subprocess. Never raises, never guesses."""
+
+    def _run(self, out="", err="", code=0):
+        return mock.Mock(stdout=out, stderr=err, returncode=code)
+
+    def test_no_binary_when_codex_is_not_on_PATH(self):
+        with mock.patch.object(providers, "provider_bin", return_value=None):
+            a = providers.codex_auth()
+        self.assertEqual(a["state"], "no_binary")
+        self.assertIsNone(a["billing"])
+        self.assertIn("PATH", a["detail"])
+
+    def test_a_missing_binary_at_exec_time_is_also_no_binary(self):
+        """which() found it, exec did not: it moved between the two calls."""
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run", side_effect=FileNotFoundError):
+            a = providers.codex_auth()
+        self.assertEqual(a["state"], "no_binary")
+
+    def test_a_timeout_returns_cleanly_and_never_propagates(self):
+        boom = providers.subprocess.TimeoutExpired(cmd="codex", timeout=10)
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run", side_effect=boom):
+            a = providers.codex_auth()
+        self.assertEqual(a["state"], "unknown")
+        self.assertIn("did not finish", a["detail"])
+
+    def test_an_os_error_returns_cleanly(self):
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run", side_effect=OSError("nope")):
+            self.assertEqual(providers.codex_auth()["state"], "unknown")
+
+    def test_the_billing_line_comes_from_this_module(self):
+        """The panel must not re-derive the billing story and disagree."""
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run("Logged in using ChatGPT")):
+            self.assertEqual(providers.codex_auth()["billing"],
+                             "usage included in your plan")
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run(
+                                   "Logged in using an API key - sk-proj-***SMnIA")):
+            a = providers.codex_auth()
+        self.assertEqual((a["state"], a["billing"], a["key_display"]),
+                         ("api_key", "billed per token", "sk-proj-***SMnIA"))
+
+    def test_a_recognised_line_wins_over_a_non_zero_exit(self):
+        """Text decides the mode, not the exit code -- 0.153.2 exits 0 when
+        logged in and learning what it exits when logged OUT would mean
+        destroying the operator's live session to find out."""
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run("Not logged in", code=1)):
+            self.assertEqual(providers.codex_auth()["state"], "logged_out")
+
+    def test_a_non_zero_exit_with_nothing_recognisable_is_unknown(self):
+        """DELIBERATELY NOT no_binary (which the plan's test list asked for):
+        the binary is right there and it ran, so claiming it is not installed
+        would send the operator after a PATH problem that does not exist --
+        the exact wrong diagnosis this file's header is about. The exit code
+        goes in the detail instead."""
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run("", "boom", code=2)):
+            a = providers.codex_auth()
+        self.assertEqual(a["state"], "unknown")
+        self.assertIn("exit 2", a["detail"])
+
+    def test_stderr_is_read_only_as_a_fallback(self):
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run("", "Not logged in")):
+            self.assertEqual(providers.codex_auth()["state"], "logged_out")
+
+
+class CodexIsConfiguredOnlyWhenSignedIn(unittest.TestCase):
+    """~/.codex EXISTS after the first `codex` run whether or not anyone ever
+    signed in -- it holds config.toml, session logs and sqlite state. Treating
+    the directory as evidence of a login claimed codex was set up on a machine
+    that had never authenticated."""
+
+    SPEC = {"id": "codex", "name": "OpenAI Codex", "bin": "codex",
+            "config_dir": "~/.codex", "default": False}
+
+    def _describe(self, credential):
+        with mock.patch.object(providers.shutil, "which", return_value="/bin/codex"), \
+             mock.patch.object(Path, "is_dir", lambda self: True), \
+             mock.patch.object(providers, "_codex_credential_present",
+                               return_value=credential):
+            return providers._describe(self.SPEC)
+
+    def test_the_config_dir_alone_is_not_configured(self):
+        self.assertFalse(self._describe(False)["configured"])
+
+    def test_the_credential_file_is_configured(self):
+        self.assertTrue(self._describe(True)["configured"])
+
+    def test_the_signed_out_reason_does_not_claim_a_missing_directory(self):
+        """The generic string would be wrong in a NEW way here: the directory
+        is there, the login is not, and sending someone to look for a missing
+        ~/.codex wastes the time the message was meant to save."""
+        reason = self._describe(False)["reason"]
+        self.assertNotIn("no config directory", reason)
+        self.assertIn("nobody is signed in", reason)
+        self.assertIn("auth.json", reason)
+
+    def test_a_credential_check_reads_existence_only(self):
+        """The file is a credential store. Nothing here opens it."""
+        with mock.patch.object(providers, "open",
+                               side_effect=AssertionError("opened auth.json"),
+                               create=True):
+            providers._codex_credential_present()
+
+
+class CodexStaysUnselectable(unittest.TestCase):
+    """Regression guard for the 2026-09-04 revert. codex was briefly added to
+    ADAPTERS, which made the row render "Ready to use", accept the click, and
+    then die at connect with code "no-adapter" -- the offer-a-choice-that-
+    cannot-run failure providers.py exists to prevent. Refusing at SELECTION
+    time is the better error until a CodexRuntime exists."""
+
+    def test_codex_is_not_in_ADAPTERS(self):
+        self.assertNotIn("codex", providers.ADAPTERS)
+
+    def test_a_fully_installed_signed_in_codex_is_still_not_runnable(self):
+        with mock.patch.object(providers.shutil, "which", return_value="/bin/codex"), \
+             mock.patch.object(Path, "is_dir", lambda self: True), \
+             mock.patch.object(providers, "_codex_credential_present", return_value=True):
+            p = providers._describe(CodexIsConfiguredOnlyWhenSignedIn.SPEC)
+        self.assertTrue(p["installed"])
+        self.assertTrue(p["configured"])
+        self.assertFalse(p["runnable"])
+        self.assertFalse(p["adapter"])
+
+    def test_the_no_adapter_reason_is_not_the_stale_claude_only_string(self):
+        """It said "this panel drives Claude's stream-json protocol only",
+        which stopped being true when the DeepSeek ACP adapter landed --
+        DeepSeek renders as ready to use two rows away in the same list, so
+        the row contradicted the screen it was printed on."""
+        with mock.patch.object(providers.shutil, "which", return_value="/bin/codex"), \
+             mock.patch.object(Path, "is_dir", lambda self: True), \
+             mock.patch.object(providers, "_codex_credential_present", return_value=True):
+            reason = providers._describe(
+                CodexIsConfiguredOnlyWhenSignedIn.SPEC)["reason"]
+        self.assertNotIn("stream-json protocol only", reason)
+        self.assertIn("stream-json", reason)
+        self.assertIn("ACP", reason)
+        self.assertIn("0.153.2", reason)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

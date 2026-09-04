@@ -215,6 +215,10 @@ const EPILOGUE = `
      so its render states (offered / cancel-while-busy / browser hint) are
      pinned as strings */
   accountHtml, accountLoginHtml,
+  /* the Codex sign-in block: the row exists to say which BILLING MODE is
+     active, so every render state is pinned as a string -- a wrong badge here
+     tells someone paying per token that their usage is included */
+  codexAuthHtml, codexConfirmText, loadCodexAuth, codexNeedsProbe, codexReprobe,
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
@@ -3530,6 +3534,363 @@ test("opt5. chat-first: teach and chat buttons present; the 7-field form is gone
 });
 
 
+
+/* ── 45. Codex sign-in block ────────────────────────────────────────────────
+   The reason this row was built: a ChatGPT sign-in and an API key cost the
+   operator completely different amounts for identical output, and nothing in
+   the panel showed which was in play. Every assertion below is about not
+   claiming the wrong one. */
+
+const CODEX_ROW = { id:"codex", name:"OpenAI Codex", installed:true, configured:true,
+                    runnable:false, adapter:false,
+                    reason:"no chat adapter yet -- this panel speaks two protocols" };
+
+function codexRender(auth, opts){
+  const o = opts || {};
+  T.PROVIDERS = [CODEX_ROW];
+  T.S.codexAuth = auth;
+  T.S.codexBusy = o.busy || null;
+  T.S.codexMsg = o.msg || null;
+  T.S.codexKeyOpen = !!o.keyOpen;
+  return T.codexAuthHtml();
+}
+
+test("45a. each state renders its own badge, and the billing line with it", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out", key_display:"", billing:null });
+    assert.ok(/Not signed in/.test(out), "signed-out says so");
+    assert.ok(/Sign in with ChatGPT/.test(out) && /Add API key/.test(out),
+      "and offers both ways in");
+    assert.ok(/usage included in your Plus\/Pro\/Business plan/.test(out)
+           && /pay for what you use/.test(out), "each way says what it costs");
+
+    const chat = codexRender({ state:"chatgpt", key_display:"",
+                               billing:"usage included in your plan" });
+    assert.ok(/Signed in with ChatGPT/.test(chat), "chatgpt badge");
+    assert.ok(/usage included in your plan/.test(chat), "with the billing line");
+    assert.ok(/Sign out/.test(chat) && /Use an API key instead/.test(chat),
+      "sign out + the switch");
+
+    const key = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
+                              billing:"billed per token" });
+    assert.ok(/sk-proj-\*\*\*SMnIA/.test(key), "the masked stub the CLI printed");
+    assert.ok(/billed per token/.test(key), "with the billing line");
+    assert.ok(/Sign out/.test(key) && /Switch to ChatGPT plan/.test(key),
+      "sign out + the other switch");
+
+    const none = codexRender({ state:"no_binary", detail:"the `codex` CLI is not on PATH" });
+    assert.ok(/not on PATH/.test(none), "a missing CLI says that, not 'not signed in'");
+    assert.ok(!/Sign in with ChatGPT/.test(none), "and offers nothing to click");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45b. an unrecognised answer says so and NEVER invents a mode", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"unknown", key_display:"", billing:null,
+                              detail:"`codex login status` answered in a shape this build does not recognise (exit 2)" });
+    assert.ok(/Could not tell which credential/.test(out), "the honest message");
+    assert.ok(/does not recognise/.test(out), "with the reason attached");
+    assert.ok(!/usage included/.test(out) && !/billed per token/.test(out),
+      "no billing claim is made when the mode is unknown");
+    assert.ok(!/Signed in with ChatGPT/.test(out) && !/Not signed in/.test(out),
+      "and no state is fabricated either way");
+    assert.ok(!/Sign out/.test(out),
+      "Sign out is withheld: it would imply we know there is something to sign out of");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45c. not asked yet is not signed out", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender(null);
+    assert.ok(/Reading the Codex sign-in/.test(out), "it says it is still reading");
+    assert.ok(!/Not signed in/.test(out), "never a billing claim before anything was read");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45d. a plain browser gets the CLI commands, never a dead button", () => {
+  const out = codexRender({ state:"logged_out" });   // no sandbox.sutra: browser
+  assert.ok(!/data-codex=/.test(out), "no buttons without the bridge");
+  assert.ok(/codex login/.test(out), "names the ChatGPT command");
+  assert.ok(/codex login --with-api-key/.test(out), "names the API-key command");
+  assert.ok(/codex logout/.test(out), "names the sign-out command");
+});
+
+test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
+    assert.ok(/<b>not<\/b> make Codex selectable/.test(out),
+      "signing in is not selectability, and the block says so");
+    /* The row directly above prints `reason` verbatim -- both protocols, the
+       version pin, the install path. Repeating it here put the same paragraph
+       on screen twice. The block must say the one thing the row does not, and
+       stop. */
+    assert.ok(!out.includes(CODEX_ROW.reason),
+      "the block repeats the row's reason back at the reader");
+    assert.ok(!/stream-json|ACP|0\.153\.2|opt\/homebrew/.test(out),
+      "no fragment of the adapter explanation is duplicated here");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45f. while a spawn runs its own button cancels and the others are dead", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out" }, { busy:"login" });
+    assert.ok(/>Cancel</.test(out), "the busy button became Cancel");
+    assert.ok(/Waiting for the browser sign-in/.test(out), "and says why it waits");
+    const others = out.match(/data-codex="apikey"[^>]*disabled/);
+    assert.ok(others, "the other action is disabled while one runs");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45g. every credential-replacing action warns first, and only those", () => {
+  /* The warning is the only thing standing between a click and a credential
+     Sutra cannot restore, because it never had a copy. */
+  const replaces = [["logout","chatgpt"], ["logout","api_key"],
+                    ["login","api_key"], ["apikey","chatgpt"]];
+  for (const [verb, state] of replaces){
+    const t = T.codexConfirmText(verb, state);
+    assert.ok(t, verb + " from " + state + " must warn before it replaces anything");
+    assert.ok(/REPLACES|removes/.test(t), "the warning names the replacement: " + t);
+    assert.ok(/go back|sign back in|restore/.test(t),
+      "and says what getting back would take: " + t);
+    /* The "Sutra never had a copy" clause is required exactly where a KEY is
+       what gets destroyed. Leaving an API key means the operator needs the key
+       itself again and nothing on this side can hand it back; leaving a
+       ChatGPT sign-in just means signing in again, where the clause would be
+       noise. */
+    if (state === "api_key")
+      assert.ok(/never had a copy/.test(t),
+        "a key is being destroyed and nothing here can put it back: " + t);
+  }
+  /* Signing in from signed-out destroys nothing, so it must not nag. */
+  assert.strictEqual(T.codexConfirmText("login", "logged_out"), null);
+  assert.strictEqual(T.codexConfirmText("apikey", "logged_out"), null);
+  assert.strictEqual(T.codexConfirmText("login", "unknown"), null);
+});
+
+test("45h. the API-key field is uncontrolled, so no key is ever held in state", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out" }, { keyOpen:true });
+    assert.ok(/data-codex-key/.test(out), "the field is there");
+    assert.ok(/type="password"/.test(out), "and not in plain sight");
+    assert.ok(!/value=/.test(out.slice(out.indexOf("data-codex-key") - 200,
+                                       out.indexOf("data-codex-key") + 200)),
+      "no value bound to state: the typed key lives only in the DOM node");
+    assert.ok(/keeps no copy/.test(out), "and the field says Sutra keeps nothing");
+  } finally { delete sandbox.sutra; }
+});
+
+/* ── 45i-45l. The Codex probe's async contract ──────────────────────────────
+   These drive the SAME globals -- sandbox.fetch, sandbox.render, S.codexAuth --
+   so registered straight into ASYNC_CHECKS they interleave and stomp each
+   other. The first version of them did exactly that and reported a failure in
+   the wrong test. They run SERIALLY through one queue, and each installs its
+   own stubs at the moment it RUNS, not when it is declared.
+
+   A failure does not cancel the ones behind it: the queue continues on a
+   caught copy while the original carries the result to ASYNC_CHECKS. */
+/* The queue starts after a real timer tick, not immediately. Other suites in
+   this file (25j's stageInBackground, for one) call render() from their own
+   async continuations, and those land on the microtask queue while a codex
+   body is mid-await -- which showed up as a phantom render inside 45k and had
+   me hunting a loop in code that no longer had one. Draining first makes the
+   render counts below attributable. Same 20ms-tick trick 31e uses. */
+let _codexQ = new Promise(r => setTimeout(r, 60));
+function codexSerial(name, body){
+  const mine = _codexQ.then(body);
+  _codexQ = mine.catch(() => {});
+  ASYNC_CHECKS.push(mine.catch(e => {
+    throw new Error(name + " -- " + (e && e.message ? e.message : e));
+  }));
+}
+
+/* Fresh stubs and a clean slate, with its own teardown. */
+function codexStub(fetchImpl){
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  let renders = 0;
+  sandbox.render = () => { renders++; };
+  sandbox.fetch = fetchImpl;
+  T.PROVIDERS = [CODEX_ROW];
+  T.S.codexAuth = null; T.S.codexProbing = false;
+  return {
+    renders: () => renders,
+    reset: () => { renders = 0; },
+    setFetch: f => { sandbox.fetch = f; },
+    restore: () => { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+                     T.S.codexAuth = null; T.S.codexProbing = false; },
+  };
+}
+
+const jsonOnce = payload => () => Promise.resolve(
+  { ok:true, json: () => Promise.resolve(payload) });
+const stillLoadingNow = () => /Reading the Codex sign-in/.test(T.codexAuthHtml());
+
+/* 45i. A PERMANENT LOADING STATE IS THE WORST ANSWER THIS BLOCK CAN GIVE.
+   The first build hooked the probe only into openScreen(), and boot() sets
+   S.screen directly (09-tail.js) -- so the shell could come up on this screen
+   with nothing having asked, and the block promised an answer that was never
+   coming. Once loadCodexAuth has SETTLED, on any path, loading must be gone. */
+codexSerial("45i", async () => {
+  const h = codexStub(jsonOnce({ state:"chatgpt", key_display:"",
+                                 billing:"usage included in your plan" }));
+  try {
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a successful probe must leave the loading state");
+    assert.ok(/Signed in with ChatGPT/.test(T.codexAuthHtml()), "and render the answer");
+
+    /* the fetch rejects outright -- socket gone, backend restarted */
+    T.S.codexAuth = null;
+    h.setFetch(() => Promise.reject(new Error("socket closed")));
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a REJECTED probe must not sit on loading");
+    assert.ok(/Could not tell which credential/.test(T.codexAuthHtml()),
+      "it falls through to the honest unknown state");
+
+    /* a non-2xx answer -- the shape apiGet turns into a throw */
+    T.S.codexAuth = null;
+    h.setFetch(() => Promise.resolve({ ok:false, status:500,
+                                       json: () => Promise.resolve({ detail:"boom" }) }));
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a 500 must not sit on loading");
+    assert.strictEqual(T.S.codexAuth.state, "unknown");
+
+    /* a 200 carrying no state. Left falsy this would keep the loading state AND
+       re-arm the wire() predicate on every render, forever. */
+    T.S.codexAuth = null;
+    h.setFetch(jsonOnce(null));
+    await T.loadCodexAuth(true);
+    assert.ok(T.S.codexAuth && T.S.codexAuth.state === "unknown",
+      "a stateless 200 is coerced to unknown, never left null");
+    assert.ok(!stillLoadingNow(), "a stateless 200 must not sit on loading");
+  } finally { h.restore(); }
+});
+
+/* 45j. Does the probe ever fire? Pure predicate, so the answer needs no DOM. */
+test("45j. the probe fires when the screen is up and nothing has been asked", () => {
+  const prev = T.S.screen;
+  try {
+    T.S.screen = "settings"; T.S.codexAuth = null;
+    assert.strictEqual(T.codexNeedsProbe(), true,
+      "screen up, no answer yet -> the probe must fire");
+    T.S.codexAuth = { state:"chatgpt" };
+    assert.strictEqual(T.codexNeedsProbe(), false, "an answered probe must not re-fire");
+    T.S.codexAuth = { state:"unknown", detail:"could not read it" };
+    assert.strictEqual(T.codexNeedsProbe(), false,
+      "a FAILED probe must not re-fire on every render either");
+    T.S.screen = "chats"; T.S.codexAuth = null;
+    assert.strictEqual(T.codexNeedsProbe(), false, "no probe for a screen that is not up");
+  } finally { T.S.screen = prev; T.S.codexAuth = null; }
+});
+
+/* 45k. THE FREEZE, and the contract that makes it impossible.
+   What shipped was `if (codexNeedsProbe()) loadCodexAuth().then(()=>render())`.
+   While a probe is in flight the predicate is still true (no answer yet) and
+   the loader early-returns on its in-flight guard -- and an early return from
+   an async function is an ALREADY-RESOLVED promise. So the chained render
+   fired, re-entered wire(), early-returned again, and looped at microtask
+   speed, rebuilding the whole panel and re-binding every handler per turn.
+   Nothing painted and nothing took input; and because apiGet carries no
+   timeout, a probe that never landed never ended the loop.
+
+   Pinned as a property of the LOADER, not as a model of the caller: it renders
+   exactly when it has something new to show, and a call that does nothing
+   renders nothing. That is what makes every caller safe as a bare call. */
+codexSerial("45k", async () => {
+  const h = codexStub(() => new Promise(() => {}));
+  try {
+    /* A. the in-flight guard blocks -- the case that used to hand the caller a
+          resolved promise to loop on */
+    T.S.codexProbing = true;
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 0,
+      "a call blocked by the in-flight guard rendered " + h.renders() + " time(s)");
+
+    /* B. the answer-in-hand guard blocks */
+    T.S.codexProbing = false; T.S.codexAuth = { state:"chatgpt" };
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 0, "a call blocked by an answer in hand rendered too");
+
+    /* C. a real probe renders its own result exactly once, so nothing needs to
+          chain a render onto it */
+    h.reset();
+    T.S.codexAuth = null;
+    h.setFetch(jsonOnce({ state:"chatgpt", key_display:"", billing:"x" }));
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 1,
+      "a completed probe must render its own result exactly once");
+  } finally { h.restore(); }
+});
+
+/* 45k2. The other half of the same contract, read off the real source. The loop
+   is invisible in any single function -- it exists only in the coupling between
+   wire() and render() -- so the rule is enforced where it can be seen.
+   Comments are stripped first: the explanation above quotes the very expression
+   it forbids, and matching that would be a test failing on its own prose. */
+test("45k2. no caller chains a render onto loadCodexAuth", () => {
+  const raw = fs.readFileSync(path.join(__dirname, "static", "js", "07-loaders.js"), "utf8");
+  const code = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const chained = code.match(/loadCodexAuth\([^)]*\)\s*\.then/g) || [];
+  assert.deepStrictEqual(chained, [],
+    "a caller chains onto loadCodexAuth (" + chained.join(", ") + ") -- a "
+    + "guard-blocked call resolves immediately and that render re-enters wire()");
+});
+
+/* 45l. The guard must not swallow the RE-PROBE. An action has just changed the
+   credential, so the answer in hand is precisely the stale one. Without force
+   the row keeps showing the state from before the sign-in -- the single thing
+   this row exists not to do. This failed when first written: 0 requests. */
+codexSerial("45l", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", key_display:"", billing:null }) }); });
+  try {
+    T.S.codexAuth = { state:"chatgpt", billing:"usage included in your plan" };
+    await T.codexReprobe(false);
+    assert.strictEqual(calls, 1,
+      "codexReprobe made " + calls + " request(s) -- with an answer in hand the "
+      + "guard swallowed the re-read, so the row would still show the old credential");
+    assert.strictEqual(T.S.codexAuth.state, "logged_out", "and the NEW answer is what lands");
+  } finally { h.restore(); }
+});
+
+/* ── 46. a rejected API key must never be echoed back ───────────────────────
+   The classified-error path in electron/main.js exists so the child's stderr
+   never crosses the bridge -- on the --with-api-key path that stderr can
+   contain the key that was just typed. This reads the real function out of
+   main.js (which cannot be require()d here: it pulls in electron) and proves
+   the property on the actual bytes, because "we return a fixed string" is
+   exactly the kind of thing that regresses quietly. */
+test("46a. codexError classifies and never quotes the child's stderr", () => {
+  const src = fs.readFileSync(path.join(__dirname, "electron", "main.js"), "utf8");
+  const start = src.indexOf("function codexError(");
+  assert.ok(start > 0, "codexError is gone from main.js -- did the verb change shape?");
+  const end = src.indexOf("\n}", start);
+  const fn = vm.runInNewContext(src.slice(start, end + 2) + ";codexError");
+
+  const KEY = "sk-proj-abcdef0123456789SECRET";
+  const cases = [
+    "Error: 401 Unauthorized - Incorrect API key provided: " + KEY,
+    "invalid_api_key: " + KEY + " is not valid",
+    "insufficient quota for key " + KEY,
+    "connection timed out while checking " + KEY,
+    "something nobody has seen before involving " + KEY,
+  ];
+  for (const stderr of cases){
+    const out = fn(1, stderr);
+    assert.ok(!out.includes(KEY), "the key was echoed back: " + out);
+    assert.ok(!out.includes("sk-"), "a key-shaped fragment survived: " + out);
+    assert.ok(out.length < 200, "the raw line leaked wholesale: " + out);
+  }
+  assert.ok(/rejected that API key/.test(fn(1, cases[0])), "a 401 is named as a bad key");
+  assert.ok(/billing or quota/.test(fn(1, cases[2])), "a quota problem is named as one");
+  assert.ok(/could not reach OpenAI/.test(fn(1, cases[3])), "a network failure is named");
+  assert.ok(/exited 7/.test(fn(7, cases[4])), "an unknown failure carries the exit code");
+});
 
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))

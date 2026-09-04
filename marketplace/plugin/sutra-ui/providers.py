@@ -37,8 +37,10 @@ Writes: exactly one file, ~/.sutra-ui/settings.json, via save_settings().
 """
 import json
 import os
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 # ------------------------------------------------------------ login PATH ---
@@ -413,6 +415,18 @@ PERMISSION_MODE_NOTES = {
 # deepseek; anything else falls through to the "no-adapter" refusal). Adding
 # an id here without writing its adapter re-creates the bug this set exists
 # to prevent.
+#
+# codex: DELIBERATELY ABSENT (2026-09-04). It was added here as a staging step
+# and taken back out the same day. With codex in this set the row rendered
+# "Ready to use", accepted the click, and then died at connect with code
+# "no-adapter" (app.py's `elif active_id != "claude"` arm) -- exactly the
+# offer-a-choice-that-cannot-run failure this set exists to prevent. Refusing
+# at SELECTION time is the better error until a CodexRuntime, a
+# build_codex_args() and a third arm in the ws_chat dispatch exist.
+#
+# The Codex row now offers SIGN-IN (see the codex auth section below), which is
+# a different capability from selectability and says so on screen. Signing in
+# does not belong to this set and must not be read as progress toward it.
 ADAPTERS = frozenset({"claude", "deepseek"})
 
 # ------------------------------------------------------------- catalog -----
@@ -499,6 +513,172 @@ def set_provider_bin(pid, path):
     return bins.get(pid)
 
 
+# ----------------------------------------------------------- codex auth ----
+# Codex is the one provider whose BILLING MODE is invisible from the outside,
+# and the two modes cost the operator completely different amounts for
+# identical output: a ChatGPT sign-in draws on a plan they already pay for, an
+# API key bills per token. Nothing in the panel showed which was in play.
+#
+# Codex stores EXACTLY ONE credential. Signing in with either method REPLACES
+# the other -- there is no both-at-once state and no precedence to resolve --
+# so this is one active mode plus a switch, never two independent toggles.
+#
+# THE CLI IS THE AUTHORITY. `codex login status` is ASKED rather than
+# ~/.codex/auth.json being parsed: that file is a credential store, and this
+# module reads config paths for EXISTENCE only, never contents (module
+# docstring). The masked stub codex prints ("sk-proj-***SMnIA") is DISPLAYED
+# and never stored -- Sutra holds no part of the key at any point, and there is
+# deliberately no settings key for one.
+#
+# NOT CALLED FROM _describe(). _describe() runs four times per
+# load_settings(), and every fs/tree, fs/read, ws_chat connect and settings GET
+# goes through that; a subprocess there would tax requests that never asked
+# about codex, and _bin_for() already had to dodge one recursion loop through
+# the same chain. This mirrors how the Claude account is handled instead:
+# claude_local.account() is a separate function the route calls and merges.
+# Provider IDENTITY is not a field of provider AVAILABILITY.
+
+#: Where codex keeps the one credential. Checked for existence, never opened.
+CODEX_AUTH_PATH = "~/.codex/auth.json"
+
+CODEX_STATUS_TIMEOUT = 10
+
+#: The one line `codex login status` answers with, verified against codex-cli
+#: 0.153.2 on 2026-09-04:
+#:
+#:     Logged in using ChatGPT
+#:     Logged in using an API key - sk-proj-***SMnIA
+#:     Not logged in
+#:
+#: The API-key form is matched with the separator OPTIONAL and the stub
+#: OPTIONAL: a build that stops printing the stub must still be recognised as
+#: an API-key login, because losing the stub is cosmetic and losing the MODE
+#: means telling the operator their tokens are free while they are being
+#: billed. Hyphen, en-dash, em-dash and colon are all accepted as the
+#: separator so a cosmetic change upstream cannot silently downgrade the state
+#: to "unknown".
+_CODEX_API_KEY_RE = re.compile(
+    r"logged\s+in\s+using\s+an\s+api\s+key\s*(?:[-:\u2013\u2014]\s*(\S+))?", re.I)
+_CODEX_CHATGPT_RE = re.compile(r"logged\s+in\s+using\s+chatgpt", re.I)
+_CODEX_LOGGED_OUT_RE = re.compile(r"not\s+logged\s+in", re.I)
+
+#: Plain English for each state, so the panel does not re-derive the billing
+#: story and disagree with this module. The whole point of the row is that
+#: these two cost different amounts.
+CODEX_BILLING = {
+    "chatgpt": "usage included in your plan",
+    "api_key": "billed per token",
+}
+
+
+def _codex_credential_present():
+    """True when codex is holding a credential -- ~/.codex/auth.json exists.
+
+    EXISTENCE ONLY. The file is a credential store and nothing here opens it.
+    """
+    return Path(os.path.expanduser(CODEX_AUTH_PATH)).is_file()
+
+
+def _parse_codex_status(text):
+    """(state, key_display) for one `codex login status` answer.
+
+    Matched on the TEXT, not the exit code. 0.153.2 exits 0 when logged in, and
+    learning what it exits when logged OUT would mean destroying the operator's
+    live session to find out -- so the exit code is used only for the coarse
+    "did it run at all" signal in codex_auth(), never to decide a mode.
+
+    Anything unrecognised is "unknown": asked, and could not tell. Guessing a
+    mode here is the convincing-wrong answer this codebase refuses to produce,
+    and the specific wrong answer would be "your usage is included" to someone
+    paying per token.
+    """
+    blob = (text or "").strip()
+    if not blob:
+        return "unknown", ""
+    m = _CODEX_API_KEY_RE.search(blob)
+    if m:
+        # rstrip: the stub is matched as one non-space run, so a build that ends
+        # the line with punctuation would otherwise fold it into the key.
+        return "api_key", (m.group(1) or "").rstrip(".,;:")
+    if _CODEX_CHATGPT_RE.search(blob):
+        return "chatgpt", ""
+    if _CODEX_LOGGED_OUT_RE.search(blob):
+        return "logged_out", ""
+    return "unknown", ""
+
+
+def codex_auth():
+    """Which credential Codex is holding, and therefore how it bills.
+
+        {"state":       chatgpt | api_key | logged_out | no_binary | unknown,
+         "key_display": the masked stub codex printed, or "" -- DISPLAY ONLY,
+         "billing":     one line of plain English, or None,
+         "detail":      what happened, when the answer is not a login state,
+         "bin_path":    the binary that was asked, or None,
+         "checked_at_ms": when}
+
+    NEVER RAISES. A probe that times out, cannot start, or answers in a shape
+    this build does not know comes back as "unknown" WITH the reason. It must
+    never fall back to a mode: the two modes bill differently, so a confident
+    wrong answer here is worse than no answer.
+
+    THE ENVIRONMENT DOES NOT CHANGE THE ANSWER while a credential file exists.
+    Measured on 0.153.2 (2026-09-04): `OPENAI_API_KEY=sk-fake codex login
+    status` still reports the ChatGPT sign-in, so ~/.codex/auth.json takes
+    precedence over the variable. That is what makes _describe()'s cheap
+    auth.json check agree with this probe rather than race it. Deliberately
+    still unmeasured, and therefore not claimed either way: whether the
+    variable authenticates ON ITS OWN when auth.json is absent entirely.
+
+    The env is passed through UNCHANGED, unlike the desktop shell's login
+    spawns which strip OPENAI_*/CODEX_*. This function reports what codex
+    reports; sanitising the environment here would make the panel disagree with
+    the same command run in a terminal, which is a worse failure than
+    inheriting a variable on a read.
+    """
+    ensure_login_path()
+    bin_path = provider_bin("codex")
+    now = int(time.time() * 1000)
+    if not bin_path:
+        return {"state": "no_binary", "key_display": "", "billing": None,
+                "detail": "the `codex` CLI is not on PATH, so its sign-in "
+                          "state cannot be read",
+                "bin_path": None, "checked_at_ms": now}
+    try:
+        p = subprocess.run([bin_path, "login", "status"], capture_output=True,
+                           text=True, timeout=CODEX_STATUS_TIMEOUT)
+    except FileNotFoundError:
+        # which() found it and exec did not: it moved between the two calls.
+        return {"state": "no_binary", "key_display": "", "billing": None,
+                "detail": "%s could not be run -- it is no longer there"
+                          % bin_path,
+                "bin_path": bin_path, "checked_at_ms": now}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"state": "unknown", "key_display": "", "billing": None,
+                "detail": "`codex login status` did not finish (%s)"
+                          % type(exc).__name__,
+                "bin_path": bin_path, "checked_at_ms": now}
+
+    # stderr is read only as a FALLBACK. 0.153.2 answers on stdout; a build
+    # that moves the line should still be understood rather than reported as
+    # an unknown mode.
+    blob = (p.stdout or "").strip() or (p.stderr or "").strip()
+    state, key_display = _parse_codex_status(blob)
+    detail = None
+    if state == "unknown":
+        # DELIBERATELY NOT no_binary. The binary is right there and it ran --
+        # saying it is not installed would send the operator after a PATH
+        # problem that does not exist, which is the exact wrong diagnosis
+        # test_provider_detect.py was written about. Unknown, with the exit
+        # code, is the honest report.
+        detail = ("`codex login status` answered in a shape this build does "
+                  "not recognise (exit %s). Run it in a terminal to see what "
+                  "it says." % p.returncode)
+    return {"state": state, "key_display": key_display,
+            "billing": CODEX_BILLING.get(state), "detail": detail,
+            "bin_path": bin_path, "checked_at_ms": now}
+
+
 def _describe(spec):
     """One provider's live state. `installed` is shutil.which() and NOTHING
     else -- a config directory is not evidence of a binary, and this function
@@ -510,15 +690,34 @@ def _describe(spec):
     cfg_display = spec["config_dir"]
     cfg_path = Path(os.path.expanduser(cfg_display))
     configured = cfg_path.is_dir()
+    if spec["id"] == "codex":
+        # ~/.codex EXISTS after the first `codex` run whether or not anyone
+        # ever signed in -- it holds config.toml, session logs and sqlite
+        # state. Treating the directory as evidence of a login claimed codex
+        # was set up on a machine that had never authenticated. The credential
+        # is ONE FILE inside it, so that is what is checked.
+        #
+        # Still existence only, never contents. WHICH of the two billing modes
+        # is active comes from codex_auth(), which asks the CLI -- and the two
+        # agree rather than race, because auth.json takes precedence over
+        # OPENAI_API_KEY (measured on 0.153.2; see codex_auth()).
+        configured = _codex_credential_present()
 
     adapter = spec["id"] in ADAPTERS
 
     if installed and configured and adapter:
         reason = None
     elif installed and configured and not adapter:
-        reason = ("no chat adapter yet -- this panel drives Claude's "
-                  "stream-json protocol only, so %s cannot be used here even "
-                  "though it is installed at %s" % (spec["name"], bin_path))
+        # This said "this panel drives Claude's stream-json protocol only",
+        # which stopped being true when the DeepSeek ACP adapter landed:
+        # DeepSeek renders as ready to use two rows away in the same list, so
+        # the row contradicted the screen it was printed on.
+        pin = (" (checked against codex-cli 0.153.2)"
+               if spec["id"] == "codex" else "")
+        reason = ("no chat adapter yet -- this panel speaks two protocols, "
+                  "Claude's stream-json and DeepSeek's ACP, and %s exposes "
+                  "neither%s, so it cannot answer messages here even though "
+                  "it is installed at %s" % (spec["name"], pin, bin_path))
     elif configured and not installed:
         # This is the message a user sees when the app cannot find a CLI they
         # know is installed. "not on PATH" alone sent people looking in the
@@ -544,8 +743,19 @@ def _describe(spec):
                       % (binary, cfg_display, _harvest_note(),
                          spec["id"].upper(), binary))
     elif installed and not configured:
-        reason = "binary %r found at %s but no config directory at %s" % (
-            binary, bin_path, cfg_display)
+        if spec["id"] == "codex":
+            # The generic string below would be WRONG here in a new way: for a
+            # signed-out codex the config directory is present, it is the
+            # LOGIN that is missing, and sending someone to look for a missing
+            # ~/.codex would waste the time the message was meant to save.
+            reason = ("installed at %s, but nobody is signed in -- there is no "
+                      "credential at %s. Sign in from the Codex row below. "
+                      "(%s exists either way, so its presence is not evidence "
+                      "of a login.)"
+                      % (bin_path, CODEX_AUTH_PATH, cfg_display))
+        else:
+            reason = "binary %r found at %s but no config directory at %s" % (
+                binary, bin_path, cfg_display)
     else:
         reason = "no binary and no config directory"
 

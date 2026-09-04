@@ -195,6 +195,103 @@ function paneMenuAction(sid, key){
   render();
 }
 
+/* ── Codex sign-in state ────────────────────────────────────────────────────
+   GET /api/providers/codex/auth spawns `codex login status`, so it is
+   deliberately NOT in boot()'s allSettled and NOT folded into /api/settings:
+   those are read on every boot and every settings open, and a subprocess does
+   not belong on either path. This runs when the AI Assistant screen opens and
+   after each sign-in action. There is nothing to cache -- being current is the
+   entire value of the call. */
+async function loadCodexAuth(force){
+  /* Guarded because wire() re-enters this on EVERY render (see the wire() call
+     site). `force` bypasses both guards: re-opening the screen and finishing an
+     action must both be able to supersede a probe that is still in flight. */
+  if (S.codexProbing && !force) return;
+  if (S.codexAuth && !force) return;
+  S.codexProbing = true;
+  try {
+    const a = await apiGet("/api/providers/codex/auth");
+    /* A 200 THAT CARRIES NO STATE IS NOT AN ANSWER. Storing it would leave
+       S.codexAuth falsy, the loading state on screen, and the wire() guard
+       re-firing forever -- a permanent "Reading the Codex sign-in..." is the
+       worst outcome available here, worse than saying we could not tell. */
+    S.codexAuth = (a && typeof a === "object" && a.state) ? a : {
+      state:"unknown", key_display:"", billing:null,
+      detail:"the sign-in endpoint answered without a state" };
+  }
+  catch (e){
+    /* A FAILED FETCH IS NOT A SIGNED-OUT CODEX. Rendered as the server's own
+       unrecognised-answer case -- unknown, with the reason -- so a dead
+       endpoint can never read as "not signed in", and never as a billing mode. */
+    S.codexAuth = { state:"unknown", key_display:"", billing:null,
+                    detail:"the panel could not read the Codex sign-in — " + e.message };
+  }
+  finally { S.codexProbing = false; }
+  /* The loader owns the render, the way loadWorkspace does. This is what lets
+     every caller be a bare call: an early return renders nothing, so no caller
+     can turn a guard-blocked call into a render loop. */
+  render();
+}
+
+/* Does the Codex block need its data fetched right now?
+
+   PURE, so the condition that answers "does the probe ever fire?" can be
+   tested without a DOM. wire() asks this on every render; openScreen forces
+   independently of it.
+
+   Off-screen is false (nothing renders it, so nothing needs it), and an answer
+   already in hand is false INCLUDING the honest unknown -- otherwise a failed
+   probe would re-fire on every render for as long as the screen stayed open. */
+function codexNeedsProbe(){
+  return S.screen === "settings" && !S.codexAuth;
+}
+
+/* The warning a codex action needs, or null when it destroys nothing.
+
+   PURE AND SEPARATE so the invariant can be pinned by a test: every action
+   that REPLACES the stored credential warns first, and nothing else nags. It
+   is derived from the state just read, never encoded in the button, so a stale
+   render cannot warn about the wrong direction.
+
+   Codex holds exactly one credential and each sign-in method replaces the
+   other -- and Sutra never had a copy of either, so nothing here can put one
+   back. That is the fact each of these sentences has to carry. */
+function codexConfirmText(verb, state){
+  if (verb === "logout")
+    return "Sign Codex out?\n\nThis removes the credential the codex CLI is holding on "
+      + "this Mac. Sutra never had a copy, so nothing here can restore it."
+      + (state === "api_key" ? " You would need the API key itself to sign back in." : "");
+  if (verb === "login" && state === "api_key")
+    return "Switch to a ChatGPT sign-in?\n\nCodex stores one credential, so signing in "
+      + "with ChatGPT REPLACES the API key it holds now. Sutra never had a copy of that "
+      + "key, so it cannot be restored here — you would need the key itself to go back.";
+  if (verb === "apikey" && state === "chatgpt")
+    return "Add an API key instead of your ChatGPT sign-in?\n\nCodex stores one "
+      + "credential, so the API key REPLACES the ChatGPT sign-in. You would then pay per "
+      + "token instead of drawing on your plan, and you would have to sign in with "
+      + "ChatGPT again to go back.";
+  return null;                 /* signing in from signed-out destroys nothing */
+}
+
+/* Re-read after an action, with ONE delayed retry when the state did not move.
+
+   THE 1500ms IS A TIMING HEDGE, NOT A FIX. codex writes ~/.codex/auth.json as
+   it finishes and the probe is a separate process, so a re-read that starts
+   immediately can lose the race and show the previous credential. The robust
+   version watches auth.json's mtime (or has the bridge resolve only once the
+   file has changed) instead of sleeping. Kept identical to the Claude sign-in
+   handler's hedge rather than invented here, so both age the same way. */
+async function codexReprobe(expectChange){
+  const before = (S.codexAuth || {}).state;
+  /* FORCE, both times. An action has just changed the credential, so the
+     answer in hand is precisely the STALE one -- without force the guard
+     short-circuits the read and the row keeps showing the state from before
+     the sign-in, which is the single thing this row exists not to do. */
+  await loadCodexAuth(true);
+  if (expectChange && (S.codexAuth || {}).state === before)
+    setTimeout(()=>{ loadCodexAuth(true); }, 1500);
+}
+
 function wire(){
   /* With the browse pane closed there is no #scBody. A detached node keeps
      every scBody.querySelectorAll below a no-op instead of a TypeError that
@@ -289,6 +386,110 @@ function wire(){
                          + (kept ? " A chat is still replying and will move after it finishes." : ""); })
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
+  /* ── Codex sign-in (AI Assistant screen) ──────────────────────────────────
+     BOTH ENTRY PATHS ask for the probe, the way loadWorkspace is entered from
+     openScreen AND from wire(). openScreen alone was not enough: boot()
+     restores S.screen DIRECTLY (09-tail.js:125) when the destination
+     remembers this screen, so the shell can come up ON the AI Assistant
+     screen without openScreen ever running -- nothing asked for the probe and
+     the block sat on "Reading the Codex sign-in..." forever. A permanent
+     loading state is the worst answer this block can give: it is a promise
+     that something is coming, and nothing was.
+
+     Cannot loop, though wire() runs on every render: loadCodexAuth returns
+     early once an answer (including the honest unknown) is in hand, and a
+     stateless 200 is coerced to unknown rather than left falsy.
+
+     AND NO RENDER IS CHAINED HERE. `loadCodexAuth().then(()=>render())` is what
+     shipped first and it FROZE THE PANEL: while a probe is in flight the
+     predicate is still true, the loader early-returns, and an early return is
+     an ALREADY-RESOLVED promise -- so the chained render fires, re-enters
+     wire(), early-returns again, and loops at microtask speed, rebuilding the
+     whole panel and re-binding every handler each time. Nothing could paint or
+     take input until the probe landed, and because apiGet has no timeout, a
+     probe that never lands never ends the loop. The loader renders its OWN
+     result instead; a call that does nothing produces nothing. */
+  if (codexNeedsProbe()) loadCodexAuth();
+
+  /* Separate from the Claude [data-auth-login] handler above by direction, not
+     by accident: that verb is untouched and this one copies its shape.
+
+     Every spawn runs in the DESKTOP SHELL, never behind an HTTP route -- the
+     API key reaches codex on stdin and the backend port is unauthenticated,
+     so a route that took a key would be a credential-write surface any local
+     page could reach. In a browser there is no bridge, the row renders the CLI
+     commands as text, and these buttons do not exist to be clicked.
+
+     BOTH SWITCH ACTIONS AND SIGN OUT CONFIRM FIRST. Codex holds exactly one
+     credential and each method replaces the other, so a switch DESTROYS what
+     is there -- and Sutra never had a copy to restore. The warning is derived
+     from the state we just read, not encoded in the button, so a stale render
+     cannot warn about the wrong direction. Same shape as the connector
+     disconnect confirm in 12-connectors.js. */
+  scBody.querySelectorAll("[data-codex]").forEach(b=>b.onclick=async()=>{
+    const verb = b.dataset.codex;
+    const sutra = window.sutra || {};
+    const st = (S.codexAuth || {}).state;
+
+    if (verb === "apikey:cancel"){ S.codexKeyOpen = false; S.codexMsg = null; render(); return; }
+
+    /* Reveal the key field. From a ChatGPT sign-in this is a SWITCH, so it
+       warns before the field even appears -- the point of no return is the
+       click that says "yes, replace it", not the typing. */
+    if (verb === "apikey"){
+      const warnSwitch = codexConfirmText("apikey", st);
+      if (warnSwitch && !confirm(warnSwitch)) return;
+      S.codexKeyOpen = true; S.codexMsg = null; render(); return;
+    }
+
+    /* The button that started a spawn doubles as Cancel, so it re-invokes the
+       SAME verb -- the shell SIGTERMs the running child and answers
+       "cancelled". codexApiKey is re-invoked with no key on purpose: the main
+       process checks for a running child before it validates one. */
+    if (S.codexBusy){
+      try {
+        if (verb === "login") sutra.codexLogin();
+        else if (verb === "logout") sutra.codexLogout();
+        else if (verb === "apikey:save") sutra.codexApiKey("");
+      } catch (e) {}
+      return;
+    }
+
+    const warn = codexConfirmText(verb, st);
+    if (warn && !confirm(warn)) return;
+
+    let key = null;
+    if (verb === "apikey:save"){
+      /* Read off the DOM at click time and never stored: not in S, not in
+         localStorage, not posted anywhere. It goes to the bridge and is
+         dropped when this handler returns. */
+      const input = scBody.querySelector("[data-codex-key]");
+      key = input ? input.value : "";
+      if (!key || !key.trim()){ S.codexMsg = "Enter a key first."; render(); return; }
+    }
+
+    if (!(verb === "login" || verb === "logout" || verb === "apikey:save")) return;
+    S.codexBusy = verb === "apikey:save" ? "apikey:save" : verb;
+    S.codexMsg = null; render();
+    let r = null;
+    try {
+      r = verb === "login" ? await sutra.codexLogin()
+        : verb === "logout" ? await sutra.codexLogout()
+        : await sutra.codexApiKey(key);
+    } catch (e){ r = { ok:false, error: e.message }; }
+    key = null;
+    S.codexBusy = null;
+    S.codexKeyOpen = false;
+    S.codexMsg = r && r.ok
+      ? (verb === "logout" ? "Signed out." : "Done.")
+      : ((r && r.error) || "codex did not finish");
+    /* RE-READ rather than assume. The action reports whether the CLI exited 0,
+       which is not the same fact as which credential it now holds -- and this
+       row exists to state the second one. */
+    await codexReprobe(!!(r && r.ok));
+    render();
+  });
+
   scBody.querySelectorAll("[data-pmode-set]").forEach(b=>b.onclick=()=>{
     const m = b.dataset.pmodeSet;
     const spec = PERM_MODES.find(x=>x.id===m) || {};
@@ -1132,6 +1333,10 @@ function openScreen(id){
      so opening that screen has to fetch it -- otherwise the section would
      sit on "Reading usage..." until something else happened to load it. */
   if (id === "usage" || id === "settings") loadUsage(true);
+  /* Codex's sign-in state, for the same reason usage is fetched here: the row
+     renders on this screen and nothing else would ever ask for it. Spawns
+     `codex login status`, hence lazy -- see loadCodexAuth. */
+  if (id === "settings") loadCodexAuth(true);
   if (id === "evals") loadEvals(false);     /* lazy, like Git */
   if (id === "routines"){ loadRoutines(false); loadProposals(false); }
   if (id === "teamsutra") loadTeamsutra(false);

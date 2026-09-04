@@ -1104,6 +1104,164 @@ ipcMain.handle("sutra:auth-login", async (e) => {
   });
 });
 
+/* ── Codex sign-in ───────────────────────────────────────────────────────────
+ * Three verbs, DELIBERATELY SEPARATE from sutra:auth-login above rather than a
+ * parameterised version of it (founder direction 2026-09-04): the Claude verb
+ * is load-bearing and stays untouched. The SHAPE is copied on purpose --
+ * desktopControl gate, origin check, one in-flight child, drained output,
+ * SIGTERM->SIGKILL timeout, {ok} / {ok:false,error}.
+ *
+ * WHY THESE SPAWN HERE AND NOT BEHIND AN HTTP ROUTE. `codex login
+ * --with-api-key` reads the key from STDIN, and the backend port is
+ * unauthenticated -- org_api.py says as much where it gates the unsafe
+ * permission modes: anything that can reach the port could otherwise widen the
+ * agent's authority. A route that accepted an API key would be a credential
+ * WRITE surface any page on this machine could POST to. In the main process
+ * the key crosses one in-process IPC call and one pipe: no request body, no
+ * access log, no validation layer holding a copy of it.
+ *
+ * SUTRA STORES NOTHING. codex owns the credential -- it keeps exactly one, and
+ * either sign-in method REPLACES the other. These verbs only ask it to change;
+ * the panel then re-reads `codex login status` to see what happened.
+ *
+ * KNOWN LIMIT, same as the Claude verb: the child is spawned as the bare name
+ * `codex` off shellEnv()'s PATH. A hand-picked binary set in Settings
+ * (provider_bins) is NOT honoured here, because executing a path the RENDERER
+ * chose is a bigger hole than the inconvenience it fixes. The status probe
+ * does honour that override, so on such a machine the two can disagree about
+ * which codex answered.
+ */
+let codexChild = null;
+
+const CODEX_BROWSER_TIMEOUT = 180000;   // a human is signing in at chatgpt.com
+const CODEX_QUICK_TIMEOUT = 60000;      // no round-trip: key check, or logout
+
+function codexEnv() {
+  const env = { ...process.env, ...shellEnv() };
+  /* Mirrors the ANTHROPIC_ and CLAUDE_CODE_ strip in the Claude verb, for the
+     same reason: the operator's CLICK decides which credential gets stored,
+     not a variable that happens to be exported in their shell profile. The
+     status PROBE deliberately does NOT strip (see providers.codex_auth) -- it
+     has to report what codex reports. */
+  for (const k of Object.keys(env)) if (/^(OPENAI_|CODEX_)/.test(k)) delete env[k];
+  return env;
+}
+
+/* Codex failures are CLASSIFIED, never echoed. The Claude verb answers "exit
+   1", which is enough for a browser flow that either completed or did not; a
+   rejected API key is a likely and recoverable failure where "exit 1" tells
+   the operator nothing they can act on. But the raw line cannot be forwarded
+   either -- on the --with-api-key path stderr can contain the key that was
+   just typed. So stderr is matched against known shapes here and a FIXED
+   string is returned. Nothing derived from the child's output crosses the
+   bridge. */
+function codexError(code, stderrTail) {
+  const t = String(stderrTail || "").toLowerCase();
+  if (/401|unauthorized|invalid[_ -]?api[_ -]?key|incorrect api key/.test(t))
+    return "OpenAI rejected that API key.";
+  if (/quota|billing|payment|insufficient/.test(t))
+    return "OpenAI took the key but reported a billing or quota problem on that account.";
+  if (/network|dns|timed out|timeout|connection|tls|certificate/.test(t))
+    return "could not reach OpenAI to check that credential.";
+  return "codex exited " + code + " without a reason this app recognises. "
+       + "Running the same command in a terminal will show what it said.";
+}
+
+/* Both gates the Claude verb applies, in one place: the shell must own the
+   backend it is driving, and the caller must be the panel this window loaded. */
+function codexGate(e) {
+  if (!desktopControl()) {
+    return { ok: false, error: "Codex sign-in is only available when this window started its own backend" };
+  }
+  try {
+    if (new URL(e.senderFrame.url).origin !== ORIGIN) throw new Error("origin");
+  } catch { return { ok: false, error: "refused: unexpected caller" }; }
+  return null;
+}
+
+/* One in-flight child across all three verbs: they all end in the same single
+   credential, so letting a logout race a login would leave the operator's real
+   state decided by whichever process finished last. Invoking any codex verb
+   while one runs CANCELS it -- the panel's button doubles as Cancel, the way
+   the Claude sign-in button does. */
+function codexCancelIfBusy() {
+  if (!codexChild) return null;
+  const c = codexChild;
+  try { c.kill("SIGTERM"); } catch (err) {}
+  setTimeout(() => { try { c.kill("SIGKILL"); } catch (err) {} }, 5000);
+  return { ok: false, error: "cancelled" };
+}
+
+async function codexRun(e, argv, apiKey, timeout) {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  const cancelled = codexCancelIfBusy();
+  if (cancelled) return cancelled;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; codexChild = null; resolve(r); } };
+    let child;
+    try {
+      child = spawn("codex", argv, {
+        env: codexEnv(),
+        stdio: [apiKey ? "pipe" : "ignore", "pipe", "pipe"],
+      });
+    } catch (err) { return done({ ok: false, error: "could not start codex: " + err.message }); }
+    codexChild = child;
+    let tail = "";
+    child.stdout.resume();                       // drained, never forwarded
+    /* stderr is KEPT only long enough to classify, capped, and dropped with
+       this closure. It is never returned, logged, or written anywhere. */
+    child.stderr.on("data", (d) => { tail = (tail + d).slice(-2000); });
+    if (apiKey) {
+      /* The key reaches codex on STDIN and never as an argument, so it is not
+         in the process list for any other program on this machine to read. */
+      child.stdin.on("error", () => {});         // a child that died first must not throw
+      try { child.stdin.write(apiKey + "\n"); child.stdin.end(); }
+      catch (err) { /* close handler reports it */ }
+    }
+    const t = setTimeout(() => {
+      try { child.kill("SIGTERM"); } catch (err) {}
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch (err) {} }, 5000);
+    }, timeout);
+    child.on("error", (err) => { clearTimeout(t); done({ ok: false, error: String(err.message || err) }); });
+    child.on("close", (code) => {
+      clearTimeout(t);
+      done(code === 0 ? { ok: true } : { ok: false, error: codexError(code, tail) });
+    });
+  });
+}
+
+/* `codex login` -- the ChatGPT browser flow. Opens the browser, completes on
+   localhost, writes ~/.codex/auth.json. No prerequisites, which is why it is
+   the default action and why --device-auth is not offered: device-code needs
+   the operator to first enable it in their ChatGPT security settings. */
+ipcMain.handle("sutra:codex-login", async (e) => codexRun(e, ["login"], null, CODEX_BROWSER_TIMEOUT));
+
+/* `codex login --with-api-key` -- reads the key from stdin, not argv. */
+ipcMain.handle("sutra:codex-api-key", async (e, key) => {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  /* Cancel is checked BEFORE the key is validated. The panel's Cancel button
+     re-invokes the verb it started, and it has no key to re-send -- validating
+     first would answer "no API key was given" and leave the child running. */
+  const cancelled = codexCancelIfBusy();
+  if (cancelled) return cancelled;
+  const k = typeof key === "string" ? key.trim() : "";
+  if (!k) return { ok: false, error: "no API key was given" };
+  /* Refused rather than sent: whitespace inside means a broken paste, and a
+     newline would end the stdin write early and hand codex half a key. The
+     refusal names the paste, not the key -- the value itself is never quoted
+     back. */
+  if (/\s/.test(k)) return { ok: false, error: "that does not look like one key -- it has a space or a line break in it. Check the paste." };
+  if (k.length > 400) return { ok: false, error: "that is too long to be an API key. Check the paste." };
+  return codexRun(e, ["login", "--with-api-key"], k, CODEX_QUICK_TIMEOUT);
+});
+
+/* `codex logout` -- removes the stored credential. Sutra never had a copy, so
+   there is nothing on this side to clean up. */
+ipcMain.handle("sutra:codex-logout", async (e) => codexRun(e, ["logout"], null, CODEX_QUICK_TIMEOUT));
+
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --
    so it is offered over the preload bridge and the renderer only draws the Browse

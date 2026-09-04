@@ -478,6 +478,126 @@ SCREENS.now = () => `
     <p>Placeholder — the Now surface is not designed yet. Everything else in the shell is live.</p>
   </div>`;
 
+/* ── Codex sign-in ─────────────────────────────────────────────────────────
+   A block of its own. NOT part of provRow above, and NOT an extension of the
+   Claude account card in 04-screens.js -- founder direction 2026-09-04: the
+   Claude and DeepSeek surfaces stay untouched and this shape is copied
+   rather than shared.
+
+   WHY IT SITS AFTER THE RADIOGROUP RATHER THAN INSIDE THE CODEX ROW. provRow
+   renders each provider as a <button>, and a button cannot contain buttons;
+   and role="radiogroup" should contain radios only, so parking three actions
+   inside it would misdescribe the group to a screen reader.
+
+   WHY THE BLOCK EXISTS AT ALL, when codex still cannot be selected: the two
+   ways to pay for codex cost completely different amounts for identical
+   output -- a ChatGPT plan already being paid for, or per-token billing --
+   and nothing in this panel showed which one was in play. Surfacing that is
+   the point. Signing in is NOT selectability, and the block says so instead
+   of implying otherwise.
+
+   ONE ACTIVE MODE PLUS A SWITCH, never two toggles: codex stores exactly one
+   credential and each method replaces the other, so two independently
+   switchable rows would misdescribe the thing being configured. */
+function codexAuthHtml(){
+  /* Existence check only. The row above already prints Codex's `reason` word
+     for word -- both protocols, the version pin and the install path -- so
+     repeating it here said the same paragraph twice on one screen. The block
+     states the one thing the row does not: signing in is not selectability. */
+  if (!PROVIDERS.some(x => x.id === "codex")) return "";
+  const a = S.codexAuth;
+  /* Presence of the verb IS the capability signal, exactly as the Claude
+     account card treats authLogin. A page cannot conjure a preload, so this
+     is trustworthy in the direction that matters. */
+  const bridge = !!(window.sutra && window.sutra.codexLogin);
+  const busy = S.codexBusy;
+  const msg = !busy && S.codexMsg
+    ? `<span class="why" style="margin-left:8px">${esc(S.codexMsg)}</span>` : "";
+
+  /* label(verb) -- the same button cancels the thing it started. */
+  const btn = (verb, text) => `<button class="btn" type="button" data-codex="${esc(verb)}"
+      ${busy && busy !== verb ? "disabled" : ""}>${
+      busy === verb ? "Cancel" : esc(text)}</button>`;
+  const waiting = busy === "login"
+    ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…</span>`
+    : busy ? `<span class="why" style="margin-left:8px">Asking codex…</span>` : "";
+
+  let head, actions;
+  if (!a) {
+    /* Not asked yet is NOT signed out. Saying "not signed in" here would be
+       a claim about billing made before anything was read. */
+    head = `<span class="why">Reading the Codex sign-in…</span>`;
+    actions = "";
+  } else if (a.state === "no_binary") {
+    head = `<span class="why">${esc(a.detail || "the codex CLI is not on PATH")}</span>`;
+    actions = "";
+  } else if (a.state === "unknown") {
+    /* Asked and could not tell. No mode is invented: the wrong guess here
+       tells someone paying per token that their usage is included. Sign-in
+       is still offered because it SETS the state rather than reporting it;
+       Sign out is not, because it would imply we know there is something to
+       sign out of. */
+    head = `<span class="why"><b>Could not tell which credential Codex is using.</b>
+      ${esc(a.detail || "")}</span>`;
+    actions = bridge
+      ? `${btn("login", "Sign in with ChatGPT")} ${btn("apikey", "Add API key")}`
+      : "";
+  } else if (a.state === "api_key") {
+    head = `<b>API key${a.key_display ? " " + esc(a.key_display) : ""}</b>
+      <span class="why">· ${esc(a.billing || "billed per token")}</span>`;
+    actions = bridge
+      ? `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}`
+      : "";
+  } else if (a.state === "chatgpt") {
+    head = `<b>Signed in with ChatGPT</b>
+      <span class="why">· ${esc(a.billing || "usage included in your plan")}</span>`;
+    actions = bridge
+      ? `${btn("logout", "Sign out")} ${btn("apikey", "Use an API key instead")}`
+      : "";
+  } else {
+    head = `<b>Not signed in</b>`;
+    actions = bridge
+      ? `${btn("login", "Sign in with ChatGPT")}
+         <span class="why">usage included in your Plus/Pro/Business plan</span>
+         <div style="margin-top:6px">${btn("apikey", "Add API key")}
+         <span class="why">pay for what you use</span></div>`
+      : "";
+  }
+
+  /* The API-key field. type=password so a shoulder does not read it, and
+     DELIBERATELY uncontrolled -- no value bound to state, so the typed key
+     lives only in the DOM node until the click reads it, and any re-render
+     clears it. */
+  const keyForm = S.codexKeyOpen && bridge ? `
+    <div class="wdrow" style="margin-top:8px">
+      <input type="password" class="wdin" data-codex-key spellcheck="false"
+             autocapitalize="off" autocorrect="off" autocomplete="off"
+             aria-label="OpenAI API key" placeholder="sk-proj-…">
+      <button class="btn" type="button" data-codex="apikey:save"
+        ${busy ? "disabled" : ""}>Use this key</button>
+      <button class="btn" type="button" data-codex="apikey:cancel">Cancel</button>
+    </div>
+    <p class="why" style="margin:6px 0 0">The key goes straight to the codex CLI and
+      Sutra keeps no copy of it — not in settings, not on disk, not in this page after
+      you click. Codex stores one credential, so this replaces whatever it holds now.</p>` : "";
+
+  return `
+    <div class="note" style="margin-top:9px">
+      <div><b>OpenAI Codex sign-in</b></div>
+      <p class="why" style="margin:4px 0 8px">Which OpenAI credential the
+        <code>codex</code> CLI holds on this Mac, and therefore what it costs you: a
+        ChatGPT plan covers it, an API key bills per token. Signing in here does
+        <b>not</b> make Codex selectable above.</p>
+      <div>${head}</div>
+      ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
+      ${keyForm}
+      ${!bridge ? `<p class="why" style="margin:8px 0 0">To sign in or switch, use the
+        desktop app — or run <code>codex login</code> (ChatGPT),
+        <code>codex login --with-api-key</code> (API key, reads the key from stdin) or
+        <code>codex logout</code> in a terminal.</p>` : ""}
+    </div>`;
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
@@ -548,6 +668,7 @@ SCREENS.settings = () => {
         with what is missing, so you can see whether a name is unavailable or simply not set up
         yet — rather than finding out when a chat fails to answer.</p>
       <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
+      ${codexAuthHtml()}
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
         <b>Your saved choice could not be used.</b>
         ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,

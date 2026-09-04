@@ -79,4 +79,30 @@ contextBridge.exposeInMainWorld("sutra", {
      the panel's button doubles as Cancel. Absent in a browser, where the
      Account card shows the CLI command instead. */
   authLogin: () => ipcRenderer.invoke("sutra:auth-login"),
+
+  /* ── Codex sign-in ──────────────────────────────────────────────────────
+     Three separate verbs, not one parameterised call and NOT a widening of
+     authLogin above: Codex holds exactly one credential, and each method
+     replaces the other, so "which verb" is the whole decision.
+
+       codexLogin()          `codex login` -- the ChatGPT browser flow
+       codexApiKey(key)      `codex login --with-api-key`, key over STDIN
+       codexLogout()         `codex logout`
+
+     The key goes over this bridge and straight into the child's stdin: never
+     into an argv (so never in the process list), never into an HTTP body on
+     the unauthenticated backend port, never onto disk. Sutra stores no part
+     of it -- codex owns the credential and the panel re-reads
+     `codex login status` to see what changed.
+
+     CLI output never crosses this bridge; a failure resolves as a classified
+     sentence, because on the API-key path the raw stderr can contain the key
+     that was just typed. Invoking any of the three while one runs CANCELS it,
+     the way authLogin does. Resolves {ok} or {ok:false, error}.
+
+     Absent in a browser, where the Codex row renders the three commands as
+     text instead -- the same fallback the Claude account card uses. */
+  codexLogin: () => ipcRenderer.invoke("sutra:codex-login"),
+  codexApiKey: (key) => ipcRenderer.invoke("sutra:codex-api-key", key),
+  codexLogout: () => ipcRenderer.invoke("sutra:codex-logout"),
 });

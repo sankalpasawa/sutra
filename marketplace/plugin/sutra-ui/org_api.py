@@ -840,6 +840,28 @@ def api_providers_set_active(req: ActiveProviderRequest):
     }
 
 
+@router.get("/providers/codex/auth")
+def api_codex_auth():
+    """Which credential the Codex CLI is holding -- and therefore how the
+    operator is billed for it.
+
+    Transport only; providers.codex_auth() owns the decision and is the single
+    place that decides codex login state.
+
+    KEPT OFF /providers AND /settings ON PURPOSE. Those two are read on every
+    panel boot, every settings open and, through load_settings(), every fs
+    call -- and this one spawns a subprocess. The panel asks for it when the
+    AI Assistant screen opens, and again after each sign-in action.
+
+    Never 500s on a failed probe. A CLI that cannot be reached or answers in
+    an unfamiliar shape comes back as state "unknown" with the reason, which
+    the row renders as "could not tell" -- never as a billing mode. Claiming
+    "usage included" to someone paying per token is the failure this endpoint
+    is shaped to avoid.
+    """
+    return providers.codex_auth()
+
+
 # ============================================================ settings ======
 
 @router.get("/settings")

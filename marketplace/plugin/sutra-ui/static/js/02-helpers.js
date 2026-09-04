@@ -331,7 +331,20 @@ const S = {
   ui: loadLayout(),
   /* Settings screen: the in-flight/failed state of a POST, so a refused write
      shows the server's reason instead of silently doing nothing. */
-  setBusy:null, setError:null, setOk:null
+  setBusy:null, setError:null, setOk:null,
+  /* Codex sign-in (AI Assistant screen). codexAuth is the last answer from
+     GET /api/providers/codex/auth -- null means "not asked yet", which the row
+     renders as reading, never as signed out. codexBusy is the verb in flight
+     ("login" | "apikey" | "logout"), so the button that started it can double
+     as Cancel. codexKeyOpen is the API-key field being shown.
+
+     THE KEY ITSELF IS NEVER HELD HERE. It is read off the input at click time,
+     handed to the bridge, and dropped -- so a re-render clears it and nothing
+     in this object ever carries credential material.
+
+     codexProbing guards the probe against wire(), which re-enters the loader
+     on every render -- see loadCodexAuth. */
+  codexAuth:null, codexProbing:false, codexBusy:null, codexMsg:null, codexKeyOpen:false
 };
 /* The real draft lives server-side at DRAFTS_DIR (outside SUTRA_NATIVE_HOME) -- boot()
    fetches it into S.draft on startup. saveDraft() posts the current S.draft back; callers
