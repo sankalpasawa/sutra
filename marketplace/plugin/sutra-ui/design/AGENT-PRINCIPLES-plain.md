@@ -351,36 +351,75 @@ what turns it into a real rule.
 
 ## The run folder
 
-19. **The folder is the whole truth.** The three files are described under "The
-    loop" above. Next to them sit the outputs you review, and every in-between file,
-    one per step. You can point at anything in the output and name the step that
-    made it.
+19. **The folder is the whole truth.** One job, one folder. Next to the three files
+    described under "The loop" sit two more things. The outputs you review, like the
+    brief, the plan and the draft. And every in-between file, one per step: 23 of
+    them on the live run. Why keep all that? So you can point at any sentence in the
+    article and trace it back. That line came from fact 221, which came from the
+    evidence step, which came from reading that page. Those files are also what make
+    a rerun cheap, because each step checks its own file first.
 
-20. **Files are written safely.** Write to a temp file, then rename. A file that
-    exists is complete. That is what lets a run resume without repeating work.
+20. **Files are written safely.** Never write straight into the real file. Write a
+    temp file next to it, then rename it over the top. Renaming is instant and
+    cannot half-happen, so the file is either the old one or the new one, never a
+    broken mix. This matters because resume trusts "the file is there, so that step
+    is done". Without it, a crash mid-write leaves half a file that the next run
+    reads as finished. That is silent corruption, the worst kind.
 
-21. **The outputs are what you review and what we test.** The screen shows them. The
-    tests render them from a real run we saved. If the screen needs a field the
-    output does not have, the test fails.
+21. **The outputs are what you review and what we test.** The screen shows them, and
+    the tests render them from a real run we saved. Add something to the screen that
+    the output does not actually carry and the test fails straight away, instead of
+    you finding a blank box in the app.
 
 ---
 
 ## Checkpoints
 
-22. **Few, fixed, enforced.** Setup has one: the brand files. Each job has four: the
-    topic, the research brief, the plan, the draft. The AI cannot add or skip one.
+22. **Few, fixed, and the stop is enforced by code.** One in setup, the brand files.
+    Four per article: the topic, the research, the plan, the draft. Few on purpose,
+    because too many and you stop reading them, which is worse than having none.
 
-23. **Approve, edit, or send back, right there.** Edit the work in the panel and
-    approve, and the agent continues from your version. "Ask for changes" sends your
-    words back as its next instruction.
+    Where they are actually written is worth knowing, because it is split in two:
+    - **The list is in the AI's instructions.** They say, in order: research, then
+      show the brief; build the plan, then show it; write the article, then show the
+      draft. And then: four stops per article, do not invent extra ones.
+    - **The stopping is in the code.** The moment the AI asks to show you something,
+      the loop writes its note and stops. Nothing can keep the job running.
+    - So the stopping is guaranteed and the list is not. Making the code refuse a
+      step whose previous step was never approved is about ten lines of work, and
+      until that is written this rule is half instruction.
 
-24. **It may ask one question when it sees a real problem.** Our agent noticed its
-    plan had lost the main section and asked before a forty-minute write. That is a
-    good question. "Which of these five formats would you like?" is not. Smart and
-    few.
+23. **Approve, edit, or send it back, right there.** When you edit something in the
+    panel and approve, the code reads **the file on disk** and hands the AI that,
+    not what the AI remembers writing. Your edit is the truth. If instead you ask for
+    changes, your words go back as the next instruction and it redoes that step.
 
-25. **Approving does something.** Approve the draft and it is saved to the Library
-    by the code. The AI is told afterwards.
+24. **The agent may ask one question of its own when it spots something real.** On
+    the live run the plan came out with no formula section, for an article about how
+    to calculate a formula. The agent noticed and asked before starting a
+    forty-minute write. That is a good question: it saved real time, and nobody would
+    have caught it without reading the plan closely. "Which of these five formats
+    would you like?" is a bad question. That is handing its job back to you.
+
+    The test: would answering save real work, or is it asking you to decide something
+    it should be deciding?
+
+    What happened next is worth recording. I answered it (demo run, carry on) and
+    **changed no code**. The plan had lost the formula because the demo facts were
+    junk, and with real facts those would have scored high. The writer then put the
+    formula and the worked examples back in by itself, and the agent said so at the
+    end: a good outcome that happened by accident. The gap it exposed, which is still
+    not built, is that nothing checks the plan still answers the question the main
+    keyword asks. The only thing that caught it was the AI noticing.
+
+25. **Approving is an action, not a message.** If a click is meant to make something
+    happen, the code does it, and the AI is told afterwards.
+
+    The bug behind this rule: approving the draft used to just tell the AI
+    "approved", and the AI reasonably replied "Saved. It's in the Library." Nothing
+    had been saved. Saving was a separate button. Now the code saves it the moment
+    you approve, then tells the AI it saved it and what it called it. So the AI can
+    only say "saved" because the code that did the saving told it so.
 
 ---
 

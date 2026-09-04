@@ -362,38 +362,80 @@ way the invented-number check works. That is what turns it into a real rule.
 
 ## The run folder
 
-19. **The folder is the whole truth.** The three files are in "The loop" above;
-    beside them sit `artifacts/` (the outputs the person reviews) and
-    `artifacts/_work/` (every intermediate, one named file per step). Anyone can
-    point at any output and name the step that made it.
+19. **The folder is the whole truth.** One job, one folder. Beside the three files
+    described under "The loop" sit `artifacts/` (the outputs the person reviews: the
+    brief, the plan, the draft, the links report) and `artifacts/_work/` (every
+    intermediate, one named file per step: 23 of them on the live run, from `seeds`
+    and `keywords` through `winners`, `evidence`, `gap-check` and `scored-cards`).
+    Anyone can point at any sentence in the output and trace it back: this came from
+    card 221, which came from the evidence step, which came from reading that page.
+    The same files are what make a rerun cheap, because each step checks its own
+    file first.
 
-20. **Every write is atomic.** Temp file in the same directory, then rename. A file
-    that exists is complete. Resume trusts that.
+20. **Every write is atomic.** Temp file in the same directory, then rename over the
+    target. The rename cannot half-happen, so the file is either the old complete
+    one or the new complete one. This is load-bearing because resume trusts "the
+    file exists, therefore that step finished". Without it a crash mid-write leaves
+    a half-file that the next run reads as finished: silent corruption, the worst
+    kind.
 
 21. **Artifacts are the unit of review and the unit of testing.** The screen renders
-    them. The tests render them from fixtures captured from a real run. A field the
-    screen needs is a field the artifact has, or the test fails.
+    them; the tests render them from fixtures captured from a real run. Add a field
+    to the screen that the artifact does not carry and the test fails at once,
+    instead of the person finding a blank box in the app.
 
 ---
 
 ## Checkpoints
 
-22. **Few, fixed, and enforced by the loop.** Setup has one (the brand pack). Each
-    job has four (topic, brief, plan, draft). The model cannot add or skip one.
+22. **Few, fixed, and the stop is enforced by the loop.** One in setup (the brand
+    pack), four per job (topic, brief, plan, draft). Few on purpose: too many and
+    the person stops reading them, which is worse than none.
 
-23. **Approve, edit, or send back, in the panel.** The person edits the artifact in
-    place and approves; the loop hands the model what is on disk, not what the
-    model remembers writing. "Ask for changes" carries the person's words back as
-    the next instruction.
+    Where they are written is worth being exact about, because it is split:
+    - **The list lives in the prompt.** `prompts/system.md` says, in order,
+      "`run_research` ... then `show_artifact` the research brief", and closes with
+      "Four stops per article: topic, research, blueprint, draft. Do not invent
+      extra ones."
+    - **The stop lives in the code.** The loop's `show_artifact` branch writes the
+      waiting note and returns. Once the model calls it, nothing can keep the run
+      going.
+    - So the stopping is enforced and the list is not. Making the loop refuse a
+      stage whose predecessor was not approved is about ten lines, and until it is
+      written this rule is half prompt.
 
-24. **The agent may ask one question of its own when it sees a real problem.** The
-    SEO Writer noticed its plan had lost the formula section and asked before a
-    forty-minute write. That is a good question. "Which of these five formats do you
-    prefer?" is not. Smart and few.
+23. **Approve, edit, or send back, in the panel.** When the person edits the
+    artifact and approves, the loop reads **the file on disk** and hands the model
+    that, not what the model remembers writing. The person's edit is the truth.
+    "Ask for changes" carries their words back as the next instruction and the step
+    is redone.
 
-25. **Approval has consequences in code.** Approving the draft saves it to the
-    Library. Approving a paid step, where one exists, sticks for the run. The
-    person's click does the thing; the model is told afterwards.
+24. **The agent may ask one question of its own when it sees a real problem.** On
+    the live run the blueprint came out with no formula section for an article about
+    calculating a formula, and the agent asked before starting a forty-minute write.
+    Good question: it saved real work and no person would have caught it without
+    reading the plan closely. "Which of these five formats do you prefer?" is a bad
+    question: that is handing its own job back.
+
+    The test: would answering save real work, or is it asking the person to decide
+    something the agent should decide?
+
+    What followed is worth recording. The question was answered ("demo run, carry
+    on") and **no code changed**: the plan had lost the formula because the demo
+    evidence was junk, and with real evidence those cards would score high. The
+    writer then put the formula and the worked examples back in by itself, and the
+    agent said so at the end: a good outcome that happened by accident. The gap that
+    exposed, still unbuilt, is that nothing checks the plan still answers the
+    question the primary keyword asks. Only the model noticing caught it.
+
+25. **Approval is an action, not a message.** If a click is meant to make something
+    happen, the code does it, and the model is informed afterwards.
+
+    The bug that produced this rule: approving the draft used to tell the model
+    "approved", and the model, reasonably, replied "Saved. It's in the Library."
+    Nothing had saved it; saving was a separate button. Now the loop saves on
+    approval itself and hands the model `saved_to_library` with the title, so the
+    model can only say "saved" because the code that saved it said so.
 
 ---
 
