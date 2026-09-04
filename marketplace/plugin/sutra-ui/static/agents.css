@@ -116,6 +116,29 @@
 .ag-prose{margin-top:8px;font-size:12.5px;color:var(--ink)}
 .ag-prose .md-p{margin:0 0 8px}
 
+/* the run log, grouped by stage: one line each when shut, the steps inside when open */
+.ag-steps{gap:6px}
+.ag-stagegroup{position:relative}
+.ag-stagehead{width:100%;display:flex;align-items:baseline;gap:9px;background:none;border:0;cursor:pointer;
+  padding:5px 0;text-align:left;color:var(--ink);font:600 12.5px/1.35 var(--sans);min-width:0}
+.ag-stagehead:hover .what,.ag-stagehead:hover b{color:var(--acc)}
+.ag-stagehead .chev{position:absolute;left:-26px;top:5px;width:15px;height:15px;display:grid;place-items:center;
+  color:var(--faint);transition:transform .12s ease}
+.ag-stagehead .chev svg{width:11px;height:11px}
+.ag-stagegroup.open>.ag-stagehead .chev{transform:rotate(90deg);color:var(--acc)}
+.ag-stagehead b{flex:none;font-weight:600}
+.ag-stagehead .meta{flex:none;font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
+.ag-stagehead .what{flex:1;min-width:0;font-weight:400;font-size:11.5px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-stagehead.run b,.ag-stagehead.wait b{color:var(--acc)}
+.ag-stagehead.run .chev,.ag-stagehead.wait .chev{color:var(--acc)}
+.ag-stagehead.bad b{color:var(--block)}
+.ag-stagehead.wait .what{color:var(--acc)}
+.ag-stagebody{margin:6px 0 10px 0;padding-left:2px;display:flex;flex-direction:column;gap:11px}
+.ag-stagebody[hidden]{display:none}
+/* a summary is a line, not a paragraph: the detail is one click away inside the stage */
+.ag-step.ok .ag-body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
 /* a question, an approval, a checkpoint — the cards where the agent waits */
 .ag-card{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--inset);padding:11px 13px;max-width:60ch}
 .ag-card.live{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}

@@ -63,7 +63,7 @@ LIVENESS_TIMEOUT = 8        # retry ladder (6 x 30s + backoff) is the wrong shap
                             # mislabelled dead by one hiccup.
 LIVENESS_WORKERS = FETCH_CONCURRENCY   # probes run in parallel up to the in-flight cap; the
                             # token bucket still owns the RATE, so this cannot raise req/s
-ARCHIVE_LIVENESS_CAP = 300  # the agent probes at most this many archive-only URLs live; the rest
+ARCHIVE_LIVENESS_CAP = 5000  # the agent probes at most this many archive-only URLs live; the rest
                             # are recorded as UNCHECKED, never assumed alive
 CRAWL_IF_UNDER = 200        # other layers found fewer distinct URLs than this -> crawl kicks in
 CRAWL_MAX_PAGES = 5000      # hard page budget for the link crawl

@@ -198,7 +198,7 @@ def new_run(chat_id, topic=""):
     os.makedirs(os.path.join(d, "artifacts"), exist_ok=True)
     save_state(chat_id, run_id, {
         "run_id": run_id, "chat_id": chat_id, "topic": topic,
-        "status": "running", "stage": "topic", "current_step": None,
+        "status": "running", "stage": "", "current_step": None,   # unknown until a tool declares it
         "waiting_on": None, "credits_spent": 0,
         "started_at": now(), "updated_at": now(),
     })

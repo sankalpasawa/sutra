@@ -139,7 +139,7 @@ def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
     store.patch_state(chat_id, run_id, **fields)
     # call_id rides on the event too, so the screen can pair a later "resumed" with the
     # exact question it answered instead of guessing by order.
-    store.emit(chat_id, run_id, "waiting", kind=kind, call_id=call_id, **payload)
+    store.emit(chat_id, run_id, "waiting", kind=kind, call_id=call_id, stage=stage, **payload)
 
 
 STAGE_FOR = {"index_site": "setup", "build_page_index": "setup", "learn_brand": "setup",
@@ -270,7 +270,7 @@ def step(chat_id, run_id):
             # --- an ordinary tool --------------------------------------------------------
             step_id = "s%d" % (int(time.time() * 1000) % 100000)
             store.emit(chat_id, run_id, "step_started", id=step_id,
-                       label=registry.label(name), tool=name)
+                       label=registry.label(name), tool=name, stage=STAGE_FOR.get(name))
             if STAGE_FOR.get(name):
                 store.patch_state(chat_id, run_id, stage=STAGE_FOR[name], current_step=name)
             t0 = time.time()
@@ -349,7 +349,7 @@ def resume(chat_id, run_id, answer):
             args = w.get("args") or {}
             step_id = "s%d" % (int(time.time() * 1000) % 100000)
             store.emit(chat_id, run_id, "step_started", id=step_id,
-                       label=registry.label(tool), tool=tool)
+                       label=registry.label(tool), tool=tool, stage=STAGE_FOR.get(tool))
             if STAGE_FOR.get(tool):
                 store.patch_state(chat_id, run_id, stage=STAGE_FOR[tool], current_step=tool)
             t0 = time.time()

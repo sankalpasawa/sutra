@@ -210,6 +210,52 @@ test("a library item opens read-only: no edit affordance, copy only", () => {
   assert.ok(/data-ag="copymd"/.test(html));
   assert.ok(/Saved one/.test(html));
 });
+test("the log groups its rows by stage, one line each, and only the running one is open", () => {
+  const evs = [
+    { t: 1, type: "message", text: "Setting up first." },
+    { t: 2, type: "step_started", id: "s1", label: "Reading the website", tool: "index_site", stage: "setup" },
+    { t: 3, type: "substep_finished", parent: "s1", label: "Opened the site", note: "https://x.com" },
+    { t: 4, type: "step_finished", id: "s1", ms: 120000, summary: "400 pages catalogued" },
+    { t: 5, type: "step_started", id: "s2", label: "Researching the topic", tool: "run_research", stage: "research" },
+  ];
+  const entries = A.agStepsFromEvents(evs, { status: "running" });
+  assert(entries.every(e => "stage" in e), "every row carries a stage");
+  assert(entries.find(e => e.id === "s1").stage === "setup", "the setup step is in setup");
+  assert(entries.find(e => e.id === "s2").stage === "research", "the research step is in research");
+  // the sentence before a step is that step's body, so it lands in the step's own stage
+  assert(entries.length === 2 && entries[0].lead === "Setting up first.", "the lead was consumed");
+
+  const groups = A.agStageGroups(entries);
+  assert(groups.length === 2, "one group per stage: " + groups.length);
+  assert(groups[0].stage === "setup" && groups[1].stage === "research", "in the order they happened");
+  assert(groups[0].label === "Setup" && groups[1].label === "Research", "each group is named in plain English");
+  assert(groups[0].steps === 1 && groups[0].ms === 120000, "a shut stage knows its step count and time");
+  assert(groups[0].summary === "400 pages catalogued", "and carries the last summary as its one line");
+  assert(groups[0].live === false && groups[1].live === true, "only the unfinished stage is live");
+
+  const html = A.agRunHtml({ run_id: "r1", status: "running", request: "go" }, evs, {});
+  const heads = html.match(/class="ag-stagehead/g) || [];
+  assert(heads.length === 2, "one clickable head per named stage: " + heads.length);
+  assert(html.indexOf("<b>Setup</b>") !== -1 && html.indexOf("<b>Research</b>") !== -1, "named on screen");
+  const bodies = html.match(/class="ag-stagebody" hidden/g) || [];
+  assert(bodies.length === 1, "the finished stage is shut and the running one is open: " + bodies.length);
+  assert(html.indexOf("400 pages catalogued") !== -1, "the shut stage still shows its one-line summary");
+});
+
+test("a stage the user opened stays open, and its rows come back", () => {
+  const evs = [
+    { t: 1, type: "step_started", id: "s1", label: "Reading the website", tool: "index_site", stage: "setup" },
+    { t: 2, type: "substep_finished", parent: "s1", label: "Opened the site", note: "https://x.com" },
+    { t: 3, type: "step_finished", id: "s1", ms: 1000, summary: "done" },
+    { t: 4, type: "step_started", id: "s2", label: "Researching", tool: "run_research", stage: "research" },
+  ];
+  const shut = A.agRunHtml({ run_id: "r1", status: "running" }, evs, {});
+  assert(shut.indexOf("Opened the site") === -1 || /ag-stagebody" hidden/.test(shut), "shut by default");
+  const open = A.agRunHtml({ run_id: "r1", status: "running" }, evs, { stageOpen: { "r1:setup": true } });
+  assert(open.indexOf("Opened the site") !== -1, "opening the stage shows its substeps");
+  assert((open.match(/class="ag-stagebody" hidden/g) || []).length === 0, "nothing hidden once both are open");
+});
+
 test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
   assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 5);

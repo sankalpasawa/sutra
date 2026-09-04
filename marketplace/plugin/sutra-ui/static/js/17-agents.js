@@ -99,7 +99,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, draft: "", scroll: null, stick: true,
     health: null, knowledge: null, memory: null, library: null, tools: null, conns: null,
     pages: null, pageQ: "", pageType: "", map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
@@ -129,9 +129,10 @@ function agLastRun(){
    acted (a `note` or a `message`), the way Unify shows it. */
 function agStepsFromEvents(events, state){
   const out = [], byId = {};
-  let lead = null, lastStep = null, lastWait = null;
+  let lead = null, lastStep = null, lastWait = null, stage = "";
+  const push = (e) => { e.stage = stage; out.push(e); return e; };
   const status = state && state.status;
-  const flushLead = () => { if (lead){ out.push({ kind: "prose", text: lead.text, t: lead.t }); lead = null; } };
+  const flushLead = () => { if (lead){ push({ kind: "prose", text: lead.text, t: lead.t }); lead = null; } };
   for (const ev of (events || [])){
     switch (ev.type){
       case "note":
@@ -139,15 +140,16 @@ function agStepsFromEvents(events, state){
       case "message":
         flushLead(); lead = { text: ev.text || "", t: ev.t }; break;
       case "step_started": {
+        if (ev.stage) stage = ev.stage;
         const e = { kind: "step", id: ev.id, label: ev.label || ev.tool || "Step", tool: ev.tool || "",
                     state: "run", lead: lead ? lead.text : "", leadNote: !!(lead && lead.note),
                     subs: [], t: ev.t, ms: null, summary: "", reason: "", detail: "", recovering: false };
-        lead = null; byId[ev.id] = e; lastStep = e; out.push(e); break;
+        lead = null; byId[ev.id] = e; lastStep = e; push(e); break;
       }
       case "substep_finished": {
         const p = (ev.parent && byId[ev.parent]) || lastStep;
         if (p) p.subs.push({ label: ev.label || "", note: ev.note || "", ms: ev.ms });
-        else out.push({ kind: "note", text: ev.label || "", t: ev.t });
+        else push({ kind: "note", text: ev.label || "", t: ev.t });
         break;
       }
       case "step_finished": {
@@ -158,11 +160,12 @@ function agStepsFromEvents(events, state){
       case "step_failed": {
         const e = ev.id && byId[ev.id];
         if (e){ e.state = "bad"; e.ms = ev.ms; e.reason = ev.reason || ""; e.detail = ev.detail || ""; e.recovering = !!ev.recovering; }
-        else { flushLead(); out.push({ kind: "failed", label: ev.label || "Run", reason: ev.reason || "",
+        else { flushLead(); push({ kind: "failed", label: ev.label || "Run", reason: ev.reason || "",
                                        detail: ev.detail || "", recovering: !!ev.recovering, t: ev.t }); }
         break;
       }
       case "waiting": {
+        if (ev.stage) stage = ev.stage;
         flushLead();
         let e;
         if (ev.kind === "question")
@@ -174,7 +177,7 @@ function agStepsFromEvents(events, state){
           e = { kind: "artifact", artifact: ev.artifact || "", view: ev.view || "article",
                 prompt: ev.prompt || "", t: ev.t };
         e.live = true; e.answer = null; e.call_id = ev.call_id || null;
-        lastWait = e; out.push(e); break;
+        lastWait = e; push(e); break;
       }
       case "resumed": {
         if (lastWait){
@@ -187,15 +190,18 @@ function agStepsFromEvents(events, state){
         }
         break;
       }
-      case "memory_saved": flushLead(); out.push({ kind: "mem", text: ev.text || "", t: ev.t }); break;
-      case "edited": flushLead(); out.push({ kind: "edited", artifact: ev.artifact || "", block: ev.block || "",
+      case "memory_saved": flushLead(); push({ kind: "mem", text: ev.text || "", t: ev.t }); break;
+      case "edited": flushLead(); push({ kind: "edited", artifact: ev.artifact || "", block: ev.block || "",
                                              instruction: ev.instruction || "", t: ev.t }); break;
-      case "saved_to_library": flushLead(); out.push({ kind: "saved", title: ev.title || "", t: ev.t }); break;
-      case "stopped": flushLead(); out.push({ kind: "stopped", t: ev.t }); break;
+      case "saved_to_library": flushLead(); push({ kind: "saved", title: ev.title || "", t: ev.t }); break;
+      case "stopped": flushLead(); push({ kind: "stopped", t: ev.t }); break;
       default: break;
     }
   }
   flushLead();
+  /* Every row belongs to the stage that was open when it happened; rows before the first
+     stage-bearing event belong to no stage and render loose above the groups. */
+  for (const e of out) if (e.stage == null) e.stage = "";
   /* a step still "running" in a run that is no longer alive was interrupted */
   if (status && status !== "running" && status !== "waiting"){
     for (const e of out){
@@ -376,6 +382,45 @@ function agEntryHtml(e, ctx){
   }
 }
 
+/* The run log, grouped by stage. One line per stage when shut; the steps inside when open.
+   A run's rows are already stamped with the stage that was open when they happened, so this
+   is a pure fold with no second copy of the tool -> stage map. */
+function agStageGroups(entries){
+  const label = {}; for (const [k, v] of AG_STAGES) label[k] = v;
+  const groups = [], byStage = {};
+  for (const e of (entries || [])){
+    const key = e.stage || "";
+    let g = byStage[key];
+    if (!g){ g = { stage: key, label: label[key] || "", entries: [], steps: 0, ms: 0, live: false, bad: false, summary: "" };
+             byStage[key] = g; groups.push(g); }
+    g.entries.push(e);
+    if (e.kind === "step"){
+      g.steps++;
+      if (e.ms) g.ms += e.ms;
+      if (e.state === "run") g.live = true;
+      if (e.state === "bad") g.bad = true;
+      if (e.summary) g.summary = e.summary;
+    }
+    if ((e.kind === "ask" || e.kind === "approval" || e.kind === "artifact") && e.live){ g.live = true; g.waiting = true; }
+  }
+  return groups;
+}
+
+function agGroupHeadHtml(g, runId, open){
+  const bits = [];
+  if (g.steps) bits.push(g.steps + (g.steps === 1 ? " step" : " steps"));
+  if (g.ms) bits.push(agDur(g.ms));
+  const state = g.waiting ? "wait" : g.live ? "run" : g.bad ? "bad" : "ok";
+  const word = g.waiting ? "waiting for you" : g.live ? "working" : g.bad ? "had a problem" : (g.summary || "");
+  return `<button class="ag-stagehead ${state}" type="button" data-ag="stageopen"
+    data-arg="${agEsc(runId + ":" + g.stage)}" aria-expanded="${open ? "true" : "false"}">
+    <span class="chev" aria-hidden="true">${AG_ICON.chev}</span>
+    <b>${agEsc(g.label)}</b>
+    <span class="meta">${agEsc(bits.join(" · "))}</span>
+    <span class="what" title="${agEsc(word)}">${agEsc(word)}</span>
+  </button>`;
+}
+
 function agRunHtml(run, events, ctx){
   ctx = ctx || {};
   const sum = agRunSummary(events, run, ctx.now);
@@ -390,9 +435,26 @@ function agRunHtml(run, events, ctx){
       <div class="ag-runhead">${head}
         ${entries.length ? `<button class="ag-fold" type="button" data-ag="fold" data-arg="${agEsc(run.run_id)}" aria-expanded="${!collapsed}">${AG_ICON.chev} ${collapsed ? "Show" : "Hide"} steps <span class="n">${sum.steps}</span></button>` : ""}
       </div>
-      <div class="ag-steps" ${collapsed ? "hidden" : ""}>${entries.map(e => agEntryHtml(e, Object.assign({}, ctx, { run_id: run.run_id }))).join("")}</div>
+      <div class="ag-steps" ${collapsed ? "hidden" : ""}>${agGroupsHtml(entries, run, ctx)}</div>
       ${run.status === "failed" && run.error && !entries.some(e => e.kind === "failed") ? `<div class="ag-err">${agEsc(run.error)}</div>` : ""}
     </div></div>`;
+}
+
+function agGroupsHtml(entries, run, ctx){
+  const groups = agStageGroups(entries);
+  const named = groups.filter(g => g.stage);
+  const opened = (ctx && ctx.stageOpen) || {};
+  const inner = e => agEntryHtml(e, Object.assign({}, ctx, { run_id: run.run_id }));
+  return groups.map(g => {
+    if (!g.stage) return g.entries.map(inner).join("");     // before any stage: loose rows
+    const key = run.run_id + ":" + g.stage;
+    /* shut by default; the stage being worked on opens itself, and a lone stage stays open */
+    const open = key in opened ? !!opened[key] : (g.live || named.length === 1);
+    return `<div class="ag-stagegroup ${open ? "open" : ""}">
+      ${agGroupHeadHtml(g, run.run_id, open)}
+      <div class="ag-stagebody" ${open ? "" : "hidden"}>${g.entries.map(inner).join("")}</div>
+    </div>`;
+  }).join("");
 }
 
 function agStagesHtml(state){
@@ -485,7 +547,7 @@ function agComposerHtml(a){
 
 function agTranscriptHtml(a){
   if (!a.chat || !(a.chat.runs || []).length) return agHeroHtml(a.health, a.conns);
-  const ctx = { collapsed: a.collapsed, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
+  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
 }
 
@@ -1259,6 +1321,11 @@ async function agAction(act, el){
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));
       await agLoadChat(a.chatId, true); break; }
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
+    case "stageopen": {
+      /* the default is computed, so record the opposite of what is on screen right now */
+      const now = el.getAttribute("aria-expanded") === "true";
+      a.stageOpen[arg] = !now; agDraw(); break;
+    }
     case "more": case "detail": a.detailOpen[arg] = !a.detailOpen[arg]; agDraw(); break;
     case "choose": await agAnswer({ choice: el.getAttribute("data-label") || "" }); break;
     case "approve": await agAnswer({ approved: arg === "yes" }); break;

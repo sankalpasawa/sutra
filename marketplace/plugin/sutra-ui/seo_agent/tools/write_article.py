@@ -98,6 +98,16 @@ def run(ctx, redo=False):
     idx = C.card_index(cards)
     ctx_a = C.context(blueprint, research)
     reports, skipped = {}, list(SKIPPED)
+    # Say it at the top, not in a footnote. Found live 2026-09-04: the draft was written from
+    # demo research and read as a finished article; the flag sat in research.json and appeared
+    # nowhere in the report, the draft, or the summary.
+    demo = bool(research.get("demo_data"))
+    if demo:
+        say("Writing from demo research",
+            "The research for this article carries made-up keyword numbers and made-up ranking "
+            "pages, so nothing it cites is a real source. The writing is real; the evidence is not.")
+        skipped.append("The research was demo data, so every number that came from a source page "
+                       "is fabricated. Do not publish this without a real research run.")
 
     def step(name, label, fn):
         """Run one step, or reuse its saved output. Every output lands on disk before the next step reads it."""
@@ -245,7 +255,11 @@ def run(ctx, redo=False):
     store.save_artifact(chat_id, run_id, "draft.md", asm["draft"])
     store.save_artifact(chat_id, run_id, "write-report.json",
                         {"generated_at": store.now(), "archetype": st.get("format_archetype"), "steps": reports,
-                         "skipped": skipped, "coverage_checklist": asm["coverage"]["checklist"],
+                         "skipped": skipped, "demo_research": demo,
+                         "enrichment_requested": (reports.get("enrich") or {}).get("markers") or 0,
+                         "claims_checked": (reports.get("verify") or {}).get("actually_judged"),
+                         "claims_to_check": (reports.get("verify") or {}).get("claims_to_check"),
+                         "coverage_checklist": asm["coverage"]["checklist"],
                          "length": asm["coverage"]["length"]})
     n = asm["coverage"]["length"]["words"]
     fails = [k for k, v in asm["coverage"]["checklist"].items() if not v]
@@ -254,6 +268,15 @@ def run(ctx, redo=False):
                                               sh.plural(len(asm["sources"]), "source"))
     if fails:
         summary += ". Keyword checklist missed: " + "; ".join(fails)
+    if demo:
+        summary = "DEMO RESEARCH, so no cited number is real. " + summary
+    ver = reports.get("verify") or {}
+    if ver.get("claims_to_check") and not ver.get("actually_judged"):
+        # 0 of 7 judged used to read exactly like 7 of 7. Say it in the summary.
+        summary += ". None of the %d claims that needed a source could be checked" % ver["claims_to_check"]
+    mk = (reports.get("enrich") or {}).get("markers") or 0
+    if mk:
+        summary += ". %s asked for extra research that did not run" % sh.plural(mk, "section")
     out = {"summary": summary, "artifact": "draft.md"}
     if len(skipped) > len(SKIPPED):
         out["note"] = " ".join(skipped[len(SKIPPED):])

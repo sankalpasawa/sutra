@@ -74,6 +74,18 @@ def render(w, idx):
     """The article as it publishes. Returns (markdown, ordered source urls, {card_id: number}, bare sections)."""
     kept_urls = [k["url"] for k in ((w.get("links") or {}).get("external_kept") or [])]
     curated = bool(kept_urls)
+    # An own-domain URL is never a source for our own claim. Found live 2026-09-04: with no
+    # external source curated, the uncurated path listed four testlify.com blog posts as the
+    # article's Sources, so the piece cited its own publisher as proof of its own numbers.
+    own = ((w.get("links") or {}).get("own_domain")
+           or w.get("own_domain") or "").lower().lstrip("www.")
+
+    def _own(u):
+        try:
+            host = (u or "").split("/")[2].lower().lstrip("www.")
+        except IndexError:
+            return False
+        return bool(own) and (host == own or host.endswith("." + own))
     num_of, order, used = {}, [], {}
     cite_keep = {int(k): set(v) for k, v in (w.get("citation_keep") or {}).items()}
     seen_count = {}
@@ -87,6 +99,8 @@ def render(w, idx):
                     continue
                 if curated and u not in kept_urls:
                     continue
+                if not curated and _own(u):
+                    continue          # no self-citation when nothing external was curated
                 if capped and cid in cite_keep:
                     seen_count[cid] = seen_count.get(cid, 0) + 1
                     if seen_count[cid] not in cite_keep[cid]:

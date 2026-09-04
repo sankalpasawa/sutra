@@ -84,12 +84,24 @@ def _discover(fx, roots, max_pages):
     raise RuntimeError("Could not read %s: %s" % (roots[0], last))
 
 
-def _stage(site, name, redo, produce):
-    """A stage's output file is its done-marker. Reuse it when it exists for THIS domain."""
+def _stage(site, name, redo, produce, key=None):
+    """A stage's output file is its done-marker. Reuse it when it exists for THIS domain AND
+    the parameters that shaped it are unchanged.
+
+    Found live 2026-09-04: reuse compared the domain only, so a first run capped at 400 pages
+    by the user wrote reconciled.json, and every later uncapped run reused that file. The
+    catalogue reported 400 pages of an 11,917-URL site and called it complete, and every brand
+    file built from it was thin for the same reason.
+    """
     doc = store.read_json(os.path.join(site["work"], name))
-    if doc and not redo and doc.get("domain") == site["host"]:
+    stale = bool(key) and doc is not None and (doc.get("_key") or {}) != key
+    if doc and not redo and not stale and doc.get("domain") == site["host"]:
         return doc, True
-    return produce(), False
+    out = produce()
+    if key and isinstance(out, dict):
+        out["_key"] = key
+        store.write_json(os.path.join(site["work"], name), out)
+    return out, False
 
 
 # ---- the fallback when the crawl is refused ------------------------------------------------
@@ -167,6 +179,7 @@ def _light_row(r):
         # the single best keyword flattened, for the older readers (already_ranking, learn_voice)
         "position": ((r.get("keywords") or [{}])[0].get("position") if r.get("keywords") else None),
         "keyword_volume": ((r.get("keywords") or [{}])[0].get("volume") if r.get("keywords") else None),
+        "canonical": r.get("canonical", ""),
         "modified": r.get("modified", ""), "lang": r.get("lang", ""), "source": r.get("source", ""),
         "extractor": r.get("extractor", ""),
         "text": (r.get("body") or "")[:settings.BODY_CHARS],
@@ -204,10 +217,12 @@ def _write_knowledge(site, rows, tr, report, wp_doc):
 
 # ---- the tool ----------------------------------------------------------------------------------
 
-def run(ctx, domain, max_pages=3000, redo=False, redo_traffic=False, force_crawl=False):
+def run(ctx, domain, max_pages=0, redo=False, redo_traffic=False, force_crawl=False):
     say = sh.reporter(ctx, "index_site")
     roots = _roots(domain)
-    max_pages = max(1, int(max_pages or 3000))
+    # 0 means no cap, which is what the original workflow ships. A cap is a user's explicit
+    # "just this many for now", never a silent default that ships a short catalogue as complete.
+    max_pages = max(0, int(max_pages or 0))
     work = os.path.join(store.knowledge_dir(), "_work")
     raw = os.path.join(store.knowledge_dir(), "_raw")
     fx = fetchmod.Fetcher(work, raw, on_event=say)
@@ -235,7 +250,8 @@ def run(ctx, domain, max_pages=3000, redo=False, redo_traffic=False, force_crawl
         sm, reused = _stage(site, "urls-sitemap.json", redo, lambda: enumerate_sitemap.run(fx, site, say))
         if reused:
             say("Reused the sitemap list", "%d pages from the last run" % len(sm.get("urls") or {}))
-        ar, reused = _stage(site, "urls-archive.json", redo, lambda: enumerate_archive.run(fx, site, say))
+        ar, reused = _stage(site, "urls-archive.json", redo, lambda: enumerate_archive.run(fx, site, say),
+                            key={"liveness_cap": settings.ARCHIVE_LIVENESS_CAP})
         if reused:
             say("Reused the web archive's list", "%d live pages from the last run" % len(ar.get("urls") or {}))
         cr, reused = _stage(site, "urls-crawl.json", redo, lambda: enumerate_crawl.run(fx, site, say))
@@ -244,7 +260,8 @@ def run(ctx, domain, max_pages=3000, redo=False, redo_traffic=False, force_crawl
 
         # 2. RECONCILE (fetches every page once)
         try:
-            rec, reused = _stage(site, "reconciled.json", redo, lambda: reconcile.run(fx, site, say))
+            rec, reused = _stage(site, "reconciled.json", redo, lambda: reconcile.run(fx, site, say),
+                             key={"max_pages": max_pages})
         except reconcile.SiteRefused as e:
             if sh.dfs_mode(dfs) == "off":
                 raise RuntimeError("The site blocked every page fetch: %s" % e)
@@ -254,8 +271,9 @@ def run(ctx, domain, max_pages=3000, redo=False, redo_traffic=False, force_crawl
             say("Reused the settled page list", "%d pages from the last run" % len(rec.get("pages") or {}))
 
         # 3. EXTRACT (offline)
-        ex, reused = _stage(site, "extracted.json", redo,
-                            lambda: {"domain": host, "rows": extract.run(fx, site, say, rec)})
+        ex, reused = _stage(site, "extracted.json", redo,   # keyed too: a bigger cap means more pages to read
+                            lambda: {"domain": host, "rows": extract.run(fx, site, say, rec)},
+                            key={"max_pages": max_pages})
         rows = ex["rows"]
         if reused:
             say("Reused the extracted text", "%d pages from the last run" % len(rows))
