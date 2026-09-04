@@ -54,6 +54,7 @@ ok("the page index is built for the test", _index.status()["built"])
 
 print("\nthe cannibalisation flag")
 from seo_agent.research import cannibalisation
+from seo_agent.research import render
 hit = cannibalisation.check("Operator Education", _fixture.SITE_INDEX)
 ok("a keyword we hold in the top 10 is flagged with rank and url", hit == {"keyword": "Operator Education", "rank": 4, "url": "https://example.com/"}, hit)
 ok("a page-2 ranking is not a flag", cannibalisation.check("leadership programme", _fixture.SITE_INDEX) is None)
@@ -191,6 +192,28 @@ ok("a card cites the source its [n] marker names",
    all(c["source_urls"] for c in ev_cards if c["origin"].startswith("dossier/")))
 ok("the run says which route the evidence took",
    any("researchers interviewing" in n for n in rs["notes"]), rs["notes"])
+
+# ---- the two documents a person reads, and the trail behind them --------------------------
+doc = store.load_artifact(chat, run, "research-doc.md") or ""
+bun = store.load_artifact(chat, run, "bundle.md") or ""
+for head in ("## Verdict", "## How the evidence was gathered", "## Keywords", "## SERP snapshot",
+             "## What the winners cover", "## Build spec", "## Proof map", "## Completeness"):
+    ok("the research doc has %s" % head.strip("# "), head in doc, doc[:200])
+ok("the doc says how the evidence was gathered, naming the team",
+   "research team of" in doc and "The Builder" in doc, doc[doc.find("## How the evidence"):][:200])
+ok("the doc marks demo data at the top when the run was demo",
+   ("DEMO DATA" in doc) == bool(rs.get("demo_data")))
+ok("the bundle names the article, the keyword, the length and the reader",
+   all(x in bun for x in ("**Title:**", "**Primary keyword:**", "**Target length:**", "**Reader")), bun[:200])
+ok("the bundle's numbered pointers never skip a number",
+   [int(l.split(".")[0]) for l in bun.splitlines() if l[:1].isdigit()] ==
+   list(range(1, 1 + len([l for l in bun.splitlines() if l[:1].isdigit()]))),
+   [l[:40] for l in bun.splitlines() if l[:1].isdigit()])
+ok("the bundle lists the evidence trail with a plain name per file",
+   "## The evidence trail" in bun and "`world.json`" in bun and "The world statement" in bun)
+ok("every trail entry names a file that really exists",
+   all(store.load_artifact(chat, run, "_work/" + r["file"]) is not None
+       for r in render.trail(chat, run, store)))
 
 ok("our own domain is never outside evidence", not any("example.com" in c["source_urls"][0] for c in ev_cards))
 ok("gap check judged the checklist items", len(rs["gap_check"]["items"]) >= 3 and all(i["verdict"] in ("covered", "partial", "no") for i in rs["gap_check"]["items"]))

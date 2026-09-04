@@ -25,7 +25,8 @@ checks, the caps and the completeness boxes are all code.
 from .. import store
 from ..research import _common as _c
 from ..research import (assemble, cannibalisation, curate, dossier, evidence, expand, gap_check,
-                        keywords, ownpage, persona, seeds, serp, spine, topic_gate, winners, world)
+                        keywords, ownpage, persona, render, seeds, serp, spine, topic_gate, winners,
+                        world)
 from . import _shared as sh
 from . import dfs
 
@@ -293,7 +294,18 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
         "notes": notes, "demo_data": demo, "generated_at": store.now(),
     }
     store.save_artifact(chat_id, run_id, "research.json", _compat(research))
-    say("Research brief saved", "%s, %s" % (_plural(len(cards), "card"), "%.2f dollars spent" % research["cost_usd"]))
+
+    # The two documents a person reads, plus the trail behind them. Pure assembly: nothing here
+    # decides anything, it lays out what the steps already wrote.
+    rows = render.trail(chat_id, run_id, store)
+    store.save_artifact(chat_id, run_id, "research-doc.md",
+                        render.research_doc(research, brief.get("keywords_md") or "",
+                                            snap.get("md") or "", win.get("md") or "", rows))
+    store.save_artifact(chat_id, run_id, "bundle.md",
+                        render.bundle(research, rows, store.list_knowledge("brand") or []))
+    say("Research brief saved",
+        "%s, %s; %s of working files kept, each one openable"
+        % (_plural(len(cards), "card"), "%.2f dollars spent" % research["cost_usd"], len(rows)))
 
     summary = "Primary '%s' (%s/mo, KD %s). %s: %s evidence, %s own pages. Angle: %s" % (
         primary["keyword"], primary.get("volume"), primary.get("kd"), _plural(len(cards), "card"),

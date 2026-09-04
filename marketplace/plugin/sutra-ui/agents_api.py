@@ -362,7 +362,13 @@ def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str
                  or ql in (p.get("top_keyword") or "").lower()]
     if type:
         pages = [p for p in pages if (p.get("type") or "page") == type]
-    pages.sort(key=lambda p: (-(p.get("traffic_clean") or p.get("traffic") or 0), (p.get("title") or "").lower()))
+    # Traffic first, then the fullest pages. Found live 2026-09-04: with no traffic pulled, every
+    # page sorted equal and the 31 pages whose text failed came out on top, so a catalogue that is
+    # 99.7% clean opened on a screen of red. A page that could not be read is never the first row.
+    pages.sort(key=lambda p: (-(p.get("traffic_clean") or p.get("traffic") or 0),
+                              0 if (p.get("body_status") or "") == "ok" else 1,
+                              -(p.get("word_count") or 0),
+                              (p.get("title") or p.get("url") or "").lower()))
     limit = max(1, min(int(limit or 50), 200))
     offset = max(0, int(offset or 0))
     rows = []
