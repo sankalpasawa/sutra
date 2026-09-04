@@ -188,7 +188,7 @@ const EPILOGUE = `
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   ensureTranscript, sessionBody, __renderSrc: String(render),
   checkUpdates, stageInBackground, TITLES, SCREENS,
-  chanKey, paletteFor,
+  chanKey, paletteFor, CLAUDE_SOCKETS, queueState,
   _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
   fmt, dirPickerAvailable,
   /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
@@ -2758,6 +2758,70 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
   const psBody = ps.slice(0, ps.indexOf("\nfunction ", 10) > 0 ? ps.indexOf("\nfunction ", 10) : ps.length);
   assert.ok(/streamBodyHtml\(/.test(psBody), "patchStreaming must call streamBodyHtml");
   assert.ok(!/class="caret"/.test(psBody), "a caret literal inside patchStreaming is the second writer returning");
+});
+
+/* ── a message typed while a turn is already running ────────────────────────
+   Typing mid-turn is normal and the message is never lost: the client sends it
+   at once and the server's reader task queues it. But askClaude set
+   `streaming = true` the instant a turn was SENT, so a message that had not
+   begun rendered the same breathing "thinking" pulse as the one actually
+   running -- two turns both claiming to work, and no way to tell whether the
+   new input had been taken or ignored (founder, 2026-09-04). */
+test("42a. a turn waiting behind a running one does not claim to be thinking", () => {
+  const running = { uid: "t-run", streaming: true, response: "", tools: [], toolRuns: [] };
+  const queued  = { uid: "t-que", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-q", { pending: [queued], turn: running, sid: "sess-q" });
+  try {
+    const run = T.turnResponse(running);
+    const que = T.turnResponse(queued);
+    assert.ok(/gv-think/.test(run), "the RUNNING turn lost its thinking indicator");
+    assert.ok(!/gv-waiting/.test(run), "the running turn was drawn as waiting");
+    assert.ok(!/gv-think/.test(que),
+      "the queued turn still shows the thinking pulse -- the two are indistinguishable");
+    assert.ok(/gv-waiting/.test(que), "the queued turn shows no waiting state");
+    assert.ok(/Queued/.test(que), "the queued turn does not say it is queued");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-q"); }
+});
+
+test("42b. the first message says it was sent, not that it is queued behind something", () => {
+  /* Nothing is running -- ch.turn is null -- so this turn is waiting for the
+     agent to spin up, which a cold CLI takes seconds to do. Saying "queued"
+     there would imply something is ahead of it, a different and wrong fact. */
+  const first = { uid: "t-first", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-f", { pending: [first], turn: null, sid: "sess-f" });
+  try {
+    const html = T.turnResponse(first);
+    assert.ok(/gv-waiting/.test(html));
+    assert.ok(!/Queued/.test(html), "a first message must not claim to be queued");
+    assert.ok(/waiting for the agent/.test(html), "it should say it was sent");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-f"); }
+});
+
+test("42c. queue position is stated once more than one is waiting", () => {
+  const a = { uid: "q1", streaming: true, response: "", tools: [], toolRuns: [] };
+  const b = { uid: "q2", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-p", { pending: [a, b], turn: { uid: "live" }, sid: "sess-p" });
+  try {
+    assert.ok(/2nd in line/.test(T.turnResponse(b)),
+      "the second queued message does not say where it is in the queue");
+    assert.ok(!/in line/.test(T.turnResponse(a)),
+      "the next-up message should not be numbered");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-p"); }
+});
+
+test("42d. the state is DERIVED, so a started turn cannot look queued forever", () => {
+  /* queueState reads ch.pending, which the `start` frame shifts and failChannel
+     splices. A stored flag would need clearing in seven separate places, and
+     whichever was missed would strand a turn as permanently queued. */
+  const t = { uid: "t-x", streaming: true, response: "", tools: [], toolRuns: [] };
+  const ch = { pending: [t], turn: null, sid: "sess-d" };
+  T.CLAUDE_SOCKETS.set("sess-d", ch);
+  try {
+    assert.ok(T.queueState(t), "should be queued while in pending");
+    ch.pending.shift();                       /* exactly what the `start` frame does */
+    assert.strictEqual(T.queueState(t), null, "still reported queued after start");
+    assert.ok(!/gv-waiting/.test(T.turnResponse(t)));
+  } finally { T.CLAUDE_SOCKETS.delete("sess-d"); }
 });
 
 /* NAMESPACE NOTE (2026-08-22): this spec was first written against S.sessMenu /

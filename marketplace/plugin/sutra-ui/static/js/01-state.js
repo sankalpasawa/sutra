@@ -1254,6 +1254,37 @@ function failChannel(ch, detail, opts){
    no resume, so the main thread is never continued or mutated. */
 function chanKey(sid, side){ return side ? sid + "::side" : sid; }
 
+/* HAS THIS MESSAGE STARTED, OR IS IT WAITING?
+ *
+ * Typing while a turn runs is normal and the message is never lost -- the
+ * client sends it immediately and the server's reader task queues it -- but
+ * every turn was marked `streaming` the instant it was sent, so a message that
+ * had not begun rendered the same breathing "thinking" pulse as the one
+ * actually running. Two turns claimed to be working and the operator had no way
+ * to tell whether their new input had been taken or was being ignored.
+ *
+ * DERIVED, never stored. `ch.pending` already IS the list of turns sent but not
+ * yet started: the `start` frame shifts a turn off it, and failChannel splices
+ * it. A `queued` flag would have to be cleared in seven separate places, and
+ * whichever one was missed would strand a turn looking queued forever.
+ *
+ * Returns null once the turn has started (or was never sent), else:
+ *   {pos}      1-based place in the queue
+ *   {behind}   true when a turn is actually running ahead of it -- distinct
+ *              from merely being first and waiting for the agent to spin up,
+ *              which is what the FIRST message of a cold pane does for the
+ *              couple of seconds the CLI takes to boot.
+ */
+function queueState(turn){
+  if (!turn) return null;
+  for (const ch of CLAUDE_SOCKETS.values()){
+    const i = ch.pending.indexOf(turn);
+    if (i === -1) continue;
+    return { pos: i + 1, behind: !!ch.turn || i > 0 };
+  }
+  return null;
+}
+
 function claudeChannel(s, side){
   const key = chanKey(s.id, side);
   let ch = CLAUDE_SOCKETS.get(key);

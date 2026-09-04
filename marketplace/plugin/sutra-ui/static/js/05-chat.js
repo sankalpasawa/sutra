@@ -775,6 +775,12 @@ async function applyPermMode(mode, withAck){
    reply and an assistant block replayed out of a transcript: in the second case
    `streaming` is false and `response` is already complete, so the same template renders
    it with no special case. */
+function nth(n){
+  const r = n % 100;
+  if (r >= 11 && r <= 13) return "th";
+  return ["th","st","nd","rd"][n % 10] || "th";
+}
+
 /* The breathing Sutra mark, used wherever a turn is actively working. Inline
    SVG rather than a font glyph so it inherits currentColor and scales cleanly. */
 const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" ' +
@@ -1390,7 +1396,10 @@ function turnResponse(t){
   /* DS port: the live loader is chip-less and BOTTOMMOST (rendered last in the
      concat below); the settled verdict pill stays at the top. data-runstrip
      stays the ticker's patch anchor and still holds ONLY a text node. */
-  const stateTop = t.streaming ? ""
+  /* A turn that has been SENT but not STARTED is not thinking, and must not
+     borrow the pulse that says it is. `q` is non-null exactly then. */
+  const q = (typeof queueState === "function") ? queueState(t) : null;
+  const stateTop = (t.streaming || q) ? ""
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
@@ -1402,9 +1411,17 @@ function turnResponse(t){
      same in-memory, per-page-load pattern S.govOpen uses; it survives
      patchTurn() because the render reads it, and it is deliberately NOT
      persisted, because a uid means nothing after a reload. */
-  const logLines = t.streaming ? gvLog(t) : [];
+  const logLines = t.streaming && !q ? gvLog(t) : [];
   const logOpen = !!(S.thinkOpen && t.uid && S.thinkOpen[t.uid]);
-  const stateBottom = t.streaming
+  const stateBottom = q
+      ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
+           <span class="gv-wdot" aria-hidden="true"></span><span>${
+             q.behind
+               ? "Queued" + (q.pos > 1 ? " · " + q.pos + nth(q.pos) + " in line" : "")
+                 + " — sends when the turn above finishes"
+               : "Sent — waiting for the agent to start"
+           }</span></div>`
+      : t.streaming
       ? `<div><button class="gv-thinkbtn" type="button" data-thinkopen="${esc(t.uid||"")}"
              aria-expanded="${logOpen?"true":"false"}" title="${logLines.length
                ? "What has run so far in this turn"
@@ -1517,7 +1534,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      full #panes rebuild, and paid the heaviest path in the app at the exact
      moment the operator is watching for the answer to begin. An empty anchor
      costs one div and `.md[data-resp]:empty` gives it no height. */
-  const body = (t.response || t.streaming)
+  const body = (t.response || (t.streaming && !q))
     ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
         t.response ? (t.streaming ? caretHtml(mdHtml(gvBody(t.response)), t)
                                   : mdHtml(gvBody(t.response))) : ""}</div>` : "";
