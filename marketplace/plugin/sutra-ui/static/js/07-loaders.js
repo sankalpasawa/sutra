@@ -241,9 +241,85 @@ async function loadCodexAuth(force){
 
    Off-screen is false (nothing renders it, so nothing needs it), and an answer
    already in hand is false INCLUDING the honest unknown -- otherwise a failed
-   probe would re-fire on every render for as long as the screen stayed open. */
+   probe would re-fire on every render for as long as the screen stayed open.
+
+   SPLIT from codexOnScreen deliberately. The sign-in POLL needs the screen
+   half ALONE: during a poll an answer is always in hand, so this predicate is
+   false on the first tick and would stop the watch immediately. Two questions,
+   two functions. */
+function codexOnScreen(){ return S.screen === "settings"; }
+
 function codexNeedsProbe(){
-  return S.screen === "settings" && !S.codexAuth;
+  return codexOnScreen() && !S.codexAuth;
+}
+
+/* The desktop shell's bridge, or null. PREFERRED wherever it exists: it
+   spawns without a request, and the API key can only travel that way. */
+function codexBridge(){
+  return (window.sutra && window.sutra.codexLogin) ? window.sutra : null;
+}
+
+/* ── watching a browser-transport sign-in ───────────────────────────────────
+   The two transports have DIFFERENT completion semantics, and this is the
+   whole reason the poll exists. The IPC verb resolves when the child EXITS.
+   POST /providers/codex/login returns the instant the child is spawned -- it
+   must, because the flow waits on a human and holding the request open would
+   park a threadpool worker, leave nothing to cancel (apiGet has no timeout)
+   and orphan the child on a reload. So the panel watches the CREDENTIAL
+   instead, which is the better signal anyway: what matters is not that codex
+   exited, it is what codex now holds.
+
+   FOUR STOP CONDITIONS. A poll with no way to end is the same class of waste
+   as the render loop this file already had:
+
+     1. the state changed          -- the sign-in landed, or was rejected
+     2. !codexOnScreen()           -- nobody is looking at the row any more
+     3. S.codexBusy is not "login" -- cancelled, or superseded
+     4. the deadline               -- just past the server's own 180s cap
+
+   Generation-counted so a second sign-in supersedes the first watcher rather
+   than running two, and setTimeout-chained rather than setInterval so a slow
+   probe cannot stack ticks. */
+const CODEX_POLL_MS = 2000;
+const CODEX_POLL_CAP_MS = 190000;
+let _codexPollGen = 0;
+
+function codexStopPoll(){
+  _codexPollGen++;                 /* invalidates any tick already scheduled */
+  S.codexPolling = false;
+}
+
+function codexWatchLogin(before){
+  const gen = ++_codexPollGen;
+  S.codexPolling = true;
+  const deadline = Date.now() + CODEX_POLL_CAP_MS;
+  const tick = async () => {
+    if (gen !== _codexPollGen) return;                       /* superseded */
+    if (!codexOnScreen()){
+      /* Stop watching, but do NOT cancel: the server child is still running
+         and will finish or hit its cap on its own. Coming back to the screen
+         re-adopts it through login_in_flight. */
+      S.codexPolling = false; S.codexBusy = null; render(); return;
+    }
+    if (S.codexBusy !== "login"){ S.codexPolling = false; return; }
+    await loadCodexAuth(true);
+    if (gen !== _codexPollGen) return;
+    const now = (S.codexAuth || {}).state;
+    if (now !== before){
+      /* The row states the new credential itself, so there is no message to
+         add -- a "Signed in." banner next to "Signed in with ChatGPT" is the
+         same fact twice. */
+      S.codexPolling = false; S.codexBusy = null; S.codexMsg = null; render(); return;
+    }
+    if (Date.now() > deadline){
+      S.codexPolling = false; S.codexBusy = null;
+      S.codexMsg = "the sign-in did not finish. If no browser window opened, "
+                 + "run `codex login` in a terminal.";
+      render(); return;
+    }
+    setTimeout(tick, CODEX_POLL_MS);
+  };
+  setTimeout(tick, CODEX_POLL_MS);
 }
 
 /* The warning a codex action needs, or null when it destroys nothing.
@@ -410,6 +486,14 @@ function wire(){
      probe that never lands never ends the loop. The loader renders its OWN
      result instead; a call that does nothing produces nothing. */
   if (codexNeedsProbe()) loadCodexAuth();
+  /* ADOPT a sign-in the server is still running. After a reload, or after
+     leaving and returning to this screen, no watcher exists but a child does --
+     login_in_flight is how the panel finds out. Guarded by codexPolling so
+     wire(), which runs on every render, cannot start a second one. */
+  if (codexOnScreen() && (S.codexAuth || {}).login_in_flight && !S.codexPolling){
+    S.codexBusy = "login";
+    codexWatchLogin((S.codexAuth || {}).state);
+  }
 
   /* Separate from the Claude [data-auth-login] handler above by direction, not
      by accident: that verb is untouched and this one copies its shape.
@@ -428,8 +512,11 @@ function wire(){
      disconnect confirm in 12-connectors.js. */
   scBody.querySelectorAll("[data-codex]").forEach(b=>b.onclick=async()=>{
     const verb = b.dataset.codex;
-    const sutra = window.sutra || {};
+    const bridge = codexBridge();
     const st = (S.codexAuth || {}).state;
+    /* Same normalisation the row renders from: a sign-in the SERVER is running
+       is busy even if this page was reloaded and has forgotten about it. */
+    const busyNow = S.codexBusy || ((S.codexAuth || {}).login_in_flight ? "login" : null);
 
     if (verb === "apikey:cancel"){ S.codexKeyOpen = false; S.codexMsg = null; render(); return; }
 
@@ -437,21 +524,40 @@ function wire(){
        warns before the field even appears -- the point of no return is the
        click that says "yes, replace it", not the typing. */
     if (verb === "apikey"){
+      /* Bridge-only. The row does not draw this button without one, so this is
+         the belt: a stale render must not open a field whose only transport is
+         absent. */
+      if (!bridge) return;
       const warnSwitch = codexConfirmText("apikey", st);
       if (warnSwitch && !confirm(warnSwitch)) return;
       S.codexKeyOpen = true; S.codexMsg = null; render(); return;
     }
 
-    /* The button that started a spawn doubles as Cancel, so it re-invokes the
-       SAME verb -- the shell SIGTERMs the running child and answers
-       "cancelled". codexApiKey is re-invoked with no key on purpose: the main
-       process checks for a running child before it validates one. */
-    if (S.codexBusy){
-      try {
-        if (verb === "login") sutra.codexLogin();
-        else if (verb === "logout") sutra.codexLogout();
-        else if (verb === "apikey:save") sutra.codexApiKey("");
-      } catch (e) {}
+    /* The button that started a spawn doubles as Cancel.
+
+       ON THE BRIDGE it re-invokes the SAME verb -- the shell SIGTERMs its
+       running child and answers "cancelled". codexApiKey is re-invoked with no
+       key on purpose: the main process checks for a running child before it
+       validates one.
+
+       OVER HTTP there is an explicit route, because a second POST /login is a
+       409 rather than a cancel: an HTTP verb that quietly means the opposite
+       thing on its second call is a worse contract than naming the operation. */
+    if (busyNow){
+      if (bridge){
+        try {
+          if (verb === "login") bridge.codexLogin();
+          else if (verb === "logout") bridge.codexLogout();
+          else if (verb === "apikey:save") bridge.codexApiKey("");
+        } catch (e) {}
+        return;
+      }
+      codexStopPoll();
+      S.codexBusy = null; S.codexMsg = null; render();
+      try { await apiPost("/api/providers/codex/login/cancel", {}); }
+      catch (e){ S.codexMsg = e.message; }
+      await codexReprobe(false);
+      render();
       return;
     }
 
@@ -469,13 +575,43 @@ function wire(){
     }
 
     if (!(verb === "login" || verb === "logout" || verb === "apikey:save")) return;
-    S.codexBusy = verb === "apikey:save" ? "apikey:save" : verb;
+    if (verb === "apikey:save" && !bridge) return;    /* no HTTP path, by design */
+    S.codexBusy = verb;
     S.codexMsg = null; render();
+
+    /* THE BROWSER SIGN-IN IS THE ONE ACTION THAT DOES NOT REPORT ITS OWN
+       OUTCOME. The route answers as soon as the child exists, so there is
+       nothing to await but the spawn -- the credential is watched instead. */
+    if (verb === "login" && !bridge){
+      const before = (S.codexAuth || {}).state;
+      try {
+        await apiPost("/api/providers/codex/login", {});
+        codexWatchLogin(before);
+      } catch (e){
+        S.codexBusy = null;
+        S.codexMsg = e.message;
+        render();
+      }
+      return;
+    }
+
     let r = null;
     try {
-      r = verb === "login" ? await sutra.codexLogin()
-        : verb === "logout" ? await sutra.codexLogout()
-        : await sutra.codexApiKey(key);
+      if (bridge){
+        r = verb === "login" ? await bridge.codexLogin()
+          : verb === "logout" ? await bridge.codexLogout()
+          : await bridge.codexApiKey(key);
+      } else {
+        /* logout only -- login returned above, and apikey has no HTTP path.
+           confirm:true is REQUIRED by the route: the dialog above is
+           client-side, so the flag is what stops a bare POST from destroying a
+           credential nobody can restore. */
+        const out = await apiPost("/api/providers/codex/logout", { confirm: true });
+        r = { ok: out && out.ok !== false, error: out && out.reason };
+        /* The route answers with the fresh probe, so the row is already
+           current without a second round trip. */
+        if (out && out.auth) S.codexAuth = out.auth;
+      }
     } catch (e){ r = { ok:false, error: e.message }; }
     key = null;
     S.codexBusy = null;

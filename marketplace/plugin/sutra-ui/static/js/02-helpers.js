@@ -343,8 +343,13 @@ const S = {
      in this object ever carries credential material.
 
      codexProbing guards the probe against wire(), which re-enters the loader
-     on every render -- see loadCodexAuth. */
-  codexAuth:null, codexProbing:false, codexBusy:null, codexMsg:null, codexKeyOpen:false
+     on every render -- see loadCodexAuth.
+
+     codexPolling is a sign-in being WATCHED -- set while the panel polls the
+     probe during a browser-transport login, so wire() can adopt a login that
+     is still running after a reload without starting a second poller. */
+  codexAuth:null, codexProbing:false, codexPolling:false,
+  codexBusy:null, codexMsg:null, codexKeyOpen:false
 };
 /* The real draft lives server-side at DRAFTS_DIR (outside SUTRA_NATIVE_HOME) -- boot()
    fetches it into S.draft on startup. saveDraft() posts the current S.draft back; callers

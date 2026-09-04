@@ -506,11 +506,28 @@ function codexAuthHtml(){
      states the one thing the row does not: signing in is not selectability. */
   if (!PROVIDERS.some(x => x.id === "codex")) return "";
   const a = S.codexAuth;
-  /* Presence of the verb IS the capability signal, exactly as the Claude
-     account card treats authLogin. A page cannot conjure a preload, so this
-     is trustworthy in the direction that matters. */
+  /* TRANSPORT IS PER ACTION, not per bridge.
+
+     Sign in, sign out and cancel exist over BOTH transports: the desktop
+     shell's IPC verbs, and POST /api/providers/codex/{login,login/cancel,
+     logout} for a browser. So those buttons are always offered.
+
+     The API KEY is bridge-only and stays that way. It reaches codex on stdin,
+     and routing it through HTTP would put a live credential in a request body,
+     through the server's logging surface, and into its memory. None of that is
+     about who may call the route, so no origin guard makes it acceptable. In a
+     browser that one action names the CLI instead.
+
+     Presence of the verb is the capability signal, exactly as the Claude
+     account card treats authLogin: a page cannot conjure a preload. */
   const bridge = !!(window.sutra && window.sutra.codexLogin);
-  const busy = S.codexBusy;
+  const canKey = bridge;
+  /* A sign-in the SERVER is still running counts as busy even when this page
+     knows nothing about it -- a reload loses S.codexBusy, and a row reading
+     "Not signed in" while a child is about to change the credential is the row
+     lying about state. Normalised here so Cancel and the waiting copy below
+     need no special case. */
+  const busy = S.codexBusy || (a && a.login_in_flight ? "login" : null);
   const msg = !busy && S.codexMsg
     ? `<span class="why" style="margin-left:8px">${esc(S.codexMsg)}</span>` : "";
 
@@ -518,8 +535,15 @@ function codexAuthHtml(){
   const btn = (verb, text) => `<button class="btn" type="button" data-codex="${esc(verb)}"
       ${busy && busy !== verb ? "disabled" : ""}>${
       busy === verb ? "Cancel" : esc(text)}</button>`;
+  /* THE ESCAPE HATCH IS SHOWN WHILE WAITING, not only after a failure.
+     codex prints the sign-in URL as a fallback for when the browser does not
+     open, and neither transport forwards the child's output -- so that URL is
+     invisible here by design. Someone staring at a spinner because no window
+     appeared needs the way through AT THAT MOMENT, not in an error message
+     three minutes later. */
   const waiting = busy === "login"
-    ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…</span>`
+    ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…
+       If no window opened, run <code>codex login</code> in a terminal.</span>`
     : busy ? `<span class="why" style="margin-left:8px">Asking codex…</span>` : "";
 
   let head, actions;
@@ -539,36 +563,30 @@ function codexAuthHtml(){
        sign out of. */
     head = `<span class="why"><b>Could not tell which credential Codex is using.</b>
       ${esc(a.detail || "")}</span>`;
-    actions = bridge
-      ? `${btn("login", "Sign in with ChatGPT")} ${btn("apikey", "Add API key")}`
-      : "";
+    actions = `${btn("login", "Sign in with ChatGPT")}${
+      canKey ? " " + btn("apikey", "Add API key") : ""}`;
   } else if (a.state === "api_key") {
     head = `<b>API key${a.key_display ? " " + esc(a.key_display) : ""}</b>
       <span class="why">· ${esc(a.billing || "billed per token")}</span>`;
-    actions = bridge
-      ? `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}`
-      : "";
+    actions = `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}`;
   } else if (a.state === "chatgpt") {
     head = `<b>Signed in with ChatGPT</b>
       <span class="why">· ${esc(a.billing || "usage included in your plan")}</span>`;
-    actions = bridge
-      ? `${btn("logout", "Sign out")} ${btn("apikey", "Use an API key instead")}`
-      : "";
+    actions = `${btn("logout", "Sign out")}${
+      canKey ? " " + btn("apikey", "Use an API key instead") : ""}`;
   } else {
     head = `<b>Not signed in</b>`;
-    actions = bridge
-      ? `${btn("login", "Sign in with ChatGPT")}
-         <span class="why">usage included in your Plus/Pro/Business plan</span>
-         <div style="margin-top:6px">${btn("apikey", "Add API key")}
-         <span class="why">pay for what you use</span></div>`
-      : "";
+    actions = `${btn("login", "Sign in with ChatGPT")}
+       <span class="why">usage included in your Plus/Pro/Business plan</span>${
+       canKey ? `<div style="margin-top:6px">${btn("apikey", "Add API key")}
+       <span class="why">pay for what you use</span></div>` : ""}`;
   }
 
   /* The API-key field. type=password so a shoulder does not read it, and
      DELIBERATELY uncontrolled -- no value bound to state, so the typed key
      lives only in the DOM node until the click reads it, and any re-render
      clears it. */
-  const keyForm = S.codexKeyOpen && bridge ? `
+  const keyForm = S.codexKeyOpen && canKey ? `
     <div class="wdrow" style="margin-top:8px">
       <input type="password" class="wdin" data-codex-key spellcheck="false"
              autocapitalize="off" autocorrect="off" autocomplete="off"
@@ -591,10 +609,12 @@ function codexAuthHtml(){
       <div>${head}</div>
       ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
       ${keyForm}
-      ${!bridge ? `<p class="why" style="margin:8px 0 0">To sign in or switch, use the
-        desktop app — or run <code>codex login</code> (ChatGPT),
-        <code>codex login --with-api-key</code> (API key, reads the key from stdin) or
-        <code>codex logout</code> in a terminal.</p>` : ""}
+      ${!canKey ? `<p class="why" style="margin:8px 0 0">Signing in with ChatGPT and
+        signing out work from this page. An <b>API key</b> is the one action it will not
+        carry — the key would have to cross an HTTP request to reach the CLI, and Sutra
+        will not put a live credential through that. Use the desktop app, or run
+        <code>codex login --with-api-key</code> in a terminal, which reads the key from
+        stdin.</p>` : ""}
     </div>`;
 }
 

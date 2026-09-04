@@ -219,6 +219,9 @@ const EPILOGUE = `
      active, so every render state is pinned as a string -- a wrong badge here
      tells someone paying per token that their usage is included */
   codexAuthHtml, codexConfirmText, loadCodexAuth, codexNeedsProbe, codexReprobe,
+  /* the browser-transport sign-in watch: every stop condition is pinned,
+     because a poll with no way to end is the render loop all over again */
+  codexOnScreen, codexWatchLogin, codexStopPoll, codexBridge,
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
@@ -3610,12 +3613,50 @@ test("45c. not asked yet is not signed out", () => {
   } finally { delete sandbox.sutra; }
 });
 
-test("45d. a plain browser gets the CLI commands, never a dead button", () => {
-  const out = codexRender({ state:"logged_out" });   // no sandbox.sutra: browser
-  assert.ok(!/data-codex=/.test(out), "no buttons without the bridge");
-  assert.ok(/codex login/.test(out), "names the ChatGPT command");
-  assert.ok(/codex login --with-api-key/.test(out), "names the API-key command");
-  assert.ok(/codex logout/.test(out), "names the sign-out command");
+test("45d. a browser can sign in and out; only the API key needs the desktop", () => {
+  /* This inverts what the row used to say. Sign in, sign out and cancel now
+     ride POST /api/providers/codex/{login,logout,login/cancel}, so a browser
+     gets real buttons. The API KEY does not and never will: it would have to
+     cross an HTTP request body to reach the CLI. */
+  const out = codexRender({ state:"logged_out" });      // no sandbox.sutra: browser
+  assert.ok(/data-codex="login"/.test(out), "ChatGPT sign-in works from a browser");
+  assert.ok(!/data-codex="apikey"/.test(out), "the API key button needs the bridge");
+  assert.ok(/codex login --with-api-key/.test(out), "and the CLI path is named for it");
+  assert.ok(/will not put a live credential/.test(out),
+    "with the reason, so it does not read as a missing feature");
+
+  const signed = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
+  assert.ok(/data-codex="logout"/.test(signed), "sign out works from a browser too");
+  assert.ok(!/data-codex="apikey"/.test(signed), "switching TO a key still needs the bridge");
+
+  const keyed = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
+                              billing:"billed per token" });
+  assert.ok(/data-codex="login"/.test(keyed) && /data-codex="logout"/.test(keyed),
+    "switching back to ChatGPT, and signing out, both work from a browser");
+});
+
+test("45d2. the waiting copy always names the terminal way through", () => {
+  /* Neither transport forwards the child's output, so codex's fallback sign-in
+     URL is invisible here by design. Someone whose browser did not open needs
+     the escape hatch WHILE waiting, not in an error three minutes later. */
+  const out = codexRender({ state:"logged_out" }, { busy:"login" });
+  assert.ok(/Waiting for the browser sign-in/.test(out), "it says what it waits for");
+  assert.ok(/run <code>codex login<\/code> in a terminal/.test(out),
+    "and names the way through if no window opened");
+  assert.ok(/>Cancel</.test(out), "and the button cancels");
+});
+
+test("45d3. a sign-in the SERVER is running is adopted after a reload", () => {
+  /* A reload loses S.codexBusy. With login_in_flight true a child is running
+     and about to change the credential, so a row reading "Not signed in" with
+     an idle button would be the row lying about state. */
+  const out = codexRender({ state:"logged_out", login_in_flight:true });
+  assert.ok(/Waiting for the browser sign-in/.test(out),
+    "the row shows the sign-in it did not start");
+  assert.ok(/>Cancel</.test(out), "and offers to cancel it");
+  const idle = codexRender({ state:"logged_out", login_in_flight:false });
+  assert.ok(!/Waiting for the browser sign-in/.test(idle),
+    "and does not invent a sign-in when none is running");
 });
 
 test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
@@ -3856,6 +3897,121 @@ codexSerial("45l", async () => {
       + "guard swallowed the re-read, so the row would still show the old credential");
     assert.strictEqual(T.S.codexAuth.state, "logged_out", "and the NEW answer is what lands");
   } finally { h.restore(); }
+});
+
+/* ── 45m-45p. The sign-in POLL. ────────────────────────────────────────────
+   The browser transport's route returns the instant the child exists, so the
+   panel watches the CREDENTIAL rather than the process. A watch with no way to
+   end is the same class of waste as the render loop this file already pinned,
+   so every stop condition gets a test.
+
+   Timers are FAKED here -- captured in a queue and drained by hand -- because
+   the real cadence is 2s a tick and a test that sleeps is a test nobody runs. */
+function codexFakeTimers(){
+  const prev = sandbox.setTimeout;
+  let queue = [];
+  sandbox.setTimeout = (fn, ms) => { queue.push(fn); return queue.length; };
+  return {
+    pending: () => queue.length,
+    /* one tick, awaited: the poll body is async and awaits the probe */
+    tick: async () => { const q = queue; queue = []; for (const fn of q) await fn(); },
+    restore: () => { sandbox.setTimeout = prev; },
+  };
+}
+
+/* 45m. Nobody is looking -> stop watching. The founder's condition. Note it
+   does NOT cancel the server child: that finishes or hits its own cap, and
+   returning to the screen re-adopts it through login_in_flight. */
+codexSerial("45m", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    assert.strictEqual(T.S.codexPolling, true, "the watch starts");
+
+    await t.tick();                       /* one poll while on screen */
+    const after1 = calls;
+    assert.ok(after1 >= 1, "it polls while the row is up");
+
+    T.S.screen = "chats";                 /* the user leaves */
+    await t.tick();
+    assert.strictEqual(T.S.codexPolling, false, "leaving the screen stops the watch");
+    assert.strictEqual(T.S.codexBusy, null, "and clears the local busy state");
+    assert.strictEqual(t.pending(), 0, "with no further tick scheduled");
+    await t.tick();
+    assert.strictEqual(calls, after1,
+      "and no probe fires against a screen nobody is looking at");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null;
+             T.codexStopPoll(); }
+});
+
+/* 45n. The credential changed -> the sign-in landed, stop. */
+codexSerial("45n", async () => {
+  const h = codexStub(() => Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"chatgpt", billing:"usage included in your plan",
+                                  login_in_flight:false }) }));
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    await t.tick();
+    assert.strictEqual(T.S.codexAuth.state, "chatgpt", "the new credential landed");
+    assert.strictEqual(T.S.codexPolling, false, "the watch stops on the change");
+    assert.strictEqual(T.S.codexBusy, null, "the button stops saying Cancel");
+    assert.strictEqual(T.S.codexMsg, null,
+      "and no banner repeats what the row already says");
+    assert.strictEqual(t.pending(), 0, "nothing further is scheduled");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.codexStopPoll(); }
+});
+
+/* 45o. A second sign-in supersedes the first watcher instead of running two. */
+codexSerial("45o", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    T.codexWatchLogin("logged_out");      /* the second one wins */
+    await t.tick();
+    assert.strictEqual(calls, 1,
+      "two watchers polled " + calls + " times for one sign-in");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null;
+             T.codexStopPoll(); }
+});
+
+/* 45p. codexStopPoll invalidates a tick that is already scheduled -- the
+   cancel path calls it, and a stale tick landing afterwards would re-adopt a
+   sign-in the operator just stopped. */
+codexSerial("45p", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    T.codexStopPoll();
+    await t.tick();
+    assert.strictEqual(calls, 0, "a stopped watch must not probe");
+    assert.strictEqual(T.S.codexPolling, false, "and reports itself stopped");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null; }
 });
 
 /* ── 46. a rejected API key must never be echoed back ───────────────────────

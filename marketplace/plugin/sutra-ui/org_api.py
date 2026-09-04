@@ -79,6 +79,7 @@ import reorg_sim as R  # noqa: E402
 import teamsutra  # noqa: E402
 
 import claude_local
+import codex_login  # spawns `codex login`/`codex logout`; holds the live child
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
 import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
@@ -858,8 +859,103 @@ def api_codex_auth():
     the row renders as "could not tell" -- never as a billing mode. Claiming
     "usage included" to someone paying per token is the failure this endpoint
     is shaped to avoid.
+
+    `login_in_flight` is merged in HERE rather than inside codex_auth(),
+    because codex_login imports providers and the reverse would be a cycle --
+    and providers.py's contract is reads plus one settings file, which holding
+    live process state would break. It exists because a panel RELOAD loses its
+    in-memory busy state: with a sign-in child running and about to change the
+    credential, the row would otherwise render "Not signed in", which is the
+    row lying about state.
     """
-    return providers.codex_auth()
+    return {**providers.codex_auth(),
+            "login_in_flight": codex_login.in_flight()}
+
+
+class CodexLogoutRequest(BaseModel):
+    #: Must be exactly True. Signing Codex out DESTROYS the credential it
+    #: holds, and if that is an API key it is the only copy anywhere -- Sutra
+    #: never had one. The panel's confirm dialog is client-side, so a caller
+    #: reaching this route directly bypasses it; this flag is what stops a bare
+    #: POST from being a permanent loss.
+    confirm: bool = False
+
+
+@router.post("/providers/codex/login")
+def api_codex_login():
+    """Start the Codex ChatGPT sign-in and return AT ONCE.
+
+    The browser flow is a human round-trip -- three minutes, or never. This
+    route does not wait for it: it spawns, hands back {"started": true}, and
+    the panel polls GET /providers/codex/auth until the credential changes.
+    Waiting here would park a threadpool worker, give the panel nothing to
+    cancel (apiGet has no timeout), and orphan the child on a page reload.
+
+    This is the BROWSER fallback. The desktop shell keeps its own IPC verb and
+    keeps preferring it. Note one asymmetry in this path's favour: the binary
+    is resolved through providers.provider_bin, so a hand-picked path set in
+    Settings IS honoured here -- the IPC path cannot honour it, because
+    executing a path the renderer chose would be a worse hole than the
+    inconvenience.
+    """
+    try:
+        return codex_login.start()
+    except codex_login.NoBinary as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "CODEX_NOT_ON_PATH", "message": str(exc),
+            "user_action": "INSTALL_OR_SET_PATH"})
+    except codex_login.Busy as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "CODEX_BUSY",
+            "message": "a codex %s is already running" % exc,
+            "user_action": "CANCEL_FIRST"})
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CODEX_SPAWN_FAILED",
+            "message": "could not start codex: %s" % exc})
+
+
+@router.post("/providers/codex/login/cancel")
+def api_codex_login_cancel():
+    """Stop a running sign-in. SIGTERM, then SIGKILL after the grace period.
+
+    {"cancelled": false} when nothing was running is a fact, not a failure:
+    Cancel can lose a race with the flow completing, and reporting an error for
+    that would be a lie about state.
+    """
+    return {"cancelled": codex_login.cancel()}
+
+
+@router.post("/providers/codex/logout")
+def api_codex_logout(req: CodexLogoutRequest):
+    """Remove the credential the codex CLI holds. Requires confirm: true.
+
+    Blocking is fine here -- no human is in the loop, codex deletes a file and
+    returns -- so this answers with the FRESH probe rather than leaving the
+    panel to discover the new state on a second request.
+    """
+    if req.confirm is not True:
+        raise HTTPException(status_code=400, detail={
+            "code": "CONFIRM_REQUIRED",
+            "message": "signing Codex out destroys the credential it holds, "
+                       "and Sutra never had a copy. Send {\"confirm\": true} "
+                       "to proceed.",
+            "user_action": "CONFIRM"})
+    try:
+        result = codex_login.logout()
+    except codex_login.NoBinary as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "CODEX_NOT_ON_PATH", "message": str(exc),
+            "user_action": "INSTALL_OR_SET_PATH"})
+    except codex_login.Busy as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "CODEX_BUSY",
+            "message": "a codex %s is running -- cancel it first" % exc,
+            "user_action": "CANCEL_FIRST"})
+    # The probe runs either way. A logout that FAILED still has to report what
+    # codex actually holds now, or the row would show a state nobody verified.
+    return {**result, "auth": {**providers.codex_auth(),
+                               "login_in_flight": codex_login.in_flight()}}
 
 
 # ============================================================ settings ======
