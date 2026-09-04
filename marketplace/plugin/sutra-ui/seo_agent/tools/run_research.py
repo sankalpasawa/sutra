@@ -24,8 +24,8 @@ checks, the caps and the completeness boxes are all code.
 """
 from .. import store
 from ..research import _common as _c
-from ..research import (assemble, cannibalisation, evidence, expand, gap_check, keywords, ownpage,
-                        persona, seeds, serp, spine, topic_gate, winners, world)
+from ..research import (assemble, cannibalisation, curate, dossier, evidence, expand, gap_check,
+                        keywords, ownpage, persona, seeds, serp, spine, topic_gate, winners, world)
 from . import _shared as sh
 from . import dfs
 
@@ -183,16 +183,49 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
     per, _ = step("persona", lambda: persona.run(topic, angle, company))
     say("Reader: %s" % (per.get("name") or "a practitioner"), (per.get("lens") or "")[:160])
 
-    # ---- 2. evidence (the STORM substitute) -----------------------------------------------------
-    ev_keywords = [primary["keyword"]] + [s["keyword"] for s in final.get("secondary") or []][:_c.EVIDENCE_MAX_SECONDARY]
-    ev, reused = step("evidence", lambda: evidence.gather(
-        ev_keywords, company, own_domain=company.get("domain") or "", demo=demo, say=say))
-    say("Evidence: %s from %s" % (_plural(len(ev["cards"]), "card"), _plural(len(ev["pages"]), "page"))
-        + (" (kept from last time)" if reused else ""),
-        "Each card is a quote checked against the page it came from"
-        + ("; %d quotes did not match and were thrown out" % ev["dropped_verbatims"] if ev.get("dropped_verbatims") else ""))
-    notes.append("evidence gathered by a live search plus a full read of the ranking pages, one pass; "
-                 "narrower than the original's research team")
+    # ---- 2. the research conversation, then the dossier, then the cards -------------------------
+    # A research TEAM, not a keyword lookup: four mixed personas interview an expert, each question
+    # grounded in what the last answer said. The dossier is written from what they retrieved, and
+    # the cards are lifted out of the dossier, which is what lets one card cite two sources.
+    spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"]}
+    cur, reused_cur = step("curate", lambda: curate.run(
+        topic, angle, spine_ctx, company, own_domain=company.get("domain") or "", say=say))
+    article_brief = curate._article_block(topic, angle, spine_ctx)
+    dos = har = None
+    if cur.get("turns"):
+        dos, _ = step("dossier", lambda: dossier.build(cur, article_brief, say=say))
+        har, _ = step("dossier-cards", lambda: dossier.harvest(dos, say=say))
+    if har and har.get("cards"):
+        ev = {"cards": har["cards"], "pages": cur["pages"], "cost": cur.get("cost") or 0.0,
+              "skipped": [], "dropped_verbatims": har.get("dropped_verbatims") or 0,
+              "team": cur.get("team") or [], "turns": cur["turns"], "queries": cur.get("queries") or [],
+              "dossier_words": dos.get("words") or 0, "sources": dos.get("sources") or []}
+        reused = reused_cur
+        say("Evidence: %s from %s"
+            % (_plural(len(ev["cards"]), "card"), _plural(len(ev["pages"]), "page"))
+            + (" (kept from last time)" if reused else ""),
+            "%d questions asked across %d searches; every card is a quote checked against the dossier"
+            % (len(cur["turns"]), len(cur.get("queries") or []))
+            + ("; %d quotes did not match and were thrown out" % ev["dropped_verbatims"]
+               if ev["dropped_verbatims"] else ""))
+        store.save_artifact(chat_id, run_id, "dossier.md",
+                            (dos.get("md") or "") + "\n\n## Sources\n\n"
+                            + dossier.sources_block(dos.get("sources") or []))
+        notes.append("evidence gathered the way the original does: %d researchers interviewing an "
+                     "expert over %d questions, then a written dossier, then cards lifted from it"
+                     % (len(ev["team"]), len(cur["turns"])))
+    else:
+        # no team came back, or nothing was retrievable: fall back to the plain keyword read rather
+        # than shipping a run with no evidence at all, and say which route was taken
+        ev_keywords = [primary["keyword"]] + [s["keyword"] for s in final.get("secondary") or []][:_c.EVIDENCE_MAX_SECONDARY]
+        ev, reused = step("evidence", lambda: evidence.gather(
+            ev_keywords, company, own_domain=company.get("domain") or "", demo=demo, say=say))
+        why = (cur.get("skipped") or ("the interviews retrieved nothing usable"
+                                      if cur.get("turns") else "no interviews ran"))
+        say("Evidence: %s from %s" % (_plural(len(ev["cards"]), "card"), _plural(len(ev["pages"]), "page")),
+            "The research team produced no cards (%s), so this is the plain keyword read" % why)
+        notes.append("the research conversation produced no cards (%s); evidence is the narrower "
+                     "keyword read" % why)
 
     # ---- 3. gap check ----------------------------------------------------------------------------
     meta = {"title": topic, "angle": angle, "spine": spn["spine"], "about": w["about"], "not_about": w["not_about"]}
@@ -242,7 +275,16 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
                        "why_changed": gate.get("why_changed", "")},
         "persona": per,
         "evidence": {"pages": ev["pages"], "skipped": ev.get("skipped") or [], "cards": len(ev["cards"]),
-                     "dropped_verbatims": ev.get("dropped_verbatims", 0)},
+                     "dropped_verbatims": ev.get("dropped_verbatims", 0),
+                     # the research conversation, so the brief can show what was actually asked
+                     "team": ev.get("team") or [], "questions": len(ev.get("turns") or []),
+                     "searches": len(ev.get("queries") or []),
+                     "turns": [{"persona": t.get("persona", ""), "question": t.get("question", ""),
+                                "queries": t.get("queries") or [], "sources": len(t.get("urls") or []),
+                                "answer": (t.get("answer") or "")[:1200]}
+                               for t in (ev.get("turns") or [])],
+                     "dossier_words": ev.get("dossier_words") or 0,
+                     "dossier_sources": ev.get("sources") or []},
         "gap_check": {"items": [{k: v[k] for k in ("id", "type", "item", "verdict", "why") if k in v} for v in gap["items"]],
                       "queries": gap["queries"], "filled": fill.get("pages") or []},
         "reuse": own.get("reuse"),
