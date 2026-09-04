@@ -442,15 +442,24 @@ way the invented-number check works. That is what turns it into a real rule.
 ## The screen
 
 26. **The screen projects the folder and holds no state.** All state lives in one
-    object read from the API. Refresh, close, reopen: the same picture.
+    object read from the API. Close the app mid-run and reopen it and the picture is
+    the same, because the picture was never in the app. The rule while building: if
+    you find yourself storing something in the screen, it belongs in the folder.
 
 27. **Plain English everywhere the person reads.** Step labels, tool rows, error
-    messages, checkpoint prompts. "The site refused the crawler, so I am reading it
-    through the app's browser" beats "HTTP 429".
+    messages, checkpoint prompts. Not "HTTP 429" but "the site refused the crawler,
+    so I am reading it through the app's browser". Not `build_page_index` but
+    "indexing the meaning of every page so I can find your own pages to link to
+    later". Errors most of all: that is the moment the person most needs to
+    understand what happened.
 
-28. **Honest numbers, visibly labelled.** Demo data is marked demo at every step it
-    touches. A check that could not run says "not checked: <why>" rather than
-    passing or failing.
+28. **Honest numbers, visibly labelled.** No number may look more solid than it is.
+    On the live demo run every step that touched a fake figure said so ("using demo
+    traffic", "no DataForSEO login, so none of these numbers are real"), and the
+    brief carried the warning at the top. The same for checks: one that could not
+    run says "not checked: <why>" rather than passing or failing. A coverage gate
+    used to fail on every demo run because demo traffic invents pages; it now says
+    "not checked: the traffic is demo data".
 
 ---
 
@@ -469,17 +478,28 @@ None of the above counts until it is checked. The gate, in the order it runs:
 | Findings written down | Every bug the run exposed is in HISTORY with what was done. Every limit is under "Not done" | `HISTORY.md`, the game plan's verification table |
 | Release guard | Both manifests carry the tag's version or the build refuses | `release-dmg.yml` |
 
-Two habits make the checks worth running. Compare pytest failures by name against a
-saved baseline, because a count of 21 hides a new failure behind a fixed one. And
-run the real run yourself, to the end, answering the checkpoints, because the bugs
-that matter (the model narrating a save that never happened, a fresh chat redoing
-setup, three fetchers where one had the fix) only show up when the whole thing runs.
+Two habits make the checks worth running.
+
+**Compare pytest failures by name, never by count.** A count of 21 hides a new
+failure sitting behind one that was fixed. That exact thing happened on 2026-09-04
+and the name diff caught it.
+
+**Run the real run yourself, to the end, answering the checkpoints.** This is the
+sentence that matters most in the document: *the bugs that matter only show up when
+the whole thing runs.* The model claiming a save that never happened, a fresh chat
+redoing an hour of setup, a fix applied to one of three page readers. No unit test
+finds any of those.
 
 ---
 
 ## Things that only running it taught us
 
-Each of these is a rule above. Each was learned the expensive way.
+Each of these is a rule above. Each was learned the expensive way, and this section
+exists so the rules are not abstract. Six are bugs found and fixed. The seventh, the
+filter dropping 93%, is the opposite: it looked like a bug and the audit file proved
+it was correct. Without that file we would have "fixed" a filter that was working.
+Read this section first if you are building the second agent. It is the shortest way
+to inherit the scars.
 
 - The site refused every plain request. Reading it through the app's own hidden
   browser window fixed the crawl. Two other readers still failed until they shared

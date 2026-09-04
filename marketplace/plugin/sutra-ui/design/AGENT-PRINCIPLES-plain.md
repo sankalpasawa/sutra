@@ -425,15 +425,23 @@ what turns it into a real rule.
 
 ## The screen
 
-26. **The screen shows the folder and keeps nothing.** Refresh, close, reopen: same
-    picture.
+26. **The screen shows the folder and keeps nothing.** Close the app mid-run and
+    open it again: same picture, because the picture was never in the app, it was on
+    disk. The rule while building: if you catch yourself storing something in the
+    screen, it belongs in the folder instead.
 
 27. **Plain English wherever you read.** Step names, tool rows, errors, questions.
-    "The site refused the crawler, so I am reading it through the app's browser"
-    rather than an error code.
+    Not "HTTP 429" but "the site refused the crawler, so I am reading it through the
+    app's browser". Not a tool called build_page_index but "indexing the meaning of
+    every page so I can find your own pages to link to later". Errors most of all,
+    because that is when you most need to know what happened.
 
-28. **Honest numbers, clearly labelled.** Demo data says demo at every step. A check
-    that could not run says "not checked" and why, instead of pretending.
+28. **Honest numbers, clearly labelled.** No number may look more solid than it is.
+    On the demo run, every step that touched a fake figure said so, and the brief
+    carried the warning at the top. Same for checks: one that could not run says "not
+    checked" and why, instead of pretending. A coverage check used to fail on every
+    demo run because demo data invents pages that do not exist. It now says "not
+    checked: the traffic is demo data".
 
 ---
 
@@ -452,13 +460,28 @@ None of the above counts until it is checked. In the order we run them:
 | Findings written down | Every bug the run exposed is in the history file with what we did about it. Every limit is listed under "Not done". |
 | Release guard | The build refuses a version tag that does not match both version files. |
 
-The bugs that matter only show up in the real run. The AI claiming a save that never
-happened, a fresh chat redoing setup, a fix applied in one of three places. No unit
-test finds those. Running it to the end, yourself, does.
+Two habits make the checks worth running.
+
+**Compare the failures by name, never by count.** A count of 21 can hide a new
+failure sitting behind one you just fixed. That exact thing happened, and comparing
+names caught it.
+
+**Run it for real yourself, to the end, answering every checkpoint.** This is the
+sentence that matters most in this whole document: *the bugs that matter only show
+up when the whole thing runs.* The AI claiming a save that never happened. A fresh
+chat redoing an hour of setup. A fix applied to one of three page readers. No test
+finds any of those.
 
 ---
 
 ## Things that only running it taught us
+
+Every rule above cost something to learn, and this section exists so they are not
+abstract. Six of these are bugs we found and fixed. The seventh, the filter dropping
+93%, is the opposite: it looked like a bug, and the audit file proved it was right.
+Without that file we would have "fixed" a filter that was working. Read this section
+first if you are ever building the second agent. It is the shortest way to inherit
+the scars.
 
 - The website refused every ordinary request. Reading it through the app's own
   hidden browser window fixed the crawl. Two other page readers stayed broken until
