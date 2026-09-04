@@ -94,21 +94,35 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: exactly eight destinations, in the founder's order", () => {
-  /* 2.239.0: Agents joined the rail between Chats and Routines -- the SEO Writer
-     is the first agent that works in front of you (design/GAME-PLAN-agents.md). */
-  /* Seven since 2026-09-02: Routines was promoted out of Settings -> Automation
-     into a destination of its own, and sits next to Chats. */
+test("model: exactly seven destinations, in the founder's order", () => {
+  /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
+     agent that works in front of you (design/GAME-PLAN-agents.md). */
+  /* Seven again since 2026-09-04: Routines went back under Settings ->
+     Automation, the home it held before the 2026-09-02 promotion. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","agents","routines","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
 });
-test("model: routines is a full-bleed destination that opens its own screen", () => {
-  assert.strictEqual(JSON.stringify(T.DEST_PLANES.routines), "[]");
-  assert.strictEqual(T.DEST_DEFAULT_SCREEN.routines, "routines");
-  /* and it must NOT still be a row under Settings -- one home, not two */
-  const settingsRows = T.planeRows("settings").flatMap(g => g.rows).map(r => r.screen);
-  assert.strictEqual(settingsRows.indexOf("routines"), -1,
-    "routines must not remain a Settings plane row");
+test("model: routines is a Settings -> Automation row, not a destination", () => {
+  /* One home, not two: it must be a row on the Settings plane AND absent from
+     the rail model entirely -- DESTS, the plane spec and the landing map. */
+  assert.strictEqual(T.DESTS.indexOf("routines"), -1, "routines is not a destination");
+  assert.strictEqual(T.DEST_PLANES.routines, undefined, "no routines plane spec");
+  assert.strictEqual(T.DEST_DEFAULT_SCREEN.routines, undefined, "no routines landing screen");
+  const auto = T.planeRows("settings").find(g => g.label === "Automation");
+  assert(auto, "Settings must carry an Automation group");
+  const rows = auto.rows.map(r => r.screen);
+  assert.strictEqual(JSON.stringify(rows),
+    JSON.stringify(["skills","automation","routines","connectors"]));
+  /* the name is unchanged -- the row still reads "Routines" */
+  assert.strictEqual(auto.rows[rows.indexOf("routines")].label, "Routines");
+});
+test("model: a stored Routines destination migrates to Settings, on that row", () => {
+  storage._m["sutra.panel.layout"] =
+    JSON.stringify({ dest: "routines", destSel: { settings: "health" } });
+  const out = T.loadLayout();
+  assert.strictEqual(out.dest, "settings");
+  assert.strictEqual(out.destSel.settings, "routines", "the migrated pick wins");
+  delete storage._m["sutra.panel.layout"];
 });
 test("model: a stored Code tab migrates to Chats", () => {
   storage._m["sutra.panel.layout"] = JSON.stringify({ railTab: "code" });
@@ -169,11 +183,11 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints eight data-dest buttons", () => {
+test("rail: renderRail paints seven data-dest buttons", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8);
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
 });
 
 /* §chats ─ S8: the Code tab's controls survive, verbatim, exactly once */
@@ -551,7 +565,7 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8, "still eight destinations");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");

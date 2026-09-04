@@ -108,13 +108,13 @@ function lsSet(key, value){
    registry itself does not change. DEST_PLANES is the single source for what
    each plane lists; the coverage test (test_nav.js) walks it against the
    legacy railSpec inventory so nothing can silently fall out of reach. */
-/* Routines earned a destination of its own (founder, 2026-09-02). It had been a
-   row inside Settings -> Automation, two clicks deep behind a noun ("Settings")
-   that describes configuration -- but a routine is not a setting, it is work the
-   operator scheduled and expects to see running. It sits after Chats because the
-   pair is the whole picture of what is executing: chats are what you run, routines
-   are what runs without you. */
-const DESTS = ["now","focus","chats","agents","routines","org","team","settings"];
+/* Routines went back under Settings -> Automation (founder, 2026-09-04). It was
+   promoted to a destination of its own on 2026-09-02; the rail is the standing
+   surface, and a screen you open when you SET UP a schedule does not earn a slot
+   on it next to the surfaces you work in all day. The name does not change --
+   "Routines" is still what the row and the screen are called, only the address
+   moved back: Settings -> Automation, next to Skills and Automation. */
+const DESTS = ["now","focus","chats","agents","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -130,10 +130,6 @@ const DEST_PLANES = {
      (the agent, its chats, its settings rows), so a second plane would only
      repeat it. 17-agents.js owns everything inside the pane. */
   agents:   [],
-  /* routines is full-bleed: the Routines screen already carries its own
-     sections (routines + proposals), so a one-row plane would be a click that
-     buys nothing -- the same call Help made on 2026-08-24. */
-  routines: [],
   org:      [/* workspace row is flag-gated at render: with the flag off,
                 SCREENS.workspace never registers and the row is dropped by the
                 same SCREENS[sel] validation every stale selection goes through. */
@@ -144,10 +140,12 @@ const DEST_PLANES = {
              {screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
-             /* routines LEFT this group on 2026-09-02 -- it is a rail destination
-                now (see DESTS). What stays here reports on subsystems; a routine
-                is something the operator creates. */
-             {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"connectors"}]},
+             /* routines came BACK to this group on 2026-09-04, in the position it
+                held before the 2026-09-02 promotion: after Automation, before
+                Connectors. Automation REPORTS on subsystems and a routine is
+                something the operator creates, but both answer "what runs
+                without me", which is what this group is for. */
+             {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
              /* The assistant row joined System and the one-row Preferences group
                 went with it (founder 2026-09-03). A group holding a single row
                 is a header that earns nothing, and "Preferences" described the
@@ -171,7 +169,7 @@ const DEST_PLANES = {
 const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
-                              agents:"agents", routines:"routines",
+                              agents:"agents",
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
@@ -212,10 +210,19 @@ function loadLayout(){
        railTab field itself is retired; only the migration still reads it. */
     if (DESTS.includes(raw.dest)) out.dest = raw.dest;
     else if (raw.railTab === "code") out.dest = "chats";
+    /* An operator parked on the Routines destination (2026-09-02 .. 2026-09-04)
+       lands where Routines now lives rather than being dropped on Now: the same
+       screen, reached through Settings. Written into destSel below so the plane
+       opens with the row already selected. */
+    else if (raw.dest === "routines") out.dest = "settings";
     if (raw.destSel && typeof raw.destSel === "object"){
       for (const d of DESTS)
         if (typeof raw.destSel[d] === "string") out.destSel[d] = raw.destSel[d];
     }
+    /* …and the migrated destination picks its row, overriding whatever Settings
+       row was last open: the operator's last surface was Routines, so that is
+       what has to be on screen. */
+    if (raw.dest === "routines") out.destSel.settings = "routines";
     /* The open accordion (2.226.0). Only the CURRENT inline destination can be
        open (codex P2: one slot, no hidden state carried across destinations);
        anything else stored is stale and reads as closed. */

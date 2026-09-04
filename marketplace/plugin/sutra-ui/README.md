@@ -334,7 +334,7 @@ written pytest-style, so `unittest` collects **0** tests from it — run it with
 
 ## Agents
 
-**Agents** is the rail destination between Chats and Routines. The first agent is the
+**Agents** is the rail destination after Chats. The first agent is the
 **SEO Writer**, a port of the SEO workflow (`Backlink gets Automated`, layers 00, 01, 03
 and 04) into an agent that works in front of you.
 

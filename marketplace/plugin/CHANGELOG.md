@@ -2,6 +2,22 @@
 
 **status**: active · **updated**: 2026-09-04
 
+## 2.242.0 (2026-09-04)
+
+**Routines moves back to Settings -> Automation.** It spent two days as its own
+rail destination (2.237.0, 2026-09-02). The rail is the standing surface -- the
+places you work from all day -- and Routines is a screen you open when you set a
+schedule up, not while the schedule runs. Eight destinations made the rail a
+list; seven make it a set of places.
+
+The name does not change. It is the same "Routines" row and the same screen,
+back in the position it held before: Settings -> Automation, after Automation
+and before Connectors, next to the other answers to "what runs without me".
+An operator parked on the old destination is carried across rather than dropped
+on Now -- the stored layout migrates to Settings with the Routines row already
+selected -- and deep links to the screen keep working, because openScreen finds
+its owning destination from the plane spec.
+
 ## 2.241.0 (2026-09-04)
 
 **Chat says which message is running and which is waiting.** Typing a second

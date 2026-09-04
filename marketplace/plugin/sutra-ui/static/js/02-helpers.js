@@ -624,7 +624,8 @@ function railSpec(){
        c:(S.auto ? (((S.auto.dispatcher||{}).ledger||{}).rows) : undefined)},
       /* Routines sit next to Automation because both are "what runs without me",
          but they are not the same: Automation REPORTS on subsystems, a routine is
-         something the operator creates. Count withheld until read, like Git. */
+         something the operator creates. Count withheld until read, like Git.
+         Rendered as a Settings -> Automation plane row again since 2026-09-04. */
       {id:"routines", n:"Routines",  i:"rout",
        c:(S.rt ? (S.rt.routines||[]).length : undefined)},
       /* Teamsutra: tasks filed from the Ask Sutra selection chat. The count is
@@ -725,9 +726,9 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agents", routines:"Routines",
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agents",
                      org:"Org", team:"Help", settings:"Settings" };
-const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents", routines:"rout",
+const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
                      org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
