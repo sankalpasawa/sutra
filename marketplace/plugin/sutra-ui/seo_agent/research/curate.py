@@ -212,7 +212,7 @@ def _converse(persona, topic, article, company, pages, budget, say=None):
         budget["demo"] = budget["demo"] or demo
         budget["queries"] += qs
         urls = [u for u in dict.fromkeys(urls)][: budget["max_pages"] - len(pages)]
-        _read(urls, pages)
+        fresh = len(_read(urls, pages))
         sources = []
         for u in urls:
             p = pages.get(u)
@@ -223,8 +223,8 @@ def _converse(persona, topic, article, company, pages, budget, say=None):
                       "urls": [u for u, _ in sources], "answer": answer})
         if say:
             say("%s asked: %s" % (persona["role"], q[:70]),
-                "%d page%s read, %d already known" % (len(sources), "" if len(sources) == 1 else "s",
-                                                      len(urls) - len(sources)))
+                "%d new page%s read, %d already seen, %d answered from"
+                % (fresh, "" if fresh == 1 else "s", len(urls) - fresh, len(sources)))
     return turns
 
 

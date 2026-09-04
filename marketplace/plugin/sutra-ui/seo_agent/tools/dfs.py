@@ -561,6 +561,25 @@ def keyword_overview(keywords, location_name="United States", language_code="en"
     return {"rows": rows, "cost": _cost(data)}
 
 
+_PAY = {"at": 0.0, "ok": None}
+
+
+def _can_pay(ttl=300.0):
+    """Is there enough balance to be worth calling? Fails OPEN when the check itself errors,
+    because the paid calls report their own failures loudly anyway."""
+    import time as _t
+    now = _t.time()
+    if now - _PAY["at"] < ttl and _PAY["ok"] is not None:
+        return _PAY["ok"]
+    try:
+        bal = balance()
+        _PAY["ok"] = True if bal is None else bal >= BULK_PAGE_FLOOR
+    except Exception:  # noqa: BLE001 — a broken balance check must not block a paid run
+        _PAY["ok"] = True
+    _PAY["at"] = now
+    return _PAY["ok"]
+
+
 def serp_advanced(keyword, depth=20, paa_click_depth=3, ai_overview=True,
                   location_name="United States", language_code="en"):
     """The live Google page for one keyword, with the AI Overview block loaded (without
@@ -569,6 +588,12 @@ def serp_advanced(keyword, depth=20, paa_click_depth=3, ai_overview=True,
     featured_snippet, paa, ai_overview{text, cites}, related_searches."""
     if demo_mode():
         return {"extract": _demo_serp_extract(keyword, depth), "cost": 0.0, "demo": True}
+    # A run that cannot pay must not fire the calls anyway. Found 2026-09-04: the research
+    # conversation issues ~48 searches, and with the balance below zero every one of them would
+    # have gone out to be refused. Checked once per process, not per call.
+    if not _can_pay():
+        return {"extract": _demo_serp_extract(keyword, depth), "cost": 0.0, "demo": True,
+                "skipped": "the DataForSEO balance is too low, so these results are demo data"}
     task = {"keyword": keyword, "location_name": location_name, "language_code": language_code,
             "depth": _int(depth, 20)}
     if paa_click_depth:
