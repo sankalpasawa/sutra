@@ -8,6 +8,9 @@ last_updated: 2026-09-03
 
 # Building another agent inside Sutra, in plain English
 
+Read `AGENT-PRINCIPLES-plain.md` first. It is the short version of the rules and
+the checks. This file is the step-by-step that follows from it.
+
 This is the readable version. It has the same sections in the same order as
 `NEW-AGENT-plan.md`, so if you want the code for anything here, look for the same
 heading there.

@@ -338,6 +338,10 @@ written pytest-style, so `unittest` collects **0** tests from it — run it with
 **SEO Writer**, a port of the SEO workflow (`Backlink gets Automated`, layers 00, 01, 03
 and 04) into an agent that works in front of you.
 
+How we build agents, for any job: `design/AGENT-PRINCIPLES.md` (the rules and the
+checks, with the code) and `design/AGENT-PRINCIPLES-plain.md` (the same in plain
+English). The step-by-step recipe is `design/NEW-AGENT-plan.md` / `NEW-AGENT-plain.md`.
+
 **Setup, once.** Give it the website. It catalogues every page (CMS API, sitemaps, web
 archive, crawl, with coverage gates), indexes every page by meaning with Voyage, and
 builds the brand pack from the site's own pages: voice, style guide, product facts,

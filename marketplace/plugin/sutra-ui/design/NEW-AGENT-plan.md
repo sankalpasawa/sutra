@@ -8,6 +8,9 @@ last_updated: 2026-09-03
 
 # Building another agent inside Sutra
 
+Read `AGENT-PRINCIPLES.md` first: the rules every part obeys and the checks that
+prove them, on two pages. This file is the step-by-step that follows from it.
+
 The engineering recipe. Every path is relative to `marketplace/plugin/sutra-ui/`
 unless it starts with `/`. The plain-English twin is `NEW-AGENT-plain.md`; it has
 the same eleven sections in the same order, so a line here has a line there.
