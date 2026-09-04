@@ -16,6 +16,10 @@ from seo_agent import llm, store
 # --- stub the model ------------------------------------------------------------------
 llm.json_call = _fixture.stub_json
 llm.text = _fixture.stub_text
+# run_research reads real pages; without these it reaches the network for fake hosts
+_fixture.stub_web()
+_fixture.stub_voyage()
+
 
 # --- drive each tool -----------------------------------------------------------------
 c = store.new_chat("tool test")

@@ -32,6 +32,7 @@ Reads: topic, angle, spine, world, company. Returns
 {"team": [...], "turns": [...], "pages": [...], "queries": [...], "cost": float, "demo": bool}.
 """
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
@@ -45,6 +46,9 @@ QUERIES_PER_TURN = 3      # max_search_queries_per_turn
 SEARCH_TOP_K = 5          # --topk 5
 FLOOR_TURNS = 3           # the breadth floor: no "thank you" before this many questions
 MAX_PAGES = 140           # every persona's reading, deduped, capped so one run cannot run away
+READ_TIMEOUT = 90.0       # wall clock for one turn's page reads; a slow host never holds the run
+TOTAL_TIMEOUT = 900.0     # and for the whole conversation: past this it stops asking and works
+                          # with what it has, so a bad day cannot be sixteen timeouts in a row
 ANSWER_WORDS = 2500       # per-source word cap inside one answer prompt (the deep-RAG tweak)
 INFO_WORDS = 15000        # and the whole prompt's cap, so one answer cannot run away
 END = "thank you so much for your help"
@@ -152,17 +156,34 @@ def _rank(passages, question, keep):
 
 
 def _read(urls, pages, say=None):
-    """Read what we have not read before. Returns the newly read pages, in order."""
+    """Read what we have not read before. Returns the newly read pages, in order.
+
+    Hard-capped in wall clock. Found 2026-09-05: one unresolvable host held the whole research
+    conversation open forever, because every persona's turn waits on its own reads and each read
+    only had a per-request timeout. A page that has not arrived by now is a page we do without.
+    """
     todo = [u for u in urls if u not in pages]
     if not todo:
         return []
     fresh = []
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        for url, page in zip(todo, pool.map(lambda u: _safe_fetch(u), todo)):
+    pool = ThreadPoolExecutor(max_workers=6)
+    try:
+        futures = {pool.submit(_safe_fetch, u): u for u in todo}
+        deadline = time.time() + READ_TIMEOUT
+        for fut in futures:
+            left = deadline - time.time()
+            try:
+                page = fut.result(timeout=max(0.1, left))
+            except Exception:  # noqa: BLE001 — a timed-out or failed read is a page we do without
+                fut.cancel()
+                continue
             if page:
+                url = futures[fut]
                 page["passages"] = web.passages(page["text"])
                 pages[url] = page
                 fresh.append(page)
+    finally:
+        pool.shutdown(wait=False)
     return fresh
 
 
@@ -195,6 +216,12 @@ def _converse(persona, topic, article, company, pages, budget, say=None):
     turns = []
     for _ in range(TURNS):
         if len(pages) >= budget["max_pages"]:
+            break
+        if time.time() > budget["deadline"]:
+            if say and not budget.get("said_deadline"):
+                budget["said_deadline"] = True
+                say("Stopping the interviews here", "the research has taken long enough; writing "
+                    "up what the team already found")
             break
         q = _ask(topic, article, persona, turns)
         if not q:
@@ -238,7 +265,8 @@ def run(topic, angle, spine_ctx, company, own_domain="", max_pages=MAX_PAGES, sa
     if say:
         say("Chose %d researchers" % len(team), "; ".join(r["role"] for r in team))
 
-    pages, budget = {}, {"cost": 0.0, "demo": False, "queries": [], "max_pages": max_pages}
+    pages, budget = {}, {"cost": 0.0, "demo": False, "queries": [], "max_pages": max_pages,
+                        "deadline": time.time() + TOTAL_TIMEOUT}
     with ThreadPoolExecutor(max_workers=len(team)) as pool:
         results = list(pool.map(
             lambda r: _converse(r, topic, article, company, pages, budget, say=say), team))

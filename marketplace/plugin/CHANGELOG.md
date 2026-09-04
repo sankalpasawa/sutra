@@ -2,6 +2,37 @@
 
 **status**: active · **updated**: 2026-09-04
 
+## 2.242.0 (2026-09-05)
+
+- **The research is a team asking questions, not a keyword lookup.** Four researchers with
+  different jobs (the builder, the sceptic, the evidence one, the practitioner) each interview
+  an expert, every question seeing the previous answers. Their findings are written up as a
+  cited dossier, and the article's facts are lifted from that. Measured on a live run: 16
+  questions across 48 searches, a 14,856-word dossier, 483 facts, and 256 of them citing more
+  than one source. A fact that no single page states was impossible before.
+- **The site catalogue reads the whole site.** A cap you gave once ("read at most 400 pages")
+  was frozen into the cache and reused by every later run, and all four coverage checks still
+  said PASS. The cache key now carries what shaped the file, the default cap is gone, and a
+  catalogue with URLs found but never read FAILS its check and says so. Testlify went from 400
+  pages to 11,734, every URL read.
+- **The brand pack is rebuilt on that catalogue** and is now richer than the workflow it was
+  ported from: customer stories 9,555 words (it was empty), brand cards 47 (there were none),
+  product facts 12,833 words. Writing examples are always real published articles, never the
+  homepage or a pricing page.
+- **The run log groups by stage.** Setup, Topic, Research, Blueprint, Draft: one line each with
+  its time and what it found. Click one to see every step inside it.
+- **A research run ends in documents again.** The brief and the bundle are written as files,
+  and the evidence trail names all twenty working files in plain English so any step of the
+  research can be opened and read in the panel.
+- **The app repairs its own runtime.** A setup made before a library was added stayed without
+  it forever, and the failure surfaced as a crawl that read zero pages ("No module named
+  'bs4'"). The app now checks at launch, installs what is missing, and if it cannot, says which
+  library is missing and what it is for.
+- Honest reporting throughout: a low DataForSEO balance is said in the first message rather
+  than a footnote, paid steps check the balance before spending, an article never cites its own
+  publisher as a source, demo research is stamped on the draft, and unverified claims reach the
+  summary instead of a JSON field.
+
 ## 2.241.0 (2026-09-04)
 
 **Chat says which message is running and which is waiting.** Typing a second

@@ -22,6 +22,10 @@ from seo_agent import llm, loop, registry, store
 # stub the model before the loop calls anything
 llm.json_call = _fixture.stub_json
 llm.text = _fixture.stub_text
+# the loop really runs run_research, which really reads pages; without these it reaches
+# the network for hosts that do not exist
+_fixture.stub_web()
+_fixture.stub_voyage()
 
 SCRIPT = [
     {"text": "", "tool_calls": [
@@ -157,11 +161,12 @@ item_id = store.library_save(chat, run, title, d, {
 store.emit(chat, run, "saved_to_library", item_id=item_id, title=title)
 ok("saved to the library", bool(item_id))
 lib = store.library_list()
-ok("library lists it", len(lib) >= 1)
-if lib:
-    item = store.library_get(lib[0]["id"]) or {}
-    ok("the item carries the draft", len(item.get("draft", "")) > 100)
-    ok("the item carries its research", bool(item.get("research")))
+# every suite in a run shares one data dir, so find OUR item by its id rather than taking the
+# first row: another suite's item is not this suite's business
+ok("library lists it", any(x.get("id") == item_id for x in lib), [x.get("id") for x in lib])
+item = store.library_get(item_id) or {}
+ok("the item carries the draft", len(item.get("draft", "")) > 100, len(item.get("draft", "")))
+ok("the item carries its research", bool(item.get("research")))
 
 print("\nmemory")
 store.add_memory("Never write about pricing", "rule", source="user")

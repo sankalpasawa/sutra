@@ -113,6 +113,17 @@ def setup():
     store.set_data_dir(os.environ["SEO_AGENT_DATA"])
     if not store.knowledge("site_index.json"):
         store.save_knowledge("site_index.json", SITE_INDEX)
+    # A real install always has a company record after setup, and several tools read it (the
+    # competitor derivation, the prompts' brand tokens). Without one the suites test a state
+    # that cannot occur once setup has run.
+    rec = store.knowledge("brand/company.json") or {}
+    if not rec.get("brand_oneliner"):
+        rec.setdefault("brand", "Example")
+        rec.setdefault("domain", "example.com")
+        rec["brand_oneliner"] = "Example — practitioner-led business programmes for founders and senior operators"
+        rec.setdefault("niche_definition", "executive education — cohort programmes for operators")
+        rec.setdefault("about", "Practitioner-led programmes for people who already run things.")
+        store.save_knowledge("brand/company.json", rec)
     import os as _os
     if not _os.path.exists(_os.path.join(store.knowledge_dir(), "content-database.jsonl")):
         plant_content_database()

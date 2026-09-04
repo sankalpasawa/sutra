@@ -44,7 +44,13 @@ def _derive_competitors(ctx, say):
     ever happens once."""
     voice = sh.brand_voice()
     if not voice:
-        return []
+        # the voice profile is the richest source, but the company record alone names what they
+        # sell and to whom, which is enough to work out who they are up against
+        co = sh.company()
+        about = " ".join(str(co.get(k) or "") for k in ("brand_oneliner", "niche_definition", "about")).strip()
+        if not about:
+            return []
+        voice = {"company": co.get("brand") or "", "what_they_sell": about}
     say("Working out who you compete with", "No competitor list on file yet")
     prompt = sh.fill(sh.load_prompt("derive_competitors"), voice=sh.voice_block(voice))
     try:
@@ -105,9 +111,9 @@ def run(ctx, competitor=None):
         rows = _derive_competitors(ctx, say)
     if not rows and not competitor:
         return {"summary": "Could not work out who you compete with.",
-                "error": ("No competitor list on file, and the brand pack has no voice profile "
-                          "to derive one from, so learn_brand has probably not run. Run setup "
-                          "first, or name a competitor domain and I will use that.")}
+                "error": ("No competitor list on file, and there is nothing on file about what "
+                          "this company sells to work one out from, so setup has probably not "
+                          "run. Run setup first, or name a competitor domain and I will use it.")}
 
     mode = sh.dfs_mode(dfs)
     if mode == "off":
