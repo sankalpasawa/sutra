@@ -53,17 +53,106 @@ the instructions are never what makes it true.
 
 ## The loop
 
-1. **Code drives, the AI chooses.** The loop runs the sequence. The AI picks the
-   next tool from a list. It cannot invent a step, skip a checkpoint, or run
-   something twice because it forgot.
+The loop is the manager. The AI is the worker. Everything the agent is allowed to
+do goes through here, and there is no AI inside it. About a hundred lines of
+ordinary code: read where we are, ask, do one thing, write it down, ask again. The
+manager never asks the worker whether a rule applies. It just enforces it.
 
-2. **Stopping for you is a note, not a held door.** When the agent needs you, it
-   writes down where it got to and stops. Nothing sits open. When you answer, it
-   picks up from the note. You can close the app mid-run and lose nothing.
+### What one pass does, in order
+
+1. **Read where it got to.** If the job is not running, stop right there.
+2. **Read the conversation so far.** Every message and every result, in order.
+3. **Check the step count.** 25 real steps in a row without checking in and it asks
+   whether to carry on. It never kills the job. The counter starts at zero every
+   pass, so answering a checkpoint resets it. 25 is a runaway guard between
+   check-ins, not a budget for the whole job. Normal work uses about 6.
+4. **Ask the AI.** It gets three things: its instructions, the conversation, and the
+   list of tools. It answers with some words and zero or more tool calls.
+5. **Write down how long the AI took.** We added this after one run had an
+   unexplained hour between two turns and nobody could work out why.
+6. **If it called no tools, the job is done.** Save its message, mark it finished.
+7. **Write down what the AI decided, before doing any of it.** If the machine dies
+   mid-step, the record already says what it was about to do.
+8. **Do each tool call, one at a time**, by the table below.
+9. **Hand the results back**, save everything, and start again from 1.
+
+### The five kinds of tool call
+
+This table is the whole permission system. There is nothing else.
+
+| The AI asks for | What the loop does | Counts toward 25 |
+|---|---|---|
+| a question for you | writes the question down, stops, returns | no |
+| to show you something | a checkpoint. Writes, stops, returns | no |
+| to narrate a step | writes a note in the log and carries on. Free | no |
+| to save a rule you gave | stores it and carries on. Free | no |
+| anything else | real work. Starts it, runs it, records how it ended | yes |
+
+There is no row for "skip the checkpoint" or "do it twice". The rows are the only
+things that can happen. Narration and saving rules are free on purpose, so an agent
+that explains itself well is not punished for it.
+
+**One honest gap.** Showing you something always stops the job: that is code. But
+*deciding* to show you after research comes from the AI's instructions. A confused
+AI could in theory skip ahead. It never has, and you would see the stage jump on
+screen, but that one checkpoint is an instruction pretending to be a rule. Fixing it
+is about ten lines, if you want it.
+
+### The important trick: waiting is not waiting
+
+- Most systems would hold a process open while they wait for you.
+- Ours does not. It writes a note saying "waiting, and here is what for", and then
+  the code **stops and exits**.
+- Nothing is running. No thread, no timer, no open connection. You can shut the
+  laptop.
+- When you answer, a separate piece of code wakes up, reads the whole job back off
+  the disk, and slots your answer in **as the answer to the thing the AI asked for**.
+- So from the AI's side: it asked to show you the brief, and got back "approved". It
+  cannot tell whether that took two seconds or eight hours.
+
+### The three files, and who reads which
+
+"The log" is really three files with three different readers. Sizes are from the
+real article run.
+
+| File | Size | Who reads it | What it holds |
+|---|---|---|---|
+| the conversation | 84 KB | the AI | every message, every request, every result |
+| the run log | 44 KB | you, on screen | steps, sub-steps, notes, questions, answers |
+| the bookmark | 4 KB | the code | where it got to, and what it is waiting on |
+
+- The AI never reads the run log. That log exists only to show you the work.
+- You never read the conversation. It is raw and full of machine detail.
+- The code only needs the bookmark to find its place again.
+- Step 7 above is the one thing written to two places at once: to the conversation
+  so the AI remembers, and to the log so you see the step begin.
+
+### One real run, start to finish
+
+| The AI asked for | What happened | Stopped? |
+|---|---|---|
+| research | 11 minutes, 327 facts gathered | |
+| show me the brief | written, stopped | waiting for you |
+| | you approve, the job is read back off disk and carries on | |
+| build the plan | 6 sections kept from 20 of those 327 facts | |
+| show me the plan | written, stopped | waiting for you |
+| ask you a question | the AI had noticed the plan lost the main section, and asked before a 40-minute write | waiting for you |
+| write the article | 8 sections. The editing pass slipped in two made-up numbers, was rejected, and passed on the retry | |
+| show me the draft | written, stopped | waiting for you |
+| | you approve, the code saves it to the Library, then tells the AI | |
+| nothing | closing message, job done | finished |
+
+### The rules this enforces
+
+1. **Code drives, the AI chooses.** The AI picks from a list. It cannot invent a
+   step, skip a checkpoint, or run something twice because it forgot.
+
+2. **Stopping for you is a note, not a held door.** As above. Close the app mid-run
+   and lose nothing.
 
 3. **The AI cannot see the files. Tell it.** A new chat starts blank. If setup is
-   already done, the agent's instructions say so in one sentence with the numbers,
-   or it redoes an hour of work. We learned this by watching it happen.
+   already done, the instructions say so in one sentence with the numbers, or it
+   redoes an hour of work. We learned this by watching it happen.
 
 4. **The AI only knows what the code tells it.** It never announces something the
    code did not report. Saving to the Library happens in code when you approve, and
@@ -72,8 +161,7 @@ the instructions are never what makes it true.
 5. **A hiccup is not a failure.** An overloaded AI, a slow website, a rate limit:
    wait, try again, say so in the log. Only a wrong password is a wrong password.
 
-6. **Too many steps without you and it asks.** Twenty-five real steps without a
-   checkpoint and the agent asks whether to keep going. It does not stop dead.
+6. **Too many steps without you and it asks.** Twenty-five, as above.
 
 ---
 
@@ -142,9 +230,10 @@ the instructions are never what makes it true.
 
 ## The run folder
 
-19. **The folder is the whole truth.** The status. Every event in order. The outputs
-    you review. Every in-between file, one per step. You can point at anything in
-    the output and name the step that produced it.
+19. **The folder is the whole truth.** The three files are described under "The
+    loop" above. Next to them sit the outputs you review, and every in-between file,
+    one per step. You can point at anything in the output and name the step that
+    made it.
 
 20. **Files are written safely.** Write to a temp file, then rename. A file that
     exists is complete. That is what lets a run resume without repeating work.
