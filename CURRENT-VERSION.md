@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-04
 
-## v2.240.0 (2026-09-04, HEAD)
+## v2.241.0 (2026-09-04, HEAD)
+
+Chat distinguishes a running turn from a queued one.
+
+## v2.240.0 (2026-09-04)
 
 The SEO Writer becomes a port of the whole SEO workflow: the four-source site catalogue
 with coverage gates, the Voyage page index with a map, the twelve brand builders and the

@@ -2,6 +2,23 @@
 
 **status**: active · **updated**: 2026-09-04
 
+## 2.241.0 (2026-09-04)
+
+**Chat says which message is running and which is waiting.** Typing a second
+message while a turn is still streaming is normal, and the message was never
+lost -- the client sends it at once and the server queues it -- but every turn
+was marked "thinking" the instant it was sent, so a queued message showed the
+same breathing pulse as the one actually running. Two turns both claimed to be
+working and there was no way to tell whether the new input had been taken.
+
+A turn that has been sent but not started now shows "Queued -- sends when the
+turn above finishes" (with its place in line when more than one waits), or
+"Sent -- waiting for the agent to start" for the first message of a cold pane.
+The state is derived from the send queue rather than a stored flag, so a turn
+cannot get stranded looking queued. Verified end to end by driving the real
+composer (the Send button becomes Stop mid-turn, so the submit path is Enter)
+through the full queued -> running -> answered lifecycle.
+
 ## 2.240.0 (2026-09-04)
 
 - **The SEO Writer is now a port of the whole workflow, not a sketch of it.** Setup reads
