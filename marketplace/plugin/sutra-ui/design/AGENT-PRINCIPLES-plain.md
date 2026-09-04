@@ -269,33 +269,83 @@ does inside itself.
 
 ## Knowledge
 
-13. **Setup runs once per company and picks up where it left off.** Each stage
-    writes a file. Run it again and it reuses what exists and says so. Rebuilding is
-    something you ask for, never a side effect.
+Knowledge is what the agent learned about your company once and keeps. Different
+from Memory, which is what you told it to do.
+
+13. **Setup runs once per company and picks up where it left off.** Setup is slow,
+    about an hour for a 400-page site, so it runs once. Every stage writes its own
+    file. Run it again and each stage checks whether its file is already there,
+    reuses it, and says "reused from the last run". If it crashes you lose only the
+    stage that was running, not the hour. Rebuilding is something you ask for out
+    loud. It never happens by accident.
 
 14. **Knowledge comes from your own material, the same way every time.** The brand
-    files are built by reading your pages. They are files you can open, read and
-    edit in the app, and your edits are the truth from then on.
+    files are not the AI writing from general knowledge. They are built by twelve
+    builders reading your actual pages. Each one is a file you can open, read and
+    edit in the app, and once you edit it, your version is the truth. Nothing
+    overwrites it.
 
 15. **Find things by meaning, not by matching words.** Whenever the agent has to
     pick "the right one" (a page to link to, a passage to quote) it searches by
-    meaning and then double-checks on the full text. Matching words was tried and
-    measured and it was wrong too often.
+    meaning and then double-checks against the full page text. Word matching was
+    tried and measured in the original workflow and it was wrong: "work sample test"
+    matched a job-simulation page, which is a different product. For Testlify that
+    is 400 pages and 1,050 passages. The live article found 31 candidate pages by
+    meaning and placed 6, each with its match score shown to you.
 
-16. **You can see everything the agent knows.** The company record, the page list
-    with its coverage checks, the index and its map, every built file.
+16. **You can see everything the agent knows.** The company record you can edit, the
+    full page list with a search box, the coverage checks and whether they passed,
+    the meaning index with a visual map, and every brand file. No hidden state.
 
 ---
 
 ## Memory
 
-17. **Memory is a short list of rules, and the rules reach the work.** Save a rule
-    once ("British spelling", "never say leverage") and it goes into every step
-    that writes or shapes output, and into the research steps that pick the topic.
-    A rule that only reaches the chat is not a rule.
+17. **Memory is a short list of your standing rules, and the rules reach the work.**
+    Save a rule once ("never open with a question", "British spelling") and it goes
+    into every step that writes or shapes words, and into the research steps that
+    pick the topic and the angle. The easy mistake is to put your rules only in the
+    chat instructions. Then the AI knows the rule while chatting, but the step that
+    writes a section is a separate call to the AI, and it has never heard of it. A
+    rule that only reaches the chat is decoration.
 
-18. **Rules are switched off, never quietly dropped.** The list is visible, each rule
-    has a toggle, and the agent says which rules it applied.
+18. **Rules are switched off, never quietly dropped.** The list is on screen, each
+    rule has a toggle, and only the ones switched on are used.
+
+### How a saved rule actually reaches a prompt, and what it is not
+
+Being straight about this one: **there is no clever routing. Every rule is pasted
+into every one of a hand-picked set of prompts.**
+
+- Saving adds one line to a file: id, time, your words, switched on. Nothing is
+  categorised or tagged.
+- Before each of those steps runs, the code collects every switched-on rule into a
+  bulleted list.
+- That same list goes into **38 of our 117 prompts**. All rules into all 38. No rule
+  is ever matched to a particular step.
+- Those 38 were picked by hand: everything that writes or shapes words, plus the
+  research steps that choose the topic, the angle, the reader and which facts
+  survive. The other 79 are data steps, like sorting page types or pulling keyword
+  numbers, where a writing rule means nothing.
+- The one real piece of design is where it sits. Your rules go near the end, under a
+  line saying they beat any instruction above them that they contradict. So your
+  rules outrank the prompt's own.
+
+**What is missing, worth knowing before you lean on it:**
+
+- No scoping. A spelling rule is pasted into the keyword step as well as the writer.
+- No conflict check. Two contradictory rules both get pasted and the AI picks.
+- No verification. Nothing checks afterwards that the rule was followed. By this
+  document's own first rule, that makes it a suggestion rather than a rule.
+- It does not scale. Three rules is fine. Fifty in every prompt becomes noise the AI
+  starts skimming.
+- It has never run for real. The plumbing is tested, but no rule of yours has ever
+  been through a real article.
+
+**The two upgrades if it ever matters:** tag each rule when you save it, so only the
+relevant ones get pasted; and for rules a machine can check, like a banned word, add
+a code check after the writing pass, the way the made-up-number check works. That is
+what turns it into a real rule.
 
 ---
 

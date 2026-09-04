@@ -279,36 +279,84 @@ cares what a tool does inside itself.
 
 ## Knowledge
 
-13. **Setup runs once per company and is resumable.** Each stage writes a named
-    file; a rerun reuses what exists and says "reused from the last run". A rebuild
-    is an explicit request, never a side effect of a new conversation.
+Knowledge is what the agent learned about this company once and keeps. It is
+distinct from Memory, which is what the person told it to do.
+
+13. **Setup runs once per company and is resumable.** Setup is expensive: about an
+    hour for a 400-page site. Every stage writes its own named file (the sitemap
+    list, the archive list, the settled page list, the extracted text), and a rerun
+    checks for that file first, reuses it, and says "reused from the last run". A
+    crash costs only the stage that was running. A rebuild is an explicit request,
+    never a side effect of a new conversation.
 
 14. **Knowledge is built from the company's own material by the same process every
-    time.** The SEO Writer's brand files come from twelve builders reading the
-    catalogued pages. They are files a person can open, read and edit in the app,
-    and the edited version is the truth from then on.
+    time.** The brand files are not written from the model's general knowledge; they
+    are built by twelve builders reading the catalogued pages. Each is a file the
+    person can open, read and edit in the app, and the edited version is the truth
+    from then on. Nothing overwrites a file a person has touched.
 
 15. **Meaning is indexed, not matched by words.** Anything the agent must find "the
-    right one of" (a page to link, a passage to cite, a product to name) is
-    embedded once and searched by vector, then re-ranked on the full text. Word
-    overlap was measured and thrown out.
+    right one of" (a page to link, a passage to cite, a product to name) is embedded
+    once and searched by vector, then re-ranked on the full text. Word overlap was
+    measured in the original workflow and thrown out: "work sample test" matched a
+    job-simulation page, which is a different product. For Testlify: 400 pages,
+    1,050 body passages. The live article searched 31 candidate pages by meaning and
+    placed 6, each shown with its match score.
 
-16. **Knowledge is visible.** The person can open the company record, the
-    catalogue with its coverage gates, the index and its map, and every built file.
-    If the agent knows it, the person can see it.
+16. **Knowledge is visible.** The company record the person can edit, the catalogue
+    with its coverage gates and a search box, the index and its map, and every built
+    file. If the agent knows it, the person can open it. There is no hidden state.
 
 ---
 
 ## Memory
 
 17. **Memory is a short list of standing rules, and it reaches the work.** A rule
-    the person saves once ("never use the word leverage", "British spelling") is
+    the person saves once ("never open with a question", "British spelling") is
     rendered into the system prompt and into every prompt that shapes or writes
-    output, and into the research prompts that decide topic and angle. A rule that
-    only reaches the chat is not a rule.
+    prose, and into the research prompts that decide topic, angle, persona and which
+    facts survive. The easy mistake is to put it in the chat prompt only: the model
+    then knows the rule while chatting, and the section-writing call, which is a
+    separate model call, has never heard of it. A rule that only reaches the chat is
+    not a rule.
 
 18. **Memory is toggled, never silently dropped.** The list is visible, each rule
-    can be switched off, and the agent says which rules it applied.
+    can be switched off, and only active rules are rendered.
+
+### How a saved rule actually reaches a prompt, and what that mechanism is not
+
+Be straight about this one: **there is no routing. It is paste-everywhere into a
+hand-picked list of prompts.**
+
+- Saving appends one line to `memory.jsonl`: id, timestamp, text, `active: true`.
+  Nothing is categorised or tagged.
+- `sh.memory_block()` collects every active rule as a bulleted list.
+- That one list is substituted for `{{MEMORY}}` in **38 of the 117 prompts**. All
+  rules go into all 38. No rule is ever matched to a particular step.
+- The 38 were chosen by hand: everything that writes or shapes prose, plus the
+  research steps that decide topic, angle, persona and card relevance. The other 79
+  are data-shaped steps (classify a page type, parse a sitemap, pull keyword
+  numbers) where a writing rule means nothing.
+- Placement is the one piece of real design. The block sits near the end under
+  "THE USER'S STANDING RULES ... they win over any rule above that they contradict",
+  so the person's rules explicitly outrank the prompt's own instructions.
+
+**What is missing, and worth knowing before relying on it:**
+
+- No scoping: a spelling rule is pasted into the keyword scorer as well as the
+  writer.
+- No conflict detection: two contradictory rules are both pasted.
+- No verification: nothing checks afterwards that the rule was followed. By this
+  document's own first rule that makes it a suggestion, not a rule.
+- It does not scale: three rules is nothing, fifty rules in every prompt is noise
+  the model starts skimming.
+- It has never run live. The plumbing has tests; no real user rule has been through
+  a real article.
+
+**The two upgrades, if it matters later:** tag each rule on save (writing /
+research / both) and paste only the relevant ones; and for rules a machine can
+check (banned words, spelling variant), add a code check after the writing pass, the
+way the invented-number check works. That is what turns it into a real rule.
 
 ---
 
