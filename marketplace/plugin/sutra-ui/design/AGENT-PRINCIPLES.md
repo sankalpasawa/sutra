@@ -54,6 +54,20 @@ Everything below is that sentence applied to one part at a time. When a rule
 matters, it lives in code and has a test. The prompt may repeat it for tone, but the
 prompt is never the thing that makes it true.
 
+There are two places to put a behaviour: the prompt, or the code. The prompt is a
+request that is usually honoured, and usually is not a guarantee. The code is a
+fact, because no other path exists. Three of ours, and how they went:
+
+| The behaviour | Where it lived | What happened |
+|---|---|---|
+| Show the draft before saving it | code: `show_artifact` cannot run without pausing | held every time |
+| Never invent a number | code: the coherence pass diffs the numbers before and after and rejects the edit | caught two invented figures on the live run, retried, passed |
+| Tell the user it was saved | prompt only | the model announced "Saved. It's in the Library" when nothing had been. Moved into the loop |
+
+**The test to apply to anything you build.** If the model ignored this instruction,
+would anything stop it? If the answer is no, and the rule matters, it is not a rule
+yet.
+
 ---
 
 ## The loop

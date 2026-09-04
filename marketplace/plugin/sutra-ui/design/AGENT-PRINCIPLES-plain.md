@@ -49,6 +49,20 @@ Everything below is that sentence applied to each part. If a rule matters, it is
 the code and there is a test for it. The instructions to the AI may repeat it, but
 the instructions are never what makes it true.
 
+There are only two places to put a behaviour: in the instructions, or in the code.
+Instructions are a request. The AI usually follows them, and usually is not a
+guarantee. Code is a fact, because there is no other way for it to go. Three of
+ours, and how they turned out:
+
+| What we wanted | Where we put it | What happened |
+|---|---|---|
+| Show you the draft before saving | code. Showing you always stops the job | worked every time |
+| Never make up a number | code. It compares the numbers before and after an edit and rejects new ones | caught two made-up figures on the live run, redid it, passed |
+| Tell you it was saved | instructions only | the AI said "Saved. It's in the Library" when nothing was saved. We moved it into code |
+
+**The test for anything you build.** If the AI ignored this instruction, would
+anything stop it? If not, and the rule matters, it is not a rule yet.
+
 ---
 
 ## The loop
