@@ -373,6 +373,10 @@ Sutra $VERSION ($ARCH)
 1. Drag Sutra to Applications.
 2. Open it.
 
+Opening Sutra from this window instead works, but it will offer to move itself
+to Applications first. Say yes. An app run from a disk image is read-only and
+can never update itself, which is a problem you would not notice for months.
+
 The app carries its own Python: you do not need Python, Node, Xcode or a
 network connection. On first launch it also installs the Sutra plugin for
 Claude Code into ~/.claude, and tells you every path it wrote.

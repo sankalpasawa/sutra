@@ -1,8 +1,51 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-08-25
+**status**: active · **updated**: 2026-09-05
 
-## v2.235.4 (2026-08-26, HEAD)
+## v2.242.0 (2026-09-05, HEAD)
+
+The SEO Writer, audited against the workflow it was ported from and corrected. Research is
+now a team of four interviewing an expert rather than a keyword lookup, and the facts are
+lifted from the cited dossier they produce, so a fact can cite two sources. The catalogue
+reads the whole site (a cap given once had been frozen into the cache and every coverage
+check still passed); Testlify went 400 pages to 11,734, and the brand pack rebuilt on it is
+richer than the original. The run log groups by stage, a research run ends in documents with
+a clickable evidence trail, and the app repairs its own runtime instead of dying inside a
+crawl on a missing library.
+
+## v2.241.0 (2026-09-04)
+
+Chat distinguishes a running turn from a queued one.
+
+## v2.240.0 (2026-09-04)
+
+The SEO Writer becomes a port of the whole SEO workflow: the four-source site catalogue
+with coverage gates, the Voyage page index with a map, the twelve brand builders and the
+writer brief, the content machine's research with the world check and evidence cards,
+and the write phase with its editing passes and internal links laid in by meaning. Sites
+behind a bot challenge are read through the app's own hidden window. No credit stops;
+five checkpoints; memory reaches every writing step; Knowledge shows everything.
+
+## v2.239.1 (2026-09-03)
+
+Sutra now offers to install itself. Opening the app straight out of the DMG
+window works, so nothing ever tells you it was never installed -- and a disk
+image is read-only, so that copy can never update itself. It now asks once on
+launch and moves itself to Applications. The update refusal was rewritten to
+name the disk image rather than a permission bit, and both update paths check
+before downloading 240MB instead of after.
+
+## v2.239.0 (2026-09-03)
+
+Agents: a new rail destination between Chats and Routines, and its first agent, the
+SEO Writer. It indexes your site, learns how you write, researches a keyword, builds
+an article structure and writes the draft, stopping at four checkpoints where you
+edit or redirect before it continues; anything that costs credits asks first with the
+number. Runs on the `claude` CLI the chat already drives (subscription, no API key);
+keyword data from DataForSEO. Engine in `sutra-ui/seo_agent/`, standalone.
+(2.238.0 in between: see marketplace/plugin/CHANGELOG.md.)
+
+## v2.235.4 (2026-08-26)
 
 Provider detection: Claude Desktop is recognised as a different product from the
 Claude Code CLI (Desktop ships no `claude` binary) and the panel says what to

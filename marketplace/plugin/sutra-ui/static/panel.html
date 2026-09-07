@@ -1,8 +1,16 @@
 <title>Sutra</title>
 
 <meta name="sutra-panel-token" content="__PANELTOKEN__">
+<!-- Which controls a pane's provider can honour, substituted per request by
+     app.py (_declarations_attr). Read once at parse time in 01-state.js, so a
+     pane is gated on the FIRST paint rather than after /api/settings resolves
+     -- the boot window is precisely when the pane menu gets opened, to set
+     something before asking. A page served without this renders as it did
+     before it existed. -->
+<meta name="sutra-declarations" content="__DECLARATIONS__">
 <link rel="stylesheet" href="/static/panel.css?v=__ASSETVER__">
 <link rel="stylesheet" href="/static/workspace.css?v=__ASSETVER__">
+<link rel="stylesheet" href="/static/agents.css?v=__ASSETVER__">
 
 <div class="wrap">
   
@@ -179,4 +187,7 @@
   <script src="/static/js/15-shadow-overlay.js"></script>
   <script src="/static/js/16-shadow-home.js"></script>
 <script src="/static/js/13-optimus.js?v=__ASSETVER__"></script>
+<!-- 17-agents.js: the Agents destination (SEO Writer). Self-mounts like
+     10-activity.js, so it loads before 09-tail.js for the same test-21b reason. -->
+<script src="/static/js/17-agents.js?v=__ASSETVER__"></script>
 <script src="/static/js/09-tail.js?v=__ASSETVER__"></script>

@@ -242,6 +242,122 @@ function shellEnv() {
   return _shellEnv;
 }
 
+
+/* ------------------------------------------------------------ browser fetch --
+ * The agent's crawler reads the user's own website. More and more sites sit behind
+ * a JavaScript bot challenge (Vercel "Attack Challenge Mode", Cloudflare "Under
+ * Attack"): every plain request, robots.txt and the sitemap included, answers 429
+ * with a page only a browser running JavaScript can get past, and the pass is bound
+ * to the browser's network fingerprint, so cookies do not carry over. Measured on a
+ * real customer site on 2026-09-03: 429 on the very first request, from any client.
+ *
+ * This app IS a browser. So the shell runs a tiny loopback service: POST /fetch
+ * {url} -> a hidden window for that origin clears the challenge once, then an
+ * in-page fetch() returns the raw body (HTML, XML, text) in a fraction of a second.
+ * The backend gets the address and a token in its environment and uses it only
+ * when a site has refused plain requests. Loopback only, token on every call,
+ * http(s) only, one request in flight at a time, windows retired after ten idle
+ * minutes. Nothing here can be reached from a web page: the token never leaves
+ * the two processes.
+ */
+const BROWSER_TOKEN = crypto.randomBytes(24).toString("hex");
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+const BROWSER_IDLE_MS = 10 * 60 * 1000;
+const BROWSER_MAX_WINDOWS = 3;
+const IN_PAGE_FETCH = `(async (u) => {
+  const r = await fetch(u, {credentials: 'include', redirect: 'follow'});
+  const t = await r.text();
+  const h = {}; r.headers.forEach((v, k) => { h[k] = v; });
+  return {status: r.status, url: r.url, text: t, content_type: r.headers.get('content-type') || '', headers: h};
+})`;
+let browserFetchUrl = "";
+const browserWindows = new Map();      // origin -> {win, ready, lastUsed}
+let browserQueue = Promise.resolve();
+
+function browserChallenged(r) {
+  if (!r || ![403, 429, 503].includes(r.status)) return false;
+  const h = r.headers || {};
+  if (/challenge/i.test(h["x-vercel-mitigated"] || "") || /challenge/i.test(h["cf-mitigated"] || "")) return true;
+  const body = (r.text || "").slice(0, 6000);
+  return /cf-chl|_cf_chl_opt|challenge-platform|vercel-challenge|Just a moment|Verifying you are human|Checking your browser/i.test(body);
+}
+
+function browserWindowFor(origin) {
+  const have = browserWindows.get(origin);
+  if (have && !have.win.isDestroyed()) { have.lastUsed = Date.now(); return have; }
+  if (browserWindows.size >= BROWSER_MAX_WINDOWS) {
+    const oldest = [...browserWindows.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
+    if (oldest) { try { oldest[1].win.destroy(); } catch {} browserWindows.delete(oldest[0]); }
+  }
+  const win = new BrowserWindow({
+    show: false, width: 1280, height: 800,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false,
+                      images: false, backgroundThrottling: false, partition: "persist:agent-fetch" },
+  });
+  win.webContents.setUserAgent(BROWSER_UA);
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const ready = new Promise((resolve) => {
+    const done = () => resolve();
+    win.webContents.once("did-finish-load", done);
+    win.webContents.once("did-fail-load", done);
+    setTimeout(done, 45000);
+  });
+  win.loadURL(origin + "/").catch(() => {});
+  const entry = { win, ready, lastUsed: Date.now() };
+  browserWindows.set(origin, entry);
+  return entry;
+}
+
+async function browserFetch(url, timeoutMs) {
+  const u = new URL(url);
+  if (!/^https?:$/.test(u.protocol)) throw new Error("only http(s) urls");
+  const origin = u.origin;
+  const entry = browserWindowFor(origin);
+  await entry.ready;
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  for (let i = 0; i < 10 && Date.now() < deadline; i++) {
+    try {
+      last = await entry.win.webContents.executeJavaScript(`${IN_PAGE_FETCH}(${JSON.stringify(url)})`, true);
+    } catch (e) {
+      last = { status: 0, url, text: "", content_type: "", headers: {}, error: String(e && e.message || e).slice(0, 160) };
+    }
+    if (last && !browserChallenged(last) && last.status) return last;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return last || { status: 0, url, text: "", content_type: "", headers: {} };
+}
+
+function startBrowserFetchService() {
+  const server = http.createServer((req, res) => {
+    const reply = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); };
+    if (req.method !== "POST" || req.url !== "/fetch") return reply(404, { error: "not found" });
+    if (req.headers["x-sutra-browser"] !== BROWSER_TOKEN) return reply(403, { error: "bad token" });
+    let body = "";
+    req.on("data", (d) => { body += d; if (body.length > 65536) req.destroy(); });
+    req.on("end", () => {
+      let want;
+      try { want = JSON.parse(body || "{}"); } catch { return reply(400, { error: "bad json" }); }
+      const url = String(want.url || "");
+      const timeoutMs = Math.min(120, Math.max(5, Number(want.timeout) || 60)) * 1000;
+      browserQueue = browserQueue.then(() => browserFetch(url, timeoutMs))
+        .then((r) => reply(200, r), (e) => reply(502, { error: String(e && e.message || e).slice(0, 200) }));
+    });
+  });
+  server.on("error", (e) => console.error("[sutra] browser fetch service:", e && e.message));
+  server.listen(0, HOST, () => {
+    browserFetchUrl = `http://${HOST}:${server.address().port}`;
+    console.log("[sutra] browser fetch service on", browserFetchUrl);
+  });
+  setInterval(() => {
+    const cut = Date.now() - BROWSER_IDLE_MS;
+    for (const [origin, e] of browserWindows) {
+      if (e.lastUsed < cut) { try { e.win.destroy(); } catch {} browserWindows.delete(origin); }
+    }
+  }, 60000).unref();
+  return server;
+}
+
 function startBackend() {
   const child = spawn(
     RUNTIME.python,
@@ -269,6 +385,9 @@ function startBackend() {
         // payload/sb/ is retired; the env stays for any bundled resource a
         // backend module resolves — e.g. the update sidecar's assets.)
         SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
+        // The agent's crawler can read a site behind a bot challenge through this
+        // app's own hidden window. Address + token, both minted per launch.
+        ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),
       } }
   );
   let stderr = "";
@@ -343,7 +462,120 @@ function createWindow() {
   win.loadURL(ORIGIN);
 }
 
+/* ------------------------------------------------------------- installed? --
+ * The one install mistake that costs a user everything and tells them nothing.
+ *
+ * You open the DMG and double-click Sutra right there in the installer window.
+ * It opens. It works. Nothing anywhere says you never installed it -- and a
+ * disk image is read-only, so the app can never replace itself. Every update
+ * from then on fails, or worse, never even announces itself. A real user ran
+ * 2.238.0 off the image for weeks and only found out when an update refused
+ * with "/Volumes/Sutra 2.238.0 is not writable by this user".
+ *
+ * macOS cannot fix this from the other end: opening a disk image is not allowed
+ * to run code, so a DMG can never install itself. The app has to move ITSELF,
+ * which is what every well-behaved Mac app does and what this function is.
+ *
+ * Deliberately a question, not a silent move. A window that vanishes and comes
+ * back somewhere else reads as a crash. One question, answered once.
+ *
+ * Returns true to carry on booting here, false when this process is done
+ * (the app has been moved and relaunched from Applications).
+ */
+function skipMoveMarker() {
+  return path.join(app.getPath("userData"), "skip-move-to-applications");
+}
+
+function appBundleDir() {
+  /* <...>/Sutra.app/Contents/MacOS/Sutra -> <...>/Sutra.app */
+  return path.resolve(app.getPath("exe"), "..", "..", "..");
+}
+
+/* The fallback when Electron's own mover declines: copy, open the copy, quit.
+   ditto rather than cp because it preserves the signature and the symlinks
+   inside a .app; a plain recursive copy produces a bundle that will not
+   launch on a machine with Gatekeeper awake. */
+function copyIntoApplications() {
+  const src = appBundleDir();
+  const dst = path.join("/Applications", path.basename(src));
+  execFileSync("/usr/bin/ditto", [src, dst]);
+  spawn("/usr/bin/open", ["-n", "-a", dst], { detached: true, stdio: "ignore" }).unref();
+  return dst;
+}
+
+async function ensureInstalled() {
+  if (process.platform !== "darwin" || !app.isPackaged) return true;
+  try { if (fs.existsSync(skipMoveMarker())) return true; } catch {}
+  try { if (app.isInApplicationsFolder()) return true; } catch { return true; }
+
+  const onImage = appBundleDir().startsWith("/Volumes/");
+  /* The async form, not showMessageBoxSync: only this one reports the
+     checkbox, and "do not ask again" has to actually mean it. */
+  const r = await dialog.showMessageBox({
+    type: "question",
+    buttons: ["Move to Applications", "Not now"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Move Sutra to Applications?",
+    message: onImage
+      ? "Sutra is running from the installer disk image."
+      : "Sutra is not in your Applications folder.",
+    detail: (onImage
+      ? "A disk image is read-only, so Sutra cannot update itself from here. "
+      : "Sutra updates itself by replacing its own copy, which only works from Applications. ") +
+      "Move it now and Sutra will reopen from Applications. You will not be asked again.",
+    checkboxLabel: "Do not ask again",
+    checkboxChecked: false,
+    noLink: true,
+  });
+
+  if (r.response !== 0) {
+    /* Asked again next launch, because the problem is still there next launch.
+       Silencing it is the user's call to make, not ours to default to. */
+    if (r.checkboxChecked) {
+      try { fs.writeFileSync(skipMoveMarker(), new Date().toISOString() + "\n"); }
+      catch (e) { console.error("[sutra] could not write skip marker:", e && e.message); }
+    }
+    return true;
+  }
+
+  try {
+    const moved = app.moveToApplicationsFolder({
+      conflictHandler: (conflict) => {
+        if (conflict === "existsAndRunning") {
+          dialog.showErrorBox(
+            "Sutra is already open",
+            "There is already a copy of Sutra in Applications and it is running.\n\n" +
+            "Quit that one, then try again.");
+          return false;
+        }
+        return true;    /* replace an older, idle copy */
+      },
+    });
+    if (moved) return false;               /* it relaunched from Applications */
+  } catch (e) {
+    console.error("[sutra] moveToApplicationsFolder:", e && e.message);
+  }
+
+  /* Electron declined (it refuses some read-only sources). Copy by hand. */
+  try {
+    const dst = copyIntoApplications();
+    console.log("[sutra] installed to", dst);
+    app.exit(0);
+    return false;
+  } catch (e) {
+    dialog.showErrorBox(
+      "Could not move Sutra",
+      "Sutra could not copy itself into Applications:\n\n" + (e && e.message) +
+      "\n\nDrag Sutra.app to Applications in Finder, then open it from there.");
+    return true;                            /* carry on; it still works today */
+  }
+}
+
 async function boot() {
+  /* Before anything else: a copy running off the installer image can never
+     update itself, and everything below assumes it can. */
+  if (!(await ensureInstalled())) return;
   if (process.env.ANTHROPIC_API_KEY) {
     return fail("Sutra refuses to start",
       "ANTHROPIC_API_KEY is set. That routes through the API (per-token billing) " +
@@ -357,6 +589,25 @@ async function boot() {
   // The DMG carries the Claude Code plugin as well as the app. Installing it is
   // deliberately NOT allowed to stop the launch: if ~/.claude is unwritable or
   // managed elsewhere, the panel still opens and the notice says what happened.
+  // A staged runtime is made once and never updated, so a venv from before a dependency was
+  // added stays broken forever and the failure surfaces deep inside a run ("No module named
+  // 'bs4'" on every page). Check at launch, repair silently if we can, and say it plainly if
+  // we cannot. A bundled payload ships complete, so this only ever does work on a staged one.
+  let missing = provision.missingDeps(RUNTIME.python);
+  if (missing.length) {
+    console.error("[sutra] missing python deps:", missing.map(m => m[0]).join(", "));
+    const fixed = provision.repairDeps(RUNTIME);
+    if (fixed.ok) {
+      console.error("[sutra] repaired the runtime from requirements.txt");
+      missing = [];
+    } else {
+      console.error("[sutra] could not repair:", fixed.why);
+    }
+  }
+  if (missing.length) {
+    return fail("Sutra is missing something it needs", provision.depsMessage(missing));
+  }
+
   const wasProvisioned = provision.alreadyProvisioned();
   pluginReport = provision.installPlugin({ payload: RUNTIME.payload });
   if (pluginReport.status === "failed") {
@@ -381,6 +632,8 @@ async function boot() {
       "Find it with:  lsof -ti tcp:8330");
   }
 
+  startBrowserFetchService();
+  await new Promise((r) => setTimeout(r, 150));   // listen(0) binds on the next tick; the port must be known before spawn
   backend = startBackend();
   const up = await waitForOwnBackend(backend);
   if (!up) {
@@ -868,6 +1121,244 @@ ipcMain.handle("sutra:auth-login", async (e) => {
                       : { ok: false, error: "sign-in did not complete (exit " + code + ")" });
     });
   });
+});
+
+/* ── Codex sign-in ───────────────────────────────────────────────────────────
+ * Three verbs, DELIBERATELY SEPARATE from sutra:auth-login above rather than a
+ * parameterised version of it (founder direction 2026-09-04): the Claude verb
+ * is load-bearing and stays untouched. The SHAPE is copied on purpose --
+ * desktopControl gate, origin check, one in-flight child, drained output,
+ * SIGTERM->SIGKILL timeout, {ok} / {ok:false,error}.
+ *
+ * WHY THESE SPAWN HERE AND NOT BEHIND AN HTTP ROUTE. `codex login
+ * --with-api-key` reads the key from STDIN, and the backend port is
+ * unauthenticated -- org_api.py says as much where it gates the unsafe
+ * permission modes: anything that can reach the port could otherwise widen the
+ * agent's authority. A route that accepted an API key would be a credential
+ * WRITE surface any page on this machine could POST to. In the main process
+ * the key crosses one in-process IPC call and one pipe: no request body, no
+ * access log, no validation layer holding a copy of it.
+ *
+ * SUTRA STORES NOTHING. codex owns the credential -- it keeps exactly one, and
+ * either sign-in method REPLACES the other. These verbs only ask it to change;
+ * the panel then re-reads `codex login status` to see what happened.
+ *
+ * KNOWN LIMIT, same as the Claude verb: the child is spawned as the bare name
+ * `codex` off shellEnv()'s PATH. A hand-picked binary set in Settings
+ * (provider_bins) is NOT honoured here, because executing a path the RENDERER
+ * chose is a bigger hole than the inconvenience it fixes. The status probe
+ * does honour that override, so on such a machine the two can disagree about
+ * which codex answered.
+ */
+let codexChild = null;
+
+const CODEX_BROWSER_TIMEOUT = 180000;   // a human is signing in at chatgpt.com
+const CODEX_QUICK_TIMEOUT = 60000;      // no round-trip: key check, or logout
+
+function codexEnv() {
+  const env = { ...process.env, ...shellEnv() };
+  /* Mirrors the ANTHROPIC_ and CLAUDE_CODE_ strip in the Claude verb, for the
+     same reason: the operator's CLICK decides which credential gets stored,
+     not a variable that happens to be exported in their shell profile. The
+     status PROBE deliberately does NOT strip (see providers.codex_auth) -- it
+     has to report what codex reports. */
+  for (const k of Object.keys(env)) if (/^(OPENAI_|CODEX_)/.test(k)) delete env[k];
+  return env;
+}
+
+/* Codex failures are CLASSIFIED, never echoed. The Claude verb answers "exit
+   1", which is enough for a browser flow that either completed or did not; a
+   rejected API key is a likely and recoverable failure where "exit 1" tells
+   the operator nothing they can act on. But the raw line cannot be forwarded
+   either -- on the --with-api-key path stderr can contain the key that was
+   just typed. So stderr is matched against known shapes here and a FIXED
+   string is returned. Nothing derived from the child's output crosses the
+   bridge. */
+function codexError(code, stderrTail) {
+  const t = String(stderrTail || "").toLowerCase();
+  if (/401|unauthorized|invalid[_ -]?api[_ -]?key|incorrect api key/.test(t))
+    return "OpenAI rejected that API key.";
+  if (/quota|billing|payment|insufficient/.test(t))
+    return "OpenAI took the key but reported a billing or quota problem on that account.";
+  if (/network|dns|timed out|timeout|connection|tls|certificate/.test(t))
+    return "could not reach OpenAI to check that credential.";
+  return "codex exited " + code + " without a reason this app recognises. "
+       + "Running the same command in a terminal will show what it said.";
+}
+
+/* Both gates the Claude verb applies, in one place: the shell must own the
+   backend it is driving, and the caller must be the panel this window loaded. */
+function codexGate(e) {
+  if (!desktopControl()) {
+    return { ok: false, error: "Codex sign-in is only available when this window started its own backend" };
+  }
+  try {
+    if (new URL(e.senderFrame.url).origin !== ORIGIN) throw new Error("origin");
+  } catch { return { ok: false, error: "refused: unexpected caller" }; }
+  return null;
+}
+
+/* One in-flight child across all three verbs: they all end in the same single
+   credential, so letting a logout race a login would leave the operator's real
+   state decided by whichever process finished last. Invoking any codex verb
+   while one runs CANCELS it -- the panel's button doubles as Cancel, the way
+   the Claude sign-in button does. */
+function codexCancelIfBusy() {
+  if (!codexChild) return null;
+  const c = codexChild;
+  try { c.kill("SIGTERM"); } catch (err) {}
+  setTimeout(() => { try { c.kill("SIGKILL"); } catch (err) {} }, 5000);
+  return { ok: false, error: "cancelled" };
+}
+
+async function codexRun(e, argv, apiKey, timeout) {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  const cancelled = codexCancelIfBusy();
+  if (cancelled) return cancelled;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; codexChild = null; resolve(r); } };
+    let child;
+    try {
+      child = spawn("codex", argv, {
+        env: codexEnv(),
+        stdio: [apiKey ? "pipe" : "ignore", "pipe", "pipe"],
+      });
+    } catch (err) { return done({ ok: false, error: "could not start codex: " + err.message }); }
+    codexChild = child;
+    let tail = "";
+    child.stdout.resume();                       // drained, never forwarded
+    /* stderr is KEPT only long enough to classify, capped, and dropped with
+       this closure. It is never returned, logged, or written anywhere. */
+    child.stderr.on("data", (d) => { tail = (tail + d).slice(-2000); });
+    if (apiKey) {
+      /* The key reaches codex on STDIN and never as an argument, so it is not
+         in the process list for any other program on this machine to read. */
+      child.stdin.on("error", () => {});         // a child that died first must not throw
+      try { child.stdin.write(apiKey + "\n"); child.stdin.end(); }
+      catch (err) { /* close handler reports it */ }
+    }
+    const t = setTimeout(() => {
+      try { child.kill("SIGTERM"); } catch (err) {}
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch (err) {} }, 5000);
+    }, timeout);
+    child.on("error", (err) => { clearTimeout(t); done({ ok: false, error: String(err.message || err) }); });
+    child.on("close", (code) => {
+      clearTimeout(t);
+      done(code === 0 ? { ok: true } : { ok: false, error: codexError(code, tail) });
+    });
+  });
+}
+
+/* `codex login` -- the ChatGPT browser flow. Opens the browser, completes on
+   localhost, writes ~/.codex/auth.json. No prerequisites, which is why it is
+   the default action and why --device-auth is not offered: device-code needs
+   the operator to first enable it in their ChatGPT security settings. */
+ipcMain.handle("sutra:codex-login", async (e) => codexRun(e, ["login"], null, CODEX_BROWSER_TIMEOUT));
+
+/* `codex login --with-api-key` -- reads the key from stdin, not argv. */
+ipcMain.handle("sutra:codex-api-key", async (e, key) => {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  /* Cancel is checked BEFORE the key is validated. The panel's Cancel button
+     re-invokes the verb it started, and it has no key to re-send -- validating
+     first would answer "no API key was given" and leave the child running. */
+  const cancelled = codexCancelIfBusy();
+  if (cancelled) return cancelled;
+  const k = typeof key === "string" ? key.trim() : "";
+  if (!k) return { ok: false, error: "no API key was given" };
+  /* Refused rather than sent: whitespace inside means a broken paste, and a
+     newline would end the stdin write early and hand codex half a key. The
+     refusal names the paste, not the key -- the value itself is never quoted
+     back. */
+  if (/\s/.test(k)) return { ok: false, error: "that does not look like one key -- it has a space or a line break in it. Check the paste." };
+  if (k.length > 400) return { ok: false, error: "that is too long to be an API key. Check the paste." };
+  return codexRun(e, ["login", "--with-api-key"], k, CODEX_QUICK_TIMEOUT);
+});
+
+/* `codex logout` -- removes the stored credential. Sutra never had a copy, so
+   there is nothing on this side to clean up. */
+ipcMain.handle("sutra:codex-logout", async (e) => codexRun(e, ["logout"], null, CODEX_QUICK_TIMEOUT));
+
+/* ── DeepSeek sign-in ────────────────────────────────────────────────────────
+ * NOT A SPAWN. The codex verbs above run a CLI that owns its own credential;
+ * DeepSeek has no such CLI credential and every reader of the key is Python
+ * (app.py's ws_chat gate, deepseek_usage.py, the `deepseek --acp` spawn env),
+ * so the backend stores it in the macOS keychain and these verbs are one
+ * authenticated loopback POST each.
+ *
+ * WHAT MAKES THAT SAFE, given codexEnv()'s note that a route accepting an API
+ * key would be "a credential WRITE surface any page on this machine could POST
+ * to": these two routes are token-gated. api() below attaches
+ * x-sutra-desktop-token, the token is minted in this process and given only to
+ * the backend it spawned, and the renderer never has it -- so a page cannot
+ * reach them, and neither can a shell that merely ATTACHED to someone else's
+ * backend. desktopControl() is checked FIRST for exactly that case, the way
+ * sutra:teamsutra-action does, because a 403 from the server reads as a broken
+ * app rather than as a window without authority.
+ *
+ * THE KEY IS NEVER LOGGED OR ECHOED. It is trimmed, sent as a JSON body, and
+ * dropped when the handler returns. Nothing derived from a failure crosses back
+ * except a fixed string: api() rejects with the server's `detail`, and FastAPI
+ * validation errors can quote the offending INPUT -- which here is a live
+ * credential -- so err.message is deliberately NOT forwarded. Same discipline
+ * as codexError(), for the same reason, at a different layer.
+ *
+ * NOT SPAWN-CANCELLABLE, so no codexCancelIfBusy() equivalent: there is no
+ * child to kill and no human round trip to abandon. The probe the backend makes
+ * is bounded by its own 8s timeout inside the 20s here.
+ */
+const DEEPSEEK_KEY_TIMEOUT = 20000;   // backend probe is 8s; this is the ceiling
+
+/* Both gates the codex verbs apply, restated rather than shared: codex is out
+   of scope for this change and must not be touched to add a second caller. */
+function deepseekGate(e) {
+  if (!desktopControl()) {
+    return { ok: false, code: "NO_AUTHORITY", message:
+      "this window is attached to a backend it did not start, so it cannot " +
+      "save a credential there. Sign in from the window that started it." };
+  }
+  try {
+    if (new URL(e.senderFrame.url).origin !== ORIGIN) throw new Error("origin");
+  } catch { return { ok: false, code: "REFUSED", message: "refused: unexpected caller" }; }
+  return null;
+}
+
+const DEEPSEEK_UNREACHABLE = {
+  ok: false, code: "TRANSPORT", message:
+    "could not reach the Sutra backend to save the key, so nothing was saved. " +
+    "If this keeps happening, restart the app.",
+};
+
+ipcMain.handle("sutra:deepseek-key-save", async (e, key) => {
+  const refused = deepseekGate(e);
+  if (refused) return refused;
+  /* Trimmed HERE as well as in the backend: people paste with a trailing
+     newline, and the empty case is answered without a request. The refusals
+     name the paste and never quote the value. */
+  const k = typeof key === "string" ? key.trim() : "";
+  if (!k) return { ok: false, code: "NO_KEY", message: "Enter a key first." };
+  if (/\s/.test(k)) return { ok: false, code: "BAD_PASTE", message:
+    "that does not look like one key -- it has a space or a line break in it. Check the paste." };
+  try {
+    return await api("POST", "/api/providers/deepseek/key", { key: k },
+                     DEEPSEEK_KEY_TIMEOUT);
+  } catch (err) {
+    return DEEPSEEK_UNREACHABLE;                 /* err.message can quote the key */
+  }
+});
+
+ipcMain.handle("sutra:deepseek-key-remove", async (e) => {
+  const refused = deepseekGate(e);
+  if (refused) return refused;
+  try {
+    return await api("POST", "/api/providers/deepseek/key/remove", {},
+                     DEEPSEEK_KEY_TIMEOUT);
+  } catch (err) {
+    return { ok: false, code: "TRANSPORT", message:
+      "could not reach the Sutra backend, so the saved key was not removed." };
+  }
 });
 
 /* Native folder chooser for the panel's working-directory fields. The panel is

@@ -34,3 +34,41 @@ Repeatability note: verdict-level output is stable across back-to-back runs
 (identical rule/state/selector signatures); the reduced-motion finding's DETAIL
 text flakes with the live activity poll (`/api/activity`, 2s). Freeze it with a
 stubbed activity response in `boot` actions if byte-stable reports matter.
+
+## Python bytecode lives OUTSIDE this repo — clearing `__pycache__` does nothing
+
+This affects any check that swaps a `.py` file out and back, which includes the
+standard way of proving a new test actually fails against the bug it names
+("sabotage, run, expect red, restore, run, expect green").
+
+The system Python 3.9 behind `.venv` sets `sys.pycache_prefix`, so bytecode for
+`sutra-ui/*.py` is written to
+
+    ~/Library/Caches/com.apple.python/<absolute path to the source>/
+
+and NOT to a `__pycache__` directory in the tree. `find . -name __pycache__
+-delete` clears nothing, and a stale `.pyc` from the sabotaged version can be
+served after the source has been restored.
+
+This has already produced a false result (2026-09-07, budget.py Phase 4): the
+source on disk read `DEFAULT_WINDOWS = {"deepseek": 1000000}` while `import
+budget` returned `{}`, and `unittest` reported four regressions that did not
+exist. Believing that report would have meant "fixing" working code.
+
+**Clear the cache on BOTH sides of the swap**, not only before it:
+
+    PYC="$HOME/Library/Caches/com.apple.python$PWD"
+    rm -rf "$PYC"     # before the sabotage run
+    rm -rf "$PYC"     # and again after restoring
+
+**The tell**, whenever a test result contradicts source you can read: compare
+the two loaders. They must agree.
+
+    python -c "ns={}; exec(compile(open('budget.py').read(),'b','exec'),ns); print(ns['DEFAULT_WINDOWS'])"
+    python -c "import budget; print(budget.DEFAULT_WINDOWS)"
+
+The same hazard applies to a baseline captured by checking out `HEAD` versions
+of files, running the suite, and restoring — the pattern used to prove "zero
+regressions". A baseline taken without clearing is not evidence.
+
+JS suites are unaffected: `node` reads the sources on every run.

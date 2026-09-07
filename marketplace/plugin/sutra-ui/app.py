@@ -16,6 +16,7 @@ import struct
 import subprocess
 import sys
 import termios
+from html import escape as _html_escape
 from pathlib import Path
 
 from urllib.parse import urlparse
@@ -123,6 +124,11 @@ app.include_router(workspace_api.router)
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api
 app.include_router(optimus_api.router)
+# The Agents destination (2.239.0). Its routes live under /api/agents/<agent>/ so a
+# second agent is another prefix, not another top-level shape. The engine itself is
+# the `seo_agent` package: standalone, no import of anything in this app.
+import agents_api  # noqa: E402
+app.include_router(agents_api.router)
 HERE = Path(__file__).resolve().parent
 
 
@@ -380,7 +386,9 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     if model:
         args += ["--model", model]
 
-    fallback = providers.clean_model(opts.get("fallback_model"))
+    # "claude" is not a default here, it is a fact: build_agent_args builds
+    # CLAUDE's argv, and --fallback-model is Claude's flag.
+    fallback = providers.clean_model(opts.get("fallback_model"), "claude")
     if fallback and fallback != model:
         args += ["--fallback-model", fallback]
 
@@ -429,12 +437,53 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     return args
 
 
-def build_acp_args(agent_bin):
-    """The full argv for the ACP subprocess. Unlike build_agent_args, this
-    is spawn-time only and constant across every turn on this pane -- ACP's
-    model/permission-mode/session are protocol-level (session/new,
-    session/set_session_mode), not CLI flags, so there is no per-message
-    argv to build.
+def build_acp_args(agent_bin, model=None):
+    """The full argv for the ACP subprocess. Unlike build_agent_args, this is
+    spawn-time only -- ACP's permission-mode and session are protocol-level
+    (session/new, session/set_session_mode), so there is no per-message argv to
+    build. The MODEL is the exception, and the reason this takes an argument.
+
+    -m: THE MODEL WAS BEING DROPPED ON THE FLOOR. This function used to take
+    only the binary, so `chosen_model` -- resolved a few lines above the spawn,
+    validated, and announced to the client in the `start` frame -- reached
+    Claude's argv and nothing at all on DeepSeek's. The pane displayed a model
+    the CLI had never been told about, for every DeepSeek session this panel
+    has ever run. Measured on the wire (2026-09-07): with no -m the fork sends
+    `deepseek-v4-flash` whatever the panel claimed; with -m it sends what it
+    was given.
+
+    The caller passes a value that has already been through
+    providers.clean_model(value, "deepseek"), because the fork does NOT
+    validate this flag -- an unknown `deepseek-`-prefixed id is forwarded
+    verbatim to the API and anything else silently becomes `deepseek-chat`.
+    Passing "" or None means "no flag", which lets the CLI use its own default
+    rather than asserting one here.
+
+    Model is spawn-time here, and the reason recorded above this line was
+    WRONG. It said this build answers session/set_model with -32601. It does
+    not. Re-probed on the wire, 2026-09-07:
+
+        session/set_model                 -> {}        (implemented)
+        session/unstable_setSessionModel  -> -32601    (never was a method --
+                                                        it is the AGENT-SIDE
+                                                        HANDLER name for
+                                                        session/set_model, so
+                                                        calling it was always
+                                                        going to 404)
+
+    The original probe evidently tried the handler name, got -32601, and
+    generalised to both. A wrong recorded finding is worse than none: anyone
+    revisiting this would have believed the door was locked without checking.
+
+    THE RESPAWN DESIGN STANDS, on a better reason. `Session.setModel` is a bare
+    `config.setModel(modelId)` with NO validation -- it accepted
+    "totally-bogus-model-xyz" and "" with {} on the same probe -- so a success
+    here says nothing about whether the id is real, and the allow-list plus a
+    respawn remains the only thing that can refuse one. Whether set_model
+    changes the model MID-SESSION is untested: proving it needs a billed prompt
+    turn, which that probe deliberately did not run. So it is not "impossible",
+    it is "unverified and not needed" -- respawn already works, because
+    spawn_key is tuple(args) and this argv carries the model.
 
     --skip-trust: this CLI is spawned into whatever workdir the operator's
     Sutra workdir setting points at -- the same directory Claude is spawned
@@ -443,7 +492,10 @@ def build_acp_args(agent_bin):
     fork trust dialog stalls the process waiting for a TTY answer that
     never comes.
     """
-    return [agent_bin, "--acp", "--skip-trust"]
+    args = [agent_bin, "--acp", "--skip-trust"]
+    if model:
+        args += [providers.model_flag_for("deepseek") or "-m", model]
+    return args
 
 
 def _ensure_workdir(path=None):
@@ -494,7 +546,8 @@ def _asset_version() -> str:
     bump. Cheap -- a dozen stats on one page load."""
     root = HERE / "static"
     newest = 0.0
-    for p in [root / "panel.css", root / "panel.html", *sorted((root / "js").glob("*.js"))]:
+    for p in [root / "panel.css", root / "workspace.css", root / "agents.css", root / "panel.html",
+              *sorted((root / "js").glob("*.js"))]:
         try:
             m = p.stat().st_mtime
             if m > newest:
@@ -520,7 +573,45 @@ def _panel_html() -> str:
     the page always references the version of the JS/CSS currently on disk."""
     html = (HERE / "static" / "panel.html").read_text(encoding="utf-8")
     return (html.replace("__ASSETVER__", _asset_version())
+                .replace("__DECLARATIONS__", _declarations_attr())
                 .replace("__PANELTOKEN__", PANEL_TOKEN))
+
+
+def _declarations_attr() -> str:
+    """WHICH CONTROLS A PANE MAY SHOW, carried BY THE PAGE instead of arriving
+    behind a fetch. HTML-escaped JSON for a meta `content` attribute.
+
+    Why this is in the page. turn_options_by_provider / permission_modes_by_
+    provider tell the panel which controls a pane's provider can honour, and
+    they reached the client only via GET /api/settings. Until that resolved,
+    the maps were empty -- and an empty map means NOT FETCHED, which the client
+    answers by rendering Claude's full set. So a DeepSeek pane showed Claude's
+    five turn options for the whole boot window, which is exactly when an
+    operator opens that menu: before asking anything.
+
+    The two ways out were "hide the controls until the maps arrive" (that
+    changes CLAUDE's render, and a control that blinks out is its own defect)
+    and this one -- make the declaration available before the first paint, so
+    there is no window in which the answer is unknown. The client keeps its
+    empty-map fallback for a page served without this token.
+
+    Never raises. A panel that will not load is worse than one whose first
+    paint is momentarily ungated, so a failure here degrades to exactly the
+    old behaviour rather than a 500 on the page itself.
+    """
+    try:
+        decl = {
+            # active_provider(), not load_settings()["provider"] -- same
+            # resolution (env, then settings.json, then first runnable) without
+            # the keychain probe load_settings does for deepseek_auth. This runs
+            # on every page load.
+            "provider": providers.active_provider() or "",
+            "turn_options_by_provider": providers.all_turn_options_by_provider(),
+            "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
+        }
+        return _html_escape(json.dumps(decl, separators=(",", ":")), quote=True)
+    except Exception:
+        return ""
 
 
 # The page itself must never be cached, or the browser serves an old page whose
@@ -1272,6 +1363,24 @@ async def _default_delegate_spawner(mission):
 
 
 @app.on_event("startup")
+async def _deepseek_pairing_code():
+    """Print the one-time DeepSeek sign-in code, when this process offers one.
+
+    HERE AND NOT AT IMPORT. The test suites import app.py in-process, and a
+    module-level mint would put a code in every one of them and print it into
+    their output. A startup hook fires once, only when a server is actually
+    serving.
+
+    deepseek_session.arm() decides whether to mint at all -- it declines when
+    SUTRA_DESKTOP_TOKEN is set, because the Electron shell already owns the
+    key-writing channel and a second door would exist for no reason.
+    """
+    import deepseek_session
+    deepseek_session.arm()
+    deepseek_session.print_banner()
+
+
+@app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
         try:
@@ -1871,11 +1980,25 @@ async def ws_chat(ws: WebSocket):
         # REFUSES a stray key; DeepSeek has no subscription path at all and
         # REQUIRES one. Refused here, at connect time, rather than left to
         # fail inside spawn() as a dead socket with no text.
-        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        #
+        # THROUGH THE RESOLVER, not os.environ. This read was its own
+        # os.environ.get("DEEPSEEK_API_KEY") and deepseek_usage.py's balance
+        # fetch was another, so neither could see a key saved in the keychain
+        # and the two would have disagreed about whether DeepSeek was usable.
+        # providers.deepseek_key_for_request() is the one resolution path, and
+        # it is read HERE, per connect, so signing in takes effect on the next
+        # message instead of the next restart.
+        #
+        # STILL REACHABLE with the readiness gate in place. An unkeyed DeepSeek
+        # is no longer runnable, so the `prov["runnable"]` refusal above now
+        # catches the ordinary case; what is left for this arm is the narrow
+        # one -- a key that vanished between that check and this line, or a
+        # settings marker whose keychain item is gone. The resolver's reason
+        # names which.
+        deepseek_key, why = providers.deepseek_key_for_request()
         if not deepseek_key:
             await ws.send_json({"type": "error", "code": "provider-missing", "detail":
-                "Active provider is 'deepseek', but DEEPSEEK_API_KEY is not set "
-                "in the server environment. Export it and restart the server."})
+                "Active provider is 'deepseek', but %s" % why})
             await ws.close()
             return
     elif active_id != "claude":
@@ -2081,8 +2204,8 @@ async def ws_chat(ws: WebSocket):
                     # payload has to be sized before it is built.
                     plan = switch.plan(
                         sutra_id, active_id, next_message=msg,
-                        model=(providers.clean_model(model)
-                               or providers.stored_model()))
+                        model=(providers.clean_model(model, active_id)
+                               or providers.stored_model(active_id)))
                     if plan.get("switch"):
                         plan = switch_egress.prepare(plan)
                     if plan.get("switch"):
@@ -2122,7 +2245,8 @@ async def ws_chat(ws: WebSocket):
             # validated against the allow-list -- an arbitrary string here would be
             # passed straight to the CLI, where a typo fails as a dead socket several
             # seconds later instead of as a refusal now.
-            chosen_model = providers.clean_model(model) or providers.stored_model()
+            chosen_model = (providers.clean_model(model, active_id)
+                            or providers.stored_model(active_id))
             # Everything else the client may ask for this turn, validated in
             # build_agent_args rather than trusted here.
             #
@@ -2144,9 +2268,12 @@ async def ws_chat(ws: WebSocket):
                                         session_id=None, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
             else:
-                # Constant every turn -- model/permission-mode are set once
-                # in new_session below, not per message.
-                args = build_acp_args(agent_bin)
+                # Permission-mode is set once in new_session below, not per
+                # message. The MODEL is spawn-time argv (ACP exposes no
+                # set_model on this build), so it goes here -- and because
+                # spawn_key is tuple(args), changing it respawns through the
+                # same path a permission-mode change already uses.
+                args = build_acp_args(agent_bin, chosen_model)
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
@@ -2185,6 +2312,15 @@ async def ws_chat(ws: WebSocket):
             # while this turn was failing. A replay continues the turn that is
             # already on screen; it does not announce a new one.
             if not payload.get("_replay"):
+                # `model` here is now true on BOTH paths. It always was on
+                # Claude's (build_agent_args carries it into --model) and never
+                # was on DeepSeek's, where build_acp_args discarded it -- so
+                # this frame asserted a model the CLI had not been given. Both
+                # arms above now build argv from this same `chosen_model`, and
+                # TestDeepSeekSpawnedModel.test_announced_model_is_the_spawned_model
+                # asserts it against the ACTUAL argv the CLI was launched with
+                # (recorded from inside the spawned process by
+                # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
                 spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
@@ -2212,6 +2348,26 @@ async def ws_chat(ws: WebSocket):
                         rt.kill_group()
                         rt.clear()
                         continue
+                    # The permission mode the operator picked did not survive
+                    # the trip to this provider. SAID, once per spawn, because
+                    # the `provider` frame above already told the pane it would
+                    # run `perm_mode` -- and that frame is sent before the
+                    # session exists, so it cannot know. Without this the pane
+                    # keeps displaying a mode nothing is enforcing, which is
+                    # the bug the runtime fix half-solves: the runtime now
+                    # knows the truth, and this is the only channel that can
+                    # carry it to the operator.
+                    #
+                    # A NEW FRAME TYPE, not the existing `notice`. `notice` is
+                    # emitted server-side in three places and the client has NO
+                    # handler for any of them -- it is dropped on the floor
+                    # today (checked, not assumed). Reusing it would look like
+                    # reporting and report nothing. Claude never sends this
+                    # frame, so nothing about Claude's rendering changes.
+                    if rt.acp_mode_note:
+                        await ws.send_json(dict(rt.acp_mode_note,
+                                                type="mode_note",
+                                                provider=active_id))
             proc = rt.proc
 
             if active_id == "claude":

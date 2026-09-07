@@ -319,6 +319,10 @@ const S = {
   /* sessionId -> the last switch frame the server sent, so the thread can show
      a marker at the point the provider changed (or say why it did not). */
   switchNote:{},
+  /* sessionId -> the last mode_note frame: the permission mode this pane asked
+     for is not the one running, and why. Empty for every Claude pane -- the
+     server only sends it from the ACP path, and only when they diverge. */
+  modeNote:{},
   /* Per-session actions menu (Feature A). sessMenu = the session id whose menu
      popover is open (one at a time). sessRename = the session id whose inline
      rename input is showing, or null. Pinned/unread/group are localStorage-
@@ -331,7 +335,37 @@ const S = {
   ui: loadLayout(),
   /* Settings screen: the in-flight/failed state of a POST, so a refused write
      shows the server's reason instead of silently doing nothing. */
-  setBusy:null, setError:null, setOk:null
+  setBusy:null, setError:null, setOk:null,
+  /* Codex sign-in (AI Provider screen). codexAuth is the last answer from
+     GET /api/providers/codex/auth -- null means "not asked yet", which the row
+     renders as reading, never as signed out. codexBusy is the verb in flight
+     ("login" | "apikey" | "logout"), so the button that started it can double
+     as Cancel. codexKeyOpen is the API-key field being shown.
+
+     THE KEY ITSELF IS NEVER HELD HERE. It is read off the input at click time,
+     handed to the bridge, and dropped -- so a re-render clears it and nothing
+     in this object ever carries credential material.
+
+     codexProbing guards the probe against wire(), which re-enters the loader
+     on every render -- see loadCodexAuth.
+
+     codexPolling is a sign-in being WATCHED -- set while the panel polls the
+     probe during a browser-transport login, so wire() can adopt a login that
+     is still running after a reload without starting a second poller. */
+  codexAuth:null, codexProbing:false, codexPolling:false,
+  codexBusy:null, codexMsg:null, codexKeyOpen:false,
+  /* DeepSeek sign-in (AI Provider screen). NO `deepseekAuth` twin to codexAuth:
+     that state rides on SETTINGS.deepseek_auth, because reading it is a
+     settings read rather than a subprocess, so it comes with the settings
+     answer and there is no probe to track and no loading state to hold.
+     deepseekBusy is the verb in flight ("save" | "remove"), which disables the field
+     and the buttons while DeepSeek is being asked whether the key works.
+     deepseekMsgOk splits the outcome so a refusal and a success do not render in the
+     same colour.
+
+     THE KEY IS NEVER HELD HERE either -- read off the input at click time,
+     handed to the bridge, and dropped. Same discipline as codex above. */
+  deepseekBusy:null, deepseekMsg:null, deepseekMsgOk:false
 };
 /* The real draft lives server-side at DRAFTS_DIR (outside SUTRA_NATIVE_HOME) -- boot()
    fetches it into S.draft on startup. saveDraft() posts the current S.draft back; callers
@@ -540,7 +574,10 @@ const ICON = {
      already uses -- two nav rows with the same glyph are two rows nobody can
      tell apart at 14px. */
   usage:'<path d="M4.2 17a8.5 8.5 0 1115.6 0"/><path d="M12 17l4.2-5.2"/><circle cx="12" cy="17" r="1.3"/>',
-  evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>'
+  evals:'<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8.5 12.2l2.4 2.4 4.6-5.2"/><path d="M8.5 17h7"/>',
+  /* Agents (2.239.0): a spark -- something that works on its own. Not the chat
+     bubble (Chats) and not the clock (Routines): three rows, three glyphs. */
+  agents:'<path d="M12 3v3.5M12 17.5V21M3 12h3.5M17.5 12H21M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/><circle cx="12" cy="12" r="2.6"/>'
 };
 /* ── Files bridge helpers ────────────────────────────────────────────────────
    A Knowledge row can open its document in Files. The path arrives from the
@@ -621,7 +658,8 @@ function railSpec(){
        c:(S.auto ? (((S.auto.dispatcher||{}).ledger||{}).rows) : undefined)},
       /* Routines sit next to Automation because both are "what runs without me",
          but they are not the same: Automation REPORTS on subsystems, a routine is
-         something the operator creates. Count withheld until read, like Git. */
+         something the operator creates. Count withheld until read, like Git.
+         Rendered as a Settings -> Automation plane row again since 2026-09-04. */
       {id:"routines", n:"Routines",  i:"rout",
        c:(S.rt ? (S.rt.routines||[]).length : undefined)},
       /* Teamsutra: tasks filed from the Ask Sutra selection chat. The count is
@@ -671,14 +709,16 @@ function railSpec(){
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
-      /* "AI Assistant", not "Settings": this row sits inside the Settings
+      /* "AI Provider", not "Settings": this row sits inside the Settings
          destination, so the old label repeated its parent and told an operator
          nothing about what was behind it. The screen configures which
-         assistant runs, what it may do without asking, and where it works. */
+         provider runs, what it may do without asking, and where it works.
+         Named for the provider on founder direction 2026-09-07 -- the word
+         the composer row and /api/providers already use for the same thing. */
       /* Carries the usage figure now that Usage is a section of this screen.
          Provider-aware: a percentage while DeepSeek is selected would describe
          a plan the panel is not using. See providerUsage. */
-      {id:"settings",n:"AI Assistant", i:"gear",
+      {id:"settings",n:"AI Provider", i:"gear",
        c:((providerUsage() || {}).short) ?? undefined}
     ]
   };
@@ -722,9 +762,9 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", routines:"Routines",
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agents",
                      org:"Org", team:"Help", settings:"Settings" };
-const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", routines:"rout",
+const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
                      org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
@@ -878,22 +918,47 @@ function renderPlane(){
    renders as its own kind of blank. That matches the existing rule for Claude:
    the rail withholds a figure until the screen has been read, so it never
    asserts a number nobody fetched. */
-function providerUsage(){
-  if (SETTINGS && SETTINGS.provider === "deepseek"){
-    const u = S.deepseekUsage;
-    const bal = u && u.available && (u.balances || [])[0];
-    if (!bal || bal.total_balance == null) return null;
-    const amt = String(bal.total_balance);
-    return { short: "$" + amt,
-             long:  (bal.currency || "USD") + " " + amt + " balance",
-             row:   "$" + amt + " balance" };
+function usageKindOf(pid){
+  /* WHAT KIND of usage fact a provider reports, declared on its catalog row and
+     shipped in GET /api/providers. Reading it here rather than branching on the
+     id is what stops the third provider inheriting the second's meaning: the
+     old shape was `if (deepseek) balance; else Anthropic percentage`, so Codex
+     would have rendered Claude's window percentage on a Codex session the day
+     it became selectable. Absent row or absent field means "none" -- withhold,
+     never borrow. */
+  const p = (PROVIDERS || []).find(x => x.id === pid);
+  return (p && p.usage_kind) || "none";
+}
+
+function providerUsage(pid){
+  /* `pid` defaults to the globally selected provider because two of the three
+     callers (the rail badge and the footer) describe the app, not a pane. The
+     pane row passes its OWN provider -- see paneMenuHtml. */
+  const id = pid || (SETTINGS || {}).provider;
+  switch (usageKindOf(id)){
+    case "balance": {
+      const u = S.deepseekUsage;
+      const bal = u && u.available && (u.balances || [])[0];
+      if (!bal || bal.total_balance == null) return null;
+      const amt = String(bal.total_balance);
+      return { short: "$" + amt,
+               long:  (bal.currency || "USD") + " " + amt + " balance",
+               row:   "$" + amt + " balance" };
+    }
+    case "window-percent": {
+      const u = S.usage;
+      if (!u || !u.available) return null;
+      const pct = Math.round((((u.limits || []).find(r => r.active)
+                               || (u.limits || [])[0] || {}).percent) ?? NaN);
+      if (!Number.isFinite(pct)) return null;
+      return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
+    }
+    default:
+      /* A provider with no usage concept. null, and every caller renders its
+         own kind of blank -- which is the same thing they already do before a
+         figure has been read, so no caller needed a new branch for this. */
+      return null;
   }
-  const u = S.usage;
-  if (!u || !u.available) return null;
-  const pct = Math.round((((u.limits || []).find(r => r.active)
-                           || (u.limits || [])[0] || {}).percent) ?? NaN);
-  if (!Number.isFinite(pct)) return null;
-  return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
 }
 
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and

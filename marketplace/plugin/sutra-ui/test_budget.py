@@ -29,7 +29,7 @@ class WindowTest(unittest.TestCase):
     def test_deepseek_window_is_declared_not_assumed(self):
         """Verified by a live GET /models on 2026-09-02: every current V4
         model reports 1M."""
-        w = budget.window_for("deepseek")
+        w = budget.window_for("deepseek", "deepseek-v4-pro")
         self.assertEqual(w["tokens"], 1000000)
         self.assertEqual(w["source"], "declared")
 
@@ -56,18 +56,84 @@ class WindowTest(unittest.TestCase):
         self.assertEqual(budget.window_for("gemini")["source"], "assumed-floor")
 
     def test_floor_is_the_smallest_declared_window(self):
-        self.assertEqual(budget.FLOOR_WINDOW, min(budget.CLAUDE_WINDOWS.values()))
+        self.assertEqual(
+            budget.FLOOR_WINDOW,
+            min(w for windows in budget.WINDOWS.values() for w in windows.values()))
 
     def test_every_catalogued_model_has_a_window_or_is_the_default(self):
         """Pins the window table to the picker, so a new model entry cannot
-        silently inherit a wrong ceiling."""
-        for m in providers.MODELS:
-            mid = m["id"]
-            if mid == "":
-                continue   # "CLI default" is the documented floor case
-            self.assertIn(mid, budget.CLAUDE_WINDOWS,
-                          "model %r is in the picker but has no declared "
-                          "context window" % mid)
+        silently inherit a wrong ceiling.
+
+        EVERY provider that has a picker, not just Claude's. A DeepSeek entry
+        added to the catalogue without a window here would resolve through the
+        unknown-model path, and this is the thing that says so at test time
+        instead of at a rejected request."""
+        for spec in providers._CATALOG:
+            pid = spec["id"]
+            for m in providers.models_for(pid):
+                mid = m["id"]
+                if mid == "":
+                    continue   # "CLI default" -- see the empty-id tests below
+                self.assertIn(mid, budget.WINDOWS.get(pid, {}),
+                              "%s model %r is in the picker but has no "
+                              "declared context window" % (pid, mid))
+
+    def test_no_provider_declares_a_window_for_a_model_it_does_not_offer(self):
+        """The other direction. A window left behind after a model is retired
+        is a claim about something the panel can no longer run, and the next
+        person to read the table would believe it."""
+        for pid, windows in budget.WINDOWS.items():
+            offered = providers.model_ids_for(pid)
+            for mid in windows:
+                self.assertIn(mid, offered,
+                              "%s declares a window for %r, which is not in "
+                              "its model list" % (pid, mid))
+
+    def test_deepseeks_cli_default_is_its_real_window_not_the_floor(self):
+        """4.2, THE REGRESSION GUARD. "" is not an edge case for DeepSeek -- it
+        is the shipped default, what every session runs on until someone picks
+        something else.
+
+        Before the table was keyed by model, window_for("deepseek", ...) ignored
+        the model and returned a flat 1M. Keying by model WITHOUT a declared
+        per-provider default would have sent "" down the unknown path to
+        FLOOR_WINDOW: 200K instead of 1M, an 800K under-count feeding the switch
+        and compaction paths, reported by nothing."""
+        w = budget.window_for("deepseek", "")
+        self.assertEqual(w["tokens"], 1000000,
+                         "DeepSeek's CLI default fell to the floor")
+        self.assertEqual(w["source"], "provider-default")
+        self.assertNotEqual(w["tokens"], budget.FLOOR_WINDOW)
+        # and the arithmetic downstream, which is where it would have bitten
+        self.assertGreater(budget.for_target("deepseek", "")["budget_chars"],
+                           budget.for_target("claude", "")["budget_chars"] * 4)
+
+    def test_a_provider_default_is_declared_for_every_provider_whose_default_is_knowable(self):
+        """Makes the floor-drop impossible rather than merely caught.
+
+        A provider with a picker resolves "" one of two ways: to a window it
+        declares as its default, or to the floor. The floor is only honest when
+        the panel genuinely cannot know what the CLI will pick. Claude is that
+        case and is exempt BY NAME here -- so adding a fifth provider with a
+        picker fails this test until someone states which case it is, rather
+        than silently inheriting the pessimistic one."""
+        UNKNOWABLE_DEFAULT = {"claude"}   # the CLI's own configured default
+        for spec in providers._CATALOG:
+            pid = spec["id"]
+            if not providers.models_for(pid) or pid in UNKNOWABLE_DEFAULT:
+                continue
+            self.assertIn(pid, budget.DEFAULT_WINDOWS,
+                          "%s offers a model picker but does not declare what "
+                          '"" resolves to, so it would silently take the %d '
+                          "floor" % (pid, budget.FLOOR_WINDOW))
+
+    def test_claudes_cli_default_still_falls_to_the_floor(self):
+        """The exemption above is not a loophole: Claude's "" is genuinely
+        unknowable to this panel, so the floor stays the honest answer and this
+        pins that it did not drift into a guess."""
+        w = budget.window_for("claude", "")
+        self.assertEqual(w["source"], "assumed-floor")
+        self.assertEqual(w["tokens"], budget.FLOOR_WINDOW)
 
 
 class ArithmeticTest(unittest.TestCase):

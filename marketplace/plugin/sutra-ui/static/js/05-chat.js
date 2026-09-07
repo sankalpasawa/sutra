@@ -478,6 +478,311 @@ SCREENS.now = () => `
     <p>Placeholder — the Now surface is not designed yet. Everything else in the shell is live.</p>
   </div>`;
 
+/* ── Codex sign-in ─────────────────────────────────────────────────────────
+   A block of its own. NOT part of provRow above, and NOT an extension of the
+   Claude account card in 04-screens.js -- founder direction 2026-09-04: the
+   Claude and DeepSeek surfaces stay untouched and this shape is copied
+   rather than shared.
+
+   WHY IT SITS AFTER THE RADIOGROUP RATHER THAN INSIDE THE CODEX ROW. provRow
+   renders each provider as a <button>, and a button cannot contain buttons;
+   and role="radiogroup" should contain radios only, so parking three actions
+   inside it would misdescribe the group to a screen reader.
+
+   WHY THE BLOCK EXISTS AT ALL, when codex still cannot be selected: the two
+   ways to pay for codex cost completely different amounts for identical
+   output -- a ChatGPT plan already being paid for, or per-token billing --
+   and nothing in this panel showed which one was in play. Surfacing that is
+   the point. Signing in is NOT selectability, and the block says so instead
+   of implying otherwise.
+
+   ONE ACTIVE MODE PLUS A SWITCH, never two toggles: codex stores exactly one
+   credential and each method replaces the other, so two independently
+   switchable rows would misdescribe the thing being configured. */
+function codexAuthHtml(){
+  /* Existence check only. The row above already prints Codex's `reason` word
+     for word -- both protocols, the version pin and the install path -- so
+     repeating it here said the same paragraph twice on one screen. The block
+     states the one thing the row does not: signing in is not selectability. */
+  if (!PROVIDERS.some(x => x.id === "codex")) return "";
+  const a = S.codexAuth;
+  /* TRANSPORT IS PER ACTION, not per bridge.
+
+     Sign in, sign out and cancel exist over BOTH transports: the desktop
+     shell's IPC verbs, and POST /api/providers/codex/{login,login/cancel,
+     logout} for a browser. So those buttons are always offered.
+
+     The API KEY is bridge-only and stays that way. It reaches codex on stdin,
+     and routing it through HTTP would put a live credential in a request body,
+     through the server's logging surface, and into its memory. None of that is
+     about who may call the route, so no origin guard makes it acceptable. In a
+     browser that one action names the CLI instead.
+
+     Presence of the verb is the capability signal, exactly as the Claude
+     account card treats authLogin: a page cannot conjure a preload. */
+  const bridge = !!(window.sutra && window.sutra.codexLogin);
+  const canKey = bridge;
+  /* A sign-in the SERVER is still running counts as busy even when this page
+     knows nothing about it -- a reload loses S.codexBusy, and a row reading
+     "Not signed in" while a child is about to change the credential is the row
+     lying about state. Normalised here so Cancel and the waiting copy below
+     need no special case. */
+  const busy = S.codexBusy || (a && a.login_in_flight ? "login" : null);
+  const msg = !busy && S.codexMsg
+    ? `<span class="why" style="margin-left:8px">${esc(S.codexMsg)}</span>` : "";
+
+  /* label(verb) -- the same button cancels the thing it started. */
+  const btn = (verb, text) => `<button class="btn" type="button" data-codex="${esc(verb)}"
+      ${busy && busy !== verb ? "disabled" : ""}>${
+      busy === verb ? "Cancel" : esc(text)}</button>`;
+  /* THE ESCAPE HATCH IS SHOWN WHILE WAITING, not only after a failure.
+     codex prints the sign-in URL as a fallback for when the browser does not
+     open, and neither transport forwards the child's output -- so that URL is
+     invisible here by design. Someone staring at a spinner because no window
+     appeared needs the way through AT THAT MOMENT, not in an error message
+     three minutes later. */
+  const waiting = busy === "login"
+    ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…
+       If no window opened, run <code>codex login</code> in a terminal.</span>`
+    : busy ? `<span class="why" style="margin-left:8px">Asking codex…</span>` : "";
+
+  let head, actions;
+  if (!a) {
+    /* Not asked yet is NOT signed out. Saying "not signed in" here would be
+       a claim about billing made before anything was read. */
+    head = `<span class="why">Reading the Codex sign-in…</span>`;
+    actions = "";
+  } else if (a.state === "no_binary") {
+    head = `<span class="why">${esc(a.detail || "the codex CLI is not on PATH")}</span>`;
+    actions = "";
+  } else if (a.state === "unknown") {
+    /* Asked and could not tell. No mode is invented: the wrong guess here
+       tells someone paying per token that their usage is included. Sign-in
+       is still offered because it SETS the state rather than reporting it;
+       Sign out is not, because it would imply we know there is something to
+       sign out of. */
+    head = `<span class="why"><b>Could not tell which credential Codex is using.</b>
+      ${esc(a.detail || "")}</span>`;
+    actions = `${btn("login", "Sign in with ChatGPT")}${
+      canKey ? " " + btn("apikey", "Add API key") : ""}`;
+  } else if (a.state === "api_key") {
+    head = `<b>API key${a.key_display ? " " + esc(a.key_display) : ""}</b>
+      <span class="why">· ${esc(a.billing || "billed per token")}</span>`;
+    actions = `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}`;
+  } else if (a.state === "chatgpt") {
+    head = `<b>Signed in with ChatGPT</b>
+      <span class="why">· ${esc(a.billing || "usage included in your plan")}</span>`;
+    actions = `${btn("logout", "Sign out")}${
+      canKey ? " " + btn("apikey", "Use an API key instead") : ""}`;
+  } else {
+    head = `<b>Not signed in</b>`;
+    actions = `${btn("login", "Sign in with ChatGPT")}
+       <span class="why">usage included in your Plus/Pro/Business plan</span>${
+       canKey ? `<div style="margin-top:6px">${btn("apikey", "Add API key")}
+       <span class="why">pay for what you use</span></div>` : ""}`;
+  }
+
+  /* The API-key field. type=password so a shoulder does not read it, and
+     DELIBERATELY uncontrolled -- no value bound to state, so the typed key
+     lives only in the DOM node until the click reads it, and any re-render
+     clears it. */
+  const keyForm = S.codexKeyOpen && canKey ? `
+    <div class="wdrow" style="margin-top:8px">
+      <input type="password" class="wdin" data-codex-key spellcheck="false"
+             autocapitalize="off" autocorrect="off" autocomplete="off"
+             aria-label="OpenAI API key" placeholder="sk-proj-…">
+      <button class="btn" type="button" data-codex="apikey:save"
+        ${busy ? "disabled" : ""}>Use this key</button>
+      <button class="btn" type="button" data-codex="apikey:cancel">Cancel</button>
+    </div>
+    <p class="why" style="margin:6px 0 0">The key goes straight to the codex CLI and
+      Sutra keeps no copy of it — not in settings, not on disk, not in this page after
+      you click. Codex stores one credential, so this replaces whatever it holds now.</p>` : "";
+
+  return `
+    <div class="note" style="margin-top:9px">
+      <div><b>OpenAI Codex sign-in</b></div>
+      <p class="why" style="margin:4px 0 8px">Which OpenAI account Codex is
+        using, and what it costs you: a ChatGPT plan covers it, an API key bills
+        per token. Signing in here does <b>not</b> make Codex selectable above.</p>
+      <div>${head}</div>
+      ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
+      ${keyForm}
+      ${!canKey ? `<p class="why" style="margin:8px 0 0">Signing in with ChatGPT and
+        signing out work from this page. Signing in with an <b>API key</b> does not —
+        use the desktop app, or run <code>codex login --with-api-key</code> in a
+        terminal.</p>` : ""}
+    </div>`;
+}
+
+/* ── the DeepSeek row's sign-in ──────────────────────────────────────────────
+   Sits DIRECTLY UNDER the DeepSeek row, which is why it is emitted after the
+   radiogroup rather than inside provRow(): a row IS a <button role="radio">,
+   and an <input> plus two buttons nested in one is invalid markup whose clicks
+   would toggle the radio. It lands under DeepSeek because deepseek is last in
+   providers._CATALOG -- a coupling, so test_provider_detect asserts that order
+   and this block renders nothing if the id is absent from the list.
+
+   NOT A COPY OF codexAuthHtml(). The states are different because the
+   credential is: codex reports which of two BILLING MODES its one credential
+   is in, and signing in there does not make codex selectable. Here a key is
+   half of whether the provider runs at all, so this block's only job is to
+   move the row between not-signed-in and selectable.
+
+   THE KEY IS NEVER IN THIS FUNCTION. `mask` comes from settings.json, built in
+   the backend from the last four characters. The input is uncontrolled -- no
+   value bound to state -- so the typed key lives only in the DOM node until the
+   click reads it, and any re-render clears it. */
+function deepseekAuthHtml(){
+  const a = SETTINGS && SETTINGS.deepseek_auth;
+  if (!a) return "";                       /* older backend: say nothing */
+  if (!(PROVIDERS || []).some(p => p.id === "deepseek")) return "";
+
+  const bridge = deepseekBridge();
+  const busy = S.deepseekBusy;
+  const msg = S.deepseekMsg
+    ? `<div class="note ${S.deepseekMsgOk ? "" : "b"}" style="margin:8px 0 0">${esc(S.deepseekMsg)}</div>`
+    : "";
+  const vars = (a.env_vars || []).map(v => `<code>${esc(v)}</code>`).join(" or ");
+
+  /* CAN THIS PAGE WRITE A KEY, and if not, is there something it can do about
+     it? Two lanes: the desktop bridge, or a session token this page traded the
+     server's one-time code for. The question used to be "is there a bridge",
+     which is why a browser got a Remove button that did nothing at all. */
+  const canWrite = deepseekCanWrite();
+  const sess = a.browser_session || {};
+
+  /* The step BEFORE the key field on a CLI-run server. Shared by the
+     not-signed-in and signed-in renders, because sign-OUT needs the same
+     authorisation sign-in does -- offering Remove without it is the dead
+     control this replaces.
+
+     THE CODE IS NOT A SECRET THIS PAGE KEEPS. It goes straight back to the
+     server in exchange for the token, the field is cleared, and it is
+     single-use, so a screenshot of this box authorises nothing afterwards.
+     type="text" for that reason: masking it would only make the paste harder
+     to check. */
+  const pairBlock = () => `
+      <p class="why" style="margin:4px 0 8px">Saving a key from a browser needs
+        this server's <b>sign-in code</b>. It printed one when it started — look
+        in the terminal you launched it from. It works once.</p>
+      <div class="wdrow">
+        <input type="text" class="wdin" data-deepseek-code spellcheck="false"
+               autocapitalize="characters" autocorrect="off" autocomplete="off"
+               ${busy ? "disabled" : ""}
+               aria-label="Sutra sign-in code" placeholder="XXXX-XXXX-XXXX-XXXX">
+        <button class="btn" type="button" data-deepseek="pair"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "pair" ? "Checking…" : "Unlock"}</button>
+      </div>
+      <p class="why" style="margin:6px 0 0">Or set ${vars} before starting the
+        server.</p>`;
+
+  /* AN ENV VAR WINS: the field is disabled and NAMES the variable. Letting
+     someone type into a box whose value would be shadowed is the "save a key
+     that silently has no effect" failure -- they would see "Saved", and the old
+     key would keep answering. */
+  if (a.state === "env"){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek key: <code>${esc(a.env_var)}</code></b>
+        <span class="pill p-ok">in use</span></div>
+      <p class="why" style="margin:4px 0 0">Set in this server's environment
+        ${a.mask ? `(<code>${esc(a.mask)}</code>)` : ""}, which wins over anything
+        saved in the app. Signing in here is switched off rather than hidden, so
+        you can see why: a key saved now would never be used.${
+        a.stored_mask ? ` There <b>is</b> a saved key underneath
+        (<code>${esc(a.stored_mask)}</code>) — unset <code>${esc(a.env_var)}</code>
+        and restart the server and it takes over.` : ""}</p>
+      <div class="wdrow" style="margin-top:8px">
+        <input type="password" class="wdin" disabled
+               aria-label="DeepSeek API key" placeholder="sk-…">
+        <button class="btn" type="button" disabled>Save</button>
+      </div>
+    </div>`;
+  }
+
+  /* SIGNED IN via the keychain. Mask + when + Remove. */
+  if (a.state === "stored"){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek key <code>${esc(a.mask)}</code></b>
+        <span class="pill p-ok">saved on this Mac</span></div>
+      <p class="why" style="margin:4px 0 0">In your login keychain${
+        a.saved_at ? `, saved ${esc(agRelTime(a.saved_at))}` : ""}. Sutra keeps
+        only the four characters above, and nothing needs restarting.</p>
+      ${canWrite ? `<p style="margin:8px 0 0">
+        <button class="btn" type="button" data-deepseek="remove"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "remove" ? "Removing…" : "Remove"}</button>
+        <span class="why">DeepSeek stops being selectable above.</span></p>`
+      : sess.available ? `<div style="margin-top:8px"><b>Unlock this page to
+          remove it</b>${pairBlock()}</div>`
+      : `<p class="why" style="margin:8px 0 0">To remove it from a browser,
+          restart the server and use the sign-in code it prints.</p>`}
+      ${msg}
+    </div>`;
+  }
+
+  /* NOT SIGNED IN. Two ways this can be un-actionable, and each says which. */
+  if (!a.store_available){
+    return `
+    <div class="note b" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key, and this machine cannot save one</b></div>
+      <p class="why" style="margin:4px 0 0">${esc(a.store_reason || "")}
+        Set ${vars} before starting the server.</p>
+    </div>`;
+  }
+  /* A BROWSER THAT HAS NOT PAIRED YET. The code field comes first and the key
+     field only exists after it, so there is never a moment where a key can be
+     typed into a page that has no way to deliver it. */
+  if (!canWrite && sess.available){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key, and this page needs unlocking first</b></div>
+      ${pairBlock()}
+      ${msg}
+    </div>`;
+  }
+  /* No bridge and no code to paste -- a desktop-started backend seen through a
+     browser, or a code already spent. Says WHICH, because "use the app" is the
+     wrong instruction for the second one. */
+  if (!canWrite){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key</b></div>
+      <p class="why" style="margin:4px 0 0">${esc(sess.reason
+        || "This page cannot save one.")} Or set ${vars} before starting the
+        server.</p>
+      ${msg}
+    </div>`;
+  }
+  return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key</b></div>
+      <p class="why" style="margin:4px 0 8px">Every DeepSeek message is billed
+        against a key — there is no plan to inherit. Paste one and it is checked
+        with DeepSeek before anything is saved, then kept in your login
+        keychain.</p>
+      <div class="wdrow">
+        <input type="password" class="wdin" data-deepseek-key spellcheck="false"
+               autocapitalize="off" autocorrect="off" autocomplete="off"
+               ${busy ? "disabled" : ""}
+               aria-label="DeepSeek API key" placeholder="sk-…">
+        <button class="btn" type="button" data-deepseek="save"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "save" ? "Checking…" : "Save"}</button>
+      </div>
+      <p class="why" style="margin:6px 0 0">${
+        busy === "save"
+          ? "Asking DeepSeek whether the key works. Nothing is saved until it says yes."
+          : `Get one at <code>platform.deepseek.com</code>. Sutra sends it to
+             DeepSeek and to nowhere else, and it never reaches this page again —
+             once saved, all this screen can see is the last four characters.`}</p>
+      ${msg}
+    </div>`;
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
@@ -490,6 +795,35 @@ SCREENS.settings = () => {
     ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
     : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
 
+  /* ONE PLAIN LINE PER ROW, and deliberately no `p.reason` under it (founder
+     2026-09-07: "only show minimum a user might want to see").
+
+     What used to render here was the backend's diagnostic sentence -- up to
+     400 characters naming binary paths, ~/.codex/auth.json, PATH, npm package
+     names, the ACP and stream-json protocols, a codex-cli version pin, the
+     keychain service and account a key would live at, and which shape of
+     record settings.json keeps. All true. None of it answers the only question
+     this list is asked: can I pick this one, and if not, what do I do.
+
+     THE DETAIL IS NOT LOST. `reason` still ships in the API and still renders
+     where someone who wants it goes looking -- Health ("Why nothing here
+     runs", 04-screens.js) and the onboarding blocked-provider facts
+     (06-render.js) -- and the Codex and DeepSeek sign-in blocks directly below
+     carry the credential specifics for their own providers. This is a change
+     of AUDIENCE, not a deletion.
+
+     ONE CASE EARNS MORE THAN A STATUS. "Not installed on this Mac" is actively
+     misleading for someone who has Claude Desktop and reasonably believes they
+     installed Claude -- a field incident, per providers.py's own note. So the
+     backend sends `desktop_only` as a FLAG and the sentence lives here, in the
+     UI, in the words a user has. Sutra deciding what to say is this file's
+     job; Sutra deciding what is true is providers.py's.
+
+     WHAT WENT WITH IT: "Set the full path in Settings below, or
+     SUTRA_UI_<ID>_BIN". No such field is rendered anywhere in the panel --
+     POST /settings/provider-bin exists as a route with no control in front of
+     it -- so that sentence sent people looking for something that is not
+     there. Removing it removes a wrong instruction, not a useful one. */
   const provRow = p => `
     <button class="opt" type="button" role="radio"
         aria-checked="${active===p.id}" data-prov="${esc(p.id)}"
@@ -502,10 +836,10 @@ SCREENS.settings = () => {
           ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
         <span class="od">${p.runnable
             ? "Ready to use"
+            : p.desktop_only ? "Claude Desktop is installed, but this needs Claude Code — a different app"
             : !p.installed ? "Not installed on this Mac"
             : !p.configured ? "Installed, but not signed in yet"
-            : "Installed, but this panel can’t talk to it yet"}</span>
-        ${p.reason?`<span class="why">${esc(p.reason)}</span>`:""}
+            : "Installed, but Sutra can’t chat with it yet"}</span>
       </span>
     </button>`;
 
@@ -544,18 +878,18 @@ SCREENS.settings = () => {
     ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
       <p style="margin-bottom:9px">Which AI answers your messages. New chats start here, and your
         next message in any open chat moves to it too — nothing already written changes.</p>
-      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest stay listed
-        with what is missing, so you can see whether a name is unavailable or simply not set up
-        yet — rather than finding out when a chat fails to answer.</p>
+      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest are listed
+        with what they need.</p>
       <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
+      ${deepseekAuthHtml()}
+      ${codexAuthHtml()}
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
         <b>Your saved choice could not be used.</b>
         ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
-          but ${esc(i.reason)}</div>`).join("")}
+          but it is not ready to use right now.</div>`).join("")}
         <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
       ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
-        Only ${esc(providerLabel(active))} is ready to use on this Mac right now. The others are
-        listed above with what they need — never quietly left out.</p>`:""}`)}
+        Only ${esc(providerLabel(active))} is ready to use on this Mac right now.</p>`:""}`)}
 
     ${fold("set.mode", "Permission mode", esc(running||"—"), `
       ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>
@@ -630,7 +964,7 @@ const TITLES = {
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["AI Assistant","which assistant runs, what it may do, and where · ~/.sutra-ui/settings.json"],
+  settings:["AI Provider","which provider runs, what it may do, and where · ~/.sutra-ui/settings.json"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
@@ -705,21 +1039,68 @@ function routingChart(s){
    sends the acknowledgement phrase the server requires. */
 const UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking";
 
-function permSelect(){
+function permSelect(mpid){
   const st = SETTINGS || {};
   /* The EFFECTIVE mode, not the stored one. When consent is absent the server
      clamps at the point of use, and showing the stored value would tell the
      operator the agent is doing something it is not. */
   const cur = st.permission_mode_effective || st.permission_mode || "plan";
-  const modes = PERM_MODES.length ? PERM_MODES : [{id:cur}];
-  /* Derived from the EFFECTIVE mode, so the warning colour tracks what will
-     actually run -- a stored-but-clamped bypassPermissions must not paint the
-     composer red for a session that is really planning. */
-  const writes = (modes.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  const all = PERM_MODES.length ? PERM_MODES : [{id:cur}];
+  /* ── only the modes THIS PANE'S provider can enforce ──────────────────
+     Three of Claude's six have no DeepSeek equivalent. Offering them there
+     was not cosmetic: selecting one ran `default` while this control kept
+     displaying the choice, so the pane reported a permission posture nothing
+     was enforcing.
+
+     Not-loaded (empty map) or a provider with no entry => the full list, i.e.
+     exactly what this rendered before the map existed. The fallback is
+     deliberately the PERMISSIVE direction here, unlike the turn-options one:
+     a missing entry must never leave a pane with no way to say "plan".
+     Filtering PERM_MODES in place keeps its order and every mode's server-sent
+     note/writes_files/settable metadata -- for Claude the result is the same
+     array, which is what keeps its render byte-identical. */
+  const allowed = Object.keys(PERM_MODES_BY_PROVIDER).length && mpid
+    ? PERM_MODES_BY_PROVIDER[mpid] : null;
+  const modes = allowed ? all.filter(m => allowed.includes(m.id)) : all;
+  /* ── the stored mode this provider cannot offer ───────────────────────
+     THE BUG THIS BRANCH EXISTS FOR. permission_mode is stored GLOBALLY (one
+     value for the panel, unlike models which are per provider), so a pane can
+     inherit a `dontAsk` chosen while Claude was selected. With `cur` filtered
+     out of the list, no <option> carries `selected` and the browser silently
+     displays the FIRST one -- so a pane running `default` claimed to be in
+     `plan`. Filtering alone would have recreated, inside the control meant to
+     fix this, the exact mis-report it was written to end.
+
+     So the stored mode is still shown, still selected, and DISABLED with the
+     reason on it -- the same idiom the Model picker already uses for a
+     catalogued-but-unrunnable model. The operator sees what is stored, learns
+     it does not apply here, and can pick something that does. What is actually
+     running is stated separately by the server's mode_note marker.
+
+     `writes` is looked up in the FULL list on purpose, so Claude's warning
+     colour is computed exactly as before. Safe today because the modes DeepSeek
+     cannot offer (auto/manual/dontAsk) are precisely the non-writing ones --
+     acceptEdits and bypassPermissions both map. If a provider ever omits a
+     writes_files mode, this must switch to what will RUN, or the composer
+     would under-warn. */
+  const unsupported = !modes.some(m => m.id === cur);
+  const writes = (all.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  const label = providerLabel(mpid) || mpid || "this provider";
+  /* Assembled into ONE string rather than interpolated as a second slot in the
+     template below. An empty `${...}` still leaves its own newline and indent
+     behind, so a Claude pane -- which never has an unsupported mode -- would
+     have gained whitespace inside its <select> for nothing. Concatenating here
+     means Claude's markup comes out byte-for-byte what it was. */
+  const opts = (unsupported
+      ? `<option value="${esc(cur)}" disabled selected
+      title="${esc(label)} has no equivalent — this chat runs in default, which asks before everything"
+      >${esc(cur)} — not supported by ${esc(label)}</option>`
+      : "")
+    + modes.map(m=>`<option value="${esc(m.id)}" ${!unsupported && m.id===cur?"selected":""}
+      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("");
   return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
       title="What the agent may do without asking — applies to the next message">
-    ${modes.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?"selected":""}
-      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("")}
+    ${opts}
   </select>`;
 }
 
@@ -775,6 +1156,12 @@ async function applyPermMode(mode, withAck){
    reply and an assistant block replayed out of a transcript: in the second case
    `streaming` is false and `response` is already complete, so the same template renders
    it with no special case. */
+function nth(n){
+  const r = n % 100;
+  if (r >= 11 && r <= 13) return "th";
+  return ["th","st","nd","rd"][n % 10] || "th";
+}
+
 /* The breathing Sutra mark, used wherever a turn is actively working. Inline
    SVG rather than a font glyph so it inherits currentColor and scales cleanly. */
 const SPARK = '<span class="spark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" ' +
@@ -889,6 +1276,27 @@ function switchMarkerHtml(sid){
       <span>turns 1–${esc(String(f.from_turn))} carried over${
         f.tier === 2 ? " (conversation only — tool output left on disk for it to read)" : ""
       }${esc(dropped)}${esc(red)}</span>
+    </div>`;
+}
+/* The marker the thread shows when this pane's permission mode did not survive
+   the trip to its provider. Always `.bad`: unlike a provider switch, there is
+   no benign version of this -- the pane's permission control is displaying a
+   mode that is not the one in force, and the operator chose that mode for a
+   reason. States BOTH names, because "your mode was changed" without saying to
+   what is a warning the operator cannot act on.
+
+   Reuses .swmark, the switch marker's own class, rather than adding CSS: it is
+   the same kind of thing (a server-stated fact about what this pane is really
+   doing, rendered as a thread marker) and a second near-identical rule is how
+   two markers drift apart visually. */
+function modeMarkerHtml(sid){
+  const f = (S.modeNote || {})[sid];
+  if (!f) return "";
+  return `<div class="swmark bad" role="status">
+      <b>Running in ${esc(f.running || "?")}, not ${esc(f.asked || "?")}.</b>
+      <span>${esc(f.reason || "")}</span>
+      <span class="swhint">The permission mode shown for this chat is not the
+        one ${esc(providerLabel(f.provider) || "this provider")} is enforcing.</span>
     </div>`;
 }
 function cwdEditorHtml(sid){
@@ -1390,7 +1798,10 @@ function turnResponse(t){
   /* DS port: the live loader is chip-less and BOTTOMMOST (rendered last in the
      concat below); the settled verdict pill stays at the top. data-runstrip
      stays the ticker's patch anchor and still holds ONLY a text node. */
-  const stateTop = t.streaming ? ""
+  /* A turn that has been SENT but not STARTED is not thinking, and must not
+     borrow the pulse that says it is. `q` is non-null exactly then. */
+  const q = (typeof queueState === "function") ? queueState(t) : null;
+  const stateTop = (t.streaming || q) ? ""
       : (t.error ? `<span class="pill p-block">failed</span>`
          : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
                  : `<span class="pill p-ok">answered</span>`);
@@ -1402,9 +1813,17 @@ function turnResponse(t){
      same in-memory, per-page-load pattern S.govOpen uses; it survives
      patchTurn() because the render reads it, and it is deliberately NOT
      persisted, because a uid means nothing after a reload. */
-  const logLines = t.streaming ? gvLog(t) : [];
+  const logLines = t.streaming && !q ? gvLog(t) : [];
   const logOpen = !!(S.thinkOpen && t.uid && S.thinkOpen[t.uid]);
-  const stateBottom = t.streaming
+  const stateBottom = q
+      ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
+           <span class="gv-wdot" aria-hidden="true"></span><span>${
+             q.behind
+               ? "Queued" + (q.pos > 1 ? " · " + q.pos + nth(q.pos) + " in line" : "")
+                 + " — sends when the turn above finishes"
+               : "Sent — waiting for the agent to start"
+           }</span></div>`
+      : t.streaming
       ? `<div><button class="gv-thinkbtn" type="button" data-thinkopen="${esc(t.uid||"")}"
              aria-expanded="${logOpen?"true":"false"}" title="${logLines.length
                ? "What has run so far in this turn"
@@ -1517,7 +1936,7 @@ It is NOT executed for you — press Enter yourself once you have read it.">term
      full #panes rebuild, and paid the heaviest path in the app at the exact
      moment the operator is watching for the answer to begin. An empty anchor
      costs one div and `.md[data-resp]:empty` gives it no height. */
-  const body = (t.response || t.streaming)
+  const body = (t.response || (t.streaming && !q))
     ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
         t.response ? (t.streaming ? caretHtml(mdHtml(gvBody(t.response)), t)
                                   : mdHtml(gvBody(t.response))) : ""}</div>` : "";

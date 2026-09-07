@@ -1108,9 +1108,64 @@ class TestApp(unittest.TestCase):
                 "%s: `installed` must be shutil.which(%r) and nothing else -- "
                 "a config directory is not evidence of a binary"
                 % (p["id"], p["bin"]))
-            self.assertEqual(
-                p["configured"], os.path.isdir(os.path.expanduser(p["config_dir"])),
-                "%s: `configured` must be the config dir's existence" % p["id"])
+            # `configured` means SET UP, and for two providers the directory is
+            # not what that means -- both overrides are documented in
+            # providers.py's docstring and covered in test_provider_detect.py:
+            #
+            #   codex     ~/.codex/auth.json exists (existence only). The dir
+            #             appears after the first `codex` run whether or not
+            #             anyone signed in.
+            #   deepseek  an API key resolves (env var, or a saved-key record).
+            #             ~/.deepseek is likewise created by the CLI and says
+            #             nothing about a key, and DeepSeek cannot answer one
+            #             message without one.
+            #
+            # Asserting isdir() for all four was this test's own intent
+            # inverted: it hardcoded the leftover-directory proxy that the
+            # docstring above says must not make a provider look available. It
+            # stayed green for codex only because BOTH the directory and
+            # auth.json happen to exist on this machine, and it went red for
+            # deepseek only when DEEPSEEK_API_KEY was exported -- i.e. it was
+            # already asserting a coincidence.
+            if p["id"] not in ("codex", "deepseek"):
+                self.assertEqual(
+                    p["configured"],
+                    os.path.isdir(os.path.expanduser(p["config_dir"])),
+                    "%s: `configured` must be the config dir's existence"
+                    % p["id"])
+            else:
+                self.assertIsInstance(
+                    p["configured"], bool,
+                    "%s: `configured` is a credential check, but still a bool"
+                    % p["id"])
+                if not p["configured"]:
+                    # THE TARGET IS THE CLAIM, NOT THE LITERAL. A bare
+                    # assertNotIn was red from the day it was written (f8d46ef,
+                    # three days after the codex reason it tests landed in
+                    # 0722504 -- the string never moved, the guard arrived
+                    # wrong). Two mentions of the directory are legitimate and
+                    # neither sends anyone looking for it:
+                    #
+                    #   1. a path INSIDE it. "no credential at ~/.codex/auth.json"
+                    #      names the file that is actually missing; the
+                    #      directory is only its parent.
+                    #   2. a parenthetical aside. "(~/.codex exists either way,
+                    #      so its presence is not evidence of a login.)" says
+                    #      the exact opposite of what this guard forbids.
+                    #
+                    # Strip both, then require the bare directory to be absent
+                    # from what is left. A real violation -- "no config
+                    # directory at ~/.codex" in the main clause -- still trips
+                    # it, so this narrows the guard rather than defeating it.
+                    cfg = p["config_dir"]
+                    residue = re.sub(r"\([^)]*\)", "", p["reason"])
+                    residue = re.sub(re.escape(cfg) + r"/\S+", "", residue)
+                    self.assertNotIn(
+                        cfg, residue,
+                        "%s: the directory is not the missing thing, so the "
+                        "reason must not send anyone to look for it -- found "
+                        "it outside a contained path and outside an aside: %r"
+                        % (p["id"], residue))
             self.assertIn("adapter", p, "%s is missing 'adapter'" % p["id"])
             self.assertEqual(
                 p["runnable"],
@@ -1224,6 +1279,35 @@ class TestApp(unittest.TestCase):
         self.assertTrue(modes["bypassPermissions"]["writes_files"])
         for m in body["permission_modes"]:
             self.assertTrue(m["note"], "%s has no explanation" % m["id"])
+
+    def test_41b_the_per_provider_control_maps_are_published_and_add_only(self):
+        """Which controls a PANE may show, keyed by provider -- the same shape
+        as models_by_provider, and for the same reason: the panel rendered
+        Claude's turn options and all six of Claude's permission modes on every
+        pane, including DeepSeek panes where the server discarded the first set
+        and ran `default` for three of the second.
+
+        ADD-ONLY is the assertion that matters. The flat `permission_modes`
+        above is the vocabulary (notes, unsafe gating) and test_41 pins it;
+        these two say who can honour what, and must not narrow it."""
+        status, body = _get("/api/settings")
+        self.assertEqual(status, 200)
+        tmap = body["turn_options_by_provider"]
+        pmap = body["permission_modes_by_provider"]
+        # Claude unchanged, which is the constraint this whole change runs under
+        self.assertEqual(pmap["claude"],
+                         [m["id"] for m in body["permission_modes"]],
+                         "Claude's modes must be exactly the flat list, in order")
+        self.assertEqual(set(tmap["claude"]),
+                         {"effort", "max_budget_usd", "allowed_tools",
+                          "disallowed_tools", "append_system_prompt"})
+        # DeepSeek: three modes, and no turn options at all -- absent, not empty
+        self.assertEqual(pmap["deepseek"],
+                         ["plan", "acceptEdits", "bypassPermissions"])
+        self.assertNotIn("deepseek", tmap)
+        # A LOADED map is never empty: that is what lets the client tell
+        # "not fetched yet" from "this provider declares none".
+        self.assertTrue(tmap, "an empty map would read as not-loaded forever")
 
     def test_42_settings_rejects_an_unknown_permission_mode_without_storing_it(self):
         _, before = _get("/api/settings")
@@ -1498,6 +1582,458 @@ class TestApp(unittest.TestCase):
             self.assertIsNone(app_mod._ensure_workdir(f))
         finally:
             shutil.rmtree(blocker, ignore_errors=True)
+
+
+class TestDeepSeekSpawnedModel(unittest.TestCase):
+    """The `start` frame's model must be the model the CLI was SPAWNED with.
+
+    THE BUG THIS EXISTS FOR. build_acp_args(agent_bin) took no model, so
+    `chosen_model` -- resolved, validated against the allow-list, and sent to
+    the client in the `start` frame -- reached Claude's argv and nothing at all
+    on DeepSeek's. Every DeepSeek session this panel ever ran displayed a model
+    the CLI had not been told about, while the fork quietly answered on its own
+    default (measured on the wire: deepseek-v4-flash).
+
+    ASSERTED AGAINST THE REAL ARGV, not against build_acp_args' return value.
+    That distinction is the whole point: the broken code computed the right
+    model and dropped it at the spawn, so any test that stopped short of the
+    spawn would have passed for the bug's entire life. qa/fake_acp_agent.py
+    records the argv it is actually launched with, from inside the launched
+    process, and this reads that file back.
+
+    Runs entirely against the stub: no DeepSeek binary, no key, no network.
+    """
+
+    proc = None
+    port = None
+    tmpdir = None
+    argv_path = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-dsmodel-")
+        sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+        sys.path.insert(0, HERE)
+        import fixture_seed  # noqa: E402
+        fixture_seed.seed(cls.tmpdir)
+
+        cls.argv_path = os.path.join(cls.tmpdir, "spawned-argv.json")
+        # An executable that IS the deepseek CLI as far as the panel is
+        # concerned. SUTRA_UI_DEEPSEEK_BIN is the documented first step of
+        # _bin_for(), so nothing here depends on a real install.
+        #
+        # Pointed straight at the stub rather than through a generated `sh -c`
+        # wrapper: this repo's path contains a space ("Joy Stephen"), and an
+        # unquoted interpreter path in such a wrapper resolves to /Users/.../Joy
+        # and dies as "ACP process closed stdout" -- a spawn failure that reads
+        # like a protocol failure. The stub carries its own shebang and imports
+        # only the stdlib, so it needs no interpreter path at all.
+        shim = os.path.join(HERE, "qa", "fake_acp_agent.py")
+        os.chmod(shim, 0o755)
+
+        cls.port = _free_port()
+        env = dict(os.environ)
+        env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        env.pop("ANTHROPIC_API_KEY", None)
+        env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
+        env["SUTRA_UI_DEEPSEEK_BIN"] = shim
+        # Makes deepseek `configured` (_deepseek_key_present) and satisfies
+        # ws_chat's key refusal. Never leaves the machine -- the stub answers
+        # before anything would be sent.
+        env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
+        env["SUTRA_FAKE_ACP_ARGV"] = cls.argv_path
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("deepseek-model server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+                cls.proc.wait(timeout=5)
+        if cls.tmpdir and os.path.isdir(cls.tmpdir):
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _run_turn(self, model):
+        """Send one message on a DeepSeek socket and return
+        (announced_model, spawned_argv)."""
+        from websockets.sync.client import connect
+        try:
+            os.unlink(self.argv_path)
+        except OSError:
+            pass
+        url = "ws://127.0.0.1:%d/ws/chat?provider=deepseek" % self.port
+        announced = None
+        with connect(url, open_timeout=10) as ws:
+            first = json.loads(ws.recv(timeout=10))
+            self.assertEqual(first.get("type"), "provider", first)
+            self.assertEqual(first.get("id"), "deepseek", first)
+            ws.send(json.dumps({"message": "hi", "model": model}))
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                f = json.loads(ws.recv(timeout=10))
+                if f.get("type") == "start":
+                    announced = f.get("model")
+                    break
+                if f.get("type") == "error":
+                    self.fail("socket refused the turn: %r" % (f,))
+        deadline = time.time() + 10
+        while time.time() < deadline and not os.path.exists(self.argv_path):
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(self.argv_path),
+                        "the CLI was never spawned, so there is no argv to check")
+        with open(self.argv_path, encoding="utf-8") as fh:
+            return announced, json.load(fh)
+
+    def test_announced_model_is_the_spawned_model(self):
+        announced, argv = self._run_turn("deepseek-v4-pro")
+        self.assertEqual(announced, "deepseek-v4-pro",
+                         "the start frame must carry the requested model")
+        self.assertIn("-m", argv,
+                      "the model never reached the CLI: argv is %r" % (argv,))
+        self.assertEqual(argv[argv.index("-m") + 1], announced,
+                         "the panel announced %r but spawned %r"
+                         % (announced, argv))
+
+    def test_an_unknown_model_is_refused_before_the_spawn(self):
+        """The fork does not validate -m: an unknown `deepseek-` id is
+        forwarded verbatim and anything else silently becomes deepseek-chat.
+        The allow-list is therefore the ONLY refusal, and it has to drop the
+        value rather than pass it on."""
+        announced, argv = self._run_turn("deepseek-v9-invented")
+        self.assertNotIn("deepseek-v9-invented", argv,
+                         "an uncatalogued id reached the CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "deepseek-v9-invented")
+        if announced:
+            self.assertEqual(argv[argv.index("-m") + 1], announced)
+        else:
+            self.assertNotIn("-m", argv,
+                             "no model was announced, so none may be spawned")
+
+    def test_the_disabled_vision_model_cannot_be_spawned(self):
+        """Listed so the operator knows it exists; refused so a session cannot
+        run on it while the panel has no image channel."""
+        announced, argv = self._run_turn("deepseek-v4-flash-vision-exp")
+        self.assertNotIn("deepseek-v4-flash-vision-exp", argv,
+                         "a listed-but-disabled model reached the CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "deepseek-v4-flash-vision-exp")
+
+    def test_a_claude_model_cannot_be_spawned_on_deepseek(self):
+        """The originating bug, at the argv. `opus` is catalogued -- for the
+        other provider -- so a shared allow-list would have let it through."""
+        announced, argv = self._run_turn("opus")
+        self.assertNotIn("opus", argv,
+                         "a Claude model reached the DeepSeek CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "opus")
+
+
+class TestDeepSeekPermissionMode(unittest.TestCase):
+    """The permission mode the operator picked must reach the CLI, or the pane
+    must say it did not.
+
+    THE BUG THIS EXISTS FOR -- two of them, in the same four lines.
+
+      1. AcpRuntime called `session/set_session_mode`. That method does not
+         exist. The real name is `session/set_mode`, and the real agent answers
+         the wrong one -32601 "Method not found".
+      2. The table mapping Sutra's permission_mode onto ACP's mode ids spelled
+         acceptEdits as "auto_edit", which is the `--approval-mode` ARGV
+         spelling. The wire spelling is "autoEdit", and set_mode answers
+         -32603 "Invalid or unavailable mode" for the other one.
+
+    Either alone silently disabled the control; the response was never checked,
+    so the runtime then RECORDED the mode it had asked for. Every DeepSeek pane
+    this panel ever ran displayed the operator's chosen mode while running
+    `default`.
+
+    ASSERTED AGAINST THE WIRE, not against _apply_mode's intent -- the same
+    discipline as TestDeepSeekSpawnedModel above, and for the same reason: the
+    broken code computed a mode, sent it, and believed the answer it never
+    read. qa/fake_acp_agent.py records every set_mode it ACCEPTED, from inside
+    the spawned process, and these read that back.
+
+    THE STUB USED TO LIE. Its unknown-method fallback was `_reply(msg_id, {})`,
+    so it answered `session/set_session_mode` with success and no test could
+    have caught any of this. It now answers -32601, as the real agent does. See
+    that file's docstring.
+
+    Runs entirely against the stub: no DeepSeek binary, no key, no network.
+    """
+
+    proc = None
+    port = None
+    tmpdir = None
+    modes_path = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-dsmode-")
+        sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+        sys.path.insert(0, HERE)
+        import fixture_seed  # noqa: E402
+        fixture_seed.seed(cls.tmpdir)
+
+        cls.modes_path = os.path.join(cls.tmpdir, "set-modes.json")
+        shim = os.path.join(HERE, "qa", "fake_acp_agent.py")
+        os.chmod(shim, 0o755)
+
+        cls.port = _free_port()
+        env = dict(os.environ)
+        env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        env.pop("ANTHROPIC_API_KEY", None)
+        env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
+        env["SUTRA_UI_DEEPSEEK_BIN"] = shim
+        env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
+        env["SUTRA_FAKE_ACP_MODES"] = cls.modes_path
+        # acceptEdits and bypassPermissions are gated out of band; this test
+        # needs to SELECT acceptEdits to check its wire spelling, which is the
+        # half of the bug a plan-only test cannot reach.
+        env["SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"] = "1"
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("deepseek-mode server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+                cls.proc.wait(timeout=5)
+        if cls.tmpdir and os.path.isdir(cls.tmpdir):
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _set_mode(self, mode):
+        url = "http://127.0.0.1:%d/api/settings" % self.port
+        req = urllib.request.Request(
+            url, data=json.dumps({"permission_mode": mode}).encode("utf-8"),
+            method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(body["settings"]["permission_mode"], mode,
+                         "the server did not accept %r, so this test would be "
+                         "asserting about the wrong mode" % mode)
+
+    def _run_turn(self, mode):
+        """Set the permission mode, run one DeepSeek turn, and return
+        (modes_the_cli_actually_received, mode_note_frame_or_None)."""
+        from websockets.sync.client import connect
+        self._set_mode(mode)
+        try:
+            os.unlink(self.modes_path)
+        except OSError:
+            pass
+        url = "ws://127.0.0.1:%d/ws/chat?provider=deepseek" % self.port
+        note = None
+        with connect(url, open_timeout=10) as ws:
+            first = json.loads(ws.recv(timeout=10))
+            self.assertEqual(first.get("type"), "provider", first)
+            ws.send(json.dumps({"message": "hi"}))
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                f = json.loads(ws.recv(timeout=10))
+                if f.get("type") == "mode_note":
+                    note = f
+                if f.get("type") == "error":
+                    self.fail("socket refused the turn: %r" % (f,))
+                if f.get("type") == "done":
+                    break
+        recorded = []
+        if os.path.exists(self.modes_path):
+            with open(self.modes_path, encoding="utf-8") as fh:
+                recorded = json.load(fh)
+        return recorded, note
+
+    def test_plan_reaches_the_cli(self):
+        """The default mode, and the one whose failure was worst: the operator
+        put the session in read-only and the CLI was never told."""
+        recorded, note = self._run_turn("plan")
+        self.assertEqual(recorded, ["plan"],
+                         "the CLI was told %r, not plan -- session/set_mode "
+                         "never landed" % (recorded,))
+        self.assertIsNone(note, "plan is available, so there is nothing to warn "
+                                "about: %r" % (note,))
+
+    def test_accept_edits_is_sent_as_camelCase_autoEdit(self):
+        """Bug 2, at the wire. `auto_edit` is the argv spelling and the CLI
+        rejects it on this surface; only `autoEdit` is accepted."""
+        recorded, note = self._run_turn("acceptEdits")
+        self.assertEqual(recorded, ["autoEdit"],
+                         "expected the wire spelling autoEdit, got %r" % (recorded,))
+        self.assertIsNone(note, "autoEdit is available and was accepted: %r" % (note,))
+
+    def test_bypass_is_sent_as_yolo(self):
+        recorded, note = self._run_turn("bypassPermissions")
+        self.assertEqual(recorded, ["yolo"], recorded)
+        self.assertIsNone(note, note)
+
+    def test_a_mode_with_no_equivalent_is_stated_not_swallowed(self):
+        """dontAsk / auto / manual have no ACP mode. The session runs in
+        `default` -- which PROMPTS for approval, i.e. the safe direction to be
+        wrong in -- and the pane is told, because the permission control is
+        still displaying `dontAsk`."""
+        recorded, note = self._run_turn("dontAsk")
+        self.assertEqual(recorded, [],
+                         "nothing should have been sent: there is no mode to "
+                         "send, and guessing one is the bug (%r)" % (recorded,))
+        self.assertIsNotNone(note, "the divergence was silent -- exactly the "
+                                   "failure this test exists for")
+        self.assertEqual(note["asked"], "dontAsk")
+        self.assertEqual(note["running"], "default")
+        self.assertIn("no equivalent", note["reason"])
+        self.assertEqual(note["provider"], "deepseek")
+
+    def test_the_old_method_name_is_gone_from_the_source(self):
+        """A grep, deliberately. The name is not reachable through any code
+        path a test can drive once the correct one works, so the only way to
+        catch its return is to assert it is absent."""
+        with open(os.path.join(HERE, "acp_runtime.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        calls = [ln for ln in src.splitlines()
+                 if "set_session_mode" in ln and "session/set_session_mode\"" in ln]
+        self.assertEqual(calls, [],
+                         "session/set_session_mode is being CALLED again: %r" % (calls,))
+        self.assertIn('"session/set_mode"', src,
+                      "the correct method name is not in this file at all")
+
+
+class TestPerProviderControlSurface(unittest.TestCase):
+    """Which controls a pane may show is DECLARED per provider, not assumed.
+
+    THE BUG THIS EXISTS FOR. The panel rendered Claude's controls on every
+    pane. On a DeepSeek pane:
+
+      - all five turn options were collected and sent, and the server dropped
+        every one. build_acp_args has no per-turn argv to put them in, and ACP's
+        prompt request carries no options field, so there was nowhere for them
+        to go -- but the UI reported them as applied.
+      - three of the six permission modes (auto / manual / dontAsk) have no ACP
+        equivalent and ran as `default` while the control kept displaying the
+        operator's choice.
+
+    Same shape as the model picker before models_by_provider, and the same fix:
+    the provider DECLARES what it can honour, and the client renders from that.
+
+    The flat `permission_modes` list is deliberately NOT narrowed -- it is the
+    vocabulary, with the notes and the unsafe-mode gating, and test_41 pins it.
+    """
+
+    def test_claude_declares_every_turn_option_and_every_mode(self):
+        """The constraint on this change: Claude's values do not move."""
+        import providers as P
+        self.assertEqual(
+            tuple(P.permission_modes_for("claude")), P.PERMISSION_MODES,
+            "Claude must still offer every mode -- narrowing it is a "
+            "regression, not a fix")
+        self.assertEqual(set(P.turn_options_for("claude")),
+                         {"effort", "max_budget_usd", "allowed_tools",
+                          "disallowed_tools", "append_system_prompt"})
+
+    def test_deepseek_declares_no_turn_options(self):
+        """Measured, not pending. ACP's session/prompt takes only
+        {sessionId, prompt[]} -- there is no field any of these could ride in,
+        and session/set_config_option (the generic per-session config surface)
+        is -32601 on this build."""
+        import providers as P
+        self.assertEqual(tuple(P.turn_options_for("deepseek")), ())
+
+    def test_allowed_tools_is_never_declared_for_deepseek(self):
+        """THE ONE THAT MUST NOT BE 'FIXED' LATER.
+
+        DeepSeek's CLI has an --allowed-tools flag, so this looks like an easy
+        win. It is the opposite kind of thing from Claude's --allowedTools:
+        Gemini's feeds mapToolsToRules(..., autoApprove=true), and the CLI's own
+        copy calls it "auto-approves certain tools". It is a prompt BYPASS, not
+        a capability whitelist.
+
+        Wiring the box labelled "Allow only" to it would WIDEN permissions for
+        an operator trying to narrow them. That is worse than the no-op this
+        change removes, so it is pinned as absent."""
+        import providers as P
+        self.assertNotIn("allowed_tools", P.turn_options_for("deepseek"))
+        self.assertNotIn("disallowed_tools", P.turn_options_for("deepseek"))
+
+    def test_deepseek_offers_only_the_three_modes_it_can_enforce(self):
+        import providers as P
+        self.assertEqual(tuple(P.permission_modes_for("deepseek")),
+                         ("plan", "acceptEdits", "bypassPermissions"))
+        for gone in ("auto", "manual", "dontAsk"):
+            self.assertNotIn(gone, P.permission_modes_for("deepseek"),
+                             "%s has no ACP equivalent and ran as default" % gone)
+
+    def test_every_declared_mode_is_a_real_mode(self):
+        """A typo here would silently drop a mode from a provider's picker --
+        the failure mode of the bug this replaces, one layer up."""
+        import providers as P
+        for pid, modes in P.all_permission_modes_by_provider().items():
+            for m in modes:
+                self.assertIn(m, P.PERMISSION_MODES,
+                              "%s declares unknown mode %r" % (pid, m))
+
+    def test_every_mode_deepseek_omits_is_a_non_writing_one(self):
+        """permSelect computes its warning colour from the FULL mode list, which
+        is safe only while the modes a provider omits are the ones that do not
+        write files. If that ever stops being true the composer would
+        under-warn, so the invariant is pinned here rather than left as a
+        comment."""
+        import providers as P
+        omitted = set(P.PERMISSION_MODES) - set(P.permission_modes_for("deepseek"))
+        self.assertEqual(omitted & set(P.UNSAFE_PERMISSION_MODES), set(),
+                         "a write-capable mode is being omitted -- permSelect's "
+                         "warn class must switch to what will RUN")
+
+    def test_an_unknown_provider_hides_turn_options_but_keeps_every_mode(self):
+        """The asymmetry, on purpose. A missing turn option costs a control,
+        which is safe. A missing permission mode would leave a pane with no way
+        to say `plan`, and hiding a safety control is the wrong direction to be
+        wrong in."""
+        import providers as P
+        self.assertEqual(tuple(P.turn_options_for("nope-not-a-provider")), ())
+        self.assertEqual(tuple(P.permission_modes_for("nope-not-a-provider")),
+                         P.PERMISSION_MODES)
+
+    def test_a_provider_honouring_none_is_absent_from_the_map(self):
+        """Same contract as models_by_provider, and the client depends on it:
+        an EMPTY map means "not fetched yet", so it must be impossible for a
+        loaded one to be empty. Claude declaring five is what guarantees that."""
+        import providers as P
+        tmap = P.all_turn_options_by_provider()
+        self.assertNotIn("deepseek", tmap, "declares none, so must be absent")
+        self.assertNotIn("codex", tmap)
+        self.assertIn("claude", tmap, "a loaded map must never be empty")
+
 
 
 class TestChatProviderParam(unittest.TestCase):
@@ -2018,10 +2554,12 @@ class TestModelAllowList(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_only_catalogued_ids_survive(self):
+        # Re-slice only: the provider these ids always belonged to is now named
+        # rather than implied. Same ids, same verdicts.
         for good in ("opus", "sonnet", "haiku"):
-            self.assertEqual(self.p.clean_model(good), good)
+            self.assertEqual(self.p.clean_model(good, "claude"), good)
         for bad in ("gpt-4", "claude-3", "", None, 7, [], "opus; rm -rf /"):
-            self.assertIsNone(self.p.clean_model(bad))
+            self.assertIsNone(self.p.clean_model(bad, "claude"))
 
     def test_save_rejects_an_unknown_model(self):
         with self.assertRaises(ValueError):
@@ -2031,17 +2569,17 @@ class TestModelAllowList(unittest.TestCase):
         """"" is a real choice, not a missing value -- it must persist, not raise."""
         self.p.save_settings(model="")
         self.assertEqual(self.p.load_settings()["model"], "")
-        self.assertIsNone(self.p.stored_model())
+        self.assertIsNone(self.p.stored_model("claude"))
 
     def test_model_round_trips(self):
         self.p.save_settings(model="haiku")
         self.assertEqual(self.p.load_settings()["model"], "haiku")
-        self.assertEqual(self.p.stored_model(), "haiku")
+        self.assertEqual(self.p.stored_model("claude"), "haiku")
 
     def test_catalog_ids_are_aliases_not_pinned_snapshots(self):
         """A pinned id goes stale and the panel then offers something that cannot
         run -- the exact failure providers.py exists to prevent."""
-        for m in self.p.MODELS:
+        for m in self.p.models_for("claude"):
             self.assertNotRegex(m["id"], r"\d{8}",
                                 "model %r looks like a dated snapshot id" % m["id"])
 
@@ -2440,7 +2978,12 @@ class TestUpdates(unittest.TestCase):
             self.skipTest("no unwritable .app to test against")
         with self.assertRaises(RuntimeError) as cm:
             self.U.install_desktop(__file__, app_path=str(app))
-        self.assertIn("writable", str(cm.exception))
+        msg = str(cm.exception)
+        # The wording moved to plain English in 2.239.1 (install_blocker), so
+        # this asserts what the sentence has to DO -- name the folder and say
+        # the account cannot write there -- not the one word it used to use.
+        self.assertIn("/System/Library/CoreServices", msg)
+        self.assertIn("cannot write", msg)
 
     def test_install_desktop_refuses_a_missing_image(self):
         app = self.Path(self.tmp) / "W.app"
@@ -2778,6 +3321,370 @@ class TestDesktopControlAuth(unittest.TestCase):
         self.assertIn("pending", self.api.api_updates_staged())
 
 
+class TestDeepSeekKeyRoutesAreGated(unittest.TestCase):
+    """The DeepSeek key write path, which is the same class of thing as arming
+    an install -- and is now gated by EITHER of two tokens.
+
+    electron/main.js says a route accepting an API key would be "a credential
+    WRITE surface any page on this machine could POST to". That is true of an
+    UNAUTHENTICATED route, which is what the rest of this API is. These are
+    not:
+
+      LANE 1, the desktop token: minted by the shell, given only to the backend
+      it spawned, attached by the MAIN process -- the renderer never holds it.
+
+      LANE 2, a browser session token: traded for a one-time code that exists
+      only on the server's STDOUT (deepseek_session). A page cannot read a
+      terminal, so this still is not "any page on this machine" -- it is the
+      operator carrying a secret across by hand.
+
+    So the negative test still has to hold, in a sharper form: a page that can
+    reach 127.0.0.1 and does NOT have one of those two tokens must not be able
+    to write a credential into the operator's keychain, or delete one. And lane
+    2 must not exist at all when lane 1 does -- see TestDeepSeekBrowserPairing.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import deepseek_session
+        import org_api
+        self.api = org_api
+        self.sess = deepseek_session
+        self._prev = org_api.DESKTOP_TOKEN
+        self._prev_env = os.environ.get("SUTRA_DESKTOP_TOKEN")
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        deepseek_session._reset_for_tests()
+        # A key-shaped stand-in, assembled rather than written out so no source
+        # line in this repo is ever key-shaped. Never a real key.
+        self.fake = "sk-" + "-".join(["notreal"] * 3) + "4f2a"
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+        self.sess._reset_for_tests()
+        if self._prev_env is None:
+            os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        else:
+            os.environ["SUTRA_DESKTOP_TOKEN"] = self._prev_env
+
+    class _Req(object):
+        def __init__(self, token=None, session=None):
+            self.headers = {}
+            if token:
+                self.headers["x-sutra-desktop-token"] = token
+            if session:
+                self.headers["x-sutra-session-token"] = session
+
+    def _refused(self, call):
+        from fastapi import HTTPException
+        try:
+            call()
+        except HTTPException as exc:
+            return exc
+        self.fail("a credential write was allowed without the desktop token")
+
+    def _body(self, key=None):
+        return self.api.DeepSeekKeyRequest(key=key)
+
+    def test_a_page_cannot_save_a_key(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        for token in (None, "guess"):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(token)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_page_cannot_remove_a_key(self):
+        """Sign-out is destructive and Sutra keeps no copy, so it is gated as
+        tightly as sign-in."""
+        self.api.DESKTOP_TOKEN = "s3cret"
+        for token in (None, "guess"):
+            exc = self._refused(lambda: self.api.api_deepseek_key_remove(
+                self._Req(token)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_cli_run_backend_accepts_no_key_at_all(self):
+        """No token in the environment means the shell did not start this
+        server, so there is nothing that could legitimately be writing a
+        credential through it."""
+        self.api.DESKTOP_TOKEN = None
+        exc = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req("anything")))
+        self.assertEqual(exc.status_code, 403)
+
+    def test_the_refusal_happens_before_the_key_is_looked_at(self):
+        """Order matters: a refusal that first validated, probed or stored
+        would have already sent the key somewhere."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        called = []
+        for name in ("save", "validate", "clean", "_store"):
+            setattr(deepseek_auth, name,
+                    (lambda n: lambda *a, **k: called.append(n))(name))
+        try:
+            self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req()))
+        finally:
+            import importlib
+            importlib.reload(deepseek_auth)
+        self.assertEqual(called, [], "nothing touched the key before the 403")
+
+    def test_a_classified_refusal_is_200_with_ok_false_and_no_key(self):
+        """A rejected key is an expected outcome of this control, not a
+        protocol error -- same shape as POST /providers/codex/logout. And no
+        answer, on any path, may quote the key back."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        real = deepseek_auth.save
+        deepseek_auth.save = lambda k: (_ for _ in ()).throw(
+            deepseek_auth.DeepSeekAuthError("KEY_REJECTED",
+                                            "DeepSeek rejected that key."))
+        try:
+            out = self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req("s3cret"))
+        finally:
+            deepseek_auth.save = real
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "KEY_REJECTED")
+        self.assertNotIn(self.fake, repr(out))
+        self.assertNotIn("4f2a", repr(out))
+        # The row redraws from the SAME read that refused the write, so it
+        # cannot show a state nobody verified.
+        for field in ("auth", "providers", "settings"):
+            self.assertIn(field, out)
+
+    def test_the_answer_carries_the_state_the_row_needs(self):
+        """Both verbs answer with auth + providers + settings, the way
+        POST /settings/provider-bin answers with a fresh discover_providers():
+        the DEFAULT PROVIDER list has to re-evaluate from the write itself, or
+        the row disagrees with the keychain for a paint."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        # remove() is STUBBED, and not for speed. The real one deletes from the
+        # operator's login keychain and clears the settings marker, so a suite
+        # run on a machine where someone had signed in would sign them out --
+        # a test with a side effect on a live credential. What is under test
+        # here is the ROUTE's answer shape; the store's behaviour is
+        # test_deepseek_auth's job, against a memory store.
+        real = deepseek_auth.remove
+        deepseek_auth.remove = lambda: {"removed": False}
+        try:
+            out = self.api.api_deepseek_key_remove(self._Req("s3cret"))
+        finally:
+            deepseek_auth.remove = real
+        self.assertTrue(out["ok"])
+        self.assertIn("auth", out)
+        self.assertIn("deepseek", [p["id"] for p in out["providers"]])
+        self.assertIn("provider_ignored", out["settings"])
+
+    def test_the_row_state_reaches_the_panel_where_it_reads_it(self):
+        """The panel does `SETTINGS = r.settings`, so the state has to be
+        inside that dict. It first shipped as a sibling of claude_account and
+        nothing read it."""
+        got = self.api.api_settings_get()
+        self.assertIn("deepseek_auth", got["settings"])
+        self.assertNotIn("deepseek_auth", got,
+                         "a top-level sibling is read by nothing -- see providers.load_settings")
+
+    def test_the_settings_answer_carries_a_mask_and_never_a_key(self):
+        import providers as p
+        got = p.deepseek_auth_state()
+        self.assertIn(got["state"], ("env", "stored", "none"))
+        for value in got.values():
+            if isinstance(value, str):
+                self.assertNotIn("sk-" + "-".join(["notreal"] * 3), value)
+
+    # ---- lane 2: the browser session token ---------------------------------
+
+    def _paired(self):
+        """A process that printed a code and had it exchanged, as a live server
+        would be. Returns the token."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        return self.sess.exchange(self.sess.display(self.sess._code))
+
+    def test_a_paired_browser_can_write(self):
+        import deepseek_auth
+        token = self._paired()
+        real = deepseek_auth.save
+        deepseek_auth.save = lambda k: {"mask": "sk-****4f2a", "saved_at": 1.0}
+        try:
+            out = self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=token))
+        finally:
+            deepseek_auth.save = real
+        self.assertTrue(out["ok"])
+        self.assertNotIn(self.fake, repr(out))
+
+    def test_a_paired_browser_can_sign_out(self):
+        """Sign-OUT needed the same widening. Without it the browser drew a
+        Remove button whose handler could only 403 -- a dead control."""
+        import deepseek_auth
+        token = self._paired()
+        real = deepseek_auth.remove
+        deepseek_auth.remove = lambda: {"removed": False}
+        try:
+            out = self.api.api_deepseek_key_remove(self._Req(session=token))
+        finally:
+            deepseek_auth.remove = real
+        self.assertTrue(out["ok"])
+
+    def test_a_forged_session_token_is_refused(self):
+        token = self._paired()
+        for guess in (None, "", "guess", token[:-1], token + "x", "x" * len(token)):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=guess)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_an_unpaired_server_refuses_every_session_token(self):
+        """arm() ran and nobody exchanged the code: there is no token yet, so
+        every value presented as one has to be a no -- including the falsy ones
+        that would make compare_digest raise."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        for guess in ("anything", "", None):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=guess)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_session_token_cannot_arm_an_install(self):
+        """The update routes keep the ONE gate they had. Signing a key into the
+        operator's own keychain is not the same authority as replacing
+        /Applications/Sutra.app on their behalf, and one shared gate would have
+        quietly handed the first the second's threat model."""
+        from fastapi import HTTPException
+        token = self._paired()
+        with self.assertRaises(HTTPException) as caught:
+            self.api._desktop_control(self._Req(session=token))
+        self.assertEqual(caught.exception.status_code, 403)
+
+    def test_the_refusal_names_the_lane_that_is_actually_available(self):
+        """"Forbidden" left the browser field looking broken. A desktop-started
+        server has no code to paste; a terminal-started one does."""
+        self.api.DESKTOP_TOKEN = "s3cret"
+        os.environ["SUTRA_DESKTOP_TOKEN"] = "s3cret"
+        desktop = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req()))
+        self.assertIn("desktop app", desktop.detail)
+
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        cli = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req()))
+        self.assertIn("session token", cli.detail)
+
+    def test_a_stale_token_is_told_to_re_pair_rather_than_just_refused(self):
+        """The token dies when the server restarts, and the panel drops it on a
+        403 -- but the operator still has to be told to go and look for the new
+        code."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        exc = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req(session="a-token-from-last-run")))
+        self.assertIn("restart", exc.detail.lower())
+
+
+class TestDeepSeekBrowserPairing(unittest.TestCase):
+    """POST /api/providers/deepseek/session -- the exchange itself.
+
+    It is the one route here with NO token gate, and that is structural: it
+    exists to hand out the credential the gate wants. What protects it is the
+    code -- 80 bits, on this process's stdout only, single-use, and behind
+    app.py's origin guard. deepseek_session's own suite pins the state machine;
+    what is pinned here is the ROUTE's answer shape, which is what the panel
+    reads.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import deepseek_session
+        import org_api
+        self.api = org_api
+        self.sess = deepseek_session
+        self._prev = org_api.DESKTOP_TOKEN
+        self._prev_env = os.environ.get("SUTRA_DESKTOP_TOKEN")
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        org_api.DESKTOP_TOKEN = None
+        deepseek_session._reset_for_tests()
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+        self.sess._reset_for_tests()
+        if self._prev_env is None:
+            os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        else:
+            os.environ["SUTRA_DESKTOP_TOKEN"] = self._prev_env
+
+    def _body(self, code=None):
+        return self.api.DeepSeekSessionRequest(code=code)
+
+    def _code(self):
+        self.sess.arm()
+        return self.sess.display(self.sess._code)
+
+    def test_the_right_code_returns_a_token_that_the_key_route_accepts(self):
+        out = self.api.api_deepseek_session(self._body(self._code()))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["code"], "PAIRED")
+        self.assertTrue(self.sess.verify(out["token"]))
+
+    def test_a_wrong_code_is_200_with_ok_false_and_no_token(self):
+        """A mistyped code is an expected outcome of this control, not a
+        protocol error -- same shape as a rejected key. Landing it in the panel
+        as a thrown fetch error would make the operator decode a status code."""
+        self._code()
+        out = self.api.api_deepseek_session(self._body("ZZZZ-ZZZZ-ZZZZ-ZZZZ"))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "BAD_CODE")
+        self.assertNotIn("token", out)
+
+    def test_a_missing_code_is_classified_not_a_422(self):
+        """DeepSeekSessionRequest.code is Optional for this reason: FastAPI's
+        validation errors can echo the offending INPUT back."""
+        self._code()
+        out = self.api.api_deepseek_session(self._body(None))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "NO_CODE")
+
+    def test_the_code_is_single_use_over_the_route(self):
+        code = self._code()
+        self.assertTrue(self.api.api_deepseek_session(self._body(code))["ok"])
+        again = self.api.api_deepseek_session(self._body(code))
+        self.assertFalse(again["ok"])
+        self.assertEqual(again["code"], "CLAIMED")
+        self.assertIn("Restart the server", again["message"])
+
+    def test_a_desktop_started_server_offers_no_exchange(self):
+        os.environ["SUTRA_DESKTOP_TOKEN"] = "shell-token"
+        self.api.DESKTOP_TOKEN = "shell-token"
+        out = self.api.api_deepseek_session(self._body("ZZZZ-ZZZZ-ZZZZ-ZZZZ"))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "NOT_OFFERED")
+
+    def test_the_answer_carries_the_state_the_row_needs(self):
+        """Same contract as the key routes: the row redraws from the read that
+        performed the write, so it cannot show a state nobody verified."""
+        out = self.api.api_deepseek_session(self._body(self._code()))
+        for field in ("auth", "providers", "settings"):
+            self.assertIn(field, out)
+
+    def test_no_answer_on_any_path_contains_the_code(self):
+        code = self._code()
+        ok = self.api.api_deepseek_session(self._body(code))
+        self.assertNotIn(code.replace("-", ""), repr(ok))
+        bad = self.api.api_deepseek_session(self._body("QQQQ-QQQQ-QQQQ-QQQQ"))
+        self.assertNotIn("QQQQ", repr(bad), "the submitted value was echoed back")
+
+    def test_the_unauthenticated_settings_read_never_carries_the_code(self):
+        """browser_session rides in GET /api/settings. If the code ever gets
+        into it, every page on the machine can read it."""
+        code = self._code()
+        got = self.api.api_settings_get()
+        self.assertNotIn(code.replace("-", ""), repr(got))
+        sess = got["settings"]["deepseek_auth"]["browser_session"]
+        self.assertTrue(sess["available"])
+        self.assertEqual(set(sess), {"available", "claimed", "reason"})
+
+
 class TestShellPathHarvest(unittest.TestCase):
     """FIELD INCIDENT: `claude` undetected on other people's Macs.
 
@@ -2916,9 +3823,6 @@ class TestPtyWinsizeFloor(unittest.TestCase):
         self.assertRegex(between, r"rows\s*<\s*\d+\s+or\s+cols\s*<\s*\d+",
                          "the floor must test both dimensions")
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestRoutines(unittest.TestCase):
@@ -3410,3 +4314,72 @@ class TestMcpAllowHook(unittest.TestCase):
         args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
         if "--settings" in args:
             self.assertIn("--strict-mcp-config", args)
+
+
+class TestDeclarationsInThePage(unittest.TestCase):
+    """The provider declarations travel IN the page, not behind a fetch.
+
+    turn_options_by_provider / permission_modes_by_provider say which controls
+    a pane's provider can honour, and they used to reach the client only via
+    GET /api/settings. Until that resolved the client's maps were empty -- and
+    an EMPTY MAP MEANS NOT FETCHED, which it answers by rendering Claude's full
+    set. So a DeepSeek pane showed all five turn options for the whole boot
+    window: precisely when that menu is opened, which is before asking
+    anything, to set something first.
+
+    app.py substitutes them into a meta so the first paint already knows.
+    """
+
+    def test_the_page_has_somewhere_to_put_them(self):
+        """Two names, in two files, that have to keep matching: the token
+        app.py replaces and the meta name 01-state.js reads. Renaming either
+        alone leaves the declarations stranded and the panel silently back on
+        its not-fetched fallback -- which renders, so nothing would fail."""
+        from pathlib import Path
+        panel = (Path(__file__).parent / "static" / "panel.html").read_text()
+        self.assertIn("__DECLARATIONS__", panel)
+        self.assertIn('name="sutra-declarations"', panel)
+        state = (Path(__file__).parent / "static" / "js" / "01-state.js").read_text()
+        self.assertIn('meta[name="sutra-declarations"]', state)
+
+    def test_it_carries_the_three_facts_the_client_gates_on(self):
+        import json as _json
+        import app as A
+        decl = _json.loads(__import__("html").unescape(A._declarations_attr()))
+        self.assertEqual(set(decl), {"provider", "turn_options_by_provider",
+                                     "permission_modes_by_provider"})
+        import providers
+        self.assertEqual(decl["turn_options_by_provider"],
+                         providers.all_turn_options_by_provider())
+        self.assertEqual(decl["permission_modes_by_provider"],
+                         providers.all_permission_modes_by_provider())
+
+    def test_it_is_safe_inside_an_html_attribute(self):
+        """It lands in a double-quoted `content`. An unescaped quote would end
+        the attribute and put JSON into the markup."""
+        import app as A
+        attr = A._declarations_attr()
+        self.assertNotIn('"', attr)
+        self.assertIn("&quot;", attr)
+
+    def test_the_substitution_actually_happens(self):
+        """Named outright rather than hasattr-guarded: a guard would turn a
+        rename of the renderer into a skip, and a skipped test is how a token
+        goes back to being served literally without anything noticing."""
+        import app as A
+        html = A._panel_html()
+        self.assertNotIn("__DECLARATIONS__", html)
+        self.assertIn('name="sutra-declarations"', html)
+
+    def test_a_failure_degrades_to_the_old_behaviour(self):
+        """A panel that will not load is worse than one whose first paint is
+        momentarily ungated. Empty attribute -> client SEED is {} -> exactly
+        the fallback that shipped before this existed."""
+        import app as A
+        from unittest import mock as _mock
+        with _mock.patch.object(A.providers, "active_provider",
+                                side_effect=RuntimeError("boom")):
+            self.assertEqual(A._declarations_attr(), "")
+
+if __name__ == "__main__":
+    unittest.main()

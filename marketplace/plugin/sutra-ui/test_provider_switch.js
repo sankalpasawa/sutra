@@ -34,6 +34,7 @@ const J = (f) => fs.readFileSync(path.join(__dirname, "static", "js", f), "utf8"
 const state = J("01-state.js");
 const helpers = J("02-helpers.js");
 const chat = J("05-chat.js");
+const screens = J("04-screens.js");
 const render = J("06-render.js");
 const loaders = J("07-loaders.js");
 const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
@@ -62,16 +63,24 @@ const sandbox = {
   location: { protocol: "http:", host: "127.0.0.1:7000" },
   S: { cwd: {}, sutraId: {}, sessions: [] },
   SETTINGS: { workdir: "/home/op/work" },
+  /* providerUsage resolves the provider's DECLARED usage kind before reading
+     any state -- the `else` it replaced handed every non-DeepSeek provider
+     Claude's percentage. That declaration ships on the /api/providers row, so
+     the sandbox has to carry one the way the live panel does. */
+  PROVIDERS: [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+              { id: "deepseek", name: "DeepSeek", usage_kind: "balance" },
+              { id: "codex", name: "OpenAI Codex", usage_kind: "none" }],
   console,
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 new vm.Script([
+  grab(helpers, "usageKindOf"),
   grab(helpers, "providerUsage"),
   grab(state, "sessCwd"),
   grab(state, "sessSutraId"),
   grab(state, "claudeWsUrl"),
-].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage};",
+].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage,usageKindOf};",
   { filename: "01-state.js#extract" }).runInContext(sandbox);
 const T = sandbox.__T;
 
@@ -274,6 +283,42 @@ test("nothing fetched yet -> null, so no surface asserts a number", () => {
   assert(T.providerUsage() === null, "asserted a figure nobody fetched");
 });
 
+test("a provider with no usage concept gets null, not Claude's percentage", () => {
+  /* THE SAME BUG ONE PROVIDER LATER. The reported failure was DeepSeek falling
+     through to S.usage; the shape that caused it -- `if (deepseek) ... else
+     Claude` -- left every future provider in the else. Codex reports neither a
+     window nor a balance, and the day it becomes selectable it must show
+     nothing rather than Anthropic's number. */
+  sandbox.SETTINGS = { provider: "codex" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  sandbox.S.deepseekUsage = { available: true,
+    balances: [{ currency: "USD", total_balance: "1.81" }] };
+  assert(T.providerUsage() === null, "borrowed another provider's figure");
+});
+
+test("an unread provider table withholds rather than guesses", () => {
+  /* Deliberate: with no table there is no way to tell which kind of fact
+     applies, and asserting one anyway is the whole failure. */
+  const prev = sandbox.PROVIDERS;
+  sandbox.PROVIDERS = [];
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  try { assert(T.providerUsage() === null, "asserted a figure with no provider table"); }
+  finally { sandbox.PROVIDERS = prev; }
+});
+
+test("the caller may name a provider, so a pane can differ from the app", () => {
+  /* SETTINGS.provider is global; a pane's provider is its own. Without the
+     argument a DeepSeek pane left open across a switch to Claude would quote
+     Claude's percentage for a session DeepSeek is still answering. */
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  sandbox.S.deepseekUsage = { available: true,
+    balances: [{ currency: "USD", total_balance: "1.81" }] };
+  eq(T.providerUsage("deepseek").row, "$1.81 balance");
+  eq(T.providerUsage("claude").row, "26% used");
+});
+
 test("all three surfaces read the one helper", () => {
   // A correct helper that two of three callers ignore is the bug unfixed.
   assert(/c:\(\(providerUsage\(\)/.test(helpers), "the rail badge does not use it");
@@ -294,16 +339,26 @@ test("the percentage is derived in exactly one place", () => {
   });
 });
 
-/* ── 6. the Assistant row (founder 2026-09-03) ─────────────────────────────── */
+/* ── 6. the Provider row (founder 2026-09-03; renamed 2026-09-07) ─────────── */
 
-test("the nested row is called AI Assistant, not Settings", () => {
+test("the nested row is called AI Provider, not Settings", () => {
   // "Settings" inside the Settings destination repeated its parent and said
   // nothing about what was behind it.
-  assert(helpers.includes('n:"AI Assistant"'), "railSpec does not label the row AI Assistant");
-  assert(chat.includes('settings:["AI Assistant"'), "TITLES does not say AI Assistant");
-  // The provider is ONE of this screen's three folds (provider, permission
-  // mode, workdir), which is why it is not named for the provider alone.
-  assert(!/n:"AI [Pp]rovider"/.test(helpers), "named for one of its three folds");
+  assert(helpers.includes('n:"AI Provider"'), "railSpec does not label the row AI Provider");
+  assert(chat.includes('settings:["AI Provider"'), "TITLES does not say AI Provider");
+  // This assertion used to run the other way -- it FORBADE "AI Provider", on
+  // the reasoning that the provider is one of the screen's three folds
+  // (provider, permission mode, workdir). Founder direction 2026-09-07
+  // overrode that: provider is the word every other surface already uses.
+  // What is checked now is that the old label is gone from BOTH files. The
+  // label lives in two of them, so a half-landed rename would show an
+  // operator two names for one screen.
+  // Assembled from parts so a future blanket rename cannot rewrite the string
+  // this guard exists to forbid -- which is exactly what happened on the
+  // 2026-09-07 pass, leaving the assert banning the new name.
+  const OLD_LABEL = "AI " + "Assistant";
+  assert(!helpers.includes(OLD_LABEL) && !chat.includes(OLD_LABEL),
+         `the old ${OLD_LABEL} label survives in railSpec or TITLES`);
 });
 
 test("the Preferences group is gone and the row lives under System", () => {
@@ -350,14 +405,54 @@ test("the project-folder fold carries no implementation jargon", () => {
   assert(src.includes('"Project folder"'), "the fold is still called Workdir");
 });
 
-test("a provider that cannot run still says WHY", () => {
+test("a provider that cannot run says WHY, in a user's words", () => {
   // providers.py exists so the panel never says "unavailable" without saying
-  // why. Plain language must not cost that: the status line leads, the exact
-  // server reason stays underneath.
+  // why. Every not-runnable case still gets a status here -- what changed
+  // (founder 2026-09-07, "only show minimum a user might want to see") is that
+  // the status is ALL this list shows.
   assert(/Not installed on this Mac/.test(chat), "no plain status for not-installed");
   assert(/not signed in yet/.test(chat), "no plain status for installed-but-unconfigured");
-  assert(/p\.reason\?/.test(chat.replace(/\s/g, "")),
-         "the server's exact reason was dropped along with the jargon");
+  assert(/can’t chat with it yet/.test(chat), "no plain status for installed-but-no-adapter");
+  assert(/Ready to use/.test(chat), "no plain status for runnable");
+});
+
+test("the provider list does NOT render the server's diagnostic sentence", () => {
+  // What this removes, measured: up to ~400 characters per row naming binary
+  // paths, ~/.codex/auth.json, PATH, an npm package, the ACP and stream-json
+  // protocols, a codex-cli version pin, and the keychain service and account a
+  // key would live at. True, and not what this list is asked.
+  const row = chat.slice(chat.indexOf("const provRow ="),
+                         chat.indexOf("const running ="));
+  assert(!/p\.reason/.test(row),
+         "provRow renders p.reason again -- the row is back to explaining Sutra "
+         + "to whoever opened Settings");
+  const fold = chat.slice(chat.indexOf('fold("set.prov"'), chat.indexOf('fold("set.mode"'));
+  assert(!/i\.reason/.test(fold),
+         "the fallback banner pastes the same sentence back in under a different "
+         + "heading");
+  assert(!/SUTRA_UI_|not on PATH|auth\.json|stream-json/.test(fold),
+         "an internals name leaked back into the Default provider fold");
+});
+
+test("the diagnostic sentence still HAS a home", () => {
+  // This was a change of audience, not a deletion. Someone who wants the exact
+  // reason goes to Health; if that stops rendering it too, the detail is gone
+  // from the product and this test is the only thing that would notice.
+  assert(/p\.reason/.test(screens),
+         "nothing renders the provider reason any more -- Health lost it too");
+  assert(/Why nothing here runs/.test(screens),
+         "the Health block that carries it is gone");
+});
+
+test("the one status that would be a lie is told from a FLAG, not prose", () => {
+  // "Not installed on this Mac" is wrong for the person who has Claude Desktop
+  // and believes they installed Claude (providers.py's own field incident). The
+  // UI must decide the wording; the backend only says whether it is that case.
+  assert(/desktop_only/.test(chat), "the Claude Desktop case is not handled in the row");
+  assert(/needs Claude Code/.test(chat),
+         "the row does not name the actual fix for a Claude Desktop user");
+  const py = fs.readFileSync(path.join(__dirname, "providers.py"), "utf8");
+  assert(/"desktop_only":/.test(py), "providers.py does not send the flag");
 });
 
 test("a refused saved choice is explained, not labelled", () => {
@@ -365,34 +460,34 @@ test("a refused saved choice is explained, not labelled", () => {
   assert(!/An override was NOT honoured/.test(chat), "still says 'override not honoured'");
 });
 
-test("Usage renders inside the AI Assistant screen, not as its own row", () => {
+test("Usage renders inside the AI Provider screen, not as its own row", () => {
   // How much of an assistant you have used is a fact about the assistant you
   // just picked; a separate destination made you cross the app to answer a
   // question this screen had raised.
   assert(chat.includes("SCREENS.usage()"),
-         "the AI Assistant screen does not render the usage section");
+         "the AI Provider screen does not render the usage section");
   const plane = state.slice(state.indexOf('settings: [{group:"Tools"'));
   const body = plane.slice(0, plane.indexOf("\n};"));
   assert(!/screen:"usage"/.test(body), "usage still has a nav row");
 });
 
 test("the usage figure moved onto the row you can actually click", () => {
-  const i = helpers.indexOf('{id:"settings",n:"AI Assistant"');
-  assert(i > 0, "the AI Assistant entry is gone");
+  const i = helpers.indexOf('{id:"settings",n:"AI Provider"');
+  assert(i > 0, "the AI Provider entry is gone");
   assert(/providerUsage\(\)/.test(helpers.slice(i, i + 260)),
-         "the AI Assistant row carries no usage count");
+         "the AI Provider row carries no usage count");
   const j = helpers.indexOf('{id:"usage"');
   assert(!/providerUsage\(\)/.test(helpers.slice(j, j + 160)),
          "the row-less usage entry still computes a badge nobody sees");
 });
 
-test("opening the AI Assistant screen fetches usage", () => {
+test("opening the AI Provider screen fetches usage", () => {
   // Otherwise the section sits on "Reading usage..." until something else
   // happens to load it.
   // Match the screen-open dispatcher specifically -- loadUsage is also called
   // from the composer popover and the sign-in flow, and indexOf found those.
   assert(/id === "usage" \|\| id === "settings"/.test(loaders),
-         "the AI Assistant screen does not trigger a usage load on open");
+         "the AI Provider screen does not trigger a usage load on open");
 });
 
 /* ── 8. two defects from a screenshot, 2026-09-03 ──────────────────────────── */

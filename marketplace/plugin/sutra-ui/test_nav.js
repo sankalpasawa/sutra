@@ -76,9 +76,16 @@ vm.runInContext(SCRIPT, sandbox, { filename: "panel-modules.js" });
 sandbox.render = () => {};
 /* const/let at a vm script's top level live in the context's lexical scope,
    not on the sandbox object — capture them from INSIDE the context. */
+/* PROVIDERS and SETTINGS need getter/setter pairs, not plain properties: a
+   top-level `let` in a classic script lives in the SCRIPT scope, not on the
+   global object, so `T.PROVIDERS = x` would set a field on this literal and
+   leave the binding the code actually reads untouched. Same reason test_panel.js
+   gives for SETTINGS. */
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
   loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
-  buildAccentRow, ACCENTS, document })`, sandbox);
+  buildAccentRow, ACCENTS, document,
+  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
+  get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; } })`, sandbox);
 /* spies for the 2.118.1 regressions: which lazy loaders fired */
 const loaded = [];
 for (const fn of ["loadBalance","loadTeamsutra","loadGit","loadFs","loadAuto",
@@ -95,18 +102,34 @@ function test(name, fn){
 
 /* §model ─ S3 */
 test("model: exactly seven destinations, in the founder's order", () => {
-  /* Seven since 2026-09-02: Routines was promoted out of Settings -> Automation
-     into a destination of its own, and sits next to Chats. */
+  /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
+     agent that works in front of you (design/GAME-PLAN-agents.md). */
+  /* Seven again since 2026-09-04: Routines went back under Settings ->
+     Automation, the home it held before the 2026-09-02 promotion. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","routines","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
 });
-test("model: routines is a full-bleed destination that opens its own screen", () => {
-  assert.strictEqual(JSON.stringify(T.DEST_PLANES.routines), "[]");
-  assert.strictEqual(T.DEST_DEFAULT_SCREEN.routines, "routines");
-  /* and it must NOT still be a row under Settings -- one home, not two */
-  const settingsRows = T.planeRows("settings").flatMap(g => g.rows).map(r => r.screen);
-  assert.strictEqual(settingsRows.indexOf("routines"), -1,
-    "routines must not remain a Settings plane row");
+test("model: routines is a Settings -> Automation row, not a destination", () => {
+  /* One home, not two: it must be a row on the Settings plane AND absent from
+     the rail model entirely -- DESTS, the plane spec and the landing map. */
+  assert.strictEqual(T.DESTS.indexOf("routines"), -1, "routines is not a destination");
+  assert.strictEqual(T.DEST_PLANES.routines, undefined, "no routines plane spec");
+  assert.strictEqual(T.DEST_DEFAULT_SCREEN.routines, undefined, "no routines landing screen");
+  const auto = T.planeRows("settings").find(g => g.label === "Automation");
+  assert(auto, "Settings must carry an Automation group");
+  const rows = auto.rows.map(r => r.screen);
+  assert.strictEqual(JSON.stringify(rows),
+    JSON.stringify(["skills","automation","routines","connectors"]));
+  /* the name is unchanged -- the row still reads "Routines" */
+  assert.strictEqual(auto.rows[rows.indexOf("routines")].label, "Routines");
+});
+test("model: a stored Routines destination migrates to Settings, on that row", () => {
+  storage._m["sutra.panel.layout"] =
+    JSON.stringify({ dest: "routines", destSel: { settings: "health" } });
+  const out = T.loadLayout();
+  assert.strictEqual(out.dest, "settings");
+  assert.strictEqual(out.destSel.settings, "routines", "the migrated pick wins");
+  delete storage._m["sutra.panel.layout"];
 });
 test("model: a stored Code tab migrates to Chats", () => {
   storage._m["sutra.panel.layout"] = JSON.stringify({ railTab: "code" });
@@ -140,7 +163,7 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
     ["workspace","departments","charters","placements","reorg"]));
 });
 test("planes: settings carries three labelled groups", () => {
-  /* Was four. "Preferences" held exactly one row -- the AI Assistant screen --
+  /* Was four. "Preferences" held exactly one row -- the AI Provider screen --
      and a group wrapping a single row is a header that earns nothing. The row
      moved into System (founder 2026-09-03), which is where the rest of the
      machine-state screens already live. The assertion stays EXACT rather than
@@ -154,7 +177,7 @@ test("planes: settings carries three labelled groups", () => {
      about the assistant you just picked. The SCREEN is still registered. */
   assert.strictEqual(JSON.stringify(system), JSON.stringify(
     ["health","evals","history","settings"]),
-    "the AI Assistant row must be the last System row, and Usage must not be one");
+    "the AI Provider row must be the last System row, and Usage must not be one");
   assert.ok(T.SCREENS && typeof T.SCREENS.usage === "function",
     "the usage screen must stay registered so openScreen('usage') still resolves");
 });
@@ -268,12 +291,36 @@ test("roles: the pick persists and survives a reload", () => {
 
 /* §telemetry ─ S14 */
 test("telemetry: renders the utilization when known, an em-dash when not", () => {
-  T.S.usage = null; T.paintTelemetry();
-  assert.strictEqual(els["idStat"].textContent, "—");
+  /* The footer asks providerUsage(), which since 2026-09-07 resolves WHICH KIND
+     of usage fact the selected provider reports before reading any state --
+     otherwise the line quoted Anthropic's percentage whatever was selected. So
+     the fixture has to name a provider and a kind, the way the live panel does
+     from GET /api/providers. */
+  const prevP = T.PROVIDERS, prevS = T.SETTINGS;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" }];
+  T.SETTINGS = Object.assign({}, T.SETTINGS, { provider: "claude" });
+  try {
+    T.S.usage = null; T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "—");
+    T.S.usage = { available: true, limits: [{ active: true, percent: 63.4 }] };
+    T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "63% of the usage window");
+  } finally { T.S.usage = null; T.PROVIDERS = prevP; T.SETTINGS = prevS; }
+});
+
+test("telemetry: withholds rather than guesses when the provider table is unread", () => {
+  /* DELIBERATE, not a gap. With no provider table there is no way to know
+     whether this assistant reports a window, a balance, or nothing -- and the
+     failure this whole change fixes was a surface asserting a number it had no
+     basis for. An em-dash is the honest output; the figure appears when the
+     table arrives. */
+  const prevP = T.PROVIDERS;
+  T.PROVIDERS = [];
   T.S.usage = { available: true, limits: [{ active: true, percent: 63.4 }] };
-  T.paintTelemetry();
-  assert.strictEqual(els["idStat"].textContent, "63% of the usage window");
-  T.S.usage = null;
+  try {
+    T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "—");
+  } finally { T.S.usage = null; T.PROVIDERS = prevP; }
 });
 
 /* §accent ─ S15-S19 */
@@ -445,12 +492,12 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
      (behavior is exercised in the workspace suite). */
   ["knowledge", "files"].forEach(id => reachable.add(id));
   /* Usage lost its nav row on 2026-09-03 and is reached by being RENDERED
-     INSIDE the AI Assistant screen -- a stronger form of reachable than a row,
+     INSIDE the AI Provider screen -- a stronger form of reachable than a row,
      since you arrive at it while answering the question that raised it. Same
      shape of claim as knowledge/files above, so it is asserted the same way:
      at the source level, that SCREENS.settings actually calls SCREENS.usage. */
   assert(/SCREENS\.usage\(\)/.test(String(T.SCREENS.settings)),
-         "usage has no nav row AND is not rendered inside the AI Assistant "
+         "usage has no nav row AND is not rendered inside the AI Provider "
          + "screen -- it would be orphaned");
   reachable.add("usage");
   const loaders = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");

@@ -402,6 +402,23 @@ class SessionRuntime:
             try:
                 line = await self.proc.stdout.readline()
             except (ValueError, asyncio.LimitOverrunError) as exc:
+                # KNOWN GAP, open, needs a founder call before it is closed:
+                # `notice` HAS NO CLIENT HANDLER. Nothing in static/js/ branches
+                # on it -- checked across the whole bundle, not assumed -- so
+                # every notice this server emits is parsed and dropped. Three
+                # sites are affected: this one, and acp_runtime.py's two
+                # permission-decision audit lines, which means the record of
+                # "Sutra auto-approved this tool call, in this mode" reaches
+                # nobody.
+                #
+                # NOT FIXED HERE ON PURPOSE. Adding a handler would newly
+                # surface output on CLAUDE panes, which is a rendering change
+                # to the provider that is supposed to stay byte-identical while
+                # the DeepSeek work lands. It is a real gap, it is not this
+                # commit's, and the comment exists so the next person does not
+                # reuse `notice` believing it displays. (Found 2026-09-07 while
+                # choosing a channel for the permission-mode divergence note --
+                # which is why that one is its own frame type instead.)
                 await emit({
                     "type": "notice",
                     "text": "one oversized frame from the agent was skipped. "

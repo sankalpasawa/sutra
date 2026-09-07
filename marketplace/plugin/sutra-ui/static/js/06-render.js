@@ -145,6 +145,53 @@ function agentDetailHtml(meta, messages){
    through paneMenuAction() or -- for Permissions and Model -- are LABELS around
    the existing selects, so the [data-perm]/[data-model] handlers in wire()
    survive unchanged (a select inside a button is invalid HTML -- codex P1). */
+/* THIS PANE'S provider id. Three controls now key off it (Model, Permissions,
+   Turn options) and they must agree, so the expression lives in one place.
+
+   s.channel is what the SERVER said it would actually run (the ws "provider"
+   frame), so a pane opened under DeepSeek keeps its own answer after the global
+   default is switched to Claude. SETTINGS.provider covers only the pane that
+   has not received its frame yet.
+
+   Undefined before /api/settings resolves, and that is on purpose -- see
+   paneDeclProvider below for the one kind of question that can be answered
+   earlier, and why this one cannot. */
+function paneProvider(s){
+  return (s && s.channel && s.channel.id) || (SETTINGS || {}).provider;
+}
+/* THE SAME PANE, for a DIFFERENT KIND OF QUESTION -- and the split is the fix
+   for a real defect, not a convenience.
+
+   An UNSTARTED pane has no channel: the provider frame arrives with the socket,
+   i.e. on the first message. So until then paneProvider is SETTINGS.provider,
+   and SETTINGS is null until /api/settings resolves. Every consumer therefore
+   took its not-loaded branch during the boot window -- and for turn options
+   that branch renders CLAUDE'S FIVE. On a DeepSeek pane. In precisely the
+   window when this menu gets opened, which is before asking anything, to set
+   something first.
+
+   What separates the two is WHAT THE CONTROL NEEDS TO KNOW:
+
+     a DECLARATION  -- "which controls can this provider honour?" Static per
+                       provider, so app.py can put it in the page and 01-state
+                       reads it at parse time (SEED). Answerable on the first
+                       paint. Permissions and Turn options ask this.
+     FETCHED STATE  -- "what has this provider actually reported?" (usage_kind
+                       off GET /api/providers) or "which models exist?"
+                       (MODELS_BY_PROVIDER). No amount of knowing the provider
+                       id answers these before the fetch. Usage and Model ask
+                       this, and they keep paneProvider above.
+
+   Feeding the seed to the fetched-state controls looked free and was not: the
+   Usage row reads `usageKindOf(mpid) === "none"` and usageKindOf answers "none"
+   for ANY id while PROVIDERS is unfetched, so a known id turns its boot-window
+   text from "not reported for default" into "not reported for Claude Code" --
+   a vague false claim sharpened into a specific one. That is a defect in the
+   Usage row's not-loaded branch, logged rather than fixed here, and this split
+   is what keeps it from spreading while it waits. */
+function paneDeclProvider(s){
+  return paneProvider(s) || SEED.provider;
+}
 function paneMenuHtml(s){
   if (S.paneMenu !== s.id) return "";
   /* The Claude-only `u = usageActive(S.usage)` binding lived here. Its one
@@ -152,6 +199,36 @@ function paneMenuHtml(s){
      matches the provider actually selected. */
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
+  /* ── the Model row, built here so the template below stays one line ──
+     THIS PANE'S provider, not the globally selected one -- see paneProvider()
+     above for why, which is now shared with the Permissions and Turn options
+     rows rather than restated here. */
+  const mpid = paneProvider(s);
+  /* Declaration-gated controls only -- see paneDeclProvider. */
+  const dpid = paneDeclProvider(s);
+  /* Before /api/settings resolves there is no map at all, and the row must not
+     vanish on first paint -- that is what the old `MODELS.length ? ... : [CLI
+     default]` fallback was for. An EMPTY map means not-loaded; a loaded map
+     that simply has no entry for this provider means the provider genuinely
+     declares no models (codex has no model flag), and then there is no picker
+     to draw rather than an empty one. */
+  const mloaded = !!mpid && Object.keys(MODELS_BY_PROVIDER).length > 0;
+  const mlist = mloaded ? (MODELS_BY_PROVIDER[mpid] || [])
+                        : [{ id: "", name: "CLI default" }];
+  /* The stored default for THIS provider. The old fallback read the single flat
+     SETTINGS.model, which was Claude's -- so a DeepSeek pane pre-selected a
+     Claude id that could never be sent. */
+  const msel = S.model[s.id] ?? (((SETTINGS || {}).model_by_provider || {})[mpid] || "");
+  /* selectable:false is CATALOGUED BUT NOT RUNNABLE HERE -- the vision model,
+     which this panel has no image channel to feed. Listed so its existence is
+     not hidden, disabled so it cannot be picked, reason on the option itself.
+     The server refuses it too (providers.clean_model gates on the selectable
+     set), so this is the visible face of a real refusal, not the only thing
+     standing in the way. */
+  const mopts = mlist.map(m=>{ const off = m.selectable === false; return `
+          <option value="${esc(m.id)}"${off?" disabled":""}${!off && msel === m.id ? " selected":""}
+            title="${esc(off ? (m.unavailable_reason || "not available") : (m.note || ""))}"
+          >${esc(m.name)}${off?" — unavailable":""}</option>`; }).join("");
   /* role="group", not "menu": the rows are buttons and <label>s, not menuitems,
      and a menu role promises arrow-key navigation this popover does not have
      (refuter 2026-08-23). A labelled group is honest and valid. */
@@ -167,15 +244,27 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
-    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect()}</span><span class="ma"></span></label>
-    <label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
-            title="Model — applies to the next message">
-        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
-          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
-          >${esc(m.name)}</option>`).join("")}
-      </select></span><span class="ma"></span></label>
-    ${row("usage", "Usage", (providerUsage() || {}).row || "plan usage")}
-    ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(dpid)}</span><span class="ma"></span></label>
+    ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
+            title="Model — applies to the next message">${mopts}
+      </select></span><span class="ma"></span></label>`}
+    ${(()=>{ /* THIS PANE'S provider, same rule as the Model row above. */
+       const pu = providerUsage(mpid);
+       if (pu) return row("usage", "Usage", pu.row);
+       /* No figure. Two different reasons, and saying the wrong one is worse
+          than saying nothing: a provider with no usage concept will never have
+          one, while a provider that has not been read yet will. "plan usage"
+          was Claude's phrasing standing in for both. */
+       return row("usage", "Usage", usageKindOf(mpid) === "none"
+         ? "not reported for " + (providerLabel(mpid) || mpid || "this assistant")
+         : "not read yet");
+     })()}
+    ${/* Omitted entirely for a provider that honours none of them, rather than
+          opening onto an empty box -- same rule as the Model row above. On a
+          DeepSeek pane every one of the five was collected and discarded: ACP's
+          per-turn request has no options field for them to travel in. */
+       !turnOptsFor(dpid).size ? "" :
+       row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
     ${row("close", "Close", "close this session")}
@@ -282,8 +371,9 @@ function sessionPane(s){
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
     ${switchMarkerHtml(s.id)}
+    ${modeMarkerHtml(s.id)}
     ${permConfirmHtml()}
-    ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneDeclProvider(s)) : ""}
     ${cwdEditorHtml(s.id)}
     ${providerSwitcherHtml(s.id)}
     ${prFormHtml(s.id)}
@@ -358,33 +448,49 @@ const COMPOSER_MAX_PX = 200;
    trusted. Kept per SESSION rather than global: "spend at most $2 on this one"
    is a property of the question being asked, not of the panel. */
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
-function turnOptsHtml(sid){
+/* Which of the five this PANE'S provider can honour, as a Set.
+   Not-loaded (empty map) => all of them, so the first paint is what it always
+   was; a loaded map with no entry for this provider => none, and the caller
+   omits the whole block rather than opening an empty one. */
+function turnOptsFor(mpid){
+  const loaded = Object.keys(TURN_OPTIONS_BY_PROVIDER).length > 0;
+  if (!loaded) return new Set(TOPT_ALL);
+  return new Set(TURN_OPTIONS_BY_PROVIDER[mpid] || []);
+}
+const TOPT_ALL = ["effort", "max_budget_usd", "allowed_tools",
+                  "disallowed_tools", "append_system_prompt"];
+function turnOptsHtml(sid, mpid){
   const o = S.turnOpts[sid] || {};
+  const on = turnOptsFor(mpid);
+  /* Each field is emitted only if this provider can act on it. A field that is
+     collected and then discarded server-side is the model-dropdown bug in a
+     different control: it reads as a setting that took effect. */
+  const f = (key, html) => on.has(key) ? html : "";
   return `<div class="topts">
-    <label><span>Effort</span>
+    ${f("effort", `<label><span>Effort</span>
       <select data-opt="effort" data-sid="${sid}">
         ${EFFORTS.map(e=>`<option value="${e}" ${o.effort===e?"selected":""}>${
           e||"default"}</option>`).join("")}
-      </select></label>
-    <label><span>Budget</span>
+      </select></label>`)}
+    ${f("max_budget_usd", `<label><span>Budget</span>
       <input type="number" step="0.5" min="0" placeholder="no cap"
              data-opt="max_budget_usd" data-sid="${sid}"
              value="${o.max_budget_usd!=null?esc(String(o.max_budget_usd)):""}"
-             title="--max-budget-usd: stop the turn once it has cost this much"/></label>
-    <label class="wide"><span>Allow only</span>
+             title="--max-budget-usd: stop the turn once it has cost this much"/></label>`)}
+    ${f("allowed_tools", `<label class="wide"><span>Allow only</span>
       <input type="text" placeholder="Read Bash Grep — blank means every tool"
              data-opt="allowed_tools" data-sid="${sid}"
              value="${esc((o.allowed_tools||[]).join(" "))}"
-             title="--allowedTools: whitespace separated"/></label>
-    <label class="wide"><span>Never</span>
+             title="--allowedTools: whitespace separated"/></label>`)}
+    ${f("disallowed_tools", `<label class="wide"><span>Never</span>
       <input type="text" placeholder="WebFetch Write"
              data-opt="disallowed_tools" data-sid="${sid}"
              value="${esc((o.disallowed_tools||[]).join(" "))}"
-             title="--disallowedTools: whitespace separated"/></label>
-    <label class="wide"><span>Extra instructions</span>
+             title="--disallowedTools: whitespace separated"/></label>`)}
+    ${f("append_system_prompt", `<label class="wide"><span>Extra instructions</span>
       <input type="text" placeholder="appended to the system prompt for this turn"
              data-opt="append_system_prompt" data-sid="${sid}"
-             value="${esc(o.append_system_prompt||"")}"/></label>
+             value="${esc(o.append_system_prompt||"")}"/></label>`)}
     <p class="topts-note">Applies to the next message; the server validates each
       value and drops anything it does not recognise.
       <strong>Denying one tool is not a capability limit</strong> — blocking only
@@ -948,6 +1054,13 @@ function render(){
          the render rebuilds it fresh each pass, so setting inline here is
          authoritative for THIS paint only (learned live 2026-08-26) */
       if (wide && bp.style) bp.style.flex = "0 0 720px";
+      /* Agents (2.239.0) carries three columns of its own -- agent, conversation,
+         review panel -- so it takes the row the way a session pane would. Measured
+         at 385px beside an open chat before this: the composer was four words wide.
+         The class also drops the pane's padding (agents.css). */
+      const agw = S.screen === "agents" && !bCol;
+      bp.classList.toggle("agwide", agw);
+      if (agw && bp.style) bp.style.flex = "1 1 100%";
     }
   }
   wire();

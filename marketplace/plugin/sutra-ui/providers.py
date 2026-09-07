@@ -11,6 +11,12 @@ fresh on every call:
 
   adapter     = <id> in ADAPTERS                     -- can WE drive it?
 
+TWO PROVIDERS OVERRIDE `configured`, because for them the directory is not
+evidence of anything: codex reads ~/.codex/auth.json (existence only) and
+deepseek asks whether an API key resolves. Both directories exist after the CLI
+has run once, whether or not anyone ever signed in, so treating them as setup
+claimed the provider was ready on a machine that had never authenticated.
+
 Neither is inferred from the others. A provider is `runnable` only when ALL
 THREE hold, and `reason` states exactly which one failed, naming the path or
 the missing capability, so the UI never says "unavailable" without saying why.
@@ -37,8 +43,10 @@ Writes: exactly one file, ~/.sutra-ui/settings.json, via save_settings().
 """
 import json
 import os
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 # ------------------------------------------------------------ login PATH ---
@@ -363,34 +371,251 @@ def workdir_allowed(path):
     return target == root or target.startswith(root + os.sep)
 
 # Models offerable for a session. An ALLOW-LIST, not free text: the value is passed
-# straight to `claude --model`, where an unknown string fails several seconds later
-# as a dead socket rather than as a refusal the operator can read. `""` means "let
-# the CLI use its own default", which is the shipped behaviour and stays the default.
+# straight to the CLI's model flag, where an unknown string fails several seconds
+# later as a dead socket -- or worse, does not fail at all and something else
+# answers (see _DEEPSEEK_MODELS). `""` means "let the CLI use its own default",
+# which is the shipped behaviour and stays the default for every provider.
 #
-# These are ALIASES on purpose. Pinned ids go stale the moment a new snapshot ships,
-# and a panel that offers a retired id is offering something that cannot run -- the
-# same failure providers.py exists to prevent. The CLI resolves an alias to whatever
-# it currently points at.
-MODELS = (
+# Claude's are ALIASES on purpose. Pinned ids go stale the moment a new snapshot
+# ships, and a panel that offers a retired id is offering something that cannot run
+# -- the same failure providers.py exists to prevent. The CLI resolves an alias to
+# whatever it currently points at. DeepSeek's fork takes concrete ids and has no
+# alias layer, so its entries are pinned and that difference is per-provider too.
+#
+# PER PROVIDER, declared on the catalog row (see _CATALOG below), not switched
+# on by id at the point of use. The panel offered Claude's four aliases on a
+# DeepSeek session because there was ONE list and it was Claude's; the fix is
+# not a branch in the picker, it is that each provider carries its own.
+_CLAUDE_MODELS = (
     {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
     {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
     {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
     {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
 )
-MODEL_IDS = frozenset(m["id"] for m in MODELS)
+
+# DeepSeek's, passed as `-m <id>`. NOT aliases -- the fork takes concrete ids,
+# and its ACP session/new advertises exactly deepseek-v4-pro and
+# deepseek-v4-flash (measured 2026-09-07). `""` is the CLI's own default, which
+# that same measurement showed to be deepseek-v4-flash.
+#
+# THE ALLOW-LIST IS LOAD-BEARING HERE IN A WAY IT IS NOT FOR CLAUDE. The fork
+# does not validate -m. Its entire check is
+#     resolveDeepSeekModel(m) { return m?.startsWith("deepseek-") ? m : "deepseek-chat" }
+# so `deepseek-v9-nonsense` is forwarded verbatim to the API and `deepsek-v4-pro`
+# (one typo) silently answers as deepseek-chat. Measured on the wire, both.
+# Nothing downstream will refuse a bad id, so this tuple is the only refusal.
+# POSSIBLE CROSS-CHECK, NOT WIRED (2026-09-07). `session/new` already returns
+# the CLI's own list -- `models: {availableModels, currentModelId}` -- which
+# AcpRuntime.new_session reads for `modes` and drops. Measured on the live
+# build: auto / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash
+# (the CLI's list really does carry that duplicate), currentModelId
+# deepseek-v4-flash.
+#
+# That is a second source of truth for what follows, and this hardcoded tuple
+# is the one that can go stale on a CLI upgrade with nothing to notice. Left
+# unused on purpose for now -- consuming it would change which models the
+# picker offers, which is a behaviour change, not a check. The cheap version
+# is a test that compares the two and fails when they disagree.
+_DEEPSEEK_MODELS = (
+    {"id": "",                  "name": "CLI default",
+     "note": "whatever `deepseek` is configured to use (currently V4 Flash)"},
+    {"id": "deepseek-v4-pro",   "name": "V4 Pro",
+     "note": "flagship, 1M context"},
+    {"id": "deepseek-v4-flash", "name": "V4 Flash",
+     "note": "fast and cheaper, 1M context"},
+    # LISTED, DISABLED, WITH THE REASON ON SCREEN. Dropping it would hide that
+    # the model exists; offering it enabled would be the offer-a-choice-that-
+    # cannot-run failure ADAPTERS exists to prevent (see the ADAPTERS comment).
+    # Also absent from the CLI's own ACP-advertised list, so even the fork does
+    # not currently claim it is reachable this way.
+    {"id": "deepseek-v4-flash-vision-exp", "name": "V4 Flash Vision",
+     "note": "experimental multimodal",
+     "selectable": False,
+     "unavailable_reason":
+         "this panel has no image channel -- an attachment is uploaded into "
+         "the workdir and handed to the agent as a FILE PATH, and the ACP "
+         "prompt it sends carries text blocks only. This model would receive "
+         "a filename where it expects an image, so it is listed rather than "
+         "offered."},
+)
 
 
-def clean_model(value):
-    """A catalogued model id, or None. Never raises, never passes junk to the CLI."""
+def _model_selectable(entry):
+    """Absent `selectable` means True.
+
+    Deliberate: only the one unavailable entry carries the key, so every
+    provider's ordinary rows stay byte-identical to what they were before this
+    field existed -- nothing about Claude's payload moved.
+    """
+    return entry.get("selectable", True) is not False
+
+
+def models_for(pid):
+    """Every model this provider declares, in menu order. () for a provider
+    that has none (codex, gemini) -- which is a real answer, not a gap: their
+    rows render without a picker rather than with someone else's."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("models", ())
+    return ()
+
+
+def model_ids_for(pid):
+    """Every declared id, selectable or not. Use for "is this catalogued"."""
+    return frozenset(m["id"] for m in models_for(pid))
+
+
+def selectable_model_ids_for(pid):
+    """The ids a session may actually RUN on. The narrower set, and the one
+    clean_model() gates against -- a listed-but-disabled model must be
+    unreachable through the API too, not merely greyed out in the menu."""
+    return frozenset(m["id"] for m in models_for(pid) if _model_selectable(m))
+
+
+def all_models_by_provider():
+    """{provider_id: [model, ...]} for every provider that declares any.
+
+    The shape the settings endpoint publishes. A provider with no models is
+    ABSENT rather than present-and-empty, so the client's test for "does this
+    provider have a picker" is the same test as "is it in this dict".
+    """
+    return {spec["id"]: list(spec["models"])
+            for spec in _CATALOG if spec.get("models")}
+
+
+def turn_options_for(pid):
+    """The per-turn controls this provider can HONOUR, in no particular order.
+    () for a provider whose transport carries none -- which is a real answer,
+    not a gap: its pane renders without those controls rather than with
+    controls that are discarded server-side.
+
+    An unknown provider gets () rather than Claude's list. A provider this
+    build has never heard of cannot be assumed to accept Claude's flags, and
+    guessing yes is what puts a dead control on screen."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("turn_options", ())
+    return ()
+
+
+def all_turn_options_by_provider():
+    """{provider_id: [option, ...]} for every provider that honours any.
+
+    Same contract as all_models_by_provider: a provider that honours none is
+    ABSENT rather than present-and-empty, so the client's "does this pane have
+    turn options" test is the same test as "is it in this dict". Claude always
+    declares five, so a LOADED map is never empty -- which is what lets the
+    client tell "not fetched yet" from "declares none"."""
+    return {spec["id"]: list(spec["turn_options"])
+            for spec in _CATALOG if spec.get("turn_options")}
+
+
+def permission_modes_for(pid):
+    """The subset of PERMISSION_MODES this provider can actually enforce.
+
+    Falls back to ALL of them when a provider declares none, and for a provider
+    that is not catalogued at all -- the opposite default from
+    turn_options_for() above, and deliberately so. A missing turn option means
+    a control vanishes, which is safe; a missing permission mode would mean the
+    pane offers no way to say "plan", and hiding a safety control is the wrong
+    direction to be wrong in.
+
+    EMPTY AND MISSING ARE TREATED THE SAME HERE, which they are not in
+    all_permission_modes_by_provider() below -- that omits an empty declaration
+    so the CLIENT applies its own fallback. Both halves therefore answer "all
+    of them" for codex/gemini, which declare (). Returning () here instead
+    would leave this helper disagreeing with the panel about the same provider,
+    and two copies of an answer that can differ is how one of them goes stale.
+
+    codex/gemini declare () because the question is unanswerable rather than
+    answered: neither has an adapter, so no pane can run one, and nothing has
+    ever measured which modes they would honour. Guessing Claude's six is safe
+    only because it is unreachable."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("permission_modes") or PERMISSION_MODES
+    return PERMISSION_MODES
+
+
+def all_permission_modes_by_provider():
+    """{provider_id: [mode_id, ...]} for every provider that enforces any."""
+    return {spec["id"]: list(spec["permission_modes"])
+            for spec in _CATALOG if spec.get("permission_modes")}
+
+
+def model_flag_for(pid):
+    """The CLI flag that carries the model, or None when the provider has no
+    model lever. `--model` for claude, `-m` for deepseek."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("model_flag")
+    return None
+
+
+def usage_kind_for(pid):
+    """What KIND of usage fact this provider reports:
+
+      window-percent  a share of a rate-limit window (claude)
+      balance         money left in a pay-as-you-go account (deepseek)
+      none            neither -- do not show a figure, and do not borrow
+                      another provider's
+
+    `none` is why this is a declared kind rather than an if/else. The client's
+    usage branch was `if deepseek -> balance else -> Anthropic percentage`, so
+    Codex would have rendered Claude's percentage on a Codex session the day it
+    became selectable.
+    """
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("usage_kind", "none")
+    return "none"
+
+
+def clean_model(value, provider_id):
+    """A model id this PROVIDER can run, or None. Never raises, never passes
+    junk to the CLI.
+
+    `provider_id` is mandatory on purpose. An optional one -- or one defaulting
+    to "claude" -- reintroduces the exact bug this change exists to remove: a
+    forgotten argument would silently validate a DeepSeek session's model
+    against Claude's list.
+
+    Gated on the SELECTABLE set, so a catalogued-but-disabled id (the vision
+    model) is refused here and not only hidden in the menu.
+    """
     if not isinstance(value, str):
         return None
     v = value.strip()
-    return v if (v and v in MODEL_IDS) else None
+    return v if (v and v in selectable_model_ids_for(provider_id)) else None
 
 
-def stored_model():
-    """The model chosen in Settings, or None for the CLI's own default."""
-    return clean_model(_raw_settings().get("model"))
+def stored_model(provider_id):
+    """The model chosen for THIS provider, or None for the CLI's own default.
+
+    Each provider keeps its own slot, so switching provider and back does not
+    discard the choice -- and a Claude id can never leak onto a DeepSeek spawn,
+    which a single shared scalar made possible.
+    """
+    return clean_model(_stored_models().get(provider_id), provider_id)
+
+
+def _stored_models():
+    """{provider_id: model_id} as stored, with the legacy scalar migrated.
+
+    Storage moved from a single `model` key to `model_by_provider` when the
+    picker became per-provider. The old scalar only ever described Claude, so
+    it migrates into that slot. Read-side only: nothing rewrites the file until
+    the next save, so an older build reading this file still finds what it
+    expects.
+    """
+    raw = _raw_settings()
+    by_provider = raw.get("model_by_provider")
+    out = ({k: v for k, v in by_provider.items() if isinstance(v, str)}
+           if isinstance(by_provider, dict) else {})
+    legacy = raw.get("model")
+    if "claude" not in out and isinstance(legacy, str):
+        out["claude"] = legacy
+    return out
 
 
 PERMISSION_MODE_NOTES = {
@@ -413,20 +638,111 @@ PERMISSION_MODE_NOTES = {
 # deepseek; anything else falls through to the "no-adapter" refusal). Adding
 # an id here without writing its adapter re-creates the bug this set exists
 # to prevent.
+#
+# codex: DELIBERATELY ABSENT (2026-09-04). It was added here as a staging step
+# and taken back out the same day. With codex in this set the row rendered
+# "Ready to use", accepted the click, and then died at connect with code
+# "no-adapter" (app.py's `elif active_id != "claude"` arm) -- exactly the
+# offer-a-choice-that-cannot-run failure this set exists to prevent. Refusing
+# at SELECTION time is the better error until a CodexRuntime, a
+# build_codex_args() and a third arm in the ws_chat dispatch exist.
+#
+# The Codex row now offers SIGN-IN (see the codex auth section below), which is
+# a different capability from selectability and says so on screen. Signing in
+# does not belong to this set and must not be read as progress toward it.
 ADAPTERS = frozenset({"claude", "deepseek"})
 
 # ------------------------------------------------------------- catalog -----
 # Order is precedence order for the "first runnable provider" fallback.
 # `default` marks the one the panel ships pointed at.
+#
+# `models` / `model_flag` / `usage_kind` are DECLARATIONS, read through
+# models_for() / model_flag_for() / usage_kind_for(). They live here so a new
+# provider answers all three questions by being added to this tuple, instead of
+# by someone remembering to extend a switch in the picker, another in the usage
+# row, and a third in the spawn path.
+#: Per-turn controls a provider can actually HONOUR. Claude's five map 1:1 onto
+#: documented `claude` flags, validated in build_agent_args.
+#:
+#: DeepSeek declares NONE, and that is a measured answer rather than a gap.
+#: Its transport is ACP, whose entire per-turn request is
+#: `{sessionId, prompt[], messageId?, _meta?}` -- there is no options field to
+#: carry any of this, `Session.prompt` reads only `params.prompt`, and the
+#: agent implements no `extMethod`, so there is not even an extension route.
+#: Probed on the wire against @sluisr/deepseek-cli@1.3.2, 2026-09-07:
+#: session/set_config_option (ACP's generic per-session config surface, and the
+#: one place a reasoning-effort knob could have lived) answers -32601.
+#:
+#: The individual controls, and why each is absent rather than pending:
+#:
+#:   effort              nothing to wire. `reasoningEffort` exists in the fork
+#:                       as config, is only ever SET from the interactive TUI's
+#:                       keyboard toggle, and never reaches the request body --
+#:                       `body.reasoning_effort` is assigned nowhere in the
+#:                       bundle and deleted in one place.
+#:   budget              no flag, no method. ACP reports per-turn token counts
+#:                       AFTER the fact and no dollar figure at all.
+#:   append_system_prompt  no equivalent on either surface.
+#:   disallowed_tools    no argv flag. Expressible only as a Policy Engine
+#:                       .toml (decision = "deny") passed with --policy, which
+#:                       REPLACES the operator's own policies directory when
+#:                       non-empty -- so wiring it would silently drop their
+#:                       rules. Deliberately not attempted.
+#:   allowed_tools       DO NOT WIRE THIS TO --allowed-tools. It looks like
+#:                       Claude's --allowedTools and does the OPPOSITE KIND of
+#:                       thing: Gemini's flag feeds
+#:                       mapToolsToRules(..., autoApprove=true)
+#:                       (chunk-UNFT3LTQ.js:384568) and the CLI's own copy for
+#:                       it reads "This project auto-approves certain tools".
+#:                       It is a permission-prompt BYPASS, not a capability
+#:                       whitelist. An operator typing "Read Bash" into a box
+#:                       labelled "Allow only" is narrowing what the agent may
+#:                       do; this flag would WIDEN it. A control that does the
+#:                       reverse of what its label promises is worse than an
+#:                       absent one, which is why this stays empty.
+_CLAUDE_TURN_OPTIONS = ("effort", "max_budget_usd", "allowed_tools",
+                        "disallowed_tools", "append_system_prompt")
+
+#: Which of PERMISSION_MODES a provider can actually enforce.
+#:
+#: Claude's six are all of them -- this is the existing global list, declared
+#: per provider rather than changed.
+#:
+#: DeepSeek's ACP layer offers four modes (default/autoEdit/yolo/plan) and
+#: three of Sutra's six map onto them. `auto`, `manual` and `dontAsk` have no
+#: equivalent and no near-miss, so they are not offered on a DeepSeek pane --
+#: selecting one there ran `default` while the control kept displaying the
+#: choice. AcpRuntime._apply_mode still states the divergence for a mode that
+#: arrives anyway (a value stored while Claude was selected), because
+#: permission_mode is stored GLOBALLY and this list cannot prevent that.
+_CLAUDE_PERMISSION_MODES = PERMISSION_MODES
+_DEEPSEEK_PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
+
 _CATALOG = (
     {"id": "claude", "name": "Claude Code", "bin": "claude",
-     "config_dir": "~/.claude", "default": True},
+     "config_dir": "~/.claude", "default": True,
+     "models": _CLAUDE_MODELS, "model_flag": "--model",
+     "usage_kind": "window-percent",
+     "turn_options": _CLAUDE_TURN_OPTIONS,
+     "permission_modes": _CLAUDE_PERMISSION_MODES},
+    # No models and no usage: Codex is sign-in-only in this build (no adapter,
+    # see ADAPTERS above). Declaring the absence is the point -- it is what
+    # stops the usage row falling through to Anthropic's percentage.
     {"id": "codex", "name": "OpenAI Codex", "bin": "codex",
-     "config_dir": "~/.codex", "default": False},
+     "config_dir": "~/.codex", "default": False,
+     "models": (), "model_flag": None, "usage_kind": "none",
+     "turn_options": (), "permission_modes": ()},
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
-     "config_dir": "~/.gemini", "default": False},
+     "config_dir": "~/.gemini", "default": False,
+     "models": (), "model_flag": None, "usage_kind": "none",
+     "turn_options": (), "permission_modes": ()},
     {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
-     "config_dir": "~/.deepseek", "default": False},
+     "config_dir": "~/.deepseek", "default": False,
+     "models": _DEEPSEEK_MODELS, "model_flag": "-m",
+     "usage_kind": "balance",
+     # None, measured. See _CLAUDE_TURN_OPTIONS above for each control and why.
+     "turn_options": (),
+     "permission_modes": _DEEPSEEK_PERMISSION_MODES},
 )
 
 
@@ -499,6 +815,443 @@ def set_provider_bin(pid, path):
     return bins.get(pid)
 
 
+# ----------------------------------------------------------- codex auth ----
+# Codex is the one provider whose BILLING MODE is invisible from the outside,
+# and the two modes cost the operator completely different amounts for
+# identical output: a ChatGPT sign-in draws on a plan they already pay for, an
+# API key bills per token. Nothing in the panel showed which was in play.
+#
+# Codex stores EXACTLY ONE credential. Signing in with either method REPLACES
+# the other -- there is no both-at-once state and no precedence to resolve --
+# so this is one active mode plus a switch, never two independent toggles.
+#
+# THE CLI IS THE AUTHORITY. `codex login status` is ASKED rather than
+# ~/.codex/auth.json being parsed: that file is a credential store, and this
+# module reads config paths for EXISTENCE only, never contents (module
+# docstring). The masked stub codex prints ("sk-proj-***SMnIA") is DISPLAYED
+# and never stored -- Sutra holds no part of the key at any point, and there is
+# deliberately no settings key for one.
+#
+# NOT CALLED FROM _describe(). _describe() runs four times per
+# load_settings(), and every fs/tree, fs/read, ws_chat connect and settings GET
+# goes through that; a subprocess there would tax requests that never asked
+# about codex, and _bin_for() already had to dodge one recursion loop through
+# the same chain. This mirrors how the Claude account is handled instead:
+# claude_local.account() is a separate function the route calls and merges.
+# Provider IDENTITY is not a field of provider AVAILABILITY.
+
+#: Where codex keeps the one credential. Checked for existence, never opened.
+CODEX_AUTH_PATH = "~/.codex/auth.json"
+
+CODEX_STATUS_TIMEOUT = 10
+
+#: The one line `codex login status` answers with, verified against codex-cli
+#: 0.153.2 on 2026-09-04:
+#:
+#:     Logged in using ChatGPT
+#:     Logged in using an API key - sk-proj-***SMnIA
+#:     Not logged in
+#:
+#: The API-key form is matched with the separator OPTIONAL and the stub
+#: OPTIONAL: a build that stops printing the stub must still be recognised as
+#: an API-key login, because losing the stub is cosmetic and losing the MODE
+#: means telling the operator their tokens are free while they are being
+#: billed. Hyphen, en-dash, em-dash and colon are all accepted as the
+#: separator so a cosmetic change upstream cannot silently downgrade the state
+#: to "unknown".
+_CODEX_API_KEY_RE = re.compile(
+    r"logged\s+in\s+using\s+an\s+api\s+key\s*(?:[-:\u2013\u2014]\s*(\S+))?", re.I)
+_CODEX_CHATGPT_RE = re.compile(r"logged\s+in\s+using\s+chatgpt", re.I)
+_CODEX_LOGGED_OUT_RE = re.compile(r"not\s+logged\s+in", re.I)
+
+#: Plain English for each state, so the panel does not re-derive the billing
+#: story and disagree with this module. The whole point of the row is that
+#: these two cost different amounts.
+CODEX_BILLING = {
+    "chatgpt": "usage included in your plan",
+    "api_key": "billed per token",
+}
+
+
+def _codex_credential_present():
+    """True when codex is holding a credential -- ~/.codex/auth.json exists.
+
+    EXISTENCE ONLY. The file is a credential store and nothing here opens it.
+    """
+    return Path(os.path.expanduser(CODEX_AUTH_PATH)).is_file()
+
+
+def _parse_codex_status(text):
+    """(state, key_display) for one `codex login status` answer.
+
+    Matched on the TEXT, not the exit code. 0.153.2 exits 0 when logged in, and
+    learning what it exits when logged OUT would mean destroying the operator's
+    live session to find out -- so the exit code is used only for the coarse
+    "did it run at all" signal in codex_auth(), never to decide a mode.
+
+    Anything unrecognised is "unknown": asked, and could not tell. Guessing a
+    mode here is the convincing-wrong answer this codebase refuses to produce,
+    and the specific wrong answer would be "your usage is included" to someone
+    paying per token.
+    """
+    blob = (text or "").strip()
+    if not blob:
+        return "unknown", ""
+    m = _CODEX_API_KEY_RE.search(blob)
+    if m:
+        # rstrip: the stub is matched as one non-space run, so a build that ends
+        # the line with punctuation would otherwise fold it into the key.
+        return "api_key", (m.group(1) or "").rstrip(".,;:")
+    if _CODEX_CHATGPT_RE.search(blob):
+        return "chatgpt", ""
+    if _CODEX_LOGGED_OUT_RE.search(blob):
+        return "logged_out", ""
+    return "unknown", ""
+
+
+def codex_auth():
+    """Which credential Codex is holding, and therefore how it bills.
+
+        {"state":       chatgpt | api_key | logged_out | no_binary | unknown,
+         "key_display": the masked stub codex printed, or "" -- DISPLAY ONLY,
+         "billing":     one line of plain English, or None,
+         "detail":      what happened, when the answer is not a login state,
+         "bin_path":    the binary that was asked, or None,
+         "checked_at_ms": when}
+
+    NEVER RAISES. A probe that times out, cannot start, or answers in a shape
+    this build does not know comes back as "unknown" WITH the reason. It must
+    never fall back to a mode: the two modes bill differently, so a confident
+    wrong answer here is worse than no answer.
+
+    THE ENVIRONMENT DOES NOT CHANGE THE ANSWER while a credential file exists.
+    Measured on 0.153.2 (2026-09-04): `OPENAI_API_KEY=sk-fake codex login
+    status` still reports the ChatGPT sign-in, so ~/.codex/auth.json takes
+    precedence over the variable. That is what makes _describe()'s cheap
+    auth.json check agree with this probe rather than race it. Deliberately
+    still unmeasured, and therefore not claimed either way: whether the
+    variable authenticates ON ITS OWN when auth.json is absent entirely.
+
+    The env is passed through UNCHANGED, unlike the desktop shell's login
+    spawns which strip OPENAI_*/CODEX_*. This function reports what codex
+    reports; sanitising the environment here would make the panel disagree with
+    the same command run in a terminal, which is a worse failure than
+    inheriting a variable on a read.
+    """
+    ensure_login_path()
+    bin_path = provider_bin("codex")
+    now = int(time.time() * 1000)
+    if not bin_path:
+        return {"state": "no_binary", "key_display": "", "billing": None,
+                "detail": "the `codex` CLI is not on PATH, so its sign-in "
+                          "state cannot be read",
+                "bin_path": None, "checked_at_ms": now}
+    try:
+        p = subprocess.run([bin_path, "login", "status"], capture_output=True,
+                           text=True, timeout=CODEX_STATUS_TIMEOUT)
+    except FileNotFoundError:
+        # which() found it and exec did not: it moved between the two calls.
+        return {"state": "no_binary", "key_display": "", "billing": None,
+                "detail": "%s could not be run -- it is no longer there"
+                          % bin_path,
+                "bin_path": bin_path, "checked_at_ms": now}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"state": "unknown", "key_display": "", "billing": None,
+                "detail": "`codex login status` did not finish (%s)"
+                          % type(exc).__name__,
+                "bin_path": bin_path, "checked_at_ms": now}
+
+    # stderr is read only as a FALLBACK. 0.153.2 answers on stdout; a build
+    # that moves the line should still be understood rather than reported as
+    # an unknown mode.
+    blob = (p.stdout or "").strip() or (p.stderr or "").strip()
+    state, key_display = _parse_codex_status(blob)
+    detail = None
+    if state == "unknown":
+        # DELIBERATELY NOT no_binary. The binary is right there and it ran --
+        # saying it is not installed would send the operator after a PATH
+        # problem that does not exist, which is the exact wrong diagnosis
+        # test_provider_detect.py was written about. Unknown, with the exit
+        # code, is the honest report.
+        detail = ("`codex login status` answered in a shape this build does "
+                  "not recognise (exit %s). Run it in a terminal to see what "
+                  "it says." % p.returncode)
+    return {"state": state, "key_display": key_display,
+            "billing": CODEX_BILLING.get(state), "detail": detail,
+            "bin_path": bin_path, "checked_at_ms": now}
+
+
+# -------------------------------------------------------- deepseek sign-in --
+# DeepSeek is the inverse of Claude on billing: Claude inherits a logged-in Max
+# subscription and app.py REFUSES a stray ANTHROPIC_API_KEY, while DeepSeek has
+# no subscription path at all and every request is billed against a key. So a
+# key is not a preference here -- it is half of whether the provider works, and
+# it belongs in the same readiness answer as the binary.
+#
+# THE BUG THIS SECTION FIXES. `configured` for deepseek was `~/.deepseek`
+# is_dir(), which is true after the CLI has run once and says nothing about a
+# key. The row rendered "Ready to use", accepted the click, and then died at
+# connect with "DEEPSEEK_API_KEY is not set in the server environment. Export it
+# and restart the server." -- the offer-a-choice-that-cannot-run failure this
+# module's docstring is about, and the one codex was pulled out of ADAPTERS for
+# on 2026-09-04. Refusing at SELECTION time is the better error.
+#
+# ONE RESOLVER. app.py's ws_chat gate and deepseek_usage.py's balance fetch each
+# called os.environ.get("DEEPSEEK_API_KEY") independently and neither knew about
+# a saved key, so with a key in the keychain the balance card and the chat would
+# have disagreed about whether DeepSeek was usable. Both now read
+# deepseek_key_for_request().
+#
+# READ AT CALL TIME, never cached: signing in has to take effect on the next
+# message, not the next restart.
+
+#: Precedence, highest first. The Sutra-prefixed name matches the SUTRA_UI_<THING>
+#: convention this file already uses (SUTRA_UI_PROVIDER, SUTRA_UI_SETTINGS,
+#: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES, and the SUTRA_UI_<ID>_BIN family in
+#: _bin_for). The bare vendor name is SECOND and is not going away: it is what
+#: app.py and deepseek_usage.py have always read and what operators already
+#: export, and dropping it would sign out every machine that works today.
+DEEPSEEK_KEY_ENVS = ("SUTRA_UI_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY")
+
+
+def deepseek_env_var():
+    """Which env var is supplying a DeepSeek key, or None.
+
+    Returns the NAME only, never the value -- callers that want the value go
+    through deepseek_api_key(), and the UI needs this to say which variable is
+    winning so nobody saves a key that silently has no effect.
+    """
+    for var in DEEPSEEK_KEY_ENVS:
+        raw = os.environ.get(var)
+        if raw and raw.strip():
+            return var
+    return None
+
+
+def _deepseek_key_present():
+    """True when a key would resolve, WITHOUT reading one.
+
+    Existence only, the same discipline _codex_credential_present() applies to
+    auth.json. A stored key is attested by the NON-SECRET marker in
+    settings.json rather than by a keychain read, because _describe() runs four
+    times per load_settings() and every fs/tree, fs/read, ws_chat connect and
+    settings GET goes through that -- a Security.framework round trip on that
+    path would tax requests that never asked about DeepSeek, and _bin_for()
+    already had to dodge one recursion loop through the same chain.
+
+    The cost of trusting the marker is that a key deleted straight out of
+    Keychain Access still reads as present here. That divergence is caught in
+    deepseek_key_for_request(), which does read, and which drops the stale
+    marker so the row corrects itself.
+    """
+    if deepseek_env_var():
+        return True
+    try:
+        import deepseek_auth
+        return bool(deepseek_auth.marker().get("mask"))
+    except Exception:
+        return False
+
+
+def deepseek_api_key():
+    """The key to authenticate DeepSeek with, or None. Never raises.
+
+    Precedence: SUTRA_UI_DEEPSEEK_API_KEY, then DEEPSEEK_API_KEY, then the
+    keychain. Prefer deepseek_key_for_request() on a request path -- it gives
+    you the same key plus the sentence to show when there is not one.
+    """
+    for var in DEEPSEEK_KEY_ENVS:
+        raw = os.environ.get(var)
+        if raw and raw.strip():
+            return raw.strip()
+    try:
+        import deepseek_auth
+        return deepseek_auth.read()
+    except Exception:
+        return None
+
+
+def deepseek_key_for_request():
+    """(key, reason). THE call a request path makes.
+
+    Exactly one of the two is set. `reason` is a sentence, not a code -- it is
+    shown verbatim by the ws_chat refusal and the balance card, so both say the
+    same thing about the same machine.
+
+    This is where a marker/keychain divergence is caught: the marker says a key
+    was saved, the keychain no longer holds it, and rather than reporting an
+    unexplained failure the marker is DROPPED so the provider row flips back to
+    not-signed-in on the next read.
+    """
+    key = deepseek_api_key()
+    if key:
+        return key, None
+    try:
+        import deepseek_auth
+        stale = deepseek_auth.marker()
+        if stale.get("mask"):
+            deepseek_auth.forget_stale_marker()
+            return None, (
+                "a saved key was on record (%s) but the login keychain no longer "
+                "holds it -- the item at service %r, account %r is gone or could "
+                "not be read. That record has been cleared; sign in again to "
+                "replace it."
+                % (stale["mask"], deepseek_auth.KEYCHAIN_SERVICE,
+                   deepseek_auth.KEYCHAIN_ACCOUNT))
+    except Exception:
+        pass
+    # keychain_read=True: deepseek_api_key() above went through
+    # deepseek_auth.read(), so this path has actually opened the keychain and
+    # may say so. _describe()'s path has not -- see _deepseek_no_key_reason.
+    return None, _deepseek_no_key_reason(keychain_read=True)
+
+
+def _deepseek_no_key_reason(keychain_read=False):
+    """The sentence for a machine with no DeepSeek key, naming all three places
+    a key can come from and what was found at each.
+
+    Concrete in the style of the gemini row, which names what it searched ("the
+    login shell's PATH and the usual install locations were both searched")
+    rather than only what is missing. "no key is saved on this Mac" was the
+    first draft and it was the same failure as the string it replaced: true,
+    and no help to someone who wants to know WHERE a key would live.
+
+    `keychain_read` is not cosmetic. Only deepseek_key_for_request() actually
+    reads the keychain; _describe() decides from the settings marker, because a
+    Security.framework round trip on the render path would tax every fs/tree
+    and settings GET (see _deepseek_key_present). So the two call sites have
+    observed different things and must not make the same claim -- asserting
+    "the keychain holds no item" from a path that never opened it is exactly
+    the "configured means the directory exists" mistake in a new coat.
+    """
+    try:
+        import deepseek_auth
+        available, why = deepseek_auth.store_status()
+        service, account = (deepseek_auth.KEYCHAIN_SERVICE,
+                            deepseek_auth.KEYCHAIN_ACCOUNT)
+        settings_key = deepseek_auth.SETTINGS_KEY
+    except Exception:                             # pragma: no cover - import guard
+        available, why = False, "the credential store could not be loaded"
+        service = account = settings_key = "?"
+
+    if not available:
+        # No point naming a keychain item on a machine that has no keychain --
+        # and no second tail either: store_status()'s sentence already ends by
+        # sending the operator to the environment, so appending the sign-in tail
+        # produced "...in the environment instead.. So: set one of those
+        # variables...". Its trailing stop is dropped rather than the sentence
+        # rewritten, so the two callers of store_status() can keep one string.
+        stored_clause = why.rstrip(".")
+        tail = ""
+    elif keychain_read:
+        stored_clause = ("the login keychain holds no item at service %r, "
+                         "account %r" % (service, account))
+        tail = ("Sign in on the DeepSeek row, or set one of those variables "
+                "before starting the server.")
+    else:
+        stored_clause = ("nothing is saved here -- settings.json carries no %r "
+                         "record, which is what a saved key leaves behind (its "
+                         "mask; the key itself goes to the login keychain at "
+                         "service %r, account %r)"
+                         % (settings_key, service, account))
+        tail = ("Sign in on the DeepSeek row, or set one of those variables "
+                "before starting the server.")
+
+    return ("no API key. DeepSeek has no subscription to inherit -- every "
+            "request is billed against a key -- and all three places it can "
+            "come from were checked: %s is not set, %s is not set, and %s.%s"
+            % (DEEPSEEK_KEY_ENVS[0], DEEPSEEK_KEY_ENVS[1], stored_clause,
+               (" " + tail) if tail else ""))
+
+
+def deepseek_auth_state():
+    """Where a DeepSeek key comes from on this machine, and what the row should
+    say. Reads no secret: the mask for a stored key comes from the settings
+    marker, and the mask for an env key is computed from the value without
+    keeping it.
+
+    Cheap by construction -- settings read plus two env lookups -- which is why
+    this can be merged into the settings response instead of needing its own
+    probe route the way codex_auth() does (that one spawns `codex login
+    status`, so _describe() must not call it).
+    """
+    var = deepseek_env_var()
+    store_available, store_reason = True, None
+    m = {}
+    try:
+        import deepseek_auth
+        store_available, store_reason = deepseek_auth.store_status()
+        m = deepseek_auth.marker()
+        env_mask = deepseek_auth.mask(os.environ.get(var, "")) if var else None
+    except Exception:
+        env_mask = None
+
+    # Whether a BROWSER can authorise a key write on this server, and why not
+    # when it cannot. Three booleans and a fixed sentence -- deepseek_session
+    # never puts the pairing code in here, which matters because this dict
+    # rides in GET /api/settings, and that route is unauthenticated.
+    try:
+        import deepseek_session
+        session = deepseek_session.state()
+    except Exception:
+        session = {"available": False, "claimed": False, "reason": None}
+
+    if var:
+        return {"state": "env", "signed_in": True, "env_var": var,
+                "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": env_mask,
+                "saved_at": None, "stored_mask": m.get("mask"),
+                "store_available": store_available, "store_reason": store_reason,
+                "browser_session": session, "reason": None}
+    if m.get("mask"):
+        return {"state": "stored", "signed_in": True, "env_var": None,
+                "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": m["mask"],
+                "saved_at": m.get("saved_at"), "stored_mask": m["mask"],
+                "store_available": store_available, "store_reason": store_reason,
+                "browser_session": session, "reason": None}
+    return {"state": "none", "signed_in": False, "env_var": None,
+            "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": None,
+            "saved_at": None, "stored_mask": None,
+            "store_available": store_available, "store_reason": store_reason,
+            "browser_session": session,
+            "reason": _deepseek_no_key_reason()}
+
+
+#: The npm package the ACP transport was read out of and verified against
+#: (acp_runtime.py's docstring: "@sluisr/deepseek-cli@1.3.2, an unminified
+#: esbuild bundle"). Named, not turned into an install command -- how it got
+#: onto the machine is the operator's business and guessing wrong sends them
+#: after the wrong fix.
+DEEPSEEK_CLI_PACKAGE = "@sluisr/deepseek-cli"
+
+
+def _deepseek_reason(binary, bin_path, installed, keyed):
+    """Why DeepSeek is not runnable, or None. Two independent requirements --
+    the CLI and the key -- so all three failing combinations are answered here
+    rather than as three arms bolted into the generic ladder in _describe().
+
+    `~/.deepseek` is deliberately absent from every string: it stopped being
+    evidence of anything the moment the key became the configured signal, and
+    sending someone to look for a directory that has no bearing on the failure
+    is the mistake the codex signed-out message was rewritten to avoid.
+    """
+    if installed and keyed:
+        return None
+    if installed and not keyed:
+        return "installed at %s, but %s" % (bin_path, _deepseek_no_key_reason())
+    missing_cli = ("the %r CLI is not on PATH (%s, the package this build's ACP "
+                   "transport was verified against). The login shell's PATH and "
+                   "the usual install locations were both searched%s. Sutra "
+                   "spawns `%s --acp` to talk to DeepSeek, so a key alone is not "
+                   "enough. Set the full path in Settings below, or "
+                   "SUTRA_UI_DEEPSEEK_BIN -- `which %s` in your terminal will say "
+                   "where."
+                   % (binary, DEEPSEEK_CLI_PACKAGE, _harvest_note(), binary,
+                      binary))
+    if keyed:
+        return missing_cli
+    return "%s And %s" % (missing_cli, _deepseek_no_key_reason())
+
+
 def _describe(spec):
     """One provider's live state. `installed` is shutil.which() and NOTHING
     else -- a config directory is not evidence of a binary, and this function
@@ -510,15 +1263,45 @@ def _describe(spec):
     cfg_display = spec["config_dir"]
     cfg_path = Path(os.path.expanduser(cfg_display))
     configured = cfg_path.is_dir()
+    if spec["id"] == "codex":
+        # ~/.codex EXISTS after the first `codex` run whether or not anyone
+        # ever signed in -- it holds config.toml, session logs and sqlite
+        # state. Treating the directory as evidence of a login claimed codex
+        # was set up on a machine that had never authenticated. The credential
+        # is ONE FILE inside it, so that is what is checked.
+        #
+        # Still existence only, never contents. WHICH of the two billing modes
+        # is active comes from codex_auth(), which asks the CLI -- and the two
+        # agree rather than race, because auth.json takes precedence over
+        # OPENAI_API_KEY (measured on 0.153.2; see codex_auth()).
+        configured = _codex_credential_present()
+    elif spec["id"] == "deepseek":
+        # Same correction, same reasoning: ~/.deepseek exists after the CLI has
+        # run once and says nothing about a key, and DeepSeek cannot answer a
+        # single message without one. Existence only here too -- the key itself
+        # is never read on this path (see _deepseek_key_present).
+        configured = _deepseek_key_present()
 
     adapter = spec["id"] in ADAPTERS
 
     if installed and configured and adapter:
         reason = None
+    elif spec["id"] == "deepseek":
+        # ONE arm rather than three: for DeepSeek every not-runnable case is
+        # about the CLI or the key, and neither is a config directory, so the
+        # generic strings below would all name ~/.deepseek wrongly.
+        reason = _deepseek_reason(binary, bin_path, installed, configured)
     elif installed and configured and not adapter:
-        reason = ("no chat adapter yet -- this panel drives Claude's "
-                  "stream-json protocol only, so %s cannot be used here even "
-                  "though it is installed at %s" % (spec["name"], bin_path))
+        # This said "this panel drives Claude's stream-json protocol only",
+        # which stopped being true when the DeepSeek ACP adapter landed:
+        # DeepSeek renders as ready to use two rows away in the same list, so
+        # the row contradicted the screen it was printed on.
+        pin = (" (checked against codex-cli 0.153.2)"
+               if spec["id"] == "codex" else "")
+        reason = ("no chat adapter yet -- this panel speaks two protocols, "
+                  "Claude's stream-json and DeepSeek's ACP, and %s exposes "
+                  "neither%s, so it cannot answer messages here even though "
+                  "it is installed at %s" % (spec["name"], pin, bin_path))
     elif configured and not installed:
         # This is the message a user sees when the app cannot find a CLI they
         # know is installed. "not on PATH" alone sent people looking in the
@@ -544,8 +1327,19 @@ def _describe(spec):
                       % (binary, cfg_display, _harvest_note(),
                          spec["id"].upper(), binary))
     elif installed and not configured:
-        reason = "binary %r found at %s but no config directory at %s" % (
-            binary, bin_path, cfg_display)
+        if spec["id"] == "codex":
+            # The generic string below would be WRONG here in a new way: for a
+            # signed-out codex the config directory is present, it is the
+            # LOGIN that is missing, and sending someone to look for a missing
+            # ~/.codex would waste the time the message was meant to save.
+            reason = ("installed at %s, but nobody is signed in -- there is no "
+                      "credential at %s. Sign in from the Codex row below. "
+                      "(%s exists either way, so its presence is not evidence "
+                      "of a login.)"
+                      % (bin_path, CODEX_AUTH_PATH, cfg_display))
+        else:
+            reason = "binary %r found at %s but no config directory at %s" % (
+                binary, bin_path, cfg_display)
     else:
         reason = "no binary and no config directory"
 
@@ -562,8 +1356,25 @@ def _describe(spec):
         # have to re-derive them and could disagree with this module
         "adapter": adapter,
         "runnable": installed and configured and adapter,
+        # A FLAG, not a sentence. The provider list stopped rendering `reason`
+        # (05-chat.js provRow, founder 2026-09-07), and "Not installed on this
+        # Mac" is the one status that is actively WRONG for the person who has
+        # Claude Desktop and believes they installed Claude -- the field
+        # incident named in the claude arm above. The UI needs to know that
+        # this is that case; it does not need this module's prose to say it.
+        "desktop_only": (spec["id"] == "claude" and not installed
+                         and claude_desktop_installed()),
         "bin_path": bin_path,
         "config_path": str(cfg_path),
+        # WHAT KIND of usage figure this provider has, so the client can look
+        # it up per provider instead of branching on the id. The client held
+        # `if (SETTINGS.provider === "deepseek") balance; else Anthropic
+        # percentage` in four places; this is the fact those four branches were
+        # each re-deriving, published once.
+        "usage_kind": spec.get("usage_kind", "none"),
+        # Declared so a reader can see WHY a provider has no picker (no flag to
+        # carry a model) without opening this file.
+        "model_flag": spec.get("model_flag"),
     }
 
 
@@ -617,10 +1428,20 @@ def shadow_enabled(settings=None):
 
 def _write_settings(raw):
     """Atomic, so a crash mid-write cannot leave a half-parsed preferences file
-    that the next launch silently degrades to defaults."""
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    that the next launch silently degrades to defaults.
+
+    0600, set on the TEMP file before the replace so the contents are never
+    briefly world-readable. No secret is kept here -- the DeepSeek marker is a
+    mask, not a key (deepseek_auth's docstring) -- but this file also records
+    the workdir the agent is pointed at and the permission mode it runs under,
+    and neither is anyone else's business. mode=0o700 applies only when the
+    directory is CREATED; an existing ~/.sutra-ui is left as the operator has
+    it rather than silently re-permissioned underneath them.
+    """
+    SETTINGS_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
+    os.chmod(tmp, 0o600)
     tmp.replace(SETTINGS_PATH)
 
 
@@ -759,7 +1580,18 @@ def load_settings():
         "onboarded": onboarded,
         # "" is a real, meaningful value here ("use the CLI's default"), so it is
         # reported as "" rather than folded into null.
-        "model": stored_model() or "",
+        #
+        # LEGACY ACCESSOR onto the claude slot, not a second store. Storage is
+        # `model_by_provider` below; this key is what existed when there was one
+        # shared model, it only ever described Claude, and it keeps working for
+        # anything still reading it. One storage, one compat reader -- not two
+        # sources that can disagree.
+        "model": stored_model("claude") or "",
+        # The real thing: every provider's own choice, so switching provider and
+        # back does not discard it and no provider can be handed another's id.
+        # Only providers that declare models appear.
+        "model_by_provider": {spec["id"]: (stored_model(spec["id"]) or "")
+                              for spec in _CATALOG if spec.get("models")},
         # metadata -- the three keys above are the contract; these explain them
         "workdir_source": workdir_source,
         "provider_source": detail["source"],
@@ -792,6 +1624,17 @@ def load_settings():
         # remain expressible. Junk still dies here.
         "flags": {k: v for k, v in (raw.get("flags") or {}).items()
                   if isinstance(v, bool)} if isinstance(raw.get("flags"), dict) else {},
+        # The DeepSeek row's sign-in state. INSIDE the settings contract, not
+        # a sibling of it in the route's response: the panel does
+        # `SETTINGS = r.settings` (07-loaders.js), so a top-level sibling would
+        # be read by nothing -- which is exactly the bug this line replaces.
+        # Living here also means the three responses that already carry
+        # load_settings() (GET /settings, POST /providers/active, and the
+        # deepseek key verbs) get it without any of them being told to.
+        #
+        # Cheap enough for a per-request call: a settings read plus two env
+        # lookups, no subprocess and no keychain. Carries a MASK, never a key.
+        "deepseek_auth": deepseek_auth_state(),
         "settings_path": str(SETTINGS_PATH),
         "settings_file_exists": SETTINGS_PATH.exists(),
         "invalid_stored_values": invalid,
@@ -806,7 +1649,7 @@ UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
 
 
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
-                  model=None, unsafe_ack=None):
+                  model=None, unsafe_ack=None, model_provider=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -869,14 +1712,45 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
             raise ValueError("onboarded must be a boolean")
         raw["onboarded"] = onboarded
 
+    # `model` without a provider still means CLAUDE -- that is what the key
+    # meant for its whole life, and callers that predate per-provider models
+    # are not silently retargeted at whichever provider happens to be active.
+    # `model_provider` names the slot explicitly.
     if model is not None:
+        target = model_provider or "claude"
+        if not models_for(target):
+            raise ValueError(
+                "provider %r declares no models, so none can be stored for it"
+                % (target,))
         # "" is legal: it means "let the CLI choose", which is why this cannot use
         # the truthiness of clean_model() alone.
-        if not isinstance(model, str) or (model.strip() and model.strip() not in MODEL_IDS):
+        allowed = selectable_model_ids_for(target)
+        if not isinstance(model, str) or (model.strip() and model.strip() not in allowed):
+            listed = model_ids_for(target)
+            # Name the disabled case specifically. "unknown model" is wrong and
+            # unhelpful for an id that IS catalogued and cannot be run -- the
+            # operator would go looking for a typo that is not there.
+            if isinstance(model, str) and model.strip() in listed:
+                entry = next(m for m in models_for(target)
+                             if m["id"] == model.strip())
+                raise ValueError(
+                    "model %r is listed for %s but cannot be selected: %s"
+                    % (model, target, entry.get("unavailable_reason",
+                                                "not available in this build")))
             raise ValueError(
-                "unknown model %r -- must be one of: %s (or \"\" for the CLI default)"
-                % (model, ", ".join(sorted(i for i in MODEL_IDS if i))))
-        raw["model"] = model.strip()
+                "unknown model %r for provider %r -- must be one of: %s "
+                "(or \"\" for the CLI default)"
+                % (model, target, ", ".join(sorted(i for i in allowed if i))))
+        by_provider = dict(raw.get("model_by_provider") or {})
+        by_provider[target] = model.strip()
+        raw["model_by_provider"] = by_provider
+        # The legacy scalar is kept in step for the claude slot ONLY, so an
+        # older build (or anything still reading settings.json by hand) does
+        # not see Claude's model silently revert. Never written for another
+        # provider -- that would put a DeepSeek id where a Claude id is
+        # expected, which is the failure this whole change removes.
+        if target == "claude":
+            raw["model"] = model.strip()
 
     _write_settings(raw)
     return load_settings()

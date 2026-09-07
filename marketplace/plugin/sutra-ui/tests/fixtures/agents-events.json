@@ -1,0 +1,122 @@
+{
+ "note": "captured from a real standalone run on 2026-09-03 (stub model, demo keyword data); the run ended with a model failure",
+ "state": {
+  "run_id": "r-134018-executive-education-for-chros",
+  "chat_id": "c-e639d533",
+  "topic": "executive education for CHROs",
+  "status": "failed",
+  "stage": "topic",
+  "current_step": "suggest_topics",
+  "waiting_on": null,
+  "credits_spent": 3,
+  "started_at": "2026-09-03T08:10:18Z",
+  "updated_at": "2026-09-03T08:34:27Z",
+  "approved_tools": [
+   "suggest_topics"
+  ],
+  "error": "No model key set. Add one in Connections."
+ },
+ "events": [
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "note",
+   "label": "Reading your site index"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "waiting",
+   "kind": "approval",
+   "tool": "suggest_topics",
+   "args": {},
+   "question": "Studying a competitor for topic ideas needs about 3 credits and around 4 minutes. Go ahead?",
+   "why": "Paid step. Nothing is spent until you say yes.",
+   "cost_credits": 3,
+   "est_minutes": 4,
+   "options": [
+    {
+     "label": "Go ahead",
+     "recommended": true
+    },
+    {
+     "label": "Not now"
+    }
+   ]
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "resumed",
+   "by": "user",
+   "note": "approved suggest_topics"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "step_started",
+   "id": "s18200",
+   "label": "Studying a competitor for topic ideas",
+   "tool": "suggest_topics"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "substep_finished",
+   "parent": "s18200",
+   "label": "Studying rival-two.com",
+   "note": "Rotating through the competitor list"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "substep_finished",
+   "parent": "s18200",
+   "label": "Using demo keyword data",
+   "note": "No DataForSEO login, so these numbers are not real"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "substep_finished",
+   "parent": "s18200",
+   "label": "Read 12 of their ranking keywords",
+   "note": "Top page: https://rival-two.com/"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "substep_finished",
+   "parent": "s18200",
+   "label": "Checked what you already cover",
+   "note": "12 pages in your site index"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "substep_finished",
+   "parent": "s18200",
+   "label": "Wrote 6 topics",
+   "note": "Topic number 1"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "step_finished",
+   "id": "s18200",
+   "label": "Studying a competitor for topic ideas",
+   "ms": 0,
+   "summary": "6 topics from rival-two.com (demo data, no DataForSEO login, so the numbers are not real)"
+  },
+  {
+   "t": "2026-09-03T08:10:18Z",
+   "type": "waiting",
+   "kind": "artifact",
+   "artifact": "topics.json",
+   "view": "topic_list",
+   "prompt": "Six ideas from rival-one.com. Which one shall I research?"
+  },
+  {
+   "t": "2026-09-03T08:34:27Z",
+   "type": "resumed",
+   "by": "user"
+  },
+  {
+   "t": "2026-09-03T08:34:27Z",
+   "type": "step_failed",
+   "label": "Model",
+   "reason": "No model key set. Add one in Connections.",
+   "recovering": false
+  }
+ ]
+}

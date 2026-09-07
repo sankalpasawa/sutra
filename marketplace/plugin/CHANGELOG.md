@@ -1,6 +1,165 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-03
+**status**: active · **updated**: 2026-09-04
+
+## 2.242.0 (2026-09-04)
+
+**Routines moves back to Settings -> Automation.** It spent two days as its own
+rail destination (2.237.0, 2026-09-02). The rail is the standing surface -- the
+places you work from all day -- and Routines is a screen you open when you set a
+schedule up, not while the schedule runs. Eight destinations made the rail a
+list; seven make it a set of places.
+
+The name does not change. It is the same "Routines" row and the same screen,
+back in the position it held before: Settings -> Automation, after Automation
+and before Connectors, next to the other answers to "what runs without me".
+An operator parked on the old destination is carried across rather than dropped
+on Now -- the stored layout migrates to Settings with the Routines row already
+selected -- and deep links to the screen keep working, because openScreen finds
+its owning destination from the plane spec.
+## 2.242.0 (2026-09-05)
+
+- **The research is a team asking questions, not a keyword lookup.** Four researchers with
+  different jobs (the builder, the sceptic, the evidence one, the practitioner) each interview
+  an expert, every question seeing the previous answers. Their findings are written up as a
+  cited dossier, and the article's facts are lifted from that. Measured on a live run: 16
+  questions across 48 searches, a 14,856-word dossier, 483 facts, and 256 of them citing more
+  than one source. A fact that no single page states was impossible before.
+- **The site catalogue reads the whole site.** A cap you gave once ("read at most 400 pages")
+  was frozen into the cache and reused by every later run, and all four coverage checks still
+  said PASS. The cache key now carries what shaped the file, the default cap is gone, and a
+  catalogue with URLs found but never read FAILS its check and says so. Testlify went from 400
+  pages to 11,734, every URL read.
+- **The brand pack is rebuilt on that catalogue** and is now richer than the workflow it was
+  ported from: customer stories 9,555 words (it was empty), brand cards 47 (there were none),
+  product facts 12,833 words. Writing examples are always real published articles, never the
+  homepage or a pricing page.
+- **The run log groups by stage.** Setup, Topic, Research, Blueprint, Draft: one line each with
+  its time and what it found. Click one to see every step inside it.
+- **A research run ends in documents again.** The brief and the bundle are written as files,
+  and the evidence trail names all twenty working files in plain English so any step of the
+  research can be opened and read in the panel.
+- **The app repairs its own runtime.** A setup made before a library was added stayed without
+  it forever, and the failure surfaced as a crawl that read zero pages ("No module named
+  'bs4'"). The app now checks at launch, installs what is missing, and if it cannot, says which
+  library is missing and what it is for.
+- Honest reporting throughout: a low DataForSEO balance is said in the first message rather
+  than a footnote, paid steps check the balance before spending, an article never cites its own
+  publisher as a source, demo research is stamped on the draft, and unverified claims reach the
+  summary instead of a JSON field.
+
+## 2.241.0 (2026-09-04)
+
+**Chat says which message is running and which is waiting.** Typing a second
+message while a turn is still streaming is normal, and the message was never
+lost -- the client sends it at once and the server queues it -- but every turn
+was marked "thinking" the instant it was sent, so a queued message showed the
+same breathing pulse as the one actually running. Two turns both claimed to be
+working and there was no way to tell whether the new input had been taken.
+
+A turn that has been sent but not started now shows "Queued -- sends when the
+turn above finishes" (with its place in line when more than one waits), or
+"Sent -- waiting for the agent to start" for the first message of a cold pane.
+The state is derived from the send queue rather than a stored flag, so a turn
+cannot get stranded looking queued. Verified end to end by driving the real
+composer (the Send button becomes Stop mid-turn, so the submit path is Enter)
+through the full queued -> running -> answered lifecycle.
+
+## 2.240.0 (2026-09-04)
+
+- **The SEO Writer is now a port of the whole workflow, not a sketch of it.** Setup reads
+  every page of the site the way the workflow's catalogue engine does (CMS API, sitemaps,
+  web archive, crawl, with coverage gates), indexes every page by meaning with Voyage, and
+  builds the brand pack from the site's own pages: voice, style guide, product facts,
+  readers, real numbers, customer stories, brand cards, the pages a call to action may link
+  to, and the writer brief every article follows. You confirm the flagged rows before they
+  are used. Per article it runs the content machine (the world statement, real keyword
+  numbers with the world check, the live results with Google's own answer, the winning
+  pages, evidence with verbatim quotes and sources, the gap check, your own pages found by
+  meaning) and the write phase (planner, architect by format, the writer with its editing
+  passes, internal links laid in by meaning and judged on real page text, sources numbered).
+- **Sites behind a bot wall can be read.** A real customer site answered every plain request
+  with a JavaScript challenge, robots.txt and the sitemap included, and cookies from a
+  browser did not help a plain client. The agent now recognises a challenge and reads that
+  site through a real browser: the app's own hidden window. One request in flight, loopback
+  only, a token per launch. On a developer machine Playwright does the same job.
+- **Knowledge shows what the agent knows.** The company record you can edit, the page
+  catalogue with its coverage gates and a search box, the page index with a map of the
+  pages by meaning, and every brand file, readable and editable in the panel.
+- **No credit talk.** Every step runs when called. Paid steps check the DataForSEO balance
+  first and say plainly when they skipped. Five stages on the bar, five checkpoints: the
+  brand pack once, then the topics, the brief, the plan and the draft.
+- **Memory reaches the work.** A rule you save once is handed to every step that shapes or
+  writes prose, and to the research steps that decide topic and angle.
+- **A fresh chat knows what is already done.** The agent is told what Knowledge holds (catalogue,
+  page index, brand pack) so it goes straight to the article instead of re-running setup. The
+  source check and the research page reader read walled sites through the browser too.
+- **Approving the draft saves it.** The Library entry is written by the app the moment you
+  approve, titled from the article's own H1; the agent can no longer say "saved" before it is.
+- **Tools in plain English.** What each does, when it runs, what it needs, how long.
+- Engine: `sutra-ui/seo_agent/` gains `foundation/`, `brand/`, `research/`, `write/`, the
+  Voyage index (`tools/_index.py`, `tools/voyage.py`) and the browser client
+  (`tools/_browser.py`); 74 prompts ported near-verbatim under `prompts/`. Shell: a
+  loopback fetch service in `electron/main.js`. `requirements.txt` gains `numpy==2.0.2`
+  (wheels for both Mac architectures, and the dev venv's Python 3.9). Suites: engine
+  ALL SUITES PASS (foundation 75, browser 18, brand 140, research 69, write 141 plus the
+  older six); `test_agents.js` 30; `test_agents_api.py` 16; `test_shell_browser_fetch.py` 8.
+
+## 2.239.1 (2026-09-03)
+
+- **An app run from the installer disk image now offers to install itself.** Open
+  the DMG, double-click Sutra without dragging it anywhere, and it opens and works
+  and says nothing. A disk image is read-only, so that copy can never replace
+  itself: every update from then on is impossible, and nothing says so. A user
+  ran 2.238.0 that way for weeks and found out only when an update finally
+  refused. macOS cannot fix this from the other end, because opening a disk image
+  is not allowed to run code, so the app has to move itself. It now asks once, on
+  launch, and moves and reopens from Applications when you say yes. "Do not ask
+  again" is honoured; a source checkout is never asked.
+- **The refusal says what is wrong instead of naming a permission bit.** The old
+  message was "/Volumes/Sutra 2.238.0 is not writable by this user -- install the
+  DMG manually", which names a folder and a flag and never the cause. It now says
+  Sutra is running from the installer disk image, that a disk image is read-only,
+  and what to do about it, in that order.
+- **And it says so before the download, not after.** Both update paths asked for
+  240MB first and refused second. The automatic one is the worse of the two: on a
+  machine that can never install, it re-fetched the whole image on every schedule
+  tick, forever, with nobody watching.
+- Guard: `updates.install_blocker()`, one rule asked by the manual button, the
+  automatic staging route and the installer itself, so the sentence cannot differ
+  by path. Shell: `ensureInstalled()` in `electron/main.js`, before the backend
+  starts, using Electron's own mover with a `ditto` fallback (a plain copy breaks
+  the signature inside a .app). 14 new checks in `test_update_install_guard.py`.
+
+## 2.239.0 (2026-09-03)
+
+- **Agents, and the first one: the SEO Writer.** A new rail destination between Chats and
+  Routines. Name a topic or ask for ideas; the agent indexes your website, learns how you
+  write, researches the keyword with real search numbers, builds an article structure and
+  writes the draft in your voice. It stops at four checkpoints -- topic ideas, the research
+  brief, the blueprint, the draft -- and shows each in a review panel where you pick, reorder,
+  or rewrite one paragraph at a time before it carries on. The next step reads your edited
+  file, so redirecting the agent is editing the artifact, not arguing with it.
+- **Every step is named before it is taken, and every credit asks first.** The run log reads
+  the way a colleague would report: the sentence the agent wrote before acting sits under the
+  step it took, sub-steps nest beneath it with their durations, and a failed step says what it
+  will try instead. A paid step (topic ideas, research) stops with the cost stated and does
+  nothing until you say yes; the gate is enforced by the loop, not asked of the model.
+- **Bills the subscription the chat already uses.** The agent drives the `claude` CLI that
+  `providers.py` resolves for the panel, so there is no API key anywhere and the billing
+  invariant the rest of this app refuses to break holds here too. Transient upstream errors
+  (a 529, a rate limit) are retried with backoff and never reported as a sign-in problem.
+- **Honest about its data.** Without DataForSEO credentials the agent still runs, on keyword
+  numbers labelled demo everywhere they appear. A site that refuses the crawl (a bot wall
+  returning 429 on the first request, seen live) is indexed from what it ranks for instead,
+  and the agent says plainly that it cannot learn a voice from titles.
+- **Data lives beside the panel's own.** `~/.sutra-ui/agents/seo/` holds chats, runs,
+  artifacts, knowledge, memory and the library; the DataForSEO credentials are owner-only
+  and never echoed back to the screen. Nothing is written inside the bundle.
+- Engine: `sutra-ui/seo_agent/`, a standalone package with its own 160-check suite; routes in
+  `agents_api.py` under `/api/agents/seo/`; screen in `17-agents.js` + `agents.css`, drawn
+  from Sutra's own tokens and components. `requirements.txt` gains `httpx` and
+  `beautifulsoup4`, pure-Python so the DMG bundle carries them.
 
 ## 2.238.0 (2026-09-03)
 

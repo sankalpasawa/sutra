@@ -11,8 +11,10 @@ different severity thresholds. Sharing one module (or one cache file) would mean
 
 WHAT NEVER CROSSES THIS BOUNDARY
 ---------------------------------
-DEEPSEEK_API_KEY. It is read from the server environment to make the request
-and is never returned, logged, or stored by this module. `sanitize()` builds an
+The API key. It is resolved through providers.deepseek_key_for_request() -- the
+one resolver, shared with app.py's ws_chat gate, so the balance card and the
+chat cannot disagree about whether a key exists -- used to make the request, and
+never returned, logged, or stored by this module. `sanitize()` builds an
 explicit allow-list of fields, same discipline as usage.py: a new key the
 DeepSeek API adds later has to be opted IN here before it can reach a screen.
 
@@ -24,6 +26,8 @@ import json
 import os
 import time
 import urllib.request
+
+import providers
 
 # Own cache, own directory entry -- NOT usage.py's CACHE. That file is shared
 # with the Claude-only PreToolUse guard (bin/sutra-usage) and its `_valid()`
@@ -57,9 +61,14 @@ def _cached(max_age):
 
 
 def _fetch():
-    key = os.environ.get("DEEPSEEK_API_KEY")
+    # providers.deepseek_key_for_request() is the ONE resolution path (env vars,
+    # then the keychain) and it hands back the sentence to show when there is no
+    # key, so this card and the chat's connect refusal cannot describe the same
+    # machine differently. This read used to be its own os.environ.get, which is
+    # how they came to disagree.
+    key, why = providers.deepseek_key_for_request()
     if not key:
-        return None, "DEEPSEEK_API_KEY is not set in the server environment"
+        return None, why
     req = urllib.request.Request(
         BALANCE_URL, headers={"Authorization": "Bearer " + key})
     try:

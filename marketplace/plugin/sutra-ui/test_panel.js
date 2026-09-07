@@ -150,6 +150,16 @@ const sandbox = {
     getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
     setItem(k, v) { this._m[k] = String(v); },
   },
+  /* The DeepSeek browser session token lives here rather than in localStorage:
+     it dies with the server process, so a localStorage copy would outlive the
+     thing it authorises. removeItem is real because the panel DROPS the token
+     on a 403 -- a no-op stub would let that regression through. */
+  sessionStorage: {
+    _m: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
+    setItem(k, v) { this._m[k] = String(v); },
+    removeItem(k) { delete this._m[k]; },
+  },
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   location: { protocol: "http:", host: "127.0.0.1:7000" },
   innerWidth: 1440,     // clampBrowseW() reads it for the 860px breakpoint
@@ -188,13 +198,37 @@ const EPILOGUE = `
   clampBrowseW, browseMax, loadLayout, adoptRealSessions, transcriptTurns,
   ensureTranscript, sessionBody, __renderSrc: String(render),
   checkUpdates, stageInBackground, TITLES, SCREENS,
-  chanKey, paletteFor,
+  chanKey, paletteFor, CLAUDE_SOCKETS, queueState,
   _browseScrollKey, _browseScrollState, _restoreBrowseScroll, dirChip, resumableId,
   fmt, dirPickerAvailable,
   /* TENANTS was exported here. It is a lazy getter, so it kept "passing" after
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
+  /* SETTINGS needs the same getter/setter pair as PROVIDERS above: a top-level
+     \`let\` in a classic script lives in the SCRIPT scope, not on the global
+     object, so a plain \`T.SETTINGS = x\` would set a property on the export
+     object and leave the binding the code actually reads untouched. */
+  get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; },
+  /* Same getter/setter reason as SETTINGS. Arrived with per-provider models:
+     the pane picker reads THIS, keyed by the pane's own provider, so a test
+     that wants a Model row has to say which provider's models exist. */
+  get MODELS_BY_PROVIDER(){ return MODELS_BY_PROVIDER; },
+  set MODELS_BY_PROVIDER(v){ MODELS_BY_PROVIDER = v; },
+  /* Same getter/setter reason as MODELS_BY_PROVIDER. The other two controls
+     that were Claude's rendered on every pane, now keyed by provider. */
+  get TURN_OPTIONS_BY_PROVIDER(){ return TURN_OPTIONS_BY_PROVIDER; },
+  set TURN_OPTIONS_BY_PROVIDER(v){ TURN_OPTIONS_BY_PROVIDER = v; },
+  get PERM_MODES_BY_PROVIDER(){ return PERM_MODES_BY_PROVIDER; },
+  set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
+  get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
+  turnOptsHtml, permSelect, turnOptsFor,
+  /* Pane provider resolution. TWO functions on purpose (see 06-render), and
+     both are exported so the split itself is pinned: collapsing them would
+     feed the page's seed to the Usage row, whose not-loaded branch turns a
+     known provider id into a specific false claim. */
+  paneProvider, paneDeclProvider, paneMenuHtml, readDeclarations,
+  get SEED(){ return SEED; }, set SEED(v){ SEED = v; },
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
   /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
      it can be tested without rAF, which never fires headlessly. */
@@ -215,10 +249,32 @@ const EPILOGUE = `
      so its render states (offered / cancel-while-busy / browser hint) are
      pinned as strings */
   accountHtml, accountLoginHtml,
+  /* the Codex sign-in block: the row exists to say which BILLING MODE is
+     active, so every render state is pinned as a string -- a wrong badge here
+     tells someone paying per token that their usage is included */
+  codexAuthHtml, codexConfirmText, loadCodexAuth, codexNeedsProbe, codexReprobe,
+  /* the browser-transport sign-in watch: every stop condition is pinned,
+     because a poll with no way to end is the render loop all over again */
+  codexOnScreen, codexWatchLogin, codexStopPoll, codexBridge,
+  /* the DeepSeek sign-in block: unlike codex this row decides whether the
+     provider RUNS AT ALL, so each state is pinned as a string -- and so is the
+     one thing that must never appear in any of them, the key itself */
+  deepseekAuthHtml, deepseekBridge,
+  /* the browser sign-in lane: a page with no Electron bridge trades the
+     server's one-time code for a write token, so the code field must come
+     BEFORE the key field -- there must be no paint where a key can be typed
+     into a page that cannot deliver it */
+  deepseekCanWrite, deepseekSessionToken, deepseekSetSessionToken,
+  deepseekClearSessionToken, DEEPSEEK_SESSION_KEY,
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
-  tsCard, tsStatusWords, tsCurrentError, tsParseDiff, tsChangeView, tsStory
+  tsCard, tsStatusWords, tsCurrentError, tsParseDiff, tsChangeView, tsStory,
+  /* the permission-mode divergence marker. Pinned as a string because it is
+     the ONLY place an operator learns their chosen mode is not the one
+     running -- a marker that renders nothing recreates the silent fallback
+     it was written to end. */
+  modeMarkerHtml
 };
 `;
 
@@ -1214,10 +1270,14 @@ test("23a. the permission mode is chosen at chat level, not only in Settings", (
      which for a Finder-launched .app means editing a plist. The panel showed the
      control, refused it, and told the operator to do something they could not. */
   const h = panelHtml;
-  assert.ok(/function permSelect\(\)\{/.test(h), "a composer-level selector must exist");
+  assert.ok(/function permSelect\([^)]*\)\{/.test(h), "a composer-level selector must exist");
   /* It renders in the composer row -- the same block as the model select, which
      is the anchor that is unambiguously part of the composer. */
-  const call = h.indexOf("${permSelect()}");
+  /* Re-sliced: the call now passes the pane's provider (permSelect(mpid)), so
+     the three modes DeepSeek cannot enforce are not offered on a DeepSeek pane.
+     What this test asserts -- that the selector is called from the template and
+     sits beside the model select -- is unchanged. */
+  const call = h.indexOf("${permSelect(");
   const model = h.indexOf('<select class="modelsel"');
   assert.ok(call !== -1, "permSelect() must be called from the template");
   assert.ok(call < model && model - call < 600,
@@ -1247,9 +1307,52 @@ test("23c. only the confirmation sends the acknowledgement phrase", () => {
 test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
   /* The server clamps at the point of use. Showing the stored value would tell
      the operator the agent is doing something it is not. */
-  const fn = panelHtml.match(/function permSelect\(\)\{[\s\S]*?\n\}/)[0];
+  const fn = panelHtml.match(/function permSelect\([^)]*\)\{[\s\S]*?\n\}/)[0];
   assert.ok(/permission_mode_effective/.test(fn),
     "must read permission_mode_effective first");
+});
+
+/* ── 23e-g. the permission-mode divergence marker ─────────────────────────
+   AcpRuntime asked DeepSeek for the operator's permission mode using a method
+   name the CLI does not have (`session/set_session_mode`; the real one is
+   `session/set_mode`), never read the answer, and recorded the mode it had
+   asked for. Every DeepSeek pane displayed the chosen mode while running
+   `default`. The server now states the divergence; this is the half that makes
+   it visible, so an empty render here is the bug coming back. */
+
+test("23e. a pane with no divergence renders NO marker", () => {
+  T.S.modeNote = {};
+  assert.strictEqual(T.modeMarkerHtml("s1"), "",
+    "a Claude pane -- or any pane whose mode was applied -- gets nothing");
+});
+
+test("23f. the marker names BOTH modes and the reason", () => {
+  T.S.modeNote = { s1: { asked: "dontAsk", running: "default",
+                         reason: "dontAsk has no equivalent on this provider",
+                         provider: "deepseek" } };
+  const h = T.modeMarkerHtml("s1");
+  /* "your mode was changed" without saying to WHAT is a warning nobody can
+     act on, so both names are required, not just the failure. */
+  assert.ok(h.includes("dontAsk"), "must name the mode that was asked for: " + h);
+  assert.ok(h.includes("default"), "must name the mode actually running: " + h);
+  assert.ok(h.includes("no equivalent"), "must carry the server's reason: " + h);
+  assert.ok(/class="swmark bad"/.test(h),
+    "always the .bad variant -- there is no benign version of this");
+  T.S.modeNote = {};
+});
+
+test("23g. the server's reason is escaped, never interpolated as markup", () => {
+  /* The reason carries CLI error text (set_mode's -32603 detail). That is a
+     string from a subprocess, i.e. exactly the kind of value that must not
+     reach innerHTML raw. */
+  T.S.modeNote = { s1: { asked: "<b>x</b>", running: "default",
+                         reason: "the CLI refused: <img src=x onerror=1>",
+                         provider: "deepseek" } };
+  const h = T.modeMarkerHtml("s1");
+  assert.ok(!/<img/.test(h), "raw markup from the CLI reached the DOM: " + h);
+  assert.ok(!/<b>x<\/b>/.test(h), "raw markup in a mode name rendered: " + h);
+  assert.ok(h.includes("&lt;img"), "the reason must still be SHOWN, escaped: " + h);
+  T.S.modeNote = {};
 });
 
 test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {
@@ -2760,6 +2863,70 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
   assert.ok(!/class="caret"/.test(psBody), "a caret literal inside patchStreaming is the second writer returning");
 });
 
+/* ── a message typed while a turn is already running ────────────────────────
+   Typing mid-turn is normal and the message is never lost: the client sends it
+   at once and the server's reader task queues it. But askClaude set
+   `streaming = true` the instant a turn was SENT, so a message that had not
+   begun rendered the same breathing "thinking" pulse as the one actually
+   running -- two turns both claiming to work, and no way to tell whether the
+   new input had been taken or ignored (founder, 2026-09-04). */
+test("42a. a turn waiting behind a running one does not claim to be thinking", () => {
+  const running = { uid: "t-run", streaming: true, response: "", tools: [], toolRuns: [] };
+  const queued  = { uid: "t-que", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-q", { pending: [queued], turn: running, sid: "sess-q" });
+  try {
+    const run = T.turnResponse(running);
+    const que = T.turnResponse(queued);
+    assert.ok(/gv-think/.test(run), "the RUNNING turn lost its thinking indicator");
+    assert.ok(!/gv-waiting/.test(run), "the running turn was drawn as waiting");
+    assert.ok(!/gv-think/.test(que),
+      "the queued turn still shows the thinking pulse -- the two are indistinguishable");
+    assert.ok(/gv-waiting/.test(que), "the queued turn shows no waiting state");
+    assert.ok(/Queued/.test(que), "the queued turn does not say it is queued");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-q"); }
+});
+
+test("42b. the first message says it was sent, not that it is queued behind something", () => {
+  /* Nothing is running -- ch.turn is null -- so this turn is waiting for the
+     agent to spin up, which a cold CLI takes seconds to do. Saying "queued"
+     there would imply something is ahead of it, a different and wrong fact. */
+  const first = { uid: "t-first", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-f", { pending: [first], turn: null, sid: "sess-f" });
+  try {
+    const html = T.turnResponse(first);
+    assert.ok(/gv-waiting/.test(html));
+    assert.ok(!/Queued/.test(html), "a first message must not claim to be queued");
+    assert.ok(/waiting for the agent/.test(html), "it should say it was sent");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-f"); }
+});
+
+test("42c. queue position is stated once more than one is waiting", () => {
+  const a = { uid: "q1", streaming: true, response: "", tools: [], toolRuns: [] };
+  const b = { uid: "q2", streaming: true, response: "", tools: [], toolRuns: [] };
+  T.CLAUDE_SOCKETS.set("sess-p", { pending: [a, b], turn: { uid: "live" }, sid: "sess-p" });
+  try {
+    assert.ok(/2nd in line/.test(T.turnResponse(b)),
+      "the second queued message does not say where it is in the queue");
+    assert.ok(!/in line/.test(T.turnResponse(a)),
+      "the next-up message should not be numbered");
+  } finally { T.CLAUDE_SOCKETS.delete("sess-p"); }
+});
+
+test("42d. the state is DERIVED, so a started turn cannot look queued forever", () => {
+  /* queueState reads ch.pending, which the `start` frame shifts and failChannel
+     splices. A stored flag would need clearing in seven separate places, and
+     whichever was missed would strand a turn as permanently queued. */
+  const t = { uid: "t-x", streaming: true, response: "", tools: [], toolRuns: [] };
+  const ch = { pending: [t], turn: null, sid: "sess-d" };
+  T.CLAUDE_SOCKETS.set("sess-d", ch);
+  try {
+    assert.ok(T.queueState(t), "should be queued while in pending");
+    ch.pending.shift();                       /* exactly what the `start` frame does */
+    assert.strictEqual(T.queueState(t), null, "still reported queued after start");
+    assert.ok(!/gv-waiting/.test(T.turnResponse(t)));
+  } finally { T.CLAUDE_SOCKETS.delete("sess-d"); }
+});
+
 /* NAMESPACE NOTE (2026-08-22): this spec was first written against S.sessMenu /
    data-sessmenu / sessMenuAction. Those names already belong to the RAIL's
    per-session actions menu (rename / pin / archive -- 02-helpers.js:809,
@@ -2774,13 +2941,25 @@ test("34d. patchStreaming uses the shared builder — no second caret writer", (
    placeholder is one word. Measured against 2.112.5 before the port: 6 of the
    24 lane-1 checks in design/PARITY-PLAN-chat-chrome.md passed. */
 const PANE_S = { id: "sid-35", title: "ledger migration", turns: [], real: false, cwd: "", channel: null };
+/* The pane picker reads MODELS_BY_PROVIDER[thisPane'sProvider], so the fixture
+   has to declare some or there is legitimately no Model row to assert on. This
+   mirrors what GET /api/settings ships for claude. Tests that care about a
+   DIFFERENT provider's list set T.MODELS_BY_PROVIDER themselves. */
+const PANE_MODELS = { claude: [{ id: "", name: "CLI default" },
+                               { id: "opus", name: "Opus" },
+                               { id: "sonnet", name: "Sonnet" },
+                               { id: "haiku", name: "Haiku" }] };
+
 function paneHtml(over) {
   const prevMenu = T.S.paneMenu, prevFold = T.S.ui.paneCollapsed["sid-35"];
+  const prevModels = T.MODELS_BY_PROVIDER;
+  if (!(over && over.keepModels)) T.MODELS_BY_PROVIDER = PANE_MODELS;
   T.S.paneMenu = over && over.menu ? "sid-35" : null;
   if (over && over.collapsed) T.S.ui.paneCollapsed["sid-35"] = true; else delete T.S.ui.paneCollapsed["sid-35"];
   try { return sandbox.sessionPane(PANE_S); }
   finally {
     T.S.paneMenu = prevMenu;
+    T.MODELS_BY_PROVIDER = prevModels;
     if (prevFold) T.S.ui.paneCollapsed["sid-35"] = prevFold; else delete T.S.ui.paneCollapsed["sid-35"];
   }
 }
@@ -2942,6 +3121,154 @@ test("36b. the rendered BODY carries no governance while the panel carries all o
   const html = T.turnResponse({ uid: "t36b", streaming: false, response: resp, tools: [], toolRuns: [] });
   assert.ok(html.includes("The answer is 4."));
   assert.ok(!/INPUT:|TYPE:|\[INBOUND/.test(html), "governance leaked into the body: " + html);
+});
+
+/* ── 35p-t. the Model picker is the PANE'S provider's, not a shared list ──
+   The panel had ONE model list and it was Claude's, so a DeepSeek session's ⋯
+   menu offered Opus/Sonnet/Haiku -- none of which DeepSeek can run, and the
+   fork does not reject a bad -m, it just answers as something else. */
+
+/* Renders the pane menu with an explicit provider map and pane channel. */
+function paneMenuWith(models, channelId, settings) {
+  const prevCh = PANE_S.channel, prevSet = T.SETTINGS;
+  PANE_S.channel = channelId ? { id: channelId } : null;
+  if (settings !== undefined) T.SETTINGS = settings;
+  try {
+    T.MODELS_BY_PROVIDER = models;
+    return paneHtml({ menu: true, keepModels: true });
+  } finally { PANE_S.channel = prevCh; T.SETTINGS = prevSet; T.MODELS_BY_PROVIDER = {}; }
+}
+/* Scoped to the MODEL select. An unscoped scan also collects the permission
+   select's options ("plan", "auto", ...) sitting one row above, which silently
+   turns every assertion below into a claim about the wrong control. */
+const optionsIn = h => {
+  const i = h.indexOf('<select class="modelsel"');
+  if (i === -1) return [];
+  const block = h.slice(i, h.indexOf("</select>", i));
+  return [...block.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
+    .map(m => ({ id: m[1], attrs: m[2] }));
+};
+
+const DS_MODELS = {
+  claude: PANE_MODELS.claude,
+  deepseek: [{ id: "", name: "CLI default" },
+             { id: "deepseek-v4-pro", name: "V4 Pro", note: "flagship, 1M context" },
+             { id: "deepseek-v4-flash", name: "V4 Flash" },
+             { id: "deepseek-v4-flash-vision-exp", name: "V4 Flash Vision",
+               selectable: false,
+               unavailable_reason: "this panel has no image channel" }],
+};
+
+test("35p. a DeepSeek pane offers DeepSeek's models and none of Claude's", () => {
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+  const ids = optionsIn(h).map(o => o.id);
+  assert.ok(ids.includes("deepseek-v4-pro"), "DeepSeek's flagship must be offered, got " + ids);
+  ["opus", "sonnet", "haiku"].forEach(id =>
+    assert.ok(!ids.includes(id),
+      "Claude's " + id + " must not appear on a DeepSeek pane, got " + ids));
+});
+
+test("35q. the pane follows ITS OWN channel, not the global provider", () => {
+  /* The bug this rules out: SETTINGS.provider is global, so a pane opened under
+     DeepSeek and left open while the default was switched to Claude would have
+     started listing Claude's models for a session DeepSeek is still answering. */
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+  assert.ok(optionsIn(h).some(o => o.id === "deepseek-v4-pro"),
+    "the pane's own channel must win over SETTINGS.provider");
+  const h2 = paneMenuWith(DS_MODELS, "claude", { provider: "deepseek" });
+  assert.ok(optionsIn(h2).some(o => o.id === "opus"), "and in the other direction");
+});
+
+test("35r. the vision model is listed, disabled, and says why", () => {
+  /* Dropping it hides that it exists; offering it enabled offers a choice that
+     cannot run. Listed + disabled + reason is the third option. */
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "deepseek" });
+  const vis = optionsIn(h).find(o => o.id === "deepseek-v4-flash-vision-exp");
+  assert.ok(vis, "it must still be listed");
+  assert.ok(/\bdisabled\b/.test(vis.attrs), "it must not be selectable: " + vis.attrs);
+  assert.ok(/no image channel/.test(vis.attrs), "the reason must be on the option: " + vis.attrs);
+  assert.ok(!/\bselected\b/.test(vis.attrs), "a disabled option must never be the selection");
+});
+
+test("35s. a provider that declares no models gets no picker at all", () => {
+  /* Codex has no model flag. An empty select would be a control that cannot do
+     anything -- the same offer-a-dead-choice failure the provider list avoids. */
+  const h = paneMenuWith(DS_MODELS, "codex", { provider: "codex" });
+  assert.ok(!/<select class="modelsel"/.test(h), "no select for a provider with no models");
+  const keys = [...h.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+  assert.ok(!keys.includes("Model"), "and no empty Model row either, got " + keys);
+});
+
+test("35t. before /api/settings resolves the row still renders", () => {
+  /* It used to fall back to a lone "CLI default" whenever the list was empty.
+     Losing that would make the Model row appear a beat after every other row
+     on first paint -- a flicker that reads as a bug. */
+  const h = paneMenuWith({}, null, null);
+  assert.ok(/<select class="modelsel"/.test(h), "the row must survive an unloaded map");
+  assert.deepStrictEqual(optionsIn(h).map(o => o.id), [""],
+    "and offer exactly the CLI default until the real list arrives");
+});
+
+test("35u. the pre-selected model comes from THIS provider's stored slot", () => {
+  /* The old fallback read the single flat SETTINGS.model, which only ever held
+     a Claude id -- so a DeepSeek pane pre-selected something it could not send. */
+  const h = paneMenuWith(DS_MODELS, "deepseek",
+    { provider: "deepseek", model: "opus",
+      model_by_provider: { claude: "opus", deepseek: "deepseek-v4-pro" } });
+  const sel = optionsIn(h).filter(o => /\bselected\b/.test(o.attrs)).map(o => o.id);
+  assert.deepStrictEqual(sel, ["deepseek-v4-pro"],
+    "the DeepSeek slot must win over the legacy flat model, got " + sel);
+});
+
+/* ── 35v-x. the Usage row reports THIS provider's kind of fact ──────────── */
+
+const usageRowOf = h => {
+  const m = h.match(/data-mrow="usage"[\s\S]*?<span class="mv">([^<]*)<\/span>/);
+  return m ? m[1] : null;
+};
+
+test("35v. a provider with no usage concept borrows nobody else's figure", () => {
+  /* THE LATENT BUG, at the row. The branch was `if (deepseek) balance; else
+     Anthropic percentage`, so Codex -- which has neither a window nor a
+     balance -- would have rendered Claude's percentage on a Codex session the
+     day it became selectable. */
+  const prevP = T.PROVIDERS, prevU = T.S.usage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+                 { id: "codex", name: "OpenAI Codex", usage_kind: "none" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  try {
+    const h = paneMenuWith({ claude: PANE_MODELS.claude }, "codex", { provider: "claude" });
+    const row = usageRowOf(h);
+    assert.ok(!/26/.test(row), "Claude's percentage leaked onto a Codex pane: " + row);
+    assert.ok(/not reported/.test(row) && /Codex/.test(row),
+      "it must say whose figure is missing and why, got: " + row);
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; }
+});
+
+test("35w. a Claude pane still shows the window percentage, unchanged", () => {
+  const prevP = T.PROVIDERS, prevU = T.S.usage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  try {
+    const h = paneMenuWith({ claude: PANE_MODELS.claude }, "claude", { provider: "claude" });
+    assert.strictEqual(usageRowOf(h), "26% used");
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; }
+});
+
+test("35x. the Usage row follows the pane's provider, like the Model row", () => {
+  /* Same divergence as the model list: SETTINGS.provider is global, so a
+     DeepSeek pane left open across a switch to Claude would have started
+     quoting Claude's percentage for a session DeepSeek is still answering. */
+  const prevP = T.PROVIDERS, prevU = T.S.usage, prevD = T.S.deepseekUsage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+                 { id: "deepseek", name: "DeepSeek", usage_kind: "balance" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  T.S.deepseekUsage = { available: true, balances: [{ total_balance: "1.81", currency: "USD" }] };
+  try {
+    const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+    assert.strictEqual(usageRowOf(h), "$1.81 balance",
+      "the pane's own provider must win over the global setting");
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; T.S.deepseekUsage = prevD; }
 });
 
 /* ── 35l-n. the repo bar's facts live in the ⋯ menu now ──────────────────── */
@@ -3467,6 +3794,850 @@ test("opt5. chat-first: teach and chat buttons present; the 7-field form is gone
 
 
 
+/* ── 45. Codex sign-in block ────────────────────────────────────────────────
+   The reason this row was built: a ChatGPT sign-in and an API key cost the
+   operator completely different amounts for identical output, and nothing in
+   the panel showed which was in play. Every assertion below is about not
+   claiming the wrong one. */
+
+const CODEX_ROW = { id:"codex", name:"OpenAI Codex", installed:true, configured:true,
+                    runnable:false, adapter:false,
+                    reason:"no chat adapter yet -- this panel speaks two protocols" };
+
+function codexRender(auth, opts){
+  const o = opts || {};
+  T.PROVIDERS = [CODEX_ROW];
+  T.S.codexAuth = auth;
+  T.S.codexBusy = o.busy || null;
+  T.S.codexMsg = o.msg || null;
+  T.S.codexKeyOpen = !!o.keyOpen;
+  return T.codexAuthHtml();
+}
+
+test("45a. each state renders its own badge, and the billing line with it", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out", key_display:"", billing:null });
+    assert.ok(/Not signed in/.test(out), "signed-out says so");
+    assert.ok(/Sign in with ChatGPT/.test(out) && /Add API key/.test(out),
+      "and offers both ways in");
+    assert.ok(/usage included in your Plus\/Pro\/Business plan/.test(out)
+           && /pay for what you use/.test(out), "each way says what it costs");
+
+    const chat = codexRender({ state:"chatgpt", key_display:"",
+                               billing:"usage included in your plan" });
+    assert.ok(/Signed in with ChatGPT/.test(chat), "chatgpt badge");
+    assert.ok(/usage included in your plan/.test(chat), "with the billing line");
+    assert.ok(/Sign out/.test(chat) && /Use an API key instead/.test(chat),
+      "sign out + the switch");
+
+    const key = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
+                              billing:"billed per token" });
+    assert.ok(/sk-proj-\*\*\*SMnIA/.test(key), "the masked stub the CLI printed");
+    assert.ok(/billed per token/.test(key), "with the billing line");
+    assert.ok(/Sign out/.test(key) && /Switch to ChatGPT plan/.test(key),
+      "sign out + the other switch");
+
+    const none = codexRender({ state:"no_binary", detail:"the `codex` CLI is not on PATH" });
+    assert.ok(/not on PATH/.test(none), "a missing CLI says that, not 'not signed in'");
+    assert.ok(!/Sign in with ChatGPT/.test(none), "and offers nothing to click");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45b. an unrecognised answer says so and NEVER invents a mode", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"unknown", key_display:"", billing:null,
+                              detail:"`codex login status` answered in a shape this build does not recognise (exit 2)" });
+    assert.ok(/Could not tell which credential/.test(out), "the honest message");
+    assert.ok(/does not recognise/.test(out), "with the reason attached");
+    assert.ok(!/usage included/.test(out) && !/billed per token/.test(out),
+      "no billing claim is made when the mode is unknown");
+    assert.ok(!/Signed in with ChatGPT/.test(out) && !/Not signed in/.test(out),
+      "and no state is fabricated either way");
+    assert.ok(!/Sign out/.test(out),
+      "Sign out is withheld: it would imply we know there is something to sign out of");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45c. not asked yet is not signed out", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender(null);
+    assert.ok(/Reading the Codex sign-in/.test(out), "it says it is still reading");
+    assert.ok(!/Not signed in/.test(out), "never a billing claim before anything was read");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45d. a browser can sign in and out; only the API key needs the desktop", () => {
+  /* This inverts what the row used to say. Sign in, sign out and cancel now
+     ride POST /api/providers/codex/{login,logout,login/cancel}, so a browser
+     gets real buttons. The API KEY does not and never will: it would have to
+     cross an HTTP request body to reach the CLI. */
+  const out = codexRender({ state:"logged_out" });      // no sandbox.sutra: browser
+  assert.ok(/data-codex="login"/.test(out), "ChatGPT sign-in works from a browser");
+  assert.ok(!/data-codex="apikey"/.test(out), "the API key button needs the bridge");
+  assert.ok(/codex login --with-api-key/.test(out), "and the CLI path is named for it");
+  assert.ok(/desktop app/.test(out),
+    "with the alternative, so it does not read as a missing feature");
+
+  const signed = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
+  assert.ok(/data-codex="logout"/.test(signed), "sign out works from a browser too");
+  assert.ok(!/data-codex="apikey"/.test(signed), "switching TO a key still needs the bridge");
+
+  const keyed = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
+                              billing:"billed per token" });
+  assert.ok(/data-codex="login"/.test(keyed) && /data-codex="logout"/.test(keyed),
+    "switching back to ChatGPT, and signing out, both work from a browser");
+});
+
+test("45d2. the waiting copy always names the terminal way through", () => {
+  /* Neither transport forwards the child's output, so codex's fallback sign-in
+     URL is invisible here by design. Someone whose browser did not open needs
+     the escape hatch WHILE waiting, not in an error three minutes later. */
+  const out = codexRender({ state:"logged_out" }, { busy:"login" });
+  assert.ok(/Waiting for the browser sign-in/.test(out), "it says what it waits for");
+  assert.ok(/run <code>codex login<\/code> in a terminal/.test(out),
+    "and names the way through if no window opened");
+  assert.ok(/>Cancel</.test(out), "and the button cancels");
+});
+
+test("45d3. a sign-in the SERVER is running is adopted after a reload", () => {
+  /* A reload loses S.codexBusy. With login_in_flight true a child is running
+     and about to change the credential, so a row reading "Not signed in" with
+     an idle button would be the row lying about state. */
+  const out = codexRender({ state:"logged_out", login_in_flight:true });
+  assert.ok(/Waiting for the browser sign-in/.test(out),
+    "the row shows the sign-in it did not start");
+  assert.ok(/>Cancel</.test(out), "and offers to cancel it");
+  const idle = codexRender({ state:"logged_out", login_in_flight:false });
+  assert.ok(!/Waiting for the browser sign-in/.test(idle),
+    "and does not invent a sign-in when none is running");
+});
+
+test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
+    assert.ok(/<b>not<\/b> make Codex selectable/.test(out),
+      "signing in is not selectability, and the block says so");
+    /* The row directly above prints `reason` verbatim -- both protocols, the
+       version pin, the install path. Repeating it here put the same paragraph
+       on screen twice. The block must say the one thing the row does not, and
+       stop. */
+    assert.ok(!out.includes(CODEX_ROW.reason),
+      "the block repeats the row's reason back at the reader");
+    assert.ok(!/stream-json|ACP|0\.153\.2|opt\/homebrew/.test(out),
+      "no fragment of the adapter explanation is duplicated here");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45f. while a spawn runs its own button cancels and the others are dead", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out" }, { busy:"login" });
+    assert.ok(/>Cancel</.test(out), "the busy button became Cancel");
+    assert.ok(/Waiting for the browser sign-in/.test(out), "and says why it waits");
+    const others = out.match(/data-codex="apikey"[^>]*disabled/);
+    assert.ok(others, "the other action is disabled while one runs");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45g. every credential-replacing action warns first, and only those", () => {
+  /* The warning is the only thing standing between a click and a credential
+     Sutra cannot restore, because it never had a copy. */
+  const replaces = [["logout","chatgpt"], ["logout","api_key"],
+                    ["login","api_key"], ["apikey","chatgpt"]];
+  for (const [verb, state] of replaces){
+    const t = T.codexConfirmText(verb, state);
+    assert.ok(t, verb + " from " + state + " must warn before it replaces anything");
+    assert.ok(/REPLACES|removes/.test(t), "the warning names the replacement: " + t);
+    assert.ok(/go back|sign back in|restore/.test(t),
+      "and says what getting back would take: " + t);
+    /* The "Sutra never had a copy" clause is required exactly where a KEY is
+       what gets destroyed. Leaving an API key means the operator needs the key
+       itself again and nothing on this side can hand it back; leaving a
+       ChatGPT sign-in just means signing in again, where the clause would be
+       noise. */
+    if (state === "api_key")
+      assert.ok(/never had a copy/.test(t),
+        "a key is being destroyed and nothing here can put it back: " + t);
+  }
+  /* Signing in from signed-out destroys nothing, so it must not nag. */
+  assert.strictEqual(T.codexConfirmText("login", "logged_out"), null);
+  assert.strictEqual(T.codexConfirmText("apikey", "logged_out"), null);
+  assert.strictEqual(T.codexConfirmText("login", "unknown"), null);
+});
+
+test("45h. the API-key field is uncontrolled, so no key is ever held in state", () => {
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"logged_out" }, { keyOpen:true });
+    assert.ok(/data-codex-key/.test(out), "the field is there");
+    assert.ok(/type="password"/.test(out), "and not in plain sight");
+    assert.ok(!/value=/.test(out.slice(out.indexOf("data-codex-key") - 200,
+                                       out.indexOf("data-codex-key") + 200)),
+      "no value bound to state: the typed key lives only in the DOM node");
+    assert.ok(/keeps no copy/.test(out), "and the field says Sutra keeps nothing");
+  } finally { delete sandbox.sutra; }
+});
+
+/* ── 45i-45l. The Codex probe's async contract ──────────────────────────────
+   These drive the SAME globals -- sandbox.fetch, sandbox.render, S.codexAuth --
+   so registered straight into ASYNC_CHECKS they interleave and stomp each
+   other. The first version of them did exactly that and reported a failure in
+   the wrong test. They run SERIALLY through one queue, and each installs its
+   own stubs at the moment it RUNS, not when it is declared.
+
+   A failure does not cancel the ones behind it: the queue continues on a
+   caught copy while the original carries the result to ASYNC_CHECKS. */
+/* The queue starts after a real timer tick, not immediately. Other suites in
+   this file (25j's stageInBackground, for one) call render() from their own
+   async continuations, and those land on the microtask queue while a codex
+   body is mid-await -- which showed up as a phantom render inside 45k and had
+   me hunting a loop in code that no longer had one. Draining first makes the
+   render counts below attributable. Same 20ms-tick trick 31e uses. */
+let _codexQ = new Promise(r => setTimeout(r, 60));
+function codexSerial(name, body){
+  const mine = _codexQ.then(body);
+  _codexQ = mine.catch(() => {});
+  ASYNC_CHECKS.push(mine.catch(e => {
+    throw new Error(name + " -- " + (e && e.message ? e.message : e));
+  }));
+}
+
+/* Fresh stubs and a clean slate, with its own teardown. */
+function codexStub(fetchImpl){
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  let renders = 0;
+  sandbox.render = () => { renders++; };
+  sandbox.fetch = fetchImpl;
+  T.PROVIDERS = [CODEX_ROW];
+  T.S.codexAuth = null; T.S.codexProbing = false;
+  return {
+    renders: () => renders,
+    reset: () => { renders = 0; },
+    setFetch: f => { sandbox.fetch = f; },
+    restore: () => { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+                     T.S.codexAuth = null; T.S.codexProbing = false; },
+  };
+}
+
+const jsonOnce = payload => () => Promise.resolve(
+  { ok:true, json: () => Promise.resolve(payload) });
+const stillLoadingNow = () => /Reading the Codex sign-in/.test(T.codexAuthHtml());
+
+/* 45i. A PERMANENT LOADING STATE IS THE WORST ANSWER THIS BLOCK CAN GIVE.
+   The first build hooked the probe only into openScreen(), and boot() sets
+   S.screen directly (09-tail.js) -- so the shell could come up on this screen
+   with nothing having asked, and the block promised an answer that was never
+   coming. Once loadCodexAuth has SETTLED, on any path, loading must be gone. */
+codexSerial("45i", async () => {
+  const h = codexStub(jsonOnce({ state:"chatgpt", key_display:"",
+                                 billing:"usage included in your plan" }));
+  try {
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a successful probe must leave the loading state");
+    assert.ok(/Signed in with ChatGPT/.test(T.codexAuthHtml()), "and render the answer");
+
+    /* the fetch rejects outright -- socket gone, backend restarted */
+    T.S.codexAuth = null;
+    h.setFetch(() => Promise.reject(new Error("socket closed")));
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a REJECTED probe must not sit on loading");
+    assert.ok(/Could not tell which credential/.test(T.codexAuthHtml()),
+      "it falls through to the honest unknown state");
+
+    /* a non-2xx answer -- the shape apiGet turns into a throw */
+    T.S.codexAuth = null;
+    h.setFetch(() => Promise.resolve({ ok:false, status:500,
+                                       json: () => Promise.resolve({ detail:"boom" }) }));
+    await T.loadCodexAuth(true);
+    assert.ok(!stillLoadingNow(), "a 500 must not sit on loading");
+    assert.strictEqual(T.S.codexAuth.state, "unknown");
+
+    /* a 200 carrying no state. Left falsy this would keep the loading state AND
+       re-arm the wire() predicate on every render, forever. */
+    T.S.codexAuth = null;
+    h.setFetch(jsonOnce(null));
+    await T.loadCodexAuth(true);
+    assert.ok(T.S.codexAuth && T.S.codexAuth.state === "unknown",
+      "a stateless 200 is coerced to unknown, never left null");
+    assert.ok(!stillLoadingNow(), "a stateless 200 must not sit on loading");
+  } finally { h.restore(); }
+});
+
+/* 45j. Does the probe ever fire? Pure predicate, so the answer needs no DOM. */
+test("45j. the probe fires when the screen is up and nothing has been asked", () => {
+  const prev = T.S.screen;
+  try {
+    T.S.screen = "settings"; T.S.codexAuth = null;
+    assert.strictEqual(T.codexNeedsProbe(), true,
+      "screen up, no answer yet -> the probe must fire");
+    T.S.codexAuth = { state:"chatgpt" };
+    assert.strictEqual(T.codexNeedsProbe(), false, "an answered probe must not re-fire");
+    T.S.codexAuth = { state:"unknown", detail:"could not read it" };
+    assert.strictEqual(T.codexNeedsProbe(), false,
+      "a FAILED probe must not re-fire on every render either");
+    T.S.screen = "chats"; T.S.codexAuth = null;
+    assert.strictEqual(T.codexNeedsProbe(), false, "no probe for a screen that is not up");
+  } finally { T.S.screen = prev; T.S.codexAuth = null; }
+});
+
+/* 45k. THE FREEZE, and the contract that makes it impossible.
+   What shipped was `if (codexNeedsProbe()) loadCodexAuth().then(()=>render())`.
+   While a probe is in flight the predicate is still true (no answer yet) and
+   the loader early-returns on its in-flight guard -- and an early return from
+   an async function is an ALREADY-RESOLVED promise. So the chained render
+   fired, re-entered wire(), early-returned again, and looped at microtask
+   speed, rebuilding the whole panel and re-binding every handler per turn.
+   Nothing painted and nothing took input; and because apiGet carries no
+   timeout, a probe that never landed never ended the loop.
+
+   Pinned as a property of the LOADER, not as a model of the caller: it renders
+   exactly when it has something new to show, and a call that does nothing
+   renders nothing. That is what makes every caller safe as a bare call. */
+codexSerial("45k", async () => {
+  const h = codexStub(() => new Promise(() => {}));
+  try {
+    /* A. the in-flight guard blocks -- the case that used to hand the caller a
+          resolved promise to loop on */
+    T.S.codexProbing = true;
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 0,
+      "a call blocked by the in-flight guard rendered " + h.renders() + " time(s)");
+
+    /* B. the answer-in-hand guard blocks */
+    T.S.codexProbing = false; T.S.codexAuth = { state:"chatgpt" };
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 0, "a call blocked by an answer in hand rendered too");
+
+    /* C. a real probe renders its own result exactly once, so nothing needs to
+          chain a render onto it */
+    h.reset();
+    T.S.codexAuth = null;
+    h.setFetch(jsonOnce({ state:"chatgpt", key_display:"", billing:"x" }));
+    await T.loadCodexAuth();
+    assert.strictEqual(h.renders(), 1,
+      "a completed probe must render its own result exactly once");
+  } finally { h.restore(); }
+});
+
+/* 45k2. The other half of the same contract, read off the real source. The loop
+   is invisible in any single function -- it exists only in the coupling between
+   wire() and render() -- so the rule is enforced where it can be seen.
+   Comments are stripped first: the explanation above quotes the very expression
+   it forbids, and matching that would be a test failing on its own prose. */
+test("45k2. no caller chains a render onto loadCodexAuth", () => {
+  const raw = fs.readFileSync(path.join(__dirname, "static", "js", "07-loaders.js"), "utf8");
+  const code = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const chained = code.match(/loadCodexAuth\([^)]*\)\s*\.then/g) || [];
+  assert.deepStrictEqual(chained, [],
+    "a caller chains onto loadCodexAuth (" + chained.join(", ") + ") -- a "
+    + "guard-blocked call resolves immediately and that render re-enters wire()");
+});
+
+/* 45l. The guard must not swallow the RE-PROBE. An action has just changed the
+   credential, so the answer in hand is precisely the stale one. Without force
+   the row keeps showing the state from before the sign-in -- the single thing
+   this row exists not to do. This failed when first written: 0 requests. */
+codexSerial("45l", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", key_display:"", billing:null }) }); });
+  try {
+    T.S.codexAuth = { state:"chatgpt", billing:"usage included in your plan" };
+    await T.codexReprobe(false);
+    assert.strictEqual(calls, 1,
+      "codexReprobe made " + calls + " request(s) -- with an answer in hand the "
+      + "guard swallowed the re-read, so the row would still show the old credential");
+    assert.strictEqual(T.S.codexAuth.state, "logged_out", "and the NEW answer is what lands");
+  } finally { h.restore(); }
+});
+
+/* ── 45m-45p. The sign-in POLL. ────────────────────────────────────────────
+   The browser transport's route returns the instant the child exists, so the
+   panel watches the CREDENTIAL rather than the process. A watch with no way to
+   end is the same class of waste as the render loop this file already pinned,
+   so every stop condition gets a test.
+
+   Timers are FAKED here -- captured in a queue and drained by hand -- because
+   the real cadence is 2s a tick and a test that sleeps is a test nobody runs. */
+function codexFakeTimers(){
+  const prev = sandbox.setTimeout;
+  let queue = [];
+  sandbox.setTimeout = (fn, ms) => { queue.push(fn); return queue.length; };
+  return {
+    pending: () => queue.length,
+    /* one tick, awaited: the poll body is async and awaits the probe */
+    tick: async () => { const q = queue; queue = []; for (const fn of q) await fn(); },
+    restore: () => { sandbox.setTimeout = prev; },
+  };
+}
+
+/* 45m. Nobody is looking -> stop watching. The founder's condition. Note it
+   does NOT cancel the server child: that finishes or hits its own cap, and
+   returning to the screen re-adopts it through login_in_flight. */
+codexSerial("45m", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    assert.strictEqual(T.S.codexPolling, true, "the watch starts");
+
+    await t.tick();                       /* one poll while on screen */
+    const after1 = calls;
+    assert.ok(after1 >= 1, "it polls while the row is up");
+
+    T.S.screen = "chats";                 /* the user leaves */
+    await t.tick();
+    assert.strictEqual(T.S.codexPolling, false, "leaving the screen stops the watch");
+    assert.strictEqual(T.S.codexBusy, null, "and clears the local busy state");
+    assert.strictEqual(t.pending(), 0, "with no further tick scheduled");
+    await t.tick();
+    assert.strictEqual(calls, after1,
+      "and no probe fires against a screen nobody is looking at");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null;
+             T.codexStopPoll(); }
+});
+
+/* 45n. The credential changed -> the sign-in landed, stop. */
+codexSerial("45n", async () => {
+  const h = codexStub(() => Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"chatgpt", billing:"usage included in your plan",
+                                  login_in_flight:false }) }));
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    await t.tick();
+    assert.strictEqual(T.S.codexAuth.state, "chatgpt", "the new credential landed");
+    assert.strictEqual(T.S.codexPolling, false, "the watch stops on the change");
+    assert.strictEqual(T.S.codexBusy, null, "the button stops saying Cancel");
+    assert.strictEqual(T.S.codexMsg, null,
+      "and no banner repeats what the row already says");
+    assert.strictEqual(t.pending(), 0, "nothing further is scheduled");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.codexStopPoll(); }
+});
+
+/* 45o. A second sign-in supersedes the first watcher instead of running two. */
+codexSerial("45o", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    T.codexWatchLogin("logged_out");      /* the second one wins */
+    await t.tick();
+    assert.strictEqual(calls, 1,
+      "two watchers polled " + calls + " times for one sign-in");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null;
+             T.codexStopPoll(); }
+});
+
+/* 45p. codexStopPoll invalidates a tick that is already scheduled -- the
+   cancel path calls it, and a stale tick landing afterwards would re-adopt a
+   sign-in the operator just stopped. */
+codexSerial("45p", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"logged_out", login_in_flight:true }) }); });
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    T.codexStopPoll();
+    await t.tick();
+    assert.strictEqual(calls, 0, "a stopped watch must not probe");
+    assert.strictEqual(T.S.codexPolling, false, "and reports itself stopped");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null; }
+});
+
+/* ── 46. a rejected API key must never be echoed back ───────────────────────
+   The classified-error path in electron/main.js exists so the child's stderr
+   never crosses the bridge -- on the --with-api-key path that stderr can
+   contain the key that was just typed. This reads the real function out of
+   main.js (which cannot be require()d here: it pulls in electron) and proves
+   the property on the actual bytes, because "we return a fixed string" is
+   exactly the kind of thing that regresses quietly. */
+test("46a. codexError classifies and never quotes the child's stderr", () => {
+  const src = fs.readFileSync(path.join(__dirname, "electron", "main.js"), "utf8");
+  const start = src.indexOf("function codexError(");
+  assert.ok(start > 0, "codexError is gone from main.js -- did the verb change shape?");
+  const end = src.indexOf("\n}", start);
+  const fn = vm.runInNewContext(src.slice(start, end + 2) + ";codexError");
+
+  const KEY = "sk-proj-abcdef0123456789SECRET";
+  const cases = [
+    "Error: 401 Unauthorized - Incorrect API key provided: " + KEY,
+    "invalid_api_key: " + KEY + " is not valid",
+    "insufficient quota for key " + KEY,
+    "connection timed out while checking " + KEY,
+    "something nobody has seen before involving " + KEY,
+  ];
+  for (const stderr of cases){
+    const out = fn(1, stderr);
+    assert.ok(!out.includes(KEY), "the key was echoed back: " + out);
+    assert.ok(!out.includes("sk-"), "a key-shaped fragment survived: " + out);
+    assert.ok(out.length < 200, "the raw line leaked wholesale: " + out);
+  }
+  assert.ok(/rejected that API key/.test(fn(1, cases[0])), "a 401 is named as a bad key");
+  assert.ok(/billing or quota/.test(fn(1, cases[2])), "a quota problem is named as one");
+  assert.ok(/could not reach OpenAI/.test(fn(1, cases[3])), "a network failure is named");
+  assert.ok(/exited 7/.test(fn(7, cases[4])), "an unknown failure carries the exit code");
+});
+
+
+/* ── 46. DeepSeek sign-in block ─────────────────────────────────────────────
+   Why this row exists: before it, the only way to get a DeepSeek key onto a
+   machine was `export DEEPSEEK_API_KEY=...` and a server restart, which the
+   panel told you to do in a websocket error frame after you had already picked
+   the provider and sent a message.
+
+   It is NOT the codex row with different words. codex reports which of two
+   billing modes its one credential is in and signing in there does not make
+   codex selectable; here the key is half of whether the provider runs, so the
+   only job is moving the row between not-signed-in and selectable.
+
+   THE INVARIANT ACROSS EVERY ASSERTION BELOW: no render may contain a key.
+   The row is fed a mask by the backend and has no other source. */
+
+const DS_ROW = { id:"deepseek", name:"DeepSeek", installed:true, configured:false,
+                 runnable:false, adapter:true, reason:"installed at /opt/homebrew/bin/deepseek, but no API key." };
+const DS_FAKE = "sk-" + ["notreal","notreal","notreal"].join("-") + "4f2a";
+const DS_MASK = "sk-****4f2a";
+
+function dsRender(auth, opts){
+  const o = opts || {};
+  T.PROVIDERS = o.providers || [DS_ROW];
+  T.SETTINGS = Object.assign({ provider:"claude" }, o.settings || {},
+                             { deepseek_auth: auth });
+  T.S.deepseekBusy = o.busy || null;
+  T.S.deepseekMsg = o.msg || null;
+  T.S.deepseekMsgOk = !!o.msgOk;
+  return T.deepseekAuthHtml();
+}
+
+const DS_BRIDGE = { deepseekKeySave: () => Promise.resolve({ ok:true }),
+                    deepseekKeyRemove: () => Promise.resolve({ ok:true }) };
+
+function withDs(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = DS_BRIDGE;
+  try { return fn(); } finally { sandbox.sutra = saved; }
+}
+
+/* browser_session is what a CLI-run server reports: a one-time code was
+   printed on its stdout and not yet spent. A desktop-started server sends
+   available:false with the reason, and DS_NO_CODE below is that case. */
+const DS_NONE = { state:"none", signed_in:false, env_var:null,
+                  env_vars:["SUTRA_UI_DEEPSEEK_API_KEY","DEEPSEEK_API_KEY"],
+                  mask:null, saved_at:null, stored_mask:null,
+                  store_available:true, store_reason:null,
+                  browser_session:{ available:true, claimed:false, reason:null },
+                  reason:"no API key. […]" };
+
+const DS_NO_CODE = { ...DS_NONE, browser_session:{ available:false, claimed:false,
+  reason:"this server was started by the Sutra desktop app, which already owns "
+       + "the key-writing channel, so no browser sign-in code was issued." } };
+
+/* A browser that has already traded the code for a token. Runs `fn` with the
+   token in sessionStorage and no Electron bridge -- the state the key field is
+   allowed to exist in outside the desktop app. */
+function withDsPaired(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage.setItem(T.DEEPSEEK_SESSION_KEY, "paired-token");
+  try { return fn(); }
+  finally {
+    sandbox.sessionStorage.removeItem(T.DEEPSEEK_SESSION_KEY);
+    sandbox.sutra = saved;
+  }
+}
+
+/* A browser that has not. Explicit rather than implied by the default, because
+   the token survives a reload and therefore survives one test into the next if
+   anything forgets to clear it. */
+function withDsBrowser(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage.removeItem(T.DEEPSEEK_SESSION_KEY);
+  try { return fn(); } finally { sandbox.sutra = saved; }
+}
+
+test("46a. not signed in offers the field inline, and says what it costs", () => {
+  const out = withDs(() => dsRender(DS_NONE));
+  assert.ok(/DeepSeek needs an API key/.test(out), "names what is missing");
+  assert.ok(/type="password"/.test(out), "the field never shows the key being typed");
+  assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out), "field + Save");
+  assert.ok(!/value=/.test(out),
+    "the input is UNCONTROLLED -- a value bound to state would keep a key in S");
+  assert.ok(/no plan to\s+inherit/.test(out), "says why a key is needed at all");
+  assert.ok(/checked\s+with DeepSeek before anything is saved/.test(out),
+    "and that it is validated before it is stored");
+});
+
+test("46b. signed in shows the mask and nothing else, plus Remove", () => {
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"stored", signed_in:true,
+                                      mask:DS_MASK, stored_mask:DS_MASK,
+                                      saved_at: Math.floor(Date.now()/1000) - 120,
+                                      reason:null }));
+  assert.ok(out.includes(DS_MASK), "the mask the backend built");
+  assert.ok(!out.includes(DS_FAKE), "and never a key");
+  assert.ok(/data-deepseek="remove"/.test(out), "Remove is offered");
+  assert.ok(!/data-deepseek-key/.test(out), "and the field is gone -- write-only, no re-edit");
+  assert.ok(/login keychain/.test(out), "says where it actually is");
+  assert.ok(/2m ago/.test(out), "and when it was saved");
+  assert.ok(/nothing needs restarting/.test(out), "no restart claim");
+  assert.ok(!/settings\.json/.test(out),
+    "the row is back to naming Sutra's own storage layout (founder 2026-09-07: "
+    + "only show the minimum a user might want to see)");
+});
+
+test("46c. an env var DISABLES the field and names which var is winning", () => {
+  /* The failure this prevents: saving a key that silently has no effect. The
+     operator would see "Saved" and the old key would keep answering. */
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"env", signed_in:true,
+                                      env_var:"DEEPSEEK_API_KEY", mask:DS_MASK,
+                                      reason:null }));
+  assert.ok(/DEEPSEEK_API_KEY/.test(out), "names the variable");
+  assert.ok(/disabled/.test(out), "the field is disabled");
+  assert.ok(!/data-deepseek="save"/.test(out), "and Save cannot be clicked");
+  assert.ok(/would never be used/.test(out), "with the reason, so it is not a mystery");
+  assert.ok(!/data-deepseek="remove"/.test(out),
+    "Remove would imply this row owns the credential; the environment does");
+});
+
+test("46c2. an env var that SHADOWS a saved key says both exist", () => {
+  /* Otherwise unsetting the variable looks like it signs you out, when there
+     is a saved key waiting underneath. */
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"env", signed_in:true,
+                                      env_var:"SUTRA_UI_DEEPSEEK_API_KEY",
+                                      mask:"sk-****9911", stored_mask:DS_MASK,
+                                      reason:null }));
+  assert.ok(out.includes("sk-****9911") && out.includes(DS_MASK),
+    "both masks, so the precedence is visible");
+  assert.ok(/takes over/.test(out), "and what happens if the variable goes away");
+});
+
+test("46d. validating disables everything and says what is happening", () => {
+  const out = withDs(() => dsRender(DS_NONE, { busy:"save" }));
+  assert.ok(/aria-busy="true"/.test(out), "the button reports busy to a screen reader");
+  assert.ok(/Checking…/.test(out), "and says so in words");
+  assert.ok(/data-deepseek-key[^>]*disabled/.test(out), "the field is locked while it runs");
+  assert.ok(/Nothing is saved until it says yes/.test(out),
+    "the spinner copy states the guarantee");
+});
+
+test("46e. a refusal renders as a refusal, a success as a success", () => {
+  const bad = withDs(() => dsRender(DS_NONE, { msg:"DeepSeek rejected that key.", msgOk:false }));
+  assert.ok(/class="note b"/.test(bad), "a refusal is not painted as an all-clear");
+  assert.ok(/rejected that key/.test(bad), "and carries the classified reason");
+
+  const good = withDs(() => dsRender({ ...DS_NONE, state:"stored", signed_in:true,
+                                       mask:DS_MASK, reason:null },
+                                     { msg:"DeepSeek accepted the key", msgOk:true }));
+  assert.ok(!/class="note b"/.test(good), "a success is not painted as a failure");
+});
+
+test("46f. no bridge and no code means no field and the variables named instead", () => {
+  /* A desktop-started backend seen through a browser: the shell owns the write
+     channel, no code was printed, and a key field here could only ever 403. */
+  const out = withDsBrowser(() => dsRender(DS_NO_CODE));
+  assert.ok(!/data-deepseek-key/.test(out), "no field a browser cannot use");
+  assert.ok(!/data-deepseek="save"/.test(out), "and nothing to click");
+  assert.ok(!/data-deepseek-code/.test(out), "and no code field, because there is no code");
+  assert.ok(/SUTRA_UI_DEEPSEEK_API_KEY/.test(out) && /DEEPSEEK_API_KEY/.test(out),
+    "both variables are named as the way in");
+  assert.ok(/already owns the key-writing channel/.test(out),
+    "with the server's own reason, so it does not read as a missing feature");
+});
+
+/* ── 46p-46u. the browser sign-in lane ──────────────────────────────────────
+   WHAT WAS BROKEN. The key write route is token-gated and only Electron main
+   held a token, so the row rendered "saving one is a desktop-app action" and
+   no field -- which made the browser at 127.0.0.1 unable to sign in to
+   DeepSeek at all, and that is where development happens.
+
+   THE ORDER IS THE SAFETY PROPERTY. A page with no write lane must never draw
+   a key field. So the code field comes first, and only a page that HOLDS a
+   token draws the key field. Every assertion below is about that ordering. */
+
+test("46p. an unpaired browser is offered the CODE field and no key field", () => {
+  const out = withDsBrowser(() => dsRender(DS_NONE));
+  assert.ok(/data-deepseek-code/.test(out), "the code field is drawn");
+  assert.ok(/data-deepseek="pair"/.test(out), "with something to click");
+  assert.ok(!/data-deepseek-key/.test(out),
+    "and NO key field -- a key must not be typeable into a page that cannot deliver it");
+  assert.ok(!/data-deepseek="save"/.test(out), "nor a Save that would 403");
+  assert.ok(/sign-in code/.test(out), "names what to paste");
+  assert.ok(/terminal you launched it from/.test(out), "and where to find it");
+  assert.ok(/works once/.test(out), "and that it is single-use");
+  assert.ok(!/value=/.test(out),
+    "the code input is UNCONTROLLED, like the key input -- nothing bound to state");
+});
+
+test("46q. once paired, the key field appears and the code field goes", () => {
+  const out = withDsPaired(() => dsRender(DS_NONE));
+  assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out),
+    "the key field is live");
+  assert.ok(!/data-deepseek-code/.test(out), "and the code step is done with");
+  /* The loopback sentence came OUT (founder 2026-09-07: only the minimum). What
+     must still hold is that neither lane CLAIMS the other's transport -- the copy
+     is now silent on transport, which is honest for both. */
+  assert.ok(!/in-process/.test(out),
+    "a browser render must not claim the desktop app's in-process hand-off");
+  assert.ok(!out.includes(DS_FAKE), "no key, ever");
+});
+
+test("46r. the desktop bridge still wins and never mentions a code", () => {
+  /* Lane 1 is unchanged. A shell-started server prints no code at all, so a
+     bridge render that talked about pasting one would be nonsense. */
+  const out = withDs(() => dsRender(DS_NO_CODE));
+  assert.ok(/data-deepseek-key/.test(out), "the field is drawn as before");
+  assert.ok(!/data-deepseek-code/.test(out), "and no pairing step is offered");
+  assert.ok(!/127\.0\.0\.1/.test(out),
+    "and no loopback claim: the bridge hands the key across in-process");
+});
+
+test("46s. a signed-in browser with no write lane is not given a dead Remove", () => {
+  /* THE BUG THIS PINS: Remove was drawn whenever a key was stored, and its
+     handler returned early with no bridge -- a button that did nothing at all,
+     silently, on every browser. */
+  const stored = { ...DS_NONE, state:"stored", signed_in:true,
+                   mask:DS_MASK, stored_mask:DS_MASK, reason:null };
+  const unpaired = withDsBrowser(() => dsRender(stored));
+  assert.ok(!/data-deepseek="remove"/.test(unpaired), "no button that cannot work");
+  assert.ok(/data-deepseek="pair"/.test(unpaired), "the way to make it work instead");
+  assert.ok(unpaired.includes(DS_MASK), "and the row still says what is saved");
+
+  const paired = withDsPaired(() => dsRender(stored));
+  assert.ok(/data-deepseek="remove"/.test(paired), "paired, Remove is live");
+  assert.ok(!/data-deepseek="pair"/.test(paired), "and the code step is gone");
+
+  const noCode = withDsBrowser(() => dsRender({ ...stored,
+    browser_session: DS_NO_CODE.browser_session }));
+  assert.ok(!/data-deepseek="remove"/.test(noCode) && !/data-deepseek="pair"/.test(noCode),
+    "no code and no bridge: neither control is offered");
+  assert.ok(/restart the server/.test(noCode),
+    "but the way out is named rather than left a mystery");
+  assert.ok(!/com\.sutra\.provider/.test(noCode),
+    "and it does not send a user into Keychain Access after an internal item name");
+});
+
+test("46t. the write lane is the token or the bridge, and nothing else", () => {
+  assert.strictEqual(withDsBrowser(() => T.deepseekCanWrite()), false, "browser, unpaired");
+  assert.strictEqual(withDsPaired(() => T.deepseekCanWrite()), true, "browser, paired");
+  assert.strictEqual(withDs(() => T.deepseekCanWrite()), true, "desktop bridge");
+
+  /* The token round-trips through sessionStorage and can be DROPPED -- which is
+     what the panel does on a 403, so a restarted server falls back to the code
+     field instead of re-offering a key field that cannot work. */
+  withDsBrowser(() => {
+    assert.strictEqual(T.deepseekSessionToken(), null, "nothing held to start");
+    assert.strictEqual(T.deepseekSetSessionToken("t0k"), true, "stored");
+    assert.strictEqual(T.deepseekSessionToken(), "t0k", "and read back");
+    T.deepseekClearSessionToken();
+    assert.strictEqual(T.deepseekSessionToken(), null, "and dropped on demand");
+  });
+});
+
+test("46u. storage that throws costs the field, not the page", () => {
+  /* sessionStorage throws outright in some private windows and webviews. The
+     row has to render there -- without a field it cannot use, but render. */
+  const saved = sandbox.sessionStorage, savedSutra = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage = { getItem(){ throw new Error("denied"); },
+                             setItem(){ throw new Error("denied"); },
+                             removeItem(){ throw new Error("denied"); } };
+  try {
+    assert.strictEqual(T.deepseekSessionToken(), null, "no token, no throw");
+    assert.strictEqual(T.deepseekSetSessionToken("t0k"), false,
+      "and setting REPORTS the refusal -- the handler says so instead of drawing a field");
+    const out = dsRender(DS_NONE);
+    assert.ok(/data-deepseek-code/.test(out), "the code step still renders");
+    assert.ok(!/data-deepseek-key/.test(out), "and no key field");
+  } finally { sandbox.sessionStorage = saved; sandbox.sutra = savedSutra; }
+});
+
+test("46f2. a shell without the DeepSeek verb is not treated as a bridge", () => {
+  /* window.sutra exists in any Sutra desktop build; deepseekKeySave does not
+     exist in one built before this change. Keying off the wrong verb would
+     draw a field whose only transport is absent. */
+  const saved = sandbox.sutra;
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    assert.strictEqual(T.deepseekBridge(), null, "codexLogin alone is not this bridge");
+    assert.ok(!/data-deepseek-key/.test(dsRender(DS_NONE)), "so no field is drawn");
+  } finally { sandbox.sutra = saved; }
+});
+
+test("46g. no keychain says so and does NOT offer a control that cannot work", () => {
+  const out = withDs(() => dsRender({ ...DS_NONE, store_available:false,
+    store_reason:"saving a key needs the macOS login keychain and this is Linux." }));
+  assert.ok(/cannot save one/.test(out), "the headline states the limit");
+  assert.ok(/this is Linux/.test(out), "with the reason from the backend");
+  assert.ok(!/data-deepseek-key/.test(out) && !/data-deepseek="save"/.test(out),
+    "and no field, because saving would have to lie or lose the key");
+});
+
+test("46h. an older backend that sends no state renders nothing at all", () => {
+  /* A row is a claim. With nothing read, the honest render is no render --
+     never "not signed in", which is a claim about the machine. */
+  assert.strictEqual(withDs(() => dsRender(undefined)), "", "no state, no block");
+  const gone = withDs(() => dsRender(DS_NONE, { providers:[
+    { id:"claude", name:"Claude Code", runnable:true }] }));
+  assert.strictEqual(gone, "", "and nothing when deepseek is not in the catalogue");
+});
+
+test("46i. NO render state can contain a key, on any transport", () => {
+  const states = [
+    DS_NONE,
+    DS_NO_CODE,
+    { ...DS_NONE, state:"stored", signed_in:true, mask:DS_MASK, reason:null },
+    { ...DS_NO_CODE, state:"stored", signed_in:true, mask:DS_MASK, reason:null },
+    { ...DS_NONE, state:"env", signed_in:true, env_var:"DEEPSEEK_API_KEY",
+      mask:DS_MASK, stored_mask:DS_MASK, reason:null },
+    { ...DS_NONE, store_available:false, store_reason:"no keychain" },
+  ];
+  /* All THREE transports, because each takes a different branch now: the
+     bridge, a paired browser, and an unpaired one drawing the code field. A
+     sweep over one of them would have left the other two unswept. */
+  const transports = [["bridge", withDs], ["paired", withDsPaired],
+                      ["browser", withDsBrowser]];
+  states.forEach((a, i) => {
+    [null, "save", "remove", "pair"].forEach(busy => {
+      transports.forEach(([label, wrap]) => {
+        const out = wrap(() => dsRender(a, { busy, msg:DS_FAKE, msgOk:false }));
+        /* msg is deliberately set to a key-shaped string: the message channel is
+           the one place a backend could hand the row something it should not
+           render, and if that ever changes this test says so. */
+        assert.ok(!out.includes(DS_FAKE.slice(0, 20)) || /note/.test(out),
+          label + " state " + i + " must not leak a key outside a message it was handed");
+        assert.ok(!/-notreal-notreal4f2a[^<]*value=/.test(out),
+          label + " state " + i + " must never put a key in an input value");
+      });
+    });
+  });
+});
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {
@@ -3484,4 +4655,346 @@ updateStagingChecks()
     process.exit(1);
   }
   process.exit(0);
+});
+
+/* ── 47a-h. turn options and permission modes are the PANE'S provider's ────
+   The panel rendered Claude's five turn options and all six of Claude's
+   permission modes on every pane. On a DeepSeek pane the five were collected,
+   sent, and dropped by the server -- ACP's per-turn request has no field to
+   carry them -- and three of the six ran as `default` while this control kept
+   displaying the operator's choice. Both read as settings that took effect.
+
+   Same shape as the Model picker (35p-t above) and the same fix: the provider
+   declares what it can honour, the client renders from that. */
+
+const TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+const PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+const SIX = PMODES.claude.map(id => ({
+  id, writes_files: id === "acceptEdits" || id === "bypassPermissions" }));
+
+/* Runs permSelect with an explicit provider map, mode list and stored mode. */
+function permWith(mpid, cur, byProvider) {
+  const pv = T.PERM_MODES, pb = T.PERM_MODES_BY_PROVIDER, ps = T.SETTINGS;
+  try {
+    T.PERM_MODES = SIX;
+    T.PERM_MODES_BY_PROVIDER = byProvider === undefined ? PMODES : byProvider;
+    T.SETTINGS = { permission_mode: cur, permission_mode_effective: cur };
+    return T.permSelect(mpid);
+  } finally { T.PERM_MODES = pv; T.PERM_MODES_BY_PROVIDER = pb; T.SETTINGS = ps; }
+}
+const permOptions = h =>
+  [...h.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
+    .map(m => ({ id: m[1], attrs: m[2] }));
+
+function toptsWith(mpid, byProvider) {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = byProvider === undefined ? TOPTS : byProvider;
+    return T.turnOptsHtml("s47", mpid);
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+}
+const fieldsIn = h =>
+  [...h.matchAll(/data-opt="([^"]+)"/g)].map(m => m[1]);
+
+test("47a. a Claude pane still gets all five turn options", () => {
+  assert.deepStrictEqual(fieldsIn(toptsWith("claude")), TOPTS.claude,
+    "Claude's controls must not move -- that is the constraint on this change");
+});
+
+test("47b. a DeepSeek pane gets NO turn option fields", () => {
+  /* Not one of the five survives the trip: build_acp_args has no per-turn argv
+     and session/prompt takes only {sessionId, prompt[]}. */
+  assert.deepStrictEqual(fieldsIn(toptsWith("deepseek")), []);
+});
+
+test("47c. 'Allow only' is never rendered on a DeepSeek pane", () => {
+  /* The one that must not be 'fixed' later. DeepSeek's CLI HAS an
+     --allowed-tools flag, but it AUTO-APPROVES tools rather than restricting
+     them -- so wiring this box to it would widen permissions for an operator
+     trying to narrow them. Absent is the correct render. */
+  const h = toptsWith("deepseek");
+  assert.ok(!/data-opt="allowed_tools"/.test(h), h);
+  assert.ok(!/Allow only/.test(h), h);
+});
+
+test("47d. before /api/settings resolves, every option still renders", () => {
+  /* Empty map means NOT FETCHED, not "nobody honours anything". Stripping
+     controls off a pane on a slow settings fetch would be a new bug. */
+  assert.deepStrictEqual(fieldsIn(toptsWith("deepseek", {})), TOPTS.claude);
+  assert.deepStrictEqual(fieldsIn(toptsWith("claude", {})), TOPTS.claude);
+});
+
+test("47e. the Turn options ROW is omitted, not opened onto an empty box", () => {
+  const shown = paneMenuWith(DS_MODELS, "claude", { provider: "claude" });
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = TOPTS;
+    const claude = paneMenuWith(DS_MODELS, "claude", { provider: "claude" });
+    const deepseek = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+    assert.ok(/data-mrow="opts"/.test(claude), "Claude keeps the row");
+    assert.ok(!/data-mrow="opts"/.test(deepseek),
+      "a provider honouring none must not offer the row: " + deepseek);
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+  assert.ok(shown.length > 0);
+});
+
+test("47f. a Claude pane still offers all six permission modes", () => {
+  const ids = permOptions(permWith("claude", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.claude);
+});
+
+test("47g. a DeepSeek pane offers only the three modes it can enforce", () => {
+  const ids = permOptions(permWith("deepseek", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.deepseek);
+  const sel = permOptions(permWith("deepseek", "plan")).filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "exactly one option is selected");
+  assert.strictEqual(sel[0].id, "plan");
+});
+
+test("47h. a stored mode this provider cannot offer is SHOWN, not silently swapped", () => {
+  /* THE EDGE CASE. permission_mode is stored globally, so a pane can inherit a
+     `dontAsk` chosen while Claude was selected. Filtering it out of the list
+     leaves no option carrying `selected`, and the browser then displays the
+     FIRST one -- so a pane running `default` would have claimed to be in
+     `plan`. That is the same mis-report this whole change exists to remove,
+     recreated inside the control meant to fix it. */
+  const h = permWith("deepseek", "dontAsk");
+  const opts = permOptions(h);
+  assert.strictEqual(opts[0].id, "dontAsk",
+    "the stored mode must still be the one shown: " + h);
+  assert.ok(/selected/.test(opts[0].attrs),
+    "it must be SELECTED, or the browser shows the first supported mode "
+    + "and the pane misreports what is running: " + h);
+  assert.ok(/disabled/.test(opts[0].attrs),
+    "and disabled, because it cannot be applied here: " + h);
+  assert.ok(/not supported by DeepSeek/.test(h), "must say why: " + h);
+  /* And no supported option may ALSO claim to be selected. */
+  const sel = opts.filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "two selected options: " + h);
+  assert.strictEqual(sel[0].id, "dontAsk");
+});
+
+test("47i. an unsupported stored mode does not paint the composer red", () => {
+  /* permSelect reads writes_files from the FULL list so Claude's warn class is
+     computed exactly as before. Safe only while the omitted modes are the
+     non-writing ones -- pinned server-side too
+     (test_every_mode_deepseek_omits_is_a_non_writing_one). */
+  assert.ok(!/permsel warn/.test(permWith("deepseek", "dontAsk")));
+  assert.ok(/permsel warn/.test(permWith("claude", "bypassPermissions")),
+    "a real write-capable mode must still warn");
+});
+
+test("47j. a provider with no declared modes keeps ALL of them", () => {
+  /* The opposite fallback from turn options, deliberately: a missing entry
+     must never leave a pane with no way to say `plan`. Hiding a safety control
+     is the wrong direction to be wrong in. */
+  const ids = permOptions(permWith("codex", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.claude);
+});
+
+/* ── 48. THE PANE NOBODY HAS ASKED ANYTHING YET (founder 2026-09-07) ────────
+   Section 47 above proved the gating works when it is HANDED a provider id.
+   Nothing proved the panel could work out which id to hand it, and on an
+   unstarted pane it could not: the provider frame arrives with the socket, so
+   `channel` is null until the first message, and before /api/settings resolves
+   SETTINGS is null too. paneProvider returned undefined, every consumer took
+   its not-loaded branch, and for turn options that branch is Claude's five.
+
+   So a fresh DeepSeek pane showed all five turn options -- in exactly the
+   window when this menu gets opened, which is BEFORE asking anything, to set
+   something first. 47d pinned that fallback as correct without ever asking
+   which provider was on the other side of it.
+
+   The fix is app.py putting the declarations in the page (a meta 01-state
+   reads at parse time), so "which provider?" has an answer on the first paint.
+   These tests are written against the UNSTARTED pane specifically -- channel
+   null -- because that is the state every one above skipped. */
+
+const DECL_TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+const DECL_PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+
+/* Renders the pane menu for a pane with NOTHING ASKED YET.
+     served   -- which provider's machine served the page (the meta), or null
+                 for a page with no declarations at all
+     fetched  -- has GET /api/settings landed? false is the boot window
+   The maps behave as the browser's do: seeded from the page, replaced by the
+   fetch. Never force-cleared, because after this change the browser has no way
+   to reach an empty map on a page that carried a seed. */
+function unstartedPane({ served, fetched, stored }) {
+  const prev = {
+    ch: PANE_S.channel, set: T.SETTINGS, seed: T.SEED, menu: T.S.paneMenu,
+    to: T.TURN_OPTIONS_BY_PROVIDER, pm: T.PERM_MODES_BY_PROVIDER, pv: T.PERM_MODES,
+  };
+  try {
+    PANE_S.channel = null;              /* THE POINT: no provider frame yet */
+    /* paneMenuHtml returns "" unless THIS pane's menu is the open one. Without
+       it every "no Turn options row" assertion below passes against an empty
+       string -- which is how the first version of 48a and 48b passed while
+       proving nothing. assertOpen() keeps that from coming back. */
+    T.S.paneMenu = PANE_S.id;
+    T.SEED = served ? {
+      provider: served,
+      turn_options_by_provider: DECL_TOPTS,
+      permission_modes_by_provider: DECL_PMODES,
+    } : {};
+    T.TURN_OPTIONS_BY_PROVIDER = T.SEED.turn_options_by_provider || {};
+    T.PERM_MODES_BY_PROVIDER = T.SEED.permission_modes_by_provider || {};
+    T.PERM_MODES = fetched ? SIX : [];
+    T.SETTINGS = fetched
+      ? { provider: served, permission_mode: stored || "plan",
+          permission_mode_effective: stored || "plan" }
+      : null;
+    if (fetched) {                      /* the same response carries both */
+      T.TURN_OPTIONS_BY_PROVIDER = DECL_TOPTS;
+      T.PERM_MODES_BY_PROVIDER = DECL_PMODES;
+    }
+    return {
+      menu: T.paneMenuHtml(PANE_S),
+      decl: T.paneDeclProvider(PANE_S),
+      running: T.paneProvider(PANE_S),
+      perm: T.permSelect(T.paneDeclProvider(PANE_S)),
+    };
+  } finally {
+    PANE_S.channel = prev.ch; T.SETTINGS = prev.set; T.SEED = prev.seed;
+    T.S.paneMenu = prev.menu;
+    T.TURN_OPTIONS_BY_PROVIDER = prev.to; T.PERM_MODES_BY_PROVIDER = prev.pm;
+    T.PERM_MODES = prev.pv;
+  }
+}
+const hasOptsRow = h => /data-mrow="opts"/.test(h);
+/* An absent row and an absent MENU are not the same finding, and only one of
+   them is this section's subject. */
+const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
+  "the pane menu did not render at all -- the assertion below would be vacuous");
+
+test("48a. a DeepSeek pane with nothing asked yet has NO Turn options row", () => {
+  /* The founder's report. Settings HAVE loaded here -- this is the state a
+     pane sits in for as long as it goes unused. */
+  const r = unstartedPane({ served: "deepseek", fetched: true });
+  assertOpen(r.menu);
+  assert.strictEqual(r.decl, "deepseek",
+    "the pane could not work out its own provider before the first turn");
+  assert.ok(!hasOptsRow(r.menu), "Turn options rendered on a DeepSeek pane: " + r.menu);
+});
+
+test("48b. ...and not during the boot window either, before /api/settings", () => {
+  /* THE ACTUAL DEFECT. SETTINGS is null, so the id can only come from the
+     page. Without the seed this is where Claude's five appeared. */
+  const r = unstartedPane({ served: "deepseek", fetched: false });
+  assertOpen(r.menu);
+  assert.strictEqual(r.running, undefined,
+    "paneProvider must stay undefined until something has actually reported");
+  assert.strictEqual(r.decl, "deepseek", "the declaring provider must come from the page");
+  assert.ok(!hasOptsRow(r.menu), "Turn options rendered during boot: " + r.menu);
+});
+
+test("48c. a Claude pane keeps its Turn options row in BOTH those states", () => {
+  /* The constraint on the whole change. A control that blinks out during boot
+     and back in afterwards is its own defect. */
+  for (const fetched of [true, false]) {
+    const r = unstartedPane({ served: "claude", fetched });
+    assertOpen(r.menu);
+    assert.ok(hasOptsRow(r.menu),
+      `Claude lost the Turn options row (fetched=${fetched}): ` + r.menu);
+  }
+});
+
+test("48d. an unstarted DeepSeek pane never offers a mode it cannot run", () => {
+  /* Asked for alongside turn options: `plan` showing there is correct, but it
+     is also what a fallback would show, so the LIST is what settles it.
+
+     The two states differ, and the first version of this test was wrong to
+     expect them not to. The mode list is the server's vocabulary (PERM_MODES);
+     before that lands there is nothing to list but the mode in force, so the
+     boot window legitimately shows exactly one option. The claim that holds in
+     BOTH is the one worth pinning: nothing DeepSeek cannot enforce. */
+  const fetchedIds = permOptions(unstartedPane({ served: "deepseek", fetched: true }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(fetchedIds, DECL_PMODES.deepseek);
+
+  const bootIds = permOptions(unstartedPane({ served: "deepseek", fetched: false }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(bootIds, ["plan"],
+    "with no vocabulary fetched the select can only carry the mode in force");
+  for (const ids of [fetchedIds, bootIds])
+    for (const id of ids)
+      assert.ok(DECL_PMODES.deepseek.includes(id),
+        `offered "${id}", which DeepSeek cannot enforce`);
+});
+
+test("48e. an unstarted Claude pane still offers all six", () => {
+  const ids = permOptions(unstartedPane({ served: "claude", fetched: true }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(ids, DECL_PMODES.claude);
+});
+
+test("48f. a mode stored under Claude is labelled, not offered, on a fresh DeepSeek pane", () => {
+  /* 47h's edge case, reached through resolution rather than a handed-in id:
+     permission_mode is global, so an unused DeepSeek pane inherits it. */
+  const r = unstartedPane({ served: "deepseek", fetched: true, stored: "dontAsk" });
+  assert.ok(/not supported by/.test(r.perm), r.perm);
+  const sel = permOptions(r.perm).filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "exactly one option stays selected");
+  assert.strictEqual(sel[0].id, "dontAsk");
+});
+
+test("48g. the two resolvers are NOT interchangeable", () => {
+  /* Pins the split. paneDeclProvider may read the page's seed; paneProvider
+     may not, because the Usage row keys off it and usageKindOf answers "none"
+     for any id while PROVIDERS is unfetched -- so a known id would turn "not
+     reported for default" into "not reported for DeepSeek", a vague false
+     claim sharpened into a specific one. Collapsing these two functions is
+     what this test exists to fail. */
+  const r = unstartedPane({ served: "deepseek", fetched: false });
+  assert.strictEqual(r.running, undefined, "paneProvider consumed the seed");
+  assert.notStrictEqual(r.decl, r.running, "the two resolvers agree where they must not");
+  assert.ok(!/not reported for DeepSeek/.test(r.menu),
+    "the seed reached the Usage row: " + r.menu);
+});
+
+test("48h. a page served without declarations behaves exactly as before", () => {
+  /* Backwards compatibility, and it is not hypothetical: a cached page from
+     before this shipped has no meta, and app.py returns "" if the lookup
+     throws. Both give SEED = {}, and then the not-loaded fallback 47d pins is
+     what runs -- Claude's five, on every pane, which is the old behaviour
+     rather than a new failure. */
+  const r = unstartedPane({ served: null, fetched: false });
+  assertOpen(r.menu);
+  assert.strictEqual(r.decl, undefined);
+  assert.ok(hasOptsRow(r.menu), "the pre-seed fallback must be untouched");
+});
+
+test("48i. readDeclarations survives every malformed attribute", () => {
+  /* It runs at parse time, before anything can catch for it: a throw here is
+     a blank panel.
+     Asserted on KEYS, not with deepStrictEqual against {}. The function builds
+     its object inside the vm realm, whose Object.prototype is not this file's,
+     and deepStrictEqual compares prototypes -- so the object-literal version
+     of this test failed on a correct return value. */
+  const prev = sandbox.document.querySelector;
+  const keys = () => Object.keys(T.readDeclarations());
+  try {
+    for (const content of ["", "{", "null", "[]", "3", '"x"', undefined, 7]) {
+      sandbox.document.querySelector = () => ({ content });
+      assert.deepStrictEqual(keys(), [],
+        "malformed content did not degrade to empty: " + JSON.stringify(content));
+    }
+    sandbox.document.querySelector = () => null;
+    assert.deepStrictEqual(keys(), [], "a missing meta must be empty");
+    sandbox.document.querySelector = () => ({ content: '{"provider":"deepseek"}' });
+    assert.deepStrictEqual(keys(), ["provider"], "the real parse path must actually work");
+    assert.strictEqual(T.readDeclarations().provider, "deepseek");
+  } finally { sandbox.document.querySelector = prev; }
 });

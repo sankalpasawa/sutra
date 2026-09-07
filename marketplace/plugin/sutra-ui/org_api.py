@@ -79,6 +79,9 @@ import reorg_sim as R  # noqa: E402
 import teamsutra  # noqa: E402
 
 import claude_local
+import codex_login  # spawns `codex login`/`codex logout`; holds the live child
+import deepseek_auth  # validates + stores the DeepSeek key (keychain, never here)
+import deepseek_session  # the one-time code a BROWSER trades for a write token
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
 import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
@@ -840,6 +843,310 @@ def api_providers_set_active(req: ActiveProviderRequest):
     }
 
 
+@router.get("/providers/codex/auth")
+def api_codex_auth():
+    """Which credential the Codex CLI is holding -- and therefore how the
+    operator is billed for it.
+
+    Transport only; providers.codex_auth() owns the decision and is the single
+    place that decides codex login state.
+
+    KEPT OFF /providers AND /settings ON PURPOSE. Those two are read on every
+    panel boot, every settings open and, through load_settings(), every fs
+    call -- and this one spawns a subprocess. The panel asks for it when the
+    AI Provider screen opens, and again after each sign-in action.
+
+    Never 500s on a failed probe. A CLI that cannot be reached or answers in
+    an unfamiliar shape comes back as state "unknown" with the reason, which
+    the row renders as "could not tell" -- never as a billing mode. Claiming
+    "usage included" to someone paying per token is the failure this endpoint
+    is shaped to avoid.
+
+    `login_in_flight` is merged in HERE rather than inside codex_auth(),
+    because codex_login imports providers and the reverse would be a cycle --
+    and providers.py's contract is reads plus one settings file, which holding
+    live process state would break. It exists because a panel RELOAD loses its
+    in-memory busy state: with a sign-in child running and about to change the
+    credential, the row would otherwise render "Not signed in", which is the
+    row lying about state.
+    """
+    return {**providers.codex_auth(),
+            "login_in_flight": codex_login.in_flight()}
+
+
+class CodexLogoutRequest(BaseModel):
+    #: Must be exactly True. Signing Codex out DESTROYS the credential it
+    #: holds, and if that is an API key it is the only copy anywhere -- Sutra
+    #: never had one. The panel's confirm dialog is client-side, so a caller
+    #: reaching this route directly bypasses it; this flag is what stops a bare
+    #: POST from being a permanent loss.
+    confirm: bool = False
+
+
+@router.post("/providers/codex/login")
+def api_codex_login():
+    """Start the Codex ChatGPT sign-in and return AT ONCE.
+
+    The browser flow is a human round-trip -- three minutes, or never. This
+    route does not wait for it: it spawns, hands back {"started": true}, and
+    the panel polls GET /providers/codex/auth until the credential changes.
+    Waiting here would park a threadpool worker, give the panel nothing to
+    cancel (apiGet has no timeout), and orphan the child on a page reload.
+
+    This is the BROWSER fallback. The desktop shell keeps its own IPC verb and
+    keeps preferring it. Note one asymmetry in this path's favour: the binary
+    is resolved through providers.provider_bin, so a hand-picked path set in
+    Settings IS honoured here -- the IPC path cannot honour it, because
+    executing a path the renderer chose would be a worse hole than the
+    inconvenience.
+    """
+    try:
+        return codex_login.start()
+    except codex_login.NoBinary as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "CODEX_NOT_ON_PATH", "message": str(exc),
+            "user_action": "INSTALL_OR_SET_PATH"})
+    except codex_login.Busy as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "CODEX_BUSY",
+            "message": "a codex %s is already running" % exc,
+            "user_action": "CANCEL_FIRST"})
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail={
+            "code": "CODEX_SPAWN_FAILED",
+            "message": "could not start codex: %s" % exc})
+
+
+@router.post("/providers/codex/login/cancel")
+def api_codex_login_cancel():
+    """Stop a running sign-in. SIGTERM, then SIGKILL after the grace period.
+
+    {"cancelled": false} when nothing was running is a fact, not a failure:
+    Cancel can lose a race with the flow completing, and reporting an error for
+    that would be a lie about state.
+    """
+    return {"cancelled": codex_login.cancel()}
+
+
+@router.post("/providers/codex/logout")
+def api_codex_logout(req: CodexLogoutRequest):
+    """Remove the credential the codex CLI holds. Requires confirm: true.
+
+    Blocking is fine here -- no human is in the loop, codex deletes a file and
+    returns -- so this answers with the FRESH probe rather than leaving the
+    panel to discover the new state on a second request.
+    """
+    if req.confirm is not True:
+        raise HTTPException(status_code=400, detail={
+            "code": "CONFIRM_REQUIRED",
+            "message": "signing Codex out destroys the credential it holds, "
+                       "and Sutra never had a copy. Send {\"confirm\": true} "
+                       "to proceed.",
+            "user_action": "CONFIRM"})
+    try:
+        result = codex_login.logout()
+    except codex_login.NoBinary as exc:
+        raise HTTPException(status_code=400, detail={
+            "code": "CODEX_NOT_ON_PATH", "message": str(exc),
+            "user_action": "INSTALL_OR_SET_PATH"})
+    except codex_login.Busy as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "CODEX_BUSY",
+            "message": "a codex %s is running -- cancel it first" % exc,
+            "user_action": "CANCEL_FIRST"})
+    # The probe runs either way. A logout that FAILED still has to report what
+    # codex actually holds now, or the row would show a state nobody verified.
+    return {**result, "auth": {**providers.codex_auth(),
+                               "login_in_flight": codex_login.in_flight()}}
+
+
+# ------------------------------------------------------- deepseek sign-in ---
+# THE ONLY WRITE SURFACE FOR A DEEPSEEK KEY, and it is AUTHENTICATED -- by
+# EITHER of two tokens, checked by _deepseek_write_control() below.
+#
+# WHY THESE ROUTES MAY EXIST AT ALL, when main.js says a route that accepted an
+# API key would be "a credential WRITE surface any page on this machine could
+# POST to". That sentence is about an UNAUTHENTICATED route, which is what the
+# rest of this API is. These are not.
+#
+#   LANE 1, the desktop app: x-sutra-desktop-token, minted by the Electron
+#   shell (main.js), handed only to the backend it spawns, attached by the MAIN
+#   process -- the renderer never holds it, so no page in any browser can reach
+#   these, and neither can a backend the shell merely attached to. Same
+#   doctrine as POST /api/balance/actionable. UNCHANGED.
+#
+#   LANE 2, a browser on a CLI-run server: x-sutra-session-token, traded for
+#   the one-time code this process printed on its own STDOUT (see
+#   deepseek_session). A web page cannot read a terminal, so the capability
+#   still only reaches a browser by the operator's own act of copying it
+#   across -- and app.py's origin guard already refuses a cross-origin mutation
+#   that does not carry PANEL_TOKEN, which another origin cannot read either.
+#   Lane 2 exists ONLY when lane 1 does not: deepseek_session.arm() mints no
+#   code when SUTRA_DESKTOP_TOKEN is set, so a desktop-started backend has
+#   exactly the one door it always had.
+#
+# THE UPDATE ROUTES ARE NOT IN THIS. They still call _desktop_control(), which
+# knows only about lane 1. Arming an unattended helper to replace
+# /Applications/Sutra.app is a persistence primitive; signing a key into the
+# operator's own keychain is not, and one gate for both would have quietly
+# handed the first the second's threat model.
+#
+# WHY NOT COPY CODEX EXACTLY AND SPAWN IN THE SHELL. Codex's key goes to a
+# CLI's stdin and Sutra keeps no copy, so it never needed a backend at all.
+# DeepSeek's key has to be STORED by Sutra and read back by Python at request
+# time (app.py's ws_chat, deepseek_usage.py) -- and the keychain adapter is
+# Python (connectors/credentials/keychain.py). Electron safeStorage cannot
+# serve those readers. So the store lives where the readers are, and the write
+# crosses one authenticated loopback hop instead.
+#
+# THE KEY IS NEVER RETURNED, LOGGED OR ECHOED. What comes back is a mask, a
+# code and a fixed sentence -- see deepseek_auth.
+#
+# 200 WITH ok:false for a classified refusal (bad key, network, env override,
+# no keychain), matching POST /providers/codex/logout, which answers 200 with
+# the operation's own result plus a fresh state. A rejected key is an expected
+# outcome of this control, not a protocol error, and an HTTPException body
+# would put the reason somewhere the shell has to unwrap. 4xx stays for the
+# things that really are protocol problems: no token, or a malformed body.
+
+def _deepseek_write_control(request):
+    """Authorise a DeepSeek key write, or refuse it with the reason that
+    applies to THIS server.
+
+    hmac.compare_digest on both lanes, the way _desktop_control and app.py's
+    /api/balance/actionable gate do it: a `==` here would compare byte by byte
+    and stop at the first mismatch, which is a timing oracle for the token.
+
+    THE REFUSAL SAYS WHICH LANE IS EVEN POSSIBLE. A single "forbidden" left the
+    browser field looking broken; a desktop-started server has no code to
+    paste, a paired-once server needs a restart, and only the third case is
+    "paste the code" -- so each says so.
+    """
+    sent_desktop = request.headers.get("x-sutra-desktop-token") or ""
+    if DESKTOP_TOKEN and sent_desktop and hmac.compare_digest(
+            sent_desktop, DESKTOP_TOKEN):
+        return
+    sent_session = request.headers.get(deepseek_session.HEADER) or ""
+    if deepseek_session.verify(sent_session):
+        return
+    if DESKTOP_TOKEN:
+        raise HTTPException(status_code=403, detail=(
+            "writing a DeepSeek key needs the desktop app's token, and this "
+            "request carried none that matched. This server was started by the "
+            "Sutra app, so sign in from its window."))
+    detail = ("writing a DeepSeek key needs a session token, and this request "
+              "carried none that matched. ")
+    if sent_session:
+        detail += ("A token stops working when the server restarts -- paste "
+                   "this server's sign-in code again to get a new one.")
+    else:
+        detail += deepseek_session.state()["reason"] or ""
+    raise HTTPException(status_code=403, detail=detail)
+
+
+class DeepSeekSessionRequest(BaseModel):
+    #: The one-time code from the server's stdout. Optional for the same reason
+    #: DeepSeekKeyRequest.key is: FastAPI's validation errors can echo the
+    #: offending INPUT, and a 422 quoting a half-typed code back into a
+    #: response body is a worse answer than a classified refusal.
+    code: Optional[str] = None
+
+
+@router.post("/providers/deepseek/session")
+def api_deepseek_session(req: DeepSeekSessionRequest):
+    """Trade the one-time code for a session token that authorises key writes.
+
+    UNGATED BY DESIGN, AND THAT IS NOT A HOLE. There is nothing this route
+    could be gated BY -- it exists to hand out the credential the gate wants,
+    which is the shape of every pairing exchange. What protects it is the code
+    itself: 80 bits that live only on this process's stdout, single-use, and
+    behind app.py's origin guard (a cross-origin POST without PANEL_TOKEN is
+    refused, and no other origin can read the panel to learn PANEL_TOKEN).
+
+    200 WITH ok:false for a classified refusal -- a mistyped code is an
+    expected outcome of this control, and it must not land in the panel as a
+    thrown fetch error whose message the operator has to decode. 4xx stays for
+    protocol problems, and there are none left here.
+
+    THE TOKEN IS RETURNED EXACTLY ONCE, in this response, and never appears in
+    _deepseek_state() or GET /api/settings -- deepseek_session.state() reports
+    that a code exists and never what it or the token is.
+    """
+    try:
+        token = deepseek_session.exchange(req.code or "")
+    except deepseek_session.SessionCodeError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "PAIRED", "token": token,
+            "message": "This browser can now save a DeepSeek key. The code is "
+                       "used up -- restart the server if you need another.",
+            **_deepseek_state()}
+
+
+class DeepSeekKeyRequest(BaseModel):
+    #: Trimmed and validated in deepseek_auth.clean(). Optional so a malformed
+    #: body is a classified "no API key was given" rather than a 422 -- FastAPI's
+    #: validation errors can echo the offending INPUT, and the input here is a
+    #: live credential.
+    key: Optional[str] = None
+
+
+def _deepseek_state():
+    """Everything the row needs to redraw itself, in one answer.
+
+    `providers` and `settings` ride along so the DEFAULT PROVIDER list
+    re-evaluates from the SAME read that performed the write -- exactly what
+    POST /settings/provider-bin does. Without them the panel would have to
+    fire a second request and could render a row that disagreed with the
+    keychain for one paint.
+
+    `settings` is what makes sign-OUT complete: load_settings() re-runs
+    active_provider_detail(), so a stored `provider: deepseek` that just
+    stopped being runnable comes back in `provider_ignored` with the fallback
+    already chosen -- the app's existing handling for a provider going away,
+    not a new path.
+    """
+    return {"auth": providers.deepseek_auth_state(),
+            "providers": providers.discover_providers(),
+            "settings": providers.load_settings()}
+
+
+@router.post("/providers/deepseek/key")
+def api_deepseek_key_save(req: DeepSeekKeyRequest, request: Request):
+    """Validate a DeepSeek key against the API, then store it in the keychain.
+
+    Validation happens BEFORE the write (deepseek_auth.save), so a key that
+    DeepSeek will not accept never becomes a saved key the row claims works.
+    """
+    _deepseek_write_control(request)
+    try:
+        marker = deepseek_auth.save(req.key or "")
+    except deepseek_auth.DeepSeekAuthError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "SAVED", "mask": marker["mask"],
+            "message": "DeepSeek accepted the key and it is saved on this Mac "
+                       "(%s). DeepSeek is selectable above now -- no restart."
+                       % marker["mask"],
+            **_deepseek_state()}
+
+
+@router.post("/providers/deepseek/key/remove")
+def api_deepseek_key_remove(request: Request):
+    """Delete the stored key. Idempotent -- see deepseek_auth.remove."""
+    _deepseek_write_control(request)
+    try:
+        out = deepseek_auth.remove()
+    except deepseek_auth.DeepSeekAuthError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "REMOVED", "removed": out["removed"],
+            "message": ("The saved key is gone from the login keychain."
+                        if out["removed"] else
+                        "There was no saved key on this Mac to remove."),
+            **_deepseek_state()}
+
+
 # ============================================================ settings ======
 
 @router.get("/settings")
@@ -877,9 +1184,35 @@ def api_settings_get():
         ],
         "unsafe_modes_allowed": unlocked,
         "unsafe_modes_env": providers.UNSAFE_MODES_ENV,
-        # An allow-list, not free text: the value reaches `claude --model`, where an
-        # unknown string fails as a dead socket seconds later instead of a refusal.
-        "models": list(providers.MODELS),
+        # An allow-list, not free text: the value reaches the provider's model
+        # flag, where an unknown string fails as a dead socket seconds later
+        # instead of a refusal -- or, on DeepSeek's fork, does not fail at all
+        # and a different model quietly answers.
+        #
+        # KEYED BY PROVIDER, and the flat `models` list it replaces is GONE
+        # rather than kept alongside. The panel is the only client, and a flat
+        # list next to a keyed one is the same "two copies that can disagree"
+        # this change exists to remove. Providers with no models simply have no
+        # entry, which is how the picker knows not to render one.
+        "models_by_provider": providers.all_models_by_provider(),
+        # WHICH PANES MAY SHOW WHICH CONTROLS. Both are ADDITIONS: the flat
+        # `permission_modes` above is unchanged and still carries all six with
+        # their notes and gating, because it is the vocabulary -- these two say
+        # who can honour what.
+        #
+        # The panel rendered Claude's controls on every pane. On a DeepSeek
+        # pane all five turn options were collected, sent, and dropped by the
+        # server (build_acp_args has no per-turn argv to put them in), and
+        # three of the six permission modes ran as `default` while the control
+        # kept displaying the choice. Same failure as the model picker before
+        # models_by_provider: a control that cannot act is worse than an absent
+        # one, because it reads as a setting that took effect.
+        #
+        # Keyed the same way, absent-when-empty for the same reason, so the
+        # client's test for "does this pane have this control" is "is this
+        # provider in this dict".
+        "turn_options_by_provider": providers.all_turn_options_by_provider(),
+        "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
         "providers": providers.discover_providers(),
         # Who is signed in to Claude on this machine. None when unknown -- the
         # panel must render an unknown identity rather than a placeholder that
@@ -1605,6 +1938,12 @@ def api_updates_desktop():
     fallback when the automatic path has given up, and a fallback that shares
     the automatic path's failure modes is not a fallback.
     """
+    # Checked BEFORE the 240MB download. A user once waited for the whole file
+    # and was then told a folder was "not writable" -- the real answer, that the
+    # app had never been dragged out of the installer image, was never said.
+    blocked = updates.install_blocker()
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     try:
         got = updates.download_and_verify()
         sched = updates.install_desktop(got["dmg"], relaunch=True,
@@ -1657,6 +1996,12 @@ def api_updates_staged():
 def api_updates_stage(request: Request):
     """Download + verify into durable staging. Arms nothing."""
     _desktop_control(request)
+    # Same pre-check as the manual button. Without it the AUTOMATIC path
+    # re-downloads 240MB on every schedule tick on a machine that can never
+    # install it, silently, forever.
+    blocked = updates.install_blocker()
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     try:
         return updates.stage_desktop()
     except RuntimeError as exc:
