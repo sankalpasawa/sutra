@@ -1,8 +1,22 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-05
+**status**: active · **updated**: 2026-09-07
 
-## v2.242.0 (2026-09-05, HEAD)
+## v2.243.0 (2026-09-07, HEAD)
+
+DeepSeek is a provider the app signs in to, and a pane stops claiming settings it cannot
+honour. Sign-in happens in a browser and the key goes to the login keychain; each provider
+now brings its own model list, and DeepSeek's models actually reach the CLI. A pane knows
+which provider it is on before the first message, and renders only the controls that
+provider declares -- because the ones it did render were not all in force: every DeepSeek
+pane displayed the operator's permission mode while the session ran in `default`, so a pane
+set to plan was not read-only. The mode now travels on the method the CLI implements, and a
+mode that cannot be set says so instead of being shown as chosen. Usage reports what the
+provider actually has, and a context window can no longer quietly shrink. Codex signs in
+and out without Electron, and its row says which credential is paying. Routines is back at
+Settings -> Automation.
+
+## v2.242.0 (2026-09-05)
 
 The SEO Writer, audited against the workflow it was ported from and corrected. Research is
 now a team of four interviewing an expert rather than a keyword lookup, and the facts are

@@ -9,6 +9,7 @@ raising into a route or inventing a number.
 
 Run: python -m pytest test_deepseek_usage.py -q
 """
+import contextlib
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import deepseek_auth   # noqa: E402
 import deepseek_usage  # noqa: E402
 
 LIVE_PAYLOAD = {
@@ -28,6 +30,30 @@ LIVE_PAYLOAD = {
          "granted_balance": "0.00", "topped_up_balance": "5.00"},
     ],
 }
+
+
+@contextlib.contextmanager
+def no_key_anywhere():
+    """A machine with no DeepSeek key, in EVERY place one can come from.
+
+    Popping DEEPSEEK_API_KEY is not enough and stopped being enough silently.
+    _fetch() resolves through providers.deepseek_key_for_request(), whose
+    precedence is SUTRA_UI_DEEPSEEK_API_KEY, then DEEPSEEK_API_KEY, then the
+    login keychain -- so on a Mac that is signed in on the DeepSeek row, the
+    old form left a key in place, the "no key" tests reached the real balance
+    endpoint and read a live balance, and both assertions failed for a reason
+    that had nothing to do with the code under test (found by the publish gate,
+    2026-09-07). Emptying the ONE resolution path instead of one of its three
+    inputs also keeps the wire out of a unit test, per the suite's own rule.
+
+    The reason SENTENCE still comes from the real producer
+    (providers._deepseek_no_key_reason), so the assertion that it names
+    DEEPSEEK_API_KEY keeps testing the shipped string, not a stub of it.
+    """
+    with mock.patch.object(deepseek_usage.providers, "deepseek_api_key",
+                           return_value=None), \
+         mock.patch.object(deepseek_auth, "marker", return_value={}):
+        yield
 
 
 class Sanitize(unittest.TestCase):
@@ -57,8 +83,7 @@ class Sanitize(unittest.TestCase):
 
 class Fetch(unittest.TestCase):
     def test_no_key_fails_open(self):
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("DEEPSEEK_API_KEY", None)
+        with no_key_anywhere():
             d, err = deepseek_usage._fetch()
         self.assertIsNone(d)
         self.assertIn("DEEPSEEK_API_KEY", err)
@@ -85,8 +110,7 @@ class Snapshot(unittest.TestCase):
     def test_fails_open_with_no_cache_and_no_key(self):
         with tempfile.TemporaryDirectory() as td, \
              mock.patch.object(deepseek_usage, "CACHE", os.path.join(td, "cache.json")), \
-             mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("DEEPSEEK_API_KEY", None)
+             no_key_anywhere():
             out = deepseek_usage.snapshot()
         self.assertFalse(out["available"])
         self.assertIn("DEEPSEEK_API_KEY", out["reason"])

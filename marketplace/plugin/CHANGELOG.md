@@ -1,22 +1,61 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-04
+**status**: active · **updated**: 2026-09-07
 
-## 2.242.0 (2026-09-04)
+## 2.243.0 (2026-09-07)
 
-**Routines moves back to Settings -> Automation.** It spent two days as its own
-rail destination (2.237.0, 2026-09-02). The rail is the standing surface -- the
-places you work from all day -- and Routines is a screen you open when you set a
-schedule up, not while the schedule runs. Eight destinations made the rail a
-list; seven make it a set of places.
+- **DeepSeek is a provider you sign in to.** Sign-in happens in a browser; the key goes to
+  the login keychain and the settings marker keeps only its mask. Where the marker and the
+  keychain disagree the marker is dropped, so the row flips back to not-signed-in on the
+  next read instead of reporting an unexplained failure.
+- **Each provider brings its own models, and DeepSeek's reach the CLI.** The picker is built
+  from the provider's own catalogue rather than one shared list, and the chosen model is
+  passed on the flag that provider actually reads.
+- **A pane knows its provider before the first message.** It no longer has to send a turn to
+  find out, and the settings section is called AI Provider again.
+- **A pane only shows the controls its provider can honour.** Turn options and permission
+  modes are DECLARED per provider and the client renders from that declaration. On a DeepSeek
+  pane all five turn options were previously collected, sent and dropped -- ACP's prompt
+  request has no field for them to travel in -- while the control still displayed the
+  operator's choice. A mode stored globally under Claude but unavailable here is still shown
+  and still selected, disabled and labelled with the reason, because filtering it out left
+  the browser displaying the first option instead: a pane running `default` claiming `plan`.
+- **DeepSeek's permission mode reaches the CLI, and a mode that cannot be set says so.** The
+  panel had been asking with `session/set_session_mode`, a method the installed CLI does not
+  implement, and mapping `acceptEdits` to the argv spelling `auto_edit` rather than the wire's
+  `autoEdit`. The response was never read, so the runtime recorded the mode it had ASKED for:
+  every DeepSeek pane this panel has run displayed the operator's mode while the session ran
+  in `default`, and a pane set to plan was not read-only. The response is now checked, the
+  recorded mode is what the CLI reported, and a divergence is stated on the pane. Verified
+  against the real CLI: under plan a write was attempted and refused; under bypassPermissions
+  the same prompt wrote the file.
+- **Usage reports what the provider actually has,** and a context window can no longer
+  quietly shrink to a default when the real figure is unknown.
+- **Codex signs in and out without Electron,** and the Codex row says which credential is
+  paying for it.
+- **Routines moves back to Settings -> Automation.** It spent two days as its own rail
+  destination (2.237.0, 2026-09-02). The rail is the standing surface -- the places you work
+  from all day -- and Routines is a screen you open when you set a schedule up, not while the
+  schedule runs. Eight destinations made the rail a list; seven make it a set of places. Same
+  row, same screen, same name, back in the position it held before: after Automation and
+  before Connectors. An operator parked on the old destination is carried across rather than
+  dropped on Now, and deep links keep working.
+- **The Shadow delegate path is guarded to Claude,** with a characterization test.
+- **Two "no key" tests stopped being machine-independent and were fixed.** `_fetch` resolves
+  through one path (SUTRA_UI_DEEPSEEK_API_KEY, then DEEPSEEK_API_KEY, then the keychain), so
+  clearing one env var left a signed-in Mac reaching the real balance endpoint and reading a
+  live balance. The suite now empties the resolution path, not one of its three inputs, and
+  the reason sentence still comes from the real producer.
+- **QA note:** the system Python behind `.venv` sets `sys.pycache_prefix`, so bytecode for
+  `sutra-ui/*.py` lands under `~/Library/Caches/com.apple.python/` and not in a tree
+  `__pycache__`. Sabotage checks must clear that cache or they report a confident wrong answer.
 
-The name does not change. It is the same "Routines" row and the same screen,
-back in the position it held before: Settings -> Automation, after Automation
-and before Connectors, next to the other answers to "what runs without me".
-An operator parked on the old destination is carried across rather than dropped
-on Now -- the stored layout migrates to Settings with the Routines row already
-selected -- and deep links to the screen keep working, because openScreen finds
-its owning destination from the plane spec.
+Gate (code truth): eleven SEO engine suites ALL PASS; all 14 node suites green (668
+counted checks across the eleven that count, all-green from the three that do not);
+pytest 907 passed, 23 failed -- every failure present by name at v2.242.0-desktop, none
+new, two fixed. Production truth (qa-shell) and design truth (qa/) were not run for this
+release.
+
 ## 2.242.0 (2026-09-05)
 
 - **The research is a team asking questions, not a keyword lookup.** Four researchers with
