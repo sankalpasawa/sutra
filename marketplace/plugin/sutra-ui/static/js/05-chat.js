@@ -652,6 +652,38 @@ function deepseekAuthHtml(){
   const canWrite = deepseekCanWrite();
   const sess = a.browser_session || {};
 
+  /* THE OTHER REQUIREMENT, read off the row this block sits under. A key is
+     half of DeepSeek; the CLI is the other half, because a message is answered
+     by spawning `deepseek --acp`. This block only ever spoke about the key, so
+     a Mac with a saved key and no CLI got "saved on this Mac" in a green pill
+     directly beneath a row reading "Not installed on this Mac" and no way
+     forward from this screen at all (founder screenshot, 2026-09-07).
+
+     `installed` comes from providers._describe -- shutil.which and nothing
+     else -- so this cannot disagree with the row above it. */
+  const dsRow = (PROVIDERS || []).find(p => p.id === "deepseek") || {};
+
+  /* WHAT THIS DOES NOT SAY: npm, PATH, node_modules, or the package name. The
+     backend knows whether an install is possible and answers with a sentence
+     that names Node.js if it is not -- putting a second copy of that judgment
+     here is how the button starts disagreeing with what happens when it is
+     pressed. So the button is offered whenever the CLI is missing, and the one
+     machine that cannot do it finds out in one click with a real reason. */
+  const cliBlock = () => `
+      <div class="note b" style="margin:8px 0 0">
+        <div><b>The DeepSeek CLI is not on this Mac yet</b></div>
+        <p class="why" style="margin:4px 0 8px">Your key is saved, but Sutra
+          talks to DeepSeek by running its command-line tool and that is not
+          here — which is why the row above still can’t be picked. Sutra can
+          fetch it into its own folder: nothing else on your Mac changes and
+          you won’t be asked for a password.</p>
+        <p style="margin:0">
+          <button class="btn" type="button" data-deepseek="install"
+            ${busy ? 'aria-busy="true" disabled' : ""}>${
+            busy === "install" ? "Installing…" : "Install it"}</button>
+          <span class="why">Takes about a minute. Needs Node.js on this Mac.</span></p>
+      </div>`;
+
   /* The step BEFORE the key field on a CLI-run server. Shared by the
      not-signed-in and signed-in renders, because sign-OUT needs the same
      authorisation sign-in does -- offering Remove without it is the dead
@@ -720,6 +752,7 @@ function deepseekAuthHtml(){
           remove it</b>${pairBlock()}</div>`
       : `<p class="why" style="margin:8px 0 0">To remove it from a browser,
           restart the server and use the sign-in code it prints.</p>`}
+      ${canWrite && !dsRow.installed ? cliBlock() : ""}
       ${msg}
     </div>`;
   }

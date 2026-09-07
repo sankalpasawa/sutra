@@ -787,7 +787,19 @@ def _bin_for(pid, fallback):
     if isinstance(bins, dict):
         chosen = bins.get(pid)
         if isinstance(chosen, str) and chosen.strip():
-            return os.path.expanduser(chosen.strip())
+            full = os.path.expanduser(chosen.strip())
+            # A STORED PATH THAT NO LONGER EXISTS IS IGNORED, not honoured.
+            # set_provider_bin validates at write time, so this only happens
+            # afterwards -- and deepseek_install made it reachable: its tree
+            # lives under ~/.sutra-ui and someone who clears that directory, or
+            # deletes the install by hand, leaves the record behind. Returning
+            # it anyway means which() answers None and the row says "not
+            # installed" on a machine where the operator has since installed
+            # the CLI globally and it is sitting on PATH. Falling through costs
+            # one stat and cannot lose a working binary: if the stored path is
+            # there, it still wins.
+            if os.path.exists(full):
+                return full
     return fallback
 
 

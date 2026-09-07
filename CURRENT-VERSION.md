@@ -2,7 +2,19 @@
 
 **status**: active · **updated**: 2026-09-07
 
-## v2.243.0 (2026-09-07, HEAD)
+## v2.244.0 (2026-09-07, HEAD)
+
+Entering a DeepSeek key now installs the DeepSeek CLI. A key is only half of what DeepSeek
+needs -- the other half is its command-line tool, because Sutra answers every message by
+spawning it -- and the panel supplied only the key, so a validated key was confirmed with
+"saved on this Mac" directly beneath a row that correctly read "Not installed on this Mac",
+with no control anywhere on the screen that could fix it. The install now runs on its own
+straight after the key is saved, and a key saved earlier gets a button. It goes into a
+folder Sutra owns rather than a global npm prefix, so nothing asks for a password and
+nothing outside ~/.sutra-ui changes; the row flips without a restart. A Mac without Node is
+told so, and told where to get it, instead of failing silently.
+
+## v2.243.0 (2026-09-07)
 
 DeepSeek is a provider the app signs in to, and a pane stops claiming settings it cannot
 honour. Sign-in happens in a browser and the key goes to the login keychain; each provider

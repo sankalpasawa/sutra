@@ -127,4 +127,8 @@ contextBridge.exposeInMainWorld("sutra", {
      Resolves {ok, code, message, auth, providers, settings}. */
   deepseekKeySave: (key) => ipcRenderer.invoke("sutra:deepseek-key-save", key),
   deepseekKeyRemove: () => ipcRenderer.invoke("sutra:deepseek-key-remove"),
+  /* The SECOND half of a usable DeepSeek: the CLI itself. Separate from the key
+     verbs because it takes minutes, not seconds, and because a Mac with a saved
+     key and no CLI needs this without re-entering the key. */
+  deepseekCliInstall: () => ipcRenderer.invoke("sutra:deepseek-cli-install"),
 });

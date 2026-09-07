@@ -81,6 +81,7 @@ import teamsutra  # noqa: E402
 import claude_local
 import codex_login  # spawns `codex login`/`codex logout`; holds the live child
 import deepseek_auth  # validates + stores the DeepSeek key (keychain, never here)
+import deepseek_install  # fetches the DeepSeek CLI itself (npm, into ~/.sutra-ui)
 import deepseek_session  # the one-time code a BROWSER trades for a write token
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
@@ -1111,12 +1112,61 @@ def _deepseek_state():
             "settings": providers.load_settings()}
 
 
+#: The saved-key sentence, which is true regardless of what else the machine
+#: is missing. Split out because what follows it is NOT unconditional.
+_DEEPSEEK_SAVED = ("DeepSeek accepted the key and it is saved on this Mac "
+                   "(%s).")
+
+
+def _deepseek_saved_message(mask, provider_rows):
+    """What to tell the operator after a key write actually succeeded.
+
+    THE BUG THIS FIXES. This message used to end with "DeepSeek is selectable
+    above now -- no restart." unconditionally. A key is only ONE of DeepSeek's
+    two requirements -- providers._describe sets `installed` from
+    shutil.which() alone, and Sutra spawns `<bin> --acp` to talk to DeepSeek --
+    so on a Mac without the CLI the panel confirmed a success in the same paint
+    where the row above it correctly read "Not installed on this Mac". The
+    operator had done nothing wrong and was sent looking at their key.
+
+    The not-installed arm quotes the row's OWN `reason` rather than restating
+    the requirement here: providers._deepseek_reason already composes that
+    sentence (naming DEEPSEEK_CLI_PACKAGE, the PATH search, SUTRA_UI_DEEPSEEK_BIN),
+    it is what the row itself renders, and a second copy in this module is a
+    second thing to keep in step. `provider_rows` is the list from the same
+    _deepseek_state() read that answered the write, so the message and the row
+    can never disagree for a paint.
+
+    Returns (code, message). The code discriminates the two outcomes for
+    tests and for any future caller; no client branches on it today, and
+    `ok` stays True in both -- the key IS saved, and the panel clears the
+    field on `ok` (07-loaders.js).
+    """
+    saved = _DEEPSEEK_SAVED % mask
+    row = next((p for p in (provider_rows or []) if p.get("id") == "deepseek"),
+               None)
+    #: No row at all should be impossible (deepseek is catalogued), and a
+    #: missing row is still not evidence the CLI is there -- so say only what
+    #: was actually established and let the row below speak for itself.
+    if row is None:
+        return "SAVED", saved
+    if row.get("installed"):
+        return "SAVED", "%s DeepSeek is selectable above now -- no restart." % saved
+    reason = (row.get("reason") or "").strip()
+    tail = (" DeepSeek is still not selectable above: %s" % reason if reason
+            else " DeepSeek is still not selectable above -- see the row for why.")
+    return "SAVED_NO_CLI", saved + tail
+
+
 @router.post("/providers/deepseek/key")
 def api_deepseek_key_save(req: DeepSeekKeyRequest, request: Request):
     """Validate a DeepSeek key against the API, then store it in the keychain.
 
     Validation happens BEFORE the write (deepseek_auth.save), so a key that
     DeepSeek will not accept never becomes a saved key the row claims works.
+
+    A successful write does NOT imply a usable provider -- see
+    _deepseek_saved_message.
     """
     _deepseek_write_control(request)
     try:
@@ -1124,11 +1174,48 @@ def api_deepseek_key_save(req: DeepSeekKeyRequest, request: Request):
     except deepseek_auth.DeepSeekAuthError as exc:
         return {"ok": False, "code": exc.code, "message": str(exc),
                 **_deepseek_state()}
-    return {"ok": True, "code": "SAVED", "mask": marker["mask"],
-            "message": "DeepSeek accepted the key and it is saved on this Mac "
-                       "(%s). DeepSeek is selectable above now -- no restart."
-                       % marker["mask"],
-            **_deepseek_state()}
+    #: ONE read, shared by the message and the rows it must agree with.
+    state = _deepseek_state()
+    code, message = _deepseek_saved_message(marker["mask"], state["providers"])
+    return {"ok": True, "code": code, "mask": marker["mask"],
+            "message": message, **state}
+
+
+@router.post("/providers/deepseek/cli")
+def api_deepseek_cli_install(request: Request):
+    """Install the `deepseek` CLI, the OTHER half of a usable DeepSeek.
+
+    WHY THIS IS NOT PART OF THE KEY WRITE, given that the panel fires it
+    straight after one. Three reasons, and the first is decisive:
+
+      1. The desktop bridge caps the key call at 20s (main.js
+         DEEPSEEK_KEY_TIMEOUT, sized against deepseek_auth's 8s probe). An npm
+         download does not fit in that and must not be made to try.
+      2. The two can fail independently and the operator needs to know WHICH.
+         Folding them into one call collapses "your key is wrong" and "npm
+         could not reach the registry" into one refusal, and only one of those
+         is about anything they typed.
+      3. A key already saved on a Mac that has no CLI -- the exact state in the
+         2026-09-07 screenshot -- needs the install WITHOUT a second key write.
+         A separate route is the only shape that serves that case at all.
+
+    SAME GATE AS THE KEY WRITE. Installing software is at least as
+    consequential as saving a credential, so this goes through
+    _deepseek_write_control() rather than being left open: an unauthenticated
+    caller must not be able to make this server fetch and register an
+    executable.
+
+    Answers 200 with ok:false on a refusal, like its neighbours -- the state
+    block rides along either way so the row corrects itself even when the
+    install did not happen.
+    """
+    _deepseek_write_control(request)
+    try:
+        out = deepseek_install.install()
+    except deepseek_install.DeepSeekInstallError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {**out, **_deepseek_state()}
 
 
 @router.post("/providers/deepseek/key/remove")

@@ -358,8 +358,11 @@ const S = {
      that state rides on SETTINGS.deepseek_auth, because reading it is a
      settings read rather than a subprocess, so it comes with the settings
      answer and there is no probe to track and no loading state to hold.
-     deepseekBusy is the verb in flight ("save" | "remove"), which disables the field
-     and the buttons while DeepSeek is being asked whether the key works.
+     deepseekBusy is the verb in flight ("pair" | "save" | "remove" | "install"),
+     which disables the field and the buttons while it runs. "install" is the odd
+     one: the other three are one bounded request each, that one is an npm
+     download held for up to 310s, and it is what stops a second install firing
+     into the same prefix while the first is still unpacking.
      deepseekMsgOk splits the outcome so a refusal and a success do not render in the
      same colour.
 

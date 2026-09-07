@@ -527,5 +527,73 @@ test("the detail line reads as supporting detail, not a second error", () => {
          + "line that already stated the problem");
 });
 
+/* ── entering a key installs the CLI ─────────────────────────────────────────
+   The founder-reported state (screenshot 2026-09-07): a validated key saved on
+   a Mac with no `deepseek` binary. The panel confirmed a success under a row
+   that correctly read "Not installed on this Mac", and there was no control
+   anywhere on the screen that could fix it. These guard the two halves of the
+   remedy -- the automatic chain, and the button for a key saved long ago. */
+
+test("a saved key with no CLI installs the CLI, without a second click", () => {
+  assert(/SAVED_NO_CLI/.test(loaders),
+         "the save handler no longer reads the backend's no-CLI code, so the "
+         + "install never fires and entering a key leaves a dead row again");
+  const chain = loaders.slice(loaders.indexOf('verb === "save" && r.code'),
+                              loaders.indexOf('verb === "save" && r.code') + 220);
+  assert(/deepseekInstallCli\(\)/.test(chain),
+         "SAVED_NO_CLI is read and nothing is done about it");
+});
+
+test("the install holds the busy flag, so two cannot run into one prefix", () => {
+  const fn = loaders.slice(loaders.indexOf("async function deepseekInstallCli"),
+                           loaders.indexOf('scBody.querySelectorAll("[data-deepseek]")'));
+  assert(/S\.deepseekBusy = "install"/.test(fn), "the install does not mark itself busy");
+  assert(/S\.deepseekBusy = null/.test(fn), "the busy flag is never cleared -- the "
+         + "field and both buttons would stay disabled after an install");
+});
+
+test("a key saved before this feature still gets a way to install the CLI", () => {
+  assert(/data-deepseek="install"/.test(chat),
+         "the signed-in block offers no install control, so a Mac with a saved "
+         + "key and no CLI has nothing to press");
+  assert(/dsRow\.installed/.test(chat),
+         "the install block is not conditioned on the row's own installed flag "
+         + "-- it will render over a machine that already has the CLI");
+});
+
+/* ONE RULE, BOTH PLACES. This assertion used to cover only the block, and the
+   FALLBACK message leaked exactly what the block was scrubbed of: it ended
+   "or run  npm install -g @sluisr/deepseek-cli  in a terminal" (founder,
+   2026-09-07). Two failures in one sentence -- an internals leak, and a
+   recommendation of the GLOBAL install deepseek_install.py refuses because a
+   root-owned prefix answers EACCES. Both strings are checked here now, because
+   a rule enforced in one of two places is how the second one drifts. */
+const INTERNALS = ["npm", "node_modules", "PATH", "sluisr", "--prefix", "-g"];
+
+test("the install copy names no internals", () => {
+  const block = chat.slice(chat.indexOf("const cliBlock ="),
+                           chat.indexOf("const cliBlock =") + 1200);
+  INTERNALS.forEach(j =>
+    assert(!block.includes(j),
+           "the install block says " + JSON.stringify(j) + " -- the backend owns "
+           + "that judgment and answers with it only when the install is refused"));
+});
+
+test("the stale-bundle message is one sentence and names no internals", () => {
+  // The only thing a person with an old app can do is update it. Anything else
+  // in this box is either unusable or a trap.
+  const guard = loaders.slice(loaders.indexOf("if (bridge && !bridge.deepseekCliInstall)"),
+                              loaders.indexOf('S.deepseekBusy = "install"'));
+  const msg = (guard.match(/S\.deepseekMsg = ([\s\S]*?);/) || [])[1] || "";
+  assert(msg, "the stale-bundle guard no longer sets a message");
+  INTERNALS.forEach(j =>
+    assert(!msg.includes(j),
+           "the stale-bundle message says " + JSON.stringify(j)
+           + " -- the same leak the install block is held to"));
+  assert(/update the sutra app/i.test(msg), "it no longer names the actual fix");
+  assert((msg.match(/\./g) || []).length === 1,
+         "more than one sentence -- there is exactly one thing to do");
+});
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -580,5 +580,85 @@ class TheRowStateSaysWhichSourceWon(_Base):
         self.assertNotIn(FAKE_KEY, repr(providers.deepseek_auth_state()))
 
 
+class SavedMessageTellsTheTruth(unittest.TestCase):
+    """A key write that succeeded must not claim a provider that cannot run.
+
+    THE SHIPPED BUG (founder report, screenshot 2026-09-07). The save handler
+    ended its success message with "DeepSeek is selectable above now" for every
+    successful write. A key is one of DeepSeek's TWO requirements -- the other
+    is the CLI on PATH, because Sutra spawns `<bin> --acp` -- so on a Mac
+    without it the panel printed that sentence directly beneath a row that
+    correctly read "Not installed on this Mac". Sibling of failure 2 in this
+    module's header: there the row lied about a key, here the message lied
+    about the machine.
+
+    org_api._deepseek_saved_message is the whole decision and it is pure, so
+    these drive it with provider rows directly -- no keychain, no HTTP, no
+    dependence on whether the DEV machine happens to have the CLI (it does,
+    which is exactly why an end-to-end assertion here would pass while the
+    reported bug stayed shipped).
+    """
+
+    ROW_MISSING_CLI = {
+        "id": "deepseek", "installed": False, "configured": True,
+        "runnable": False,
+        "reason": "the 'deepseek' CLI is not on PATH (@sluisr/deepseek-cli).",
+    }
+    ROW_READY = {"id": "deepseek", "installed": True, "configured": True,
+                 "runnable": True, "reason": None}
+
+    def msg(self, rows):
+        import org_api
+        return org_api._deepseek_saved_message(FAKE_MASK, rows)
+
+    def test_a_missing_cli_is_never_called_selectable(self):
+        code, message = self.msg([self.ROW_READY | {"id": "claude"},
+                                  self.ROW_MISSING_CLI])
+        self.assertEqual(code, "SAVED_NO_CLI")
+        self.assertNotIn("selectable above now", message)
+        self.assertIn("still not selectable", message)
+
+    def test_the_key_is_still_reported_as_saved(self):
+        #: The write DID happen. Burying that would send the operator back to
+        #: re-paste a key that is already in the keychain.
+        _, message = self.msg([self.ROW_MISSING_CLI])
+        self.assertIn("saved on this Mac", message)
+        self.assertIn(FAKE_MASK, message)
+
+    def test_the_row_s_own_reason_is_what_gets_quoted(self):
+        #: One source for the requirement sentence. If providers.py rewords it,
+        #: this message follows instead of drifting.
+        _, message = self.msg([self.ROW_MISSING_CLI])
+        self.assertIn(self.ROW_MISSING_CLI["reason"], message)
+
+    def test_an_installed_cli_still_gets_the_no_restart_promise(self):
+        code, message = self.msg([self.ROW_READY])
+        self.assertEqual(code, "SAVED")
+        self.assertIn("selectable above now -- no restart.", message)
+
+    def test_a_reasonless_missing_row_still_refuses_to_promise(self):
+        code, message = self.msg([self.ROW_MISSING_CLI | {"reason": None}])
+        self.assertEqual(code, "SAVED_NO_CLI")
+        self.assertNotIn("selectable above now", message)
+
+    def test_no_deepseek_row_claims_nothing_either_way(self):
+        #: Should be unreachable -- deepseek is catalogued. A row that went
+        #: missing is still not evidence the CLI is present.
+        code, message = self.msg([{"id": "claude", "installed": True}])
+        self.assertEqual(code, "SAVED")
+        self.assertNotIn("selectable", message)
+        self.assertIn("saved on this Mac", message)
+
+    def test_an_empty_provider_list_does_not_raise(self):
+        for rows in ([], None):
+            code, message = self.msg(rows)
+            self.assertEqual(code, "SAVED")
+            self.assertIn(FAKE_MASK, message)
+
+    def test_the_message_never_carries_the_key(self):
+        for rows in ([self.ROW_READY], [self.ROW_MISSING_CLI]):
+            self.assertNotIn(FAKE_KEY, self.msg(rows)[1])
+
+
 if __name__ == "__main__":
     unittest.main()

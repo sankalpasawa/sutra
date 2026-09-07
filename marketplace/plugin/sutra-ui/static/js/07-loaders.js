@@ -308,6 +308,85 @@ function deepseekCanWrite(){
   return !!deepseekBridge() || !!deepseekSessionToken();
 }
 
+/* THE OTHER HALF OF A USABLE DEEPSEEK. A key makes it AUTHORISED; the CLI
+   makes it RUNNABLE, because every message is answered by spawning
+   `deepseek --acp`. The panel used to supply only the first and then tell
+   the operator the row was still dead.
+
+   ONE FUNCTION, TWO CALLERS, and they must behave identically: the Install
+   button (a Mac whose key was saved weeks ago), and the automatic chain
+   straight after a save that came back SAVED_NO_CLI -- which is the flow
+   that matters, and the reason nobody needs to find the button.
+
+   TOP-LEVEL, not tucked inside the click handler that fires it. Everything it
+   touches is already a global (S, PROVIDERS, SETTINGS, render, apiPost, the
+   deepseekBridge/token helpers just above), and a lane-1 check cannot
+   interrogate what it cannot reach -- the publish gate's whole premise is that
+   every piece of panel logic is a global the running app can be asked about.
+   Found by the gate: the first draft was scope-local and the in-app lane could
+   only report "deepseekInstallCli is not defined".
+
+   IT HOLDS deepseekBusy FOR THE WHOLE DOWNLOAD. Backend caps npm at 300s,
+   the desktop bridge at 310s, and the field and both buttons stay disabled
+   until one of them answers: a second install firing into the same prefix is
+   the one thing that could turn a slow success into a broken tree. */
+async function deepseekInstallCli(){
+  const bridge = deepseekBridge();
+  /* An app binary older than this feature: the panel is served by the backend
+     and is current, while preload.js ships frozen inside Sutra.app, so the
+     button exists and the verb behind it does not. The guard is what stops a
+     TypeError being rendered as "the install did not come back", which would
+     send someone to their network for a stale app.
+
+     ONE SENTENCE, AND NO npm IN IT (founder, 2026-09-07). The first version
+     ended with "or run  npm install -g @sluisr/deepseek-cli  in a terminal",
+     which was wrong twice: it broke the rule the install block is held to --
+     no npm, no package name, no node_modules, asserted by
+     test_provider_switch.js -- and it recommended the GLOBAL install this
+     module exists to avoid (deepseek_install.py's "--prefix, NOT -g": a
+     root-owned prefix answers EACCES). Updating the app is the actual fix, it
+     is one action, and it names nothing internal. */
+  if (bridge && !bridge.deepseekCliInstall){
+    S.deepseekBusy = null; S.deepseekMsgOk = false;
+    S.deepseekMsg = "Update the Sutra app to install the DeepSeek CLI from here.";
+    return null;
+  }
+
+  S.deepseekBusy = "install";
+  S.deepseekMsgOk = true;
+  S.deepseekMsg = "Installing the DeepSeek CLI — this takes a minute. It goes "
+    + "into Sutra's own folder; nothing else on your Mac changes.";
+  render();
+
+  let r = null;
+  try {
+    r = bridge
+      ? await bridge.deepseekCliInstall()
+      : await apiPost("/api/providers/deepseek/cli", {},
+                      { "X-Sutra-Session-Token": deepseekSessionToken() });
+  } catch (e){
+    /* Same 403 carve-out the key verbs make, for the same reason: the token
+       can die under this page when the server restarts. */
+    if (e && e.status === 403){
+      deepseekClearSessionToken();
+      r = { ok:false, message:"this browser's sign-in has expired — the server "
+            + "was restarted. Paste its new code below." };
+    } else {
+      r = { ok:false, message:"the install did not come back. Nothing is "
+            + "registered — try again." };
+    }
+  }
+
+  S.deepseekBusy = null;
+  if (r && r.providers) PROVIDERS = r.providers;
+  if (r && r.settings)  SETTINGS  = r.settings;
+  S.deepseekMsgOk = !!(r && r.ok);
+  S.deepseekMsg = (r && r.message) || (r && r.ok
+    ? "The DeepSeek CLI is installed."
+    : "The DeepSeek CLI was not installed.");
+  return r;
+}
+
 /* ── watching a browser-transport sign-in ───────────────────────────────────
    The two transports have DIFFERENT completion semantics, and this is the
    whole reason the poll exists. The IPC verb resolves when the child EXITS.
@@ -732,6 +811,13 @@ function wire(){
 
     if (!bridge && !deepseekSessionToken()) return;    /* no lane; nothing drawn */
 
+    /* ── install: fetch the CLI, no key involved ───────────────────────────
+       Reached from the button the signed-in block draws when the row above is
+       still not installed. Handled before the key/remove path because it reads
+       no field, asks no confirmation, and is neither of the two verbs the
+       bridge call below knows. */
+    if (verb === "install"){ await deepseekInstallCli(); render(); return; }
+
     let key = null;
     if (verb === "save"){
       /* Read off the DOM at click time and never stored: not in S, not in
@@ -799,6 +885,21 @@ function wire(){
          operator can fix a paste instead of finding it again. */
       const input = scBody.querySelector("[data-deepseek-key]");
       if (input) input.value = "";
+    }
+
+    /* THE CHAIN, and the whole point of the change. A saved key on a Mac with
+       no CLI is a provider that still cannot answer -- SAVED_NO_CLI is the
+       backend saying exactly that -- so the install runs HERE instead of being
+       left as a second thing for the operator to discover. Entering a key
+       installs the CLI; that is one action on screen.
+
+       ONLY on that code. SAVED means the CLI is already there and there is
+       nothing to fetch, and a refusal means nothing was saved at all. The
+       success message from the save is replaced by the install's own, which is
+       correct: the key line has already been read by the time this returns, and
+       what the operator needs next is the outcome of the longer step. */
+    if (r && r.ok && verb === "save" && r.code === "SAVED_NO_CLI"){
+      await deepseekInstallCli();
     }
 
     /* SIGN-OUT OF THE ACTIVE PROVIDER. The server has already re-resolved the

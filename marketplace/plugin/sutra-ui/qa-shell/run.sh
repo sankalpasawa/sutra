@@ -104,9 +104,17 @@ fi
 step "lane 1 (state) + lane 2 (pixels)"
 # QA_SCRIPT: an alternative lane script (default: the chat-surface check).
 # nav-check.mjs is the v3.3 shell lane — raw CDP, no playwright needed.
-for one in ${QA_SCRIPTS:-${QA_SCRIPT:-$HERE/shell-check.mjs}}; do
-  SHELL_DEBUG_PORT="$PORT" node "${one:-$HERE/shell-check.mjs}"
-done
+# QA_SCRIPTS is a SPACE-separated list, so it can never carry a path with a
+# space in it -- but the single-script forms can, and did not: both arms went
+# through the same unquoted expansion, so the DEFAULT invocation died with
+# "Cannot find module '/Users/joytadanki/Desktop/Joy'" on a checkout under a
+# directory with a space in its name (2026-09-07). The single-script paths are
+# now quoted; the list keeps its separator.
+if [ -n "${QA_SCRIPTS:-}" ]; then
+  for one in $QA_SCRIPTS; do SHELL_DEBUG_PORT="$PORT" node "$one"; done
+else
+  SHELL_DEBUG_PORT="$PORT" node "${QA_SCRIPT:-$HERE/shell-check.mjs}"
+fi
 RC=$?
 
 step "post-check liveness (the check must not have harmed the app)"

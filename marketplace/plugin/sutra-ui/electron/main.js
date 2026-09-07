@@ -1349,6 +1349,30 @@ ipcMain.handle("sutra:deepseek-key-save", async (e, key) => {
   }
 });
 
+/* Install the DeepSeek CLI. A LONGER CEILING THAN THE KEY VERBS and that is the
+   reason it is its own channel rather than a flag on the save: the backend is
+   downloading and unpacking an npm package, bounded there at 300s, and running
+   that inside DEEPSEEK_KEY_TIMEOUT would abandon a perfectly healthy install at
+   twenty seconds and report it as a failure.
+
+   NO KEY CROSSES HERE, so unlike the two verbs above the server's own message
+   is forwarded verbatim on failure -- it is npm's complaint (EACCES, ETARGET,
+   a dead registry), which is the one thing that makes the failure actionable,
+   and there is nothing in this call for it to leak. */
+const DEEPSEEK_CLI_TIMEOUT = 310000;   // backend caps npm at 300s; this clears it
+
+ipcMain.handle("sutra:deepseek-cli-install", async (e) => {
+  const refused = deepseekGate(e);
+  if (refused) return refused;
+  try {
+    return await api("POST", "/api/providers/deepseek/cli", {},
+                     DEEPSEEK_CLI_TIMEOUT);
+  } catch (err) {
+    return { ok: false, code: "TRANSPORT", message:
+      "could not reach the Sutra backend, so the DeepSeek CLI was not installed." };
+  }
+});
+
 ipcMain.handle("sutra:deepseek-key-remove", async (e) => {
   const refused = deepseekGate(e);
   if (refused) return refused;

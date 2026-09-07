@@ -2,6 +2,43 @@
 
 **status**: active · **updated**: 2026-09-07
 
+## 2.244.0 (2026-09-07)
+
+- **Entering a DeepSeek key installs the DeepSeek CLI.** DeepSeek needs two things and the
+  panel supplied one. A validated key was confirmed with "DeepSeek accepted the key and it is
+  saved on this Mac -- DeepSeek is selectable above now" printed directly beneath a row that
+  correctly read "Not installed on this Mac", because `installed` is `shutil.which()` and
+  Sutra answers a message by spawning `<bin> --acp`. The operator had done everything the
+  screen asked and had a provider that could not answer. The message now tells the truth when
+  the CLI is missing, and the panel then installs it without a second click; a key saved
+  earlier gets an Install button in the signed-in block.
+- **The install is `--prefix`, never `-g`.** A global npm install writes to whatever prefix
+  node was configured with, which on a Homebrew or system node is root-owned -- so it fails
+  with EACCES, and the only ways out are sudo (which a GUI app must not ask for) or
+  permanently repointing the operator's npm prefix. The package goes into
+  `~/.sutra-ui/providers/deepseek` instead and the binary is registered through
+  `provider_bins`, the settings-backed override the resolver already consulted ahead of PATH
+  and which had never had a control in front of it. No sudo, no PATH edit, no shell rc file,
+  nothing outside `~/.sutra-ui`, and the row flips on the next read with no restart.
+- **The version is pinned to the build the adapter was measured against.** `@sluisr/deepseek-cli@1.3.2`
+  is what the ACP transport was read out of and probed against on the wire; `latest` would
+  point a verified adapter at an unverified CLI.
+- **Each failure names its own fix.** No npm, npm exiting non-zero, npm succeeding while
+  publishing no `deepseek` command, a slow registry, and an install shadowed by a live
+  `SUTRA_UI_DEEPSEEK_BIN` are five different problems, and each says which happened. Sutra
+  does not install Node: a Mac without it is pointed at nodejs.org rather than given a second
+  copy somewhere unexpected.
+- **A registered path whose file has gone no longer hides a working CLI.** `provider_bins` is
+  validated when written, so this only happens afterwards -- clearing `~/.sutra-ui`, or
+  deleting the install by hand. Honouring the stale record meant reporting "not installed" on
+  a Mac where the operator had since installed the CLI globally and it was sitting on PATH.
+- **An app older than this feature says so in one sentence.** The panel is served by the
+  backend and is current while `preload.js` ships frozen in the bundle, so the button can
+  exist before the verb behind it does. That case is detected rather than thrown, and answers
+  "Update the Sutra app to install the DeepSeek CLI from here" -- not a raw npm command, which
+  both leaked internals the install copy is scrubbed of and recommended the global install
+  this change exists to avoid.
+
 ## 2.243.0 (2026-09-07)
 
 - **DeepSeek is a provider you sign in to.** Sign-in happens in a browser; the key goes to
