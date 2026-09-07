@@ -210,6 +210,11 @@ const EPILOGUE = `
      object, so a plain \`T.SETTINGS = x\` would set a property on the export
      object and leave the binding the code actually reads untouched. */
   get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; },
+  /* Same getter/setter reason as SETTINGS. Arrived with per-provider models:
+     the pane picker reads THIS, keyed by the pane's own provider, so a test
+     that wants a Model row has to say which provider's models exist. */
+  get MODELS_BY_PROVIDER(){ return MODELS_BY_PROVIDER; },
+  set MODELS_BY_PROVIDER(v){ MODELS_BY_PROVIDER = v; },
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
   /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
      it can be tested without rAF, which never fires headlessly. */
@@ -2870,13 +2875,25 @@ test("42d. the state is DERIVED, so a started turn cannot look queued forever", 
    placeholder is one word. Measured against 2.112.5 before the port: 6 of the
    24 lane-1 checks in design/PARITY-PLAN-chat-chrome.md passed. */
 const PANE_S = { id: "sid-35", title: "ledger migration", turns: [], real: false, cwd: "", channel: null };
+/* The pane picker reads MODELS_BY_PROVIDER[thisPane'sProvider], so the fixture
+   has to declare some or there is legitimately no Model row to assert on. This
+   mirrors what GET /api/settings ships for claude. Tests that care about a
+   DIFFERENT provider's list set T.MODELS_BY_PROVIDER themselves. */
+const PANE_MODELS = { claude: [{ id: "", name: "CLI default" },
+                               { id: "opus", name: "Opus" },
+                               { id: "sonnet", name: "Sonnet" },
+                               { id: "haiku", name: "Haiku" }] };
+
 function paneHtml(over) {
   const prevMenu = T.S.paneMenu, prevFold = T.S.ui.paneCollapsed["sid-35"];
+  const prevModels = T.MODELS_BY_PROVIDER;
+  if (!(over && over.keepModels)) T.MODELS_BY_PROVIDER = PANE_MODELS;
   T.S.paneMenu = over && over.menu ? "sid-35" : null;
   if (over && over.collapsed) T.S.ui.paneCollapsed["sid-35"] = true; else delete T.S.ui.paneCollapsed["sid-35"];
   try { return sandbox.sessionPane(PANE_S); }
   finally {
     T.S.paneMenu = prevMenu;
+    T.MODELS_BY_PROVIDER = prevModels;
     if (prevFold) T.S.ui.paneCollapsed["sid-35"] = prevFold; else delete T.S.ui.paneCollapsed["sid-35"];
   }
 }
@@ -3038,6 +3055,103 @@ test("36b. the rendered BODY carries no governance while the panel carries all o
   const html = T.turnResponse({ uid: "t36b", streaming: false, response: resp, tools: [], toolRuns: [] });
   assert.ok(html.includes("The answer is 4."));
   assert.ok(!/INPUT:|TYPE:|\[INBOUND/.test(html), "governance leaked into the body: " + html);
+});
+
+/* ── 35p-t. the Model picker is the PANE'S provider's, not a shared list ──
+   The panel had ONE model list and it was Claude's, so a DeepSeek session's ⋯
+   menu offered Opus/Sonnet/Haiku -- none of which DeepSeek can run, and the
+   fork does not reject a bad -m, it just answers as something else. */
+
+/* Renders the pane menu with an explicit provider map and pane channel. */
+function paneMenuWith(models, channelId, settings) {
+  const prevCh = PANE_S.channel, prevSet = T.SETTINGS;
+  PANE_S.channel = channelId ? { id: channelId } : null;
+  if (settings !== undefined) T.SETTINGS = settings;
+  try {
+    T.MODELS_BY_PROVIDER = models;
+    return paneHtml({ menu: true, keepModels: true });
+  } finally { PANE_S.channel = prevCh; T.SETTINGS = prevSet; T.MODELS_BY_PROVIDER = {}; }
+}
+/* Scoped to the MODEL select. An unscoped scan also collects the permission
+   select's options ("plan", "auto", ...) sitting one row above, which silently
+   turns every assertion below into a claim about the wrong control. */
+const optionsIn = h => {
+  const i = h.indexOf('<select class="modelsel"');
+  if (i === -1) return [];
+  const block = h.slice(i, h.indexOf("</select>", i));
+  return [...block.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
+    .map(m => ({ id: m[1], attrs: m[2] }));
+};
+
+const DS_MODELS = {
+  claude: PANE_MODELS.claude,
+  deepseek: [{ id: "", name: "CLI default" },
+             { id: "deepseek-v4-pro", name: "V4 Pro", note: "flagship, 1M context" },
+             { id: "deepseek-v4-flash", name: "V4 Flash" },
+             { id: "deepseek-v4-flash-vision-exp", name: "V4 Flash Vision",
+               selectable: false,
+               unavailable_reason: "this panel has no image channel" }],
+};
+
+test("35p. a DeepSeek pane offers DeepSeek's models and none of Claude's", () => {
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+  const ids = optionsIn(h).map(o => o.id);
+  assert.ok(ids.includes("deepseek-v4-pro"), "DeepSeek's flagship must be offered, got " + ids);
+  ["opus", "sonnet", "haiku"].forEach(id =>
+    assert.ok(!ids.includes(id),
+      "Claude's " + id + " must not appear on a DeepSeek pane, got " + ids));
+});
+
+test("35q. the pane follows ITS OWN channel, not the global provider", () => {
+  /* The bug this rules out: SETTINGS.provider is global, so a pane opened under
+     DeepSeek and left open while the default was switched to Claude would have
+     started listing Claude's models for a session DeepSeek is still answering. */
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+  assert.ok(optionsIn(h).some(o => o.id === "deepseek-v4-pro"),
+    "the pane's own channel must win over SETTINGS.provider");
+  const h2 = paneMenuWith(DS_MODELS, "claude", { provider: "deepseek" });
+  assert.ok(optionsIn(h2).some(o => o.id === "opus"), "and in the other direction");
+});
+
+test("35r. the vision model is listed, disabled, and says why", () => {
+  /* Dropping it hides that it exists; offering it enabled offers a choice that
+     cannot run. Listed + disabled + reason is the third option. */
+  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "deepseek" });
+  const vis = optionsIn(h).find(o => o.id === "deepseek-v4-flash-vision-exp");
+  assert.ok(vis, "it must still be listed");
+  assert.ok(/\bdisabled\b/.test(vis.attrs), "it must not be selectable: " + vis.attrs);
+  assert.ok(/no image channel/.test(vis.attrs), "the reason must be on the option: " + vis.attrs);
+  assert.ok(!/\bselected\b/.test(vis.attrs), "a disabled option must never be the selection");
+});
+
+test("35s. a provider that declares no models gets no picker at all", () => {
+  /* Codex has no model flag. An empty select would be a control that cannot do
+     anything -- the same offer-a-dead-choice failure the provider list avoids. */
+  const h = paneMenuWith(DS_MODELS, "codex", { provider: "codex" });
+  assert.ok(!/<select class="modelsel"/.test(h), "no select for a provider with no models");
+  const keys = [...h.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+  assert.ok(!keys.includes("Model"), "and no empty Model row either, got " + keys);
+});
+
+test("35t. before /api/settings resolves the row still renders", () => {
+  /* It used to fall back to a lone "CLI default" whenever the list was empty.
+     Losing that would make the Model row appear a beat after every other row
+     on first paint -- a flicker that reads as a bug. */
+  const h = paneMenuWith({}, null, null);
+  assert.ok(/<select class="modelsel"/.test(h), "the row must survive an unloaded map");
+  assert.deepStrictEqual(optionsIn(h).map(o => o.id), [""],
+    "and offer exactly the CLI default until the real list arrives");
+});
+
+test("35u. the pre-selected model comes from THIS provider's stored slot", () => {
+  /* The old fallback read the single flat SETTINGS.model, which only ever held
+     a Claude id -- so a DeepSeek pane pre-selected something it could not send. */
+  const h = paneMenuWith(DS_MODELS, "deepseek",
+    { provider: "deepseek", model: "opus",
+      model_by_provider: { claude: "opus", deepseek: "deepseek-v4-pro" } });
+  const sel = optionsIn(h).filter(o => /\bselected\b/.test(o.attrs)).map(o => o.id);
+  assert.deepStrictEqual(sel, ["deepseek-v4-pro"],
+    "the DeepSeek slot must win over the legacy flat model, got " + sel);
 });
 
 /* ── 35l-n. the repo bar's facts live in the ⋯ menu now ──────────────────── */

@@ -89,7 +89,13 @@ def window_for(target, model=None):
     """
     if model is None:
         try:
-            model = providers.stored_model() or ""
+            # THIS target's stored model, not a shared one. Reading the single
+            # global scalar here meant a Claude id could be read while sizing a
+            # DeepSeek payload; harmless only because the deepseek arm below
+            # ignores the model entirely. Phase 4 makes the windows model-keyed,
+            # at which point reading the wrong provider's id would pick the
+            # wrong window -- so it is corrected before that lands, not with it.
+            model = providers.stored_model(target) or ""
         except Exception:
             model = ""
     model = (model or "").strip()

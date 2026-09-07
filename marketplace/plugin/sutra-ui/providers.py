@@ -371,34 +371,179 @@ def workdir_allowed(path):
     return target == root or target.startswith(root + os.sep)
 
 # Models offerable for a session. An ALLOW-LIST, not free text: the value is passed
-# straight to `claude --model`, where an unknown string fails several seconds later
-# as a dead socket rather than as a refusal the operator can read. `""` means "let
-# the CLI use its own default", which is the shipped behaviour and stays the default.
+# straight to the CLI's model flag, where an unknown string fails several seconds
+# later as a dead socket -- or worse, does not fail at all and something else
+# answers (see _DEEPSEEK_MODELS). `""` means "let the CLI use its own default",
+# which is the shipped behaviour and stays the default for every provider.
 #
-# These are ALIASES on purpose. Pinned ids go stale the moment a new snapshot ships,
-# and a panel that offers a retired id is offering something that cannot run -- the
-# same failure providers.py exists to prevent. The CLI resolves an alias to whatever
-# it currently points at.
-MODELS = (
+# Claude's are ALIASES on purpose. Pinned ids go stale the moment a new snapshot
+# ships, and a panel that offers a retired id is offering something that cannot run
+# -- the same failure providers.py exists to prevent. The CLI resolves an alias to
+# whatever it currently points at. DeepSeek's fork takes concrete ids and has no
+# alias layer, so its entries are pinned and that difference is per-provider too.
+#
+# PER PROVIDER, declared on the catalog row (see _CATALOG below), not switched
+# on by id at the point of use. The panel offered Claude's four aliases on a
+# DeepSeek session because there was ONE list and it was Claude's; the fix is
+# not a branch in the picker, it is that each provider carries its own.
+_CLAUDE_MODELS = (
     {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
     {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
     {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
     {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
 )
-MODEL_IDS = frozenset(m["id"] for m in MODELS)
+
+# DeepSeek's, passed as `-m <id>`. NOT aliases -- the fork takes concrete ids,
+# and its ACP session/new advertises exactly deepseek-v4-pro and
+# deepseek-v4-flash (measured 2026-09-07). `""` is the CLI's own default, which
+# that same measurement showed to be deepseek-v4-flash.
+#
+# THE ALLOW-LIST IS LOAD-BEARING HERE IN A WAY IT IS NOT FOR CLAUDE. The fork
+# does not validate -m. Its entire check is
+#     resolveDeepSeekModel(m) { return m?.startsWith("deepseek-") ? m : "deepseek-chat" }
+# so `deepseek-v9-nonsense` is forwarded verbatim to the API and `deepsek-v4-pro`
+# (one typo) silently answers as deepseek-chat. Measured on the wire, both.
+# Nothing downstream will refuse a bad id, so this tuple is the only refusal.
+_DEEPSEEK_MODELS = (
+    {"id": "",                  "name": "CLI default",
+     "note": "whatever `deepseek` is configured to use (currently V4 Flash)"},
+    {"id": "deepseek-v4-pro",   "name": "V4 Pro",
+     "note": "flagship, 1M context"},
+    {"id": "deepseek-v4-flash", "name": "V4 Flash",
+     "note": "fast and cheaper, 1M context"},
+    # LISTED, DISABLED, WITH THE REASON ON SCREEN. Dropping it would hide that
+    # the model exists; offering it enabled would be the offer-a-choice-that-
+    # cannot-run failure ADAPTERS exists to prevent (see the ADAPTERS comment).
+    # Also absent from the CLI's own ACP-advertised list, so even the fork does
+    # not currently claim it is reachable this way.
+    {"id": "deepseek-v4-flash-vision-exp", "name": "V4 Flash Vision",
+     "note": "experimental multimodal",
+     "selectable": False,
+     "unavailable_reason":
+         "this panel has no image channel -- an attachment is uploaded into "
+         "the workdir and handed to the agent as a FILE PATH, and the ACP "
+         "prompt it sends carries text blocks only. This model would receive "
+         "a filename where it expects an image, so it is listed rather than "
+         "offered."},
+)
 
 
-def clean_model(value):
-    """A catalogued model id, or None. Never raises, never passes junk to the CLI."""
+def _model_selectable(entry):
+    """Absent `selectable` means True.
+
+    Deliberate: only the one unavailable entry carries the key, so every
+    provider's ordinary rows stay byte-identical to what they were before this
+    field existed -- nothing about Claude's payload moved.
+    """
+    return entry.get("selectable", True) is not False
+
+
+def models_for(pid):
+    """Every model this provider declares, in menu order. () for a provider
+    that has none (codex, gemini) -- which is a real answer, not a gap: their
+    rows render without a picker rather than with someone else's."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("models", ())
+    return ()
+
+
+def model_ids_for(pid):
+    """Every declared id, selectable or not. Use for "is this catalogued"."""
+    return frozenset(m["id"] for m in models_for(pid))
+
+
+def selectable_model_ids_for(pid):
+    """The ids a session may actually RUN on. The narrower set, and the one
+    clean_model() gates against -- a listed-but-disabled model must be
+    unreachable through the API too, not merely greyed out in the menu."""
+    return frozenset(m["id"] for m in models_for(pid) if _model_selectable(m))
+
+
+def all_models_by_provider():
+    """{provider_id: [model, ...]} for every provider that declares any.
+
+    The shape the settings endpoint publishes. A provider with no models is
+    ABSENT rather than present-and-empty, so the client's test for "does this
+    provider have a picker" is the same test as "is it in this dict".
+    """
+    return {spec["id"]: list(spec["models"])
+            for spec in _CATALOG if spec.get("models")}
+
+
+def model_flag_for(pid):
+    """The CLI flag that carries the model, or None when the provider has no
+    model lever. `--model` for claude, `-m` for deepseek."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("model_flag")
+    return None
+
+
+def usage_kind_for(pid):
+    """What KIND of usage fact this provider reports:
+
+      window-percent  a share of a rate-limit window (claude)
+      balance         money left in a pay-as-you-go account (deepseek)
+      none            neither -- do not show a figure, and do not borrow
+                      another provider's
+
+    `none` is why this is a declared kind rather than an if/else. The client's
+    usage branch was `if deepseek -> balance else -> Anthropic percentage`, so
+    Codex would have rendered Claude's percentage on a Codex session the day it
+    became selectable.
+    """
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("usage_kind", "none")
+    return "none"
+
+
+def clean_model(value, provider_id):
+    """A model id this PROVIDER can run, or None. Never raises, never passes
+    junk to the CLI.
+
+    `provider_id` is mandatory on purpose. An optional one -- or one defaulting
+    to "claude" -- reintroduces the exact bug this change exists to remove: a
+    forgotten argument would silently validate a DeepSeek session's model
+    against Claude's list.
+
+    Gated on the SELECTABLE set, so a catalogued-but-disabled id (the vision
+    model) is refused here and not only hidden in the menu.
+    """
     if not isinstance(value, str):
         return None
     v = value.strip()
-    return v if (v and v in MODEL_IDS) else None
+    return v if (v and v in selectable_model_ids_for(provider_id)) else None
 
 
-def stored_model():
-    """The model chosen in Settings, or None for the CLI's own default."""
-    return clean_model(_raw_settings().get("model"))
+def stored_model(provider_id):
+    """The model chosen for THIS provider, or None for the CLI's own default.
+
+    Each provider keeps its own slot, so switching provider and back does not
+    discard the choice -- and a Claude id can never leak onto a DeepSeek spawn,
+    which a single shared scalar made possible.
+    """
+    return clean_model(_stored_models().get(provider_id), provider_id)
+
+
+def _stored_models():
+    """{provider_id: model_id} as stored, with the legacy scalar migrated.
+
+    Storage moved from a single `model` key to `model_by_provider` when the
+    picker became per-provider. The old scalar only ever described Claude, so
+    it migrates into that slot. Read-side only: nothing rewrites the file until
+    the next save, so an older build reading this file still finds what it
+    expects.
+    """
+    raw = _raw_settings()
+    by_provider = raw.get("model_by_provider")
+    out = ({k: v for k, v in by_provider.items() if isinstance(v, str)}
+           if isinstance(by_provider, dict) else {})
+    legacy = raw.get("model")
+    if "claude" not in out and isinstance(legacy, str):
+        out["claude"] = legacy
+    return out
 
 
 PERMISSION_MODE_NOTES = {
@@ -438,15 +583,30 @@ ADAPTERS = frozenset({"claude", "deepseek"})
 # ------------------------------------------------------------- catalog -----
 # Order is precedence order for the "first runnable provider" fallback.
 # `default` marks the one the panel ships pointed at.
+#
+# `models` / `model_flag` / `usage_kind` are DECLARATIONS, read through
+# models_for() / model_flag_for() / usage_kind_for(). They live here so a new
+# provider answers all three questions by being added to this tuple, instead of
+# by someone remembering to extend a switch in the picker, another in the usage
+# row, and a third in the spawn path.
 _CATALOG = (
     {"id": "claude", "name": "Claude Code", "bin": "claude",
-     "config_dir": "~/.claude", "default": True},
+     "config_dir": "~/.claude", "default": True,
+     "models": _CLAUDE_MODELS, "model_flag": "--model",
+     "usage_kind": "window-percent"},
+    # No models and no usage: Codex is sign-in-only in this build (no adapter,
+    # see ADAPTERS above). Declaring the absence is the point -- it is what
+    # stops the usage row falling through to Anthropic's percentage.
     {"id": "codex", "name": "OpenAI Codex", "bin": "codex",
-     "config_dir": "~/.codex", "default": False},
+     "config_dir": "~/.codex", "default": False,
+     "models": (), "model_flag": None, "usage_kind": "none"},
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
-     "config_dir": "~/.gemini", "default": False},
+     "config_dir": "~/.gemini", "default": False,
+     "models": (), "model_flag": None, "usage_kind": "none"},
     {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
-     "config_dir": "~/.deepseek", "default": False},
+     "config_dir": "~/.deepseek", "default": False,
+     "models": _DEEPSEEK_MODELS, "model_flag": "-m",
+     "usage_kind": "balance"},
 )
 
 
@@ -1070,6 +1230,15 @@ def _describe(spec):
                          and claude_desktop_installed()),
         "bin_path": bin_path,
         "config_path": str(cfg_path),
+        # WHAT KIND of usage figure this provider has, so the client can look
+        # it up per provider instead of branching on the id. The client held
+        # `if (SETTINGS.provider === "deepseek") balance; else Anthropic
+        # percentage` in four places; this is the fact those four branches were
+        # each re-deriving, published once.
+        "usage_kind": spec.get("usage_kind", "none"),
+        # Declared so a reader can see WHY a provider has no picker (no flag to
+        # carry a model) without opening this file.
+        "model_flag": spec.get("model_flag"),
     }
 
 
@@ -1275,7 +1444,18 @@ def load_settings():
         "onboarded": onboarded,
         # "" is a real, meaningful value here ("use the CLI's default"), so it is
         # reported as "" rather than folded into null.
-        "model": stored_model() or "",
+        #
+        # LEGACY ACCESSOR onto the claude slot, not a second store. Storage is
+        # `model_by_provider` below; this key is what existed when there was one
+        # shared model, it only ever described Claude, and it keeps working for
+        # anything still reading it. One storage, one compat reader -- not two
+        # sources that can disagree.
+        "model": stored_model("claude") or "",
+        # The real thing: every provider's own choice, so switching provider and
+        # back does not discard it and no provider can be handed another's id.
+        # Only providers that declare models appear.
+        "model_by_provider": {spec["id"]: (stored_model(spec["id"]) or "")
+                              for spec in _CATALOG if spec.get("models")},
         # metadata -- the three keys above are the contract; these explain them
         "workdir_source": workdir_source,
         "provider_source": detail["source"],
@@ -1333,7 +1513,7 @@ UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
 
 
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
-                  model=None, unsafe_ack=None):
+                  model=None, unsafe_ack=None, model_provider=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -1396,14 +1576,45 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
             raise ValueError("onboarded must be a boolean")
         raw["onboarded"] = onboarded
 
+    # `model` without a provider still means CLAUDE -- that is what the key
+    # meant for its whole life, and callers that predate per-provider models
+    # are not silently retargeted at whichever provider happens to be active.
+    # `model_provider` names the slot explicitly.
     if model is not None:
+        target = model_provider or "claude"
+        if not models_for(target):
+            raise ValueError(
+                "provider %r declares no models, so none can be stored for it"
+                % (target,))
         # "" is legal: it means "let the CLI choose", which is why this cannot use
         # the truthiness of clean_model() alone.
-        if not isinstance(model, str) or (model.strip() and model.strip() not in MODEL_IDS):
+        allowed = selectable_model_ids_for(target)
+        if not isinstance(model, str) or (model.strip() and model.strip() not in allowed):
+            listed = model_ids_for(target)
+            # Name the disabled case specifically. "unknown model" is wrong and
+            # unhelpful for an id that IS catalogued and cannot be run -- the
+            # operator would go looking for a typo that is not there.
+            if isinstance(model, str) and model.strip() in listed:
+                entry = next(m for m in models_for(target)
+                             if m["id"] == model.strip())
+                raise ValueError(
+                    "model %r is listed for %s but cannot be selected: %s"
+                    % (model, target, entry.get("unavailable_reason",
+                                                "not available in this build")))
             raise ValueError(
-                "unknown model %r -- must be one of: %s (or \"\" for the CLI default)"
-                % (model, ", ".join(sorted(i for i in MODEL_IDS if i))))
-        raw["model"] = model.strip()
+                "unknown model %r for provider %r -- must be one of: %s "
+                "(or \"\" for the CLI default)"
+                % (model, target, ", ".join(sorted(i for i in allowed if i))))
+        by_provider = dict(raw.get("model_by_provider") or {})
+        by_provider[target] = model.strip()
+        raw["model_by_provider"] = by_provider
+        # The legacy scalar is kept in step for the claude slot ONLY, so an
+        # older build (or anything still reading settings.json by hand) does
+        # not see Claude's model silently revert. Never written for another
+        # provider -- that would put a DeepSeek id where a Claude id is
+        # expected, which is the failure this whole change removes.
+        if target == "claude":
+            raw["model"] = model.strip()
 
     _write_settings(raw)
     return load_settings()

@@ -385,7 +385,9 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     if model:
         args += ["--model", model]
 
-    fallback = providers.clean_model(opts.get("fallback_model"))
+    # "claude" is not a default here, it is a fact: build_agent_args builds
+    # CLAUDE's argv, and --fallback-model is Claude's flag.
+    fallback = providers.clean_model(opts.get("fallback_model"), "claude")
     if fallback and fallback != model:
         args += ["--fallback-model", fallback]
 
@@ -434,12 +436,32 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     return args
 
 
-def build_acp_args(agent_bin):
-    """The full argv for the ACP subprocess. Unlike build_agent_args, this
-    is spawn-time only and constant across every turn on this pane -- ACP's
-    model/permission-mode/session are protocol-level (session/new,
-    session/set_session_mode), not CLI flags, so there is no per-message
-    argv to build.
+def build_acp_args(agent_bin, model=None):
+    """The full argv for the ACP subprocess. Unlike build_agent_args, this is
+    spawn-time only -- ACP's permission-mode and session are protocol-level
+    (session/new, session/set_session_mode), so there is no per-message argv to
+    build. The MODEL is the exception, and the reason this takes an argument.
+
+    -m: THE MODEL WAS BEING DROPPED ON THE FLOOR. This function used to take
+    only the binary, so `chosen_model` -- resolved a few lines above the spawn,
+    validated, and announced to the client in the `start` frame -- reached
+    Claude's argv and nothing at all on DeepSeek's. The pane displayed a model
+    the CLI had never been told about, for every DeepSeek session this panel
+    has ever run. Measured on the wire (2026-09-07): with no -m the fork sends
+    `deepseek-v4-flash` whatever the panel claimed; with -m it sends what it
+    was given.
+
+    The caller passes a value that has already been through
+    providers.clean_model(value, "deepseek"), because the fork does NOT
+    validate this flag -- an unknown `deepseek-`-prefixed id is forwarded
+    verbatim to the API and anything else silently becomes `deepseek-chat`.
+    Passing "" or None means "no flag", which lets the CLI use its own default
+    rather than asserting one here.
+
+    Model is spawn-time and not changeable in-session: this build answers
+    session/set_model and session/unstable_setSessionModel with -32601 Method
+    not found. Changing it therefore has to respawn -- which happens on its own,
+    because spawn_key is tuple(args) and this argv now carries the model.
 
     --skip-trust: this CLI is spawned into whatever workdir the operator's
     Sutra workdir setting points at -- the same directory Claude is spawned
@@ -448,7 +470,10 @@ def build_acp_args(agent_bin):
     fork trust dialog stalls the process waiting for a TTY answer that
     never comes.
     """
-    return [agent_bin, "--acp", "--skip-trust"]
+    args = [agent_bin, "--acp", "--skip-trust"]
+    if model:
+        args += [providers.model_flag_for("deepseek") or "-m", model]
+    return args
 
 
 def _ensure_workdir(path=None):
@@ -2088,8 +2113,8 @@ async def ws_chat(ws: WebSocket):
                     # payload has to be sized before it is built.
                     plan = switch.plan(
                         sutra_id, active_id, next_message=msg,
-                        model=(providers.clean_model(model)
-                               or providers.stored_model()))
+                        model=(providers.clean_model(model, active_id)
+                               or providers.stored_model(active_id)))
                     if plan.get("switch"):
                         plan = switch_egress.prepare(plan)
                     if plan.get("switch"):
@@ -2129,7 +2154,8 @@ async def ws_chat(ws: WebSocket):
             # validated against the allow-list -- an arbitrary string here would be
             # passed straight to the CLI, where a typo fails as a dead socket several
             # seconds later instead of as a refusal now.
-            chosen_model = providers.clean_model(model) or providers.stored_model()
+            chosen_model = (providers.clean_model(model, active_id)
+                            or providers.stored_model(active_id))
             # Everything else the client may ask for this turn, validated in
             # build_agent_args rather than trusted here.
             #
@@ -2151,9 +2177,12 @@ async def ws_chat(ws: WebSocket):
                                         session_id=None, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
             else:
-                # Constant every turn -- model/permission-mode are set once
-                # in new_session below, not per message.
-                args = build_acp_args(agent_bin)
+                # Permission-mode is set once in new_session below, not per
+                # message. The MODEL is spawn-time argv (ACP exposes no
+                # set_model on this build), so it goes here -- and because
+                # spawn_key is tuple(args), changing it respawns through the
+                # same path a permission-mode change already uses.
+                args = build_acp_args(agent_bin, chosen_model)
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
@@ -2192,6 +2221,15 @@ async def ws_chat(ws: WebSocket):
             # while this turn was failing. A replay continues the turn that is
             # already on screen; it does not announce a new one.
             if not payload.get("_replay"):
+                # `model` here is now true on BOTH paths. It always was on
+                # Claude's (build_agent_args carries it into --model) and never
+                # was on DeepSeek's, where build_acp_args discarded it -- so
+                # this frame asserted a model the CLI had not been given. Both
+                # arms above now build argv from this same `chosen_model`, and
+                # TestDeepSeekSpawnedModel.test_announced_model_is_the_spawned_model
+                # asserts it against the ACTUAL argv the CLI was launched with
+                # (recorded from inside the spawned process by
+                # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
                 spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}

@@ -1945,7 +1945,7 @@ async function loadRuntime(){
     const settings = settingsR.value;
     SETTINGS = settings.settings || null;
     PERM_MODES = settings.permission_modes || [];
-    MODELS = settings.models || [];
+    MODELS_BY_PROVIDER = settings.models_by_provider || {};
     CLAUDE_ACCOUNT = settings.claude_account || null;
     paintAvatar();
   } else {

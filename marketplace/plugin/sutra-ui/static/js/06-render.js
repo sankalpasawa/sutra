@@ -152,6 +152,36 @@ function paneMenuHtml(s){
      matches the provider actually selected. */
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
+  /* ── the Model row, built here so the template below stays one line ──
+     THIS PANE'S provider, not the globally selected one. s.channel is what the
+     server said it would actually run (the ws "provider" frame), so a pane
+     opened under DeepSeek keeps offering DeepSeek's models after the global
+     default is switched to Claude. SETTINGS.provider covers only the pane that
+     has not received its frame yet. */
+  const mpid = (s.channel && s.channel.id) || (SETTINGS || {}).provider;
+  /* Before /api/settings resolves there is no map at all, and the row must not
+     vanish on first paint -- that is what the old `MODELS.length ? ... : [CLI
+     default]` fallback was for. An EMPTY map means not-loaded; a loaded map
+     that simply has no entry for this provider means the provider genuinely
+     declares no models (codex has no model flag), and then there is no picker
+     to draw rather than an empty one. */
+  const mloaded = !!mpid && Object.keys(MODELS_BY_PROVIDER).length > 0;
+  const mlist = mloaded ? (MODELS_BY_PROVIDER[mpid] || [])
+                        : [{ id: "", name: "CLI default" }];
+  /* The stored default for THIS provider. The old fallback read the single flat
+     SETTINGS.model, which was Claude's -- so a DeepSeek pane pre-selected a
+     Claude id that could never be sent. */
+  const msel = S.model[s.id] ?? (((SETTINGS || {}).model_by_provider || {})[mpid] || "");
+  /* selectable:false is CATALOGUED BUT NOT RUNNABLE HERE -- the vision model,
+     which this panel has no image channel to feed. Listed so its existence is
+     not hidden, disabled so it cannot be picked, reason on the option itself.
+     The server refuses it too (providers.clean_model gates on the selectable
+     set), so this is the visible face of a real refusal, not the only thing
+     standing in the way. */
+  const mopts = mlist.map(m=>{ const off = m.selectable === false; return `
+          <option value="${esc(m.id)}"${off?" disabled":""}${!off && msel === m.id ? " selected":""}
+            title="${esc(off ? (m.unavailable_reason || "not available") : (m.note || ""))}"
+          >${esc(m.name)}${off?" — unavailable":""}</option>`; }).join("");
   /* role="group", not "menu": the rows are buttons and <label>s, not menuitems,
      and a menu role promises arrow-key navigation this popover does not have
      (refuter 2026-08-23). A labelled group is honest and valid. */
@@ -168,12 +198,9 @@ function paneMenuHtml(s){
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
     <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect()}</span><span class="ma"></span></label>
-    <label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${s.id}" aria-label="Model for this session"
-            title="Model — applies to the next message">
-        ${(MODELS.length?MODELS:[{id:"",name:"CLI default"}]).map(m=>`
-          <option value="${esc(m.id)}" ${(S.model[s.id] ?? ((SETTINGS||{}).model||"")) === m.id ? "selected":""}
-          >${esc(m.name)}</option>`).join("")}
-      </select></span><span class="ma"></span></label>
+    ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
+            title="Model — applies to the next message">${mopts}
+      </select></span><span class="ma"></span></label>`}
     ${row("usage", "Usage", (providerUsage() || {}).row || "plan usage")}
     ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}

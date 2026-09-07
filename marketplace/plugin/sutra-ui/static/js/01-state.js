@@ -17,7 +17,12 @@ let ORG_ALL = null;
 let SKILLS = [], SKILLS_META = {};
 /* The live provider table (GET /api/providers) and the panel's settings
    (GET /api/settings). Both are fetched; neither is a literal in this file. */
-let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS = [];
+/* MODELS_BY_PROVIDER, not MODELS: the list is a property of the provider, and
+   a single flat one was Claude's list shown on every session -- a DeepSeek pane
+   offered Opus/Sonnet/Haiku. {provider_id: [{id,name,note,...}]}, and a provider
+   with no models is ABSENT rather than empty, so "is there a picker" and "is it
+   in this map" are the same question. */
+let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS_BY_PROVIDER = {};
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is

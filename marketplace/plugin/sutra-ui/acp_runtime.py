@@ -519,6 +519,36 @@ class AcpRuntime:
         runs before self._emit is set (that only happens in prompt_turn),
         so unlike Claude's resume_reset/retry frame, a dropped session id
         here just quietly starts fresh.
+
+        ``session/load`` IS A WRITE. IT IS NOT A LOOKUP. (Measured against
+        @sluisr/deepseek-cli, bundle of 2026-08-26, on 2026-09-07.)
+
+        A successful load RESUMES the session and REWRITES its record under a
+        new ``~/.gemini/tmp/<project>/chats/session-<date>-<shortid>.jsonl``
+        file. The previous file for that id does not survive, and afterwards
+        the original id may no longer resolve. Loading a session is therefore
+        destructive to the thing being loaded -- there is no dry run, and
+        "just check whether this id is resumable" cannot be done without
+        risking the transcript it asks about.
+
+        Two consequences that cost real data before they were understood:
+
+          - NEVER call this against a session store you are not willing to
+            lose. Any experiment belongs in a throwaway workdir with sessions
+            generated for the purpose. Two of this machine's DeepSeek
+            transcripts were destroyed on 2026-09-07 by probes that assumed
+            load was read-only.
+          - The sibling CLI flag ``--list-sessions`` is ALSO a write, and a
+            billed one: it calls generateSummary(), a MODEL CALL whose result
+            is persisted as the session's display name. A third transcript's
+            title was overwritten with a test fixture's output the same day.
+            It is not a safe way to inspect the store either.
+
+        Related: a session is INVISIBLE to both load and --list-sessions until
+        a summary exists for it, because the selector drops entries whose
+        sessionInfo parses to null. A session whose turns completed but whose
+        summary never generated cannot be resumed, which makes "load failed"
+        ambiguous between "no such id" and "never summarised".
         """
         self.effective_permission_mode = effective_permission_mode
         result = None

@@ -1184,9 +1184,17 @@ def api_settings_get():
         ],
         "unsafe_modes_allowed": unlocked,
         "unsafe_modes_env": providers.UNSAFE_MODES_ENV,
-        # An allow-list, not free text: the value reaches `claude --model`, where an
-        # unknown string fails as a dead socket seconds later instead of a refusal.
-        "models": list(providers.MODELS),
+        # An allow-list, not free text: the value reaches the provider's model
+        # flag, where an unknown string fails as a dead socket seconds later
+        # instead of a refusal -- or, on DeepSeek's fork, does not fail at all
+        # and a different model quietly answers.
+        #
+        # KEYED BY PROVIDER, and the flat `models` list it replaces is GONE
+        # rather than kept alongside. The panel is the only client, and a flat
+        # list next to a keyed one is the same "two copies that can disagree"
+        # this change exists to remove. Providers with no models simply have no
+        # entry, which is how the picker knows not to render one.
+        "models_by_provider": providers.all_models_by_provider(),
         "providers": providers.discover_providers(),
         # Who is signed in to Claude on this machine. None when unknown -- the
         # panel must render an unknown identity rather than a placeholder that

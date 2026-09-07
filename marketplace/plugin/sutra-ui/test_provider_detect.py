@@ -476,7 +476,24 @@ class DeepSeekNeedsAKeyToBeRunnable(unittest.TestCase):
     def test_the_catalogue_entry_is_the_one_this_class_describes(self):
         """A drifted catalogue would make every assertion above vacuous."""
         live = [s for s in providers._CATALOG if s["id"] == "deepseek"]
-        self.assertEqual(live, [self.SPEC])
+        self.assertEqual(len(live), 1)
+        entry = live[0]
+        # The identity fields _describe() actually reads, compared exactly --
+        # a change to any of them still trips this guard.
+        self.assertEqual({k: entry[k] for k in self.SPEC}, self.SPEC)
+        # The declarations added when models became per-provider. Pinned here
+        # by their VALUES rather than folded into SPEC: SPEC referencing
+        # providers._DEEPSEEK_MODELS would compare a constant with itself and
+        # quietly stop guarding anything.
+        self.assertEqual(entry["model_flag"], "-m")
+        self.assertEqual(entry["usage_kind"], "balance")
+        self.assertEqual([m["id"] for m in entry["models"]],
+                         ["", "deepseek-v4-pro", "deepseek-v4-flash",
+                          "deepseek-v4-flash-vision-exp"])
+        # Nothing may appear that neither half above accounts for, which is
+        # what the old exact-equality assertion was really protecting.
+        self.assertEqual(set(entry) - set(self.SPEC),
+                         {"models", "model_flag", "usage_kind"})
 
     def test_deepseek_is_LAST_in_the_catalogue(self):
         """LOAD-BEARING FOR THE UI, which is why it is asserted here rather

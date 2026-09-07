@@ -61,7 +61,10 @@ class WindowTest(unittest.TestCase):
     def test_every_catalogued_model_has_a_window_or_is_the_default(self):
         """Pins the window table to the picker, so a new model entry cannot
         silently inherit a wrong ceiling."""
-        for m in providers.MODELS:
+        # Re-slice only: providers.MODELS was Claude's list under a general
+        # name. CLAUDE_WINDOWS is still Claude's table, so this still iterates
+        # Claude's models. Phase 4 widens both to every provider.
+        for m in providers.models_for("claude"):
             mid = m["id"]
             if mid == "":
                 continue   # "CLI default" is the documented floor case

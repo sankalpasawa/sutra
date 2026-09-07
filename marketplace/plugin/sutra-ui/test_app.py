@@ -1139,10 +1139,33 @@ class TestApp(unittest.TestCase):
                     "%s: `configured` is a credential check, but still a bool"
                     % p["id"])
                 if not p["configured"]:
+                    # THE TARGET IS THE CLAIM, NOT THE LITERAL. A bare
+                    # assertNotIn was red from the day it was written (f8d46ef,
+                    # three days after the codex reason it tests landed in
+                    # 0722504 -- the string never moved, the guard arrived
+                    # wrong). Two mentions of the directory are legitimate and
+                    # neither sends anyone looking for it:
+                    #
+                    #   1. a path INSIDE it. "no credential at ~/.codex/auth.json"
+                    #      names the file that is actually missing; the
+                    #      directory is only its parent.
+                    #   2. a parenthetical aside. "(~/.codex exists either way,
+                    #      so its presence is not evidence of a login.)" says
+                    #      the exact opposite of what this guard forbids.
+                    #
+                    # Strip both, then require the bare directory to be absent
+                    # from what is left. A real violation -- "no config
+                    # directory at ~/.codex" in the main clause -- still trips
+                    # it, so this narrows the guard rather than defeating it.
+                    cfg = p["config_dir"]
+                    residue = re.sub(r"\([^)]*\)", "", p["reason"])
+                    residue = re.sub(re.escape(cfg) + r"/\S+", "", residue)
                     self.assertNotIn(
-                        p["config_dir"], p["reason"],
+                        cfg, residue,
                         "%s: the directory is not the missing thing, so the "
-                        "reason must not send anyone to look for it" % p["id"])
+                        "reason must not send anyone to look for it -- found "
+                        "it outside a contained path and outside an aside: %r"
+                        % (p["id"], residue))
             self.assertIn("adapter", p, "%s is missing 'adapter'" % p["id"])
             self.assertEqual(
                 p["runnable"],
@@ -1530,6 +1553,166 @@ class TestApp(unittest.TestCase):
             self.assertIsNone(app_mod._ensure_workdir(f))
         finally:
             shutil.rmtree(blocker, ignore_errors=True)
+
+
+class TestDeepSeekSpawnedModel(unittest.TestCase):
+    """The `start` frame's model must be the model the CLI was SPAWNED with.
+
+    THE BUG THIS EXISTS FOR. build_acp_args(agent_bin) took no model, so
+    `chosen_model` -- resolved, validated against the allow-list, and sent to
+    the client in the `start` frame -- reached Claude's argv and nothing at all
+    on DeepSeek's. Every DeepSeek session this panel ever ran displayed a model
+    the CLI had not been told about, while the fork quietly answered on its own
+    default (measured on the wire: deepseek-v4-flash).
+
+    ASSERTED AGAINST THE REAL ARGV, not against build_acp_args' return value.
+    That distinction is the whole point: the broken code computed the right
+    model and dropped it at the spawn, so any test that stopped short of the
+    spawn would have passed for the bug's entire life. qa/fake_acp_agent.py
+    records the argv it is actually launched with, from inside the launched
+    process, and this reads that file back.
+
+    Runs entirely against the stub: no DeepSeek binary, no key, no network.
+    """
+
+    proc = None
+    port = None
+    tmpdir = None
+    argv_path = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-dsmodel-")
+        sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+        sys.path.insert(0, HERE)
+        import fixture_seed  # noqa: E402
+        fixture_seed.seed(cls.tmpdir)
+
+        cls.argv_path = os.path.join(cls.tmpdir, "spawned-argv.json")
+        # An executable that IS the deepseek CLI as far as the panel is
+        # concerned. SUTRA_UI_DEEPSEEK_BIN is the documented first step of
+        # _bin_for(), so nothing here depends on a real install.
+        #
+        # Pointed straight at the stub rather than through a generated `sh -c`
+        # wrapper: this repo's path contains a space ("Joy Stephen"), and an
+        # unquoted interpreter path in such a wrapper resolves to /Users/.../Joy
+        # and dies as "ACP process closed stdout" -- a spawn failure that reads
+        # like a protocol failure. The stub carries its own shebang and imports
+        # only the stdlib, so it needs no interpreter path at all.
+        shim = os.path.join(HERE, "qa", "fake_acp_agent.py")
+        os.chmod(shim, 0o755)
+
+        cls.port = _free_port()
+        env = dict(os.environ)
+        env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        env.pop("ANTHROPIC_API_KEY", None)
+        env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
+        env["SUTRA_UI_DEEPSEEK_BIN"] = shim
+        # Makes deepseek `configured` (_deepseek_key_present) and satisfies
+        # ws_chat's key refusal. Never leaves the machine -- the stub answers
+        # before anything would be sent.
+        env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
+        env["SUTRA_FAKE_ACP_ARGV"] = cls.argv_path
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("deepseek-model server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+                cls.proc.wait(timeout=5)
+        if cls.tmpdir and os.path.isdir(cls.tmpdir):
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _run_turn(self, model):
+        """Send one message on a DeepSeek socket and return
+        (announced_model, spawned_argv)."""
+        from websockets.sync.client import connect
+        try:
+            os.unlink(self.argv_path)
+        except OSError:
+            pass
+        url = "ws://127.0.0.1:%d/ws/chat?provider=deepseek" % self.port
+        announced = None
+        with connect(url, open_timeout=10) as ws:
+            first = json.loads(ws.recv(timeout=10))
+            self.assertEqual(first.get("type"), "provider", first)
+            self.assertEqual(first.get("id"), "deepseek", first)
+            ws.send(json.dumps({"message": "hi", "model": model}))
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                f = json.loads(ws.recv(timeout=10))
+                if f.get("type") == "start":
+                    announced = f.get("model")
+                    break
+                if f.get("type") == "error":
+                    self.fail("socket refused the turn: %r" % (f,))
+        deadline = time.time() + 10
+        while time.time() < deadline and not os.path.exists(self.argv_path):
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(self.argv_path),
+                        "the CLI was never spawned, so there is no argv to check")
+        with open(self.argv_path, encoding="utf-8") as fh:
+            return announced, json.load(fh)
+
+    def test_announced_model_is_the_spawned_model(self):
+        announced, argv = self._run_turn("deepseek-v4-pro")
+        self.assertEqual(announced, "deepseek-v4-pro",
+                         "the start frame must carry the requested model")
+        self.assertIn("-m", argv,
+                      "the model never reached the CLI: argv is %r" % (argv,))
+        self.assertEqual(argv[argv.index("-m") + 1], announced,
+                         "the panel announced %r but spawned %r"
+                         % (announced, argv))
+
+    def test_an_unknown_model_is_refused_before_the_spawn(self):
+        """The fork does not validate -m: an unknown `deepseek-` id is
+        forwarded verbatim and anything else silently becomes deepseek-chat.
+        The allow-list is therefore the ONLY refusal, and it has to drop the
+        value rather than pass it on."""
+        announced, argv = self._run_turn("deepseek-v9-invented")
+        self.assertNotIn("deepseek-v9-invented", argv,
+                         "an uncatalogued id reached the CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "deepseek-v9-invented")
+        if announced:
+            self.assertEqual(argv[argv.index("-m") + 1], announced)
+        else:
+            self.assertNotIn("-m", argv,
+                             "no model was announced, so none may be spawned")
+
+    def test_the_disabled_vision_model_cannot_be_spawned(self):
+        """Listed so the operator knows it exists; refused so a session cannot
+        run on it while the panel has no image channel."""
+        announced, argv = self._run_turn("deepseek-v4-flash-vision-exp")
+        self.assertNotIn("deepseek-v4-flash-vision-exp", argv,
+                         "a listed-but-disabled model reached the CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "deepseek-v4-flash-vision-exp")
+
+    def test_a_claude_model_cannot_be_spawned_on_deepseek(self):
+        """The originating bug, at the argv. `opus` is catalogued -- for the
+        other provider -- so a shared allow-list would have let it through."""
+        announced, argv = self._run_turn("opus")
+        self.assertNotIn("opus", argv,
+                         "a Claude model reached the DeepSeek CLI: %r" % (argv,))
+        self.assertNotEqual(announced, "opus")
 
 
 class TestChatProviderParam(unittest.TestCase):
@@ -2050,10 +2233,12 @@ class TestModelAllowList(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_only_catalogued_ids_survive(self):
+        # Re-slice only: the provider these ids always belonged to is now named
+        # rather than implied. Same ids, same verdicts.
         for good in ("opus", "sonnet", "haiku"):
-            self.assertEqual(self.p.clean_model(good), good)
+            self.assertEqual(self.p.clean_model(good, "claude"), good)
         for bad in ("gpt-4", "claude-3", "", None, 7, [], "opus; rm -rf /"):
-            self.assertIsNone(self.p.clean_model(bad))
+            self.assertIsNone(self.p.clean_model(bad, "claude"))
 
     def test_save_rejects_an_unknown_model(self):
         with self.assertRaises(ValueError):
@@ -2063,17 +2248,17 @@ class TestModelAllowList(unittest.TestCase):
         """"" is a real choice, not a missing value -- it must persist, not raise."""
         self.p.save_settings(model="")
         self.assertEqual(self.p.load_settings()["model"], "")
-        self.assertIsNone(self.p.stored_model())
+        self.assertIsNone(self.p.stored_model("claude"))
 
     def test_model_round_trips(self):
         self.p.save_settings(model="haiku")
         self.assertEqual(self.p.load_settings()["model"], "haiku")
-        self.assertEqual(self.p.stored_model(), "haiku")
+        self.assertEqual(self.p.stored_model("claude"), "haiku")
 
     def test_catalog_ids_are_aliases_not_pinned_snapshots(self):
         """A pinned id goes stale and the panel then offers something that cannot
         run -- the exact failure providers.py exists to prevent."""
-        for m in self.p.MODELS:
+        for m in self.p.models_for("claude"):
             self.assertNotRegex(m["id"], r"\d{8}",
                                 "model %r looks like a dated snapshot id" % m["id"])
 
