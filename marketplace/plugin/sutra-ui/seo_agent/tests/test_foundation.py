@@ -359,8 +359,20 @@ try:
     out4 = index_site.run(ctx, domain=HOST, max_pages=5)
     rep4 = store.knowledge("catalogue-report.json") or {}
     ok("only max_pages are read and the rest are recorded", out4.get("page_count") <= 5 and rep4.get("found_urls", 0) > rep4.get("read_urls", 0), (rep4.get("found_urls"), rep4.get("read_urls")))
-    ok("the unread URLs still count as accounted for", {x["name"]: x for x in rep4["gates"]}["enumeration accounting"]["pass"], rep4["gates"][0]["detail"])
+    g4 = {x["name"]: x for x in rep4["gates"]}["enumeration accounting"]
+    # the original fails the run rather than ship a short catalogue; here the gate fails and says so
+    ok("a capped read FAILS the accounting gate, so a sample never reads as the whole site", not g4["pass"], g4["detail"])
+    ok("and the gate says how many were missed and that a cap did it",
+       "never read" in g4["detail"] and "capped the read at 5" in g4["detail"], g4["detail"])
     ok("the summary says how many were found vs read", "found" in out4.get("summary", "") and "read" in out4.get("summary", ""), out4.get("summary"))
+
+    print("\nthe cap is part of the stage reuse key")
+    out5 = index_site.run(ctx, domain=HOST, max_pages=0)
+    ok("raising the cap re-runs the settle instead of reusing the capped file",
+       out5.get("page_count") > out4.get("page_count"), (out4.get("page_count"), out5.get("page_count")))
+    rep5 = store.knowledge("catalogue-report.json") or {}
+    g5 = {x["name"]: x for x in rep5["gates"]}["enumeration accounting"]
+    ok("and with nothing left unread the gate passes again", g5["pass"], g5["detail"])
 
 except Exception as e:
     import traceback

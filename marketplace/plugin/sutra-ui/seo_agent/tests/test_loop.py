@@ -110,6 +110,9 @@ ok("approving the draft saves it, titled from the draft's own H1", saved and sav
 item = next((i for i in store.library_list() if i.get("id", i.get("item_id")) == saved["item_id"]), None) or {}
 ok("the library row carries the primary keyword", (item.get("primary_keyword") or item.get("meta", {}).get("primary_keyword")) == "cost per hire", item)
 ok("the run log says it was saved", any(e["type"] == "saved_to_library" and e.get("title") == saved["title"] for e in store.get_events(c3, r3)))
+# the data dir is shared with every other suite, so take this item back out again
+import shutil as _sh, os as _os
+_sh.rmtree(_os.path.join(store.library_dir(), saved["item_id"]), ignore_errors=True)
 shutil.rmtree(store.chat_dir(c3))
 
 print("\nevents in run 1:", evs)

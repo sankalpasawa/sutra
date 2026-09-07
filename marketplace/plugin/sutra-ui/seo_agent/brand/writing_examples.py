@@ -40,6 +40,36 @@ def tag_format(url):
     return next((k for rx, k in FORMAT_SIGNALS if rx.search(url)), OTHER_FORMAT)
 
 
+# A writing example is a published ARTICLE. Found live 2026-09-04: with the homepage classified
+# under an editorial type, Example 1 was the homepage, its title carried the nav's dot leaders
+# ("Hire for proven skills,not ········"), and its keyword was blank. The recipe asks for five real
+# published articles, so the pool is filtered here regardless of what type-roles said.
+_NOT_ARTICLE = ("/pricing", "/contact", "/about", "/careers", "/login", "/signup", "/sign-up",
+                "/demo", "/book-", "/partners", "/integrations", "/customers", "/terms",
+                "/privacy", "/security", "/author/", "/tag/", "/category/", "/sitemap")
+
+
+def _is_article(r, co, strict=True):
+    """The homepage, a commercial landing page and a junk-titled page are never examples.
+    strict=False keeps the hard exclusions and drops only the length floor."""
+    url = (r.get("url") or "").rstrip("/")
+    root = "https://" + (co.get("domain") or "").lstrip("www.").rstrip("/")
+    if not url or url == root or url == root.replace("https://", "http://"):
+        return False                                   # the homepage
+    path = url.split("//", 1)[-1].split("/", 1)
+    if len(path) < 2 or not path[1]:
+        return False                                   # a bare domain or a language root
+    low = url.lower()
+    if any(seg in low for seg in _NOT_ARTICLE):
+        return False
+    title = (r.get("title") or "").strip()
+    if not title or "\u00b7\u00b7" in title or "····" in title:
+        return False                                   # nav furniture scraped as a title
+    if not strict:
+        return True
+    return len((r.get("body") or "").split()) >= 300    # an example has to be long enough to learn from
+
+
 def candidates(co, say):
     cat = {}
     for r in cm.ok_pages(co.get("language_code")):
@@ -52,16 +82,36 @@ def candidates(co, say):
         say("No top-pages file", "the pool is the site index ordered by its own traffic column")
         pool = [{"url": r["url"], "traffic": r.get("traffic"), "top_keyword": r.get("top_keyword")}
                 for r in sorted(cm.ok_pages(co.get("language_code")), key=lambda r: -(r.get("traffic") or 0))]
-    out, seen = [], set()
+    out, seen, dropped = [], set(), 0
     for row in pool:
         r = cat.get(row["url"]) or cat.get(row["url"].rstrip("/"))
         if not r or r["url"] in seen or (etypes and r.get("type") not in etypes):
+            continue
+        if not _is_article(r, co):
+            dropped += 1
             continue
         seen.add(r["url"])
         out.append({"url": r["url"], "traffic": str(row.get("traffic_clean") or row.get("traffic") or ""),
                     "keyword": str(row.get("top_keyword") or r.get("top_keyword") or ""),
                     "format": tag_format(r["url"]), "title": r.get("title") or "", "body": r.get("body") or ""})
-    say("Built the pool", "%d editorial candidates (types: %s)" % (len(out), sorted(etypes) or "URL-signal fallback"))
+    if len(out) < WE_BATCH and dropped:
+        # a filter that empties the pool is worse than no filter: fall back to everything but the
+        # homepage and the junk-titled pages, and say the standard was relaxed
+        out, seen = [], set()
+        for row in pool:
+            r = cat.get(row["url"]) or cat.get(row["url"].rstrip("/"))
+            if not r or r["url"] in seen or (etypes and r.get("type") not in etypes):
+                continue
+            if not _is_article(r, co, strict=False):
+                continue
+            seen.add(r["url"])
+            out.append({"url": r["url"], "traffic": str(row.get("traffic_clean") or row.get("traffic") or ""),
+                        "keyword": str(row.get("top_keyword") or r.get("top_keyword") or ""),
+                        "format": tag_format(r["url"]), "title": r.get("title") or "", "body": r.get("body") or ""})
+        say("Relaxed the article filter", "too few full-length articles, so shorter pages are allowed in")
+    say("Built the pool", "%d editorial candidates (types: %s)%s"
+        % (len(out), sorted(etypes) or "URL-signal fallback",
+           "; %d pages dropped as not articles" % dropped if dropped else ""))
     return out
 
 

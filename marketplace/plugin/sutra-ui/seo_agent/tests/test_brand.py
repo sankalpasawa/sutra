@@ -266,6 +266,20 @@ ok("cta_rows(): at most three features per page, article-shaped URLs dropped",
    len(rows_) == 1 and len(rows_[0]["features"]) == 3 and dropped_[0][1].startswith("reads as an article"))
 
 print("\n5 writing-examples")
+# a writing example is a published article: never the homepage, a commercial page, or nav furniture
+from seo_agent.brand import writing_examples as _we
+_co = {"domain": "example.com", "brand": "Example"}
+ok("the homepage is never a writing example",
+   not _we._is_article({"url": "https://example.com/", "title": "Home", "body": "x " * 500}, _co))
+ok("a commercial landing page is never a writing example",
+   not _we._is_article({"url": "https://example.com/pricing/", "title": "Pricing", "body": "x " * 500}, _co))
+ok("a title full of nav dot leaders is never a writing example",
+   not _we._is_article({"url": "https://example.com/x/", "title": "Hire for skills,not \u00b7\u00b7\u00b7\u00b7", "body": "x " * 500}, _co))
+ok("a page too short to learn from is never a writing example",
+   not _we._is_article({"url": "https://example.com/short/", "title": "Short", "body": "x " * 50}, _co))
+ok("a real published article is",
+   _we._is_article({"url": "https://example.com/a-guide-to-skills/", "title": "A guide to skills", "body": "x " * 500}, _co))
+
 we = brand("writing-examples.md")
 ok("writing-examples.md has its title and instructions", we.startswith("# Example Writing Examples") and "**What Makes It Great**" in we)
 ok("five examples", we.count("## Example ") == 5, we.count("## Example "))

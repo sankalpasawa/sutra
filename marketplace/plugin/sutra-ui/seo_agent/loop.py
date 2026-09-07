@@ -48,6 +48,23 @@ def _system_prompt():
                .replace("{{MEMORY}}", mem_block))
 
 
+_BAL = {"at": 0.0, "v": None}
+
+
+def _cached_balance(dfs, ttl=300.0):
+    """The DataForSEO balance, at most once every ttl seconds. The system prompt is built on
+    every model turn and a network call per turn would be absurd."""
+    now = time.time()
+    if now - _BAL["at"] < ttl:
+        return _BAL["v"]
+    try:
+        _BAL["v"] = float(dfs.balance())
+    except Exception:  # noqa: BLE001 — never let a balance check break the prompt
+        _BAL["v"] = None
+    _BAL["at"] = now
+    return _BAL["v"]
+
+
 def _knowledge_block(site):
     """What is already on file, so the model never redoes setup that is done. Found live
     (2026-09-04): a fresh chat re-ran the whole setup because nothing told the model the site
@@ -66,6 +83,28 @@ def _knowledge_block(site):
                      if st.get("built") else "- Page index (meaning): not built. Run build_page_index (needs a Voyage key).")
     except Exception:  # noqa: BLE001
         pass
+    # what is connected, so the model says it up front instead of discovering it mid-run
+    try:
+        from .tools import _shared as _sh
+        from .tools import dfs as _dfs
+        mode = _sh.dfs_mode(_dfs)
+        if mode == "live":
+            bal = _cached_balance(_dfs)
+            lines.append("- DataForSEO: connected%s." % ("" if bal is None else ", balance $%.2f%s"
+                         % (bal, " (too low for paid steps; they will skip and say so)" if bal < 0.5 else "")))
+        else:
+            lines.append("- DataForSEO: NOT connected, so keyword volumes, difficulty and ranking "
+                         "data are demo placeholders, not real. Say that in your first message.")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .tools import voyage as _voy
+        lines.append("- Voyage (for finding your own pages to link to): connected."
+                     if _voy.available() else
+                     "- Voyage: no key, so internal links fall back to title-word matching.")
+    except Exception:  # noqa: BLE001
+        pass
+
     brief = store.knowledge("brand/writer-brief.md")
     lines.append("- Brand pack: built (writer brief on file)." if isinstance(brief, str) and brief.strip()
                  else "- Brand pack: not built. Run learn_brand after the site is read.")
@@ -100,7 +139,7 @@ def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
     store.patch_state(chat_id, run_id, **fields)
     # call_id rides on the event too, so the screen can pair a later "resumed" with the
     # exact question it answered instead of guessing by order.
-    store.emit(chat_id, run_id, "waiting", kind=kind, call_id=call_id, **payload)
+    store.emit(chat_id, run_id, "waiting", kind=kind, call_id=call_id, stage=stage, **payload)
 
 
 STAGE_FOR = {"index_site": "setup", "build_page_index": "setup", "learn_brand": "setup",
@@ -231,7 +270,7 @@ def step(chat_id, run_id):
             # --- an ordinary tool --------------------------------------------------------
             step_id = "s%d" % (int(time.time() * 1000) % 100000)
             store.emit(chat_id, run_id, "step_started", id=step_id,
-                       label=registry.label(name), tool=name)
+                       label=registry.label(name), tool=name, stage=STAGE_FOR.get(name))
             if STAGE_FOR.get(name):
                 store.patch_state(chat_id, run_id, stage=STAGE_FOR[name], current_step=name)
             t0 = time.time()
@@ -310,7 +349,7 @@ def resume(chat_id, run_id, answer):
             args = w.get("args") or {}
             step_id = "s%d" % (int(time.time() * 1000) % 100000)
             store.emit(chat_id, run_id, "step_started", id=step_id,
-                       label=registry.label(tool), tool=tool)
+                       label=registry.label(tool), tool=tool, stage=STAGE_FOR.get(tool))
             if STAGE_FOR.get(tool):
                 store.patch_state(chat_id, run_id, stage=STAGE_FOR[tool], current_step=tool)
             t0 = time.time()

@@ -44,7 +44,13 @@ def _derive_competitors(ctx, say):
     ever happens once."""
     voice = sh.brand_voice()
     if not voice:
-        return []
+        # the voice profile is the richest source, but the company record alone names what they
+        # sell and to whom, which is enough to work out who they are up against
+        co = sh.company()
+        about = " ".join(str(co.get(k) or "") for k in ("brand_oneliner", "niche_definition", "about")).strip()
+        if not about:
+            return []
+        voice = {"company": co.get("brand") or "", "what_they_sell": about}
     say("Working out who you compete with", "No competitor list on file yet")
     prompt = sh.fill(sh.load_prompt("derive_competitors"), voice=sh.voice_block(voice))
     try:
@@ -98,12 +104,16 @@ def _rival_lines(keywords):
 def run(ctx, competitor=None):
     say = sh.reporter(ctx, "suggest_topics")
     rows = _load_competitors()
-    if not rows:
+    if not rows and not competitor:
+        # derive from the brand pack rather than asking. Found live 2026-09-04: this tool asked
+        # the user to name a competitor on every first run, which is a question the agent can
+        # answer itself from what it already knows the company sells.
         rows = _derive_competitors(ctx, say)
-    if not rows:
-        return {"summary": "No competitors to study.",
-                "error": ("competitors.json is empty and there is no brand voice profile to "
-                          "work one out from. Run learn_voice first, or name a competitor.")}
+    if not rows and not competitor:
+        return {"summary": "Could not work out who you compete with.",
+                "error": ("No competitor list on file, and there is nothing on file about what "
+                          "this company sells to work one out from, so setup has probably not "
+                          "run. Run setup first, or name a competitor domain and I will use it.")}
 
     mode = sh.dfs_mode(dfs)
     if mode == "off":
@@ -111,7 +121,7 @@ def run(ctx, competitor=None):
                 "error": ("DataForSEO is not connected, so there are no real ranking keywords "
                           "to spark topics from. Add the login in Connections.")}
 
-    chosen = _pick(rows, competitor)
+    chosen = _pick(rows, competitor)   # a named competitor is honoured even with an empty list
     domain = chosen["domain"]
     say("Studying %s" % domain,
         "Rotating through the competitor list" if not competitor else "You asked for this one")

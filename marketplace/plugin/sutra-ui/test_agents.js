@@ -210,6 +210,91 @@ test("a library item opens read-only: no edit affordance, copy only", () => {
   assert.ok(/data-ag="copymd"/.test(html));
   assert.ok(/Saved one/.test(html));
 });
+test("the log groups its rows by stage, one line each, and only the running one is open", () => {
+  const evs = [
+    { t: 1, type: "message", text: "Setting up first." },
+    { t: 2, type: "step_started", id: "s1", label: "Reading the website", tool: "index_site", stage: "setup" },
+    { t: 3, type: "substep_finished", parent: "s1", label: "Opened the site", note: "https://x.com" },
+    { t: 4, type: "step_finished", id: "s1", ms: 120000, summary: "400 pages catalogued" },
+    { t: 5, type: "step_started", id: "s2", label: "Researching the topic", tool: "run_research", stage: "research" },
+  ];
+  const entries = A.agStepsFromEvents(evs, { status: "running" });
+  assert(entries.every(e => "stage" in e), "every row carries a stage");
+  assert(entries.find(e => e.id === "s1").stage === "setup", "the setup step is in setup");
+  assert(entries.find(e => e.id === "s2").stage === "research", "the research step is in research");
+  // the sentence before a step is that step's body, so it lands in the step's own stage
+  assert(entries.length === 2 && entries[0].lead === "Setting up first.", "the lead was consumed");
+
+  const groups = A.agStageGroups(entries);
+  assert(groups.length === 2, "one group per stage: " + groups.length);
+  assert(groups[0].stage === "setup" && groups[1].stage === "research", "in the order they happened");
+  assert(groups[0].label === "Setup" && groups[1].label === "Research", "each group is named in plain English");
+  assert(groups[0].steps === 1 && groups[0].ms === 120000, "a shut stage knows its step count and time");
+  assert(groups[0].summary === "400 pages catalogued", "and carries the last summary as its one line");
+  assert(groups[0].live === false && groups[1].live === true, "only the unfinished stage is live");
+
+  const html = A.agRunHtml({ run_id: "r1", status: "running", request: "go" }, evs, {});
+  const heads = html.match(/class="ag-stagehead/g) || [];
+  assert(heads.length === 2, "one clickable head per named stage: " + heads.length);
+  assert(html.indexOf("<b>Setup</b>") !== -1 && html.indexOf("<b>Research</b>") !== -1, "named on screen");
+  const bodies = html.match(/class="ag-stagebody" hidden/g) || [];
+  assert(bodies.length === 1, "the finished stage is shut and the running one is open: " + bodies.length);
+  assert(html.indexOf("400 pages catalogued") !== -1, "the shut stage still shows its one-line summary");
+});
+
+test("a stage the user opened stays open, and its rows come back", () => {
+  const evs = [
+    { t: 1, type: "step_started", id: "s1", label: "Reading the website", tool: "index_site", stage: "setup" },
+    { t: 2, type: "substep_finished", parent: "s1", label: "Opened the site", note: "https://x.com" },
+    { t: 3, type: "step_finished", id: "s1", ms: 1000, summary: "done" },
+    { t: 4, type: "step_started", id: "s2", label: "Researching", tool: "run_research", stage: "research" },
+  ];
+  const shut = A.agRunHtml({ run_id: "r1", status: "running" }, evs, {});
+  assert(shut.indexOf("Opened the site") === -1 || /ag-stagebody" hidden/.test(shut), "shut by default");
+  const open = A.agRunHtml({ run_id: "r1", status: "running" }, evs, { stageOpen: { "r1:setup": true } });
+  assert(open.indexOf("Opened the site") !== -1, "opening the stage shows its substeps");
+  assert((open.match(/class="ag-stagebody" hidden/g) || []).length === 0, "nothing hidden once both are open");
+});
+
+test("the research brief lists who researched it and every step's own file", () => {
+  const r = {
+    topic: "Cost per hire", keywords: { primary: { keyword: "cost per hire", volume: 210, kd: 7 } },
+    evidence: { cards: 483, questions: 16, searches: 48, dossier_words: 14856,
+                team: [{ role: "The Builder", focus: "how it is done" },
+                       { role: "The Sceptic", focus: "what it costs" }],
+                turns: [{ persona: "The Builder", question: "Which hires count toward the denominator?" }] },
+  };
+  A.S.ag.trail = [{ file: "curate.json", label: "The research conversation", note: "every question asked", bytes: 91234 },
+                  { file: "winners.json", label: "What the winners cover", note: "their common headings", bytes: 4096 }];
+  A.S.ag.workOpen = null;
+  const html = A.agResearchHtml(r);
+  assert(html.indexOf("Who researched this") !== -1, "the team has its own block");
+  assert(html.indexOf("The Builder") !== -1 && html.indexOf("The Sceptic") !== -1, "every researcher is named");
+  assert(/2 researchers asked 16 questions across 48 searches/.test(html), "and what they did: " + html.slice(html.indexOf("researchers") - 40, html.indexOf("researchers") + 80));
+  assert(html.indexOf("14,856-word dossier") !== -1, "the dossier is named with its size");
+  assert(html.indexOf("Which hires count toward the denominator?") !== -1, "a real question is shown");
+
+  assert(html.indexOf("The evidence trail") !== -1, "the trail has its own block");
+  assert(html.indexOf("The research conversation") !== -1 && html.indexOf("What the winners cover") !== -1,
+         "each file is named in plain English, never by filename alone");
+  assert(html.indexOf('data-ag="work" data-arg="curate.json"') !== -1, "and each row is clickable");
+  assert(html.indexOf("89 KB") !== -1, "sizes are human: " + (html.match(/\d+ [KM]?B/g) || []).join(","));
+
+  A.S.ag.workOpen = { label: "What the winners cover", data: { gaps_to_own: ["the formula"] } };
+  const open = A.agResearchHtml(r);
+  assert(open.indexOf("gaps_to_own") !== -1, "an opened file shows its real content");
+  assert(open.indexOf('data-ag="workclose"') !== -1, "and can be closed");
+  A.S.ag.trail = []; A.S.ag.workOpen = null;
+  assert(A.agResearchHtml(r).indexOf("The evidence trail") === -1, "no trail, no block");
+});
+
+test("a brief from before the research team shows no team block and never breaks", () => {
+  A.S.ag.trail = []; A.S.ag.workOpen = null;
+  const html = A.agResearchHtml({ topic: "Old run", primary_keyword: { keyword: "x" }, evidence_count: 12 });
+  assert(html.indexOf("Who researched this") === -1, "no team, no block");
+  assert(html.indexOf("Old run") !== -1 || html.indexOf("x") !== -1, "the old brief still renders");
+});
+
 test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
   assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 5);

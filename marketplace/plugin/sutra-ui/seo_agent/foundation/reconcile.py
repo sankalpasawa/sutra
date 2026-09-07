@@ -374,7 +374,8 @@ def run(fx, site, say):
                  robots=len(dropped["robots"]), non_content=len(non_content), unread=len(unread),
                  fan_in_flagged=len(flagged))
     doc = {"domain": site["host"], "pages": {u: pages[u] for u in sorted(pages)},
-           "dropped": dropped, "fan_in": flagged, "fetch": verdict, "stats": stats}
+           "dropped": dropped, "fan_in": flagged, "fetch": verdict, "stats": stats,
+           "capped_at": cap or None}   # the cap this file was actually built under, for the gate
     store.write_json(os.path.join(work, "reconciled.json"), doc)
     say("Settled the page list", "%d real pages; dropped %d gone, %d empty templates, %d duplicate addresses, %d off-site"
         % (stats["final"], stats["dead"], stats["soft_404"], stats["collapsed"], stats["offsite"]))

@@ -589,6 +589,25 @@ async function boot() {
   // The DMG carries the Claude Code plugin as well as the app. Installing it is
   // deliberately NOT allowed to stop the launch: if ~/.claude is unwritable or
   // managed elsewhere, the panel still opens and the notice says what happened.
+  // A staged runtime is made once and never updated, so a venv from before a dependency was
+  // added stays broken forever and the failure surfaces deep inside a run ("No module named
+  // 'bs4'" on every page). Check at launch, repair silently if we can, and say it plainly if
+  // we cannot. A bundled payload ships complete, so this only ever does work on a staged one.
+  let missing = provision.missingDeps(RUNTIME.python);
+  if (missing.length) {
+    console.error("[sutra] missing python deps:", missing.map(m => m[0]).join(", "));
+    const fixed = provision.repairDeps(RUNTIME);
+    if (fixed.ok) {
+      console.error("[sutra] repaired the runtime from requirements.txt");
+      missing = [];
+    } else {
+      console.error("[sutra] could not repair:", fixed.why);
+    }
+  }
+  if (missing.length) {
+    return fail("Sutra is missing something it needs", provision.depsMessage(missing));
+  }
+
   const wasProvisioned = provision.alreadyProvisioned();
   pluginReport = provision.installPlugin({ payload: RUNTIME.payload });
   if (pluginReport.status === "failed") {

@@ -217,24 +217,24 @@ does inside itself.
 
 ### The rules
 
-8. **The tool list is the Tools screen.** Every tool has a plain row: what it does,
+7. **The tool list is the Tools screen.** Every tool has a plain row: what it does,
    when it runs, what it needs, how long it takes. That row is the only description
    of it anywhere. The AI gets a shorter view with no mention of cost. One list,
    two audiences, nothing to drift out of date.
 
-9. **Anything that touches the internet goes through one door.** We fixed a blocked
+8. **Anything that touches the internet goes through one door.** We fixed a blocked
    website in the crawler and it stayed broken in two other places that fetched
    pages on their own, so every source in the article came back unreadable on a site
    we had already read successfully. Now there is one helper and everything uses it.
    Same for anything paid, and for calling the AI.
 
-10. **Paid steps check the balance first and say when they skipped.** No stopping to
+9. **Paid steps check the balance first and say when they skipped.** No stopping to
     ask about credits. If there is not enough, the step skips that bit, says so in
     plain English, and the job carries on. On the live run the balance was below
     zero, so it used demo numbers, labelled them demo everywhere they appeared, and
     still finished the article.
 
-11. **Nothing is made up. Code counts, the AI judges, a source backs every number.**
+10. **Nothing is made up. Code counts, the AI judges, a source backs every number.**
     - Code counts. Word counts, link counts, page lists, match scores. Never ask the
       AI to count. It approximates.
     - The AI judges. Is this relevant, is this good, does this fit. Real judgement,
@@ -245,7 +245,7 @@ does inside itself.
       after, and rejects an edit that introduced a new one. It fired on the live run
       when the editor invented 14,000 and 4,000. The retry was clean.
 
-12. **Cut the smallest piece, and protect the valuable ones.** The plan's filter is
+11. **Cut the smallest piece, and protect the valuable ones.** The plan's filter is
     the example, and it is a step inside the plan-building tool, not a tool of its
     own:
     - The unit is one fact, never a section. A good fact hides inside a bad section,
@@ -272,20 +272,20 @@ does inside itself.
 Knowledge is what the agent learned about your company once and keeps. Different
 from Memory, which is what you told it to do.
 
-13. **Setup runs once per company and picks up where it left off.** Setup is slow,
+12. **Setup runs once per company and picks up where it left off.** Setup is slow,
     about an hour for a 400-page site, so it runs once. Every stage writes its own
     file. Run it again and each stage checks whether its file is already there,
     reuses it, and says "reused from the last run". If it crashes you lose only the
     stage that was running, not the hour. Rebuilding is something you ask for out
     loud. It never happens by accident.
 
-14. **Knowledge comes from your own material, the same way every time.** The brand
+13. **Knowledge comes from your own material, the same way every time.** The brand
     files are not the AI writing from general knowledge. They are built by twelve
     builders reading your actual pages. Each one is a file you can open, read and
     edit in the app, and once you edit it, your version is the truth. Nothing
     overwrites it.
 
-15. **Find things by meaning, not by matching words.** Whenever the agent has to
+14. **Find things by meaning, not by matching words.** Whenever the agent has to
     pick "the right one" (a page to link to, a passage to quote) it searches by
     meaning and then double-checks against the full page text. Word matching was
     tried and measured in the original workflow and it was wrong: "work sample test"
@@ -293,7 +293,7 @@ from Memory, which is what you told it to do.
     is 400 pages and 1,050 passages. The live article found 31 candidate pages by
     meaning and placed 6, each with its match score shown to you.
 
-16. **You can see everything the agent knows.** The company record you can edit, the
+15. **You can see everything the agent knows.** The company record you can edit, the
     full page list with a search box, the coverage checks and whether they passed,
     the meaning index with a visual map, and every brand file. No hidden state.
 
@@ -301,7 +301,7 @@ from Memory, which is what you told it to do.
 
 ## Memory
 
-17. **Memory is a short list of your standing rules, and the rules reach the work.**
+16. **Memory is a short list of your standing rules, and the rules reach the work.**
     Save a rule once ("never open with a question", "British spelling") and it goes
     into every step that writes or shapes words, and into the research steps that
     pick the topic and the angle. The easy mistake is to put your rules only in the
@@ -309,7 +309,7 @@ from Memory, which is what you told it to do.
     writes a section is a separate call to the AI, and it has never heard of it. A
     rule that only reaches the chat is decoration.
 
-18. **Rules are switched off, never quietly dropped.** The list is on screen, each
+17. **Rules are switched off, never quietly dropped.** The list is on screen, each
     rule has a toggle, and only the ones switched on are used.
 
 ### How a saved rule actually reaches a prompt, and what it is not
@@ -351,7 +351,7 @@ what turns it into a real rule.
 
 ## The run folder
 
-19. **The folder is the whole truth.** One job, one folder. Next to the three files
+18. **The folder is the whole truth.** One job, one folder. Next to the three files
     described under "The loop" sit two more things. The outputs you review, like the
     brief, the plan and the draft. And every in-between file, one per step: 23 of
     them on the live run. Why keep all that? So you can point at any sentence in the
@@ -359,14 +359,14 @@ what turns it into a real rule.
     evidence step, which came from reading that page. Those files are also what make
     a rerun cheap, because each step checks its own file first.
 
-20. **Files are written safely.** Never write straight into the real file. Write a
+19. **Files are written safely.** Never write straight into the real file. Write a
     temp file next to it, then rename it over the top. Renaming is instant and
     cannot half-happen, so the file is either the old one or the new one, never a
     broken mix. This matters because resume trusts "the file is there, so that step
     is done". Without it, a crash mid-write leaves half a file that the next run
     reads as finished. That is silent corruption, the worst kind.
 
-21. **The outputs are what you review and what we test.** The screen shows them, and
+20. **The outputs are what you review and what we test.** The screen shows them, and
     the tests render them from a real run we saved. Add something to the screen that
     the output does not actually carry and the test fails straight away, instead of
     you finding a blank box in the app.
@@ -375,7 +375,7 @@ what turns it into a real rule.
 
 ## Checkpoints
 
-22. **Few, fixed, and the stop is enforced by code.** One in setup, the brand files.
+21. **Few, fixed, and the stop is enforced by code.** One in setup, the brand files.
     Four per article: the topic, the research, the plan, the draft. Few on purpose,
     because too many and you stop reading them, which is worse than having none.
 
@@ -389,12 +389,12 @@ what turns it into a real rule.
       step whose previous step was never approved is about ten lines of work, and
       until that is written this rule is half instruction.
 
-23. **Approve, edit, or send it back, right there.** When you edit something in the
+22. **Approve, edit, or send it back, right there.** When you edit something in the
     panel and approve, the code reads **the file on disk** and hands the AI that,
     not what the AI remembers writing. Your edit is the truth. If instead you ask for
     changes, your words go back as the next instruction and it redoes that step.
 
-24. **The agent may ask one question of its own when it spots something real.** On
+23. **The agent may ask one question of its own when it spots something real.** On
     the live run the plan came out with no formula section, for an article about how
     to calculate a formula. The agent noticed and asked before starting a
     forty-minute write. That is a good question: it saved real time, and nobody would
@@ -412,7 +412,7 @@ what turns it into a real rule.
     not built, is that nothing checks the plan still answers the question the main
     keyword asks. The only thing that caught it was the AI noticing.
 
-25. **Approving is an action, not a message.** If a click is meant to make something
+24. **Approving is an action, not a message.** If a click is meant to make something
     happen, the code does it, and the AI is told afterwards.
 
     The bug behind this rule: approving the draft used to just tell the AI
@@ -425,23 +425,43 @@ what turns it into a real rule.
 
 ## The screen
 
-26. **The screen shows the folder and keeps nothing.** Close the app mid-run and
+25. **The screen shows the folder and keeps nothing.** Close the app mid-run and
     open it again: same picture, because the picture was never in the app, it was on
     disk. The rule while building: if you catch yourself storing something in the
     screen, it belongs in the folder instead.
 
-27. **Plain English wherever you read.** Step names, tool rows, errors, questions.
+26. **Plain English wherever you read.** Step names, tool rows, errors, questions.
     Not "HTTP 429" but "the site refused the crawler, so I am reading it through the
     app's browser". Not a tool called build_page_index but "indexing the meaning of
     every page so I can find your own pages to link to later". Errors most of all,
     because that is when you most need to know what happened.
 
-28. **Honest numbers, clearly labelled.** No number may look more solid than it is.
+27. **Honest numbers, clearly labelled.** No number may look more solid than it is.
     On the demo run, every step that touched a fake figure said so, and the brief
     carried the warning at the top. Same for checks: one that could not run says "not
     checked" and why, instead of pretending. A coverage check used to fail on every
     demo run because demo data invents pages that do not exist. It now says "not
     checked: the traffic is demo data".
+
+28. **If a setting changed the file, it belongs in the "have we done this already" check.** Ours
+    only checked the website name, so when you once said "just read 400 pages", every later run
+    reused that 400 and reported it as complete.
+
+29. **A partial answer must fail its check, not pass with a note.** Ticking the box and mentioning
+    the shortfall underneath is the same as hiding it.
+
+30. **"The file exists" is not the same as "the file is still right".** Our page index checked only
+    that it existed, so when the site went from 400 pages to 11,703 it kept the old 400 and could
+    only ever link to the first 400 pages.
+
+31. **Research means asking questions, not looking up keywords.** Looking things up can only find a
+    sentence that already exists on one page. A team of researchers interviewing an expert, each
+    question building on the last answer, finds things no single page says. On the same subject: 7
+    searches became 16 questions, and 256 of 483 facts came from two or more sources.
+
+32. **A run should end in something you can read.** If the only way to check the work is to open raw
+    data files, nobody checks. Every step keeps its own file, and the app names them in plain
+    English so you can click one open.
 
 ---
 

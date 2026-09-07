@@ -104,6 +104,10 @@ function resolveRuntime(resourcesPath, appDataDir) {
   if (fs.existsSync(sPy) && fs.existsSync(path.join(sApp, "app.py"))) {
     return { kind: "staged", appDir: sApp, python: sPy, payload: null, stamp: null };
   }
+  // A staged runtime is created once by install.sh and never updated, so a venv made before a
+  // dependency was added stays without it forever. Found 2026-09-04 on a second machine: the
+  // crawler died on every page with "No module named 'bs4'" because beautifulsoup4 arrived in
+  // 2.239.0 and that venv predated it. checkDeps() below repairs this at launch.
   return {
     kind: "none",
     why: `No runtime found.\n\nLooked for a bundled one at:\n  ${bPy}\n` +
@@ -237,7 +241,69 @@ function alreadyProvisioned(home) {
   return fs.existsSync(receiptPath(home || os.homedir()));
 }
 
+/* Every module the app cannot run without, and the plain sentence for a person when it is
+   missing. Kept here, beside the runtime, because this is the only place that knows which
+   Python is about to be used. */
+const REQUIRED = [
+  ["fastapi", "the web server the panel talks to"],
+  ["uvicorn", "the web server the panel talks to"],
+  ["httpx", "fetching web pages"],
+  ["bs4", "reading the HTML of a page (beautifulsoup4)"],
+  ["numpy", "the page index that finds your own pages to link to"],
+];
+
+/* Which REQUIRED modules the given python cannot import. [] means it is fine. */
+function missingDeps(python, execFileSync) {
+  const run = execFileSync || require("child_process").execFileSync;
+  const code = "import importlib,json,sys\n" +
+    "names=" + JSON.stringify(REQUIRED.map(r => r[0])) + "\n" +
+    "out=[]\n" +
+    "for n in names:\n" +
+    "    try: importlib.import_module(n)\n" +
+    "    except Exception: out.append(n)\n" +
+    "sys.stdout.write(json.dumps(out))\n";
+  try {
+    const raw = run(python, ["-c", code], { encoding: "utf8", timeout: 30000 });
+    const names = JSON.parse(String(raw).trim() || "[]");
+    return REQUIRED.filter(r => names.indexOf(r[0]) !== -1);
+  } catch (e) {
+    return [];      // a python we cannot even ask is a different failure, reported elsewhere
+  }
+}
+
+/* Install the app's requirements into a STAGED runtime. Never touches a bundled payload: that
+   one ships complete and is read-only once signed. Returns {ok, why}. */
+function repairDeps(runtime, opts) {
+  const o = opts || {};
+  const run = o.execFileSync || require("child_process").execFileSync;
+  if (!runtime || runtime.kind !== "staged") {
+    return { ok: false, why: "only a staged runtime can be repaired from here" };
+  }
+  const req = path.join(runtime.appDir, "requirements.txt");
+  if (!fs.existsSync(req)) return { ok: false, why: "no requirements.txt beside app.py" };
+  try {
+    run(runtime.python, ["-m", "pip", "install", "--quiet", "--no-input", "-r", req],
+        { encoding: "utf8", timeout: 300000 });
+    const still = missingDeps(runtime.python, o.execFileSync);
+    return still.length ? { ok: false, why: "still missing: " + still.map(r => r[0]).join(", ") }
+                        : { ok: true, why: "" };
+  } catch (e) {
+    return { ok: false, why: String((e && e.message) || e).slice(0, 300) };
+  }
+}
+
+/* What to tell a person when a repair could not fix it. */
+function depsMessage(missing) {
+  const lines = missing.map(r => "  - " + r[0] + ", used for " + r[1]);
+  return "Sutra is missing " + (missing.length === 1 ? "a Python library" : "some Python libraries") +
+    " it needs:\n\n" + lines.join("\n") +
+    "\n\nThis happens when the app is running an older setup that was made before these were " +
+    "added. The surest fix is to download the latest Sutra DMG and drag it to Applications, " +
+    "which ships everything it needs inside the app.";
+}
+
 module.exports = {
   resolveRuntime, installPlugin, alreadyProvisioned, receiptPath,
+  REQUIRED, missingDeps, repairDeps, depsMessage,
   cmpVersion, MARKETPLACE, PLUGIN_NAME,
 };

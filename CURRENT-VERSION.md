@@ -1,8 +1,19 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-04
+**status**: active · **updated**: 2026-09-05
 
-## v2.241.0 (2026-09-04, HEAD)
+## v2.242.0 (2026-09-05, HEAD)
+
+The SEO Writer, audited against the workflow it was ported from and corrected. Research is
+now a team of four interviewing an expert rather than a keyword lookup, and the facts are
+lifted from the cited dossier they produce, so a fact can cite two sources. The catalogue
+reads the whole site (a cap given once had been frozen into the cache and every coverage
+check still passed); Testlify went 400 pages to 11,734, and the brand pack rebuilt on it is
+richer than the original. The run log groups by stage, a research run ends in documents with
+a clickable evidence trail, and the app repairs its own runtime instead of dying inside a
+crawl on a missing library.
+
+## v2.241.0 (2026-09-04)
 
 Chat distinguishes a running turn from a queued one.
 

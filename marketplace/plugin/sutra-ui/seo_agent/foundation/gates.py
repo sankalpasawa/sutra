@@ -79,7 +79,18 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
     if not is_wp and not problems:
         detail = "no content-system counts to check; every sitemap URL is accounted for"
     if dropped.get("unread"):
-        detail += "; %d URLs found but not read (max_pages %s)" % (len(dropped["unread"]), site.get("max_pages"))
+        # The original fails the run rather than ship a short catalogue ("a short catalogue must
+        # never look like success"). Found live 2026-09-04: 400 of 11,917 URLs were read and all
+        # four gates reported PASS, so every brand file built from it was thin for a reason
+        # nothing on screen admitted. The cap printed is the one that actually shaped this run,
+        # not whatever the current call asked for.
+        cap = (reconciled.get("capped_at") or reconciled.get("max_pages")
+               or (reconciled.get("_key") or {}).get("max_pages") or site.get("max_pages"))
+        problems.append("%d of the %d URLs found were never read%s, so this catalogue is a "
+                        "sample, not the site"
+                        % (len(dropped["unread"]), len(dropped["unread"]) + len(reconciled.get("pages") or {}),
+                           " (you capped the read at %s)" % cap if cap else ""))
+        detail = "; ".join(problems)
     gates.append({"name": "enumeration accounting", "pass": not problems, "detail": detail})
 
     # ---- gate 2: response integrity --------------------------------------------------------------

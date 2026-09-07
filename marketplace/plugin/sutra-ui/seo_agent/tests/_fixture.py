@@ -113,6 +113,17 @@ def setup():
     store.set_data_dir(os.environ["SEO_AGENT_DATA"])
     if not store.knowledge("site_index.json"):
         store.save_knowledge("site_index.json", SITE_INDEX)
+    # A real install always has a company record after setup, and several tools read it (the
+    # competitor derivation, the prompts' brand tokens). Without one the suites test a state
+    # that cannot occur once setup has run.
+    rec = store.knowledge("brand/company.json") or {}
+    if not rec.get("brand_oneliner"):
+        rec.setdefault("brand", "Example")
+        rec.setdefault("domain", "example.com")
+        rec["brand_oneliner"] = "Example — practitioner-led business programmes for founders and senior operators"
+        rec.setdefault("niche_definition", "executive education — cohort programmes for operators")
+        rec.setdefault("about", "Practitioner-led programmes for people who already run things.")
+        store.save_knowledge("brand/company.json", rec)
     import os as _os
     if not _os.path.exists(_os.path.join(store.knowledge_dir(), "content-database.jsonl")):
         plant_content_database()
@@ -1074,6 +1085,23 @@ def _research_json(p):
                 "why_changed": "the old angle described the curriculum, not the outcome"}
     if "THE SPINE" in p and '"spine":' in p:                                    # build-spine
         return {"spine": "A programme is worth what changes in the six months after it, and here is how to measure that."}
+    if '"researchers"' in p:                                                   # pick-researchers
+        return {"researchers": [
+            {"role": "The Builder", "focus": "how the measurement is actually done, step by step"},
+            {"role": "The Sceptic", "focus": "what it costs, when it fails, who it disadvantages"},
+            {"role": "The Evidence One", "focus": "whether it works, and how anyone would know"},
+            {"role": "The Practitioner", "focus": "the awkward Monday-morning questions"}]}
+    if "outlining a RESEARCH DOSSIER" in p or "OUTLINING A RESEARCH DOSSIER" in p.upper():   # dossier-outline
+        n = len(_re.findall(r"^\d+\. \[", p, _re.M)) or 1
+        half = max(1, n // 2)
+        return {"sections": [{"title": "What the measurement actually costs", "questions": list(range(1, half + 1))},
+                             {"title": "Whether it works, and how anyone would know", "questions": list(range(half + 1, n + 1))}]}
+    if "--- SECTION TEXT ---" in p:                                            # harvest-dossier
+        text = p.split("--- SECTION TEXT ---", 1)[1].split("═══", 1)[0].strip()
+        sents = [x.strip() for x in _re.split(r"(?<=[.!?])\s+", text) if len(x.strip()) > 30][:4]
+        cards = [{"gloss": "dossier fact %d" % (i + 1), "verbatim": x} for i, x in enumerate(sents)]
+        cards.append({"gloss": "a quote the model made up", "verbatim": FAKE_VERBATIM})
+        return cards
     if "--- PAGE TEXT ---" in p:                                               # harvest-evidence
         text = p.split("--- PAGE TEXT ---", 1)[1].strip()
         sents = [s.strip() for s in _re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 20][:4]
@@ -1141,7 +1169,29 @@ def _research_json(p):
     return None
 
 
+def _research_conversation_text(p):
+    """The three text calls of the research conversation, plus the dossier section write."""
+    if "YOUR PERSONA BESIDES BEING A WRITER" in p:                             # ask-question
+        n = p.count("You: ")
+        return "Question %d: what does this actually cost a team of fifty?" % (n + 1)
+    if "What do you type in the search box?" in p:                             # question-to-queries
+        return "- cost per hire benchmark 2026\n- recruiting cost breakdown by role\n- agency fee percentage"
+    if "You are an expert who can use information effectively" in p:           # answer-question
+        return ("The published band runs 15 to 25 percent of first-year salary [1]. A mid-size team "
+                "reports a blended figure near $4,700 per hire [2]. Both sources agree the internal "
+                "share is the one teams forget to count [1][2].")
+    if "CAPTURE THE EVIDENCE, not to" in p:                                    # write-dossier-section
+        return ("## What the measurement actually costs\n\n"
+                "The published agency band runs 15 to 25 percent of first-year salary [1]. "
+                "A blended internal figure near $4,700 per hire is reported for mid-size teams [2]. "
+                "Read together, the two sources show the internal share is the one teams forget [1][2].")
+    return None
+
+
 def _research_text(p):
+    c = _research_conversation_text(p)
+    if c is not None:
+        return c
     if "```readlist" in p:                                                     # serp-snapshot, the fixed shape
         extract = _block_json(p, "INPUT (raw SERP extract, JSON):", "DO THIS:")
         urls = [r["url"] for r in (extract.get("top_organic") or []) if r.get("url")][:3]

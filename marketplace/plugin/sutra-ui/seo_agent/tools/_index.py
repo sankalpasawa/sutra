@@ -126,8 +126,18 @@ def build(pages, say=None, reindex=False):
     # --- TITLE index: one vector per page, one shot ---
     tdir = _title_dir()
     tvec_path = os.path.join(tdir, "vectors.npy")
-    if os.path.exists(tvec_path) and not reindex:
-        say("Title index already built", "%d pages, kept" % sum(1 for _ in open(os.path.join(tdir, "meta.jsonl"))))
+    have_titles = 0
+    if os.path.exists(tvec_path):
+        try:
+            have_titles = sum(1 for _ in open(os.path.join(tdir, "meta.jsonl")))
+        except OSError:
+            have_titles = 0
+    # The body index embeds only what is new, but the TITLE index is one shot over every page, so
+    # "the file exists" is not enough: it must cover the pages we have now. Found live 2026-09-04,
+    # when the catalogue went 400 -> 11,703 and the title index quietly stayed at 400, so an
+    # internal link could only ever match one of the first 400 titles.
+    if have_titles == len(pages) and not reindex:
+        say("Title index already built", "%d pages, kept" % have_titles)
     else:
         os.makedirs(tdir, exist_ok=True)
         tvecs = voyage.embed([t if t else u for u, t, b in pages], "document")

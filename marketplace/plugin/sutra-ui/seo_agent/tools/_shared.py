@@ -93,7 +93,24 @@ def bullets(items, empty="(nothing on file)"):
 # ---- knowledge -------------------------------------------------------------------------
 
 def brand_voice():
-    return store.knowledge("brand_voice.json") or {}
+    """The voice profile as a dict: {company, summary, traits, avoid, examples, ...}.
+
+    Derived from the brand pack's own brand-voice.md, which is what learn_brand actually
+    writes. Found live 2026-09-04: this used to read a legacy knowledge/brand_voice.json
+    that the ported setup never writes, so every caller silently got {} and suggest_topics
+    failed with "no brand voice profile" on a fully built brand pack.
+    """
+    legacy = store.knowledge("brand_voice.json")
+    if isinstance(legacy, dict) and legacy:
+        return legacy
+    text = brand_file("brand-voice.md")
+    if not text.strip():
+        return {}
+    try:
+        from ..brand import brand_voice as _bv
+        return _bv.profile(company(), text) or {}
+    except Exception:  # noqa: BLE001 — a derived profile must never break the caller
+        return {"company": (company() or {}).get("brand", ""), "summary": " ".join(text.split()[:120])}
 
 
 def voice_block(voice=None, limit=2500):

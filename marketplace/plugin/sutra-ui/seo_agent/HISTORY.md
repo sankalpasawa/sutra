@@ -146,6 +146,54 @@ is the build contract every layer followed.
 13. The agent closed the demo run with "Saved. It's in the Library" and the Library was empty: saving was a button, and the model narrated a step it never took. Approving the draft now saves it in code (`loop.save_to_library`, the same function the button calls), the run log gets a `saved_to_library` row, the model only learns of it from the tool result, and the item is titled from the draft's own H1 rather than the blueprint's. Loop suite +6.
 14. A fresh chat on the finished site went straight to research, no setup re-run, once the Knowledge block was in the prompt (checked live after the restart).
 
+### 2.242.0 — the audit against the original, and what it found (2026-09-04)
+
+Five readers were pointed at `Backlink gets Automated` and the port side by side, one per layer.
+The port turned out faithful in most places (every DataForSEO endpoint byte-identical, all of
+engine 13's code discipline intact, 20 of 23 prompts differing only by the memory block) and
+badly short in two. Both are now closed.
+
+15. **The catalogue was 400 pages of an 11,917-URL site, and every gate said PASS.** The 400 came
+    from the user's own first message ("read at most 400 pages") and then froze: the stage reuse
+    key compared only the domain, so every later uncapped run reused the capped file. The report
+    contradicted itself in writing, "11517 URLs found but not read (max_pages 3000)" beside
+    "read: 400", and still passed. Fixed three ways: the reuse key carries the run parameters, the
+    default cap is gone (the original ships none), and URLs found but never read now FAIL the
+    accounting gate. The original's rule, quoted in its own plan: a short catalogue must never look
+    like success. Re-crawled: 11,734 pages, all 13,016 URLs read, 99.7% with text.
+16. **Every thin brand file was downstream of that.** stories.md was empty because the 46
+    customer-story pages were never crawled; brand-cards.json was empty because it reads stories;
+    features.md was one-seventh the original's Integrations section because the builder saw 3
+    integration pages instead of 153; writing-examples picked the homepage because type-roles had
+    collapsed to one type. Nothing was wrong with the builders. All twelve are faithful ports.
+17. **The research asked no questions.** `evidence.py` searched the article's own ranking keywords
+    and read what came back: 7 searches where STORM asked 36 generated questions across 132 pages.
+    A card could only ever be a sentence copied off one page. Ported the method as plain Python
+    (`research/curate.py`, `research/dossier.py`): four mixed personas interview an expert, each
+    question seeing the previous answers, then a written dossier, then cards lifted from that.
+    Live on real pages: 16 questions, a 14,856-word dossier, 483 cards, **256 of them citing more
+    than one source**. The shim is deliberately not ported; it exists only because dspy speaks the
+    OpenAI HTTP API.
+18. **The run ended with data, not documents.** The original writes `research-doc-<slug>.md`,
+    `bundle-<slug>.md` and a numbered proof folder. The port computed every input and rendered
+    none, so a run could only be checked by reading JSON. `research/render.py` writes both, and the
+    trail names all twenty working files in plain English, clickable in the panel.
+
+### Found by looking at the screen, not by testing (this release)
+
+19. The catalogue opened on a screen of red. Only 31 of 11,734 pages failed to extract, but with no
+    traffic pulled every page sorted equal, so the failures came out on top.
+20. The title index checked only that its file existed, not that it covered the pages we have. The
+    catalogue went 400 to 11,703 and the title index quietly stayed at 400, so an internal link
+    could only ever match one of the first 400 titles.
+21. `serp_advanced` had no balance guard, so a research conversation would have fired ~48 requests
+    at a balance of -$0.07 for every one to be refused. The first version of that guard compared
+    against a constant that does not exist, failed open, and was caught by running it.
+22. The bundle's numbered pointers filtered out missing brand files without renumbering, so the
+    list read "1." then "10.".
+23. The research conversation's progress line reported every page as newly read even when it had
+    been read already.
+
 ### Not done, and said so
 
 - STORM does not ship. `research/evidence.py` is the named substitute (see Layer 03).

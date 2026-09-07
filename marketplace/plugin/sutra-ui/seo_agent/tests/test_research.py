@@ -54,6 +54,7 @@ ok("the page index is built for the test", _index.status()["built"])
 
 print("\nthe cannibalisation flag")
 from seo_agent.research import cannibalisation
+from seo_agent.research import render
 hit = cannibalisation.check("Operator Education", _fixture.SITE_INDEX)
 ok("a keyword we hold in the top 10 is flagged with rank and url", hit == {"keyword": "Operator Education", "rank": 4, "url": "https://example.com/"}, hit)
 ok("a page-2 ranking is not a flag", cannibalisation.check("leadership programme", _fixture.SITE_INDEX) is None)
@@ -167,6 +168,53 @@ own_cards = [c for c in cards if c["tag"] == "ownpage"]
 ok("evidence cards exist with verbatim, source and tag", ev_cards and all(c["verbatim"] and c["source_urls"] for c in ev_cards))
 ok("the invented quote was dropped by the substring check",
    not any(c["verbatim"] == _fixture.FAKE_VERBATIM for c in cards) and rs["evidence"]["dropped_verbatims"] > 0)
+# ---- the research conversation: a team, not a keyword lookup -------------------------------
+evd = rs["evidence"]
+roles = [r["role"] for r in (evd.get("team") or [])]
+ok("a research team was picked, not a single searcher", len(roles) >= 3, roles)
+ok("the team is mixed, never four people who agree", len(set(roles)) == len(roles), roles)
+ok("every researcher asked more than one question", evd["questions"] >= len(roles) * 2, evd["questions"])
+ok("each question became its own searches", evd["searches"] >= evd["questions"], (evd["searches"], evd["questions"]))
+turns = evd.get("turns") or []
+ok("every turn records the question, who asked it and what was searched",
+   turns and all(t.get("question") and t.get("persona") and t.get("queries") for t in turns))
+ok("the conversation carries forward: later questions are not the first one repeated",
+   len({t["question"] for t in turns}) > 1, len({t["question"] for t in turns}))
+ok("a dossier was written from what the team retrieved", evd.get("dossier_words", 0) > 0, evd.get("dossier_words"))
+ok("and its sources are numbered once for the whole dossier",
+   evd.get("dossier_sources") and [x["n"] for x in evd["dossier_sources"]] == list(range(1, len(evd["dossier_sources"]) + 1)))
+doss = store.load_artifact(chat, run, "dossier.md") or ""
+ok("the dossier is saved where a person can read it", "## Sources" in doss and len(doss.split()) > 40, len(doss.split()))
+ok("the cards came out of the dossier, not off raw pages",
+   ev_cards and any(c["origin"].startswith("dossier/") for c in ev_cards),
+   [c["origin"] for c in ev_cards[:3]])
+ok("a card cites the source its [n] marker names",
+   all(c["source_urls"] for c in ev_cards if c["origin"].startswith("dossier/")))
+ok("the run says which route the evidence took",
+   any("researchers interviewing" in n for n in rs["notes"]), rs["notes"])
+
+# ---- the two documents a person reads, and the trail behind them --------------------------
+doc = store.load_artifact(chat, run, "research-doc.md") or ""
+bun = store.load_artifact(chat, run, "bundle.md") or ""
+for head in ("## Verdict", "## How the evidence was gathered", "## Keywords", "## SERP snapshot",
+             "## What the winners cover", "## Build spec", "## Proof map", "## Completeness"):
+    ok("the research doc has %s" % head.strip("# "), head in doc, doc[:200])
+ok("the doc says how the evidence was gathered, naming the team",
+   "research team of" in doc and "The Builder" in doc, doc[doc.find("## How the evidence"):][:200])
+ok("the doc marks demo data at the top when the run was demo",
+   ("DEMO DATA" in doc) == bool(rs.get("demo_data")))
+ok("the bundle names the article, the keyword, the length and the reader",
+   all(x in bun for x in ("**Title:**", "**Primary keyword:**", "**Target length:**", "**Reader")), bun[:200])
+ok("the bundle's numbered pointers never skip a number",
+   [int(l.split(".")[0]) for l in bun.splitlines() if l[:1].isdigit()] ==
+   list(range(1, 1 + len([l for l in bun.splitlines() if l[:1].isdigit()]))),
+   [l[:40] for l in bun.splitlines() if l[:1].isdigit()])
+ok("the bundle lists the evidence trail with a plain name per file",
+   "## The evidence trail" in bun and "`world.json`" in bun and "The world statement" in bun)
+ok("every trail entry names a file that really exists",
+   all(store.load_artifact(chat, run, "_work/" + r["file"]) is not None
+       for r in render.trail(chat, run, store)))
+
 ok("our own domain is never outside evidence", not any("example.com" in c["source_urls"][0] for c in ev_cards))
 ok("gap check judged the checklist items", len(rs["gap_check"]["items"]) >= 3 and all(i["verdict"] in ("covered", "partial", "no") for i in rs["gap_check"]["items"]))
 ok("gap check caps at 3 questions (the stub asked for 4)", len(rs["gap_check"]["queries"]) == 3, len(rs["gap_check"]["queries"]))
@@ -234,7 +282,9 @@ out = build_blueprint.run(ctx, redo=True)
 ok("a failed scorer aborts the blueprint instead of keeping everything", bool(out.get("error")) and "scorer" in out["error"].lower(), out)
 llm.json_call = _real_json
 
-shutil.rmtree(store.chat_dir(chat))
+import os as _os
+if not _os.environ.get('KEEP_RUN'):
+    shutil.rmtree(store.chat_dir(chat))
 if _saved_index is not None:
     store.save_knowledge("site_index.json", _saved_index)
 print("\nStubbed model, wire and web. Proves the guards and the shapes, not the judgment.")
