@@ -34,6 +34,7 @@ const J = (f) => fs.readFileSync(path.join(__dirname, "static", "js", f), "utf8"
 const state = J("01-state.js");
 const helpers = J("02-helpers.js");
 const chat = J("05-chat.js");
+const screens = J("04-screens.js");
 const render = J("06-render.js");
 const loaders = J("07-loaders.js");
 const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
@@ -350,14 +351,54 @@ test("the project-folder fold carries no implementation jargon", () => {
   assert(src.includes('"Project folder"'), "the fold is still called Workdir");
 });
 
-test("a provider that cannot run still says WHY", () => {
+test("a provider that cannot run says WHY, in a user's words", () => {
   // providers.py exists so the panel never says "unavailable" without saying
-  // why. Plain language must not cost that: the status line leads, the exact
-  // server reason stays underneath.
+  // why. Every not-runnable case still gets a status here -- what changed
+  // (founder 2026-09-07, "only show minimum a user might want to see") is that
+  // the status is ALL this list shows.
   assert(/Not installed on this Mac/.test(chat), "no plain status for not-installed");
   assert(/not signed in yet/.test(chat), "no plain status for installed-but-unconfigured");
-  assert(/p\.reason\?/.test(chat.replace(/\s/g, "")),
-         "the server's exact reason was dropped along with the jargon");
+  assert(/can’t chat with it yet/.test(chat), "no plain status for installed-but-no-adapter");
+  assert(/Ready to use/.test(chat), "no plain status for runnable");
+});
+
+test("the provider list does NOT render the server's diagnostic sentence", () => {
+  // What this removes, measured: up to ~400 characters per row naming binary
+  // paths, ~/.codex/auth.json, PATH, an npm package, the ACP and stream-json
+  // protocols, a codex-cli version pin, and the keychain service and account a
+  // key would live at. True, and not what this list is asked.
+  const row = chat.slice(chat.indexOf("const provRow ="),
+                         chat.indexOf("const running ="));
+  assert(!/p\.reason/.test(row),
+         "provRow renders p.reason again -- the row is back to explaining Sutra "
+         + "to whoever opened Settings");
+  const fold = chat.slice(chat.indexOf('fold("set.prov"'), chat.indexOf('fold("set.mode"'));
+  assert(!/i\.reason/.test(fold),
+         "the fallback banner pastes the same sentence back in under a different "
+         + "heading");
+  assert(!/SUTRA_UI_|not on PATH|auth\.json|stream-json/.test(fold),
+         "an internals name leaked back into the Default provider fold");
+});
+
+test("the diagnostic sentence still HAS a home", () => {
+  // This was a change of audience, not a deletion. Someone who wants the exact
+  // reason goes to Health; if that stops rendering it too, the detail is gone
+  // from the product and this test is the only thing that would notice.
+  assert(/p\.reason/.test(screens),
+         "nothing renders the provider reason any more -- Health lost it too");
+  assert(/Why nothing here runs/.test(screens),
+         "the Health block that carries it is gone");
+});
+
+test("the one status that would be a lie is told from a FLAG, not prose", () => {
+  // "Not installed on this Mac" is wrong for the person who has Claude Desktop
+  // and believes they installed Claude (providers.py's own field incident). The
+  // UI must decide the wording; the backend only says whether it is that case.
+  assert(/desktop_only/.test(chat), "the Claude Desktop case is not handled in the row");
+  assert(/needs Claude Code/.test(chat),
+         "the row does not name the actual fix for a Claude Desktop user");
+  const py = fs.readFileSync(path.join(__dirname, "providers.py"), "utf8");
+  assert(/"desktop_only":/.test(py), "providers.py does not send the flag");
 });
 
 test("a refused saved choice is explained, not labelled", () => {

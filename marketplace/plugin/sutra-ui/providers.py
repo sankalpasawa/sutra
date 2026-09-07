@@ -11,6 +11,12 @@ fresh on every call:
 
   adapter     = <id> in ADAPTERS                     -- can WE drive it?
 
+TWO PROVIDERS OVERRIDE `configured`, because for them the directory is not
+evidence of anything: codex reads ~/.codex/auth.json (existence only) and
+deepseek asks whether an API key resolves. Both directories exist after the CLI
+has run once, whether or not anyone ever signed in, so treating them as setup
+claimed the provider was ready on a machine that had never authenticated.
+
 Neither is inferred from the others. A provider is `runnable` only when ALL
 THREE hold, and `reason` states exactly which one failed, naming the path or
 the missing capability, so the UI never says "unavailable" without saying why.
@@ -679,6 +685,277 @@ def codex_auth():
             "bin_path": bin_path, "checked_at_ms": now}
 
 
+# -------------------------------------------------------- deepseek sign-in --
+# DeepSeek is the inverse of Claude on billing: Claude inherits a logged-in Max
+# subscription and app.py REFUSES a stray ANTHROPIC_API_KEY, while DeepSeek has
+# no subscription path at all and every request is billed against a key. So a
+# key is not a preference here -- it is half of whether the provider works, and
+# it belongs in the same readiness answer as the binary.
+#
+# THE BUG THIS SECTION FIXES. `configured` for deepseek was `~/.deepseek`
+# is_dir(), which is true after the CLI has run once and says nothing about a
+# key. The row rendered "Ready to use", accepted the click, and then died at
+# connect with "DEEPSEEK_API_KEY is not set in the server environment. Export it
+# and restart the server." -- the offer-a-choice-that-cannot-run failure this
+# module's docstring is about, and the one codex was pulled out of ADAPTERS for
+# on 2026-09-04. Refusing at SELECTION time is the better error.
+#
+# ONE RESOLVER. app.py's ws_chat gate and deepseek_usage.py's balance fetch each
+# called os.environ.get("DEEPSEEK_API_KEY") independently and neither knew about
+# a saved key, so with a key in the keychain the balance card and the chat would
+# have disagreed about whether DeepSeek was usable. Both now read
+# deepseek_key_for_request().
+#
+# READ AT CALL TIME, never cached: signing in has to take effect on the next
+# message, not the next restart.
+
+#: Precedence, highest first. The Sutra-prefixed name matches the SUTRA_UI_<THING>
+#: convention this file already uses (SUTRA_UI_PROVIDER, SUTRA_UI_SETTINGS,
+#: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES, and the SUTRA_UI_<ID>_BIN family in
+#: _bin_for). The bare vendor name is SECOND and is not going away: it is what
+#: app.py and deepseek_usage.py have always read and what operators already
+#: export, and dropping it would sign out every machine that works today.
+DEEPSEEK_KEY_ENVS = ("SUTRA_UI_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY")
+
+
+def deepseek_env_var():
+    """Which env var is supplying a DeepSeek key, or None.
+
+    Returns the NAME only, never the value -- callers that want the value go
+    through deepseek_api_key(), and the UI needs this to say which variable is
+    winning so nobody saves a key that silently has no effect.
+    """
+    for var in DEEPSEEK_KEY_ENVS:
+        raw = os.environ.get(var)
+        if raw and raw.strip():
+            return var
+    return None
+
+
+def _deepseek_key_present():
+    """True when a key would resolve, WITHOUT reading one.
+
+    Existence only, the same discipline _codex_credential_present() applies to
+    auth.json. A stored key is attested by the NON-SECRET marker in
+    settings.json rather than by a keychain read, because _describe() runs four
+    times per load_settings() and every fs/tree, fs/read, ws_chat connect and
+    settings GET goes through that -- a Security.framework round trip on that
+    path would tax requests that never asked about DeepSeek, and _bin_for()
+    already had to dodge one recursion loop through the same chain.
+
+    The cost of trusting the marker is that a key deleted straight out of
+    Keychain Access still reads as present here. That divergence is caught in
+    deepseek_key_for_request(), which does read, and which drops the stale
+    marker so the row corrects itself.
+    """
+    if deepseek_env_var():
+        return True
+    try:
+        import deepseek_auth
+        return bool(deepseek_auth.marker().get("mask"))
+    except Exception:
+        return False
+
+
+def deepseek_api_key():
+    """The key to authenticate DeepSeek with, or None. Never raises.
+
+    Precedence: SUTRA_UI_DEEPSEEK_API_KEY, then DEEPSEEK_API_KEY, then the
+    keychain. Prefer deepseek_key_for_request() on a request path -- it gives
+    you the same key plus the sentence to show when there is not one.
+    """
+    for var in DEEPSEEK_KEY_ENVS:
+        raw = os.environ.get(var)
+        if raw and raw.strip():
+            return raw.strip()
+    try:
+        import deepseek_auth
+        return deepseek_auth.read()
+    except Exception:
+        return None
+
+
+def deepseek_key_for_request():
+    """(key, reason). THE call a request path makes.
+
+    Exactly one of the two is set. `reason` is a sentence, not a code -- it is
+    shown verbatim by the ws_chat refusal and the balance card, so both say the
+    same thing about the same machine.
+
+    This is where a marker/keychain divergence is caught: the marker says a key
+    was saved, the keychain no longer holds it, and rather than reporting an
+    unexplained failure the marker is DROPPED so the provider row flips back to
+    not-signed-in on the next read.
+    """
+    key = deepseek_api_key()
+    if key:
+        return key, None
+    try:
+        import deepseek_auth
+        stale = deepseek_auth.marker()
+        if stale.get("mask"):
+            deepseek_auth.forget_stale_marker()
+            return None, (
+                "a saved key was on record (%s) but the login keychain no longer "
+                "holds it -- the item at service %r, account %r is gone or could "
+                "not be read. That record has been cleared; sign in again to "
+                "replace it."
+                % (stale["mask"], deepseek_auth.KEYCHAIN_SERVICE,
+                   deepseek_auth.KEYCHAIN_ACCOUNT))
+    except Exception:
+        pass
+    # keychain_read=True: deepseek_api_key() above went through
+    # deepseek_auth.read(), so this path has actually opened the keychain and
+    # may say so. _describe()'s path has not -- see _deepseek_no_key_reason.
+    return None, _deepseek_no_key_reason(keychain_read=True)
+
+
+def _deepseek_no_key_reason(keychain_read=False):
+    """The sentence for a machine with no DeepSeek key, naming all three places
+    a key can come from and what was found at each.
+
+    Concrete in the style of the gemini row, which names what it searched ("the
+    login shell's PATH and the usual install locations were both searched")
+    rather than only what is missing. "no key is saved on this Mac" was the
+    first draft and it was the same failure as the string it replaced: true,
+    and no help to someone who wants to know WHERE a key would live.
+
+    `keychain_read` is not cosmetic. Only deepseek_key_for_request() actually
+    reads the keychain; _describe() decides from the settings marker, because a
+    Security.framework round trip on the render path would tax every fs/tree
+    and settings GET (see _deepseek_key_present). So the two call sites have
+    observed different things and must not make the same claim -- asserting
+    "the keychain holds no item" from a path that never opened it is exactly
+    the "configured means the directory exists" mistake in a new coat.
+    """
+    try:
+        import deepseek_auth
+        available, why = deepseek_auth.store_status()
+        service, account = (deepseek_auth.KEYCHAIN_SERVICE,
+                            deepseek_auth.KEYCHAIN_ACCOUNT)
+        settings_key = deepseek_auth.SETTINGS_KEY
+    except Exception:                             # pragma: no cover - import guard
+        available, why = False, "the credential store could not be loaded"
+        service = account = settings_key = "?"
+
+    if not available:
+        # No point naming a keychain item on a machine that has no keychain --
+        # and no second tail either: store_status()'s sentence already ends by
+        # sending the operator to the environment, so appending the sign-in tail
+        # produced "...in the environment instead.. So: set one of those
+        # variables...". Its trailing stop is dropped rather than the sentence
+        # rewritten, so the two callers of store_status() can keep one string.
+        stored_clause = why.rstrip(".")
+        tail = ""
+    elif keychain_read:
+        stored_clause = ("the login keychain holds no item at service %r, "
+                         "account %r" % (service, account))
+        tail = ("Sign in on the DeepSeek row, or set one of those variables "
+                "before starting the server.")
+    else:
+        stored_clause = ("nothing is saved here -- settings.json carries no %r "
+                         "record, which is what a saved key leaves behind (its "
+                         "mask; the key itself goes to the login keychain at "
+                         "service %r, account %r)"
+                         % (settings_key, service, account))
+        tail = ("Sign in on the DeepSeek row, or set one of those variables "
+                "before starting the server.")
+
+    return ("no API key. DeepSeek has no subscription to inherit -- every "
+            "request is billed against a key -- and all three places it can "
+            "come from were checked: %s is not set, %s is not set, and %s.%s"
+            % (DEEPSEEK_KEY_ENVS[0], DEEPSEEK_KEY_ENVS[1], stored_clause,
+               (" " + tail) if tail else ""))
+
+
+def deepseek_auth_state():
+    """Where a DeepSeek key comes from on this machine, and what the row should
+    say. Reads no secret: the mask for a stored key comes from the settings
+    marker, and the mask for an env key is computed from the value without
+    keeping it.
+
+    Cheap by construction -- settings read plus two env lookups -- which is why
+    this can be merged into the settings response instead of needing its own
+    probe route the way codex_auth() does (that one spawns `codex login
+    status`, so _describe() must not call it).
+    """
+    var = deepseek_env_var()
+    store_available, store_reason = True, None
+    m = {}
+    try:
+        import deepseek_auth
+        store_available, store_reason = deepseek_auth.store_status()
+        m = deepseek_auth.marker()
+        env_mask = deepseek_auth.mask(os.environ.get(var, "")) if var else None
+    except Exception:
+        env_mask = None
+
+    # Whether a BROWSER can authorise a key write on this server, and why not
+    # when it cannot. Three booleans and a fixed sentence -- deepseek_session
+    # never puts the pairing code in here, which matters because this dict
+    # rides in GET /api/settings, and that route is unauthenticated.
+    try:
+        import deepseek_session
+        session = deepseek_session.state()
+    except Exception:
+        session = {"available": False, "claimed": False, "reason": None}
+
+    if var:
+        return {"state": "env", "signed_in": True, "env_var": var,
+                "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": env_mask,
+                "saved_at": None, "stored_mask": m.get("mask"),
+                "store_available": store_available, "store_reason": store_reason,
+                "browser_session": session, "reason": None}
+    if m.get("mask"):
+        return {"state": "stored", "signed_in": True, "env_var": None,
+                "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": m["mask"],
+                "saved_at": m.get("saved_at"), "stored_mask": m["mask"],
+                "store_available": store_available, "store_reason": store_reason,
+                "browser_session": session, "reason": None}
+    return {"state": "none", "signed_in": False, "env_var": None,
+            "env_vars": list(DEEPSEEK_KEY_ENVS), "mask": None,
+            "saved_at": None, "stored_mask": None,
+            "store_available": store_available, "store_reason": store_reason,
+            "browser_session": session,
+            "reason": _deepseek_no_key_reason()}
+
+
+#: The npm package the ACP transport was read out of and verified against
+#: (acp_runtime.py's docstring: "@sluisr/deepseek-cli@1.3.2, an unminified
+#: esbuild bundle"). Named, not turned into an install command -- how it got
+#: onto the machine is the operator's business and guessing wrong sends them
+#: after the wrong fix.
+DEEPSEEK_CLI_PACKAGE = "@sluisr/deepseek-cli"
+
+
+def _deepseek_reason(binary, bin_path, installed, keyed):
+    """Why DeepSeek is not runnable, or None. Two independent requirements --
+    the CLI and the key -- so all three failing combinations are answered here
+    rather than as three arms bolted into the generic ladder in _describe().
+
+    `~/.deepseek` is deliberately absent from every string: it stopped being
+    evidence of anything the moment the key became the configured signal, and
+    sending someone to look for a directory that has no bearing on the failure
+    is the mistake the codex signed-out message was rewritten to avoid.
+    """
+    if installed and keyed:
+        return None
+    if installed and not keyed:
+        return "installed at %s, but %s" % (bin_path, _deepseek_no_key_reason())
+    missing_cli = ("the %r CLI is not on PATH (%s, the package this build's ACP "
+                   "transport was verified against). The login shell's PATH and "
+                   "the usual install locations were both searched%s. Sutra "
+                   "spawns `%s --acp` to talk to DeepSeek, so a key alone is not "
+                   "enough. Set the full path in Settings below, or "
+                   "SUTRA_UI_DEEPSEEK_BIN -- `which %s` in your terminal will say "
+                   "where."
+                   % (binary, DEEPSEEK_CLI_PACKAGE, _harvest_note(), binary,
+                      binary))
+    if keyed:
+        return missing_cli
+    return "%s And %s" % (missing_cli, _deepseek_no_key_reason())
+
+
 def _describe(spec):
     """One provider's live state. `installed` is shutil.which() and NOTHING
     else -- a config directory is not evidence of a binary, and this function
@@ -702,11 +979,22 @@ def _describe(spec):
         # agree rather than race, because auth.json takes precedence over
         # OPENAI_API_KEY (measured on 0.153.2; see codex_auth()).
         configured = _codex_credential_present()
+    elif spec["id"] == "deepseek":
+        # Same correction, same reasoning: ~/.deepseek exists after the CLI has
+        # run once and says nothing about a key, and DeepSeek cannot answer a
+        # single message without one. Existence only here too -- the key itself
+        # is never read on this path (see _deepseek_key_present).
+        configured = _deepseek_key_present()
 
     adapter = spec["id"] in ADAPTERS
 
     if installed and configured and adapter:
         reason = None
+    elif spec["id"] == "deepseek":
+        # ONE arm rather than three: for DeepSeek every not-runnable case is
+        # about the CLI or the key, and neither is a config directory, so the
+        # generic strings below would all name ~/.deepseek wrongly.
+        reason = _deepseek_reason(binary, bin_path, installed, configured)
     elif installed and configured and not adapter:
         # This said "this panel drives Claude's stream-json protocol only",
         # which stopped being true when the DeepSeek ACP adapter landed:
@@ -772,6 +1060,14 @@ def _describe(spec):
         # have to re-derive them and could disagree with this module
         "adapter": adapter,
         "runnable": installed and configured and adapter,
+        # A FLAG, not a sentence. The provider list stopped rendering `reason`
+        # (05-chat.js provRow, founder 2026-09-07), and "Not installed on this
+        # Mac" is the one status that is actively WRONG for the person who has
+        # Claude Desktop and believes they installed Claude -- the field
+        # incident named in the claude arm above. The UI needs to know that
+        # this is that case; it does not need this module's prose to say it.
+        "desktop_only": (spec["id"] == "claude" and not installed
+                         and claude_desktop_installed()),
         "bin_path": bin_path,
         "config_path": str(cfg_path),
     }
@@ -827,10 +1123,20 @@ def shadow_enabled(settings=None):
 
 def _write_settings(raw):
     """Atomic, so a crash mid-write cannot leave a half-parsed preferences file
-    that the next launch silently degrades to defaults."""
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    that the next launch silently degrades to defaults.
+
+    0600, set on the TEMP file before the replace so the contents are never
+    briefly world-readable. No secret is kept here -- the DeepSeek marker is a
+    mask, not a key (deepseek_auth's docstring) -- but this file also records
+    the workdir the agent is pointed at and the permission mode it runs under,
+    and neither is anyone else's business. mode=0o700 applies only when the
+    directory is CREATED; an existing ~/.sutra-ui is left as the operator has
+    it rather than silently re-permissioned underneath them.
+    """
+    SETTINGS_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
+    os.chmod(tmp, 0o600)
     tmp.replace(SETTINGS_PATH)
 
 
@@ -1002,6 +1308,17 @@ def load_settings():
         # remain expressible. Junk still dies here.
         "flags": {k: v for k, v in (raw.get("flags") or {}).items()
                   if isinstance(v, bool)} if isinstance(raw.get("flags"), dict) else {},
+        # The DeepSeek row's sign-in state. INSIDE the settings contract, not
+        # a sibling of it in the route's response: the panel does
+        # `SETTINGS = r.settings` (07-loaders.js), so a top-level sibling would
+        # be read by nothing -- which is exactly the bug this line replaces.
+        # Living here also means the three responses that already carry
+        # load_settings() (GET /settings, POST /providers/active, and the
+        # deepseek key verbs) get it without any of them being told to.
+        #
+        # Cheap enough for a per-request call: a settings read plus two env
+        # lookups, no subprocess and no keychain. Carries a MASK, never a key.
+        "deepseek_auth": deepseek_auth_state(),
         "settings_path": str(SETTINGS_PATH),
         "settings_file_exists": SETTINGS_PATH.exists(),
         "invalid_stored_values": invalid,

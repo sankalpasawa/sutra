@@ -150,6 +150,16 @@ const sandbox = {
     getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
     setItem(k, v) { this._m[k] = String(v); },
   },
+  /* The DeepSeek browser session token lives here rather than in localStorage:
+     it dies with the server process, so a localStorage copy would outlive the
+     thing it authorises. removeItem is real because the panel DROPS the token
+     on a 403 -- a no-op stub would let that regression through. */
+  sessionStorage: {
+    _m: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
+    setItem(k, v) { this._m[k] = String(v); },
+    removeItem(k) { delete this._m[k]; },
+  },
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   location: { protocol: "http:", host: "127.0.0.1:7000" },
   innerWidth: 1440,     // clampBrowseW() reads it for the 860px breakpoint
@@ -195,6 +205,11 @@ const EPILOGUE = `
      the global was deleted -- it would only have thrown the moment a test
      touched it. Removed with the tenant surface it belonged to. */
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
+  /* SETTINGS needs the same getter/setter pair as PROVIDERS above: a top-level
+     \`let\` in a classic script lives in the SCRIPT scope, not on the global
+     object, so a plain \`T.SETTINGS = x\` would set a property on the export
+     object and leave the binding the code actually reads untouched. */
+  get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; },
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
   /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
      it can be tested without rAF, which never fires headlessly. */
@@ -222,6 +237,16 @@ const EPILOGUE = `
   /* the browser-transport sign-in watch: every stop condition is pinned,
      because a poll with no way to end is the render loop all over again */
   codexOnScreen, codexWatchLogin, codexStopPoll, codexBridge,
+  /* the DeepSeek sign-in block: unlike codex this row decides whether the
+     provider RUNS AT ALL, so each state is pinned as a string -- and so is the
+     one thing that must never appear in any of them, the key itself */
+  deepseekAuthHtml, deepseekBridge,
+  /* the browser sign-in lane: a page with no Electron bridge trades the
+     server's one-time code for a write token, so the code field must come
+     BEFORE the key field -- there must be no paint where a key can be typed
+     into a page that cannot deliver it */
+  deepseekCanWrite, deepseekSessionToken, deepseekSetSessionToken,
+  deepseekClearSessionToken, DEEPSEEK_SESSION_KEY,
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
@@ -3622,8 +3647,8 @@ test("45d. a browser can sign in and out; only the API key needs the desktop", (
   assert.ok(/data-codex="login"/.test(out), "ChatGPT sign-in works from a browser");
   assert.ok(!/data-codex="apikey"/.test(out), "the API key button needs the bridge");
   assert.ok(/codex login --with-api-key/.test(out), "and the CLI path is named for it");
-  assert.ok(/will not put a live credential/.test(out),
-    "with the reason, so it does not read as a missing feature");
+  assert.ok(/desktop app/.test(out),
+    "with the alternative, so it does not read as a missing feature");
 
   const signed = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
   assert.ok(/data-codex="logout"/.test(signed), "sign out works from a browser too");
@@ -4046,6 +4071,340 @@ test("46a. codexError classifies and never quotes the child's stderr", () => {
   assert.ok(/billing or quota/.test(fn(1, cases[2])), "a quota problem is named as one");
   assert.ok(/could not reach OpenAI/.test(fn(1, cases[3])), "a network failure is named");
   assert.ok(/exited 7/.test(fn(7, cases[4])), "an unknown failure carries the exit code");
+});
+
+
+/* ── 46. DeepSeek sign-in block ─────────────────────────────────────────────
+   Why this row exists: before it, the only way to get a DeepSeek key onto a
+   machine was `export DEEPSEEK_API_KEY=...` and a server restart, which the
+   panel told you to do in a websocket error frame after you had already picked
+   the provider and sent a message.
+
+   It is NOT the codex row with different words. codex reports which of two
+   billing modes its one credential is in and signing in there does not make
+   codex selectable; here the key is half of whether the provider runs, so the
+   only job is moving the row between not-signed-in and selectable.
+
+   THE INVARIANT ACROSS EVERY ASSERTION BELOW: no render may contain a key.
+   The row is fed a mask by the backend and has no other source. */
+
+const DS_ROW = { id:"deepseek", name:"DeepSeek", installed:true, configured:false,
+                 runnable:false, adapter:true, reason:"installed at /opt/homebrew/bin/deepseek, but no API key." };
+const DS_FAKE = "sk-" + ["notreal","notreal","notreal"].join("-") + "4f2a";
+const DS_MASK = "sk-****4f2a";
+
+function dsRender(auth, opts){
+  const o = opts || {};
+  T.PROVIDERS = o.providers || [DS_ROW];
+  T.SETTINGS = Object.assign({ provider:"claude" }, o.settings || {},
+                             { deepseek_auth: auth });
+  T.S.deepseekBusy = o.busy || null;
+  T.S.deepseekMsg = o.msg || null;
+  T.S.deepseekMsgOk = !!o.msgOk;
+  return T.deepseekAuthHtml();
+}
+
+const DS_BRIDGE = { deepseekKeySave: () => Promise.resolve({ ok:true }),
+                    deepseekKeyRemove: () => Promise.resolve({ ok:true }) };
+
+function withDs(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = DS_BRIDGE;
+  try { return fn(); } finally { sandbox.sutra = saved; }
+}
+
+/* browser_session is what a CLI-run server reports: a one-time code was
+   printed on its stdout and not yet spent. A desktop-started server sends
+   available:false with the reason, and DS_NO_CODE below is that case. */
+const DS_NONE = { state:"none", signed_in:false, env_var:null,
+                  env_vars:["SUTRA_UI_DEEPSEEK_API_KEY","DEEPSEEK_API_KEY"],
+                  mask:null, saved_at:null, stored_mask:null,
+                  store_available:true, store_reason:null,
+                  browser_session:{ available:true, claimed:false, reason:null },
+                  reason:"no API key. […]" };
+
+const DS_NO_CODE = { ...DS_NONE, browser_session:{ available:false, claimed:false,
+  reason:"this server was started by the Sutra desktop app, which already owns "
+       + "the key-writing channel, so no browser sign-in code was issued." } };
+
+/* A browser that has already traded the code for a token. Runs `fn` with the
+   token in sessionStorage and no Electron bridge -- the state the key field is
+   allowed to exist in outside the desktop app. */
+function withDsPaired(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage.setItem(T.DEEPSEEK_SESSION_KEY, "paired-token");
+  try { return fn(); }
+  finally {
+    sandbox.sessionStorage.removeItem(T.DEEPSEEK_SESSION_KEY);
+    sandbox.sutra = saved;
+  }
+}
+
+/* A browser that has not. Explicit rather than implied by the default, because
+   the token survives a reload and therefore survives one test into the next if
+   anything forgets to clear it. */
+function withDsBrowser(fn){
+  const saved = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage.removeItem(T.DEEPSEEK_SESSION_KEY);
+  try { return fn(); } finally { sandbox.sutra = saved; }
+}
+
+test("46a. not signed in offers the field inline, and says what it costs", () => {
+  const out = withDs(() => dsRender(DS_NONE));
+  assert.ok(/DeepSeek needs an API key/.test(out), "names what is missing");
+  assert.ok(/type="password"/.test(out), "the field never shows the key being typed");
+  assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out), "field + Save");
+  assert.ok(!/value=/.test(out),
+    "the input is UNCONTROLLED -- a value bound to state would keep a key in S");
+  assert.ok(/no plan to\s+inherit/.test(out), "says why a key is needed at all");
+  assert.ok(/checked\s+with DeepSeek before anything is saved/.test(out),
+    "and that it is validated before it is stored");
+});
+
+test("46b. signed in shows the mask and nothing else, plus Remove", () => {
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"stored", signed_in:true,
+                                      mask:DS_MASK, stored_mask:DS_MASK,
+                                      saved_at: Math.floor(Date.now()/1000) - 120,
+                                      reason:null }));
+  assert.ok(out.includes(DS_MASK), "the mask the backend built");
+  assert.ok(!out.includes(DS_FAKE), "and never a key");
+  assert.ok(/data-deepseek="remove"/.test(out), "Remove is offered");
+  assert.ok(!/data-deepseek-key/.test(out), "and the field is gone -- write-only, no re-edit");
+  assert.ok(/login keychain/.test(out), "says where it actually is");
+  assert.ok(/2m ago/.test(out), "and when it was saved");
+  assert.ok(/nothing needs restarting/.test(out), "no restart claim");
+  assert.ok(!/settings\.json/.test(out),
+    "the row is back to naming Sutra's own storage layout (founder 2026-09-07: "
+    + "only show the minimum a user might want to see)");
+});
+
+test("46c. an env var DISABLES the field and names which var is winning", () => {
+  /* The failure this prevents: saving a key that silently has no effect. The
+     operator would see "Saved" and the old key would keep answering. */
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"env", signed_in:true,
+                                      env_var:"DEEPSEEK_API_KEY", mask:DS_MASK,
+                                      reason:null }));
+  assert.ok(/DEEPSEEK_API_KEY/.test(out), "names the variable");
+  assert.ok(/disabled/.test(out), "the field is disabled");
+  assert.ok(!/data-deepseek="save"/.test(out), "and Save cannot be clicked");
+  assert.ok(/would never be used/.test(out), "with the reason, so it is not a mystery");
+  assert.ok(!/data-deepseek="remove"/.test(out),
+    "Remove would imply this row owns the credential; the environment does");
+});
+
+test("46c2. an env var that SHADOWS a saved key says both exist", () => {
+  /* Otherwise unsetting the variable looks like it signs you out, when there
+     is a saved key waiting underneath. */
+  const out = withDs(() => dsRender({ ...DS_NONE, state:"env", signed_in:true,
+                                      env_var:"SUTRA_UI_DEEPSEEK_API_KEY",
+                                      mask:"sk-****9911", stored_mask:DS_MASK,
+                                      reason:null }));
+  assert.ok(out.includes("sk-****9911") && out.includes(DS_MASK),
+    "both masks, so the precedence is visible");
+  assert.ok(/takes over/.test(out), "and what happens if the variable goes away");
+});
+
+test("46d. validating disables everything and says what is happening", () => {
+  const out = withDs(() => dsRender(DS_NONE, { busy:"save" }));
+  assert.ok(/aria-busy="true"/.test(out), "the button reports busy to a screen reader");
+  assert.ok(/Checking…/.test(out), "and says so in words");
+  assert.ok(/data-deepseek-key[^>]*disabled/.test(out), "the field is locked while it runs");
+  assert.ok(/Nothing is saved until it says yes/.test(out),
+    "the spinner copy states the guarantee");
+});
+
+test("46e. a refusal renders as a refusal, a success as a success", () => {
+  const bad = withDs(() => dsRender(DS_NONE, { msg:"DeepSeek rejected that key.", msgOk:false }));
+  assert.ok(/class="note b"/.test(bad), "a refusal is not painted as an all-clear");
+  assert.ok(/rejected that key/.test(bad), "and carries the classified reason");
+
+  const good = withDs(() => dsRender({ ...DS_NONE, state:"stored", signed_in:true,
+                                       mask:DS_MASK, reason:null },
+                                     { msg:"DeepSeek accepted the key", msgOk:true }));
+  assert.ok(!/class="note b"/.test(good), "a success is not painted as a failure");
+});
+
+test("46f. no bridge and no code means no field and the variables named instead", () => {
+  /* A desktop-started backend seen through a browser: the shell owns the write
+     channel, no code was printed, and a key field here could only ever 403. */
+  const out = withDsBrowser(() => dsRender(DS_NO_CODE));
+  assert.ok(!/data-deepseek-key/.test(out), "no field a browser cannot use");
+  assert.ok(!/data-deepseek="save"/.test(out), "and nothing to click");
+  assert.ok(!/data-deepseek-code/.test(out), "and no code field, because there is no code");
+  assert.ok(/SUTRA_UI_DEEPSEEK_API_KEY/.test(out) && /DEEPSEEK_API_KEY/.test(out),
+    "both variables are named as the way in");
+  assert.ok(/already owns the key-writing channel/.test(out),
+    "with the server's own reason, so it does not read as a missing feature");
+});
+
+/* ── 46p-46u. the browser sign-in lane ──────────────────────────────────────
+   WHAT WAS BROKEN. The key write route is token-gated and only Electron main
+   held a token, so the row rendered "saving one is a desktop-app action" and
+   no field -- which made the browser at 127.0.0.1 unable to sign in to
+   DeepSeek at all, and that is where development happens.
+
+   THE ORDER IS THE SAFETY PROPERTY. A page with no write lane must never draw
+   a key field. So the code field comes first, and only a page that HOLDS a
+   token draws the key field. Every assertion below is about that ordering. */
+
+test("46p. an unpaired browser is offered the CODE field and no key field", () => {
+  const out = withDsBrowser(() => dsRender(DS_NONE));
+  assert.ok(/data-deepseek-code/.test(out), "the code field is drawn");
+  assert.ok(/data-deepseek="pair"/.test(out), "with something to click");
+  assert.ok(!/data-deepseek-key/.test(out),
+    "and NO key field -- a key must not be typeable into a page that cannot deliver it");
+  assert.ok(!/data-deepseek="save"/.test(out), "nor a Save that would 403");
+  assert.ok(/sign-in code/.test(out), "names what to paste");
+  assert.ok(/terminal you launched it from/.test(out), "and where to find it");
+  assert.ok(/works once/.test(out), "and that it is single-use");
+  assert.ok(!/value=/.test(out),
+    "the code input is UNCONTROLLED, like the key input -- nothing bound to state");
+});
+
+test("46q. once paired, the key field appears and the code field goes", () => {
+  const out = withDsPaired(() => dsRender(DS_NONE));
+  assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out),
+    "the key field is live");
+  assert.ok(!/data-deepseek-code/.test(out), "and the code step is done with");
+  /* The loopback sentence came OUT (founder 2026-09-07: only the minimum). What
+     must still hold is that neither lane CLAIMS the other's transport -- the copy
+     is now silent on transport, which is honest for both. */
+  assert.ok(!/in-process/.test(out),
+    "a browser render must not claim the desktop app's in-process hand-off");
+  assert.ok(!out.includes(DS_FAKE), "no key, ever");
+});
+
+test("46r. the desktop bridge still wins and never mentions a code", () => {
+  /* Lane 1 is unchanged. A shell-started server prints no code at all, so a
+     bridge render that talked about pasting one would be nonsense. */
+  const out = withDs(() => dsRender(DS_NO_CODE));
+  assert.ok(/data-deepseek-key/.test(out), "the field is drawn as before");
+  assert.ok(!/data-deepseek-code/.test(out), "and no pairing step is offered");
+  assert.ok(!/127\.0\.0\.1/.test(out),
+    "and no loopback claim: the bridge hands the key across in-process");
+});
+
+test("46s. a signed-in browser with no write lane is not given a dead Remove", () => {
+  /* THE BUG THIS PINS: Remove was drawn whenever a key was stored, and its
+     handler returned early with no bridge -- a button that did nothing at all,
+     silently, on every browser. */
+  const stored = { ...DS_NONE, state:"stored", signed_in:true,
+                   mask:DS_MASK, stored_mask:DS_MASK, reason:null };
+  const unpaired = withDsBrowser(() => dsRender(stored));
+  assert.ok(!/data-deepseek="remove"/.test(unpaired), "no button that cannot work");
+  assert.ok(/data-deepseek="pair"/.test(unpaired), "the way to make it work instead");
+  assert.ok(unpaired.includes(DS_MASK), "and the row still says what is saved");
+
+  const paired = withDsPaired(() => dsRender(stored));
+  assert.ok(/data-deepseek="remove"/.test(paired), "paired, Remove is live");
+  assert.ok(!/data-deepseek="pair"/.test(paired), "and the code step is gone");
+
+  const noCode = withDsBrowser(() => dsRender({ ...stored,
+    browser_session: DS_NO_CODE.browser_session }));
+  assert.ok(!/data-deepseek="remove"/.test(noCode) && !/data-deepseek="pair"/.test(noCode),
+    "no code and no bridge: neither control is offered");
+  assert.ok(/restart the server/.test(noCode),
+    "but the way out is named rather than left a mystery");
+  assert.ok(!/com\.sutra\.provider/.test(noCode),
+    "and it does not send a user into Keychain Access after an internal item name");
+});
+
+test("46t. the write lane is the token or the bridge, and nothing else", () => {
+  assert.strictEqual(withDsBrowser(() => T.deepseekCanWrite()), false, "browser, unpaired");
+  assert.strictEqual(withDsPaired(() => T.deepseekCanWrite()), true, "browser, paired");
+  assert.strictEqual(withDs(() => T.deepseekCanWrite()), true, "desktop bridge");
+
+  /* The token round-trips through sessionStorage and can be DROPPED -- which is
+     what the panel does on a 403, so a restarted server falls back to the code
+     field instead of re-offering a key field that cannot work. */
+  withDsBrowser(() => {
+    assert.strictEqual(T.deepseekSessionToken(), null, "nothing held to start");
+    assert.strictEqual(T.deepseekSetSessionToken("t0k"), true, "stored");
+    assert.strictEqual(T.deepseekSessionToken(), "t0k", "and read back");
+    T.deepseekClearSessionToken();
+    assert.strictEqual(T.deepseekSessionToken(), null, "and dropped on demand");
+  });
+});
+
+test("46u. storage that throws costs the field, not the page", () => {
+  /* sessionStorage throws outright in some private windows and webviews. The
+     row has to render there -- without a field it cannot use, but render. */
+  const saved = sandbox.sessionStorage, savedSutra = sandbox.sutra;
+  sandbox.sutra = undefined;
+  sandbox.sessionStorage = { getItem(){ throw new Error("denied"); },
+                             setItem(){ throw new Error("denied"); },
+                             removeItem(){ throw new Error("denied"); } };
+  try {
+    assert.strictEqual(T.deepseekSessionToken(), null, "no token, no throw");
+    assert.strictEqual(T.deepseekSetSessionToken("t0k"), false,
+      "and setting REPORTS the refusal -- the handler says so instead of drawing a field");
+    const out = dsRender(DS_NONE);
+    assert.ok(/data-deepseek-code/.test(out), "the code step still renders");
+    assert.ok(!/data-deepseek-key/.test(out), "and no key field");
+  } finally { sandbox.sessionStorage = saved; sandbox.sutra = savedSutra; }
+});
+
+test("46f2. a shell without the DeepSeek verb is not treated as a bridge", () => {
+  /* window.sutra exists in any Sutra desktop build; deepseekKeySave does not
+     exist in one built before this change. Keying off the wrong verb would
+     draw a field whose only transport is absent. */
+  const saved = sandbox.sutra;
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    assert.strictEqual(T.deepseekBridge(), null, "codexLogin alone is not this bridge");
+    assert.ok(!/data-deepseek-key/.test(dsRender(DS_NONE)), "so no field is drawn");
+  } finally { sandbox.sutra = saved; }
+});
+
+test("46g. no keychain says so and does NOT offer a control that cannot work", () => {
+  const out = withDs(() => dsRender({ ...DS_NONE, store_available:false,
+    store_reason:"saving a key needs the macOS login keychain and this is Linux." }));
+  assert.ok(/cannot save one/.test(out), "the headline states the limit");
+  assert.ok(/this is Linux/.test(out), "with the reason from the backend");
+  assert.ok(!/data-deepseek-key/.test(out) && !/data-deepseek="save"/.test(out),
+    "and no field, because saving would have to lie or lose the key");
+});
+
+test("46h. an older backend that sends no state renders nothing at all", () => {
+  /* A row is a claim. With nothing read, the honest render is no render --
+     never "not signed in", which is a claim about the machine. */
+  assert.strictEqual(withDs(() => dsRender(undefined)), "", "no state, no block");
+  const gone = withDs(() => dsRender(DS_NONE, { providers:[
+    { id:"claude", name:"Claude Code", runnable:true }] }));
+  assert.strictEqual(gone, "", "and nothing when deepseek is not in the catalogue");
+});
+
+test("46i. NO render state can contain a key, on any transport", () => {
+  const states = [
+    DS_NONE,
+    DS_NO_CODE,
+    { ...DS_NONE, state:"stored", signed_in:true, mask:DS_MASK, reason:null },
+    { ...DS_NO_CODE, state:"stored", signed_in:true, mask:DS_MASK, reason:null },
+    { ...DS_NONE, state:"env", signed_in:true, env_var:"DEEPSEEK_API_KEY",
+      mask:DS_MASK, stored_mask:DS_MASK, reason:null },
+    { ...DS_NONE, store_available:false, store_reason:"no keychain" },
+  ];
+  /* All THREE transports, because each takes a different branch now: the
+     bridge, a paired browser, and an unpaired one drawing the code field. A
+     sweep over one of them would have left the other two unswept. */
+  const transports = [["bridge", withDs], ["paired", withDsPaired],
+                      ["browser", withDsBrowser]];
+  states.forEach((a, i) => {
+    [null, "save", "remove", "pair"].forEach(busy => {
+      transports.forEach(([label, wrap]) => {
+        const out = wrap(() => dsRender(a, { busy, msg:DS_FAKE, msgOk:false }));
+        /* msg is deliberately set to a key-shaped string: the message channel is
+           the one place a backend could hand the row something it should not
+           render, and if that ever changes this test says so. */
+        assert.ok(!out.includes(DS_FAKE.slice(0, 20)) || /note/.test(out),
+          label + " state " + i + " must not leak a key outside a message it was handed");
+        assert.ok(!/-notreal-notreal4f2a[^<]*value=/.test(out),
+          label + " state " + i + " must never put a key in an input value");
+      });
+    });
+  });
 });
 
 updateStagingChecks()

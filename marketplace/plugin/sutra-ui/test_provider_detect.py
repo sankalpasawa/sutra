@@ -370,5 +370,128 @@ class CodexStaysUnselectable(unittest.TestCase):
         self.assertIn("0.153.2", reason)
 
 
+class DeepSeekNeedsAKeyToBeRunnable(unittest.TestCase):
+    """The same lie the codex class above is about, one row further down.
+
+    `configured` for deepseek was `~/.deepseek` is_dir(), which is true after
+    the CLI has run once and says nothing about a key. DeepSeek has no
+    subscription to inherit -- every request is billed against a key -- so the
+    row rendered "Ready to use", accepted the click, and then died at ws
+    connect with "DEEPSEEK_API_KEY is not set in the server environment. Export
+    it and restart the server." Refusing at SELECTION time is the better error,
+    and it is the one thing that has to be true for the sign-in row to mean
+    anything.
+    """
+
+    SPEC = {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
+            "config_dir": "~/.deepseek", "default": False}
+
+    def _describe(self, keyed, installed=True):
+        with mock.patch.object(providers.shutil, "which",
+                               return_value="/bin/deepseek" if installed else None), \
+             mock.patch.object(Path, "is_dir", lambda self: True), \
+             mock.patch.object(providers, "_deepseek_key_present",
+                               return_value=keyed):
+            return providers._describe(self.SPEC)
+
+    def test_the_config_dir_alone_is_not_configured(self):
+        self.assertFalse(self._describe(False)["configured"])
+
+    def test_a_resolvable_key_is_configured(self):
+        self.assertTrue(self._describe(True)["configured"])
+
+    def test_an_unkeyed_deepseek_is_not_runnable_even_with_the_cli(self):
+        p = self._describe(False)
+        self.assertTrue(p["installed"])
+        self.assertTrue(p["adapter"])          # the ACP adapter exists
+        self.assertFalse(p["runnable"])        # and it still cannot answer
+
+    def test_a_keyed_installed_deepseek_is_runnable(self):
+        self.assertTrue(self._describe(True)["runnable"])
+
+    def test_the_unkeyed_reason_does_not_send_anyone_to_a_directory(self):
+        """~/.deepseek stopped being evidence of anything the moment the key
+        became the configured signal. Naming it would waste the time the
+        message exists to save -- the mistake the codex signed-out string was
+        rewritten to avoid."""
+        reason = self._describe(False)["reason"]
+        self.assertNotIn(".deepseek", reason)
+        self.assertNotIn("config directory", reason)
+
+    def test_the_unkeyed_reason_names_every_way_in(self):
+        """All THREE sources, not just the two variables. "no key is saved on
+        this Mac" was true and no help to someone asking where a key lives --
+        the same failure as the ~/.deepseek string it replaced."""
+        import deepseek_auth
+        reason = self._describe(False)["reason"]
+        self.assertIn("/bin/deepseek", reason)            # the CLI half is done
+        for var in providers.DEEPSEEK_KEY_ENVS:
+            self.assertIn(var, reason)
+        self.assertIn(deepseek_auth.KEYCHAIN_SERVICE, reason)
+        self.assertIn(deepseek_auth.KEYCHAIN_ACCOUNT, reason)
+
+    def test_the_render_path_does_not_claim_to_have_opened_the_keychain(self):
+        """_describe() decides from the settings marker. Asserting "the keychain
+        holds no item" from a path that never opened it is the "configured means
+        the directory exists" mistake in a new coat."""
+        reason = self._describe(False)["reason"]
+        self.assertNotIn("keychain holds no item", reason)
+        self.assertIn("settings.json", reason)
+
+    def test_a_key_with_no_cli_says_the_key_half_is_done(self):
+        """Two independent requirements, so the row must not report the one that
+        is satisfied as missing."""
+        reason = self._describe(True, installed=False)["reason"]
+        self.assertIn("not on PATH", reason)
+        self.assertIn("--acp", reason)
+        self.assertNotIn("no API key", reason)
+
+    def test_neither_half_reports_both(self):
+        reason = self._describe(False, installed=False)["reason"]
+        self.assertIn("not on PATH", reason)
+        self.assertIn("no API key", reason)
+        self.assertNotIn("no config directory", reason)
+
+    def test_readiness_never_reads_the_keychain(self):
+        """_describe() runs four times per load_settings(), and every fs/tree,
+        fs/read, ws_chat connect and settings GET goes through that. A
+        Security.framework round trip on that path would tax requests that
+        never asked about DeepSeek."""
+        import deepseek_auth
+        with mock.patch.object(deepseek_auth, "_store",
+                               side_effect=AssertionError("read the keychain")), \
+             mock.patch.object(providers.shutil, "which", return_value="/bin/deepseek"), \
+             mock.patch.object(Path, "is_dir", lambda self: True):
+            providers._describe(self.SPEC)
+
+    def test_an_unkeyed_deepseek_cannot_be_selected(self):
+        """save_settings refuses a provider that is not runnable, so the gate
+        above is what makes the row unclickable rather than a UI detail."""
+        with mock.patch.object(providers, "provider_by_id",
+                               return_value=dict(self._describe(False))):
+            with self.assertRaises(ValueError) as caught:
+                providers.save_settings(provider="deepseek")
+        self.assertIn("not runnable", str(caught.exception))
+
+    def test_the_catalogue_entry_is_the_one_this_class_describes(self):
+        """A drifted catalogue would make every assertion above vacuous."""
+        live = [s for s in providers._CATALOG if s["id"] == "deepseek"]
+        self.assertEqual(live, [self.SPEC])
+
+    def test_deepseek_is_LAST_in_the_catalogue(self):
+        """LOAD-BEARING FOR THE UI, which is why it is asserted here rather
+        than left as an incidental fact.
+
+        The sign-in block renders after the DEFAULT PROVIDER radiogroup, not
+        inside provRow() -- a row is a <button role="radio">, and an <input>
+        plus two buttons nested in one is invalid markup whose clicks would
+        toggle the radio. "After the group" reads as "under the DeepSeek row"
+        only while deepseek is the last row. Reorder the catalogue and the
+        sign-in silently detaches from the row it belongs to, so this test is
+        the tripwire for that.
+        """
+        self.assertEqual(providers._CATALOG[-1]["id"], "deepseek")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -259,6 +259,55 @@ function codexBridge(){
   return (window.sutra && window.sutra.codexLogin) ? window.sutra : null;
 }
 
+/* The DeepSeek write path, or null. Keyed on ITS OWN verb rather than reusing
+   codexBridge(): the two shipped separately, and a shell built before this
+   change exposes window.sutra with codexLogin and no deepseekKeySave. Keying
+   off the wrong verb would draw a field whose only transport is absent. */
+function deepseekBridge(){
+  return (window.sutra && window.sutra.deepseekKeySave) ? window.sutra : null;
+}
+
+/* ── the browser's own write token ──────────────────────────────────────────
+   The second lane into POST /api/providers/deepseek/key, for a server started
+   from a terminal rather than by the Electron shell. That server prints a
+   one-time code on its stdout; POST /providers/deepseek/session trades the code
+   for this token; every key write then carries it in a header.
+
+   WHY sessionStorage AND NOT localStorage. The token dies with the server
+   process, so a localStorage copy would outlive the thing it authorises and
+   sit in the profile as a dead credential-write capability across reboots.
+   sessionStorage survives a RELOAD -- which is the case that matters, since
+   the code is single-use and a reload must not cost you the pairing -- and
+   goes when the tab does.
+
+   WHY IN STORAGE AT ALL AND NOT JUST A MODULE `let`. A module variable dies on
+   reload, and with a single-use code the only recovery is restarting the
+   server. Reloading the panel is not a reason to restart a backend.
+
+   EVERY ACCESS IS GUARDED. sessionStorage throws outright in a Safari private
+   window and in some embedded webviews, and the panel must render there --
+   without a field it cannot use, but rendering. */
+const DEEPSEEK_SESSION_KEY = "sutra.deepseek.session";
+
+function deepseekSessionToken(){
+  try { return sessionStorage.getItem(DEEPSEEK_SESSION_KEY) || null; }
+  catch (e) { return null; }
+}
+function deepseekSetSessionToken(token){
+  try { sessionStorage.setItem(DEEPSEEK_SESSION_KEY, token); return true; }
+  catch (e) { return false; }
+}
+function deepseekClearSessionToken(){
+  try { sessionStorage.removeItem(DEEPSEEK_SESSION_KEY); } catch (e) {}
+}
+
+/* Can this page write a key at all, by either lane? The render asks this, not
+   "is there a bridge" -- that question is what drew a dead Remove button on
+   every browser before the session lane existed. */
+function deepseekCanWrite(){
+  return !!deepseekBridge() || !!deepseekSessionToken();
+}
+
 /* ── watching a browser-transport sign-in ───────────────────────────────────
    The two transports have DIFFERENT completion semantics, and this is the
    whole reason the poll exists. The IPC verb resolves when the child EXITS.
@@ -623,6 +672,157 @@ function wire(){
        which is not the same fact as which credential it now holds -- and this
        row exists to state the second one. */
     await codexReprobe(!!(r && r.ok));
+    render();
+  });
+
+  /* ── DeepSeek sign-in ─────────────────────────────────────────────────────
+     Separate from the codex handler above by DIRECTION, not by accident: that
+     one asks a CLI to change a credential it owns and then re-reads what it
+     holds. This one hands Sutra a key to keep, and the response already
+     carries the new state, so there is nothing to re-probe -- PROVIDERS and
+     SETTINGS are replaced from the same read that performed the write, which
+     is what makes DeepSeek selectable on this paint rather than the next one.
+
+     TWO LANES, and the render picks which one it drew a control for. The
+     desktop bridge when the Electron shell is here -- the key then never
+     crosses an HTTP request at all. Otherwise the token this page traded a
+     one-time code for, sent as a header on the same route. What there is still
+     no lane for is a browser holding NEITHER: deepseekAuthHtml draws the code
+     field or the environment variables instead of a field that could only
+     403. */
+  scBody.querySelectorAll("[data-deepseek]").forEach(b=>b.onclick=async()=>{
+    const verb = b.dataset.deepseek;
+    const bridge = deepseekBridge();
+    if (S.deepseekBusy) return;                        /* belt: a stale render */
+
+    /* ── pair: trade the printed code for this page's write token ──────────
+       Sent through apiPost like any other panel write. The CODE is read off
+       the DOM at click time and never stored -- same discipline the key gets
+       below -- and the token that comes back is the only thing kept. */
+    if (verb === "pair"){
+      const field = scBody.querySelector("[data-deepseek-code]");
+      const code = field ? field.value : "";
+      if (!code || !code.trim()){
+        S.deepseekMsg = "Paste the code from the server's terminal output first.";
+        S.deepseekMsgOk = false; render(); return;
+      }
+      S.deepseekBusy = "pair"; S.deepseekMsg = null; S.deepseekMsgOk = false; render();
+      let out = null;
+      try { out = await apiPost("/api/providers/deepseek/session", { code: code }); }
+      catch (e){ out = { ok:false, message:"the server did not answer the sign-in code." }; }
+      S.deepseekBusy = null;
+      if (out && out.providers) PROVIDERS = out.providers;
+      if (out && out.settings)  SETTINGS  = out.settings;
+      if (out && out.ok && out.token){
+        /* The code is spent either way; if storage refuses the token there is
+           nothing to retry and saying so beats drawing a field that 403s. */
+        S.deepseekMsgOk = deepseekSetSessionToken(out.token);
+        S.deepseekMsg = S.deepseekMsgOk
+          ? out.message
+          : "The code was accepted but this browser will not keep the token " +
+            "(private window?), so the key field cannot open. The code is used " +
+            "up — restart the server for a new one.";
+      } else {
+        S.deepseekMsgOk = false;
+        S.deepseekMsg = (out && out.message) || "That code was not accepted.";
+      }
+      if (field) field.value = "";
+      render(); return;
+    }
+
+    if (!bridge && !deepseekSessionToken()) return;    /* no lane; nothing drawn */
+
+    let key = null;
+    if (verb === "save"){
+      /* Read off the DOM at click time and never stored: not in S, not in
+         localStorage, not in a closure that outlives this handler. */
+      const input = scBody.querySelector("[data-deepseek-key]");
+      key = input ? input.value : "";
+      if (!key || !key.trim()){
+        S.deepseekMsg = "Enter a key first."; S.deepseekMsgOk = false; render(); return;
+      }
+    }
+    if (verb === "remove" && !window.confirm(
+        "Remove the saved DeepSeek key?\n\n" +
+        "It is deleted from your login keychain and Sutra keeps no copy, so " +
+        "you will need the key itself to sign in again. DeepSeek stops being " +
+        "selectable until you do.")) return;
+
+    /* Was DeepSeek the one answering? Read BEFORE the write, because the
+       response replaces SETTINGS with the state that has already fallen back. */
+    const wasActive = (SETTINGS || {}).provider === "deepseek";
+
+    S.deepseekBusy = verb; S.deepseekMsg = null; S.deepseekMsgOk = false; render();
+
+    let r = null;
+    try {
+      if (bridge){
+        r = verb === "save" ? await bridge.deepseekKeySave(key)
+                            : await bridge.deepseekKeyRemove();
+      } else {
+        /* The session lane. Header name matches deepseek_session.HEADER. */
+        const hdr = { "X-Sutra-Session-Token": deepseekSessionToken() };
+        r = verb === "save"
+          ? await apiPost("/api/providers/deepseek/key", { key: key }, hdr)
+          : await apiPost("/api/providers/deepseek/key/remove", {}, hdr);
+      }
+    } catch (e){
+      /* A 403 is the ONE case worth reading, and only because the token can
+         die under this page: the server restarted and minted a fresh code. Drop
+         the dead token so the render falls back to the code field instead of
+         re-offering a key field that cannot work. e.message is otherwise never
+         quoted -- from the IPC layer or from fetch, nothing derived from a call
+         that carried a key gets rendered (same reasoning as main.js). */
+      if (e && e.status === 403){
+        deepseekClearSessionToken();
+        r = { ok:false, message:"this browser's sign-in has expired — the server "
+              + "was restarted. Paste its new code below." };
+      } else {
+        r = { ok:false, message: bridge
+              ? "the desktop bridge did not answer. Nothing was saved."
+              : "the server did not answer. Nothing was saved." };
+      }
+    }
+    key = null;
+    S.deepseekBusy = null;
+
+    /* Whatever happened, take the state the server reported -- a REFUSED save
+       still answers with the truth about the machine, and rendering the old
+       state after a refusal is how a row starts disagreeing with the keychain. */
+    if (r && r.providers) PROVIDERS = r.providers;
+    if (r && r.settings)  SETTINGS  = r.settings;
+    S.deepseekMsgOk = !!(r && r.ok);
+    S.deepseekMsg = (r && r.message) || (r && r.ok ? "Done." : "That did not work.");
+
+    if (r && r.ok && verb === "save"){
+      /* Clear the field on success only. A refused key stays in the box so the
+         operator can fix a paste instead of finding it again. */
+      const input = scBody.querySelector("[data-deepseek-key]");
+      if (input) input.value = "";
+    }
+
+    /* SIGN-OUT OF THE ACTIVE PROVIDER. The server has already re-resolved the
+       active provider (load_settings -> active_provider_detail drops a stored
+       choice that stopped being runnable and reports it in provider_ignored,
+       which this screen already renders). What it cannot do is close the
+       sockets: a socket is bound to its provider at spawn, so a message sent
+       down an existing one would still reach DeepSeek while the UI said
+       otherwise. Same move the provider selector makes, and the same carve-out
+       -- a pane mid-reply is left to finish rather than have its answer
+       discarded. */
+    if (r && r.ok && verb === "remove" && wasActive){
+      [...CLAUDE_SOCKETS.keys()].forEach(k=>{
+        const sid = k.replace(/::side$/, "");
+        if (streamingFor(sid) || sideStreamingFor(sid)) return;
+        const ch = CLAUDE_SOCKETS.get(k);
+        try { ch.ws.close(); } catch (e) {}
+        CLAUDE_SOCKETS.delete(k);
+      });
+      /* Usage renders as a section of this screen and keeps the two providers'
+         figures in different state, so after falling back it is showing the
+         wrong provider's numbers until something asks for the new one. */
+      if (typeof loadUsage === "function") loadUsage(true);
+    }
     render();
   });
 

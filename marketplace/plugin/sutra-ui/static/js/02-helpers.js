@@ -349,7 +349,19 @@ const S = {
      probe during a browser-transport login, so wire() can adopt a login that
      is still running after a reload without starting a second poller. */
   codexAuth:null, codexProbing:false, codexPolling:false,
-  codexBusy:null, codexMsg:null, codexKeyOpen:false
+  codexBusy:null, codexMsg:null, codexKeyOpen:false,
+  /* DeepSeek sign-in (AI Assistant screen). NO `deepseekAuth` twin to codexAuth:
+     that state rides on SETTINGS.deepseek_auth, because reading it is a
+     settings read rather than a subprocess, so it comes with the settings
+     answer and there is no probe to track and no loading state to hold.
+     deepseekBusy is the verb in flight ("save" | "remove"), which disables the field
+     and the buttons while DeepSeek is being asked whether the key works.
+     deepseekMsgOk splits the outcome so a refusal and a success do not render in the
+     same colour.
+
+     THE KEY IS NEVER HELD HERE either -- read off the input at click time,
+     handed to the bridge, and dropped. Same discipline as codex above. */
+  deepseekBusy:null, deepseekMsg:null, deepseekMsgOk:false
 };
 /* The real draft lives server-side at DRAFTS_DIR (outside SUTRA_NATIVE_HOME) -- boot()
    fetches it into S.draft on startup. saveDraft() posts the current S.draft back; callers

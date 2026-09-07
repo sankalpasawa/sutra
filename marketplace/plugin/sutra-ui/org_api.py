@@ -80,6 +80,8 @@ import teamsutra  # noqa: E402
 
 import claude_local
 import codex_login  # spawns `codex login`/`codex logout`; holds the live child
+import deepseek_auth  # validates + stores the DeepSeek key (keychain, never here)
+import deepseek_session  # the one-time code a BROWSER trades for a write token
 import providers  # provider registry + ~/.sutra-ui/settings.json (no engine access)
 import updates    # desktop-app + plugin version checks and installs (no engine access)
 import routines   # local scheduled routines (launchd + the claude CLI; no engine access)
@@ -956,6 +958,193 @@ def api_codex_logout(req: CodexLogoutRequest):
     # codex actually holds now, or the row would show a state nobody verified.
     return {**result, "auth": {**providers.codex_auth(),
                                "login_in_flight": codex_login.in_flight()}}
+
+
+# ------------------------------------------------------- deepseek sign-in ---
+# THE ONLY WRITE SURFACE FOR A DEEPSEEK KEY, and it is AUTHENTICATED -- by
+# EITHER of two tokens, checked by _deepseek_write_control() below.
+#
+# WHY THESE ROUTES MAY EXIST AT ALL, when main.js says a route that accepted an
+# API key would be "a credential WRITE surface any page on this machine could
+# POST to". That sentence is about an UNAUTHENTICATED route, which is what the
+# rest of this API is. These are not.
+#
+#   LANE 1, the desktop app: x-sutra-desktop-token, minted by the Electron
+#   shell (main.js), handed only to the backend it spawns, attached by the MAIN
+#   process -- the renderer never holds it, so no page in any browser can reach
+#   these, and neither can a backend the shell merely attached to. Same
+#   doctrine as POST /api/balance/actionable. UNCHANGED.
+#
+#   LANE 2, a browser on a CLI-run server: x-sutra-session-token, traded for
+#   the one-time code this process printed on its own STDOUT (see
+#   deepseek_session). A web page cannot read a terminal, so the capability
+#   still only reaches a browser by the operator's own act of copying it
+#   across -- and app.py's origin guard already refuses a cross-origin mutation
+#   that does not carry PANEL_TOKEN, which another origin cannot read either.
+#   Lane 2 exists ONLY when lane 1 does not: deepseek_session.arm() mints no
+#   code when SUTRA_DESKTOP_TOKEN is set, so a desktop-started backend has
+#   exactly the one door it always had.
+#
+# THE UPDATE ROUTES ARE NOT IN THIS. They still call _desktop_control(), which
+# knows only about lane 1. Arming an unattended helper to replace
+# /Applications/Sutra.app is a persistence primitive; signing a key into the
+# operator's own keychain is not, and one gate for both would have quietly
+# handed the first the second's threat model.
+#
+# WHY NOT COPY CODEX EXACTLY AND SPAWN IN THE SHELL. Codex's key goes to a
+# CLI's stdin and Sutra keeps no copy, so it never needed a backend at all.
+# DeepSeek's key has to be STORED by Sutra and read back by Python at request
+# time (app.py's ws_chat, deepseek_usage.py) -- and the keychain adapter is
+# Python (connectors/credentials/keychain.py). Electron safeStorage cannot
+# serve those readers. So the store lives where the readers are, and the write
+# crosses one authenticated loopback hop instead.
+#
+# THE KEY IS NEVER RETURNED, LOGGED OR ECHOED. What comes back is a mask, a
+# code and a fixed sentence -- see deepseek_auth.
+#
+# 200 WITH ok:false for a classified refusal (bad key, network, env override,
+# no keychain), matching POST /providers/codex/logout, which answers 200 with
+# the operation's own result plus a fresh state. A rejected key is an expected
+# outcome of this control, not a protocol error, and an HTTPException body
+# would put the reason somewhere the shell has to unwrap. 4xx stays for the
+# things that really are protocol problems: no token, or a malformed body.
+
+def _deepseek_write_control(request):
+    """Authorise a DeepSeek key write, or refuse it with the reason that
+    applies to THIS server.
+
+    hmac.compare_digest on both lanes, the way _desktop_control and app.py's
+    /api/balance/actionable gate do it: a `==` here would compare byte by byte
+    and stop at the first mismatch, which is a timing oracle for the token.
+
+    THE REFUSAL SAYS WHICH LANE IS EVEN POSSIBLE. A single "forbidden" left the
+    browser field looking broken; a desktop-started server has no code to
+    paste, a paired-once server needs a restart, and only the third case is
+    "paste the code" -- so each says so.
+    """
+    sent_desktop = request.headers.get("x-sutra-desktop-token") or ""
+    if DESKTOP_TOKEN and sent_desktop and hmac.compare_digest(
+            sent_desktop, DESKTOP_TOKEN):
+        return
+    sent_session = request.headers.get(deepseek_session.HEADER) or ""
+    if deepseek_session.verify(sent_session):
+        return
+    if DESKTOP_TOKEN:
+        raise HTTPException(status_code=403, detail=(
+            "writing a DeepSeek key needs the desktop app's token, and this "
+            "request carried none that matched. This server was started by the "
+            "Sutra app, so sign in from its window."))
+    detail = ("writing a DeepSeek key needs a session token, and this request "
+              "carried none that matched. ")
+    if sent_session:
+        detail += ("A token stops working when the server restarts -- paste "
+                   "this server's sign-in code again to get a new one.")
+    else:
+        detail += deepseek_session.state()["reason"] or ""
+    raise HTTPException(status_code=403, detail=detail)
+
+
+class DeepSeekSessionRequest(BaseModel):
+    #: The one-time code from the server's stdout. Optional for the same reason
+    #: DeepSeekKeyRequest.key is: FastAPI's validation errors can echo the
+    #: offending INPUT, and a 422 quoting a half-typed code back into a
+    #: response body is a worse answer than a classified refusal.
+    code: Optional[str] = None
+
+
+@router.post("/providers/deepseek/session")
+def api_deepseek_session(req: DeepSeekSessionRequest):
+    """Trade the one-time code for a session token that authorises key writes.
+
+    UNGATED BY DESIGN, AND THAT IS NOT A HOLE. There is nothing this route
+    could be gated BY -- it exists to hand out the credential the gate wants,
+    which is the shape of every pairing exchange. What protects it is the code
+    itself: 80 bits that live only on this process's stdout, single-use, and
+    behind app.py's origin guard (a cross-origin POST without PANEL_TOKEN is
+    refused, and no other origin can read the panel to learn PANEL_TOKEN).
+
+    200 WITH ok:false for a classified refusal -- a mistyped code is an
+    expected outcome of this control, and it must not land in the panel as a
+    thrown fetch error whose message the operator has to decode. 4xx stays for
+    protocol problems, and there are none left here.
+
+    THE TOKEN IS RETURNED EXACTLY ONCE, in this response, and never appears in
+    _deepseek_state() or GET /api/settings -- deepseek_session.state() reports
+    that a code exists and never what it or the token is.
+    """
+    try:
+        token = deepseek_session.exchange(req.code or "")
+    except deepseek_session.SessionCodeError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "PAIRED", "token": token,
+            "message": "This browser can now save a DeepSeek key. The code is "
+                       "used up -- restart the server if you need another.",
+            **_deepseek_state()}
+
+
+class DeepSeekKeyRequest(BaseModel):
+    #: Trimmed and validated in deepseek_auth.clean(). Optional so a malformed
+    #: body is a classified "no API key was given" rather than a 422 -- FastAPI's
+    #: validation errors can echo the offending INPUT, and the input here is a
+    #: live credential.
+    key: Optional[str] = None
+
+
+def _deepseek_state():
+    """Everything the row needs to redraw itself, in one answer.
+
+    `providers` and `settings` ride along so the DEFAULT PROVIDER list
+    re-evaluates from the SAME read that performed the write -- exactly what
+    POST /settings/provider-bin does. Without them the panel would have to
+    fire a second request and could render a row that disagreed with the
+    keychain for one paint.
+
+    `settings` is what makes sign-OUT complete: load_settings() re-runs
+    active_provider_detail(), so a stored `provider: deepseek` that just
+    stopped being runnable comes back in `provider_ignored` with the fallback
+    already chosen -- the app's existing handling for a provider going away,
+    not a new path.
+    """
+    return {"auth": providers.deepseek_auth_state(),
+            "providers": providers.discover_providers(),
+            "settings": providers.load_settings()}
+
+
+@router.post("/providers/deepseek/key")
+def api_deepseek_key_save(req: DeepSeekKeyRequest, request: Request):
+    """Validate a DeepSeek key against the API, then store it in the keychain.
+
+    Validation happens BEFORE the write (deepseek_auth.save), so a key that
+    DeepSeek will not accept never becomes a saved key the row claims works.
+    """
+    _deepseek_write_control(request)
+    try:
+        marker = deepseek_auth.save(req.key or "")
+    except deepseek_auth.DeepSeekAuthError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "SAVED", "mask": marker["mask"],
+            "message": "DeepSeek accepted the key and it is saved on this Mac "
+                       "(%s). DeepSeek is selectable above now -- no restart."
+                       % marker["mask"],
+            **_deepseek_state()}
+
+
+@router.post("/providers/deepseek/key/remove")
+def api_deepseek_key_remove(request: Request):
+    """Delete the stored key. Idempotent -- see deepseek_auth.remove."""
+    _deepseek_write_control(request)
+    try:
+        out = deepseek_auth.remove()
+    except deepseek_auth.DeepSeekAuthError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_deepseek_state()}
+    return {"ok": True, "code": "REMOVED", "removed": out["removed"],
+            "message": ("The saved key is gone from the login keychain."
+                        if out["removed"] else
+                        "There was no saved key on this Mac to remove."),
+            **_deepseek_state()}
 
 
 # ============================================================ settings ======

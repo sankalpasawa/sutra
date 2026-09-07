@@ -602,19 +602,184 @@ function codexAuthHtml(){
   return `
     <div class="note" style="margin-top:9px">
       <div><b>OpenAI Codex sign-in</b></div>
-      <p class="why" style="margin:4px 0 8px">Which OpenAI credential the
-        <code>codex</code> CLI holds on this Mac, and therefore what it costs you: a
-        ChatGPT plan covers it, an API key bills per token. Signing in here does
-        <b>not</b> make Codex selectable above.</p>
+      <p class="why" style="margin:4px 0 8px">Which OpenAI account Codex is
+        using, and what it costs you: a ChatGPT plan covers it, an API key bills
+        per token. Signing in here does <b>not</b> make Codex selectable above.</p>
       <div>${head}</div>
       ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
       ${keyForm}
       ${!canKey ? `<p class="why" style="margin:8px 0 0">Signing in with ChatGPT and
-        signing out work from this page. An <b>API key</b> is the one action it will not
-        carry — the key would have to cross an HTTP request to reach the CLI, and Sutra
-        will not put a live credential through that. Use the desktop app, or run
-        <code>codex login --with-api-key</code> in a terminal, which reads the key from
-        stdin.</p>` : ""}
+        signing out work from this page. Signing in with an <b>API key</b> does not —
+        use the desktop app, or run <code>codex login --with-api-key</code> in a
+        terminal.</p>` : ""}
+    </div>`;
+}
+
+/* ── the DeepSeek row's sign-in ──────────────────────────────────────────────
+   Sits DIRECTLY UNDER the DeepSeek row, which is why it is emitted after the
+   radiogroup rather than inside provRow(): a row IS a <button role="radio">,
+   and an <input> plus two buttons nested in one is invalid markup whose clicks
+   would toggle the radio. It lands under DeepSeek because deepseek is last in
+   providers._CATALOG -- a coupling, so test_provider_detect asserts that order
+   and this block renders nothing if the id is absent from the list.
+
+   NOT A COPY OF codexAuthHtml(). The states are different because the
+   credential is: codex reports which of two BILLING MODES its one credential
+   is in, and signing in there does not make codex selectable. Here a key is
+   half of whether the provider runs at all, so this block's only job is to
+   move the row between not-signed-in and selectable.
+
+   THE KEY IS NEVER IN THIS FUNCTION. `mask` comes from settings.json, built in
+   the backend from the last four characters. The input is uncontrolled -- no
+   value bound to state -- so the typed key lives only in the DOM node until the
+   click reads it, and any re-render clears it. */
+function deepseekAuthHtml(){
+  const a = SETTINGS && SETTINGS.deepseek_auth;
+  if (!a) return "";                       /* older backend: say nothing */
+  if (!(PROVIDERS || []).some(p => p.id === "deepseek")) return "";
+
+  const bridge = deepseekBridge();
+  const busy = S.deepseekBusy;
+  const msg = S.deepseekMsg
+    ? `<div class="note ${S.deepseekMsgOk ? "" : "b"}" style="margin:8px 0 0">${esc(S.deepseekMsg)}</div>`
+    : "";
+  const vars = (a.env_vars || []).map(v => `<code>${esc(v)}</code>`).join(" or ");
+
+  /* CAN THIS PAGE WRITE A KEY, and if not, is there something it can do about
+     it? Two lanes: the desktop bridge, or a session token this page traded the
+     server's one-time code for. The question used to be "is there a bridge",
+     which is why a browser got a Remove button that did nothing at all. */
+  const canWrite = deepseekCanWrite();
+  const sess = a.browser_session || {};
+
+  /* The step BEFORE the key field on a CLI-run server. Shared by the
+     not-signed-in and signed-in renders, because sign-OUT needs the same
+     authorisation sign-in does -- offering Remove without it is the dead
+     control this replaces.
+
+     THE CODE IS NOT A SECRET THIS PAGE KEEPS. It goes straight back to the
+     server in exchange for the token, the field is cleared, and it is
+     single-use, so a screenshot of this box authorises nothing afterwards.
+     type="text" for that reason: masking it would only make the paste harder
+     to check. */
+  const pairBlock = () => `
+      <p class="why" style="margin:4px 0 8px">Saving a key from a browser needs
+        this server's <b>sign-in code</b>. It printed one when it started — look
+        in the terminal you launched it from. It works once.</p>
+      <div class="wdrow">
+        <input type="text" class="wdin" data-deepseek-code spellcheck="false"
+               autocapitalize="characters" autocorrect="off" autocomplete="off"
+               ${busy ? "disabled" : ""}
+               aria-label="Sutra sign-in code" placeholder="XXXX-XXXX-XXXX-XXXX">
+        <button class="btn" type="button" data-deepseek="pair"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "pair" ? "Checking…" : "Unlock"}</button>
+      </div>
+      <p class="why" style="margin:6px 0 0">Or set ${vars} before starting the
+        server.</p>`;
+
+  /* AN ENV VAR WINS: the field is disabled and NAMES the variable. Letting
+     someone type into a box whose value would be shadowed is the "save a key
+     that silently has no effect" failure -- they would see "Saved", and the old
+     key would keep answering. */
+  if (a.state === "env"){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek key: <code>${esc(a.env_var)}</code></b>
+        <span class="pill p-ok">in use</span></div>
+      <p class="why" style="margin:4px 0 0">Set in this server's environment
+        ${a.mask ? `(<code>${esc(a.mask)}</code>)` : ""}, which wins over anything
+        saved in the app. Signing in here is switched off rather than hidden, so
+        you can see why: a key saved now would never be used.${
+        a.stored_mask ? ` There <b>is</b> a saved key underneath
+        (<code>${esc(a.stored_mask)}</code>) — unset <code>${esc(a.env_var)}</code>
+        and restart the server and it takes over.` : ""}</p>
+      <div class="wdrow" style="margin-top:8px">
+        <input type="password" class="wdin" disabled
+               aria-label="DeepSeek API key" placeholder="sk-…">
+        <button class="btn" type="button" disabled>Save</button>
+      </div>
+    </div>`;
+  }
+
+  /* SIGNED IN via the keychain. Mask + when + Remove. */
+  if (a.state === "stored"){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek key <code>${esc(a.mask)}</code></b>
+        <span class="pill p-ok">saved on this Mac</span></div>
+      <p class="why" style="margin:4px 0 0">In your login keychain${
+        a.saved_at ? `, saved ${esc(agRelTime(a.saved_at))}` : ""}. Sutra keeps
+        only the four characters above, and nothing needs restarting.</p>
+      ${canWrite ? `<p style="margin:8px 0 0">
+        <button class="btn" type="button" data-deepseek="remove"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "remove" ? "Removing…" : "Remove"}</button>
+        <span class="why">DeepSeek stops being selectable above.</span></p>`
+      : sess.available ? `<div style="margin-top:8px"><b>Unlock this page to
+          remove it</b>${pairBlock()}</div>`
+      : `<p class="why" style="margin:8px 0 0">To remove it from a browser,
+          restart the server and use the sign-in code it prints.</p>`}
+      ${msg}
+    </div>`;
+  }
+
+  /* NOT SIGNED IN. Two ways this can be un-actionable, and each says which. */
+  if (!a.store_available){
+    return `
+    <div class="note b" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key, and this machine cannot save one</b></div>
+      <p class="why" style="margin:4px 0 0">${esc(a.store_reason || "")}
+        Set ${vars} before starting the server.</p>
+    </div>`;
+  }
+  /* A BROWSER THAT HAS NOT PAIRED YET. The code field comes first and the key
+     field only exists after it, so there is never a moment where a key can be
+     typed into a page that has no way to deliver it. */
+  if (!canWrite && sess.available){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key, and this page needs unlocking first</b></div>
+      ${pairBlock()}
+      ${msg}
+    </div>`;
+  }
+  /* No bridge and no code to paste -- a desktop-started backend seen through a
+     browser, or a code already spent. Says WHICH, because "use the app" is the
+     wrong instruction for the second one. */
+  if (!canWrite){
+    return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key</b></div>
+      <p class="why" style="margin:4px 0 0">${esc(sess.reason
+        || "This page cannot save one.")} Or set ${vars} before starting the
+        server.</p>
+      ${msg}
+    </div>`;
+  }
+  return `
+    <div class="note" style="margin-top:9px">
+      <div><b>DeepSeek needs an API key</b></div>
+      <p class="why" style="margin:4px 0 8px">Every DeepSeek message is billed
+        against a key — there is no plan to inherit. Paste one and it is checked
+        with DeepSeek before anything is saved, then kept in your login
+        keychain.</p>
+      <div class="wdrow">
+        <input type="password" class="wdin" data-deepseek-key spellcheck="false"
+               autocapitalize="off" autocorrect="off" autocomplete="off"
+               ${busy ? "disabled" : ""}
+               aria-label="DeepSeek API key" placeholder="sk-…">
+        <button class="btn" type="button" data-deepseek="save"
+          ${busy ? 'aria-busy="true" disabled' : ""}>${
+          busy === "save" ? "Checking…" : "Save"}</button>
+      </div>
+      <p class="why" style="margin:6px 0 0">${
+        busy === "save"
+          ? "Asking DeepSeek whether the key works. Nothing is saved until it says yes."
+          : `Get one at <code>platform.deepseek.com</code>. Sutra sends it to
+             DeepSeek and to nowhere else, and it never reaches this page again —
+             once saved, all this screen can see is the last four characters.`}</p>
+      ${msg}
     </div>`;
 }
 
@@ -630,6 +795,35 @@ SCREENS.settings = () => {
     ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
     : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
 
+  /* ONE PLAIN LINE PER ROW, and deliberately no `p.reason` under it (founder
+     2026-09-07: "only show minimum a user might want to see").
+
+     What used to render here was the backend's diagnostic sentence -- up to
+     400 characters naming binary paths, ~/.codex/auth.json, PATH, npm package
+     names, the ACP and stream-json protocols, a codex-cli version pin, the
+     keychain service and account a key would live at, and which shape of
+     record settings.json keeps. All true. None of it answers the only question
+     this list is asked: can I pick this one, and if not, what do I do.
+
+     THE DETAIL IS NOT LOST. `reason` still ships in the API and still renders
+     where someone who wants it goes looking -- Health ("Why nothing here
+     runs", 04-screens.js) and the onboarding blocked-provider facts
+     (06-render.js) -- and the Codex and DeepSeek sign-in blocks directly below
+     carry the credential specifics for their own providers. This is a change
+     of AUDIENCE, not a deletion.
+
+     ONE CASE EARNS MORE THAN A STATUS. "Not installed on this Mac" is actively
+     misleading for someone who has Claude Desktop and reasonably believes they
+     installed Claude -- a field incident, per providers.py's own note. So the
+     backend sends `desktop_only` as a FLAG and the sentence lives here, in the
+     UI, in the words a user has. Sutra deciding what to say is this file's
+     job; Sutra deciding what is true is providers.py's.
+
+     WHAT WENT WITH IT: "Set the full path in Settings below, or
+     SUTRA_UI_<ID>_BIN". No such field is rendered anywhere in the panel --
+     POST /settings/provider-bin exists as a route with no control in front of
+     it -- so that sentence sent people looking for something that is not
+     there. Removing it removes a wrong instruction, not a useful one. */
   const provRow = p => `
     <button class="opt" type="button" role="radio"
         aria-checked="${active===p.id}" data-prov="${esc(p.id)}"
@@ -642,10 +836,10 @@ SCREENS.settings = () => {
           ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
         <span class="od">${p.runnable
             ? "Ready to use"
+            : p.desktop_only ? "Claude Desktop is installed, but this needs Claude Code — a different app"
             : !p.installed ? "Not installed on this Mac"
             : !p.configured ? "Installed, but not signed in yet"
-            : "Installed, but this panel can’t talk to it yet"}</span>
-        ${p.reason?`<span class="why">${esc(p.reason)}</span>`:""}
+            : "Installed, but Sutra can’t chat with it yet"}</span>
       </span>
     </button>`;
 
@@ -684,19 +878,18 @@ SCREENS.settings = () => {
     ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
       <p style="margin-bottom:9px">Which AI answers your messages. New chats start here, and your
         next message in any open chat moves to it too — nothing already written changes.</p>
-      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest stay listed
-        with what is missing, so you can see whether a name is unavailable or simply not set up
-        yet — rather than finding out when a chat fails to answer.</p>
+      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest are listed
+        with what they need.</p>
       <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
+      ${deepseekAuthHtml()}
       ${codexAuthHtml()}
       ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
         <b>Your saved choice could not be used.</b>
         ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
-          but ${esc(i.reason)}</div>`).join("")}
+          but it is not ready to use right now.</div>`).join("")}
         <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
       ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
-        Only ${esc(providerLabel(active))} is ready to use on this Mac right now. The others are
-        listed above with what they need — never quietly left out.</p>`:""}`)}
+        Only ${esc(providerLabel(active))} is ready to use on this Mac right now.</p>`:""}`)}
 
     ${fold("set.mode", "Permission mode", esc(running||"—"), `
       ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>

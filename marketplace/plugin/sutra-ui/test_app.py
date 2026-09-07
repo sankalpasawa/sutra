@@ -1108,9 +1108,41 @@ class TestApp(unittest.TestCase):
                 "%s: `installed` must be shutil.which(%r) and nothing else -- "
                 "a config directory is not evidence of a binary"
                 % (p["id"], p["bin"]))
-            self.assertEqual(
-                p["configured"], os.path.isdir(os.path.expanduser(p["config_dir"])),
-                "%s: `configured` must be the config dir's existence" % p["id"])
+            # `configured` means SET UP, and for two providers the directory is
+            # not what that means -- both overrides are documented in
+            # providers.py's docstring and covered in test_provider_detect.py:
+            #
+            #   codex     ~/.codex/auth.json exists (existence only). The dir
+            #             appears after the first `codex` run whether or not
+            #             anyone signed in.
+            #   deepseek  an API key resolves (env var, or a saved-key record).
+            #             ~/.deepseek is likewise created by the CLI and says
+            #             nothing about a key, and DeepSeek cannot answer one
+            #             message without one.
+            #
+            # Asserting isdir() for all four was this test's own intent
+            # inverted: it hardcoded the leftover-directory proxy that the
+            # docstring above says must not make a provider look available. It
+            # stayed green for codex only because BOTH the directory and
+            # auth.json happen to exist on this machine, and it went red for
+            # deepseek only when DEEPSEEK_API_KEY was exported -- i.e. it was
+            # already asserting a coincidence.
+            if p["id"] not in ("codex", "deepseek"):
+                self.assertEqual(
+                    p["configured"],
+                    os.path.isdir(os.path.expanduser(p["config_dir"])),
+                    "%s: `configured` must be the config dir's existence"
+                    % p["id"])
+            else:
+                self.assertIsInstance(
+                    p["configured"], bool,
+                    "%s: `configured` is a credential check, but still a bool"
+                    % p["id"])
+                if not p["configured"]:
+                    self.assertNotIn(
+                        p["config_dir"], p["reason"],
+                        "%s: the directory is not the missing thing, so the "
+                        "reason must not send anyone to look for it" % p["id"])
             self.assertIn("adapter", p, "%s is missing 'adapter'" % p["id"])
             self.assertEqual(
                 p["runnable"],
@@ -2781,6 +2813,370 @@ class TestDesktopControlAuth(unittest.TestCase):
         reached the network could not be polled without turning every open
         panel into a crawler."""
         self.assertIn("pending", self.api.api_updates_staged())
+
+
+class TestDeepSeekKeyRoutesAreGated(unittest.TestCase):
+    """The DeepSeek key write path, which is the same class of thing as arming
+    an install -- and is now gated by EITHER of two tokens.
+
+    electron/main.js says a route accepting an API key would be "a credential
+    WRITE surface any page on this machine could POST to". That is true of an
+    UNAUTHENTICATED route, which is what the rest of this API is. These are
+    not:
+
+      LANE 1, the desktop token: minted by the shell, given only to the backend
+      it spawned, attached by the MAIN process -- the renderer never holds it.
+
+      LANE 2, a browser session token: traded for a one-time code that exists
+      only on the server's STDOUT (deepseek_session). A page cannot read a
+      terminal, so this still is not "any page on this machine" -- it is the
+      operator carrying a secret across by hand.
+
+    So the negative test still has to hold, in a sharper form: a page that can
+    reach 127.0.0.1 and does NOT have one of those two tokens must not be able
+    to write a credential into the operator's keychain, or delete one. And lane
+    2 must not exist at all when lane 1 does -- see TestDeepSeekBrowserPairing.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import deepseek_session
+        import org_api
+        self.api = org_api
+        self.sess = deepseek_session
+        self._prev = org_api.DESKTOP_TOKEN
+        self._prev_env = os.environ.get("SUTRA_DESKTOP_TOKEN")
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        deepseek_session._reset_for_tests()
+        # A key-shaped stand-in, assembled rather than written out so no source
+        # line in this repo is ever key-shaped. Never a real key.
+        self.fake = "sk-" + "-".join(["notreal"] * 3) + "4f2a"
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+        self.sess._reset_for_tests()
+        if self._prev_env is None:
+            os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        else:
+            os.environ["SUTRA_DESKTOP_TOKEN"] = self._prev_env
+
+    class _Req(object):
+        def __init__(self, token=None, session=None):
+            self.headers = {}
+            if token:
+                self.headers["x-sutra-desktop-token"] = token
+            if session:
+                self.headers["x-sutra-session-token"] = session
+
+    def _refused(self, call):
+        from fastapi import HTTPException
+        try:
+            call()
+        except HTTPException as exc:
+            return exc
+        self.fail("a credential write was allowed without the desktop token")
+
+    def _body(self, key=None):
+        return self.api.DeepSeekKeyRequest(key=key)
+
+    def test_a_page_cannot_save_a_key(self):
+        self.api.DESKTOP_TOKEN = "s3cret"
+        for token in (None, "guess"):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(token)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_page_cannot_remove_a_key(self):
+        """Sign-out is destructive and Sutra keeps no copy, so it is gated as
+        tightly as sign-in."""
+        self.api.DESKTOP_TOKEN = "s3cret"
+        for token in (None, "guess"):
+            exc = self._refused(lambda: self.api.api_deepseek_key_remove(
+                self._Req(token)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_cli_run_backend_accepts_no_key_at_all(self):
+        """No token in the environment means the shell did not start this
+        server, so there is nothing that could legitimately be writing a
+        credential through it."""
+        self.api.DESKTOP_TOKEN = None
+        exc = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req("anything")))
+        self.assertEqual(exc.status_code, 403)
+
+    def test_the_refusal_happens_before_the_key_is_looked_at(self):
+        """Order matters: a refusal that first validated, probed or stored
+        would have already sent the key somewhere."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        called = []
+        for name in ("save", "validate", "clean", "_store"):
+            setattr(deepseek_auth, name,
+                    (lambda n: lambda *a, **k: called.append(n))(name))
+        try:
+            self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req()))
+        finally:
+            import importlib
+            importlib.reload(deepseek_auth)
+        self.assertEqual(called, [], "nothing touched the key before the 403")
+
+    def test_a_classified_refusal_is_200_with_ok_false_and_no_key(self):
+        """A rejected key is an expected outcome of this control, not a
+        protocol error -- same shape as POST /providers/codex/logout. And no
+        answer, on any path, may quote the key back."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        real = deepseek_auth.save
+        deepseek_auth.save = lambda k: (_ for _ in ()).throw(
+            deepseek_auth.DeepSeekAuthError("KEY_REJECTED",
+                                            "DeepSeek rejected that key."))
+        try:
+            out = self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req("s3cret"))
+        finally:
+            deepseek_auth.save = real
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "KEY_REJECTED")
+        self.assertNotIn(self.fake, repr(out))
+        self.assertNotIn("4f2a", repr(out))
+        # The row redraws from the SAME read that refused the write, so it
+        # cannot show a state nobody verified.
+        for field in ("auth", "providers", "settings"):
+            self.assertIn(field, out)
+
+    def test_the_answer_carries_the_state_the_row_needs(self):
+        """Both verbs answer with auth + providers + settings, the way
+        POST /settings/provider-bin answers with a fresh discover_providers():
+        the DEFAULT PROVIDER list has to re-evaluate from the write itself, or
+        the row disagrees with the keychain for a paint."""
+        import deepseek_auth
+        self.api.DESKTOP_TOKEN = "s3cret"
+        # remove() is STUBBED, and not for speed. The real one deletes from the
+        # operator's login keychain and clears the settings marker, so a suite
+        # run on a machine where someone had signed in would sign them out --
+        # a test with a side effect on a live credential. What is under test
+        # here is the ROUTE's answer shape; the store's behaviour is
+        # test_deepseek_auth's job, against a memory store.
+        real = deepseek_auth.remove
+        deepseek_auth.remove = lambda: {"removed": False}
+        try:
+            out = self.api.api_deepseek_key_remove(self._Req("s3cret"))
+        finally:
+            deepseek_auth.remove = real
+        self.assertTrue(out["ok"])
+        self.assertIn("auth", out)
+        self.assertIn("deepseek", [p["id"] for p in out["providers"]])
+        self.assertIn("provider_ignored", out["settings"])
+
+    def test_the_row_state_reaches_the_panel_where_it_reads_it(self):
+        """The panel does `SETTINGS = r.settings`, so the state has to be
+        inside that dict. It first shipped as a sibling of claude_account and
+        nothing read it."""
+        got = self.api.api_settings_get()
+        self.assertIn("deepseek_auth", got["settings"])
+        self.assertNotIn("deepseek_auth", got,
+                         "a top-level sibling is read by nothing -- see providers.load_settings")
+
+    def test_the_settings_answer_carries_a_mask_and_never_a_key(self):
+        import providers as p
+        got = p.deepseek_auth_state()
+        self.assertIn(got["state"], ("env", "stored", "none"))
+        for value in got.values():
+            if isinstance(value, str):
+                self.assertNotIn("sk-" + "-".join(["notreal"] * 3), value)
+
+    # ---- lane 2: the browser session token ---------------------------------
+
+    def _paired(self):
+        """A process that printed a code and had it exchanged, as a live server
+        would be. Returns the token."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        return self.sess.exchange(self.sess.display(self.sess._code))
+
+    def test_a_paired_browser_can_write(self):
+        import deepseek_auth
+        token = self._paired()
+        real = deepseek_auth.save
+        deepseek_auth.save = lambda k: {"mask": "sk-****4f2a", "saved_at": 1.0}
+        try:
+            out = self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=token))
+        finally:
+            deepseek_auth.save = real
+        self.assertTrue(out["ok"])
+        self.assertNotIn(self.fake, repr(out))
+
+    def test_a_paired_browser_can_sign_out(self):
+        """Sign-OUT needed the same widening. Without it the browser drew a
+        Remove button whose handler could only 403 -- a dead control."""
+        import deepseek_auth
+        token = self._paired()
+        real = deepseek_auth.remove
+        deepseek_auth.remove = lambda: {"removed": False}
+        try:
+            out = self.api.api_deepseek_key_remove(self._Req(session=token))
+        finally:
+            deepseek_auth.remove = real
+        self.assertTrue(out["ok"])
+
+    def test_a_forged_session_token_is_refused(self):
+        token = self._paired()
+        for guess in (None, "", "guess", token[:-1], token + "x", "x" * len(token)):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=guess)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_an_unpaired_server_refuses_every_session_token(self):
+        """arm() ran and nobody exchanged the code: there is no token yet, so
+        every value presented as one has to be a no -- including the falsy ones
+        that would make compare_digest raise."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        for guess in ("anything", "", None):
+            exc = self._refused(lambda: self.api.api_deepseek_key_save(
+                self._body(self.fake), self._Req(session=guess)))
+            self.assertEqual(exc.status_code, 403)
+
+    def test_a_session_token_cannot_arm_an_install(self):
+        """The update routes keep the ONE gate they had. Signing a key into the
+        operator's own keychain is not the same authority as replacing
+        /Applications/Sutra.app on their behalf, and one shared gate would have
+        quietly handed the first the second's threat model."""
+        from fastapi import HTTPException
+        token = self._paired()
+        with self.assertRaises(HTTPException) as caught:
+            self.api._desktop_control(self._Req(session=token))
+        self.assertEqual(caught.exception.status_code, 403)
+
+    def test_the_refusal_names_the_lane_that_is_actually_available(self):
+        """"Forbidden" left the browser field looking broken. A desktop-started
+        server has no code to paste; a terminal-started one does."""
+        self.api.DESKTOP_TOKEN = "s3cret"
+        os.environ["SUTRA_DESKTOP_TOKEN"] = "s3cret"
+        desktop = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req()))
+        self.assertIn("desktop app", desktop.detail)
+
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        cli = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req()))
+        self.assertIn("session token", cli.detail)
+
+    def test_a_stale_token_is_told_to_re_pair_rather_than_just_refused(self):
+        """The token dies when the server restarts, and the panel drops it on a
+        403 -- but the operator still has to be told to go and look for the new
+        code."""
+        self.api.DESKTOP_TOKEN = None
+        self.sess.arm()
+        exc = self._refused(lambda: self.api.api_deepseek_key_save(
+            self._body(self.fake), self._Req(session="a-token-from-last-run")))
+        self.assertIn("restart", exc.detail.lower())
+
+
+class TestDeepSeekBrowserPairing(unittest.TestCase):
+    """POST /api/providers/deepseek/session -- the exchange itself.
+
+    It is the one route here with NO token gate, and that is structural: it
+    exists to hand out the credential the gate wants. What protects it is the
+    code -- 80 bits, on this process's stdout only, single-use, and behind
+    app.py's origin guard. deepseek_session's own suite pins the state machine;
+    what is pinned here is the ROUTE's answer shape, which is what the panel
+    reads.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import deepseek_session
+        import org_api
+        self.api = org_api
+        self.sess = deepseek_session
+        self._prev = org_api.DESKTOP_TOKEN
+        self._prev_env = os.environ.get("SUTRA_DESKTOP_TOKEN")
+        os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        org_api.DESKTOP_TOKEN = None
+        deepseek_session._reset_for_tests()
+
+    def tearDown(self):
+        self.api.DESKTOP_TOKEN = self._prev
+        self.sess._reset_for_tests()
+        if self._prev_env is None:
+            os.environ.pop("SUTRA_DESKTOP_TOKEN", None)
+        else:
+            os.environ["SUTRA_DESKTOP_TOKEN"] = self._prev_env
+
+    def _body(self, code=None):
+        return self.api.DeepSeekSessionRequest(code=code)
+
+    def _code(self):
+        self.sess.arm()
+        return self.sess.display(self.sess._code)
+
+    def test_the_right_code_returns_a_token_that_the_key_route_accepts(self):
+        out = self.api.api_deepseek_session(self._body(self._code()))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["code"], "PAIRED")
+        self.assertTrue(self.sess.verify(out["token"]))
+
+    def test_a_wrong_code_is_200_with_ok_false_and_no_token(self):
+        """A mistyped code is an expected outcome of this control, not a
+        protocol error -- same shape as a rejected key. Landing it in the panel
+        as a thrown fetch error would make the operator decode a status code."""
+        self._code()
+        out = self.api.api_deepseek_session(self._body("ZZZZ-ZZZZ-ZZZZ-ZZZZ"))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "BAD_CODE")
+        self.assertNotIn("token", out)
+
+    def test_a_missing_code_is_classified_not_a_422(self):
+        """DeepSeekSessionRequest.code is Optional for this reason: FastAPI's
+        validation errors can echo the offending INPUT back."""
+        self._code()
+        out = self.api.api_deepseek_session(self._body(None))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "NO_CODE")
+
+    def test_the_code_is_single_use_over_the_route(self):
+        code = self._code()
+        self.assertTrue(self.api.api_deepseek_session(self._body(code))["ok"])
+        again = self.api.api_deepseek_session(self._body(code))
+        self.assertFalse(again["ok"])
+        self.assertEqual(again["code"], "CLAIMED")
+        self.assertIn("Restart the server", again["message"])
+
+    def test_a_desktop_started_server_offers_no_exchange(self):
+        os.environ["SUTRA_DESKTOP_TOKEN"] = "shell-token"
+        self.api.DESKTOP_TOKEN = "shell-token"
+        out = self.api.api_deepseek_session(self._body("ZZZZ-ZZZZ-ZZZZ-ZZZZ"))
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["code"], "NOT_OFFERED")
+
+    def test_the_answer_carries_the_state_the_row_needs(self):
+        """Same contract as the key routes: the row redraws from the read that
+        performed the write, so it cannot show a state nobody verified."""
+        out = self.api.api_deepseek_session(self._body(self._code()))
+        for field in ("auth", "providers", "settings"):
+            self.assertIn(field, out)
+
+    def test_no_answer_on_any_path_contains_the_code(self):
+        code = self._code()
+        ok = self.api.api_deepseek_session(self._body(code))
+        self.assertNotIn(code.replace("-", ""), repr(ok))
+        bad = self.api.api_deepseek_session(self._body("QQQQ-QQQQ-QQQQ-QQQQ"))
+        self.assertNotIn("QQQQ", repr(bad), "the submitted value was echoed back")
+
+    def test_the_unauthenticated_settings_read_never_carries_the_code(self):
+        """browser_session rides in GET /api/settings. If the code ever gets
+        into it, every page on the machine can read it."""
+        code = self._code()
+        got = self.api.api_settings_get()
+        self.assertNotIn(code.replace("-", ""), repr(got))
+        sess = got["settings"]["deepseek_auth"]["browser_session"]
+        self.assertTrue(sess["available"])
+        self.assertEqual(set(sess), {"available", "claimed", "reason"})
 
 
 class TestShellPathHarvest(unittest.TestCase):

@@ -105,4 +105,26 @@ contextBridge.exposeInMainWorld("sutra", {
   codexLogin: () => ipcRenderer.invoke("sutra:codex-login"),
   codexApiKey: (key) => ipcRenderer.invoke("sutra:codex-api-key", key),
   codexLogout: () => ipcRenderer.invoke("sutra:codex-logout"),
+
+  /* ── DeepSeek sign-in ───────────────────────────────────────────────────
+     DIFFERENT SHAPE FROM CODEX ABOVE, because the credential has a different
+     owner. Codex owns its own credential and the key goes to a CLI's stdin,
+     so Sutra keeps nothing and there is no backend in the story. DeepSeek has
+     no CLI credential store: Sutra holds the key, and the readers are all
+     PYTHON -- the ws_chat connect gate, the balance card, and the spawn env
+     for `deepseek --acp`. So the key crosses to the backend, which owns the
+     macOS keychain adapter, over the AUTHENTICATED loopback hop: the main
+     process attaches the desktop control token, which is why this cannot be a
+     plain fetch() from the panel. The token still never reaches here.
+
+     WRITE-ONLY, BOTH WAYS. The key goes out; what comes back is a mask, a
+     code and a fixed sentence. Nothing on the return path can carry the key,
+     including on failure -- the backend classifies, and main returns a fixed
+     string for anything the backend never answered.
+
+     Absent in a browser, where the DeepSeek row renders the environment
+     variables as text instead -- the same fallback the Codex row uses.
+     Resolves {ok, code, message, auth, providers, settings}. */
+  deepseekKeySave: (key) => ipcRenderer.invoke("sutra:deepseek-key-save", key),
+  deepseekKeyRemove: () => ipcRenderer.invoke("sutra:deepseek-key-remove"),
 });

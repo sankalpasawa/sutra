@@ -306,8 +306,14 @@ async function _fail(r, path){
   let detail = "";
   try { const j = await r.json(); detail = (j && (j.detail || j.message)) || ""; } catch (e) {}
   if (detail && typeof detail !== "string") { try { detail = JSON.stringify(detail); } catch (e) { detail = ""; } }
-  return new Error(detail ? (detail + " (" + path + " -> " + r.status + ")")
-                          : (path + " -> " + r.status));
+  const err = new Error(detail ? (detail + " (" + path + " -> " + r.status + ")")
+                              : (path + " -> " + r.status));
+  /* The STATUS as well as the sentence. A caller that holds a capability token
+     has to tell "the server refused this token" (403 -> drop it and re-pair)
+     apart from "the server broke" (5xx -> keep it), and a message string is
+     not something to pattern-match for that. */
+  err.status = r.status;
+  return err;
 }
 /* Per-boot panel token (security consult 2026-08-25): rides every panel
    request so browser-origin mutations authenticate. Another origin cannot
@@ -333,9 +339,14 @@ async function apiGet(path){
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
-async function apiPost(path, body){
+/* `headers` is for the routes that need a SECOND credential on top of the
+   panel token -- today just the DeepSeek key write, which carries either the
+   desktop token or a paired browser session token. Merged over the defaults so
+   a caller cannot accidentally drop X-Sutra-Panel and get a silent 403. */
+async function apiPost(path, body, headers){
   const r = await fetch(API + path, { method:"POST",
-    headers:{"Content-Type":"application/json", "X-Sutra-Panel": panelToken()},
+    headers: Object.assign({"Content-Type":"application/json",
+                            "X-Sutra-Panel": panelToken()}, headers || {}),
     body: JSON.stringify(body||{}) });
   if (!r.ok) throw await _fail(r, path);
   return r.json();

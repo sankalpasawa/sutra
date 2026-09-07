@@ -1247,6 +1247,24 @@ async def _default_delegate_spawner(mission):
 
 
 @app.on_event("startup")
+async def _deepseek_pairing_code():
+    """Print the one-time DeepSeek sign-in code, when this process offers one.
+
+    HERE AND NOT AT IMPORT. The test suites import app.py in-process, and a
+    module-level mint would put a code in every one of them and print it into
+    their output. A startup hook fires once, only when a server is actually
+    serving.
+
+    deepseek_session.arm() decides whether to mint at all -- it declines when
+    SUTRA_DESKTOP_TOKEN is set, because the Electron shell already owns the
+    key-writing channel and a second door would exist for no reason.
+    """
+    import deepseek_session
+    deepseek_session.arm()
+    deepseek_session.print_banner()
+
+
+@app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
         try:
@@ -1846,11 +1864,25 @@ async def ws_chat(ws: WebSocket):
         # REFUSES a stray key; DeepSeek has no subscription path at all and
         # REQUIRES one. Refused here, at connect time, rather than left to
         # fail inside spawn() as a dead socket with no text.
-        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        #
+        # THROUGH THE RESOLVER, not os.environ. This read was its own
+        # os.environ.get("DEEPSEEK_API_KEY") and deepseek_usage.py's balance
+        # fetch was another, so neither could see a key saved in the keychain
+        # and the two would have disagreed about whether DeepSeek was usable.
+        # providers.deepseek_key_for_request() is the one resolution path, and
+        # it is read HERE, per connect, so signing in takes effect on the next
+        # message instead of the next restart.
+        #
+        # STILL REACHABLE with the readiness gate in place. An unkeyed DeepSeek
+        # is no longer runnable, so the `prov["runnable"]` refusal above now
+        # catches the ordinary case; what is left for this arm is the narrow
+        # one -- a key that vanished between that check and this line, or a
+        # settings marker whose keychain item is gone. The resolver's reason
+        # names which.
+        deepseek_key, why = providers.deepseek_key_for_request()
         if not deepseek_key:
             await ws.send_json({"type": "error", "code": "provider-missing", "detail":
-                "Active provider is 'deepseek', but DEEPSEEK_API_KEY is not set "
-                "in the server environment. Export it and restart the server."})
+                "Active provider is 'deepseek', but %s" % why})
             await ws.close()
             return
     elif active_id != "claude":

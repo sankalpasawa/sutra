@@ -1262,6 +1262,86 @@ ipcMain.handle("sutra:codex-api-key", async (e, key) => {
    there is nothing on this side to clean up. */
 ipcMain.handle("sutra:codex-logout", async (e) => codexRun(e, ["logout"], null, CODEX_QUICK_TIMEOUT));
 
+/* ── DeepSeek sign-in ────────────────────────────────────────────────────────
+ * NOT A SPAWN. The codex verbs above run a CLI that owns its own credential;
+ * DeepSeek has no such CLI credential and every reader of the key is Python
+ * (app.py's ws_chat gate, deepseek_usage.py, the `deepseek --acp` spawn env),
+ * so the backend stores it in the macOS keychain and these verbs are one
+ * authenticated loopback POST each.
+ *
+ * WHAT MAKES THAT SAFE, given codexEnv()'s note that a route accepting an API
+ * key would be "a credential WRITE surface any page on this machine could POST
+ * to": these two routes are token-gated. api() below attaches
+ * x-sutra-desktop-token, the token is minted in this process and given only to
+ * the backend it spawned, and the renderer never has it -- so a page cannot
+ * reach them, and neither can a shell that merely ATTACHED to someone else's
+ * backend. desktopControl() is checked FIRST for exactly that case, the way
+ * sutra:teamsutra-action does, because a 403 from the server reads as a broken
+ * app rather than as a window without authority.
+ *
+ * THE KEY IS NEVER LOGGED OR ECHOED. It is trimmed, sent as a JSON body, and
+ * dropped when the handler returns. Nothing derived from a failure crosses back
+ * except a fixed string: api() rejects with the server's `detail`, and FastAPI
+ * validation errors can quote the offending INPUT -- which here is a live
+ * credential -- so err.message is deliberately NOT forwarded. Same discipline
+ * as codexError(), for the same reason, at a different layer.
+ *
+ * NOT SPAWN-CANCELLABLE, so no codexCancelIfBusy() equivalent: there is no
+ * child to kill and no human round trip to abandon. The probe the backend makes
+ * is bounded by its own 8s timeout inside the 20s here.
+ */
+const DEEPSEEK_KEY_TIMEOUT = 20000;   // backend probe is 8s; this is the ceiling
+
+/* Both gates the codex verbs apply, restated rather than shared: codex is out
+   of scope for this change and must not be touched to add a second caller. */
+function deepseekGate(e) {
+  if (!desktopControl()) {
+    return { ok: false, code: "NO_AUTHORITY", message:
+      "this window is attached to a backend it did not start, so it cannot " +
+      "save a credential there. Sign in from the window that started it." };
+  }
+  try {
+    if (new URL(e.senderFrame.url).origin !== ORIGIN) throw new Error("origin");
+  } catch { return { ok: false, code: "REFUSED", message: "refused: unexpected caller" }; }
+  return null;
+}
+
+const DEEPSEEK_UNREACHABLE = {
+  ok: false, code: "TRANSPORT", message:
+    "could not reach the Sutra backend to save the key, so nothing was saved. " +
+    "If this keeps happening, restart the app.",
+};
+
+ipcMain.handle("sutra:deepseek-key-save", async (e, key) => {
+  const refused = deepseekGate(e);
+  if (refused) return refused;
+  /* Trimmed HERE as well as in the backend: people paste with a trailing
+     newline, and the empty case is answered without a request. The refusals
+     name the paste and never quote the value. */
+  const k = typeof key === "string" ? key.trim() : "";
+  if (!k) return { ok: false, code: "NO_KEY", message: "Enter a key first." };
+  if (/\s/.test(k)) return { ok: false, code: "BAD_PASTE", message:
+    "that does not look like one key -- it has a space or a line break in it. Check the paste." };
+  try {
+    return await api("POST", "/api/providers/deepseek/key", { key: k },
+                     DEEPSEEK_KEY_TIMEOUT);
+  } catch (err) {
+    return DEEPSEEK_UNREACHABLE;                 /* err.message can quote the key */
+  }
+});
+
+ipcMain.handle("sutra:deepseek-key-remove", async (e) => {
+  const refused = deepseekGate(e);
+  if (refused) return refused;
+  try {
+    return await api("POST", "/api/providers/deepseek/key/remove", {},
+                     DEEPSEEK_KEY_TIMEOUT);
+  } catch (err) {
+    return { ok: false, code: "TRANSPORT", message:
+      "could not reach the Sutra backend, so the saved key was not removed." };
+  }
+});
+
 /* Native folder chooser for the panel's working-directory fields. The panel is
    the same app the CLI serves to an ordinary browser, where this cannot exist --
    so it is offered over the preload bridge and the renderer only draws the Browse
