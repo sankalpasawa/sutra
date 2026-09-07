@@ -1280,6 +1280,35 @@ class TestApp(unittest.TestCase):
         for m in body["permission_modes"]:
             self.assertTrue(m["note"], "%s has no explanation" % m["id"])
 
+    def test_41b_the_per_provider_control_maps_are_published_and_add_only(self):
+        """Which controls a PANE may show, keyed by provider -- the same shape
+        as models_by_provider, and for the same reason: the panel rendered
+        Claude's turn options and all six of Claude's permission modes on every
+        pane, including DeepSeek panes where the server discarded the first set
+        and ran `default` for three of the second.
+
+        ADD-ONLY is the assertion that matters. The flat `permission_modes`
+        above is the vocabulary (notes, unsafe gating) and test_41 pins it;
+        these two say who can honour what, and must not narrow it."""
+        status, body = _get("/api/settings")
+        self.assertEqual(status, 200)
+        tmap = body["turn_options_by_provider"]
+        pmap = body["permission_modes_by_provider"]
+        # Claude unchanged, which is the constraint this whole change runs under
+        self.assertEqual(pmap["claude"],
+                         [m["id"] for m in body["permission_modes"]],
+                         "Claude's modes must be exactly the flat list, in order")
+        self.assertEqual(set(tmap["claude"]),
+                         {"effort", "max_budget_usd", "allowed_tools",
+                          "disallowed_tools", "append_system_prompt"})
+        # DeepSeek: three modes, and no turn options at all -- absent, not empty
+        self.assertEqual(pmap["deepseek"],
+                         ["plan", "acceptEdits", "bypassPermissions"])
+        self.assertNotIn("deepseek", tmap)
+        # A LOADED map is never empty: that is what lets the client tell
+        # "not fetched yet" from "this provider declares none".
+        self.assertTrue(tmap, "an empty map would read as not-loaded forever")
+
     def test_42_settings_rejects_an_unknown_permission_mode_without_storing_it(self):
         _, before = _get("/api/settings")
         status, err = _post("/api/settings", {"permission_mode": "yolo"})
@@ -1898,6 +1927,113 @@ class TestDeepSeekPermissionMode(unittest.TestCase):
                          "session/set_session_mode is being CALLED again: %r" % (calls,))
         self.assertIn('"session/set_mode"', src,
                       "the correct method name is not in this file at all")
+
+
+class TestPerProviderControlSurface(unittest.TestCase):
+    """Which controls a pane may show is DECLARED per provider, not assumed.
+
+    THE BUG THIS EXISTS FOR. The panel rendered Claude's controls on every
+    pane. On a DeepSeek pane:
+
+      - all five turn options were collected and sent, and the server dropped
+        every one. build_acp_args has no per-turn argv to put them in, and ACP's
+        prompt request carries no options field, so there was nowhere for them
+        to go -- but the UI reported them as applied.
+      - three of the six permission modes (auto / manual / dontAsk) have no ACP
+        equivalent and ran as `default` while the control kept displaying the
+        operator's choice.
+
+    Same shape as the model picker before models_by_provider, and the same fix:
+    the provider DECLARES what it can honour, and the client renders from that.
+
+    The flat `permission_modes` list is deliberately NOT narrowed -- it is the
+    vocabulary, with the notes and the unsafe-mode gating, and test_41 pins it.
+    """
+
+    def test_claude_declares_every_turn_option_and_every_mode(self):
+        """The constraint on this change: Claude's values do not move."""
+        import providers as P
+        self.assertEqual(
+            tuple(P.permission_modes_for("claude")), P.PERMISSION_MODES,
+            "Claude must still offer every mode -- narrowing it is a "
+            "regression, not a fix")
+        self.assertEqual(set(P.turn_options_for("claude")),
+                         {"effort", "max_budget_usd", "allowed_tools",
+                          "disallowed_tools", "append_system_prompt"})
+
+    def test_deepseek_declares_no_turn_options(self):
+        """Measured, not pending. ACP's session/prompt takes only
+        {sessionId, prompt[]} -- there is no field any of these could ride in,
+        and session/set_config_option (the generic per-session config surface)
+        is -32601 on this build."""
+        import providers as P
+        self.assertEqual(tuple(P.turn_options_for("deepseek")), ())
+
+    def test_allowed_tools_is_never_declared_for_deepseek(self):
+        """THE ONE THAT MUST NOT BE 'FIXED' LATER.
+
+        DeepSeek's CLI has an --allowed-tools flag, so this looks like an easy
+        win. It is the opposite kind of thing from Claude's --allowedTools:
+        Gemini's feeds mapToolsToRules(..., autoApprove=true), and the CLI's own
+        copy calls it "auto-approves certain tools". It is a prompt BYPASS, not
+        a capability whitelist.
+
+        Wiring the box labelled "Allow only" to it would WIDEN permissions for
+        an operator trying to narrow them. That is worse than the no-op this
+        change removes, so it is pinned as absent."""
+        import providers as P
+        self.assertNotIn("allowed_tools", P.turn_options_for("deepseek"))
+        self.assertNotIn("disallowed_tools", P.turn_options_for("deepseek"))
+
+    def test_deepseek_offers_only_the_three_modes_it_can_enforce(self):
+        import providers as P
+        self.assertEqual(tuple(P.permission_modes_for("deepseek")),
+                         ("plan", "acceptEdits", "bypassPermissions"))
+        for gone in ("auto", "manual", "dontAsk"):
+            self.assertNotIn(gone, P.permission_modes_for("deepseek"),
+                             "%s has no ACP equivalent and ran as default" % gone)
+
+    def test_every_declared_mode_is_a_real_mode(self):
+        """A typo here would silently drop a mode from a provider's picker --
+        the failure mode of the bug this replaces, one layer up."""
+        import providers as P
+        for pid, modes in P.all_permission_modes_by_provider().items():
+            for m in modes:
+                self.assertIn(m, P.PERMISSION_MODES,
+                              "%s declares unknown mode %r" % (pid, m))
+
+    def test_every_mode_deepseek_omits_is_a_non_writing_one(self):
+        """permSelect computes its warning colour from the FULL mode list, which
+        is safe only while the modes a provider omits are the ones that do not
+        write files. If that ever stops being true the composer would
+        under-warn, so the invariant is pinned here rather than left as a
+        comment."""
+        import providers as P
+        omitted = set(P.PERMISSION_MODES) - set(P.permission_modes_for("deepseek"))
+        self.assertEqual(omitted & set(P.UNSAFE_PERMISSION_MODES), set(),
+                         "a write-capable mode is being omitted -- permSelect's "
+                         "warn class must switch to what will RUN")
+
+    def test_an_unknown_provider_hides_turn_options_but_keeps_every_mode(self):
+        """The asymmetry, on purpose. A missing turn option costs a control,
+        which is safe. A missing permission mode would leave a pane with no way
+        to say `plan`, and hiding a safety control is the wrong direction to be
+        wrong in."""
+        import providers as P
+        self.assertEqual(tuple(P.turn_options_for("nope-not-a-provider")), ())
+        self.assertEqual(tuple(P.permission_modes_for("nope-not-a-provider")),
+                         P.PERMISSION_MODES)
+
+    def test_a_provider_honouring_none_is_absent_from_the_map(self):
+        """Same contract as models_by_provider, and the client depends on it:
+        an EMPTY map means "not fetched yet", so it must be impossible for a
+        loaded one to be empty. Claude declaring five is what guarantees that."""
+        import providers as P
+        tmap = P.all_turn_options_by_provider()
+        self.assertNotIn("deepseek", tmap, "declares none, so must be absent")
+        self.assertNotIn("codex", tmap)
+        self.assertIn("claude", tmap, "a loaded map must never be empty")
+
 
 
 class TestChatProviderParam(unittest.TestCase):

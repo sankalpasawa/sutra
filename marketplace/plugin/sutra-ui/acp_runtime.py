@@ -445,6 +445,12 @@ class AcpRuntime:
             # the same way an auto-approved acceptEdits write is auditable,
             # not just silently allowed. `notice` is existing vocabulary
             # (already used for a dropped oversized frame); no new frame type.
+            #
+            # AND IT CURRENTLY GOES NOWHERE. `notice` has no client handler, so
+            # this audit line is emitted and dropped -- the "auditable, not
+            # silently allowed" claim above is not true today. See the KNOWN GAP
+            # block at session_runtime.py's own notice emit for why it is not
+            # fixed in this commit.
             await self._emit({"type": "notice", "text":
                 "%s permission request for %r (%s) -- mode %r"
                 % ("approved" if approved else "declined",
@@ -531,12 +537,23 @@ class AcpRuntime:
 
         `session_id`, when given, is tried via `session/load` first --
         ACP's stable, capability-advertised resume path (agentCapabilities.
-        loadSession, confirmed true on this CLI). `session/resume` exists
-        too but dispatches to an internal `unstable_resumeSession`, so load
-        is the one to use. A dead or unknown id comes back as a JSON-RPC
-        error (loadSession's own session lookup throws) -- caught here and
-        treated exactly like Claude's dead ``--resume`` id: fall back to a
-        fresh session rather than failing the turn.
+        loadSession, confirmed true on this CLI). A dead or unknown id comes
+        back as a JSON-RPC error (loadSession's own session lookup throws) --
+        caught here and treated exactly like Claude's dead ``--resume`` id:
+        fall back to a fresh session rather than failing the turn.
+
+        CORRECTION (2026-09-07). This used to say `session/resume` "exists too
+        but dispatches to an internal unstable_resumeSession, so load is the
+        one to use". That described the ACP SDK's DISPATCHER TABLE, not this
+        agent. The two are not the same surface, and the SDK's is the larger:
+        every case in it is guarded by `if (!agent.<handler>) throw
+        methodNotFound`. `GeminiAgent` on this build implements exactly
+        initialize / authenticate / newSession / loadSession / prompt / cancel
+        / setSessionMode / unstable_setSessionModel -- so `session/resume` is
+        -32601 here, as are session/list, session/fork, session/close and
+        session/set_config_option. Verified by calling them, not by reading the
+        table. `session/load` is still the right choice; the reason given for
+        it was describing a method that does not exist on this agent.
 
         KNOWN GAP (follow-up, accepted for now): the fallback is silent.
         There is no channel to tell the client continuity was lost -- this

@@ -1946,6 +1946,8 @@ async function loadRuntime(){
     SETTINGS = settings.settings || null;
     PERM_MODES = settings.permission_modes || [];
     MODELS_BY_PROVIDER = settings.models_by_provider || {};
+    TURN_OPTIONS_BY_PROVIDER = settings.turn_options_by_provider || {};
+    PERM_MODES_BY_PROVIDER = settings.permission_modes_by_provider || {};
     CLAUDE_ACCOUNT = settings.claude_account || null;
     paintAvatar();
   } else {

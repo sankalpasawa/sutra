@@ -145,6 +145,16 @@ function agentDetailHtml(meta, messages){
    through paneMenuAction() or -- for Permissions and Model -- are LABELS around
    the existing selects, so the [data-perm]/[data-model] handlers in wire()
    survive unchanged (a select inside a button is invalid HTML -- codex P1). */
+/* THIS PANE'S provider id. Three controls now key off it (Model, Permissions,
+   Turn options) and they must agree, so the expression lives in one place.
+
+   s.channel is what the SERVER said it would actually run (the ws "provider"
+   frame), so a pane opened under DeepSeek keeps its own answer after the global
+   default is switched to Claude. SETTINGS.provider covers only the pane that
+   has not received its frame yet. */
+function paneProvider(s){
+  return (s && s.channel && s.channel.id) || (SETTINGS || {}).provider;
+}
 function paneMenuHtml(s){
   if (S.paneMenu !== s.id) return "";
   /* The Claude-only `u = usageActive(S.usage)` binding lived here. Its one
@@ -153,12 +163,10 @@ function paneMenuHtml(s){
   const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
   /* ── the Model row, built here so the template below stays one line ──
-     THIS PANE'S provider, not the globally selected one. s.channel is what the
-     server said it would actually run (the ws "provider" frame), so a pane
-     opened under DeepSeek keeps offering DeepSeek's models after the global
-     default is switched to Claude. SETTINGS.provider covers only the pane that
-     has not received its frame yet. */
-  const mpid = (s.channel && s.channel.id) || (SETTINGS || {}).provider;
+     THIS PANE'S provider, not the globally selected one -- see paneProvider()
+     above for why, which is now shared with the Permissions and Turn options
+     rows rather than restated here. */
+  const mpid = paneProvider(s);
   /* Before /api/settings resolves there is no map at all, and the row must not
      vanish on first paint -- that is what the old `MODELS.length ? ... : [CLI
      default]` fallback was for. An EMPTY map means not-loaded; a loaded map
@@ -197,7 +205,7 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
-    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect()}</span><span class="ma"></span></label>
+    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(mpid)}</span><span class="ma"></span></label>
     ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
             title="Model — applies to the next message">${mopts}
       </select></span><span class="ma"></span></label>`}
@@ -212,7 +220,12 @@ function paneMenuHtml(s){
          ? "not reported for " + (providerLabel(mpid) || mpid || "this assistant")
          : "not read yet");
      })()}
-    ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+    ${/* Omitted entirely for a provider that honours none of them, rather than
+          opening onto an empty box -- same rule as the Model row above. On a
+          DeepSeek pane every one of the five was collected and discarded: ACP's
+          per-turn request has no options field for them to travel in. */
+       !turnOptsFor(mpid).size ? "" :
+       row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
     ${row("close", "Close", "close this session")}
@@ -321,7 +334,7 @@ function sessionPane(s){
     ${switchMarkerHtml(s.id)}
     ${modeMarkerHtml(s.id)}
     ${permConfirmHtml()}
-    ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneProvider(s)) : ""}
     ${cwdEditorHtml(s.id)}
     ${providerSwitcherHtml(s.id)}
     ${prFormHtml(s.id)}
@@ -396,33 +409,49 @@ const COMPOSER_MAX_PX = 200;
    trusted. Kept per SESSION rather than global: "spend at most $2 on this one"
    is a property of the question being asked, not of the panel. */
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
-function turnOptsHtml(sid){
+/* Which of the five this PANE'S provider can honour, as a Set.
+   Not-loaded (empty map) => all of them, so the first paint is what it always
+   was; a loaded map with no entry for this provider => none, and the caller
+   omits the whole block rather than opening an empty one. */
+function turnOptsFor(mpid){
+  const loaded = Object.keys(TURN_OPTIONS_BY_PROVIDER).length > 0;
+  if (!loaded) return new Set(TOPT_ALL);
+  return new Set(TURN_OPTIONS_BY_PROVIDER[mpid] || []);
+}
+const TOPT_ALL = ["effort", "max_budget_usd", "allowed_tools",
+                  "disallowed_tools", "append_system_prompt"];
+function turnOptsHtml(sid, mpid){
   const o = S.turnOpts[sid] || {};
+  const on = turnOptsFor(mpid);
+  /* Each field is emitted only if this provider can act on it. A field that is
+     collected and then discarded server-side is the model-dropdown bug in a
+     different control: it reads as a setting that took effect. */
+  const f = (key, html) => on.has(key) ? html : "";
   return `<div class="topts">
-    <label><span>Effort</span>
+    ${f("effort", `<label><span>Effort</span>
       <select data-opt="effort" data-sid="${sid}">
         ${EFFORTS.map(e=>`<option value="${e}" ${o.effort===e?"selected":""}>${
           e||"default"}</option>`).join("")}
-      </select></label>
-    <label><span>Budget</span>
+      </select></label>`)}
+    ${f("max_budget_usd", `<label><span>Budget</span>
       <input type="number" step="0.5" min="0" placeholder="no cap"
              data-opt="max_budget_usd" data-sid="${sid}"
              value="${o.max_budget_usd!=null?esc(String(o.max_budget_usd)):""}"
-             title="--max-budget-usd: stop the turn once it has cost this much"/></label>
-    <label class="wide"><span>Allow only</span>
+             title="--max-budget-usd: stop the turn once it has cost this much"/></label>`)}
+    ${f("allowed_tools", `<label class="wide"><span>Allow only</span>
       <input type="text" placeholder="Read Bash Grep — blank means every tool"
              data-opt="allowed_tools" data-sid="${sid}"
              value="${esc((o.allowed_tools||[]).join(" "))}"
-             title="--allowedTools: whitespace separated"/></label>
-    <label class="wide"><span>Never</span>
+             title="--allowedTools: whitespace separated"/></label>`)}
+    ${f("disallowed_tools", `<label class="wide"><span>Never</span>
       <input type="text" placeholder="WebFetch Write"
              data-opt="disallowed_tools" data-sid="${sid}"
              value="${esc((o.disallowed_tools||[]).join(" "))}"
-             title="--disallowedTools: whitespace separated"/></label>
-    <label class="wide"><span>Extra instructions</span>
+             title="--disallowedTools: whitespace separated"/></label>`)}
+    ${f("append_system_prompt", `<label class="wide"><span>Extra instructions</span>
       <input type="text" placeholder="appended to the system prompt for this turn"
              data-opt="append_system_prompt" data-sid="${sid}"
-             value="${esc(o.append_system_prompt||"")}"/></label>
+             value="${esc(o.append_system_prompt||"")}"/></label>`)}
     <p class="topts-note">Applies to the next message; the server validates each
       value and drops anything it does not recognise.
       <strong>Denying one tool is not a capability limit</strong> — blocking only

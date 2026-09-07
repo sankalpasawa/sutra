@@ -1039,21 +1039,68 @@ function routingChart(s){
    sends the acknowledgement phrase the server requires. */
 const UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking";
 
-function permSelect(){
+function permSelect(mpid){
   const st = SETTINGS || {};
   /* The EFFECTIVE mode, not the stored one. When consent is absent the server
      clamps at the point of use, and showing the stored value would tell the
      operator the agent is doing something it is not. */
   const cur = st.permission_mode_effective || st.permission_mode || "plan";
-  const modes = PERM_MODES.length ? PERM_MODES : [{id:cur}];
-  /* Derived from the EFFECTIVE mode, so the warning colour tracks what will
-     actually run -- a stored-but-clamped bypassPermissions must not paint the
-     composer red for a session that is really planning. */
-  const writes = (modes.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  const all = PERM_MODES.length ? PERM_MODES : [{id:cur}];
+  /* ── only the modes THIS PANE'S provider can enforce ──────────────────
+     Three of Claude's six have no DeepSeek equivalent. Offering them there
+     was not cosmetic: selecting one ran `default` while this control kept
+     displaying the choice, so the pane reported a permission posture nothing
+     was enforcing.
+
+     Not-loaded (empty map) or a provider with no entry => the full list, i.e.
+     exactly what this rendered before the map existed. The fallback is
+     deliberately the PERMISSIVE direction here, unlike the turn-options one:
+     a missing entry must never leave a pane with no way to say "plan".
+     Filtering PERM_MODES in place keeps its order and every mode's server-sent
+     note/writes_files/settable metadata -- for Claude the result is the same
+     array, which is what keeps its render byte-identical. */
+  const allowed = Object.keys(PERM_MODES_BY_PROVIDER).length && mpid
+    ? PERM_MODES_BY_PROVIDER[mpid] : null;
+  const modes = allowed ? all.filter(m => allowed.includes(m.id)) : all;
+  /* ── the stored mode this provider cannot offer ───────────────────────
+     THE BUG THIS BRANCH EXISTS FOR. permission_mode is stored GLOBALLY (one
+     value for the panel, unlike models which are per provider), so a pane can
+     inherit a `dontAsk` chosen while Claude was selected. With `cur` filtered
+     out of the list, no <option> carries `selected` and the browser silently
+     displays the FIRST one -- so a pane running `default` claimed to be in
+     `plan`. Filtering alone would have recreated, inside the control meant to
+     fix this, the exact mis-report it was written to end.
+
+     So the stored mode is still shown, still selected, and DISABLED with the
+     reason on it -- the same idiom the Model picker already uses for a
+     catalogued-but-unrunnable model. The operator sees what is stored, learns
+     it does not apply here, and can pick something that does. What is actually
+     running is stated separately by the server's mode_note marker.
+
+     `writes` is looked up in the FULL list on purpose, so Claude's warning
+     colour is computed exactly as before. Safe today because the modes DeepSeek
+     cannot offer (auto/manual/dontAsk) are precisely the non-writing ones --
+     acceptEdits and bypassPermissions both map. If a provider ever omits a
+     writes_files mode, this must switch to what will RUN, or the composer
+     would under-warn. */
+  const unsupported = !modes.some(m => m.id === cur);
+  const writes = (all.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
+  const label = providerLabel(mpid) || mpid || "this provider";
+  /* Assembled into ONE string rather than interpolated as a second slot in the
+     template below. An empty `${...}` still leaves its own newline and indent
+     behind, so a Claude pane -- which never has an unsupported mode -- would
+     have gained whitespace inside its <select> for nothing. Concatenating here
+     means Claude's markup comes out byte-for-byte what it was. */
+  const opts = (unsupported
+      ? `<option value="${esc(cur)}" disabled selected
+      title="${esc(label)} has no equivalent — this chat runs in default, which asks before everything"
+      >${esc(cur)} — not supported by ${esc(label)}</option>`
+      : "")
+    + modes.map(m=>`<option value="${esc(m.id)}" ${!unsupported && m.id===cur?"selected":""}
+      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("");
   return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
       title="What the agent may do without asking — applies to the next message">
-    ${modes.map(m=>`<option value="${esc(m.id)}" ${m.id===cur?"selected":""}
-      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("")}
+    ${opts}
   </select>`;
 }
 

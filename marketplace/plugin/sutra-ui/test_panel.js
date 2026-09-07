@@ -215,6 +215,14 @@ const EPILOGUE = `
      that wants a Model row has to say which provider's models exist. */
   get MODELS_BY_PROVIDER(){ return MODELS_BY_PROVIDER; },
   set MODELS_BY_PROVIDER(v){ MODELS_BY_PROVIDER = v; },
+  /* Same getter/setter reason as MODELS_BY_PROVIDER. The other two controls
+     that were Claude's rendered on every pane, now keyed by provider. */
+  get TURN_OPTIONS_BY_PROVIDER(){ return TURN_OPTIONS_BY_PROVIDER; },
+  set TURN_OPTIONS_BY_PROVIDER(v){ TURN_OPTIONS_BY_PROVIDER = v; },
+  get PERM_MODES_BY_PROVIDER(){ return PERM_MODES_BY_PROVIDER; },
+  set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
+  get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
+  turnOptsHtml, permSelect, turnOptsFor,
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
   /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
      it can be tested without rAF, which never fires headlessly. */
@@ -1256,10 +1264,14 @@ test("23a. the permission mode is chosen at chat level, not only in Settings", (
      which for a Finder-launched .app means editing a plist. The panel showed the
      control, refused it, and told the operator to do something they could not. */
   const h = panelHtml;
-  assert.ok(/function permSelect\(\)\{/.test(h), "a composer-level selector must exist");
+  assert.ok(/function permSelect\([^)]*\)\{/.test(h), "a composer-level selector must exist");
   /* It renders in the composer row -- the same block as the model select, which
      is the anchor that is unambiguously part of the composer. */
-  const call = h.indexOf("${permSelect()}");
+  /* Re-sliced: the call now passes the pane's provider (permSelect(mpid)), so
+     the three modes DeepSeek cannot enforce are not offered on a DeepSeek pane.
+     What this test asserts -- that the selector is called from the template and
+     sits beside the model select -- is unchanged. */
+  const call = h.indexOf("${permSelect(");
   const model = h.indexOf('<select class="modelsel"');
   assert.ok(call !== -1, "permSelect() must be called from the template");
   assert.ok(call < model && model - call < 600,
@@ -1289,7 +1301,7 @@ test("23c. only the confirmation sends the acknowledgement phrase", () => {
 test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
   /* The server clamps at the point of use. Showing the stored value would tell
      the operator the agent is doing something it is not. */
-  const fn = panelHtml.match(/function permSelect\(\)\{[\s\S]*?\n\}/)[0];
+  const fn = panelHtml.match(/function permSelect\([^)]*\)\{[\s\S]*?\n\}/)[0];
   assert.ok(/permission_mode_effective/.test(fn),
     "must read permission_mode_effective first");
 });
@@ -4637,4 +4649,145 @@ updateStagingChecks()
     process.exit(1);
   }
   process.exit(0);
+});
+
+/* ── 47a-h. turn options and permission modes are the PANE'S provider's ────
+   The panel rendered Claude's five turn options and all six of Claude's
+   permission modes on every pane. On a DeepSeek pane the five were collected,
+   sent, and dropped by the server -- ACP's per-turn request has no field to
+   carry them -- and three of the six ran as `default` while this control kept
+   displaying the operator's choice. Both read as settings that took effect.
+
+   Same shape as the Model picker (35p-t above) and the same fix: the provider
+   declares what it can honour, the client renders from that. */
+
+const TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+const PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+const SIX = PMODES.claude.map(id => ({
+  id, writes_files: id === "acceptEdits" || id === "bypassPermissions" }));
+
+/* Runs permSelect with an explicit provider map, mode list and stored mode. */
+function permWith(mpid, cur, byProvider) {
+  const pv = T.PERM_MODES, pb = T.PERM_MODES_BY_PROVIDER, ps = T.SETTINGS;
+  try {
+    T.PERM_MODES = SIX;
+    T.PERM_MODES_BY_PROVIDER = byProvider === undefined ? PMODES : byProvider;
+    T.SETTINGS = { permission_mode: cur, permission_mode_effective: cur };
+    return T.permSelect(mpid);
+  } finally { T.PERM_MODES = pv; T.PERM_MODES_BY_PROVIDER = pb; T.SETTINGS = ps; }
+}
+const permOptions = h =>
+  [...h.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
+    .map(m => ({ id: m[1], attrs: m[2] }));
+
+function toptsWith(mpid, byProvider) {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = byProvider === undefined ? TOPTS : byProvider;
+    return T.turnOptsHtml("s47", mpid);
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+}
+const fieldsIn = h =>
+  [...h.matchAll(/data-opt="([^"]+)"/g)].map(m => m[1]);
+
+test("47a. a Claude pane still gets all five turn options", () => {
+  assert.deepStrictEqual(fieldsIn(toptsWith("claude")), TOPTS.claude,
+    "Claude's controls must not move -- that is the constraint on this change");
+});
+
+test("47b. a DeepSeek pane gets NO turn option fields", () => {
+  /* Not one of the five survives the trip: build_acp_args has no per-turn argv
+     and session/prompt takes only {sessionId, prompt[]}. */
+  assert.deepStrictEqual(fieldsIn(toptsWith("deepseek")), []);
+});
+
+test("47c. 'Allow only' is never rendered on a DeepSeek pane", () => {
+  /* The one that must not be 'fixed' later. DeepSeek's CLI HAS an
+     --allowed-tools flag, but it AUTO-APPROVES tools rather than restricting
+     them -- so wiring this box to it would widen permissions for an operator
+     trying to narrow them. Absent is the correct render. */
+  const h = toptsWith("deepseek");
+  assert.ok(!/data-opt="allowed_tools"/.test(h), h);
+  assert.ok(!/Allow only/.test(h), h);
+});
+
+test("47d. before /api/settings resolves, every option still renders", () => {
+  /* Empty map means NOT FETCHED, not "nobody honours anything". Stripping
+     controls off a pane on a slow settings fetch would be a new bug. */
+  assert.deepStrictEqual(fieldsIn(toptsWith("deepseek", {})), TOPTS.claude);
+  assert.deepStrictEqual(fieldsIn(toptsWith("claude", {})), TOPTS.claude);
+});
+
+test("47e. the Turn options ROW is omitted, not opened onto an empty box", () => {
+  const shown = paneMenuWith(DS_MODELS, "claude", { provider: "claude" });
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = TOPTS;
+    const claude = paneMenuWith(DS_MODELS, "claude", { provider: "claude" });
+    const deepseek = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+    assert.ok(/data-mrow="opts"/.test(claude), "Claude keeps the row");
+    assert.ok(!/data-mrow="opts"/.test(deepseek),
+      "a provider honouring none must not offer the row: " + deepseek);
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+  assert.ok(shown.length > 0);
+});
+
+test("47f. a Claude pane still offers all six permission modes", () => {
+  const ids = permOptions(permWith("claude", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.claude);
+});
+
+test("47g. a DeepSeek pane offers only the three modes it can enforce", () => {
+  const ids = permOptions(permWith("deepseek", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.deepseek);
+  const sel = permOptions(permWith("deepseek", "plan")).filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "exactly one option is selected");
+  assert.strictEqual(sel[0].id, "plan");
+});
+
+test("47h. a stored mode this provider cannot offer is SHOWN, not silently swapped", () => {
+  /* THE EDGE CASE. permission_mode is stored globally, so a pane can inherit a
+     `dontAsk` chosen while Claude was selected. Filtering it out of the list
+     leaves no option carrying `selected`, and the browser then displays the
+     FIRST one -- so a pane running `default` would have claimed to be in
+     `plan`. That is the same mis-report this whole change exists to remove,
+     recreated inside the control meant to fix it. */
+  const h = permWith("deepseek", "dontAsk");
+  const opts = permOptions(h);
+  assert.strictEqual(opts[0].id, "dontAsk",
+    "the stored mode must still be the one shown: " + h);
+  assert.ok(/selected/.test(opts[0].attrs),
+    "it must be SELECTED, or the browser shows the first supported mode "
+    + "and the pane misreports what is running: " + h);
+  assert.ok(/disabled/.test(opts[0].attrs),
+    "and disabled, because it cannot be applied here: " + h);
+  assert.ok(/not supported by DeepSeek/.test(h), "must say why: " + h);
+  /* And no supported option may ALSO claim to be selected. */
+  const sel = opts.filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "two selected options: " + h);
+  assert.strictEqual(sel[0].id, "dontAsk");
+});
+
+test("47i. an unsupported stored mode does not paint the composer red", () => {
+  /* permSelect reads writes_files from the FULL list so Claude's warn class is
+     computed exactly as before. Safe only while the omitted modes are the
+     non-writing ones -- pinned server-side too
+     (test_every_mode_deepseek_omits_is_a_non_writing_one). */
+  assert.ok(!/permsel warn/.test(permWith("deepseek", "dontAsk")));
+  assert.ok(/permsel warn/.test(permWith("claude", "bypassPermissions")),
+    "a real write-capable mode must still warn");
+});
+
+test("47j. a provider with no declared modes keeps ALL of them", () => {
+  /* The opposite fallback from turn options, deliberately: a missing entry
+     must never leave a pane with no way to say `plan`. Hiding a safety control
+     is the wrong direction to be wrong in. */
+  const ids = permOptions(permWith("codex", "plan")).map(o => o.id);
+  assert.deepStrictEqual(ids, PMODES.claude);
 });

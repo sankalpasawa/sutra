@@ -490,10 +490,21 @@ class DeepSeekNeedsAKeyToBeRunnable(unittest.TestCase):
         self.assertEqual([m["id"] for m in entry["models"]],
                          ["", "deepseek-v4-pro", "deepseek-v4-flash",
                           "deepseek-v4-flash-vision-exp"])
+        # The declarations added when TURN OPTIONS and PERMISSION MODES became
+        # per-provider. Pinned by value for the same reason as the three above,
+        # and these two matter more than most: an empty turn_options is the
+        # whole reason a DeepSeek pane stops rendering five controls the server
+        # would discard, and the three modes are the ones ACP can actually
+        # enforce. A well-meaning "fill these in" would put the no-op controls
+        # straight back, so the emptiness is asserted, not assumed.
+        self.assertEqual(entry["turn_options"], ())
+        self.assertEqual(entry["permission_modes"],
+                         ("plan", "acceptEdits", "bypassPermissions"))
         # Nothing may appear that neither half above accounts for, which is
         # what the old exact-equality assertion was really protecting.
         self.assertEqual(set(entry) - set(self.SPEC),
-                         {"models", "model_flag", "usage_kind"})
+                         {"models", "model_flag", "usage_kind",
+                          "turn_options", "permission_modes"})
 
     def test_deepseek_is_LAST_in_the_catalogue(self):
         """LOAD-BEARING FOR THE UI, which is why it is asserted here rather

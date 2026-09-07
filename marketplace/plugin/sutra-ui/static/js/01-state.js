@@ -22,7 +22,22 @@ let SKILLS = [], SKILLS_META = {};
    offered Opus/Sonnet/Haiku. {provider_id: [{id,name,note,...}]}, and a provider
    with no models is ABSENT rather than empty, so "is there a picker" and "is it
    in this map" are the same question. */
-let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS_BY_PROVIDER = {};
+/* Same shape and same reasoning as MODELS_BY_PROVIDER, for the two OTHER
+   controls that were Claude's rendered on every pane:
+
+     TURN_OPTIONS_BY_PROVIDER   {provider_id: ["effort", ...]}. A DeepSeek pane
+                                collected all five and the server dropped every
+                                one -- ACP has no per-turn options field at all.
+     PERM_MODES_BY_PROVIDER     {provider_id: ["plan", ...]}. Three of Claude's
+                                six have no DeepSeek equivalent and ran as
+                                `default` while the control kept showing them.
+
+   EMPTY MEANS NOT FETCHED YET, not "nobody honours anything" -- Claude always
+   declares both, so a loaded map is never empty. Every consumer below tests
+   that before hiding anything, so the first paint renders as it always did
+   rather than stripping controls off a pane on a slow settings fetch. */
+let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS_BY_PROVIDER = {},
+    TURN_OPTIONS_BY_PROVIDER = {}, PERM_MODES_BY_PROVIDER = {};
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is

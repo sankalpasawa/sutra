@@ -458,10 +458,31 @@ def build_acp_args(agent_bin, model=None):
     Passing "" or None means "no flag", which lets the CLI use its own default
     rather than asserting one here.
 
-    Model is spawn-time and not changeable in-session: this build answers
-    session/set_model and session/unstable_setSessionModel with -32601 Method
-    not found. Changing it therefore has to respawn -- which happens on its own,
-    because spawn_key is tuple(args) and this argv now carries the model.
+    Model is spawn-time here, and the reason recorded above this line was
+    WRONG. It said this build answers session/set_model with -32601. It does
+    not. Re-probed on the wire, 2026-09-07:
+
+        session/set_model                 -> {}        (implemented)
+        session/unstable_setSessionModel  -> -32601    (never was a method --
+                                                        it is the AGENT-SIDE
+                                                        HANDLER name for
+                                                        session/set_model, so
+                                                        calling it was always
+                                                        going to 404)
+
+    The original probe evidently tried the handler name, got -32601, and
+    generalised to both. A wrong recorded finding is worse than none: anyone
+    revisiting this would have believed the door was locked without checking.
+
+    THE RESPAWN DESIGN STANDS, on a better reason. `Session.setModel` is a bare
+    `config.setModel(modelId)` with NO validation -- it accepted
+    "totally-bogus-model-xyz" and "" with {} on the same probe -- so a success
+    here says nothing about whether the id is real, and the allow-list plus a
+    respawn remains the only thing that can refuse one. Whether set_model
+    changes the model MID-SESSION is untested: proving it needs a billed prompt
+    turn, which that probe deliberately did not run. So it is not "impossible",
+    it is "unverified and not needed" -- respawn already works, because
+    spawn_key is tuple(args) and this argv carries the model.
 
     --skip-trust: this CLI is spawned into whatever workdir the operator's
     Sutra workdir setting points at -- the same directory Claude is spawned

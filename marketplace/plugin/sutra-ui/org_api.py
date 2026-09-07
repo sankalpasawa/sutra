@@ -1195,6 +1195,24 @@ def api_settings_get():
         # this change exists to remove. Providers with no models simply have no
         # entry, which is how the picker knows not to render one.
         "models_by_provider": providers.all_models_by_provider(),
+        # WHICH PANES MAY SHOW WHICH CONTROLS. Both are ADDITIONS: the flat
+        # `permission_modes` above is unchanged and still carries all six with
+        # their notes and gating, because it is the vocabulary -- these two say
+        # who can honour what.
+        #
+        # The panel rendered Claude's controls on every pane. On a DeepSeek
+        # pane all five turn options were collected, sent, and dropped by the
+        # server (build_acp_args has no per-turn argv to put them in), and
+        # three of the six permission modes ran as `default` while the control
+        # kept displaying the choice. Same failure as the model picker before
+        # models_by_provider: a control that cannot act is worse than an absent
+        # one, because it reads as a setting that took effect.
+        #
+        # Keyed the same way, absent-when-empty for the same reason, so the
+        # client's test for "does this pane have this control" is "is this
+        # provider in this dict".
+        "turn_options_by_provider": providers.all_turn_options_by_provider(),
+        "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
         "providers": providers.discover_providers(),
         # Who is signed in to Claude on this machine. None when unknown -- the
         # panel must render an unknown identity rather than a placeholder that

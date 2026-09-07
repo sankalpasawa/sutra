@@ -404,6 +404,18 @@ _CLAUDE_MODELS = (
 # so `deepseek-v9-nonsense` is forwarded verbatim to the API and `deepsek-v4-pro`
 # (one typo) silently answers as deepseek-chat. Measured on the wire, both.
 # Nothing downstream will refuse a bad id, so this tuple is the only refusal.
+# POSSIBLE CROSS-CHECK, NOT WIRED (2026-09-07). `session/new` already returns
+# the CLI's own list -- `models: {availableModels, currentModelId}` -- which
+# AcpRuntime.new_session reads for `modes` and drops. Measured on the live
+# build: auto / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash
+# (the CLI's list really does carry that duplicate), currentModelId
+# deepseek-v4-flash.
+#
+# That is a second source of truth for what follows, and this hardcoded tuple
+# is the one that can go stale on a CLI upgrade with nothing to notice. Left
+# unused on purpose for now -- consuming it would change which models the
+# picker offers, which is a behaviour change, not a check. The cheap version
+# is a test that compares the two and fails when they disagree.
 _DEEPSEEK_MODELS = (
     {"id": "",                  "name": "CLI default",
      "note": "whatever `deepseek` is configured to use (currently V4 Flash)"},
@@ -469,6 +481,66 @@ def all_models_by_provider():
     """
     return {spec["id"]: list(spec["models"])
             for spec in _CATALOG if spec.get("models")}
+
+
+def turn_options_for(pid):
+    """The per-turn controls this provider can HONOUR, in no particular order.
+    () for a provider whose transport carries none -- which is a real answer,
+    not a gap: its pane renders without those controls rather than with
+    controls that are discarded server-side.
+
+    An unknown provider gets () rather than Claude's list. A provider this
+    build has never heard of cannot be assumed to accept Claude's flags, and
+    guessing yes is what puts a dead control on screen."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("turn_options", ())
+    return ()
+
+
+def all_turn_options_by_provider():
+    """{provider_id: [option, ...]} for every provider that honours any.
+
+    Same contract as all_models_by_provider: a provider that honours none is
+    ABSENT rather than present-and-empty, so the client's "does this pane have
+    turn options" test is the same test as "is it in this dict". Claude always
+    declares five, so a LOADED map is never empty -- which is what lets the
+    client tell "not fetched yet" from "declares none"."""
+    return {spec["id"]: list(spec["turn_options"])
+            for spec in _CATALOG if spec.get("turn_options")}
+
+
+def permission_modes_for(pid):
+    """The subset of PERMISSION_MODES this provider can actually enforce.
+
+    Falls back to ALL of them when a provider declares none, and for a provider
+    that is not catalogued at all -- the opposite default from
+    turn_options_for() above, and deliberately so. A missing turn option means
+    a control vanishes, which is safe; a missing permission mode would mean the
+    pane offers no way to say "plan", and hiding a safety control is the wrong
+    direction to be wrong in.
+
+    EMPTY AND MISSING ARE TREATED THE SAME HERE, which they are not in
+    all_permission_modes_by_provider() below -- that omits an empty declaration
+    so the CLIENT applies its own fallback. Both halves therefore answer "all
+    of them" for codex/gemini, which declare (). Returning () here instead
+    would leave this helper disagreeing with the panel about the same provider,
+    and two copies of an answer that can differ is how one of them goes stale.
+
+    codex/gemini declare () because the question is unanswerable rather than
+    answered: neither has an adapter, so no pane can run one, and nothing has
+    ever measured which modes they would honour. Guessing Claude's six is safe
+    only because it is unreachable."""
+    for spec in _CATALOG:
+        if spec["id"] == pid:
+            return spec.get("permission_modes") or PERMISSION_MODES
+    return PERMISSION_MODES
+
+
+def all_permission_modes_by_provider():
+    """{provider_id: [mode_id, ...]} for every provider that enforces any."""
+    return {spec["id"]: list(spec["permission_modes"])
+            for spec in _CATALOG if spec.get("permission_modes")}
 
 
 def model_flag_for(pid):
@@ -589,24 +661,88 @@ ADAPTERS = frozenset({"claude", "deepseek"})
 # provider answers all three questions by being added to this tuple, instead of
 # by someone remembering to extend a switch in the picker, another in the usage
 # row, and a third in the spawn path.
+#: Per-turn controls a provider can actually HONOUR. Claude's five map 1:1 onto
+#: documented `claude` flags, validated in build_agent_args.
+#:
+#: DeepSeek declares NONE, and that is a measured answer rather than a gap.
+#: Its transport is ACP, whose entire per-turn request is
+#: `{sessionId, prompt[], messageId?, _meta?}` -- there is no options field to
+#: carry any of this, `Session.prompt` reads only `params.prompt`, and the
+#: agent implements no `extMethod`, so there is not even an extension route.
+#: Probed on the wire against @sluisr/deepseek-cli@1.3.2, 2026-09-07:
+#: session/set_config_option (ACP's generic per-session config surface, and the
+#: one place a reasoning-effort knob could have lived) answers -32601.
+#:
+#: The individual controls, and why each is absent rather than pending:
+#:
+#:   effort              nothing to wire. `reasoningEffort` exists in the fork
+#:                       as config, is only ever SET from the interactive TUI's
+#:                       keyboard toggle, and never reaches the request body --
+#:                       `body.reasoning_effort` is assigned nowhere in the
+#:                       bundle and deleted in one place.
+#:   budget              no flag, no method. ACP reports per-turn token counts
+#:                       AFTER the fact and no dollar figure at all.
+#:   append_system_prompt  no equivalent on either surface.
+#:   disallowed_tools    no argv flag. Expressible only as a Policy Engine
+#:                       .toml (decision = "deny") passed with --policy, which
+#:                       REPLACES the operator's own policies directory when
+#:                       non-empty -- so wiring it would silently drop their
+#:                       rules. Deliberately not attempted.
+#:   allowed_tools       DO NOT WIRE THIS TO --allowed-tools. It looks like
+#:                       Claude's --allowedTools and does the OPPOSITE KIND of
+#:                       thing: Gemini's flag feeds
+#:                       mapToolsToRules(..., autoApprove=true)
+#:                       (chunk-UNFT3LTQ.js:384568) and the CLI's own copy for
+#:                       it reads "This project auto-approves certain tools".
+#:                       It is a permission-prompt BYPASS, not a capability
+#:                       whitelist. An operator typing "Read Bash" into a box
+#:                       labelled "Allow only" is narrowing what the agent may
+#:                       do; this flag would WIDEN it. A control that does the
+#:                       reverse of what its label promises is worse than an
+#:                       absent one, which is why this stays empty.
+_CLAUDE_TURN_OPTIONS = ("effort", "max_budget_usd", "allowed_tools",
+                        "disallowed_tools", "append_system_prompt")
+
+#: Which of PERMISSION_MODES a provider can actually enforce.
+#:
+#: Claude's six are all of them -- this is the existing global list, declared
+#: per provider rather than changed.
+#:
+#: DeepSeek's ACP layer offers four modes (default/autoEdit/yolo/plan) and
+#: three of Sutra's six map onto them. `auto`, `manual` and `dontAsk` have no
+#: equivalent and no near-miss, so they are not offered on a DeepSeek pane --
+#: selecting one there ran `default` while the control kept displaying the
+#: choice. AcpRuntime._apply_mode still states the divergence for a mode that
+#: arrives anyway (a value stored while Claude was selected), because
+#: permission_mode is stored GLOBALLY and this list cannot prevent that.
+_CLAUDE_PERMISSION_MODES = PERMISSION_MODES
+_DEEPSEEK_PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
+
 _CATALOG = (
     {"id": "claude", "name": "Claude Code", "bin": "claude",
      "config_dir": "~/.claude", "default": True,
      "models": _CLAUDE_MODELS, "model_flag": "--model",
-     "usage_kind": "window-percent"},
+     "usage_kind": "window-percent",
+     "turn_options": _CLAUDE_TURN_OPTIONS,
+     "permission_modes": _CLAUDE_PERMISSION_MODES},
     # No models and no usage: Codex is sign-in-only in this build (no adapter,
     # see ADAPTERS above). Declaring the absence is the point -- it is what
     # stops the usage row falling through to Anthropic's percentage.
     {"id": "codex", "name": "OpenAI Codex", "bin": "codex",
      "config_dir": "~/.codex", "default": False,
-     "models": (), "model_flag": None, "usage_kind": "none"},
+     "models": (), "model_flag": None, "usage_kind": "none",
+     "turn_options": (), "permission_modes": ()},
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
      "config_dir": "~/.gemini", "default": False,
-     "models": (), "model_flag": None, "usage_kind": "none"},
+     "models": (), "model_flag": None, "usage_kind": "none",
+     "turn_options": (), "permission_modes": ()},
     {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
      "config_dir": "~/.deepseek", "default": False,
      "models": _DEEPSEEK_MODELS, "model_flag": "-m",
-     "usage_kind": "balance"},
+     "usage_kind": "balance",
+     # None, measured. See _CLAUDE_TURN_OPTIONS above for each control and why.
+     "turn_options": (),
+     "permission_modes": _DEEPSEEK_PERMISSION_MODES},
 )
 
 
