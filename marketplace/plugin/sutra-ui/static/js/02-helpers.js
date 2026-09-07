@@ -319,6 +319,10 @@ const S = {
   /* sessionId -> the last switch frame the server sent, so the thread can show
      a marker at the point the provider changed (or say why it did not). */
   switchNote:{},
+  /* sessionId -> the last mode_note frame: the permission mode this pane asked
+     for is not the one running, and why. Empty for every Claude pane -- the
+     server only sends it from the ACP path, and only when they diverge. */
+  modeNote:{},
   /* Per-session actions menu (Feature A). sessMenu = the session id whose menu
      popover is open (one at a time). sessRename = the session id whose inline
      rename input is showing, or null. Pinned/unread/group are localStorage-

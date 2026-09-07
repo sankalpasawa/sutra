@@ -255,7 +255,12 @@ const EPILOGUE = `
   /* task.apply card states: the board is where a machine diff meets a human
      click, so the three renders (Apply offered / PR handed off / failure in
      place) are pinned as strings */
-  tsCard, tsStatusWords, tsCurrentError, tsParseDiff, tsChangeView, tsStory
+  tsCard, tsStatusWords, tsCurrentError, tsParseDiff, tsChangeView, tsStory,
+  /* the permission-mode divergence marker. Pinned as a string because it is
+     the ONLY place an operator learns their chosen mode is not the one
+     running -- a marker that renders nothing recreates the silent fallback
+     it was written to end. */
+  modeMarkerHtml
 };
 `;
 
@@ -1287,6 +1292,49 @@ test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
   const fn = panelHtml.match(/function permSelect\(\)\{[\s\S]*?\n\}/)[0];
   assert.ok(/permission_mode_effective/.test(fn),
     "must read permission_mode_effective first");
+});
+
+/* ── 23e-g. the permission-mode divergence marker ─────────────────────────
+   AcpRuntime asked DeepSeek for the operator's permission mode using a method
+   name the CLI does not have (`session/set_session_mode`; the real one is
+   `session/set_mode`), never read the answer, and recorded the mode it had
+   asked for. Every DeepSeek pane displayed the chosen mode while running
+   `default`. The server now states the divergence; this is the half that makes
+   it visible, so an empty render here is the bug coming back. */
+
+test("23e. a pane with no divergence renders NO marker", () => {
+  T.S.modeNote = {};
+  assert.strictEqual(T.modeMarkerHtml("s1"), "",
+    "a Claude pane -- or any pane whose mode was applied -- gets nothing");
+});
+
+test("23f. the marker names BOTH modes and the reason", () => {
+  T.S.modeNote = { s1: { asked: "dontAsk", running: "default",
+                         reason: "dontAsk has no equivalent on this provider",
+                         provider: "deepseek" } };
+  const h = T.modeMarkerHtml("s1");
+  /* "your mode was changed" without saying to WHAT is a warning nobody can
+     act on, so both names are required, not just the failure. */
+  assert.ok(h.includes("dontAsk"), "must name the mode that was asked for: " + h);
+  assert.ok(h.includes("default"), "must name the mode actually running: " + h);
+  assert.ok(h.includes("no equivalent"), "must carry the server's reason: " + h);
+  assert.ok(/class="swmark bad"/.test(h),
+    "always the .bad variant -- there is no benign version of this");
+  T.S.modeNote = {};
+});
+
+test("23g. the server's reason is escaped, never interpolated as markup", () => {
+  /* The reason carries CLI error text (set_mode's -32603 detail). That is a
+     string from a subprocess, i.e. exactly the kind of value that must not
+     reach innerHTML raw. */
+  T.S.modeNote = { s1: { asked: "<b>x</b>", running: "default",
+                         reason: "the CLI refused: <img src=x onerror=1>",
+                         provider: "deepseek" } };
+  const h = T.modeMarkerHtml("s1");
+  assert.ok(!/<img/.test(h), "raw markup from the CLI reached the DOM: " + h);
+  assert.ok(!/<b>x<\/b>/.test(h), "raw markup in a mode name rendered: " + h);
+  assert.ok(h.includes("&lt;img"), "the reason must still be SHOWN, escaped: " + h);
+  T.S.modeNote = {};
 });
 
 test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {

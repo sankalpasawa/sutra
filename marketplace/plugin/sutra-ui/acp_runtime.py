@@ -31,18 +31,34 @@ from session_runtime import _drain_to_newline, TurnQueue
 
 
 # session/new returns {modes: {availableModes: [{id, name}, ...], currentModeId}}.
-# These ids are the CLI's own --approval-mode values (verified at the argv
-# parser: choices are default/auto_edit/yolo/plan) -- DeepSeek's native
-# equivalent of Claude's --permission-mode flag. Setting this at session
-# start means plan/acceptEdits/bypassPermissions need ZERO runtime-side
-# request_permission handling; only what falls through still asks.
+# These ids are DeepSeek's native equivalent of Claude's --permission-mode.
+# Setting this at session start means plan/acceptEdits/bypassPermissions need
+# ZERO runtime-side request_permission handling; only what falls through asks.
+#
+# THE IDS ARE THE WIRE'S, NOT THE ARGV FLAG'S, AND THE TWO DISAGREE.
+#
+# This table used to say "auto_edit", taken from the `--approval-mode` argv
+# parser (whose choices genuinely are default/auto_edit/yolo/plan). The ACP
+# field is a different spelling of the same concept: `ApprovalMode.AUTO_EDIT`
+# serialises as "autoEdit". Measured on the wire against
+# @sluisr/deepseek-cli@1.3.2 on 2026-09-07:
+#
+#   session/set_mode  modeId="auto_edit"  ->  -32603 Invalid or unavailable mode
+#   session/set_mode  modeId="autoEdit"   ->  {}
+#
+# So acceptEdits failed the `wanted in available` test below and fell through
+# to "default" -- the panel's SAFEST mode, which is why nothing looked broken,
+# and which meant "auto-approve edits" silently prompted for every one.
+#
+# Read from the live availableModes rather than trusted: `plan` is only present
+# when the build has it enabled, so membership is checked, never assumed.
 _ACP_MODE_FOR_PERMISSION_MODE = {
     "plan": "plan",
-    "acceptEdits": "auto_edit",
+    "acceptEdits": "autoEdit",
     "bypassPermissions": "yolo",
-    # dontAsk / auto / manual: no ACP-native equivalent. "default" is what's
-    # left, which means the CLI asks about everything -- the fallback below
-    # has to actually decide, because nothing upstream already did.
+    # dontAsk / auto / manual: NO ACP-native equivalent, and no near-miss to
+    # reach for. Absent from this table on purpose -- new_session reports the
+    # absence to the operator instead of quietly running something else.
 }
 _DEFAULT_ACP_MODE = "default"
 
@@ -211,7 +227,15 @@ class AcpRuntime:
         self.state = "idle"
         self.session_id = None
         self.effective_permission_mode = None
+        #: The mode the CLI is ACTUALLY in, as the CLI itself reported it --
+        #: never what we asked for. The bug this replaces set it to the wanted
+        #: value without looking at the response.
         self.acp_mode = None
+        #: None when the requested mode was applied. Otherwise a dict the
+        #: caller states to the operator: {"asked", "running", "reason"}.
+        #: The runtime cannot say it itself -- new_session runs before
+        #: self._emit exists (see the KNOWN GAP note in new_session).
+        self.acp_mode_note = None
         self.agent_capabilities = {}
         self.subscribers = []
         self._id_seq = itertools.count(1)
@@ -574,17 +598,108 @@ class AcpRuntime:
             result = resp["result"]
             self.session_id = result["sessionId"]
 
-        modes = result.get("modes") or {}
-        available = {m.get("id") for m in (modes.get("availableModes") or [])}
-        current = modes.get("currentModeId")
-        wanted = _ACP_MODE_FOR_PERMISSION_MODE.get(
-            effective_permission_mode, _DEFAULT_ACP_MODE)
-        if wanted in available and wanted != current:
-            await self._call("session/set_session_mode",
-                              {"sessionId": self.session_id, "modeId": wanted})
-            current = wanted
-        self.acp_mode = current
+        await self._apply_mode(result, effective_permission_mode)
         return self.session_id
+
+    async def _apply_mode(self, session_result, effective_permission_mode):
+        """Put the session into the mode Sutra's permission_mode asks for, and
+        record what ACTUALLY happened.
+
+        THE METHOD NAME. It is `session/set_mode`. It was `session/set_mode`
+        for the whole life of this file, which called
+        `session/set_session_mode` -- a name that appears NOWHERE in the
+        installed CLI. Probed against @sluisr/deepseek-cli@1.3.2, 2026-09-07:
+
+          session/set_session_mode  ->  -32601 "Method not found"
+          session/set_mode          ->  {}
+
+        `GeminiAgent` implements no `extMethod`, so its dispatcher answers an
+        unknown method -32601 rather than routing it anywhere. There was no
+        second surface quietly picking it up.
+
+        THE RESPONSE IS CHECKED. The old code awaited the call, ignored the
+        result, and then assigned `current = wanted` -- so the panel recorded
+        the mode it had asked for regardless of whether the CLI had accepted,
+        refused, or never heard of the request. Combined with the -32601 above,
+        every DeepSeek pane this panel has ever run reported the operator's
+        chosen mode while running `default`.
+
+        A control that discards the answer is indistinguishable from one that
+        was never wired up. The three outcomes below are kept DISTINCT because
+        they mean different things to an operator, and collapsing them into
+        "something else is running" would be its own dishonesty.
+
+        VERIFIED AGAINST THE REAL CLI, NOT ONLY THE STUB. The stub had already
+        lied about this once (see qa/fake_acp_agent.py), so "the tests pass"
+        was not evidence that a mode does anything. Two runs of this exact code
+        path against @sluisr/deepseek-cli@1.3.2 on 2026-09-07, same prompt
+        ("create written.txt containing hello"), separate throwaway workdirs:
+
+          plan               acp_mode='plan'  write_file attempted, REFUSED,
+                                              no file. The CLI's own words:
+                                              "I'm currently in Plan Mode,
+                                              which restricts me to read-only
+                                              exploration".
+          bypassPermissions  acp_mode='yolo'  ran pwd, wrote written.txt
+                                              ("hello"), file present.
+
+        The control writing is the half that makes the refusal mean something:
+        without it, "no file appeared" is equally well explained by a model
+        that never tried.
+        """
+        modes = session_result.get("modes") or {}
+        available = {m.get("id") for m in (modes.get("availableModes") or [])}
+        # What the CLI says it is in right now. This -- not `wanted` -- is the
+        # floor for self.acp_mode: if nothing below succeeds, this is the truth.
+        current = modes.get("currentModeId")
+        self.acp_mode = current
+        self.acp_mode_note = None
+
+        wanted = _ACP_MODE_FOR_PERMISSION_MODE.get(effective_permission_mode)
+        if wanted is None:
+            # dontAsk / auto / manual. Nothing to try, and `default` is where
+            # the session already is. SAID, not swallowed: `default` prompts
+            # for approval on everything, which is the safe direction to be
+            # wrong in but not what the operator selected.
+            self.acp_mode_note = {
+                "asked": effective_permission_mode,
+                "running": current or _DEFAULT_ACP_MODE,
+                "reason": "%s has no equivalent on this provider"
+                          % effective_permission_mode,
+            }
+            return current
+
+        if wanted not in available:
+            # The build does not offer it -- `plan` on a build with planning
+            # disabled is the real case. Not attempted: set_mode validates
+            # against this same list and would answer -32603.
+            self.acp_mode_note = {
+                "asked": effective_permission_mode,
+                "running": current or _DEFAULT_ACP_MODE,
+                "reason": "this provider's CLI does not offer %r "
+                          "(it offers: %s)" % (wanted, ", ".join(sorted(available)) or "nothing"),
+            }
+            return current
+
+        if wanted == current:
+            return current
+
+        resp = await self._call("session/set_mode",
+                                {"sessionId": self.session_id, "modeId": wanted})
+        if "error" in resp:
+            # Refused or unreachable. self.acp_mode stays at what the CLI
+            # reported, because that is what is still in force.
+            err = resp["error"]
+            detail = (err.get("data") or {}).get("details") or err.get("message")
+            self.acp_mode_note = {
+                "asked": effective_permission_mode,
+                "running": current or _DEFAULT_ACP_MODE,
+                "reason": "the CLI refused %r: %s" % (wanted, str(detail)[:200]),
+            }
+            return current
+
+        self.acp_mode = wanted
+        return wanted
 
     async def prompt_turn(self, msg, emit, session_id=None):
         """The ACP analogue of SessionRuntime.send_user_frame() +

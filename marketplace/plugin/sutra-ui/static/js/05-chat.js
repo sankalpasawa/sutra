@@ -1231,6 +1231,27 @@ function switchMarkerHtml(sid){
       }${esc(dropped)}${esc(red)}</span>
     </div>`;
 }
+/* The marker the thread shows when this pane's permission mode did not survive
+   the trip to its provider. Always `.bad`: unlike a provider switch, there is
+   no benign version of this -- the pane's permission control is displaying a
+   mode that is not the one in force, and the operator chose that mode for a
+   reason. States BOTH names, because "your mode was changed" without saying to
+   what is a warning the operator cannot act on.
+
+   Reuses .swmark, the switch marker's own class, rather than adding CSS: it is
+   the same kind of thing (a server-stated fact about what this pane is really
+   doing, rendered as a thread marker) and a second near-identical rule is how
+   two markers drift apart visually. */
+function modeMarkerHtml(sid){
+  const f = (S.modeNote || {})[sid];
+  if (!f) return "";
+  return `<div class="swmark bad" role="status">
+      <b>Running in ${esc(f.running || "?")}, not ${esc(f.asked || "?")}.</b>
+      <span>${esc(f.reason || "")}</span>
+      <span class="swhint">The permission mode shown for this chat is not the
+        one ${esc(providerLabel(f.provider) || "this provider")} is enforcing.</span>
+    </div>`;
+}
 function cwdEditorHtml(sid){
   if (S.cwdEdit !== sid) return "";
   const eff = sessCwd(sid);

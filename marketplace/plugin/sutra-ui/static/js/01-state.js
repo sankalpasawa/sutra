@@ -1383,6 +1383,16 @@ function claudeChannel(s, side){
       if (!S.switchNote) S.switchNote = {};
       S.switchNote[s.id] = f;
       scheduleRender();
+    } else if (f.type === "mode_note"){
+      /* The permission mode this pane asked for is NOT the one running, and the
+         server said which is. Same reasoning as the switch marker one branch
+         up: the pane's own permission chip is showing what the operator chose,
+         and if nothing enforces it the operator has to be told rather than
+         left to infer it from a prompt that should not have appeared.
+         Per-pane, stated once per spawn -- a respawn re-states it. */
+      if (!S.modeNote) S.modeNote = {};
+      S.modeNote[s.id] = f;
+      scheduleRender();
     } else if (f.type === "session"){
       /* A SIDE channel must never write s.claude_session: that field is what the main
          thread resumes from, and overwriting it with the branch's id would silently

@@ -319,6 +319,7 @@ function sessionPane(s){
                 aria-label="Remove ${esc(a.name)}">&times;</button></span>`).join("")}
     </div>` : ""}
     ${switchMarkerHtml(s.id)}
+    ${modeMarkerHtml(s.id)}
     ${permConfirmHtml()}
     ${S.optsOpen[s.id] ? turnOptsHtml(s.id) : ""}
     ${cwdEditorHtml(s.id)}

@@ -1715,6 +1715,191 @@ class TestDeepSeekSpawnedModel(unittest.TestCase):
         self.assertNotEqual(announced, "opus")
 
 
+class TestDeepSeekPermissionMode(unittest.TestCase):
+    """The permission mode the operator picked must reach the CLI, or the pane
+    must say it did not.
+
+    THE BUG THIS EXISTS FOR -- two of them, in the same four lines.
+
+      1. AcpRuntime called `session/set_session_mode`. That method does not
+         exist. The real name is `session/set_mode`, and the real agent answers
+         the wrong one -32601 "Method not found".
+      2. The table mapping Sutra's permission_mode onto ACP's mode ids spelled
+         acceptEdits as "auto_edit", which is the `--approval-mode` ARGV
+         spelling. The wire spelling is "autoEdit", and set_mode answers
+         -32603 "Invalid or unavailable mode" for the other one.
+
+    Either alone silently disabled the control; the response was never checked,
+    so the runtime then RECORDED the mode it had asked for. Every DeepSeek pane
+    this panel ever ran displayed the operator's chosen mode while running
+    `default`.
+
+    ASSERTED AGAINST THE WIRE, not against _apply_mode's intent -- the same
+    discipline as TestDeepSeekSpawnedModel above, and for the same reason: the
+    broken code computed a mode, sent it, and believed the answer it never
+    read. qa/fake_acp_agent.py records every set_mode it ACCEPTED, from inside
+    the spawned process, and these read that back.
+
+    THE STUB USED TO LIE. Its unknown-method fallback was `_reply(msg_id, {})`,
+    so it answered `session/set_session_mode` with success and no test could
+    have caught any of this. It now answers -32601, as the real agent does. See
+    that file's docstring.
+
+    Runs entirely against the stub: no DeepSeek binary, no key, no network.
+    """
+
+    proc = None
+    port = None
+    tmpdir = None
+    modes_path = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp(prefix="sutra-test-dsmode-")
+        sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+        sys.path.insert(0, HERE)
+        import fixture_seed  # noqa: E402
+        fixture_seed.seed(cls.tmpdir)
+
+        cls.modes_path = os.path.join(cls.tmpdir, "set-modes.json")
+        shim = os.path.join(HERE, "qa", "fake_acp_agent.py")
+        os.chmod(shim, 0o755)
+
+        cls.port = _free_port()
+        env = dict(os.environ)
+        env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        env.pop("ANTHROPIC_API_KEY", None)
+        env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
+        env["SUTRA_UI_DEEPSEEK_BIN"] = shim
+        env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
+        env["SUTRA_FAKE_ACP_MODES"] = cls.modes_path
+        # acceptEdits and bypassPermissions are gated out of band; this test
+        # needs to SELECT acceptEdits to check its wire spelling, which is the
+        # half of the bug a plan-only test cannot reach.
+        env["SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"] = "1"
+        cls.proc = subprocess.Popen(
+            [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
+             "--port", str(cls.port), "--log-level", "warning"],
+            cwd=HERE, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/org/stats" % cls.port, timeout=1)
+                break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.25)
+        else:
+            raise RuntimeError("deepseek-mode server did not come up")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+                cls.proc.wait(timeout=5)
+        if cls.tmpdir and os.path.isdir(cls.tmpdir):
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _set_mode(self, mode):
+        url = "http://127.0.0.1:%d/api/settings" % self.port
+        req = urllib.request.Request(
+            url, data=json.dumps({"permission_mode": mode}).encode("utf-8"),
+            method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(body["settings"]["permission_mode"], mode,
+                         "the server did not accept %r, so this test would be "
+                         "asserting about the wrong mode" % mode)
+
+    def _run_turn(self, mode):
+        """Set the permission mode, run one DeepSeek turn, and return
+        (modes_the_cli_actually_received, mode_note_frame_or_None)."""
+        from websockets.sync.client import connect
+        self._set_mode(mode)
+        try:
+            os.unlink(self.modes_path)
+        except OSError:
+            pass
+        url = "ws://127.0.0.1:%d/ws/chat?provider=deepseek" % self.port
+        note = None
+        with connect(url, open_timeout=10) as ws:
+            first = json.loads(ws.recv(timeout=10))
+            self.assertEqual(first.get("type"), "provider", first)
+            ws.send(json.dumps({"message": "hi"}))
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                f = json.loads(ws.recv(timeout=10))
+                if f.get("type") == "mode_note":
+                    note = f
+                if f.get("type") == "error":
+                    self.fail("socket refused the turn: %r" % (f,))
+                if f.get("type") == "done":
+                    break
+        recorded = []
+        if os.path.exists(self.modes_path):
+            with open(self.modes_path, encoding="utf-8") as fh:
+                recorded = json.load(fh)
+        return recorded, note
+
+    def test_plan_reaches_the_cli(self):
+        """The default mode, and the one whose failure was worst: the operator
+        put the session in read-only and the CLI was never told."""
+        recorded, note = self._run_turn("plan")
+        self.assertEqual(recorded, ["plan"],
+                         "the CLI was told %r, not plan -- session/set_mode "
+                         "never landed" % (recorded,))
+        self.assertIsNone(note, "plan is available, so there is nothing to warn "
+                                "about: %r" % (note,))
+
+    def test_accept_edits_is_sent_as_camelCase_autoEdit(self):
+        """Bug 2, at the wire. `auto_edit` is the argv spelling and the CLI
+        rejects it on this surface; only `autoEdit` is accepted."""
+        recorded, note = self._run_turn("acceptEdits")
+        self.assertEqual(recorded, ["autoEdit"],
+                         "expected the wire spelling autoEdit, got %r" % (recorded,))
+        self.assertIsNone(note, "autoEdit is available and was accepted: %r" % (note,))
+
+    def test_bypass_is_sent_as_yolo(self):
+        recorded, note = self._run_turn("bypassPermissions")
+        self.assertEqual(recorded, ["yolo"], recorded)
+        self.assertIsNone(note, note)
+
+    def test_a_mode_with_no_equivalent_is_stated_not_swallowed(self):
+        """dontAsk / auto / manual have no ACP mode. The session runs in
+        `default` -- which PROMPTS for approval, i.e. the safe direction to be
+        wrong in -- and the pane is told, because the permission control is
+        still displaying `dontAsk`."""
+        recorded, note = self._run_turn("dontAsk")
+        self.assertEqual(recorded, [],
+                         "nothing should have been sent: there is no mode to "
+                         "send, and guessing one is the bug (%r)" % (recorded,))
+        self.assertIsNotNone(note, "the divergence was silent -- exactly the "
+                                   "failure this test exists for")
+        self.assertEqual(note["asked"], "dontAsk")
+        self.assertEqual(note["running"], "default")
+        self.assertIn("no equivalent", note["reason"])
+        self.assertEqual(note["provider"], "deepseek")
+
+    def test_the_old_method_name_is_gone_from_the_source(self):
+        """A grep, deliberately. The name is not reachable through any code
+        path a test can drive once the correct one works, so the only way to
+        catch its return is to assert it is absent."""
+        with open(os.path.join(HERE, "acp_runtime.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        calls = [ln for ln in src.splitlines()
+                 if "set_session_mode" in ln and "session/set_session_mode\"" in ln]
+        self.assertEqual(calls, [],
+                         "session/set_session_mode is being CALLED again: %r" % (calls,))
+        self.assertIn('"session/set_mode"', src,
+                      "the correct method name is not in this file at all")
+
+
 class TestChatProviderParam(unittest.TestCase):
     """/ws/chat?provider= -- the per-chat provider override (provider-switch
     piece 7).

@@ -2257,6 +2257,26 @@ async def ws_chat(ws: WebSocket):
                         rt.kill_group()
                         rt.clear()
                         continue
+                    # The permission mode the operator picked did not survive
+                    # the trip to this provider. SAID, once per spawn, because
+                    # the `provider` frame above already told the pane it would
+                    # run `perm_mode` -- and that frame is sent before the
+                    # session exists, so it cannot know. Without this the pane
+                    # keeps displaying a mode nothing is enforcing, which is
+                    # the bug the runtime fix half-solves: the runtime now
+                    # knows the truth, and this is the only channel that can
+                    # carry it to the operator.
+                    #
+                    # A NEW FRAME TYPE, not the existing `notice`. `notice` is
+                    # emitted server-side in three places and the client has NO
+                    # handler for any of them -- it is dropped on the floor
+                    # today (checked, not assumed). Reusing it would look like
+                    # reporting and report nothing. Claude never sends this
+                    # frame, so nothing about Claude's rendering changes.
+                    if rt.acp_mode_note:
+                        await ws.send_json(dict(rt.acp_mode_note,
+                                                type="mode_note",
+                                                provider=active_id))
             proc = rt.proc
 
             if active_id == "claude":
