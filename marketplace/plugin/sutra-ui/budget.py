@@ -42,28 +42,54 @@ Writes: nothing.
 """
 import providers
 
-#: Context windows in TOKENS, keyed by the model ids providers.MODELS uses.
-#: Kept here rather than in providers.py deliberately: providers.py probes PATH
-#: and config directories on every call, and context arithmetic has no business
-#: behind that. test_budget.test_every_catalogued_model_has_a_window pins the
-#: two together so a new picker entry cannot silently inherit a wrong ceiling.
+#: Context windows in TOKENS, keyed by provider and then by the model ids that
+#: provider declares in providers.py. Kept here rather than in providers.py
+#: deliberately: providers.py probes PATH and config directories on every call,
+#: and context arithmetic has no business behind that.
+#: test_budget.test_every_catalogued_model_has_a_window pins the two together so
+#: a new picker entry cannot silently inherit a wrong ceiling.
 #:
 #: Sources: the bundled claude-api model table (cached 2026-06-24) for the
 #: Claude family; a live GET /models against DeepSeek on 2026-09-02 for the V4
 #: family, which reported deepseek-v4-flash / -pro / -flash-vision-exp, all 1M.
-CLAUDE_WINDOWS = {
-    "opus": 1000000,
-    "sonnet": 1000000,
-    "haiku": 200000,     # Haiku 4.5. Five times smaller than its siblings.
+WINDOWS = {
+    "claude": {
+        "opus": 1000000,
+        "sonnet": 1000000,
+        "haiku": 200000,     # Haiku 4.5. Five times smaller than its siblings.
+    },
+    "deepseek": {
+        "deepseek-v4-pro": 1000000,
+        "deepseek-v4-flash": 1000000,
+        "deepseek-v4-flash-vision-exp": 1000000,
+    },
 }
 
-#: Every current DeepSeek model is 1M, so there is nothing to key on yet. When
-#: the panel gains a DeepSeek model picker this becomes a dict like the above.
-DEEPSEEK_WINDOW = 1000000
+#: What `""` -- "let the CLI choose" -- resolves to, PER PROVIDER. This entry is
+#: the whole reason the table above could be keyed by model without breaking
+#: anything, and it is not an optimisation.
+#:
+#: Before models were per-provider, window_for("deepseek", ...) ignored the model
+#: and returned a flat 1M. Keying by model without declaring a default would have
+#: sent DeepSeek's "" -- which is the SHIPPED default, what every session runs on
+#: until someone picks something -- down the unknown-model path to FLOOR_WINDOW,
+#: quietly costing 800K tokens of ceiling on the switch and compaction paths. A
+#: five-fold under-count that nothing would have reported.
+#:
+#: Claude has no entry ON PURPOSE, and that asymmetry is the point: `claude` with
+#: no model selected genuinely resolves to something this panel cannot know (the
+#: CLI's own configured default, which the operator may have changed), so the
+#: floor is the honest answer there. DeepSeek's default IS knowable -- the fork's
+#: ACP session/new reports deepseek-v4-flash, measured 2026-09-07 -- so assuming
+#: the floor for it would be pessimism, not caution.
+DEFAULT_WINDOWS = {
+    "deepseek": 1000000,
+}
 
-#: Used whenever the selected model does not resolve to a declared window.
-#: The smallest window in the catalogue, on purpose -- see unknown (1).
-FLOOR_WINDOW = min(CLAUDE_WINDOWS.values())
+#: Used whenever the selected model does not resolve to a declared window AND the
+#: provider declares no default. The smallest window in the catalogue, on
+#: purpose -- see unknown (1).
+FLOOR_WINDOW = min(w for windows in WINDOWS.values() for w in windows.values())
 
 #: Deliberately below the prose figure of ~4. See unknown (2).
 CHARS_PER_TOKEN = 3.0
@@ -82,10 +108,18 @@ USABLE_FRACTION = 0.90
 def window_for(target, model=None):
     """{tokens, source, model} for the model a switch to `target` will run on.
 
-    `model` is the panel's stored model id ("", "opus", "sonnet", "haiku"),
-    read from settings when not passed. It is meaningful for Claude only --
-    DeepSeek's model is chosen inside the CLI, not by Sutra -- so it is ignored
-    for other targets rather than being allowed to pick a wrong window.
+    `model` is the stored model id for THAT TARGET, read from settings when not
+    passed. It is meaningful for every provider that has a picker now, not just
+    Claude -- DeepSeek's model used to be chosen inside the CLI and was ignored
+    here; it is chosen by Sutra as of the per-provider picker, so it selects a
+    window like Claude's does.
+
+    Three outcomes, and `source` says which:
+      declared          the provider declares a window for this exact model
+      provider-default  no model selected (or an unrecognised one) and the
+                        provider knows what its own default resolves to
+      assumed-floor     neither -- the smallest catalogued window, so a payload
+                        is under-sized rather than rejected at the API
     """
     if model is None:
         try:
@@ -100,15 +134,16 @@ def window_for(target, model=None):
             model = ""
     model = (model or "").strip()
 
-    if target == "deepseek":
-        return {"tokens": DEEPSEEK_WINDOW, "source": "declared", "model": model}
-    if target == "claude":
-        win = CLAUDE_WINDOWS.get(model)
-        if win:
-            return {"tokens": win, "source": "declared", "model": model}
-        # "" (CLI default) or an id this build has not been taught.
-        return {"tokens": FLOOR_WINDOW, "source": "assumed-floor", "model": model}
-    # An unknown target has no window we can honestly claim.
+    win = WINDOWS.get(target, {}).get(model)
+    if win:
+        return {"tokens": win, "source": "declared", "model": model}
+    # "" (CLI default), an id this build has not been taught, or another
+    # provider's id arriving on this path. A provider that KNOWS what its own
+    # default resolves to declares it; the rest fall to the floor.
+    fallback = DEFAULT_WINDOWS.get(target)
+    if fallback:
+        return {"tokens": fallback, "source": "provider-default", "model": model}
+    # An unknown target, or a known one with nothing we can honestly claim.
     return {"tokens": FLOOR_WINDOW, "source": "assumed-floor", "model": model}
 
 
@@ -142,6 +177,10 @@ def _note(win):
         return ("no model is selected, so the smallest catalogued window "
                 "(%d tokens) is assumed rather than risking a rejected "
                 "request. Selecting a model in Settings raises this."
+                % win["tokens"])
+    if win["source"] == "provider-default":
+        return ("no model is selected, so this assistant's own default "
+                "(%d tokens) is used -- it is a known model, not a guess."
                 % win["tokens"])
     return ("%s holds %d tokens" % (win["model"] or win.get("target") or "the model",
                                     win["tokens"]))

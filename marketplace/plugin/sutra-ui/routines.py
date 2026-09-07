@@ -77,7 +77,36 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 ROUTINE_PERMISSION_MODES = ("dontAsk", "plan")
 DEFAULT_ROUTINE_MODE = "dontAsk"
 
-MODELS = ("", "opus", "sonnet", "haiku")
+#: ROUTINES ARE CLAUDE-ONLY, BY CONSTRUCTION. The runner spawns `claude` by name
+#: (see the run body below: shutil.which("claude") ... [claude, "-p", prompt,
+#: "--output-format", "json"]) and parses Claude Code's JSON output. There is no
+#: provider selection here and no ACP path, so there is exactly one provider
+#: whose models can appear.
+#:
+#: DERIVED from that provider's catalogue rather than copied. This was a second
+#: hardcoded ("", "opus", "sonnet", "haiku") living three files away from the
+#: first, with nothing tying them together -- so a model added to the panel's
+#: picker was simply absent here, and one retired from it stayed selectable for
+#: routines. Deriving is safe in the direction that matters: any id in that list
+#: is one `claude --model` accepts, which is the whole requirement.
+#:
+#: NOT the same call as ROUTINE_PERMISSION_MODES above, and the difference is
+#: deliberate. That one is a positive allow-list precisely because deriving it
+#: would re-admit bypassPermissions the day someone edits providers.py. A model
+#: id carries no authority -- a new Claude alias cannot widen what an unattended
+#: run may do -- so there is nothing here for a subtraction to silently re-admit.
+def _claude_model_ids():
+    """Claude's catalogued ids, "" included. Falls back to the ids this module
+    shipped with if providers cannot be imported, so a routine store stays
+    readable even when the panel's own module is broken."""
+    try:
+        import providers
+        return tuple(m["id"] for m in providers.models_for("claude"))
+    except Exception:
+        return ("", "opus", "sonnet", "haiku")
+
+
+MODELS = _claude_model_ids()
 PRESETS = ("manual", "hourly", "daily", "weekdays", "weekly", "custom")
 
 RUN_INDEX = "index.jsonl"

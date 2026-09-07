@@ -486,7 +486,22 @@ function usageChipHtml(){
    because DeepSeek's account has none. */
 function usagePopHtml(){
   if (!S.usagePop) return "";
-  if (SETTINGS && SETTINGS.provider === "deepseek"){
+  const upKind = usageKindOf((SETTINGS || {}).provider);
+  /* Same rule as SCREENS.usage: a provider with no usage concept gets a
+     popover that says so, not Claude's. */
+  if (upKind === "none") return `<div class="upop" role="dialog" aria-label="Usage">
+      <div class="upophead">
+        <b>Usage</b>
+        <button class="ib" type="button" data-usageclose="1" aria-label="Close">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="upopbody"><p style="margin:0">${esc(providerLabel((SETTINGS||{}).provider))}
+        publishes no usage figure this panel can read — no rate-limit window and
+        no balance.</p></div>
+    </div>`;
+  if (upKind === "balance"){
     const u = S.deepseekUsage;
     const body = !u
       ? `<p style="color:var(--faint);margin:0">Reading balance…</p>`
@@ -665,7 +680,17 @@ function deepseekUsageScreen(){
 }
 
 SCREENS.usage = () => {
-  if (SETTINGS && SETTINGS.provider === "deepseek") return deepseekUsageScreen();
+  /* Keyed on the DECLARED usage kind, not the provider id. The `else` this
+     replaces meant every provider that was not DeepSeek got Claude's screen --
+     Anthropic's account fold, Anthropic's window percentages -- which for Codex
+     would have been a confident description of an account it has nothing to do
+     with. */
+  const kind = usageKindOf((SETTINGS || {}).provider);
+  if (kind === "balance") return deepseekUsageScreen();
+  if (kind === "none") return `<div class="zero"><h4>No usage to report</h4>
+    <p>${esc(providerLabel((SETTINGS || {}).provider))} does not publish a usage
+    figure this panel can read — it has neither a rate-limit window nor a
+    balance. Nothing is hidden here; there is nothing to show.</p></div>`;
   const acct = accountFold();
   if (S.usageError) return `${acct}<div class="zero"><h4>Usage unavailable</h4>
     <p>${esc(S.usageError)}</p></div>`;

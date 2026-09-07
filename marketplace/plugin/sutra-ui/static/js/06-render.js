@@ -201,7 +201,17 @@ function paneMenuHtml(s){
     ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
             title="Model — applies to the next message">${mopts}
       </select></span><span class="ma"></span></label>`}
-    ${row("usage", "Usage", (providerUsage() || {}).row || "plan usage")}
+    ${(()=>{ /* THIS PANE'S provider, same rule as the Model row above. */
+       const pu = providerUsage(mpid);
+       if (pu) return row("usage", "Usage", pu.row);
+       /* No figure. Two different reasons, and saying the wrong one is worse
+          than saying nothing: a provider with no usage concept will never have
+          one, while a provider that has not been read yet will. "plan usage"
+          was Claude's phrasing standing in for both. */
+       return row("usage", "Usage", usageKindOf(mpid) === "none"
+         ? "not reported for " + (providerLabel(mpid) || mpid || "this assistant")
+         : "not read yet");
+     })()}
     ${row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}

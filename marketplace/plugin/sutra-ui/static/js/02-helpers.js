@@ -912,22 +912,47 @@ function renderPlane(){
    renders as its own kind of blank. That matches the existing rule for Claude:
    the rail withholds a figure until the screen has been read, so it never
    asserts a number nobody fetched. */
-function providerUsage(){
-  if (SETTINGS && SETTINGS.provider === "deepseek"){
-    const u = S.deepseekUsage;
-    const bal = u && u.available && (u.balances || [])[0];
-    if (!bal || bal.total_balance == null) return null;
-    const amt = String(bal.total_balance);
-    return { short: "$" + amt,
-             long:  (bal.currency || "USD") + " " + amt + " balance",
-             row:   "$" + amt + " balance" };
+function usageKindOf(pid){
+  /* WHAT KIND of usage fact a provider reports, declared on its catalog row and
+     shipped in GET /api/providers. Reading it here rather than branching on the
+     id is what stops the third provider inheriting the second's meaning: the
+     old shape was `if (deepseek) balance; else Anthropic percentage`, so Codex
+     would have rendered Claude's window percentage on a Codex session the day
+     it became selectable. Absent row or absent field means "none" -- withhold,
+     never borrow. */
+  const p = (PROVIDERS || []).find(x => x.id === pid);
+  return (p && p.usage_kind) || "none";
+}
+
+function providerUsage(pid){
+  /* `pid` defaults to the globally selected provider because two of the three
+     callers (the rail badge and the footer) describe the app, not a pane. The
+     pane row passes its OWN provider -- see paneMenuHtml. */
+  const id = pid || (SETTINGS || {}).provider;
+  switch (usageKindOf(id)){
+    case "balance": {
+      const u = S.deepseekUsage;
+      const bal = u && u.available && (u.balances || [])[0];
+      if (!bal || bal.total_balance == null) return null;
+      const amt = String(bal.total_balance);
+      return { short: "$" + amt,
+               long:  (bal.currency || "USD") + " " + amt + " balance",
+               row:   "$" + amt + " balance" };
+    }
+    case "window-percent": {
+      const u = S.usage;
+      if (!u || !u.available) return null;
+      const pct = Math.round((((u.limits || []).find(r => r.active)
+                               || (u.limits || [])[0] || {}).percent) ?? NaN);
+      if (!Number.isFinite(pct)) return null;
+      return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
+    }
+    default:
+      /* A provider with no usage concept. null, and every caller renders its
+         own kind of blank -- which is the same thing they already do before a
+         figure has been read, so no caller needed a new branch for this. */
+      return null;
   }
-  const u = S.usage;
-  if (!u || !u.available) return null;
-  const pct = Math.round((((u.limits || []).find(r => r.active)
-                           || (u.limits || [])[0] || {}).percent) ?? NaN);
-  if (!Number.isFinite(pct)) return null;
-  return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
 }
 
 /* Row metadata, in USER language (founder 2026-08-24: "user-friendly and

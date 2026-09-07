@@ -3154,6 +3154,57 @@ test("35u. the pre-selected model comes from THIS provider's stored slot", () =>
     "the DeepSeek slot must win over the legacy flat model, got " + sel);
 });
 
+/* ── 35v-x. the Usage row reports THIS provider's kind of fact ──────────── */
+
+const usageRowOf = h => {
+  const m = h.match(/data-mrow="usage"[\s\S]*?<span class="mv">([^<]*)<\/span>/);
+  return m ? m[1] : null;
+};
+
+test("35v. a provider with no usage concept borrows nobody else's figure", () => {
+  /* THE LATENT BUG, at the row. The branch was `if (deepseek) balance; else
+     Anthropic percentage`, so Codex -- which has neither a window nor a
+     balance -- would have rendered Claude's percentage on a Codex session the
+     day it became selectable. */
+  const prevP = T.PROVIDERS, prevU = T.S.usage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+                 { id: "codex", name: "OpenAI Codex", usage_kind: "none" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  try {
+    const h = paneMenuWith({ claude: PANE_MODELS.claude }, "codex", { provider: "claude" });
+    const row = usageRowOf(h);
+    assert.ok(!/26/.test(row), "Claude's percentage leaked onto a Codex pane: " + row);
+    assert.ok(/not reported/.test(row) && /Codex/.test(row),
+      "it must say whose figure is missing and why, got: " + row);
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; }
+});
+
+test("35w. a Claude pane still shows the window percentage, unchanged", () => {
+  const prevP = T.PROVIDERS, prevU = T.S.usage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  try {
+    const h = paneMenuWith({ claude: PANE_MODELS.claude }, "claude", { provider: "claude" });
+    assert.strictEqual(usageRowOf(h), "26% used");
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; }
+});
+
+test("35x. the Usage row follows the pane's provider, like the Model row", () => {
+  /* Same divergence as the model list: SETTINGS.provider is global, so a
+     DeepSeek pane left open across a switch to Claude would have started
+     quoting Claude's percentage for a session DeepSeek is still answering. */
+  const prevP = T.PROVIDERS, prevU = T.S.usage, prevD = T.S.deepseekUsage;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+                 { id: "deepseek", name: "DeepSeek", usage_kind: "balance" }];
+  T.S.usage = { available: true, limits: [{ active: true, percent: 26 }] };
+  T.S.deepseekUsage = { available: true, balances: [{ total_balance: "1.81", currency: "USD" }] };
+  try {
+    const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
+    assert.strictEqual(usageRowOf(h), "$1.81 balance",
+      "the pane's own provider must win over the global setting");
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU; T.S.deepseekUsage = prevD; }
+});
+
 /* ── 35l-n. the repo bar's facts live in the ⋯ menu now ──────────────────── */
 test("35l. with a repository known, Folder carries branch + state and PR rows appear after it", () => {
   const prevRepo = T.S.repo; T.S.repo = { "sid-35": { available: true, branch: "main", remote: "github.com/x/y",

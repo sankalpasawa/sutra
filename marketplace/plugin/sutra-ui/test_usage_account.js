@@ -36,10 +36,26 @@ test("the account comes BEFORE the plan limits", () => {
   assert(acct >= 0 && limits > acct, "account fold is not ahead of the limits fold");
 });
 
-test("every early return still carries the account", () => {
-  const returns = usageBody.match(/return `[^`]*`/g) || [];
-  assert(returns.length >= 4, "expected the four return branches, found " + returns.length);
+test("every early return on the CLAUDE path still carries the account", () => {
+  /* Scoped to the Claude path. The screen now returns earlier for the other
+     two usage kinds -- DeepSeek's own screen, and a "nothing to report" for a
+     provider that publishes neither a window nor a balance -- and NEITHER may
+     carry accountFold(), which reads Anthropic's account. Requiring ${acct} on
+     every return would demand exactly the bug this split fixes: Claude's
+     identity rendered on someone else's screen. */
+  const claudeBody = usageBody.slice(usageBody.indexOf("const acct = accountFold()"));
+  const returns = claudeBody.match(/return `[^`]*`/g) || [];
+  assert(returns.length >= 3, "expected the Claude return branches, found " + returns.length);
   returns.forEach(r => assert(r.includes("${acct}"), "a return branch drops the account: " + r.slice(0, 60)));
+});
+
+test("the non-Claude usage screens never render Claude's account", () => {
+  const preClaude = usageBody.slice(0, usageBody.indexOf("const acct = accountFold()"));
+  assert(/usageKindOf\(/.test(preClaude), "the screen no longer keys on the declared kind");
+  assert(!/accountFold\(\)/.test(preClaude),
+         "a non-Claude branch reaches accountFold(): " + preClaude.slice(0, 200));
+  assert(/kind === "none"/.test(preClaude),
+         "a provider with no usage concept has no branch, so it falls into Claude's");
 });
 
 test("absent fields render as 'not reported', never as a placeholder", () => {
@@ -51,27 +67,52 @@ test("the plan shows raw values beside a friendly name, or instead of one", () =
   assert(screens.includes("p.plan || rawPlan"), "raw plan values are not the fallback");
 });
 
-test("loadUsage reads /api/account on its own route", () => {
+/* Counting render() calls to find the branches broke the moment a third
+   branch was added. Brace-match the function instead, then slice by the
+   branch guards themselves -- which is what these tests are actually about. */
+const loadUsageBody = (() => {
   const i = boot.indexOf("async function loadUsage");
-  // loadUsage now branches on provider (DeepSeek's own early return, which
-  // hits "render();" first) before reaching the Claude path this test pins --
-  // scope to the SECOND render() so the slice covers both branches rather
-  // than stopping inside the DeepSeek one.
-  const firstRender = boot.indexOf("render();", i);
-  const body = boot.slice(i, boot.indexOf("render();", firstRender + 1));
-  assert(body.includes('apiGet("/api/account")'), "loadUsage does not fetch /api/account");
-  assert(body.includes('apiGet("/api/usage")'), "loadUsage no longer fetches /api/usage");
-  assert(body.indexOf('apiGet("/api/account")') < body.indexOf('apiGet("/api/usage")'),
+  let d = 0, start = boot.indexOf("{", i);
+  for (let j = start; j < boot.length; j++) {
+    if (boot[j] === "{") d++;
+    else if (boot[j] === "}" && --d === 0) return boot.slice(i, j + 1);
+  }
+  throw new Error("could not isolate loadUsage");
+})();
+
+test("loadUsage reads /api/account on its own route", () => {
+  const claude = loadUsageBody.slice(loadUsageBody.indexOf('kind === "none"'));
+  assert(claude.includes('apiGet("/api/account")'), "loadUsage does not fetch /api/account");
+  assert(claude.includes('apiGet("/api/usage")'), "loadUsage no longer fetches /api/usage");
+  assert(claude.indexOf('apiGet("/api/account")') < claude.indexOf('apiGet("/api/usage")'),
          "account should load first");
 });
 
-test("loadUsage branches to DeepSeek's own route before the Claude path", () => {
-  const i = boot.indexOf("async function loadUsage");
-  const firstRender = boot.indexOf("render();", i);
-  const branch = boot.slice(i, firstRender);
-  assert(branch.includes('SETTINGS.provider === "deepseek"'), "no provider branch found");
-  assert(branch.includes('apiGet("/api/deepseek/usage")'), "DeepSeek branch does not call its own route");
-  assert(!branch.includes('apiGet("/api/account")'), "DeepSeek branch must not fetch the Claude account route");
+test("loadUsage branches on the DECLARED usage kind, not the provider id", () => {
+  /* Was `SETTINGS.provider === "deepseek"`, whose else-arm swept up every
+     other provider. usage_kind is declared per provider in providers.py and
+     shipped on the /api/providers row, so a provider that reports neither a
+     window nor a balance gets neither instead of Claude's. */
+  assert(loadUsageBody.includes("usageKindOf("), "loadUsage no longer reads the declared kind");
+  assert(!/SETTINGS\.provider === "deepseek"/.test(loadUsageBody),
+         "the provider-id branch is back");
+  const balance = loadUsageBody.slice(loadUsageBody.indexOf('kind === "balance"'),
+                                      loadUsageBody.indexOf('kind === "none"'));
+  assert(balance.includes('apiGet("/api/deepseek/usage")'),
+         "the balance branch does not call DeepSeek's own route");
+  assert(!balance.includes('apiGet("/api/account")'),
+         "the balance branch must not fetch the Claude account route");
+});
+
+test("a provider with no usage concept fetches nothing at all", () => {
+  /* THE LATENT BUG. Codex is not selectable yet; the day it is, the old
+     else-arm would have spent two requests reading ANTHROPIC's account and
+     usage and rendered the answer as Codex's. */
+  const i = loadUsageBody.indexOf('kind === "none"');
+  assert(i > 0, "there is no branch for a provider with no usage concept");
+  const arm = loadUsageBody.slice(i, i + 200);
+  assert(/return/.test(arm), "the no-usage branch must return before any fetch");
+  assert(!/apiGet/.test(arm), "the no-usage branch must not fetch anything: " + arm);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

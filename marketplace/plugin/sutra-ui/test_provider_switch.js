@@ -63,16 +63,24 @@ const sandbox = {
   location: { protocol: "http:", host: "127.0.0.1:7000" },
   S: { cwd: {}, sutraId: {}, sessions: [] },
   SETTINGS: { workdir: "/home/op/work" },
+  /* providerUsage resolves the provider's DECLARED usage kind before reading
+     any state -- the `else` it replaced handed every non-DeepSeek provider
+     Claude's percentage. That declaration ships on the /api/providers row, so
+     the sandbox has to carry one the way the live panel does. */
+  PROVIDERS: [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" },
+              { id: "deepseek", name: "DeepSeek", usage_kind: "balance" },
+              { id: "codex", name: "OpenAI Codex", usage_kind: "none" }],
   console,
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 new vm.Script([
+  grab(helpers, "usageKindOf"),
   grab(helpers, "providerUsage"),
   grab(state, "sessCwd"),
   grab(state, "sessSutraId"),
   grab(state, "claudeWsUrl"),
-].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage};",
+].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage,usageKindOf};",
   { filename: "01-state.js#extract" }).runInContext(sandbox);
 const T = sandbox.__T;
 
@@ -273,6 +281,42 @@ test("nothing fetched yet -> null, so no surface asserts a number", () => {
   sandbox.SETTINGS = { provider: "claude" };
   sandbox.S.usage = null; sandbox.S.deepseekUsage = null;
   assert(T.providerUsage() === null, "asserted a figure nobody fetched");
+});
+
+test("a provider with no usage concept gets null, not Claude's percentage", () => {
+  /* THE SAME BUG ONE PROVIDER LATER. The reported failure was DeepSeek falling
+     through to S.usage; the shape that caused it -- `if (deepseek) ... else
+     Claude` -- left every future provider in the else. Codex reports neither a
+     window nor a balance, and the day it becomes selectable it must show
+     nothing rather than Anthropic's number. */
+  sandbox.SETTINGS = { provider: "codex" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  sandbox.S.deepseekUsage = { available: true,
+    balances: [{ currency: "USD", total_balance: "1.81" }] };
+  assert(T.providerUsage() === null, "borrowed another provider's figure");
+});
+
+test("an unread provider table withholds rather than guesses", () => {
+  /* Deliberate: with no table there is no way to tell which kind of fact
+     applies, and asserting one anyway is the whole failure. */
+  const prev = sandbox.PROVIDERS;
+  sandbox.PROVIDERS = [];
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  try { assert(T.providerUsage() === null, "asserted a figure with no provider table"); }
+  finally { sandbox.PROVIDERS = prev; }
+});
+
+test("the caller may name a provider, so a pane can differ from the app", () => {
+  /* SETTINGS.provider is global; a pane's provider is its own. Without the
+     argument a DeepSeek pane left open across a switch to Claude would quote
+     Claude's percentage for a session DeepSeek is still answering. */
+  sandbox.SETTINGS = { provider: "claude" };
+  sandbox.S.usage = { available: true, limits: [{ active: true, percent: 26.4 }] };
+  sandbox.S.deepseekUsage = { available: true,
+    balances: [{ currency: "USD", total_balance: "1.81" }] };
+  eq(T.providerUsage("deepseek").row, "$1.81 balance");
+  eq(T.providerUsage("claude").row, "26% used");
 });
 
 test("all three surfaces read the one helper", () => {

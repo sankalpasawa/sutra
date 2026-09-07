@@ -189,7 +189,8 @@ async function loadUsage(force){
      balance -- so it gets its own state (S.deepseekUsage) and skips /api/account
      entirely rather than rendering "not reported" rows for fields that do not
      exist for this provider. */
-  if (SETTINGS && SETTINGS.provider === "deepseek"){
+  const kind = usageKindOf((SETTINGS || {}).provider);
+  if (kind === "balance"){
     if (S.deepseekUsage && !force) return;
     try {
       S.deepseekUsage = await apiGet("/api/deepseek/usage");
@@ -200,6 +201,12 @@ async function loadUsage(force){
     render();
     return;
   }
+  /* NO USAGE CONCEPT: fetch nothing. The `else` this guards used to reach
+     /api/usage and /api/account for every non-DeepSeek provider, so selecting
+     Codex would have spent two requests reading ANTHROPIC's account and then
+     rendered the result as Codex's. Returning early is the whole fix -- the
+     renderers already treat absent state as "nothing to show". */
+  if (kind === "none"){ render(); return; }
   if (S.usage && !force) return;
   /* The account rides the same open: same screen, local read, and it has to
      render when the usage endpoint cannot. Its own route rather than a field

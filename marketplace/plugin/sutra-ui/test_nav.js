@@ -76,9 +76,16 @@ vm.runInContext(SCRIPT, sandbox, { filename: "panel-modules.js" });
 sandbox.render = () => {};
 /* const/let at a vm script's top level live in the context's lexical scope,
    not on the sandbox object — capture them from INSIDE the context. */
+/* PROVIDERS and SETTINGS need getter/setter pairs, not plain properties: a
+   top-level `let` in a classic script lives in the SCRIPT scope, not on the
+   global object, so `T.PROVIDERS = x` would set a field on this literal and
+   leave the binding the code actually reads untouched. Same reason test_panel.js
+   gives for SETTINGS. */
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
   loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
-  buildAccentRow, ACCENTS, document })`, sandbox);
+  buildAccentRow, ACCENTS, document,
+  get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
+  get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; } })`, sandbox);
 /* spies for the 2.118.1 regressions: which lazy loaders fired */
 const loaded = [];
 for (const fn of ["loadBalance","loadTeamsutra","loadGit","loadFs","loadAuto",
@@ -284,12 +291,36 @@ test("roles: the pick persists and survives a reload", () => {
 
 /* §telemetry ─ S14 */
 test("telemetry: renders the utilization when known, an em-dash when not", () => {
-  T.S.usage = null; T.paintTelemetry();
-  assert.strictEqual(els["idStat"].textContent, "—");
+  /* The footer asks providerUsage(), which since 2026-09-07 resolves WHICH KIND
+     of usage fact the selected provider reports before reading any state --
+     otherwise the line quoted Anthropic's percentage whatever was selected. So
+     the fixture has to name a provider and a kind, the way the live panel does
+     from GET /api/providers. */
+  const prevP = T.PROVIDERS, prevS = T.SETTINGS;
+  T.PROVIDERS = [{ id: "claude", name: "Claude Code", usage_kind: "window-percent" }];
+  T.SETTINGS = Object.assign({}, T.SETTINGS, { provider: "claude" });
+  try {
+    T.S.usage = null; T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "—");
+    T.S.usage = { available: true, limits: [{ active: true, percent: 63.4 }] };
+    T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "63% of the usage window");
+  } finally { T.S.usage = null; T.PROVIDERS = prevP; T.SETTINGS = prevS; }
+});
+
+test("telemetry: withholds rather than guesses when the provider table is unread", () => {
+  /* DELIBERATE, not a gap. With no provider table there is no way to know
+     whether this assistant reports a window, a balance, or nothing -- and the
+     failure this whole change fixes was a surface asserting a number it had no
+     basis for. An em-dash is the honest output; the figure appears when the
+     table arrives. */
+  const prevP = T.PROVIDERS;
+  T.PROVIDERS = [];
   T.S.usage = { available: true, limits: [{ active: true, percent: 63.4 }] };
-  T.paintTelemetry();
-  assert.strictEqual(els["idStat"].textContent, "63% of the usage window");
-  T.S.usage = null;
+  try {
+    T.paintTelemetry();
+    assert.strictEqual(els["idStat"].textContent, "—");
+  } finally { T.S.usage = null; T.PROVIDERS = prevP; }
 });
 
 /* §accent ─ S15-S19 */
