@@ -223,6 +223,12 @@ const EPILOGUE = `
   set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
   get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
   turnOptsHtml, permSelect, turnOptsFor,
+  /* Pane provider resolution. TWO functions on purpose (see 06-render), and
+     both are exported so the split itself is pinned: collapsing them would
+     feed the page's seed to the Usage row, whose not-loaded branch turns a
+     known provider id into a specific false claim. */
+  paneProvider, paneDeclProvider, paneMenuHtml, readDeclarations,
+  get SEED(){ return SEED; }, set SEED(v){ SEED = v; },
   renderUpdateBanner, stopUpdCountdown, updDesktop, updTick, UPDATE_COUNTDOWN_S,
   /* B1 cadence smoothing: the drain POLICY is pure arithmetic and lives here so
      it can be tested without rAF, which never fires headlessly. */
@@ -4790,4 +4796,205 @@ test("47j. a provider with no declared modes keeps ALL of them", () => {
      is the wrong direction to be wrong in. */
   const ids = permOptions(permWith("codex", "plan")).map(o => o.id);
   assert.deepStrictEqual(ids, PMODES.claude);
+});
+
+/* ── 48. THE PANE NOBODY HAS ASKED ANYTHING YET (founder 2026-09-07) ────────
+   Section 47 above proved the gating works when it is HANDED a provider id.
+   Nothing proved the panel could work out which id to hand it, and on an
+   unstarted pane it could not: the provider frame arrives with the socket, so
+   `channel` is null until the first message, and before /api/settings resolves
+   SETTINGS is null too. paneProvider returned undefined, every consumer took
+   its not-loaded branch, and for turn options that branch is Claude's five.
+
+   So a fresh DeepSeek pane showed all five turn options -- in exactly the
+   window when this menu gets opened, which is BEFORE asking anything, to set
+   something first. 47d pinned that fallback as correct without ever asking
+   which provider was on the other side of it.
+
+   The fix is app.py putting the declarations in the page (a meta 01-state
+   reads at parse time), so "which provider?" has an answer on the first paint.
+   These tests are written against the UNSTARTED pane specifically -- channel
+   null -- because that is the state every one above skipped. */
+
+const DECL_TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+const DECL_PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+
+/* Renders the pane menu for a pane with NOTHING ASKED YET.
+     served   -- which provider's machine served the page (the meta), or null
+                 for a page with no declarations at all
+     fetched  -- has GET /api/settings landed? false is the boot window
+   The maps behave as the browser's do: seeded from the page, replaced by the
+   fetch. Never force-cleared, because after this change the browser has no way
+   to reach an empty map on a page that carried a seed. */
+function unstartedPane({ served, fetched, stored }) {
+  const prev = {
+    ch: PANE_S.channel, set: T.SETTINGS, seed: T.SEED, menu: T.S.paneMenu,
+    to: T.TURN_OPTIONS_BY_PROVIDER, pm: T.PERM_MODES_BY_PROVIDER, pv: T.PERM_MODES,
+  };
+  try {
+    PANE_S.channel = null;              /* THE POINT: no provider frame yet */
+    /* paneMenuHtml returns "" unless THIS pane's menu is the open one. Without
+       it every "no Turn options row" assertion below passes against an empty
+       string -- which is how the first version of 48a and 48b passed while
+       proving nothing. assertOpen() keeps that from coming back. */
+    T.S.paneMenu = PANE_S.id;
+    T.SEED = served ? {
+      provider: served,
+      turn_options_by_provider: DECL_TOPTS,
+      permission_modes_by_provider: DECL_PMODES,
+    } : {};
+    T.TURN_OPTIONS_BY_PROVIDER = T.SEED.turn_options_by_provider || {};
+    T.PERM_MODES_BY_PROVIDER = T.SEED.permission_modes_by_provider || {};
+    T.PERM_MODES = fetched ? SIX : [];
+    T.SETTINGS = fetched
+      ? { provider: served, permission_mode: stored || "plan",
+          permission_mode_effective: stored || "plan" }
+      : null;
+    if (fetched) {                      /* the same response carries both */
+      T.TURN_OPTIONS_BY_PROVIDER = DECL_TOPTS;
+      T.PERM_MODES_BY_PROVIDER = DECL_PMODES;
+    }
+    return {
+      menu: T.paneMenuHtml(PANE_S),
+      decl: T.paneDeclProvider(PANE_S),
+      running: T.paneProvider(PANE_S),
+      perm: T.permSelect(T.paneDeclProvider(PANE_S)),
+    };
+  } finally {
+    PANE_S.channel = prev.ch; T.SETTINGS = prev.set; T.SEED = prev.seed;
+    T.S.paneMenu = prev.menu;
+    T.TURN_OPTIONS_BY_PROVIDER = prev.to; T.PERM_MODES_BY_PROVIDER = prev.pm;
+    T.PERM_MODES = prev.pv;
+  }
+}
+const hasOptsRow = h => /data-mrow="opts"/.test(h);
+/* An absent row and an absent MENU are not the same finding, and only one of
+   them is this section's subject. */
+const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
+  "the pane menu did not render at all -- the assertion below would be vacuous");
+
+test("48a. a DeepSeek pane with nothing asked yet has NO Turn options row", () => {
+  /* The founder's report. Settings HAVE loaded here -- this is the state a
+     pane sits in for as long as it goes unused. */
+  const r = unstartedPane({ served: "deepseek", fetched: true });
+  assertOpen(r.menu);
+  assert.strictEqual(r.decl, "deepseek",
+    "the pane could not work out its own provider before the first turn");
+  assert.ok(!hasOptsRow(r.menu), "Turn options rendered on a DeepSeek pane: " + r.menu);
+});
+
+test("48b. ...and not during the boot window either, before /api/settings", () => {
+  /* THE ACTUAL DEFECT. SETTINGS is null, so the id can only come from the
+     page. Without the seed this is where Claude's five appeared. */
+  const r = unstartedPane({ served: "deepseek", fetched: false });
+  assertOpen(r.menu);
+  assert.strictEqual(r.running, undefined,
+    "paneProvider must stay undefined until something has actually reported");
+  assert.strictEqual(r.decl, "deepseek", "the declaring provider must come from the page");
+  assert.ok(!hasOptsRow(r.menu), "Turn options rendered during boot: " + r.menu);
+});
+
+test("48c. a Claude pane keeps its Turn options row in BOTH those states", () => {
+  /* The constraint on the whole change. A control that blinks out during boot
+     and back in afterwards is its own defect. */
+  for (const fetched of [true, false]) {
+    const r = unstartedPane({ served: "claude", fetched });
+    assertOpen(r.menu);
+    assert.ok(hasOptsRow(r.menu),
+      `Claude lost the Turn options row (fetched=${fetched}): ` + r.menu);
+  }
+});
+
+test("48d. an unstarted DeepSeek pane never offers a mode it cannot run", () => {
+  /* Asked for alongside turn options: `plan` showing there is correct, but it
+     is also what a fallback would show, so the LIST is what settles it.
+
+     The two states differ, and the first version of this test was wrong to
+     expect them not to. The mode list is the server's vocabulary (PERM_MODES);
+     before that lands there is nothing to list but the mode in force, so the
+     boot window legitimately shows exactly one option. The claim that holds in
+     BOTH is the one worth pinning: nothing DeepSeek cannot enforce. */
+  const fetchedIds = permOptions(unstartedPane({ served: "deepseek", fetched: true }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(fetchedIds, DECL_PMODES.deepseek);
+
+  const bootIds = permOptions(unstartedPane({ served: "deepseek", fetched: false }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(bootIds, ["plan"],
+    "with no vocabulary fetched the select can only carry the mode in force");
+  for (const ids of [fetchedIds, bootIds])
+    for (const id of ids)
+      assert.ok(DECL_PMODES.deepseek.includes(id),
+        `offered "${id}", which DeepSeek cannot enforce`);
+});
+
+test("48e. an unstarted Claude pane still offers all six", () => {
+  const ids = permOptions(unstartedPane({ served: "claude", fetched: true }).perm)
+    .map(o => o.id);
+  assert.deepStrictEqual(ids, DECL_PMODES.claude);
+});
+
+test("48f. a mode stored under Claude is labelled, not offered, on a fresh DeepSeek pane", () => {
+  /* 47h's edge case, reached through resolution rather than a handed-in id:
+     permission_mode is global, so an unused DeepSeek pane inherits it. */
+  const r = unstartedPane({ served: "deepseek", fetched: true, stored: "dontAsk" });
+  assert.ok(/not supported by/.test(r.perm), r.perm);
+  const sel = permOptions(r.perm).filter(o => /selected/.test(o.attrs));
+  assert.strictEqual(sel.length, 1, "exactly one option stays selected");
+  assert.strictEqual(sel[0].id, "dontAsk");
+});
+
+test("48g. the two resolvers are NOT interchangeable", () => {
+  /* Pins the split. paneDeclProvider may read the page's seed; paneProvider
+     may not, because the Usage row keys off it and usageKindOf answers "none"
+     for any id while PROVIDERS is unfetched -- so a known id would turn "not
+     reported for default" into "not reported for DeepSeek", a vague false
+     claim sharpened into a specific one. Collapsing these two functions is
+     what this test exists to fail. */
+  const r = unstartedPane({ served: "deepseek", fetched: false });
+  assert.strictEqual(r.running, undefined, "paneProvider consumed the seed");
+  assert.notStrictEqual(r.decl, r.running, "the two resolvers agree where they must not");
+  assert.ok(!/not reported for DeepSeek/.test(r.menu),
+    "the seed reached the Usage row: " + r.menu);
+});
+
+test("48h. a page served without declarations behaves exactly as before", () => {
+  /* Backwards compatibility, and it is not hypothetical: a cached page from
+     before this shipped has no meta, and app.py returns "" if the lookup
+     throws. Both give SEED = {}, and then the not-loaded fallback 47d pins is
+     what runs -- Claude's five, on every pane, which is the old behaviour
+     rather than a new failure. */
+  const r = unstartedPane({ served: null, fetched: false });
+  assertOpen(r.menu);
+  assert.strictEqual(r.decl, undefined);
+  assert.ok(hasOptsRow(r.menu), "the pre-seed fallback must be untouched");
+});
+
+test("48i. readDeclarations survives every malformed attribute", () => {
+  /* It runs at parse time, before anything can catch for it: a throw here is
+     a blank panel.
+     Asserted on KEYS, not with deepStrictEqual against {}. The function builds
+     its object inside the vm realm, whose Object.prototype is not this file's,
+     and deepStrictEqual compares prototypes -- so the object-literal version
+     of this test failed on a correct return value. */
+  const prev = sandbox.document.querySelector;
+  const keys = () => Object.keys(T.readDeclarations());
+  try {
+    for (const content of ["", "{", "null", "[]", "3", '"x"', undefined, 7]) {
+      sandbox.document.querySelector = () => ({ content });
+      assert.deepStrictEqual(keys(), [],
+        "malformed content did not degrade to empty: " + JSON.stringify(content));
+    }
+    sandbox.document.querySelector = () => null;
+    assert.deepStrictEqual(keys(), [], "a missing meta must be empty");
+    sandbox.document.querySelector = () => ({ content: '{"provider":"deepseek"}' });
+    assert.deepStrictEqual(keys(), ["provider"], "the real parse path must actually work");
+    assert.strictEqual(T.readDeclarations().provider, "deepseek");
+  } finally { sandbox.document.querySelector = prev; }
 });

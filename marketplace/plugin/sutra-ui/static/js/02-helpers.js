@@ -336,7 +336,7 @@ const S = {
   /* Settings screen: the in-flight/failed state of a POST, so a refused write
      shows the server's reason instead of silently doing nothing. */
   setBusy:null, setError:null, setOk:null,
-  /* Codex sign-in (AI Assistant screen). codexAuth is the last answer from
+  /* Codex sign-in (AI Provider screen). codexAuth is the last answer from
      GET /api/providers/codex/auth -- null means "not asked yet", which the row
      renders as reading, never as signed out. codexBusy is the verb in flight
      ("login" | "apikey" | "logout"), so the button that started it can double
@@ -354,7 +354,7 @@ const S = {
      is still running after a reload without starting a second poller. */
   codexAuth:null, codexProbing:false, codexPolling:false,
   codexBusy:null, codexMsg:null, codexKeyOpen:false,
-  /* DeepSeek sign-in (AI Assistant screen). NO `deepseekAuth` twin to codexAuth:
+  /* DeepSeek sign-in (AI Provider screen). NO `deepseekAuth` twin to codexAuth:
      that state rides on SETTINGS.deepseek_auth, because reading it is a
      settings read rather than a subprocess, so it comes with the settings
      answer and there is no probe to track and no loading state to hold.
@@ -709,14 +709,16 @@ function railSpec(){
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
-      /* "AI Assistant", not "Settings": this row sits inside the Settings
+      /* "AI Provider", not "Settings": this row sits inside the Settings
          destination, so the old label repeated its parent and told an operator
          nothing about what was behind it. The screen configures which
-         assistant runs, what it may do without asking, and where it works. */
+         provider runs, what it may do without asking, and where it works.
+         Named for the provider on founder direction 2026-09-07 -- the word
+         the composer row and /api/providers already use for the same thing. */
       /* Carries the usage figure now that Usage is a section of this screen.
          Provider-aware: a percentage while DeepSeek is selected would describe
          a plan the panel is not using. See providerUsage. */
-      {id:"settings",n:"AI Assistant", i:"gear",
+      {id:"settings",n:"AI Provider", i:"gear",
        c:((providerUsage() || {}).short) ?? undefined}
     ]
   };

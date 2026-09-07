@@ -3824,9 +3824,6 @@ class TestPtyWinsizeFloor(unittest.TestCase):
                          "the floor must test both dimensions")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestRoutines(unittest.TestCase):
     """Schedule translation, validation and the permission floor.
@@ -4317,3 +4314,72 @@ class TestMcpAllowHook(unittest.TestCase):
         args = A.build_agent_args("/usr/bin/claude", "hi", "plan")
         if "--settings" in args:
             self.assertIn("--strict-mcp-config", args)
+
+
+class TestDeclarationsInThePage(unittest.TestCase):
+    """The provider declarations travel IN the page, not behind a fetch.
+
+    turn_options_by_provider / permission_modes_by_provider say which controls
+    a pane's provider can honour, and they used to reach the client only via
+    GET /api/settings. Until that resolved the client's maps were empty -- and
+    an EMPTY MAP MEANS NOT FETCHED, which it answers by rendering Claude's full
+    set. So a DeepSeek pane showed all five turn options for the whole boot
+    window: precisely when that menu is opened, which is before asking
+    anything, to set something first.
+
+    app.py substitutes them into a meta so the first paint already knows.
+    """
+
+    def test_the_page_has_somewhere_to_put_them(self):
+        """Two names, in two files, that have to keep matching: the token
+        app.py replaces and the meta name 01-state.js reads. Renaming either
+        alone leaves the declarations stranded and the panel silently back on
+        its not-fetched fallback -- which renders, so nothing would fail."""
+        from pathlib import Path
+        panel = (Path(__file__).parent / "static" / "panel.html").read_text()
+        self.assertIn("__DECLARATIONS__", panel)
+        self.assertIn('name="sutra-declarations"', panel)
+        state = (Path(__file__).parent / "static" / "js" / "01-state.js").read_text()
+        self.assertIn('meta[name="sutra-declarations"]', state)
+
+    def test_it_carries_the_three_facts_the_client_gates_on(self):
+        import json as _json
+        import app as A
+        decl = _json.loads(__import__("html").unescape(A._declarations_attr()))
+        self.assertEqual(set(decl), {"provider", "turn_options_by_provider",
+                                     "permission_modes_by_provider"})
+        import providers
+        self.assertEqual(decl["turn_options_by_provider"],
+                         providers.all_turn_options_by_provider())
+        self.assertEqual(decl["permission_modes_by_provider"],
+                         providers.all_permission_modes_by_provider())
+
+    def test_it_is_safe_inside_an_html_attribute(self):
+        """It lands in a double-quoted `content`. An unescaped quote would end
+        the attribute and put JSON into the markup."""
+        import app as A
+        attr = A._declarations_attr()
+        self.assertNotIn('"', attr)
+        self.assertIn("&quot;", attr)
+
+    def test_the_substitution_actually_happens(self):
+        """Named outright rather than hasattr-guarded: a guard would turn a
+        rename of the renderer into a skip, and a skipped test is how a token
+        goes back to being served literally without anything noticing."""
+        import app as A
+        html = A._panel_html()
+        self.assertNotIn("__DECLARATIONS__", html)
+        self.assertIn('name="sutra-declarations"', html)
+
+    def test_a_failure_degrades_to_the_old_behaviour(self):
+        """A panel that will not load is worse than one whose first paint is
+        momentarily ungated. Empty attribute -> client SEED is {} -> exactly
+        the fallback that shipped before this existed."""
+        import app as A
+        from unittest import mock as _mock
+        with _mock.patch.object(A.providers, "active_provider",
+                                side_effect=RuntimeError("boom")):
+            self.assertEqual(A._declarations_attr(), "")
+
+if __name__ == "__main__":
+    unittest.main()

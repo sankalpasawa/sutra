@@ -964,7 +964,7 @@ const TITLES = {
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["AI Assistant","which assistant runs, what it may do, and where · ~/.sutra-ui/settings.json"],
+  settings:["AI Provider","which provider runs, what it may do, and where · ~/.sutra-ui/settings.json"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()

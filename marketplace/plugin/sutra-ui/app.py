@@ -16,6 +16,7 @@ import struct
 import subprocess
 import sys
 import termios
+from html import escape as _html_escape
 from pathlib import Path
 
 from urllib.parse import urlparse
@@ -572,7 +573,45 @@ def _panel_html() -> str:
     the page always references the version of the JS/CSS currently on disk."""
     html = (HERE / "static" / "panel.html").read_text(encoding="utf-8")
     return (html.replace("__ASSETVER__", _asset_version())
+                .replace("__DECLARATIONS__", _declarations_attr())
                 .replace("__PANELTOKEN__", PANEL_TOKEN))
+
+
+def _declarations_attr() -> str:
+    """WHICH CONTROLS A PANE MAY SHOW, carried BY THE PAGE instead of arriving
+    behind a fetch. HTML-escaped JSON for a meta `content` attribute.
+
+    Why this is in the page. turn_options_by_provider / permission_modes_by_
+    provider tell the panel which controls a pane's provider can honour, and
+    they reached the client only via GET /api/settings. Until that resolved,
+    the maps were empty -- and an empty map means NOT FETCHED, which the client
+    answers by rendering Claude's full set. So a DeepSeek pane showed Claude's
+    five turn options for the whole boot window, which is exactly when an
+    operator opens that menu: before asking anything.
+
+    The two ways out were "hide the controls until the maps arrive" (that
+    changes CLAUDE's render, and a control that blinks out is its own defect)
+    and this one -- make the declaration available before the first paint, so
+    there is no window in which the answer is unknown. The client keeps its
+    empty-map fallback for a page served without this token.
+
+    Never raises. A panel that will not load is worse than one whose first
+    paint is momentarily ungated, so a failure here degrades to exactly the
+    old behaviour rather than a 500 on the page itself.
+    """
+    try:
+        decl = {
+            # active_provider(), not load_settings()["provider"] -- same
+            # resolution (env, then settings.json, then first runnable) without
+            # the keychain probe load_settings does for deepseek_auth. This runs
+            # on every page load.
+            "provider": providers.active_provider() or "",
+            "turn_options_by_provider": providers.all_turn_options_by_provider(),
+            "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
+        }
+        return _html_escape(json.dumps(decl, separators=(",", ":")), quote=True)
+    except Exception:
+        return ""
 
 
 # The page itself must never be cached, or the browser serves an old page whose

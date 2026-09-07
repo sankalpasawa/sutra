@@ -163,7 +163,7 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
     ["workspace","departments","charters","placements","reorg"]));
 });
 test("planes: settings carries three labelled groups", () => {
-  /* Was four. "Preferences" held exactly one row -- the AI Assistant screen --
+  /* Was four. "Preferences" held exactly one row -- the AI Provider screen --
      and a group wrapping a single row is a header that earns nothing. The row
      moved into System (founder 2026-09-03), which is where the rest of the
      machine-state screens already live. The assertion stays EXACT rather than
@@ -177,7 +177,7 @@ test("planes: settings carries three labelled groups", () => {
      about the assistant you just picked. The SCREEN is still registered. */
   assert.strictEqual(JSON.stringify(system), JSON.stringify(
     ["health","evals","history","settings"]),
-    "the AI Assistant row must be the last System row, and Usage must not be one");
+    "the AI Provider row must be the last System row, and Usage must not be one");
   assert.ok(T.SCREENS && typeof T.SCREENS.usage === "function",
     "the usage screen must stay registered so openScreen('usage') still resolves");
 });
@@ -492,12 +492,12 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
      (behavior is exercised in the workspace suite). */
   ["knowledge", "files"].forEach(id => reachable.add(id));
   /* Usage lost its nav row on 2026-09-03 and is reached by being RENDERED
-     INSIDE the AI Assistant screen -- a stronger form of reachable than a row,
+     INSIDE the AI Provider screen -- a stronger form of reachable than a row,
      since you arrive at it while answering the question that raised it. Same
      shape of claim as knowledge/files above, so it is asserted the same way:
      at the source level, that SCREENS.settings actually calls SCREENS.usage. */
   assert(/SCREENS\.usage\(\)/.test(String(T.SCREENS.settings)),
-         "usage has no nav row AND is not rendered inside the AI Assistant "
+         "usage has no nav row AND is not rendered inside the AI Provider "
          + "screen -- it would be orphaned");
   reachable.add("usage");
   const loaders = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");

@@ -35,9 +35,44 @@ let SKILLS = [], SKILLS_META = {};
    EMPTY MEANS NOT FETCHED YET, not "nobody honours anything" -- Claude always
    declares both, so a loaded map is never empty. Every consumer below tests
    that before hiding anything, so the first paint renders as it always did
-   rather than stripping controls off a pane on a slow settings fetch. */
+   rather than stripping controls off a pane on a slow settings fetch.
+
+   ...WHICH WAS THE BUG. "Renders as it always did" means renders CLAUDE'S set,
+   on every pane, for the whole boot window -- so a DeepSeek pane showed all
+   five turn options until the fetch landed, and that window is exactly when
+   this menu is opened: to set something before asking anything. The fallback
+   is not wrong for Claude and cannot be made right for DeepSeek, because
+   during it the client does not yet know what DeepSeek declares.
+
+   So it is no longer the first thing that happens. SEED below carries the
+   declarations IN THE PAGE (app.py substitutes them into a meta), and these
+   two start from it instead of from {}. The fetch still replaces them --
+   nothing here is authoritative, it is the same answer arriving sooner. With
+   no meta (an old cached page, or the test harness) SEED is {} and every
+   fallback below behaves exactly as it did before this existed. */
+/* Read ONCE, at parse time, before any render. Never throws: a malformed or
+   absent attribute leaves SEED empty, which is the pre-existing behaviour.
+   A named function rather than an inline IIFE so a test can run the real
+   parser over real attribute values instead of asserting on a mock. */
+function readDeclarations(){
+  try {
+    const m = document.querySelector('meta[name="sutra-declarations"]');
+    /* typeof-checked because the value must be a JSON string. A document stub
+       that answers querySelector with a node whose `content` is the node
+       itself would otherwise reach JSON.parse and throw. */
+    if (!m || typeof m.content !== "string" || !m.content) return {};
+    const d = JSON.parse(m.content);
+    return (d && typeof d === "object" && !Array.isArray(d)) ? d : {};
+  } catch (e) { return {}; }
+}
+/* `let`, not `const`, for the same reason SETTINGS and PROVIDERS are: a
+   top-level binding in a classic script cannot be replaced from outside its
+   scope, and the tests have to be able to say "this page was served by a
+   DeepSeek machine". Nothing in the panel writes it after this line. */
+let SEED = readDeclarations();
 let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS_BY_PROVIDER = {},
-    TURN_OPTIONS_BY_PROVIDER = {}, PERM_MODES_BY_PROVIDER = {};
+    TURN_OPTIONS_BY_PROVIDER = SEED.turn_options_by_provider || {},
+    PERM_MODES_BY_PROVIDER = SEED.permission_modes_by_provider || {};
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
@@ -166,17 +201,20 @@ const DEST_PLANES = {
                 something the operator creates, but both answer "what runs
                 without me", which is what this group is for. */
              {group:"Automation",  rows:[{screen:"skills"},{screen:"automation"},{screen:"routines"},{screen:"connectors"}]},
-             /* The assistant row joined System and the one-row Preferences group
+             /* The provider row joined System and the one-row Preferences group
                 went with it (founder 2026-09-03). A group holding a single row
                 is a header that earns nothing, and "Preferences" described the
                 row least accurately of anything on this plane: the screen sets
-                which assistant runs, what it may do without asking, and where
+                which provider runs, what it may do without asking, and where
                 it works -- operational facts about the agent process, not
-                preferences. Named "AI Assistant" rather than "AI provider" for
-                the same reason: the provider is one of its three folds. */
+                preferences. Named "AI Provider" (founder 2026-09-07, replacing
+                a brief "AI Assistant"): the operator comes here to pick a
+                provider, and provider is already the word every other surface
+                uses for it -- the composer row, panel.css .provrow,
+                /api/providers, org_api's catalogue. One name, everywhere. */
              /* Usage is no longer a row here (founder 2026-09-03): it renders as
-                a section INSIDE the AI Assistant screen, because how much of an
-                assistant you have used is a fact about the assistant you just
+                a section INSIDE the AI Provider screen, because how much of a
+                provider you have used is a fact about the provider you just
                 picked. SCREENS.usage stays registered, so openScreen("usage")
                 and any saved selection still resolve. */
              {group:"System",      rows:[{screen:"health"},{screen:"evals"},

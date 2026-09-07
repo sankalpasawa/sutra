@@ -163,7 +163,7 @@ def banner():
         "  |    %-58s|" % display(_code),
         "  |                                                              |",
         "  |  Paste it into the DeepSeek row under                        |",
-        "  |  Settings -> AI Assistant to unlock the API-key field in a   |",
+        "  |  Settings -> AI Provider to unlock the API-key field in a    |",
         "  |  browser. Single use. It dies with this server and is never  |",
         "  |  written to disk.                                            |",
         "  +--------------------------------------------------------------+",

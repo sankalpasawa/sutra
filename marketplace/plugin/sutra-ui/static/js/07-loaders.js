@@ -199,7 +199,7 @@ function paneMenuAction(sid, key){
    GET /api/providers/codex/auth spawns `codex login status`, so it is
    deliberately NOT in boot()'s allSettled and NOT folded into /api/settings:
    those are read on every boot and every settings open, and a subprocess does
-   not belong on either path. This runs when the AI Assistant screen opens and
+   not belong on either path. This runs when the AI Provider screen opens and
    after each sign-in action. There is nothing to cache -- being current is the
    entire value of the call. */
 async function loadCodexAuth(force){
@@ -511,11 +511,11 @@ function wire(){
                          + (kept ? " A chat is still replying and will move after it finishes." : ""); })
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
-  /* ── Codex sign-in (AI Assistant screen) ──────────────────────────────────
+  /* ── Codex sign-in (AI Provider screen) ──────────────────────────────────
      BOTH ENTRY PATHS ask for the probe, the way loadWorkspace is entered from
      openScreen AND from wire(). openScreen alone was not enough: boot()
      restores S.screen DIRECTLY (09-tail.js:125) when the destination
-     remembers this screen, so the shell can come up ON the AI Assistant
+     remembers this screen, so the shell can come up ON the AI Provider
      screen without openScreen ever running -- nothing asked for the probe and
      the block sat on "Reading the Codex sign-in..." forever. A permanent
      loading state is the worst answer this block can give: it is a promise
@@ -1665,7 +1665,7 @@ function openScreen(id){
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */
-  /* "settings" too: Usage renders as a section of the AI Assistant screen,
+  /* "settings" too: Usage renders as a section of the AI Provider screen,
      so opening that screen has to fetch it -- otherwise the section would
      sit on "Reading usage..." until something else happened to load it. */
   if (id === "usage" || id === "settings") loadUsage(true);

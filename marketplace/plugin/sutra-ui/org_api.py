@@ -854,7 +854,7 @@ def api_codex_auth():
     KEPT OFF /providers AND /settings ON PURPOSE. Those two are read on every
     panel boot, every settings open and, through load_settings(), every fs
     call -- and this one spawns a subprocess. The panel asks for it when the
-    AI Assistant screen opens, and again after each sign-in action.
+    AI Provider screen opens, and again after each sign-in action.
 
     Never 500s on a failed probe. A CLI that cannot be reached or answers in
     an unfamiliar shape comes back as state "unknown" with the reason, which

@@ -339,16 +339,26 @@ test("the percentage is derived in exactly one place", () => {
   });
 });
 
-/* ── 6. the Assistant row (founder 2026-09-03) ─────────────────────────────── */
+/* ── 6. the Provider row (founder 2026-09-03; renamed 2026-09-07) ─────────── */
 
-test("the nested row is called AI Assistant, not Settings", () => {
+test("the nested row is called AI Provider, not Settings", () => {
   // "Settings" inside the Settings destination repeated its parent and said
   // nothing about what was behind it.
-  assert(helpers.includes('n:"AI Assistant"'), "railSpec does not label the row AI Assistant");
-  assert(chat.includes('settings:["AI Assistant"'), "TITLES does not say AI Assistant");
-  // The provider is ONE of this screen's three folds (provider, permission
-  // mode, workdir), which is why it is not named for the provider alone.
-  assert(!/n:"AI [Pp]rovider"/.test(helpers), "named for one of its three folds");
+  assert(helpers.includes('n:"AI Provider"'), "railSpec does not label the row AI Provider");
+  assert(chat.includes('settings:["AI Provider"'), "TITLES does not say AI Provider");
+  // This assertion used to run the other way -- it FORBADE "AI Provider", on
+  // the reasoning that the provider is one of the screen's three folds
+  // (provider, permission mode, workdir). Founder direction 2026-09-07
+  // overrode that: provider is the word every other surface already uses.
+  // What is checked now is that the old label is gone from BOTH files. The
+  // label lives in two of them, so a half-landed rename would show an
+  // operator two names for one screen.
+  // Assembled from parts so a future blanket rename cannot rewrite the string
+  // this guard exists to forbid -- which is exactly what happened on the
+  // 2026-09-07 pass, leaving the assert banning the new name.
+  const OLD_LABEL = "AI " + "Assistant";
+  assert(!helpers.includes(OLD_LABEL) && !chat.includes(OLD_LABEL),
+         `the old ${OLD_LABEL} label survives in railSpec or TITLES`);
 });
 
 test("the Preferences group is gone and the row lives under System", () => {
@@ -450,34 +460,34 @@ test("a refused saved choice is explained, not labelled", () => {
   assert(!/An override was NOT honoured/.test(chat), "still says 'override not honoured'");
 });
 
-test("Usage renders inside the AI Assistant screen, not as its own row", () => {
+test("Usage renders inside the AI Provider screen, not as its own row", () => {
   // How much of an assistant you have used is a fact about the assistant you
   // just picked; a separate destination made you cross the app to answer a
   // question this screen had raised.
   assert(chat.includes("SCREENS.usage()"),
-         "the AI Assistant screen does not render the usage section");
+         "the AI Provider screen does not render the usage section");
   const plane = state.slice(state.indexOf('settings: [{group:"Tools"'));
   const body = plane.slice(0, plane.indexOf("\n};"));
   assert(!/screen:"usage"/.test(body), "usage still has a nav row");
 });
 
 test("the usage figure moved onto the row you can actually click", () => {
-  const i = helpers.indexOf('{id:"settings",n:"AI Assistant"');
-  assert(i > 0, "the AI Assistant entry is gone");
+  const i = helpers.indexOf('{id:"settings",n:"AI Provider"');
+  assert(i > 0, "the AI Provider entry is gone");
   assert(/providerUsage\(\)/.test(helpers.slice(i, i + 260)),
-         "the AI Assistant row carries no usage count");
+         "the AI Provider row carries no usage count");
   const j = helpers.indexOf('{id:"usage"');
   assert(!/providerUsage\(\)/.test(helpers.slice(j, j + 160)),
          "the row-less usage entry still computes a badge nobody sees");
 });
 
-test("opening the AI Assistant screen fetches usage", () => {
+test("opening the AI Provider screen fetches usage", () => {
   // Otherwise the section sits on "Reading usage..." until something else
   // happens to load it.
   // Match the screen-open dispatcher specifically -- loadUsage is also called
   // from the composer popover and the sign-in flow, and indexOf found those.
   assert(/id === "usage" \|\| id === "settings"/.test(loaders),
-         "the AI Assistant screen does not trigger a usage load on open");
+         "the AI Provider screen does not trigger a usage load on open");
 });
 
 /* ── 8. two defects from a screenshot, 2026-09-03 ──────────────────────────── */

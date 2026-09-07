@@ -151,9 +151,46 @@ function agentDetailHtml(meta, messages){
    s.channel is what the SERVER said it would actually run (the ws "provider"
    frame), so a pane opened under DeepSeek keeps its own answer after the global
    default is switched to Claude. SETTINGS.provider covers only the pane that
-   has not received its frame yet. */
+   has not received its frame yet.
+
+   Undefined before /api/settings resolves, and that is on purpose -- see
+   paneDeclProvider below for the one kind of question that can be answered
+   earlier, and why this one cannot. */
 function paneProvider(s){
   return (s && s.channel && s.channel.id) || (SETTINGS || {}).provider;
+}
+/* THE SAME PANE, for a DIFFERENT KIND OF QUESTION -- and the split is the fix
+   for a real defect, not a convenience.
+
+   An UNSTARTED pane has no channel: the provider frame arrives with the socket,
+   i.e. on the first message. So until then paneProvider is SETTINGS.provider,
+   and SETTINGS is null until /api/settings resolves. Every consumer therefore
+   took its not-loaded branch during the boot window -- and for turn options
+   that branch renders CLAUDE'S FIVE. On a DeepSeek pane. In precisely the
+   window when this menu gets opened, which is before asking anything, to set
+   something first.
+
+   What separates the two is WHAT THE CONTROL NEEDS TO KNOW:
+
+     a DECLARATION  -- "which controls can this provider honour?" Static per
+                       provider, so app.py can put it in the page and 01-state
+                       reads it at parse time (SEED). Answerable on the first
+                       paint. Permissions and Turn options ask this.
+     FETCHED STATE  -- "what has this provider actually reported?" (usage_kind
+                       off GET /api/providers) or "which models exist?"
+                       (MODELS_BY_PROVIDER). No amount of knowing the provider
+                       id answers these before the fetch. Usage and Model ask
+                       this, and they keep paneProvider above.
+
+   Feeding the seed to the fetched-state controls looked free and was not: the
+   Usage row reads `usageKindOf(mpid) === "none"` and usageKindOf answers "none"
+   for ANY id while PROVIDERS is unfetched, so a known id turns its boot-window
+   text from "not reported for default" into "not reported for Claude Code" --
+   a vague false claim sharpened into a specific one. That is a defect in the
+   Usage row's not-loaded branch, logged rather than fixed here, and this split
+   is what keeps it from spreading while it waits. */
+function paneDeclProvider(s){
+  return paneProvider(s) || SEED.provider;
 }
 function paneMenuHtml(s){
   if (S.paneMenu !== s.id) return "";
@@ -167,6 +204,8 @@ function paneMenuHtml(s){
      above for why, which is now shared with the Permissions and Turn options
      rows rather than restated here. */
   const mpid = paneProvider(s);
+  /* Declaration-gated controls only -- see paneDeclProvider. */
+  const dpid = paneDeclProvider(s);
   /* Before /api/settings resolves there is no map at all, and the row must not
      vanish on first paint -- that is what the old `MODELS.length ? ... : [CLI
      default]` fallback was for. An EMPTY map means not-loaded; a loaded map
@@ -205,7 +244,7 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
-    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(mpid)}</span><span class="ma"></span></label>
+    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(dpid)}</span><span class="ma"></span></label>
     ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
             title="Model — applies to the next message">${mopts}
       </select></span><span class="ma"></span></label>`}
@@ -224,7 +263,7 @@ function paneMenuHtml(s){
           opening onto an empty box -- same rule as the Model row above. On a
           DeepSeek pane every one of the five was collected and discarded: ACP's
           per-turn request has no options field for them to travel in. */
-       !turnOptsFor(mpid).size ? "" :
+       !turnOptsFor(dpid).size ? "" :
        row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
@@ -334,7 +373,7 @@ function sessionPane(s){
     ${switchMarkerHtml(s.id)}
     ${modeMarkerHtml(s.id)}
     ${permConfirmHtml()}
-    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneProvider(s)) : ""}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneDeclProvider(s)) : ""}
     ${cwdEditorHtml(s.id)}
     ${providerSwitcherHtml(s.id)}
     ${prFormHtml(s.id)}
