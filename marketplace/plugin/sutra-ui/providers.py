@@ -46,6 +46,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -204,6 +205,79 @@ def _known_bin_dirs(binaries):
                 found.append(d)
                 break
     return found
+
+
+#: Where bundle-runtime.sh puts the vendored Node, relative to the payload root.
+#: One string, because deepseek_install's npm search and the spawn PATH both
+#: need it and a second copy is a second thing to keep in step.
+BUNDLED_NODE_SUBDIR = os.path.join("node", "bin")
+_BUNDLED_NODE_DONE = False
+
+
+def bundled_node_bin_dir():
+    """`payload/node/bin` inside a packaged Sutra.app, or None. Never raises.
+
+    None IS THE NORMAL ANSWER outside the DMG. A checkout, a dev server and the
+    test suite all have no payload, and every caller has to work the same way
+    there as it did before Node was bundled -- so this returns None rather than
+    guessing, and the callers fall back to the machine's own Node.
+
+    Resolved from sys.executable FIRST. In the packaged app the interpreter is
+    `payload/python/bin/python3`, which fixes the payload root exactly; __file__
+    is the fallback because this module lives at `payload/plugin/sutra-ui/`,
+    which is the same root two levels further down. Checking both means a build
+    that rearranges one of the two does not silently lose Node.
+    """
+    roots = []
+    try:
+        exe = Path(sys.executable).resolve()
+        if len(exe.parents) >= 3:
+            roots.append(exe.parents[2])         # payload/python/bin/python3
+    except Exception:                            # noqa: BLE001
+        pass
+    try:
+        here = Path(__file__).resolve()
+        if len(here.parents) >= 3:
+            roots.append(here.parents[2])        # payload/plugin/sutra-ui/x.py
+    except Exception:                            # noqa: BLE001
+        pass
+    for root in roots:
+        d = root / BUNDLED_NODE_SUBDIR
+        try:
+            if (d / "node").is_file() and os.access(str(d / "node"), os.X_OK):
+                return str(d)
+        except OSError:
+            continue
+    return None
+
+
+def ensure_bundled_node_path():
+    """Put the bundled `node` on this process's PATH, once. Returns the dir or None.
+
+    WHY THIS IS NOT ONLY deepseek_install's problem. npm_path() already appends
+    whatever directory it found npm in, which is enough DURING an install. But
+    the `deepseek` command npm publishes is a shim beginning
+    `#!/usr/bin/env node`, so Node has to resolve on EVERY LATER LAUNCH too --
+    and on those launches nothing installs anything, so npm_path() is never
+    called and the PATH it would have fixed is never fixed. On a Mac with no
+    Node of its own that is a CLI that installed perfectly and then dies at
+    spawn with `env: node: No such file or directory`, which reads like a broken
+    install rather than a missing runtime.
+
+    APPENDED, never prepended, matching ensure_login_path(): a machine with its
+    own Node keeps using it, and the bundled copy is the last resort it was
+    bundled to be.
+    """
+    global _BUNDLED_NODE_DONE
+    d = bundled_node_bin_dir()
+    if not d:
+        return None
+    if not _BUNDLED_NODE_DONE:
+        have = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+        if d not in have:
+            os.environ["PATH"] = os.pathsep.join(have + [d])
+        _BUNDLED_NODE_DONE = True
+    return d
 
 
 def ensure_login_path():

@@ -41,6 +41,11 @@ CACHE="${SUTRA_BUNDLE_CACHE:-$HOME/.cache/sutra-bundle}"
 
 PY_VERSION="${SUTRA_PY_VERSION:-3.12.13}"
 PBS_TAG="${SUTRA_PBS_TAG:-20260804}"
+#: Node ships for ONE reason -- the DeepSeek CLI is an npm package Sutra
+#: installs and spawns -- so this tracks the Active LTS line rather than
+#: current. Bumping it means replacing BOTH checksums below, from
+#: https://nodejs.org/dist/v<version>/SHASUMS256.txt.
+NODE_VERSION="${SUTRA_NODE_VERSION:-24.20.0}"
 ARCH="$(uname -m)"
 
 die() { printf 'bundle-runtime: %s\n' "$*" >&2; exit 2; }
@@ -56,8 +61,12 @@ while [ $# -gt 0 ]; do
 done
 
 case "$ARCH" in
-  arm64|aarch64) PBS_ARCH="aarch64-apple-darwin"; ARCH="arm64" ;;
-  x86_64)        PBS_ARCH="x86_64-apple-darwin" ;;
+  arm64|aarch64) PBS_ARCH="aarch64-apple-darwin"; ARCH="arm64"
+                 NODE_ARCH="arm64"
+                 NODE_SHA256="40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8" ;;
+  x86_64)        PBS_ARCH="x86_64-apple-darwin"
+                 NODE_ARCH="x64"
+                 NODE_SHA256="9e5b2644cf107befb6aefca676b96d3296bc10138096f022ed378d6233ed81f4" ;;
   *) die "unsupported arch: $ARCH (arm64 or x86_64)" ;;
 esac
 
@@ -211,6 +220,107 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# 3c. Node -- the runtime the DeepSeek CLI is fetched and run with.
+#
+# WHY IT IS HERE AT ALL. DeepSeek is an npm package (@sluisr/deepseek-cli) that
+# Sutra installs on demand and then SPAWNS (`deepseek --acp`), and the shim npm
+# publishes begins `#!/usr/bin/env node`. So Node is needed twice: once to
+# install, and again on every launch to run. Without it, entering a valid
+# DeepSeek key got a saved key, a refusal naming nodejs.org, and a provider that
+# could not be selected -- the last path from "correct key" to "still cannot use
+# DeepSeek", and the only one left after 2.244.1 closed the others. This module
+# is bundle-runtime.sh's whole premise applied to the one runtime it had skipped:
+# a machine that has NOTHING installed must go from DMG to working panel.
+#
+# NOT A SECOND COPY OF THE OPERATOR'S NODE, and this is the distinction that
+# makes bundling defensible after deepseek_install.py spent a paragraph refusing
+# to install one. That refusal is about writing Node ONTO the machine -- into a
+# shared prefix, on PATH, where the operator's other tools would start resolving
+# it. This ships inside Sutra.app, is reachable only through the payload, is
+# consulted only when the machine has no Node of its own, and disappears when
+# the app is dragged to the Trash. deepseek_install.npm_path() searches the
+# login shell and the usual install locations FIRST and falls back here last, so
+# a Mac with Node keeps using its own and nothing about that path changes.
+#
+# The official darwin tarball, pinned and checksum-verified against the
+# SHASUMS256.txt the release publishes -- same discipline as the CPython
+# interpreter and the SilverBullet sidecar, for the same reason: an executable
+# this bundle will run must never be taken on trust.
+# --------------------------------------------------------------------------
+step "node $NODE_VERSION ($NODE_ARCH)"
+NODE_TARBALL="node-v${NODE_VERSION}-darwin-${NODE_ARCH}.tar.gz"
+NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+if [ ! -s "$CACHE/$NODE_TARBALL" ]; then
+  echo "downloading $NODE_TARBALL"
+  curl -fL --retry 3 -o "$CACHE/$NODE_TARBALL.part" "$NODE_URL" \
+    || die "download failed: $NODE_URL"
+  mv "$CACHE/$NODE_TARBALL.part" "$CACHE/$NODE_TARBALL"
+else
+  echo "cached: $CACHE/$NODE_TARBALL"
+fi
+# PINNED IN THIS FILE, not fetched from the same server as the tarball. A
+# checksum downloaded beside the thing it vouches for proves the transfer, not
+# the artefact -- anyone able to serve one can serve the other. These two lines
+# are the trust anchor and changing them is a deliberate act, exactly like
+# SB_SHA256 above.
+node_want="$NODE_SHA256"
+node_got="$(shasum -a 256 "$CACHE/$NODE_TARBALL" | awk '{print $1}')"
+[ "$node_want" = "$node_got" ] || die "checksum mismatch for $NODE_TARBALL
+    pinned: $node_want
+    got:    $node_got
+  Delete $CACHE/$NODE_TARBALL and re-run."
+echo "checksum ok ($node_want)"
+
+rm -r -f "$PAYLOAD/node"
+mkdir -p "$PAYLOAD/node"
+# --strip-components drops the version-stamped top directory, so the payload
+# path is stable across Node bumps and nothing downstream has to know the
+# version to find `node`.
+tar xzf "$CACHE/$NODE_TARBALL" -C "$PAYLOAD/node" --strip-components 1 \
+  || die "could not extract $NODE_TARBALL"
+[ -x "$PAYLOAD/node/bin/node" ] || die "archive did not contain bin/node"
+[ -e "$PAYLOAD/node/bin/npm" ]  || die "archive did not contain bin/npm"
+# npm ships as a symlink into lib/node_modules. Kept as one -- npm resolves its
+# own root by walking the real path, and replacing the link with a copy of the
+# shim breaks that.
+if [ "$ARCH" = "$(uname -m | sed 's/aarch64/arm64/')" ]; then
+  echo "  node $("$PAYLOAD/node/bin/node" -v 2>&1)"
+  # A bundled npm that cannot run is worth finding here, not on a stranger's
+  # Mac in the middle of an install.
+  PATH="$PAYLOAD/node/bin:$PATH" "$PAYLOAD/node/bin/npm" -v >/dev/null 2>&1 \
+    || die "bundled npm does not run"
+else
+  echo "  node v$NODE_VERSION (cross-arch: not executed)"
+fi
+# Dead weight in a shipped bundle: the bundled headers exist for compiling
+# native addons, which nothing here does, and the docs are ~10MB of man pages.
+rm -r -f "$PAYLOAD/node/include" "$PAYLOAD/node/share"
+# corepack ships a second package manager Sutra never calls, and every binary
+# left in bin/ is one more Mach-O for the signing loop to walk.
+rm -r -f "$PAYLOAD/node/bin/corepack" "$PAYLOAD/node/lib/node_modules/corepack"
+# The `node` binary is the single biggest file in this DMG -- 122MB of the
+# 199MB tarball -- and 29MB of that is local debug symbols nothing here reads.
+# Measured on v24.20.0/arm64: 122MB -> 93MB, and the stripped binary still runs
+# a real `npm install` against the registry.
+#
+# THE RE-SIGN IS NOT OPTIONAL AND MUST BE IN THIS BLOCK. strip rewrites the
+# file, which invalidates the signature the tarball ships with, and macOS does
+# not fail such a binary politely -- it SIGKILLs it, so the symptom is exit 137
+# with no message at all. make-dmg.sh signs everything in the payload later,
+# but bundle-runtime.sh's output has to be runnable on its own (the dev install
+# path uses it without ever building a DMG), so an ad-hoc signature goes on
+# here and the real identity replaces it downstream.
+if strip -x "$PAYLOAD/node/bin/node" 2>/dev/null; then
+  codesign --force --sign - "$PAYLOAD/node/bin/node" >/dev/null 2>&1 \
+    || die "could not re-sign the stripped node -- it would be killed on launch"
+  if [ "$ARCH" = "$(uname -m | sed 's/aarch64/arm64/')" ]; then
+    "$PAYLOAD/node/bin/node" -e 'process.exit(0)' \
+      || die "the stripped node does not run"
+  fi
+  echo "  stripped and re-signed node"
+fi
+
+# --------------------------------------------------------------------------
 # 4. STAMP -- what the app compares against the staged copy to decide whether
 #    a re-stage is needed. Content-addressed, so an edited checkout produces a
 #    different stamp and the next launch re-stages instead of running stale code.
@@ -225,6 +335,7 @@ cat > "$PAYLOAD/STAMP" <<STAMP
 {
   "plugin_version": "$PLUGIN_VERSION",
   "python": "$PY_VERSION",
+  "node": "$NODE_VERSION",
   "pbs_tag": "$PBS_TAG",
   "arch": "$ARCH",
   "tree_sha256": "$TREE_SHA",
@@ -235,6 +346,8 @@ cat "$PAYLOAD/STAMP" | sed 's/^/  /'
 
 step "summary"
 du -sh "$PAYLOAD" | sed 's/^/  total  /'
-for d in python plugin; do du -sh "$PAYLOAD/$d" | sed 's/^/  /'; done
+for d in python node plugin; do
+  [ -d "$PAYLOAD/$d" ] && du -sh "$PAYLOAD/$d" | sed 's/^/  /'
+done
 echo
 echo "next:  ./make-dmg.sh"

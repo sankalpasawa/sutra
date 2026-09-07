@@ -2,6 +2,39 @@
 
 **status**: active · **updated**: 2026-09-07
 
+## 2.245.0 (2026-09-07)
+
+- **The app carries its own Node, so a valid DeepSeek key is enough.** 2.244.1 closed the three
+  client-side ways a validated key could end at no CLI. One was left and it was not about the
+  client: DeepSeek is an npm package (`@sluisr/deepseek-cli`) that Sutra installs on demand and
+  then SPAWNS, and the .app bundled its own CPython but no Node -- so on a Mac without Node the
+  key saved, the install refused with a nodejs.org pointer, and the provider stayed
+  unselectable. `bundle-runtime.sh` now vendors the official darwin Node tarball into
+  `payload/node`, pinned and checksum-verified against two hashes written in that file, the same
+  discipline the CPython interpreter and the SilverBullet sidecar are held to.
+- **It is not a second copy of the operator's Node.** `deepseek_install.py` spends a paragraph
+  refusing to install Node ONTO a machine and that reasoning stands -- it is a runtime other
+  tools share. This one ships inside `Sutra.app`, is reachable only through the payload, is
+  consulted only after the login-shell PATH and the usual install locations find nothing, and
+  goes away when the app is dragged to the Trash. A Mac with Node keeps using its own; a test
+  pins that order, because "prefer the version we tested against" is the plausible change that
+  would break it.
+- **Node reaches PATH for the spawn, not only the install.** The `deepseek` command npm
+  publishes is a shim beginning `#!/usr/bin/env node`, so Node has to resolve on every later
+  launch -- and those launches install nothing, so the PATH fix inside `npm_path()` never runs.
+  Without `providers.ensure_bundled_node_path()` at the spawn, a perfect install dies as
+  `env: node: No such file or directory`, which reads like a broken install rather than a
+  missing runtime.
+- **The binary is stripped and re-signed in the same block.** `node` is the largest file in the
+  DMG; `strip -x` takes it from 122MB to 93MB (payload total 110MB after dropping headers, man
+  pages and corepack). strip invalidates the signature the tarball ships with, and macOS does
+  not refuse such a binary politely -- it SIGKILLs it, so the symptom is exit 137 with no
+  message. An ad-hoc signature goes on immediately, and `make-dmg.sh`'s inside-out loop replaces
+  it with the real identity.
+- **Verified end to end, not by construction.** The payload was built, `PATH` and
+  `_known_bin_dirs` were emptied to stand in for a Mac with no Node, and the bundled npm
+  fetched the CLI and ran it: `deepseek --version` -> `1.3.2`. DMG grows by ~110MB.
+
 ## 2.244.1 (2026-09-07)
 
 - **A DeepSeek pane stops failing with a Gemini error.** Every DeepSeek session died at

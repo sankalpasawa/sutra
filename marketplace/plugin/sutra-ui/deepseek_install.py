@@ -161,6 +161,16 @@ def npm_path():
             if d not in have:
                 os.environ["PATH"] = os.pathsep.join(have + [d])
             return cand
+    # LAST, and only in the packaged app. bundle-runtime.sh vendors Node into
+    # payload/node for one reason -- DeepSeek is an npm package Sutra installs
+    # and spawns -- and this is where a Mac with no Node of its own finds it.
+    # Deliberately BELOW the searches above: the operator's Node is the one
+    # their other tools use, so nothing about a machine that has one changes.
+    d = providers.ensure_bundled_node_path()
+    if d:
+        cand = os.path.join(d, "npm")
+        if _usable(cand) or os.path.islink(cand):
+            return cand
     return None
 
 
@@ -172,7 +182,8 @@ def _no_npm_reason():
     found" is true and sends nobody anywhere.
     """
     return ("npm is not on this Mac, or not where Sutra can see it. The login "
-            "shell's PATH and the usual install locations were both searched%s. "
+            "shell's PATH, the usual install locations and Sutra's own bundled "
+            "copy of Node were all searched%s. "
             "The DeepSeek CLI is an npm package (%s), so installing it needs "
             "Node.js -- get it from nodejs.org or `brew install node`, then try "
             "again. Sutra does not install Node itself: it is a runtime your "

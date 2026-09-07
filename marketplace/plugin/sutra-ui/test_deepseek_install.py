@@ -565,5 +565,120 @@ class TheInstallHappensWhateverTheClientDoes(_Base):
         self.assertEqual(sum(1 for r in results if r["code"] == "ALREADY"), 3)
 
 
+# ---------------------------------------------- Node ships with the app -----
+
+class TheAppCarriesItsOwnNode(_Base):
+    """THE LAST PATH FROM A CORRECT KEY TO AN UNUSABLE PROVIDER.
+
+    2.244.1 closed the three client-side ways a validated key could end at no
+    CLI. One was left, and it was not about the client at all: DeepSeek is an
+    npm package, the .app bundles its own CPython but bundled no Node, so on a
+    Mac without Node the key saved and the install refused -- correctly, and
+    with nowhere useful to send someone who just wanted to use DeepSeek.
+    bundle-runtime.sh now vendors Node into `payload/node`, and these are the
+    two halves of using it.
+
+    THE ORDER MATTERS AS MUCH AS THE FALLBACK. deepseek_install.py spends a
+    paragraph refusing to install Node ONTO a machine, and that reasoning still
+    stands: the operator's Node is what their other tools share. The bundled
+    copy is reachable only through the payload, is consulted only when the
+    searches above it find nothing, and goes away with the .app. A Mac that has
+    Node must keep using its own -- test_a_machine_with_its_own_npm_ignores_the_bundle
+    is the guard on that, and it is the one that would catch a well-meaning
+    "prefer the version we tested against" change.
+    """
+
+    def _payload(self):
+        """A tree shaped like a packaged Sutra.app's payload: an executable
+        node and an npm beside it, under <root>/node/bin."""
+        root = self.home / "payload"
+        d = root / "node" / "bin"
+        d.mkdir(parents=True)
+        (d / "node").write_text("#!/bin/sh\nexit 0\n")
+        (d / "node").chmod(0o755)
+        (d / "npm").write_text(_FAKE_NPM)
+        (d / "npm").chmod(0o755)
+        return root, d
+
+    def _point_providers_at(self, root):
+        """providers resolves the payload from sys.executable and __file__;
+        both are real paths in a test run, so the resolution itself is what
+        gets stubbed -- the fallback ORDER is what these tests are about."""
+        return mock.patch.object(providers, "bundled_node_bin_dir",
+                                 return_value=str(root / "node" / "bin"))
+
+    def setUp(self):
+        super().setUp()
+        providers._BUNDLED_NODE_DONE = False
+        self.addCleanup(setattr, providers, "_BUNDLED_NODE_DONE", False)
+
+    def test_a_mac_with_no_node_installs_through_the_bundled_one(self):
+        """No npm anywhere on PATH -- the state that used to be a refusal."""
+        root, d = self._payload()
+        with self._point_providers_at(root):
+            self.assertIsNone(shutil.which("npm"),
+                              "this test is meaningless with an npm on PATH")
+            out = deepseek_install.install()
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["code"], "INSTALLED")
+        self.assertTrue(self.argv(), "the bundled npm was never run")
+
+    def test_a_machine_with_its_own_npm_ignores_the_bundle(self):
+        """The operator's Node stays the one in use. A bundled runtime that
+        quietly took over would change what every other tool on the machine
+        shares, which is the thing this module refuses to do."""
+        own = self.npm()
+        root, bundled = self._payload()
+        with self._point_providers_at(root):
+            found = deepseek_install.npm_path()
+        self.assertEqual(found, str(own),
+                         "the bundle won over the machine's own npm")
+        self.assertNotIn(str(bundled),
+                         os.environ.get("PATH", "").split(os.pathsep),
+                         "the bundle was put on PATH despite not being used")
+
+    def test_the_bundled_node_reaches_path_for_the_later_spawn(self):
+        """NOT just for the install. The `deepseek` command is a shim starting
+        `#!/usr/bin/env node`, so a launch that installs nothing still needs
+        node resolvable -- otherwise a perfect install dies at spawn with
+        `env: node: No such file or directory`."""
+        root, d = self._payload()
+        with self._point_providers_at(root):
+            returned = providers.ensure_bundled_node_path()
+        self.assertEqual(returned, str(d))
+        self.assertIn(str(d), os.environ["PATH"].split(os.pathsep))
+        self.assertIsNotNone(shutil.which("node"), "node still does not resolve")
+
+    def test_it_is_appended_never_prepended(self):
+        """Same rule as ensure_login_path: a PATH set deliberately for this
+        process keeps precedence."""
+        before = os.environ["PATH"].split(os.pathsep)
+        root, _ = self._payload()
+        with self._point_providers_at(root):
+            providers.ensure_bundled_node_path()
+        self.assertEqual(os.environ["PATH"].split(os.pathsep)[:len(before)], before)
+
+    def test_no_payload_means_no_change(self):
+        """A checkout, a dev server and this suite have no payload. Every
+        caller must behave exactly as it did before Node was bundled."""
+        before = os.environ["PATH"]
+        with mock.patch.object(providers, "bundled_node_bin_dir",
+                               return_value=None):
+            self.assertIsNone(providers.ensure_bundled_node_path())
+            self.assertIsNone(deepseek_install.npm_path())
+        self.assertEqual(os.environ["PATH"], before)
+
+    def test_the_refusal_names_the_bundled_copy_too(self):
+        """A Mac that reaches NO_NPM has now had three places searched, and the
+        sentence has to say so -- otherwise it sends someone to install Node
+        when the bundled one is what actually failed to resolve."""
+        with mock.patch.object(providers, "bundled_node_bin_dir",
+                               return_value=None):
+            with self.assertRaises(deepseek_install.DeepSeekInstallError) as caught:
+                deepseek_install.install()
+        self.assertEqual(caught.exception.code, "NO_NPM")
+        self.assertIn("bundled", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

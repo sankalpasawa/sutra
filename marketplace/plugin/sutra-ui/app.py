@@ -2323,6 +2323,16 @@ async def ws_chat(ws: WebSocket):
                 # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
+                if active_id == "deepseek":
+                    # The `deepseek` command npm publishes is a shim beginning
+                    # `#!/usr/bin/env node`, so Node has to resolve HERE, on
+                    # every launch -- not only during the install that fetched
+                    # it. On a Mac with no Node of its own, without this the CLI
+                    # installs perfectly (through the bundled npm) and then dies
+                    # at spawn with `env: node: No such file or directory`,
+                    # which reads like a broken install rather than a missing
+                    # runtime. No-op outside the packaged app.
+                    providers.ensure_bundled_node_path()
                 spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
                              if active_id == "deepseek" else None)
                 try:

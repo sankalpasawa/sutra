@@ -2,7 +2,16 @@
 
 **status**: active · **updated**: 2026-09-07
 
-## v2.244.1 (2026-09-07, HEAD)
+## v2.245.0 (2026-09-07, HEAD)
+
+Sutra now brings its own Node, so entering a valid DeepSeek key is all it takes. DeepSeek is an
+npm package Sutra installs and runs, and the app shipped its own Python but not Node -- so a Mac
+without Node saved the key, was told to go and install Node, and could not select the provider.
+The runtime now ships inside the app: used only when the Mac has none of its own, invisible to
+everything else on the machine, and gone when the app is. Verified by installing and running the
+CLI with the machine's own Node hidden. The download grows by about 110MB.
+
+## v2.244.1 (2026-09-07)
 
 A DeepSeek pane no longer dies with a Gemini error. Every session ended at "Gemini API key is
 missing or not configured" -- with a valid DeepSeek key saved and the CLI installed -- because
