@@ -1608,6 +1608,7 @@ class TestDeepSeekSpawnedModel(unittest.TestCase):
     port = None
     tmpdir = None
     argv_path = None
+    auth_path = None
 
     @classmethod
     def setUpClass(cls):
@@ -1642,6 +1643,8 @@ class TestDeepSeekSpawnedModel(unittest.TestCase):
         # before anything would be sent.
         env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
         env["SUTRA_FAKE_ACP_ARGV"] = cls.argv_path
+        cls.auth_path = os.path.join(cls.tmpdir, "authenticate-calls.json")
+        env["SUTRA_FAKE_ACP_AUTH"] = cls.auth_path
         cls.proc = subprocess.Popen(
             [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
              "--port", str(cls.port), "--log-level", "warning"],
@@ -1734,6 +1737,39 @@ class TestDeepSeekSpawnedModel(unittest.TestCase):
         self.assertNotIn("deepseek-v4-flash-vision-exp", argv,
                          "a listed-but-disabled model reached the CLI: %r" % (argv,))
         self.assertNotEqual(announced, "deepseek-v4-flash-vision-exp")
+
+    def test_the_session_is_authenticated_as_deepseek_before_it_is_created(self):
+        """THE BUG: the key was in the spawn env and nowhere else, so the fork
+        picked its auth type the only other way it can -- `settings.security.
+        auth.selectedType || USE_GEMINI` -- and refused every pane with
+
+            session/new failed: {'code': -32000,
+             'message': 'Gemini API key is missing or not configured.'}
+
+        on any machine that had never run `deepseek` interactively. A Gemini
+        error, on a DeepSeek pane, with a valid DeepSeek key saved.
+
+        ASSERTED FROM INSIDE THE SPAWNED PROCESS, like the argv and mode tests
+        above: qa/fake_acp_agent.py now refuses session/new with that exact
+        sentence until `authenticate` has run, and records the call. So this
+        fails on the old code at the turn itself, not on a missing file.
+        """
+        try:
+            os.unlink(self.auth_path)
+        except OSError:
+            pass
+        announced, _ = self._run_turn("deepseek-v4-pro")
+        self.assertEqual(announced, "deepseek-v4-pro",
+                         "the turn never started, so nothing authenticated")
+        self.assertTrue(os.path.exists(self.auth_path),
+                        "session/new ran without an authenticate before it")
+        with open(self.auth_path, encoding="utf-8") as fh:
+            calls = json.load(fh)
+        self.assertTrue(calls, "authenticate was never called")
+        self.assertEqual(calls[0]["methodId"], "deepseek-api-key",
+                         "authenticated as the wrong vendor: %r" % (calls,))
+        self.assertTrue(calls[0]["key_present"],
+                        "authenticate carried no key: %r" % (calls,))
 
     def test_a_claude_model_cannot_be_spawned_on_deepseek(self):
         """The originating bug, at the argv. `opus` is catalogued -- for the

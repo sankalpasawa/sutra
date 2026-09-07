@@ -66,6 +66,19 @@ AVAILABLE_MODELS = [
 CURRENT_MODE = "default"
 CURRENT_MODEL = "deepseek-v4-flash"
 
+#: The fork's own auth method id (AuthType.USE_DEEPSEEK in the bundle). It is
+#: NOT in the `authMethods` the real initialize advertises -- that list is still
+#: the upstream Gemini set -- but the handler parses methodId through
+#: nativeEnum(AuthType) and accepts it.
+DEEPSEEK_AUTH_METHOD = "deepseek-api-key"
+#: Has `authenticate` been called on THIS connection. Starts false, exactly
+#: like a machine that has never run the fork interactively.
+AUTHENTICATED = False
+#: The sentence the real agent returns from session/new on an unauthenticated
+#: connection, verbatim. A DeepSeek pane, a saved DeepSeek key, and a GEMINI
+#: error -- reproduced here so the regression cannot come back silently.
+UNAUTHED_MESSAGE = "Gemini API key is missing or not configured."
+
 
 def _write_argv():
     path = os.environ.get("SUTRA_FAKE_ACP_ARGV")
@@ -97,6 +110,24 @@ def _record_mode(mode_id):
         pass
 
 
+def _record_auth(method_id, api_key):
+    """Append an ACCEPTED authenticate to the recording, so a test can assert
+    the method id AND that a key crossed -- masked, never the value."""
+    path = os.environ.get("SUTRA_FAKE_ACP_AUTH")
+    if not path:
+        return
+    try:
+        calls = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                calls = json.load(fh)
+        calls.append({"methodId": method_id, "key_present": bool(api_key)})
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(calls, fh)
+    except (OSError, ValueError):
+        pass
+
+
 def _reply(msg_id, result):
     sys.stdout.write(json.dumps(
         {"jsonrpc": "2.0", "id": msg_id, "result": result}) + "\n")
@@ -120,7 +151,7 @@ def _session_state():
 
 
 def main():
-    global CURRENT_MODE
+    global CURRENT_MODE, AUTHENTICATED
     _write_argv()
     for line in sys.stdin:
         line = line.strip()
@@ -137,16 +168,36 @@ def main():
         if method == "initialize":
             _reply(msg_id, {"protocolVersion": 1,
                             "agentCapabilities": {"loadSession": True}})
+        elif method == "authenticate":
+            method_id = params.get("methodId")
+            if method_id != DEEPSEEK_AUTH_METHOD:
+                # The real handler's zod parse rejects an unknown member.
+                _error(msg_id, -32602, "Invalid auth method: %s" % method_id)
+            else:
+                AUTHENTICATED = True
+                _record_auth(method_id, (params.get("_meta") or {}).get("api-key"))
+                _reply(msg_id, {})
         elif method == "session/new":
-            state = _session_state()
-            state["sessionId"] = "fake-session"
-            _reply(msg_id, state)
+            if not AUTHENTICATED:
+                # NOT a stub convenience. The real agent's newSession defaults
+                # its auth type to USE_GEMINI when nothing has selected one,
+                # then refuses for want of a GEMINI key -- with a DeepSeek key
+                # sitting in the env the whole time. Answering `{}` here is what
+                # would let that ship again.
+                _error(msg_id, -32000, UNAUTHED_MESSAGE)
+            else:
+                state = _session_state()
+                state["sessionId"] = "fake-session"
+                _reply(msg_id, state)
         elif method == "session/load":
             # Implemented, because the real agent implements it -- letting this
             # 404 would make a resume test pass for the wrong reason. Carries no
             # sessionId, matching zLoadSessionResponse (unlike session/new, the
             # real one does not echo the id back).
-            _reply(msg_id, _session_state())
+            if not AUTHENTICATED:
+                _error(msg_id, -32000, UNAUTHED_MESSAGE)
+            else:
+                _reply(msg_id, _session_state())
         elif method == "session/set_mode":
             mode_id = params.get("modeId")
             if any(m["id"] == mode_id for m in AVAILABLE_MODES):

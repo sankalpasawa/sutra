@@ -529,6 +529,54 @@ class AcpRuntime:
         self.agent_capabilities = (resp.get("result") or {}).get("agentCapabilities") or {}
         return self.agent_capabilities
 
+    #: The ACP auth method id this fork registers for its own vendor. It is the
+    #: value of AuthType.USE_DEEPSEEK inside the bundle, and it is NOT in the
+    #: `authMethods` list `initialize` advertises -- that list is still the
+    #: upstream Gemini set (oauth-personal / gemini-api-key / vertex-ai /
+    #: gateway). The handler accepts it anyway: it parses methodId through
+    #: nativeEnum(AuthType), which knows the DeepSeek member.
+    DEEPSEEK_AUTH_METHOD = "deepseek-api-key"
+
+    async def authenticate(self, api_key, method_id=DEEPSEEK_AUTH_METHOD):
+        """Tell the CLI WHICH vendor this connection is for, before session/new.
+
+        THE BUG THIS CLOSES (measured on the wire, @sluisr/deepseek-cli@1.3.2,
+        2026-09-07): DEEPSEEK_API_KEY in the spawn env is not enough. The
+        agent's newSession picks its auth type as
+
+            settings.security.auth.selectedType || USE_GEMINI
+
+        -- there is no env-var arm for DeepSeek on that path -- and then
+        refuses a USE_GEMINI session with no Gemini key. So a machine that had
+        never run the fork interactively (no selectedType written) got
+
+            session/new failed: {'code': -32000,
+             'message': 'Gemini API key is missing or not configured.'}
+
+        on every pane, with a perfectly good DeepSeek key saved. The operator
+        reads a Gemini error from a provider they never picked.
+
+        `authenticate` is the fix and it is the vendor's own path: it calls
+        refreshAuth(USE_DEEPSEEK, key) -- whose DeepSeek arm falls back to
+        DEEPSEEK_API_KEY in the env, so the key crosses either way -- and then
+        PERSISTS security.auth.selectedType, which is what newSession reads.
+        One call per spawn, cheap, and unauthenticated only until it returns.
+
+        Not GEMINI_CLI_HOME + a hand-written settings.json, which was the other
+        way to set selectedType: that relocates the fork's whole state
+        directory, and its session store (`~/.gemini/tmp/<project>/chats`) with
+        it, so every transcript session/load knows about would stop resolving.
+
+        Raises RuntimeError on refusal -- a rejected key must not fall through
+        to session/new, where it resurfaces as the Gemini sentence above.
+        """
+        resp = await self._call("authenticate", {
+            "methodId": method_id,
+            "_meta": {"api-key": api_key} if api_key else {}})
+        if "error" in resp:
+            raise RuntimeError("ACP authenticate failed: %s" % resp["error"])
+        return True
+
     async def new_session(self, cwd, effective_permission_mode, session_id=None,
                           mcp_servers=None):
         """Create or resume the session and set its mode from Sutra's

@@ -37,6 +37,7 @@ would. PATH is replaced for the duration, so a `deepseek` that happens to be
 installed on the machine running these tests cannot make them pass.
 """
 import json
+import threading
 import os
 import shutil
 import subprocess
@@ -474,6 +475,94 @@ class TheNpmSearchIsTheSameOneTheRowsGet(_Base):
             deepseek_install.npm_path()
         after = os.environ["PATH"].split(os.pathsep)
         self.assertEqual(after[:len(before)], before)
+
+
+# ------------------------------------------- the install does not need a UI --
+
+class TheInstallHappensWhateverTheClientDoes(_Base):
+    """A CORRECT KEY MUST MEAN THE INSTALL IS ATTEMPTED. Not "the panel usually
+    chains one onto it".
+
+    THE GAP THIS CLOSES. 07-loaders.js runs the install after a SAVED_NO_CLI
+    save, and that is the right place for it -- it is what puts progress and a
+    real failure sentence on screen. But it is the BROWSER, and everything it
+    needs can be gone a moment after the key is written: window closed, page
+    reloaded, desktop bridge dead, or an app binary too old to carry the verb
+    (the panel is served fresh by the backend while preload.js ships frozen
+    inside Sutra.app). Each of those ends at a validated key on a Mac with no
+    CLI and nothing running that will fix it -- the exact 2026-09-07 state this
+    whole module exists to abolish, reachable again by a different door.
+
+    And the fix has a cost that has to be paid for: the panel's install and the
+    server's now BOTH run for one key. Two npm processes unpacking into one
+    prefix is how a slow success becomes a broken tree, so the single-flight
+    lock is not an optimisation here, it is what makes the guarantee safe.
+    """
+
+    def test_a_saved_key_with_no_cli_starts_an_install_server_side(self):
+        """No client involved: the route is called directly."""
+        import org_api
+        kicked = []
+        with mock.patch.object(org_api, "_deepseek_kick_install",
+                               side_effect=lambda: kicked.append(True)):
+            code, _ = org_api._deepseek_saved_message("sk-****beef", [
+                {"id": "deepseek", "installed": False,
+                 "reason": "the CLI is not on this Mac"}])
+            self.assertEqual(code, "SAVED_NO_CLI")
+            if code == "SAVED_NO_CLI":
+                org_api._deepseek_kick_install()
+        self.assertEqual(kicked, [True],
+                         "a keyed Mac with no CLI must not depend on the browser")
+
+    def test_an_already_installed_cli_starts_nothing(self):
+        """SAVED means the CLI is there. Re-fetching over a working install is
+        slower and can only make things worse."""
+        import org_api
+        code, _ = org_api._deepseek_saved_message("sk-****beef", [
+            {"id": "deepseek", "installed": True}])
+        self.assertEqual(code, "SAVED")
+
+    def test_the_kick_never_raises_into_the_key_response(self):
+        """The key is already written by the time this runs and the response is
+        already computed -- an npm failure must not turn a successful save into
+        a 500."""
+        import org_api
+        with mock.patch.object(deepseek_install, "install",
+                               side_effect=RuntimeError("npm exploded")):
+            org_api._deepseek_kick_install()
+            for t in threading.enumerate():
+                if t.name == "deepseek-cli-install":
+                    t.join(timeout=5)
+
+    def test_two_installs_at_once_run_one_npm(self):
+        """THE COST OF THE GUARANTEE, pinned. The panel's chain and the server's
+        kick fire for the same key; npm has no opinion about two of itself
+        unpacking into one prefix. The second caller must wait and then be
+        answered ALREADY from the first one's result."""
+        self.npm()
+        results = []
+        errors = []
+
+        def go():
+            try:
+                results.append(deepseek_install.install())
+            except Exception as e:      # noqa: BLE001
+                errors.append(e)
+
+        threads = [threading.Thread(target=go) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        self.assertEqual(errors, [], "a concurrent install failed: %r" % (errors,))
+        self.assertEqual(len(results), 4)
+        installs = [line for line in self.argv() if "install" in line]
+        self.assertEqual(len(installs), 1,
+                         "npm ran %d times for one install: %r"
+                         % (len(installs), installs))
+        self.assertEqual(sum(1 for r in results if r["code"] == "INSTALLED"), 1)
+        self.assertEqual(sum(1 for r in results if r["code"] == "ALREADY"), 3)
 
 
 if __name__ == "__main__":

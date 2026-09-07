@@ -2,6 +2,45 @@
 
 **status**: active · **updated**: 2026-09-07
 
+## 2.244.1 (2026-09-07)
+
+- **A DeepSeek pane stops failing with a Gemini error.** Every DeepSeek session died at
+  `session/new failed: {'code': -32000, 'message': 'Gemini API key is missing or not
+  configured.'}` -- a Gemini sentence, on a DeepSeek pane, with a valid DeepSeek key saved and
+  the CLI installed. The key was put in the spawn environment and nowhere else. That is enough
+  for the fork's own `refreshAuth`, but not for the step before it: the agent picks its auth
+  type as `settings.security.auth.selectedType || USE_GEMINI`, with no environment arm for
+  DeepSeek, and then refuses a Gemini session for want of a Gemini key. Any Mac that had never
+  run `deepseek` interactively -- which is every Mac Sutra installs the CLI onto -- had nothing
+  in that setting. Sutra now calls ACP `authenticate` with the fork's own method id
+  (`deepseek-api-key`) and the key, once per spawn, between `initialize` and `session/new`.
+  That is the vendor's path: it authenticates the connection and persists the setting the
+  session creation reads.
+- **A rejected key is refused where it happened.** A failed `authenticate` kills the process
+  and says the provider did not accept the saved key, instead of falling through to
+  `session/new` and resurfacing as the Gemini sentence above.
+- **The stub agent now enforces the gate.** `qa/fake_acp_agent.py` answers `session/new` and
+  `session/load` with that exact -32000 message until `authenticate` has run, and records the
+  call. `TestDeepSeekSpawnedModel.test_the_session_is_authenticated_as_deepseek_before_it_is_created`
+  reads that recording back from inside the spawned process, so the regression fails the suite
+  rather than only the operator.
+- **A correct key now means the install is attempted, whatever the client does.** The
+  key->install chain lived in the browser, so everything it needed could be gone a moment
+  after the key was written -- window closed, page reloaded, desktop bridge dead, or an app
+  binary too old to carry the verb (the panel is served fresh by the backend while preload.js
+  ships frozen inside Sutra.app). Each ended at a validated key on a Mac with no CLI and
+  nothing running that would fix it. `POST /providers/deepseek/key` now starts the install
+  itself, off-request, on `SAVED_NO_CLI`. The panel still calls the install route -- that call
+  is what puts progress and a real failure sentence on screen.
+- **npm is single-flighted.** The panel's install and the server's now both run for one key,
+  and npm has no opinion about two of itself unpacking into one prefix. `install()` takes a
+  lock; the second caller waits and is answered `ALREADY` from the first one's result.
+  Measured without it: three of four concurrent installs failed.
+
+- **Not `GEMINI_CLI_HOME`.** Pointing the fork at a Sutra-owned state directory would set the
+  same setting, and would also move its session store (`~/.gemini/tmp/<project>/chats`) --
+  orphaning every transcript `session/load` resumes from.
+
 ## 2.244.0 (2026-09-07)
 
 - **Entering a DeepSeek key installs the DeepSeek CLI.** DeepSeek needs two things and the

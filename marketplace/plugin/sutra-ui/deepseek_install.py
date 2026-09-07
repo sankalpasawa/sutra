@@ -52,6 +52,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -242,6 +243,17 @@ def _tail(text):
     return blob[-_ERR_TAIL:] if len(blob) > _ERR_TAIL else blob
 
 
+#: SINGLE-FLIGHT. npm has no opinion about two of itself unpacking into one
+#: prefix at the same time, and this route can be entered twice for reasons the
+#: UI cannot prevent: the panel's own key->install chain racing a background
+#: kick from the key route, an operator with the panel open in two tabs, or a
+#: retry fired while a slow registry was still answering. The second caller
+#: BLOCKS on this and then re-enters install(), where the ALREADY branch
+#: answers it from the first one's result -- so it reports the truth rather
+#: than a second download over a half-written tree.
+_INSTALL_LOCK = threading.Lock()
+
+
 def install(force=False):
     """Fetch the CLI and register it. Returns a result dict; raises
     DeepSeekInstallError with a classified reason on failure.
@@ -262,6 +274,12 @@ def install(force=False):
     renders, and set_provider_bin refuses a path that is not executable
     anyway, so this cannot leave a row pointing at nothing.
     """
+    with _INSTALL_LOCK:
+        return _install_locked(force)
+
+
+def _install_locked(force):
+    """install()'s body, entered one at a time. See _INSTALL_LOCK."""
     started = time.time()
     existing = providers.provider_bin(PROVIDER_ID)
     if existing and not force:

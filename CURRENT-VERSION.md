@@ -2,7 +2,19 @@
 
 **status**: active · **updated**: 2026-09-07
 
-## v2.244.0 (2026-09-07, HEAD)
+## v2.244.1 (2026-09-07, HEAD)
+
+A DeepSeek pane no longer dies with a Gemini error. Every session ended at "Gemini API key is
+missing or not configured" -- with a valid DeepSeek key saved and the CLI installed -- because
+the key reached the spawn environment and nothing told the CLI which vendor the session was
+for. Left to guess, it defaults to Gemini and refuses. Sutra now authenticates the connection
+as DeepSeek before creating the session, and a key the provider rejects is reported as that
+rather than as a missing Gemini key. And a key the panel accepts now means the CLI install is
+attempted whatever happens to the window afterwards -- it no longer depends on the browser
+being alive to chain it -- with npm single-flighted so the two paths cannot race into one
+folder.
+
+## v2.244.0 (2026-09-07)
 
 Entering a DeepSeek key now installs the DeepSeek CLI. A key is only half of what DeepSeek
 needs -- the other half is its command-line tool, because Sutra answers every message by

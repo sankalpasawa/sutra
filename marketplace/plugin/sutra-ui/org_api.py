@@ -37,6 +37,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -1177,8 +1178,44 @@ def api_deepseek_key_save(req: DeepSeekKeyRequest, request: Request):
     #: ONE read, shared by the message and the rows it must agree with.
     state = _deepseek_state()
     code, message = _deepseek_saved_message(marker["mask"], state["providers"])
+    if code == "SAVED_NO_CLI":
+        _deepseek_kick_install()
     return {"ok": True, "code": code, "mask": marker["mask"],
             "message": message, **state}
+
+
+def _deepseek_kick_install():
+    """Start the CLI install SERVER-SIDE, off the key request, and forget it.
+
+    WHY, given that 07-loaders.js already chains the install onto a successful
+    save. Because that chain lives in the browser, and everything it depends on
+    can be gone the moment after the key is written: the window closed, the page
+    reloaded, the desktop bridge dead, an app binary too old to have the verb
+    (the panel is served fresh by the backend, preload.js ships frozen inside
+    Sutra.app). Every one of those leaves the exact state this feature exists to
+    abolish -- a validated key saved on a Mac with no CLI, and nothing running
+    that will fix it. A correct key now means the install is ATTEMPTED, whatever
+    the client does next.
+
+    NOT a replacement for the route. The panel still calls it, because that call
+    is what carries progress and a real failure message to the screen;
+    deepseek_install's single-flight lock is what makes the two safe together --
+    whichever arrives second waits, then answers ALREADY from the first one's
+    result instead of unpacking npm over it a second time.
+
+    DAEMON, and deliberately silent. An npm fetch is up to 300s and must not
+    hold the 20s key request open (main.js DEEPSEEK_KEY_TIMEOUT), and there is
+    no channel here to report into -- the key response has already been
+    computed. A failure is not lost: the provider row still reads "not
+    installed" with its own reason, and the Install button is still there.
+    """
+    def _run():
+        try:
+            deepseek_install.install()
+        except Exception:            # noqa: BLE001 -- nothing to report into
+            pass
+    threading.Thread(target=_run, name="deepseek-cli-install",
+                     daemon=True).start()
 
 
 @router.post("/providers/deepseek/cli")

@@ -2333,6 +2333,21 @@ async def ws_chat(ws: WebSocket):
                         "could not start %r in %s: %s" % (agent_bin, workdir, e)})
                     continue
                 if active_id != "claude":
+                    if deepseek_key:
+                        # BEFORE session/new, not instead of the env key.
+                        # AcpRuntime.authenticate's docstring has the wire
+                        # evidence: without this the fork defaults the session
+                        # to Gemini auth and refuses it with "Gemini API key is
+                        # missing or not configured" -- a Gemini error on a
+                        # DeepSeek pane, with a valid DeepSeek key in hand.
+                        try:
+                            await rt.authenticate(deepseek_key)
+                        except Exception as e:
+                            await ws.send_json({"type": "error", "detail":
+                                "%s did not accept the saved key: %s" % (active_id, e)})
+                            rt.kill_group()
+                            rt.clear()
+                            continue
                     try:
                         # session_id is already in scope here: the client's
                         # `resume` seed on a reconnect (set above, before
