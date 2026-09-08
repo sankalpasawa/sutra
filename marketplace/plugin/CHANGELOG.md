@@ -2,6 +2,45 @@
 
 **status**: active · **updated**: 2026-09-08
 
+## 2.246.1 (2026-09-08)
+
+- **The 2.246.0 DMG never built, and the reason was not the signing failure it looked like.**
+  CI stopped at `Sutra.app: invalid destination for symbolic link in bundle`, after signing had
+  reported success. The actual defect was in the bundle: @electron/packager 20.3.0 REWRITES
+  RELATIVE SYMLINKS AS ABSOLUTE ONES when it copies an `--extra-resource`, so all eleven links
+  in the runtime came out pointing at the build machine's own checkout --
+
+      source   payload/python/bin/python3  ->  python3.12
+      bundled  .../python/bin/python3      ->  /Users/<builder>/.../electron/payload/python/bin/python3.12
+
+  Nine CPython links (`python3`, `python`, `2to3`, `idle3`, `pydoc3`, `python3-config`, two in
+  `lib/pkgconfig/`, one in `share/man/`) and both npm ones (`npm`, `npx`). Those paths exist on
+  no user's Mac, so had this shipped, every install would have carried a dangling `python3` and
+  a dangling `npm`. codesign is simply what noticed first. The packager was upgraded from 18.3.6
+  in 2.246.0 because 18.3.6 exits 0 while producing nothing on Node 26; 18.3.6 preserved these
+  links relative, which is why v2.244.0's DMG carries the same nine and verifies clean.
+- **`--extra-resource` is gone; `ditto` copies the payload instead.** It reproduces a tree
+  verbatim, symlinks included, resolving none of them. `--no-deref-symlinks` was tried first and
+  has no effect on extra resources.
+- **The check that should have caught this now can.** `[ -x .../payload/python/bin/python3 ]`
+  FOLLOWS the symlink, and on the build machine the absolute target genuinely is there -- so it
+  passed, on the one machine where it could not fail, while producing a bundle broken everywhere
+  else. Every symlink in the bundle is now resolved against its own directory and required to
+  land inside the bundle; absolute targets and `../` chains that climb out both stop the build.
+  Verified both ways: the broken bundle is refused and named link by link, the fixed one passes
+  with 25 links checked, including Electron's own framework links.
+
+**Not tested locally: Developer ID signing and notarization.** The fix was verified with an
+AD-HOC signature only -- `codesign --verify --deep --strict` answers "valid on disk" and
+"satisfies its Designated Requirement" on the ditto build and fails on the `--extra-resource`
+one. Nothing in this change touches the Developer ID or notarization path, but that path has run
+only in CI, not here.
+
+Gate (code truth): four node suites re-run and green -- panel 304, governance 104, charters 31,
+agents 34. Steps 4 and 4b were NOT re-run: this release changes one shell script, no Python and
+no JavaScript, and both were green at 2.246.0 (pytest 1044 passed / 23 pre-existing failures,
+eleven SEO suites ALL PASS). Production truth (qa-shell) and design truth (qa/) were not run.
+
 ## 2.246.0 (2026-09-08)
 
 - **Codex has two sign-ins and you can switch between them without losing one.** Codex keeps

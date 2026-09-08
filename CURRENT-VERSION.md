@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-08
 
-## v2.246.0 (2026-09-08, HEAD)
+## v2.246.1 (2026-09-08, HEAD)
+
+The 2.246.0 build never produced a DMG, and what stopped it was worse than the signing error it
+appeared to be. The packager upgrade in 2.246.0 turned every relative symlink in the bundled
+runtime into an absolute one pointing at the build machine's own checkout -- nine CPython links
+and both npm links -- so the app would have shipped with a dangling `python3` and a dangling
+`npm` to everyone. codesign refused it, which is the only reason it was caught before release.
+The payload is now copied with `ditto`, which preserves symlinks exactly, and the build refuses
+to continue if any symlink in the bundle points outside it. The old check could not catch this:
+it tested `python3` with `-x`, which follows the link, and on the build machine the absolute
+target really was there. Developer ID signing and notarization were not exercised locally --
+the fix was verified with an ad-hoc signature.
+
+## v2.246.0 (2026-09-08)
 
 Codex has two ways to sign in and you can now move between them without losing one. Codex keeps
 exactly one credential and each method deletes the other -- measured on codex-cli 0.153.2,

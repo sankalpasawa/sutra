@@ -143,20 +143,68 @@ step "package"
 rm -rf "$DIST/$APP_NAME-darwin-$PKG_ARCH"
 # --no-install: without it a missing local binary makes npx DOWNLOAD and run the
 # deprecated legacy electron-packager from the registry -- remote code during a
-# release build. --extra-resource is what puts the payload in Contents/Resources.
+# release build.
 #
 # --prune WAS REMOVED HERE (2026-09-08). @electron/packager 20.x dropped the flag
 # and prunes devDependencies by default; the negation is --no-prune. Verified:
 # packaging without it yields a 0.21MB app.asar carrying no packager files.
+#
+# --extra-resource WAS ALSO REMOVED, and the payload is copied by ditto below.
+# @electron/packager 20.3.0 REWRITES RELATIVE SYMLINKS AS ABSOLUTE ONES when it
+# copies an extra resource. Measured 2026-09-08 on this tree:
+#
+#     source   payload/python/bin/python3  ->  python3.12
+#     bundled  .../python/bin/python3      ->  /Users/<builder>/.../electron/payload/python/bin/python3.12
+#
+# All eleven symlinks in the runtime (nine CPython, two npm) came out pointing
+# at the BUILD MACHINE'S CHECKOUT. codesign rejects that -- "invalid destination
+# for symbolic link in bundle" -- which is how it was caught, but signing is not
+# the real damage: those paths do not exist on any user's Mac, so `python3` and
+# `npm` inside the shipped app would have been dangling links. 18.3.6 preserved
+# them relative, which is why v2.244.0's DMG carries the same nine links and
+# verifies clean. --no-deref-symlinks does NOT change this; it has no effect on
+# extra resources.
 ( cd "$HERE" && npx --no-install electron-packager . "$APP_NAME" \
     --platform=darwin --arch="$PKG_ARCH" --out=dist --overwrite \
     --app-bundle-id="$BUNDLE_ID" --app-version="$VERSION" \
     --icon=build/"$APP_NAME".icns \
-    --extra-resource=payload \
     --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)' \
 ) >/dev/null || die "electron-packager failed"
 APP="$DIST/$APP_NAME-darwin-$PKG_ARCH/$APP_NAME.app"
 [ -d "$APP" ] || die "no bundle at $APP"
+
+# ditto, not cp -R and not the packager: it copies a tree verbatim, symlinks
+# included, without resolving any of them. This is the same tool main.js already
+# uses to move bundles around.
+/usr/bin/ditto "$PAYLOAD" "$APP/Contents/Resources/payload" \
+  || die "copying the payload into the bundle failed"
+
+# THE GUARD THAT WOULD HAVE CAUGHT IT ON THE BUILD MACHINE. The existing
+# python3 check below could not: `-x` FOLLOWS the link, and on the builder the
+# absolute target really is there, so it passed while producing a bundle that
+# was broken everywhere else. A symlink is only shippable if it stays inside
+# the bundle, so that is what gets asserted -- absolute targets and any ../
+# chain that climbs out both fail here rather than at a user's first launch.
+bad_links=""
+while IFS= read -r l; do
+  t="$(readlink "$l")"
+  case "$t" in
+    /*) bad_links="$bad_links
+  $l -> $t (absolute)" ; continue ;;
+  esac
+  # Resolve the link relative to its own directory and require the result to
+  # still be under $APP. -m so a target that does not exist yet still resolves.
+  abs="$(cd "$(dirname "$l")" 2>/dev/null && python3 -c 'import os,sys; print(os.path.normpath(os.path.join(os.getcwd(), sys.argv[1])))' "$t" 2>/dev/null)"
+  case "$abs" in
+    "$APP"/*) ;;
+    *) bad_links="$bad_links
+  $l -> $t (escapes the bundle)" ;;
+  esac
+done < <(find "$APP" -type l)
+if [ -n "$bad_links" ]; then
+  printf '\nmake-dmg: symbolic links that do not stay inside the bundle:%s\n' "$bad_links" >&2
+  die "refusing to ship a bundle whose symlinks point outside it"
+fi
 [ -x "$APP/Contents/Resources/payload/python/bin/python3" ] \
   || die "the payload did not make it into the bundle"
 echo "  $APP  ($(du -sh "$APP" | awk '{print $1}'))"
