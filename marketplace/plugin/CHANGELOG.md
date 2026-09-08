@@ -1,6 +1,87 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-07
+**status**: active · **updated**: 2026-09-08
+
+## 2.246.0 (2026-09-08)
+
+- **Codex has two sign-ins and you can switch between them without losing one.** Codex keeps
+  exactly one credential -- `~/.codex/auth.json` carries `auth_mode` as either `chatgpt` or
+  `apikey` -- and signing in with either DELETES the other. Measured on codex-cli 0.153.2 in a
+  `CODEX_HOME` copy: switching to an API key removes `tokens` and `last_refresh` outright. So
+  anyone who moved from a key to ChatGPT lost the key permanently, and Sutra had never held a
+  copy. Sutra now stores the key in the login keychain (service `com.sutra.provider`, account
+  `codex:api-key`) and can put either mode back on a click. The row reads the live mode from
+  `codex login status` on every open and reconciles against it, so a `codex login` run in a
+  terminal is shown as the truth rather than the stored preference.
+- **A key is checked with OpenAI before anything is written.** `codex login --with-api-key`
+  validates nothing: it takes any non-empty string, exits 0 and prints "Successfully logged
+  in". A deliberately fake key was therefore accepted and the row read "billed per token",
+  and every call afterwards failed with a raw 401 retried five times carrying websocket URLs
+  and Rust module paths -- output nobody would trace back to a paste. Sutra now makes one
+  authenticated GET to `api.openai.com/v1/models` (~0.4s to a 401) BEFORE the login spawn, not
+  after: the login is what destroys the credential already there, so a rejected key must never
+  reach `~/.codex`. 401/403/402/429/404 and transport failures each get their own sentence, and
+  an unconfirmed key is refused rather than saved with a caveat. Restoring a saved key
+  re-checks it too, since a key can be revoked after it was stored -- and a failed re-check
+  KEEPS the saved copy, because the network may be at fault and it is the only copy.
+- **The key never touches HTTP.** It crosses one pipe from the desktop shell to a Python child
+  that owns the keychain -- the seam `updates_cli.py` already established -- so it is never in
+  a request body, never through uvicorn's logging or validation surface, never in the backend's
+  memory, and never in argv. Nothing on the return path can carry it: what comes back is the
+  masked stub codex itself prints.
+- **Keychain items are deletable across code identities.** Ad-hoc signing gives the app a new
+  code identity on every install, and items written under the old one could not be removed by
+  the new one -- leaving credentials nobody could reach or delete.
+- **install.sh stages the connectors package, and proves the backend imports before claiming
+  success.** `stage_runtime()` copied `sutra-ui/` and `lib/` and never `connectors/`, so a
+  staged install produced a backend that died at import with `ModuleNotFoundError: No module
+  named 'connectors'` -- app.py imports connectors_api, which resolves the package as a sibling.
+  Staging still reported success, because the only assertions were for `app.py` and
+  `placement_engine.py`. The DMG path was never affected: bundle-runtime.sh rsyncs the whole
+  plugin tree rather than naming directories. There is now a third copy, an assertion for it,
+  and an `import app` check that aborts the install -- so the next forgotten dependency fails on
+  the machine doing the installing rather than at someone else's first launch.
+- **The Electron build no longer fails silently.** `electron-packager` began exiting 0 while
+  producing nothing: @electron/packager 18.3.6 -> extract-zip 2.0.1 -> yauzl 2.10.0 stalls
+  mid-extraction on Node 26 and its promise never settles, so the process exits when the event
+  loop empties. install.sh sent that output to `/dev/null` and only checked whether a directory
+  appeared, so it fell back to the script bundle -- which has no desktop bridge, silently
+  removing every IPC-only feature. Upgraded to @electron/packager 20.3.0, which replaced
+  extract-zip with `@electron-internal/extract-zip`; the packager's output is now kept and its
+  tail shown on failure. `npm run package` also lacked the `--ignore` flags that install.sh and
+  make-dmg.sh both carry, so it swept in node_modules and the 95MB payload: app.asar was 309MB,
+  now 0.2MB. `--prune` was removed (20.x prunes by default), and `execFile` -- used by
+  `updateCli` and never imported -- was added, which had been throwing ReferenceError on every
+  attach-mode update.
+- **Two gate steps could not run at all.** Step 4 aborted with 50 collection errors on any
+  machine that had built a DMG: `electron/payload/` and `electron/dist/` are gitignored build
+  artifacts carrying a second copy of every `test_*.py`, and pytest refuses duplicate basenames.
+  Step 4b died on every suite with `No such file or directory` because `run_all.sh` used `$PY`
+  unquoted and this checkout's path contains a space; its summary grep matched none of that, so
+  eleven suites printed a header and nothing else. Both fixed, and a failing suite now always
+  prints its own tail.
+
+**Not in this release, though it was on the list:** per-provider models, usage display and
+context windows, DeepSeek's model selection reaching the CLI, and DeepSeek permission modes
+applying -- all of that shipped in 2.243.0 (commit 2ced10b), including the `/api/settings`
+change from a flat `models` list to `models_by_provider`.
+
+**Known gaps.** Signing in to Codex still does NOT make it selectable: there is no Codex chat
+adapter, and the row says so rather than implying otherwise. Validation stops a bad key being
+saved but does not stop the 401 storm itself -- a key revoked AFTER saving still produces it on
+the chat path, because that is raw ACP error surfacing in the streaming layer, not in this
+credential code; restore-time re-checking narrows the window without closing it. The restore
+spawn was never exercised end-to-end against the real `codex` binary: `CODEX_HOME` is stripped
+from the spawn environment by design, so it cannot be sandboxed, and running it for real would
+overwrite the operator's live sign-in.
+
+Gate (code truth): four node suites green -- panel 304, governance 104, charters 31, agents 34
+(473 counted checks). Eleven SEO engine suites ALL PASS. pytest 1044 passed, 23 failed -- the
+same failures carried at v2.242.0-desktop and v2.243.0-desktop, none new: the release range
+touches none of the seven files involved, nor anything they import. 15 fail standalone on
+`asyncio.get_event_loop()` under the venv's Python 3.9; the rest appear only under the full run
+and pass in isolation. Production truth (qa-shell) and design truth (qa/) were NOT run for this
+release.
 
 ## 2.245.0 (2026-09-07)
 

@@ -1,8 +1,30 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-07
+**status**: active · **updated**: 2026-09-08
 
-## v2.245.0 (2026-09-07, HEAD)
+## v2.246.0 (2026-09-08, HEAD)
+
+Codex has two ways to sign in and you can now move between them without losing one. Codex keeps
+exactly one credential and each method deletes the other -- measured on codex-cli 0.153.2,
+switching to an API key strips the ChatGPT tokens outright -- so anyone who switched away from a
+key lost it for good, and Sutra had never kept a copy. Sutra now holds the key in the login
+keychain and puts either mode back on a click, reading the live state from the CLI on every open
+so a sign-in done in a terminal shows as the truth rather than the stored preference. The key is
+checked against OpenAI before anything is written, because codex validates nothing: it accepted a
+deliberately fake key, reported success, and left every later call failing with a raw 401 nobody
+would trace back to the paste. The key reaches the keychain through a child process, never an
+HTTP request. Signing in still does not make Codex selectable -- there is no chat adapter yet,
+and the row says so.
+
+Alongside it, three things that were failing quietly. A staged install produced a backend that
+could not start, because install.sh never copied the connectors package and its checks did not
+look; it now copies it and refuses to finish unless the staged backend imports. The Electron
+build had begun exiting 0 while producing nothing, so installs silently fell back to the
+script bundle with no desktop bridge at all. And two steps of the publish gate could not run on
+a release machine -- one aborted on duplicate test files from the build output, the other on a
+space in this checkout's path.
+
+## v2.245.0 (2026-09-07)
 
 Sutra now brings its own Node, so entering a valid DeepSeek key is all it takes. DeepSeek is an
 npm package Sutra installs and runs, and the app shipped its own Python but not Node -- so a Mac
