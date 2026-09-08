@@ -474,7 +474,59 @@ function codexConfirmText(verb, state){
       + "credential, so the API key REPLACES the ChatGPT sign-in. You would then pay per "
       + "token instead of drawing on your plan, and you would have to sign in with "
       + "ChatGPT again to go back.";
+  /* SWITCHING ONTO THE SAVED KEY. Restoring destroys the ChatGPT sign-in the
+     same way a freshly typed key does -- the saved copy makes it RECOVERABLE,
+     not free -- and it moves the user onto per-token billing, which is the one
+     consequence this whole block exists to make visible. */
+  if (verb === "restore" && state === "chatgpt")
+    return "Switch to your saved API key?\n\nCodex stores one credential, so the saved "
+      + "key REPLACES your ChatGPT sign-in. You would pay per token instead of drawing "
+      + "on your plan, and you would have to sign in with ChatGPT again to go back "
+      + "(Sutra cannot store a ChatGPT session — it is a browser sign-in).";
+  if (verb === "restore" && state === "api_key")
+    return "Replace the API key Codex is using?\n\nCodex is already on an API key. If "
+      + "that is a different one from the key Sutra saved, Sutra has no copy of it and "
+      + "it would be lost.";
+  /* FORGETTING IS NOT SIGNING OUT, and the sentence has to carry that or the
+     button reads as the destructive one it is not. */
+  if (verb === "forget")
+    return "Forget the saved API key?\n\nThis deletes Sutra's copy from your login "
+      + "keychain. Codex keeps whatever credential it is using right now — this does "
+      + "not sign you out. But you would need the key itself to switch back to it "
+      + "later, because nothing here would have it any more.";
   return null;                 /* signing in from signed-out destroys nothing */
+}
+
+/* What to say after an action that WORKED.
+
+   PURE AND SEPARATE for the same reason codexConfirmText is: the one message
+   that can overstate what happened is the key save, and it is worth being able
+   to pin that with a test.
+
+   MEASURED (2026-09-08, codex-cli 0.153.2): `codex login --with-api-key` does
+   not validate -- it took a deliberately fake key, exited 0 and printed
+   "Successfully logged in", and the user met that key later as a raw 401
+   retried five times. So Sutra now checks the key against OpenAI BEFORE the
+   sign-in, and these messages may say so: "OpenAI accepted it" is a claim about
+   a real request that really happened, not an inference from an exit code.
+
+   THREE THINGS FAIL INDEPENDENTLY and the wording keeps them apart: the key was
+   ACCEPTED (a probe), Codex is USING it (the spawn), and Sutra REMEMBERED it
+   (the keychain). A keychain that refused leaves the first two true, so `ok` is
+   not downgraded and the shortfall is its own clause. */
+function codexDoneText(verb, r){
+  if (verb === "logout") return "Signed out.";
+  if (verb === "forget") return (r && r.removed === false)
+    ? "There was no saved key to forget." : "Forgotten. Codex is still signed in as it was.";
+  if (verb === "restore") return "OpenAI accepted your saved key and Codex is using it now"
+    + (r && r.display ? " (" + r.display + ")." : ".") + " You are billed per token.";
+  if (verb === "apikey:save") return r && r.remembered
+    ? "OpenAI accepted this key and Codex is using it now. Sutra saved a copy, so you "
+      + "can switch to ChatGPT and back without typing it again."
+    : "OpenAI accepted this key and Codex is using it now, but Sutra could not keep a copy"
+      + (r && r.note ? " — " + r.note : ".")
+      + " Switching to ChatGPT would lose it.";
+  return "Done.";
 }
 
 /* Re-read after an action, with ONE delayed retry when the state did not move.
@@ -485,6 +537,15 @@ function codexConfirmText(verb, state){
    version watches auth.json's mtime (or has the bridge resolve only once the
    file has changed) instead of sleeping. Kept identical to the Claude sign-in
    handler's hedge rather than invented here, so both age the same way. */
+/* NO AUTOMATIC FALLBACK ONTO THE METER (founder direction, 2026-09-08).
+   THIS FUNCTION IS WHERE IT WOULD CREEP IN. It runs after every codex action
+   and re-reads the live credential, so it is the obvious place to notice a
+   plan-exhausted or 429 answer and "helpfully" call codexKeyRestore. It must
+   not. Sutra now HOLDS the key, which is exactly what makes the shortcut
+   available and exactly why it is forbidden: silently moving someone from a
+   plan they already pay for onto per-token billing is a bill they did not
+   agree to. If that is ever wanted it is an explicit prompt stating the cost,
+   never a silent switch. codex_auth.restore() serves a click. */
 async function codexReprobe(expectChange){
   const before = (S.codexAuth || {}).state;
   /* FORCE, both times. An action has just changed the credential, so the
@@ -702,8 +763,13 @@ function wire(){
       if (!key || !key.trim()){ S.codexMsg = "Enter a key first."; render(); return; }
     }
 
-    if (!(verb === "login" || verb === "logout" || verb === "apikey:save")) return;
-    if (verb === "apikey:save" && !bridge) return;    /* no HTTP path, by design */
+    if (!(verb === "login" || verb === "logout" || verb === "apikey:save"
+          || verb === "restore" || verb === "forget")) return;
+    /* NO HTTP PATH FOR ANY KEY ACTION, by design. apikey:save carries a key;
+       restore and forget reach the keychain through a child of the shell, and
+       a route for either would be a credential surface on the backend port.
+       The row does not draw these without a bridge -- this is the belt. */
+    if ((verb === "apikey:save" || verb === "restore" || verb === "forget") && !bridge) return;
     S.codexBusy = verb;
     S.codexMsg = null; render();
 
@@ -728,6 +794,8 @@ function wire(){
       if (bridge){
         r = verb === "login" ? await bridge.codexLogin()
           : verb === "logout" ? await bridge.codexLogout()
+          : verb === "restore" ? await bridge.codexKeyRestore()
+          : verb === "forget" ? await bridge.codexKeyForget()
           : await bridge.codexApiKey(key);
       } else {
         /* logout only -- login returned above, and apikey has no HTTP path.
@@ -744,13 +812,21 @@ function wire(){
     key = null;
     S.codexBusy = null;
     S.codexKeyOpen = false;
+    /* `error` is what the codex spawn verbs answer; `message` is what the
+       keychain helper answers. Both are FIXED strings chosen on the far side --
+       neither can carry the key or a child's output. */
     S.codexMsg = r && r.ok
-      ? (verb === "logout" ? "Signed out." : "Done.")
-      : ((r && r.error) || "codex did not finish");
+      ? codexDoneText(verb, r)
+      : ((r && (r.error || r.message)) || "codex did not finish");
     /* RE-READ rather than assume. The action reports whether the CLI exited 0,
        which is not the same fact as which credential it now holds -- and this
        row exists to state the second one. */
-    await codexReprobe(!!(r && r.ok));
+    /* expectChange is FALSE for forget: it deletes Sutra's copy and leaves the
+       live credential exactly as it was, so the delayed retry that exists for a
+       credential codex is still writing would just be a second pointless probe.
+       The re-read itself still happens -- the row's saved-key half comes from
+       the same endpoint and has genuinely changed. */
+    await codexReprobe(!!(r && r.ok) && verb !== "forget");
     render();
   });
 

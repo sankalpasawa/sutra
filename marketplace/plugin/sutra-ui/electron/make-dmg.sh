@@ -144,10 +144,14 @@ rm -rf "$DIST/$APP_NAME-darwin-$PKG_ARCH"
 # --no-install: without it a missing local binary makes npx DOWNLOAD and run the
 # deprecated legacy electron-packager from the registry -- remote code during a
 # release build. --extra-resource is what puts the payload in Contents/Resources.
+#
+# --prune WAS REMOVED HERE (2026-09-08). @electron/packager 20.x dropped the flag
+# and prunes devDependencies by default; the negation is --no-prune. Verified:
+# packaging without it yields a 0.21MB app.asar carrying no packager files.
 ( cd "$HERE" && npx --no-install electron-packager . "$APP_NAME" \
     --platform=darwin --arch="$PKG_ARCH" --out=dist --overwrite \
     --app-bundle-id="$BUNDLE_ID" --app-version="$VERSION" \
-    --icon=build/"$APP_NAME".icns --prune=true \
+    --icon=build/"$APP_NAME".icns \
     --extra-resource=payload \
     --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)' \
 ) >/dev/null || die "electron-packager failed"

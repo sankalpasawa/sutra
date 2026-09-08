@@ -252,7 +252,8 @@ const EPILOGUE = `
   /* the Codex sign-in block: the row exists to say which BILLING MODE is
      active, so every render state is pinned as a string -- a wrong badge here
      tells someone paying per token that their usage is included */
-  codexAuthHtml, codexConfirmText, loadCodexAuth, codexNeedsProbe, codexReprobe,
+  codexAuthHtml, codexConfirmText, codexDoneText, loadCodexAuth, codexNeedsProbe,
+  codexReprobe,
   /* the browser-transport sign-in watch: every stop condition is pinned,
      because a poll with no way to end is the render loop all over again */
   codexOnScreen, codexWatchLogin, codexStopPoll, codexBridge,
@@ -4268,6 +4269,176 @@ codexSerial("45p", async () => {
     assert.strictEqual(calls, 0, "a stopped watch must not probe");
     assert.strictEqual(T.S.codexPolling, false, "and reports itself stopped");
   } finally { t.restore(); h.restore(); T.S.screen = prevScreen; T.S.codexBusy = null; }
+});
+
+/* ── 45m-45t. Codex API-key MEMORY ──────────────────────────────────────────
+   Codex holds one credential and each sign-in wipes the other (measured
+   2026-09-08 on codex-cli 0.153.2: `tokens` and `last_refresh` are deleted
+   outright). Sutra now keeps a copy of the API key so the switch is
+   reversible. Everything below is about the two lies that copy makes possible:
+   claiming the saved key is the LIVE one, and offering to remember on a
+   machine that cannot. */
+
+/* The bridge as it exists once the memory verbs ship. codexKeyRestore is
+   checked separately because the verbs shipped AFTER codexLogin -- a shell
+   built before this change has the first and not the second. */
+const CODEX_MEM_BRIDGE = {
+  codexLogin:      () => Promise.resolve({ ok:true }),
+  codexKeyRestore: () => Promise.resolve({ ok:true }),
+  codexKeyForget:  () => Promise.resolve({ ok:true }),
+};
+const SAVED = { stored:true, display:"sk-proj-***Kyt8A", saved_at:1757260000,
+                store_available:true, store_reason:null };
+const NOT_SAVED = { stored:false, display:"", saved_at:null,
+                    store_available:true, store_reason:null };
+const NO_STORE = { stored:false, display:"", saved_at:null, store_available:false,
+                   store_reason:"this is Linux, where Sutra has no credential store yet." };
+
+test("45m. a saved key is offered as a SWITCH and never as the live mode", () => {
+  sandbox.sutra = CODEX_MEM_BRIDGE;
+  try {
+    const out = codexRender({ state:"chatgpt", billing:"usage included in your plan",
+                              stored:SAVED });
+    assert.ok(/Signed in with ChatGPT/.test(out), "the live mode still comes from the probe");
+    assert.ok(/usage included in your plan/.test(out), "and so does the billing line");
+    assert.ok(/data-codex="restore"/.test(out), "the saved key is offered");
+    assert.ok(/Use saved API key sk-proj-\*\*\*Kyt8A/.test(out),
+      "named with the stub CODEX printed, so the offer and the live row read alike");
+    /* THE LIE THIS TEST EXISTS FOR. A saved key must never make the row say
+       the user is billed per token while codex is on a ChatGPT plan. */
+    assert.ok(!/billed per token/.test(out),
+      "holding a key is not using one: no per-token claim over a ChatGPT session");
+    assert.ok(/not using it right now/.test(out),
+      "and the copy says plainly that codex is not on it");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45n. the key field says whether a copy is actually kept", () => {
+  /* 45h pins the no-copy wording. That sentence is now CONDITIONAL, so the
+     other branch needs pinning too -- otherwise remembering could quietly stop
+     working and the copy would still read as correct. */
+  sandbox.sutra = CODEX_MEM_BRIDGE;
+  try {
+    const kept = codexRender({ state:"logged_out", stored:NOT_SAVED }, { keyOpen:true });
+    assert.ok(/login keychain/.test(kept), "it names where the copy goes");
+    assert.ok(/switch back to it later/.test(kept), "and what the copy buys");
+    assert.ok(!/keeps no copy/.test(kept), "and does not deny keeping one");
+    assert.ok(/checks the key with OpenAI first/.test(kept),
+      "codex accepts any text, so the field must say Sutra checks it -- this is the "
+      + "one sentence that explains why a bad paste is refused instead of accepted");
+    assert.ok(/401/.test(kept),
+      "and name the failure it prevents, which is what the user would otherwise meet");
+  } finally { delete sandbox.sutra; }
+
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const not = codexRender({ state:"logged_out", stored:NO_STORE }, { keyOpen:true });
+    assert.ok(/keeps no copy/.test(not), "an older shell still gets the honest sentence");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45o. a live key Sutra has no copy of warns BEFORE the switch, not after", () => {
+  /* Entered in a terminal, or saved on a machine that could not keep it.
+     Switching away destroys it and nothing here can put it back. */
+  sandbox.sutra = CODEX_MEM_BRIDGE;
+  try {
+    const out = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
+                              billing:"billed per token", stored:NOT_SAVED });
+    assert.ok(/not saved in Sutra/.test(out), "it says the key is unheld");
+    assert.ok(/would lose it/.test(out), "and what switching would cost");
+    assert.ok(!/data-codex="restore"/.test(out),
+      "and offers no restore, because there is nothing to restore");
+    assert.ok(!/data-codex="forget"/.test(out), "nor a forget for a copy that does not exist");
+
+    const held = codexRender({ state:"api_key", key_display:"sk-proj-***Kyt8A",
+                               billing:"billed per token", stored:SAVED });
+    assert.ok(!/not saved in Sutra/.test(held), "a held key draws no warning");
+    assert.ok(/data-codex="forget"/.test(held), "and can be forgotten");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45p. no memory controls where there is no credential store", () => {
+  /* The row must never draw a control that cannot work on this machine --
+     Linux, Windows, or a Mac whose keychain will not load. */
+  sandbox.sutra = CODEX_MEM_BRIDGE;
+  try {
+    for (const state of ["chatgpt", "logged_out", "api_key", "unknown"]) {
+      const out = codexRender({ state, stored:NO_STORE });
+      assert.ok(!/data-codex="restore"/.test(out), state + ": no restore without a store");
+      assert.ok(!/data-codex="forget"/.test(out), state + ": no forget without a store");
+    }
+  } finally { delete sandbox.sutra; }
+});
+
+test("45q. a shell built before the memory verbs draws none of them", () => {
+  /* codexLogin shipped first. Presence of the NEWER verb is the capability
+     signal -- a page cannot conjure a preload, and an older one must degrade
+     to the row it already had rather than to a dead button. */
+  sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
+  try {
+    const out = codexRender({ state:"chatgpt", stored:SAVED });
+    assert.ok(!/data-codex="restore"/.test(out), "no restore on an older shell");
+    assert.ok(!/data-codex="forget"/.test(out), "no forget either");
+    assert.ok(/data-codex="apikey"/.test(out), "but the key field it already had stays");
+  } finally { delete sandbox.sutra; }
+});
+
+test("45r. restore warns; forget warns and says it is NOT a sign-out", () => {
+  const r = T.codexConfirmText("restore", "chatgpt");
+  assert.ok(r, "switching onto the saved key replaces a credential, so it warns");
+  assert.ok(/REPLACES/.test(r), "the warning names the replacement");
+  assert.ok(/per token/.test(r), "and the billing consequence, which is the point of the row");
+
+  const f = T.codexConfirmText("forget", "api_key");
+  assert.ok(f, "deleting the only copy of a key warns");
+  assert.ok(/does not sign you out/.test(f),
+    "and distinguishes itself from Sign out -- a tidy-up must not read as destroying a session");
+
+  /* Restoring from signed-out replaces nothing, so it must not nag. */
+  assert.strictEqual(T.codexConfirmText("restore", "logged_out"), null);
+});
+
+test("45s. success messages claim exactly what was checked, and no more", () => {
+  /* MEASURED (2026-09-08, 0.153.2): `codex login --with-api-key` accepted a
+     deliberately fake key, exited 0 and printed "Successfully logged in", and
+     the user met it later as a raw 401 retried five times. Sutra now probes the
+     key against OpenAI BEFORE signing in, so "OpenAI accepted it" is a report of
+     a request that really happened -- and saying it is the point, because it is
+     what tells the user a bad paste would have been refused.
+
+     The bound is that nothing may claim MORE than the probe established. One
+     authenticated GET says the key authenticates today. It says nothing about
+     quota, about tomorrow, or about whether any particular model is reachable. */
+  const msgs = [T.codexDoneText("apikey:save", { ok:true, remembered:true }),
+                T.codexDoneText("apikey:save", { ok:true, remembered:false, note:"no keychain." }),
+                T.codexDoneText("restore", { ok:true, display:"sk-proj-***Kyt8A" })];
+  for (const m of msgs) {
+    assert.ok(/OpenAI accepted/.test(m), "the check is stated: " + m);
+    for (const over of ["unlimited", "will work", "guaranteed", "verified forever"])
+      assert.ok(!new RegExp(over, "i").test(m), over + " overstates the probe: " + m);
+  }
+});
+
+test("45t. a failed copy does not read as a failed sign-in", () => {
+  /* The login and the copy fail independently. codex is using the key either
+     way, so a keychain that refused must not be reported as a sign-in that did. */
+  /* THREE facts, three clauses: OpenAI accepted it, Codex is using it, Sutra
+     kept a copy. They fail independently, so a keychain that refused must not
+     read as a rejected key or a failed sign-in. */
+  const bad = T.codexDoneText("apikey:save", { ok:true, remembered:false,
+                                               note:"the login keychain would not keep a copy." });
+  assert.ok(/OpenAI accepted/.test(bad), "the key was still accepted");
+  assert.ok(/using it now/.test(bad), "and the sign-in still worked");
+  assert.ok(/could not keep a copy/.test(bad), "and the shortfall is its own clause");
+  assert.ok(/keychain/.test(bad), "carrying the reason through");
+
+  const good = T.codexDoneText("apikey:save", { ok:true, remembered:true });
+  assert.ok(/OpenAI accepted/.test(good) && /using it now/.test(good)
+            && /switch to ChatGPT and back/.test(good),
+    "and the happy path states all three");
+
+  assert.ok(/still signed in/.test(T.codexDoneText("forget", { ok:true, removed:true })),
+    "forgetting reassures that codex is untouched");
 });
 
 /* ── 46. a rejected API key must never be echoed back ───────────────────────

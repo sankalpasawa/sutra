@@ -9,14 +9,14 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "package": "electron-packager . Sutra --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=os.sutra.ui --app-version=1.0.0 --icon=build/Sutra.icns --prune=true",
+    "package": "electron-packager . Sutra --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=os.sutra.ui --app-version=1.0.0 --icon=build/Sutra.icns --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)'",
     "bundle": "./bundle-runtime.sh",
     "dmg": "./bundle-runtime.sh && ./make-dmg.sh",
     "test": "node test_provision.js"
   },
   "devDependencies": {
-    "electron": "33.4.11",
-    "@electron/packager": "18.3.6"
+    "@electron/packager": "^20.3.0",
+    "electron": "33.4.11"
   },
   "allowScripts": {
     "electron@33.4.11": true

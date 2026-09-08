@@ -80,6 +80,7 @@ import reorg_sim as R  # noqa: E402
 import teamsutra  # noqa: E402
 
 import claude_local
+import codex_auth  # Sutra's COPY of the Codex API key (keychain, never here)
 import codex_login  # spawns `codex login`/`codex logout`; holds the live child
 import deepseek_auth  # validates + stores the DeepSeek key (keychain, never here)
 import deepseek_install  # fetches the DeepSeek CLI itself (npm, into ~/.sutra-ui)
@@ -873,7 +874,18 @@ def api_codex_auth():
     row lying about state.
     """
     return {**providers.codex_auth(),
-            "login_in_flight": codex_login.in_flight()}
+            "login_in_flight": codex_login.in_flight(),
+            # WHETHER THERE IS A KEY TO RESTORE -- never a claim about which
+            # credential is live. providers.codex_auth() above owns that, and
+            # the two must not be conflated: a saved key says nothing about
+            # what codex is holding right now, and the row renders the live
+            # mode from the probe and the RESTORE OFFER from this.
+            #
+            # Merged HERE for the same reason login_in_flight is: codex_auth
+            # imports providers, so providers importing it back would be a
+            # cycle. Costs no subprocess -- state() reads one small file and
+            # asks whether the keychain loads.
+            "stored": codex_auth.state()}
 
 
 class CodexLogoutRequest(BaseModel):

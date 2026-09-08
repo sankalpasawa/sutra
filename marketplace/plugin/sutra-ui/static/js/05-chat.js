@@ -512,21 +512,31 @@ function codexAuthHtml(){
      shell's IPC verbs, and POST /api/providers/codex/{login,login/cancel,
      logout} for a browser. So those buttons are always offered.
 
-     The API KEY is bridge-only and stays that way. It reaches codex on stdin,
-     and routing it through HTTP would put a live credential in a request body,
+     Everything to do with the API KEY is bridge-only and stays that way. It
+     reaches codex on stdin and the keychain through a child of the shell;
+     routing it through HTTP would put a live credential in a request body,
      through the server's logging surface, and into its memory. None of that is
      about who may call the route, so no origin guard makes it acceptable. In a
-     browser that one action names the CLI instead.
-
-     Presence of the verb is the capability signal, exactly as the Claude
-     account card treats authLogin: a page cannot conjure a preload. */
+     browser those actions name the CLI instead. */
   const bridge = !!(window.sutra && window.sutra.codexLogin);
   const canKey = bridge;
+  /* REMEMBERING NEEDS TWO MORE THINGS than signing in does, and both are
+     checked rather than assumed:
+
+       codexKeyRestore  -- the memory verbs shipped AFTER codexLogin, so a
+                           shell built before this change has the first and not
+                           the second. Same guard codexBridge() already carries.
+       store_available  -- there is a credential store on this machine at all.
+                           False on Linux/Windows and on a Mac whose keychain
+                           will not load, and the row must never draw a control
+                           that cannot work here. */
+  const st = (a && a.stored) || {};
+  const canRemember = !!(bridge && window.sutra.codexKeyRestore && st.store_available);
+  const saved = !!(canRemember && st.stored);
   /* A sign-in the SERVER is still running counts as busy even when this page
      knows nothing about it -- a reload loses S.codexBusy, and a row reading
      "Not signed in" while a child is about to change the credential is the row
-     lying about state. Normalised here so Cancel and the waiting copy below
-     need no special case. */
+     lying about state. */
   const busy = S.codexBusy || (a && a.login_in_flight ? "login" : null);
   const msg = !busy && S.codexMsg
     ? `<span class="why" style="margin-left:8px">${esc(S.codexMsg)}</span>` : "";
@@ -535,18 +545,33 @@ function codexAuthHtml(){
   const btn = (verb, text) => `<button class="btn" type="button" data-codex="${esc(verb)}"
       ${busy && busy !== verb ? "disabled" : ""}>${
       busy === verb ? "Cancel" : esc(text)}</button>`;
+  /* The memory verbs are NOT cancel-doubling: restore is one short spawn and
+     forget is a keychain delete, so there is no human round trip to abandon
+     and a button that silently changed meaning would be worse than a disabled
+     one. */
+  const sbtn = (verb, text) => `<button class="btn" type="button" data-codex="${esc(verb)}"
+      ${busy ? "disabled" : ""}>${esc(text)}</button>`;
+
   /* THE ESCAPE HATCH IS SHOWN WHILE WAITING, not only after a failure.
      codex prints the sign-in URL as a fallback for when the browser does not
      open, and neither transport forwards the child's output -- so that URL is
-     invisible here by design. Someone staring at a spinner because no window
-     appeared needs the way through AT THAT MOMENT, not in an error message
-     three minutes later. */
+     invisible here by design. */
   const waiting = busy === "login"
     ? `<span class="why" style="margin-left:8px">Waiting for the browser sign-in…
        If no window opened, run <code>codex login</code> in a terminal.</span>`
+    : busy === "restore" ? `<span class="why" style="margin-left:8px">Putting your saved key back…</span>`
     : busy ? `<span class="why" style="margin-left:8px">Asking codex…</span>` : "";
 
-  let head, actions;
+  /* The offer to switch BACK, drawn wherever there is something to switch back
+     to. Names the key it would restore, using the stub CODEX printed when the
+     key was saved -- so the string on this button is the same string the row
+     shows once it is live, rather than two different masks of one key. */
+  const restoreBtn = saved
+    ? sbtn("restore", "Use saved API key" + (st.display ? " " + st.display : ""))
+    : "";
+  const forgetBtn = saved ? sbtn("forget", "Forget saved key") : "";
+
+  let head, actions, extra = "";
   if (!a) {
     /* Not asked yet is NOT signed out. Saying "not signed in" here would be
        a claim about billing made before anything was read. */
@@ -557,29 +582,45 @@ function codexAuthHtml(){
     actions = "";
   } else if (a.state === "unknown") {
     /* Asked and could not tell. No mode is invented: the wrong guess here
-       tells someone paying per token that their usage is included. Sign-in
-       is still offered because it SETS the state rather than reporting it;
-       Sign out is not, because it would imply we know there is something to
-       sign out of. */
+       tells someone paying per token that their usage is included. Sign-in and
+       restore are still offered because they SET the state rather than
+       reporting it; Sign out is not, because it would imply we know there is
+       something to sign out of. */
     head = `<span class="why"><b>Could not tell which credential Codex is using.</b>
       ${esc(a.detail || "")}</span>`;
     actions = `${btn("login", "Sign in with ChatGPT")}${
+      restoreBtn ? " " + restoreBtn : ""}${
       canKey ? " " + btn("apikey", "Add API key") : ""}`;
   } else if (a.state === "api_key") {
     head = `<b>API key${a.key_display ? " " + esc(a.key_display) : ""}</b>
       <span class="why">· ${esc(a.billing || "billed per token")}</span>`;
-    actions = `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}`;
+    actions = `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}${
+      forgetBtn ? " " + forgetBtn : ""}`;
+    /* THE ONE STATE THAT NEEDS A WARNING RATHER THAN AN OFFER. This key is
+       live and Sutra has no copy -- entered in a terminal, or saved on a
+       machine that could not keep it. Switching away destroys it, and there is
+       nothing here that can put it back, so the row says so BEFORE the click
+       rather than after. It cannot offer to save it either: codex prints a
+       stub, never the key. */
+    if (!saved && canRemember) extra = `<p class="why" style="margin:6px 0 0">
+      This key is <b>not saved in Sutra</b>, so switching to ChatGPT would lose it —
+      you would need the key itself to come back. To have Sutra remember it,
+      paste it again with <b>Add API key</b>.</p>`;
   } else if (a.state === "chatgpt") {
     head = `<b>Signed in with ChatGPT</b>
       <span class="why">· ${esc(a.billing || "usage included in your plan")}</span>`;
     actions = `${btn("logout", "Sign out")}${
-      canKey ? " " + btn("apikey", "Use an API key instead") : ""}`;
+      restoreBtn ? " " + restoreBtn : ""}${
+      canKey ? " " + btn("apikey", saved ? "Add a different key" : "Use an API key instead") : ""}${
+      forgetBtn ? " " + forgetBtn : ""}`;
   } else {
     head = `<b>Not signed in</b>`;
     actions = `${btn("login", "Sign in with ChatGPT")}
        <span class="why">usage included in your Plus/Pro/Business plan</span>${
-       canKey ? `<div style="margin-top:6px">${btn("apikey", "Add API key")}
-       <span class="why">pay for what you use</span></div>` : ""}`;
+       restoreBtn ? `<div style="margin-top:6px">${restoreBtn}
+       <span class="why">pay for what you use</span></div>` : ""}${
+       canKey ? `<div style="margin-top:6px">${btn("apikey", saved ? "Add a different key" : "Add API key")}
+       ${restoreBtn ? "" : `<span class="why">pay for what you use</span>`}</div>` : ""}`;
   }
 
   /* The API-key field. type=password so a shoulder does not read it, and
@@ -595,9 +636,29 @@ function codexAuthHtml(){
         ${busy ? "disabled" : ""}>Use this key</button>
       <button class="btn" type="button" data-codex="apikey:cancel">Cancel</button>
     </div>
-    <p class="why" style="margin:6px 0 0">The key goes straight to the codex CLI and
-      Sutra keeps no copy of it — not in settings, not on disk, not in this page after
-      you click. Codex stores one credential, so this replaces whatever it holds now.</p>` : "";
+    <p class="why" style="margin:6px 0 0">Sutra checks the key with OpenAI first and
+      only signs in if it works — codex itself accepts any text, so a typo would
+      otherwise become a live credential you meet later as a stream of 401s.
+      ${canRemember
+      ? `The key then goes straight to the codex CLI, and Sutra keeps a copy in your
+         Mac's login keychain so you can switch back to it later without typing it
+         again. It is never written to settings, never sent to the Sutra server, and
+         never shown again — only the last few characters. Codex stores one
+         credential, so this replaces whatever it holds now.`
+      : `The key then goes straight to the codex CLI and Sutra keeps no copy of it —
+         ${esc(st.store_reason || "there is no credential store on this machine")}
+         So if you switch to ChatGPT later, you will need this key again to come back.
+         Codex stores one credential, so this replaces whatever it holds now.`}</p>` : "";
+
+  /* Saved BUT the live credential is something else. The saved key is not a
+     claim about what codex is using -- `codex login status` is the only
+     authority for that -- so when it is not live it is described as what it
+     is: a copy waiting to be put back. */
+  const savedNote = saved && a && a.state !== "api_key"
+    ? `<p class="why" style="margin:6px 0 0">Sutra is holding a copy of
+       ${esc(st.display || "your API key")}${
+       st.saved_at ? ", saved " + esc(agRelTime(st.saved_at)) : ""}.
+       Codex is not using it right now.</p>` : "";
 
   return `
     <div class="note" style="margin-top:9px">
@@ -607,6 +668,8 @@ function codexAuthHtml(){
         per token. Signing in here does <b>not</b> make Codex selectable above.</p>
       <div>${head}</div>
       ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
+      ${extra}
+      ${savedNote}
       ${keyForm}
       ${!canKey ? `<p class="why" style="margin:8px 0 0">Signing in with ChatGPT and
         signing out work from this page. Signing in with an <b>API key</b> does not —

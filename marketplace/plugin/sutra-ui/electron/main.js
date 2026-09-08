@@ -35,7 +35,11 @@
 "use strict";
 
 const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
-const { spawn, execFileSync } = require("child_process");
+/* execFile: used by updateCli() and codexAuthCli() below. It was MISSING from
+   this list while updateCli already called it, so every attach-mode update
+   operation threw ReferenceError -- test_update_attach.js reads this file as
+   TEXT and never executes it, so nothing caught it. Found 2026-09-08. */
+const { spawn, execFile, execFileSync } = require("child_process");
 const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
@@ -1274,7 +1278,145 @@ ipcMain.handle("sutra:codex-api-key", async (e, key) => {
      back. */
   if (/\s/.test(k)) return { ok: false, error: "that does not look like one key -- it has a space or a line break in it. Check the paste." };
   if (k.length > 400) return { ok: false, error: "that is too long to be an API key. Check the paste." };
-  return codexRun(e, ["login", "--with-api-key"], k, CODEX_QUICK_TIMEOUT);
+  /* THREE STEPS, AND THE FIRST ONE IS THE POINT.
+     check -> codex login -> store.
+
+     CHECK COMES BEFORE THE SPAWN. codex validates nothing: measured 2026-09-08
+     on 0.153.2, `--with-api-key` took a deliberately fake key, exited 0, printed
+     "Successfully logged in" and REPLACED a live ChatGPT session. The user then
+     met that key as a raw 401 retried five times, carrying websocket URLs and
+     Rust module paths -- output nobody would trace back to a paste. So the
+     helper makes one authenticated GET first (~0.4s to a 401), and a key OpenAI
+     rejects never reaches ~/.codex. The credential already there survives.
+
+     Checking AFTER the spawn, which is where this was first pointed, would
+     still have let a dead key destroy a working sign-in: the login is the
+     damage, the store is only the record of it.
+
+     An UNCONFIRMED key -- no network, a 429, a status this build cannot read --
+     is refused too, and nothing is changed. Saving one on a guess recreates the
+     exact failure this check exists to stop. */
+  const checked = await codexAuthCli("check", k, CODEX_KEY_CHECK_TIMEOUT);
+  if (!checked || !checked.ok) {
+    /* The helper's sentence, which is built from fixed strings and a status
+       code and can carry neither the key nor a child's output. */
+    return { ok: false, error: (checked && checked.message)
+      || "the key could not be checked, so nothing was changed." };
+  }
+  const r = await codexRun(e, ["login", "--with-api-key"], k, CODEX_QUICK_TIMEOUT);
+  if (!r || !r.ok) return r;
+  const kept = await codexAuthCli("store", k, CODEX_KEY_CLI_TIMEOUT);
+  /* `ok` reports the LOGIN, `checked` that OpenAI accepted the key, and
+     `remembered` the keychain copy. All three fail independently and the panel
+     says which, because "signed in" and "will still be here tomorrow" are
+     different promises. A failed store NEVER downgrades a successful login.
+
+     codexError()'s 401/quota classification above still cannot fire on this
+     path -- codex exits 0 for a bad key -- but nothing reaches it now anyway. */
+  return { ok: true, checked: true, remembered: !!kept.ok,
+           display: kept.display || "", note: kept.ok ? null : kept.message };
+});
+
+/* ── Codex API-key MEMORY ────────────────────────────────────────────────────
+ * The verbs above ask codex to CHANGE its one credential. These three keep a
+ * copy of the API key so the change is reversible, which it is not today:
+ * measured 2026-09-08 on codex-cli 0.153.2, `codex login --with-api-key` over a
+ * ChatGPT session deletes `tokens` and `last_refresh` outright, and `codex
+ * login` deletes the key. Whichever way you switch, the old one is gone and
+ * Sutra never had it.
+ *
+ * WHY A PYTHON SIDECAR AND NOT AN HTTP ROUTE. The keychain adapter is Python
+ * (connectors/credentials/keychain.py, ctypes into Security.framework), so the
+ * key has to reach Python somehow. Not through the backend port: a key in a
+ * request body crosses uvicorn's logging and validation surface and sits in the
+ * server process's memory, and no origin or token gate changes any of that.
+ * Instead it goes to a CHILD of this process, on stdin -- the seam updateCli()
+ * already established for the same reason, whose comment puts it exactly: "no
+ * HTTP and no token: the token exists because any browser page can POST to
+ * localhost, and a child process is not reachable from a page."
+ *
+ * So the key's whole route is: renderer -> this IPC call -> child stdin ->
+ * keychain. Never a request body, never argv, never the backend, never a log.
+ *
+ * WRITE-ONLY. Nothing on the return path can carry the key: the helper answers
+ * one JSON line that holds a mask at most, and `err.message` from execFile is
+ * deliberately never forwarded -- it can quote a child's output. Fixed strings
+ * only, the same discipline codexError() applies one layer up.
+ */
+const CODEX_KEY_CLI_TIMEOUT = 30000;   /* keychain + one `codex login status` */
+const CODEX_KEY_CHECK_TIMEOUT = 20000; /* helper caps the probe at 8s */
+const CODEX_RESTORE_TIMEOUT = 70000;   /* helper caps the spawn at 60s */
+
+function codexAuthCli(verb, apiKey, timeoutMs) {
+  return new Promise((resolve) => {
+    /* Unreachable by construction -- boot() calls fail() and opens no window
+       when resolveRuntime() answers kind:"none", which is the only shape
+       without a python. Kept because the cost of being wrong is a TypeError
+       inside a credential verb rather than a sentence. */
+    if (!RUNTIME || !RUNTIME.python) {
+      return resolve({ ok: false, code: "NO_RUNTIME", message:
+        "this build has no Python runtime, so Sutra cannot remember an API key." });
+    }
+    let child;
+    const done = (r) => resolve(r);
+    try {
+      child = execFile(RUNTIME.python, ["-m", "codex_auth", verb], {
+        // cwd puts codex_auth.py + providers.py on sys.path, as updateCli does;
+        // env is INHERITED and overlaid so HOME/TMPDIR/locale survive and
+        // shellEnv() brings the PATH a Finder launch lacks -- the helper needs
+        // it to find `codex`.
+        cwd: RUNTIME.appDir,
+        env: { ...process.env, ...shellEnv(), PYTHONDONTWRITEBYTECODE: "1" },
+        timeout: timeoutMs || CODEX_KEY_CLI_TIMEOUT,
+        maxBuffer: 1024 * 1024,
+      }, (err, stdout) => {
+        let parsed = null;
+        try { parsed = JSON.parse(String(stdout || "").trim()); } catch (e) { /* judged next */ }
+        if (parsed && typeof parsed.ok === "boolean") return done(parsed);
+        if (err && err.killed) return done({ ok: false, code: "TIMEOUT", message:
+          "the credential helper did not finish in time. Nothing was changed." });
+        /* err.message can quote the child's output, so it is dropped. */
+        done({ ok: false, code: "NO_ANSWER", message:
+          "the credential helper did not answer. Nothing was changed." });
+      });
+    } catch (e) {
+      return done({ ok: false, code: "SPAWN_FAILED", message:
+        "the credential helper could not be started." });
+    }
+    /* The key crosses HERE and nowhere else. stdin is always ended, or a verb
+       that reads it would hang until the timeout. */
+    if (child.stdin) {
+      child.stdin.on("error", () => {});    /* a child that died first must not throw */
+      try { if (apiKey) child.stdin.write(apiKey); child.stdin.end(); } catch (e) {}
+    }
+  });
+}
+
+/* Put the saved key back in front of codex. CARRIES NO KEY -- the helper reads
+   it from the keychain and spawns codex itself, so the key never re-enters this
+   process. Serves a CLICK only; see NO AUTOMATIC FALLBACK in codex_auth.py. */
+ipcMain.handle("sutra:codex-key-restore", async (e) => {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  const cancelled = codexCancelIfBusy();
+  if (cancelled) return { ok: false, code: "CANCELLED", message: "cancelled" };
+  return codexAuthCli("restore", null, CODEX_RESTORE_TIMEOUT);
+});
+
+/* Forget Sutra's copy. DOES NOT SIGN CODEX OUT -- codex keeps whatever it is
+   holding. Conflating the two would make a tidy-up destroy a working session. */
+ipcMain.handle("sutra:codex-key-forget", async (e) => {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  return codexAuthCli("forget", null, CODEX_KEY_CLI_TIMEOUT);
+});
+
+/* Whether there is a key to restore, and whether this machine can hold one.
+   No key, no claim about the live mode -- `codex login status` owns that. */
+ipcMain.handle("sutra:codex-key-state", async (e) => {
+  const refused = codexGate(e);
+  if (refused) return refused;
+  return codexAuthCli("state", null, CODEX_KEY_CLI_TIMEOUT);
 });
 
 /* `codex logout` -- removes the stored credential. Sutra never had a copy, so

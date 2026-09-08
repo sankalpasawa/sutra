@@ -106,6 +106,34 @@ contextBridge.exposeInMainWorld("sutra", {
   codexApiKey: (key) => ipcRenderer.invoke("sutra:codex-api-key", key),
   codexLogout: () => ipcRenderer.invoke("sutra:codex-logout"),
 
+  /* ── Codex API-key MEMORY ───────────────────────────────────────────────
+     The three above ask codex to CHANGE its one credential. These three keep
+     a copy of the API key so that change is REVERSIBLE, which it is not:
+     measured 2026-09-08 on codex-cli 0.153.2, each sign-in method deletes the
+     other's credential outright and Sutra never had a copy.
+
+       codexKeyRestore()   put the saved key back in front of codex
+       codexKeyForget()    delete Sutra's copy (does NOT sign codex out)
+       codexKeyState()     is there one to restore, and can this Mac hold one
+
+     WRITE-ONLY, AND THE WRITE IS NOT HERE. A key ENTERS through codexApiKey()
+     above, which now also remembers it; nothing on this bridge ever hands one
+     back. codexKeyRestore carries NO key either way -- the key is read from
+     the keychain by a Python child of the main process and goes straight to
+     `codex login --with-api-key` on its stdin, so it never re-enters the main
+     process and never touches an HTTP request. What crosses back is a mask, a
+     code and a fixed sentence.
+
+     NEVER CALLED IN REACTION TO ANYTHING. codexKeyRestore serves a click. A
+     plan-exhausted error must not silently move someone onto per-token
+     billing; see NO AUTOMATIC FALLBACK in codex_auth.py.
+
+     Absent in a browser, where the row names the CLI commands instead.
+     Resolves {ok, code, message, ...}. */
+  codexKeyRestore: () => ipcRenderer.invoke("sutra:codex-key-restore"),
+  codexKeyForget:  () => ipcRenderer.invoke("sutra:codex-key-forget"),
+  codexKeyState:   () => ipcRenderer.invoke("sutra:codex-key-state"),
+
   /* ── DeepSeek sign-in ───────────────────────────────────────────────────
      DIFFERENT SHAPE FROM CODEX ABOVE, because the credential has a different
      owner. Codex owns its own credential and the key goes to a CLI's stdin,

@@ -45,6 +45,12 @@ CLI_PATH="$CLI_DIR/$CLI_NAME"
 SUTRA_STAGE="$HOME/Library/Application Support/$APP_NAME"
 SRC="$SUTRA_STAGE/plugin/sutra-ui"
 STAGE_LIB="$SUTRA_STAGE/plugin/lib"
+# connectors/ is the OTHER sibling the backend imports, and it was missed here
+# until 2026-09-08. app.py imports connectors_api, which resolves
+# `connectors.credentials` as parents[1]/connectors -- so a stage without it
+# produces a backend that dies at import with "No module named 'connectors'".
+# deepseek_auth and codex_auth reach the same package for the keychain.
+STAGE_CONN="$SUTRA_STAGE/plugin/connectors"
 VENV="$SUTRA_STAGE/venv"
 PY="$VENV/bin/python"
 SUTRA_CANONICAL_PORT=8330                    # the installed app ALWAYS serves here
@@ -173,7 +179,7 @@ do_uninstall() {
 stage_runtime() {
   step "stage runtime"
   command -v rsync >/dev/null 2>&1 || die "rsync not found -- cannot stage the runtime"
-  mkdir -p "$SRC" "$STAGE_LIB" || die "cannot create $SUTRA_STAGE"
+  mkdir -p "$SRC" "$STAGE_LIB" "$STAGE_CONN" || die "cannot create $SUTRA_STAGE"
   # The excludes are not cosmetic. Without the electron/ ones the staged copy
   # carried node_modules, a packaged dist/ and bundle-runtime.sh's 95MB payload/
   # -- measured at 1.6GB for a runtime whose actual content is ~5MB of Python.
@@ -191,9 +197,21 @@ stage_runtime() {
   rsync -a --delete \
     --exclude '__pycache__/' --exclude '*.pyc' --exclude '.DS_Store' \
     "$PLUGIN_REPO/lib"/ "$STAGE_LIB"/ || die "staging lib -> $STAGE_LIB failed"
+  # THE THIRD COPY, missing until 2026-09-08. Its absence did not fail the
+  # stage -- the two assertions below only knew about app.py and the engine --
+  # so install.sh reported success and produced a backend that could not start.
+  # The DMG path never had this bug: bundle-runtime.sh rsyncs the whole plugin
+  # tree, so it carried connectors/ all along.
+  rsync -a --delete \
+    --exclude '__pycache__/' --exclude '*.pyc' --exclude '.DS_Store' \
+    --exclude '.git/' \
+    "$PLUGIN_REPO/connectors"/ "$STAGE_CONN"/ \
+    || die "staging connectors -> $STAGE_CONN failed"
   [ -f "$SRC/app.py" ] || die "staging incomplete: no app.py at $SRC"
   [ -f "$STAGE_LIB/placement_engine.py" ] \
     || die "staging incomplete: no placement_engine.py at $STAGE_LIB"
+  [ -f "$STAGE_CONN/credentials/__init__.py" ] \
+    || die "staging incomplete: no connectors/credentials at $STAGE_CONN"
   say "  staged to $SRC"
   wrote "$SUTRA_STAGE"
 }
@@ -268,6 +286,18 @@ for m in mods:
 print("  deps ok: " + ", ".join(
     "%s %s" % (m, getattr(importlib.import_module(m), "__version__", "?")) for m in mods))
 PYEOF
+
+# THE CHECK THAT WOULD HAVE CAUGHT THE MISSING connectors/ PACKAGE.
+# Every assertion above this line tests a PART -- these files are present,
+# these third-party modules import. None of them asked the only question that
+# matters: can the staged backend be imported at all? It could not, and
+# install.sh printed success every time. Anything the stage forgets in future
+# fails HERE, on the machine doing the installing, rather than at the first
+# launch on someone else's.
+say "verifying the staged backend imports"
+( cd "$SRC" && "$PY" -c "import app" >/dev/null ) \
+  || die "the staged backend at $SRC cannot be imported -- refusing to install a launcher that will not start"
+say "  backend imports ok"
 
 
 # --------------------------------------------------------------------------
@@ -736,16 +766,44 @@ if [ "${SUTRA_SKIP_ELECTRON:-0}" != "1" ] \
   # size of an install that does not use it. The DMG path passes the payload
   # deliberately, via --extra-resource; this path is the CHECKOUT install and
   # runs from the staged runtime instead (see provision.js resolveRuntime).
+  # --prune IS NO LONGER A FLAG. @electron/packager 20.x removed it and prunes
+  # devDependencies by DEFAULT (the negation is --no-prune); measured 2026-09-08,
+  # an app packaged without it carries a 0.21MB app.asar and zero packager files.
+  # Passing the old flag was harmless but it is not a real option any more.
+  #
+  # THE OUTPUT IS KEPT. It used to go to /dev/null, and that is the only reason
+  # this failure was ever invisible: on 2026-09-08 the packager began exiting 0
+  # while producing nothing (@electron/packager 18.3.6 -> extract-zip 2.0.1 ->
+  # yauzl 2.10.0 stalls mid-extraction on Node 26 and its promise never
+  # settles). install.sh saw no directory, said one line about a fallback, and
+  # shipped the script bundle -- so every desktop-only feature silently
+  # disappeared with no error anywhere to search for.
+  SUTRA_PACK_LOG="${TMPDIR:-/tmp}/sutra-electron-package.$$.log"
   if ( cd "$REPO/electron" \
        && npx --no-install electron-packager . "$APP_NAME" --platform=darwin --arch="$ARCH" \
             --out=dist --overwrite --app-bundle-id="$BUNDLE_ID" --app-version=1.0.0 \
-            --icon=build/"$APP_NAME".icns --prune=true \
+            --icon=build/"$APP_NAME".icns \
             --ignore='^/payload($|/)' --ignore='^/dist($|/)' --ignore='^/build($|/)' \
-     ) >/dev/null 2>&1; then
+     ) >"$SUTRA_PACK_LOG" 2>&1; then
     SUTRA_ELECTRON_APP="$REPO/electron/dist/$APP_NAME-darwin-$ARCH/$APP_NAME.app"
     [ -d "$SUTRA_ELECTRON_APP" ] || SUTRA_ELECTRON_APP=""
   fi
-  [ -n "$SUTRA_ELECTRON_APP" ] || note "the Electron build failed, so the script-based bundle was installed instead. Build it by hand to see the error:  (cd $REPO/electron && npm install && npm run package)"
+  if [ -z "$SUTRA_ELECTRON_APP" ]; then
+    # EXIT 0 AND NO APP IS THE INTERESTING CASE, so it is named separately. A
+    # packager that reports success and writes nothing is not a build failure
+    # anyone can search for; it is the one that cost a day.
+    note "the Electron build produced no app, so the script-based bundle was
+      installed instead -- which has NO desktop bridge, so anything IPC-only
+      (the Codex API key, for one) will not be reachable.
+      The packager's own output is at:
+        $SUTRA_PACK_LOG
+      Last lines:
+$(sed -e 's/^/        /' "$SUTRA_PACK_LOG" 2>/dev/null | tail -8)
+      Build it by hand to iterate:  (cd $REPO/electron && npm install && npm run package)
+      @electron/packager needs Node >= 22.12; this run used $(node -v 2>/dev/null || echo 'no node on PATH')."
+  else
+    rm -f "$SUTRA_PACK_LOG"
+  fi
 fi
 
 if [ -n "$SUTRA_ELECTRON_APP" ]; then
