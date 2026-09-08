@@ -252,19 +252,61 @@ class CodexAuthProbe(unittest.TestCase):
             self.assertEqual(providers.codex_auth()["state"], "unknown")
 
     def test_the_billing_line_comes_from_this_module(self):
-        """The panel must not re-derive the billing story and disagree."""
+        """The panel must not re-derive the billing story and disagree.
+
+        REWORDED 2026-09-08. "usage included in your plan" was read as
+        unlimited and "billed per token" implied Sutra knows a rate; neither is
+        knowable, because codex publishes no allowance and no price. Both
+        labels now say only WHICH ACCOUNT PAYS.
+        """
         with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
              mock.patch.object(providers.subprocess, "run",
                                return_value=self._run("Logged in using ChatGPT")):
             self.assertEqual(providers.codex_auth()["billing"],
-                             "usage included in your plan")
+                             "covered by your ChatGPT plan")
         with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
              mock.patch.object(providers.subprocess, "run",
                                return_value=self._run(
                                    "Logged in using an API key - sk-proj-***SMnIA")):
             a = providers.codex_auth()
         self.assertEqual((a["state"], a["billing"], a["key_display"]),
-                         ("api_key", "billed per token", "sk-proj-***SMnIA"))
+                         ("api_key", "billed to your OpenAI API account",
+                          "sk-proj-***SMnIA"))
+
+    def test_neither_billing_label_states_a_price_or_an_allowance(self):
+        """THE INVARIANT, not the wording. codex reports no price, no plan
+        allowance and no remaining quota, so no label may imply one -- a
+        plausible number here would be believed and would be invented."""
+        for label in providers.CODEX_BILLING.values():
+            self.assertNotIn("$", label)
+            self.assertNotIn("%", label)
+            self.assertNotIn("unlimited", label.lower())
+            self.assertNotIn("included", label.lower())
+
+    def test_the_long_explanation_says_what_sutra_cannot_see(self):
+        """The paragraph exists to stop the short label being over-read. Each
+        one has to name the account AND the limit of Sutra's knowledge."""
+        plan = providers.CODEX_BILLING_DETAIL["chatgpt"]
+        key = providers.CODEX_BILLING_DETAIL["api_key"]
+        self.assertIn("ChatGPT plan", plan)
+        self.assertIn("cannot see", plan)          # the allowance is unknowable
+        self.assertNotIn("$", plan)
+        self.assertIn("OpenAI API", key)
+        self.assertIn("not covered", key.lower())   # not the subscription
+        self.assertNotIn("$", key)
+        for text in (plan, key):
+            self.assertNotIn("unlimited", text.lower())
+
+    def test_the_probe_carries_the_explanation_for_live_credentials_only(self):
+        """`unknown` and `no_binary` get no billing story -- inventing one for a
+        state nobody could read is the failure those states exist to avoid."""
+        with mock.patch.object(providers, "provider_bin", return_value="/bin/codex"), \
+             mock.patch.object(providers.subprocess, "run",
+                               return_value=self._run("Logged in using ChatGPT")):
+            self.assertIn("ChatGPT plan",
+                          providers.codex_auth()["billing_detail"])
+        with mock.patch.object(providers, "provider_bin", return_value=None):
+            self.assertIsNone(providers.codex_auth()["billing_detail"])
 
     def test_a_recognised_line_wins_over_a_non_zero_exit(self):
         """Text decides the mode, not the exit code -- 0.153.2 exits 0 when
@@ -334,40 +376,85 @@ class CodexIsConfiguredOnlyWhenSignedIn(unittest.TestCase):
             providers._codex_credential_present()
 
 
-class CodexStaysUnselectable(unittest.TestCase):
-    """Regression guard for the 2026-09-04 revert. codex was briefly added to
-    ADAPTERS, which made the row render "Ready to use", accept the click, and
-    then die at connect with code "no-adapter" -- the offer-a-choice-that-
-    cannot-run failure providers.py exists to prevent. Refusing at SELECTION
-    time is the better error until a CodexRuntime exists."""
+class CodexBecameSelectable(unittest.TestCase):
+    """This class used to be CodexStaysUnselectable, and its own docstring
+    named the condition under which it should flip.
 
-    def test_codex_is_not_in_ADAPTERS(self):
-        self.assertNotIn("codex", providers.ADAPTERS)
+    It guarded the 2026-09-04 revert: codex was briefly added to ADAPTERS,
+    which made the row render "Ready to use", accept the click, and then die at
+    connect with code "no-adapter" -- the offer-a-choice-that-cannot-run
+    failure providers.py exists to prevent. The guard said refusing at
+    SELECTION time was the better error "until a CodexRuntime exists".
 
-    def test_a_fully_installed_signed_in_codex_is_still_not_runnable(self):
+    A CodexRuntime now exists (codex_runtime.py, `codex exec --json`, measured
+    against codex-cli 0.153.2 on 2026-09-08), along with build_codex_args() and
+    the ws_chat arms. So the assertions INVERT rather than being deleted: the
+    row must now be selectable, and it must be selectable BECAUSE the transport
+    is there -- which is what the second test pins, so a future revert of the
+    transport cannot quietly leave codex clickable.
+
+    The signed-out and credential-existence guarantees above are untouched:
+    being an adapter says nothing about whether anyone is signed in.
+    """
+
+    def test_codex_is_in_ADAPTERS(self):
+        self.assertIn("codex", providers.ADAPTERS)
+
+    def test_membership_is_backed_by_a_real_transport(self):
+        """The precondition the old guard named. Imported lazily so the failure
+        reads as "the transport is gone" rather than as a collection error.
+
+        codex_runtime ONLY, deliberately: `import app` here would run app.py's
+        module-level _ensure_workdir() and create the operator's real
+        ~/sutra-ui-workspace just by collecting this file, which this module has
+        never done. build_codex_args' existence is asserted in
+        test_codex_runtime.py, which sets the import-time isolation env for it.
+        """
+        import codex_runtime
+        self.assertTrue(hasattr(codex_runtime, "CodexRuntime"))
+        self.assertTrue(hasattr(codex_runtime.CodexRuntime, "prompt_turn"))
+        self.assertTrue(hasattr(codex_runtime.CodexRuntime, "send_prompt"))
+
+    def test_a_fully_installed_signed_in_codex_is_runnable(self):
         with mock.patch.object(providers.shutil, "which", return_value="/bin/codex"), \
              mock.patch.object(Path, "is_dir", lambda self: True), \
              mock.patch.object(providers, "_codex_credential_present", return_value=True):
             p = providers._describe(CodexIsConfiguredOnlyWhenSignedIn.SPEC)
         self.assertTrue(p["installed"])
         self.assertTrue(p["configured"])
-        self.assertFalse(p["runnable"])
-        self.assertFalse(p["adapter"])
+        self.assertTrue(p["adapter"])
+        self.assertTrue(p["runnable"])
+        self.assertIsNone(p["reason"])
 
-    def test_the_no_adapter_reason_is_not_the_stale_claude_only_string(self):
-        """It said "this panel drives Claude's stream-json protocol only",
-        which stopped being true when the DeepSeek ACP adapter landed --
-        DeepSeek renders as ready to use two rows away in the same list, so
-        the row contradicted the screen it was printed on."""
+    def test_a_signed_out_codex_is_still_refused_at_selection(self):
+        """The half that did NOT change. An adapter does not sign anyone in, and
+        an unauthenticated codex must still be unclickable rather than accepting
+        the click and failing at the first message."""
         with mock.patch.object(providers.shutil, "which", return_value="/bin/codex"), \
              mock.patch.object(Path, "is_dir", lambda self: True), \
-             mock.patch.object(providers, "_codex_credential_present", return_value=True):
-            reason = providers._describe(
-                CodexIsConfiguredOnlyWhenSignedIn.SPEC)["reason"]
+             mock.patch.object(providers, "_codex_credential_present", return_value=False):
+            p = providers._describe(CodexIsConfiguredOnlyWhenSignedIn.SPEC)
+        self.assertTrue(p["adapter"])
+        self.assertFalse(p["configured"])
+        self.assertFalse(p["runnable"])
+        self.assertIn("nobody is signed in", p["reason"])
+
+    def test_the_no_adapter_reason_no_longer_mentions_codex(self):
+        """The arm codex used to land in now belongs to gemini alone, and its
+        sentence has been corrected twice for the same reason: it said "Claude's
+        stream-json protocol only" until DeepSeek landed, and "two protocols"
+        until Codex did. The codex-specific 0.153.2 pin that hung off it went
+        with this change, because codex cannot reach the arm any more."""
+        with mock.patch.object(providers.shutil, "which", return_value="/bin/gemini"), \
+             mock.patch.object(Path, "is_dir", lambda self: True):
+            reason = providers._describe({
+                "id": "gemini", "name": "Gemini CLI", "bin": "gemini",
+                "config_dir": "~/.gemini", "default": False})["reason"]
         self.assertNotIn("stream-json protocol only", reason)
+        self.assertIn("three protocols", reason)
         self.assertIn("stream-json", reason)
         self.assertIn("ACP", reason)
-        self.assertIn("0.153.2", reason)
+        self.assertIn("exec --json", reason)
 
 
 class DeepSeekNeedsAKeyToBeRunnable(unittest.TestCase):

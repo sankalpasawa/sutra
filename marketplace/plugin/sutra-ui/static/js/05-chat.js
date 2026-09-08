@@ -499,6 +499,47 @@ SCREENS.now = () => `
    ONE ACTIVE MODE PLUS A SWITCH, never two toggles: codex stores exactly one
    credential and each method replaces the other, so two independently
    switchable rows would misdescribe the thing being configured. */
+/* The step BEFORE a sign-in on a Mac that has no Codex CLI.
+
+   MODELLED ON deepseekAuthHtml's cliBlock(), which is the field-tested answer
+   to this exact screen, and held to the same rule: no npm, no package name, no
+   node_modules, no PATH. What the user needs to decide is whether to let Sutra
+   put a tool in its own folder, and none of those words help them decide it.
+
+   THE BUTTON IS ALWAYS OFFERED, even when `can_install` is false. Two copies
+   of "is this possible" -- one here, one in codex_install -- is how a control
+   starts disagreeing with what happens when it is pressed, so the machine that
+   cannot do it finds out in one click, with the backend's own reason. That
+   reason is PREVIEWED underneath when we already know it (it names nodejs.org,
+   which is actionable before clicking), but it never removes the button: a
+   stale `can_install` must not be able to strand anyone.
+
+   NO PERCENTAGE. npm reports nothing parseable while it works. A bar here
+   would be a claim about time this code cannot make. */
+function codexInstallHtml(busy){
+  const rt = S.codexRuntime || {};
+  const blocked = rt.can_install === false && rt.reason
+    ? `<p class="why" style="margin:6px 0 0">${esc(rt.reason)}</p>` : "";
+  return `
+      <div class="note b" style="margin:8px 0 0">
+        <div><b>The Codex CLI is not on this Mac yet</b></div>
+        <p class="why" style="margin:4px 0 8px">Sutra talks to Codex by running
+          its command-line tool, and that is not here — which is why the row
+          above can’t be picked and why there is nothing to sign in to yet.
+          Sutra can fetch it into its own folder: nothing else on your Mac
+          changes, your own tools are left alone, and you won’t be asked for a
+          password.</p>
+        <p style="margin:0">
+          <button class="btn" type="button" data-codex="install"
+            ${busy ? 'aria-busy="true" disabled' : ""}>${
+            busy === "install" ? "Installing…" : "Install it"}</button>
+          <span class="why">${busy === "install"
+            ? "Fetching it and checking that it runs — about a minute."
+            : "Takes about a minute. Needs Node.js on this Mac."}</span></p>
+        ${blocked}
+      </div>`;
+}
+
 function codexAuthHtml(){
   /* Existence check only. The row above already prints Codex's `reason` word
      for word -- both protocols, the version pin and the install path -- so
@@ -578,8 +619,19 @@ function codexAuthHtml(){
     head = `<span class="why">Reading the Codex sign-in…</span>`;
     actions = "";
   } else if (a.state === "no_binary") {
+    /* THE DEAD END THIS REPLACES. `actions` was "" -- the block printed the
+       reason and offered nothing, on the one screen that exists to get Codex
+       working. Signing in cannot be offered here (there is no CLI to sign in
+       to), so what belongs here is the step that comes BEFORE it.
+
+       THE SENTENCE NAMES NOTHING INTERNAL: no npm, no package name, no
+       node_modules, no PATH. Same rule the DeepSeek install block is held to.
+       The backend knows whether an install is possible and answers with its
+       own reason when it is not -- a second copy of that judgment here is how
+       the button starts disagreeing with what happens when it is pressed. */
     head = `<span class="why">${esc(a.detail || "the codex CLI is not on PATH")}</span>`;
     actions = "";
+    extra = codexInstallHtml(busy);
   } else if (a.state === "unknown") {
     /* Asked and could not tell. No mode is invented: the wrong guess here
        tells someone paying per token that their usage is included. Sign-in and
@@ -593,7 +645,7 @@ function codexAuthHtml(){
       canKey ? " " + btn("apikey", "Add API key") : ""}`;
   } else if (a.state === "api_key") {
     head = `<b>API key${a.key_display ? " " + esc(a.key_display) : ""}</b>
-      <span class="why">· ${esc(a.billing || "billed per token")}</span>`;
+      <span class="why">· ${esc(a.billing || "billed to your OpenAI API account")}</span>`;
     actions = `${btn("logout", "Sign out")} ${btn("login", "Switch to ChatGPT plan")}${
       forgetBtn ? " " + forgetBtn : ""}`;
     /* THE ONE STATE THAT NEEDS A WARNING RATHER THAN AN OFFER. This key is
@@ -608,7 +660,7 @@ function codexAuthHtml(){
       paste it again with <b>Add API key</b>.</p>`;
   } else if (a.state === "chatgpt") {
     head = `<b>Signed in with ChatGPT</b>
-      <span class="why">· ${esc(a.billing || "usage included in your plan")}</span>`;
+      <span class="why">· ${esc(a.billing || "covered by your ChatGPT plan")}</span>`;
     actions = `${btn("logout", "Sign out")}${
       restoreBtn ? " " + restoreBtn : ""}${
       canKey ? " " + btn("apikey", saved ? "Add a different key" : "Use an API key instead") : ""}${
@@ -616,11 +668,11 @@ function codexAuthHtml(){
   } else {
     head = `<b>Not signed in</b>`;
     actions = `${btn("login", "Sign in with ChatGPT")}
-       <span class="why">usage included in your Plus/Pro/Business plan</span>${
+       <span class="why">runs against your ChatGPT plan's own Codex limits</span>${
        restoreBtn ? `<div style="margin-top:6px">${restoreBtn}
-       <span class="why">pay for what you use</span></div>` : ""}${
+       <span class="why">billed to your OpenAI API account</span></div>` : ""}${
        canKey ? `<div style="margin-top:6px">${btn("apikey", saved ? "Add a different key" : "Add API key")}
-       ${restoreBtn ? "" : `<span class="why">pay for what you use</span>`}</div>` : ""}`;
+       ${restoreBtn ? "" : `<span class="why">billed to your OpenAI API account</span>`}</div>` : ""}`;
   }
 
   /* The API-key field. type=password so a shoulder does not read it, and
@@ -654,6 +706,22 @@ function codexAuthHtml(){
      claim about what codex is using -- `codex login status` is the only
      authority for that -- so when it is not live it is described as what it
      is: a copy waiting to be put back. */
+  /* WHICH ACCOUNT PAYS, in one paragraph the short label cannot carry.
+     Composed in providers.CODEX_BILLING_DETAIL, not here: the whole point is
+     that one place decides what Sutra claims about billing, and every claim it
+     makes is one codex actually supports. It names the account and then says
+     out loud what Sutra does NOT know -- no price, no allowance, no remaining
+     quota -- because all three are unobtainable from the CLI and a plausible
+     number would be believed.
+
+     Rendered only for the two LIVE credentials. On `unknown` or `no_binary`
+     there is no billing story to tell, and telling one would be the exact
+     mistake those states exist to avoid. Falls back to nothing on an older
+     backend that does not send the field. */
+  const billingNote = a && a.billing_detail
+      && (a.state === "chatgpt" || a.state === "api_key")
+    ? `<p class="why" style="margin:6px 0 0">${esc(a.billing_detail)}</p>` : "";
+
   const savedNote = saved && a && a.state !== "api_key"
     ? `<p class="why" style="margin:6px 0 0">Sutra is holding a copy of
        ${esc(st.display || "your API key")}${
@@ -663,10 +731,13 @@ function codexAuthHtml(){
   return `
     <div class="note" style="margin-top:9px">
       <div><b>OpenAI Codex sign-in</b></div>
-      <p class="why" style="margin:4px 0 8px">Which OpenAI account Codex is
-        using, and what it costs you: a ChatGPT plan covers it, an API key bills
-        per token. Signing in here does <b>not</b> make Codex selectable above.</p>
+      <p class="why" style="margin:4px 0 8px">Which OpenAI account Codex bills
+        to. A <b>ChatGPT sign-in</b> runs against that plan and its own Codex
+        usage limits; an <b>API key</b> runs against your OpenAI API account and
+        is not covered by a ChatGPT subscription. Codex needs a credential
+        <i>and</i> its command-line tool before the row above can be picked.</p>
       <div>${head}</div>
+      ${billingNote}
       ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
       ${extra}
       ${savedNote}

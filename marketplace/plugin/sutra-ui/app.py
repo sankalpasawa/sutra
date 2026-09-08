@@ -41,6 +41,7 @@ from session_runtime import (SessionRuntime, _drain_to_newline,
                              register_runtime, unregister_runtime,
                              lookup_runtime)
 from acp_runtime import AcpRuntime
+from codex_runtime import CodexRuntime
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -495,6 +496,187 @@ def build_acp_args(agent_bin, model=None):
     args = [agent_bin, "--acp", "--skip-trust"]
     if model:
         args += [providers.model_flag_for("deepseek") or "-m", model]
+    return args
+
+
+#: Sutra permission modes codex can enforce -> its sandbox mode. Anything not
+#: in here has NO codex equivalent and is answered by the safest option rather
+#: than the nearest-looking one (see build_codex_args).
+_CODEX_SANDBOX_FOR_MODE = {
+    "plan": "read-only",
+    "acceptEdits": "workspace-write",
+    # bypassPermissions is deliberately ABSENT: it is not a --sandbox value, it
+    # is a different flag that replaces the sandbox entirely.
+}
+
+
+def codex_mode_note(perm_mode):
+    """None when codex can honour `perm_mode`, else the divergence to STATE.
+
+    Reachable because permission_mode is stored GLOBALLY, not per provider: an
+    operator who picks `dontAsk` while Claude is selected and then switches to
+    Codex arrives here with a mode codex has no equivalent for. The client's
+    picker already hides those on a Codex pane (permission_modes_for), but it
+    cannot un-store a value chosen on another provider.
+
+    Same contract and same frame as DeepSeek's `rt.acp_mode_note`: the pane's
+    permission chip is showing what the operator chose, and if nothing is
+    enforcing it they have to be told rather than left to infer it.
+    """
+    if perm_mode in providers.permission_modes_for("codex"):
+        return None
+    return {
+        "asked": perm_mode,
+        "running": "plan",
+        "reason": "codex has no equivalent for %r. Its approval policies are "
+                  "untrusted/on-failure/on-request/granular/never, and every "
+                  "one except `never` waits for an answer on a channel a chat "
+                  "pane does not have -- a `codex exec` run has nobody to "
+                  "approve anything, so it would stall rather than prompt. "
+                  "This turn runs read-only instead of running something "
+                  "wider than you asked for." % perm_mode,
+    }
+
+
+#: The two per-turn config keys codex enumerates, and the enum each is checked
+#: against. Sutra emits NOTHING it has not validated: codex accepts `-c` values
+#: fairly loosely (a bad `model_reasoning_effort` sailed through), so the
+#: allow-list is the only thing standing between a typo in a client payload and
+#: a silently different run.
+_CODEX_TURN_CONFIG = (
+    ("reasoning_summary", "model_reasoning_summary", providers.CODEX_REASONING_SUMMARY),
+    ("verbosity", "model_verbosity", providers.CODEX_VERBOSITY),
+)
+
+
+def codex_turn_config(opts, model=None):
+    """`-c key=value` pairs for one turn's options. [] when there are none.
+
+    PURE, so the mapping from a client payload to argv can be tested without a
+    subprocess -- the same reason build_codex_args is separate from the socket
+    loop.
+
+    A value not in its enum is DROPPED, not passed on and not an error. Codex
+    would take an unknown one and run with a fallback, which is a turn that
+    quietly did something other than what the control said; leaving the key off
+    means codex uses its own default, which is what the empty option means
+    anyway. "" is the empty option and is skipped by the same test.
+
+    TOML, not bare text: `-c` parses the value as TOML and falls back to a
+    literal string, so a quoted scalar is what these enums actually are.
+    """
+    if not isinstance(opts, dict):
+        return []
+    out = []
+    for key, cfg, allowed in _CODEX_TURN_CONFIG:
+        val = opts.get(key)
+        if not isinstance(val, str):
+            continue
+        v = val.strip()
+        if not v or v not in allowed:
+            continue
+        out += ["-c", '%s="%s"' % (cfg, v)]
+
+    # REASONING EFFORT, validated against a list that depends on the MODEL --
+    # which is why it cannot live in the table above. Measured on one account:
+    # terra offers `ultra`, luna does not, 5.5 stops at `xhigh`. A fixed list
+    # would offer every model the union, and codex takes an unsupported value
+    # silently, so the turn would just quietly run at something else.
+    #
+    # `model` is the id already chosen for this turn, or None for "CLI
+    # default" -- codex_efforts_for() resolves None to whatever model/list
+    # marked isDefault, the same resolution the client's picker uses, so the
+    # control and this check cannot disagree about what is offerable.
+    #
+    # Unknown model, no discovery, or an effort this model does not support all
+    # end the same way: nothing is emitted and codex uses its own default.
+    effort = opts.get("reasoning_effort")
+    if isinstance(effort, str) and effort.strip():
+        v = effort.strip()
+        if v in providers.codex_efforts_for(model):
+            out += ["-c", 'model_reasoning_effort="%s"' % v]
+    return out
+
+
+def build_codex_args(agent_bin, perm_mode, workdir, model=None, session_id=None,
+                     opts=None):
+    """The full argv for one `codex exec` turn.
+
+    ONE PROCESS PER TURN, unlike the other two builders. codex exec reads the
+    prompt, streams JSONL and exits; continuity is `resume <thread_id>`. So
+    everything -- model, sandbox, approval policy, resume -- is spawn-time
+    argv, which is also why the provider declares no turn_options.
+
+    Every element below was verified against codex-cli 0.153.2 on 2026-09-08.
+
+    FLAG ORDER IS LOAD-BEARING. `codex exec resume` accepts only
+    -c/--last/--all/--enable/--disable/-i/--strict-config -- NOT --json,
+    --sandbox, -C, --skip-git-repo-check or -m. Measured both ways:
+
+        exec --json --sandbox read-only -C wd --skip-git-repo-check resume ID -
+            -> parsed, ran, emitted JSONL
+        exec resume --last --json
+            -> plain-text error, NO JSON on stdout at all
+
+    So `resume` goes LAST, after every flag, and the prompt marker after it.
+
+    --skip-git-repo-check is MANDATORY, not defensive. Without it codex refuses
+    with "Not inside a trusted directory and --skip-git-repo-check was not
+    specified." and emits nothing -- and the Sutra workdir is frequently not a
+    git repo. This is the direct analogue of DeepSeek's --skip-trust.
+
+    THE PROMPT IS NOT HERE. The argv ends with `-`, codex's documented "read
+    instructions from stdin" form, and CodexRuntime.send_prompt writes it
+    there. Putting the message in argv would work for short turns and die at
+    exec with E2BIG on a long one -- which is the failure switch.py's
+    ARGV_SAFETY_FRACTION exists to predict, and which stdin has no ceiling for.
+
+    approval_policy=never is what makes a headless run possible: all three
+    probe turns ran with stdin closed after the prompt and never stalled
+    waiting for a TTY answer.
+    """
+    args = [agent_bin, "exec", "--json", "--skip-git-repo-check", "-C", workdir]
+
+    if perm_mode == "bypassPermissions":
+        # NOT a --sandbox value. This flag replaces the sandbox rather than
+        # selecting one, so it is passed alone -- adding --sandbox beside it
+        # would be asking for two different things at once.
+        args += ["--dangerously-bypass-approvals-and-sandbox"]
+    else:
+        # Unknown modes land on read-only, the NARROWEST option. Widening on an
+        # unrecognised value is the one direction this must never be wrong in;
+        # codex_mode_note() says so on screen rather than letting it be silent.
+        sandbox = _CODEX_SANDBOX_FOR_MODE.get(perm_mode, "read-only")
+        args += ["--sandbox", sandbox, "-c", "approval_policy=never"]
+        if sandbox == "workspace-write":
+            # NAMED EXPLICITLY rather than inherited. Whether workspace-write
+            # defaults its writable root to the -C directory on the exec path
+            # was NOT measured, and a wrong guess here either blocks the edits
+            # the operator opted into or widens them past the workdir. Stating
+            # it removes the guess. json.dumps for the escaping: this is a TOML
+            # array of basic strings, and a path is operator-supplied.
+            args += ["-c", "sandbox_workspace_write.writable_roots=%s"
+                     % json.dumps([workdir])]
+
+    # PER-TURN OPTIONS, and they belong here rather than on a running session
+    # because `codex exec` has none: one process per turn means a spawn-time
+    # `-c` IS a per-turn control. Emitted BEFORE `resume` for the same reason
+    # every other flag is -- `codex exec resume` accepts no flags after it.
+    args += codex_turn_config(opts, model)
+
+    if model:
+        # Pre-validated by the caller through providers.clean_model(value,
+        # "codex"). codex does NOT validate this: measured, an unknown id is
+        # accepted with a "Model metadata ... not found" warning and then runs
+        # on fallback metadata, so the allow-list is the only thing that can
+        # refuse one.
+        args += [providers.model_flag_for("codex") or "-m", model]
+
+    if session_id:
+        args += ["resume", session_id]
+
+    # Prompt on stdin. Must be the final element.
+    args += ["-"]
     return args
 
 
@@ -2001,16 +2183,22 @@ async def ws_chat(ws: WebSocket):
                 "Active provider is 'deepseek', but %s" % why})
             await ws.close()
             return
-    elif active_id != "claude":
+    elif active_id not in ("claude", "codex"):
         # Honest refusal instead of a confusing crash: the frames below parse
-        # either Claude Code's `--output-format stream-json` protocol or
-        # DeepSeek's ACP protocol. Spawning another vendor's CLI with these
+        # Claude Code's `--output-format stream-json`, Codex's `exec --json`
+        # or DeepSeek's ACP protocol. Spawning another vendor's CLI with these
         # flags would fail on argument parsing and report as though the
         # provider were broken. No adapter has been written, so say that.
+        #
+        # `not in (...)` rather than `!= "claude"` (2026-09-08, Codex adapter).
+        # The truth table is unchanged for every id that could already reach
+        # this line: claude was False and stays False; deepseek returns or
+        # falls through from the arm above and never arrives here; gemini and
+        # any unknown id are still refused. Only `codex` changed answer.
         await ws.send_json({"type": "error", "code": "no-adapter", "detail":
             "Active provider is %r (%s at %s). No chat adapter has been "
             "written for it here, so it is not being run rather than run "
-            "wrongly. Use the provider selector to switch to claude or "
+            "wrongly. Use the provider selector to switch to claude, codex or "
             "deepseek, or the terminal tab." % (active_id, prov["name"], prov["bin_path"])})
         await ws.close()
         return
@@ -2090,7 +2278,12 @@ async def ws_chat(ws: WebSocket):
     #
     # One reader task owns the socket, handles `stop` inline (the only frame that
     # must act during a turn) and queues everything else for the main loop.
-    rt = SessionRuntime() if active_id == "claude" else AcpRuntime()
+    # Claude's arm is FIRST and unchanged; the final else still yields
+    # AcpRuntime for deepseek, which is the only other id that reaches here
+    # (everything else was refused above). Only codex takes the new branch.
+    rt = (SessionRuntime() if active_id == "claude"
+          else CodexRuntime() if active_id == "codex"
+          else AcpRuntime())
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
 
@@ -2267,6 +2460,29 @@ async def ws_chat(ws: WebSocket):
                 args = build_agent_args(agent_bin, msg, perm_mode,
                                         session_id=None, model=chosen_model,
                                         opts=payload.get("opts"), stream_input=True)
+            elif active_id == "codex":
+                # RESUME IS BAKED IN HERE, unlike Claude's path, and that is
+                # correct rather than a copy of the bug below. Claude keeps ONE
+                # PROCESS across turns, so a resume-bearing spawn_key made the
+                # reuse test permanently unequal and cold-started the CLI every
+                # message. `codex exec` is one process per TURN -- it exits
+                # after answering -- so `alive` is always False at the top of
+                # the next turn and the comparison can never mis-fire. The
+                # thread id therefore belongs in the argv the key is built
+                # from.
+                #
+                # THE PROMPT IS NOT PASSED. build_codex_args ends the argv with
+                # `-` and CodexRuntime.send_prompt delivers `msg` on stdin, so
+                # no message text ever reaches argv (and E2BIG cannot happen on
+                # a long provider-switch payload).
+                args = build_codex_args(agent_bin, perm_mode, workdir,
+                                        model=chosen_model,
+                                        session_id=session_id,
+                                        # The pane's own per-turn controls,
+                                        # validated in codex_turn_config rather
+                                        # than trusted here -- same policy the
+                                        # Claude arm applies to its own opts.
+                                        opts=payload.get("opts"))
             else:
                 # Permission-mode is set once in new_session below, not per
                 # message. The MODEL is spawn-time argv (ACP exposes no
@@ -2323,7 +2539,7 @@ async def ws_chat(ws: WebSocket):
                 # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
-                if active_id == "deepseek":
+                if active_id in ("deepseek", "codex"):
                     # The `deepseek` command npm publishes is a shim beginning
                     # `#!/usr/bin/env node`, so Node has to resolve HERE, on
                     # every launch -- not only during the install that fetched
@@ -2332,6 +2548,17 @@ async def ws_chat(ws: WebSocket):
                     # at spawn with `env: node: No such file or directory`,
                     # which reads like a broken install rather than a missing
                     # runtime. No-op outside the packaged app.
+                    #
+                    # `codex` ADDED 2026-09-08 and it is the same fact, measured
+                    # rather than assumed: @openai/codex publishes bin/codex.js,
+                    # 13KB of ESM beginning `#!/usr/bin/env node`, which resolves
+                    # a platform package and execs the Rust binary inside it
+                    # (`file` on an installed copy: "a /usr/bin/env node script
+                    # text executable"). codex_install.py fetches that package,
+                    # so a Codex installed by Sutra on a Node-less Mac had
+                    # exactly the DeepSeek failure waiting for it. Nothing about
+                    # Claude changes -- its CLI is not a node shim and it is
+                    # still excluded.
                     providers.ensure_bundled_node_path()
                 spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
                              if active_id == "deepseek" else None)
@@ -2342,7 +2569,21 @@ async def ws_chat(ws: WebSocket):
                     await ws.send_json({"type": "error", "detail":
                         "could not start %r in %s: %s" % (agent_bin, workdir, e)})
                     continue
-                if active_id != "claude":
+                if active_id == "deepseek":
+                    # NARROWED from `!= "claude"` (2026-09-08, Codex adapter).
+                    # This block is the ACP handshake -- authenticate +
+                    # session/new + the mode note -- and `codex exec` has none
+                    # of those: no auth step (the CLI owns ~/.codex/auth.json),
+                    # no session/new (the thread arrives on stdout's first
+                    # line), and its permission mode is spawn-time argv. Left
+                    # as `!= "claude"` a Codex pane would have called
+                    # AcpRuntime methods CodexRuntime does not implement and
+                    # died at the first message with an AttributeError.
+                    #
+                    # A STATEMENT OF TRUTH, NOT A BEHAVIOUR CHANGE: deepseek is
+                    # the only id that has ever reached this line. claude was
+                    # excluded by the old condition and is excluded by this
+                    # one; gemini and unknown ids are refused at connect.
                     if deepseek_key:
                         # BEFORE session/new, not instead of the env key.
                         # AcpRuntime.authenticate's docstring has the wire
@@ -2393,6 +2634,18 @@ async def ws_chat(ws: WebSocket):
                         await ws.send_json(dict(rt.acp_mode_note,
                                                 type="mode_note",
                                                 provider=active_id))
+                elif active_id == "codex":
+                    # Same divergence, same frame, computed WITHOUT a round
+                    # trip: codex's permission posture is spawn-time argv, so
+                    # the mismatch is known from `perm_mode` alone and needs no
+                    # equivalent of ACP's session/new response. Reachable
+                    # because permission_mode is stored globally -- a `dontAsk`
+                    # chosen while Claude was selected arrives here. Emitted
+                    # once per spawn, exactly like DeepSeek's.
+                    note = codex_mode_note(perm_mode)
+                    if note:
+                        await ws.send_json(dict(note, type="mode_note",
+                                                provider=active_id))
             proc = rt.proc
 
             if active_id == "claude":
@@ -2412,6 +2665,12 @@ async def ws_chat(ws: WebSocket):
                 # read-until-terminal collapse into one call. Same 5-tuple
                 # contract as demux_turn, so everything below this point
                 # (stderr/rc reap, stop/failed/done handling) is unchanged.
+                #
+                # CODEX SHARES THIS CALL UNCHANGED (2026-09-08). Its turn is
+                # also one send-then-read-to-terminal, so CodexRuntime
+                # implements the same prompt_turn(msg, emit, session_id)
+                # signature and returns the same 5-tuple -- which is why the
+                # third provider needed no third arm here.
                 (session_id, got_text, got_result,
                  result_error, eof) = await rt.prompt_turn(msg, ws.send_json, session_id)
             # S23: now that the session id is known, make this runtime
@@ -2515,7 +2774,18 @@ async def ws_chat(ws: WebSocket):
             if failed:
                 # stderr carries the specific cause ("No conversation found with
                 # session ID: ..."); the result payload is the fallback.
-                detail = err.strip()[:600] or result_error or ("claude exited " + str(rc))
+                #
+                # The last-resort string names CODEX on a codex pane and is
+                # otherwise untouched. Added as its own branch rather than by
+                # interpolating active_id into the existing one, because that
+                # would also change the sentence DeepSeek shows -- a working
+                # provider's error text is not this change's business. Narrow
+                # but real: eof with an empty stderr on a codex pane would
+                # otherwise report "claude exited -1" about a process named
+                # codex.
+                fallback = ("codex exited " + str(rc) if active_id == "codex"
+                            else "claude exited " + str(rc))
+                detail = err.strip()[:600] or result_error or fallback
                 frame = {"type": "error", "detail": detail}
                 if resume_unverified:
                     # The id the browser handed us may be stale, from another

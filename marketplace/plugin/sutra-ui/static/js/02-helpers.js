@@ -351,9 +351,33 @@ const S = {
 
      codexPolling is a sign-in being WATCHED -- set while the panel polls the
      probe during a browser-transport login, so wire() can adopt a login that
-     is still running after a reload without starting a second poller. */
-  codexAuth:null, codexProbing:false, codexPolling:false,
+     is still running after a reload without starting a second poller.
+
+     codexRuntime is the OTHER half of a usable Codex -- codex_install.state(),
+     riding on the same answer: whether an install could be attempted and why
+     not. Deliberately NOT folded into codexAuth: a credential and a binary are
+     two independent requirements that fail separately, and the whole reason
+     the Codex row could claim "Ready to use" over a machine with no runtime is
+     that something conflated them. null means "not asked yet", exactly like
+     codexAuth. */
+  codexAuth:null, codexRuntime:null, codexProbing:false, codexPolling:false,
   codexBusy:null, codexMsg:null, codexKeyOpen:false,
+  /* sessionId -> the LAST turn's token counts, off the `done` frame's `quota`.
+     Codex is the provider this exists for: it reports per-turn tokens and
+     nothing else -- no price, no plan allowance -- so "the last turn used N"
+     is the only usage claim that can honestly be made about it. Keyed by
+     session, not by turn: the Usage row asks about the pane, not the history.
+     Empty for a provider that sends no quota, which is what keeps Claude's
+     window percentage and DeepSeek's balance untouched. */
+  turnTokens:{},
+  /* The ChatGPT plan's Codex allowance, from GET /api/providers/codex/plan
+     (account/rateLimits/read). null means "nothing to draw" and covers both
+     "not read yet" and "not a ChatGPT credential" -- the two are deliberately
+     indistinguishable here, because both mean the indicator must be absent
+     rather than stale. GLOBAL, like S.usage: it describes the account, not a
+     pane. codexPlanError keeps a failed read from reading as a zeroed
+     allowance. */
+  codexPlan:null, codexPlanError:null,
   /* DeepSeek sign-in (AI Provider screen). NO `deepseekAuth` twin to codexAuth:
      that state rides on SETTINGS.deepseek_auth, because reading it is a
      settings read rather than a subprocess, so it comes with the settings
@@ -933,10 +957,66 @@ function usageKindOf(pid){
   return (p && p.usage_kind) || "none";
 }
 
-function providerUsage(pid){
+/* Compact token count: 1240 -> "1.2k". Whole numbers under 1000 stay exact,
+   because "347 tokens" is a fact and "0.3k" is a worse way to say it. */
+function tokShort(n){
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return null;
+  return n < 1000 ? String(n)
+       : n < 1000000 ? (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k"
+       : (n / 1000000).toFixed(1) + "M";
+}
+
+/* A window's label, DERIVED from windowDurationMins -- never a lookup table.
+   This is the rule the whole feature turns on: the measured account is planType
+   "go" and returns ONE window of 43200 minutes (30 days) with no `secondary`,
+   while other plans return the five-hour/weekly pair people describe. Any
+   hardcoded "5-hour"/"weekly" pair would have mislabelled this very account.
+
+   So the arithmetic names whatever arrives: 300 -> "5-hour", 10080 -> "weekly",
+   43200 -> "30-day", 1440 -> "daily". A window with no duration still gets a
+   truthful generic label rather than a guessed one. */
+function codexWindowLabel(mins){
+  if (typeof mins !== "number" || !Number.isFinite(mins) || mins <= 0)
+    return "usage window";
+  if (mins % 1440 === 0){
+    const d = mins / 1440;
+    return d === 1 ? "daily" : d === 7 ? "weekly" : d + "-day";
+  }
+  if (mins % 60 === 0) return (mins / 60) + "-hour";
+  return mins + "-minute";
+}
+
+/* The plan's windows as the rows Claude's usageRowsHtml already draws:
+   {label, active, resets_epoch, percent}. Reusing that renderer rather than
+   writing a second one is what gets the bars, the severity colours and the
+   countdown for free, and keeps one definition of "what a usage window looks
+   like" in the panel.
+
+   `active` marks the window closest to its limit -- the one actually metering
+   you -- which is the same thing Claude's `active` flag means. With one window
+   it is that window; with several it is the highest percentage. */
+function codexPlanRows(plan){
+  const ws = (plan && Array.isArray(plan.windows)) ? plan.windows : [];
+  if (!ws.length) return [];
+  let top = 0;
+  ws.forEach((w, i) => { if (w.used_percent > ws[top].used_percent) top = i; });
+  return ws.map((w, i) => ({
+    label: codexWindowLabel(w.duration_mins),
+    active: i === top,
+    resets_epoch: w.resets_at || 0,
+    percent: w.used_percent,
+  }));
+}
+
+function providerUsage(pid, sid){
   /* `pid` defaults to the globally selected provider because two of the three
      callers (the rail badge and the footer) describe the app, not a pane. The
-     pane row passes its OWN provider -- see paneMenuHtml. */
+     pane row passes its OWN provider -- see paneMenuHtml.
+
+     `sid` is OPTIONAL and only the "tokens" kind reads it: token counts are a
+     property of a pane's last turn, not of the app. Added as a second
+     parameter rather than by changing the first, so the three existing
+     one-argument callers are untouched. */
   const id = pid || (SETTINGS || {}).provider;
   switch (usageKindOf(id)){
     case "balance": {
@@ -955,6 +1035,58 @@ function providerUsage(pid){
                                || (u.limits || [])[0] || {}).percent) ?? NaN);
       if (!Number.isFinite(pct)) return null;
       return { short: pct, long: pct + "% of the usage window", row: pct + "% used" };
+    }
+    case "tokens": {
+      /* TWO SURFACES, TWO FACTS, and `sid` is what separates them.
+         Codex reports both, and they are not the same question:
+
+           no sid  -> the APP is asking (rail badge, footer telemetry). The
+                      account-level fact is the ChatGPT plan's allowance, which
+                      is what Claude's indicator shows in those same two
+                      places, so this is where it belongs.
+           sid     -> a PANE is asking. The pane-level fact is that pane's last
+                      turn, in tokens. Unchanged by this addition.
+
+         The plan half is null in API-key mode, after a sign-out, and before the
+         first read -- so those all draw the em-dash the indicator drew before
+         this existed, rather than a stale percentage. */
+      if (!sid){
+        const rows = codexPlanRows(S.codexPlan);
+        if (!rows.length) return null;
+        const a = rows.find(r => r.active) || rows[0];
+        const pct = Math.round(a.percent);
+        return { short: pct,
+                 long: pct + "% of the " + a.label + " limit",
+                 row: pct + "% of " + a.label };
+      }
+      /* WHAT CODEX ACTUALLY REPORTS, and nothing more. `turn.completed.usage`
+         carries five per-turn counts and no price, no rate-limit window and no
+         plan allowance -- so this says "tokens", says which turn they belong
+         to, and stops. There is deliberately no $ anywhere in this branch: a
+         dollar figure would have to come from a price table Sutra does not
+         have and codex does not publish.
+
+         `cached_input_tokens` is called out because it is the one number that
+         changes what a turn cost the operator in either billing mode, and it
+         is invisible in a bare in/out pair. */
+      const t = sid && S.turnTokens ? S.turnTokens[sid] : null;
+      if (!t) return null;
+      const inn = tokShort(t.input_tokens), out = tokShort(t.output_tokens);
+      if (inn == null && out == null) return null;
+      const cached = tokShort(t.cached_input_tokens);
+      const reason = tokShort(t.reasoning_output_tokens);
+      const parts = [];
+      if (inn != null) parts.push(inn + " in");
+      if (out != null) parts.push(out + " out");
+      const head = parts.join(" · ");
+      const extra = [];
+      if (cached != null && t.cached_input_tokens > 0) extra.push(cached + " cached");
+      if (reason != null && t.reasoning_output_tokens > 0) extra.push(reason + " reasoning");
+      return {
+        short: head,
+        long:  head + " last turn" + (extra.length ? " (" + extra.join(", ") + ")" : ""),
+        row:   head + " last turn" + (extra.length ? " · " + extra.join(" · ") : ""),
+      };
     }
     default:
       /* A provider with no usage concept. null, and every caller renders its

@@ -197,7 +197,13 @@ function paneMenuHtml(s){
   /* The Claude-only `u = usageActive(S.usage)` binding lived here. Its one
      consumer was the Usage row, which now asks providerUsage() so the row
      matches the provider actually selected. */
-  const row = (key, label, val) => `<button class="mrow" type="button" data-mrow="${key}">
+  /* `title` is OPTIONAL and only the Folder row passes it. The row shows a
+     BASENAME (cwdLabel), which is the right thing to show and the wrong thing
+     to have to guess at -- so the absolute path the provider actually receives
+     is one hover away. Added as a fourth parameter so every existing
+     three-argument call renders byte-identical markup. */
+  const row = (key, label, val, title) => `<button class="mrow" type="button" data-mrow="${key}"${
+      title ? ` title="${esc(title)}"` : ""}>
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
   /* ── the Model row, built here so the template below stays one line ──
      THIS PANE'S provider, not the globally selected one -- see paneProvider()
@@ -237,8 +243,27 @@ function paneMenuHtml(s){
         /* the repo bar's facts, one click away instead of always on screen */
         const r = S.repo && S.repo[s.id]; if (!r || !r.available) return "";
         const d = r.diff || {};
-        return ` · ${esc(r.detached ? "detached" : (r.branch || "—"))} · ${(d.files||0) > 0 ? `+${d.added||0} −${d.removed||0}` : "clean"}`;
-      })())}
+        /* THE BRANCH IS LABELLED AS A BRANCH (2026-09-08). This row rendered
+           `<folder> · <branch> · clean`, and on a checkout whose branch is
+           named after a provider it read as provider context: the founder saw
+           "sutra-ui · deepseek-provider" on a CODEX pane and reasonably asked
+           whether Codex was being routed through DeepSeek. It was not -- the
+           folder and the branch were both correct, and `deepseek-provider` is
+           simply the git branch this checkout sits on.
+
+           Presentation only. The path, the branch and the diff are the same
+           three facts from the same source; `on` is what stops the middle one
+           being read as something other than a branch. `git:` was the
+           alternative and was rejected as jargon for the audience this row is
+           written for. */
+        return ` · on ${esc(r.detached ? "a detached HEAD" : (r.branch || "—"))} · ${(d.files||0) > 0 ? `+${d.added||0} −${d.removed||0}` : "clean"}`;
+      })(),
+      /* The absolute path this pane's assistant is actually given -- the same
+         string that reaches `-C` on a Codex spawn and `cwd=` on every spawn.
+         The row can only show a basename; this is where the whole answer
+         lives, so "which folder is this really?" never needs a guess. */
+      (sessCwd(s.id) || "no folder") + "\nthe working directory "
+        + (providerLabel(paneProvider(s)) || "this assistant") + " is given")}
     ${(()=>{ const r = S.repo && S.repo[s.id]; if (!r || !r.available || !r.remote) return "";
         const prs = S.prs && S.prs[s.id]; const n = prs && prs.available ? (prs.pulls||[]).length : null;
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
@@ -249,14 +274,23 @@ function paneMenuHtml(s){
             title="Model — applies to the next message">${mopts}
       </select></span><span class="ma"></span></label>`}
     ${(()=>{ /* THIS PANE'S provider, same rule as the Model row above. */
-       const pu = providerUsage(mpid);
-       if (pu) return row("usage", "Usage", pu.row);
-       /* No figure. Two different reasons, and saying the wrong one is worse
-          than saying nothing: a provider with no usage concept will never have
-          one, while a provider that has not been read yet will. "plan usage"
-          was Claude's phrasing standing in for both. */
-       return row("usage", "Usage", usageKindOf(mpid) === "none"
+       /* `s.id` is new here and only the "tokens" kind reads it -- token counts
+          belong to THIS pane's last turn, not to the app. */
+       const pu = providerUsage(mpid, s.id);
+       /* TOKENS ARE NOT BILLING, and the row label is where that has to be
+          said, because "Usage" next to a number reads as spend. codex reports
+          no price and no plan allowance (see providers' usage_kind "tokens"),
+          so the row is titled for what it holds. Only the tokens kind renames;
+          Claude's "Usage" and DeepSeek's "Usage" are untouched. */
+       const ulabel = usageKindOf(mpid) === "tokens" ? "Tokens" : "Usage";
+       if (pu) return row("usage", ulabel, pu.row);
+       /* No figure. THREE different reasons now, and saying the wrong one is
+          worse than saying nothing: a provider with no usage concept will
+          never have one, a provider not read yet will, and a tokens provider
+          simply has not finished a turn in this pane. */
+       return row("usage", ulabel, usageKindOf(mpid) === "none"
          ? "not reported for " + (providerLabel(mpid) || mpid || "this assistant")
+         : usageKindOf(mpid) === "tokens" ? "after the first reply"
          : "not read yet");
      })()}
     ${/* Omitted entirely for a provider that honours none of them, rather than
@@ -373,7 +407,8 @@ function sessionPane(s){
     ${switchMarkerHtml(s.id)}
     ${modeMarkerHtml(s.id)}
     ${permConfirmHtml()}
-    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneDeclProvider(s)) : ""}
+    ${S.optsOpen[s.id] ? turnOptsHtml(s.id, paneDeclProvider(s),
+                                  paneModelFor(s, paneDeclProvider(s))) : ""}
     ${cwdEditorHtml(s.id)}
     ${providerSwitcherHtml(s.id)}
     ${prFormHtml(s.id)}
@@ -457,9 +492,53 @@ function turnOptsFor(mpid){
   if (!loaded) return new Set(TOPT_ALL);
   return new Set(TURN_OPTIONS_BY_PROVIDER[mpid] || []);
 }
+/* THE BOOT-WINDOW FALLBACK, and Codex's two keys are deliberately NOT in it.
+   turnOptsFor() answers with this whole set before /api/providers has landed,
+   so adding them here would draw Reasoning and Verbosity on a CLAUDE pane for
+   the first second of every launch -- the same class of false-specific claim
+   the Usage row's not-loaded branch is logged for. Left as Claude's five, so
+   nothing renders until a provider actually declares it. */
 const TOPT_ALL = ["effort", "max_budget_usd", "allowed_tools",
                   "disallowed_tools", "append_system_prompt"];
-function turnOptsHtml(sid, mpid){
+
+/* Codex's own enumerations, mirrored from providers.CODEX_REASONING_SUMMARY and
+   providers.CODEX_VERBOSITY. Duplicated rather than fetched because they are
+   the CLI's fixed vocabulary, not machine state -- and the server validates
+   every value again in codex_turn_config, so a drift here cannot put an
+   unrecognised value on the wire. "" is first: it is the default. */
+const CODEX_SUMMARY_OPTS = ["", "auto", "concise", "detailed", "none"];
+const CODEX_VERBOSITY_OPTS = ["", "low", "medium", "high"];
+
+/* The reasoning EFFORTS the selected model supports. There is deliberately no
+   constant beside the two above, because this set is PER MODEL and discovered:
+   measured on one account, terra offers `ultra`, luna does not, and 5.5 stops
+   at `xhigh`. A fixed list would offer every model the union, and codex takes
+   an unsupported value SILENTLY -- so the turn would quietly run at something
+   other than what the control said.
+
+   A falsy `model` is the "CLI default" row, which resolves to whatever codex
+   marked isDefault -- so its efforts are that model's. providers.
+   codex_efforts_for() resolves None the same way server-side, which is what
+   stops this offering a value the validator would then drop.
+
+   [] whenever discovery has not run or the model is unknown, and the caller
+   renders "default" alone -- the behaviour that existed before this control. */
+function codexEffortsFor(mpid, model){
+  const list = (MODELS_BY_PROVIDER || {})[mpid] || [];
+  const pick = model ? list.find(m => m && m.id === model)
+                     : list.find(m => m && m.default);
+  return (pick && Array.isArray(pick.efforts)) ? pick.efforts : [];
+}
+
+/* This pane's selected model id. Mirrors the resolution paneMenuHtml uses for
+   its own picker, but takes `mpid` explicitly rather than recomputing it: the
+   two call sites resolve the provider differently (paneProvider there,
+   paneDeclProvider here), so sharing that half would change which provider one
+   of them asks about. */
+function paneModelFor(s, mpid){
+  return S.model[s.id] ?? (((SETTINGS || {}).model_by_provider || {})[mpid] || "");
+}
+function turnOptsHtml(sid, mpid, model){
   const o = S.turnOpts[sid] || {};
   const on = turnOptsFor(mpid);
   /* Each field is emitted only if this provider can act on it. A field that is
@@ -491,6 +570,54 @@ function turnOptsHtml(sid, mpid){
       <input type="text" placeholder="appended to the system prompt for this turn"
              data-opt="append_system_prompt" data-sid="${sid}"
              value="${esc(o.append_system_prompt||"")}"/></label>`)}
+    ${/* CODEX'S TWO, and they are here rather than in a Codex-only box because
+          this function is already the provider-gated place: `f()` emits a field
+          only if the provider DECLARES it, so Claude and DeepSeek -- which
+          declare neither -- render exactly the markup they rendered before.
+
+          Both values come from codex's OWN enumeration, read out of the CLI's
+          rejection of a bad one (providers.CODEX_REASONING_SUMMARY /
+          CODEX_VERBOSITY). Nothing here is a Sutra invention, and the empty
+          option is a real choice meaning "leave it to codex" -- it emits no
+          -c at all. `model_reasoning_effort` is deliberately absent: it is a
+          real key whose values codex does not enumerate, so a picker for it
+          would be guesses. */""}
+    ${/* "Reasoning summary", not "Reasoning" (2026-09-09). The key is
+          model_reasoning_summary, which controls how much of its reasoning
+          Codex SHOWS -- not how much it DOES. Codex exposes both axes and they
+          share no values: summary is auto/concise/detailed/none, effort is
+          low/medium/high/xhigh/max/ultra (per model, off model/list). A control
+          labelled "Reasoning" offering `none` reads as "turn reasoning off",
+          and selecting it leaves the effort at the model's own default and
+          merely hides the summary. The tooltip already said so; the label is
+          what gets read. */""}
+    ${f("reasoning_summary", `<label><span>Reasoning summary</span>
+      <select data-opt="reasoning_summary" data-sid="${sid}"
+              title="model_reasoning_summary — how much of its reasoning Codex shows">
+        ${CODEX_SUMMARY_OPTS.map(v=>`<option value="${v}" ${
+          o.reasoning_summary===v?"selected":""}>${v||"default"}</option>`).join("")}
+      </select></label>`)}
+    ${/* REASONING EFFORT -- how much reasoning codex DOES, the other axis from
+          the summary control above (which is how much it SHOWS). They share no
+          values and both are codex's own.
+
+          THE OPTIONS ARE THE SELECTED MODEL'S, not a constant: the sets differ
+          per model and codex accepts an unsupported value silently, so a fixed
+          list would let a turn quietly run at something else. "default" is
+          always present and always first -- it emits no override at all, which
+          is also the whole control when discovery has produced nothing. */""}
+    ${f("reasoning_effort", `<label><span>Reasoning effort</span>
+      <select data-opt="reasoning_effort" data-sid="${sid}"
+              title="model_reasoning_effort — how much reasoning Codex does">
+        ${[""].concat(codexEffortsFor(mpid, model)).map(v=>`<option value="${esc(v)}" ${
+          o.reasoning_effort===v?"selected":""}>${v||"default"}</option>`).join("")}
+      </select></label>`)}
+    ${f("verbosity", `<label><span>Verbosity</span>
+      <select data-opt="verbosity" data-sid="${sid}"
+              title="model_verbosity — how long Codex's answers run">
+        ${CODEX_VERBOSITY_OPTS.map(v=>`<option value="${v}" ${
+          o.verbosity===v?"selected":""}>${v||"default"}</option>`).join("")}
+      </select></label>`)}
     <p class="topts-note">Applies to the next message; the server validates each
       value and drops anything it does not recognise.
       <strong>Denying one tool is not a capability limit</strong> — blocking only

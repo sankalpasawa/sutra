@@ -96,6 +96,7 @@ switch. The place this would creep in is named in 07-loaders.js's codexReprobe.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -103,6 +104,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import codex_install       # managed_bin(): Sutra's own codex, for _codex_bin
 import providers
 
 # The plugin tree ships whole (bundle-runtime.sh rsyncs marketplace/plugin/), so
@@ -456,20 +458,51 @@ def read_or_reason():
 # --------------------------------------------------------------- display ----
 
 def _codex_bin():
-    """The BARE NAME off PATH, never providers.provider_bin("codex").
+    """Which `codex` receives a credential. PATH first, Sutra's own install
+    second, and NEVER providers.provider_bin("codex").
 
     provider_bin honours `provider_bins` in settings.json, which the RENDERER
     can set -- so using it here would let the panel choose which binary receives
     the API key on stdin. That is the hole main.js's codex verbs already refuse
     to open ("executing a path the RENDERER chose is a bigger hole than the
     inconvenience it fixes"). codex_login.py may use provider_bin because those
-    verbs carry no credential; these do.
+    verbs carry no credential; these do. That refusal STANDS.
 
-    KNOWN DIVERGENCE, pre-existing: the STATUS probe in providers.codex_auth()
-    does honour the override, so on a machine with one set, the row and this
-    spawn can be talking about two different binaries.
+    THE MANAGED FALLBACK, AND WHY IT IS NOT THAT HOLE (bug #4, 2026-09-09).
+    Returning the bare name alone was measured broken on the machine this app
+    is built for: Sutra installs its own codex at
+    ~/.sutra-ui/providers/codex/node_modules/.bin/codex, which is on NO PATH,
+    so `spawn("codex")` answered ENOENT and
+
+        add an API key -> codex login --with-api-key never ran
+                       -> ~/.codex/auth.json kept the ChatGPT credential
+                       -> the row correctly went on saying "Signed in with
+                          ChatGPT", because that is what codex still held
+
+    while the STATUS probe resolved fine through provider_bin -- the "KNOWN
+    DIVERGENCE" this docstring used to merely record. The same ENOENT broke
+    restore() and blanked current_display().
+
+    codex_install.managed_bin() is a FIXED, Sutra-owned location, computed here
+    and not supplied by anyone: the renderer cannot point it somewhere, which
+    is the whole difference between this and provider_bins. Executing it is
+    exactly as safe as executing whatever `codex` on PATH happens to be, and it
+    is the binary Sutra itself put there.
+
+    Bare name still WINS when it resolves, so a machine with a real codex on
+    PATH behaves precisely as before. The final "codex" keeps the failure
+    message unchanged when neither exists.
     """
-    return "codex"
+    bare = shutil.which(codex_install.BIN_NAME)
+    if bare:
+        return bare
+    try:
+        managed = codex_install.managed_bin()
+        if managed.exists():
+            return str(managed)
+    except Exception:                            # noqa: BLE001
+        pass                                     # fall through to the bare name
+    return codex_install.BIN_NAME
 
 
 def _env():
@@ -499,6 +532,74 @@ def current_display():
 
 
 # ----------------------------------------------------------------- verbs ----
+
+def _put_key_live(key, timeout):
+    """Hand `key` to `codex login --with-api-key` on stdin. Raises or returns.
+
+    The one place a key is put in front of codex. login() and restore() both
+    route through it so there is a SINGLE definition of how that spawn is made
+    and which binary makes it -- having two was the shape of bug #4.
+
+    The key goes on STDIN, never in argv, so it is not in the process list for
+    anything else on this machine to read. The child's output is never
+    forwarded: on this path stderr echoes the read and a future build could
+    echo more, so fixed strings cross instead.
+    """
+    try:
+        p = subprocess.run(
+            [_codex_bin(), "login", "--with-api-key"], env=_env(),
+            input=key + "\n", capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise CodexAuthError("NO_BINARY", (
+            "the `codex` CLI could not be found, so the key was not put in "
+            "front of it. Nothing was changed."))
+    except subprocess.TimeoutExpired:
+        raise CodexAuthError("TIMEOUT", (
+            "`codex login --with-api-key` did not finish within %ss. Nothing "
+            "was changed here; run it in a terminal to see what it says."
+            % timeout))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CodexAuthError("SPAWN_FAILED", (
+            "`codex login --with-api-key` could not be run (%s)."
+            % type(exc).__name__))
+    if p.returncode != 0:
+        raise CodexAuthError("CODEX_REFUSED", (
+            "codex exited %s without taking the key. Running `codex login "
+            "--with-api-key` in a terminal will show what it said."
+            % p.returncode))
+
+
+def login(submitted):
+    """Make `submitted` the credential codex holds. Returns {"display": ...}.
+
+    ADDED FOR BUG #4 (2026-09-09). The spawn used to live in main.js's
+    codexRun(), which hard-codes `spawn("codex", ...)` -- the bare name, off
+    shellEnv()'s PATH. On the machine this app is built for, Sutra's own codex
+    is at ~/.sutra-ui/providers/codex/node_modules/.bin/codex and is on NO
+    PATH, so that spawn answered ENOENT and the API key never went live: the
+    row went on truthfully reporting "Signed in with ChatGPT" because codex
+    still held the ChatGPT credential, and the keychain copy was never written
+    either (main.js returns before its `store` step on a failed login).
+
+    Moving it here does not widen anything. The key already reaches this module
+    on stdin twice on the same click -- `check` before and `store` after -- so
+    the sidecar is an established credential channel, not a new one. It still
+    never crosses HTTP: org_api.py has no route that accepts a key, and this
+    change adds none.
+
+    VALIDATED FIRST, same order and same reason as the module docstring gives:
+    codex validates nothing, and the login is the destruction. A key OpenAI
+    rejects must never reach ~/.codex, so the credential already there
+    survives a bad paste.
+    """
+    key = clean(submitted)
+    validate(key)                    # raises with OpenAI's own verdict
+    try:
+        _put_key_live(key, RESTORE_TIMEOUT)
+    finally:
+        key = None
+    return {"display": current_display()}
+
 
 def store(submitted):
     """Remember a key that is ALREADY LIVE. Returns the marker.
@@ -571,35 +672,14 @@ def restore():
     # and the network may not, and forgetting it here would destroy the only
     # copy over a transient.
     validate(key)
+    # ONE SPAWN DEFINITION, shared with login() since bug #4. This block used
+    # to carry its own copy of the subprocess call and its own binary
+    # resolution; two copies is how the API-key save came to spawn a different
+    # (and on this machine non-existent) codex than the status probe read.
     try:
-        p = subprocess.run(
-            [_codex_bin(), "login", "--with-api-key"], env=_env(),
-            input=key + "\n", capture_output=True, text=True,
-            timeout=RESTORE_TIMEOUT)
-    except FileNotFoundError:
-        raise CodexAuthError("NO_BINARY", (
-            "the `codex` CLI is not on PATH, so the saved key could not be "
-            "put back."))
-    except subprocess.TimeoutExpired:
-        raise CodexAuthError("TIMEOUT", (
-            "`codex login --with-api-key` did not finish within %ss. Nothing "
-            "was changed here; run it in a terminal to see what it says."
-            % RESTORE_TIMEOUT))
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise CodexAuthError("SPAWN_FAILED", (
-            "`codex login --with-api-key` could not be run (%s)."
-            % type(exc).__name__))
+        _put_key_live(key, RESTORE_TIMEOUT)
     finally:
         key = None
-    if p.returncode != 0:
-        # The child's output is NOT forwarded. On this path stderr echoes the
-        # read ("Reading API key from stdin...") and a future build could echo
-        # more, so a fixed string crosses instead -- the same discipline
-        # main.js's codexError() applies at the other layer.
-        raise CodexAuthError("CODEX_REFUSED", (
-            "codex exited %s without taking the saved key. Running `codex "
-            "login --with-api-key` in a terminal will show what it said."
-            % p.returncode))
     return {"display": current_display()}
 
 
@@ -653,6 +733,11 @@ def _main(argv):
         if verb == "check":
             submitted = sys.stdin.buffer.read().decode("utf-8", "replace")
             return {"ok": True, **check(submitted)}
+        if verb == "login":
+            # Same BUFFER read as store/check, for the same reason: a locale
+            # that is not UTF-8 must not mangle the key on the way in.
+            submitted = sys.stdin.buffer.read().decode("utf-8", "replace")
+            return {"ok": True, **login(submitted)}
         if verb == "restore":
             return {"ok": True, **restore()}
         if verb == "forget":

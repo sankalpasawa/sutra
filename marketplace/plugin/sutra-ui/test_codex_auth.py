@@ -49,6 +49,7 @@ from pathlib import Path
 from unittest import mock
 
 import codex_auth
+import codex_install
 import providers
 
 #: Long enough to mask, shaped enough to exercise the sk- branch, and visibly
@@ -818,6 +819,13 @@ class TheCheckRunsBEFORETheLogin(unittest.TestCase):
     would still let a dead key REPLACE a working ChatGPT sign-in, because the
     login is the destruction and the store is only the record of it. This reads
     the shell as text, since main.js cannot be require()d (it pulls in electron).
+
+    THE LOGIN MARKER CHANGED WITH BUG #4 (2026-09-09), the invariant did not.
+    The login used to be `codexRun(e, ["login","--with-api-key"], ...)` in this
+    handler; it is now `codexAuthCli("login", ...)`, because spawning the bare
+    name `codex` here found nothing on the default install. What these tests
+    pin -- probe first, store last, and a rejected key returning before the
+    login -- is untouched by that move.
     """
 
     def setUp(self):
@@ -828,14 +836,14 @@ class TheCheckRunsBEFORETheLogin(unittest.TestCase):
 
     def test_the_handler_checks_then_logs_in_then_stores(self):
         i_check = self.handler.index('codexAuthCli("check"')
-        i_login = self.handler.index('["login", "--with-api-key"]')
+        i_login = self.handler.index('codexAuthCli("login"')
         i_store = self.handler.index('codexAuthCli("store"')
         self.assertLess(i_check, i_login, "the probe must precede the spawn")
         self.assertLess(i_login, i_store, "only a live key is remembered")
 
     def test_a_failed_check_returns_before_the_spawn(self):
         between = self.handler[self.handler.index('codexAuthCli("check"'):
-                               self.handler.index('["login", "--with-api-key"]')]
+                               self.handler.index('codexAuthCli("login"')]
         self.assertIn("return", between,
                       "a rejected key must return, not fall through to the spawn")
 
@@ -931,6 +939,257 @@ class TheDuplicationIsDeclared(unittest.TestCase):
         assertion is against executable code only."""
         code = _code_only((HERE / "codex_auth.py").read_text(encoding="utf-8"), "py")
         self.assertNotIn("deepseek_auth", code)
+
+
+# ================== BUG #4: THE API KEY NEVER BECAME THE ACTIVE MODE ========
+# THE BUG, exactly. On a machine where `codex` is NOT on PATH -- which is the
+# machine this app is BUILT for, because Sutra installs its own codex at
+# ~/.sutra-ui/providers/codex/node_modules/.bin/codex and puts it on no PATH --
+# adding an OpenAI API key did nothing:
+#
+#   1. main.js's codexRun() spawned the BARE NAME `codex`      -> ENOENT
+#   2. `codex login --with-api-key` therefore never ran
+#   3. ~/.codex/auth.json kept the CHATGPT credential
+#   4. the row went on saying "Signed in with ChatGPT · covered by your
+#      ChatGPT plan" -- TRUTHFULLY, because that is what codex still held
+#   5. and the keychain copy was never written either: main.js returns before
+#      its `store` step when the login fails
+#
+# The status PROBE resolved fine the whole time, through
+# providers.provider_bin("codex") -- so the two halves of the feature were
+# asking two different binaries and only one of them existed. codex_auth.py
+# recorded that as a "KNOWN DIVERGENCE" and main.js as a "KNOWN LIMIT"; it was
+# a live bug on the default install.
+#
+# THE FIX. _codex_bin() resolves PATH first and Sutra's own install second, and
+# is now the SINGLE place that decides which binary receives a credential --
+# login() and restore() both go through _put_key_live().
+#
+# WHAT THESE TESTS PIN, that nothing above did: the RESOLUTION. Every existing
+# test in this file puts a `codex` on PATH via fake_codex(), so all of them
+# passed for the entire life of the bug. The regression is the case where PATH
+# has none.
+
+
+class _NoCodexOnPath(_Base):
+    """_Base, plus a PATH with no `codex` on it at all.
+
+    This is the shape the bug lived in, and no other test in this file creates
+    it -- fake_codex() always makes the bare name resolve.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # The SYSTEM dirs stay, deliberately: a real machine has /bin and
+        # /usr/bin and simply no codex, and the stub scripts below need `cat`.
+        # An empty PATH would make them exit 127 and test the fixture instead.
+        was = os.environ.get("PATH", "")
+        os.environ["PATH"] = os.pathsep.join(["/usr/bin", "/bin"])
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", was))
+        self.assertIsNone(__import__("shutil").which("codex"),
+                          "the fixture failed: a codex is still reachable")
+
+    def managed(self, script="exit 0"):
+        """A Sutra-managed codex at a path that is on NO PATH. Returns (path,
+        log) -- the script may append to `log` to prove it was the one run."""
+        root = Path(self.dir) / "managed" / "node_modules" / ".bin"
+        root.mkdir(parents=True, exist_ok=True)
+        log = Path(self.dir) / "managed.log"
+        binp = root / "codex"
+        binp.write_text("#!/bin/sh\necho managed >> '%s'\n%s\n" % (log, script),
+                        encoding="utf-8")
+        binp.chmod(binp.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        self._patch(codex_install, "managed_bin", return_value=binp)
+        return binp, log
+
+
+class TheCredentialSpawnFindsSutrasOwnCodex(_NoCodexOnPath):
+    """_codex_bin(): PATH first, Sutra's own install second, provider_bin never."""
+
+    def test_THE_BUG_managed_install_is_used_when_PATH_has_no_codex(self):
+        """THE REGRESSION. Before the fix this returned the bare name "codex",
+        which does not exist here, and every credential spawn died ENOENT."""
+        binp, _ = self.managed()
+        self.assertEqual(codex_auth._codex_bin(), str(binp))
+        self.assertNotEqual(codex_auth._codex_bin(), "codex")
+
+    def test_a_codex_on_PATH_still_wins_so_nothing_else_changes(self):
+        """The bare name is still preferred when it resolves: a machine with a
+        real codex on PATH must behave exactly as it did before."""
+        self.managed()
+        self.fake_codex("exit 0")               # puts one back on PATH
+        got = codex_auth._codex_bin()
+        self.assertTrue(got.endswith("/bin/codex"), got)
+        self.assertNotIn("node_modules", got)
+
+    def test_the_bare_name_is_the_last_resort_so_the_error_is_unchanged(self):
+        """Neither exists -> "codex", so FileNotFoundError still fires and the
+        NO_BINARY sentence is the one it always was."""
+        self._patch(codex_install, "managed_bin",
+                    return_value=Path(self.dir) / "nope" / "codex")
+        self.assertEqual(codex_auth._codex_bin(), "codex")
+
+    def test_provider_bins_is_STILL_never_honoured(self):
+        """The renderer can set provider_bins; it must never choose which
+        binary receives a key. The fallback is a FIXED Sutra-owned path, which
+        is the whole difference between it and provider_bin."""
+        binp, _ = self.managed()
+        evil = Path(self.dir) / "evil-codex"
+        evil.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        evil.chmod(evil.stat().st_mode | stat.S_IEXEC)
+        self._patch(providers, "provider_bin", return_value=str(evil))
+        self.assertEqual(codex_auth._codex_bin(), str(binp))
+
+    def test_a_broken_managed_lookup_degrades_to_the_bare_name(self):
+        """managed_bin() reads a settings path; if that ever raises, a
+        credential verb must still produce its normal refusal rather than a
+        traceback out of the sidecar."""
+        self._patch(codex_install, "managed_bin",
+                    side_effect=RuntimeError("settings unreadable"))
+        self.assertEqual(codex_auth._codex_bin(), "codex")
+
+
+class LoginMakesTheKeyTheActiveCredential(_NoCodexOnPath):
+    """codex_auth.login() -- the verb main.js now calls instead of spawning
+    `codex` itself."""
+
+    def test_THE_BUG_END_TO_END_the_key_reaches_codex_with_no_PATH_entry(self):
+        """What the operator actually reported: adding a key changed nothing.
+        The login now runs, through Sutra's own binary, and reports the mask."""
+        _, log = self.managed("cat > /dev/null")
+        self.ok_probe()
+        self.quiet_display(CODEX_STUB)
+        out = codex_auth.login(FAKE_KEY)
+        self.assertEqual(out, {"display": CODEX_STUB})
+        self.assertIn("managed", log.read_text(encoding="utf-8"),
+                      "Sutra's own codex was never the one that ran")
+
+    def test_the_key_goes_on_STDIN_and_never_into_argv(self):
+        """A key in argv is readable from the process list by anything on this
+        machine. The spawn is inspected directly rather than trusted."""
+        self.managed("cat > /dev/null")
+        self.ok_probe()
+        self.quiet_display()
+        seen = {}
+        real = subprocess.run
+
+        def spy(args, **kw):
+            seen["argv"] = list(args)
+            seen["input"] = kw.get("input")
+            return real(args, **kw)
+
+        self._patch(subprocess, "run", side_effect=spy)
+        codex_auth.login(FAKE_KEY)
+        self.assertEqual(seen["argv"][1:], ["login", "--with-api-key"])
+        self.assertNotIn(FAKE_KEY, " ".join(seen["argv"]))
+        self.assertEqual(seen["input"], FAKE_KEY + "\n")
+
+    def test_the_probe_runs_BEFORE_the_spawn_so_a_bad_key_changes_nothing(self):
+        """The login is the destruction: a key OpenAI rejects must never reach
+        ~/.codex, or a dead paste replaces a working ChatGPT session."""
+        _, log = self.managed("cat > /dev/null")
+        self._patch(codex_auth, "validate",
+                    side_effect=codex_auth.CodexAuthError("BAD_KEY", "no."))
+        with self.assertRaises(codex_auth.CodexAuthError):
+            codex_auth.login(FAKE_KEY)
+        self.assertFalse(log.exists(), "a rejected key still reached codex")
+
+    def test_a_refusing_codex_is_reported_without_echoing_its_output(self):
+        self.managed("cat > /dev/null\necho 'the key is %s' >&2\nexit 3" % FAKE_KEY)
+        self.ok_probe()
+        self.quiet_display()
+        with self.assertRaises(codex_auth.CodexAuthError) as caught:
+            codex_auth.login(FAKE_KEY)
+        msg = str(caught.exception)
+        self.assertEqual(caught.exception.code, "CODEX_REFUSED")
+        self.assertNotIn(FAKE_KEY, msg)
+        self.assertNotIn("the key is", msg)
+
+    def test_a_missing_binary_refuses_without_a_traceback(self):
+        self._patch(codex_install, "managed_bin",
+                    return_value=Path(self.dir) / "nope" / "codex")
+        self.ok_probe()
+        with self.assertRaises(codex_auth.CodexAuthError) as caught:
+            codex_auth.login(FAKE_KEY)
+        self.assertEqual(caught.exception.code, "NO_BINARY")
+
+    def test_restore_uses_THE_SAME_resolution_so_it_is_fixed_too(self):
+        """restore() had the identical ENOENT. It now shares _put_key_live, so
+        one definition decides which binary receives a credential."""
+        _, log = self.managed("cat > /dev/null")
+        self.store({codex_auth.KEYCHAIN_ACCOUNT: FAKE_KEY})
+        self.ok_probe()
+        self.quiet_display(CODEX_STUB)
+        self.assertEqual(codex_auth.restore(), {"display": CODEX_STUB})
+        self.assertIn("managed", log.read_text(encoding="utf-8"))
+
+
+class TheSidecarLoginVerbAnswersOneJsonLine(_NoCodexOnPath):
+    """The wire main.js now uses: `python -m codex_auth login`, key on stdin."""
+
+    def _run(self, key, script="cat > /dev/null"):
+        binp, _ = self.managed(script)
+        env = dict(os.environ)
+        env["SUTRA_UI_SETTINGS"] = str(providers.SETTINGS_PATH)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["SUTRA_TEST_MANAGED_CODEX"] = str(binp)
+        return subprocess.run(
+            [sys.executable, "-m", "codex_auth", "login"],
+            input=key, capture_output=True, text=True, cwd=str(HERE),
+            env=env, timeout=60)
+
+    def test_an_unroutable_probe_is_a_refusal_not_a_crash(self):
+        """No network is touched: the probe host is unroutable, so this asserts
+        the SHAPE of the answer -- one JSON line, ok:false, no key in it."""
+        self._patch(codex_auth, "VALIDATE_URL", "https://127.0.0.1:1/v1/models")
+        p = self._run(FAKE_KEY)
+        lines = [l for l in p.stdout.splitlines() if l.strip()]
+        self.assertEqual(len(lines), 1, p.stdout)
+        answer = json.loads(lines[0])
+        self.assertIs(answer["ok"], False)
+        self.assertNotIn(FAKE_KEY, p.stdout)
+        self.assertNotIn(FAKE_KEY, p.stderr)
+
+    def test_the_verb_is_recognised_at_all(self):
+        """A verb the sidecar does not know answers BAD_VERB, which is what
+        `login` did before this fix -- main.js would have had no way to run it."""
+        p = subprocess.run([sys.executable, "-m", "codex_auth", "login"],
+                           input="", capture_output=True, text=True,
+                           cwd=str(HERE), timeout=60)
+        answer = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertNotEqual(answer.get("code"), "BAD_VERB",
+                            "the login verb is not wired into _main")
+
+
+class MainJsDelegatesTheLoginToTheSidecar(unittest.TestCase):
+    """main.js is read as TEXT -- it needs Electron to execute. These pin the
+    two-line rewiring that is the other half of the fix."""
+
+    def setUp(self):
+        self.js = (HERE / "electron" / "main.js").read_text(encoding="utf-8")
+
+    def test_the_api_key_handler_no_longer_spawns_codex_itself(self):
+        handler = self.js.split('ipcMain.handle("sutra:codex-api-key"')[1]
+        handler = handler.split("ipcMain.handle(")[0]
+        self.assertNotIn('codexRun(e, ["login", "--with-api-key"]', handler,
+                         "the bare-name spawn is back in the API-key handler")
+        self.assertIn('codexAuthCli("login"', handler)
+
+    def test_the_login_timeout_exceeds_the_helpers_own_budget(self):
+        """An outer kill inside the helper's 78s worst case would SIGKILL it
+        mid-spawn and report a timeout for a login that already landed."""
+        m = re.search(r"CODEX_KEY_LOGIN_TIMEOUT\s*=\s*(\d+)", self.js)
+        self.assertIsNotNone(m, "CODEX_KEY_LOGIN_TIMEOUT is gone")
+        budget = (codex_auth.PROBE_TIMEOUT + codex_auth.RESTORE_TIMEOUT
+                  + codex_auth.STATUS_TIMEOUT)
+        self.assertGreater(int(m.group(1)) / 1000.0, budget)
+
+    def test_no_http_route_accepts_a_key(self):
+        """The fix must not have moved the key onto the backend port. The
+        sidecar is stdin; org_api has no key-accepting route and gains none."""
+        org = (HERE / "org_api.py").read_text(encoding="utf-8")
+        self.assertNotIn("codex/apikey", org)
+        self.assertNotIn("with-api-key", org)
 
 
 if __name__ == "__main__":

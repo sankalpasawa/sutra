@@ -202,6 +202,99 @@ function paneMenuAction(sid, key){
    not belong on either path. This runs when the AI Provider screen opens and
    after each sign-in action. There is nothing to cache -- being current is the
    entire value of the call. */
+/* Take the provider/settings/runtime state a Codex answer carried, if it
+   carried any. Returns true when something was applied -- for the tests, and
+   for nothing else.
+
+   THE BUG THIS CLOSES. `S.codexAuth` and `PROVIDERS` are separate state, and
+   only the first was ever refreshed after a sign-in: PROVIDERS is filled once,
+   by loadRuntime() inside boot(), and nothing else in the app re-reads it. So
+   a successful ChatGPT sign-in updated the block below and left the ROW above
+   it -- "Ready to use", and the radio's disabled attribute, both read off
+   PROVIDERS -- showing what was true when the window opened, until a reload.
+   The backend had the right answer the whole time; nobody asked for it.
+
+   NOT A NEW POLL AND NOT A SECOND COPY OF THE STATE. It rides on the answer
+   the panel was already reading, which is what makes it cover every Codex
+   transition at once: browser login (through codexWatchLogin's tick), bridge
+   login, cancel, logout, apikey:save, restore and forget all funnel through
+   loadCodexAuth, and the logout route sends the same block on its own reply so
+   that one corrects on the same paint rather than the next.
+
+   PRESENCE, NOT TRUTHINESS. An older backend omits these keys entirely, and
+   assigning `undefined` over a good PROVIDERS would blank the provider list --
+   turning a missing feature into a broken screen. `Array.isArray` also refuses
+   a scalar or a string, which no amount of `if (r.providers)` would.
+
+   SETTINGS IS CHECKED FOR ITS CONTRACT, not merely for being an object, and a
+   test caught the difference. `{}` passes `typeof x === "object"` and would
+   replace a good SETTINGS with one that has no provider, no permission mode
+   and no workdir -- every screen reading it then renders its own not-loaded
+   fallback, which is a blank panel dressed as a successful read.
+   load_settings() always returns all three contract keys (its docstring makes
+   that a rule), so `provider` present is the cheap proof this is one. */
+function codexApplyState(r){
+  if (!r || typeof r !== "object") return false;
+  let applied = false;
+  if (Array.isArray(r.providers)){ PROVIDERS = r.providers; applied = true; }
+  if (r.settings && typeof r.settings === "object" && "provider" in r.settings){
+    SETTINGS = r.settings; applied = true;
+  }
+  /* The runtime half -- can an install even be attempted, and where would it
+     come from. Kept in S rather than folded into PROVIDERS: the row answers
+     "is there a codex", this answers "could Sutra fetch one", and collapsing
+     them is how the Install button starts disagreeing with what happens when
+     it is pressed. */
+  if (r.runtime && typeof r.runtime === "object"){ S.codexRuntime = r.runtime; applied = true; }
+  /* THE MODEL PICKER'S LIST, and the bug it closes is the one above it one link
+     further along. MODELS_BY_PROVIDER is written exactly ONCE, by loadRuntime()
+     inside boot() -- and Codex's list is DISCOVERED, warmed only by the request
+     this function is reading. That request cannot precede boot (the probe waits
+     for the Settings screen), so boot always stored the pre-discovery list:
+     `[CLI default]` alone, for the life of the window, on a machine where
+     model/list had just answered three models. A reload appeared to fix it
+     because a reload is loadRuntime() running again.
+
+     Carried on THIS answer for the same reason `providers` is: it is the read
+     that observed the change. `settings` above does NOT cover it -- the model
+     map is a SIBLING of `settings` in the /settings payload, not a key inside
+     it, which is exactly why the earlier fix missed this.
+
+     NON-EMPTY, NOT MERELY AN OBJECT, and that distinction is the whole guard.
+     `{}` is the panel's sentinel for "not fetched yet" (06-render's `mloaded`
+     reads Object.keys().length), so an older backend that omits the key -- or
+     any shape this build does not recognise -- must leave a good map ALONE
+     rather than downgrade a loaded picker to its boot-window fallback. Same
+     policy as PROVIDERS: an omission is not an answer of empty. */
+  if (r.models_by_provider && typeof r.models_by_provider === "object"
+      && !Array.isArray(r.models_by_provider)
+      && Object.keys(r.models_by_provider).length){
+    MODELS_BY_PROVIDER = r.models_by_provider; applied = true;
+  }
+  /* PLAN USAGE IS CHATGPT-ONLY, so a credential that is no longer a ChatGPT
+     sign-in must make the indicator GO AWAY rather than go stale: a percentage
+     left on the rail after a switch to an API key describes an allowance
+     nothing is metering any more. Cleared here, on the answer that observed
+     the change, so it happens on the same paint as the row itself.
+
+     Only ever CLEARS. Populating is loadUsage()'s job -- this response does not
+     carry a plan, and inventing one from an auth read is how two sources of the
+     same fact start disagreeing. */
+  if (r.state && r.state !== "chatgpt" && S.codexPlan){
+    S.codexPlan = null; S.codexPlanError = null; applied = true;
+  }
+  return applied;
+}
+
+/* Is there nothing to run, and could Sutra fix that? Read off the row rather
+   than off S.codexAuth: `no_binary` is the sign-in probe's word for the same
+   machine state, but the ROW is what the install has to move, and after an
+   install lands the row is the thing that changed. */
+function codexNeedsInstall(){
+  const row = (PROVIDERS || []).find(p => p.id === "codex");
+  return !!(row && !row.installed);
+}
+
 async function loadCodexAuth(force){
   /* Guarded because wire() re-enters this on EVERY render (see the wire() call
      site). `force` bypasses both guards: re-opening the screen and finishing an
@@ -211,6 +304,11 @@ async function loadCodexAuth(force){
   S.codexProbing = true;
   try {
     const a = await apiGet("/api/providers/codex/auth");
+    /* BEFORE the state check below, because a 200 whose `state` this build does
+       not recognise still carried a perfectly good provider list, and throwing
+       it away would keep the row stale for a reason that has nothing to do with
+       the row. */
+    codexApplyState(a);
     /* A 200 THAT CARRIES NO STATE IS NOT AN ANSWER. Storing it would leave
        S.codexAuth falsy, the loading state on screen, and the wire() guard
        re-firing forever -- a permanent "Reading the Codex sign-in..." is the
@@ -387,6 +485,84 @@ async function deepseekInstallCli(){
   return r;
 }
 
+/* ── installing the Codex CLI ────────────────────────────────────────────────
+   The other half of a usable Codex. Signing in moves a credential; this puts
+   the binary on the machine, and before it existed the `no_binary` state was a
+   dead end -- the block rendered the reason and NO actions at all, on the one
+   screen that exists to get Codex working.
+
+   NO SECOND CREDENTIAL, and that is the difference from the DeepSeek install
+   this is otherwise modelled on. That one needs either the desktop bridge or a
+   paired session token, so it renders a pairing field when it has neither.
+   This route accepts the PANEL TOKEN apiPost already attaches to every call,
+   which is what makes one control work in both transports -- the Electron
+   window and a browser -- with nothing for the user to paste. Nothing here is
+   a credential; the route takes no arguments and can only ever produce the one
+   pinned CLI in Sutra's own folder.
+
+   NO FAKE PROGRESS. npm reports nothing parseable while it works, so this is a
+   busy state and a sentence about how long it takes -- a percentage would be a
+   claim about time nobody here can make. */
+async function codexInstall(){
+  if (S.codexBusy) return null;                    /* belt: a stale render */
+  S.codexBusy = "install";
+  S.codexMsg = "Installing the Codex CLI — this takes a minute. It goes into "
+    + "Sutra's own folder; nothing else on your Mac changes, and you won't be "
+    + "asked for a password.";
+  render();
+
+  let r = null;
+  try {
+    r = await apiPost("/api/providers/codex/cli", {});
+  } catch (e){
+    /* A 403 here is a STALE PANEL TOKEN -- the page outliving the backend it
+       was served by, which is what refreshPanelToken exists for -- so the
+       action is a reload, not a credential. Kept apart from the generic
+       failure because the two have nothing to do with each other.
+
+       Neither message claims nothing happened: the route is synchronous and
+       uvicorn does not cancel a worker whose client went away, so an install
+       may well be running regardless of what this page just saw. */
+    r = (e && e.status === 403)
+      ? { ok:false, message:"this page's session with the server has expired. "
+          + "Reload the panel and try again." }
+      : { ok:false, message:"the install did not come back. Try again — if it "
+          + "was already running, the second attempt reports what the first one "
+          + "did." };
+  }
+
+  S.codexBusy = null;
+  /* Whatever happened, take the state the server reported: a REFUSED install
+     still answers with the truth about the machine, and rendering the old
+     state after a refusal is how the row starts disagreeing with the disk. */
+  codexApplyState(r);
+  S.codexMsg = (r && r.message) || (r && r.ok
+    ? "The Codex CLI is installed."
+    : "The Codex CLI was not installed.");
+  /* The row moved (or did not) and the sign-in probe's answer is now stale --
+     `no_binary` becomes `logged_out` the moment a binary exists. */
+  await loadCodexAuth(true);
+  return r;
+}
+
+/* AUTHENTICATION IS NOT READINESS, and this is the line that keeps them apart.
+   Called after every action that ENABLES Codex -- a ChatGPT sign-in landing, a
+   key saved, a key restored -- to make sure the runtime those actions assume
+   actually exists. It is a no-op on the ordinary machine, because a sign-in
+   that succeeded had a `codex` to run; what it catches is the machine where
+   the credential is fine and the binary is not, which is the state this whole
+   change exists to abolish.
+
+   PROVISION ONLY WHAT IS MISSING. The guard is the row's own `installed`,
+   re-read from the answer that just came back, so a Mac that already has Codex
+   -- theirs or ours -- never sees a request. The install itself is idempotent
+   underneath (ALREADY runs no npm), so this guard is about not making a
+   pointless authenticated round trip, not about correctness. */
+async function codexEnsureRuntime(){
+  if (!codexNeedsInstall()) return null;
+  return await codexInstall();
+}
+
 /* ── watching a browser-transport sign-in ───────────────────────────────────
    The two transports have DIFFERENT completion semantics, and this is the
    whole reason the poll exists. The IPC verb resolves when the child EXITS.
@@ -436,8 +612,16 @@ function codexWatchLogin(before){
     if (now !== before){
       /* The row states the new credential itself, so there is no message to
          add -- a "Signed in." banner next to "Signed in with ChatGPT" is the
-         same fact twice. */
-      S.codexPolling = false; S.codexBusy = null; S.codexMsg = null; render(); return;
+         same fact twice.
+
+         The PROVIDER ROW above it has already moved too: loadCodexAuth applied
+         the providers/settings the same answer carried, so "Ready to use" and
+         the radio are correct on this paint. That is the whole fix -- it used
+         to take a page reload. */
+      S.codexPolling = false; S.codexBusy = null; S.codexMsg = null; render();
+      /* ...and the runtime the new credential assumes. No-op when it is there. */
+      codexEnsureRuntime();
+      return;
     }
     if (Date.now() > deadline){
       S.codexPolling = false; S.codexBusy = null;
@@ -733,12 +917,15 @@ function wire(){
        409 rather than a cancel: an HTTP verb that quietly means the opposite
        thing on its second call is a worse contract than naming the operation. */
     if (busyNow){
-      if (bridge){
-        try {
-          if (verb === "login") bridge.codexLogin();
-          else if (verb === "logout") bridge.codexLogout();
-          else if (verb === "apikey:save") bridge.codexApiKey("");
-        } catch (e) {}
+      /* LOGIN AND LOGOUT ARE EXCLUDED FROM THE BRIDGE CANCEL (2026-09-08), and
+         it is the same one-line reason they no longer START on the bridge: the
+         child is now the SERVER's, so codexCancelIfBusy() in the main process
+         has nothing to kill and the sign-in would keep running with the button
+         reporting it cancelled. They fall through to the explicit HTTP cancel
+         below -- which is not new code, it is the lane a browser has always
+         used. Only the API-key verb still cancels by re-invoking itself. */
+      if (bridge && verb === "apikey:save"){
+        try { bridge.codexApiKey(""); } catch (e) {}
         return;
       }
       codexStopPoll();
@@ -763,6 +950,12 @@ function wire(){
       if (!key || !key.trim()){ S.codexMsg = "Enter a key first."; render(); return; }
     }
 
+    /* THE INSTALL VERB, and it is first because it is the only one that needs
+       no credential, no bridge and no sign-in state -- it puts the binary
+       there. Handled before the credential ladder below rather than inside it,
+       so none of that ladder's bridge guards can swallow it. */
+    if (verb === "install"){ await codexInstall(); render(); return; }
+
     if (!(verb === "login" || verb === "logout" || verb === "apikey:save"
           || verb === "restore" || verb === "forget")) return;
     /* NO HTTP PATH FOR ANY KEY ACTION, by design. apikey:save carries a key;
@@ -773,10 +966,26 @@ function wire(){
     S.codexBusy = verb;
     S.codexMsg = null; render();
 
-    /* THE BROWSER SIGN-IN IS THE ONE ACTION THAT DOES NOT REPORT ITS OWN
-       OUTCOME. The route answers as soon as the child exists, so there is
-       nothing to await but the spawn -- the credential is watched instead. */
-    if (verb === "login" && !bridge){
+    /* THE SIGN-IN IS THE ONE ACTION THAT DOES NOT REPORT ITS OWN OUTCOME. The
+       route answers as soon as the child exists, so there is nothing to await
+       but the spawn -- the credential is watched instead.
+
+       HTTP FOR EVERY TRANSPORT (2026-09-08), where this used to be `&& !bridge`.
+       The bridge spawns the BARE NAME `codex` off the login shell's PATH
+       (main.js: "A hand-picked binary set in Settings (provider_bins) is NOT
+       honoured here"), and the Codex that Sutra installs lives at
+       ~/.sutra-ui/providers/codex/... which is on no PATH at all. So on the
+       machine this app is built for, the bridge had nothing to spawn and both
+       verbs died with ENOENT. The HTTP route resolves
+       providers.provider_bin("codex"), which honours that registration -- the
+       route's own docstring says so: "a hand-picked path set in Settings IS
+       honoured here -- the IPC path cannot".
+
+       THIS CARRIES NO CREDENTIAL, which is what makes it allowed to ride HTTP
+       at all. codex_login.py's docstring draws exactly this line: `codex login`
+       and `codex logout` carry nothing, so they may cross the port; the API KEY
+       may not, and below it still does not. */
+    if (verb === "login"){
       const before = (S.codexAuth || {}).state;
       try {
         await apiPost("/api/providers/codex/login", {});
@@ -785,16 +994,33 @@ function wire(){
         S.codexBusy = null;
         S.codexMsg = e.message;
         render();
+        /* CODEX_NOT_ON_PATH is the refusal this reaches on a Mac with no Codex,
+           and the server has already kicked the install off the same request
+           (org_api._codex_kick_install). Joining it here is not a second
+           download -- codex_install is single-flight, so this blocks on the
+           one already running and reports what it did. That turns "Sign in" on
+           a fresh Mac into one action that provisions and says when it is
+           done, instead of an error with nothing behind it. */
+        await codexEnsureRuntime();
+        render();
       }
       return;
     }
 
     let r = null;
     try {
-      if (bridge){
-        r = verb === "login" ? await bridge.codexLogin()
-          : verb === "logout" ? await bridge.codexLogout()
-          : verb === "restore" ? await bridge.codexKeyRestore()
+      /* `verb !== "logout"` ADDED 2026-09-08, alongside the login change above
+         and for the identical reason: bridge.codexLogout() spawns the bare name
+         `codex`, which does not resolve to Sutra's own managed install, so the
+         sign-out reported ENOENT and the credential stayed exactly where it
+         was. Logout now always takes the branch below.
+
+         WHAT STAYS ON THE BRIDGE: apikey:save, restore and forget. Those touch
+         a KEY -- on the CLI's stdin or in the keychain -- and routing any of
+         them through HTTP would put a live credential in a request body. That
+         is the line codex_login.py draws and this change does not move it. */
+      if (bridge && verb !== "logout"){
+        r = verb === "restore" ? await bridge.codexKeyRestore()
           : verb === "forget" ? await bridge.codexKeyForget()
           : await bridge.codexApiKey(key);
       } else {
@@ -807,6 +1033,11 @@ function wire(){
         /* The route answers with the fresh probe, so the row is already
            current without a second round trip. */
         if (out && out.auth) S.codexAuth = out.auth;
+        /* ...and with the provider list re-evaluated from that same read, so
+           the row above STOPS saying "Ready to use" on this paint. Signing out
+           had the staleness bug in its more dangerous direction: an enabled
+           radio over a Codex holding no credential. */
+        codexApplyState(out);
       }
     } catch (e){ r = { ok:false, error: e.message }; }
     key = null;
@@ -827,6 +1058,17 @@ function wire(){
        The re-read itself still happens -- the row's saved-key half comes from
        the same endpoint and has genuinely changed. */
     await codexReprobe(!!(r && r.ok) && verb !== "forget");
+    /* THE RUNTIME CHAIN. A credential that just landed assumes a `codex` to
+       spend it on, so the actions that ENABLE Codex check that one exists --
+       the same shape the DeepSeek key save uses to chain its own CLI install,
+       and for the identical reason: a saved credential on a Mac with no CLI is
+       a provider that still cannot answer.
+
+       `logout` and `forget` are excluded because they enable nothing: fetching
+       a binary in reaction to someone signing OUT would be the app installing
+       software nobody asked for. No-op whenever a codex is already there. */
+    if (r && r.ok && (verb === "login" || verb === "apikey:save" || verb === "restore"))
+      await codexEnsureRuntime();
     render();
   });
 
@@ -1450,6 +1692,14 @@ function wire(){
     /* Per-session only. Persisting it here would silently change the default for
        every other session too; Settings is where the default lives. */
     S.model[sel.dataset.model] = sel.value;
+    /* REPAINT, added 2026-09-09 with the Codex Reasoning-effort control. That
+       control's options are the SELECTED MODEL's supported efforts, and the
+       sets differ per model (terra offers `ultra`, 5.5 stops at `xhigh`), so
+       without this the list would keep describing the previous model until
+       something else happened to render.
+       Selection semantics are unchanged -- still per-session, still not
+       persisted; only the paint is new. */
+    render();
   });
 
   /* ── attachments ── */

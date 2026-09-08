@@ -501,6 +501,18 @@ function usagePopHtml(){
         publishes no usage figure this panel can read — no rate-limit window and
         no balance.</p></div>
     </div>`;
+  if (upKind === "tokens"){
+    return `<div class="upop" role="dialog" aria-label="Codex plan usage">
+        <div class="upophead">
+          <b>Codex plan usage</b>
+          <button class="ib" type="button" data-usageclose="1" aria-label="Close">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="upopbody">${codexPlanBodyHtml()}</div>
+      </div>`;
+  }
   if (upKind === "balance"){
     const u = S.deepseekUsage;
     const body = !u
@@ -679,6 +691,45 @@ function deepseekUsageScreen(){
       not yet a confirmed product decision.</p>`;
 }
 
+/* The ChatGPT plan's Codex allowance. Shared by the Usage screen and the
+   composer popover so the two cannot drift.
+
+   EVERY WINDOW THE ACCOUNT RETURNS, drawn through Claude's own usageRowsHtml --
+   same bars, same severity colours, same countdown. Nothing here names a
+   duration: codexWindowLabel derives the label from windowDurationMins, because
+   the measured account returns ONE 30-day window while other plans return the
+   five-hour/weekly pair, and a hardcoded pair would have described this account
+   wrongly.
+
+   CREDITS ONLY WHEN OPENAI REPORTS THEM. The measured answer is {hasCredits:
+   false, unlimited: false, balance: null}, which is "no credits here" and NOT
+   "your balance is zero" -- so the backend returns null for that and this
+   draws nothing. A 0 would read as an exhausted balance. */
+function codexPlanBodyHtml(){
+  if (S.codexPlanError) return `<p style="margin:0">${esc(S.codexPlanError)}</p>
+    <p style="margin:6px 0 0;font-size:10.5px;color:var(--faint)">This reads
+    <code>account/rateLimits/read</code> from the Codex CLI. No model turn is
+    spent, and nothing is billed.</p>`;
+  const plan = S.codexPlan;
+  if (!plan) return `<p style="color:var(--faint);margin:0">No plan usage to
+    show. Codex reports a plan allowance only for a <b>ChatGPT sign-in</b> — an
+    API key is billed through your OpenAI API account instead, and Sutra does
+    not read that.</p>`;
+  const rows = codexPlanRows(plan);
+  const bars = rows.length ? usageRowsHtml({ limits: rows })
+    : `<p style="color:var(--faint);margin:0">This account has a plan but no
+       metered window right now.</p>`;
+  const c = plan.credits;
+  const credits = !c ? "" : `<div class="kv" style="margin-top:8px"><b>Credits</b><span>${
+    c.unlimited ? "unlimited" : esc(String(c.balance))}</span></div>`;
+  const reached = plan.reached
+    ? `<div class="note w" style="margin-top:8px">Codex reports a limit reached
+       (<code>${esc(plan.reached)}</code>).</div>` : "";
+  const resets = (typeof plan.reset_credits === "number" && plan.reset_credits > 0)
+    ? `<div class="kv"><b>Reset credits</b><span>${plan.reset_credits} available</span></div>` : "";
+  return `${bars}${credits}${resets}${reached}`;
+}
+
 SCREENS.usage = () => {
   /* Keyed on the DECLARED usage kind, not the provider id. The `else` this
      replaces meant every provider that was not DeepSeek got Claude's screen --
@@ -687,6 +738,19 @@ SCREENS.usage = () => {
      with. */
   const kind = usageKindOf((SETTINGS || {}).provider);
   if (kind === "balance") return deepseekUsageScreen();
+  /* Codex: the plan allowance, plus a plain statement of what it is NOT.
+     Its own arm for the reason DeepSeek has one -- reaching Claude's screen
+     here would render Anthropic's account fold over a Codex session. */
+  if (kind === "tokens"){
+    const plan = S.codexPlan;
+    const sub = plan && plan.plan_type ? esc(plan.plan_type) + " plan"
+              : plan ? "signed in with ChatGPT" : "not reported";
+    return `${fold("usage.codexplan", "Codex plan usage", sub, codexPlanBodyHtml())}
+      <p style="font-size:11px;color:var(--faint);margin:9px 0 0">Read from the
+      Codex CLI with <code>account/rateLimits/read</code> — no model turn is
+      spent. Per-turn token counts for a chat are on that chat's options row.
+      Codex publishes no prices, so nothing here is a cost.</p>`;
+  }
   if (kind === "none") return `<div class="zero"><h4>No usage to report</h4>
     <p>${esc(providerLabel((SETTINGS || {}).provider))} does not publish a usage
     figure this panel can read — it has neither a rate-limit window nor a

@@ -1303,8 +1303,34 @@ ipcMain.handle("sutra:codex-api-key", async (e, key) => {
     return { ok: false, error: (checked && checked.message)
       || "the key could not be checked, so nothing was changed." };
   }
-  const r = await codexRun(e, ["login", "--with-api-key"], k, CODEX_QUICK_TIMEOUT);
-  if (!r || !r.ok) return r;
+  /* THE LOGIN RUNS IN THE SIDECAR, NOT HERE (bug #4, 2026-09-09).
+     This was `codexRun(e, ["login","--with-api-key"], k, ...)`, and codexRun
+     spawns the BARE NAME `codex` off shellEnv()'s PATH -- see the KNOWN LIMIT
+     in this section's header. Sutra installs its own codex at
+     ~/.sutra-ui/providers/codex/node_modules/.bin/codex, which is on NO PATH,
+     so on the machine this app is built for that spawn answered
+
+         spawn codex ENOENT
+
+     and the key never went live. ~/.codex/auth.json kept the ChatGPT
+     credential, so the row went on TRUTHFULLY saying "Signed in with ChatGPT"
+     -- and because this handler returns before its `store` step on a failed
+     login, the keychain copy was never written either. Nothing switched and
+     nothing was remembered.
+
+     codex_auth._codex_bin() resolves PATH first and Sutra's own install
+     second, so the sidecar finds a codex where this process could not. It is
+     also now the SINGLE place that decides which binary receives a
+     credential, which is the actual defect: the status probe resolved through
+     provider_bin while this spawn did not, and the two disagreed.
+
+     NO NEW CREDENTIAL SURFACE. The key already reaches this same sidecar on
+     stdin twice on this very click -- `check` above and `store` below -- so
+     this adds a third use of an established channel, not a new one. It still
+     never touches HTTP: the backend port has no route that accepts a key, and
+     this change adds none. */
+  const r = await codexAuthCli("login", k, CODEX_KEY_LOGIN_TIMEOUT);
+  if (!r || !r.ok) return { ok: false, error: r && (r.message || r.error) };
   const kept = await codexAuthCli("store", k, CODEX_KEY_CLI_TIMEOUT);
   /* `ok` reports the LOGIN, `checked` that OpenAI accepted the key, and
      `remembered` the keychain copy. All three fail independently and the panel
@@ -1346,6 +1372,14 @@ ipcMain.handle("sutra:codex-api-key", async (e, key) => {
 const CODEX_KEY_CLI_TIMEOUT = 30000;   /* keychain + one `codex login status` */
 const CODEX_KEY_CHECK_TIMEOUT = 20000; /* helper caps the probe at 8s */
 const CODEX_RESTORE_TIMEOUT = 70000;   /* helper caps the spawn at 60s */
+/* The `login` verb, added for bug #4. MUST EXCEED THE HELPER'S OWN BUDGET, and
+   that is a correctness bound rather than a comfort margin: codex_auth.login()
+   validates (PROBE_TIMEOUT 8s), spawns `codex login --with-api-key`
+   (RESTORE_TIMEOUT 60s) and then reads the mask back (STATUS_TIMEOUT 10s) --
+   78s worst case. An outer kill inside that window would SIGKILL the helper
+   mid-spawn and report a timeout for a login that had already replaced the
+   credential, which is the one wrong answer this path must never give. */
+const CODEX_KEY_LOGIN_TIMEOUT = 90000;
 
 function codexAuthCli(verb, apiKey, timeoutMs) {
   return new Promise((resolve) => {
