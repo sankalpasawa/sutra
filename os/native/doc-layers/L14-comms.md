@@ -38,7 +38,7 @@ Per launch / per public communication. Per holding/PRODUCT-DOC-STANDARD.md §3 /
 - DRAFT → RATIFIED requires founder direct ratification per holding/PRODUCT-DOC-STANDARD.md §7.
 - Common spine required per L14 spec: hero · problem · solution · proof · CTA.
 - Auto-publish on edit per memory `feedback_native_html_auto_publish`: any commit under `holding/website/native/` autonomously commits (`docs(native): ...`) + pushes to origin/main; no founder gate per D52 autonomous-push.
-- IP locality per memory `feedback_ip_locality`: Native = sutra-os.vercel.app (Sutra IP venue); Asawa holding-co identity stays on asawa-inc.vercel.app — pick venue by product ownership, not by which site was edited last.
+- IP locality per memory `feedback_ip_locality`: Native = sankalpasawa.github.io/sutra (Sutra IP venue); Asawa holding-co identity stays on sankalpasawa.github.io/asawa-site — pick venue by product ownership, not by which site was edited last. (Vercel venues retired 2026-09-02 per D65.)
 - L7 PRFAQ + L14 Comms travel together — repositioning triggers BOTH rewrite.
 - Native website is OUTSIDE D54 forbidden paths (forbidden = `holding/research/*native*` + `holding/plans/native-*`); `holding/website/native/` is permitted per D54 + holding/PRODUCT-DOC-STANDARD.md §5 Native-exception table.
 

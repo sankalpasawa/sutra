@@ -12,7 +12,7 @@ curl -fsSL https://sankalpasawa.github.io/sutra/install.sh | bash
 ```
 
 Then in any project: `cd your/project && claude` → `/core:start`.
-The story, pillars, and hardstops: **[sutra-os website](https://sutra-os.vercel.app)**.
+The story, pillars, and hardstops: **[sutra website](https://sankalpasawa.github.io/sutra/)**.
 
 ## Desktop app (optional)
 
