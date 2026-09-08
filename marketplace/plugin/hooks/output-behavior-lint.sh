@@ -12,6 +12,11 @@
 # Findings are written to .enforcement/output-behavior-lint.jsonl as JSON rows.
 # Advisory only: always exits 0, never blocks, never emits to stdout.
 #
+# 2026-09-08 (D71): rule authority moved to core:writing-style — ask-to-run is
+# WS-5/WS-A7 and no-HTML is WS-A8 in hooks/writing-style-gate.sh. This file is
+# legacy telemetry only (kept for dispatcher-stop.sh §16 name resolution and the
+# daily-audit presence check); retire after 14 days of ledger parity.
+#
 # Wired from: holding/hooks/dispatcher-stop.sh section 16.
 # Also invokable directly for tests.
 #

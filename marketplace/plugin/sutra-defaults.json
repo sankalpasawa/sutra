@@ -347,27 +347,47 @@
     }
   },
   "output_discipline": {
+    "$comment": "D71 (2026-09-08): single home is plugin skill core:writing-style (skills/writing-style/SKILL.md), replacing caveman, anti-glaze-tone, readability-gate and writing-llm-md. Booleans are the D55 clause-1 practices the per-turn nudge prints; numeric thresholds live in writing_style; banned phrases live ONLY in the skill file (section 4) and are read at runtime by hooks/writing-style-gate.sh — never duplicated here.",
     "tables_preferred_over_prose": true,
     "numbers_preferred_over_adjectives": true,
     "decisions_in_ascii_boxes": true,
     "no_unicode_box_drawing": true,
     "progress_bars_for_scores": true,
-    "skill": "core:readability-gate",
+    "skill": "core:writing-style",
+    "writing_style": {
+      "enforcement": "hard",
+      "gate_hook": "writing-style-gate.sh",
+      "ledger": ".enforcement/writing-style.jsonl",
+      "turn_prose_advisory": 40,
+      "turn_prose_hard": 60,
+      "outcome_lines": 5,
+      "skill_md_lines": 250,
+      "pinned_hard_projects": ["asawa-holding", "sutra"],
+      "banned_source": "skills/writing-style/SKILL.md#banned",
+      "revoke_marker": ".claude/sessions/<sid>/.writing-style-revoked",
+      "glyphs": "ASCII only in prose: boxes +--+, bars ######....; U+2500-U+259F banned (WS-2)",
+      "kill_switch": {
+        "env": "WRITING_STYLE_DISABLED=1",
+        "file": "~/.writing-style-disabled",
+        "per_project": ".claude/sutra-project.json writing_style: advisory|off (ignored for pinned_hard_projects)",
+        "per_turn": ".claude/sessions/<sid>/writing-style-ack with REASON= (audited)"
+      }
+    },
     "highlight_decisions": {
-      "$comment": "cap-113. Memory→fleet 2026-05-04 per CSM TODO #4 fold + codex 2026-05-04 ADVISORY (soft governance surfacing only — coverage = policy-visible, not behavior-verified).",
+      "$comment": "cap-113. Memory→fleet 2026-05-04 per CSM TODO #4 fold + codex 2026-05-04 ADVISORY. D71: unboxed decision lines are logged by writing-style-gate.sh WS-A12.",
       "rule": "Decisions needing input must be visually boxed (ASCII), impossible to miss.",
       "format": "ASCII box; no unicode box-drawing chars per terminal-box-formatting memory",
       "applies_to": "responses_with_decisions",
-      "enforcement": "convention_only",
+      "enforcement": "stop-gate-advisory",
       "cap_id": "cap-113"
     },
     "table_shape": {
-      "$comment": "cap-115. Memory→fleet 2026-05-04. Bundled under output_discipline per codex ADVISORY #2 (no thin dedicated hooks).",
+      "$comment": "cap-115. Memory→fleet 2026-05-04. Bundled under output_discipline per codex ADVISORY #2 (no thin dedicated hooks). D71: enforced HARD by writing-style-gate.sh WS-4 at 3+ task rows.",
       "rule": "Every task list (review/backlog/roadmap/recommendations) carries Impact + Effort columns. Severity/Priority/Score alone insufficient — they rank but do not frame.",
       "minimum_header": "| # | Area/Task | Impact (who/what changes) | Effort (time, files) |",
       "applies_to": "task_lists_3_or_more_rows",
       "applies_to_relayed": "subagent_and_codex_output_reshape_before_presenting",
-      "enforcement": "convention_only",
+      "enforcement": "stop-gate-hard",
       "cap_id": "cap-115"
     }
   },

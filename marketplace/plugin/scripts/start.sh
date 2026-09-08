@@ -276,12 +276,14 @@ Open a Work-Atom before the first Edit/Write of a unit and close it through its 
 
 Write marker files via the Write tool to `.claude/sessions/<CLAUDE_CODE_SESSION_ID>/<name>`, always including a `SESSION=<session-id>` line. Markers persist within a turn and reset on the next user prompt. Never write the shared `.claude/<name>` twin directly — dual-write maintains it.
 
-## Readability Gate — apply at output time
+## Writing Style — core:writing-style, MINIMIZE first (HARD Stop gate)
 
-- Tables over paragraphs when ≥3 rows of comparable data
-- Numbers over adjectives
-- Progress bars for scores: `Name ▓▓▓▓▓▓░░░░ 0.6 STATUS`
-- Decisions in boxed callouts (impossible to miss)
+- MINIMIZE: outcome in the first 5 prose lines; 40 prose lines per turn (60 = one forced redo); detail goes to the artifact, chat carries the path
+- STRUCTURE: table for 3+ comparable items; numbers not adjectives; one ASCII decision box; Impact + Effort on task tables
+- CANDOR + GROUND: no glaze, no closers, no narration of tool use; file:line, a typed label, or Confidence: high|moderate|low|unknown on actionable claims
+- ASCII only: boxes `+--+`, bars `######....`; no unicode box-drawing or block glyphs in prose
+- FILES: every .md carries a metadata block, one H1, tagged fences, a provenance footer (md-standard-gate.sh)
+- Single home: skills/writing-style/SKILL.md (replaces caveman, anti-glaze-tone, readability-gate, writing-llm-md). Revoke phrases on their own line: normal mode | stop anti-glaze | long form | stop writing-style; restore: strict mode
 - Structure-First (D55): when adding anything — survey > reorganize > simplify > surface
 - Skill-explain: a 4-line WHAT / WHY / EXPECT / ASKS card before invoking any skill
 - Right-effort (Karpathy): think-first, simpler-alt, surgical-scope, verify-loop before Edit
@@ -292,7 +294,7 @@ Write marker files via the Write tool to `.claude/sessions/<CLAUDE_CODE_SESSION_
 OS: [route] > [domain] > [node count] > [terminal] > [output]
 ```
 
-Example: `OS: Input Routing (task) > Depth 3 > 2 tool calls > Readability gate > 1 file written`
+Example: `OS: Input Routing (task) > Depth 3 > 2 tool calls > Writing style > 1 file written`
 GOVBLOCK
 )
 

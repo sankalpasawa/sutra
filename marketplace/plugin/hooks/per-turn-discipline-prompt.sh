@@ -160,7 +160,10 @@ _sutra_per_turn_block() {
   printf '\n  Conditionals (apply when triggered):\n'
   printf '  - Codex consult: IF Depth >= %s with %s planned → invoke %s skill BEFORE the Edit\n' "${DEPTH_THRESHOLD:-3}" "${CONSULT_TOOLS:-Edit/Write/MultiEdit}" "${CONSULT_SKILL:-core:codex-sutra}"
   printf '  - Skill-explain: BEFORE invoking any Skill, emit 4-line card with: %s\n' "${SE_LINES:-SKILL/WHAT/WHY/EXPECT/ASKS}"
-  printf '  - Readability gate: format output per: %s\n' "${RG_PRACTICES:-tables_preferred_over_prose, numbers_preferred_over_adjectives, decisions_in_ascii_boxes}"
+  printf '  - Writing style (%s, HARD Stop gate writing-style-gate.sh): MINIMIZE — outcome in the first 5 prose lines, <=40 prose lines per turn (60 = one forced redo), no banned phrases, ASCII only; practices: %s\n' "${RG_SKILL:-core:writing-style}" "${RG_PRACTICES:-tables_preferred_over_prose, numbers_preferred_over_adjectives, decisions_in_ascii_boxes}"
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ -f "$REPO_ROOT/.claude/sessions/${CLAUDE_CODE_SESSION_ID}/.writing-style-revoked" ]; then
+    printf '  - Writing style REVOKED this session: SCOPE=%s (say "strict mode" on its own line to restore)\n' "$(grep -m1 '^SCOPE=' "$REPO_ROOT/.claude/sessions/${CLAUDE_CODE_SESSION_ID}/.writing-style-revoked" 2>/dev/null | cut -d= -f2)"
+  fi
   printf '  - Right-effort (Karpathy): BEFORE %s, apply: %s\n' "${RE_TOOLS:-Edit/Write}" "${RE_PRINCIPLES:-think first / simpler-alt / surgical scope / verify-loop}"
   printf '\n  Canonical schema: %s/sutra-defaults.json  (human-readable: SUTRA-DEFAULTS.md)\n' "$DEFAULTS_DIR"
   printf '  Kill-switch: touch %s\n\n' "${KILL_FILE:-~/.per-turn-discipline-disabled}"
@@ -323,6 +326,36 @@ if [ -f "$_MARKER_LIB" ]; then
 fi
 _FLOW_SID=$(printf '%s' "$HSUTRA_SESSION_ID" | tr -cd 'a-zA-Z0-9_-' | head -c 64)
 [ -z "$_FLOW_SID" ] && _FLOW_SID="no-sid"
+
+# ── Writing-style revoke / resume (core:writing-style §8, 2026-09-08) ──────
+# Deterministic WHOLE-LINE phrase match on the submitted prompt (lines inside
+# ``` fences ignored). Writes or removes the session-scoped DOTFILE the Stop gate
+# (writing-style-gate.sh) reads. Dotfile on purpose: sutra_marker_reset_own wipes
+# "$d"/* and skips dotfiles, so a revoke lasts the session (the legacy caveman /
+# anti-glaze contract) until a clear phrase. The model never writes this marker.
+_WS_DIR="$REPO_ROOT/.claude/sessions/$_FLOW_SID"
+_WS_REV="$_WS_DIR/.writing-style-revoked"
+_WS_SCOPE=""; _WS_CLEAR=0; _WS_INFENCE=0
+while IFS= read -r _ws_ln; do
+  case "$_ws_ln" in '```'*) _WS_INFENCE=$((1 - _WS_INFENCE)); continue ;; esac
+  [ "$_WS_INFENCE" = 1 ] && continue
+  _ws_l=$(printf '%s' "$_ws_ln" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*[.!]*[[:space:]]*$//')
+  case "$_ws_l" in
+    "normal mode"|"stop caveman")                       _WS_SCOPE=compress ;;
+    "stop anti-glaze"|"drop anti-glaze")                _WS_SCOPE=candor ;;
+    "long form"|"stop minimize")                        _WS_SCOPE=minimize ;;
+    "stop writing-style"|"stop writing style")          _WS_SCOPE=all ;;
+    "strict mode"|"resume writing-style"|"resume writing style"|"caveman mode") _WS_CLEAR=1 ;;
+  esac
+done <<WSEOF
+$HSUTRA_PROMPT
+WSEOF
+if [ "$_WS_CLEAR" = 1 ]; then
+  rm -f "$_WS_REV" 2>/dev/null || true
+elif [ -n "$_WS_SCOPE" ] && [ "$_FLOW_SID" != "no-sid" ]; then
+  mkdir -p "$_WS_DIR" 2>/dev/null || true
+  printf 'SCOPE=%s\nSESSION=%s\nTS=%s\nWRITER=per-turn-discipline-prompt.sh\n' "$_WS_SCOPE" "$_FLOW_SID" "$(date +%s)" > "$_WS_REV" 2>/dev/null || true
+fi
 
 _FLOW_VERB=$(bash "$HSUTRA_CLASSIFIER" "$HSUTRA_PROMPT" 2>/dev/null \
   | jq -r '.verb // empty' 2>/dev/null)

@@ -139,15 +139,17 @@ Hook: `subagent-dispatch-brief.sh` (soft hint on PreToolUse Task).
 
 ---
 
-## Output Discipline
+## Output Discipline = Writing Style
 
-- **Tables > prose** when comparing options
-- **Numbers > adjectives** when describing scale ("200 LOC" not "small")
-- **ASCII boxes** for decisions (no unicode box-drawing chars)
-- **Progress bars** for scores (`#####.....` 5/10)
-- **Decisions boxed** so user can't miss them
+Single home: plugin skill `core:writing-style` (`skills/writing-style/SKILL.md`). It replaced caveman, anti-glaze-tone, readability-gate and writing-llm-md on 2026-09-08 (D71); those names remain as redirect stubs.
 
-Skill: `core:readability-gate`. Applied at output time.
+- **MINIMIZE first**: outcome in the first 5 prose lines; 40 prose lines per turn (60 = one forced redo); detail lives in the artifact, chat carries the path
+- **Tables > prose** for 3+ comparable items; **numbers > adjectives** ("200 LOC" not "small"); **Impact + Effort** on every task table
+- **ASCII only**: decision boxes `+--+`, progress bars `######....`; no unicode box-drawing or block glyphs in prose
+- **No glaze, closers or narration**: the banned list lives in the skill file (section 4) and the gate reads it at runtime
+- **Files**: every .md carries a metadata block, one H1, tagged fences and a provenance footer (`md-standard-gate.sh`)
+
+Gate: `hooks/writing-style-gate.sh` (Stop, HARD after `/core:start`; ledger `.enforcement/writing-style.jsonl`). Numbers: `output_discipline.writing_style`. Kill: `WRITING_STYLE_DISABLED=1`, `~/.writing-style-disabled`, per-project `writing_style: advisory`. Revoke phrases (whole line): `normal mode`, `stop anti-glaze`, `long form`, `stop writing-style`; restore with `strict mode`.
 
 ---
 
@@ -183,3 +185,7 @@ Per D40: every Sutra plugin client inherits these defaults so the discipline shi
 The block reports the honest resolved spine for the unit: [1] TYPE/cell → [2] FOLLOW a workflow type (child→platform) or CONSTRUCT → [3] steps → [4] inner engine (factors + lens + Cynefin) → [5] mode per step → [6] close. **Honesty bar**: state what ACTUALLY resolved — an honest 1-step ATOM block on a trivial turn is correct; faking the full spine is theater.
 
 **Enforcement**: HARD, fleet-wide, via two FLOORS (not the firing). `flow-gate.sh` (PreToolUse) blocks an Edit/Write/Task that skipped classify+resolve. `flow-stop-check.sh` (Stop) forces one redo when Flow didn't fire on a no-tool turn (loop-safe via `stop_hook_active`). Both depend on markers persisting — write them via the Write tool (Claude Code rolls back sandboxed Bash writes to `.claude/`). Kill-switches: `FLOW_DISABLED=1` / `~/.flow-disabled` / `FLOW_ACK=1`.
+
+---
+
+provenance: {author: claude, date: 2026-09-08, inputs: [sutra-defaults.json (canonical schema), D71 writing-style consolidation], review: codex, supersedes: none (same path), confidence: high, gaps: [human mirror of the json; the json wins on conflict]}
