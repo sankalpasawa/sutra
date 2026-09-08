@@ -513,6 +513,192 @@ _DEEPSEEK_MODELS = (
          "offered."},
 )
 
+#: ONE ENTRY, AND THE EMPTINESS IS THE MEASUREMENT.
+#:
+#: codex-cli 0.153.2 publishes NO model list. There is no `codex models`
+#: subcommand (checked against the full command list on 2026-09-08), nothing in
+#: `codex exec --help`, and no model roster in the generated app-server schema
+#: bundle. The only id this build has ever OBSERVED is the default the CLI
+#: chose for itself -- `gpt-5.6-terra`, read out of a session rollout's
+#: turn_context -- and that is a snapshot of a server-side default, not a menu.
+#:
+#: So the picker offers "let codex decide" and nothing else. The alternative
+#: was inventing plausible OpenAI ids, and `-m` does NOT protect us from that:
+#: measured, `-m gpt-5-codex` was ACCEPTED, warned "Model metadata for
+#: `gpt-5-codex` not found. Defaulting to fallback metadata; this can degrade
+#: performance and cause issues", and ran anyway. A wrong id therefore does not
+#: fail loudly -- it silently degrades the session. Same laxity as DeepSeek's
+#: `-m`, same mitigation: clean_model() gates every value against this tuple.
+#:
+#: "" is legal and means "no flag" (build_codex_args omits -m), which is why
+#: this cannot rely on the truthiness of clean_model() alone.
+#: RE-MEASURED 2026-09-08 against codex-cli 0.153.2, because "no model list"
+#: is a claim that has to be re-checked before it is used to justify an empty
+#: picker. It still holds, and here is everything that was asked:
+#:
+#:   codex models …                 no such subcommand (full command list read)
+#:   codex exec --help              `-m, --model <MODEL>`, no enumeration
+#:   codex app-server
+#:     generate-json-schema         39 files, 1.79 MB, ZERO concrete model ids
+#:   codex doctor                   reports `model  <default> · openai`
+#:
+#: The CLI itself does not know a roster. So this stays a one-entry list and
+#: the picker keeps meaning what it says.
+#:
+#: WHAT IS AUTHORITATIVE, AND IS NOW USED: the operator's OWN config. codex
+#: reads `model` out of $CODEX_HOME/config.toml, and `-p/--profile` layers
+#: $CODEX_HOME/<name>.config.toml on top of it. A value the operator wrote
+#: there is not a guess -- it is the model this machine is actually set up to
+#: use -- so codex_config_models() surfaces it beside the default instead of
+#: leaving the picker pretending there is nothing to choose. On a machine with
+#: no config.toml (the common case) the picker is exactly what it was.
+_CODEX_MODELS = (
+    {"id": "", "name": "CLI default",
+     "note": "whatever `codex` is configured to use"},
+)
+
+#: Where codex keeps its own configuration. CODEX_HOME wins, as it does for
+#: codex itself.
+def _codex_home():
+    return Path(os.path.expanduser(
+        os.environ.get("CODEX_HOME") or "~/.codex"))
+
+
+#: `model = "..."` at the top level of a codex config file. A LINE SCAN, not a
+#: TOML parse, and that is deliberate: tomllib is 3.11+ and this package still
+#: runs its tests on 3.9, so a parser would have to be vendored to read one
+#: key. The scan is anchored to column 0 so a `model` nested under any
+#: `[table]` cannot be mistaken for the top-level default, and it accepts only
+#: a quoted scalar -- anything it does not understand is simply not offered.
+_CODEX_MODEL_LINE = re.compile(r'^model\s*=\s*["\']([^"\']+)["\']\s*(?:#.*)?$',
+                               re.M)
+
+#: mtime-keyed cache. models_for() is on the settings read path, which every
+#: fs call goes through, and this must not become a stat-plus-read storm. The
+#: key is (path, mtime, size) per file, so an edit is picked up on the next
+#: call and nothing else costs more than one stat.
+_CODEX_MODEL_CACHE = {}
+
+
+def _codex_model_from(path):
+    """The top-level `model` in one codex config file, or None. Never raises."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = (str(path), st.st_mtime, st.st_size)
+    if key in _CODEX_MODEL_CACHE:
+        return _CODEX_MODEL_CACHE[key]
+    found = None
+    try:
+        # Capped: a config file is a few KB, and a caller must not be able to
+        # make this read an arbitrarily large file off the settings path.
+        m = _CODEX_MODEL_LINE.search(path.read_text(encoding="utf-8",
+                                                    errors="replace")[:65536])
+        if m:
+            found = m.group(1).strip() or None
+    except OSError:
+        found = None
+    _CODEX_MODEL_CACHE.clear() if len(_CODEX_MODEL_CACHE) > 64 else None
+    _CODEX_MODEL_CACHE[key] = found
+    return found
+
+
+def codex_config_models():
+    """Models the operator's own codex config declares, in menu order.
+
+    () on a machine with no codex config, which is the ordinary case and the
+    reason this can never make the picker worse.
+
+    TWO SOURCES, both codex's own:
+      $CODEX_HOME/config.toml          -> the base default
+      $CODEX_HOME/<name>.config.toml   -> one per `-p/--profile`
+
+    NOTHING IS INVENTED HERE. Every id returned was typed by the operator into
+    a file codex reads. If they wrote something codex will not accept, codex
+    answers for it the same way it would have without Sutra -- and Sutra is not
+    in a position to know better, because the CLI publishes no roster to check
+    against (see _CODEX_MODELS).
+    """
+    home = _codex_home()
+    out, seen = [], set()
+    base = _codex_model_from(home / "config.toml")
+    if base:
+        seen.add(base)
+        out.append({"id": base, "name": base,
+                    "note": "from your codex config"})
+    try:
+        profiles = sorted(home.glob("*.config.toml"))
+    except OSError:
+        profiles = []
+    for p in profiles:
+        mid = _codex_model_from(p)
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        out.append({"id": mid, "name": mid,
+                    "note": "from your %s codex profile" % p.name.split(".")[0]})
+    return tuple(out)
+
+
+#: Codex's own enumerations, read out of the CLI's REJECTION of a bad value --
+#: the only authoritative source there is, and cheap to re-check:
+#:
+#:   codex exec --strict-config -c model_reasoning_summary='"__bogus__"' …
+#:     -> unknown variant `__bogus__`, expected one of `auto`, `concise`,
+#:        `detailed`, `none`
+#:   codex exec --strict-config -c model_verbosity='"__bogus__"' …
+#:     -> unknown variant `__bogus__`, expected one of `low`, `medium`, `high`
+#:
+#: Measured 2026-09-08 on 0.153.2 WITHOUT spending a model turn: `--strict-config`
+#: validates the config before anything is sent, and the probe resumed a
+#: nonexistent thread so the run died at "No prompt provided via stdin".
+#:
+#: `model_reasoning_effort` IS a real key -- the same probe proves it, because a
+#: made-up key is refused with "unknown configuration field" and that one was
+#: not -- but it ACCEPTED "__bogus__" as a value, so this build has no
+#: authoritative list of its levels. It is therefore NOT offered: a picker of
+#: guessed levels is the invented-capability this module refuses everywhere
+#: else. If a later codex declares them, the probe above is how to find out.
+#:
+#: "" is legal in both and means "leave it to codex" (no -c emitted).
+CODEX_REASONING_SUMMARY = ("", "auto", "concise", "detailed", "none")
+CODEX_VERBOSITY = ("", "low", "medium", "high")
+
+#: Which of PERMISSION_MODES codex can actually enforce, and why the other
+#: three are absent rather than pending.
+#:
+#: VERIFIED against codex-cli 0.153.2 on 2026-09-08. The sandbox enumeration
+#: comes from the CLI's own rejection ("[possible values: read-only,
+#: workspace-write, danger-full-access]") and the enforcement was measured
+#: through `codex sandbox`, which runs a command under the same seatbelt
+#: without spending a model turn:
+#:
+#:   read-only          reads succeed; a write answers "Operation not permitted"
+#:   workspace-write    a write inside the workspace root succeeds; the same
+#:                      write to $HOME answers "Operation not permitted"
+#:   danger-full-access writes succeed
+#:
+#: plan               -> --sandbox read-only        + approval_policy=never
+#: acceptEdits        -> --sandbox workspace-write  + approval_policy=never
+#: bypassPermissions  -> --dangerously-bypass-approvals-and-sandbox
+#:
+#: auto / manual / dontAsk: NO codex equivalent and no near-miss. codex's
+#: approval_policy values are untrusted/on-failure/on-request/granular/never
+#: (from its config-load error), and every one except `never` waits for an
+#: answer on a channel a chat pane does not have -- a `codex exec` run has
+#: nobody to approve anything, so it would stall rather than prompt. Offering
+#: one of these would repeat the DeepSeek bug this per-provider list was
+#: written to end: the control displayed the operator's choice while something
+#: else ran.
+#:
+#: DECLARED, NOT LEFT EMPTY, and that distinction is load-bearing.
+#: permission_modes_for() falls back to ALL SIX for a provider that declares
+#: (), and its docstring says that default is "safe only because it is
+#: unreachable". The moment codex entered ADAPTERS it became reachable, so an
+#: empty declaration here would have put auto/manual/dontAsk on a Codex pane.
+_CODEX_PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
+
 
 def _model_selectable(entry):
     """Absent `selectable` means True.
@@ -526,12 +712,98 @@ def _model_selectable(entry):
 
 def models_for(pid):
     """Every model this provider declares, in menu order. () for a provider
-    that has none (codex, gemini) -- which is a real answer, not a gap: their
-    rows render without a picker rather than with someone else's."""
+    that has none (gemini) -- which is a real answer, not a gap: their rows
+    render without a picker rather than with someone else's.
+
+    CODEX IS COMPOSED, not static, and it is the only one: its catalogue entry
+    carries "CLI default" and codex_config_models() appends whatever the
+    operator's own codex config declares. Nothing about any other provider's
+    list changes -- the branch is keyed on the id and every other spec returns
+    its tuple exactly as before.
+
+    Cheap enough for this path (a stat per config file, cached on mtime; see
+    _codex_model_from) and it must stay that way: load_settings() reaches here
+    and every fs call reaches load_settings().
+    """
     for spec in _CATALOG:
         if spec["id"] == pid:
-            return spec.get("models", ())
+            declared = spec.get("models", ())
+            if pid == "codex":
+                return tuple(declared) + _codex_discovered()
+            return declared
     return ()
+
+
+def _codex_discovered():
+    """Codex's own model list, then the operator's config, then nothing.
+
+    ORDER IS THE POINT. codex_models.cached() holds what `model/list` last
+    answered -- account-scoped, server-fresh, and Codex's own opinion of what
+    it will run -- so it wins. codex_config_models() stays BEHIND it rather
+    than being deleted: a `model` the operator wrote into their own codex
+    config is a legitimate custom choice (a self-hosted provider, an
+    entitlement Sutra cannot see), and it is only reachable through this path.
+    It is consulted only when discovery has produced nothing, so on an ordinary
+    machine it costs one stat and changes nothing.
+
+    NO SUBPROCESS, EVER. cached() is pure by construction -- the spawning half
+    lives in codex_models.refresh_if_stale() and is called from the auth route,
+    never from here. This function is reached by load_settings(), and every
+    fs/tree, fs/read and settings GET goes through that; the same rule that
+    keeps codex_auth() out of _describe() applies with more force here.
+
+    `_default` is stripped. It is bookkeeping between codex_models and the
+    picker's first option, and a key that reaches a client frame because
+    nothing removed it is how a private field becomes an accidental contract.
+
+    THE IMPORT IS DEFERRED because codex_models imports THIS module -- a
+    top-level import here would be a cycle. Same shape org_api uses for its
+    `import app`, and cheap after the first call (sys.modules).
+    """
+    import codex_models
+    found = codex_models.cached()
+    if not found:
+        return codex_config_models()
+    # `_default` becomes the public `default`, and `efforts` rides along. Both
+    # are needed by the CLIENT and by nothing else: the Reasoning-effort picker
+    # offers the SELECTED model's efforts, and on "CLI default" it has to know
+    # which model that resolves to. Server-side validation resolves the same
+    # two facts through codex_efforts_for(), so the control and the validator
+    # cannot disagree about what is offerable.
+    #
+    # Codex-only keys. Claude's and DeepSeek's entries are untouched, and no
+    # existing reader looks past {id, name, note, selectable}.
+    return tuple(dict({k: v for k, v in m.items() if k != "_default"},
+                      default=bool(m.get("_default")))
+                 for m in found)
+
+
+def codex_efforts_for(model_id=None):
+    """The reasoning efforts a Codex model supports, or ().
+
+    The allow-list build_codex_args validates a per-turn `reasoning_effort`
+    against. It is PER MODEL and discovered, never declared: measured on one
+    account, terra offers `ultra`, luna does not, and 5.5 stops at `xhigh`.
+
+    () is the honest answer when discovery has not run or the model is unknown,
+    and it makes the control degrade correctly -- only "default" is offered and
+    no override is emitted, which is exactly the behaviour before this existed.
+
+    NO SUBPROCESS. Reads codex_models' cache, like _codex_discovered().
+    """
+    import codex_models
+    return codex_models.efforts_for(model_id)
+
+
+def codex_default_model():
+    """The id `codex` would pick on its own, or None.
+
+    Metadata about the CLI default, so the picker's first row can say what it
+    resolves to. NOT a selection: choosing "CLI default" still stores "" and
+    still emits no -m.
+    """
+    import codex_models
+    return codex_models.default_id()
 
 
 def model_ids_for(pid):
@@ -552,8 +824,24 @@ def all_models_by_provider():
     The shape the settings endpoint publishes. A provider with no models is
     ABSENT rather than present-and-empty, so the client's test for "does this
     provider have a picker" is the same test as "is it in this dict".
+
+    GOES THROUGH models_for(), and that is the fix for a real bug: this read
+    `spec["models"]` straight off _CATALOG, which is the STATIC tuple. Every
+    other consumer -- clean_model, selectable_model_ids_for, model_ids_for --
+    already went through models_for(), so when codex's list became composed
+    (catalogue + what `model/list` discovered) a selected model VALIDATED and
+    reached `-m` correctly while the picker had no rows to select from. The
+    published payload was the one path that bypassed the composition, so the
+    Codex picker showed "CLI default" alone on a machine where discovery had
+    just returned three models.
+
+    UNCHANGED FOR EVERY OTHER PROVIDER: models_for() returns spec["models"]
+    verbatim for every id except codex. The `if spec.get("models")` guard still
+    keys off the STATIC tuple on purpose -- it answers "is this provider
+    supposed to have a picker at all", which must not become true for gemini
+    just because some future discovery returned something.
     """
-    return {spec["id"]: list(spec["models"])
+    return {spec["id"]: list(models_for(spec["id"]))
             for spec in _CATALOG if spec.get("models")}
 
 
@@ -708,23 +996,31 @@ PERMISSION_MODE_NOTES = {
 }
 
 # Providers this codebase can actually DRIVE. Keep in lockstep with app.py's
-# ws_chat provider dispatch (SessionRuntime for claude, AcpRuntime for
-# deepseek; anything else falls through to the "no-adapter" refusal). Adding
-# an id here without writing its adapter re-creates the bug this set exists
-# to prevent.
+# ws_chat provider dispatch (SessionRuntime for claude, CodexRuntime for codex,
+# AcpRuntime for deepseek; anything else falls through to the "no-adapter"
+# refusal). Adding an id here without writing its adapter re-creates the bug
+# this set exists to prevent.
 #
-# codex: DELIBERATELY ABSENT (2026-09-04). It was added here as a staging step
-# and taken back out the same day. With codex in this set the row rendered
-# "Ready to use", accepted the click, and then died at connect with code
-# "no-adapter" (app.py's `elif active_id != "claude"` arm) -- exactly the
-# offer-a-choice-that-cannot-run failure this set exists to prevent. Refusing
-# at SELECTION time is the better error until a CodexRuntime, a
-# build_codex_args() and a third arm in the ws_chat dispatch exist.
+# codex: ADDED 2026-09-08, and this note records what had to exist first.
+# It was briefly in this set on 2026-09-04 as a staging step and taken back out
+# the same day: with codex here the row rendered "Ready to use", accepted the
+# click, and then died at connect with code "no-adapter" (app.py's
+# `elif active_id != "claude"` arm) -- exactly the offer-a-choice-that-cannot-
+# run failure this set exists to prevent. The note left behind said refusing at
+# SELECTION time was the better error "until a CodexRuntime, a
+# build_codex_args() and a third arm in the ws_chat dispatch exist".
 #
-# The Codex row now offers SIGN-IN (see the codex auth section below), which is
-# a different capability from selectability and says so on screen. Signing in
-# does not belong to this set and must not be read as progress toward it.
-ADAPTERS = frozenset({"claude", "deepseek"})
+# All three now exist: codex_runtime.CodexRuntime (`codex exec --json`,
+# measured against codex-cli 0.153.2 on 2026-09-08), build_codex_args() in
+# app.py beside the other two builders, and the codex arms in ws_chat's
+# dispatch. So this membership is now backed by a transport rather than
+# staging a hope.
+#
+# SIGN-IN IS STILL A DIFFERENT CAPABILITY. The Codex row's sign-in block (see
+# the codex auth section below) answers "which credential is codex holding",
+# which is `configured`, not `adapter`. Being in this set does not mean anyone
+# is signed in, and being signed in never implied membership here.
+ADAPTERS = frozenset({"claude", "codex", "deepseek"})
 
 # ------------------------------------------------------------- catalog -----
 # Order is precedence order for the "first runnable provider" fallback.
@@ -792,6 +1088,30 @@ _CLAUDE_TURN_OPTIONS = ("effort", "max_budget_usd", "allowed_tools",
 _CLAUDE_PERMISSION_MODES = PERMISSION_MODES
 _DEEPSEEK_PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions")
 
+#: Codex's per-turn controls. ONE PROCESS PER TURN is what makes these
+#: deliverable: the old declaration was () with the note "there is no running
+#: session to change anything on", which is true of a persistent process and
+#: backwards for `codex exec` -- every turn is a fresh spawn, so a spawn-time
+#: `-c` IS a per-turn control.
+#:
+#: BOTH ARE ENFORCED BY CODEX ITSELF, not interpreted by Sutra, and both are
+#: named by the CLI's own rejection of a bad value (see CODEX_REASONING_SUMMARY).
+#: Nothing else is offered: `model_reasoning_effort` is real but publishes no
+#: value list, and Claude's five have no codex equivalent.
+#: `reasoning_effort` ADDED 2026-09-09, and it is a DIFFERENT AXIS from
+#: `reasoning_summary` rather than a rename of it: summary is how much of its
+#: reasoning codex SHOWS (auto/concise/detailed/none), effort is how much it
+#: DOES (low/medium/high/xhigh/max/ultra). They share no values.
+#:
+#: It was deliberately left out when the other two shipped, because
+#: `-c model_reasoning_effort` ACCEPTS an unknown value without complaint
+#: (measured: "__bogus__" sailed through) and no enumeration was available, so
+#: any list would have been guesses. model/list supplies one -- per model, and
+#: the sets differ -- which is what made this implementable without inventing
+#: anything. Its allow-list is therefore codex_efforts_for(model), not a
+#: constant like the other two.
+_CODEX_TURN_OPTIONS = ("reasoning_summary", "verbosity", "reasoning_effort")
+
 _CATALOG = (
     {"id": "claude", "name": "Claude Code", "bin": "claude",
      "config_dir": "~/.claude", "default": True,
@@ -799,13 +1119,34 @@ _CATALOG = (
      "usage_kind": "window-percent",
      "turn_options": _CLAUDE_TURN_OPTIONS,
      "permission_modes": _CLAUDE_PERMISSION_MODES},
-    # No models and no usage: Codex is sign-in-only in this build (no adapter,
-    # see ADAPTERS above). Declaring the absence is the point -- it is what
-    # stops the usage row falling through to Anthropic's percentage.
+    # usage_kind "none" is still a DECLARATION, not a gap, now that codex has
+    # an adapter. `turn.completed` carries {input_tokens, cached_input_tokens,
+    # cache_write_input_tokens, output_tokens, reasoning_output_tokens} --
+    # per-turn counts with NO dollar figure and no rate-limit window anywhere
+    # in the payload (measured 0.153.2, 2026-09-08). Neither "window-percent"
+    # nor "balance" is true of that, and declaring one would put Anthropic's
+    # percentage on a Codex session. The counts still reach the client on the
+    # `done` frame's `quota` field; they are just not a usage HEADLINE.
+    #
+    # turn_options () -- measured, like DeepSeek's. Every per-turn lever codex
+    # has is spawn-time argv (model, sandbox, approval policy), and `codex
+    # exec` is one process per turn, so there is no running session to change
+    # anything on. Nothing to wire, rather than something not yet wired.
     {"id": "codex", "name": "OpenAI Codex", "bin": "codex",
      "config_dir": "~/.codex", "default": False,
-     "models": (), "model_flag": None, "usage_kind": "none",
-     "turn_options": (), "permission_modes": ()},
+     "models": _CODEX_MODELS, "model_flag": "-m",
+     # "tokens", not "none" and emphatically not "window-percent" or
+     # "balance". codex reports PER-TURN TOKEN COUNTS on turn.completed and
+     # nothing else: no dollar figure, no rate-limit window, no plan
+     # allowance. Those counts were already reaching the client on the `done`
+     # frame's `quota` field and nothing rendered them. This declares what kind
+     # of fact they are so the client can show them AS TOKENS -- the one thing
+     # that is true -- rather than borrowing Anthropic's percentage or
+     # DeepSeek's balance, which is what any of the other three values would
+     # have done.
+     "usage_kind": "tokens",
+     "turn_options": _CODEX_TURN_OPTIONS,
+     "permission_modes": _CODEX_PERMISSION_MODES},
     {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
      "config_dir": "~/.gemini", "default": False,
      "models": (), "model_flag": None, "usage_kind": "none",
@@ -931,6 +1272,16 @@ CODEX_AUTH_PATH = "~/.codex/auth.json"
 
 CODEX_STATUS_TIMEOUT = 10
 
+#: The npm package the `codex exec --json` transport was measured against
+#: (codex_runtime.py's docstring: "MEASURED against codex-cli 0.153.2 on
+#: 2026-09-08"). Lives here for the same reason DEEPSEEK_CLI_PACKAGE does:
+#: codex_install.py fetches it and the provider row may name it, and those two
+#: must never be able to disagree about which package is meant.
+#:
+#: NAMING IT IS NOT AN INSTALL COMMAND. `npm install -g` is exactly what
+#: codex_install.py refuses to do -- see its "--prefix, NOT -g" section.
+CODEX_CLI_PACKAGE = "@openai/codex"
+
 #: The one line `codex login status` answers with, verified against codex-cli
 #: 0.153.2 on 2026-09-04:
 #:
@@ -953,9 +1304,33 @@ _CODEX_LOGGED_OUT_RE = re.compile(r"not\s+logged\s+in", re.I)
 #: Plain English for each state, so the panel does not re-derive the billing
 #: story and disagree with this module. The whole point of the row is that
 #: these two cost different amounts.
+#: REWORDED 2026-09-08. "usage included in your plan" was read as unlimited,
+#: and "billed per token" implied Sutra knows a rate. Neither is knowable here:
+#: codex publishes no plan allowance and no price (see usage_kind "tokens"), so
+#: these say WHERE the usage lands and stop -- one short clause, no number.
+#: The longer explanation lives in CODEX_BILLING_DETAIL below, which the
+#: sign-in block renders under the row rather than inside this label.
 CODEX_BILLING = {
-    "chatgpt": "usage included in your plan",
-    "api_key": "billed per token",
+    "chatgpt": "covered by your ChatGPT plan",
+    "api_key": "billed to your OpenAI API account",
+}
+
+#: The sentence a normal user needs, for each credential. NO PRICES, NO LIMITS,
+#: NO REMAINING QUOTA -- none of the three is obtainable from the CLI, and a
+#: made-up figure here is worse than an absent one because it would be believed.
+#: What each one DOES say is which account pays and that limits exist somewhere
+#: the user can go and look.
+CODEX_BILLING_DETAIL = {
+    "chatgpt": ("Codex runs against your ChatGPT plan and draws on that plan's "
+                "own Codex usage limits. Nothing here is billed per token. "
+                "Sutra cannot see how much of the allowance is left -- codex "
+                "does not report it -- so check your ChatGPT account for that."),
+    "api_key": ("Codex runs against your OpenAI API account, so these turns are "
+                "billed at OpenAI's API pricing and are NOT covered by a "
+                "ChatGPT subscription. Sutra shows the tokens a turn used but "
+                "not what they cost: codex reports no prices, and Sutra will "
+                "not guess at them. Your OpenAI usage dashboard is the "
+                "authority on spend."),
 }
 
 
@@ -1029,6 +1404,7 @@ def codex_auth():
     now = int(time.time() * 1000)
     if not bin_path:
         return {"state": "no_binary", "key_display": "", "billing": None,
+                "billing_detail": None,
                 "detail": "the `codex` CLI is not on PATH, so its sign-in "
                           "state cannot be read",
                 "bin_path": None, "checked_at_ms": now}
@@ -1038,11 +1414,13 @@ def codex_auth():
     except FileNotFoundError:
         # which() found it and exec did not: it moved between the two calls.
         return {"state": "no_binary", "key_display": "", "billing": None,
+                "billing_detail": None,
                 "detail": "%s could not be run -- it is no longer there"
                           % bin_path,
                 "bin_path": bin_path, "checked_at_ms": now}
     except (OSError, subprocess.SubprocessError) as exc:
         return {"state": "unknown", "key_display": "", "billing": None,
+                "billing_detail": None,
                 "detail": "`codex login status` did not finish (%s)"
                           % type(exc).__name__,
                 "bin_path": bin_path, "checked_at_ms": now}
@@ -1064,6 +1442,12 @@ def codex_auth():
                   "it says." % p.returncode)
     return {"state": state, "key_display": key_display,
             "billing": CODEX_BILLING.get(state), "detail": detail,
+            # The paragraph the short label cannot carry: which account pays,
+            # and -- explicitly -- what Sutra does NOT know (price, allowance,
+            # remaining quota). Sent as a sibling of `billing` so the row can
+            # render one line and the block underneath the fuller sentence,
+            # without either re-deriving the other.
+            "billing_detail": CODEX_BILLING_DETAIL.get(state),
             "bin_path": bin_path, "checked_at_ms": now}
 
 
@@ -1381,13 +1765,17 @@ def _describe(spec):
         # This said "this panel drives Claude's stream-json protocol only",
         # which stopped being true when the DeepSeek ACP adapter landed:
         # DeepSeek renders as ready to use two rows away in the same list, so
-        # the row contradicted the screen it was printed on.
-        pin = (" (checked against codex-cli 0.153.2)"
-               if spec["id"] == "codex" else "")
-        reason = ("no chat adapter yet -- this panel speaks two protocols, "
-                  "Claude's stream-json and DeepSeek's ACP, and %s exposes "
-                  "neither%s, so it cannot answer messages here even though "
-                  "it is installed at %s" % (spec["name"], pin, bin_path))
+        # the row contradicted the screen it was printed on. Corrected a second
+        # time on 2026-09-08 for the same reason -- the count became three when
+        # the Codex adapter landed, and the codex-specific version pin that
+        # used to hang off this string went with it, because codex is now in
+        # ADAPTERS and can no longer reach this arm at all. `gemini` is the
+        # only id left that does.
+        reason = ("no chat adapter yet -- this panel speaks three protocols, "
+                  "Claude's stream-json, Codex's `exec --json` and DeepSeek's "
+                  "ACP, and %s exposes none of them, so it cannot answer "
+                  "messages here even though it is installed at %s"
+                  % (spec["name"], bin_path))
     elif configured and not installed:
         # This is the message a user sees when the app cannot find a CLI they
         # know is installed. "not on PATH" alone sent people looking in the

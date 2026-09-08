@@ -64,7 +64,13 @@ BLOCK_TYPES = ("text", "thinking", "tool_use", "tool_result")
 #: providers.ADAPTERS rather than an import, to keep this module free of the
 #: PATH/config probing that providers.py does on every call. Kept in sync by
 #: test_chat_store.test_providers_match_adapters.
-SEGMENT_PROVIDERS = ("claude", "deepseek")
+#:
+#: codex added 2026-09-08 with its adapter. NOT cosmetic: begin_segment()
+#: RAISES for a provider outside this tuple, and ws_chat calls switch.confirm()
+#: inside a try/except that swallows bookkeeping failures -- so a missing entry
+#: here would leave every Codex chat working on screen and unrecorded on disk,
+#: with no error anywhere to say so.
+SEGMENT_PROVIDERS = ("claude", "codex", "deepseek")
 
 
 def store_dir():

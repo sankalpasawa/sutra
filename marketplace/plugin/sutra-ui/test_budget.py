@@ -117,7 +117,29 @@ class WindowTest(unittest.TestCase):
         case and is exempt BY NAME here -- so adding a fifth provider with a
         picker fails this test until someone states which case it is, rather
         than silently inheriting the pessimistic one."""
-        UNKNOWABLE_DEFAULT = {"claude"}   # the CLI's own configured default
+        # The CLI's own configured default, which this panel cannot know.
+        #
+        # codex joined this set on 2026-09-08 with its adapter, and it belongs
+        # in Claude's case rather than DeepSeek's. DeepSeek's default is
+        # KNOWABLE -- the fork's ACP session/new reports deepseek-v4-flash --
+        # so declaring 1M for it is measurement. codex has no equivalent: it
+        # publishes no model roster at all (no `codex models`, nothing in
+        # `codex exec --help`, nothing in the generated app-server schema), so
+        # there is no way to ask what "" will resolve to before the turn runs.
+        # The one id ever observed, gpt-5.6-terra, was read out of a session
+        # rollout AFTER the fact and is a server-side default that can change
+        # under us -- which is exactly the "operator may have changed it"
+        # situation the claude exemption exists for.
+        #
+        # So codex gets NO budget.DEFAULT_WINDOWS entry and takes the floor.
+        # That is the pessimistic direction, and here it is also the safe and
+        # currently inert one: budget.for_target is reached through
+        # switch.plan, and switch._transport_for("codex") returns None, so a
+        # switch TO codex is refused with UNKNOWN_TARGET before any ceiling is
+        # computed. If a codex switch arm ever lands, under-counting the window
+        # costs ceiling; over-claiming one would build a payload past the
+        # context window and have it rejected at the API.
+        UNKNOWABLE_DEFAULT = {"claude", "codex"}
         for spec in providers._CATALOG:
             pid = spec["id"]
             if not providers.models_for(pid) or pid in UNKNOWABLE_DEFAULT:

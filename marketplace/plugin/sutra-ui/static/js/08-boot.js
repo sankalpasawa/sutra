@@ -201,6 +201,34 @@ async function loadUsage(force){
     render();
     return;
   }
+  /* CODEX: its own endpoint and its own state, exactly as `balance` does above.
+     `account/rateLimits/read` is the plan allowance -- windows, percentages and
+     reset times -- and it is ChatGPT-only, which the ROUTE enforces rather than
+     this branch: in API-key mode it answers `{plan:null}` without asking Codex,
+     so signing out or switching credentials makes the indicator disappear
+     instead of going stale.
+
+     THIS ALSO CLOSES A LEAK. `tokens` is neither "balance" nor "none", so it
+     fell through to the two requests below and read ANTHROPIC's account and
+     usage on a Codex session -- the exact failure the comment beneath this one
+     was written about, reintroduced when Codex gained a usage_kind. Now it
+     never reaches them.
+
+     No cost check here: the plan read is TTL-cached server-side, and this
+     function is already the thing that runs after every completed turn. */
+  if (kind === "tokens"){
+    try {
+      const r = await apiGet("/api/providers/codex/plan");
+      S.codexPlan = (r && r.plan) || null;
+      S.codexPlanError = null;
+    } catch (e){
+      /* A failed read is NOT a zeroed allowance. Cleared, and the renderers
+         draw nothing -- the state before this existed. */
+      S.codexPlan = null; S.codexPlanError = e.message;
+    }
+    render();
+    return;
+  }
   /* NO USAGE CONCEPT: fetch nothing. The `else` this guards used to reach
      /api/usage and /api/account for every non-DeepSeek provider, so selecting
      Codex would have spent two requests reading ANTHROPIC's account and then

@@ -223,6 +223,18 @@ const EPILOGUE = `
   set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
   get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
   turnOptsHtml, permSelect, turnOptsFor,
+  /* Codex Reasoning effort: the option set is the SELECTED model's, so both
+     the lookup and the pane's model resolution are pinned */
+  codexEffortsFor, paneModelFor,
+  get MODELS_BY_PROVIDER_RAW(){ return MODELS_BY_PROVIDER; },
+  /* the Codex UX pass: per-turn token counts (the one usage fact codex
+     reports), and the compacting that must never turn a small exact number
+     into a rounded one */
+  providerUsage, usageKindOf, tokShort,
+  /* the global Codex plan indicator: the label is DERIVED from
+     windowDurationMins, so both the derivation and the row mapping are
+     pinned rather than a hardcoded 5h/weekly pair */
+  codexWindowLabel, codexPlanRows, codexPlanBodyHtml,
   /* Pane provider resolution. TWO functions on purpose (see 06-render), and
      both are exported so the split itself is pinned: collapsing them would
      feed the page's seed to the Usage row, whose not-loaded branch turns a
@@ -254,6 +266,12 @@ const EPILOGUE = `
      tells someone paying per token that their usage is included */
   codexAuthHtml, codexConfirmText, codexDoneText, loadCodexAuth, codexNeedsProbe,
   codexReprobe,
+  /* the auth/readiness join. S.codexAuth and PROVIDERS were separate state and
+     only the first was refreshed after a sign-in, so the row kept boot()'s
+     answer until a reload -- these are what make one answer move both, and
+     what keeps an older backend's omission from blanking the provider list */
+  codexApplyState, codexNeedsInstall, codexEnsureRuntime, codexInstall,
+  codexInstallHtml,
   /* the browser-transport sign-in watch: every stop condition is pinned,
      because a poll with no way to end is the render loop all over again */
   codexOnScreen, codexWatchLogin, codexStopPoll, codexBridge,
@@ -3822,20 +3840,23 @@ test("45a. each state renders its own badge, and the billing line with it", () =
     assert.ok(/Not signed in/.test(out), "signed-out says so");
     assert.ok(/Sign in with ChatGPT/.test(out) && /Add API key/.test(out),
       "and offers both ways in");
-    assert.ok(/usage included in your Plus\/Pro\/Business plan/.test(out)
-           && /pay for what you use/.test(out), "each way says what it costs");
+    /* REWORDED 2026-09-08: neither way in may state a price or an allowance,
+       because codex publishes neither. Each says which ACCOUNT pays. */
+    assert.ok(/ChatGPT plan's own Codex limits/.test(out)
+           && /billed to your OpenAI API account/.test(out),
+      "each way in says which account pays");
 
     const chat = codexRender({ state:"chatgpt", key_display:"",
-                               billing:"usage included in your plan" });
+                               billing:"covered by your ChatGPT plan" });
     assert.ok(/Signed in with ChatGPT/.test(chat), "chatgpt badge");
-    assert.ok(/usage included in your plan/.test(chat), "with the billing line");
+    assert.ok(/covered by your ChatGPT plan/.test(chat), "with the billing line");
     assert.ok(/Sign out/.test(chat) && /Use an API key instead/.test(chat),
       "sign out + the switch");
 
     const key = codexRender({ state:"api_key", key_display:"sk-proj-***SMnIA",
-                              billing:"billed per token" });
+                              billing:"billed to your OpenAI API account" });
     assert.ok(/sk-proj-\*\*\*SMnIA/.test(key), "the masked stub the CLI printed");
-    assert.ok(/billed per token/.test(key), "with the billing line");
+    assert.ok(/billed to your OpenAI API account/.test(key), "with the billing line");
     assert.ok(/Sign out/.test(key) && /Switch to ChatGPT plan/.test(key),
       "sign out + the other switch");
 
@@ -3919,9 +3940,17 @@ test("45d3. a sign-in the SERVER is running is adopted after a reload", () => {
 test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
   sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
   try {
-    const out = codexRender({ state:"chatgpt", billing:"usage included in your plan" });
-    assert.ok(/<b>not<\/b> make Codex selectable/.test(out),
-      "signing in is not selectability, and the block says so");
+    const out = codexRender({ state:"chatgpt", billing:"covered by your ChatGPT plan" });
+    /* REWORDED 2026-09-08. The old sentence was "signing in here does NOT make
+       Codex selectable" -- true when nothing could install the CLI, and
+       misleading once Sutra provisions it: a sign-in on a machine that has the
+       runtime DOES make the row selectable, on the same paint. The claim that
+       still needs making is that a credential is only HALF of it. */
+    assert.ok(/credential\s*<i>and<\/i>\s*its command-line tool/.test(
+                out.replace(/\s+/g, " ")),
+      "the block must still say a credential alone is not enough");
+    assert.ok(!/does <b>not<\/b> make Codex selectable/.test(out),
+      "the superseded absolute claim is back");
     /* The row directly above prints `reason` verbatim -- both protocols, the
        version pin, the install path. Repeating it here put the same paragraph
        on screen twice. The block must say the one thing the row does not, and
@@ -5168,4 +5197,1034 @@ test("48i. readDeclarations survives every malformed attribute", () => {
     assert.deepStrictEqual(keys(), ["provider"], "the real parse path must actually work");
     assert.strictEqual(T.readDeclarations().provider, "deepseek");
   } finally { sandbox.document.querySelector = prev; }
+});
+
+/* ── 49. Codex: the join between "signed in" and "can be picked" ────────────
+   THE BUG THESE CLOSE (2026-09-08). `S.codexAuth` and `PROVIDERS` are separate
+   state, and only the first was ever refreshed after a sign-in. PROVIDERS is
+   filled exactly once, by loadRuntime() inside boot(); nothing else in the app
+   re-reads it. So a successful ChatGPT sign-in updated the sign-in block and
+   left the ROW above it -- "Ready to use", and the radio's disabled attribute,
+   both read off PROVIDERS -- showing what was true when the window opened.
+   Only a page reload fixed it.
+
+   45n above already pinned that a completed sign-in updates
+   S.codexAuth.state, and it passed for the whole life of the bug, because
+   nothing looked at the row. Every test here looks at the row. */
+
+const CODEX_ROW_BLOCKED = { id:"codex", name:"OpenAI Codex", installed:true,
+                            configured:false, runnable:false, adapter:true,
+                            reason:"installed, but nobody is signed in" };
+const CODEX_ROW_READY   = { id:"codex", name:"OpenAI Codex", installed:true,
+                            configured:true, runnable:true, adapter:true,
+                            reason:null };
+const CODEX_ROW_ABSENT  = { id:"codex", name:"OpenAI Codex", installed:false,
+                            configured:false, runnable:false, adapter:true,
+                            reason:"binary 'codex' not on PATH" };
+
+/* 49a. THE FIX ITSELF: one answer moves both halves. */
+codexSerial("49a", async () => {
+  const h = codexStub(jsonOnce({
+    state:"chatgpt", key_display:"", billing:"usage included in your plan",
+    providers:[CODEX_ROW_READY], settings:{ provider:"codex" },
+    runtime:{ installed:true, can_install:true, reason:null } }));
+  try {
+    T.PROVIDERS = [CODEX_ROW_BLOCKED];
+    T.SETTINGS = { provider:"claude" };
+    await T.loadCodexAuth(true);
+    assert.strictEqual(T.PROVIDERS[0].runnable, true,
+      "the row did not move -- this is the reload-required bug");
+    assert.strictEqual(T.SETTINGS.provider, "codex", "settings did not move");
+    assert.strictEqual(T.S.codexRuntime.installed, true, "the runtime half is missing");
+  } finally { h.restore(); }
+});
+
+/* 49b. A sign-in landing through the WATCH makes the row selectable on the
+   same paint. The end-to-end version of 45n, asserting what 45n could not. */
+codexSerial("49b", async () => {
+  const h = codexStub(jsonOnce({
+    state:"chatgpt", billing:"usage included in your plan", login_in_flight:false,
+    providers:[CODEX_ROW_READY], settings:{ provider:"codex" } }));
+  const t = codexFakeTimers();
+  const prevScreen = T.S.screen;
+  try {
+    T.S.screen = "settings";
+    T.PROVIDERS = [CODEX_ROW_BLOCKED];
+    T.S.codexAuth = { state:"logged_out" };
+    T.S.codexBusy = "login";
+    T.codexWatchLogin("logged_out");
+    await t.tick();
+    assert.strictEqual(T.S.codexAuth.state, "chatgpt", "the credential landed");
+    assert.strictEqual(T.PROVIDERS[0].runnable, true,
+      "the sign-in landed and the row STILL cannot be picked");
+  } finally { t.restore(); h.restore(); T.S.screen = prevScreen;
+              T.S.codexBusy = null; T.codexStopPoll(); }
+});
+
+/* 49c. ...and the row is what the RADIO reads, so pin the rendered markup too.
+   A `runnable` that never reaches the DOM is the same bug one layer down. */
+codexSerial("49c", async () => {
+  const h = codexStub(jsonOnce({
+    state:"chatgpt", providers:[CODEX_ROW_READY], settings:{ provider:"claude" } }));
+  const prevSettings = T.SETTINGS, prevModes = T.PERM_MODES;
+  try {
+    T.PROVIDERS = [CODEX_ROW_BLOCKED];
+    T.SETTINGS = { provider:"claude", permission_mode:"plan", workdir:"/tmp" };
+    T.PERM_MODES = [];
+    const before = T.SCREENS.settings();
+    assert.ok(/Installed, but not signed in yet/.test(before), before.slice(0, 400));
+
+    await T.loadCodexAuth(true);
+    const after = T.SCREENS.settings();
+    assert.ok(/Ready to use/.test(after), "the row never says Ready to use");
+    const row = after.slice(after.indexOf('data-prov="codex"'));
+    assert.ok(!/^[^>]*disabled/.test(row), "the radio is still disabled: " + row.slice(0, 200));
+  } finally { h.restore(); T.SETTINGS = prevSettings; T.PERM_MODES = prevModes; }
+});
+
+/* 49d. THE OPPOSITE DIRECTION, and the more dangerous one. A row saying
+   "Ready to use" over a signed-out Codex is an offer that dies at the first
+   message. */
+codexSerial("49d", async () => {
+  const h = codexStub(jsonOnce({
+    state:"logged_out", providers:[CODEX_ROW_BLOCKED],
+    settings:{ provider:"claude", provider_ignored:[{ id:"codex" }] } }));
+  try {
+    T.PROVIDERS = [CODEX_ROW_READY];
+    T.SETTINGS = { provider:"codex" };
+    await T.loadCodexAuth(true);
+    assert.strictEqual(T.PROVIDERS[0].runnable, false,
+      "signing out left the row offering a Codex with no credential");
+    assert.strictEqual(T.SETTINGS.provider, "claude",
+      "the active provider did not fall back");
+  } finally { h.restore(); }
+});
+
+/* 49e. AN OLDER BACKEND MUST NOT BLANK THE SCREEN. The panel is served fresh
+   by the backend, but a cached page, a proxy, or a half-updated install can
+   pair a new panel with an old server. Omission is not an answer of []. */
+codexSerial("49e", async () => {
+  const h = codexStub(jsonOnce({ state:"chatgpt", key_display:"", billing:"x" }));
+  const prevSettings = T.SETTINGS;
+  try {
+    T.PROVIDERS = [CODEX_ROW_READY];
+    T.SETTINGS = { provider:"codex" };
+    await T.loadCodexAuth(true);
+    assert.strictEqual(T.PROVIDERS.length, 1, "PROVIDERS was wiped");
+    assert.strictEqual(T.PROVIDERS[0].runnable, true, "PROVIDERS was replaced");
+    assert.strictEqual(T.SETTINGS.provider, "codex", "SETTINGS was wiped");
+    assert.strictEqual(T.S.codexAuth.state, "chatgpt", "the credential still lands");
+  } finally { h.restore(); T.SETTINGS = prevSettings; }
+});
+
+/* 49f. codexApplyState is the whole guard, so pin it directly against every
+   shape a wire can produce. `if (r.providers)` would let most of these
+   through -- and `{}` was the one that mattered: it is an object, so a
+   typeof check alone replaced a good SETTINGS with one holding no provider,
+   no permission mode and no workdir. Every screen then renders its own
+   not-loaded fallback, which is a blank panel dressed as a successful read. */
+test("49f. only a real provider array and a real settings object are applied", () => {
+  const prevP = T.PROVIDERS, prevS = T.SETTINGS, prevR = T.S.codexRuntime;
+  try {
+    for (const bad of [null, undefined, "many", 3, {}, true, []]) {
+      T.PROVIDERS = [CODEX_ROW_READY]; T.SETTINGS = { provider:"codex" };
+      T.codexApplyState({ state:"chatgpt", settings:bad });
+      assert.strictEqual(T.SETTINGS.provider, "codex", "settings=" + JSON.stringify(bad));
+    }
+    for (const bad of [null, undefined, "many", 3, {}, true]) {
+      T.PROVIDERS = [CODEX_ROW_READY];
+      T.codexApplyState({ state:"chatgpt", providers:bad });
+      assert.strictEqual(T.PROVIDERS[0].runnable, true, "providers=" + JSON.stringify(bad));
+    }
+    assert.strictEqual(T.codexApplyState(null), false, "a null answer applies nothing");
+    assert.strictEqual(T.codexApplyState("nope"), false, "a string applies nothing");
+    assert.strictEqual(T.codexApplyState({ providers:[] }), true,
+      "an empty list IS an answer and must be taken");
+    assert.strictEqual(T.codexApplyState({ settings:{ provider:null } }), true,
+      "a settings object carrying the contract key is taken even when the "
+      + "value is null -- that is what 'nothing runnable' looks like");
+  } finally { T.PROVIDERS = prevP; T.SETTINGS = prevS; T.S.codexRuntime = prevR; }
+});
+
+/* 49g. A PROBE THAT COULD NOT BE UNDERSTOOD STILL CARRIED A GOOD ROW.
+   The state check and the row are independent, and coupling them would keep
+   the row stale for a reason that has nothing to do with the row. */
+codexSerial("49g", async () => {
+  const h = codexStub(jsonOnce({ providers:[CODEX_ROW_READY] }));   /* no `state` */
+  try {
+    T.PROVIDERS = [CODEX_ROW_BLOCKED];
+    await T.loadCodexAuth(true);
+    assert.strictEqual(T.S.codexAuth.state, "unknown", "a stateless 200 is still unknown");
+    assert.strictEqual(T.PROVIDERS[0].runnable, true, "but the row it carried was thrown away");
+  } finally { h.restore(); }
+});
+
+/* 49h. A FAILED FETCH CHANGES NOTHING. The synthetic unknown must not reach
+   codexApplyState -- it has no providers, and a wipe here would blank the
+   screen every time the backend hiccuped. */
+codexSerial("49h", async () => {
+  const h = codexStub(() => Promise.reject(new Error("socket closed")));
+  const prevS = T.SETTINGS;
+  try {
+    T.PROVIDERS = [CODEX_ROW_READY];
+    T.SETTINGS = { provider:"codex" };
+    await T.loadCodexAuth(true);
+    assert.strictEqual(T.S.codexAuth.state, "unknown");
+    assert.strictEqual(T.PROVIDERS.length, 1, "a dead endpoint wiped the provider list");
+    assert.strictEqual(T.SETTINGS.provider, "codex");
+  } finally { h.restore(); T.SETTINGS = prevS; }
+});
+
+/* ── 49i-49m. The runtime half: no_binary stops being a dead end ────────────
+   Before this, `state: "no_binary"` rendered the reason and `actions = ""`.
+   Nothing to click, on the one screen that exists to get Codex working: the
+   user could not sign in (nothing to sign in to) and could not install
+   (nothing offered it). */
+
+/* 49i. The dead end, replaced. */
+test("49i. a Mac with no Codex is offered an install, not just a reason", () => {
+  const prevP = T.PROVIDERS, prevA = T.S.codexAuth, prevR = T.S.codexRuntime;
+  try {
+    T.PROVIDERS = [CODEX_ROW_ABSENT];
+    T.S.codexRuntime = { installed:false, can_install:true, reason:null };
+    T.S.codexAuth = { state:"no_binary", detail:"the `codex` CLI is not on PATH" };
+    const h = T.codexAuthHtml();
+    assert.ok(/data-codex="install"/.test(h), "no Install control at all: " + h);
+    assert.ok(/Install it/.test(h), "the button has no label");
+    assert.ok(/not on this Mac yet/.test(h), "nothing explains what is missing");
+  } finally { T.PROVIDERS = prevP; T.S.codexAuth = prevA; T.S.codexRuntime = prevR; }
+});
+
+/* 49j. WHAT THE BLOCK MUST NOT SAY. Same rule the DeepSeek install block is
+   held to: the user is deciding whether to let Sutra put a tool in its own
+   folder, and no internal name helps them decide it. */
+test("49j. the install block names nothing internal and promises no password", () => {
+  const prevP = T.PROVIDERS, prevA = T.S.codexAuth, prevR = T.S.codexRuntime;
+  try {
+    T.PROVIDERS = [CODEX_ROW_ABSENT];
+    T.S.codexRuntime = { installed:false, can_install:true, reason:null };
+    T.S.codexAuth = { state:"no_binary", detail:"not on PATH" };
+    const h = T.codexInstallHtml(null);
+    for (const banned of ["npm", "node_modules", "@openai/codex", "sudo", "PATH",
+                          "--prefix", "provider_bins"]) {
+      assert.ok(!h.includes(banned), "the block leaks " + banned + ": " + h);
+    }
+    /* Whitespace-normalised: the copy is a template literal wrapped for the
+       source, so every sentence in it spans newlines and indentation. */
+    const flat = h.replace(/\s+/g, " ");
+    assert.ok(/won.t be asked for a password/.test(flat), "it must say no password");
+    assert.ok(/own folder/.test(flat), "it must say where it goes");
+    assert.ok(/your own tools are left alone/.test(flat),
+      "it must promise not to touch a codex they already have");
+  } finally { T.PROVIDERS = prevP; T.S.codexAuth = prevA; T.S.codexRuntime = prevR; }
+});
+
+/* 49k. Busy is a state, never a percentage. npm reports nothing parseable, so
+   a bar here would be a claim about time this code cannot make. */
+test("49k. installing shows a busy state and invents no progress", () => {
+  const h = T.codexInstallHtml("install");
+  assert.ok(/Installing…/.test(h), "no busy label");
+  assert.ok(/aria-busy="true"/.test(h) && /disabled/.test(h), "the button stays clickable");
+  assert.ok(!/%/.test(h), "a percentage was invented: " + h);
+  assert.ok(/checking that it runs/.test(h),
+    "the busy line must say verification is part of it");
+});
+
+/* 49l. A machine that cannot install is told why BEFORE clicking -- but the
+   button stays, so a stale can_install cannot strand anyone. */
+test("49l. the backend's own reason is previewed, and never removes the button", () => {
+  const prev = T.S.codexRuntime;
+  try {
+    T.S.codexRuntime = { installed:false, can_install:false,
+                         reason:"npm is not on this Mac … get it from nodejs.org" };
+    const h = T.codexInstallHtml(null);
+    assert.ok(/nodejs\.org/.test(h), "the reason is not shown");
+    assert.ok(/data-codex="install"/.test(h), "the button was removed on a stale flag");
+  } finally { T.S.codexRuntime = prev; }
+});
+
+/* 49m. A successful install makes the row selectable on the same paint --
+   the install's own answer carries the row, exactly like the sign-in's does. */
+codexSerial("49m", async () => {
+  let posted = null;
+  const h = codexStub((url, opts) => {
+    if (String(url).indexOf("/cli") >= 0){
+      posted = { url:String(url), opts };
+      return Promise.resolve({ ok:true, json: () => Promise.resolve({
+        ok:true, code:"INSTALLED", message:"the Codex CLI is installed",
+        providers:[CODEX_ROW_READY], settings:{ provider:"codex" },
+        runtime:{ installed:true, can_install:true, reason:null } }) });
+    }
+    return Promise.resolve({ ok:true, json: () => Promise.resolve({
+      state:"logged_out", providers:[CODEX_ROW_READY],
+      settings:{ provider:"codex" } }) });
+  });
+  try {
+    T.PROVIDERS = [CODEX_ROW_ABSENT];
+    const r = await T.codexInstall();
+    assert.ok(r && r.ok, "the install did not report success");
+    assert.ok(/\/api\/providers\/codex\/cli$/.test(posted.url), posted.url);
+    assert.strictEqual(posted.opts.method, "POST");
+    assert.strictEqual(T.PROVIDERS[0].runnable, true,
+      "the CLI landed and the row still cannot be picked");
+    assert.strictEqual(T.S.codexBusy, null, "the button is stuck on Installing…");
+  } finally { h.restore(); T.S.codexBusy = null; T.S.codexMsg = null; }
+});
+
+/* 49n. A refused install still corrects the rows and says why. */
+codexSerial("49n", async () => {
+  const h = codexStub(url => String(url).indexOf("/cli") >= 0
+    ? Promise.resolve({ ok:true, json: () => Promise.resolve({
+        ok:false, code:"NO_NPM", message:"npm is not on this Mac",
+        providers:[CODEX_ROW_ABSENT],
+        runtime:{ installed:false, can_install:false, reason:"no npm" } }) })
+    : Promise.resolve({ ok:true, json: () => Promise.resolve({
+        state:"no_binary", providers:[CODEX_ROW_ABSENT] }) }));
+  try {
+    T.PROVIDERS = [CODEX_ROW_ABSENT];
+    const r = await T.codexInstall();
+    assert.strictEqual(r.ok, false);
+    assert.ok(/npm is not on this Mac/.test(T.S.codexMsg), T.S.codexMsg);
+    assert.strictEqual(T.S.codexRuntime.can_install, false,
+      "the refusal did not correct the runtime state");
+    assert.strictEqual(T.S.codexBusy, null);
+  } finally { h.restore(); T.S.codexBusy = null; T.S.codexMsg = null; }
+});
+
+/* 49o. PROVISION ONLY WHAT IS MISSING. The guard on the post-sign-in chain: a
+   Mac that already has Codex must never see an install request. */
+codexSerial("49o", async () => {
+  let calls = 0;
+  const h = codexStub(() => { calls++; return Promise.resolve({ ok:true,
+    json: () => Promise.resolve({ state:"chatgpt", providers:[CODEX_ROW_READY] }) }); });
+  try {
+    T.PROVIDERS = [CODEX_ROW_READY];
+    assert.strictEqual(T.codexNeedsInstall(), false);
+    assert.strictEqual(await T.codexEnsureRuntime(), null, "an install was attempted");
+    assert.strictEqual(calls, 0, "an installed Codex still cost a request");
+
+    T.PROVIDERS = [CODEX_ROW_ABSENT];
+    assert.strictEqual(T.codexNeedsInstall(), true);
+  } finally { h.restore(); T.S.codexBusy = null; T.S.codexMsg = null; }
+});
+
+/* 49p. A page with no Codex row at all asks for nothing. */
+test("49p. no codex in the catalogue means no install offer", () => {
+  const prev = T.PROVIDERS;
+  try {
+    T.PROVIDERS = [{ id:"claude", name:"Claude Code", installed:true,
+                     configured:true, runnable:true }];
+    assert.strictEqual(T.codexNeedsInstall(), false);
+    assert.strictEqual(T.codexAuthHtml(), "", "the block rendered without a row");
+  } finally { T.PROVIDERS = prev; }
+});
+
+/* ── 50. Codex UX pass: tokens, controls, folder ────────────────────────────
+   Codex reports per-turn TOKEN COUNTS on turn.completed and nothing else --
+   no price, no rate-limit window, no plan allowance. Those counts were already
+   arriving on the `done` frame's `quota` and NOTHING in this directory read
+   them. Everything below is about showing exactly that and not one claim more. */
+
+const CODEX_TOK_ROW = { id:"codex", name:"OpenAI Codex", installed:true,
+                        configured:true, runnable:true, adapter:true,
+                        usage_kind:"tokens", reason:null };
+
+test("50a. token counts compact without rounding small exact numbers", () => {
+  assert.strictEqual(T.tokShort(0), "0");
+  assert.strictEqual(T.tokShort(347), "347", "a small count is a fact, not 0.3k");
+  assert.strictEqual(T.tokShort(999), "999");
+  assert.strictEqual(T.tokShort(1240), "1.2k");
+  assert.strictEqual(T.tokShort(29582), "30k");
+  assert.strictEqual(T.tokShort(1500000), "1.5M");
+  for (const bad of [null, undefined, "12", NaN, Infinity, -5])
+    assert.strictEqual(T.tokShort(bad), null, "junk: " + String(bad));
+});
+
+test("50b. the tokens kind renders what codex measured, and no money", () => {
+  const prevP = T.PROVIDERS, prevS = T.SETTINGS, prevT = T.S.turnTokens;
+  try {
+    T.PROVIDERS = [CODEX_TOK_ROW];
+    T.SETTINGS = { provider:"codex" };
+    /* The exact shape measured off codex-cli 0.153.2's turn.completed. */
+    T.S.turnTokens = { s1: { input_tokens:29582, cached_input_tokens:25088,
+                             cache_write_input_tokens:0, output_tokens:412,
+                             reasoning_output_tokens:128 } };
+    const u = T.providerUsage("codex", "s1");
+    assert.ok(u, "no usage rendered at all");
+    assert.ok(/30k in/.test(u.row) && /412 out/.test(u.row), u.row);
+    assert.ok(/last turn/.test(u.row), "it must say WHICH turn: " + u.row);
+    assert.ok(/25k cached/.test(u.row), "cached input changes the cost: " + u.row);
+    assert.ok(/128 reasoning/.test(u.row), "reasoning tokens are output too");
+    /* THE INVARIANT. codex publishes no price and no allowance, so no glyph
+       here may suggest either one. */
+    assert.ok(!/\$/.test(u.row + u.long + u.short), "a price appeared: " + u.row);
+    assert.ok(!/%/.test(u.row + u.long + u.short), "a percentage appeared: " + u.row);
+    assert.ok(!/remaining|left|quota|limit/i.test(u.row + u.long),
+      "an allowance was implied: " + u.row);
+  } finally { T.PROVIDERS = prevP; T.SETTINGS = prevS; T.S.turnTokens = prevT; }
+});
+
+test("50c. a zero cached/reasoning count is omitted rather than shown as 0", () => {
+  const prevP = T.PROVIDERS, prevT = T.S.turnTokens;
+  try {
+    T.PROVIDERS = [CODEX_TOK_ROW];
+    T.S.turnTokens = { s1: { input_tokens:100, output_tokens:20,
+                             cached_input_tokens:0, reasoning_output_tokens:0 } };
+    const u = T.providerUsage("codex", "s1");
+    assert.strictEqual(u.row, "100 in · 20 out last turn");
+  } finally { T.PROVIDERS = prevP; T.S.turnTokens = prevT; }
+});
+
+test("50d. before the first reply there is nothing to claim", () => {
+  const prevP = T.PROVIDERS, prevT = T.S.turnTokens;
+  try {
+    T.PROVIDERS = [CODEX_TOK_ROW];
+    T.S.turnTokens = {};
+    assert.strictEqual(T.providerUsage("codex", "s1"), null,
+      "an unfinished pane must report nothing, not zero");
+    assert.strictEqual(T.providerUsage("codex"), null,
+      "and with no session id there is nothing to look up");
+  } finally { T.PROVIDERS = prevP; T.S.turnTokens = prevT; }
+});
+
+test("50e. Claude and DeepSeek usage rendering is untouched", () => {
+  const prevP = T.PROVIDERS, prevU = T.S.usage, prevD = T.S.deepseekUsage,
+        prevT = T.S.turnTokens;
+  try {
+    /* Tokens present for BOTH sessions -- the other two kinds must ignore them
+       entirely rather than start rendering a second provider's fact. */
+    T.S.turnTokens = { s1: { input_tokens:100, output_tokens:20 } };
+    T.PROVIDERS = [{ id:"claude", name:"Claude Code", usage_kind:"window-percent" }];
+    T.S.usage = { available:true, limits:[{ active:true, percent:42 }] };
+    assert.strictEqual(T.providerUsage("claude", "s1").row, "42% used");
+
+    T.PROVIDERS = [{ id:"deepseek", name:"DeepSeek", usage_kind:"balance" }];
+    T.S.deepseekUsage = { available:true, balances:[{ total_balance:"7.50",
+                                                      currency:"USD" }] };
+    assert.strictEqual(T.providerUsage("deepseek", "s1").row, "$7.50 balance");
+  } finally { T.PROVIDERS = prevP; T.S.usage = prevU;
+             T.S.deepseekUsage = prevD; T.S.turnTokens = prevT; }
+});
+
+test("50f. a provider with no usage concept still reports none", () => {
+  const prev = T.PROVIDERS;
+  try {
+    T.PROVIDERS = [{ id:"gemini", name:"Gemini CLI", usage_kind:"none" }];
+    assert.strictEqual(T.providerUsage("gemini", "s1"), null);
+    assert.strictEqual(T.usageKindOf("gemini"), "none");
+  } finally { T.PROVIDERS = prev; }
+});
+
+/* ── 50g-50j. The two per-turn controls ─────────────────────────────────────
+   Both values are codex's OWN enumeration, read out of the CLI's rejection of
+   a bad one. The gating is the pre-existing `f(key, html)` in turnOptsHtml, so
+   a provider that does not DECLARE a key renders no field for it. */
+
+test("50g. a Codex pane offers Reasoning summary and Verbosity", () => {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = { codex:["reasoning_summary","verbosity"] };
+    const h = T.turnOptsHtml("s1", "codex");
+    assert.ok(/data-opt="reasoning_summary"/.test(h), "no Reasoning control");
+    assert.ok(/data-opt="verbosity"/.test(h), "no Verbosity control");
+    /* THE LABEL, not just the attribute. This control sets
+       model_reasoning_summary -- how much of its reasoning Codex SHOWS -- and
+       it was labelled "Reasoning", which reads as how much it DOES. Codex
+       exposes both axes and they share no values (summary:
+       auto/concise/detailed/none; effort: low/medium/high/xhigh/max/ultra), so
+       "Reasoning ... none" invited "reasoning off" when it only hides the
+       summary. The old assertions were on `data-opt`, which is why none of
+       them caught the wording. */
+    assert.ok(/<span>Reasoning summary<\/span>/.test(h),
+      "the label must say which reasoning axis this is: " + h.slice(0, 400));
+    assert.ok(!/<span>Reasoning<\/span>/.test(h),
+      "the ambiguous label is back");
+    assert.ok(/model_reasoning_summary/.test(h),
+      "the tooltip must still name the config key it sets");
+    /* codex's own variants, and only those. */
+    for (const v of ["auto","concise","detailed","none"])
+      assert.ok(h.includes(`value="${v}"`), "missing summary variant " + v);
+    for (const v of ["low","medium","high"])
+      assert.ok(h.includes(`value="${v}"`), "missing verbosity variant " + v);
+    /* No Claude control leaks onto a Codex pane. */
+    assert.ok(!/data-opt="effort"/.test(h), "Claude's Effort appeared");
+    assert.ok(!/data-opt="max_budget_usd"/.test(h), "a $ budget appeared");
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+});
+
+test("50h. a Claude pane is byte-identical to before the pass", () => {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = { claude:["effort","max_budget_usd",
+      "allowed_tools","disallowed_tools","append_system_prompt"] };
+    const h = T.turnOptsHtml("s1", "claude");
+    assert.ok(/data-opt="effort"/.test(h), "Claude lost its Effort control");
+    assert.ok(!/reasoning_summary|verbosity/.test(h),
+      "a Codex control reached a Claude pane");
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+});
+
+test("50i. the boot-window fallback draws no Codex control", () => {
+  /* turnOptsFor() answers with TOPT_ALL before /api/providers lands. Adding
+     the Codex keys there would draw them on a Claude pane for the first second
+     of every launch -- a false-specific claim, which is why they are not in it. */
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = {};
+    const on = T.turnOptsFor("claude");
+    assert.ok(on.has("effort"), "the pre-existing fallback must be intact");
+    assert.ok(!on.has("reasoning_summary") && !on.has("verbosity"),
+      "a Codex control is in the boot-window fallback");
+    assert.ok(!/reasoning_summary|verbosity/.test(T.turnOptsHtml("s1", "claude")));
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+});
+
+test("50j. a DeepSeek pane still offers no per-turn controls at all", () => {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = { deepseek:[] };
+    assert.strictEqual(T.turnOptsFor("deepseek").size, 0);
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+});
+
+/* ── 50k. The folder row ────────────────────────────────────────────────────
+   "sutra-ui · deepseek-provider" on a CODEX pane read as provider context. It
+   was a folder name and a GIT BRANCH, both correct. `on` is what stops the
+   middle field being read as anything but a branch. */
+
+test("50k. the branch is labelled as a branch", () => {
+  const prevSettings = T.SETTINGS, prevProv = T.PROVIDERS,
+        prevMenu = T.S.paneMenu, prevRepo = T.S.repo;
+  try {
+    T.PROVIDERS = [CODEX_TOK_ROW];
+    T.SETTINGS = { provider:"codex", permission_mode:"plan", workdir:"/w" };
+    const s = { id:"s1", title:"t", real:true };
+    T.S.paneMenu = "s1";
+    /* sessCwd() resolves S.cwd -> S.sessions -> SETTINGS.workdir, never the
+       object passed in, so the per-session override is what a real pane with
+       its own folder uses. */
+    T.S.cwd = Object.assign({}, T.S.cwd, { s1: "/Users/x/sutra" });
+    T.S.repo = { s1: { available:true, branch:"deepseek-provider",
+                       diff:{ files:0 } } };
+    const h = T.paneMenuHtml(s);
+    assert.ok(/on deepseek-provider/.test(h),
+      "the branch is still unlabelled, so it reads as provider context: " + h.slice(0, 300));
+    assert.ok(/sutra/.test(h), "the folder itself must still be shown");
+    /* The absolute path the provider actually receives is one hover away. */
+    assert.ok(/title="[^"]*\/Users\/x\/sutra/.test(h),
+      "the full working directory is not reachable from the row");
+  } finally { T.SETTINGS = prevSettings; T.PROVIDERS = prevProv;
+             T.S.paneMenu = prevMenu; T.S.repo = prevRepo;
+             delete T.S.cwd.s1; }
+});
+
+test("50l. the Tokens row is titled for what it holds, not 'Usage'", () => {
+  const prevSettings = T.SETTINGS, prevProv = T.PROVIDERS,
+        prevMenu = T.S.paneMenu, prevT = T.S.turnTokens;
+  try {
+    T.PROVIDERS = [CODEX_TOK_ROW];
+    T.SETTINGS = { provider:"codex", permission_mode:"plan", workdir:"/w" };
+    T.S.paneMenu = "s1";
+    T.S.turnTokens = { s1: { input_tokens:1200, output_tokens:80 } };
+    const h = T.paneMenuHtml({ id:"s1", title:"t", real:true, cwd:"/w" });
+    assert.ok(/>Tokens</.test(h), "'Usage' next to a number reads as spend: " + h.slice(0,400));
+    assert.ok(/1\.2k in/.test(h), "the measured counts are not rendered");
+  } finally { T.SETTINGS = prevSettings; T.PROVIDERS = prevProv;
+              T.S.paneMenu = prevMenu; T.S.turnTokens = prevT; }
+});
+
+/* ── 51. Codex Reasoning effort ──────────────────────────────────────────────
+   The OTHER axis from Reasoning summary: effort is how much reasoning codex
+   DOES, summary is how much it SHOWS. They share no values.
+
+   It waited for model/list because `-c model_reasoning_effort` ACCEPTS an
+   unknown value without complaint (measured: "__bogus__" sailed through), so
+   before there was an enumeration any list would have been guesses. The
+   enumeration is PER MODEL and the sets genuinely differ, which is why every
+   test below drives it off MODELS_BY_PROVIDER rather than a constant. */
+
+const CODEX_MODELS_FIXTURE = [
+  { id:"", name:"CLI default", note:"whatever `codex` is configured to use" },
+  { id:"m-alpha", name:"Alpha", note:"a", default:true,
+    efforts:["low","medium","high","xhigh","max","ultra"] },
+  { id:"m-beta", name:"Beta", note:"b", default:false,
+    efforts:["low","medium","high","xhigh"] },
+];
+
+function withCodexModels(models, fn){
+  const prevM = T.MODELS_BY_PROVIDER, prevT = T.TURN_OPTIONS_BY_PROVIDER,
+        prevSel = T.S.model, prevOpts = T.S.turnOpts;
+  try {
+    T.MODELS_BY_PROVIDER = { codex: models };
+    T.TURN_OPTIONS_BY_PROVIDER = {
+      codex:["reasoning_summary","verbosity","reasoning_effort"] };
+    T.S.model = {}; T.S.turnOpts = {};
+    return fn();
+  } finally { T.MODELS_BY_PROVIDER = prevM; T.TURN_OPTIONS_BY_PROVIDER = prevT;
+              T.S.model = prevSel; T.S.turnOpts = prevOpts; }
+}
+
+const effortOpts = h => {
+  const at = h.indexOf('data-opt="reasoning_effort"');
+  if (at < 0) return null;
+  const seg = h.slice(at, h.indexOf("</select>", at));
+  return [...seg.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]);
+};
+
+test("51a. the options are the SELECTED model's supportedReasoningEfforts", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "m-alpha")),
+      ["", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  });
+});
+
+test("51b. a different model exposes a different set", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    /* beta has no `max` and no `ultra`. A fixed union would offer them and the
+       turn would silently run at something else. */
+    const beta = effortOpts(T.turnOptsHtml("s1", "codex", "m-beta"));
+    assert.deepStrictEqual(beta, ["", "low", "medium", "high", "xhigh"]);
+    assert.ok(!beta.includes("ultra"), "beta was offered alpha's ultra");
+    assert.ok(!beta.includes("max"), "beta was offered alpha's max");
+  });
+});
+
+test("51c. changing the selected model changes the options", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    const before = effortOpts(T.turnOptsHtml("s1", "codex", "m-alpha"));
+    T.S.model = { s1: "m-beta" };                 /* what the picker's onchange does */
+    const after = effortOpts(T.turnOptsHtml("s1", "codex",
+                                            T.paneModelFor({ id:"s1" }, "codex")));
+    assert.ok(before.includes("ultra"), "alpha should have offered ultra");
+    assert.ok(!after.includes("ultra"), "the list did not follow the model change");
+  });
+});
+
+test("51d. CLI default offers the default model's efforts", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    /* "" resolves to whatever codex marked isDefault -- alpha here -- which is
+       the same resolution providers.codex_efforts_for(None) makes, so the
+       control cannot offer something the validator would drop. */
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "")),
+      ["", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  });
+});
+
+test("51e. default is always present and always first", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    const h = T.turnOptsHtml("s1", "codex", "m-beta");
+    assert.strictEqual(effortOpts(h)[0], "", "default must be the first option");
+    assert.ok(/<option value="" [^>]*>default<\/option>|<option value="">default</.test(
+      h.replace(/\s+/g, " ")) || /value=""/.test(h), "default is not labelled");
+  });
+});
+
+test("51f. no discovery -> the control offers default alone", () => {
+  withCodexModels([{ id:"", name:"CLI default", note:"n" }], () => {
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "")), [""]);
+  });
+  withCodexModels([], () => {
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "")), [""]);
+  });
+});
+
+test("51g. an unknown model degrades to default alone", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "not-a-model")),
+      [""]);
+  });
+});
+
+test("51h. Reasoning summary is completely unchanged", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    const h = T.turnOptsHtml("s1", "codex", "m-alpha");
+    assert.ok(/<span>Reasoning summary<\/span>/.test(h), "summary label moved");
+    assert.ok(/data-opt="reasoning_summary"/.test(h), "summary control gone");
+    for (const v of ["auto","concise","detailed","none"])
+      assert.ok(h.includes(`value="${v}"`), "summary lost " + v);
+    /* the two are separate controls, not one renamed */
+    assert.ok(/data-opt="reasoning_effort"/.test(h), "effort control missing");
+    assert.notStrictEqual(h.indexOf('data-opt="reasoning_summary"'),
+                          h.indexOf('data-opt="reasoning_effort"'));
+  });
+});
+
+test("51i. Verbosity is completely unchanged", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    const h = T.turnOptsHtml("s1", "codex", "m-alpha");
+    assert.ok(/data-opt="verbosity"/.test(h), "verbosity control gone");
+    assert.ok(/<span>Verbosity<\/span>/.test(h), "verbosity label moved");
+    for (const v of ["low","medium","high"])
+      assert.ok(h.includes(`value="${v}"`), "verbosity lost " + v);
+  });
+});
+
+test("51j. no Codex control reaches a Claude or DeepSeek pane", () => {
+  withCodexModels(CODEX_MODELS_FIXTURE, () => {
+    T.TURN_OPTIONS_BY_PROVIDER = {
+      claude:["effort","max_budget_usd","allowed_tools","disallowed_tools",
+              "append_system_prompt"], deepseek:[] };
+    const claude = T.turnOptsHtml("s1", "claude", "");
+    assert.ok(!/reasoning_effort|reasoning_summary|data-opt="verbosity"/.test(claude),
+      "a Codex control reached a Claude pane");
+    assert.ok(/data-opt="effort"/.test(claude), "Claude lost its own Effort control");
+    assert.strictEqual(T.turnOptsFor("deepseek").size, 0);
+  });
+});
+
+test("51k. the boot-window fallback still draws no Codex control", () => {
+  const prev = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.TURN_OPTIONS_BY_PROVIDER = {};
+    const on = T.turnOptsFor("claude");
+    assert.ok(!on.has("reasoning_effort"), "effort is in the boot fallback");
+    assert.ok(on.has("effort"), "the pre-existing fallback must be intact");
+  } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
+});
+
+/* ── 52. Codex global plan usage ─────────────────────────────────────────────
+   `account/rateLimits/read` renders in the SAME two global places Claude's plan
+   usage does -- the rail badge and the footer telemetry -- plus the Usage screen
+   and the composer popover.
+
+   THE ASSUMPTION THIS FEATURE ALMOST SHIPPED ON: "5-hour and weekly windows".
+   The measured account is planType "go" and returns ONE 30-day window with no
+   `secondary`. So no test here hardcodes a duration pair; they pin the
+   DERIVATION. */
+
+const CODEX_TOK_PROV = [{ id:"codex", name:"OpenAI Codex", usage_kind:"tokens" }];
+
+function withCodexPlan(plan, fn){
+  const pv = T.PROVIDERS, st = T.SETTINGS, pl = T.S.codexPlan,
+        pe = T.S.codexPlanError, tt = T.S.turnTokens;
+  try {
+    T.PROVIDERS = CODEX_TOK_PROV;
+    T.SETTINGS = { provider:"codex" };
+    T.S.codexPlan = plan; T.S.codexPlanError = null; T.S.turnTokens = {};
+    return fn();
+  } finally { T.PROVIDERS = pv; T.SETTINGS = st; T.S.codexPlan = pl;
+             T.S.codexPlanError = pe; T.S.turnTokens = tt; }
+}
+
+test("52a. window labels are DERIVED from windowDurationMins", () => {
+  /* 5-hour and weekly fall out of the arithmetic rather than being listed --
+     which is why the account that returns 43200 is labelled correctly too. */
+  assert.strictEqual(T.codexWindowLabel(300), "5-hour");
+  assert.strictEqual(T.codexWindowLabel(10080), "weekly");
+  assert.strictEqual(T.codexWindowLabel(1440), "daily");
+  assert.strictEqual(T.codexWindowLabel(43200), "30-day");
+  assert.strictEqual(T.codexWindowLabel(60), "1-hour");
+  assert.strictEqual(T.codexWindowLabel(45), "45-minute");
+  for (const bad of [null, undefined, 0, -5, NaN, "300"])
+    assert.strictEqual(T.codexWindowLabel(bad), "usage window", String(bad));
+});
+
+test("52b. the measured one-window account renders one row", () => {
+  const plan = { plan_type:"go", limit_id:"codex", credits:null, reset_credits:0,
+    windows:[{ key:"primary", used_percent:5, duration_mins:43200,
+               resets_at: Math.floor(Date.now()/1000) + 86400 }] };
+  withCodexPlan(plan, () => {
+    const rows = T.codexPlanRows(plan);
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].label, "30-day");
+    assert.strictEqual(rows[0].percent, 5);
+    assert.strictEqual(rows[0].active, true, "the only window is the active one");
+  });
+});
+
+test("52c. multiple windows all render, and the fullest is active", () => {
+  const plan = { windows:[
+    { key:"primary", used_percent:12, duration_mins:300, resets_at:111 },
+    { key:"secondary", used_percent:44, duration_mins:10080, resets_at:222 }] };
+  const rows = T.codexPlanRows(plan);
+  assert.deepStrictEqual(rows.map(r => r.label), ["5-hour", "weekly"]);
+  assert.deepStrictEqual(rows.map(r => r.active), [false, true]);
+});
+
+test("52d. a missing secondary window is a normal answer", () => {
+  const rows = T.codexPlanRows({ windows:[
+    { key:"primary", used_percent:3, duration_mins:300, resets_at:0 }] });
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].resets_epoch, 0, "no reset is not a fake reset");
+});
+
+test("52e. no plan -> no rows and no global figure", () => {
+  /* LENGTH, not deepStrictEqual: the array is built inside the vm realm whose
+     Object.prototype is not this file's, and deepStrictEqual compares
+     prototypes -- the same trap 48i records for readDeclarations. */
+  for (const p of [null, undefined, {}, { windows:[] }, { windows:"x" }])
+    assert.strictEqual(T.codexPlanRows(p).length, 0, JSON.stringify(p));
+  withCodexPlan(null, () => {
+    assert.strictEqual(T.providerUsage("codex"), null,
+      "the global indicator must be absent, not zero");
+  });
+});
+
+test("52f. the GLOBAL surfaces show the plan; a PANE still shows its tokens", () => {
+  const plan = { windows:[{ key:"primary", used_percent:44,
+                            duration_mins:10080, resets_at:0 }] };
+  withCodexPlan(plan, () => {
+    /* no sid = the app asking -> plan */
+    const g = T.providerUsage("codex");
+    assert.strictEqual(g.short, 44);
+    assert.ok(/44% of the weekly limit/.test(g.long), g.long);
+    /* sid = a pane asking -> that pane's last turn, unchanged */
+    T.S.turnTokens = { s1: { input_tokens:1200, output_tokens:80 } };
+    const pane = T.providerUsage("codex", "s1");
+    assert.ok(/1\.2k in/.test(pane.row) && /80 out/.test(pane.row), pane.row);
+    assert.ok(!/%/.test(pane.row), "the pane row must not become a percentage");
+  });
+});
+
+test("52g. the plan body draws every window through Claude's renderer", () => {
+  const plan = { plan_type:"plus", credits:null, reset_credits:0, windows:[
+    { key:"primary", used_percent:12, duration_mins:300, resets_at:0 },
+    { key:"secondary", used_percent:44, duration_mins:10080, resets_at:0 }] };
+  withCodexPlan(plan, () => {
+    const h = T.codexPlanBodyHtml();
+    assert.ok(/5-hour/.test(h) && /weekly/.test(h), "both windows must render");
+    assert.ok(/class="ubar"/.test(h), "it must reuse the shared bar markup");
+    assert.ok(!/\$/.test(h), "codex publishes no prices: " + h);
+  });
+});
+
+test("52h. credits render only when OpenAI reports them", () => {
+  const base = { windows:[{ key:"primary", used_percent:5, duration_mins:300,
+                            resets_at:0 }] };
+  /* null credits -> nothing. NOT "0", which would read as exhausted. */
+  withCodexPlan(Object.assign({}, base, { credits:null }), () => {
+    const h = T.codexPlanBodyHtml();
+    assert.ok(!/Credits/.test(h), "an absent balance was rendered: " + h);
+    assert.ok(!/\b0\b(?![-\d])/.test(h.replace(/\d+%/g, "")), "a zero appeared");
+  });
+  withCodexPlan(Object.assign({}, base,
+      { credits:{ unlimited:false, balance:"12.50", has_credits:true } }), () => {
+    assert.ok(/Credits/.test(T.codexPlanBodyHtml()));
+    assert.ok(/12\.50/.test(T.codexPlanBodyHtml()));
+  });
+  withCodexPlan(Object.assign({}, base,
+      { credits:{ unlimited:true, balance:null, has_credits:true } }), () => {
+    assert.ok(/unlimited/.test(T.codexPlanBodyHtml()));
+  });
+});
+
+test("52i. a failed read says so and never reads as a zeroed allowance", () => {
+  const pv = T.PROVIDERS, st = T.SETTINGS, pl = T.S.codexPlan, pe = T.S.codexPlanError;
+  try {
+    T.PROVIDERS = CODEX_TOK_PROV; T.SETTINGS = { provider:"codex" };
+    T.S.codexPlan = null; T.S.codexPlanError = "the endpoint did not answer";
+    const h = T.codexPlanBodyHtml();
+    assert.ok(/did not answer/.test(h), h);
+    assert.ok(!/0%/.test(h), "a failure rendered as 0%");
+    /* Whitespace-normalised: the copy is a wrapped template literal, so the
+       sentence spans newlines and indentation in the source. */
+    assert.ok(/no model turn is spent/i.test(h.replace(/\s+/g, " ")),
+      "it must say the read costs nothing");
+  } finally { T.PROVIDERS = pv; T.SETTINGS = st; T.S.codexPlan = pl;
+              T.S.codexPlanError = pe; }
+});
+
+test("52j. API-key mode shows no ChatGPT plan usage", () => {
+  withCodexPlan(null, () => {
+    const h = T.codexPlanBodyHtml();
+    assert.ok(/ChatGPT sign-in/.test(h), "it must say which credential has a plan");
+    assert.ok(/API key/.test(h), "and that a key is billed elsewhere");
+    assert.ok(!/%/.test(h), "no percentage may appear without a plan: " + h);
+    assert.strictEqual(T.providerUsage("codex"), null);
+  });
+});
+
+test("52k. a credential change CLEARS the plan rather than leaving it stale", () => {
+  const pl = T.S.codexPlan, pv = T.PROVIDERS;
+  try {
+    T.S.codexPlan = { windows:[{ key:"primary", used_percent:5,
+                                 duration_mins:300, resets_at:0 }] };
+    T.codexApplyState({ state:"api_key" });
+    assert.strictEqual(T.S.codexPlan, null, "an API key kept a ChatGPT plan on screen");
+    T.S.codexPlan = { windows:[] };
+    T.codexApplyState({ state:"logged_out" });
+    assert.strictEqual(T.S.codexPlan, null, "a sign-out kept the plan");
+    /* still chatgpt -> untouched; populating is loadUsage's job, not this one */
+    T.S.codexPlan = { windows:[{ key:"primary", used_percent:9,
+                                 duration_mins:300, resets_at:0 }] };
+    T.codexApplyState({ state:"chatgpt" });
+    assert.ok(T.S.codexPlan, "a chatgpt answer must not clear the plan");
+  } finally { T.S.codexPlan = pl; T.PROVIDERS = pv; }
+});
+
+test("52l. Claude and DeepSeek global usage are untouched", () => {
+  const pv = T.PROVIDERS, st = T.SETTINGS, u = T.S.usage, d = T.S.deepseekUsage,
+        pl = T.S.codexPlan;
+  try {
+    /* a Codex plan present must not leak into either */
+    T.S.codexPlan = { windows:[{ key:"primary", used_percent:5,
+                                 duration_mins:300, resets_at:0 }] };
+    T.PROVIDERS = [{ id:"claude", name:"Claude Code", usage_kind:"window-percent" }];
+    T.S.usage = { available:true, limits:[{ active:true, percent:42 }] };
+    assert.strictEqual(T.providerUsage("claude").row, "42% used");
+    T.PROVIDERS = [{ id:"deepseek", name:"DeepSeek", usage_kind:"balance" }];
+    T.S.deepseekUsage = { available:true,
+                          balances:[{ total_balance:"7.50", currency:"USD" }] };
+    assert.strictEqual(T.providerUsage("deepseek").row, "$7.50 balance");
+  } finally { T.PROVIDERS = pv; T.SETTINGS = st; T.S.usage = u;
+              T.S.deepseekUsage = d; T.S.codexPlan = pl; }
+});
+
+/* ── 53. the model map arrives on the Codex answer ───────────────────────────
+   THE CLIENT HALF of the picker bug (2026-09-09). MODELS_BY_PROVIDER is
+   written exactly ONCE, by loadRuntime() inside boot(), and Codex's list is
+   DISCOVERED -- warmed only by GET /providers/codex/auth, which cannot run
+   before boot because the probe waits for the Settings screen. So boot always
+   stored the pre-discovery list and nothing ever re-read it: "CLI default"
+   alone, for the life of the window, on a machine where model/list had just
+   answered. A reload appeared to fix it because a reload is loadRuntime again.
+
+   49f pins the SETTINGS/PROVIDERS half of codexApplyState and passed for the
+   whole life of this bug -- nothing looked at the model map. These do.
+
+   The wire half is pinned in test_codex_readiness.py. */
+
+/* Ids that exist in no catalogue, so a hardcoded list cannot satisfy these. */
+const DISCOVERED_MAP = {
+  codex: [
+    { id:"", name:"CLI default", note:"whatever `codex` is configured to use" },
+    { id:"m-disc-one", name:"Disc One", note:"a", default:true,
+      efforts:["low","medium","high"] },
+    { id:"m-disc-two", name:"Disc Two", note:"b", default:false,
+      efforts:["low","medium"] },
+  ],
+  claude: [{ id:"", name:"CLI default" }, { id:"opus", name:"Opus" }],
+};
+
+function withModelMap(initial, fn){
+  const prevM = T.MODELS_BY_PROVIDER, prevP = T.PROVIDERS, prevS = T.SETTINGS,
+        prevSel = T.S.model, prevOpts = T.S.turnOpts, prevT = T.TURN_OPTIONS_BY_PROVIDER;
+  try {
+    T.MODELS_BY_PROVIDER = initial;
+    T.S.model = {}; T.S.turnOpts = {};
+    return fn();
+  } finally { T.MODELS_BY_PROVIDER = prevM; T.PROVIDERS = prevP; T.SETTINGS = prevS;
+             T.S.model = prevSel; T.S.turnOpts = prevOpts;
+             T.TURN_OPTIONS_BY_PROVIDER = prevT; }
+}
+
+test("53a. a Codex answer carrying models updates MODELS_BY_PROVIDER", () => {
+  withModelMap({}, () => {
+    assert.strictEqual(
+      T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP }),
+      true, "the answer applied nothing");
+    assert.deepStrictEqual(T.MODELS_BY_PROVIDER, DISCOVERED_MAP,
+      "the discovered map did not land");
+  });
+});
+
+test("53b. the dropdown then renders the discovered models, not the fallback", () => {
+  withModelMap({}, () => {
+    /* the boot-window state the bug froze the panel in */
+    let opts = optionsIn(paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
+                                      { provider:"codex", workdir:"/w" }));
+    assert.deepStrictEqual(opts.map(o => o.id), [""],
+      "the fixture is not reproducing the pre-fix state: " + JSON.stringify(opts));
+    /* the AI Provider screen's answer lands */
+    T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
+    opts = optionsIn(paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
+                                  { provider:"codex", workdir:"/w" }));
+    assert.deepStrictEqual(opts.map(o => o.id), ["", "m-disc-one", "m-disc-two"],
+      "the picker still has nothing to select: " + JSON.stringify(opts));
+  });
+});
+
+test("53c. CLI default survives as the first option", () => {
+  withModelMap({}, () => {
+    T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
+    const opts = optionsIn(paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
+                                        { provider:"codex", workdir:"/w" }));
+    assert.strictEqual(opts[0].id, "", "CLI default is no longer first");
+  });
+});
+
+test("53d. an API-key answer lands its models exactly like a ChatGPT one", () => {
+  /* The picker was stuck on "CLI default" under BOTH credentials, and the two
+     are scoped by different things -- so neither may be assumed to carry the
+     other's list, and neither may be the only one that works. */
+  for (const state of ["chatgpt", "api_key"]) {
+    withModelMap({}, () => {
+      T.codexApplyState({ state, models_by_provider:DISCOVERED_MAP });
+      assert.deepStrictEqual(T.MODELS_BY_PROVIDER.codex.map(m => m.id),
+        ["", "m-disc-one", "m-disc-two"], "state=" + state);
+    });
+  }
+});
+
+test("53e. AN OLDER BACKEND'S OMISSION MUST NOT WIPE A LOADED MAP", () => {
+  /* `{}` is the panel's sentinel for "not fetched yet" (06-render's mloaded
+     reads Object.keys().length), so a downgrade here does not merely lose the
+     new list -- it puts a LOADED picker back into its boot-window fallback.
+     Omission is not an answer of empty, the same rule PROVIDERS follows. */
+  for (const bad of [undefined, null, {}, [], "many", 3, true]) {
+    withModelMap(DISCOVERED_MAP, () => {
+      T.codexApplyState({ state:"chatgpt", models_by_provider:bad });
+      assert.deepStrictEqual(T.MODELS_BY_PROVIDER, DISCOVERED_MAP,
+        "models_by_provider=" + JSON.stringify(bad) + " wiped the map");
+    });
+  }
+  /* and the omission alone must not be reported as an applied change */
+  withModelMap(DISCOVERED_MAP, () => {
+    assert.strictEqual(T.codexApplyState({ state:"chatgpt" }), false,
+      "an answer carrying nothing claimed to have applied something");
+  });
+});
+
+test("53f. the other providers' lists are not touched by a Codex answer", () => {
+  withModelMap({ claude:[{ id:"", name:"CLI default" }, { id:"opus", name:"Opus" }] },
+    () => {
+      T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
+      assert.deepStrictEqual(T.MODELS_BY_PROVIDER.claude.map(m => m.id),
+        ["", "opus"], "Claude's list changed shape");
+      assert.ok(!("gemini" in T.MODELS_BY_PROVIDER),
+        "a provider with no models gained a picker");
+    });
+});
+
+test("53g. the Reasoning-effort options follow the newly landed model", () => {
+  /* The efforts are PER MODEL and ride on the same rows, so the control has to
+     move with the map -- otherwise it keeps offering the CLI-default set for a
+     model that was only selectable because this answer arrived. */
+  withModelMap({}, () => {
+    T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
+    T.TURN_OPTIONS_BY_PROVIDER = {
+      codex:["reasoning_summary","verbosity","reasoning_effort"] };
+    assert.deepStrictEqual(T.codexEffortsFor("codex", "m-disc-one"),
+      ["low","medium","high"]);
+    assert.deepStrictEqual(T.codexEffortsFor("codex", "m-disc-two"),
+      ["low","medium"]);
+    /* falsy model = the CLI default row, which resolves to the isDefault one */
+    assert.deepStrictEqual(T.codexEffortsFor("codex", ""),
+      ["low","medium","high"], "CLI default did not resolve to the default model");
+    /* and through the rendered control, which is what an operator sees */
+    T.S.model = { s1:"m-disc-two" };
+    assert.deepStrictEqual(effortOpts(T.turnOptsHtml("s1", "codex", "m-disc-two")),
+      ["", "low", "medium"], "the control is not describing the selected model");
+  });
+});
+
+test("53h. selecting one of the landed models is what gets sent", () => {
+  /* The handler is per-session and unpersisted; what matters here is that an id
+     that only exists because this answer arrived is the id the frame carries.
+     The `-m` half is server-side and pinned in test_codex_readiness.py. */
+  withModelMap({}, () => {
+    T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
+    const chosen = T.MODELS_BY_PROVIDER.codex[1].id;
+    /* PANE_S.id, not a literal: paneMenuWith renders THAT pane, and a hardcoded
+       id silently asserts about a session the markup was never built for. */
+    T.S.model = { [PANE_S.id]: chosen };
+    assert.strictEqual(T.paneModelFor(PANE_S, "codex"), chosen);
+    /* and it renders as the selected option rather than silently reverting */
+    T.SETTINGS = { provider:"codex", workdir:"/w" };
+    const h = paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
+                           { provider:"codex", workdir:"/w" });
+    const sel = optionsIn(h).find(o => o.id === chosen);
+    assert.ok(sel && / selected/.test(sel.attrs),
+      "the chosen model is not the selected option: " + JSON.stringify(optionsIn(h)));
+  });
 });

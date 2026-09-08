@@ -81,7 +81,9 @@ import teamsutra  # noqa: E402
 
 import claude_local
 import codex_auth  # Sutra's COPY of the Codex API key (keychain, never here)
+import codex_install  # fetches the Codex CLI itself (npm --prefix, into ~/.sutra-ui)
 import codex_login  # spawns `codex login`/`codex logout`; holds the live child
+import codex_models  # asks codex which models it will run (app-server model/list)
 import deepseek_auth  # validates + stores the DeepSeek key (keychain, never here)
 import deepseek_install  # fetches the DeepSeek CLI itself (npm, into ~/.sutra-ui)
 import deepseek_session  # the one-time code a BROWSER trades for a write token
@@ -846,6 +848,65 @@ def api_providers_set_active(req: ActiveProviderRequest):
     }
 
 
+def _codex_state():
+    """Everything the Codex rows need to redraw themselves, in one answer.
+
+    THE BUG THIS FIXES (2026-09-08). The panel keeps the CREDENTIAL and the
+    READINESS in two different places -- `S.codexAuth` and `PROVIDERS` -- and
+    only the first was ever refreshed after a sign-in. `PROVIDERS` is filled
+    exactly once, by loadRuntime() inside boot(); nothing else in the app
+    re-reads it. So a successful ChatGPT sign-in wrote ~/.codex/auth.json,
+    flipped `configured` server-side, updated the sign-in block to "Signed in
+    with ChatGPT" -- and left the row directly above it reading "Installed, but
+    not signed in yet" with its radio disabled, until the operator reloaded the
+    page. Sign-OUT had the same gap in the more dangerous direction: the row
+    kept saying "Ready to use" over a Codex holding no credential.
+
+    `providers` and `settings` ride along so the DEFAULT PROVIDER list
+    re-evaluates from the SAME read that observed the change -- exactly what
+    _deepseek_state() does for its own row, and what POST /settings/provider-bin
+    does. The alternative was a second request the panel would have to know to
+    fire, which is the round trip that was missing in the first place.
+
+    `settings` is what makes sign-OUT complete: load_settings() re-runs
+    active_provider_detail(), so a stored `provider: codex` that just stopped
+    being runnable comes back in `provider_ignored` with the fallback already
+    chosen -- the app's existing handling for a provider going away, not a new
+    path.
+
+    `runtime` is the OTHER half of a usable Codex, and it is not redundant with
+    `providers`: the row's `installed` says whether a `codex` resolves, while
+    this says whether an install could be attempted and why not. The Install
+    control needs the second. codex_install.state() runs NO SUBPROCESS -- see
+    its docstring -- so this is affordable on a route the sign-in poll hits
+    every 2 seconds, and cheap next to the `codex login status` spawn that
+    route already pays for.
+
+    `models_by_provider` closes the SAME GAP one link further along, and it is
+    the reason the Model picker read "CLI default" alone on a machine where
+    discovery had just answered. The published model list is a SIBLING of
+    `settings` in the /settings payload, not a key inside it -- so carrying
+    `settings` here never carried the models, and the panel writes
+    MODELS_BY_PROVIDER exactly once, in loadRuntime() inside boot(). Discovery
+    cannot have run by then: refresh_if_stale() is reached only from the route
+    below, which the panel asks for when the AI Provider screen opens. Boot
+    therefore always published the pre-discovery list and nothing re-asked, so
+    the picker stayed empty for the life of the window and a reload "fixed" it.
+
+    It rides on THIS answer because refresh_if_stale() runs above, before this
+    spread -- so the models discovered by this very request are in the reply
+    that observed them. No new endpoint, no poll, no second round trip the
+    client would have to know to fire. all_models_by_provider() is REUSED
+    rather than reimplemented, and it spawns nothing (models_for() reads
+    codex_models' cache; see its docstring and test_models_for_never_spawns),
+    so this stays affordable on the route the sign-in poll hits every 2s.
+    """
+    return {"providers": providers.discover_providers(),
+            "settings": providers.load_settings(),
+            "models_by_provider": providers.all_models_by_provider(),
+            "runtime": codex_install.state()}
+
+
 @router.get("/providers/codex/auth")
 def api_codex_auth():
     """Which credential the Codex CLI is holding -- and therefore how the
@@ -873,7 +934,21 @@ def api_codex_auth():
     credential, the row would otherwise render "Not signed in", which is the
     row lying about state.
     """
-    return {**providers.codex_auth(),
+    auth = providers.codex_auth()
+    # THE ONE PLACE MODEL DISCOVERY IS ALLOWED TO SPAWN. This request is
+    # already paying for `codex login status`, and it is the request the
+    # provider screen makes -- so it is where the picker's list can be brought
+    # up to date without putting a subprocess anywhere near a render.
+    #
+    # TTL- AND STATE-GATED, so the 2-second sign-in poll does not start an
+    # app-server per tick: unchanged state inside the TTL is a dict lookup.
+    # Passing the state is also what makes the picker correct across a
+    # credential change -- a ChatGPT plan and an API key are scoped by
+    # different things, and rather than assume they offer the same models,
+    # a change here re-asks Codex.
+    codex_models.refresh_if_stale(auth.get("state"))
+    return {**auth,
+            **_codex_state(),
             "login_in_flight": codex_login.in_flight(),
             # WHETHER THERE IS A KEY TO RESTORE -- never a claim about which
             # credential is live. providers.codex_auth() above owns that, and
@@ -917,6 +992,12 @@ def api_codex_login():
     try:
         return codex_login.start()
     except codex_login.NoBinary as exc:
+        # THE ONE PLACE THAT PROVES INTENT AND GAP TOGETHER -- the operator
+        # asked to sign Codex in, and there is no Codex to sign in to. Kicked
+        # server-side so the runtime lands whatever the browser does next; see
+        # _codex_kick_install. The refusal below is unchanged: this route
+        # promises a browser window, not a 300s download.
+        _codex_kick_install()
         raise HTTPException(status_code=400, detail={
             "code": "CODEX_NOT_ON_PATH", "message": str(exc),
             "user_action": "INSTALL_OR_SET_PATH"})
@@ -970,8 +1051,194 @@ def api_codex_logout(req: CodexLogoutRequest):
             "user_action": "CANCEL_FIRST"})
     # The probe runs either way. A logout that FAILED still has to report what
     # codex actually holds now, or the row would show a state nobody verified.
+    #
+    # _codex_state() rides along for the same reason it does on the poll: this
+    # is the read that observed the credential going away, so the provider row
+    # and the active-provider fallback must re-evaluate from it rather than
+    # keep boot()'s answer. Without it, signing out left "Ready to use" and an
+    # enabled radio over a Codex that could no longer answer a message.
     return {**result, "auth": {**providers.codex_auth(),
-                               "login_in_flight": codex_login.in_flight()}}
+                               "login_in_flight": codex_login.in_flight()},
+            **_codex_state()}
+
+
+@router.get("/providers/codex/plan")
+def api_codex_plan():
+    """How much of this ChatGPT plan's Codex allowance is spent.
+
+    `account/rateLimits/read` over the same `codex app-server` transport
+    codex_models already uses for model/list -- one mechanism, two reads.
+    Measured 2026-09-09: answers in under a second and CONSUMES NO MODEL TURN.
+
+    CHATGPT ONLY, and the state is read here rather than trusted from the
+    client: a rate-limit window is a property of a ChatGPT PLAN, and the
+    protocol's own PlanType enum has no API-key member. In any other state this
+    answers `{"plan": null}` and asks Codex nothing -- so API-key mode never
+    sends the request, and a credential change makes the indicator disappear
+    rather than go stale.
+
+    NOTHING ABOUT DOLLARS. API-key spend lives behind OpenAI's Admin API, which
+    needs a separate and more privileged credential than Sutra holds. Not
+    pursued on purpose.
+
+    WHY IT HAS ITS OWN ROUTE rather than riding /providers/codex/auth: this is
+    the GLOBAL usage figure, and the client fetches it through loadUsage() --
+    the same function that already fetches Claude's windows and DeepSeek's
+    balance, on boot, on screen open and after every completed turn. Folding it
+    into the auth route would tie a global indicator to the provider screen.
+
+    Never 500s. A failed read is `{"plan": null}` and the indicator draws
+    nothing, which is the state before this existed.
+    """
+    state = providers.codex_auth().get("state")
+    return {"state": state,
+            "plan": codex_models.refresh_plan_if_stale(state)}
+
+
+# ------------------------------------------------------ codex provisioning --
+# THE OTHER HALF OF A USABLE CODEX. Everything above moves a CREDENTIAL; this
+# puts the BINARY on the machine. They fail independently and the operator has
+# to be able to tell which one is missing, so they are separate routes -- the
+# same split POST /providers/deepseek/cli made, for the same reason.
+#
+# codex_install.py owns the decision and the refusals; this is transport.
+
+def _codex_install_control(request):
+    """Authorise a Codex CLI install, or refuse it with the reason that applies
+    to THIS server.
+
+    THREE LANES, AND THE THIRD ONE IS WHY THIS IS NOT A COPY OF
+    _deepseek_write_control. Writing the two-lane version first was a mistake
+    caught before it shipped, and the reason is worth keeping: on a
+    DESKTOP-STARTED server neither of DeepSeek's lanes is reachable from the
+    panel. The renderer deliberately never holds the desktop token (main.js:
+    "the renderer never has it"), and deepseek_session.arm() mints no one-time
+    code when SUTRA_DESKTOP_TOKEN is set -- so the desktop app's own window,
+    the primary user of this feature, would have met a 403. DeepSeek escapes
+    that only because it has an IPC verb (sutra:deepseek-cli-install) that
+    calls the route from the MAIN process with the token attached; Codex has no
+    such verb, and adding one would put the fix inside a frozen app binary
+    where a newer panel could not rely on it.
+
+      1. x-sutra-desktop-token  the Electron shell, calling from its main
+                                process. Kept so a shell that does gain a verb
+                                later needs no change here.
+      2. x-sutra-session-token  a browser on a CLI-started server, holding the
+                                token it traded this process's stdout code for.
+      3. x-sutra-panel          THE PANEL ITSELF, either transport.
+
+    WHY LANE 3 IS NOT A HOLE. app.py's origin guard already refuses every
+    mutating request whose Origin is not loopback, and demands PANEL_TOKEN from
+    any request that carries an Origin at all -- so no other page in any
+    browser can reach this, because no other origin can read the panel to learn
+    the token. What lane 3 additionally admits is a NON-BROWSER local process
+    (no Origin, so the guard lets it through, exactly as it does for POST
+    /providers/codex/login). And that is the same calculus codex_login.py
+    already wrote down for its own routes: such a process can already run npm
+    itself and already write ~/.sutra-ui/settings.json, so this hands it no
+    authority it did not have.
+
+    THE ROUTE TAKES NO ARGUMENTS, which is what makes that true. The package,
+    the version and the destination are all constants in codex_install; a
+    caller chooses nothing. The only effect obtainable is "the pinned Codex CLI
+    exists in Sutra's own folder", idempotently. It is not a path to fetching
+    arbitrary code, and it never touches a credential.
+
+    >>> WHY deepseek_session APPEARS IN A CODEX ROUTE <<<
+    The session token is a per-SERVER browser-write capability -- 80 bits on
+    this process's stdout, single-use, nothing to do with DeepSeek's key. It
+    lives in a module named for the feature that needed it first. Only
+    verify() is called, so nothing about DeepSeek's install or credential
+    behaviour is reachable from here, and nothing in that module is modified.
+    EXTRACTION POINT: this and _deepseek_write_control() want one
+    panel_session.py once a second provider needs the lane -- which is now.
+
+    hmac.compare_digest on every literal comparison, matching _desktop_control
+    and _deepseek_write_control: a `==` would stop at the first mismatching
+    byte, which is a timing oracle for the token.
+    """
+    sent_desktop = request.headers.get("x-sutra-desktop-token") or ""
+    if DESKTOP_TOKEN and sent_desktop and hmac.compare_digest(
+            sent_desktop, DESKTOP_TOKEN):
+        return
+    if deepseek_session.verify(request.headers.get(deepseek_session.HEADER) or ""):
+        return
+    # Imported HERE rather than at module scope: app.py imports this module, so
+    # a top-level `import app` would be a cycle.
+    import app
+    sent_panel = request.headers.get("x-sutra-panel") or ""
+    if sent_panel and hmac.compare_digest(sent_panel, app.PANEL_TOKEN):
+        return
+    raise HTTPException(status_code=403, detail=(
+        "installing the Codex CLI needs this panel's token, and this request "
+        "carried none that matched. Reload the panel and try again."))
+
+
+@router.post("/providers/codex/cli")
+def api_codex_cli_install(request: Request):
+    """Install the `codex` CLI into Sutra's own directory and register it.
+
+    SYNCHRONOUS, and that is what makes it survive the window closing: uvicorn
+    runs a sync endpoint on a worker thread and does not cancel it when the
+    client goes away, so an npm fetch started here finishes whatever the panel
+    does next. A caller that reloads and retries meets codex_install's
+    single-flight lock, waits, and is answered ALREADY from the first run's
+    result rather than unpacking a second copy over a half-written tree.
+
+    Answers 200 with ok:false on a refusal, like its neighbours -- the state
+    block rides along either way so the rows correct themselves even when the
+    install did not happen. 4xx stays for the things that really are protocol
+    problems: no token, or a malformed body.
+    """
+    _codex_install_control(request)
+    try:
+        out = codex_install.install()
+    except codex_install.CodexInstallError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                **_codex_state()}
+    return {**out, **_codex_state()}
+
+
+def _codex_kick_install():
+    """Start the CLI install SERVER-SIDE and forget it.
+
+    WHY, given that 07-loaders.js already offers an Install button and chains
+    one onto a sign-in. Because that chain lives in the browser, and everything
+    it depends on can be gone the moment after: the window closed, the page
+    reloaded, the desktop bridge dead, an app binary too old to have the verb.
+    Every one of those leaves the state this feature exists to abolish -- an
+    operator who asked for Codex on a Mac that has no Codex runtime, and
+    nothing running that will fix it.
+
+    CALLED FROM THE ONE PLACE THAT PROVES THE INTENT AND THE GAP AT ONCE: the
+    NoBinary arm of POST /providers/codex/login. Reaching it means the operator
+    clicked "Sign in with ChatGPT" (intent) and `codex` did not resolve (gap).
+    The request still refuses -- there is nothing to sign in to yet, and
+    pretending otherwise would hold a 300s download open under a button that
+    promised a browser -- but by the time they have read the message and come
+    back, the runtime is usually there.
+
+    NOT a replacement for the route. The panel still calls POST
+    /providers/codex/cli, because that call is what carries progress and a real
+    failure message to the screen; the single-flight lock is what makes the two
+    safe together.
+
+    DAEMON, and deliberately silent. There is no channel here to report into --
+    the login response has already been computed -- and a failure is not lost:
+    the provider row still reads "not installed" with its own reason, and the
+    Install button is still there.
+
+    NO CREDENTIAL IS INVOLVED. This fetches a binary. It does not read, write,
+    validate or delete a ChatGPT session or a saved API key, and codex_install
+    has no path to any of them.
+    """
+    def _run():
+        try:
+            codex_install.install()
+        except Exception:            # noqa: BLE001 -- nothing to report into
+            pass
+    threading.Thread(target=_run, name="codex-cli-install",
+                     daemon=True).start()
 
 
 # ------------------------------------------------------- deepseek sign-in ---

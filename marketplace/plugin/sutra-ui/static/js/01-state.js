@@ -1534,6 +1534,20 @@ function claudeChannel(s, side){
            Mark it UNKNOWN rather than silently completing it. */
         (ch.turn.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
       }
+      /* PER-TURN TOKEN COUNTS. The server has been sending these on this frame
+         since the Codex adapter landed and nothing read them -- `quota` did not
+         appear anywhere in this directory. Stored per SESSION rather than per
+         turn because that is the granularity the pane's Usage row asks for:
+         "what did the last turn cost me", which is the only usage question
+         codex can actually answer.
+
+         GUARDED ON PRESENCE, so the two providers that send no quota (Claude,
+         and DeepSeek when its ACP payload carries none) keep storing nothing
+         and rendering exactly what they rendered before. */
+      if (f.quota && typeof f.quota === "object"){
+        if (!S.turnTokens) S.turnTokens = {};
+        S.turnTokens[ch.sid] = f.quota;
+      }
       ch.turn = null;
       /* A completed turn is the ONLY moment utilization actually moved, which is
          why the chip refreshes here instead of on a clock. The 60s server cache
