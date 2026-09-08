@@ -474,6 +474,34 @@ class RemoveIsIdempotent(_Base):
         self.assertEqual(caught.exception.code, "STORE_FAILED")
         self.assertTrue(deepseek_auth.marker())
 
+    def _failed_delete_message(self, status):
+        from connectors.credentials.keychain import KeychainError
+        mem = self.store()
+        self.ok_probe()
+        deepseek_auth.save(FAKE_KEY)
+        mem.delete_secret = mock.Mock(
+            side_effect=KeychainError(status, "delete"))
+        with self.assertRaises(deepseek_auth.DeepSeekAuthError) as caught:
+            deepseek_auth.remove()
+        return str(caught.exception)
+
+    def test_a_failed_delete_names_the_osstatus(self):
+        """It used to say "(KeychainError)" and nothing else, which named the
+        exception class rather than the problem."""
+        message = self._failed_delete_message(-25308)
+        self.assertIn("-25308", message)
+        self.assertNotIn("KeychainError", message)
+
+    def test_a_locked_keychain_and_a_foreign_owner_do_not_read_alike(self):
+        """One is fixed by unlocking the keychain; the other never resolves on
+        its own and needs the CLI fallback. Same exception type, so the status
+        is the only thing that can tell the reader which one they have."""
+        locked = self._failed_delete_message(-25308)
+        foreign = self._failed_delete_message(-25244)
+        self.assertNotEqual(locked, foreign)
+        self.assertIn("locked", locked)
+        self.assertIn("different build", foreign)
+
 
 # ------------------------------------------------------------------ state ----
 

@@ -422,6 +422,31 @@ class ForgetIsIdempotentAndIsNotASignOut(_Base):
         self.assertEqual(c.exception.code, "STORE_FAILED")
         self.assertTrue(codex_auth.marker())
 
+    def _failed_delete_message(self, status):
+        from connectors.credentials.keychain import KeychainError
+        mem = self.store()
+        self.quiet_display()
+        codex_auth.store(FAKE_KEY)
+        mem.delete_secret = mock.Mock(
+            side_effect=KeychainError(status, "delete"))
+        with self.assertRaises(codex_auth.CodexAuthError) as c:
+            codex_auth.forget()
+        return str(c.exception)
+
+    def test_a_failed_forget_names_the_osstatus(self):
+        """Forget is the same keychain path Remove is, and it read the same way
+        -- "(KeychainError)", which named the class and not the problem."""
+        message = self._failed_delete_message(-25308)
+        self.assertIn("-25308", message)
+        self.assertNotIn("KeychainError", message)
+
+    def test_a_locked_keychain_and_a_foreign_owner_do_not_read_alike(self):
+        locked = self._failed_delete_message(-25308)
+        foreign = self._failed_delete_message(-25244)
+        self.assertNotEqual(locked, foreign)
+        self.assertIn("locked", locked)
+        self.assertIn("different build", foreign)
+
     def test_forget_spawns_NOTHING(self):
         """Forgetting Sutra's copy must never sign codex out. A tidy-up that
         destroyed a working session would be the worst kind of surprise."""

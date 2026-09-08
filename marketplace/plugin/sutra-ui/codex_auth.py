@@ -206,6 +206,27 @@ def store_status():
                    "key safely.")
 
 
+def _store_failure(exc):
+    """Why a keychain call failed, in a phrase a user can act on.
+
+    NOT `type(exc).__name__`, which is what the keychain messages below used
+    to carry.
+    A locked keychain and an item owned by a build of Sutra that no longer
+    exists both arrive here as KeychainError, and they arrived on screen as the
+    same word -- one of them fixed by unlocking the keychain, the other never
+    resolving on its own. describe_failure keeps the OSStatus, which is the
+    only part that tells them apart.
+
+    Falls back to the type name if the connectors package will not import, so a
+    machine with no credential store still gets a sentence rather than a 500.
+    """
+    try:
+        from connectors.credentials import describe_failure
+    except Exception:                             # pragma: no cover - import guard
+        return type(exc).__name__
+    return describe_failure(exc)
+
+
 def _store():
     """The keychain store, or raise. NEVER falls back to an in-memory store: a
     dict that empties on restart, with a marker on disk that does not, would
@@ -425,7 +446,7 @@ def read_or_reason():
         raise
     except Exception as exc:
         return None, "STORE_UNREADABLE", (
-            "the saved key could not be read (%s)." % type(exc).__name__)
+            "the saved key could not be read (%s)." % _store_failure(exc))
     raw = (raw or "").strip()
     if not raw:
         return None, "NO_STORED_KEY", "there is no API key saved in Sutra."
@@ -498,7 +519,7 @@ def store(submitted):
         raise CodexAuthError("STORE_FAILED", (
             "Codex is using the key now, but the login keychain would not keep "
             "a copy (%s) -- so switching to ChatGPT and back would lose it."
-            % type(exc).__name__))
+            % _store_failure(exc)))
     return _write_marker(key, current_display())
 
 
@@ -521,7 +542,7 @@ def forget():
         except Exception as exc:
             raise CodexAuthError("STORE_FAILED", (
                 "the login keychain would not delete the saved key (%s), so it "
-                "is still there. Nothing was changed." % type(exc).__name__))
+                "is still there. Nothing was changed." % _store_failure(exc)))
     _clear_marker()
     return {"removed": had}
 

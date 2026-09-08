@@ -148,6 +148,27 @@ def store_status():
                    "Set the key in the environment instead.")
 
 
+def _store_failure(exc):
+    """Why a keychain call failed, in a phrase a user can act on.
+
+    NOT `type(exc).__name__`, which is what the keychain messages below used
+    to carry.
+    A locked keychain and an item owned by a build of Sutra that no longer
+    exists both arrive here as KeychainError, and they arrived on screen as the
+    same word -- one of them fixed by unlocking the keychain, the other never
+    resolving on its own. describe_failure keeps the OSStatus, which is the
+    only part that tells them apart.
+
+    Falls back to the type name if the connectors package will not import, so a
+    machine with no credential store still gets a sentence rather than a 500.
+    """
+    try:
+        from connectors.credentials import describe_failure
+    except Exception:                             # pragma: no cover - import guard
+        return type(exc).__name__
+    return describe_failure(exc)
+
+
 def _store():
     """The keychain store, or raise. NEVER falls back to an in-memory store --
     see the module docstring."""
@@ -330,7 +351,7 @@ def save(submitted):
     except Exception as exc:
         raise DeepSeekAuthError("STORE_FAILED", (
             "DeepSeek accepted the key but the login keychain would not store it "
-            "(%s). Nothing was saved." % type(exc).__name__))
+            "(%s). Nothing was saved." % _store_failure(exc)))
     return _write_marker(key)
 
 
@@ -350,6 +371,6 @@ def remove():
         except Exception as exc:
             raise DeepSeekAuthError("STORE_FAILED", (
                 "the login keychain would not delete the saved key (%s), so it is "
-                "still there. Nothing was changed." % type(exc).__name__))
+                "still there. Nothing was changed." % _store_failure(exc)))
     _clear_marker()
     return {"removed": had}
