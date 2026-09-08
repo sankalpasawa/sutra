@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How does Sutra work? — Six layers</title>
+<meta name="description" content="Sutra builds a model of your organisation, designs workflows on top of it, and deploys agents to run them. Six layers, one lending example, three pictures.">
+<meta property="og:title" content="How does Sutra work?">
+<meta property="og:description" content="Six layers: ontology, workflow design, agents, feedback, marketplaces, tooling. One example company, three pictures.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,400..600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FBF8F3;--paper-2:#F4EFE7;--ink:#1C1917;--ink-2:#4A443E;--muted:#8A8078;--faint:#B8AFA5;--rule:#E3DACD;--accent:#A8543A;--green:#2F6B4F;--green-soft:#E6EFE8;
+--serif:'Fraunces',Georgia,serif;--sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.68;-webkit-font-smoothing:antialiased}
+nav{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid var(--rule)}
+.logo-word{font-family:var(--serif);font-size:20px;font-weight:500;color:var(--ink);text-decoration:none}
+.nav-links{display:flex;gap:22px}
+.nav-link{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.nav-link:hover,.nav-link.active{color:var(--ink)}
+.container{max-width:860px;margin:0 auto;padding:0 22px}
+header.hero{padding:76px 0 40px}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--serif);font-weight:300;font-size:clamp(34px,6vw,52px);line-height:1.1;margin:14px 0 16px;letter-spacing:-.015em}
+.hero-sub{color:var(--ink-2);font-size:18px;max-width:600px}
+h2{font-family:var(--serif);font-weight:400;font-size:27px;line-height:1.2;margin:56px 0 12px;letter-spacing:-.01em}
+p{margin:10px 0}
+.key{background:var(--green-soft);border-left:3px solid var(--green);padding:14px 18px;font-size:16px;margin:18px 0;border-radius:0 8px 8px 0}
+.key.alt{background:var(--paper-2);border-color:var(--faint)}
+svg{width:100%;height:auto;display:block;margin:16px 0}
+.cap{font-size:13px;color:var(--muted);margin:-6px 0 20px;text-align:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:12px 0}
+@media (max-width:640px){.grid{grid-template-columns:1fr}.nav-links{gap:14px}}
+.card{border:1px solid var(--rule);border-radius:12px;padding:14px 16px;background:#fff}
+.card b{display:block;font-size:15px;margin-bottom:3px}
+.card .q{font-size:13px;color:var(--muted);margin-bottom:8px}
+.card .ex{font-size:13.5px;background:var(--paper-2);border-radius:8px;padding:8px 10px;margin:6px 0}
+.card .ex:before{content:"Example";display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--faint);text-transform:uppercase;margin-bottom:2px}
+.card .see{font-size:13.5px;color:var(--ink-2)}
+.card .see:before{content:"In Sutra: ";font-weight:700;color:var(--green)}
+.rail{position:relative;margin:20px 0 8px;padding-left:38px}
+.rail:before{content:"";position:absolute;left:12px;top:6px;bottom:6px;width:2px;background:var(--green-soft)}
+.step{position:relative;margin:0 0 16px}
+.step:before{content:attr(data-n);position:absolute;left:-38px;top:1px;width:26px;height:26px;border-radius:50%;background:var(--green);color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:26px}
+.step b{display:inline-block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin-bottom:1px}
+.step .say{font-size:15px;color:var(--ink-2)}
+.step .say i{color:var(--muted)}
+.next{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0 8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:13px 22px;border-radius:100px;text-decoration:none;font-size:15px;min-width:180px}
+.btn.primary{background:var(--ink);color:var(--paper)}
+.btn.ghost{border:1px solid var(--rule);color:var(--ink)}
+footer{margin-top:80px;padding:26px 24px 40px;border-top:1px solid var(--rule);font-size:13.5px;color:var(--muted);text-align:center}
+footer a{color:var(--ink);text-decoration:none}
+.fine{font-size:13px;color:var(--muted);margin-top:34px}
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="logo-word" href="index.html">Sutra</a>
+  <div class="nav-links">
+    <a class="nav-link active" href="how-sutra-works.html">How it works</a>
+    <a class="nav-link" href="way.html">The Way</a>
+    <a class="nav-link" href="index.html#download">Download</a>
+  </div>
+</nav>
+
+<header class="hero container">
+  <div class="eyebrow">How does Sutra work?</div>
+  <h1>Six layers, one loop.</h1>
+  <p class="hero-sub">Sutra helps you design your work, then runs it. The first three layers are the spine: know the company, design the work, put agents on it. The other three keep it honest and growing: feedback, marketplaces, tooling.</p>
+</header>
+
+<main class="container">
+
+<div class="key"><b>In one sentence:</b> Sutra builds a model of the organisation, designs workflows on top of that model, and deploys agents to execute those workflows &#8212; then records what happened and improves both, with your approval.</div>
+
+<h2>The six layers in one picture</h2>
+<svg viewBox="0 0 880 340" role="img" aria-label="Six layers: ontology shapes workflow design, which assigns agents; marketplaces and tooling equip them; every run leaves a record in feedback, which corrects the model and the playbooks">
+<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2F6B4F"/></marker>
+<marker id="arrg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8A8078"/></marker></defs>
+<text x="40" y="48" font-size="12" font-weight="700" fill="#2F6B4F">SPINE &#8212; model &#8594; workflow &#8594; agent</text>
+<rect x="40" y="62" width="220" height="86" rx="10" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.8"/>
+<text x="150" y="90" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1F4A36">1 &#183; ONTOLOGY</text>
+<text x="150" y="110" text-anchor="middle" font-size="11.5" fill="#2F6B4F">what exists in the company</text>
+<text x="150" y="128" text-anchor="middle" font-size="11.5" fill="#2F6B4F">and how it is connected</text>
+<rect x="330" y="62" width="220" height="86" rx="10" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.8"/>
+<text x="440" y="90" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1F4A36">2 &#183; WORKFLOW DESIGN</text>
+<text x="440" y="110" text-anchor="middle" font-size="11.5" fill="#2F6B4F">how each outcome</text>
+<text x="440" y="128" text-anchor="middle" font-size="11.5" fill="#2F6B4F">should be produced</text>
+<rect x="600" y="62" width="220" height="86" rx="10" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.8"/>
+<text x="710" y="90" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1F4A36">3 &#183; AGENTS</text>
+<text x="710" y="110" text-anchor="middle" font-size="11.5" fill="#2F6B4F">who or what</text>
+<text x="710" y="128" text-anchor="middle" font-size="11.5" fill="#2F6B4F">does the work</text>
+<line x1="260" y1="105" x2="330" y2="105" stroke="#2F6B4F" stroke-width="1.6" marker-end="url(#arr)"/>
+<text x="295" y="96" text-anchor="middle" font-size="11" fill="#2F6B4F">shapes</text>
+<line x1="550" y1="105" x2="600" y2="105" stroke="#2F6B4F" stroke-width="1.6" marker-end="url(#arr)"/>
+<text x="575" y="96" text-anchor="middle" font-size="11" fill="#2F6B4F">assigns</text>
+<text x="40" y="207" font-size="12" font-weight="700" fill="#8A8078">SUPPORT &#8212; feedback &#183; playbooks &#183; tools</text>
+<rect x="40" y="215" width="220" height="70" rx="10" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/>
+<text x="150" y="241" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4A443E">4 &#183; FEEDBACK</text>
+<text x="150" y="261" text-anchor="middle" font-size="11" fill="#8A8078">what came back, what to change</text>
+<rect x="330" y="215" width="220" height="70" rx="10" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/>
+<text x="440" y="241" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4A443E">5 &#183; MARKETPLACES</text>
+<text x="440" y="261" text-anchor="middle" font-size="11" fill="#8A8078">where reusable playbooks come from</text>
+<rect x="600" y="215" width="220" height="70" rx="10" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/>
+<text x="710" y="241" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4A443E">6 &#183; TOOLING</text>
+<text x="710" y="261" text-anchor="middle" font-size="11" fill="#8A8078">what the agents can touch</text>
+<line x1="710" y1="215" x2="710" y2="148" stroke="#8A8078" stroke-width="1.4" marker-end="url(#arrg)"/>
+<text x="722" y="184" font-size="11.5" fill="#8A8078">equips</text>
+<line x1="440" y1="215" x2="440" y2="148" stroke="#8A8078" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrg)"/>
+<text x="452" y="184" font-size="11.5" fill="#8A8078">provides playbook shapes</text>
+<path d="M820,105 L850,105 L850,312 L150,312 L150,285" fill="none" stroke="#8A8078" stroke-width="1.4" marker-end="url(#arrg)"/>
+<text x="500" y="328" text-anchor="middle" font-size="11.5" fill="#8A8078">run record</text>
+<line x1="150" y1="215" x2="150" y2="148" stroke="#8A8078" stroke-width="1.4" marker-end="url(#arrg)"/>
+<text x="162" y="184" font-size="11.5" fill="#8A8078">corrects the model</text>
+<path d="M260,250 L295,250 L295,132 L330,132" fill="none" stroke="#8A8078" stroke-width="1.4" marker-end="url(#arrg)"/>
+<text x="300" y="172" font-size="11.5" fill="#8A8078">corrects the playbooks</text>
+</svg>
+<p class="cap">Green is the spine. Grey is what keeps it honest and growing.</p>
+
+<h2>Each layer, with an example</h2>
+<p>All examples are one company: a digital lender that takes applications, sanctions loans, disburses money and collects EMIs. Its rule: a disbursal above &#8377;5 lakh needs a second approval.</p>
+<div class="grid">
+<div class="card"><b>1 &#183; Ontology</b><div class="q">What exists in this company, and how is it connected?</div>
+<div class="ex">Applicants, credit officers, loans, EMIs. A credit officer owns an application. An application can become a sanctioned loan. A disbursal above &#8377;5 lakh needs a second approval.</div>
+<div class="see">departments with written purposes, and a read-back before work starts: &#8220;this is a Finance request, medium size, owned by Collections&#8221;.</div></div>
+<div class="card"><b>2 &#183; Workflow design</b><div class="q">How should this outcome be produced?</div>
+<div class="ex">Verify identity &#8594; score &#8594; sanction or decline &#8594; disburse &#8594; reconcile the first EMI. If identity cannot be verified, stop and ask the owner. Done means: money moved, ledger matches, applicant informed.</div>
+<div class="see">a playbook with steps and a declared &#8220;done means this&#8221; check.</div></div>
+<div class="card"><b>3 &#183; Agents</b><div class="q">Who or what does the work?</div>
+<div class="ex">The agent runs the identity check, the scoring and the sanction on its own, then pauses before any step that needs an approval &#8212; such as a disbursal above &#8377;5 lakh.</div>
+<div class="see">steps ticking by, a receipt at the end, and a question only when the decision is genuinely yours.</div></div>
+<div class="card"><b>4 &#183; Feedback</b><div class="q">How does it get better?</div>
+<div class="ex">The bank file arrived late three Fridays running, and the check failed each time. The playbook gains a &#8220;wait until 11:00 on Fridays&#8221; step &#8212; after you approve it.</div>
+<div class="see">&#8220;Want me to keep this as the way we do it?&#8221; Every run is recorded. Sutra checks whether a playbook still works and flags it when it stops passing.</div></div>
+<div class="card"><b>5 &#183; Marketplaces</b><div class="q">Where do playbooks come from?</div>
+<div class="ex">Your identity-check playbook started as a shared template. You kept the shape. Your limits, your rules and your customers stayed yours.</div>
+<div class="see">playbook shapes can travel between companies; your customers, numbers and decisions do not.</div></div>
+<div class="card"><b>6 &#183; Tooling</b><div class="q">What can the agent touch and change?</div>
+<div class="ex">The bank export, the ledger, the CRM, the message to the applicant.</div>
+<div class="see">connectors to those systems, with every action written to the record.</div></div>
+</div>
+
+<h2>One request, through all six</h2>
+<p>You type: <i>&#8220;disburse loan 4821&#8221;</i>. Here is what happens, in order.</p>
+<div class="rail">
+<div class="step" data-n="1"><b>Layer 1 &#183; Ontology</b><div class="say">Loan 4821 is a sanctioned loan of &#8377;7 lakh, owned by credit officer Meera. Her limit is &#8377;5 lakh, so a second approval is required. <i>The company model already knows all of this.</i></div></div>
+<div class="step" data-n="2"><b>Layer 2 &#183; Workflow design</b><div class="say">The disbursal playbook applies: confirm sanction &#8594; second approval &#8594; send bank instruction &#8594; post to ledger &#8594; inform applicant. Done means: money moved, ledger matches, applicant told.</div></div>
+<div class="step" data-n="3"><b>Layer 5 &#183; Marketplaces</b><div class="say">That playbook&#8217;s shape came from a shared lending template last quarter. <i>The approval limit in it is yours.</i></div></div>
+<div class="step" data-n="4"><b>Layer 6 &#183; Tooling</b><div class="say">The agent can reach the bank portal, the ledger and the messaging channel. Nothing else.</div></div>
+<div class="step" data-n="5"><b>Layer 3 &#183; Agents</b><div class="say">The agent confirms the sanction, then stops: &#8220;&#8377;7 lakh is above Meera&#8217;s limit. Approve?&#8221; You approve. It sends the instruction, posts the ledger entry, messages the applicant, and hands you a receipt.</div></div>
+<div class="step" data-n="6"><b>Layer 4 &#183; Feedback</b><div class="say">The run is recorded and the check passed. If it had failed, work would have stopped with the evidence attached. If you had changed a step, Sutra would ask: &#8220;keep this as the way we do it?&#8221;</div></div>
+</div>
+<p class="cap">Numbers are the order in time. Marketplaces and tooling equip the agent before it runs.</p>
+
+<h2>Ontology is not workflow</h2>
+<svg viewBox="0 0 880 250" role="img" aria-label="Left: the ontology as connected things. Right: the workflow as a route with a check at the end.">
+<defs><marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2F6B4F"/></marker>
+<marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8A8078"/></marker></defs>
+<text x="215" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="#8A8078">ONTOLOGY &#8212; the map</text>
+<rect x="30" y="60" width="130" height="40" rx="8" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.5"/><text x="95" y="85" text-anchor="middle" font-size="12" fill="#1F4A36">credit officer</text>
+<rect x="240" y="60" width="130" height="40" rx="8" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.5"/><text x="305" y="85" text-anchor="middle" font-size="12" fill="#1F4A36">application</text>
+<line x1="160" y1="80" x2="240" y2="80" stroke="#2F6B4F" stroke-width="1.4" marker-end="url(#a2)"/><text x="200" y="72" text-anchor="middle" font-size="10.5" fill="#2F6B4F">owns</text>
+<rect x="240" y="150" width="130" height="40" rx="8" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.5"/><text x="305" y="175" text-anchor="middle" font-size="12" fill="#1F4A36">sanctioned loan</text>
+<line x1="305" y1="100" x2="305" y2="150" stroke="#2F6B4F" stroke-width="1.4" marker-end="url(#a2)"/><text x="318" y="130" font-size="10.5" fill="#2F6B4F">can become</text>
+<rect x="30" y="150" width="130" height="40" rx="8" fill="#E6EFE8" stroke="#2F6B4F" stroke-width="1.5"/><text x="95" y="175" text-anchor="middle" font-size="12" fill="#1F4A36">disbursal</text>
+<line x1="240" y1="170" x2="160" y2="170" stroke="#2F6B4F" stroke-width="1.4" marker-end="url(#a2)"/><text x="200" y="162" text-anchor="middle" font-size="10.5" fill="#2F6B4F">paid out as</text>
+<text x="200" y="225" text-anchor="middle" font-size="11" fill="#8A8078">rule: a disbursal above &#8377;5 lakh needs a second approval</text>
+<line x1="440" y1="45" x2="440" y2="235" stroke="#E3DACD" stroke-width="1"/>
+<text x="660" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="#8A8078">WORKFLOW &#8212; the route</text>
+<rect x="480" y="60" width="110" height="36" rx="8" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/><text x="535" y="83" text-anchor="middle" font-size="11.5" fill="#4A443E">verify identity</text>
+<rect x="620" y="60" width="90" height="36" rx="8" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/><text x="665" y="83" text-anchor="middle" font-size="11.5" fill="#4A443E">score</text>
+<rect x="740" y="60" width="110" height="36" rx="8" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/><text x="795" y="83" text-anchor="middle" font-size="11.5" fill="#4A443E">sanction</text>
+<line x1="590" y1="78" x2="620" y2="78" stroke="#8A8078" stroke-width="1.4" marker-end="url(#a3)"/>
+<line x1="710" y1="78" x2="740" y2="78" stroke="#8A8078" stroke-width="1.4" marker-end="url(#a3)"/>
+<path d="M795,96 L795,120 L535,120 L535,140" fill="none" stroke="#8A8078" stroke-width="1.4" marker-end="url(#a3)"/>
+<rect x="480" y="140" width="110" height="36" rx="8" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/><text x="535" y="163" text-anchor="middle" font-size="11.5" fill="#4A443E">disburse</text>
+<rect x="620" y="140" width="110" height="36" rx="8" fill="#fff" stroke="#B8AFA5" stroke-width="1.5"/><text x="675" y="163" text-anchor="middle" font-size="11.5" fill="#4A443E">reconcile EMI</text>
+<line x1="590" y1="158" x2="620" y2="158" stroke="#8A8078" stroke-width="1.4" marker-end="url(#a3)"/>
+<rect x="760" y="136" width="90" height="44" rx="8" fill="#F6E7DE" stroke="#A8543A" stroke-width="1.5"/><text x="805" y="154" text-anchor="middle" font-size="10.5" font-weight="700" fill="#A8543A">DONE MEANS</text><text x="805" y="170" text-anchor="middle" font-size="10.5" fill="#A8543A">ledger matches</text>
+<line x1="730" y1="158" x2="760" y2="158" stroke="#A8543A" stroke-width="1.4" marker-end="url(#a3)"/>
+<text x="660" y="225" text-anchor="middle" font-size="11" fill="#8A8078">every step refers to things on the map; the check at the end is part of the route</text>
+</svg>
+<p class="cap">The map does not change when you reorder the route. The route means nothing without the map.</p>
+<p>This is why the order matters. A workflow without an ontology has nobody to own it, nothing to check against, and nowhere to put an exception. An agent without a workflow improvises. Sutra insists on the model first, the design second, the agent third.</p>
+
+<h2>The loop is the product</h2>
+<div class="key">Agents do the work, and they are not what makes Sutra different. What compounds is the loop: understand the company, design its work, run it, record what came back, correct the model and the playbooks. Take the feedback layer away and you have a collection of agents. Keep it and you have a system whose work can be inspected, corrected and reused.</div>
+<div class="key alt"><b>In plain words:</b> understand the organisation, design its work, execute its work. Tooling lets the agents act; feedback lets the system improve. <span style="color:var(--muted)">(The short form: Ontology &#8594; Orchestration &#8594; Agency.)</span></div>
+
+<h2>Next</h2>
+<div class="next">
+  <a class="btn primary" href="index.html#download">Download Sutra</a>
+  <a class="btn ghost" href="way.html">How Sutra is getting built</a>
+</div>
+
+<p class="fine">Examples are illustrative and use one digital lending company throughout.</p>
+
+</main>
+
+<footer>
+  <a href="index.html">Sutra</a> by Asawa Inc. &#183; <a href="https://github.com/sankalpasawa/sutra">github</a> &#183; <a href="way.html">the way</a>
+</footer>
+
+</body>
+</html>
