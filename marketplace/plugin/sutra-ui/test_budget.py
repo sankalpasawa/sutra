@@ -119,27 +119,28 @@ class WindowTest(unittest.TestCase):
         than silently inheriting the pessimistic one."""
         # The CLI's own configured default, which this panel cannot know.
         #
-        # codex joined this set on 2026-09-08 with its adapter, and it belongs
-        # in Claude's case rather than DeepSeek's. DeepSeek's default is
-        # KNOWABLE -- the fork's ACP session/new reports deepseek-v4-flash --
-        # so declaring 1M for it is measurement. codex has no equivalent: it
-        # publishes no model roster at all (no `codex models`, nothing in
-        # `codex exec --help`, nothing in the generated app-server schema), so
-        # there is no way to ask what "" will resolve to before the turn runs.
-        # The one id ever observed, gpt-5.6-terra, was read out of a session
-        # rollout AFTER the fact and is a server-side default that can change
-        # under us -- which is exactly the "operator may have changed it"
-        # situation the claude exemption exists for.
+        # CLAUDE IS THE ONLY MEMBER, and it is the only one that can be: its ""
+        # spans a five-fold range (opus and sonnet hold 1M, haiku 200K), so
+        # without knowing the model there is no honest number to state.
         #
-        # So codex gets NO budget.DEFAULT_WINDOWS entry and takes the floor.
-        # That is the pessimistic direction, and here it is also the safe and
-        # currently inert one: budget.for_target is reached through
-        # switch.plan, and switch._transport_for("codex") returns None, so a
-        # switch TO codex is refused with UNKNOWN_TARGET before any ceiling is
-        # computed. If a codex switch arm ever lands, under-counting the window
-        # costs ceiling; over-claiming one would build a payload past the
-        # context window and have it rejected at the API.
-        UNKNOWABLE_DEFAULT = {"claude", "codex"}
+        # codex was exempt here from 2026-09-08 to 2026-09-09 on an argument
+        # that has since expired in both halves. It read: codex publishes no
+        # model roster at all, so "" cannot be resolved; and the exemption is
+        # inert anyway because switch._transport_for("codex") returns None, so
+        # a switch TO codex is refused before any ceiling is computed. Neither
+        # holds now -- codex_models.py asks `model/list` over RPC and falls
+        # back to $CODEX_HOME/models_cache.json, and codex became a real switch
+        # target -- so the floor stopped being caution and became a 22%
+        # under-count on a live path.
+        #
+        # What actually made it knowable is narrower than a roster, and worth
+        # stating because it is the thing that could change: EVERY MODEL CODEX
+        # OFFERS DECLARES THE SAME EFFECTIVE WINDOW (272,000 x 95% = 258,400).
+        # So "" resolves to 258,400 whichever model the server picks, and the
+        # unresolvable-default worry never has to be answered.
+        # test_codex_models_all_declare_one_effective_window is what fails if
+        # that stops being true.
+        UNKNOWABLE_DEFAULT = {"claude"}
         for spec in providers._CATALOG:
             pid = spec["id"]
             if not providers.models_for(pid) or pid in UNKNOWABLE_DEFAULT:
@@ -148,6 +149,91 @@ class WindowTest(unittest.TestCase):
                           "%s offers a model picker but does not declare what "
                           '"" resolves to, so it would silently take the %d '
                           "floor" % (pid, budget.FLOOR_WINDOW))
+
+    def test_codex_reports_its_enforced_window_not_the_floor(self):
+        """4A. 258,400 is what codex ENFORCES, not the 272,000 raw window.
+
+        Before this landed, a switch TO codex was sized against the 200K floor
+        -- a 22% under-count that made tier 2 shed tool I/O sooner than the
+        provider required. The direction was safe (degraded success, never a
+        rejected request) and it was still wrong."""
+        w = budget.window_for("codex", "")
+        self.assertEqual(w["tokens"], 258400)
+        self.assertEqual(w["source"], "provider-default")
+        self.assertNotEqual(w["tokens"], budget.FLOOR_WINDOW)
+        b = budget.for_target("codex", "")
+        self.assertEqual(b["window_tokens"], 258400)
+        # the derivation the operator sees after a tier-2 switch
+        self.assertEqual(b["usable_tokens"],
+                         int((258400 - budget.REPLY_RESERVE_TOKENS)
+                             * budget.USABLE_FRACTION))
+        self.assertEqual(b["budget_chars"],
+                         int(b["usable_tokens"] * budget.CHARS_PER_TOKEN))
+        self.assertIn("known model, not a guess", b["note"])
+
+    def test_codex_ignores_another_providers_model_id(self):
+        """Same guard test_claude_model_id_is_ignored_for_deepseek makes: a
+        stray id from another provider must not select a window."""
+        for foreign in ("haiku", "opus", "deepseek-v4-pro"):
+            w = budget.window_for("codex", foreign)
+            self.assertEqual(w["tokens"], 258400, foreign)
+            self.assertEqual(w["source"], "provider-default", foreign)
+
+    def test_codex_declares_no_per_model_window_table(self):
+        """Deliberate: codex's roster is DISCOVERED per account, so a per-model
+        table would claim windows for ids models_for("codex") does not offer in
+        a fresh process, and would go stale the day a fourth model ships."""
+        self.assertNotIn("codex", budget.WINDOWS)
+        self.assertIn("codex", budget.DEFAULT_WINDOWS)
+
+    def test_codex_models_all_declare_one_effective_window(self):
+        """THE CANARY FOR THE ONE ASSUMPTION 258,400 RESTS ON.
+
+        A single default is honest only while every model codex offers agrees.
+        Reads codex's OWN cache when it is present and skips otherwise, so this
+        never depends on an account or a network call."""
+        import json
+        import os
+        home = os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex")
+        path = os.path.join(home, "models_cache.json")
+        if not os.path.exists(path):
+            self.skipTest("no codex models cache on this machine")
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            blob = json.load(fh)
+        effective = set()
+        for m in blob.get("models") or []:
+            if m.get("visibility") != "list":
+                continue
+            cw, pct = m.get("context_window"), m.get(
+                "effective_context_window_percent")
+            if isinstance(cw, int) and isinstance(pct, int):
+                effective.add(int(cw * pct / 100))
+        if not effective:
+            self.skipTest("cache declares no visible model windows")
+        self.assertEqual(
+            effective, {budget.DEFAULT_WINDOWS["codex"]},
+            "codex's models no longer agree on one effective window (%r), so a "
+            "single DEFAULT_WINDOWS entry is no longer honest -- this is the "
+            "point at which a per-model table becomes justified" % (effective,))
+
+    def test_the_other_providers_windows_are_untouched_by_4a(self):
+        """Frozen: 4A adds one DEFAULT_WINDOWS key and nothing else."""
+        self.assertEqual(budget.WINDOWS["claude"],
+                         {"opus": 1000000, "sonnet": 1000000, "haiku": 200000})
+        self.assertEqual(budget.DEFAULT_WINDOWS["deepseek"], 1000000)
+        self.assertEqual(budget.window_for("claude", "opus")["tokens"], 1000000)
+        self.assertEqual(budget.window_for("claude", "haiku")["tokens"], 200000)
+        self.assertEqual(budget.window_for("claude", "")["source"],
+                         "assumed-floor")
+        self.assertEqual(budget.window_for("deepseek", "")["tokens"], 1000000)
+        self.assertEqual(budget.window_for("deepseek", "")["source"],
+                         "provider-default")
+        # and the floor is derived from WINDOWS only, so a DEFAULT_WINDOWS
+        # addition cannot move it
+        self.assertEqual(budget.FLOOR_WINDOW, 200000)
+        self.assertEqual(budget.window_for("gemini")["source"], "assumed-floor")
+        self.assertEqual(budget.window_for("nope-not-a-provider")["tokens"],
+                         budget.FLOOR_WINDOW)
 
     def test_claudes_cli_default_still_falls_to_the_floor(self):
         """The exemption above is not a loophole: Claude's "" is genuinely

@@ -82,8 +82,39 @@ WINDOWS = {
 #: floor is the honest answer there. DeepSeek's default IS knowable -- the fork's
 #: ACP session/new reports deepseek-v4-flash, measured 2026-09-07 -- so assuming
 #: the floor for it would be pessimism, not caution.
+#:
+#: codex ADDED 2026-09-09, and the number is 258,400 rather than the 272,000
+#: raw window because that is what codex ENFORCES. Two independent sources
+#: agree, both codex's own:
+#:
+#:   $CODEX_HOME/models_cache.json   context_window 272000 and
+#:                                   effective_context_window_percent 95, for
+#:                                   every visible model -> 258,400
+#:   the session rollouts            model_context_window: 258400, on 70
+#:                                   observations across every real rollout on
+#:                                   this machine, from task_started and
+#:                                   token_count alike
+#:
+#: WHY THIS IS MEASUREMENT AND NOT A GUESS, which is the bar DeepSeek's entry
+#: had to clear too. The worry that kept codex out of this table was that ""
+#: resolves to a SERVER-SIDE default that can change under us, so the panel
+#: cannot know which model will answer. That is still true and no longer
+#: matters: all three models codex offers this account declare the SAME
+#: effective window, so the default resolves to 258,400 whichever one it picks.
+#: Claude stays exempt because its "" genuinely varies -- opus and sonnet hold
+#: 1M where haiku holds 200K, a five-fold spread the panel cannot resolve.
+#:
+#: NOT keyed per model, deliberately. codex's roster is DISCOVERED per account
+#: (codex_models.cached() is None until something refreshes it), so a
+#: WINDOWS["codex"] table would claim windows for ids that models_for("codex")
+#: does not offer in a fresh process -- which
+#: test_no_provider_declares_a_window_for_a_model_it_does_not_offer catches --
+#: and would go stale silently the day OpenAI ships a fourth model. One default
+#: is the honest shape while every model agrees; the moment one does not,
+#: test_codex_models_all_declare_one_effective_window fails and says so.
 DEFAULT_WINDOWS = {
     "deepseek": 1000000,
+    "codex": 258400,
 }
 
 #: Used whenever the selected model does not resolve to a declared window AND the
