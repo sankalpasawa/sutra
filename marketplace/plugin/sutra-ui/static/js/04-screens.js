@@ -486,7 +486,14 @@ function usageChipHtml(){
    because DeepSeek's account has none. */
 function usagePopHtml(){
   if (!S.usagePop) return "";
-  const upKind = usageKindOf((SETTINGS || {}).provider);
+  /* THIS PANE'S provider, not the globally selected one. S.usagePop is the
+     session this popover was opened for and 06-render draws it only inside
+     that pane, so the pane is always known here -- reading Settings instead
+     showed Claude's five-hour window on a Codex chat. usagePopProvider is
+     shared with the fetch (loadUsage) so the panel and the request cannot
+     describe two different providers. */
+  const uppid = usagePopProvider();
+  const upKind = usageKindOf(uppid);
   /* Same rule as SCREENS.usage: a provider with no usage concept gets a
      popover that says so, not Claude's. */
   if (upKind === "none") return `<div class="upop" role="dialog" aria-label="Usage">
@@ -497,7 +504,7 @@ function usagePopHtml(){
                stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
-      <div class="upopbody"><p style="margin:0">${esc(providerLabel((SETTINGS||{}).provider))}
+      <div class="upopbody"><p style="margin:0">${esc(providerLabel(uppid))}
         publishes no usage figure this panel can read — no rate-limit window and
         no balance.</p></div>
     </div>`;

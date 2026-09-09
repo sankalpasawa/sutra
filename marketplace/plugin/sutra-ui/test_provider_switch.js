@@ -778,7 +778,10 @@ const CHAT_LOCAL_SESSIONS = [
 
 const UI = (() => {
   const box = {
-    S: { sessions: CHAT_LOCAL_SESSIONS, chatProviderNote: {} },
+    /* chatProvider is the ARMED-BUT-NOT-YET-SPAWNED switch paneProvider now
+       consults first (see 06-render). Empty here: these four sessions are all
+       past that window, so the answer must come from what the server said. */
+    S: { sessions: CHAT_LOCAL_SESSIONS, chatProviderNote: {}, chatProvider: {} },
     SETTINGS: { provider: "claude" },
     PROVIDERS: [{ id: "claude", name: "Claude Code", runnable: true },
                 { id: "codex", name: "OpenAI Codex", runnable: true },
@@ -790,6 +793,7 @@ const UI = (() => {
   box.globalThis = box;
   vm.createContext(box);
   new vm.Script([
+    grab(state, "sessProviderRequest"),
     grab(render, "paneProvider"),
     grab(render, "providerIsChatLocal"),
     grab(chat, "providerLabel"),
@@ -816,6 +820,89 @@ test("a chat reopened from the rail uses its transcript's provider", () => {
   // Claude's usage kind -- for precisely as long as the operator is looking at
   // the menu before asking anything.
   eq(UI.fns.paneProvider(CHAT_LOCAL_SESSIONS[3]), "codex");
+});
+
+/* THE REFRESH, END TO END, on the shape /api/sessions really returns.
+
+   The four fixtures above set `source` by hand, and that is exactly how this
+   bug survived: nothing in the client was assigning it. adoptRealSessions
+   REBUILDS every on-disk row into a new object, and its literal copied id,
+   title, project, cwd, branch, mtime, size and claude_session -- but not
+   `source`. So paneProvider's transcript-provider branch could never fire, and
+   a Codex chat reopened after a refresh reported the GLOBAL Settings default
+   until its next turn's provider frame arrived.
+
+   Measured against the live endpoint 2026-09-09: row source="codex",
+   id="01a085fc-...", sutra_id="5bafdfaa..." -- and paneProvider answered
+   "claude". This drives the REAL rebuild rather than a fixture, which is the
+   only thing that could have caught it. */
+const REFRESH = (() => {
+  const box = {
+    S: { sessions: [], openPanes: [], cwd: {}, sutraId: {},
+         chatProvider: {}, chatProviderNote: {} },
+    SETTINGS: { provider: "claude" },       /* Settings still says Claude */
+    /* the preservation branches are not under test: a refreshed page has no
+       in-flight turn and no loaded pane to keep */
+    sessionBusy: () => false,
+    console,
+  };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grab(state, "adoptRealSessions"),
+    grab(state, "sessProviderRequest"),
+    grab(render, "paneProvider"),
+  ].join("\n") + "\n;globalThis.__R={adoptRealSessions,paneProvider};",
+    { filename: "refresh#extract" }).runInContext(box);
+  return { box: box, fns: box.__R };
+})();
+
+/* One page of /api/sessions, verbatim in shape: a Codex-only chat (the new-chat
+   case -- its only transcript lives in codex's tree) and a Claude one. */
+const REFRESH_ROWS = [
+  { id: "01a085fc-3c41-7f20-bc80-b37a69f02e47", source: "codex",
+    title: "what's 4=5", cwd: "/w/sutra-ui", branch: "main",
+    mtime: 1789000000, size: 1234,
+    sutra_id: "5bafdfaa415246398d0b08e6b1fb38c3" },
+  { id: "07c7e7e1-9cea-404a-a0a7-9263805b8608", source: "claude",
+    title: "something else", cwd: "/w/sutra-ui", branch: "main",
+    mtime: 1788999000, size: 999, sutra_id: null },
+];
+
+test("a refreshed row KEEPS the provider that wrote it", () => {
+  REFRESH.fns.adoptRealSessions(REFRESH_ROWS);
+  const codex = REFRESH.box.S.sessions.find(s => s.id === REFRESH_ROWS[0].id);
+  assert(codex, "the codex row was not adopted at all");
+  eq(codex.source, "codex",
+     "adoptRealSessions dropped the row's source, so paneProvider has nothing "
+     + "to read —");
+});
+
+test("...so paneProvider reports Codex, not the Settings default", () => {
+  // THE REGRESSION. Settings says claude and this chat is on codex; before the
+  // fix the reopened pane answered "claude" -- the composer row, the Model,
+  // Permissions, Turn options and Usage rows and the Chat AI Provider row all
+  // named a provider the chat was not on.
+  REFRESH.fns.adoptRealSessions(REFRESH_ROWS);
+  const codex = REFRESH.box.S.sessions.find(s => s.id === REFRESH_ROWS[0].id);
+  const claude = REFRESH.box.S.sessions.find(s => s.id === REFRESH_ROWS[1].id);
+  eq(REFRESH.fns.paneProvider(codex), "codex",
+     "a refreshed Codex chat fell back to the global default —");
+  eq(REFRESH.fns.paneProvider(claude), "claude", "the Claude row");
+  eq(REFRESH.box.SETTINGS.provider, "claude",
+     "the rebuild wrote the global default");
+});
+
+test("the hint stays BELOW the server's frame", () => {
+  /* `source` says what this ROW is; the chat's durable provider is its
+     provider_history segment, which only the ws frame reports. A chat whose
+     rail row is its Claude transcript but whose live socket resolved Codex
+     must answer Codex. */
+  REFRESH.fns.adoptRealSessions(REFRESH_ROWS);
+  const claude = REFRESH.box.S.sessions.find(s => s.id === REFRESH_ROWS[1].id);
+  claude.channel = { id: "codex", source: "chat-history" };
+  eq(REFRESH.fns.paneProvider(claude), "codex",
+     "the transcript hint outranked the frame the server actually sent —");
 });
 
 test("providerIsChatLocal separates governed chats from pinned ones", () => {
@@ -904,20 +991,36 @@ function applySrc() {
   throw new Error("unbalanced braces");
 }
 const APPLY = applySrc();
+/* THE SWITCH ITSELF MOVED OUT of applyProviderRequest and into
+   switchChatProvider, which the ⋮ menu's Chat AI Provider row calls too -- one
+   function, so the two ways of asking for a switch cannot answer differently.
+   The pins below describe the in-chat PATH, which is now both functions. */
+function switchFnSrc() {
+  const i = helpers.indexOf("function switchChatProvider(");
+  assert(i >= 0, "switchChatProvider is gone -- the shared switch must exist");
+  let j = helpers.indexOf("{", i), depth = 0;
+  for (let k = j; k < helpers.length; k++) {
+    if (helpers[k] === "{") depth++;
+    else if (helpers[k] === "}") { depth--; if (depth === 0) return helpers.slice(i, k + 1); }
+  }
+  throw new Error("unbalanced braces");
+}
+const SWITCH_FN = switchFnSrc();
+const IN_CHAT_PATH = APPLY + "\n" + SWITCH_FN;
 
 test("an in-chat switch never writes the global provider", () => {
   // THE LOCKED CONSTRAINT. Settings.provider governs new chats and chats that
   // never asked; an in-chat request is explicitly not a vote about it.
-  assert(!/providers\/active/.test(APPLY),
+  assert(!/providers\/active/.test(IN_CHAT_PATH),
          "the in-chat path posts to the global provider endpoint");
-  assert(!/api\/settings/.test(APPLY), "the in-chat path writes settings");
-  assert(!/SETTINGS\s*=/.test(APPLY), "the in-chat path reassigns SETTINGS");
+  assert(!/api\/settings/.test(IN_CHAT_PATH), "the in-chat path writes settings");
+  assert(!/SETTINGS\s*=/.test(IN_CHAT_PATH), "the in-chat path reassigns SETTINGS");
 });
 
 test("a request for the provider already running does nothing at all", () => {
   // No socket drop, no replay, no marker: the server would answer NOT_NEEDED
   // and the reconnect would cost a cold start to arrive where it already is.
-  assert(/want\.target === paneProvider\(s\)/.test(APPLY),
+  assert(/target === paneProvider\(s\)/.test(IN_CHAT_PATH),
          "the same-provider case is not short-circuited");
 });
 
@@ -948,15 +1051,15 @@ test("the boot window never claims a provider is unready", () => {
 });
 
 test("a pane mid-reply is spared, as the Settings handler spares it", () => {
-  assert(/streamingFor\(/.test(APPLY) && /sideStreamingFor\(/.test(APPLY),
+  assert(/streamingFor\(/.test(IN_CHAT_PATH) && /sideStreamingFor\(/.test(IN_CHAT_PATH),
          "switching now would discard the reply being written");
 });
 
 test("the switch is the reconnect -- no per-turn routing was introduced", () => {
-  assert(/closeClaudeChannel\(/.test(APPLY),
+  assert(/closeClaudeChannel\(/.test(IN_CHAT_PATH),
          "the socket is bound to its provider at spawn, so the switch must "
          + "drop it");
-  assert(/S\.chatProvider\[s\.id\] =/.test(APPLY),
+  assert(/S\.chatProvider\[s\.id\] =/.test(IN_CHAT_PATH),
          "the request never reaches the url builder");
 });
 
@@ -986,6 +1089,7 @@ function runApply(providers, text) {
     grab(helpers, "providerIntentFrames"),
     grab(helpers, "providerIntentOpensWithDirective"),
     grab(helpers, "detectProviderIntent"),
+    grab(helpers, "switchChatProvider"),
     grab(helpers, "applyProviderRequest"),
   ].join("\n") + "\n;globalThis.__A=applyProviderRequest;",
     { filename: "apply#extract" }).runInContext(box);
@@ -1207,6 +1311,7 @@ async function firstTurn(text, opts) {
     grab(helpers, "providerIntentFrames"),
     grab(helpers, "providerIntentOpensWithDirective"),
     grab(helpers, "detectProviderIntent"),
+    grab(helpers, "switchChatProvider"),
     grab(helpers, "applyProviderRequest"),
     grab(helpers, "turnUid"),
     grab(helpers, "askClaude"),

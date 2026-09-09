@@ -710,6 +710,17 @@ function adoptRealSessions(rows){
          the file's last write — genuinely "updated", not a fabricated "created". */
       created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,
       size: r.size || 0,
+      /* WHICH PROVIDER WROTE THIS TRANSCRIPT. On the row from
+         session_reader for all three providers, and dropped here until
+         2026-09-09 -- which made two readers of it dead code: paneProvider
+         (06-render) fell through to the GLOBAL Settings default, so a Codex
+         chat reopened after a refresh reported Claude in the composer row and
+         in every provider-dependent ⋮ row until its next turn's provider
+         frame landed; and rowMeta's provider badge never rendered at all.
+         A HINT, not the answer -- it says what this ROW is, and the chat's
+         durable provider is its provider_history segment, which only the ws
+         frame reports. That is why paneProvider ranks it below s.channel. */
+      source: r.source || "",
       turns: [], loadState: "unread", loadError: null,
       /* the jsonl filename IS the Claude session id, so continuing this session
          from the composer resumes the real thread rather than starting a cold one */

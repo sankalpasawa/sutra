@@ -180,16 +180,26 @@ async function rtLoadRuns(id){
 /* Usage. Lazy like Git, and re-read on every open rather than cached in S: a
    utilization figure that is quietly ten minutes stale is worse than one that
    costs a request, and the server already coalesces at 60s against a shared cache. */
-async function loadUsage(force){
+async function loadUsage(force, pid){
   /* Two entirely different payloads live behind this one call, gated on the
-     ACTIVE provider (SETTINGS.provider) -- not per-session, because the panel
-     only ever drives one provider's CLI at a time (providers.py
-     active_provider_detail). DeepSeek has no account concept in this build
+     provider being asked about. DeepSeek has no account concept in this build
      (no whoami-shaped endpoint was found) and no rate-limit window, only a
      balance -- so it gets its own state (S.deepseekUsage) and skips /api/account
      entirely rather than rendering "not reported" rows for fields that do not
-     exist for this provider. */
-  const kind = usageKindOf((SETTINGS || {}).provider);
+     exist for this provider.
+
+     `pid` IS THE FIX, and it is optional on purpose. The old comment here read
+     "not per-session, because the panel only ever drives one provider's CLI at
+     a time" -- true until a chat could carry its own provider, after which a
+     Codex chat's Usage row fetched ANTHROPIC's account and usage and rendered
+     them as its own. The two PANE callers (paneMenuAction's Usage row and the
+     composer's usage chip) now pass usagePopProvider(), the provider of the
+     pane whose panel is opening.
+
+     EVERY OTHER CALLER PASSES NOTHING and is unchanged: the Usage and Settings
+     screens, and the post-turn / post-sign-in refreshes, describe the app
+     rather than one chat, so they keep the global default they always had. */
+  const kind = usageKindOf(pid || (SETTINGS || {}).provider);
   if (kind === "balance"){
     if (S.deepseekUsage && !force) return;
     try {

@@ -185,7 +185,10 @@ function paneMenuAction(sid, key){
       const t = document.querySelector("[data-prf='title']"); if (t && t.focus) t.focus();
       return;
     }
-    case "usage":  S.usagePop = sid; if (typeof loadUsage === "function") loadUsage(true); break;
+    /* usagePopProvider() reads S.usagePop, which is set on the line before --
+       so this fetches THIS pane's provider, not the global default. */
+    case "usage":  S.usagePop = sid;
+      if (typeof loadUsage === "function") loadUsage(true, usagePopProvider()); break;
     case "route":  S.sessTab[sid] = (S.sessTab[sid] || "chat") === "route" ? "chat" : "route"; break;
     case "opts":   S.optsOpen[sid] = !S.optsOpen[sid]; break;   /* the ≡ control, now a row */
     case "fold":   S.ui.paneCollapsed[sid] = true; saveLayout(); break;
@@ -1408,7 +1411,8 @@ function wire(){
          someone is looking at it, and a background poll against an external API
          for a panel nobody has open is cost with no reader. The server's 60s
          cache makes reopening free. */
-      if (opening) loadUsage(true);
+      /* Same as the ⋮ Usage row: the pane's provider, not Settings'. */
+      if (opening) loadUsage(true, usagePopProvider());
     };
   });
   panes.querySelectorAll("[data-usageclose]").forEach(b=>b.onclick=()=>{
@@ -1502,6 +1506,30 @@ function wire(){
     const sid = b.dataset.panemenu;
     const opening = S.paneMenu !== sid;
     S.paneMenu = opening ? sid : null;
+    /* CODEX'S MODEL LIST, WARMED ON DEMAND -- through the path that already
+       exists, not a new one.
+
+       MODELS_BY_PROVIDER is written exactly ONCE, by loadRuntime() in boot(),
+       and codex's entry there is composed from codex_models.cached() -- an
+       IN-PROCESS cache warmed only by GET /providers/codex/auth. The client
+       asks for that only while the AI Provider screen is open
+       (codexNeedsProbe = codexOnScreen && !S.codexAuth), so on any load where
+       Settings was never visited -- every load after a backend restart -- the
+       published codex list is the catalogue's `[CLI default]` alone. Measured
+       2026-09-09: the Model row rendered with one option and
+       codexEffortsFor() returned [], so Reasoning effort offered "default"
+       alone. Give the same pane a warm map and both are identical to the live
+       session; the refresh was never the cause.
+
+       This menu is where those two controls are read, so this is where the
+       existing probe is asked for. UNFORCED deliberately: loadCodexAuth
+       returns early once an answer is in hand (S.codexAuth / S.codexProbing),
+       so this is at most ONE `codex login status` per page load, started by an
+       operator opening a menu -- the same gesture cost as opening the AI
+       Provider screen, and never on a render path. codexApplyState stores what
+       comes back; nothing here parses or caches models itself. */
+    if (opening && paneProvider((S.sessions || []).find(x => x.id === sid)) === "codex")
+      loadCodexAuth();
     render();
     /* the render replaced the chip, so focus fell to <body>; a keyboard user
        who just opened the menu must land ON it (refuter 2026-08-23). Escape
@@ -1726,6 +1754,26 @@ function wire(){
        something else happened to render.
        Selection semantics are unchanged -- still per-session, still not
        persisted; only the paint is new. */
+    render();
+  });
+
+  /* ── Chat AI Provider (this chat only) ──
+     THE SAME SWITCH "using Codex, ..." PERFORMS. Not a second mechanism: it
+     calls switchChatProvider (02-helpers), which is also what the composer's
+     detector calls, so the menu and the natural-language request move a chat
+     the same way and the no-op / readiness / mid-reply rules are decided in
+     exactly one place. Nothing here writes Settings — the global Primary
+     Provider is untouched by a chat-level switch, by construction.
+
+     The refusals ("busy", "unready") set their own note inside
+     switchChatProvider, rendered by the composer's provider row. The render is
+     what SNAPS THE SELECT BACK when a switch was refused: paneProvider still
+     answers the old provider, so re-painting the row is what stops it showing
+     a provider this chat did not move to. */
+  panes.querySelectorAll("[data-chatprov]").forEach(sel=>sel.onchange=()=>{
+    const sid = sel.dataset.chatprov;
+    delete S.chatProviderNote[sid];
+    switchChatProvider((S.sessions || []).find(x => x.id === sid), sel.value);
     render();
   });
 

@@ -157,6 +157,17 @@ function agentDetailHtml(meta, messages){
    paneDeclProvider below for the one kind of question that can be answered
    earlier, and why this one cannot. */
 function paneProvider(s){
+  /* A SWITCH ALREADY ASKED FOR OUTRANKS THE FRAME IT HAS NOT REPLACED YET.
+     A chat-level switch is armed as a one-shot request (S.chatProvider, read
+     by claudeWsUrl) and only becomes `s.channel` when the next socket opens
+     and the server answers — which for a menu-driven switch is not until the
+     next message is sent. Without this the pane would keep reporting the
+     provider it is LEAVING for as long as the operator looks at the menu
+     without typing: the Chat AI Provider row would snap back to Claude a
+     moment after Codex was chosen, and the Model and Permissions rows beside
+     it would go on offering Claude's for a chat whose next turn is Codex's.
+     Ranked first because it is the most recent fact about where this chat is
+     going, and spent the moment the socket carries it. */
   /* `s.source` sits between the two for ONE window: a chat reopened from the
      rail before its socket exists. The chat's real answer lives server-side in
      provider_history, which only the ws `provider` frame can report -- but the
@@ -166,7 +177,8 @@ function paneProvider(s){
      rail no longer paints Claude's model list for the window before its first
      message. Still a hint, not the answer: the frame overwrites it the moment
      it lands, which is why it ranks below s.channel and not above. */
-  return (s && s.channel && s.channel.id)
+  return (s && sessProviderRequest(s.id))
+      || (s && s.channel && s.channel.id)
       || (s && s.source)
       || (SETTINGS || {}).provider;
 }
@@ -300,6 +312,45 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
+    ${(()=>{ /* ── Chat AI Provider ─────────────────────────────────────────
+         THIS CHAT ONLY. Settings' Primary Provider still governs new chats and
+         every chat that never asked for anything else; nothing in this row
+         touches it (see switchChatProvider, which is what the handler calls).
+
+         NO STATE OF ITS OWN. The selection is `mpid` — paneProvider, the same
+         expression the Model, Permissions, Turn options and Usage rows read —
+         so the row cannot disagree with what the chat is about to run, and a
+         "using Codex, ..." typed in the composer shows up here without this
+         control being told about it. It sits FIRST because the four rows below
+         it are all answers about the provider it names.
+
+         ONLY READY-TO-USE PROVIDERS ARE OFFERED. `runnable` is the server's own
+         verdict on the /api/providers row (installed AND configured AND this
+         build has an adapter); offering a name that cannot start is the exact
+         failure providers.py was written to prevent.
+
+         Two omissions, both for the same reason the Model row has its own: an
+         EMPTY provider table means NOT FETCHED, never "nothing is ready", so a
+         row built from it would offer nothing at all; and with no `mpid` there
+         is no honest answer to which provider this chat is on, and a select
+         renders its first option when nothing matches — inventing one. */
+       const usable = (PROVIDERS || []).filter(p => p.runnable);
+       if (!usable.length || !mpid) return "";
+       /* RUNNING, BUT NO LONGER READY. A provider can be signed out or
+          uninstalled after the socket resolved it. A select whose value is
+          absent from its options silently displays the FIRST one, which would
+          name a provider this chat is not on — so the current one is listed
+          disabled instead, the same way the Model row carries a catalogued
+          model it cannot select. */
+       const opts = (usable.some(p => p.id === mpid) ? usable
+                     : [{ id: mpid, name: providerLabel(mpid), off: true }].concat(usable))
+         .map(p => `<option value="${esc(p.id)}"${p.off ? " disabled" : ""}${
+              p.id === mpid ? " selected" : ""}>${esc(p.name)}${
+              p.off ? " — no longer ready" : ""}</option>`).join("");
+       return `<label class="mrow"><span class="mk">Chat AI Provider</span><span class="mv"><select class="provsel" data-chatprov="${esc(s.id)}" aria-label="AI provider for this chat"
+            title="This chat only — Settings keeps the default for new chats">${opts}
+      </select></span><span class="ma"></span></label>`;
+     })()}
     <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(dpid)}</span><span class="ma"></span></label>
     ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
             title="Model — applies to the next message">${mopts}

@@ -964,7 +964,7 @@
      textarea: a new control added next to an existing one, without inheriting the
      rule that made the existing one belong. They are styled together now so the
      next one added here cannot drift either. */
-  .modelsel,.permsel{flex:none;background:var(--inset);border:1px solid var(--line);
+  .modelsel,.permsel,.provsel{flex:none;background:var(--inset);border:1px solid var(--line);
     border-radius:7px;color:var(--muted);font:11px/1 var(--sans);padding:6px 5px;
     max-width:112px;cursor:pointer;
     /* the UA select chrome is light-on-light in dark mode; drop it and draw our own */
@@ -1316,8 +1316,8 @@
   .swmark.bad{border-left-color:var(--block)}
   .swmark.bad b{color:var(--block)}
   .swmark .swhint{color:var(--faint)}
-  .modelsel:hover,.permsel:hover{color:var(--ink);border-color:var(--line)}
-  .modelsel:focus-visible,.permsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .modelsel:hover,.permsel:hover,.provsel:hover{color:var(--ink);border-color:var(--line)}
+  .modelsel:focus-visible,.permsel:focus-visible,.provsel:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* A mode that writes files without asking is not a neutral preference, and the
      composer is where you are about to use it. It carries the warn colour so the
      state is legible at a glance rather than only inside the dropdown. */

@@ -366,6 +366,67 @@ function uploadAttachment(sid, file){
   fr.readAsDataURL(file);
 }
 
+/* THE chat-level provider switch — and the only one there is.
+
+   Both ways of asking for it end here: "using Codex, ..." typed in the
+   composer (applyProviderRequest below) and the ⋮ menu's Chat AI Provider row
+   (07-loaders' [data-chatprov] handler). One function means the two cannot
+   drift, and exactly one place decides whether a switch happens.
+
+   WHAT IT NEVER DOES. It never writes Settings. The global default governs new
+   chats and every chat that has not asked for anything else, and a chat-level
+   switch is explicitly not a vote about it — POST /api/providers/active is not
+   called from here and must not be. It never routes ONE turn either: the
+   socket is reopened on the target and the chat stays there, because the
+   server records the move as a provider_history segment.
+
+   Returns why it did not switch, so a caller can add detail in its own words.
+   The refusals that need saying are said HERE, in one voice:
+
+     "switched"  armed. The next socket carries ?provider= (claudeWsUrl) and
+                 the server does the rest — switch.plan replays the
+                 conversation, switch.confirm records the segment.
+     "same"      already on it. No socket drop, no replay, no marker, no new
+                 segment: the server would answer NOT_NEEDED anyway, and
+                 reopening would cost a cold start to arrive where the chat is.
+     "unready"   catalogued but not runnable. Refused here as ws_chat would
+                 refuse it, off the SAME `runnable` flag the server publishes.
+     "busy"      a reply is streaming, and dropping the socket would bin it.
+     "none"      nothing to act on.                                          */
+function switchChatProvider(s, target){
+  if (!s || !target) return "none";
+  /* ALREADY THERE. paneProvider is the chat's own answer — the server's
+     provider frame, or a switch already armed and not yet spawned — so this
+     is measured against what the chat will actually run, not against Settings. */
+  if (target === paneProvider(s)) return "same";
+  /* READINESS IS THE SERVER'S ANSWER, never one computed here: `runnable` on
+     the /api/providers row means installed AND configured AND this build has
+     an adapter. ws_chat applies the same gate again on connect, so this
+     proposes and the server disposes. */
+  const p = (PROVIDERS || []).find(x => x.id === target);
+  if (!p || !p.runnable){
+    S.chatProviderNote[s.id] = providerLabel(target) + " is not ready to use"
+      + (p && p.reason ? " — " + p.reason : "") + ". This chat stayed on "
+      + providerLabel(paneProvider(s)) + ".";
+    return "unready";
+  }
+  /* A pane mid-reply is spared, exactly as the Settings handler spares it and
+     for the same reason — closing the socket now would throw away the reply
+     being written. Said out loud rather than silently ignoring the request,
+     because a provider instruction that does nothing and says nothing reads
+     as a broken control. */
+  if (streamingFor(s.id) || sideStreamingFor(s.id)){
+    S.chatProviderNote[s.id] = "Finish or stop the running turn first — switching to "
+      + providerLabel(target) + " now would discard the reply it is still writing.";
+    return "busy";
+  }
+  /* The socket is bound to its provider at spawn, so the switch IS the
+     reconnect. claudeWsUrl reads this on the way out. */
+  S.chatProvider[s.id] = target;
+  closeClaudeChannel(s.id, { force: true });
+  return "switched";
+}
+
 /* Act on an in-chat provider request, if this message is one.
 
    Returns true when the message must NOT be sent yet -- the only such case is
@@ -430,30 +491,12 @@ function applyProviderRequest(s, text){
       + providerLabel(paneProvider(s)) + ".";
     return false;
   }
-  /* ALREADY THERE. No socket drop, no replay, no marker: the server would
-     answer NOT_NEEDED anyway, and re-opening the socket would cost a cold
-     start to arrive where the chat already is. */
-  if (want.target === paneProvider(s)) return false;
-
-  /* A pane mid-reply is spared, exactly as the Settings handler spares it and
-     for the same reason -- closing the socket now would throw away the reply
-     being written. Said out loud rather than silently ignoring the request,
-     because a provider instruction that does nothing and says nothing reads
-     as a broken detector. */
-  if (streamingFor(s.id) || sideStreamingFor(s.id)){
-    S.chatProviderNote[s.id] = "Finish or stop the running turn first — switching to "
-      + providerLabel(want.target) + " now would discard the reply it is still writing.";
-    return true;
-  }
-
-  /* The socket is bound to its provider at spawn, so the switch IS the
-     reconnect. claudeWsUrl reads this on the way out and the server does the
-     rest: switch.plan replays the conversation to the target, the operator's
-     message rides along at the end of it, and switch.confirm records the
-     segment that keeps the chat there. */
-  S.chatProvider[s.id] = want.target;
-  closeClaudeChannel(s.id, { force: true });
-  return false;
+  /* THE SWITCH ITSELF IS switchChatProvider, shared with the ⋮ menu's Chat AI
+     Provider row — the already-there no-op, the mid-reply guard, the readiness
+     gate and the arm-plus-reconnect all live there now, so both ways of asking
+     for a switch get the same answer. The only thing left here is what this
+     path alone knows: a held message has to be reported as held. */
+  return switchChatProvider(s, want.target) === "busy";
 }
 
 async function submitTurn(text, sessionId){
@@ -1334,6 +1377,34 @@ function codexPlanRows(plan){
     resets_epoch: w.resets_at || 0,
     percent: w.used_percent,
   }));
+}
+
+/* THE PROVIDER THE USAGE PANEL IS ABOUT.
+
+   The popover is a PANE's control -- S.usagePop holds the session id it was
+   opened for, and 06-render renders it only inside that pane
+   (`S.usagePop === s.id`) -- so the pane's own provider is the answer, and
+   paneProvider is the one expression that gives it. Read here rather than in
+   each of the two places that need it (usagePopHtml, and the fetch it
+   triggers) so the panel it draws and the request it makes cannot disagree
+   about which provider they are describing.
+
+   THE BUG THIS CLOSES. Both read `SETTINGS.provider` instead. loadUsage said
+   so out loud -- "not per-session, because the panel only ever drives one
+   provider's CLI at a time" -- which was true until a chat could carry its own
+   provider. On a Codex chat while Settings said Claude, `usageKindOf("claude")`
+   is "window-percent", so the tokens branch was skipped, ANTHROPIC's account
+   and usage were fetched, and the popover rendered them under "Plan usage …
+   using the Claude Code credentials on this machine". Measured 2026-09-09: the
+   Codex chat showed Claude's five-hour window, before AND after a refresh --
+   this was never a refresh regression.
+
+   SETTINGS IS STILL THE ANSWER WHEN THERE IS NO PANE. The Usage and Settings
+   SCREENS describe the app, not a chat, and they call loadUsage with no
+   provider at all -- so they keep the global default they always had. */
+function usagePopProvider(){
+  const s = (S.sessions || []).find(x => x.id === S.usagePop);
+  return s ? paneProvider(s) : (SETTINGS || {}).provider;
 }
 
 function providerUsage(pid, sid){
