@@ -1944,6 +1944,48 @@
   background:var(--card); color:var(--ink); border:1px solid var(--line);
   border-radius:10px; padding:8px 12px; font-size:12px;
   box-shadow:0 6px 20px rgba(0,0,0,.14); }
+/* THE PROVIDER TOAST -- a .nudge VARIANT, never an edit to .nudge: the five
+   shadow callers are 12px chips reporting that a toggle stuck, and they stay
+   that way. This one answers "which provider is this chat about to use" at the
+   moment a chat opens, so it is read, not glanced at: 15px, more padding than
+   a chip, a card radius.
+
+   EVERY VALUE IS A TOKEN OR A TOKEN'S DARK VALUE. The component is fixed-dark
+   in both themes, so the three colour properties cannot take var(--card) /
+   var(--ink) -- those flip to #ffffff / #1c1917 in light theme and the toast
+   would vanish into itself. They carry the DARK palette's own literals
+   instead, which is what --card and --ink resolve to on the default theme:
+     background  #1C1A17                 = dark --card
+     color       #F5F0E8 -> 66% toward
+                 #8C857D                 = dark --ink pulled toward --muted,
+                                           because the reference text is a warm
+                                           muted light-gray, never pure white
+     border      rgba(245,240,232,.08)   = dark --ink at 8%, subtler than
+                                           --line would read on this ground
+
+   THE METRICS ARE THE PANEL'S OWN, not a size of my choosing. Everything
+   nearby sits in one tight band -- .toast 12px/9px 13px/r9, .nudge 12px/8px
+   12px/r10, .ag-toast 11.5px/9px 14px/r8, .shcard r12 -- and this rule had
+   drifted to 15px/13px 18px/r15, which is why it read heavy against them.
+   13px is the one concession: the toast is read once, not glanced at.
+   font and shadow ARE tokens: var(--sans) is the app's system stack, and
+   var(--shadow) is the soft two-layer spread (1px contact + 44px broad) every
+   raised surface here uses -- .ag-toast reaches for the same one.
+
+   pointer-events:none, scoped HERE: a 5-second card in the bottom-right corner
+   must not eat a click meant for the chat under it.
+
+   bottom:80px, overriding .nudge's 18px: at 18px it sat ON the composer, over
+   the text input of the very chat it is talking about. Clearing the composer
+   is the point -- the toast must never cover the thing you type into. */
+.nudge.provtoast{ background:#1C1A17; bottom:80px;
+  color:color-mix(in srgb,#F5F0E8 66%,#8C857D);
+  border:1px solid rgba(245,240,232,.08);
+  border-radius:12px; padding:10px 14px;
+  font:400 13px/1.45 var(--sans);
+  box-shadow:var(--shadow);
+  max-width:340px;
+  pointer-events:none; }
 .nyfeed{ display:flex; flex-direction:column; gap:10px; max-width:560px; }
 .nycard{ border:1px solid var(--line); border-radius:10px; padding:10px 12px;
   background:var(--card); cursor:pointer; }

@@ -15,6 +15,26 @@ const MAX_PANES = 6;
 function pushPane(id){
   if (!S.openPanes.includes(id)) S.openPanes.push(id);
   if (S.openPanes.length > MAX_PANES) S.openPanes = S.openPanes.slice(-MAX_PANES);
+  /* A PROVIDER SWITCH CONFIRMS ITSELF HERE, not in Settings. The Settings note
+     lives on a screen the operator leaves, and the fact they actually want --
+     which provider is this chat about to use -- is wanted when they open a
+     chat. Both open paths come through pushPane (the rail's [data-open] and
+     newSession), and neither boot-time openPanes push does, so this fires on a
+     deliberate open and never on startup. CLEARED FIRST: one toast per switch,
+     however many chats are opened after it. SETTINGS at spend time, not the
+     switch's own answer, so two switches before the next open collapse to one
+     toast naming the provider that actually won. */
+  if (S.provToast){
+    S.provToast = null;
+    if (typeof showNudge === "function"){
+      const el = showNudge("This chat will use "
+                           + providerLabel((SETTINGS || {}).provider) + ".", 5000);
+      /* The variant class, applied to the element showNudge hands back -- so
+         showNudge needs no third parameter and no other caller can inherit
+         this look. */
+      if (el) el.className += " provtoast";
+    }
+  }
 }
 
 function turnUid(t){
@@ -227,6 +247,9 @@ const S = {
   props:null, propBusy:null, propError:null,
   /* transient, self-clearing note -- see the pane close handler. */
   toast:null,
+  /* ONE-SHOT: set by the Settings provider switch, spent by the next pushPane.
+     In memory only -- a switch the app has forgotten has nothing to announce. */
+  provToast:null,
   /* permission mode confirmation, at chat level -- see permSelect(). */
   permConfirm:null, permBusy:false, permError:null,
   /* Per-session composer extras. `attach` holds one entry per pending file (each with

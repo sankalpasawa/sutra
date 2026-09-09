@@ -82,14 +82,17 @@ function openNeedsYouItem(link, itemId){
   if (typeof goDest === "function") goDest("focus");
 }
 
-/* S62: the nudge -- ephemeral, never navigates, never steals focus. */
-function showNudge(text){
+/* S62: the nudge -- ephemeral, never navigates, never steals focus.
+   `ms` is OPTIONAL and defaults to the 6000 every existing caller was written
+   against: a second surface wanting a shorter life is not a reason to shorten
+   theirs. */
+function showNudge(text, ms){
   if (typeof document === "undefined") return null;
   const el = document.createElement("div");
   el.className = "nudge";
   el.textContent = text || "";
   (document.body || document.documentElement).appendChild(el);
-  setTimeout(() => { try { el.remove(); } catch (e) {} }, 6000);
+  setTimeout(() => { try { el.remove(); } catch (e) {} }, ms || 6000);
   return el;
 }
 

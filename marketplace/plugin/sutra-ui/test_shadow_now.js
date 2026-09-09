@@ -23,7 +23,9 @@ const src = fs.readFileSync(
 
 function fresh(withDom){
   const ctx = {
-    console, setTimeout: (fn)=>({fn}), clearTimeout(){},
+    console, _timers: [],
+    setTimeout: (fn, ms)=>{ const t = { fn, ms }; ctx._timers.push(t); return t; },
+    clearTimeout(){},
     esc: (x) => String(x == null ? "" : x)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;"),
     SCREENS: {}, S: {}, goneTo: [],
@@ -103,7 +105,19 @@ const ITEMS = [{
   assert.strictEqual(el.className, "nudge");
   assert.strictEqual(ctx.document.body.appended.length, 1);
   assert.deepStrictEqual(ctx.goneTo, [], "a nudge never navigates");
+  assert.strictEqual(ctx._timers[0].ms, 6000,
+    "the default lifetime every existing caller was written against");
   console.log("ok 4 nudge");
+}
+
+/* 4b. the OPTIONAL duration. A caller needing a different life says so, and
+   the default above is what proves the other callers were not moved. */
+{
+  const ctx = fresh(true);
+  const el = ctx.showNudge("This chat will use OpenAI Codex.", 5000);
+  assert.strictEqual(el.textContent, "This chat will use OpenAI Codex.");
+  assert.strictEqual(ctx._timers[0].ms, 5000, "an explicit duration is honoured");
+  console.log("ok 4b nudge duration");
 }
 
 /* observations pass: opening a card retires it */

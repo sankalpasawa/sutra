@@ -832,7 +832,14 @@ function wire(){
                     after a switch belongs to the OTHER provider. */
                  if (typeof loadUsage === "function") loadUsage(true);
                  S.setOk = "new chats and your next message use " + r.active + "."
-                         + (kept ? " A chat is still replying and will move after it finishes." : ""); })
+                         + (kept ? " A chat is still replying and will move after it finishes." : "");
+                 /* CONFIRMED ON THE CHAT SURFACE, NOT HERE. S.setOk above is
+                    this screen's own receipt. The fact an operator wants --
+                    which provider is this chat about to use -- is wanted when
+                    they open a chat, so the switch only ARMS it and pushPane()
+                    spends it. Never a chat message: a Settings change is not a
+                    turn and does not belong in a transcript. */
+                 S.provToast = true; })
       .catch(e=>{ S.setError = e.message; })
       .then(()=>{ S.setBusy = null; render(); }); });
   /* ── Codex sign-in (AI Provider screen) ──────────────────────────────────

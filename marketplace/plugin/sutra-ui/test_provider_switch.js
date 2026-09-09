@@ -216,6 +216,101 @@ test("the confirmation says when the change takes effect", () => {
          "'active provider is now X' overstated it -- nothing moves until you send");
 });
 
+test("the switch ARMS the toast -- it does not fire in Settings", () => {
+  // S.setOk is this screen's receipt. The fact worth having ("which provider
+  // is this chat about to use") is worth having when a chat is opened.
+  const body = provHandlerSrc();
+  assert(/S\.provToast = true/.test(body), "the success path arms nothing");
+  assert(!/showNudge\(/.test(body),
+         "Settings is the screen the operator leaves -- the toast is the chat's");
+  assert(!/S\.toast\s*=/.test(body), "a second notification system");
+  assert(!/pushTurn|S\.turns|sideTurns/.test(body),
+         "a Settings change is not a turn -- it must never enter chat history");
+});
+
+test("a REFUSED switch arms nothing", () => {
+  // A 400 (provider not runnable) must not leave a toast waiting to announce a
+  // switch that never happened.
+  const i = loaders.indexOf('apiPost("/api/providers/active"');
+  const c = loaders.indexOf(".catch(", i);
+  const j = loaders.indexOf('querySelectorAll("[data-pmode-set]")', i);
+  assert(c > i && j > c, "the handler's catch is gone");
+  assert(!/provToast/.test(loaders.slice(c, j)), "the failure path arms the toast");
+});
+
+/* ── 3b. behavioural: pushPane spends the flag, on real bytes ─────────────
+   The flag is only worth anything if the ONE place both chat-open paths share
+   actually spends it, so this runs the real pushPane rather than reading it. */
+
+function panePad(){
+  const box = {
+    S: { openPanes: [], provToast: null },
+    SETTINGS: { provider: "codex" },
+    PROVIDERS: [{ id: "codex", name: "OpenAI Codex" },
+                { id: "claude", name: "Claude Code" }],
+    MAX_PANES: 6, nudges: [], console,
+  };
+  box.showNudge = (text, ms) => { const el = { className: "nudge" };
+                                  box.nudges.push({ text, ms, el }); return el; };
+  vm.createContext(box);
+  new vm.Script([grab(chat, "providerLabel"),
+                 grab(helpers, "pushPane")].join("\n")).runInContext(box);
+  return box;
+}
+
+test("opening a chat spends the flag and names the provider from SETTINGS", () => {
+  const box = panePad();
+  box.S.provToast = true;
+  box.pushPane("s-1");
+  eq(box.nudges.length, 1, "no toast on the first chat opened after a switch");
+  eq(box.nudges[0].text, "This chat will use OpenAI Codex.");
+  eq(box.nudges[0].ms, 5000, "the toast must clear itself after 5s");
+  eq(box.S.provToast, null, "the flag was not spent");
+  eq(box.S.openPanes.length, 1, "the pane must still open");
+  /* The reference is a readable 18px card, not the 12px chip the shadow
+     nudges are. A VARIANT class, so those callers cannot inherit it. */
+  assert(/\bprovtoast\b/.test(box.nudges[0].el.className),
+         "the toast does not wear the provider variant");
+  assert(/\.nudge\.provtoast\s*\{/.test(css), "no style for the variant");
+  assert(/\.nudge\{[^}]*font-size:12px/.test(css),
+         ".nudge itself was restyled -- the shadow chips moved with it");
+});
+
+test("it fires ONCE per switch, not on every chat opened afterwards", () => {
+  const box = panePad();
+  box.S.provToast = true;
+  box.pushPane("s-1"); box.pushPane("s-2"); box.pushPane("s-1");
+  eq(box.nudges.length, 1, "one switch, one toast");
+});
+
+test("with no switch pending, opening a chat is silent", () => {
+  const box = panePad();
+  box.pushPane("s-1");
+  eq(box.nudges.length, 0, "opening a chat is not a provider announcement");
+});
+
+test("the name comes from SETTINGS at spend time, not from the switch", () => {
+  // Two switches before the next chat open collapse to one toast, naming the
+  // provider that actually won.
+  const box = panePad();
+  box.S.provToast = true;
+  box.SETTINGS.provider = "claude";
+  box.pushPane("s-1");
+  eq(box.nudges[0].text, "This chat will use Claude Code.");
+});
+
+test("existing showNudge callers keep the lifetime they were written against", () => {
+  const nudge = fs.readFileSync(
+    path.join(__dirname, "static", "js", "14-needs-you.js"), "utf8");
+  assert(/function showNudge\(text, ms\)/.test(nudge), "the duration is not a parameter");
+  assert(/ms \|\| 6000/.test(nudge), "the 6000 default is gone");
+  ["15-shadow-overlay.js", "16-shadow-home.js"].forEach(f => {
+    const src = fs.readFileSync(path.join(__dirname, "static", "js", f), "utf8");
+    (src.match(/showNudge\([^)]*\)/g) || []).forEach(call =>
+      assert(!/,\s*\d/.test(call), f + " now passes a duration: " + call));
+  });
+});
+
 /* ── 4. the surfaces that survived ───────────────────────────────────────── */
 
 test("the rail still badges which provider wrote each transcript", () => {
