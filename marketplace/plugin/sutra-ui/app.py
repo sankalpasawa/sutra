@@ -2066,6 +2066,50 @@ async def api_session_say(sid: str, request: Request):
     return _validated_say(sid, mission, msg, body.get("dedupe_key"))
 
 
+def _seed_is_another_providers(seed, active_id, sutra_id):
+    """True when THIS chat already records `seed` as a DIFFERENT provider's
+    native session.
+
+    The browser keeps ONE session id per pane -- 01-state.js:1455 writes
+    s.claude_session from the `session` frame of whichever provider spoke last
+    -- and hands it back as `resume`. Nothing in the id says who minted it, and
+    the two spawn paths that consume it are credulous in opposite ways:
+
+      claude    resolves ids in its own tree, so a foreign one fails the turn
+                loudly and the dead-seed retry recovers it.
+      codex     reports the id it was resumed WITH as its own thread.started id
+                (measured, codex_runtime.py:522). A foreign id is therefore
+                ACCEPTED IN SILENCE, and switch.confirm then writes it onto a
+                codex segment -- a segment naming a session that does not exist
+                in codex's tree at all. Measured on a live server: the bogus
+                segment made active_segment() report codex, so every later
+                plan() returned NOT_NEEDED and the chat could never carry over
+                again. No error frame anywhere.
+
+    So the id is checked against what the chat ALREADY KNOWS, using the reverse
+    index chat_store maintains for exactly this kind of lookup rather than a
+    second one invented here.
+
+    DELIBERATELY NARROW. Only an id this chat records under another provider is
+    refused. An UNRECORDED id -- a pane restored from the transcript rail, say
+    (07-loaders.js:2244) -- behaves exactly as before, which is what keeps
+    Claude's dead_seeds/retry machinery and DeepSeek's session/load fallback
+    untouched. This closes the case where the chat itself contradicts the
+    client, not every case where the client could be wrong.
+    """
+    if not (seed and sutra_id and active_id):
+        return False
+    for pid in chat_store.SEGMENT_PROVIDERS:
+        if pid == active_id:
+            continue
+        try:
+            if chat_store.resolve(pid, seed) == sutra_id:
+                return True
+        except Exception:   # noqa: BLE001 -- a bad index must not kill a turn
+            continue
+    return False
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -2260,6 +2304,14 @@ async def ws_chat(ws: WebSocket):
     # a switch happens once -- at the moment the provider changes -- and turns
     # after it are ordinary turns on the new provider's own session.
     seed_switch = bool(sutra_id)
+    #: A carry-over payload was BUILT this turn and the target has not yet
+    #: handed back a native session. Exists because "once per connection,
+    #: whatever happens" was written when a switch had only two outcomes --
+    #: planned, or refused -- and a target that dies AFTER a successful plan is
+    #: a third one it did not anticipate. In that case the switch did not
+    #: happen: no segment was written, and the payload was never processed, so
+    #: the carry-over is still owed to the operator. See the `failed` branch.
+    switch_planned = False
 
     session_id = None
     resume_unverified = False   # session id came from the client, not from a live run
@@ -2403,6 +2455,14 @@ async def ws_chat(ws: WebSocket):
                         plan = switch_egress.prepare(plan)
                     if plan.get("switch"):
                         msg = plan["payload"]
+                        # Owed until the target proves it exists. Only a BUILT
+                        # payload arms this -- every refusal below is
+                        # deterministic (NOT_NEEDED, UNKNOWN_TARGET,
+                        # OVER_BUDGET, FENCE_BROKEN) and returns the identical
+                        # answer next message, so re-attempting one would
+                        # re-announce a refusal on every turn and change
+                        # nothing.
+                        switch_planned = True
                         switch_note = {
                             "type": "switch", "ok": True,
                             "source": plan["source"], "target": plan["target"],
@@ -2472,7 +2532,27 @@ async def ws_chat(ws: WebSocket):
                 await ws.send_json(switch_note)
             if (session_id is None and seed and isinstance(seed, str)
                     and seed not in dead_seeds
-                    and "/" not in seed and ".." not in seed):
+                    and "/" not in seed and ".." not in seed
+                    # NOT this pane's provider's id, by this chat's own record.
+                    #
+                    # THE CASE THIS GUARDS IS THE `NOT_NEEDED` ONE, which the
+                    # switch-time clearing above cannot reach: plan() returns
+                    # NOT_NEEDED for "already running on <target>", and that
+                    # arm deliberately KEEPS the seed so an ordinary
+                    # same-provider reconnect still resumes. It keeps whatever
+                    # the client sent -- and the client holds ONE id per pane,
+                    # written by whichever provider spoke last, so on a chat
+                    # that has already switched, the id offered may belong to
+                    # the provider being reconnected AWAY from. Codex accepts
+                    # such an id in silence (see _seed_is_another_providers),
+                    # so nothing downstream would have caught it.
+                    #
+                    # A target that DIES is a different problem with a
+                    # different fix: the `failed` branch re-arms seed_switch,
+                    # so the next message re-plans the switch and clears the
+                    # seed through the normal path. This guard is not what
+                    # covers that.
+                    and not _seed_is_another_providers(seed, active_id, sutra_id)):
                 session_id, resume_unverified = seed, True
 
             # Model: per-message override wins over the stored setting, and BOTH are
@@ -2737,6 +2817,13 @@ async def ws_chat(ws: WebSocket):
             # Minted server-side rather than in the browser because the id is
             # durable state keyed on a session id only the server sees.
             if session_id:
+                # The target EXISTS, so the carry-over is no longer owed: the
+                # segment below records it, and the next plan() therefore
+                # returns NOT_NEEDED. Cleared here rather than in the failure
+                # branch so a turn that fails LATER -- after a session was
+                # established -- cannot re-arm and replay a payload the target
+                # has already received.
+                switch_planned = False
                 try:
                     if not sutra_id:
                         # Resolve first: a pane reopened on an existing session
@@ -2828,6 +2915,25 @@ async def ws_chat(ws: WebSocket):
                             else "claude exited " + str(rc))
                 detail = err.strip()[:600] or result_error or fallback
                 frame = {"type": "error", "detail": detail}
+                if switch_planned and session_id is None:
+                    # A CARRY-OVER WAS BUILT AND THE TARGET NEVER CAME UP, so
+                    # the switch did not happen: `if session_id:` above wrote no
+                    # segment, and the payload was never processed. Re-arm so
+                    # the next message on this connection tries again, rather
+                    # than running on the new provider with no history and
+                    # saying nothing about it -- which is the failure the switch
+                    # marker exists to make visible.
+                    #
+                    # This cannot duplicate a replay. The two outcomes are
+                    # exhaustive: no session means the target read nothing, and
+                    # a session means the branch above already cleared this flag
+                    # and the next plan() answers NOT_NEEDED.
+                    #
+                    # Only THIS outcome re-arms. Deterministic refusals never
+                    # set switch_planned, so one-switch-per-connection still
+                    # holds for every non-failure path.
+                    seed_switch = True
+                    switch_planned = False
                 if resume_unverified:
                     # The id the browser handed us may be stale, from another
                     # machine, or -- the common case -- from a session recorded
