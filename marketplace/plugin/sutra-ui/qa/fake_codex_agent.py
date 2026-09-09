@@ -62,13 +62,29 @@ _EXEC_ONLY_FLAGS = ("--json", "--sandbox", "-C", "--cd", "--skip-git-repo-check"
                     "-m", "--model", "--dangerously-bypass-approvals-and-sandbox")
 
 
-def _record(env_var, payload):
+def _record(env_var, payload, append=False):
+    """One recording, from inside the spawned process.
+
+    `append` writes ONE JSON OBJECT PER LINE instead of overwriting, and it is
+    used for the argv recording only. A single overwritten argv cannot answer
+    the question a switch test has to ask -- "was codex EVER spawned with the
+    source provider's session id" -- because it only ever holds the LAST spawn.
+    That is not hypothetical: the same overwrite in the Claude stub made two
+    provider-switch tests pass while the bug was fully present (see
+    qa/fake_claude_agent.py's header).
+
+    The STDIN recording deliberately stays overwrite-and-raw: it is the prompt
+    BYTES the panel delivered, and JSON-quoting them would change the thing
+    under test.
+    """
     path = os.environ.get(env_var)
     if not path:
         return
     try:
-        with open(path, "w") as fh:
-            if isinstance(payload, str):
+        with open(path, "a" if append else "w") as fh:
+            if append:
+                fh.write(json.dumps(payload) + "\n")
+            elif isinstance(payload, str):
                 fh.write(payload)
             else:
                 json.dump(payload, fh)
@@ -90,7 +106,7 @@ def _emit(obj):
 
 
 def main(argv):
-    _record("SUTRA_FAKE_CODEX_ARGV", argv)
+    _record("SUTRA_FAKE_CODEX_ARGV", argv, append=True)
 
     # ---- parse enough to be as strict as the real thing -----------------
     if "exec" not in argv:
@@ -174,6 +190,17 @@ def main(argv):
     thread_id = resumed_id or ("01a08191-7175-7f62-%s" % uuid.uuid4().hex[:16])
 
     script = (os.environ.get("SUTRA_FAKE_CODEX_SCRIPT") or "ok").strip()
+
+    if script == "no-thread":
+        # DIES BEFORE thread.started, which is the one failure shape the other
+        # scripts cannot produce: every one of them runs AFTER the emit below,
+        # so the panel has already learned a thread id by the time they fail.
+        # Here it never learns one -- so `session_id` stays None and
+        # switch.confirm is never reached, which is what keeps
+        # provider_history free of a segment for a session that does not exist.
+        # stderr and a non-zero exit with NO JSON on stdout, the same shape
+        # _die_plain already models for the argv refusals.
+        _die_plain("codex: could not start a thread", 1)
 
     _emit({"type": "thread.started", "thread_id": thread_id})
     _emit({"type": "turn.started"})

@@ -25,6 +25,18 @@ PROJECTS = Path(os.path.expanduser("~/.claude/projects"))
 GEMINI_ROOT = Path(os.path.expanduser("~/.gemini"))
 GEMINI_PROJECTS_FILE = GEMINI_ROOT / "projects.json"
 
+# Codex sessions ("rollouts") live at
+# $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ISO>-<thread-id>.jsonl -- a THIRD
+# tree, and the only one of the three whose location is configurable, so
+# CODEX_HOME is honoured exactly as codex itself honours it.
+#
+# READ AT IMPORT, like GEMINI_ROOT above, deliberately: this is a constant a
+# reader can see the value of, and every process that reaches here has its
+# environment set before Python starts. providers._codex_home() reads the same
+# variable at CALL time for its own reasons; the two agree for any process that
+# does not rewrite its own environ mid-run.
+CODEX_ROOT = Path(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"))
+
 
 def _text_of(content) -> str:
     """Extract human-readable text from a message.content (str or block list)."""
@@ -542,6 +554,47 @@ def _gemini_resolve_path(session_id: str) -> Optional[Path]:
         if _gemini_header_id(f) == session_id:
             return f
     return None
+
+
+#: A codex thread id, and NOTHING that can act as a glob pattern. `_safe_id`
+#: alone is not enough here: it rejects "/", "\" and "..", but `*`, `?` and `[`
+#: reach Path.glob as METACHARACTERS, so an id of "*" would match every rollout
+#: on disk and hand back an arbitrary one. Every id measured (13/13) is a
+#: hyphenated hex UUID, so the charset is stated positively rather than by
+#: blacklisting the characters that happen to be dangerous today.
+_CODEX_ID = re.compile(r"\A[0-9a-fA-F-]{8,64}\Z")
+
+
+def codex_resolve_path(session_id: str) -> Optional[Path]:
+    """The rollout file for one codex thread id, or None.
+
+    SEPARATE FROM resolve_path() ON PURPOSE, and this is the whole reason it is
+    its own function rather than a third arm of that one. resolve_path is
+    shared with the two WRITE paths in this module: append_title() appends a
+    Claude-shaped {"type": "custom-title"} record to whatever it resolves, and
+    relocate() MOVES the file into ~/.sutra-ui/{archive,trash}. Folding codex
+    into resolve_path would silently point both of those at another vendor's
+    tree -- a Claude record written into a codex rollout, or a live codex
+    thread moved out from under the running CLI. Neither has a codex analogue
+    and neither was asked for.
+
+    So this is read-only by construction: the one caller is
+    transcript_ir.load, which only ever opens the file.
+
+    The id is the LAST hyphen-joined component of the filename stem, and it
+    equals session_meta.payload.session_id in 13/13 rollouts measured
+    2026-09-09 -- so unlike DeepSeek (whose stem and header id diverged, see
+    _gemini_resolve_path) no file has to be opened to identify one.
+
+    The glob is recursive rather than sessions/*/*/*/: the YYYY/MM/DD nesting
+    is codex's business, and a layout change should cost nothing here.
+    """
+    if not _safe_id(session_id) or not _CODEX_ID.match(session_id or ""):
+        return None
+    if not CODEX_ROOT.exists():
+        return None
+    matches = sorted(CODEX_ROOT.glob("sessions/**/rollout-*-%s.jsonl" % session_id))
+    return matches[0] if matches else None
 
 
 def resolve_path(session_id: str) -> Optional[Path]:

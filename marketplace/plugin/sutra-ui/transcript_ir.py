@@ -49,7 +49,10 @@ Both are tool-I/O dominated. An earlier reading of this module's own header
 called them "near mirror-images" on the strength of stored bytes; that was
 wrong and is corrected here.
 
-Reads:  ~/.claude/projects/**/*.jsonl and ~/.gemini/tmp/*/chats/*.jsonl
+Reads:  ~/.claude/projects/**/*.jsonl, ~/.gemini/tmp/*/chats/*.jsonl, and
+        $CODEX_HOME/sessions/**/rollout-*.jsonl (added 2026-09-09; the codex
+        section below carries its own measurements, and it is the one tree
+        whose own truncation policy bounds the no-caps promise above)
 Writes: nothing. This module is read-only by contract.
 """
 import json
@@ -342,6 +345,285 @@ def from_deepseek_file(path, project_cwd=None):
     return ir
 
 
+# ------------------------------------------------------------------- codex --
+#
+# MEASURED 2026-09-09 against the 13 rollouts in the founder's own
+# $CODEX_HOME/sessions (311 records, 0 unparseable lines), written by codex-cli
+# 0.153.2.
+#
+# ONE FILE PER THREAD, APPEND-ONLY, AND THAT IS WHY THIS IS THE SIMPLEST OF THE
+# THREE PARSERS. A resumed thread APPENDS to the file it started in -- verified:
+# one rollout carries two `task_started` events, one `session_meta`, and the
+# second turn writes ONLY its new records. So there is no last-write-wins to do
+# (DeepSeek), no cross-file merge, and no re-emission of earlier turns.
+#
+# THE FILE CARRIES THE CONVERSATION TWICE, AND ONLY ONE COPY IS READ HERE:
+#
+#   response_item   the API-level history -- message / reasoning /
+#                   custom_tool_call / custom_tool_call_output
+#   event_msg       a UI-level mirror -- item_completed carrying UserMessage /
+#                   AgentMessage / Reasoning / CommandExecution / Extension
+#
+# `response_item` is a STRICT SUPERSET and is the only stream read. Verified
+# per file: custom_tool_call >= CommandExecution in all three tool-bearing
+# rollouts (3>=1, 2>=1, 10>=9) and assistant messages == AgentMessage exactly
+# (2==2, 2==2, 3==3). The `Extension` items that look like a gap are not one --
+# a web search is a custom_tool_call whose script calls `tools.web__run(...)`,
+# so it is already in the stream this parser reads. Reading both would
+# double-render every message, which is the one bug this comment prevents.
+#
+# `aggregated_output`, the field the event stream carries tool output in, was
+# also MEASURED LOSSY (codex_runtime.py:392 -- a command printing line1/line2/
+# line3 came back missing line1). custom_tool_call_output does not go through
+# it.
+#
+# COMPOSITION of replayable text, this provider against the other two:
+#
+#     Claude    tool I/O 93.6%   conversation  6.4%   thinking   ~0%
+#     DeepSeek  tool I/O 65.2%   conversation 16.5%   reasoning 18.3%
+#     Codex     tool I/O 98.2%   conversation  1.8%   reasoning   0.0%
+#
+# Codex is the most tool-dominated of the three, and its reasoning is 0.0%
+# because none of it is readable (see _CODEX_ITEM_TYPES).
+#
+# ONE FIDELITY LIMIT THAT IS NOT THIS MODULE'S TO FIX, stated because the
+# module header promises no caps: codex declares
+# `truncation_policy {mode: "tokens", limit: 10000}` for every model in its own
+# models_cache.json, so tool output is capped BEFORE it is written to the
+# rollout. Nothing is truncated here -- the source already was. Largest output
+# observed is 40,152 chars.
+
+#: The `payload.type` values on a `response_item` this build TRANSLATES.
+#: Everything else is dropped, and the test suite has a canary that fails if a
+#: real rollout on this machine ever carries a type outside this set -- because
+#: the failure mode of a silent drop here is a replay with NO tool activity in
+#: it that still reports success, and tool activity is 98.2% of the content.
+#:
+#: `reasoning` is recognised and deliberately EMITS NOTHING. Its `summary` is
+#: [] in 16/16 records measured, and the only other field is
+#: `encrypted_content` -- an opaque base64 blob, not readable thought. There is
+#: no Codex analogue of DeepSeek's `thoughts`, so a Codex IR carries no
+#: thinking blocks at all.
+_CODEX_ITEM_TYPES = ("message", "reasoning",
+                     "custom_tool_call", "custom_tool_call_output")
+
+#: Content-item types that carry text, across all three roles. `input_text` on
+#: user/developer messages and on tool output, `output_text` on assistant
+#: messages; `text` is accepted because it is the cheaper shape a later build
+#: is most likely to move to.
+_CODEX_TEXT_TYPES = ("input_text", "output_text", "text")
+
+
+def _codex_text(content):
+    """Text of one codex `content` list, uncapped.
+
+    Keeps an "[image]" placeholder for the same reason _result_text_full does:
+    an image that vanishes silently is a fact the receiving model cannot know
+    it is missing.
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for c in content:
+        if not isinstance(c, dict):
+            continue
+        t = c.get("type")
+        if t in _CODEX_TEXT_TYPES and isinstance(c.get("text"), str):
+            parts.append(c["text"])
+        elif t in ("input_image", "output_image", "image"):
+            parts.append("[image]")
+    return "\n".join(parts)
+
+
+def _codex_tool_input(raw):
+    """A codex tool `input` as the dict the IR's tool_use block requires.
+
+    NOT A COSMETIC CONVERSION. `custom_tool_call.input` is a STRING in 15/15
+    records measured -- the source of a small JavaScript program, e.g.
+
+        const r = await tools.exec_command({"cmd":"sed -n '1,240p' …"});
+
+    and chat_store.block_tool_use replaces any non-dict input with `{}`
+    (chat_store.py:118). Passing it through raw would therefore drop every tool
+    input in the transcript -- 7,118 characters on one measured rollout -- with
+    the replay still reporting success. chat_store is NOT relaxed to accept a
+    string: it is the durable store shared with Claude and DeepSeek, and the
+    narrow fix belongs on the one provider that needs it.
+
+    json.loads is tried FIRST so that a tool whose input is a JSON object (the
+    classic `function_call.arguments` shape) keeps its real keys rather than
+    being buried under one. When it is not JSON -- which is every case measured
+    so far -- the raw string is preserved under the wire field's own name, so a
+    reader can trace the value back to the record it came from and this
+    function asserts nothing about what the string contains.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+        return {"input": raw}
+    return {} if raw is None else {"input": raw}
+
+
+def from_codex_file(path):
+    """One Codex rollout -> IR. Read-only, never raises on a bad file."""
+    ir = _empty("codex")
+    results = {}    # call_id -> block_tool_result
+    open_reply = None   # the assistant turn currently accumulating blocks
+
+    def _reply(ts):
+        """The open assistant turn, opening one if there is none.
+
+        ASSISTANT ITEMS ARE FOLDED into one turn per operator turn, which is a
+        DELIBERATE DIVERGENCE from from_claude_file (one turn per record).
+        Codex's response_item stream is per-API-item -- a message, then a tool
+        call, then another message -- so one reply that ran ten commands
+        arrives as fourteen separate records. Unfolded, replay.py would print
+        fourteen "assistant" turn headers for a single answer. Folded, the
+        measured shape of a real rollout is [user, assistant] with blocks
+        [text, tool_use, tool_result, ..., text, ...] -- which is exactly the
+        shape a Claude turn has.
+        """
+        nonlocal open_reply
+        if open_reply is None:
+            open_reply = {"role": "assistant", "ts": ts, "blocks": []}
+            ir["turns"].append(open_reply)
+        return open_reply
+
+    try:
+        with Path(path).open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                payload = d.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                rec_type, ts = d.get("type"), d.get("timestamp", "")
+
+                if rec_type == "session_meta":
+                    # The only place cwd and branch appear. `git` is absent
+                    # when the thread ran outside a repository, which is an
+                    # ordinary case (3 of 13 measured) and not an error.
+                    ir["cwd"] = ir["cwd"] or (payload.get("cwd") or "")
+                    git = payload.get("git")
+                    if isinstance(git, dict):
+                        ir["branch"] = ir["branch"] or (git.get("branch") or "")
+                    continue
+
+                if rec_type != "response_item":
+                    continue    # event_msg and the rest -- see the section header
+                item = payload.get("type")
+                if item not in _CODEX_ITEM_TYPES:
+                    continue
+                if item == "reasoning":
+                    continue    # nothing readable in it; never encrypted_content
+
+                if item == "message":
+                    role = payload.get("role")
+                    if role == "user":
+                        # An operator turn ENDS the assistant turn before it,
+                        # so the next reply cannot absorb blocks from this one.
+                        open_reply = None
+                        text = _codex_text(payload.get("content")).strip()
+                        if not text or text.startswith("<"):
+                            continue   # synthetic injection, not typed input
+                        ir["turns"].append({
+                            "role": "user", "ts": ts,
+                            "blocks": _strip_preamble(
+                                [chat_store.block_text(text)])})
+                    elif role == "assistant":
+                        # `phase` is final_answer or commentary; both are real
+                        # assistant text and neither is treated specially.
+                        text = _codex_text(payload.get("content"))
+                        if text.strip():
+                            _reply(ts)["blocks"].append(
+                                chat_store.block_text(text))
+                    # role == "developer" IS DROPPED BY ROLE, and the role test
+                    # is why -- the `<`-prefix rule the two other parsers use
+                    # is NOT sufficient here. Codex writes its own system
+                    # instructions as developer messages (34 of them measured),
+                    # and while most open with a tag like <skills_instructions>,
+                    # one measured record begins:
+                    #
+                    #     You are `/root`, the primary agent in a team of …
+                    #
+                    # A parser that treated every non-assistant message as an
+                    # operator turn would replay CODEX'S OWN SYSTEM PROMPT to
+                    # the next vendor's model as something the operator said.
+                    continue
+
+                if item == "custom_tool_call":
+                    _reply(ts)["blocks"].append(chat_store.block_tool_use(
+                        payload.get("name") or "",
+                        _codex_tool_input(payload.get("input")),
+                        payload.get("call_id")))
+                    continue
+
+                # custom_tool_call_output. Collected rather than appended: the
+                # output arrives on its own later record, exactly as a Claude
+                # tool_result does, and is spliced after its call once the
+                # whole file is read. 15/15 measured calls paired cleanly by
+                # call_id, with 0 orphans in either direction.
+                #
+                # TESTED EXPLICITLY RATHER THAN BY ELIMINATION, and that is the
+                # whole point of this guard. This used to be the bare tail of
+                # the chain -- "anything recognised that got this far is an
+                # output" -- which is true of the four types in
+                # _CODEX_ITEM_TYPES today and false of the next one added to
+                # it. And the next one WILL be added: the canary in
+                # test_transcript_ir tells whoever hits an unmeasured type to
+                # put it in that tuple. Doing so without a branch here sent the
+                # record down this path, where `results[call_id] = ...`
+                # OVERWROTE the real tool result for that call -- measured, a
+                # `web_search` record replaced a command's output with an empty
+                # string. Silent, and in the 98.2%-of-content path.
+                if item == "custom_tool_call_output":
+                    cid = payload.get("call_id")
+                    results[cid] = chat_store.block_tool_result(
+                        _codex_text(payload.get("output")), cid,
+                        # ALWAYS False, and this is a measurement rather than
+                        # an oversight: custom_tool_call_output carries NO
+                        # status field at all (15/15 -- its keys are exactly
+                        # call_id, id, output, type and the passthrough
+                        # envelope). The call's own `status` is "completed" for
+                        # every record including the ones whose command failed,
+                        # so it says nothing about the outcome either. A failed
+                        # command is therefore indistinguishable from a
+                        # successful one at the record level, and replay.py
+                        # will render it "-> returned:". The failure is still
+                        # visible in the output TEXT; inferring it from that
+                        # prose would be guessing, which is what the rest of
+                        # this codebase refuses to do about a provider's wire
+                        # format.
+                        False)
+    except OSError:
+        return ir
+
+    # Results follow their calls, so splice them in only once the file is read
+    # -- identical policy to from_claude_file, for the identical reason.
+    for turn in ir["turns"]:
+        spliced = []
+        for b in turn["blocks"]:
+            spliced.append(b)
+            if b["type"] == "tool_use":
+                r = results.get(b.get("id"))
+                if r:
+                    spliced.append(r)
+        turn["blocks"] = spliced
+    return ir
+
+
 # ------------------------------------------------------------------ facade --
 
 def load(session_id):
@@ -351,14 +633,29 @@ def load(session_id):
     checks Claude's tree by filename and DeepSeek's by header id (the DeepSeek
     filename stem and its session id diverged -- session_reader.py:535). The
     tree the file was found in decides the parser, not the id's shape.
+
+    CODEX IS TRIED ONLY AFTER BOTH OF THOSE MISS, and the ordering is the whole
+    safety argument for this function. resolve_path is called first and
+    unmodified, so any id that resolves today takes byte-identical code and
+    neither existing provider's resolution changes shape; the codex lookup sits
+    on the branch that used to `return None` outright. It is also a separate
+    function rather than a third arm of resolve_path, because resolve_path is
+    shared with append_title and relocate -- see session_reader.
+    codex_resolve_path for what folding it in would have done to a rollout.
     """
     p = session_reader.resolve_path(session_id)
+    codex = None
     if p is None:
-        return None
+        codex = session_reader.codex_resolve_path(session_id)
+        if codex is None:
+            return None
+        p = codex
     try:
         rel = Path(p).resolve()
     except OSError:
         return None
+    if codex is not None:
+        return from_codex_file(rel)
     if str(rel).startswith(str(session_reader.GEMINI_ROOT.resolve())):
         return from_deepseek_file(rel, session_reader._gemini_project_cwd_map())
     return from_claude_file(rel)

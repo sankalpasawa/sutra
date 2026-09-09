@@ -54,6 +54,11 @@ class _Server(unittest.TestCase):
     tmpdir = None
     argv_path = None
     stdin_path = None
+    #: Which canned event script the stub emits. Class-level because the stub
+    #: reads it from the SERVER's environment, which is fixed for the life of
+    #: the uvicorn -- so a case needing a different script needs its own class
+    #: (the constraint TestCodexFailureModes already documents).
+    codex_script = "ok"
 
     @classmethod
     def setUpClass(cls):
@@ -92,7 +97,7 @@ class _Server(unittest.TestCase):
         env["SUTRA_UI_CODEX_BIN"] = STUB
         env["SUTRA_FAKE_CODEX_ARGV"] = cls.argv_path
         env["SUTRA_FAKE_CODEX_STDIN"] = cls.stdin_path
-        env["SUTRA_FAKE_CODEX_SCRIPT"] = "ok"
+        env["SUTRA_FAKE_CODEX_SCRIPT"] = cls.codex_script
         # DeepSeek, so the untouched-provider assertions have something live.
         env["SUTRA_UI_DEEPSEEK_BIN"] = ACP_STUB
         env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
@@ -134,9 +139,34 @@ class _Server(unittest.TestCase):
     def _url(self, provider):
         return "ws://127.0.0.1:%d/ws/chat?provider=%s" % (self.port, provider)
 
+    def _recorded_spawns(self):
+        """EVERY argv the stub was launched with, oldest first.
+
+        The stub appends one JSON object per spawn (qa/fake_codex_agent.py
+        _record(append=True)) rather than overwriting, so a test can ask "was
+        codex EVER spawned this way" and not merely "how was it spawned last".
+        That distinction is what a provider-switch test needs: a leaked source
+        session id can be followed by a clean retry spawn, and only the last
+        recording would be visible.
+        """
+        try:
+            with open(self.argv_path) as fh:
+                return [json.loads(l) for l in fh if l.strip()]
+        except (OSError, ValueError):
+            return []
+
     def _recorded_argv(self):
-        with open(self.argv_path) as fh:
-            return json.load(fh)
+        """The MOST RECENT spawn's argv -- the semantics every assertion in
+        this file was written against, unchanged by the move to JSONL."""
+        spawns = self._recorded_spawns()
+        return spawns[-1] if spawns else None
+
+    def _clear_recordings(self):
+        for p in (self.argv_path, self.stdin_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
     def _recorded_stdin(self):
         with open(self.stdin_path) as fh:
@@ -396,3 +426,314 @@ class TestUntouchedProviders(_Server):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# --------------------------------------------------------------- codex target --
+
+#: Source session ids, in each provider's own shape. Distinctive on purpose: if
+#: either ever reaches codex's argv, the assertion message names it outright.
+CLAUDE_SRC = "5e550001-0000-4000-8000-00000000c1a0"
+DEEPSEEK_SRC = "5e550002-0000-4000-8000-00000000d550"
+
+
+def _claude_transcript(home, session_id, cwd, text="do the thing"):
+    """A Claude transcript where session_reader.PROJECTS will find it.
+
+    PROJECTS is ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl and
+    resolve_path globs `*/<id>.jsonl`, so the directory name is free.
+    """
+    d = os.path.join(home, ".claude", "projects", "-test-project")
+    os.makedirs(d, exist_ok=True)
+    recs = [
+        {"type": "user", "cwd": cwd, "gitBranch": "main",
+         "timestamp": "2026-09-09T10:00:00.000Z",
+         "message": {"role": "user", "content": text}},
+        {"type": "assistant", "timestamp": "2026-09-09T10:00:01.000Z",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "done"}]}},
+    ]
+    p = os.path.join(d, session_id + ".jsonl")
+    with open(p, "w", encoding="utf-8") as fh:
+        for r in recs:
+            fh.write(json.dumps(r) + "\n")
+    return p
+
+
+def _deepseek_transcript(home, session_id, text="do the thing"):
+    """A DeepSeek transcript, resolved by its HEADER id rather than its stem --
+    the two diverged, which is why _gemini_resolve_path reads file content
+    (session_reader.py:535)."""
+    d = os.path.join(home, ".gemini", "tmp", "testproj", "chats")
+    os.makedirs(d, exist_ok=True)
+    recs = [
+        {"sessionId": session_id, "projectHash": "testproj",
+         "startTime": "2026-09-09T10:00:00.000Z",
+         "lastUpdated": "2026-09-09T10:00:02.000Z", "kind": "chat"},
+        {"id": "m0", "type": "user", "timestamp": "2026-09-09T10:00:00.000Z",
+         "content": [{"text": text}]},
+        {"id": "m1", "type": "gemini", "timestamp": "2026-09-09T10:00:01.000Z",
+         "content": "done"},
+    ]
+    p = os.path.join(d, "session-2026-09-09T10-00-testproj.jsonl")
+    with open(p, "w", encoding="utf-8") as fh:
+        for r in recs:
+            fh.write(json.dumps(r) + "\n")
+    return p
+
+
+class TestCodexAsSwitchTarget(_Server):
+    """Claude -> Codex and DeepSeek -> Codex.
+
+    THE INVARIANT UNDER TEST, and the reason each assertion exists:
+
+        source native_id  ->  read the source transcript, and NOTHING ELSE
+        target            ->  starts FRESH (no `resume` in codex's argv)
+        target native_id  ->  captured from thread.started and stored
+
+    Codex would not have refused a foreign id the way `claude --resume` does --
+    it reports whatever id it was resumed with as its own thread.started id
+    (qa/fake_codex_agent.py:174, reproducing measured behaviour). So a leak here
+    is SILENT, and the argv recording is the only thing that can see it.
+    """
+
+    def _chat_store(self):
+        os.environ["SUTRA_UI_CHATS"] = os.path.join(self.tmpdir, "chats")
+        sys.path.insert(0, HERE)
+        import chat_store
+        return chat_store
+
+    def _chat_on(self, provider, native_id):
+        cs = self._chat_store()
+        rec = cs.create(cwd=os.path.join(self.tmpdir, "workspace"))
+        cs.begin_segment(rec, provider, native_id)
+        rec = cs.load(rec["sutra_id"])
+        cs.append_turn(rec, "user", [cs.block_text("do the thing")])
+        return rec["sutra_id"]
+
+    def _history(self, sutra_id, expect=None):
+        """provider_history, waiting for the segment to land if asked.
+
+        switch.confirm and append_turn run AFTER prompt_turn returns -- i.e.
+        after the `done` frame this test drains to -- so a read that raced the
+        write would see the pre-switch history and fail for the wrong reason.
+        """
+        cs = self._chat_store()
+        deadline = time.time() + 5
+        hist = []
+        while time.time() < deadline:
+            hist = (cs.load(sutra_id) or {}).get("provider_history") or []
+            if expect is None or len(hist) >= expect:
+                break
+            time.sleep(0.1)
+        return hist
+
+    def _switch_turn(self, sutra_id, source_id):
+        """Open a codex pane bound to `sutra_id` and send the first message.
+        Returns (frames, spawns)."""
+        from websockets.sync.client import connect
+        self._clear_recordings()
+        url = ("ws://127.0.0.1:%d/ws/chat?provider=codex&sutra=%s"
+               % (self.port, sutra_id))
+        with connect(url, open_timeout=10) as ws:
+            json.loads(ws.recv(timeout=10))          # provider frame
+            ws.send(json.dumps({"message": "carry on please",
+                                # The client hands back the SOURCE provider's
+                                # id, which is what it really does: one field
+                                # per pane, written by whichever provider spoke
+                                # last (01-state.js:1455).
+                                "resume": source_id}))
+            # `done`, not `chat`: the chat frame is minted only for a pane
+            # that did NOT already name one (app.py `if not sutra_id:`), and
+            # every pane here arrives with ?sutra= already set.
+            frames = self._drain(ws, until=("done", "error"), limit=60)
+        return frames, self._recorded_spawns()
+
+    # ------------------------------------------------------------- claude -> --
+
+    def test_claude_to_codex_starts_a_fresh_codex_session(self):
+        _claude_transcript(os.path.join(self.tmpdir, "home"), CLAUDE_SRC,
+                           os.path.join(self.tmpdir, "workspace"))
+        sutra_id = self._chat_on("claude", CLAUDE_SRC)
+        frames, spawns = self._switch_turn(sutra_id, CLAUDE_SRC)
+
+        notes = [f for f in frames if f["type"] == "switch"]
+        self.assertTrue(notes, "no switch frame: %r"
+                        % ([f["type"] for f in frames],))
+        self.assertTrue(notes[0].get("ok"),
+                        "the switch was refused: %r" % (notes[0],))
+        self.assertEqual(notes[0]["source"], "claude")
+        self.assertEqual(notes[0]["target"], "codex")
+
+        self.assertTrue(spawns, "codex was never spawned: %r"
+                        % ([f["type"] for f in frames],))
+        for argv in spawns:
+            self.assertNotIn("resume", argv,
+                             "codex was spawned with `resume` on a switch; a "
+                             "fresh thread is the ABSENCE of it: %r" % (argv,))
+            self.assertNotIn(CLAUDE_SRC, argv,
+                             "the claude source id reached codex's argv: %r"
+                             % (argv,))
+        self.assertEqual(argv[-1], "-", "the prompt must ride on stdin")
+
+    def test_claude_to_codex_delivers_the_replay_payload_on_stdin(self):
+        _claude_transcript(os.path.join(self.tmpdir, "home"), CLAUDE_SRC,
+                           os.path.join(self.tmpdir, "workspace"))
+        sutra_id = self._chat_on("claude", CLAUDE_SRC)
+        self._switch_turn(sutra_id, CLAUDE_SRC)
+
+        prompt = self._recorded_stdin()
+        self.assertIn("You are taking over an in-progress working session",
+                      prompt, "the replay preamble never reached codex")
+        self.assertRegex(prompt, r"<transcript-[0-9a-f]{16}>",
+                         "the fenced recording never reached codex")
+        self.assertIn("carry on please", prompt,
+                      "the operator's own message must ride at the end")
+        self.assertIn("do the thing", prompt,
+                      "the source transcript's content is the whole point")
+        # and the target is named by its PRODUCT name, not its internal id
+        self.assertIn("OpenAI Codex", prompt)
+        self.assertNotIn("switched to you (codex)", prompt)
+
+    def test_claude_to_codex_records_codexs_own_new_native_id(self):
+        _claude_transcript(os.path.join(self.tmpdir, "home"), CLAUDE_SRC,
+                           os.path.join(self.tmpdir, "workspace"))
+        sutra_id = self._chat_on("claude", CLAUDE_SRC)
+        frames, _ = self._switch_turn(sutra_id, CLAUDE_SRC)
+
+        # The switch itself, so this test fails when the target is refused
+        # rather than only when the id bookkeeping is wrong. (The ID invariant
+        # alone holds even on a refusal, because app.py clears the seed for any
+        # non-NOT_NEEDED outcome -- so without this it would be a pure guard.)
+        notes = [f for f in frames if f["type"] == "switch"]
+        self.assertTrue(notes and notes[0].get("ok"),
+                        "the claude -> codex switch did not happen: %r"
+                        % (notes or [f["type"] for f in frames],))
+
+        sess = [f for f in frames if f["type"] == "session"]
+        self.assertTrue(sess, "codex never reported a thread id: %r"
+                        % ([f["type"] for f in frames],))
+        thread = sess[0]["id"]
+        self.assertNotEqual(thread, CLAUDE_SRC,
+                            "codex echoed the source id back as its own")
+
+        hist = self._history(sutra_id, expect=2)
+        self.assertEqual(len(hist), 2, "expected claude then codex: %r" % (hist,))
+        self.assertEqual(hist[0], {"provider": "claude",
+                                   "native_id": CLAUDE_SRC, "from_turn": 0})
+        self.assertEqual(hist[1]["provider"], "codex")
+        self.assertEqual(hist[1]["native_id"], thread,
+                         "the codex segment must name the thread codex created")
+        self.assertNotEqual(hist[1]["native_id"], CLAUDE_SRC,
+                            "provider_history was poisoned with the source id")
+
+    # ----------------------------------------------------------- deepseek -> --
+
+    def test_deepseek_to_codex_starts_fresh_and_records_the_new_id(self):
+        _deepseek_transcript(os.path.join(self.tmpdir, "home"), DEEPSEEK_SRC)
+        sutra_id = self._chat_on("deepseek", DEEPSEEK_SRC)
+        frames, spawns = self._switch_turn(sutra_id, DEEPSEEK_SRC)
+
+        notes = [f for f in frames if f["type"] == "switch"]
+        self.assertTrue(notes and notes[0].get("ok"),
+                        "the deepseek -> codex switch did not happen: %r"
+                        % (notes or [f["type"] for f in frames],))
+        self.assertEqual(notes[0]["source"], "deepseek")
+
+        self.assertTrue(spawns, "codex was never spawned")
+        for argv in spawns:
+            self.assertNotIn("resume", argv, argv)
+            self.assertNotIn(DEEPSEEK_SRC, argv,
+                             "the deepseek source id reached codex's argv: %r"
+                             % (argv,))
+
+        thread = [f for f in frames if f["type"] == "session"][0]["id"]
+        hist = self._history(sutra_id, expect=2)
+        self.assertEqual(hist[-1]["provider"], "codex")
+        self.assertEqual(hist[-1]["native_id"], thread)
+        self.assertNotEqual(hist[-1]["native_id"], DEEPSEEK_SRC)
+        self.assertIn("DeepSeek", self._recorded_stdin())
+
+    # ----------------------------------------------------- codex -> codex ---
+
+    def test_codex_to_codex_reconnect_still_resumes(self):
+        """NOT_NEEDED must keep behaving as it did. A pane reopened on a chat
+        ALREADY running on codex is a reconnect, not a switch, so the seed
+        survives and the thread continues -- the behaviour the seed fix is
+        scoped around rather than overriding."""
+        sutra_id = self._chat_on("codex", "01a08191-7175-7f62-aaaabbbbccccdddd")
+        frames, spawns = self._switch_turn(
+            sutra_id, "01a08191-7175-7f62-aaaabbbbccccdddd")
+
+        self.assertFalse([f for f in frames if f["type"] == "switch"],
+                         "a same-provider reconnect is not a switch: %r"
+                         % ([f for f in frames if f["type"] == "switch"],))
+        self.assertTrue(spawns, "codex was never spawned")
+        argv = spawns[-1]
+        self.assertIn("resume", argv,
+                      "an ordinary codex reconnect lost its session: %r" % (argv,))
+        self.assertEqual(argv[argv.index("resume") + 1],
+                         "01a08191-7175-7f62-aaaabbbbccccdddd")
+        hist = self._history(sutra_id)
+        self.assertEqual(len(hist), 1,
+                         "a reconnect must not append a segment: %r" % (hist,))
+
+
+class TestCodexTargetFailure(_Server):
+    """A codex target that dies BEFORE thread.started must leave the chat
+    record exactly as it was.
+
+    switch.confirm's contract is that a segment records a session that EXISTS
+    (switch.py's module header). The guard is app.py's `if session_id:` -- with
+    no thread id there is nothing to confirm -- and this is the case that
+    proves it holds once codex became a reachable target, because the source
+    transcript has already been read and the payload already built by then.
+    """
+
+    codex_script = "no-thread"
+
+    def _chat_store(self):
+        os.environ["SUTRA_UI_CHATS"] = os.path.join(self.tmpdir, "chats")
+        sys.path.insert(0, HERE)
+        import chat_store
+        return chat_store
+
+    def test_a_codex_target_that_never_starts_leaves_history_untouched(self):
+        from websockets.sync.client import connect
+        cs = self._chat_store()
+        _claude_transcript(os.path.join(self.tmpdir, "home"), CLAUDE_SRC,
+                           os.path.join(self.tmpdir, "workspace"))
+        rec = cs.create(cwd=os.path.join(self.tmpdir, "workspace"))
+        cs.begin_segment(rec, "claude", CLAUDE_SRC)
+        sutra_id = rec["sutra_id"]
+        before = cs.load(sutra_id)["provider_history"]
+
+        url = ("ws://127.0.0.1:%d/ws/chat?provider=codex&sutra=%s"
+               % (self.port, sutra_id))
+        with connect(url, open_timeout=10) as ws:
+            json.loads(ws.recv(timeout=10))
+            ws.send(json.dumps({"message": "carry on please",
+                                "resume": CLAUDE_SRC}))
+            frames = self._drain(ws, until=("done", "error"), limit=60)
+
+        # the switch was planned and reported -- the transcript WAS read
+        notes = [f for f in frames if f["type"] == "switch"]
+        self.assertTrue(notes and notes[0].get("ok"),
+                        "this test only means something if the switch was "
+                        "attempted: %r" % (notes or [f["type"] for f in frames],))
+        # codex never reported a thread
+        self.assertEqual([f for f in frames if f["type"] == "session"], [],
+                         "the stub was supposed to die before thread.started")
+        self.assertTrue([f for f in frames if f["type"] == "error"],
+                        "a dead target must be reported: %r"
+                        % ([f["type"] for f in frames],))
+
+        # and nothing was written
+        time.sleep(0.5)   # give any (wrong) write time to land
+        after = cs.load(sutra_id)["provider_history"]
+        self.assertEqual(after, before,
+                         "a codex target that never started still altered "
+                         "provider_history: %r -> %r" % (before, after))
+        self.assertTrue(all(h["provider"] == "claude" for h in after), after)
+        self.assertFalse([h for h in after if h["native_id"] != CLAUDE_SRC],
+                         "a foreign or invented native_id was recorded: %r"
+                         % (after,))

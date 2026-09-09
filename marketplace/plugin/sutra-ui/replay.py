@@ -78,7 +78,13 @@ def _new_nonce():
 
 
 def _provider_label(pid):
-    return {"claude": "Claude Code", "deepseek": "DeepSeek"}.get(pid, pid or "another assistant")
+    # The PRODUCT name, because this string is read by a model being told who it
+    # is and who it is taking over from. Without a codex entry the fallback
+    # returned the bare id, so the prompt said "switched to you (codex)" and,
+    # in the already-shipped source direction, "from a different assistant
+    # (codex)" -- the only provider named by its internal id.
+    return {"claude": "Claude Code", "deepseek": "DeepSeek",
+            "codex": "OpenAI Codex"}.get(pid, pid or "another assistant")
 
 
 # ------------------------------------------------------------------ framing --

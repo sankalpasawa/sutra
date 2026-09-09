@@ -57,6 +57,26 @@ class FramingTest(unittest.TestCase):
         self.assertIn("Claude Code", p)
         self.assertIn("DeepSeek", p)
 
+    def test_codex_is_named_by_its_product_name_not_its_id(self):
+        """Without a label entry the fallback returned the bare id, so the
+        prompt read "switched to you (codex)" -- the only provider named by an
+        internal id, in a string a model reads to learn who it is."""
+        p = replay.render(self.ir, "codex")["prompt"]
+        self.assertIn("OpenAI Codex", p)
+        self.assertNotIn("switched to you (codex)", p)
+
+    def test_codex_as_the_source_is_also_named_properly(self):
+        ir = dict(self.ir)
+        ir["provider"] = "codex"
+        p = replay.render(ir, "claude")["prompt"]
+        self.assertIn("from a different assistant (OpenAI Codex)", p)
+
+    def test_the_existing_two_labels_are_unchanged(self):
+        self.assertEqual(replay._provider_label("claude"), "Claude Code")
+        self.assertEqual(replay._provider_label("deepseek"), "DeepSeek")
+        self.assertEqual(replay._provider_label(""), "another assistant")
+        self.assertEqual(replay._provider_label("gemini"), "gemini")
+
     def test_turn_counts_are_stated(self):
         out = replay.render(self.ir, "deepseek")
         self.assertIn("2 turns", out["prompt"])

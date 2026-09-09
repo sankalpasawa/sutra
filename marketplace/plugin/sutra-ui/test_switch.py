@@ -152,6 +152,40 @@ class SwitchTest(_StoreCase):
         self.assertTrue(t["stream_input"])
         self.assertEqual(t["delivery"], "stdin-frame")
 
+    def test_codex_transport_never_resumes_and_uses_stdin(self):
+        """A fresh codex thread is the ABSENCE of the `resume` subcommand --
+        build_codex_args appends it only when given an id -- so session_id=None
+        IS the seeding instruction on this transport, not a default."""
+        rec = self._chat_on("claude", "c-1", turns=2)
+        r = switch.plan(rec["sutra_id"], "codex",
+                        ir_loader=lambda sid: _ir("claude", 2))
+        self.assertTrue(r["switch"], r)
+        t = r["transport"]
+        self.assertEqual(t["kind"], "codex-exec")
+        self.assertEqual(t["builder"], "build_codex_args")
+        self.assertIsNone(t["session_id"])
+        self.assertEqual(t["then"], "prompt_turn")
+        self.assertEqual(t["delivery"], "stdin-eof")
+
+    def test_codex_is_no_longer_an_unknown_target(self):
+        """The gate this slice opened. _transport_for returning None is what
+        made plan() refuse before a transcript was ever read."""
+        self.assertIsNotNone(switch._transport_for("codex"))
+        rec = self._chat_on("claude", "c-1", turns=2)
+        r = switch.plan(rec["sutra_id"], "codex",
+                        ir_loader=lambda sid: _ir("claude", 2))
+        self.assertNotEqual(r.get("reason"), switch.UNKNOWN_TARGET)
+        self.assertEqual(r["target"], "codex")
+        self.assertEqual(r["source"], "claude")
+
+    def test_the_other_two_transports_are_unchanged_by_the_codex_arm(self):
+        """Frozen providers: the codex arm is an addition to an if-chain, and
+        these are the exact descriptors the existing tests assert."""
+        self.assertEqual(switch._transport_for("claude")["kind"], "claude-cli")
+        self.assertEqual(switch._transport_for("deepseek")["kind"], "acp")
+        self.assertIsNone(switch._transport_for("gemini"))
+        self.assertIsNone(switch._transport_for("nope"))
+
     def test_tier_two_engages_when_over_budget_then_fits(self):
         rec = self._chat_on("claude")
         ir = _ir("claude", 5, tool_bytes=4000)

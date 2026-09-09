@@ -2421,6 +2421,47 @@ async def ws_chat(ws: WebSocket):
                             "source": plan.get("source"),
                             "target": active_id,
                         }
+                    # THE CLIENT'S RESUME SEED BELONGS TO THE PROVIDER WE ARE
+                    # LEAVING, so on a provider change it must not be adopted
+                    # by the block below.
+                    #
+                    # The browser keeps ONE session id per pane
+                    # (01-state.js:1455 writes s.claude_session from the
+                    # `session` frame of WHICHEVER provider sent it) and hands
+                    # it back as `resume` on the next connect. Nothing in that
+                    # id says which provider minted it. Adopted here it becomes
+                    # `session_id`, and two spawn paths then act on it:
+                    #
+                    #   claude    build_agent_args(session_id=...) -> --resume,
+                    #             rebuilt at the `not alive` arm below. Claude
+                    #             resolves ids in its OWN tree, so a Codex
+                    #             thread id fails the turn outright:
+                    #             "No conversation found with session ID: ..."
+                    #   deepseek  new_session(session_id=...) -> session/load
+                    #             instead of session/new, which is the opposite
+                    #             of what switch._transport_for("deepseek")
+                    #             declares seeding to mean.
+                    #
+                    # And because _demux_turn_inner adopts a native id only
+                    # when the incoming one is None (session_runtime.py:439),
+                    # the foreign id then SURVIVES the turn and reaches
+                    # switch.confirm -- writing the source provider's
+                    # native_id onto the target's segment. Measured live
+                    # 2026-09-09 on two chats: every segment shared one id, so
+                    # a later switch would have deduped them and never read
+                    # the target's own transcript at all.
+                    #
+                    # NOT_NEEDED IS THE EXEMPTION, and it is what keeps
+                    # ordinary reconnect-resume working: switch.plan returns it
+                    # for "chat is already running on <target>" -- the
+                    # same-provider reconnect -- and for a chat with no segment
+                    # yet. Both keep their seed and behave exactly as before.
+                    # Every other outcome means the provider changed, so the
+                    # seed is stale by definition. A REFUSED switch is included
+                    # deliberately: the live 10:17 failure leaked its seed on
+                    # the refusal path, where the provider had still changed.
+                    if plan.get("reason") != switch.NOT_NEEDED:
+                        seed = None
                 except Exception as exc:   # never let this kill a live turn
                     switch_note = {"type": "switch", "ok": False,
                                    "reason": "internal-error",

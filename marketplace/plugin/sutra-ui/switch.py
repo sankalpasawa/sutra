@@ -112,6 +112,29 @@ def _transport_for(target):
             "then": "prompt_turn",
             "delivery": "session/prompt",
         }
+    if target == "codex":
+        # `codex exec` is ONE PROCESS PER TURN, so there is no session to
+        # create and nothing to resume: A FRESH THREAD IS THE ABSENCE OF THE
+        # `resume` SUBCOMMAND. build_codex_args appends `resume <id>` only when
+        # it is given an id (app.py:679), so session_id=None IS the seeding
+        # instruction here -- there is no "start fresh" flag to pass.
+        #
+        # THAT ABSENCE IS ALSO WHY THIS TARGET COULD NOT SHIP BEFORE THE SEED
+        # FIX. Codex reports the id it was resumed WITH as its own
+        # thread.started id (measured; qa/fake_codex_agent.py:174 reproduces
+        # it), so a switch that handed it the source provider's session id
+        # would have had that id echoed straight back and written onto the
+        # codex segment by switch.confirm -- the same poisoning the claude arm
+        # suffered, but silent, because codex would not have refused it the way
+        # `claude --resume` does. app.py's seed-clearing on a provider change
+        # is what keeps session_id None on this path; nothing here enforces it.
+        return {
+            "kind": "codex-exec",
+            "builder": "build_codex_args",
+            "session_id": None,      # no `resume`: the old thread is what we are leaving
+            "then": "prompt_turn",   # same 5-tuple as the other two transports
+            "delivery": "stdin-eof",  # argv ends `-`; no ARG_MAX ceiling
+        }
     return None
 
 
