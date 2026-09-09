@@ -147,6 +147,21 @@ class _Base(unittest.TestCase):
         kb.start()
         self.addCleanup(kb.stop)
 
+        #: THE THIRD SOURCE. The note above names two searches; npm_path() has
+        #: had three since Node was bundled -- PATH, _known_bin_dirs, then
+        #: providers.ensure_bundled_node_path() (payload/node). Only the first
+        #: two were controlled, and payload/node EXISTS on any machine that has
+        #: built a DMG, so on a release machine the three "there is no npm"
+        #: tests found the bundled npm and no refusal was raised. Patched at
+        #: bundled_node_bin_dir so TheBundledNodeIsTheLastResort's own patches
+        #: still nest and take precedence.
+        bn = mock.patch.object(providers, "bundled_node_bin_dir", return_value=None)
+        bn.start()
+        self.addCleanup(bn.stop)
+
+        providers._BUNDLED_NODE_DONE = False
+        self.addCleanup(setattr, providers, "_BUNDLED_NODE_DONE", False)
+
         self.addCleanup(self._restore)
 
     def _restore(self):

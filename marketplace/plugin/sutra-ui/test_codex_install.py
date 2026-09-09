@@ -199,6 +199,21 @@ class _Base(unittest.TestCase):
         providers._BUNDLED_NODE_DONE = False
         self.addCleanup(setattr, providers, "_BUNDLED_NODE_DONE", False)
 
+        #: THE THIRD npm SOURCE, and the one the first draft of this base
+        #: missed. npm_path() searches PATH, then _known_bin_dirs, then
+        #: providers.ensure_bundled_node_path() -- payload/node, which
+        #: bundle-runtime.sh vendors. Both of the first two are controlled
+        #: above; the third is not, and it is PRESENT on any machine that has
+        #: built a DMG, which is every release machine. So `test_no_npm` found
+        #: the bundled npm, install() ran, and the refusal it asserts never
+        #: came -- the same class of release-machine-only gate failure that
+        #: conftest.py's build-artifact excludes were written for. Patched at
+        #: bundled_node_bin_dir, the lever TheBundledNodeIsTheLastResort
+        #: already uses, so that class's own patches still nest and win.
+        bn = mock.patch.object(providers, "bundled_node_bin_dir", return_value=None)
+        bn.start()
+        self.addCleanup(bn.stop)
+
         self.addCleanup(self._restore)
 
     def _restore(self):

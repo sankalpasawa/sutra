@@ -36,6 +36,32 @@ class Initials(unittest.TestCase):
         self.assertEqual(claude_local.initials_for(None, None), "")
 
 
+class _HomeIsTheWorkdirRoot(unittest.TestCase):
+    """Pin SUTRA_UI_WORKDIR_ROOT to its default for tests that assert about ~.
+
+    providers.workdir_allowed() reads that variable on EVERY call, defaulting
+    to "~". Two sibling suites -- test_shadow_delegate.py and
+    test_codex_runtime.py -- must set it to a temp dir at IMPORT time, before
+    `import app` runs _ensure_workdir() against the operator's real home. That
+    is correct and stays. But pytest imports every test module during
+    COLLECTION, before running a single test, so their assignment is already in
+    effect here: `~` sat outside the leaked root and this file's assertion that
+    a home path is allowed failed -- only under the full suite, never alone,
+    which is exactly the shape that reads as flakiness. A test that asserts
+    about the default root sets the default root.
+    """
+
+    def setUp(self):
+        self._orig_root = os.environ.pop("SUTRA_UI_WORKDIR_ROOT", None)
+        self.addCleanup(self._restore_root)
+
+    def _restore_root(self):
+        if self._orig_root is None:
+            os.environ.pop("SUTRA_UI_WORKDIR_ROOT", None)
+        else:
+            os.environ["SUTRA_UI_WORKDIR_ROOT"] = self._orig_root
+
+
 class Account(unittest.TestCase):
     def _with_claude_json(self, payload):
         fd, path = tempfile.mkstemp(suffix=".json")
@@ -74,7 +100,7 @@ class Account(unittest.TestCase):
             self.assertIsNone(claude_local.account())
 
 
-class RecentWorkspace(unittest.TestCase):
+class RecentWorkspace(_HomeIsTheWorkdirRoot):
     def test_skips_a_directory_that_no_longer_exists(self):
         with mock.patch("session_reader.list_sessions",
                         return_value=[{"cwd": "/gone/forever"},

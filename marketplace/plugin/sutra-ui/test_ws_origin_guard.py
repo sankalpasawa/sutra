@@ -125,6 +125,26 @@ class PermissionModeGate(unittest.TestCase):
 
 
 class WorkdirContainment(unittest.TestCase):
+    """Same import-time leak as test_claude_local's RecentWorkspace, same fix.
+
+    providers.workdir_allowed() reads SUTRA_UI_WORKDIR_ROOT on every call and
+    defaults to "~". test_shadow_delegate.py and test_codex_runtime.py set it
+    to a temp dir at import time -- correctly, so importing `app` cannot touch
+    the operator's real home -- and pytest performs those imports during
+    COLLECTION, before any test runs. `test_home_paths_allowed` then asked
+    whether ~ was inside a temp root and was told no. It passed alone and
+    failed in the suite. A test that asserts about the default root sets it.
+    """
+
+    def setUp(self):
+        self._orig_root = os.environ.pop("SUTRA_UI_WORKDIR_ROOT", None)
+        self.addCleanup(self._restore_root)
+
+    def _restore_root(self):
+        if self._orig_root is None:
+            os.environ.pop("SUTRA_UI_WORKDIR_ROOT", None)
+        else:
+            os.environ["SUTRA_UI_WORKDIR_ROOT"] = self._orig_root
 
     def test_paths_outside_root_rejected(self):
         for bad in ("/etc", "/", "/var/root", "/usr/bin"):

@@ -2063,12 +2063,25 @@ class TestPerProviderControlSurface(unittest.TestCase):
     def test_a_provider_honouring_none_is_absent_from_the_map(self):
         """Same contract as models_by_provider, and the client depends on it:
         an EMPTY map means "not fetched yet", so it must be impossible for a
-        loaded one to be empty. Claude declaring five is what guarantees that."""
+        loaded one to be empty. Claude declaring five is what guarantees that.
+
+        codex was listed here as a second provider declaring none until it
+        gained reasoning_summary / verbosity / reasoning_effort. The rule was
+        never "codex is absent" -- it is "absent IFF it declares none", so the
+        row moved sides and the rule is now asserted as the biconditional it
+        always was, which no future provider can quietly falsify."""
         import providers as P
         tmap = P.all_turn_options_by_provider()
         self.assertNotIn("deepseek", tmap, "declares none, so must be absent")
-        self.assertNotIn("codex", tmap)
+        self.assertEqual(tmap.get("codex"), list(P._CODEX_TURN_OPTIONS),
+                         "codex declares three, so the map must carry exactly those")
         self.assertIn("claude", tmap, "a loaded map must never be empty")
+        for spec in P._CATALOG:
+            pid = spec["id"]
+            declared = tuple(P.turn_options_for(pid))
+            self.assertEqual(pid in tmap, bool(declared),
+                             "%r declares %r but is %s the map"
+                             % (pid, declared, "in" if pid in tmap else "not in"))
 
 
 
