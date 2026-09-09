@@ -2,7 +2,7 @@
 
 **status**: active · **updated**: 2026-09-09
 
-## 2.251.0 (2026-09-09)
+## 2.252.0 (2026-09-09)
 
 **The agent stops interrupting you.** A run used to stop five times. It now stops twice, at the two
 that are decisions rather than reviews: which topic, and whether the draft is finished. The brand
