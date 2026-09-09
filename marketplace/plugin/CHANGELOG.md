@@ -2,6 +2,40 @@
 
 **status**: active · **updated**: 2026-09-09
 
+## 2.249.1 (2026-09-09)
+
+**Installing Sutra no longer writes the new app on top of the old one.** When you open the app
+from the disk image it offers to move itself to Applications, and Electron's own mover refuses a
+read-only source, so almost every first install actually goes through the fallback underneath it.
+That fallback was one line: copy this bundle onto `/Applications/` under the same name. `ditto`
+merges rather than replaces, so every file the new version had deleted stayed on disk and the
+installed app no longer matched its own signature. It also never looked at what was already there,
+and never checked whether that app was running.
+
+It now does what the updater has always done: copy alongside the target, swap the two with
+renames, and put the old one back if the swap fails. A bundle already in Applications is only
+replaced when it is the same app by its bundle identifier, and never while something is still
+running out of it. Anything it refuses to do, it says, instead of half-installing and going quiet.
+Found by opening the shipped app to check this release, which overwrote a real install.
+
+**A quoted line break no longer makes your own numbers look confirmed.** Every drafted row in
+stats.md carries a hidden marker saying the machine wrote it, and a row without one means a person
+confirmed it, which is what stops a rebuild overwriting your edits. The stat, the number, the URL
+and the quote all come back from the model, and they were written into the row as they arrived. A
+quote that happened to contain a line break split the row in two: the marker rode away on the
+second half and the first half was left looking exactly like a row somebody had confirmed. One
+newline was enough to make the whole file read as finished, after which the next rebuild would
+send its drafts to a side file instead of into stats.md. Four of forty-three rows split this way
+on a first real run. Cells are now flattened to one line, and a pipe inside a value can no longer
+open a column either.
+
+**The style guide's "confirm with marketing" gate is written down and now has a test.** The
+original workflow flags two fields for a person to confirm, the same shape as the persona gate. It
+turned out to be ported already, across the template, the prompt and the builder's note, and a
+review had recorded it as missing. Nothing tied those three pieces together, so any one of them
+could have gone and the gate would have quietly stopped existing. `seo_agent/CONTRACTS.md` now
+lists both confirm-a-draft gates and where each one surfaces.
+
 ## 2.249.0 (2026-09-09)
 
 **The Knowledge tab stops nagging and starts reading like a document.** The brand pack asked to be

@@ -2,7 +2,30 @@
 
 **status**: active · **updated**: 2026-09-09
 
-## v2.249.0 (2026-09-09, HEAD)
+## v2.249.1 (2026-09-09, HEAD)
+
+**Two fixes found by actually opening the shipped app and running the setup interview for real.**
+
+Installing Sutra used to copy the new app straight onto the old one. Almost every first install
+goes that way, because Electron's own mover refuses a read-only source and the source is a disk
+image. `ditto` merges rather than replaces, so files the new version had deleted stayed behind and
+the installed app no longer matched its own signature; nothing checked what was already at the
+destination, or whether it was running. It now stages beside the target and swaps with renames,
+the way the updater has always done, only replaces a bundle that is the same app by its identifier,
+and refuses out loud rather than half-installing. Found the hard way: verifying this release
+overwrote a real install.
+
+A drafted row in stats.md carries a hidden marker meaning the machine wrote it, and a row without
+one means a person confirmed it. The cells come back from the model and were written in as they
+arrived, so a quoted line break split the row and left its unmarked first half looking confirmed.
+One newline made the whole file read as finished, which would have sent the next rebuild's drafts
+to a side file. Four of forty-three rows split this way on a first real run.
+
+Also: `seo_agent/CONTRACTS.md` now names both confirm-a-draft gates. The style guide's two
+"confirm with marketing" fields were recorded as never ported and are in fact ported end to end;
+nothing tied the template, the prompt and the builder's note together, so a test now does.
+
+## v2.249.0 (2026-09-09)
 
 **The Knowledge tab stops nagging and starts reading like a document.** The brand pack asked to be
 confirmed in four different places at once: a yellow banner, a warning symbol on every drafted row,

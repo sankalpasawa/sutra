@@ -245,10 +245,29 @@ def _dedupe(found):
     return rows
 
 
+def _cell(v, cap=None):
+    """One model-written value, safe to put in a table cell.
+
+    A ROW MUST BE ONE LINE, and nothing upstream guaranteed it. These values come back from the
+    model: the stat, the number, the URL and a quote lifted off the page. A quote that happened to
+    contain a line break was written straight into the row, so the row became two lines, and the
+    half that did not carry the marker read to `human_confirmed` as a row a PERSON had confirmed.
+    One newline inside one quote was therefore enough to make the whole file look finished, and
+    the next rebuild would send its drafts to _drafts/ instead of into the file. Seen live on
+    2026-09-09: 4 of 43 drafted stat rows split this way on a first real run.
+
+    A `|` in the text ends the cell early and shifts every column after it, so it goes too. Same
+    scrub `brand/persona.py::render` has always done on its own cells.
+    """
+    out = " ".join(str(v if v is not None else "").split()).replace("|", "/")
+    return out[:cap] if cap else out
+
+
 def _stat_row(s):
     """The marker sits AFTER the closing pipe, so the row is still three clean cells to anything
     that reads the table by cell."""
-    return "| %s | %s | %s — \"%s\" |%s" % (s["stat"], s["value"], s["url"], str(s.get("quote") or "")[:80], DRAFT)
+    return "| %s | %s | %s — \"%s\" |%s" % (_cell(s["stat"]), _cell(s["value"]), _cell(s["url"]),
+                                            _cell(s.get("quote"), 80), DRAFT)
 
 
 def strip_drafts(text, kind):
@@ -361,7 +380,10 @@ def _extract_story(co, row):
 
 
 def _story_block(s):
-    return ["### %s%s" % (s.get("title") or "(untitled)", DRAFT),
+    # The heading is one line for the same reason a table row is: a title that arrived with a
+    # newline in it left a bare `### ` behind, and `human_confirmed` reads an unmarked `### ` as
+    # a person's own entry exactly as it reads an unmarked table row.
+    return ["### %s%s" % (_cell(s.get("title")) or "(untitled)", DRAFT),
             str(s.get("story") or ""),
             "- Point it makes: %s" % (s.get("point") or ""),
             "- Number (if any): %s" % (s.get("number") or ""),

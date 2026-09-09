@@ -186,6 +186,30 @@ ok("brand-facts asks for nothing: no row counts, no symbols, no opinions intervi
    not any(n.startswith(("stats.md", "stories.md", "opinions.md")) for n in out["needs_review"])
    and not any("⚠️" in n for n in out["needs_review"]), out["needs_review"])
 
+# A DRAFTED ROW MUST BE ONE LINE. The stat, the number, the URL and the quote all come back from
+# the model, and a quote with a line break in it used to be written straight into the row: the row
+# became two, and the half without the marker read to human_confirmed() as a row a PERSON had
+# confirmed. That one newline was enough to make the file look finished, so the next rebuild would
+# divert its drafts to _drafts/ and the owner would never see them in stats.md again. Caught on a
+# live run against real pages on 2026-09-09, where 4 of 43 drafted rows split this way.
+# The newline is inside the QUOTE and nowhere else, which is exactly how it arrived in the wild:
+# the row splits after three pipes, so the first half is a well-formed unmarked table row and the
+# marker rides away on the second half.
+_messy = {"stat": "tests in library", "value": "3,500+", "url": "https://example.com/x/",
+          "quote": "3,500+ tests for\nevery role you hire"}
+_row = brand_facts._stat_row(_messy)
+_table = "| Stat | Value | Source-note |\n|---|---|---|\n" + _row + "\n"
+ok("a drafted stat row is one line however the model wrote its cells", "\n" not in _row, repr(_row))
+ok("and it still ends with the draft marker, so it is still a draft",
+   _row.endswith(brand_facts.DRAFT), _row[-40:])
+ok("so the machine's own draft is NOT read as a row a person confirmed",
+   not brand_facts.human_confirmed(_table), _row)
+ok("a pipe inside a value cannot open a new column: three cells, four pipes",
+   brand_facts._stat_row(dict(_messy, quote="a | b")).count("|") == 4,
+   brand_facts._stat_row(dict(_messy, quote="a | b")))
+ok("a story title with a newline cannot leave a bare ### heading behind",
+   "\n" not in brand_facts._story_block({"title": "Acme\nships", "url": "https://example.com/a"})[0])
+
 print("\n1 brand-facts: the seed rule")
 confirmed = stats.replace("| Customers | 1,500+ | https://example.com/ — \"Trusted by 1,500+ teams\" |<!--d-->",
                           "| Customers | 1,500+ | https://example.com/ — confirmed by: Dev, 2026-01-02 |")
@@ -243,6 +267,21 @@ ok("merge(): majority wins, union dedupes case-insensitively, text is carried pe
    m["oxford_comma"] == "Yes" and m["acronyms"] == ["ATS", "HR", "DEI"] and m["brand_naming"] == "batch1: a | batch2: b")
 tb = brand("_work/style-guide/top-blogs.json")
 ok("blogs came from the editorial type only", all("/blog/" in b["url"] for b in tb) and len(tb) == 7, [b["url"] for b in tb])
+
+# The style guide's own human gate, end to end. The original workflow flags its two [COMPANY]
+# fields "confirm with marketing" and expects a person to say yes; that is a confirm-a-draft
+# gate exactly like the personas, and it surfaces at the brand-pack checkpoint. A review on
+# 2026-09-09 recorded it as never ported, having read only the workflow. It IS ported -- across
+# the template, the prompt and the builder's note -- and nothing tied the three together, so any
+# one of them could go missing and the gate would just quietly stop existing.
+ok("the template still has [COMPANY] fields for a person to confirm",
+   "[COMPANY" in cm.template("style-guide"))
+ok("the prompt still tells the model to flag every one it fills",
+   "confirm with marketing" in cm.prompt("fill-template"))
+ok("the phrase counter counts lines, not files",
+   cm.count_lines("a — confirm with marketing\nb\nc — confirm with marketing\n", "confirm with marketing") == 2)
+ok("and the builder turns those lines into a note at the checkpoint",
+   any("to confirm with marketing" in n for n in out["needs_review"]), out["needs_review"])
 
 print("\n4 features + cta-pages")
 ft = brand("features.md")

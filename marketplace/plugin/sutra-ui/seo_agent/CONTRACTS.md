@@ -67,6 +67,23 @@ Human gates become checkpoints: the tool saves everything, then the agent shows 
 (`show_artifact` view `brand_pack`) for the user to confirm. The standing Knowledge screen never
 nags; only a live checkpoint says what it is waiting for.
 
+### The two confirm-a-draft gates, and where each one lives
+The original workflow has two places where it drafts something and then wants a person to say yes.
+Both are ported, both are confirm-a-draft rather than a question, and so neither belongs in the
+setup interview (the interview asks for facts nobody could draft; these hand back a draft).
+Written down because a review on 2026-09-09 recorded the style-guide one as never ported, and it
+is: it was checked end to end against the owner's real 12,318-page pack the same day.
+
+| Gate | Drafted by | How it is marked | Where it surfaces |
+|---|---|---|---|
+| the 3-4 reader personas | `brand/persona.py` | a `needs_review` note naming the count | the brand-pack checkpoint |
+| the two `[COMPANY]` style fields (product references, competitor references) | `brand/style_guide.py`, from the top blogs | the words `confirm with marketing` on the line, which `prompts/brand/fill-template.md` tells the model to append to every `[COMPANY:` field it fills | the brand-pack checkpoint |
+
+Both notes ride out of the builder in `needs_review`, are collected by `tools/learn_brand.py`, and
+are drawn by `agBrandPackHtml` only when `atCheckpoint` is true. The style-guide gate is counted by
+`count_lines(draft, "confirm with marketing")`, so it follows what the file actually says rather
+than a number fixed in code: the owner's own `style-guide.md` carries two such lines today.
+
 ## Setup order
 `index_site` -> `onboard` (the first-run interview, six skippable questions, runs once) -> `learn_brand`.
 `onboard` waits through the ordinary `_wait(kind="question")`, records to `brand/_interview/answers.json`

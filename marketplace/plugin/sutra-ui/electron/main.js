@@ -495,14 +495,89 @@ function appBundleDir() {
   return path.resolve(app.getPath("exe"), "..", "..", "..");
 }
 
+/* One bundle's CFBundleIdentifier, or "" when it cannot be read. */
+function bundleIdOf(bundle) {
+  try {
+    return String(execFileSync("/usr/bin/plutil",
+      ["-extract", "CFBundleIdentifier", "raw", "-o", "-",
+       path.join(bundle, "Contents", "Info.plist")],
+      { encoding: "utf8", timeout: 10000 })).trim();
+  } catch { return ""; }
+}
+
 /* The fallback when Electron's own mover declines: copy, open the copy, quit.
    ditto rather than cp because it preserves the signature and the symlinks
    inside a .app; a plain recursive copy produces a bundle that will not
-   launch on a machine with Gatekeeper awake. */
+   launch on a machine with Gatekeeper awake.
+
+   THIS IS THE MAIN INSTALL PATH, not a rare corner. Electron's own mover
+   refuses a read-only source, and the source here is a DMG, so nearly every
+   first install lands in this function.
+
+   It used to be one line: `ditto src /Applications/<same basename>`. Three
+   things were wrong with that, and all three bit for real on 2026-09-09 while
+   opening the shipped app to verify a release:
+
+   1. ditto MERGES, it does not replace. Copying a new bundle onto an older one
+      leaves every file the new version deleted still sitting there, and the
+      result is a bundle whose contents no longer match its own sealed
+      signature. updates.py has carried the correct shape for months -- copy
+      BESIDE the target, verify it there, then swap with two renames on the one
+      volume -- and this path simply never learned it. It does now.
+   2. It never looked at what was already at the destination. A bundle that
+      merely shares the name `Sutra.app` was overwritten without a word, which
+      is how a differently-identified copy landed on top of a real install. The
+      destination is only replaced when it is the SAME app by bundle id, which
+      is updates.py's own EXPECT_BUNDLE_ID check in a different place.
+   3. It replaced a bundle that could still be running. updates.py waits for
+      every process under the target's MacOS/ to go, because Electron keeps
+      helper and renderer processes mapped out of the bundle and writing over
+      those is how you get an app that launches into nothing.
+
+   Anything it refuses is reported to the caller as an ordinary Error, which
+   already draws the "drag it to Applications yourself" dialog. Refusing and
+   saying so beats a silent half-install. */
 function copyIntoApplications() {
   const src = appBundleDir();
   const dst = path.join("/Applications", path.basename(src));
-  execFileSync("/usr/bin/ditto", [src, dst]);
+  const stage = dst + ".new-" + process.pid;
+  const backup = dst + ".old-" + process.pid;
+
+  if (fs.existsSync(dst)) {
+    const mine = bundleIdOf(src);
+    const theirs = bundleIdOf(dst);
+    if (!mine || mine !== theirs) {
+      throw new Error(
+        `${dst} already exists and is a different application ` +
+        `(${theirs || "unreadable"}, not ${mine || "unreadable"}). ` +
+        `It has been left exactly as it was.`);
+    }
+    try {
+      execFileSync("/usr/bin/pgrep", ["-f", path.join(dst, "Contents", "MacOS") + "/"],
+                   { stdio: "ignore", timeout: 10000 });
+      throw new Error(`${dst} is still running. Quit it, then try again.`);
+    } catch (e) {
+      /* pgrep exits 1 with no match, which is the case we want. Only a real
+         match (exit 0, so our own throw above) stops the install. */
+      if (e && e.message && e.message.includes("still running")) throw e;
+    }
+  }
+
+  fs.rmSync(stage, { recursive: true, force: true });
+  try {
+    execFileSync("/usr/bin/ditto", [src, stage]);
+    if (fs.existsSync(dst)) fs.renameSync(dst, backup);
+    try {
+      fs.renameSync(stage, dst);
+    } catch (e) {
+      if (fs.existsSync(backup)) fs.renameSync(backup, dst);   /* put it back */
+      throw e;
+    }
+  } catch (e) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    throw e;
+  }
+  fs.rmSync(backup, { recursive: true, force: true });
   spawn("/usr/bin/open", ["-n", "-a", dst], { detached: true, stdio: "ignore" }).unref();
   return dst;
 }
