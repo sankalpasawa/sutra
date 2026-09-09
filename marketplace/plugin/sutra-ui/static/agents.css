@@ -375,8 +375,13 @@
 .ag-mapcap{padding:7px 10px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--muted)}
 
 /* the writer brief: one document you read straight down, with the files behind one door */
+/* Capped and scrolling in its own box. The brief is the longest thing on the screen (3,090 words
+   on the first real pack), and left uncapped it buried every section under it. */
 .ag-brief{border:1px solid var(--line-soft);border-radius:9px;background:var(--inset);padding:14px 16px;
-  margin:0 0 6px;font-size:12.5px;line-height:1.65;color:var(--ink)}
+  margin:0 0 6px;font-size:12.5px;line-height:1.65;color:var(--ink);
+  max-height:62vh;overflow-y:auto;overscroll-behavior:contain}
+.ag-briefhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 10px}
+.ag-briefhead .ag-sub{margin:0}
 .ag-brief .md-p{margin:0 0 9px}
 .ag-brief .md-h{margin:14px 0 6px}
 .ag-brief .md-l{margin:0 0 9px;padding-left:20px}

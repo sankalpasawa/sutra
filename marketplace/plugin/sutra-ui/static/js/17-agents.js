@@ -1006,13 +1006,19 @@ function agBriefHtml(brand, open){
   if (!br.exists) return `<div class="ag-row"><div class="ri"><div class="rn">Not written yet</div>
       <div class="rd">Built during setup from the site's own pages: what they believe, how they sound, the words they use and refuse.</div></div></div>`;
   const built = b.built_from || [];
-  return `<p class="ag-sub" style="margin:0 0 10px">This is what the writer reads before writing an article about ${agEsc(name)}.</p>
-    <div class="ag-brief">${agMd(br.text || "")}</div>
-    ${built.length ? `<button class="ag-more" type="button" data-ag="detail" data-arg="builtfrom" aria-expanded="${open ? "true" : "false"}">${open ? "Hide how this was built" : "See how this was built"}</button>` : ""}
-    ${open && built.length ? `<div class="ag-files" style="margin-top:6px">${built.map(f => `<button class="ag-file ${f.exists ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}" ${f.exists ? "" : "disabled"}>
+  const files = built.map(f => `<button class="ag-file ${f.exists ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}" ${f.exists ? "" : "disabled"}>
         <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
         <span class="ft"><span class="fn">${agEsc(f.label || f.name)}</span><span class="fd">${agEsc(f.note || "")}</span></span>
-        <span class="fm">${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></button>`).join("")}</div>` : ""}`;
+        <span class="fm">${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></button>`).join("");
+  // The door sits ABOVE the brief, not below it. Found 2026-09-09 by opening the real pack: the
+  // brief runs 3,090 words, so anything after it is a screen and a half down and nobody finds it.
+  // The brief scrolls in its own box for the same reason: the sections under it stay reachable.
+  return `<div class="ag-briefhead">
+      <p class="ag-sub">This is what the writer reads before writing an article about ${agEsc(name)}.</p>
+      ${built.length ? `<button class="ag-more" type="button" data-ag="detail" data-arg="builtfrom" aria-expanded="${open ? "true" : "false"}">${open ? "Hide how this was built" : "See how this was built"}</button>` : ""}
+    </div>
+    ${open && built.length ? `<div class="ag-files" style="margin:0 0 10px">${files}</div>` : ""}
+    <div class="ag-brief">${agMd(br.text || "")}</div>`;
 }
 
 /* A file the pack carries but nothing reads yet. Its own heading, because its label IS the
@@ -1021,7 +1027,7 @@ function agExtrasHtml(brand){
   const list = (brand && brand.extras) || [];
   return list.map(f => `<h3 class="sec">${agEsc(f.label || f.name)}</h3>
     <div class="ag-row ${f.exists ? "" : "off"}"><div class="ri">
-      <div class="rn">${agEsc(f.note || f.name)} <span class="pill p-mut">not in use yet</span></div>
+      <div class="rn">${agEsc(f.note || f.name)} <span class="pill ${f.in_use === false ? "p-mut" : "p-ok"}">${f.in_use === false ? "not in use yet" : "read on every article"}</span></div>
       <div class="rm"><span>${agEsc(f.name)}</span><span>${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></div></div>
       ${f.exists ? `<div class="ra"><button class="btn" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}">Open</button></div>` : ""}</div>`).join("");
 }
