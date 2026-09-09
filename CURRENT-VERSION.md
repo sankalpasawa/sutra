@@ -2,7 +2,63 @@
 
 **status**: active · **updated**: 2026-09-09
 
-## v2.248.0 (2026-09-09, HEAD)
+## v2.249.0 (2026-09-09, HEAD)
+
+**The Knowledge tab stops nagging and starts reading like a document.** The brand pack asked to be
+confirmed in four different places at once: a yellow banner, a warning symbol on every drafted row,
+a "N to confirm" pill per file, and a review list. All of it is gone. The symbol that marked a
+machine draft becomes a hidden marker, so a rebuild still never touches a row someone edited, but
+nothing on screen tells them off. Legacy files are migrated on their next run and a legacy row is
+still read correctly until then.
+
+That hidden marker would have shipped VISIBLE. `mdHtml` escapes every `<` and `>` before it does
+anything else, which is the whole safety argument of that function, so `<!--d-->` would have
+rendered as those literal characters on every row -- worse than the symbol it replaced. It is
+stripped after escaping, never before: stripping raw source could splice `<sc<!---->ript>` back
+into a real tag. One strip covers all three hidden markers the app now uses.
+
+**opinions.md is deleted.** Nothing ever read it. It asked the owner to answer an interview whose
+answers no step used.
+
+**The tab is rebuilt around the one file a writer actually reads.** The writer brief is on the page
+in full, and the files it was assembled from sit behind one control. The four gate chips
+(`enumeration accounting`, `response integrity`, `extraction coverage`, `traffic check`) are off the
+screen; they still run and still write to catalogue-report.json. The meaning-index section and its
+stats are gone, and the one sentence worth keeping became the map's caption. The page list shows
+five rows. A standing screen carries no nags; a live checkpoint still says what it is waiting for.
+
+**That door lists what the builder really read, not what was assumed.** The first version claimed
+features.md, which writer_brief.py excludes BY NAME with a comment giving the reason, and omitted
+voices.md, which it reads as one of four classified sources. So "Who writes" is not idle after all,
+and features.md moved to where it belongs: read on every article, but not a source of the brief.
+
+**The pages a call to action may link to are now a list you edit.** The format lives in one module,
+so what the screen writes is what the writer parses. A row you add survives a rebuild. A page the
+crawl has never seen is accepted and says so rather than failing silently.
+
+**A first-run interview puts the questions the workflow has always asked out loud.** Six of them, in
+the chat, once, each skippable, and a skip recorded as a skip rather than as an empty answer.
+voices.md was the real hole: its builder drafts nothing by design, so it shipped with seven
+placeholders that nothing was ever going to fill.
+
+**A language prefix in a URL is a language, never a kind of page.** Thirteen of one site's
+thirty-nine types were language codes, and 584 pages added by a refresh had no type at all: 2,933
+of 12,318 rows mis-filed. The type list drops to 25 real kinds, the translations rejoin their
+English originals, and languages become their own filter with real names. Page types also gained
+plain-English display names, decided in the one model call that already classifies them.
+
+**Library editing is back.** It was built, then lost when a corrupted git store forced a fresh
+clone, which left the route calling a `store.library_update` that no longer existed. Both restored.
+
+Also fixed: the honesty contract's "what the product is NOT" slot never filled, because it demanded
+a comma-separated list and the only real boundary in the pack was a single item; `.ag-editrow`,
+`.ag-libedit` and `.ag-lbl` had no CSS at all, so the traffic-import form rendered unstyled; the
+confidence pill's hover text leaked "enumeration accounting" onto the screen; "meaning vectors" was
+still in the Connections copy; and opening a file shifted the reader's position by several hundred
+pixels, because `haspanel` reflows the left column three ways at once.
+
+
+## v2.248.0 (2026-09-09)
 
 Codex is a provider you can actually chat with. Signing in has worked since 2.246.0, but the row
 said so itself: there was no chat adapter, so the account sat there unusable. There is one now,
