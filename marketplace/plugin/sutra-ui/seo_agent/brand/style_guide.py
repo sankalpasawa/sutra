@@ -113,6 +113,7 @@ def fill(co, top, merged, say, redo_notes=""):
 
 
 def run(co, say, redo=False):
+    cm.require_traffic("The style guide builder")
     if cm.exists(OUTPUT) and not redo:
         say("Kept style-guide.md", "already built; ask for a redo to rebuild it")
         return {"files": [OUTPUT], "needs_review": []}

@@ -116,6 +116,14 @@ def setup():
     # A real install always has a company record after setup, and several tools read it (the
     # competitor derivation, the prompts' brand tokens). Without one the suites test a state
     # that cannot occur once setup has run.
+    # The brand builders choose which pages to learn from by traffic and refuse without it, so a
+    # fixture with no traffic tests a state that cannot occur once the site has been read.
+    if not (store.knowledge("top-pages.json") or []):
+        pages = (store.knowledge("site_index.json") or {}).get("pages") or []
+        store.save_knowledge("top-pages.json", [
+            {"url": p_["url"], "traffic": 900 - i * 20, "traffic_clean": 900 - i * 20,
+             "top_keyword": (p_.get("title") or "page %d" % i).lower()[:40]}
+            for i, p_ in enumerate(pages[:16])])
     rec = store.knowledge("brand/company.json") or {}
     if not rec.get("brand_oneliner"):
         rec.setdefault("brand", "Example")

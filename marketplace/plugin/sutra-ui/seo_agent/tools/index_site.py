@@ -191,7 +191,13 @@ def _write_knowledge(site, rows, tr, report, wp_doc):
     store.save_knowledge("content-database.jsonl", "".join(
         json.dumps({"url": r["url"], "type": r.get("type", ""), "title": r.get("title", ""),
                     "body": r.get("body", "")}, ensure_ascii=False) + "\n" for r in rows))
-    store.save_knowledge("top-pages.json", tr["top_pages"])
+    # Never replace measured traffic with nothing. A re-read on an account with no balance
+    # returns an empty pull, and writing that over an imported file silently un-does the import
+    # and stops the whole brand pack building. (Same fault found in refresh_site, 2026-09-09.)
+    if tr.get("top_pages"):
+        store.save_knowledge("top-pages.json", tr["top_pages"])
+    elif not (store.knowledge("top-pages.json") or []):
+        store.save_knowledge("top-pages.json", [])
     store.save_knowledge("catalogue-report.json", report)
     store.save_knowledge("site_index.json", {
         "domain": site["host"],

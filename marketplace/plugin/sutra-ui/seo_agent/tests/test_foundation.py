@@ -335,6 +335,12 @@ try:
     ok("emitted plain-English progress", len(events) > 10 and all(e.get("label") for e in events))
 
     print("\nlearn_voice can read this index")
+    # the brand builders refuse without measured traffic, and the stubbed pull leaves none, so
+    # plant a small real-shaped table here the way an import or a live pull would
+    _idx_pages = (store.knowledge("site_index.json") or {}).get("pages") or []
+    store.save_knowledge("top-pages.json", [
+        {"url": p_["url"], "traffic": 500 - i * 10, "traffic_clean": 500 - i * 10,
+         "top_keyword": "kw %d" % i} for i, p_ in enumerate(_idx_pages[:14])])
     try:
         lv = learn_voice.run(ctx, sample_pages=4)
         ok("learn_voice runs on the produced index", bool(lv.get("summary")))
@@ -374,6 +380,7 @@ try:
     g5 = {x["name"]: x for x in rep5["gates"]}["enumeration accounting"]
     ok("and with nothing left unread the gate passes again", g5["pass"], g5["detail"])
 
+
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -385,6 +392,73 @@ finally:
     for d in (work, raw):
         shutil.rmtree(d, ignore_errors=True)
     fetchmod.TRANSPORT = None
+
+print("\nimporting a traffic file someone already paid for")
+from seo_agent.foundation import traffic_import
+CSV = ("URL,Traffic,Traffic_clean,Top Keyword,Primary Intent,Market\n"
+       "https://example.com/a/,4952,3028,gen x,informational,United States/en\n"
+       "https://example.com/b/,120,90,hiring test,commercial,United States/en\n"
+       "https://example.com/c/,0,0,ranked but quiet,informational,United States/en\n"
+       "not-a-url,10,10,junk,,\n"
+       "https://example.com/d/,,,,,\n")
+rows, dropped, why = traffic_import.parse(CSV)
+ok("a traffic export is read", not why and len(rows) == 3, (len(rows), why))
+ok("a row that is not a page address is dropped", all(r["url"].startswith("http") for r in rows))
+ok("a page that ranks but earns nothing is KEPT, because its keyword is real",
+   any(r["url"].endswith("/c/") and r["traffic"] == 0 and r["top_keyword"] for r in rows))
+ok("a row with neither a figure nor a keyword is dropped", dropped == 2, dropped)
+ok("the rows come back busiest first", [r["url"] for r in rows][0].endswith("/a/"))
+bad = traffic_import.parse("something,else\n1,2\n")
+ok("a file with no address column is refused, and says which columns it saw",
+   bad[2] and "header row is" in bad[2], bad[2])
+
+print("\nthe brand pack refuses to build with no measured traffic")
+from seo_agent.brand import _common as bcm
+store.save_knowledge("top-pages.json", [])
+ok("no traffic on file means no traffic", not bcm.have_traffic())
+try:
+    bcm.require_traffic("The brand voice builder")
+    ok("it refuses", False)
+except bcm.NoTraffic as e:
+    ok("it refuses, naming the builder and both ways out",
+       "brand voice" in str(e) and "DataForSEO" in str(e) and "import" in str(e), str(e)[:120])
+store.save_knowledge("top-pages.json", [{"url": "https://example.com/%d/" % i, "traffic": 100 - i,
+                                          "traffic_clean": 100 - i} for i in range(12)])
+ok("with real rows on file it builds", bcm.have_traffic())
+try:
+    bcm.require_traffic("The brand voice builder"); ok("and does not raise", True)
+except bcm.NoTraffic:
+    ok("and does not raise", False)
+store.save_knowledge("top-pages.json", {"demo": True, "pages": [{"url": "https://example.com/x/", "traffic": 5}] * 20})
+ok("demo figures never count as measured traffic", not bcm.have_traffic())
+
+print("\nthe article extractor rung")
+from seo_agent.foundation import extract as _ex
+BURIED = ("<html><head><title>t</title></head><body>"
+          "<nav>Home Pricing Features Login Signup Blog Contact About Careers Docs Support Partners</nav>"
+          "<article><h1>The real cost per hire</h1><p>" + ("The internal share is the one teams forget. " * 12) +
+          "</p><h2>What counts</h2><p>" + ("Recruiter time, job ads, agency fees. " * 12) + "</p></article>"
+          "<footer>Copyright 2026. Privacy Terms Cookies Sitemap Careers</footer></body></html>")
+tb = _ex._trafilatura_body(BURIED)
+ok("the article extractor pulls the article out of a page full of navigation", len(tb) > 300, len(tb))
+ok("and keeps the headings as markers the rest of the pipeline reads",
+   "# The real cost per hire" in tb and "## What counts" in tb, tb[:80])
+ok("the navigation and the footer do not come with it",
+   "Privacy Terms Cookies" not in tb and "Login Signup" not in tb)
+ok("a page it cannot read returns nothing rather than raising", _ex._trafilatura_body("") == "")
+ok("and so does junk", _ex._trafilatura_body("<<<not html at all>>>") == "")
+_saved_t = _ex._TRAFILATURA
+_ex._TRAFILATURA = False
+ok("with the package absent the rung is simply skipped", _ex._trafilatura_body(BURIED) == "")
+_ex._TRAFILATURA = _saved_t
+
+print("\nthe refresh reads only what changed")
+from seo_agent.tools import refresh_site as rs
+ok("a sitemap date parses, with or without a timezone",
+   rs._parse_lastmod("2026-09-03T18:27:01Z") and rs._parse_lastmod("2026-09-03") and
+   rs._parse_lastmod("") is None)
+ok("a newer sitemap date than our fetch means the page changed",
+   rs._parse_lastmod("2026-09-05") > rs._parse_lastmod("2026-09-04"))
 
 print("\nFake site, stubbed DataForSEO. Proves the rules and the plumbing, not the extractor on real HTML.")
 if FAILS:

@@ -250,6 +250,7 @@ const REQUIRED = [
   ["httpx", "fetching web pages"],
   ["bs4", "reading the HTML of a page (beautifulsoup4)"],
   ["numpy", "the page index that finds your own pages to link to"],
+  ["trafilatura", "reading the article out of a page full of navigation"],
 ];
 
 /* Which REQUIRED modules the given python cannot import. [] means it is fine. */

@@ -295,6 +295,53 @@ test("a brief from before the research team shows no team block and never breaks
   assert(html.indexOf("Old run") !== -1 || html.indexOf("x") !== -1, "the old brief still renders");
 });
 
+test("Knowledge offers a check for changes and a traffic import, and never a chat log", () => {
+  const k = { site_index: { domain: "x.com", page_count: 100, pages: [] }, report: {}, brand: { files: [] } };
+  A.S.ag.refresh = null; A.S.ag.trafficForm = null;
+  const html = A.agKnowledgeHtml(k, A.S.ag);
+  assert(html.indexOf('data-ag="refreshcheck"') !== -1, "a check button");
+  assert(html.indexOf('data-ag="trafficimport"') !== -1, "and an import button");
+  assert(/only what is new or has changed/.test(html), "and says it does not re-read the site");
+});
+
+test("a refresh shows ONE line while it works, then what it found, then what changed", () => {
+  const a = A.S.ag;
+  a.refresh = { busy: true, step: "Asking the site for its current list…" };
+  let h = A.agRefreshHtml(a);
+  assert(/class="spin"/.test(h) && h.indexOf("Asking the site") !== -1, "one line and a spinner");
+  assert((h.match(/class="msg"/g) || []).length === 1, "exactly one line, never a log");
+
+  a.refresh = { preview: { new: 37, gone: 4, changed: 112, unchecked: 900 } };
+  h = A.agRefreshHtml(a);
+  assert(/37 new/.test(h) && /4 gone/.test(h) && /112 rewritten/.test(h), "the counts: " + h.slice(0, 160));
+  assert(/900 pages give no date/.test(h), "and says what it could not check");
+  assert(h.indexOf('data-ag="refreshgo"') !== -1, "nothing happens until you say go");
+
+  a.refresh = { preview: { new: 0, gone: 0, changed: 0, unchecked: 0 } };
+  h = A.agRefreshHtml(a);
+  assert(/Nothing has changed/.test(h) && h.indexOf('data-ag="refreshgo"') === -1,
+         "with nothing to do there is nothing to press");
+
+  a.refresh = { done: "584 pages added, 0 removed." };
+  h = A.agRefreshHtml(a);
+  assert(/Done\./.test(h) && h.indexOf('data-ag="refreshchanges"') !== -1, "done, and a way to read it");
+
+  a.refresh = { error: "The site refused every page." };
+  h = A.agRefreshHtml(a);
+  assert(/refused every page/.test(h) && /class="msg err"/.test(h), "a failure says so plainly");
+  a.refresh = null;
+});
+
+test("the traffic import asks for a path and never invents a figure", () => {
+  const a = A.S.ag;
+  a.refresh = null; a.trafficForm = { path: "" };
+  const h = A.agRefreshHtml(a);
+  assert(h.indexOf("data-agtraffic") !== -1, "a path box");
+  assert(/page address column and a traffic column/.test(h), "and says what the file must have");
+  assert(h.indexOf('data-ag="trafficgo"') !== -1 && h.indexOf('data-ag="trafficcancel"') !== -1, "import or cancel");
+  a.trafficForm = null;
+});
+
 test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
   assert.strictEqual((html.match(/class="ag-stage /g) || []).length, 5);

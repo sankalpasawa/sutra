@@ -9,3 +9,9 @@ beautifulsoup4==4.15.0
 # dev venv's Python 3.9 AND ships cp312 wheels for both macOS arches (arm64 11_0, x86_64 10_9),
 # checked 2026-09-03 with pip download --only-binary=:all: --platform.
 numpy==2.0.2
+# The article extractor, rung 2b of the catalogue's ladder. On the original workflow's own
+# catalogue it won 300 of the 334 pages the DOM rung alone did not, so it is nearly the whole of
+# the measured extraction gap. Pure-python wheel; its dependencies ship universal2 wheels, so the
+# cross-arch bundle installs it with --only-binary. Optional at runtime: extract.py falls back to
+# the ladder it had if the import fails.
+trafilatura==2.2.0

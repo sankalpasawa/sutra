@@ -36,7 +36,28 @@ def read(name, default=None):
 
 
 def save(name, data):
+    """Write a brand file. Text goes through one tidy first, so every builder gets it.
+
+    Found 2026-09-09: 33 HTML entities leaked into brand-voice.md, and one of them turned a
+    "HUMAN DECISION" blockquote into body text, so the flag a person is meant to act on read as
+    prose. The model writes &gt; when it means >, because it has been reading HTML all day.
+    """
+    if isinstance(data, str):
+        data = unescape_text(data)
     return store.save_knowledge("brand/" + name, data)
+
+
+_ENTITIES = (("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'),
+             ("&#39;", "'"), ("&apos;", "'"), ("&nbsp;", " "))
+
+
+def unescape_text(text):
+    """HTML entities back to the characters they stand for. &amp; last, or &amp;gt; becomes >."""
+    out = text
+    for ent, ch in _ENTITIES:
+        if ent != "&amp;":
+            out = out.replace(ent, ch)
+    return out.replace("&amp;", "&")
 
 
 def template(name):
@@ -99,6 +120,10 @@ def ok_pages(language=None):
             and (p["lang"] or lang)[:2] == lang]
 
 
+MIN_TRAFFIC_ROWS = 1      # the question is whether a pull happened at all, not how big the site
+                          # is: a five-page site with five measured rows has complete traffic
+
+
 def traffic_map():
     """{url: traffic} from knowledge/top-pages.json (traffic_clean when present, else traffic).
     Empty when the file is not there; callers then fall back to the index's own traffic column."""
@@ -122,6 +147,33 @@ def top_pages():
     if isinstance(rows, dict):
         rows = rows.get("pages") or rows.get("rows") or []
     return [r for r in rows if isinstance(r, dict) and r.get("url")]
+
+
+class NoTraffic(Exception):
+    """Raised when the brand pack is asked to build with no measured traffic behind it."""
+
+
+def have_traffic():
+    """Is there real, measured traffic on file? Demo figures do not count."""
+    rows = store.knowledge("top-pages.json") or []
+    if isinstance(rows, dict):
+        if rows.get("demo"):
+            return False
+        rows = rows.get("pages") or rows.get("rows") or []
+    return sum(1 for r in rows if isinstance(r, dict) and r.get("url")) >= MIN_TRAFFIC_ROWS
+
+
+def require_traffic(builder):
+    """Five builders choose which pages to learn from BY TRAFFIC. Without it they used to fall
+    back to the catalogue's own order, which is roughly alphabetical, so the brand voice was
+    learned from whatever page sorted first. That is silently wrong, which is worse than
+    failing: the pack looks finished and is built on the wrong pages.
+    """
+    if not have_traffic():
+        raise NoTraffic(
+            "%s picks which of your pages to learn from by how much search traffic they get, and "
+            "there is no measured traffic on file. Connect DataForSEO and run the site read again, "
+            "or import a traffic file in Knowledge. It will not guess." % builder)
 
 
 def traffic_of(page, tmap=None):

@@ -129,6 +129,38 @@ def extract_dom(clean):
     return dom_text(mark_headings(copy.deepcopy(scope(clean))))
 
 
+_TRAFILATURA = None      # None = not looked for yet, False = not installed
+
+
+def _trafilatura_body(html):
+    """The article's text as trafilatura reads it, with headings kept as markers.
+
+    trafilatura is built for exactly the case the DOM rung is weakest at: a page whose real
+    article is buried in template markup that carries plenty of its own text. Returns "" when the
+    package is absent or it finds nothing, so it can only ever add.
+    """
+    global _TRAFILATURA
+    if _TRAFILATURA is False or not html:
+        return ""
+    if _TRAFILATURA is None:
+        try:
+            import trafilatura as _t
+            _TRAFILATURA = _t
+        except Exception:  # noqa: BLE001 — an optional rung, never a failure
+            _TRAFILATURA = False
+            return ""
+    try:
+        out = _TRAFILATURA.extract(html, include_comments=False, include_tables=True,
+                                   include_formatting=True, favor_recall=True,
+                                   output_format="markdown", no_fallback=False)
+    except Exception:  # noqa: BLE001 — one bad page must not stop the catalogue
+        return ""
+    if not out:
+        return ""
+    # the rest of the pipeline marks headings as #/##/###, and markdown already does
+    return tidy(out)
+
+
 def _jsonld_body(soup):
     best = ""
 
@@ -263,6 +295,14 @@ def extract_one(url, rec, live_html, rest_html):
         text = extract_dom(clean)
         if len(text) > len(best):
             best, best_name = text, "dom"
+
+        # rung 2b — trafilatura, the article extractor. It is the one rung the port was missing:
+        # on the original's own catalogue it won 300 of the 334 pages that the DOM rung alone did
+        # not (resiliparse won 23, everything else 11), so it is the whole of the measured gap.
+        # Optional: without the package installed the ladder is exactly what it was.
+        tb = _trafilatura_body(live_html)
+        if len(tb) > len(best):
+            best, best_name = tb, "trafilatura"
 
         # rung 3 — JSON-LD articleBody / bare <article> baseline
         if len(best) < settings.EXTRACT_FAIL_CHARS:

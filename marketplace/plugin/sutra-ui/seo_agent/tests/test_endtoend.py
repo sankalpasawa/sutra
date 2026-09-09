@@ -74,7 +74,10 @@ def ok(label, cond, extra=""):
 
 print("\ntools")
 tools = registry.WORK_TOOLS
-ok("seven work tools", len(tools) == 7, len(tools))
+ok("nine work tools: the seven that make an article, plus keeping Knowledge current",
+   len(tools) == 9, [t["name"] for t in tools])
+ok("refreshing the catalogue and importing traffic are tools, not hidden buttons",
+   {"refresh_site", "import_traffic"} <= {t["name"] for t in tools})
 ok("no credit gates: every work tool runs when called", all(t["gate"] == "auto" and not t.get("cost_credits") for t in tools))
 ok("every work tool carries a plain-English row for the Tools screen",
    all(all(k in (t.get("plain") or {}) for k in ("does", "when", "needs", "takes")) for t in tools))

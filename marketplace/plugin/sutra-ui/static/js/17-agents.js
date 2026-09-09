@@ -99,7 +99,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, refresh: null, trafficForm: null, draft: "", scroll: null, stick: true,
     health: null, knowledge: null, memory: null, library: null, tools: null, conns: null,
     pages: null, pageQ: "", pageType: "", map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
@@ -869,6 +869,50 @@ function agPanelHtml(a){
 
 /* ── settings views ────────────────────────────────────────────────────────── */
 
+/* Keeping the catalogue current. One line that replaces itself while it works, then a link to
+   what changed. Never a chat log: a person watching an update wants one line, not a transcript. */
+function agRefreshHtml(a){
+  const r = a.refresh || null;
+  if (r && r.busy) {
+    return `<div class="ag-refresh busy"><span class="spin" aria-hidden="true"></span><span class="msg">${agEsc(r.step || "Working…")}</span></div>`;
+  }
+  if (r && r.preview) {
+    const n = r.preview;
+    const nothing = !n.new && !n.gone && !n.changed;
+    return `<div class="ag-refresh">
+      <div class="msg">${nothing ? "Nothing has changed since the last read."
+        : `<b>${agEsc(agNum(n.new))} new</b>, ${agEsc(agNum(n.gone))} gone, ${agEsc(agNum(n.changed))} rewritten.${n.unchecked ? ` ${agEsc(agNum(n.unchecked))} pages give no date, so they cannot be checked without reading them.` : ""}`}</div>
+      <div class="ag-editrow">
+        ${nothing ? "" : `<button class="btn pri" type="button" data-ag="refreshgo">Update the catalogue</button>`}
+        <button class="btn" type="button" data-ag="refreshcancel">${nothing ? "Close" : "Not now"}</button>
+      </div></div>`;
+  }
+  if (r && r.done) {
+    return `<div class="ag-refresh done">
+      <div class="msg"><b>Done.</b> ${agEsc(r.done)}</div>
+      <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshchanges">See what changed</button>
+        <button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
+  }
+  if (r && r.error) {
+    return `<div class="ag-refresh"><div class="msg err">${agEsc(r.error)}</div>
+      <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
+  }
+  return `<div class="ag-editrow" style="margin:10px 0 2px">
+    <button class="btn" type="button" data-ag="refreshcheck">Check for changes</button>
+    <button class="btn" type="button" data-ag="trafficimport">Import a traffic file</button>
+    <span class="ag-sub">Reads only what is new or has changed, not the whole site.</span>
+  </div>
+  ${a.trafficForm ? `<div class="ag-libedit" style="margin-top:8px">
+      <label class="ag-lbl">Where the traffic file is on this Mac</label>
+      <input class="in" type="text" data-agtraffic placeholder="/Users/you/Desktop/top-pages.csv" value="${agEsc(a.trafficForm.path || "")}" />
+      <div class="ag-editrow">
+        <button class="btn pri" type="button" data-ag="trafficgo" ${a.trafficForm.busy ? "disabled" : ""}>${a.trafficForm.busy ? "Reading…" : "Import"}</button>
+        <button class="btn" type="button" data-ag="trafficcancel">Cancel</button>
+        <span class="ag-sub">A CSV with a page address column and a traffic column.</span>
+        ${a.trafficForm.error ? `<span class="ag-err">${agEsc(a.trafficForm.error)}</span>` : ""}
+      </div></div>` : ""}`;
+}
+
 function agKnowledgeHtml(k, a){
   a = a || {};
   if (!k) return `<div class="ag-view"><h2>Knowledge</h2><p class="lead">Reading…</p></div>`;
@@ -904,6 +948,7 @@ function agKnowledgeHtml(k, a){
         <div class="rn">${agEsc(idx.domain || "your site")} <span class="pill p-ok">${agEsc(agNum(idx.page_count))} pages</span>${rep.confidence ? `<span class="pill ${/^full/i.test(rep.confidence) ? "p-ok" : "p-warn"}" title="${agEsc(rep.confidence)}">${agEsc(String(rep.confidence).split(/[:\s(]/)[0].toLowerCase())} confidence</span>` : ""}</div>
         <div class="rd">${agEsc(agNum(idx.ranking_pages))} pages rank for something · ${agEsc(agNum(idx.ok_pages))} with full text${idx.indexed_at ? " · read " + agEsc(agAgo(idx.indexed_at)) : ""}</div>
         ${gates.length ? `<div class="ag-checks" style="margin:8px 0 4px">${gates.map(g => `<span class="ag-check ${g.pass ? "" : "warn"}" title="${agEsc(g.detail || "")}">${g.pass ? "✓" : "!"} ${agEsc(g.name)}</span>`).join("")}</div>` : ""}
+        ${agRefreshHtml(a)}
         ${typeList.length ? `<div class="rm">${typeList.slice(0, 8).map(t => `<span>${agEsc(t)} <b>${agEsc(agNum(types[t]))}</b></span>`).join("")}</div>` : ""}
         <div class="ag-addrow" style="margin:12px 0 8px"><input type="search" data-agpageq placeholder="Search pages by title, address or keyword" value="${agEsc(a.pageQ || "")}" aria-label="Search pages">
           <select data-agpagetype aria-label="Page type"><option value="">All types</option>${typeList.map(t => `<option value="${agEsc(t)}" ${a.pageType === t ? "selected" : ""}>${agEsc(t)}</option>`).join("")}</select></div>

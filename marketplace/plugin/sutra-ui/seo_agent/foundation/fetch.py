@@ -450,6 +450,12 @@ class Fetcher:
             raise Blocked(str(e))
         self.stats["network"] += 1
         headers = {str(k).lower(): str(v) for k, v in (r.get("headers") or {}).items()}
+        # The browser hands back the page already decoded. Carrying the original transfer headers
+        # over makes httpx try to decompress plain text, and it dies with "brotli: decoder failed".
+        # Found 2026-09-09 on a refresh: 584 pages in a row failed this way and the site looked
+        # like it was throttling. Only the transfer headers are dropped; the rest are kept.
+        for h in ("content-encoding", "content-length", "transfer-encoding", "content-md5"):
+            headers.pop(h, None)
         if r.get("content_type"):
             headers["content-type"] = r["content_type"]
         headers["x-sutra-fetched-via"] = "browser"

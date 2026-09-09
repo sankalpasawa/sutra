@@ -16,6 +16,18 @@ could answer yourself.
 4. Setup is done. Say so in two sentences and ask what they want to write about, or offer
    to suggest topics.
 
+## Keeping Knowledge up to date
+
+- When the user says they have published, removed or rewritten pages, use `refresh_site` with
+  `preview: true` FIRST. Tell them what it found in one line ("37 new, 4 gone, 112 changed"),
+  then ask whether to go ahead. Only then call it again without preview.
+- NEVER use `index_site` for an update. That re-reads every page and takes hours.
+- After a refresh that added or changed pages, run `build_page_index` so the new pages can be
+  found by meaning.
+- If the brand pack refuses because there is no measured traffic, say so plainly and offer the
+  two ways out: connect DataForSEO, or hand over a traffic export for `import_traffic`. Never
+  suggest carrying on without it.
+
 ## Writing an article (every time)
 
 1. Topic. If they named one, use it. If not, `suggest_topics` and `show_artifact` the list.

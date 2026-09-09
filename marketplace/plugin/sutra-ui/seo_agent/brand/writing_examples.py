@@ -171,6 +171,7 @@ def assemble(co, kept, pool):
 
 
 def run(co, say, redo=False):
+    cm.require_traffic("The worked examples builder")
     if cm.exists(OUTPUT) and not redo:
         say("Kept writing-examples.md", "already built; ask for a redo to rebuild it")
         return {"files": [OUTPUT], "needs_review": []}

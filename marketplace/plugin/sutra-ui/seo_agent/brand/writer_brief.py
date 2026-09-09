@@ -115,6 +115,21 @@ def _norm(s):
     return re.sub(r"\s+", " ", _PUNCT.sub(" ", s)).strip().lower()
 
 
+def _with_readers(draft):
+    """Append the reader table from persona.md, unless the brief already names its readers."""
+    if re.search(r"^#+\s*who we write (to|for)", draft, re.I | re.M):
+        return draft
+    per = cm.read("persona.md")
+    if not per.strip():
+        return draft
+    rows = [ln for ln in per.splitlines() if ln.strip().startswith("|")]
+    if len(rows) < 3:                      # a header, a rule line, and at least one reader
+        return draft
+    return (draft.rstrip() + "\n\n## Who we write to\n\n"
+            "One article, one reader. Write to this depth and never name them in the article.\n\n"
+            + "\n".join(rows).strip() + "\n")
+
+
 def atoms(text):
     """The CONCRETE items the source gave us: table cells and the head of each list item. Losing one
     of these is the failure mode that matters, so they are counted rather than trusted.
@@ -160,6 +175,11 @@ def assemble(co, sections, say):
     draft = cm.strip_fence(llm.text(cm.fill(cm.prompt("assemble-brief"), brand=co["brand"],
                                              niche=co.get("niche_definition") or "", kept=kept,
                                              rulings=rulings(co, say), template=cm.template("writer-brief")), timeout=llm.LONG_TIMEOUT))
+    # WHO WE WRITE TO. persona.md is deliberately not one of the classified sources (it describes
+    # the reader, not the company's voice, so the classifier drops its rows as facts). But the
+    # original's brief carries a reader table, and without it the brief tells a writer who is
+    # writing and never who they are writing for. Appended whole, not classified.
+    draft = _with_readers(draft)
     cm.save(OUTPUT, draft)
     # Search the WHOLE normalised brief, not a set of output atoms: the brief is allowed to reformat a
     # bullet into a table cell, and an atom-to-atom compare called every such reformat a loss.

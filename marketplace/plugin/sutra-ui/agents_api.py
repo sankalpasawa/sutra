@@ -382,6 +382,47 @@ def api_knowledge():
             "competitors": store.knowledge("competitors.json")}
 
 
+@router.post("/knowledge/refresh")
+def api_knowledge_refresh(body: dict = Body(default={})):
+    """Bring the catalogue up to date. With preview=true it reports and changes nothing."""
+    ctx = {"chat_id": "knowledge", "run_id": "refresh", "emit": lambda **kw: None}
+    try:
+        from seo_agent.tools import refresh_site
+        return refresh_site.run(ctx, preview=bool(body.get("preview")),
+                                include_unchecked=bool(body.get("include_unchecked")),
+                                use_archive=bool(body.get("use_archive")))
+    except Exception as e:  # noqa: BLE001
+        return _bad(str(e)[:300], 500)
+
+
+@router.get("/knowledge/changes")
+def api_knowledge_changes():
+    """The last refresh's change summary, as markdown."""
+    return {"text": store.knowledge("catalogue-changes.md") or ""}
+
+
+@router.post("/knowledge/traffic")
+def api_knowledge_traffic(body: dict = Body(...)):
+    """Import a traffic export the person already has. Takes a path on this Mac, or the CSV text."""
+    from seo_agent.foundation import traffic_import
+    text = body.get("text")
+    source = "pasted text"
+    if not text:
+        path = os.path.expanduser((body.get("path") or "").strip())
+        if not path:
+            return _bad("give me a file path or the text of the file")
+        if not os.path.exists(path):
+            return _bad("there is no file at %s" % path, 404)
+        try:
+            with open(path, encoding="utf-8-sig") as f:
+                text = f.read()
+        except Exception as e:  # noqa: BLE001
+            return _bad("that file could not be read: %s" % str(e)[:160])
+        source = os.path.basename(path)
+    out = traffic_import.apply(text, source=source)
+    return out if out.get("ok") else _bad(out.get("error", "nothing was imported"))
+
+
 @router.get("/knowledge/pages")
 def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str = ""):
     """A page of the catalogue: searchable by title or url, filterable by type, sorted by

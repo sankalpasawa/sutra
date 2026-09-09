@@ -249,6 +249,7 @@ def gate(co, draft, round_n, say):
 # ---- the builder ------------------------------------------------------------------------------
 
 def run(co, say, redo=False):
+    cm.require_traffic("The brand voice builder")
     if cm.exists(OUTPUT) and not redo:
         say("Kept brand-voice.md", "already built; ask for a redo to rebuild it")
         return {"files": [OUTPUT, SHORTLIST], "needs_review": []}

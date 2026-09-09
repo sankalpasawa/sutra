@@ -207,6 +207,7 @@ def build_cta_pages(co, facts, pages, say):
 # ---- the builder ------------------------------------------------------------------------------
 
 def run(co, say, redo=False):
+    cm.require_traffic("The product facts builder")
     if cm.exists(OUTPUT) and cm.exists(CTA_OUTPUT) and not redo:
         say("Kept features.md and cta-pages.md", "already built; ask for a redo to rebuild them")
         return {"files": [OUTPUT, CTA_OUTPUT], "needs_review": []}

@@ -62,6 +62,18 @@ def run(ctx, redo=False, only=None):
     if not index or not (index.get("pages") if isinstance(index, dict) else index):
         raise RuntimeError("There is no site index yet. Run index_site first, then learn_brand.")
     co = sh.company()
+    # Say it once, at the top, rather than four builders each raising the same thing. Five of the
+    # twelve choose which pages to learn from by traffic; with none measured they would learn the
+    # brand from whatever page sorts first.
+    from ..brand import _common as _cm
+    if not _cm.have_traffic():
+        return {"summary": "The brand pack was not built: there is no measured search traffic.",
+                "error": ("Five of the builders (the voice, the style guide, the product facts, the "
+                          "worked examples and the call-to-action pages) choose which of your pages "
+                          "to learn from by how much search traffic each one gets. There is none on "
+                          "file, so they would learn your brand from whatever page happens to sort "
+                          "first. Connect DataForSEO and run the site read again, or import a "
+                          "traffic file in Knowledge. I will not guess at this.")}
     wanted = _only(only)
     redo = bool(redo)
 

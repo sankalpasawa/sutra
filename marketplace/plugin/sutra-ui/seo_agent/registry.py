@@ -121,6 +121,50 @@ WORK_TOOLS = [
         },
     },
     {
+        "name": "refresh_site",
+        "description": (
+            "Bring the site catalogue up to date without re-reading the whole site. Asks the "
+            "sitemaps and the CMS for the site's CURRENT address list, compares it against the "
+            "catalogue, and reads only what is new or has changed. Use this when the user says "
+            "they have published, removed or rewritten pages. Call it with preview=true FIRST and "
+            "show the person what would change; only call it again without preview once they say "
+            "go ahead. Never use index_site for an update: that re-reads every page."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": False,
+        "est_minutes": 4, "module": "tools.refresh_site",
+        "input_schema": {"type": "object", "properties": {
+            "preview": {"type": "boolean", "description": "Report what would change and touch nothing. Do this first."},
+            "include_unchecked": {"type": "boolean", "description": "Also re-read pages that give no last-changed date. Slow; only when the user asks."},
+            "use_archive": {"type": "boolean", "description": "Also ask the web archive. Slow; only for a deep check."},
+        }},
+        "plain": {
+            "does": "Finds what is new, gone or rewritten on the site and reads only that.",
+            "when": "Whenever pages have been added, removed or rewritten since the last read.",
+            "needs": "Nothing. DataForSEO only if you want traffic for the new pages.",
+            "takes": "Seconds to find the changes, then about a second per page it has to read.",
+        },
+    },
+    {
+        "name": "import_traffic",
+        "description": (
+            "Load a traffic export the user already has (a CSV with a page address and a traffic "
+            "figure) and use it as the catalogue's measured traffic. Use ONLY when the user offers "
+            "a file or says they have one, usually because DataForSEO has no balance. Never invent "
+            "traffic and never suggest making some up."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": False,
+        "est_minutes": 1, "module": "tools.import_traffic",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Where the CSV is on this Mac."},
+        }, "required": ["path"]},
+        "plain": {
+            "does": "Reads a traffic file you already have and uses it instead of a paid pull.",
+            "when": "When DataForSEO has no balance but you have an export from it or another tool.",
+            "needs": "A CSV with a page address column and a traffic column.",
+            "takes": "A few seconds.",
+        },
+    },
+    {
         "name": "learn_brand",
         "description": (
             "Build the brand pack from the company's own pages: how they write, what they sell, "
