@@ -212,6 +212,31 @@ WORK_TOOLS = [
         },
     },
     {
+        "name": "build_assets",
+        "description": (
+            "Work out WHAT is worth writing about, from evidence. Three independent methods: which "
+            "competitor pages actually earn links and the FORMAT that earned them; formats proven "
+            "in other industries, transplanted; and what the audience argues about in public. Then "
+            "merge, dedupe by meaning, rank, and check each idea against pages the company already "
+            "has. Run AFTER learn_brand, and only when the user asks for ideas or a content plan. "
+            "It is optional and it takes a while. It STOPS TWICE for the user: the competitor "
+            "shortlist and the subreddit list. Never call it to write a single article the user "
+            "has already named."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": True,
+        "est_minutes": 25, "module": "tools.build_assets",
+        "input_schema": {"type": "object", "properties": {
+            "redo": {"type": "boolean", "description": "Rebuild files that already exist. Default false."},
+            "only": {"type": "string", "description": "Run one builder only, e.g. trends."},
+        }},
+        "plain": {
+            "does": "Builds a ranked sheet of asset ideas from what earns links, what works in other industries, and what your audience argues about.",
+            "when": "After the brand pack, when you want a plan rather than one article.",
+            "needs": "The brand pack. The competitor study also needs DataForSEO credit.",
+            "takes": "Twenty to thirty minutes, and it asks you two questions along the way.",
+        },
+    },
+    {
         "name": "suggest_topics",
         "description": (
             "Propose six topics this company could own, each with an angle competitors have not "

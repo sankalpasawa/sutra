@@ -74,10 +74,16 @@ def ok(label, cond, extra=""):
 
 print("\ntools")
 tools = registry.WORK_TOOLS
-ok("ten work tools: the seven that make an article, keeping Knowledge current, and the setup interview",
-   len(tools) == 10, [t["name"] for t in tools])
-ok("refreshing the catalogue, importing traffic and asking the setup questions are tools, not hidden buttons",
-   {"refresh_site", "import_traffic", "onboard"} <= {t["name"] for t in tools})
+ok("eleven work tools: the seven that make an article, keeping Knowledge current, the setup "
+   "interview, and working out what is worth writing",
+   len(tools) == 11, [t["name"] for t in tools])
+ok("refreshing the catalogue, importing traffic, asking the setup questions and building the asset "
+   "ideas are tools, not hidden buttons",
+   {"refresh_site", "import_traffic", "onboard", "build_assets"} <= {t["name"] for t in tools})
+# The engine stops twice for a person, so the registry has to say it pauses. A tool the loop will
+# stop on that claims it does not is how a run looks hung to everyone watching it.
+ok("the asset engine declares that it pauses, because it stops twice for the user",
+   next(t for t in tools if t["name"] == "build_assets")["pauses"] is True)
 ok("no credit gates: every work tool runs when called", all(t["gate"] == "auto" and not t.get("cost_credits") for t in tools))
 ok("every work tool carries a plain-English row for the Tools screen",
    all(all(k in (t.get("plain") or {}) for k in ("does", "when", "needs", "takes")) for t in tools))

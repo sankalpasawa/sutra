@@ -132,6 +132,20 @@ def _knowledge_block(site):
     tail = ("\nSetup is complete. Do NOT run index_site, build_page_index or learn_brand again unless the user "
             "asks for a rebuild. Go straight to the article." if done else
             "\nFinish setup first, in the order above, then the article.")
+    # The asset sheet, when there is one. This is CONTEXT, not an instruction: the chip on the
+    # Asset ideas tab carries the id as data and is the real path. This line only stops the model
+    # claiming there are no ideas when a sheet is sitting right there.
+    try:
+        from .tools import build_assets as _ba
+        a = _ba.status()
+        if a["built"]:
+            lines.append("- Asset ideas: %d on the sheet, %d still to write%s."
+                         % (a["total"], a["counts"].get("open", 0),
+                            ("; next up is %s — %s" % (a["next"]["id"], a["next"]["title"][:70]))
+                            if a["next"] else ""))
+    except Exception:   # noqa: BLE001 — a sheet we cannot read must not stop the run starting
+        pass
+
     # An install from before the interview existed has a finished pack and an unasked user. Say so
     # rather than letting "setup is complete" read as "there is nothing left to ask".
     if done and interview and not interview["asked"]:
@@ -193,6 +207,85 @@ def _ask_interview(chat_id, run_id, call_id, ask):
         "interview": ask.get("id", ""),
         "step": ask.get("step"), "of": ask.get("of"),
         "options": [{"label": onboard.SKIP_LABEL}]}, stage="setup")
+
+
+def _ask_asset_gate(chat_id, run_id, call_id, gate):
+    """One asset-engine gate, through the SAME checkpoint every approval already uses.
+
+    Two of the original's layer-02 steps stop and ask a person: the competitor shortlist
+    (`1-competitor-study` step A4, "this is a gate") and the subreddit list (`3-study-trends` A2).
+    Neither is a rubber stamp. A shortlist nobody looked at sends fifteen paid pulls at the wrong
+    companies, and a subreddit list nobody looked at mines the wrong argument for a week.
+
+    Same `kind: "question"` as the setup interview, for the same reason: the screen already draws
+    that kind with its option chips and its free-text box. What marks it as a gate is the
+    `asset_gate` field, which carries the builder's name so resume() files the answer against the
+    right one instead of guessing by order.
+    """
+    _wait(chat_id, run_id, "question", call_id, {
+        "question": gate.get("question") or gate.get("why", ""),
+        "why": gate.get("why", ""),
+        "asset_gate": gate.get("kind", ""),
+        "builder": gate.get("builder", ""),
+        "proposed": gate.get("proposed") or [],
+        "options": [{"label": "Use this list"}, {"label": "Not now"}]}, stage="setup")
+
+
+def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
+    """File the approval, then run the engine again from where it stopped.
+
+    The whole engine is ONE tool call and gets ONE tool result, at the end, exactly as the setup
+    interview does. The model never sees a half-built sheet it could decide to finish itself, in
+    its own words, with ideas it made up.
+    """
+    from .assets import _common as acm
+    from .tools import build_assets
+    call_id = waiting.get("call_id")
+    text = (answer.get("text") or "").strip() if isinstance(answer, dict) else str(answer or "")
+    declined = text.lower().startswith("not now") or answer.get("approved") is False
+
+    if declined:
+        store.emit(chat_id, run_id, "resumed", by="user", approved=False, answer="Not now")
+        messages.append({"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": call_id,
+            "content": {"summary": "The asset engine is paused: the %s list was not approved."
+                                   % waiting.get("asset_gate", "proposed"),
+                        "hint": "Say so in one line and carry on. Do not ask again unprompted."}}]})
+        store.save_messages(chat_id, messages)
+        store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+        return step(chat_id, run_id)
+
+    # An edited list wins over the proposed one. A person who rewrote the list meant it, and
+    # taking the proposal anyway would make the gate decorative.
+    approved = acm.parse_gate_answer(waiting.get("asset_gate"), text, waiting.get("proposed") or [])
+    try:
+        acm.save_gate(waiting.get("builder") or waiting.get("asset_gate"), approved)
+    except Exception as e:  # noqa: BLE001 — an answer we cannot file must not strand the run
+        store.emit(chat_id, run_id, "step_failed", label=registry.label("build_assets"),
+                   reason=str(e)[:400], detail=traceback.format_exc()[-1200:], recovering=True)
+    store.emit(chat_id, run_id, "resumed", by="user", answer="%d approved" % len(approved))
+
+    step_id = "s%d" % (int(time.time() * 1000) % 100000)
+    store.emit(chat_id, run_id, "step_started", id=step_id,
+               label=registry.label("build_assets"), tool="build_assets", stage="setup")
+    t0 = time.time()
+    try:
+        out = _run_tool(chat_id, run_id, "build_assets", {}, step_id=step_id)
+    except Exception as e:  # noqa: BLE001
+        out = {"error": str(e)[:600],
+               "hint": "The asset engine could not finish. Say so in one line and carry on."}
+    store.emit(chat_id, run_id, "step_finished", id=step_id, label=registry.label("build_assets"),
+               ms=int((time.time() - t0) * 1000), summary=(out or {}).get("summary", ""))
+
+    if isinstance(out, dict) and out.get("gate"):
+        _ask_asset_gate(chat_id, run_id, call_id, out["gate"])
+        return store.get_state(chat_id, run_id)
+
+    messages.append({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
+    store.save_messages(chat_id, messages)
+    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+    return step(chat_id, run_id)
 
 
 def _resume_interview(chat_id, run_id, waiting, messages, answer):
@@ -374,6 +467,10 @@ def step(chat_id, run_id):
                     store.save_messages(chat_id, messages)
                     _ask_interview(chat_id, run_id, call_id, out["ask"])
                     return store.get_state(chat_id, run_id)
+                if isinstance(out, dict) and out.get("gate"):
+                    store.save_messages(chat_id, messages)
+                    _ask_asset_gate(chat_id, run_id, call_id, out["gate"])
+                    return store.get_state(chat_id, run_id)
                 if registry.cost(name):
                     s = store.get_state(chat_id, run_id)
                     store.patch_state(chat_id, run_id,
@@ -423,6 +520,11 @@ def resume(chat_id, run_id, answer):
     # the ordinary question branch because it looks exactly like one on the wire.
     if w.get("interview"):
         return _resume_interview(chat_id, run_id, w, messages, answer)
+
+    # An asset-engine gate also goes into a file rather than into the conversation, and also looks
+    # exactly like an ordinary question on the wire.
+    if w.get("asset_gate"):
+        return _resume_asset_gate(chat_id, run_id, w, messages, answer)
 
     if w.get("kind") == "approval":
         tool = w.get("tool")
@@ -524,10 +626,28 @@ def save_to_library(chat_id, run_id, title=None):
     title = (title or h1 or bp.get("h1") or bp.get("title") or state.get("topic") or "Untitled").strip()[:120]
     kw = rs.get("keywords") or {}
     primary = kw.get("primary") or rs.get("primary_keyword") or {}
+    idea_id = (state.get("idea_id") or "").strip()
     item = store.library_save(chat_id, run_id, title, draft, {
-        "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary)})
+        "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary),
+        "idea_id": idea_id})
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
-    return {"item_id": item, "title": title}
+
+    # Tick the idea this run came FROM, and only that. `idea_id` was written into the run's state
+    # by the send that started it, before the model read anything, so this is provenance and not a
+    # judgement: either the run began at an idea or it did not.
+    #
+    # Deliberately NOT matched by meaning. The owner ruled on that 2026-09-09: matching a
+    # hand-written article against open ideas adds a whole class of wrong answers to save a rare
+    # piece of bookkeeping, and a wrong tick silently drops an idea out of the queue where nobody
+    # would ever find it. An article somebody typed himself ticks nothing.
+    if idea_id:
+        try:
+            from .assets import _common as _acm
+            if _acm.mark_built(idea_id, item, run_id):
+                store.emit(chat_id, run_id, "idea_built", idea_id=idea_id, item_id=item)
+        except Exception:   # noqa: BLE001 — a sheet we cannot tick must never lose the article
+            pass
+    return {"item_id": item, "title": title, "idea_id": idea_id}
 
 
 def _save_if_draft_approved(chat_id, run_id, waiting, answer):

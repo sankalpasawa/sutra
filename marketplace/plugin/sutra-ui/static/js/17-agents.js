@@ -518,7 +518,9 @@ function agSideHtml(a){
   const dotCls = !h ? "" : !h.model_provider ? "bad" : !setup.ready ? "warn" : "run";
   const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
   const brand = (a.knowledge && a.knowledge.company && a.knowledge.company.brand) || "";
+  const openIdeas = a.assets && a.assets.built ? (a.assets.counts || {}).open : null;
   const rows = [["knowledge", "Knowledge", AG_ICON.doc, null], ["memory", "Memory", AG_ICON.star, a.memory ? a.memory.active : null],
+                ["assets", "Asset ideas", AG_ICON.spark, openIdeas || null],
                 ["library", "Library", AG_ICON.check, a.library ? a.library.length : null], ["tools", "Tools", AG_ICON.spark, null],
                 ["connections", "Connections", AG_ICON.link, null]];
   const connWarn = h && (!h.dataforseo || !h.voyage);
@@ -859,6 +861,30 @@ function agLibEditHtml(p, ed){
     </div></div>`;
 }
 
+/* One idea, with everything that argues for it. Every field here traces to a step that produced
+   it, so a person can tell an idea backed by fifteen competitor pages from one a model liked. */
+function agIdeaHtml(d){
+  if (!d) return `<div class="zero"><h4>Nothing to show</h4></div>`;
+  const lk = d.linkability || {}, ow = d.ownability || {}, ru = d.reuse || {};
+  const rows = [
+    ["The angle", d.angle], ["Shape", d.format],
+    ["Found by", (d.method || []).map(agMethodName).join(", ")],
+    ["Fit", d.brand_fit + (d.transplant_from ? ` (the shape comes from ${d.transplant_from})` : "")],
+    ["Would anyone cite it", lk.score != null ? `${lk.score}/${lk.of || 4} — ${lk.why || ""}` : ""],
+    ["Can we own it", ow.verdict == null ? "" : `${ow.verdict ? "yes" : "no"} — ${ow.why || ""}`],
+    ["Do we have it already", ru.verdict ? `${ru.verdict}${ru.why ? " — " + ru.why : ""}` : ""],
+    ["How hard to beat", d.beatability], ["Effort", d.effort],
+  ].filter(r => r[1] != null && String(r[1]).trim() && String(r[1]).trim() !== "()");
+  return `<div class="ag-idea">
+    ${rows.map(r => `<div class="ir"><span class="k">${agEsc(r[0])}</span><span class="v">${agEsc(String(r[1]))}</span></div>`).join("")}
+    ${(d.proof || []).length ? `<div class="ir"><span class="k">The proof</span><span class="v">${
+      (d.proof || []).map(x => `<a href="${agEsc(x.url || "")}" target="_blank" rel="noopener">${agEsc(x.what || x.url || "")}</a>${x.domains ? ` — ${agEsc(agNum(x.domains))} sites link to it` : ""}`).join("<br>")}</span></div>` : ""}
+    ${(ru.links || []).length ? `<div class="ir"><span class="k">Pages we already have</span><span class="v">${
+      (ru.links || []).map(u => `<a href="${agEsc(u)}" target="_blank" rel="noopener">${agEsc(agPath(u))}</a>`).join("<br>")}</span></div>` : ""}
+    ${d.built && d.built.library_id ? `<div class="ir"><span class="k">Written</span><span class="v">It is in the Library, saved ${agEsc(agAgo(d.built.at))}</span></div>` : ""}
+  </div>`;
+}
+
 function agPanelHtml(a){
   const p = a.panel; if (!p) return "";
   const title = p.title || AG_VIEW_TITLE[p.view] || p.name;
@@ -881,6 +907,8 @@ function agPanelHtml(a){
   } else if (p.view === "brand_file"){
     body = agBrandFileHtml(p.data, a.fileEdit);
     footer = a.fileEdit ? "" : `<button class="btn" type="button" data-ag="fileedit">Edit</button>${p.back ? `<button class="btn" type="button" data-ag="back">Back to the pack</button>` : ""}`;
+  } else if (p.view === "idea"){
+    body = agIdeaHtml(p.data);
   } else if (p.view === "page"){
     body = agPageHtml(p.data);
   } else if (p.view === "research_brief"){
@@ -997,26 +1025,31 @@ function agMapHtml(a){
     ${a.map ? `<div class="ag-maplegend">${agMapLegend(a.map)}</div>` : `<div class="rd" style="padding:10px">Loading the map…</div>`}</div>`;
 }
 
-/* The writer brief, whole, on the page. One document to read, and one door behind which the
-   files it was assembled from wait for anyone who wants them. */
+/* The writer brief: a short readable window on the page, the whole thing one click away, and one
+   door behind which the files it was assembled from wait for anyone who wants them.
+   The section draws its own heading, because its two controls belong on that heading row. */
 function agBriefHtml(brand, open){
   const b = brand || {};
   const br = b.brief || {};
   const name = b.brand || "the business";
-  if (!br.exists) return `<div class="ag-row"><div class="ri"><div class="rn">Not written yet</div>
+  const head = ctl => `<div class="ag-sechead"><h3 class="sec">The writer brief</h3>${ctl}</div>`;
+  if (!br.exists) return head("") + `<div class="ag-row"><div class="ri"><div class="rn">Not written yet</div>
       <div class="rd">Built during setup from the site's own pages: what they believe, how they sound, the words they use and refuse.</div></div></div>`;
   const built = b.built_from || [];
   const files = built.map(f => `<button class="ag-file ${f.exists ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}" ${f.exists ? "" : "disabled"}>
         <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
         <span class="ft"><span class="fn">${agEsc(f.label || f.name)}</span><span class="fd">${agEsc(f.note || "")}</span></span>
         <span class="fm">${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></button>`).join("");
-  // The door sits ABOVE the brief, not below it. Found 2026-09-09 by opening the real pack: the
+  // Both doors sit ABOVE the brief, not below it. Found 2026-09-09 by opening the real pack: the
   // brief runs 3,090 words, so anything after it is a screen and a half down and nobody finds it.
-  // The brief scrolls in its own box for the same reason: the sections under it stay reachable.
-  return `<div class="ag-briefhead">
-      <p class="ag-sub">This is what the writer reads before writing an article about ${agEsc(name)}.</p>
-      ${built.length ? `<button class="ag-more" type="button" data-ag="detail" data-arg="builtfrom" aria-expanded="${open ? "true" : "false"}">${open ? "Hide how this was built" : "See how this was built"}</button>` : ""}
-    </div>
+  // Open reuses the same brandfile route the built-from files use, so there is one way in, not two.
+  // The window itself is short and scrolls, so the sections under it stay reachable. Shortened
+  // 2026-09-09 after the owner read the real pack: at 62vh the box still owned the whole screen.
+  return head(`<div class="ag-secctl">
+      <button class="btn" type="button" data-ag="brandfile" data-arg="writer-brief.md" data-label="Writer brief" title="Opens the whole brief in the side panel, nothing left out.">Open</button>
+      ${built.length ? `<button class="btn" type="button" data-ag="detail" data-arg="builtfrom" aria-expanded="${open ? "true" : "false"}">${open ? "Hide how this was built" : "See how this was built"}</button>` : ""}
+    </div>`) + `
+    <p class="ag-sub ag-briefsub">This is what the writer reads before writing an article about ${agEsc(name)}. The first part of it is below; Open shows all of it.</p>
     ${open && built.length ? `<div class="ag-files" style="margin:0 0 10px">${files}</div>` : ""}
     <div class="ag-brief">${agMd(br.text || "")}</div>`;
 }
@@ -1112,7 +1145,6 @@ function agKnowledgeHtml(k, a){
       </div></div>`
       : `<div class="ag-row"><div class="ri"><div class="rn">No site catalogue yet</div><div class="rd">In the chat, give the agent the website. It reads every page and what each ranks for, and the catalogue appears here.</div></div></div>`}
 
-    <h3 class="sec">The writer brief</h3>
     ${agBriefHtml(k.brand, !!(a.detailOpen && a.detailOpen.builtfrom))}
 
     ${extras}
@@ -1178,6 +1210,74 @@ function agDrawMap(){
     cv.addEventListener("click", ev => { const { best } = nearest(ev); if (best) agOpenPage(best.u); });
   }
 }
+
+/* What is worth writing about, and what has been written. The one row a person acts on is the
+   next open idea, so it sits at the top as a chip that WRITES THE MESSAGE. The chip carries the
+   idea's id in a data attribute, never in the prose, so nothing downstream has to read an id out
+   of a sentence and decide to look it up. */
+function agAssetsHtml(as, a){
+  if (!as) return `<div class="ag-view"><h2>Asset ideas</h2><p class="lead">Reading…</p></div>`;
+  const c = as.counts || {};
+  const busy = a && a.assetsBusy;
+  if (!as.built) return `<div class="ag-view"><h2>Asset ideas</h2>
+    <p class="lead">What is worth writing about, worked out from evidence rather than a hunch.</p>
+    <div class="ag-row"><div class="ri"><div class="rn">Not built yet</div>
+      <div class="rd">Three ways of finding ideas, kept apart until the end: which competitor pages
+        actually earn links and the shape that earned them, formats proven in other industries, and
+        what your audience argues about in public. Then they are merged, ranked, and checked against
+        pages you already have.<br><br>It takes about half an hour and it stops twice to ask you:
+        once for the competitor list, once for the communities.</div>
+      <div class="ag-editrow" style="margin-top:10px">
+        <button class="btn pri" type="button" data-ag="assetsbuild" ${busy ? "disabled" : ""}>${busy ? "Starting…" : "Work out what to write"}</button>
+        <span class="ag-sub">It runs in the chat, so you can watch it and answer as it goes.</span>
+      </div></div></div></div>`;
+
+  const nx = as.next;
+  const blocked = as.methods_blocked || [];
+  const rows = as.rows || [];
+  const filt = (a && a.assetFilter) || "open";
+  const shown = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
+  return `<div class="ag-view wide"><h2>Asset ideas</h2>
+    <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
+      ${blocked.length ? `${3 - blocked.length} of 3 methods contributed; ${agEsc(blocked.map(agMethodName).join(" and "))} did not.` : "All three methods contributed."}</p>
+
+    ${nx ? `<div class="ag-nextidea">
+      <div class="nl">Next up</div>
+      <div class="nt">${agEsc(nx.title)}</div>
+      <div class="nd">${agEsc(nx.angle || "")}</div>
+      <div class="nm">${agEsc(nx.format || "")}${(nx.method || []).length ? " · found by " + agEsc((nx.method || []).map(agMethodName).join(" and ")) : ""}${nx.linkability && nx.linkability.score ? ` · ${agEsc(nx.linkability.score)}/${agEsc(nx.linkability.of || 4)} on whether anyone would cite it` : ""}</div>
+      <div class="ag-editrow">
+        <button class="btn pri" type="button" data-ag="ideawrite" data-arg="${agEsc(nx.id)}"
+          data-text="${agEsc("Write this asset idea: " + nx.title)}">Write this one</button>
+        <button class="btn" type="button" data-ag="ideadrop" data-arg="${agEsc(nx.id)}">Not this one</button>
+      </div>
+      <div class="nw">This can still be turned down later. The topic gate reads the live search
+        results, and if they argue for a different intent than this idea assumes, it stops rather
+        than write the wrong article.</div>
+    </div>` : `<div class="ag-row"><div class="ri"><div class="rn">Nothing left to write</div>
+        <div class="rd">Every idea on the sheet is written or dropped. Ask for the ideas to be rebuilt when you want more.</div></div></div>`}
+
+    <div class="ag-editrow" style="margin:14px 0 8px">
+      ${[["open", "To write"], ["done", "Written"], ["dropped", "Dropped"], ["all", "All"]].map(f =>
+        `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
+    </div>
+
+    ${shown.length ? `<table class="ag-pages"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th></tr></thead><tbody>${shown.map(r => `<tr>
+      <td><button class="ag-pagelink" type="button" data-ag="ideaopen" data-arg="${agEsc(r.id)}">${agEsc(r.title || r.id)}</button>
+        <div class="h">${agEsc((r.angle || "").slice(0, 110))}</div>
+        ${r.status === "done" ? `<span class="pill p-ok">written</span>` : r.status === "dropped" ? `<span class="pill p-mut">dropped</span>` : ""}</td>
+      <td class="m">${agEsc(r.format || "")}</td>
+      <td class="m">${agEsc((r.method || []).map(agMethodName).join(", "))}</td>
+      <td class="m">${r.linkability && r.linkability.score != null ? agEsc(r.linkability.score) + "/" + agEsc(r.linkability.of || 4) : "—"}</td>
+      <td class="m">${agEsc((r.reuse && r.reuse.verdict) || "—")}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="ag-row"><div class="ri"><div class="rd">Nothing in this list.</div></div></div>`}
+  </div>`;
+}
+
+/* The method names as a person would say them, never as the folder is called. */
+const AG_METHOD_NAMES = {"competitors": "the competitor study", "formats": "other industries",
+                         "trends": "what your audience argues about"};
+function agMethodName(m){ return AG_METHOD_NAMES[m] || m; }
 
 function agMemoryHtml(m, form){
   const rules = (m && m.rules) || [];
@@ -1361,6 +1461,7 @@ function agDraw(force){
     /* a settings view is a new document: start it at the top, not where the chat was */
     if (scroll && a.lastView !== a.view) scroll.scrollTop = 0;
     const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
+      : a.view === "assets" ? agAssetsHtml(a.assets, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
       : a.view === "library" ? agLibraryHtml(a.library)
       : a.view === "tools" ? agToolsHtml(a.tools)
@@ -1563,7 +1664,12 @@ async function agSend(text){
       const answer = w.kind === "approval" ? { approved: false, note: text } : w.kind === "artifact" ? { approved: false, changes: text } : { text };
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/answer`, { answer });
     } else {
-      await agPostApi(`/chats/${encodeURIComponent(a.chatId)}/send`, { text });
+      // The idea's id travels BESIDE the message, never inside it. Cleared immediately: an id
+      // left on the state would silently attach itself to whatever the user typed next, and the
+      // wrong article would tick the wrong idea off the sheet.
+      const idea = a.chipIdea || "";
+      a.chipIdea = null;
+      await agPostApi(`/chats/${encodeURIComponent(a.chatId)}/send`, idea ? { text, idea } : { text });
     }
     await agLoadChat(a.chatId, true);
     a.chats = await agApi("/chats");
@@ -1591,6 +1697,7 @@ async function agAction(act, el){
     case "view": {
       a.view = arg; a.panel = null;
       if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
+      if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
@@ -1647,6 +1754,39 @@ async function agAction(act, el){
       await agAnswer({ approved: true }); break;
     }
     case "changes": a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
+
+    /* The chip that writes the message. It fills the composer with WORDS, and separately parks the
+       idea's ID on the state. The id then travels beside the message on send, never inside it, so
+       nothing downstream has to read an id out of prose. See agSend. */
+    case "ideawrite": {
+      a.draft = el.getAttribute("data-text") || "";
+      a.chipIdea = arg;
+      a.view = "chat"; a.panel = null; a.focusComposer = true;
+      agDraw(true); break;
+    }
+    case "ideadrop": {
+      try { a.assets = await agPostApi(`/assets/${encodeURIComponent(arg)}/status`, { status: "dropped" }); }
+      catch (e) { agToast("Could not drop it: " + (e && e.message || e)); }
+      agDraw(true); break;
+    }
+    case "assetfilter": a.assetFilter = arg; agDraw(true); break;
+    case "ideaopen": {
+      a.panel = { run_id: null, name: "idea:" + arg, view: "idea", data: null, loading: true,
+                  error: null, title: "Asset idea", subtitle: arg };
+      agDraw();
+      try { const d = await agApi(`/assets/${encodeURIComponent(arg)}`); a.panel.data = d;
+            a.panel.title = d.title || arg; a.panel.loading = false; }
+      catch (e) { a.panel.loading = false; a.panel.error = String(e && e.message || e); }
+      agDraw(); break;
+    }
+    case "assetsbuild": {
+      a.assetsBusy = true; agDraw();
+      try {
+        await agSend("Work out what is worth writing about. Build the asset ideas.");
+        a.view = "chat";
+      } catch (e) { agToast("Could not start it: " + (e && e.message || e)); }
+      a.assetsBusy = false; agDraw(true); break;
+    }
     case "bpmove": {
       const secs = a.panel && a.panel.data && a.panel.data.sections; if (!secs) break;
       const i = secs.findIndex((s, k) => (s.id || ("s" + (k + 1))) === arg), j = i + Number(el.getAttribute("data-dir") || 0);

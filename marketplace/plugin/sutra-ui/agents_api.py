@@ -160,6 +160,14 @@ def api_send(chat_id: str, body: dict = Body(...)):
 
     run_id = store.new_run(chat_id, text[:60])
     store.patch_state(chat_id, run_id, request=text)
+    # The chip on the Asset ideas tab carries the idea's id as DATA, not as words in the message.
+    # It is written into the run's state here, before loop.start, so the model never has to read
+    # an id out of prose and decide to look it up. That is a step that can quietly not happen, and
+    # nobody would ever know it had been skipped. Research reads it to get the angle; the Library
+    # save reads it to tick the idea. The model touches it at no point.
+    idea = (body.get("idea") or "").strip()
+    if idea and re.match(r"^a\d{1,6}$", idea):
+        store.patch_state(chat_id, run_id, idea_id=idea)
     if len(runs) == 0:
         store.set_chat_title(chat_id, text[:60])
     _sync_claude_bin()
@@ -762,6 +770,69 @@ def api_library_delete(item_id: str):
     if not _ok_id(item_id):
         return _bad("bad id")
     return {"ok": store.library_delete(item_id)}
+
+
+# ---- asset ideas ---------------------------------------------------------------------------------
+
+def _assets_payload():
+    from seo_agent.assets import _common as acm
+    from seo_agent.tools import build_assets
+    rows = acm.ideas()
+    nxt = acm.next_open(rows)
+    ran = sorted({m for r in rows for m in (r.get("method") or [])})
+    return {
+        "built": bool(rows),
+        "total": len(rows),
+        "counts": acm.counts(rows),
+        "methods_run": ran,
+        "methods_blocked": [m for m in build_assets.FINDERS if m not in ran],
+        "next": ({"id": nxt["id"], "title": nxt.get("title", ""), "angle": nxt.get("angle", ""),
+                  "format": nxt.get("format", ""), "method": nxt.get("method") or [],
+                  "linkability": nxt.get("linkability") or {}} if nxt else None),
+        "rows": [{k: r.get(k) for k in
+                  ("id", "title", "angle", "format", "method", "brand_fit", "linkability",
+                   "beatability", "effort", "rank", "status", "reuse", "built")} for r in rows],
+    }
+
+
+@router.get("/assets")
+def api_assets():
+    return _assets_payload()
+
+
+@router.get("/assets/{idea_id}")
+def api_asset(idea_id: str):
+    from seo_agent.assets import _common as acm
+    if not re.match(r"^a\d{1,6}$", idea_id or ""):
+        return _bad("bad id")
+    row = acm.by_id(idea_id)
+    return row or _bad("not found", 404)
+
+
+@router.post("/assets/{idea_id}/status")
+def api_asset_status(idea_id: str, body: dict = Body(...)):
+    """Drop an idea, or put a dropped one back. The only status a person sets by hand.
+
+    `done` is deliberately NOT settable here. An idea is ticked from provenance, when a run that
+    started from it reaches the Library, and nowhere else. Letting the screen set it would put a
+    second source of truth next to the first, and they would disagree the first time somebody
+    clicked the wrong row.
+    """
+    from seo_agent.assets import _common as acm
+    if not re.match(r"^a\d{1,6}$", idea_id or ""):
+        return _bad("bad id")
+    want = (body.get("status") or "").strip()
+    if want not in ("open", "dropped"):
+        return _bad("An idea can be set to open or dropped. Done is set by writing the article.")
+    rows = acm.ideas()
+    row = acm.by_id(idea_id, rows)
+    if not row:
+        return _bad("not found", 404)
+    if row.get("status") == "done":
+        return _bad("That one is written. It is in the Library.")
+    row["status"] = want
+    acm.save_ideas(rows)
+    return _assets_payload()
 
 
 # ---- health ------------------------------------------------------------------------------------

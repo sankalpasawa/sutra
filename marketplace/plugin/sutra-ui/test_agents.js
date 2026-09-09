@@ -537,7 +537,11 @@ test("the writer brief is on the page in full, with the files it was built from 
   assert.ok(/data-ag="detail" data-arg="builtfrom"/.test(html) && /See how this was built/.test(html), "and the door");
   assert.ok(/aria-expanded="false"/.test(html.slice(html.indexOf("builtfrom") - 120, html.indexOf("builtfrom") + 60)));
   const shut = A.agBriefHtml(KBRAND, false);
-  assert.ok(!/data-ag="brandfile"/.test(shut), "shut, the brief shows no files at all");
+  /* Was "no brandfile button at all" until 2026-09-09, when Open joined the heading row and became
+     a brandfile button too. What must stay true is that the door is shut: none of the files the
+     brief was built from are on screen. */
+  assert.ok(!/brand-voice\.md|writer-brief-rulings\.md/.test(shut), "shut, the brief shows none of the files it was built from");
+  assert.ok(!/ag-file/.test(shut), "and no file list either");
 
   a.detailOpen = { builtfrom: true };
   html = A.agKnowledgeHtml(kdoc(), a);
@@ -546,6 +550,31 @@ test("the writer brief is on the page in full, with the files it was built from 
   assert.ok(!/company\.json|page-shortlist|type-roles|stats\.md|stories\.md/.test(html),
             "and ONLY the files the brief was built from");
   a.detailOpen = {};
+});
+
+test("the brief box is short, and Open puts the whole file in the side panel", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  const ctl = html.slice(html.indexOf('<h3 class="sec">The writer brief</h3>'));
+  const row = ctl.slice(ctl.indexOf('<div class="ag-secctl">'), ctl.indexOf('class="ag-brief"'));
+  assert.ok(/data-ag="brandfile" data-arg="writer-brief\.md"/.test(row), "Open opens writer-brief.md by the route the other files use");
+  assert.ok(/>Open</.test(row), "and it is called Open");
+  assert.ok(/data-ag="detail" data-arg="builtfrom"/.test(row), "it sits beside See how this was built, on one control row");
+  assert.ok(row.indexOf('data-arg="writer-brief.md"') < row.indexOf('data-arg="builtfrom"'), "Open comes first");
+  /* The control belongs to the heading row, not inside the box you scroll. Before 2026-09-09
+     the only door was below the sub line; a control inside the brief scrolls away with it. */
+  const box = html.slice(html.indexOf('class="ag-brief"'));
+  assert.ok(!/data-arg="writer-brief\.md"/.test(box), "Open is not inside the brief box");
+  assert.ok(/<div class="ag-sechead"><h3 class="sec">The writer brief<\/h3>/.test(html),
+            "the brief uses the same heading idiom as the site catalogue");
+  assert.ok(!/ag-briefhead/.test(html), "and the old one-off heading row is gone");
+});
+
+test("the brief that is not written yet still gets its heading, and no Open", () => {
+  const none = A.agBriefHtml({ brand: "Testlify", brief: { exists: false } }, false);
+  assert.ok(/<h3 class="sec">The writer brief<\/h3>/.test(none), "the section is still named");
+  assert.ok(!/data-ag="brandfile"/.test(none), "nothing to open");
+  assert.ok(/Not written yet/.test(none));
 });
 
 test("who writes is one file, and says it is not in use yet", () => {
@@ -777,6 +806,17 @@ test("every new class the Knowledge tab uses is actually styled", () => {
     assert.ok(CSS.indexOf("." + c) !== -1, "." + c + " has no rule in agents.css");
   });
   assert.ok(!/#[0-9a-fA-F]{3,6}/.test(CSS.slice(CSS.indexOf(".ag-sechead"))), "no hardcoded colour after the new block");
+  assert.ok(CSS.indexOf(".ag-briefsub") !== -1, ".ag-briefsub has no rule in agents.css");
+});
+test("the brief box is capped short enough to leave room for what is under it", () => {
+  /* 62vh until 2026-09-09: the owner read the real 3,090-word pack and the box still owned the
+     screen. Short window on the page, whole file behind Open. */
+  const flat = CSS.replace(/\s+/g, "");
+  const m = flat.match(/\.ag-brief\{[^}]*max-height:(\d+)vh/);
+  assert.ok(m, ".ag-brief has no max-height");
+  assert.ok(Number(m[1]) <= 34, "the brief box is still tall: " + m[1] + "vh");
+  assert.ok(/overflow-y:auto/.test(m.input.slice(flat.indexOf(".ag-brief{"), flat.indexOf(".ag-brief{") + 400)),
+            "and it keeps its own scroll");
 });
 
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
