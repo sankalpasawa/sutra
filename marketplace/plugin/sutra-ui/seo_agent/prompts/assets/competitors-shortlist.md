@@ -1,4 +1,4 @@
-You are building the competitor shortlist for **{{BRAND}}** — {{ONELINER}}
+You are building the competitor shortlist for **{{BRAND}}**. {{ONELINER}}
 
 What this company is about: {{NICHE}}
 
@@ -11,9 +11,9 @@ similar words. Throwing those out is the first half of the job.
 
 # The two groups
 
-- **DIRECT** — sells the same kind of product to the same buyer. If a buyer could realistically pick
+- **DIRECT**: sells the same kind of product to the same buyer. If a buyer could realistically pick
   them INSTEAD of {{BRAND}}, they are direct. Aim for about two thirds of the list.
-- **ADJACENT** — does not sell the product but owns the audience: the authority sites, industry
+- **ADJACENT**: does not sell the product but owns the audience: the authority sites, industry
   bodies and content leaders this buyer already reads and links to. They matter because their pages
   show which SHAPES of page earn links in this world. Aim for about one third.
 
@@ -79,7 +79,7 @@ JSON only.
 {"competitors": [
    {"domain": "example.com", "group": "DIRECT",
     "why": "one short line: what they sell, or whose audience they own"}],
- "excluded_notable": ["domain — why it was thrown out (only the ones that ranked high and might surprise a reader)"],
+ "excluded_notable": ["domain: why it was thrown out (only the ones that ranked high and might surprise a reader)"],
  "note": "one line on anything worth knowing, for example a competitor you expected and could not find"}
 ```
 

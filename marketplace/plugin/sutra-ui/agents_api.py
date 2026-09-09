@@ -776,16 +776,25 @@ def api_library_delete(item_id: str):
 
 def _assets_payload():
     from seo_agent.assets import _common as acm
-    from seo_agent.tools import build_assets
     rows = acm.ideas()
     nxt = acm.next_open(rows)
-    ran = sorted({m for r in rows for m in (r.get("method") or [])})
+    # Which methods contributed comes from the merge's own record, not from counting the `method`
+    # field on the rows. Counting rows cannot tell a method that RAN AND FOUND NOTHING from one
+    # that never ran at all, and those are different facts a person needs: one means the method is
+    # working and this site has nothing there, the other means it is blocked. The merge writes all
+    # three states, with a ready-made sentence. (Raised by the merge builder, 2026-09-09.)
+    m = acm.read("_work/merge/methods.json") or {}
+    states = m.get("methods") or {}
+    ran = sorted([k for k, v in states.items() if v == "ran"]) or \
+        sorted({x for r in rows for x in (r.get("method") or [])})
     return {
         "built": bool(rows),
         "total": len(rows),
         "counts": acm.counts(rows),
         "methods_run": ran,
-        "methods_blocked": [m for m in build_assets.FINDERS if m not in ran],
+        "methods": states,
+        "methods_line": m.get("line") or "",
+        "methods_blocked": sorted([k for k, v in states.items() if v != "ran"]),
         "next": ({"id": nxt["id"], "title": nxt.get("title", ""), "angle": nxt.get("angle", ""),
                   "format": nxt.get("format", ""), "method": nxt.get("method") or [],
                   "linkability": nxt.get("linkability") or {}} if nxt else None),

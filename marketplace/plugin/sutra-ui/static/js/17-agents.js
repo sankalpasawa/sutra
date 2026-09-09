@@ -1239,7 +1239,9 @@ function agAssetsHtml(as, a){
   const shown = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
   return `<div class="ag-view wide"><h2>Asset ideas</h2>
     <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
-      ${blocked.length ? `${3 - blocked.length} of 3 methods contributed; ${agEsc(blocked.map(agMethodName).join(" and "))} did not.` : "All three methods contributed."}</p>
+      ${as.methods_line ? agEsc(as.methods_line)
+        : blocked.length ? `${3 - blocked.length} of 3 methods contributed; ${agEsc(blocked.map(agMethodName).join(" and "))} did not.`
+        : "All three methods contributed."}</p>
 
     ${nx ? `<div class="ag-nextidea">
       <div class="nl">Next up</div>

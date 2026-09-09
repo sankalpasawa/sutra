@@ -21,7 +21,7 @@ draws the same line between "empty" and "unknown" for the same reason.
 
 Reads:  assets/competitors.json · assets/trends.json · assets/formats.json
 Writes: assets/ideas.json
-        assets/_work/merge/stacked.json    every pool row re-identified, in one list
+        assets/_work/merge/stacked.json    every pool row in one list, before the de-duplication
         assets/_work/merge/methods.json    which methods contributed, for the "2 of 3 ran" line
         assets/_work/merge/dedup.json      every cluster the model saw and what it decided
 """
@@ -37,16 +37,18 @@ from . import _common as cm
 OUTPUT = "ideas.json"
 WORK = "_work/merge/"
 
-# The three pools, in the order they are stacked. The order is the original's (competitor study
-# first, then trends, then the transplanted formats) and it fixes the id numbering, so a re-run
-# over the same pools mints the same ids.
+# The three pools, in the order they are stacked, each as (file, id band key, method name).
 #
 # The method name is taken from the FILE, never from the row. Which pool a row was read out of IS
 # the fact of which method found it; a row that labelled itself differently would be a method
-# mislabelling its own output. One value, decided in one place.
-POOLS = (("competitors.json", "competitor-study"),
-         ("trends.json", "study-trends"),
-         ("formats.json", "model-other-niches"))
+# mislabelling its own output. One value, decided in one place. The names are the three builders'
+# own METHOD constants, so the sheet says what each builder says.
+#
+# The band key is `_common.ID_BASE`'s, which is the file stem and NOT the method name. Only used
+# when the ids arrive broken; see `_reidentify`.
+POOLS = (("competitors.json", "competitors", "competitors"),
+         ("trends.json", "trends", "study-trends"),
+         ("formats.json", "formats", "model-other-niches"))
 
 # --- dedup knobs, the original's names and numbers (4-merge/scripts/config.py) -------------------
 DEDUP_THRESHOLD = 0.78      # cosine that NOMINATES a pair as a possible repeat. Looser than a
@@ -59,7 +61,8 @@ DEDUP_MAX_CLUSTER = 10      # a cluster is cut into slices of this size before t
 # Evidence fields pooled on a merge: the survivor takes the other row's value ONLY where its own is
 # blank. Filling a blank is not re-deciding; overwriting a decided value would be, and the row that
 # owns each of these is the method that measured it.
-POOL_BLANKS = ("format", "angle", "brand_fit", "transplant_from", "beatability", "effort")
+POOL_BLANKS = ("format", "angle", "brand_fit", "transplant_from", "beatability", "effort",
+               "what_it_would_be")
 
 FIT_ORDER = {"CORE": 0, "TRANSPLANT": 1, "ADJACENT": 2}
 
@@ -70,12 +73,13 @@ def stack(say):
     """The three pool files as one list of well-shaped rows, plus the per-method record.
 
     Every row is rebuilt on top of `blank_idea`, so a method that left a field out still produces a
-    full row and nothing downstream has to guard for a missing key. Ids are re-minted across the
-    whole stack: each method numbers its own pool from a0001, so without this every pool would
-    collide with the others on its first row.
+    full row and nothing downstream has to guard for a missing key. Each row KEEPS the id its own
+    method gave it: `_common.new_id` bands the three methods apart (competitors 1001+, formats
+    2001+, trends 3001+) so an id is unique across pools by construction and its band says where it
+    came from. Re-numbering here would throw that away.
     """
     rows, methods = [], []
-    for filename, method in POOLS:
+    for filename, band, method in POOLS:
         pool = cm.read(filename) if cm.exists(filename) else None
         if pool is None:
             state, found = "missing", []
@@ -85,21 +89,52 @@ def stack(say):
             state = "ran" if found else "empty"
         methods.append({"method": method, "file": filename, "state": state, "ideas": len(found)})
         for src in found:
-            row = cm.blank_idea(cm.new_id(len(rows) + 1), method)
+            row = cm.blank_idea(src.get("id") or "", method)
             for k, v in src.items():
                 if k in row and k not in ("id", "method"):
                     row[k] = v
             row["_from"] = src.get("id") or ""      # the pool's own id, kept so a row is traceable
             row["_pool"] = filename
+            row["_band"] = band
             rows.append(row)
 
+    reid = _reidentify(rows, say)
     ran = [m for m in methods if m["state"] == "ran"]
-    record = {"of": len(POOLS), "ran": len(ran), "methods": methods,
+    record = {"of": len(POOLS), "ran": len(ran), "methods": methods, "reidentified": reid,
               "line": _methods_line(methods), "at": store.now()}
     cm.save(WORK + "methods.json", record)
     cm.save(WORK + "stacked.json", rows)
     say("Stacked the idea pools", "%s from %s" % (sh.plural(len(rows), "idea"), record["line"]))
     return rows, record
+
+
+def _reidentify(rows, say):
+    """Guarantee the stack's ids are unique, and say so when they were not.
+
+    Everything after this point looks a row up by its id, so two rows sharing one would quietly
+    fold two different ideas into one. `_common.new_id(n, method)` bands the methods apart to stop
+    exactly that, but the band only applies when the caller passes it, and the caller has to pass
+    the band KEY ("competitors", "trends", "formats") rather than its own METHOD name: pass
+    "model-other-niches" and you silently get no band at all. On 2026-09-09 the formats builder was
+    still calling `new_id(n)` with nothing, so its ids sat outside every band. Rather than trust an
+    invariant three separate files have to remember, check it here.
+
+    When they collide, every row is re-banded off its pool so the whole sheet stays uniform and an
+    id still says which method found it. It is recorded here and raised for review, because the
+    real fix is in the three builders and this is only a way to keep the sheet honest until then.
+    """
+    ids = [r["id"] for r in rows]
+    if len(set(ids)) == len(ids) and all(ids):
+        return None
+    per_band = {}
+    for r in rows:
+        per_band[r["_band"]] = per_band.get(r["_band"], 0) + 1
+        r["id"] = cm.new_id(per_band[r["_band"]], r["_band"])
+    clashes = sorted({i for i in ids if ids.count(i) > 1})
+    say("Re-numbered the ideas",
+        "%s arrived on more than one row, so the ids were rebuilt from each method's own band"
+        % sh.plural(len(clashes), "id"))
+    return {"clashes": clashes[:20], "n": len(clashes)}
 
 
 def _methods_line(methods):
@@ -194,7 +229,7 @@ def pool(survivor, dead):
     for m in dead.get("method") or []:
         if m not in seen:
             seen.append(m)
-    survivor["method"] = [m for _f, m in POOLS if m in seen]        # canonical order, not merge order
+    survivor["method"] = [m for _f, _b, m in POOLS if m in seen]        # canonical order, not merge order
 
     urls = {(p.get("url") or "").rstrip("/") for p in survivor.get("proof") or [] if isinstance(p, dict)}
     for p in dead.get("proof") or []:
@@ -207,6 +242,18 @@ def pool(survivor, dead):
             survivor[field] = dead[field]
     if survivor.get("beatability") is None and dead.get("beatability") is not None:
         survivor["beatability"] = dead["beatability"]
+
+    # If either side says this asset needs a real build, the merged row says so. The original added
+    # the flag on 2026-07-22 after its engine turned 1,143 of 2,213 ideas into calculators, and its
+    # rule is that such an idea is flagged and never hidden. Losing the flag here is how the write
+    # phase ends up trying to write a calculator as prose.
+    #
+    # This is not the OR-ratchet the judgment rules warn about. That is one verdict on ONE row
+    # accumulated across several passes, where OR can only ever climb. This is two rows describing
+    # ONE asset being folded together, and the flag is a property of the asset: if the asset needs
+    # a build, it needs a build whichever method noticed.
+    if dead.get("tool_escalation"):
+        survivor["tool_escalation"] = True
     for judged in ("ownability", "linkability"):
         mine, theirs = survivor.get(judged) or {}, dead.get(judged) or {}
         if mine.get("verdict") is None and theirs.get("verdict") is not None:
@@ -220,6 +267,9 @@ def dedup(rows, brand, say):
     cls = clusters(rows, say)
     by_id = {r["id"]: r for r in rows}
     if not cls:
+        # Still write the report. "The file is not there" and "the file says nothing was merged"
+        # read the same to a person looking for it, and only one of them is true.
+        cm.save(WORK + "dedup.json", {"same": 0, "combined": 0, "kept": len(rows), "clusters": []})
         return rows, []
 
     judged = bcm.parallel(lambda cl: adjudicate([rows[i] for i in cl], brand), cls,
@@ -268,8 +318,12 @@ def rank(rows):
     """Best first, and every row carries its position as `rank`.
 
     The order, in keys:
-      1. an idea this company cannot credibly own goes last, whatever else it scores. It is not
-         dropped: the row and its reason stay on the sheet where a person can argue with them.
+      1. an idea a method judged this company CANNOT credibly own goes last, whatever else it
+         scores. It is not dropped: the row and its reason stay on the sheet where a person can
+         argue with them, and dropping is the finding method's call, not the merge's. An idea
+         nobody judged is a different thing and is NOT sent to the bottom here: it ranks normally
+         and is counted into a review note instead, because `judged: False` means the question was
+         never put, not that the answer was no.
       2. brand fit, CORE before TRANSPLANT before ADJACENT. The original's first key.
       3. the Linkability score. This is where Sutra's ranking parts company with the original,
          which summed follow-domains and Reddit post counts to keep a strong trends idea from
@@ -329,9 +383,23 @@ def run(co, say, redo=False):
 
     ordered = rank(kept)
     for r in ordered:
-        for private in ("_gone", "_from", "_pool"):
+        for private in ("_gone", "_from", "_pool", "_band"):
             r.pop(private, None)     # the trace stays in _work/merge/stacked.json
     cm.save_ideas(ordered)
+
+    if methods.get("reidentified"):
+        notes.append("ideas.json: %d ids arrived on more than one row, so every idea was "
+                     "re-numbered from its method's own band. The real fix is that the three "
+                     "builders pass their method to _common.new_id; until they do, an id here "
+                     "will not match the one in that method's own working files."
+                     % methods["reidentified"]["n"])
+    # An unscored idea sits at the bottom of its brand-fit tier, which is close enough to invisible
+    # that it has to be said out loud. It is not a low score: the question was never put.
+    unscored = [r["id"] for r in ordered if (r.get("linkability") or {}).get("score") is None]
+    if unscored:
+        notes.append("ideas.json: %s never got a Linkability score, so they sit at the bottom of "
+                     "their tier without having been judged. Redo the method that found them."
+                     % sh.plural(len(unscored), "idea"))
 
     multi = sum(1 for r in ordered if len(r.get("method") or []) > 1)
     say("Wrote the idea sheet",

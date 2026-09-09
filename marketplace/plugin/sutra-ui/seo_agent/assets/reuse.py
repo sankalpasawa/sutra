@@ -5,12 +5,14 @@ the idea sheet. That workflow was ported into this app once already, as the own-
 research flow, so almost nothing here is new code:
 
     stage 1, the content index   -> tools/_index.py, the two-vector page index. Sutra builds it
-                                    once per company over the real catalogue (12,318 pages on the
-                                    live install) and the internal-link pass already reads it.
-                                    This builder READS it and never builds a second one. When it
-                                    is not there the builder says so and stops; building it is
-                                    `build_page_index`'s job and costs a Voyage pass over the
-                                    whole site.
+                                    once per company and the internal-link pass already reads it.
+                                    On the live install it holds 11,703 pages and 33,039 passages,
+                                    the part of the 12,318-page catalogue whose text the crawl
+                                    actually saved; a page with no body cannot be a reuse
+                                    candidate and is not indexed. This builder READS that index and
+                                    never builds a second one. When it is not there the builder
+                                    says so and stops: building it is `build_page_index`'s job and
+                                    costs a Voyage pass over the whole site.
     stage 2, retrieval           -> tools/voyage.py + _index.score, with research/_common's own
                                     knobs (ALPHA, N_RETRIEVE) and its query rule (`query_text`).
     stage 3, the judgment        -> research/ownpage.reuse_judge and prompts/research/reuse-judge.md,
@@ -115,13 +117,17 @@ def judge(row, pages, co):
     lower case. `_common.REUSE_VERDICTS` is the sheet's list and it is what the row is checked
     against, so a wording that is not one of the four never reaches the file.
     """
+    shown = pages[:rc.TOPK]        # the read window: the judge sees these and cites only these
     out = ownpage.reuse_judge(row.get("title") or "", row.get("angle") or "",
-                              pages[:rc.TOPK], co, fmt=row.get("format") or "content asset")
+                              shown, co, fmt=row.get("format") or "content asset")
     verdict = (out.get("verdict") or "").strip().lower()
     if verdict not in cm.REUSE_VERDICTS:
         verdict = "brand new"
-    links = [u for u in out.get("chosen_links") or []
-             if u in {p["url"] for p in pages}]      # a link the judge invented is not a link
+    # `reuse_judge` already drops a URL that was not among the pages it was handed. Checked again
+    # here against the same set, because this is the rule the sheet depends on and it should be
+    # readable in the file that writes the sheet, not only in the one that builds the prompt.
+    allowed = {p["url"] for p in shown}
+    links = [u for u in out.get("chosen_links") or [] if u in allowed]
     return {"verdict": verdict, "links": links, "why": (out.get("why") or "").strip()}
 
 

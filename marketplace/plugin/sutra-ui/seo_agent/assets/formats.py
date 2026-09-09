@@ -47,7 +47,11 @@ METHOD = "model-other-niches"
 # brand_cards reserves 8001+. The three pools are built by three separate builders that never see
 # each other's files, so without bands all three would start at a0001 and the merge would be
 # handed three different ideas all called a0001.
-ID_BASE = 2001
+# The band itself lives in _common.ID_BASE, keyed by both this module's name and the workflow's,
+# so there is one table and not four. Kept here only as the offset into THIS method's own pool,
+# which starts at 1. (It used to be 2001 here as well, and adding the two together put the ids in
+# a band nobody owned: a4001. Found by running it, 2026-09-09.)
+ID_BASE = 1
 
 EXTRA_FORMATS = 5           # what source 2 (the model's own knowledge) is asked to add. The original
                             # aims for 3-5 on top of the 19 proven rows.
@@ -319,7 +323,9 @@ def _idea_row(n, a):
     `domains` stays None because method 2 counts no linking domains; a 0 there would read as a
     measured zero, and this method has measured nothing.
     """
-    row = cm.blank_idea(cm.new_id(n), METHOD)
+    # METHOD, not nothing: an id with no band collides with the other two pools at the merge.
+    # _common accepts the workflow's name and the module's name for the same band. (2026-09-09)
+    row = cm.blank_idea(cm.new_id(n, METHOD), METHOD)
     row["title"] = a["asset"]
     row["angle"] = a["distinct_angle"]
     row["format"] = a["format"]

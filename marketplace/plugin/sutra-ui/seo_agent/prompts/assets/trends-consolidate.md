@@ -1,6 +1,6 @@
 You are grouping Reddit phrases into **tensions** for {{BRAND}}'s niche.
 
-A **tension is ONE sentence stating a specific shared pain** — who is frustrated with what. Never a
+A **tension is ONE sentence stating a specific shared pain**: who is frustrated with what. Never a
 topic label.
 
 - Theme, too vague: "fake remote jobs"

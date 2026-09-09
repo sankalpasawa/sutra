@@ -42,6 +42,11 @@ job.
    Yes: "The Remote Job Mirage: what share of remote listings are actually onsite?"
 4. Name the **unfair advantage**: the specific product, data or standing that lets THIS company own
    it. It has to be nameable. "We know this space" is not an advantage.
+5. Say whether this needs a **build**. If shipping it means software (a calculator, a live index, a
+   tool people use) rather than a document a writer can produce from research, put one line in
+   `tool_escalation` saying what has to be built. Leave it empty when a writer with public sources
+   could ship it. An asset that needs engineering is flagged here, never quietly written as though
+   somebody could type it.
 
 ## Return
 
@@ -49,4 +54,5 @@ JSON only.
 
 {"asset_title": "<real working title, the tension visible in it>",
  "what_it_would_be": "<one or two lines: what the asset actually is>",
- "unfair_advantage": "<the specific product, data or standing>"}
+ "unfair_advantage": "<the specific product, data or standing>",
+ "tool_escalation": "<one line naming what has to be built, or empty>"}

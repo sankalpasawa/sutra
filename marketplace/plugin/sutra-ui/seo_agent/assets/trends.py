@@ -48,7 +48,10 @@ from ..tools import _shared as sh
 from . import _common as cm
 
 OUTPUT = "trends.json"
-METHOD = "study-trends"
+METHOD = "study-trends"     # what the row says it came from, in the plan's own vocabulary
+ID_BAND = "trends"          # ...and the band `_common.ID_BASE` reserves for it, so this method's
+#                             ids start at a3001 and can never collide with the other two finders,
+#                             which run apart and never see this file
 WORK = "_work/trends/"
 APPROVED = WORK + "approved-subreddits.json"
 
@@ -86,6 +89,9 @@ STRETCH = ("doesn't work", "does not work", "is broken", "are broken", "is a mes
            "are outdated", "has problems with", "have problems with", "struggles with", "is bad at")
 
 KEPT = ("KEEP", "MAYBE")
+# A tension the model never returned a row for. It is NOT a drop: a keep-or-drop nobody made must
+# not be made by a default. It is held, said out loud, and never turned into an idea.
+UNJUDGED = "UNJUDGED"
 
 
 def _w(name):
@@ -142,7 +148,7 @@ def _probe(rows, say):
     """Fill in the activity for candidates that carry none, using builder 11's own probe.
 
     Vetted by ACTIVITY, never by subscriber count, and a page Reddit would not serve is `unknown`
-    rather than `empty` — the same rule, from the same function, so the two builders can never
+    rather than `empty`. It is the same rule, from the same function, so the two builders can never
     disagree about what a dead community looks like.
     """
     unknown = 0
@@ -576,7 +582,7 @@ def _remine(co, misc_ids, phrases, posts, tensions, say):
     """Re-mine misc. Required, not optional.
 
     misc is only for a post that shares no pain with any other post. It is not a quiet bin for posts
-    that are coherent but off-brand — brand fit is stage 3's decision and it is made in writing. So
+    that are coherent but off-brand: brand fit is stage 3's decision and it is made in writing. So
     every group of three or more posts sharing an issue is promoted to a real tension here, and the
     count is written down either way.
     """
@@ -738,7 +744,7 @@ def records(co, tensions, amap, posts, say, redo=False):
             else:
                 subq.append(str(q).strip())
         rows.append({
-            "tension_id": tid, "idea_id": cm.new_id(i), "tension": t["tension"],
+            "tension_id": tid, "idea_id": cm.new_id(i, ID_BAND), "tension": t["tension"],
             "shared_pain": t.get("shared_pain", ""), "from_misc": bool(t.get("from_misc")),
             "phrases": t["phrases"], "core_pain": str(r.get("core_pain") or "").strip(),
             "audience": aud, "emotion": emo,
@@ -853,9 +859,11 @@ def filter_tensions(rows, say):
     So this method does not own a filter prompt, and it does not invent a third test.
 
     The keep-or-drop line is drawn HERE, in code, once per tension:
-      KEEP   the linkability score cleared the floor AND the company can own it, CORE or TRANSPLANT
-      MAYBE  it cleared the floor but the fit is only ADJACENT
-      DROP   anything else
+      KEEP      the linkability score cleared the floor AND the company can own it, CORE or TRANSPLANT
+      MAYBE     it cleared the floor but the fit is only ADJACENT
+      UNJUDGED  a test came back with no row for this tension. Held, not dropped: an unjudged idea
+                is not a scored zero, and a decision nobody made must not be made by a default.
+      DROP      anything else
     """
     if not rows:
         return rows
@@ -878,11 +886,16 @@ def filter_tensions(rows, say):
         lk = link.get(r["idea_id"]) or {}
         fit = str(o.get("brand_fit") or "").strip().upper()
         r["ownability"] = {"verdict": o.get("verdict"), "why": o.get("why") or ""}
-        r["linkability"] = {"score": lk.get("score") or 0, "of": cm.LINKABILITY_OF,
+        # The score is copied as it comes back, None included. Turning an unjudged None into a 0
+        # here would make "nobody scored this" look exactly like "this scored nothing", and the
+        # whole point of the `judged` field is that those two are not the same answer.
+        r["linkability"] = {"score": lk.get("score"), "of": cm.LINKABILITY_OF,
                             "verdict": lk.get("verdict"), "why": lk.get("why") or ""}
         r["brand_fit"] = fit
         r["transplant_from"] = o.get("transplant_from") or ""
-        if lk.get("verdict") and o.get("verdict") and fit in ("CORE", "TRANSPLANT"):
+        if not o.get("judged") or not lk.get("judged"):
+            r["verdict"] = UNJUDGED
+        elif lk.get("verdict") and o.get("verdict") and fit in ("CORE", "TRANSPLANT"):
             r["verdict"] = "KEEP"
         elif lk.get("verdict") and fit == "ADJACENT":
             r["verdict"] = "MAYBE"
@@ -891,8 +904,9 @@ def filter_tensions(rows, say):
         r["why"] = "; ".join(x for x in (lk.get("why"), o.get("why")) if x)
         kept += 1 if r["verdict"] in KEPT else 0
     cm.save(_w("tensions.json"), rows)
-    say("Filtered the tensions", "%d of %d survive; the rest are attention, not links"
-        % (kept, len(rows)))
+    unjudged = sum(1 for r in rows if r["verdict"] == UNJUDGED)
+    say("Filtered the tensions", "%d of %d survive; the rest are attention, not links%s"
+        % (kept, len(rows), "; %d came back unjudged and are held" % unjudged if unjudged else ""))
     return rows
 
 
@@ -930,7 +944,15 @@ def ideas(co, rows, say):
             continue
         row = cm.blank_idea(r["idea_id"], METHOD)
         row["title"] = str(got.get("asset_title") or "").strip()
-        row["angle"] = str(got.get("what_it_would_be") or "").strip()
+        # The angle IS the tension. That is this method's whole edge, and it is the one field the
+        # merge can compare against an idea another method found for the same reason.
+        row["angle"] = r["tension"]
+        row["what_it_would_be"] = str(got.get("what_it_would_be") or "").strip()
+        # Flagged, never hidden. The original added this after its engine turned 1,143 of 2,213
+        # ideas into calculators nobody could build: an asset that needs software rather than a
+        # document says so on the row, and the reason travels with it.
+        build = str(got.get("tool_escalation") or "").strip()
+        row["tool_escalation"] = bool(build) and build.lower() not in ("no", "none", "false")
         row["brand_fit"] = r["brand_fit"]
         row["transplant_from"] = r["transplant_from"]
         row["ownability"] = dict(r["ownability"])
@@ -941,6 +963,8 @@ def ideas(co, rows, say):
                 ", ".join("r/" + s for s in r["subreddits"]) or "one community", r["tension"])},
             {"url": "", "what": "Unfair advantage: %s" % (str(got.get("unfair_advantage") or "").strip()
                                                           or "(not named)")}]
+        if row["tool_escalation"]:
+            row["proof"].append({"url": "", "what": "Needs a build, not a document: %s" % build})
         if row["title"]:
             out.append(row)
     say("Turned the tensions into ideas", "%d ideas, each backed by real posts" % len(out))
@@ -1072,6 +1096,13 @@ def run(co, say, redo=False):
         return {"files": [], "needs_review": notes}
 
     rows = filter_tensions(rows, say)
+    held = [r["tension_id"] for r in rows if r["verdict"] == UNJUDGED]
+    if held:
+        notes.append("trends: %s came back unjudged from one of the two tests, so %s held rather "
+                     "than dropped and no idea was built from %s. They are in "
+                     "assets/_work/trends/tensions.json."
+                     % (", ".join(held), "they are" if len(held) > 1 else "it is",
+                        "them" if len(held) > 1 else "it"))
     pool = ideas(co, rows, say)
     passed, fails = verify(co, rows, amap, len(pool), posts)
     if not passed:

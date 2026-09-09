@@ -181,7 +181,14 @@ def _rows(out, ideas, what):
 # One band per finder. The three run apart and never see each other's files, so all three would
 # otherwise start at a0001 and the merge would receive three different ideas wearing one id. Same
 # device brand_cards uses when it reserves 8001+. Raised by the formats builder, 2026-09-09.
-ID_BASE = {"competitors": 1001, "formats": 2001, "trends": 3001}
+# BOTH vocabularies map to the same band. The builders carry a METHOD constant in the original
+# workflow's words ("model-other-niches"), while the pool files and this table are named after the
+# module. Accepting only one of the two is a trap: the miss returns a base of 0, the ids quietly
+# fall outside every band, and the collision it was meant to prevent happens anyway with nothing
+# said. Raised by the merge builder, 2026-09-09, which found formats' ids already outside a band.
+ID_BASE = {"competitors": 1001, "competitor-study": 1001,
+           "formats": 2001, "model-other-niches": 2001,
+           "trends": 3001, "study-trends": 3001}
 
 
 def new_id(n, method=None):
@@ -190,8 +197,16 @@ def new_id(n, method=None):
     `n` counts from 1 within the method, so the first formats idea is a2001, not a2002. Pass the
     method or the id lands outside every band and the merge cannot tell where it came from.
     """
-    base = ID_BASE.get(method or "", 0)
-    return "a%04d" % ((base + int(n) - 1) if base else int(n))
+    if not method:
+        return "a%04d" % int(n)
+    base = ID_BASE.get(method)
+    if base is None:
+        # Loud, never a silent 0. A method name this table does not know means the caller has
+        # drifted, and the whole point of the bands is that a drift shows up here rather than as
+        # two different ideas wearing one id three steps later.
+        raise ValueError("No id band for method %r. Known: %s"
+                         % (method, ", ".join(sorted(ID_BASE))))
+    return "a%04d" % (base + int(n) - 1)
 
 
 def blank_idea(idea_id, method):

@@ -9,8 +9,8 @@ Each is one content card: id, subreddit, score and comment count, title, body, t
 
 ## For EACH post, pull the 2 to 3 phrases that best capture it
 
-- (1) the post's **core complaint or claim** — what the writer is actually angry or anxious about
-- (2) **any point several different commenters land on** — independent voices converging on one
+- (1) the post's **core complaint or claim**: what the writer is actually angry or anxious about
+- (2) **any point several different commenters land on**: independent voices converging on one
   thing is real signal, one person repeating himself is not
 - Always **tight phrases of 2 to 4 words**. Never single words: "remote" is noise, "fake remote
   listings" is signal.

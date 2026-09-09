@@ -119,47 +119,57 @@ def stub_bucket_embeddings():
 
 
 # --- the three pools ---------------------------------------------------------------------------------
-# Each pool numbers itself from a0001, exactly as `_common.new_id` makes a method do, so the stack
-# has to re-mint or three rows collide on one id.
+# Ids come from `_common.new_id(n, band)`, which is what the three builders are meant to call: the
+# bands (competitors 1001+, formats 2001+, trends 3001+) keep three pools that never see each other
+# from minting the same id. The stack keeps these ids rather than re-numbering, so a row's id still
+# says which method found it.
 
-def idea(n, method, title, angle, **over):
-    row = cm.blank_idea(cm.new_id(n), method)
+def idea(n, band, method, title, angle, **over):
+    row = cm.blank_idea(cm.new_id(n, band), method)
     row["title"] = title
     row["angle"] = angle
-    row["ownability"] = {"verdict": over.pop("own", True), "why": "judged by the method"}
-    row["linkability"] = {"score": over.pop("link", 3), "of": 4,
-                          "verdict": over.pop("link", 3) >= cm.LINKABILITY_FLOOR, "why": "scored"}
+    row["ownability"] = {"judged": True, "verdict": over.pop("own", True), "why": "judged"}
+    link = over.pop("link", 3)
+    row["linkability"] = ({"judged": False, "score": None, "of": 4, "verdict": None,
+                           "why": "the linkability pass returned no row for this idea"}
+                          if link is None else
+                          {"judged": True, "score": link, "of": 4,
+                           "verdict": link >= cm.LINKABILITY_FLOOR, "why": "scored"})
     row.update(over)
     return row
 
 
 def plant_pools():
     store.save_knowledge("assets/competitors.json", [
-        idea(1, "competitor-study", "Cost of a Bad Hire, benchmarked",
+        idea(1, "competitors", "competitors", "Cost of a Bad Hire, benchmarked",
              "what a wrong hire costs, by role and company size", brand_fit="CORE", link=4,
              format="benchmark report",
              proof=[{"url": "https://rival-one.com/bad-hire", "domains": 136, "what": "136 domains"}]),
-        idea(2, "competitor-study", "Interview Scorecard Template Library",
+        idea(2, "competitors", "competitors", "Interview Scorecard Template Library",
              "a scorecard per role, free", brand_fit="CORE", link=3, format="template pack"),
-        idea(3, "competitor-study", "Interview scorecard pack, printable",
-             "the same scorecards as a PDF", brand_fit="CORE", link=3, format="template pack"),
+        # Nobody scored this one. That is not a score of zero and must not read as one.
+        idea(3, "competitors", "competitors", "Interview scorecard pack, printable",
+             "the same scorecards as a PDF", brand_fit="CORE", link=None, format="template pack"),
     ])
     store.save_knowledge("assets/trends.json", [
-        idea(1, "study-trends", "Annual bad-hire cost report",
-             "[people keep arguing about it] we have the numbers", link=3,
+        # The side that gets merged away is the one carrying the build flag, so the flag can only
+        # survive by being pooled onto the survivor.
+        idea(1, "trends", "study-trends", "Annual bad-hire cost report",
+             "[people keep arguing about it] we have the numbers", link=3, tool_escalation=True,
              proof=[{"url": "https://reddit.com/r/hr/x", "domains": 0, "what": "412 comments"}]),
-        idea(2, "study-trends", "Remote onboarding tension index",
+        idea(2, "trends", "study-trends", "Remote onboarding tension index",
              "[nobody knows if it works] measured", brand_fit="ADJACENT", link=4),
-        idea(3, "study-trends", "Skills gap tension report",
+        idea(3, "trends", "study-trends", "Skills gap tension report",
              "[the gap everyone complains about] with the complaints attached", brand_fit="CORE",
              link=4),
     ])
     store.save_knowledge("assets/formats.json", [
-        idea(1, "model-other-niches", "Skills gap interactive index",
+        idea(1, "formats", "model-other-niches", "Skills gap interactive index",
              "an index other niches proved works", brand_fit="TRANSPLANT", link=4,
              format="interactive index", beatability=2, effort="M",
+             what_it_would_be="a live index page with a slider per industry",
              proof=[{"url": "https://otherniche.com/index", "domains": 58, "what": "58 domains"}]),
-        idea(2, "model-other-niches", "Vendor-neutral payroll audit",
+        idea(2, "formats", "model-other-niches", "Vendor-neutral payroll audit",
              "nothing to do with what this company sells", brand_fit="CORE", link=4, own=False),
     ])
 
@@ -177,12 +187,18 @@ stacked = cm.read("_work/merge/stacked.json")
 methods = cm.read("_work/merge/methods.json")
 
 ok("stacked all three pools", len(stacked) == 8, len(stacked))
-ok("re-minted the ids, so three pools numbered from a0001 do not collide",
-   len({r["id"] for r in stacked}) == 8, sorted(r["id"] for r in stacked))
+ok("kept every pool's own banded id rather than re-numbering",
+   [r["id"] for r in stacked] == [r["_from"] for r in stacked]
+   and len({r["id"] for r in stacked}) == 8, sorted(r["id"] for r in stacked))
+ok("the bands survive, so an id still says which method found it",
+   {r["id"][:2] for r in stacked[:3]} == {"a1"} and {r["id"][:2] for r in stacked[3:6]} == {"a3"}
+   and {r["id"][:2] for r in stacked[6:]} == {"a2"}, [r["id"] for r in stacked])
+ok("nothing was re-identified, because nothing collided", methods["reidentified"] is None,
+   methods["reidentified"])
 ok("kept each pool's own id in the working file, so a row is traceable",
    all(r.get("_from") for r in stacked), [r.get("_from") for r in stacked[:3]])
 ok("the method comes from the pool file",
-   [r["method"] for r in stacked[:3]] == [["competitor-study"]] * 3
+   [r["method"] for r in stacked[:3]] == [["competitors"]] * 3
    and stacked[3]["method"] == ["study-trends"] and stacked[6]["method"] == ["model-other-niches"])
 ok("recorded all three methods as having run", methods["ran"] == 3 and methods["of"] == 3, methods["line"])
 ok("no private key reached ideas.json",
@@ -200,12 +216,14 @@ ok("the SAME pair became one row", bad is not None and
    not any("bad-hire cost report" in r["title"] for r in rows))
 ok("the survivor kept the clearer title", bad and bad["title"] == "Cost of a Bad Hire, benchmarked")
 ok("the survivor records BOTH methods that found it",
-   bad and bad["method"] == ["competitor-study", "study-trends"], bad and bad["method"])
+   bad and bad["method"] == ["competitors", "study-trends"], bad and bad["method"])
 ok("the survivor carries BOTH proofs, not one",
    bad and sorted(p["url"] for p in bad["proof"]) ==
    ["https://reddit.com/r/hr/x", "https://rival-one.com/bad-hire"], bad and bad["proof"])
 ok("the survivor keeps its own Linkability score, decided once by its own method",
    bad and bad["linkability"]["score"] == 4, bad and bad["linkability"])
+ok("the build flag survives the merge even though it was on the side that merged away",
+   bad and bad["tool_escalation"] is True, bad and bad.get("tool_escalation"))
 
 combined = next((r for r in rows if r["title"].startswith("The Skills-Gap Index")), None)
 ok("the COMBINE pair became one row with the new title", combined is not None)
@@ -216,6 +234,9 @@ ok("the combined row pooled both methods",
 ok("the combined row filled its blanks from the other side (effort, beatability, format)",
    combined and combined["effort"] == "M" and combined["beatability"] == 2
    and combined["format"] == "interactive index", combined)
+ok("the combined row pooled what-it-would-be too",
+   combined and combined["what_it_would_be"].startswith("a live index page"),
+   combined and combined.get("what_it_would_be"))
 ok("eight stacked ideas became six distinct ones", len(rows) == 6, len(rows))
 ok("the dedup report names every cluster the model saw", len(dedup["clusters"]) == 2
    and dedup["same"] == 1 and dedup["combined"] == 1, dedup.get("same"))
@@ -233,6 +254,11 @@ ok("brand fit leads: the one ADJACENT idea sits below the CORE ones",
 ok("inside a fit tier the shared Linkability score decides",
    rows[0]["linkability"]["score"] == 4 and rows[1]["linkability"]["score"] == 4
    and rows[2]["linkability"]["score"] == 3, [r["linkability"]["score"] for r in rows])
+ok("an idea nobody scored is ranked, not dropped, and not sent below the unownable one",
+   rows[3]["linkability"]["score"] is None and rows[3]["rank"] < rows[-1]["rank"],
+   [(r["id"], (r["linkability"] or {}).get("score"), r["rank"]) for r in rows])
+ok("and it is raised for review rather than left to sit there quietly",
+   any("never got a Linkability score" in n for n in out["needs_review"]), out["needs_review"])
 ok("on a tie the heavier proof wins", rows[0]["title"] == "Cost of a Bad Hire, benchmarked",
    rows[0]["title"])
 ok("run() reports what a person needs to see", out["count"] == 6 and out["multi_method"] == 2
@@ -316,9 +342,35 @@ ok("tells apart a method that ran and found nothing from one that never ran",
    [(m["method"], m["state"]) for m in methods["methods"]])
 ok("says so in one plain line", "1 of 3 methods ran" in methods["line"]
    and "model-other-niches ran and found nothing" in methods["line"]
-   and "competitor-study did not run" in methods["line"], methods["line"])
+   and "competitors did not run" in methods["line"], methods["line"])
 ok("flags the partial sheet for review", out["needs_review"]
    and "1 of 3 methods ran" in out["needs_review"][0], out["needs_review"])
+
+print("\nmerge: when the pools collide on their ids")
+# What the three builders actually do today (2026-09-09): every one calls `new_id(n)` without its
+# method, so the bands in `_common.ID_BASE` never apply and all three pools mint a0001, a0002...
+# The merge looks every row up by id, so it has to notice rather than fold two ideas into one.
+plant_pools()
+for name in ("competitors.json", "trends.json", "formats.json"):
+    pool = store.knowledge("assets/" + name)
+    for i, row in enumerate(pool, 1):
+        row["id"] = cm.new_id(i)                       # no method, so no band: the live defect
+    store.save_knowledge("assets/" + name, pool)
+stub_bucket_embeddings()
+out = merge.run(co, say, redo=True)
+stacked = cm.read("_work/merge/stacked.json")
+methods = cm.read("_work/merge/methods.json")
+
+ok("noticed the clash instead of folding two ideas onto one id",
+   methods["reidentified"] and methods["reidentified"]["n"] == 3, methods.get("reidentified"))
+ok("every id in the stack is unique again",
+   len({r["id"] for r in stacked}) == len(stacked), len(stacked))
+ok("re-numbered from each method's own band, so an id still says where it came from",
+   [r["id"] for r in stacked] == ["a1001", "a1002", "a1003", "a3001", "a3002", "a3003",
+                                  "a2001", "a2002"], [r["id"] for r in stacked])
+ok("still merged the same pairs afterwards", out["count"] == 6 and out["multi_method"] == 2, out)
+ok("told a person, and named the real fix",
+   any("_common.new_id" in n for n in out["needs_review"]), out["needs_review"])
 
 print("\nprompts")
 ok("every {{TOKEN}} in every merge prompt was filled before the model saw it", not UNFILLED,

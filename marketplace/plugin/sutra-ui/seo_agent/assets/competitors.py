@@ -1,4 +1,4 @@
-"""assets/competitors.py — builder 1, method 1: what already earns links in this niche, and the
+"""assets/competitors.py: builder 1, method 1. What already earns links in this niche, and the
 SHAPE that earned it.
 
 The port of `02-asset-engine/1-competitor-study`. Its one idea: look at the pages that already earn
@@ -36,8 +36,6 @@ worth an idea at all; the idea's own verdicts come from the two shared tests in 
 `ownability()` and `linkability()`, which all three methods call in the same words. Ranking, the
 merge across methods and the reuse verdict belong to `merge.py`, not to this file.
 """
-import json
-import os
 import re
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,7 +43,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from .. import llm
 from .. import store
-from ..brand import _common as bcm
 from ..tools import _shared as sh
 from . import _common as cm
 
@@ -175,7 +172,7 @@ def _fanout(fn, items, workers, say=None, label="", every=25):
             i = futs[fut]
             try:
                 out[i] = (fut.result(), None)
-            except Exception as e:      # noqa: BLE001 — one bad page must not lose the run
+            except Exception as e:      # noqa: BLE001. One bad page must not lose the run
                 out[i] = (None, e)
             if say and label and (n % every == 0 or n == len(items)):
                 say(label, "%d of %d" % (n, len(items)))
@@ -235,7 +232,7 @@ def _dfs_items(data):
     """tasks[0].result[0].items, where any level may be missing. dfs.py owns this shape and this is
     its unwrapper; the two endpoints this file needs have no named function there yet, so the call
     goes through dfs.post(), which is still the one place the credential lives."""
-    return dfs._items(data)      # noqa: SLF001 — see the docstring; dfs.py should grow the wrappers
+    return dfs._items(data)      # noqa: SLF001. See the docstring; dfs.py should grow the wrappers
 
 
 # ---- STEP A1: the candidate list ------------------------------------------------------------------
@@ -259,9 +256,9 @@ def _candidates(co, say, redo=False):
         return doc
 
     rows, source = [], ""
-    ok, why = paid_route()
+    can_pay, _why = paid_route()
     domain = _bare(co.get("domain") or "")
-    if ok and domain:
+    if can_pay and domain:
         try:
             data = dfs.post("/dataforseo_labs/google/competitors_domain/live",
                             [{"target": domain, "location_name": co.get("location_name") or "United States",
@@ -276,7 +273,7 @@ def _candidates(co, say, redo=False):
                                  "etv": round(m.get("etv") or 0), "why": ""})
             source = "DataForSEO competitors_domain"
             say("Found who ranks for the same words", "%d candidate domains" % len(rows))
-        except Exception as e:      # noqa: BLE001 — a refused pull falls back, it does not stop the run
+        except Exception as e:      # noqa: BLE001. A refused pull falls back, it does not stop the run
             say("The competitor lookup did not answer", str(e)[:160])
 
     if not rows:
@@ -654,7 +651,7 @@ def _filter(pages, say):
 
 # ---- STEP D: tag every kept page by FORMAT, never by topic --------------------------------------
 
-def _tag(rows, co, say, redo=False):
+def _tag(rows, co, say):
     """D. One format per kept page. The shape, not the subject.
 
     Reads:  the kept pages
@@ -702,7 +699,7 @@ def _tag(rows, co, say, redo=False):
 
 # ---- STEP E: read every kept page in full ----------------------------------------------------------
 
-def _read(rows, say, redo=False):
+def _read(rows, say):
     """E. The step that gets skipped. Do not skip it.
 
     Reads:  the tagged rows
@@ -987,7 +984,7 @@ def _score(rows, scope, say):
         try:
             out = llm.json_call(sh.fill(cm.prompt("competitors-score"), scope=scope,
                                         ideas="\n\n".join(block))) or {}
-        except Exception as e:      # noqa: BLE001 — an unscored idea is still an idea
+        except Exception as e:      # noqa: BLE001. An unscored idea is still an idea
             say("Could not score some ideas", str(e)[:160])
             continue
         got = {str(x.get("id")): x for x in (out.get("ideas") or []) if isinstance(x, dict)}
@@ -1076,7 +1073,7 @@ def _cut(rows, say):
 
 # ---- STEP H: deliver ---------------------------------------------------------------------------
 
-def _deliver(rows, fmt_summary, say):
+def _deliver(rows, say):
     """H. The pool file, one idea row per idea, in the shared schema.
 
     Pure assembly. Every field is lifted from a step that already decided it, and nothing is
@@ -1169,8 +1166,8 @@ def run(co, say, redo=False):
                          "usually means their editorial sits somewhere the rules did not expect. "
                          "Worth a look at _work/competitors/filter-report.json."
                          % (LOW_KEEP_ALARM, ", ".join(alarms)))
-        kept = _tag(kept, co, say, redo)
-        kept, tally = _read(kept, say, redo)
+        kept = _tag(kept, co, say)
+        kept, tally = _read(kept, say)
         cm.save(WORK + "master.json", kept)
         master = kept
     else:
@@ -1207,7 +1204,7 @@ def run(co, say, redo=False):
     ideas = _cut(ideas, say)
 
     # H.
-    rows = _deliver(ideas, fmt_summary, say)
+    rows = _deliver(ideas, say)
     thin = [r for r in ideas if len({m["competitor"] for m in r.get("members") or []}) < 2]
     if thin and len(thin) > len(ideas) // 2:
         # Recurrence is the real signal. An idea from one page at one competitor might be a one-off;

@@ -2,6 +2,55 @@
 
 **status**: active · **updated**: 2026-09-09
 
+## 2.250.0 (2026-09-09)
+
+**Sutra can now work out WHAT to write, not just write it.** Layer 02 of the workflow, the asset
+engine, is ported: three ways of finding ideas that never see each other's output until the end,
+then a merge, then a check against pages the company already has.
+
+Method 1 studies which competitor pages actually earn links and takes the FORMAT, never the topic.
+Method 2 lifts shapes proven in other industries, from a table of nineteen copied verbatim off the
+workflow rather than remembered by a model. Method 3 reads what the audience argues about in public
+and turns recurring arguments into ideas. The three are kept apart on purpose: one method finds one
+kind of idea, and letting them talk before the merge would collapse three independent signals into
+one. They meet exactly once, where an idea all three found arrives carrying three kinds of evidence.
+
+**All three judge with the SAME two tests, in the same words.** Ownability and Linkability live in
+one file and no method may write its own. That is the original's own argument for why the pools can
+be ranked against each other at the end; three paraphrases could not be. Linkability is scored out
+of four by the model and the keep-or-drop line is derived in CODE, never asked.
+
+**The engine stops twice and asks you**, through the same checkpoint every approval already uses:
+the competitor shortlist and the subreddit list. A rewritten list wins over the proposal, always.
+Taking the proposal anyway when somebody clearly typed something else would make the gate
+decorative, which is worse than not having one. The answer lands in a file the builder checks on
+its next run, so an approval survives a crash, a quit and a week off.
+
+**A new Asset ideas tab.** The next unwritten idea sits at the top as a chip that writes the message
+for you. The chip carries the idea's id as DATA and the id travels BESIDE the message, never inside
+the words: it reaches the run's state before the model reads anything, so nothing has to read an id
+out of prose and decide to look it up. That is a step that can quietly not happen and nobody would
+know it had been skipped. The warning that the topic gate can still turn the idea down is on screen
+before you send, not after.
+
+**Ticking is provenance only.** A run that began at an idea ticks that idea when it reaches the
+Library. An article you typed yourself ticks nothing, and nothing is matched by meaning. Matching
+adds a whole class of wrong answers to save a rare piece of bookkeeping, and a wrong tick silently
+drops an idea out of the queue where nobody would find it.
+
+**Honest about what it could not do.** A method that ran and found nothing, and one that never ran
+at all, are different facts and the screen says which. The competitor study needs DataForSEO credit
+and refuses cleanly without spending; the trends method inherits the subreddit checker's rule that a
+rate-limited Reddit is "unknown", never "empty".
+
+Also: the writer brief box is capped short with an Open control that puts the whole file in the side
+panel; page types carry plain-English display names; and three defects were found by building
+against the shared file rather than reading it. Ids from three pools were going to collide. A
+forgotten idea came back scored zero, which reads exactly like a genuine drop, so a keep-or-drop
+decision was resting on a phrase in a sentence. And an idea row had nowhere to say it needs building
+rather than writing, which the original added after its own engine turned 1,143 of 2,213 ideas into
+calculators.
+
 ## 2.249.1 (2026-09-09)
 
 **Installing Sutra no longer writes the new app on top of the old one.** When you open the app
