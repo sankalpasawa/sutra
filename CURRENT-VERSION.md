@@ -2,7 +2,7 @@
 
 **status**: active · **updated**: 2026-09-09
 
-## v2.247.0 (2026-09-09, HEAD)
+## v2.248.0 (2026-09-09, HEAD)
 
 Codex is a provider you can actually chat with. Signing in has worked since 2.246.0, but the row
 said so itself: there was no chat adapter, so the account sat there unusable. There is one now,
