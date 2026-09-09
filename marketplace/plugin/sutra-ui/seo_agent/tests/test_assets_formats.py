@@ -305,7 +305,7 @@ ok("transplant_from is filled where the tag says TRANSPLANT",
    all(r["transplant_from"] for r in rows if r["brand_fit"] == "TRANSPLANT"))
 ok("linkability keeps the score, the of, and the code-derived verdict",
    all(r["linkability"]["of"] == 4 and r["linkability"]["verdict"] is True
-       for r in rows if r["linkability"]["score"] >= cm.LINKABILITY_FLOOR),
+       for r in rows if (r["linkability"]["score"] or 0) >= cm.LINKABILITY_FLOOR),
    [r["linkability"] for r in rows][:2])
 own_prompt = [p for p in SEEN if "OWNABLE when a reader" in p][0]
 ok("the ownability judge is shown the scope, so it is not judging blind", "Payroll" in own_prompt)

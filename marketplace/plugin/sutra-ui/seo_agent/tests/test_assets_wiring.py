@@ -112,6 +112,71 @@ out = build_assets.run({"chat_id": chat, "run_id": run})
 ok("with no brand pack it refuses rather than judging blind", bool(out.get("error")), out.get("summary"))
 ok("and names both what is missing and what to do", "brand pack" in (out.get("error") or "").lower())
 
+
+# ---- the gate, driven the whole way round ------------------------------------------------------
+# A builder stops. The loop asks. The person answers. The engine picks up where it stopped. This is
+# the path the owner cares about most and it crosses three files, so nothing else tests it.
+
+print("\nthe gate, all the way round")
+from seo_agent import registry as _reg  # noqa: E402
+from seo_agent.tools import build_assets as _ba  # noqa: E402
+
+_fixture.plant_brand_files()          # put features.md back; the refusal test above removed it
+# ...and un-answer the gate: an earlier check saved an empty approval, which would make the
+# builder below sail straight past the very thing this section exists to prove.
+_gp = acm.path(acm.gate_path("competitors"))
+if os.path.exists(_gp):
+    os.remove(_gp)
+ASKED = {"n": 0}
+
+
+def _fake_run(co, say, redo=False):
+    """A builder that wants the competitor list, then finishes once it has one."""
+    approved = acm.gate_approved("competitors")
+    if approved is None:
+        ASKED["n"] += 1
+        return {"gate": {"kind": "competitors", "builder": "competitors",
+                         "question": "These are the fifteen I would study. Agree, or give me your own list.",
+                         "why": "Studying the wrong companies costs fifteen paid pulls and a week.",
+                         "proposed": [{"domain": "adaface.com", "kind": "direct", "why": "same product"}]}}
+    acm.save("competitors.json", [dict(acm.blank_idea("a9001", "competitors"), title="From the study")])
+    return {"files": ["competitors.json"], "needs_review": []}
+
+
+_real_module = _ba._module
+_ba._module = lambda name: (type("M", (), {"run": staticmethod(_fake_run)})
+                            if name == "competitors" else _real_module(name))
+
+chat2 = store.new_chat("gate")
+run3 = store.new_run(chat2, "gate")
+store.save_messages(chat2, [{"role": "user", "content": "work out what to write about"}])
+out = _ba.run({"chat_id": chat2, "run_id": run3}, only="competitors")
+ok("a builder that needs a person returns a gate and writes nothing", bool(out.get("gate")), out.get("summary"))
+ok("the gate names which builder is waiting", out["gate"].get("builder") == "competitors")
+ok("and says WHY it is worth stopping for", "costs" in out["gate"].get("why", ""))
+
+loop._ask_asset_gate(chat2, run3, "call-1", out["gate"])
+st = store.get_state(chat2, run3)
+w = st.get("waiting_on") or {}
+ok("the run is genuinely stopped, not running", st.get("status") == "waiting", st.get("status"))
+ok("it waits as an ordinary question, so the screen already knows how to draw it",
+   w.get("kind") == "question", w.get("kind"))
+ok("what marks it as a gate is its own field, not the kind", w.get("asset_gate") == "competitors")
+ok("the proposal is on the checkpoint, so a person can see it before answering",
+   len(w.get("proposed") or []) == 1, w.get("proposed"))
+ok("there is an option to decline", any("Not now" in (o.get("label") or "")
+                                        for o in (w.get("options") or [])), w.get("options"))
+
+before = ASKED["n"]
+loop._resume_asset_gate(chat2, run3, w, store.get_messages(chat2), {"text": "Use this list"})
+ok("answering files the approval where the builder will look", acm.gate_approved("competitors") is not None)
+ok("the approved list kept the evidence behind the name",
+   (acm.gate_approved("competitors") or [{}])[0].get("why") == "same product")
+ok("the engine picked up where it stopped and did NOT ask again", ASKED["n"] == before, ASKED["n"])
+ok("and it produced its file this time", acm.exists("competitors.json"))
+
+_ba._module = _real_module
+
 print("\n%d passed, %d failed" % (P, len(F)))
 for n in F:
     print("  FAILED: %s" % n)

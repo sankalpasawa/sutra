@@ -333,11 +333,15 @@ def _idea_row(n, a):
 def _unjudged(r):
     """Did the judge actually return a row for this idea, or did `_common` fill the gap?
 
-    `_common._rows` reports a forgotten idea with this exact phrase rather than a default, because
-    a default here is a keep-or-drop decision nobody made. Linkability then scores the gap 0, which
-    would drop the idea silently, so the gap is caught here and the idea is kept and flagged for a
-    person instead.
+    A forgotten idea is not a rejected one, and a default here would be a keep-or-drop decision
+    nobody made. So the gap is caught and the idea is kept and flagged for a person instead.
+
+    This used to string-match a phrase in `why`, which put a keep-or-drop decision on prose nobody
+    had promised to keep stable. `_common` gained a real `judged` field on 2026-09-09; the old
+    phrase is still recognised so a row written by the previous version reads the same way.
     """
+    if "judged" in r:
+        return not r.get("judged")
     return str(r.get("why") or "").startswith("not judged:")
 
 
@@ -403,8 +407,9 @@ def step_c(scope, adaptations, say, redo):
             row["transplant_from"] = str(o.get("transplant_from") or "").strip()
             row["ownability"] = {"verdict": o.get("verdict"), "why": str(o.get("why") or "").strip()}
         if l:
-            row["linkability"] = {"score": l.get("score", 0), "of": l.get("of", cm.LINKABILITY_OF),
-                                  "verdict": l.get("verdict"), "why": str(l.get("why") or "").strip()}
+            row["linkability"] = {"score": l.get("score"), "of": l.get("of", cm.LINKABILITY_OF),
+                                  "verdict": l.get("verdict"), "why": str(l.get("why") or "").strip(),
+                                  "judged": bool(l.get("judged"))}
         if blind:
             # Neither kept on a default nor dropped on one. It goes through, marked, and a person
             # is told which ones and why.
@@ -418,8 +423,13 @@ def step_c(scope, adaptations, say, redo):
         if o.get("verdict") is not True:
             why.append("ownability: " + (row["ownability"]["why"] or "this company cannot credibly own it"))
         if l.get("verdict") is not True:
-            why.append("linkability: %d of %d, needs %d — %s"
-                       % (row["linkability"]["score"], row["linkability"]["of"], cm.LINKABILITY_FLOOR,
+            # An unjudged row reaches here with score None, never 0. The two are not the same and
+            # printing one as the other would tell a person an idea scored nothing when in truth
+            # nobody looked at it. (_common gained a `judged` field for this, 2026-09-09.)
+            sc = row["linkability"].get("score")
+            why.append("linkability: %s of %d, needs %d — %s"
+                       % ("not scored" if sc is None else sc, row["linkability"]["of"],
+                          cm.LINKABILITY_FLOOR,
                           row["linkability"]["why"] or "nobody would cite it"))
         dropped.append({"id": row["id"], "title": row["title"], "format": row["format"],
                         "why": " · ".join(why)})

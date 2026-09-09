@@ -113,11 +113,14 @@ def linkability(ideas, scope, competitors=None, say=None):
                 ideas=_numbered(ideas))
     rows = _rows(llm.json_call(p), ideas, "linkability")
     for r in rows:
+        r["of"] = LINKABILITY_OF
+        if not r.get("judged"):
+            r["score"], r["verdict"] = None, None    # unjudged is not zero, and it is not a drop
+            continue
         try:
             r["score"] = max(0, min(LINKABILITY_OF, int(r.get("score") or 0)))
         except (TypeError, ValueError):
             r["score"] = 0
-        r["of"] = LINKABILITY_OF
         r["verdict"] = r["score"] >= LINKABILITY_FLOOR      # decided here, not by the model
     return rows
 
@@ -159,20 +162,36 @@ def _rows(out, ideas, what):
     for i in ideas:
         r = got.get(str(i.get("id")))
         if r is None:
-            result.append({"id": i.get("id"), "verdict": None, "why": "not judged: the %s pass "
-                           "returned no row for this idea" % what})
+            # A real field, not a phrase in `why`. The formats builder was string-matching
+            # "not judged:" to tell a forgotten idea from one that genuinely scored zero, which is
+            # a keep-or-drop decision resting on prose nobody promised to keep stable.
+            result.append({"id": i.get("id"), "judged": False, "verdict": None,
+                           "score": None,
+                           "why": "the %s pass returned no row for this idea" % what})
         else:
             r = dict(r)
             r["id"] = i.get("id")
+            r["judged"] = True
             result.append(r)
     return result
 
 
 # ---- the idea row ------------------------------------------------------------------------------
 
-def new_id(n):
-    """a0001.. Stable, sortable, and short enough to sit on a button and travel in one field."""
-    return "a%04d" % n
+# One band per finder. The three run apart and never see each other's files, so all three would
+# otherwise start at a0001 and the merge would receive three different ideas wearing one id. Same
+# device brand_cards uses when it reserves 8001+. Raised by the formats builder, 2026-09-09.
+ID_BASE = {"competitors": 1001, "formats": 2001, "trends": 3001}
+
+
+def new_id(n, method=None):
+    """a2001.. Stable, sortable, short enough to sit on a button and travel in one field.
+
+    `n` counts from 1 within the method, so the first formats idea is a2001, not a2002. Pass the
+    method or the id lands outside every band and the merge cannot tell where it came from.
+    """
+    base = ID_BASE.get(method or "", 0)
+    return "a%04d" % ((base + int(n) - 1) if base else int(n))
 
 
 def blank_idea(idea_id, method):
@@ -186,6 +205,11 @@ def blank_idea(idea_id, method):
         "ownability": {"verdict": None, "why": ""},
         "linkability": {"score": 0, "of": LINKABILITY_OF, "verdict": None, "why": ""},
         "beatability": None, "effort": "",
+        # Does making this need a real build, or can a person do it at a desk? The original added
+        # this rule on 2026-07-22 after the engine turned 1,143 of 2,213 ideas into calculators,
+        # and its wording is that such an idea is flagged and "never hidden". Without the field the
+        # merge drops the flag and the write phase cannot tell a document from a piece of software.
+        "tool_escalation": False, "what_it_would_be": "",
         "proof": [], "rank": None,
         "reuse": {"verdict": "", "links": [], "why": ""},
         "status": "open",
