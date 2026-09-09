@@ -81,8 +81,22 @@ QUICK_MIN = 60
 QUICK_MAX = 110
 READABLE_EASE = 45.0                # Flesch band floor; the human articles score 28-35, so no chasing 60
 READABLE_EASE_MAX = 72.0            # above this the prose went clipped, not clear
-READABLE_WORDS_PER_FACT = 110       # how much room each kept fact gets
-READABLE_CEILING = 2100             # at most this, and never longer than it came in
+# ONE belief, held by two steps. About this many words around a fact is what it takes for the fact
+# to mean something: stated, sourced, and told why it matters. Fewer and it is trivia on a page.
+# write_body uses it to decide how many facts a section can carry; readable uses it to decide how
+# many survive the rewrite. It lived in readable alone under a name of its own, which read
+# as that one step's private preference rather than the shared rule it is. (Owner, 2026-09-09:
+# "just this should be there in both write body and that readable".)
+WORDS_PER_FACT = 110
+
+# A hardcoded ceiling of 2,100 words was here. DELETED 2026-09-09 on the owner's instruction,
+# and it is not coming back as a guard or a maximum.
+#
+# It capped every article at 2,100 words regardless of the pages it was competing with, and readable
+# never looked at the measured band at all. Competitors at 3,200 words and competitors at 1,400 both
+# produced an article cut to 2,100. That was the over-concision, and the owner found it before we
+# did. The length is now one number, chosen by a person at the start of the run, and every step
+# reads that one.
 READABLE_EXAMPLES_CHARS = 6000      # of brand/writing-examples.md shown to the rewrite as the bar
 CITATION_MAX_REPEATS = 3            # times ONE source may be marked
 EXTERNAL_LINKS_MAX = 4              # visible outbound links per article
@@ -132,6 +146,25 @@ def format_rules(archetype):
         text = open(format_path(archetype), encoding="utf-8").read()
     except OSError:
         return "(no format rules on file)"
+    i = text.find("\n## ")
+    return (text[i + 1:] if i >= 0 else text).strip()
+
+
+def format_craft(archetype):
+    """The per-format rules for the WRAP: the intro, the TL;DR, the FAQ and the close.
+
+    Different from format_rules(), which shapes the BODY. The owner added these on 2026-09-05 as
+    his answer to the review complaint that every article wrapped the same way whatever it was, and
+    a comparison piece and a glossary should not open or close alike.
+
+    Missing file is not an error: a format with no craft file gets the general rules only, which is
+    what happened before these existed.
+    """
+    path = os.path.join(FORMATS, "_craft", "%s.md" % (archetype or "").strip())
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return "(no extra wrap rules for this format; the general rules above are the whole brief)"
     i = text.find("\n## ")
     return (text[i + 1:] if i >= 0 else text).strip()
 

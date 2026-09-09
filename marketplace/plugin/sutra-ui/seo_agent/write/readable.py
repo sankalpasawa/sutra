@@ -6,8 +6,9 @@ FLAGS. NONE BLOCK: the earlier steps already guard themselves, and what is measu
 THIS step could break.
 
   5a  the rewrite (readable.md), with the checklist code computed before the call: FACTS_NOW, WORDS_NOW,
-      TARGET_WORDS = min(READABLE_CEILING, current), the reading ease, the hard words, the longest
-      sentences, the archetype and its format rule (formats/<arch>.md "## The rewrite").
+      TARGET_WORDS = the length the person asked for (target_words() below), the reading ease, the
+      hard words, the longest sentences, the archetype and its format rule (formats/<arch>.md
+      "## The rewrite").
   5b  fix_fat (fat-paragraphs.md): code finds the paragraphs over the sentence ceiling, one call rewrites
       only those, code validates each replacement and swaps it back by id.
   5c  fix_plain (plain-english.md, at most 2 rounds): the worst-scoring blocks go back with their hard
@@ -475,8 +476,8 @@ def check(before, after, primary, target=None, stakes=None, judged=None):
         "a tag stripped of its number is a claim pretending to be sourced")
     if all_b and b:
         d0, d1 = words_per_fact(before), words_per_fact(after)
-        add("Facts have room to breathe (%d+ words each)" % C.READABLE_WORDS_PER_FACT,
-            d1 >= min(C.READABLE_WORDS_PER_FACT, d0 * 1.4),
+        add("Facts have room to breathe (%d+ words each)" % C.WORDS_PER_FACT,
+            d1 >= min(C.WORDS_PER_FACT, d0 * 1.4),
             "%.0f -> %.0f words per fact (%d -> %d facts, %d -> %d words)" % (d0, d1, len(all_b), len(all_a), b, a),
             "a fact with no room to be explained is a fact the reader cannot use")
     hb, ha = subheads(before), subheads(after)
@@ -529,6 +530,43 @@ def check(before, after, primary, target=None, stakes=None, judged=None):
     return out
 
 
+def target_words(article, plan=None, structure=None):
+    """The length this article is written to: the number the PERSON gave, and nothing else.
+
+    Where it comes from, in order, and both routes lead to the same answer:
+      1. structure.word_budget.target, written down by allocate_words, which divided it up.
+      2. the plan's word band, which is build_spec.word_band. Since the length became one
+         question that band is the person's answer, carried with min == max.
+      3. only if a plan somehow reaches here with no length at all: what the article already is,
+         which asks this step to tighten the prose and leave the length where it stands.
+
+    THERE IS NO CEILING HERE, and there is not meant to be one. This step used to take the smaller
+    of the current length and a hardcoded 2,100 words, a number that had never seen the pages that
+    rank. Competitors at 3,200 words and competitors at 1,400 both produced an article cut to
+    2,100, which is the over-concision the owner felt for weeks before he worked out where it came
+    from. His ruling, 2026-09-09: it "should go away completely, not some safety limit and shit."
+    So it is gone, name and all, and what holds the length is the person who answered the question.
+    """
+    budget = ((structure or {}).get("word_budget") or {})
+    for candidate in (budget.get("target"), _band_middle(plan)):
+        try:
+            n = int(candidate or 0)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            return n
+    return words(article)
+
+
+def _band_middle(plan):
+    band = (plan or {}).get("word_band") or {}
+    try:
+        lo, hi = int(band.get("min") or 0), int(band.get("max") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return (lo + hi) // 2 if lo and hi else (hi or lo)
+
+
 def _examples():
     ex = C.sh.brand_file("writing-examples.md").strip()
     return ex[:C.READABLE_EXAMPLES_CHARS] if ex else ("(no published examples on file for this brand; hold to the three moves "
@@ -542,13 +580,17 @@ def run(w, plan, st, say=lambda *a: None):
     var = ", ".join(ks.get("variations") or []) or "(none)"
     h2 = ", ".join(ks.get("section_keywords") or []) or "(none)"
     now = words(w)
-    target = min(C.READABLE_CEILING, now)
+    target = target_words(w, plan, st)
     stakes = plan.get("table_stakes") or []
     ai_overview = plan.get("ai_overview") or ""
     archetype = plan.get("format_archetype") or ""
     rule = format_rule(archetype)
     facts = len(fact_ids(w))
-    keep = max(6, round(target / max(C.READABLE_WORDS_PER_FACT, 1)))
+    # The fact count FOLLOWS the length now. One belief, WORDS_PER_FACT, held by this step and by
+    # write_body: a fact needs about that much room around it to be worth reading. So a longer
+    # article keeps more facts and a shorter one keeps fewer, instead of the count being fixed by a
+    # cap that ignored the article.
+    keep = max(6, round(target / max(C.WORDS_PER_FACT, 1)))
     say("Rewriting the article to be read", "%d facts in %d words; aiming for about %d words carrying about %d facts"
         % (facts, now, target, min(keep, facts) if facts else keep))
     prompt = C.prompt("readable", brand=brand["brand"], facts_now="{:,}".format(facts), words_now="{:,}".format(now),

@@ -10,12 +10,16 @@ Writes: the SAME plan shape, sources verified; the card fixes (corrected source_
   3. Per worthy card: fetch its claimed page(s), an AI judge (source-judge.md) reads the page OPENING plus
      the passages around the claim's numbers and answers whether it supports the claim ABOUT THE SAME
      SUBJECT. A page that will not load is NOT a wrong page: the card is kept unverified.
-  4. THE HUNT IS SKIPPED. The original went out and bought replacement pages through DataForSEO's search
-     queue. That is a paid web search this agent does not run, and the report says so. So a card whose
-     source is proven wrong loses that url and is marked needs_source; it is CUT only when it is numeric
-     and has no other source left, because a number with no page behind it cannot be published.
+  4. THE HUNT (2026-09-09). A card whose source is proven wrong now goes and looks for a replacement,
+     the way the original did: source-queries.md plans the queries from the gloss AND the verbatim, so
+     the subject is in the query; the search and the page reads are the same ones enrich uses; and the
+     same source-judge decides. The FIRST page that supports the claim wins and becomes the card's
+     source. Only when the hunt comes back empty does the old behaviour apply: the card loses the bad
+     url and is marked needs_source, and it is CUT only when it is numeric and has no source left,
+     because a number with no page behind it cannot be published.
   5. Every url proven wrong is remembered; every other used card citing it loses that url too (a bad
-     page is bad for every card that cites it). A prose card keeps its claim and loses the source.
+     page is bad for every card that cites it). A prose card keeps its claim and loses the source; a
+     numeric one is re-hunted, because for a number the hunt actually works.
   6. An H3 that loses all its cards dies with them; a section that loses all its H3s dies too.
 """
 import re
@@ -23,6 +27,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import llm
 from . import _common as C
+from . import enrich
+
+# ---- the replacement hunt's knobs ------------------------------------------------------------------
+HUNT_QUERIES_PER_CLAIM = 3    # queries planned per claim (the original's QUERIES_PER_CLAIM)
+HUNT_PAGES_PER_CLAIM = 4      # pages actually opened and judged before a claim is given up on
+HUNT_MAX = 250                # claims hunted per article, an unattended-run safety cap
+HUNT_WORKERS = 4              # claims hunted at once
 
 _NUM = C._NUM
 
@@ -106,6 +117,61 @@ def _worthy_ids(cards):
     return worthy, failed_batches
 
 
+def _hunt_one(card, route_name):
+    """Find a page that really supports ONE claim. (url, quote, queries, searched).
+
+    Same machinery as enrich: plan the queries, search, read the pages, judge. The judge is the one
+    already used above, so a hunted source has to clear exactly the bar the original source failed.
+    """
+    try:
+        q = llm.json_call(C.prompt("source-queries", gloss=card.get("gloss", ""),
+                                   verbatim=card.get("verbatim", ""), n=HUNT_QUERIES_PER_CLAIM)) or {}
+    except Exception:  # noqa: BLE001 — a failed plan is a claim left unverified, never a crash
+        return None, "", [], False
+    queries = [str(x).strip() for x in (q.get("queries") or []) if str(x).strip()][:HUNT_QUERIES_PER_CLAIM]
+    if not queries:
+        return None, "", [], False
+    urls, _cost = enrich.search(queries, route_name, exclude=card.get("source_urls") or ())
+    if not urls:
+        return None, "", queries, False
+    checked = 0
+    for u in urls:
+        if checked >= HUNT_PAGES_PER_CLAIM:
+            break
+        page = C.fetch(u)
+        if page.startswith("__ERR__"):
+            continue
+        checked += 1
+        ok, quote = _judge(card, u, page)
+        if ok:
+            return u, quote, queries, True
+    return None, "", queries, True
+
+
+def _hunt_many(cards, route_name, say, what):
+    """Hunt a batch of claims in parallel. {card_id: (url, quote, queries, searched)}."""
+    cards = list(cards)[:HUNT_MAX]
+    if not cards:
+        return {}
+    say("Hunting a replacement source for %s" % C.sh.plural(len(cards), what),
+        "planning the search from the claim itself, then reading the pages that come back")
+    out = {}
+    with ThreadPoolExecutor(max_workers=HUNT_WORKERS) as ex:
+        futs = {ex.submit(_hunt_one, c, route_name): c for c in cards}
+        for f in as_completed(futs):
+            c = futs[f]
+            try:
+                res = f.result()
+            except Exception:  # noqa: BLE001
+                res = (None, "", [], False)
+            out[C.nid(c["card_id"])] = res
+            if res[0]:
+                say("New source found for a claim", "%s -> %s" % ((c.get("gloss") or "")[:70], res[0]))
+            else:
+                say("No replacement source for a claim", (c.get("gloss") or "")[:90])
+    return out
+
+
 def run(plan, idx, say=lambda *a: None):
     used_ids = []
     for sec in plan["sections"]:
@@ -156,44 +222,84 @@ def run(plan, idx, say=lambda *a: None):
             else:
                 bad.append((c, verdict, wrong, unloadable))
 
-    # --- phase 2: the hunt is not run here -----------------------------------
+    # --- phase 2: HUNT a replacement for every claim whose source failed -------
     bad_urls = {u for _c, _v, wrong, _u in bad for u in wrong}
-    cut, needs_source, fixes = [], [], {}
+    cut, needs_source, fixes, replaced = [], [], {}, []
+    route_name, route_note = enrich.route()
 
     def _record(c, note):
         fixes[c["card_id"]] = {"source_urls": list(c.get("source_urls") or []),
                                "needs_source": bool(c.get("needs_source")), "note": note}
 
+    hunted = _hunt_many([c for c, *_ in bad], route_name, say, "claim") if bad else {}
+    searched = sum(1 for _cid, (_u, _q, _qs, ok) in hunted.items() if ok)
+
     for c, verdict, wrong, unloadable in bad:
+        hit, quote, queries, ok_search = hunted.get(C.nid(c["card_id"]), (None, "", [], False))
         keep = [u for u in (c.get("source_urls") or []) if u not in bad_urls]
+        if hit:
+            # THE NEW PAGE IS THE SOURCE, and the proven-wrong ones do not ride along behind it.
+            c["source_urls"] = [hit] + [u for u in keep if u != hit]
+            c.pop("needs_source", None)
+            replaced.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
+                             "old": (wrong or [None])[0], "new": hit, "quote": quote[:200],
+                             "queries": queries})
+            _record(c, "source replaced by the hunt")
+            continue
         c["source_urls"] = keep
+        why_hunt = ("the replacement hunt found no page that supports it" if ok_search
+                    else "the replacement hunt could not search (" + route_note + ")")
         if keep:                                     # an unloadable url remains: unproven, not wrong
             c["needs_source"] = True
             needs_source.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
-                                 "why": "its loaded source(s) did not support it; the remaining url could not be read"})
-            _record(c, "source proven wrong, one unreadable url kept, no replacement hunted")
+                                 "why": "its loaded source(s) did not support it, the remaining url could not "
+                                        "be read, and " + why_hunt})
+            _record(c, "source proven wrong, one unreadable url kept, no replacement found")
         else:
             cut.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
                         "old": (wrong or [None])[0],
                         "why": ("no source url" if verdict == "no-url" else "source did not support the claim")
-                               + "; a numeric fact with no page behind it is not published (replacement hunt not run)"})
+                               + ", " + why_hunt
+                               + "; a numeric fact with no page behind it is not published"})
             _record(c, "cut")
 
     # --- phase 2b: PROPAGATE. A url proven wrong is wrong for EVERY card citing it. --------------
     judged = {c["card_id"] for c, *_ in bad}
     unsourced, propagated = [], []
+    contaminated = []
     for cid in used_ids:
         c = idx.get(cid)
         if c is None or cid in judged or not any(u in bad_urls for u in (c.get("source_urls") or [])):
             continue
+        contaminated.append(c)
+    # A CONTAMINATED NUMERIC CARD WITH NOTHING LEFT IS HUNTED TOO, and for the same reason as above:
+    # the claim may well be true and published somewhere else, and cutting it unhunted throws away a
+    # fact over one bad page. A card with NO number is not hunted: there is no distinctive figure to
+    # search for, so the hunt cannot work; its claim is kept and its source stripped.
+    rehunt = [c for c in contaminated
+              if not [u for u in (c.get("source_urls") or []) if u not in bad_urls]
+              and C.has_number(c.get("verbatim", ""))]
+    hunted2 = _hunt_many(rehunt, route_name, say, "claim left without a source") if rehunt else {}
+    searched += sum(1 for _cid, (_u, _q, _qs, ok) in hunted2.items() if ok)
+    for c in contaminated:
+        cid = C.nid(c["card_id"])
         keep = [u for u in (c.get("source_urls") or []) if u not in bad_urls]
+        hit, quote, queries, _ok = hunted2.get(cid, (None, "", [], False))
+        if hit:
+            c["source_urls"] = [hit]
+            c.pop("needs_source", None)
+            replaced.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
+                             "old": None, "new": hit, "quote": quote[:200], "queries": queries})
+            propagated.append({"card_id": cid, "replaced": True})
+            _record(c, "cited a url proven wrong elsewhere; the hunt found a page that does support it")
+            continue
         c["source_urls"] = keep
         if keep:
             propagated.append({"card_id": cid, "replaced": False, "kept_other_url": True})
             _record(c, "lost a url proven wrong elsewhere; another source remains")
         elif C.has_number(c.get("verbatim", "")):
             cut.append({"card_id": cid, "claim": (c.get("gloss") or "")[:140], "old": None,
-                        "why": "cites a url proven wrong; numeric, and no other source"})
+                        "why": "cites a url proven wrong; numeric, no other source, and the hunt found no replacement"})
             propagated.append({"card_id": cid, "replaced": False, "cut": True})
             _record(c, "cut (propagated)")
         else:
@@ -222,13 +328,20 @@ def run(plan, idx, say=lambda *a: None):
         "needs_source": needs_source, "cut": cut, "kept_unsourced": unsourced,
         "bad_urls": sorted(bad_urls), "propagated": propagated,
         "dropped_h3s": dropped_h3s, "dropped_sections": dropped_secs,
-        "hunt": "skipped: replacing a bad source needs a DataForSEO web search, which this agent does not run. "
-                "A fact whose source failed keeps its claim and loses the url; a number with no source left is cut.",
+        "replaced": replaced,
+        # ONE SENTENCE THAT SAYS WHAT REALLY HAPPENED. A run that could not search at all must not
+        # read like a run that searched and found nothing, so the route is named either way.
+        "hunt": (("no source failed, so no replacement was needed. Route available: " + route_note + ".")
+                 if not (bad or rehunt) else
+                 ("%d of %d claim(s) whose source failed found a replacement page. Route: %s."
+                  % (len(replaced), len(bad) + len(rehunt), route_note))),
+        "hunt_route": route_name, "hunt_searched": searched,
         "failed_worthy_batches": failed_batches,
         "coverage": {"claims_to_check": len(todo),
                      "actually_judged": len(kept_ok) + len(bad),
                      "unloadable": len(unverifiable)},
     }
-    say("Source check done", "%d confirmed, %d could not be read (kept), %d need a new source, %d cut"
-        % (len(kept_ok), len(unverifiable), len(needs_source) + len(unsourced), len(cut)))
+    say("Source check done", "%d confirmed, %d could not be read (kept), %d given a new source, "
+                             "%d still need one, %d cut"
+        % (len(kept_ok), len(unverifiable), len(replaced), len(needs_source) + len(unsourced), len(cut)))
     return {"plan": plan, "card_fixes": fixes, "police": police}

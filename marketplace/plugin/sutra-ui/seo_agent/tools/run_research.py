@@ -18,6 +18,11 @@ next reads it, so a crash resumes where it stopped and a paid call is never repe
                          the reuse verdict
     persona              the one reader this is written for, decided once and reused by the blueprint
 
+Between the brief and the research conversation the run STOPS ONCE and asks the person how long
+the article should be. That is the only stop of its kind in a run, and it sits there because the
+band exists by then and the four researchers have not started: they are the longest and most
+expensive part of a run, so this is the last cheap moment to ask. Answering it starts them.
+
 Before step 0b there is the credit pre-flight. If the numbers cannot be bought, the run refuses at
 the top rather than starting and quietly filling itself with placeholders (see _preflight).
 
@@ -58,6 +63,65 @@ def _compat(research):
     research["what_they_all_cover"] = list((research.get("winners") or {}).get("common_h2s") or [])
     research["the_gap"] = "; ".join((research.get("winners") or {}).get("gaps_to_own") or [])
     return research
+
+
+# ---- the one length question --------------------------------------------------------------------
+# The whole record of the question and its answer for this run: _work/ask-words.json. It holds what
+# was asked, what was measured, what the person said, AND the run's own inputs.
+#
+# THE INPUTS MATTER. loop._resume_words re-enters this tool with `{"word_target": N}` and nothing
+# else, so on the way back there is no topic, no angle and no placeholder flag in the call. Without
+# them recorded here the resumed run would refuse itself with "No topic given" and the person would
+# watch twenty minutes of research vanish because they answered a question. Written BEFORE the tool
+# returns the question, never after.
+ASK_FILE = "ask-words"
+
+
+def _ask_block(keyword, band, suggested):
+    """The two lines a person reads, in their words, with the numbers in them.
+
+    No band means nothing could be measured (no login, a refused SERP, a model reply with no band
+    in it). Say that plainly rather than dressing a default up as a measurement.
+    """
+    lo, hi = (band or {}).get("min"), (band or {}).get("max")
+    n = "{:,}".format(suggested)
+    if lo and hi and lo != hi:
+        question = ('The pages ranking for "%s" run %s to %s words. The average is %s.'
+                    % (keyword, "{:,}".format(lo), "{:,}".format(hi), n))
+    elif lo or hi:
+        question = ('The pages ranking for "%s" run about %s words.'
+                    % (keyword, "{:,}".format(lo or hi)))
+    else:
+        question = ('I could not measure how long the pages ranking for "%s" run, so %s words is a '
+                    "starting point, not a measurement." % (keyword, n))
+    why = ("I will write to %s words, and the research team will take about fifteen minutes. "
+           "Type a different number if you want a different length." % n)
+    return question, why
+
+
+def _record_question(ctx, topic, angle_given, placeholder_numbers, demo, demo_note, keyword,
+                     band, suggested):
+    """File the question, and the run's inputs with it, then hand loop.py what to put on screen."""
+    _c.save_work(ctx, ASK_FILE, {
+        "asked_at": store.now(),
+        "topic": topic, "angle": angle_given, "placeholder_numbers": bool(placeholder_numbers),
+        "demo": bool(demo), "demo_note": demo_note,
+        "keyword": keyword, "band_measured": band or None, "suggested": suggested,
+        "answer": None, "answered_at": None, "answer_source": None,
+    })
+    question, why = _ask_block(keyword, band, suggested)
+    return {"question": question, "why": why, "suggested": suggested, "band": band or {}}
+
+
+def _record_answer(ctx, asked, words, source):
+    """File the answer next to the question. The file, not the run state, is what a later call reads,
+    so the number survives a restart of the app between the question and the rest of the research."""
+    row = dict(asked or {})
+    row["answer"] = words
+    row["answered_at"] = store.now()
+    row["answer_source"] = source
+    _c.save_work(ctx, ASK_FILE, row)
+    return row
 
 
 # ---- the credit pre-flight ---------------------------------------------------------------------
@@ -162,9 +226,28 @@ def _preflight(ctx, redo, placeholder_numbers, say):
                        % (bal, MIN_CREDITS))}, False, "")
 
 
-def run(ctx, topic, angle="", redo=False, placeholder_numbers=False, **_ignored):
+def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_target=None, **_ignored):
+    """One topic, researched. Called twice per article: once by the model with the topic, and once
+    by loop._resume_words with the length the person answered and nothing else.
+
+    word_target is the person's answer, in words. It is never the model's to set and it is not in
+    the tool schema the model sees: the length of an article is a decision for the person paying
+    for it, and a tool argument would let the model quietly decide it instead.
+    """
     topic = (topic or "").strip()
     angle = (angle or "").strip()
+    asked = _c.load_work(ctx, ASK_FILE) or {}
+    words_chosen = assemble.as_words(word_target)
+
+    # The way back in from the length question: the call carries a number and nothing else, so the
+    # topic, the angle as the person first gave it, and the placeholder flag all come off the file
+    # that was written before the question went out.
+    resuming = bool(asked.get("asked_at")) and words_chosen is not None
+    if not topic:
+        topic = str(asked.get("topic") or "").strip()
+        angle = angle or str(asked.get("angle") or "").strip()
+        if asked.get("placeholder_numbers"):
+            placeholder_numbers = True
     if not topic:
         return {"summary": "No topic given.", "error": "run_research needs a topic."}
     chat_id, run_id = ctx["chat_id"], ctx["run_id"]
@@ -173,9 +256,15 @@ def run(ctx, topic, angle="", redo=False, placeholder_numbers=False, **_ignored)
     notes = []
 
     # ---- the credit pre-flight, before a single step starts ------------------------------------
-    refusal, demo, demo_note = _preflight(ctx, redo, bool(placeholder_numbers), say)
-    if refusal:
-        return refusal
+    # Skipped on the way back from the length question. Reading the balance is itself a DataForSEO
+    # call, the rule in _preflight is that it is read ONCE per run, and the run that asked the
+    # question already read it a moment ago. Its verdict is on the ask file, so it is reused.
+    if resuming:
+        demo, demo_note = bool(asked.get("demo")), str(asked.get("demo_note") or "")
+    else:
+        refusal, demo, demo_note = _preflight(ctx, redo, bool(placeholder_numbers), say)
+        if refusal:
+            return refusal
     if demo_note:
         notes.append(demo_note)
 
@@ -274,6 +363,58 @@ def run(ctx, topic, angle="", redo=False, placeholder_numbers=False, **_ignored)
     else:
         say("Brief assembled", "Verdict and build spec written; every box checked")
 
+    # ---- THE ONE LENGTH QUESTION ----------------------------------------------------------------
+    # Here, and nowhere else. The band exists (the brief above measured it) and the research
+    # conversation has not started, so this is the last moment the run is still cheap.
+    #
+    # The bug it ends, 2026-09-09: length used to be decided TWICE by two steps that never spoke.
+    # The architect budgeted from this band, and then readable re-decided it from a hardcoded 2,100
+    # that had never seen the band. Competitors at 3,200 words and competitors at 1,400 both came
+    # out as an article cut to 2,100. That is the over-concision the owner had been feeling for
+    # weeks and worked out himself. From here on there is one number, a person chose it, and every
+    # step downstream reads it off build_spec.word_band.
+    measured_band = (brief.get("build_spec") or {}).get("word_band") or {}
+    suggested = assemble.suggested_words(brief.get("build_spec"))
+    if words_chosen is None:
+        words_chosen = assemble.as_words(asked.get("answer"))
+    if words_chosen is None and asked.get("asked_at"):
+        # Asked once already and still no number: take the suggestion and say so. Asking again
+        # would break "one question per article", and re-asking on every re-entry is a loop that
+        # never ends, because the thing that would end it is the answer we did not get.
+        words_chosen = suggested
+        asked = _record_answer(ctx, asked, words_chosen, "the suggestion; the question was put once "
+                                                         "and came back without a number")
+        notes.append("the length question was put once and came back without a number, so the "
+                     "article is written to the measured average of %s words" % "{:,}".format(words_chosen))
+    if words_chosen is None:
+        ask = _record_question(ctx, topic, angle_before, placeholder_numbers, demo, demo_note,
+                               primary["keyword"], measured_band, suggested)
+        say("Asking how long the article should be",
+            "The pages that rank run %s; suggesting %s words"
+            % (("%s to %s" % ("{:,}".format(measured_band["min"]), "{:,}".format(measured_band["max"])))
+               if measured_band.get("min") and measured_band.get("max") else "an unmeasured length",
+               "{:,}".format(suggested)))
+        return {"summary": "Waiting on one answer: how long this article should be.",
+                "ask_words": ask}
+    if not asked.get("asked_at"):
+        # The number arrived with the call and no question was ever put (a scripted run, a rerun
+        # that already knows the answer). Record the same row anyway, with asked_at left null, so
+        # the file always says which of the two happened.
+        asked = dict(asked, topic=topic, angle=angle_before, asked_at=None,
+                     placeholder_numbers=bool(placeholder_numbers), demo=bool(demo),
+                     demo_note=demo_note, keyword=primary["keyword"],
+                     band_measured=measured_band or None, suggested=suggested)
+    if asked.get("answer") != words_chosen:
+        asked = _record_answer(ctx, asked, words_chosen,
+                               "the person" if words_chosen != suggested else "the person, who kept the suggestion")
+
+    # From this line on, `build_spec` is the settled one and `brief["build_spec"]` is the raw
+    # measurement. Nothing below reads the raw one, and _work/brief.json keeps it for the record.
+    build_spec = assemble.settle_word_band(brief["build_spec"], words_chosen)
+    say("Writing to %s words" % "{:,}".format(words_chosen),
+        "Your number, not the measured band. Every step from here reads it: the plan's word budget, "
+        "each section's length, the blend and the final rewrite")
+
     # ---- 2a. the spine ---------------------------------------------------------------------------
     spn, _ = step("spine", lambda: {"spine": spine.run(topic, angle, w, win, company)})
     say("The spine", spn["spine"][:200])
@@ -368,7 +509,8 @@ def run(ctx, topic, angle="", redo=False, placeholder_numbers=False, **_ignored)
                      "spokes": (final.get("spoke_candidates") or [])[:_c.MAX_SPOKES], "notes": final.get("notes", "")},
         "serp": _serp_block(extract, snap),
         "winners": _win_block(win),
-        "verdict": brief["verdict"], "build_spec": brief["build_spec"], "completeness": brief["completeness"],
+        "verdict": brief["verdict"], "build_spec": build_spec, "completeness": brief["completeness"],
+        "word_target": words_chosen,
         "cannibalisation": cann.get("hit"),
         "topic_gate": {"relevant": True, "why": gate.get("why", ""), "angle_changed": bool(gate.get("angle_changed")),
                        "why_changed": gate.get("why_changed", "")},

@@ -51,6 +51,12 @@ the one that makes the reader's problem hurt.
 WRITE FOR SOMEONE WHO KNOWS NOTHING YET. Nothing in your opening may depend on a term, a measure or
 a comparison that only the body explains.
 
+WHEN THE ARTICLE EXPLAINS A SUBJECT THE READER MAY NOT KNOW (a glossary, a definitional piece, an
+informational explainer), the intro also says plainly what that subject IS, in one sentence, before
+the agitate beat leans on it. A reader who arrives not knowing what a skills assessment is must not
+meet validity claims and benchmarks before anyone has told them. The definition is one plain
+sentence inside the PAS shape, not a section.
+
 BANNED. Never open with, or include anywhere in the intro, any sentence that describes the article
 instead of informing the reader:
   "This article breaks down / covers / explores / explains / walks through…"
@@ -64,29 +70,33 @@ Work the primary keyword in naturally. It must appear within the article's first
 not read as though it was inserted.
 
 ────────────────────────────────────────────────────────────────────────
-3. THE QUICK ANSWER — the short version of the whole article.
+3. THE TL;DR — the article's takeaways, for someone who reads nothing else.
 
-It sits under the heading "Quick answer", directly after the intro and before the first section.
-A reader who reads ONLY this must still come away with the article's answer and the two or three
-things that matter most.
+It sits under the heading "TL;DR", directly after the intro and before the first section. This is
+the house pattern: a concise set of the main takeaways the reader can act on, not a teaser and
+not a second intro.
 
-IT IS A SHORTER ARTICLE, NOT A LIST OF TAKEAWAYS. That distinction is the whole rule.
-  Wrong: "Key things to remember: cost per hire varies · track it quarterly · benchmarks differ"
-         — that is a contents page. It tells the reader what the article is about, not what it says.
-  Right: "Cost per hire is what you spend to fill one seat, divided by the seats you filled. The
-         figure most teams quote is from 2022 and counts only the invoiced half. Once you add
-         interview hours and the empty seat, the real number is roughly three times the benchmark."
-         — that is the article, short. It ANSWERS.
+EVERY ITEM IS A FULL STATEMENT THAT ANSWERS, never a topic label.
+  Wrong: "- Cost per hire varies
+          - Track it quarterly
+          - Benchmarks differ"
+         — that is a contents page. It names topics without saying what the article found.
+  Right: "- The cost-per-hire figure most teams quote is from 2022 and counts only the invoiced
+           half; the real number is roughly three times it.
+          - Divide what you spent by the seats you filled, and count interview hours and the
+           empty seat, not just invoices.
+          - Benchmark against your own last two quarters before any industry table."
+         — each line carries a verdict or an action the reader can take away.
 
 HOW TO WRITE IT
-- 60 to 110 words. Under 60 and it says nothing; over 110 and it is a second intro.
-- Prose or a short list, whichever suits the article. Both are fine. If you use a list, every item
-  must be a full statement that says something, never a two-word label.
-- Give the answer. If the article settles a question, settle it here too, in one line.
-- At most ONE number, and only the single figure the whole article turns on. This is a summary,
-  not a data dump.
-- It must not repeat the intro's wording. The intro makes them want to read; this tells them what
-  they would learn if they did.
+- 3 to 5 items, 60 to 110 words in total. Under 60 and it says nothing; over 110 and it is a
+  second intro.
+- A dashed list is the default. Tight prose is allowed when the article settles one single
+  question and a list would pad it.
+- If the article settles a question, settle it here too, in the first item.
+- At most ONE number across the whole block, and only the figure the article turns on.
+- It must not repeat the intro's wording. The intro makes them want to read; this is what they
+  keep if they do not.
 - No source tags. It carries nothing the body has not already proved.
 
 ────────────────────────────────────────────────────────────────────────
@@ -205,6 +215,9 @@ HOW THE INTRO, THE ANSWERS AND THE CLOSE MUST READ
 This is the first thing a reader meets and the last thing they leave on, so these are held TIGHTER
 here than in the body, not looser.
 
+- THE REGISTER IS PROFESSIONAL. The readership is senior managers, directors, VPs and the
+  C-suite, and the register to hold is SHRM's: plain, direct, professional. No colloquial hooks,
+  no slang, no jokey fragments. Warmth comes from the reader's own situation, never informality.
 - NO SENTENCE OVER 25 WORDS. Not "most". None. Count them.
 - NO PARAGRAPH OVER 4 SENTENCES.
 - READING LEVEL: GRADE 12. A capable adult who does NOT work in this field reads it once and gets
@@ -224,7 +237,15 @@ HOW THIS COMPANY WRITES. The sections you are wrapping were written against thes
 a different voice announces itself.
 {{VOICE}}
 
+════════════════════════════════════════════════════════════════════
+
+THIS ARTICLE IS A {{ARCHETYPE}}. FORMAT RULES FOR THE WRAP — where they clash with the general
+shapes above, the format rules win. Articles must not all open and close the same way; this block
+is what makes this format's wrap its own.
+{{FORMAT_CRAFT}}
+
 ════════════════════════════════════════════════════════════════════════
+
 ON MENTIONING {{BRAND}}: the close is where it belongs, and nowhere else. Never in the intro, never
 in an FAQ answer. A forced mention costs more trust than it buys.
 
@@ -236,7 +257,7 @@ rule above that they contradict. "(none)" means there are none.
 Return ONLY this JSON, nothing else:
 {"h1": "<the H1, exactly as given above>",
  "intro": "<4-6 sentences, built on PAS>",
- "quick_answer": "<60-110 words: the article in short, and it must ANSWER>",
+ "quick_answer": "<the TL;DR block: 3-5 takeaway items, 60-110 words total, each a full statement>",
  "faq": [{"question": "<the question>", "answer": "<{{FAQ_WORDS}} words or fewer>",
           "origin": "researched | added"}],
  "dropped_questions": [{"question": "<the one you dropped>", "why": "<one line>"}],

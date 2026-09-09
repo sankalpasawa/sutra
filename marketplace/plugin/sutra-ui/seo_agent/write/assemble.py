@@ -10,7 +10,7 @@ reader first meets them, one number per URL (two cards sharing a source share on
 whose source did not make the list is stripped from display; its provenance stays in the work files.
 Markers appear only at the places the links pass kept for an over-cited source (citation_keep).
 
-The order: H1, intro, ## Quick answer, sections, ## <close heading>, close, ## Frequently asked
+The order: H1, intro, ## TL;DR, sections, ## <close heading>, close, ## Frequently asked
 questions, ## Sources. The close comes before the FAQ: it ends the argument; the FAQ is reference.
 """
 import re
@@ -115,7 +115,11 @@ def render(w, idx):
 
     L = ["# %s" % (w.get("h1") or ""), "", refs(w.get("intro") or ""), ""]
     if w.get("quick_answer"):
-        L += ["## Quick answer", "", refs(w["quick_answer"]), ""]
+        # "TL;DR", not "Quick answer". The owner changed the wrapper prompt on 2026-09-05 to ask
+        # for takeaways rather than a paragraph, and his own assemble follows suit. Left alone, the
+        # shipped article carried a takeaway block under the old label, which is the one thing a
+        # heading must never do: promise something the text below it is not.
+        L += ["## TL;DR", "", refs(w["quick_answer"]), ""]
     bare = 0
     for s in w["sections"]:
         body = refs(s["prose"])

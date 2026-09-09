@@ -385,7 +385,12 @@ def run(w, st, idx, say=lambda *a: None):
             for u in (c.get("source_urls") or [])[:1]:
                 url_cards[u].append(c)
 
-    words = sum(len((s_.get("prose") or "").split()) for s_ in (w.get("sections") or []))
+    # The person's number first, the prose second. The link budget is a share of the article's
+    # length, so measuring the draft would size it against whatever the writer happened to produce
+    # instead of the length that was actually chosen. Last of the length readers to be wired,
+    # 2026-09-09; the others go through research.json's build spec.
+    words = int(((st.get("word_budget") or {}).get("target")) or 0) or \
+        sum(len((s_.get("prose") or "").split()) for s_ in (w.get("sections") or []))
     want = max(C.MIN_INTERNAL_LINKS, round(words / C.WORDS_PER_INTERNAL_LINK))
     jobs = {s_.get("headline") or "": (s_.get("job") or "")[:220] for s_ in (st.get("sections") or [])}
     notes = []

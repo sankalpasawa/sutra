@@ -167,9 +167,18 @@ def _cli_prompt(messages):
     return "\n\n".join(parts)
 
 
-def _cli_command(binary, system, tools, model):
+def _cli_command(binary, system, tools, model, web=False):
+    """The CLI call. `--tools ""` is the default and it matters: the model answers from the prompt
+    and nothing else, so a step cannot quietly reach the internet and nobody notices.
+
+    `web=True` is the ONE exception, and only two callers may set it: the enrichment search and the
+    replacement-source hunt. Both exist to go and find pages, both are the port of a step the
+    original runs as `claude -p --allowedTools WebSearch`, and without it they can only ask the
+    model for URLs it believes exist. A believed URL fails to load and is discarded, so nothing
+    invented survives either way, but guess-and-check finds less than a search does. (2026-09-09.)
+    """
     cmd = [binary, "-p", "--output-format", "json", "--no-session-persistence",
-           "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+           "--tools", "WebSearch" if web else "", "--setting-sources", "", "--strict-mcp-config",
            "--disable-slash-commands",
            "--system-prompt", _cli_system(system, tools),
            "--json-schema", _compact(CLI_TOOL_SCHEMA if tools else CLI_TEXT_SCHEMA)]
@@ -197,8 +206,8 @@ def _transient(text):
     return any(k in t for k in _TRANSIENT)
 
 
-def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=None):
-    cmd = _cli_command(binary, system, tools, model)
+def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=None, web=False):
+    cmd = _cli_command(binary, system, tools, model, web=web)
     prompt = _cli_prompt(messages)
     attempts = 1 + len(CLI_RETRY_SLEEPS)
     for attempt in range(attempts):
@@ -347,21 +356,21 @@ _GATE = _threading.BoundedSemaphore(PARALLEL)
 LONG_TIMEOUT = 1200.0        # a whole document in one call (a brand file, a full-article edit)
 
 
-def call(system, messages, tools=None, model=None, on_retry=None, timeout=None):
+def call(system, messages, tools=None, model=None, on_retry=None, timeout=None, web=False):
     """timeout: seconds for this one call. Whole-document calls pass LONG_TIMEOUT; the
     default CLI_TIMEOUT is for a turn or a section. Per call, never a global swap."""
     with _GATE:
-        return _call(system, messages, tools, model, on_retry, timeout)
+        return _call(system, messages, tools, model, on_retry, timeout, web)
 
 
-def _call(system, messages, tools=None, model=None, on_retry=None, timeout=None):
+def _call(system, messages, tools=None, model=None, on_retry=None, timeout=None, web=False):
     """on_retry(message) is called before each retry of a transient CLI error, so the
     caller can put a line in the run log instead of leaving the user staring at a spinner."""
     binary = cli_bin()
     if binary:
         return _claude_cli(system, messages, tools, binary,
                            model or os.environ.get("SEO_AGENT_MODEL", "").strip() or None,
-                           on_retry=on_retry, timeout=timeout)
+                           on_retry=on_retry, timeout=timeout, web=web)
     a, o = _keys()
     if a:
         return _anthropic(system, messages, tools, a, model or ANTHROPIC_MODEL)
@@ -370,15 +379,22 @@ def _call(system, messages, tools=None, model=None, on_retry=None, timeout=None)
     raise NoKey("No model available. Install the Claude CLI or add a key in Connections.")
 
 
-def text(prompt, system="You are a precise assistant. Answer with only what was asked.", timeout=None):
-    """One-shot text. Used inside tools, where no tool-calling is needed."""
-    return call(system, [{"role": "user", "content": prompt}], timeout=timeout)["text"]
+def text(prompt, system="You are a precise assistant. Answer with only what was asked.", timeout=None,
+         web=False):
+    """One-shot text. Used inside tools, where no tool-calling is needed.
+
+    `web=True` lets this ONE call search the internet. Only the enrichment search and the
+    replacement-source hunt may pass it: both exist to go and find pages, and both are ports of a
+    step the original runs with WebSearch enabled. Everything else answers from its prompt.
+    """
+    return call(system, [{"role": "user", "content": prompt}], timeout=timeout, web=web)["text"]
 
 
-def json_call(prompt, system="Reply with valid JSON only. No prose, no code fences.", retries=1, timeout=None):
+def json_call(prompt, system="Reply with valid JSON only. No prose, no code fences.", retries=1,
+              timeout=None, web=False):
     """One-shot JSON, with a tolerant extractor and one retry on a parse failure."""
     for attempt in range(retries + 1):
-        raw = text(prompt, system, timeout=timeout)
+        raw = text(prompt, system, timeout=timeout, web=web)
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("```")[1]

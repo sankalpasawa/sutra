@@ -113,6 +113,38 @@ def fake_fetch(url):
 
 fs.fetch = fake_fetch
 
+# The scrape moved off old.reddit HTML and onto research/reddit.py on 2026-09-09, because old.reddit
+# login-walls even a real browser and this builder was coming back empty every single time while
+# reporting it as "nobody talks about this". So the stub moves with it: same fixture data, new
+# transport. BLOCK_ALL still makes every call unknown, which is what the refusal checks below need.
+from seo_agent.research import reddit as _reddit          # noqa: E402
+
+
+def _fake_top(sub, limit=25, period="year", fetch_fn=None):
+    FETCHED.append("top:" + sub)
+    if BLOCK_ALL["on"]:
+        return {"state": "unknown", "posts": [], "reason": "Reddit served a login page"}
+    rows = [{"id": pid, "subreddit": s_, "title": "A post about %s hiring" % g,
+             "text": "This happened to me, %s." % g,
+             "author": "someone", "score": score, "num_comments": ncom, "created_utc": 0.0,
+             "url": "https://www.reddit.com/r/%s/comments/%s/t/" % (s_, pid), "permalink": ""}
+            for pid, s_, g, score, ncom in POSTS if s_ == sub][:limit]
+    return {"state": "ok" if rows else "empty", "posts": rows, "reason": ""}
+
+
+def _fake_comments(post_id, limit=20, sort="top", fetch_fn=None):
+    FETCHED.append("comments:" + post_id)
+    if BLOCK_ALL["on"]:
+        return {"state": "unknown", "comments": [], "reason": "Reddit served a login page"}
+    g = BY_ID[post_id][2]
+    return {"state": "ok", "reason": "", "comments": [
+        {"text": "This happened to me, %s." % g}, {"text": "Same here, %s again." % g},
+        {"text": "It is always %s." % g}]}
+
+
+_reddit.top = _fake_top
+_reddit.comments = _fake_comments
+
 
 # --- the model stub ------------------------------------------------------------------------------
 
@@ -332,8 +364,10 @@ ok("audience stays inside its closed set", all(r["audience"] in trends.AUDIENCES
 ok("a sub-question naming the company is dropped as evidence leaking backwards",
    not any("example" in q.lower() for r in rows for q in r["sub_questions"]),
    [r["sub_questions"] for r in rows])
+# www.reddit.com, not old.reddit.com: the scrape moved on 2026-09-09 because old.reddit login-walls
+# even a real browser, and this builder was blind.
 ok("the best example is a real post URL from that tension's own pile",
-   all(r["best_example"].startswith("https://old.reddit.com") for r in rows if r["n_posts"]))
+   all(r["best_example"].startswith("https://www.reddit.com") for r in rows if r["n_posts"]))
 
 print("\nstage 2.5 — the self-audit gate")
 sa = cm.read(trends._w("self-audit.md")) or ""

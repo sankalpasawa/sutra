@@ -2,7 +2,55 @@
 
 **status**: active · **updated**: 2026-09-09
 
-## v2.252.0 (2026-09-09, HEAD)
+## v2.253.0 (2026-09-09, HEAD)
+
+**Reddit reads again, and it was blocking three things at once.** Every plain request from this
+machine came back 403, and old.reddit answered a login page with a success code, which is why one
+site's eighteen candidate communities all sat unverified. A real browser goes straight through:
+warm the origin once, then fetch from inside the page. `research/reddit.py` is now the one place
+anything asks Reddit anything, with a three-state answer that never confuses "nobody talks about
+this" with "we could not look". Re-run live against the real 18: **10 kept, 8 dropped, 0
+unverified, in 42 seconds.** Two bugs surfaced only by running it: a subreddit that does not exist
+answers with subreddit rows instead of posts, so `r/ExperiencedRecruiter` reported "8 posts" titled
+*googlejobs* and *Oil and Gas Life*. The Study Trends builder was on the same broken path and is
+moved across.
+
+**The length is one number, chosen by a person.** It was decided twice by two steps that never
+spoke: the architect budgeted from the pages that actually rank, then the readable pass re-decided
+it from a hardcoded 2,100 that knew nothing about them. Competitors at 3,200 words and competitors
+at 1,400 both produced an article cut to 2,100. That ceiling is deleted, not softened. One question
+now, asked once per run, before the expensive research: here is what the ranking pages run, here is
+the average, use it or type your own. A typed number wins. Every step downstream reads that one
+number, including the internal-link budget, which was the last one still measuring the draft.
+
+`WORDS_PER_FACT` is now shared by the body writer and the rewrite instead of being one step's
+private preference. The fact count follows the length rather than a fixed number.
+
+**234 lines of the owner's own prompt writing, restored.** His edits were a week old and the app was
+running older copies. The rewrite pass alone was missing "professional, not chatty", "put the basics
+first", "connect the sections", and a far stronger rule about sections that wander off the
+headline's promise. It was still carrying the chatty example AS ITS MODEL. A new parity suite now
+fails by name when his originals drift ahead again, which is exactly how this went unnoticed.
+
+**The three stations that only reported are now doing the work.** Enrich goes and researches what
+the structure says is thin, instead of writing a note about it; nine sections on one real article
+had asked and got nothing. A dead source is hunted and replaced rather than reported. And voices
+from the field is built: it reads where practitioners argue in public and weaves the real arguments
+in, which on the owner's own article was worth 1,273 words. All three log live. All three carry the
+same honesty rule: a page that will not load is dropped, and a quote that is not really on the page
+it claims is thrown away.
+
+**A Prompts tab.** The words the agent writes by, editable without a developer: the eight format
+rulebooks and the six writing prompts, with a flow at the top showing how an article actually gets
+made. Edits live beside the owner's own files, so an app update never overwrites them, and Reset
+puts a prompt back to what shipped. A save that loses a placeholder the code fills is refused with
+the missing ones named, rather than breaking a run three steps later.
+
+Also: the Library says what shape each article was written to · a takeaway block no longer ships
+under a heading that promises a quick answer · the per-format wrapper rules the owner wrote are
+wired in, so a comparison and a glossary no longer open and close alike.
+
+## v2.252.0 (2026-09-09)
 
 **The agent stops interrupting you.** A run used to stop five times. It now stops twice, at the two
 that are decisions rather than reviews: which topic, and whether the draft is finished. The brand

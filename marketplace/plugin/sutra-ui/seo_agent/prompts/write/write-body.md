@@ -178,6 +178,21 @@ Grade 12 is not simplified and not dumbed down: at that level a reader handles a
 word without help. What they cannot do is re-read a sentence to parse it, or guess what a piece of
 jargon means. Every sentence survives one pass.
 
+THE REGISTER: PROFESSIONAL. This publishes under a B2B brand and is read by senior managers,
+directors, VPs, and the C-suite. Write the way SHRM writes: plain, direct, professional. Grade 12
+sets the ceiling on complexity; this rule sets the floor on formality. Banned: colloquial idioms
+and punchy asides ("this is where it bites", "watch the clock", "real talk"), slang, jokey
+fragments, and cleverness that trades precision for personality. Not banned: contractions, short
+sentences, and the plain word.
+   Fails:  "Identical job titles are where this bites."
+   Passes: "Identical job titles are where this problem usually appears."
+Warmth comes from concrete cases and the second person, never from informality.
+
+EVERY SENTENCE MUST STAND ON ITS OWN. Search engines and AI assistants lift single sentences from
+this page and show them with nothing around them. A sentence that only makes sense once the whole
+piece has been read is a wasted sentence. Give each one its own subject, and never write one that
+leans on a conclusion the reader has not reached yet.
+
 - CUT PADDING, NOT CONNECTIVE TISSUE. No filler, no throat-clearing before a fact, no "in this section
   we will", no restating the heading in the first sentence, no summarising at the end what the reader
   just read. But a short phrase carrying the reader from one fact to the next ("since then", "but",

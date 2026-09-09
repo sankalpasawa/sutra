@@ -513,3 +513,56 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .ag-idea .ir .k{flex:0 0 168px;color:var(--muted)}
 .ag-idea .ir .v{flex:1;min-width:0;color:var(--ink);overflow-wrap:anywhere}
 .ag-idea .ir .v a{color:var(--acc)}
+
+/* ── the Prompts tab ─────────────────────────────────────────────────────────
+   The owner's own writing rules, changed without a developer. Two pieces: the
+   flow across the top, and the prompts under it in one box that scrolls.
+   Everything here uses the tokens the rest of the screen uses, so light, dark
+   and a changed accent all follow with no second set of colours. */
+
+/* The flow. A station name on the left, its steps as phrases running across,
+   with a small chevron between them. Deliberately not a diagram: he asked for
+   phrases, not boxes and arrows. */
+.ag-flow{display:flex;flex-direction:column;gap:6px;margin:0 0 4px}
+.ag-flowrow{display:flex;gap:12px;align-items:baseline;padding:8px 11px;border:1px solid var(--line-soft);
+  border-radius:9px;background:var(--inset)}
+.ag-flowrow .fh{flex:0 0 118px;font:600 11px/1.4 var(--sans);color:var(--ink)}
+.ag-flowrow .fs{flex:1;min-width:0;margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;
+  align-items:baseline;gap:2px 4px;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.ag-flowrow .fs li+li::before{content:"›";color:var(--line);padding-right:5px}
+/* the format rules are the one station on this screen he can open and change, and they sit
+   BEFORE the architect because that is what the architect obeys, so they carry the accent */
+.ag-flowrow.rules{border-color:var(--acc);background:var(--acc-bg)}
+.ag-flowrow.rules .fh{color:var(--acc)}
+.ag-flowrow.rules .fs{color:var(--ink)}
+
+/* The list. It scrolls in its own box and does not take the screen: his words,
+   "it is scrollable, it is not super, it does not cover the entire screen". */
+.ag-promptlist{max-height:46vh;overflow-y:auto;overscroll-behavior:contain;
+  border:1px solid var(--line-soft);border-radius:9px;padding:12px 13px;background:var(--card)}
+.ag-promptgroup+.ag-promptgroup{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.ag-promptgroup .gh{font:600 12px/1.3 var(--sans);color:var(--ink);margin:0 0 3px}
+.ag-promptgroup .gn{font-size:11.5px;color:var(--muted);line-height:1.5;margin:0 0 9px}
+.ag-file.on{border-color:var(--acc);background:var(--acc-bg)}
+.ag-file .fn .pill{margin-left:6px;vertical-align:1px}
+
+/* One prompt in the review panel: the placeholders it fills, then the text. */
+.ag-toks{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;margin:0 0 12px;padding:9px 11px;
+  border-left:2px solid var(--acc);background:var(--acc-bg);border-radius:0 7px 7px 0}
+.ag-toks .tl{flex:1 0 100%;font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px}
+.ag-toks code{font:500 10.5px/1.5 var(--mono);color:var(--acc);background:var(--card);
+  border:1px solid var(--line-soft);border-radius:4px;padding:1px 5px}
+.ag-prompttext{margin:0;font:11.5px/1.6 var(--mono);color:var(--ink);white-space:pre-wrap;
+  overflow-wrap:anywhere;background:var(--inset);border:1px solid var(--line-soft);
+  border-radius:8px;padding:12px 13px}
+.ag-editbox .ag-toks{margin-bottom:8px}
+.ag-editbox .ag-err{margin:8px 0 0}
+/* the refusal sits between the words he typed and the Save button, where he is looking,
+   not below the row where a long message runs off the foot of the panel */
+.ag-editbox .ag-err+.row{margin-top:8px}
+
+/* With the review panel open this column is about 200px wide, and a fixed station
+   label beside a wrapping list of phrases turned every phrase vertical. Narrow, the
+   row stacks: the station name on its own line, its phrases under it. */
+.ag.haspanel .ag-flowrow{flex-direction:column;gap:3px}
+.ag.haspanel .ag-flowrow .fh{flex:none}

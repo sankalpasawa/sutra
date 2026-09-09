@@ -110,6 +110,15 @@ FIRST DUTY — fix what only the whole set reveals. These are the real reason th
 
 SECOND DUTY — improve any heading that is weak on its own:
 
+- A HEADING THAT NEEDS THE ARTICLE. Read each heading as someone who knows only the H1: a skimmer,
+  a searcher, an AI agent lifting one section. If it cannot be understood without the article's
+  context, rewrite it plainly. "The 40-Minute Ceiling: What Drops Off" fails this; "How Long a
+  Skills Assessment Should Take" passes. Clever, coined, or hook-and-colon headings are the
+  commonest way a set fails it, and plain beats clever every time.
+- NO RHETORICAL QUESTIONS, NO QUIPS, NO IDIOM. The readership is senior managers and the C-suite,
+  and the register is professional. "Validated for Whose Job? The Call Center Problem" becomes
+  "Check the Validity Study Covers Your Job Title". A verdict written as a quip ("An Invite Link
+  Is Not an Identity Check") becomes the neutral statement ("No Built-In Identity Verification").
 - A LABEL IS NOT A HEADING. "How we compiled these figures" files the section away. "Which figures we
   kept apart, and why" tells the reader what they get. Name the actual thing: the number, the role,
   the question someone would ask out loud, the decision being made.

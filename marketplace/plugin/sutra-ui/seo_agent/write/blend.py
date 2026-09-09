@@ -113,10 +113,13 @@ def _length_line(secs, band):
     verdict = ("over that aim by about {:,} words".format(words - aim_hi) if words > aim_hi
                else "under that aim by about {:,} words".format(aim_lo - words) if words < aim_lo
                else "inside that aim")
-    return ("the sections below total {:,} words. The finished article should land between {:,} and {:,}. "
+    # One number now, not a range: the length is settled by a person before the run starts, so
+    # "between 3,200 and 3,200" was what this printed. (2026-09-09)
+    aim = ("about {:,}".format(lo) if lo == hi else "between {:,} and {:,}".format(lo, hi))
+    return ("the sections below total {:,} words. The finished article should land {}. "
             "An intro, five FAQ answers and a close are written AFTER you and add roughly {} words, so the "
             "sections need to come in around {:,} to {:,}. Right now they are {}."
-            .format(words, lo, hi, reserve, aim_lo, aim_hi, verdict))
+            .format(words, aim, reserve, aim_lo, aim_hi, verdict))
 
 
 def _jobs_block(st, secs):

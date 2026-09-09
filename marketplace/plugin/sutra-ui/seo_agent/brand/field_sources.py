@@ -3,30 +3,38 @@
 Port of 9-field-sources/scripts/run_field_sources.py, minus the paid fallback.
 
 Step 1 propose candidate subreddits from the niche and the personas (model; it knows the names).
-Step 2 CHECK every one against old.reddit and keep only the live ones (code; this is counting).
-       A subreddit name that does not exist returns zero results in silence, indistinguishable from
-       "nobody discusses this", so the check happens once, here. A rate-limited old.reddit serves a
-       LOGIN PAGE with HTTP 200: that is "unknown", never "empty". There is NO paid fallback: a
-       candidate that cannot be checked is marked unverified and said so, never dropped, never raised on.
+Step 2 CHECK every one against Reddit and keep only the live ones (code; this is counting).
+       The check has THREE answers and never two, because a subreddit with real posts, a community
+       nobody posts in, and a community we were not allowed to look at are three different facts:
+         keep/drop  Reddit answered and we counted what is there.
+         unknown    We could not look. Blocked, login-walled, or no browser on this machine.
+       A rate-limited Reddit serves a LOGIN PAGE with HTTP 200, which is why "it answered" is not
+       the same as "we read it": research/reddit.py parses the body and only calls it empty when it
+       parsed a real, empty listing. There is NO paid fallback: a candidate that cannot be checked
+       is marked unverified and said so, never dropped, never raised on.
 Step 3 write the reference file (model), then verify every kept name appears and no rejected one does.
+
+HOW THE CHECK REACHES REDDIT. Through research/reddit.py, which goes out through a real browser.
+Plain HTTP from an ordinary machine is refused: measured 2026-09-09 on the owner's laptop, this
+builder's old request (old.reddit.com HTML with a plain user agent) returned a login page for all
+18 candidates, so all 18 were unverified and the file was useless. Six plain-HTTP variations were
+tried and every one was a 403 or a login page. A browser gets through; that is the whole fix.
 
 Reads:  brand/persona.md
 Writes: brand/_work/field-sources/candidates.json · brand/field-sources.md
 """
 import re
-import time
-import urllib.parse
-import urllib.request
 
 from .. import llm
+from ..research import reddit
 from . import _common as cm
 
 OUTPUT = "field-sources.md"
 WORK = "_work/field-sources/"
 
 # --- how a subreddit qualifies -------------------------------------------------------------------
-# Vetted by ACTIVITY, never by subscriber count: old.reddit stopped exposing subscriber counts, and a
-# big dormant community is worth less than a small busy one anyway.
+# Vetted by ACTIVITY, never by subscriber count: the free surfaces stopped exposing subscriber
+# counts, and a big dormant community is worth less than a small busy one anyway.
 MIN_POSTS = 5               # top posts found in the last year
 MIN_COMMENTS = 40           # summed across those posts
 MAX_KEEP = 10               # subreddits kept in the final list. A longer list is nearly free: the
@@ -34,50 +42,69 @@ MAX_KEEP = 10               # subreddits kept in the final list. A longer list i
 #                             is a menu, not a workload. Too short is the expensive mistake.
 PER_ANGLE = 3               # kept from EACH `covers` angle first
 FS_CANDIDATES = 18          # discovered before verification
-THROTTLE = 2.0              # seconds between probes (tests set 0)
-TIMEOUT = 30
+PROBE_LIMIT = 25            # posts asked for per probe; the thresholds sit well under it
 PERSONA_CHARS = 6000
 QUERY = "hiring OR interview OR process"
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 ANGLES = ("the job", "the other side", "the tier below", "the adjacent trade")
-
-_RESULT = re.compile(r'<div class="[^"]*search-result search-result-link.*?'
-                     r'<span class="search-score">([\d,]+) point.*?'
-                     r'class="search-comments[^"]*"\s*>([\d,]+) comment', re.S)
-
-
-class _R308(urllib.request.HTTPRedirectHandler):
-    def http_error_308(self, req, fp, code, msg, headers):
-        return self.http_error_301(req, fp, 301, msg, headers)
-
-
-_OPENER = urllib.request.build_opener(_R308)
+# No THROTTLE here any more. Pacing between Reddit requests is decided in ONE place, research/
+# reddit.py's MIN_INTERVAL, so the two builders that probe Reddit cannot drift apart or double up.
 
 
 def fetch(url):
-    """The page text, or None when Reddit could not be reached. Tests replace this."""
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        return _OPENER.open(req, timeout=TIMEOUT).read().decode("utf-8", "ignore")
-    except Exception:        # noqa: BLE001 - a network failure degrades, never raises
-        return None
+    """The body Reddit returned for one URL, or None when it could not be reached.
+
+    THE network seam for this builder. Tests replace it (tests/test_brand.py and
+    tests/test_assets_trends.py both do), which is how no suite ever reaches reddit.com, and
+    assets/trends.py calls it directly for its own Reddit reads. It returns text rather than the
+    reader's dict because trends.py has been calling it that way since before reddit.py existed.
+    """
+    got = reddit.fetch(url)
+    return got.get("text") or None
+
+
+def check(sub):
+    """One subreddit's activity: {"posts", "comments", "state", "why"}.
+
+    `state` is "ok" (counted), "empty" (Reddit answered, nothing there) or "unknown" (we could
+    not look). The verdict is decided HERE and nowhere else; probe() and verify() only read it.
+
+    When a search comes back empty we spend one more request on about.json, because an empty
+    listing is also what Reddit returns for a name that does not exist (checked 2026-09-09:
+    r/zzzqqxnotarealsub answers 200 with no children, exactly like a real but silent community).
+    Telling those apart is the difference between "the model invented this subreddit" and
+    "nobody posts there".
+    """
+    r = reddit.search(sub, QUERY, limit=PROBE_LIMIT, fetch_fn=fetch)
+    if r["state"] == "unknown":
+        return {"posts": 0, "comments": 0, "state": "unknown", "why": r.get("reason") or ""}
+    posts = r["posts"]
+    counted = {"posts": len(posts), "comments": sum(int(p.get("num_comments") or 0) for p in posts),
+               "state": "ok", "why": ""}
+    if r["state"] == "empty":
+        was = reddit.exists(sub, fetch_fn=fetch)
+        if was == "no":
+            return {"posts": 0, "comments": 0, "state": "empty", "why": "there is no subreddit by this name"}
+        if was in ("private", "unknown"):
+            # The search found nothing AND we could not confirm the community is real. That is two
+            # unknowns, not an empty community, so it goes in the unverified pile.
+            return {"posts": 0, "comments": 0, "state": "unknown",
+                    "why": "the community is private, so its activity cannot be checked" if was == "private"
+                           else "the search found nothing and the community could not be confirmed"}
+        counted["state"] = "empty"
+        counted["why"] = "the community exists but nothing matched in a year"
+    return counted
 
 
 def probe(sub):
-    """(posts, comments) from old.reddit, or None when it is blocking us or unreachable."""
-    u = ("https://old.reddit.com/r/%s/search?q=%s&restrict_sr=on&sort=top&t=year"
-         % (urllib.parse.quote(sub), urllib.parse.quote(QUERY)))
-    page = fetch(u)
-    # Reddit now answers an anonymous search with a redirect to its login page (reason=lor2), and
-    # that page happens to contain the string "search-result" once, so it used to read as "zero
-    # posts" and every real community was dropped (measured 2026-09-04: r/recruiting, 0 of 18 kept).
-    # A login page, a block, or no results markup at all is UNKNOWN, never empty.
-    if page is None or "search-result-link" not in page or "<title>Welcome to Reddit" in page \
-            or "reason=lor2" in page or 'id="login-form"' in page:
-        return None                                   # blocked, login-walled, private, or gone: cannot tell
-    hits = _RESULT.findall(page)
-    return len(hits), sum(int(c.replace(",", "")) for _, c in hits)
+    """(posts, comments), or None when Reddit could not be checked.
+
+    Kept as a tuple because assets/trends.py reads it that way. It is a thin read of check(),
+    never a second opinion.
+    """
+    got = check(sub)
+    if got["state"] == "unknown":
+        return None
+    return got["posts"], got["comments"]
 
 
 def clean_name(name):
@@ -112,20 +139,23 @@ def propose(co, say):
 
 def verify(cands, say):
     unknown = 0
-    for i, c in enumerate(cands):
-        got = probe(c["name"])
-        if got is None:
-            c.update(posts=0, comments=0, checked_via="unreachable", verdict="unknown",
-                     why="unverified — Reddit could not be checked (blocked or unreachable); no paid fallback")
+    for c in cands:
+        got = check(c["name"])
+        if got["state"] == "unknown":
+            # A REFUSAL IS NOT AN EMPTY COMMUNITY. Reddit answers a logged-out or rate-limited
+            # request with a login page carrying HTTP 200, and on 2026-09-04 this builder read
+            # that page as "zero posts" and dropped every real community. Unknown, and said so.
+            why = "unverified — Reddit could not be checked; no paid fallback"
+            if got["why"]:
+                why += " (%s)" % got["why"]
+            c.update(posts=0, comments=0, checked_via="unreachable", verdict="unknown", why=why)
             unknown += 1
         else:
-            posts, comments = got
+            posts, comments = got["posts"], got["comments"]
             ok = posts >= MIN_POSTS and comments >= MIN_COMMENTS
             c.update(posts=posts, comments=comments, checked_via="free",
                      verdict="keep" if ok else "drop",
-                     why="" if ok else "only %d posts / %d comments in a year" % (posts, comments))
-        if i + 1 < len(cands) and THROTTLE:
-            time.sleep(THROTTLE)
+                     why="" if ok else (got["why"] or "only %d posts / %d comments in a year" % (posts, comments)))
     # RANK WITHIN EACH ANGLE, NOT ACROSS ALL OF THEM. Raw comment volume favours big general communities
     # over small exact ones. So take the best few from each `covers` group first, then fill by volume.
     keep = sorted([c for c in cands if c["verdict"] == "keep"], key=lambda c: -c["comments"])

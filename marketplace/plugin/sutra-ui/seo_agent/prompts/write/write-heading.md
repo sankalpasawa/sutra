@@ -48,6 +48,31 @@ A well-researched keyword that does not fit is still a keyword that does not fit
 
 THE RULES for whatever you write:
 
+- THE HEADING MUST STAND ALONE. It is read by three audiences who have read nothing else: a
+  skimmer scanning the page, a searcher on a results page, and an AI agent lifting one section.
+  If any of them needs the article's context to understand it, it fails. This is the test the
+  last review failed hardest, so run it on every draft:
+    Fails:  "The 40-Minute Ceiling: What Drops Off"        ← ceiling of what? drops off of what?
+    Passes: "How Long a Skills Assessment Should Take"
+    Fails:  "Validated for Whose Job? The Call Center Problem"
+    Passes: "Check the Validity Study Covers Your Job Title"
+
+- SIMPLE BEATS CLEVER, EVERY TIME. A heading is a plain promise, not a punchline. Never a
+  rhetorical question, never a coinage the article invents, never a colon splicing a hook onto a
+  label, never an idiom. If a colleague would ask "meaning what?", rewrite it plainly.
+
+- A PRODUCT SECTION'S HEADING IS THE PRODUCT NAME PLUS A PLAIN DESCRIPTOR. When the section
+  reviews one named tool in a list or ranking, the heading states the name and, in neutral
+  professional words, the one thing the reader learns about it. No snark, no verdict-as-quip.
+    Fails:  "Interviewer.AI's Face Match Is Sold, Not Included"
+    Passes: "Interviewer.AI: Face Matching Costs Extra"
+    Fails:  "Hireflix: An Invite Link Is Not an Identity Check"
+    Passes: "Hireflix: No Built-In Identity Verification"
+
+- USE THE READER'S OWN SEARCH WORDS FOR THE TOPIC. People Google "skills test types", not "the
+  five test types" — a count or our own framing is not what anyone types. When the section covers
+  a nameable topic, the heading carries that topic's plain name, the way a searcher would word it.
+
 - SPECIFIC, NEVER GENERIC. "Overview", "Key considerations", "Things to know", "Best practices",
   "Understanding X" say nothing, and they are the default an AI reaches for. Name the actual thing: the
   role, the question a reader would ask out loud, the decision being made.

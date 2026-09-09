@@ -108,7 +108,13 @@ def run(bl, plan, st, inputs, ctx, say=lambda *a: None):
     block = "\n\n".join("## %s\n\n%s" % (s["heading"], s["prose"]) for s in secs)
     paa = plan.get("paa_pool") or []
     pages_text, allowed = cta_pages()
-    prompt = C.prompt("wrapper", brand=brand["brand"], about=brand["about"], h1=h1,
+    # The wrap differs by format: a comparison and a glossary should not open or close alike. The
+    # owner wired this on 2026-09-05 as his answer to "same format across every article"; the port
+    # brought his prompt across but not the two tokens it needs. (Restored 2026-09-09.)
+    archetype = (plan.get("format_archetype") or st.get("format_archetype") or "").strip()
+    prompt = C.prompt("wrapper", archetype=archetype or "general article",
+                      format_craft=C.format_craft(archetype),
+                      brand=brand["brand"], about=brand["about"], h1=h1,
                       angle=ctx["angle"] or "(none)", spine=st.get("spine") or "(none)",
                       persona=C.persona_short({"persona": plan.get("persona")}, {}),
                       primary=primary, variations=", ".join(variations or []) or "(none)",

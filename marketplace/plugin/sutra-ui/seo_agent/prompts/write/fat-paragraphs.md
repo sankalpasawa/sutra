@@ -15,6 +15,9 @@ YOUR TWO JOBS, IN THIS ORDER
 2. SPLIT IT — only when shortening genuinely cannot get there. A paragraph that holds two separate
    ideas should be two paragraphs. Then:
      · ONE split. A paragraph becomes two. Never three.
+     · BOTH HALVES MUST STAND AS REAL PARAGRAPHS: at least two sentences, or 25 words, each. A
+       split that strands a five-word stub on its own line reads worse than the long paragraph
+       did. If the split point leaves a stub, shorten instead.
      · Only if the section has room. Each paragraph below tells you how many paragraphs its
        section currently has. A SECTION MAY NOT EXCEED 4 PARAGRAPHS. If its section is already at
        4, you have no room — shorten instead, however hard.

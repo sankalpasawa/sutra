@@ -88,6 +88,33 @@ def fetch(url, timeout=TIMEOUT):
                     "on a developer machine, `pip install playwright && playwright install chromium`.")
 
 
+def fetch_json(url, timeout=TIMEOUT):
+    """Warm the origin once, then fetch `url` from inside the page and parse the body as JSON.
+
+    Same shape as fetch(), plus "data": the parsed body, or None when the body was not JSON.
+
+    A caller MUST read data=None as "we could not read it", never as "it was empty". That is not a
+    style preference, it is the whole reason this function exists: Reddit answers a logged-out or
+    rate-limited request with an HTML LOGIN PAGE carrying HTTP 200 (measured 2026-09-09, on
+    old.reddit.com and on www.reddit.com alike), so the status code cannot tell a refusal from a
+    real answer. Parsing is the only honest test. An earlier version of brand/field_sources.py
+    counted a marker string in that login page as "zero posts" and dropped all 18 real communities
+    as dead (2026-09-04).
+
+    Why in-page fetch and not a page navigation: navigating to a JSON URL hands you Chrome's JSON
+    viewer, and navigating to old.reddit.com throws away the execution context the warm-up bought.
+    fetch() from inside an already-warmed page returns the raw bytes. Proved 2026-09-09 with live
+    posts from r/recruiting through this exact call.
+    """
+    r = fetch(url, timeout=timeout)
+    body = r.get("text") or ""
+    try:
+        r["data"] = json.loads(body)
+    except Exception:        # noqa: BLE001 - a login page, an error page, or half a body
+        r["data"] = None
+    return r
+
+
 # ---- backend 1: the desktop shell ------------------------------------------------------------
 
 def _shell_fetch(url, timeout):
@@ -151,7 +178,7 @@ class _Playwright:
                 origin = "%s://%s" % (parts.scheme, parts.netloc)
                 page = pages.get(origin)
                 if page is None or page.is_closed():
-                    ctx = browser.new_context(user_agent=_UA)
+                    ctx = browser.new_context(user_agent=_UA, locale="en-US")
                     page = ctx.new_page()
                     page.goto(origin + "/", wait_until="domcontentloaded", timeout=int(timeout * 1000))
                     pages[origin] = page

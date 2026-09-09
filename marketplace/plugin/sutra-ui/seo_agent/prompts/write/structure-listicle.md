@@ -40,6 +40,13 @@ THE MAIN RULE — above everything else:
 - The article must speak about ONE main idea from start to finish, and it must READ as one continuous
   piece: each section following naturally from the one before, building a single argument a reader can
   follow top to bottom. A section that pulls the article into a side-topic does not belong in it.
+- STAY INSIDE THE HEADLINE'S PROMISE. The test for every section: would a reader who clicked THIS
+  headline expect THIS section here? A glossary of terms does not take a legal or process
+  deep-dive; an explainer does not take a buying guide. Well-evidenced material that answers a
+  question the headline never asked is benched, not placed.
+- THE BASICS COME FIRST. If the article defines its own subject anywhere ("what a skills
+  assessment is"), that section is placed before anything that assumes the definition. Never let
+  five sections lean on a term the sixth one finally explains.
 - NOTHING IN THIS ARTICLE MAY CONTRADICT ANYTHING ELSE IN IT. Two sections that argue opposite ways,
   or two boxes inside one section whose figures or conclusions disagree, leave the reader unable to
   act and cost the piece its authority. Where the material genuinely conflicts, you have two honest

@@ -32,3 +32,18 @@ You MAY NOT:
 
 Every item keeps its own heading. If the headline promises a count, hand back that many items. Twelve
 short items is right; eight good ones and a table is not, however much better it reads.
+
+THE SHAPE OF ONE ITEM, and every item gets the same one:
+  · One or two short paragraphs of prose: what the thing is, and how it handles the ONE dimension
+    this article ranks on. Plain, easy language — a listicle is read faster and less formally than
+    an explainer, though the register stays professional.
+  · Then a short pointer block, dashed, bold lead-ins: "**Best for:** …" and two or three
+    "**Key features:** a; b; c" style lines. This is what makes the item scannable in one glance,
+    and it is the visual pattern break readers expect from a list article.
+EVERY item covers the article's ranking dimension. An item that drifts to pricing or history while
+saying nothing about the dimension the headline promised has not been written. Where the material
+genuinely lacks that dimension for one item, say so in ONE plain sentence and move on: never pad
+around the gap, and never quietly change the subject.
+THE PUBLISHER'S OWN PRODUCT, when it is an item: cover it factually, state what it does and who it
+is for, and never write a limitation line for it. Scope stated plainly is fine; a drawback written
+as a drawback is not. Every other item may keep its honest limits.

@@ -1,7 +1,11 @@
 """allocate_words.py — Architect step 4: give every section a word target, judged by importance.
 
-  base   = the MIDPOINT of the word band, cut by ARCH_BAND_SHRINK (every section of a real run overshot).
-           The band itself is never rewritten; only the number divided up moves.
+  target = THE PERSON'S NUMBER. The length of this article was answered once, by a human, before the
+           research conversation ran, and written into research.json's build_spec.word_band with
+           min == max. It reaches this step on the plan, which carries that band unchanged. Nothing
+           here re-decides it; this step only divides it up.
+  base   = target cut by ARCH_BAND_SHRINK. Aiming low is earned, not caution: every section of every
+           real run came in over its target, so the split is made under the number rather than on it.
   share  = the model decides each section's PERCENTAGE in two passes. Pass 1: IMPORTANCE to the argument
            sets the number. Pass 2: the section's actual FACTS are a ceiling, so evidence can only ever
            take words away, never earn them. Code does the arithmetic so shares total 100.
@@ -14,12 +18,31 @@ from . import _common as C
 from . import shape
 
 
+DEFAULT_WORDS = 2500        # only when a plan reaches here with no band at all (never a real run)
+
+
+def target_words(plan):
+    """The length this article was asked to be, off the plan's word band.
+
+    Since the length became one question, that band is the PERSON'S answer with min == max, so the
+    midpoint IS their number. The midpoint is still taken rather than the max, because a plan
+    written before the question existed carries a real measured band and must still divide up
+    something sensible.
+    """
+    band = (plan or {}).get("word_band") or {}
+    try:
+        lo, hi = int(band.get("min") or 0), int(band.get("max") or 0)
+    except (TypeError, ValueError):
+        return DEFAULT_WORDS
+    return ((lo + hi) // 2 if lo and hi else (hi or lo)) or DEFAULT_WORDS
+
+
 def run(st, plan, idx, ctx, say=lambda *a: None):
     brand = C.company()
+    target = target_words(plan)
     wb = plan.get("word_band") or {}
     lo, hi = int(wb.get("min") or 0), int(wb.get("max") or 0)
-    true_base = (lo + hi) // 2 if lo and hi else (hi or lo or 2500)
-    base = max(1, round(true_base * (1 - C.ARCH_BAND_SHRINK)))
+    base = max(1, round(target * (1 - C.ARCH_BAND_SHRINK)))
     secs = st["sections"]
 
     block = []
@@ -78,7 +101,9 @@ def run(st, plan, idx, ctx, say=lambda *a: None):
             thin.append({"section": s["headline"], "words": s["word_target"], "sub_headings": n,
                          "words_per_stretch": s["word_target"] // (n + 1)})
     heads = len(secs) + n_h3_total
-    st["word_budget"] = {"band": {"min": lo, "max": hi}, "band_middle": true_base,
+    # `target` is the number every later step must agree with, so it is written down here under its
+    # own name. readable reads it back off this record rather than working it out a second time.
+    st["word_budget"] = {"target": target, "band": {"min": lo, "max": hi},
                          "aim_low_pct": round(C.ARCH_BAND_SHRINK * 100), "base": base, "overwrite_pct": C.OVER_PCT,
                          "sum_of_targets": sum(s["word_target"] for s in secs), "even_split": even,
                          "headings": {"sections": len(secs), "sub_headings": n_h3_total, "total": heads,

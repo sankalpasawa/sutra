@@ -420,8 +420,8 @@ ok("numbered by first appearance", asm["sources"][0]["url"].endswith("cost-per-h
 ok("an over-cited source keeps only its chosen places", md.count("[2]") == 2, md.count("[2]"))
 ok("FAQ tags are not capped and get a number", "A [4]." in md)
 ok("the Sources list carries every url once", md.count("\n1. https://www.shrm.org/research/cost-per-hire") == 1 and "## Sources" in md)
-ok("the order is H1, intro, quick answer, sections, close heading, close, FAQ, sources",
-   md.index("## Quick answer") < md.index("## The Real Cost") < md.index("## Next") < md.index("## Frequently asked questions") < md.index("## Sources"))
+ok("the order is H1, intro, TL;DR, sections, close heading, close, FAQ, sources",
+   md.index("## TL;DR") < md.index("## The Real Cost") < md.index("## Next") < md.index("## Frequently asked questions") < md.index("## Sources"))
 cl = asm["coverage"]["checklist"]
 ok("checklist: primary in H1, first 100 words, close; keywords in 2 headings; a section keyword used",
    cl == {"primary in H1": True, "primary in first 100 words": True, "keywords in at least 2 headings": True,

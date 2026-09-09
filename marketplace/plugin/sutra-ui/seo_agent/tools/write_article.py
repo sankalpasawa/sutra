@@ -5,38 +5,35 @@ Writes: article.json, draft.md, links-report.json, write-report.json, plus one w
         so a run that stops resumes where it left off (redo=True reruns everything).
 
 This file is PURE SEQUENCING. It calls each step's run() in order and passes outputs along; every
-judgment lives in write/<step>.py, every prompt in prompts/write/. The three stations:
+judgment lives in write/<step>.py, every prompt in prompts/write/. The four stations:
 
   PLANNER    gather -> route -> select -> verify_sources -> freeze   (a HARD freeze flag stops the run)
   ARCHITECT  shape -> enrich -> brand_cards -> allocate_words -> section_keywords -> headings
+  FIELD      what practitioners say in public, read and filtered into one briefing
   WRITER     write_body -> blend -> wrapper -> coherence -> readable -> sentence_pass -> slop_pass
              -> links (editing/links_pass.py) -> clean -> assemble
 
-Three things the original bought from the web are deliberately not run here, and the report says so
-each time: the replacement-source hunt (verify_sources), the enrichment search (enrich), and the
-voices-from-the-field station. Section-keyword lookups run only when DataForSEO is connected and funded.
+FIELD SITS BETWEEN THE ARCHITECT AND THE WRITER, which is where the original puts it: run_article.py
+sequences planner -> architect -> field -> writer, and the station reads the architect's finished
+structure. It is also the one station whose failure does not cost the article, so it is reported and
+stepped over, never raised.
+
+Every station now does its own job rather than declaring it skipped. What each one could NOT do is
+still recorded, in `skipped`, one line per station, in the words of what actually happened.
+Section-keyword lookups run only when DataForSEO is connected and funded.
 """
 import re
 
 from .. import store
 from ..editing import links_pass
 from ..write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, enrich,
-                     fmt_router, freeze, gather, headings, plan_select, readable, section_keywords,
+                     field, fmt_router, freeze, gather, headings, plan_select, readable, section_keywords,
                      sentence_pass, shape, slop_pass, verify_sources, wrapper, write_body)
 from . import _shared as sh
 
 STEPS = ["gather", "route", "select", "verify", "freeze", "shape", "enrich", "brand_cards", "allocate",
-         "section_keywords", "headings", "write_body", "blend", "wrapper", "coherence", "readable",
+         "section_keywords", "headings", "field", "write_body", "blend", "wrapper", "coherence", "readable",
          "sentences", "slop", "links", "clean", "assemble"]
-
-SKIPPED = [
-    "Replacement-source hunt (planner): a fact whose source failed keeps its claim and loses the url; "
-    "finding a new page needs a DataForSEO web search this agent does not run.",
-    "Enrichment (architect): extra research the structure asked for needs a DataForSEO web search; "
-    "the requests are recorded and the writer is told those sections are thinner than designed.",
-    "Voices from the field: the Reddit/Blind/LinkedIn station is not ported; the body writer's "
-    "FILE 2 block is empty.",
-]
 
 
 def _apply_card_fixes(idx, fixes):
@@ -53,6 +50,16 @@ def _merge_brand_cards(idx, used):
     for cid, card in (used or {}).items():
         c = dict(card)
         c["card_id"] = C.nid(cid)
+        idx[C.nid(cid)] = c
+
+
+def _merge_enriched(idx, enriched):
+    """The cards enrich bought, added to the index the writer reads. Ids start at 9001, so they
+    cannot collide with the research cards or with the brand cards (8001+)."""
+    for cid, card in (enriched or {}).items():
+        c = dict(card)
+        c["card_id"] = C.nid(cid)
+        c["id"] = C.nid(cid)
         idx[C.nid(cid)] = c
 
 
@@ -97,7 +104,10 @@ def run(ctx, redo=False):
                 "error": "cards.json is missing for this run. Run run_research first."}
     idx = C.card_index(cards)
     ctx_a = C.context(blueprint, research)
-    reports, skipped = {}, list(SKIPPED)
+    # `skipped` is the run's honest record: one line per station saying what it did and what it could
+    # not do. `surfaced` is the shorter list that also reaches the caller's note, for the things a
+    # person has to act on. Everything in `surfaced` is also in `skipped`.
+    reports, skipped, surfaced = {}, [], []
     # Say it at the top, not in a footnote. Found live 2026-09-04: the draft was written from
     # demo research and read as a finished article; the flag sat in research.json and appeared
     # nowhere in the report, the draft, or the summary.
@@ -106,8 +116,10 @@ def run(ctx, redo=False):
         say("Writing from demo research",
             "The research for this article carries made-up keyword numbers and made-up ranking "
             "pages, so nothing it cites is a real source. The writing is real; the evidence is not.")
-        skipped.append("The research was demo data, so every number that came from a source page "
-                       "is fabricated. Do not publish this without a real research run.")
+        note = ("The research was demo data, so every number that came from a source page "
+                "is fabricated. Do not publish this without a real research run.")
+        skipped.append(note)
+        surfaced.append(note)
 
     def step(name, label, fn):
         """Run one step, or reuse its saved output. Every output lands on disk before the next step reads it."""
@@ -176,10 +188,14 @@ def run(ctx, redo=False):
                         "coverage": st.get("coverage"), "reopened_holes": st.get("reopened_holes"),
                         "coverage_note": st.get("coverage_note"), "bad_research_destinations": st.get("bad_research_destinations")}
 
-    en = step("enrich", "Extra research", lambda: enrich.run(C.deep(st), say))
+    en = step("enrich", "Extra research", lambda: enrich.run(C.deep(st), say, ctx_a))
     st = en["structure"]
+    # THE NEW CARDS JOIN THE INDEX. Enrich mints ids from 9001 and attaches them to the structure;
+    # without this the writer would be handed ids it cannot look up and the facts would vanish.
+    _merge_enriched(idx, en.get("enriched_cards"))
     reports["enrich"] = st.get("enrichment", {})
     reports["enrich"]["empty_subheadings_removed"] = st.get("empty_subheadings_removed", [])
+    skipped.append("Enrichment: " + (en.get("note") or ""))
 
     bc = step("brand_cards", "Placing the company's own material", lambda: brand_cards.run(C.deep(st), idx, ctx_a, say))
     st = bc["structure"]
@@ -203,6 +219,25 @@ def run(ctx, redo=False):
     reports["headings"] = {"h1": st.get("h1"), "rewritten": sum(1 for r in hm["headings"] if r.get("changed")),
                            "cross_section_pass": hm["cross_section_pass"], "over_length": hm["over_length"],
                            "keywords": st.get("keywords")}
+
+    # ---------------- FIELD ----------------
+    # Between the architect and the writer, where the original puts it, and never allowed to stop the
+    # run: losing some forum quotes must not cost a finished article.
+    def _field():
+        try:
+            return field.run(st, ctx_a, say)
+        except Exception as e:  # noqa: BLE001 — a field failure is reported, never fatal
+            return {"markdown": "", "block": "",
+                    "report": {"note": "the station failed (%s: %s), so the article was written "
+                                       "without it" % (type(e).__name__, str(e)[:120]), "findings": 0}}
+
+    fld = step("field", "Reading what practitioners say in public", _field)
+    if fld.get("markdown"):
+        store.save_artifact(chat_id, run_id, "voices-from-the-field.md", fld["markdown"])
+    # The block the body writer is shown. Empty when there was nothing worth showing it.
+    st["field_block"] = fld.get("block") or ""
+    reports["field"] = fld.get("report") or {}
+    skipped.append("Voices from the field: " + (reports["field"].get("note") or ""))
 
     # ---------------- WRITER ----------------
     body = step("write_body", "Writing the body", lambda: write_body.run(st, idx, ctx_a, say))
@@ -264,6 +299,10 @@ def run(ctx, redo=False):
                         {"generated_at": store.now(), "archetype": st.get("format_archetype"), "steps": reports,
                          "skipped": skipped, "demo_research": demo,
                          "enrichment_requested": (reports.get("enrich") or {}).get("markers") or 0,
+                         "enrichment_resolved": (reports.get("enrich") or {}).get("resolved") or 0,
+                         "enrichment_cards": (reports.get("enrich") or {}).get("new_cards") or 0,
+                         "field_findings": (reports.get("field") or {}).get("findings") or 0,
+                         "sources_replaced": len((reports.get("verify") or {}).get("replaced") or []),
                          "claims_checked": (reports.get("verify") or {}).get("actually_judged"),
                          "claims_to_check": (reports.get("verify") or {}).get("claims_to_check"),
                          "coverage_checklist": asm["coverage"]["checklist"],
@@ -281,10 +320,18 @@ def run(ctx, redo=False):
     if ver.get("claims_to_check") and not ver.get("actually_judged"):
         # 0 of 7 judged used to read exactly like 7 of 7. Say it in the summary.
         summary += ". None of the %d claims that needed a source could be checked" % ver["claims_to_check"]
-    mk = (reports.get("enrich") or {}).get("markers") or 0
-    if mk:
-        summary += ". %s asked for extra research that did not run" % sh.plural(mk, "section")
+    enr = reports.get("enrich") or {}
+    if enr.get("new_cards"):
+        summary += ". Extra research added %s to %s that asked for it" % (
+            sh.plural(enr["new_cards"], "fact"), sh.plural(enr.get("resolved") or 0, "section"))
+    if enr.get("failed"):
+        # A section that asked for research and got none is thinner than it was designed to be. It used
+        # to be the only enrichment line here, because nothing ever ran. Now it is the exception.
+        summary += ". %s asked for extra research and found none" % sh.plural(enr["failed"], "section")
+    fnd = (reports.get("field") or {}).get("findings") or 0
+    if fnd:
+        summary += ". %s from what practitioners say in public" % sh.plural(fnd, "finding")
     out = {"summary": summary, "artifact": "draft.md"}
-    if len(skipped) > len(SKIPPED):
-        out["note"] = " ".join(skipped[len(SKIPPED):])
+    if surfaced:
+        out["note"] = " ".join(surfaced)
     return out

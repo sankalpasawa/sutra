@@ -270,7 +270,7 @@ WORK_TOOLS = [
             "in this article, and write the brief. Run once per article after the topic is "
             "settled. Then show_artifact the research brief."
         ),
-        "gate": "auto", "cost_credits": 0, "pauses": False,
+        "gate": "auto", "cost_credits": 0, "pauses": True,
         "est_minutes": 20, "module": "tools.run_research",
         "input_schema": {"type": "object", "properties": {
             "topic": {"type": "string", "description": "The working title."},

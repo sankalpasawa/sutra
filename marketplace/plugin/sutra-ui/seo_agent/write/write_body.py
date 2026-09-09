@@ -6,6 +6,10 @@
     They cannot see each other's TEXT, only the briefs.
   - The section's SHAPE arrives with the facts UNDER the heading they belong to: the opening's facts,
     then each authored sub-heading with its own. A writer cannot follow a shape it cannot see.
+  - It also arrives with HOW MANY of those facts the section's length has room for, worked out from
+    WORDS_PER_FACT, the same constant the readable rewrite uses when it decides how many survive.
+    One belief in both places: a fact needs about that much room around it to be worth reading. The
+    section is usually handed more facts than it can carry, and choosing between them is the job.
   - Facts carry a [c<id>] tag inline; CODE parses those into a provenance list. A tag pointing at a card
     not in this section is a hallucinated id: it is dropped from the prose and counted.
   - PRODUCT-FREE by default; the rule relaxes only for a section that IS about the brand.
@@ -51,11 +55,37 @@ def _facts(group, idx):
     return lines
 
 
+def facts_room(sec):
+    """How many facts this section's length has room to explain properly.
+
+    C.WORDS_PER_FACT is the shared belief: about that many words around a fact is what it takes for
+    a reader to be able to use it. readable holds the same constant and cuts to the same ratio at
+    the other end of the pipeline, so the two steps cannot disagree about what a crowded section is.
+    The count FOLLOWS the section's word target, which follows the length the person asked for.
+    """
+    try:
+        target = int(sec.get("word_target") or 0)
+    except (TypeError, ValueError):
+        target = 0
+    return max(1, round((target or C.WORDS_PER_SECTION) / max(C.WORDS_PER_FACT, 1)))
+
+
 def render_shape(sec, idx):
     """The section's SHAPE and its facts, together. Showing the facts UNDER their heading is the point."""
     lead, h3s = (sec.get("lead") or {}), (sec.get("h3s") or [])
     lead_facts = _facts(lead, idx)
+    held = len(lead_facts) + sum(len(_facts(h, idx)) for h in h3s)
+    room = facts_room(sec)
     out = []
+    if held:
+        out.append("THIS SECTION HOLDS %d FACT%s. At about %s words it has room to properly explain "
+                   "about %d of them (roughly %d words each). %s"
+                   % (held, "" if held == 1 else "S", "{:,}".format(int(sec.get("word_target") or C.WORDS_PER_SECTION)),
+                      room, C.WORDS_PER_FACT,
+                      "Pick the ones the job needs and leave the rest. A fact you cannot give room to "
+                      "explain is a fact the reader cannot use." if held > room
+                      else "There is room for all of them, so none has to be dropped for space."))
+        out.append("")
     if h3s:
         out.append("THE OPENING — write this first, directly under the section heading, with no "
                    "sub-heading of its own:")
@@ -184,10 +214,11 @@ def run(st, idx, ctx, say=lambda *a: None):
                      item_contract=contract if sec.get("is_item") else supporting,
                      table=_table_instruction(sec), list=_list_instruction(sec),
                      thin=_thin_note(sec, failures), shape=render_shape(sec, idx),
-                     product_rule=rule, brief=brief, field="", memory=memory)
+                     product_rule=rule, brief=brief, field=st.get("field_block") or "", memory=memory)
         prose = _strip_h2(llm.text(p, SYSTEM), head)
         prose, prov, dropped = provenance(prose, sec, idx)
         return {"headline": head, "job": sec.get("job", ""), "word_target": sec.get("word_target"),
+                "facts_room": facts_room(sec),
                 "words": len(prose.split()), "prose": prose, "provenance": prov, "bad_tags_dropped": dropped}
 
     say("Writing every section", "%d sections, %d at a time" % (len(sections), llm.PARALLEL))

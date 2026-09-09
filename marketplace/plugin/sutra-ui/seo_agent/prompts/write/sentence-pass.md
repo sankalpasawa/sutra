@@ -22,6 +22,12 @@ You are not editing. You are re-saying the same thing, in a way a person reads a
 If you find yourself deleting a sentence because the block is getting long, stop. You have
 misunderstood the job. Re-say it in the same number of words instead.
 
+AND THE OTHER HALF OF THE SAME RULE: A SENTENCE UNDER 15 WORDS IS NEVER SPLIT. Splitting exists
+for the sentence carrying two or three clauses. Split a short sentence and you get broken stubs
+("It barely registers in the first job.") standing alone as if they were paragraphs, and the last
+run did exactly that and a human reviewer caught it. A short, correct sentence is finished. Leave
+it alone.
+
 ════════════════════════════════════════════════════════════════════════
 THE BUDGET, AND CODE CHECKS IT
 
@@ -128,13 +134,17 @@ own articles.
    AFTER:  "Completion holds near 80% up to about forty minutes. Past an hour of total testing, it
             falls to around 60%."
 
-3. THE TRAILING LIST GLUED TO A MAIN CLAUSE, CUT INTO FRAGMENTS.
-   People list things out loud in fragments. Write them that way.
+3. THE TRAILING LIST GLUED TO A MAIN CLAUSE, TURNED ROUND.
+   Put the point first, then the list, as one clean sentence.
 
    BEFORE: "Looking away to think, a housemate crossing the frame, a connection dropping for eight
             seconds: all of it trips the same wire."
-   AFTER:  "Looking away to think. A housemate crossing the frame. A connection dropping for eight
-            seconds. All of it trips the same wire."
+   AFTER:  "The same wire is tripped by ordinary events: looking away to think, a housemate
+            crossing the frame, or a connection dropping for eight seconds."
+
+   NEVER cut a list into stand-alone fragments ("Looking away to think. A housemate crossing the
+   frame."). Fragment stacks read punchy, and punchy is the wrong register for a readership of
+   senior managers and the C-suite. This device used to be allowed here; it is now banned.
 
 4. THE INVERTED OR PASSIVE OPENING, TURNED BACK TO SUBJECT-VERB.
    Say who does the thing, then what they do.
@@ -152,6 +162,10 @@ SIMPLE TO UNDERSTAND, WHICH IS NOT THE SAME AS SHORT
 
 A reader should finish a sentence knowing what it meant, first time, without going back.
 
+  · KEEP THE REGISTER PROFESSIONAL. The readers are senior managers, directors and the C-suite,
+    and the register to hold is SHRM's: plain, direct, professional. The working word is not the
+    slang word: "quits" is working English, "bites" and "real talk" are not. Never trade a formal
+    sentence for a chatty one; trade it for a plain professional one.
   · Use the word a working {{READER}} would use out loud. Not the word an academic paper would use.
   · Say who is doing the thing. A person, a team, a company, and the reader is "you". Never let a
     thing do what only a person can. Not "the cost scales with seniority" but "you pay more for

@@ -129,6 +129,15 @@ ok("FAQ from PAA is deduped and question-marked", faq_order.faq_from_paa(["What 
 # ---- the balance pre-flight -----------------------------------------------------------------------
 print("\nthe pre-flight")
 from seo_agent.tools import run_research, build_blueprint
+# run_research now STOPS ONCE and asks how long the article should be, between the brief and the
+# research conversation. Outside the loop there is nobody to answer, so this answers it the way
+# loop._resume_words does and calls the tool straight back with the number.
+def research(ctx, **kw):
+    out = run_research.run(ctx, **kw)
+    if isinstance(out, dict) and out.get("ask_words"):
+        out = run_research.run(ctx, word_target=out["ask_words"]["suggested"])
+    return out
+
 _fixture.stub_dfs(balance=0.20)
 r0 = store.new_run(chat, "broke")
 out = run_research.run(ctx_for(r0), topic="Operator education (a buyer's guide)")
@@ -140,7 +149,7 @@ print("\nrun_research, end to end")
 _fixture.stub_dfs(balance=12.5)
 run = store.new_run(chat, "operator education")
 ctx = ctx_for(run)
-out = run_research.run(ctx, topic="Operator education (a buyer's guide)", angle="what changes after")
+out = research(ctx, topic="Operator education (a buyer's guide)", angle="what changes after")
 rs = store.load_artifact(chat, run, "research.json") or {}
 cards = store.load_artifact(chat, run, "cards.json") or []
 ok("returns a summary and no error", bool(out.get("summary")) and not out.get("error"), out.get("error"))
@@ -156,7 +165,12 @@ ok("navigational keywords never reached the scorer",
 ok("serp: who ranks, PAA on/off, AI Overview", len(rs["serp"]["who_ranks"]) == 10 and rs["serp"]["paa_on"] and rs["serp"]["ai_overview"]["cites"])
 ok("read-list has exactly 3 pages", len(rs["serp"]["read_list"]) == 3)
 ok("winners: format, common H2s, gaps to own", rs["winners"]["format"] and rs["winners"]["common_h2s"] and rs["winners"]["gaps_to_own"])
-ok("verdict bullets and a word band", len(rs["verdict"]) >= 3 and rs["build_spec"]["word_band"] == {"min": 1500, "max": 2200})
+# The word band in the build spec is now the ANSWER to the one length question (min == max), and
+# what the ranking pages measured sits beside it under word_band_measured. The fixture's pages
+# measure 1,500 to 2,200, so the suggestion offered and accepted here is 1,850.
+ok("verdict bullets, and the answered length with the measurement kept beside it",
+   len(rs["verdict"]) >= 3 and rs["build_spec"]["word_band"] == {"min": 1850, "max": 1850}
+   and rs["build_spec"]["word_band_measured"] == {"min": 1500, "max": 2200}, rs["build_spec"])
 ok("cannibalisation flags the top-10 keyword we already hold",
    (rs.get("cannibalisation") or {}).get("rank") == 4 and "example.com" in (rs.get("cannibalisation") or {}).get("url", ""), rs.get("cannibalisation"))
 ok("the angle was replaced and the old one kept", rs["angle"] != rs["angle_before"] and rs["angle_before"] == "what changes after")
@@ -231,7 +245,7 @@ ok("substeps were emitted with a parent", len(events) > 15 and all(e.get("parent
 
 print("\nresume")
 n_calls = len(_fixture.DFS_CALLS)
-out2 = run_research.run(ctx, topic="Operator education (a buyer's guide)", angle="what changes after")
+out2 = research(ctx, topic="Operator education (a buyer's guide)", angle="what changes after")
 ok("a second run reuses every step and spends nothing", len(_fixture.DFS_CALLS) == n_calls and not out2.get("error"))
 ok("and rewrites the same brief", (store.load_artifact(chat, run, "research.json") or {}).get("keywords", {}).get("primary", {}).get("keyword") == "operator education")
 
@@ -267,7 +281,7 @@ ok("keyword_set shape", set(ks) == {"primary", "variations", "secondaries", "in_
    and ks["primary"] not in ks["secondaries"] and ks["in_body"] == ["decision speed"], ks)
 ok("orphan keywords come from the measured pool", all("keyword" in o and "volume" in o for o in bp["orphan_keywords"]))
 ok("persona reused, never re-picked", bp["persona"] == rs["persona"])
-ok("format archetype and word band carried", bp["format_archetype"] == "how-to guide" and bp["word_band"] == {"min": 1500, "max": 2200})
+ok("format archetype and the answered length carried", bp["format_archetype"] == "how-to guide" and bp["word_band"] == {"min": 1850, "max": 1850}, bp.get("word_band"))
 ok("angle_filter counts", bp["angle_filter"]["kept"] + bp["angle_filter"]["dropped"] == len(cards2))
 ok("write guidance is present", "note" in bp.get("write_guidance", {}))
 ok("older readers find title and heading/covers", bp.get("title") and all(s.get("heading") and s.get("covers") for s in bp["sections"]))

@@ -71,13 +71,18 @@ conventional, applicant tracking system. Long words are not the problem and neve
 ════════════════════════════════════════════════════════════════════════
 THE REGISTER, AND WHAT BREAKS IT
 
+PROFESSIONAL, NOT CHATTY. The readership is senior: managers, directors, VPs, the C-suite. The
+register to copy is SHRM's: plain, direct, professional. Conversational asides ("here's the
+thing", "real talk", "this is where it bites"), slang, rhetorical hooks and jokey fragments are
+banned. Warmth comes from concrete scenes and the second person, never from informality.
+
 WRITE FULL SENTENCES THAT FLOW INTO EACH OTHER. The last run wrote clipped fragments stacked like
 bullet points wearing punctuation, and it made an easy subject feel hard:
 
    BROKEN: "Read the rank as a percentage and you reject people who cleared the bar."
-   HUMAN:  "This is where it gets expensive. A recruiter sees 70th percentile, reads it as 70% of
-            the answers right, decides that is a weak pass, and rejects someone who actually
-            outscored seven candidates in ten."
+   HUMAN:  "A recruiter sees 70th percentile, reads it as 70% of the answers right, decides that
+            is a weak pass, and rejects someone who actually outscored seven candidates in ten.
+            That misreading is expensive."
 
    BROKEN: "Skip it and you bolt one model onto every role, and nobody trusts the result."
    HUMAN:  "Skip the job analysis and you end up running the same test on a warehouse supervisor
@@ -146,9 +151,23 @@ REBUILD IT. Merge two sections. Split one carrying two ideas. Reorder them if th
 better. Delete a section whose work another one already does, or that the headline never promised.
 You are reading the whole article at once, which no earlier step could.
 
-CHECK THE HEADINGS AGAINST THE HEADLINE. A section whose heading answers a question the headline
-never asked does not belong. If the article promises to explain a set of terms, a heading like
-"How employers choose which test to run" is a different article and should go, or become a term.
+PUT THE BASICS FIRST. If the article defines its own subject anywhere ("what a skills assessment
+is"), that section comes before anything that assumes the definition. An article that discusses
+validity and benchmarks for five sections and only then explains what the subject is has its
+spine backwards, and you are the only step that can turn it round.
+
+CHECK EVERY SECTION AGAINST THE HEADLINE'S PROMISE. The test: would a reader who clicked THIS
+headline expect THIS section here? A section can be accurate, well sourced and still belong to a
+different article. If the headline promises a glossary of assessment terms, a legal deep-dive on
+accommodations and medical-exam timing is a different article: delete it or cut it to the one
+term it defines. If the article promises to explain a set of terms, a heading like "How employers
+choose which test to run" should go, or become a term. Off-promise sections are the single
+loudest complaint reviewers make about these articles. Be ruthless here.
+
+CONNECT THE SECTIONS. The article must read as one continuous piece, never as sections bolted
+together. Where you reorder or rebuild, let a section's last sentence hand off to the next where
+it reads naturally, and never let the article jump context with no bridge. A reader should always
+know why this section follows that one.
 
 DELETE. A paragraph earns its place by adding something the reader did not already have.
 
@@ -208,8 +227,9 @@ THE INTRO has one job: make a busy person keep reading. Put them in the situatio
 person, before you define anything. No statistic in the first sentence. No "in today's competitive
 hiring landscape". Two short paragraphs at most.
 
-THE QUICK ANSWER is the article in short, for someone who reads nothing else. Plain sentences, not a
-compressed list of every definition in the piece.
+THE TL;DR is the article's takeaways, for someone who reads nothing else: the two to four things
+the reader should carry away and act on, each a full statement that stands on its own. Not a
+contents page, and not a compressed list of every definition in the piece.
 
 FAQ answers: 40 words maximum, written as speech, not as a compressed definition.
 
@@ -263,7 +283,7 @@ Return the rebuilt article as JSON, nothing else:
 
 {"h1": "<the headline: corrected if your rebuild made it false, otherwise exactly as you got it>",
  "intro": "<the opening, rewritten>",
- "quick_answer": "<the Quick answer block, rewritten, still the article in short>",
+ "quick_answer": "<the TL;DR block, rewritten: the takeaways, each a full statement>",
  "sections": [{"heading": "<the section's heading>", "prose": "<its prose>"}],
  "faq": [{"question": "<unchanged>", "answer": "<rewritten>"}],
  "close": "<the closing paragraph, still carrying its one link>"}

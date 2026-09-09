@@ -27,8 +27,16 @@ from fastapi.responses import JSONResponse
 
 import providers
 from seo_agent import llm, loop, registry, store
+from seo_agent.prompts import store as prompt_store
 
 router = APIRouter(prefix="/api/agents/seo", tags=["agents"])
+
+# THE OWNER'S OWN PROMPTS, TURNED ON FOR THIS PROCESS. A prompt he edited on the Prompts tab lives
+# under the data dir, and `install()` teaches the engine's two prompt doors to prefer it. It is done
+# here, at import, because this is the process a run actually happens in: `_spawn` below puts the
+# loop on a background THREAD, not in a subprocess, so patching once covers every run this app
+# serves. Nothing outside this app is touched, which is the ruling: "it only changes the Sutra app".
+prompt_store.install()
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -723,11 +731,86 @@ def api_tools():
     return registry.for_screen()
 
 
+# ---- prompts -------------------------------------------------------------------------------------
+# The owner's own writing rules, editable without a developer. Four routes and no logic: which
+# prompts exist, one prompt's text, save, reset. Everything they need to decide lives in
+# seo_agent/prompts/store.py, including the flow drawn across the top of the tab.
+#
+# The name of a prompt travels as a QUERY parameter, not a path segment, because a name carries
+# slashes ("write/formats/listicle") — the same names the engine already loads prompts by. It is
+# never joined onto a path here: the store resolves it through its own allow-list.
+
+
+@router.get("/prompts")
+def api_prompts():
+    return prompt_store.listing()
+
+
+@router.get("/prompts/one")
+def api_prompt(name: str = ""):
+    try:
+        return prompt_store.one(name)
+    except prompt_store.PromptError as e:
+        return _bad(str(e), 404)
+
+
+@router.post("/prompts/save")
+def api_save_prompt(body: dict = Body(...)):
+    """His version of one prompt. Saved under the data dir, and read by the very next article.
+
+    A save that has lost a {{TOKEN}} the shipped version had is refused, with the missing ones
+    named. That break would otherwise surface in the middle of a paid run, as a model reading a
+    prompt with a hole in it, and nothing on screen would ever have said why.
+    """
+    try:
+        return prompt_store.save(body.get("name"), body.get("text"))
+    except prompt_store.PromptError as e:
+        return _bad(str(e))
+
+
+@router.post("/prompts/reset")
+def api_reset_prompt(body: dict = Body(...)):
+    """Back to what shipped. It deletes his copy; the original was never written over."""
+    try:
+        return prompt_store.reset(body.get("name"))
+    except prompt_store.PromptError as e:
+        return _bad(str(e), 404)
+
+
 # ---- library -----------------------------------------------------------------------------------
+
+# WHICH SHAPE EACH ARTICLE WAS WRITTEN TO, for the Library's Format column. Read from the run that
+# made it, never stored a second time on the row: the format is decided once, at the route step, and
+# `write-report.json` records it. Cached per run because the Library screen polls this route while a
+# run is going, and a routed archetype never changes afterwards. Only a real answer is cached, so a
+# row still being written is looked at again on the next poll and fills in when the report lands.
+_FORMAT_CACHE = {}
+
+
+def _run_format(chat_id, run_id):
+    """The routed archetype for one run, or "" when it has not got that far."""
+    if not chat_id or not run_id:
+        return ""
+    key = (chat_id, run_id)
+    if key in _FORMAT_CACHE:
+        return _FORMAT_CACHE[key]
+    rep = store.load_artifact(chat_id, run_id, "write-report.json") or {}
+    arch = str(rep.get("archetype") or "").strip() if isinstance(rep, dict) else ""
+    if arch:
+        _FORMAT_CACHE[key] = arch
+    return arch
+
 
 @router.get("/library")
 def api_library():
-    return store.library_list()
+    rows = store.library_list()
+    for r in rows:
+        arch = _run_format(r.get("chat_id"), r.get("run_id"))
+        r["format"] = arch
+        # the plain name comes from the prompt store, the same place the Prompts tab gets it, so
+        # the two screens can never call the same shape by two different names
+        r["format_label"] = prompt_store.format_title(arch) if arch else ""
+    return rows
 
 
 @router.get("/library/{item_id}")

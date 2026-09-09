@@ -44,6 +44,7 @@ from .. import llm
 from .. import store
 from ..brand import _common as bcm
 from ..brand import field_sources as fs
+from ..research import reddit
 from ..tools import _shared as sh
 from . import _common as cm
 
@@ -287,26 +288,32 @@ def scrape(subs, say, redo=False):
         got = cm.read(_w("posts.json")) or {}
         say("Kept the posts already pulled", "%d posts from the last run" % len(got.get("posts") or []))
         return got
+    # Through research/reddit.py, the one place anything asks Reddit anything. This used to scrape
+    # old.reddit HTML, which login-walls even a real browser, so this builder was blind: it came
+    # back empty every time and reported it as "nobody talks about this". Moved 2026-09-09, once
+    # the browser path was proved live. Pacing lives in that module now, not here.
     posts, refused, empty = [], [], []
-    for i, sub in enumerate(subs):
-        url = "https://old.reddit.com/r/%s/top/?t=year&limit=%d" % (urllib.parse.quote(sub), POSTS_PER_SUB)
-        page = fs.fetch(url)
-        if _blocked(page):
+    for sub in subs:
+        got = reddit.top(sub, limit=POSTS_PER_SUB)
+        if got["state"] == "unknown":
             refused.append(sub)
-            say("Reddit would not serve r/%s" % sub, "recorded as unknown, not as empty")
+            say("Reddit would not serve r/%s" % sub,
+                "%s — recorded as unknown, never as empty" % (got.get("reason") or "no reason given"))
             continue
-        rows = _parse_listing(page, sub)[:POSTS_PER_SUB]
+        rows = [{"post_id": x["id"], "subreddit": x["subreddit"], "score": x["score"],
+                 "comment_count": x["num_comments"], "title": x["title"], "author": x["author"],
+                 "date": x["created_utc"], "url": x["url"], "body": x["text"], "top_comments": ""}
+                for x in (got.get("posts") or [])][:POSTS_PER_SUB]
         if not rows:
             empty.append(sub)
-        for n, p in enumerate(rows):
-            if n < COMMENT_POSTS:
-                if THROTTLE:
-                    time.sleep(THROTTLE)
-                p.update(_read_post(p["url"]))
+        # The argument, not just the headline: the tensions are in the comments.
+        for n, row in enumerate(rows[:COMMENT_POSTS]):
+            c = reddit.comments(row["post_id"])
+            if c["state"] == "ok":
+                row["top_comments"] = "\n\n".join(
+                    (x.get("text") or "").strip() for x in (c.get("comments") or []) if x.get("text"))
         posts += rows
-        say("Read r/%s" % sub, "%d posts" % len(rows))
-        if i + 1 < len(subs) and THROTTLE:
-            time.sleep(THROTTLE)
+        say("Read r/%s" % sub, "%d posts%s" % (len(rows), ", nothing matched" if not rows else ""))
     out = {"at": store.now(), "subreddits": list(subs), "refused": refused, "empty": empty,
            "posts": posts}
     cm.save(_w("posts.json"), out)

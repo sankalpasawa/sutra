@@ -11,6 +11,7 @@ answer comes back later as that tool's return value, and the model never knows i
 import importlib
 import json
 import os
+import re
 import time
 import traceback
 
@@ -255,6 +256,73 @@ def _ask_asset_gate(chat_id, run_id, call_id, gate):
         "builder": gate.get("builder", ""),
         "proposed": gate.get("proposed") or [],
         "options": [{"label": "Use this list"}, {"label": "Not now"}]}, stage="setup")
+
+
+def _ask_words(chat_id, run_id, call_id, ask):
+    """The one length question, asked once per article, through the ordinary checkpoint.
+
+    It sits at the end of the keyword work, once the pages that rank have been measured, and
+    BEFORE the research conversation. That ordering is the whole point: the four researchers are
+    the longest and most expensive part of a run, so this is the last cheap moment to ask. Saying
+    yes here also starts them.
+
+    Why this is the only length question. The length used to be decided twice by two steps that
+    never spoke: the architect budgeted from the band the ranking pages set, and then readable
+    re-decided it from a hardcoded 2,100 that knew nothing about those pages. Competitors at 3,200
+    words and competitors at 1,400 both produced an article cut to 2,100. Now one number is
+    settled here, by a person, and every step downstream reads that one.
+    """
+    band = ask.get("band") or {}
+    _wait(chat_id, run_id, "question", call_id, {
+        "question": ask.get("question", ""),
+        "why": ask.get("why", ""),
+        "ask_words": True,
+        "suggested": ask.get("suggested"),
+        "band": band,
+        "options": [{"label": "Yes, %s words" % "{:,}".format(int(ask.get("suggested") or 0))}]},
+        stage="research")
+
+
+def _resume_words(chat_id, run_id, waiting, messages, answer):
+    """Take the number, write it where every later step reads it, and carry on into the research.
+
+    A typed number WINS over the suggestion. Somebody who typed 1,800 when offered 2,700 meant it,
+    and quietly using the suggestion anyway would make the question decorative.
+    """
+    call_id = waiting.get("call_id")
+    text = (answer.get("text") or "").strip() if isinstance(answer, dict) else str(answer or "")
+    picked = None
+    m = re.search(r"\b(\d{3,5})\b", text.replace(",", ""))
+    if m:
+        picked = int(m.group(1))
+    if picked is None or not (200 <= picked <= 20000):
+        picked = int(waiting.get("suggested") or 0) or None
+
+    store.patch_state(chat_id, run_id, word_target=picked)
+    store.emit(chat_id, run_id, "resumed", by="user",
+               answer=("%s words" % "{:,}".format(picked)) if picked else "kept the measured band")
+
+    step_id = "s%d" % (int(time.time() * 1000) % 100000)
+    store.emit(chat_id, run_id, "step_started", id=step_id,
+               label=registry.label("run_research"), tool="run_research", stage="research")
+    t0 = time.time()
+    try:
+        out = _run_tool(chat_id, run_id, "run_research", {"word_target": picked}, step_id=step_id)
+    except Exception as e:  # noqa: BLE001
+        out = {"error": str(e)[:600],
+               "hint": "The research could not finish. Say so in one line and carry on."}
+    store.emit(chat_id, run_id, "step_finished", id=step_id, label=registry.label("run_research"),
+               ms=int((time.time() - t0) * 1000), summary=(out or {}).get("summary", ""))
+
+    if isinstance(out, dict) and out.get("ask_words"):
+        _ask_words(chat_id, run_id, call_id, out["ask_words"])
+        return store.get_state(chat_id, run_id)
+
+    messages.append({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
+    store.save_messages(chat_id, messages)
+    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+    return step(chat_id, run_id)
 
 
 def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
@@ -521,6 +589,10 @@ def step(chat_id, run_id):
                     store.save_messages(chat_id, messages)
                     _ask_asset_gate(chat_id, run_id, call_id, out["gate"])
                     return store.get_state(chat_id, run_id)
+                if isinstance(out, dict) and out.get("ask_words"):
+                    store.save_messages(chat_id, messages)
+                    _ask_words(chat_id, run_id, call_id, out["ask_words"])
+                    return store.get_state(chat_id, run_id)
                 if registry.cost(name):
                     s = store.get_state(chat_id, run_id)
                     store.patch_state(chat_id, run_id,
@@ -575,6 +647,11 @@ def resume(chat_id, run_id, answer):
     # exactly like an ordinary question on the wire.
     if w.get("asset_gate"):
         return _resume_asset_gate(chat_id, run_id, w, messages, answer)
+
+    # The length answer becomes a number in the run's state, not a message. Checked before the
+    # ordinary question branch because on the wire it looks exactly like one.
+    if w.get("ask_words"):
+        return _resume_words(chat_id, run_id, w, messages, answer)
 
     if w.get("kind") == "approval":
         tool = w.get("tool")
@@ -679,8 +756,14 @@ def save_to_library(chat_id, run_id, title=None):
     idea_id = (state.get("idea_id") or "").strip()
     # RENAME the row this run already opened, never make a second one. library_save routes through
     # library_finish with the run named, so a run whose row was never opened still gets exactly one.
+    # The archetype goes ONTO the row, beside the keyword, rather than being read back out of the
+    # run every time the Library is drawn. A run folder can be deleted and its article kept, and a
+    # finished article should still be able to say what shape it was written to. (2026-09-09.)
+    fmt = (bp.get("format_archetype") or rs.get("format_archetype")
+           or (rs.get("build_spec") or {}).get("format") or "").strip()
     item = store.library_save(chat_id, run_id, title, draft, {
         "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary),
+        "format_archetype": fmt,
         "idea_id": idea_id})
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
 

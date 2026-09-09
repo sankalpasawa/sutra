@@ -109,6 +109,16 @@ ok("the guard's other two names are real too",
    callable(getattr(dfs, "balance", None)) and callable(getattr(dfs, "demo_mode", None)))
 
 
+# run_research now STOPS ONCE and asks how long the article should be, between the brief and the
+# research conversation. Outside the loop there is nobody to answer, so this answers it the way
+# loop._resume_words does and calls the tool straight back with the number.
+def research(ctx, **kw):
+    out = run_research.run(ctx, **kw)
+    if isinstance(out, dict) and out.get("ask_words"):
+        out = run_research.run(ctx, word_target=out["ask_words"]["suggested"])
+    return out
+
+
 # ---- 2. a healthy balance runs, and the balance is read exactly once ----------------------------
 print("\na healthy balance runs, and is read once for the whole run")
 _fixture.stub_dfs(balance=12.5)
@@ -117,7 +127,7 @@ box = counting_balance(12.5)
 _real_can_pay = dfs._can_pay
 dfs._can_pay = lambda ttl=300.0: True     # dfs has its own per-call can-pay cache; silence it so
                                           # the count below is the pre-flight's read and nothing else
-out1 = run_research.run(ctx_for(run1), topic=TOPIC, angle="what changes after")
+out1 = research(ctx_for(run1), topic=TOPIC, angle="what changes after")
 dfs._can_pay = _real_can_pay
 ok("the run finishes with no error", bool(out1.get("summary")) and not out1.get("error"), out1.get("error"))
 ok("it wrote the brief", bool(store.load_artifact(chat, run1, "research.json")))
@@ -154,7 +164,7 @@ ok("no em dashes on screen", "—" not in err2 and "—" not in sum2)
 # ---- 4. the way out is explicit, never the default ----------------------------------------------
 print("\nplaceholder_numbers is the only way past it")
 run3 = fresh_run("placeholders on purpose")
-out3 = run_research.run(ctx_for(run3), topic=TOPIC, angle="what changes after", placeholder_numbers=True)
+out3 = research(ctx_for(run3), topic=TOPIC, angle="what changes after", placeholder_numbers=True)
 ok("asked for explicitly, the run goes ahead", bool(out3.get("summary")) and not out3.get("error"), out3.get("error"))
 rs3 = store.load_artifact(chat, run3, "research.json") or {}
 ok("and every number in it is flagged as demo", rs3.get("demo_data") is True, rs3.get("demo_data"))
@@ -169,7 +179,7 @@ print("\nfail open: an unreadable balance never stops a run")
 _fixture.stub_dfs(balance=12.5)
 run4 = fresh_run("balance check raises")
 counting_balance(RuntimeError("api.dataforseo.com: connection reset"))
-out4 = run_research.run(ctx_for(run4), topic=TOPIC, angle="what changes after")
+out4 = research(ctx_for(run4), topic=TOPIC, angle="what changes after")
 ok("a balance check that RAISES lets the run proceed",
    bool(out4.get("summary")) and not out4.get("error"), out4.get("error"))
 ok("and it proceeds LIVE, not on placeholders",

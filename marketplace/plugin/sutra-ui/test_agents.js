@@ -983,6 +983,145 @@ test("the brief box is capped short enough to leave room for what is under it", 
             "and it keeps its own scroll");
 });
 
+
+/* ── the Prompts tab ───────────────────────────────────────────────────────────
+   His own writing rules, changed without a developer. What these guard:
+
+     · the tab offers exactly the fourteen prompts he asked for, and none of the
+       three he named as skipped (slop, links, clean);
+     · the FORMAT RULES come before the architect in the flow, because they are
+       not part of it, they are what it obeys;
+     · a save reaches the server whole, and a refused save keeps his words on
+       screen with the reason beside them;
+     · Reset puts a prompt back to what shipped;
+     · the Library says what shape each article was written to.
+
+   The list, the flow and the plain names all live in seo_agent/prompts/store.py,
+   so they are READ OUT OF THAT FILE here rather than typed a second time: a copy
+   in a test is a copy that drifts, and then the test passes while the screen is
+   wrong. The Python half (an edit is what the next run loads, Reset restores the
+   shipped text, a lost {{TOKEN}} is refused) runs at the foot of this file
+   through the same interpreter run_all.sh picks. */
+const PSTORE = fs.readFileSync(path.join(__dirname, "seo_agent", "prompts", "store.py"), "utf8");
+
+/* the names in a Python list of ("name", "Title", "note") triples */
+function pyNames(listName){
+  const m = PSTORE.match(new RegExp("\\n" + listName + " = \\[([\\s\\S]*?)\\n\\]"));
+  assert.ok(m, listName + " is not in seo_agent/prompts/store.py");
+  return (m[1].match(/\("([^"]+)",/g) || []).map(x => x.slice(2, -2));
+}
+/* the station titles of FLOW, in order */
+function pyFlowTitles(){
+  const m = PSTORE.match(/\nFLOW = \[([\s\S]*?)\n\]\n/);
+  assert.ok(m, "FLOW is not in seo_agent/prompts/store.py");
+  return (m[1].match(/"title": "([^"]+)"/g) || []).map(x => x.slice(10, -1));
+}
+/* the payload the server sends, rebuilt from the same file the server builds it from */
+function promptsPayload(edited){
+  edited = edited || [];
+  const row = n => ({ name: n, title: n.split("/").pop(), note: "what it decides",
+                      edited: edited.indexOf(n) >= 0, lines: 100, words: 900 });
+  return {
+    flow: pyFlowTitles().map(t => ({ key: t.toLowerCase(), title: t, rules: t === "The format rules",
+                                     steps: ["a phrase", "another phrase"] })),
+    groups: [{ key: "formats", title: "The format rules", note: "eight shapes", prompts: pyNames("FORMATS").map(row) },
+             { key: "writing", title: "The writing prompts", note: "how it writes", prompts: pyNames("WRITING").map(row) }],
+    edited: edited,
+  };
+}
+
+test("the tab offers the eight format rulebooks and the six writing prompts, and nothing else", () => {
+  const formats = pyNames("FORMATS"), writing = pyNames("WRITING");
+  assert.strictEqual(formats.length, 8, "eight archetypes, got " + formats.length + ": " + formats);
+  assert.strictEqual(writing.length, 6, "six writing prompts, got " + writing.length + ": " + writing);
+  const html = A.agPromptsHtml(promptsPayload(), A.agS());
+  formats.concat(writing).forEach(n => assert.ok(html.indexOf('data-arg="' + n + '"') >= 0, "missing from the tab: " + n));
+  /* every one of them is a real file in the bundle, so nothing on this screen opens onto nothing */
+  formats.concat(writing).forEach(n =>
+    assert.ok(fs.existsSync(path.join(__dirname, "seo_agent", "prompts", n + ".md")), "no such prompt file: " + n));
+});
+
+test("the three he said to skip are not on the tab: slop, links, clean", () => {
+  const all = pyNames("FORMATS").concat(pyNames("WRITING")).join(" ");
+  ["slop", "slop-rules", "inline-links", "external-links", "clean"].forEach(n =>
+    assert.ok(all.indexOf(n) < 0, "the tab offers a prompt he told us to skip: " + n));
+  const html = A.agPromptsHtml(promptsPayload(), A.agS());
+  ["slop", "inline-links", "external-links", "clean"].forEach(n =>
+    assert.ok(html.indexOf('data-arg="write/' + n + '"') < 0, "the skipped prompt reached the screen: " + n));
+});
+
+test("the format rules come BEFORE the architect in the flow, and after the planner", () => {
+  const titles = pyFlowTitles();
+  const rules = titles.indexOf("The format rules"), arch = titles.indexOf("Architect"), plan = titles.indexOf("Planner");
+  assert.ok(rules >= 0 && arch >= 0 && plan >= 0, "the flow is missing a station: " + titles);
+  assert.ok(plan < rules && rules < arch, "the order is wrong: " + titles.join(" -> "));
+  const html = A.agFlowHtml(promptsPayload().flow);
+  assert.ok(html.indexOf("The format rules") < html.indexOf("Architect"), "and on screen the architect still comes first");
+  /* the format-rules station carries the accent, so the eye lands on the one he can change */
+  assert.ok(/ag-flowrow rules/.test(html), "the format rules are not marked out in the flow");
+});
+
+test("nothing in the flow is marked as missing or not running", () => {
+  const html = A.agFlowHtml(promptsPayload().flow).toLowerCase();
+  ["not running", "not built", "missing", "skipped", "coming soon"].forEach(w =>
+    assert.ok(html.indexOf(w) < 0, "the flow labels a station " + w));
+  /* the three stations built in this release are all in it, as stations like any other */
+  const titles = pyFlowTitles().join(" | ");
+  assert.ok(/Voices from the field/.test(titles), "voices from the field is not a station: " + titles);
+});
+
+test("nothing about the word count is on this tab", () => {
+  const a = A.agS(); a.panel = null;
+  const html = A.agPromptsHtml(promptsPayload(), a).toLowerCase();
+  ["word count", "words per", "how long", "2,100", "2100", "word band", "target length"].forEach(w =>
+    assert.ok(html.indexOf(w) < 0, "the word count leaked onto the Prompts tab: " + w));
+});
+
+test("a prompt he changed says so, and the sidebar counts them", () => {
+  const p = promptsPayload(["write/readable"]);
+  const html = A.agPromptsHtml(p, A.agS());
+  assert.ok(/p-acc">yours/.test(html), "an edited prompt is not marked as his");
+  assert.ok(/1 changed by you/.test(html), "the heading does not say how many he changed");
+  const a = A.agS(); a.prompts = p; a.view = "prompts";
+  const side = A.agSideHtml(a);
+  assert.ok(/data-arg="prompts"/.test(side), "Prompts is not in the sidebar");
+  assert.ok(/data-arg="prompts"[^>]*aria-current="true"/.test(side), "the open tab is not marked current");
+});
+
+test("the panel lists the placeholders the agent fills, and says not to lose them", () => {
+  const html = A.agPromptHtml({ name: "write/blend", title: "Blend", note: "n", text: "hi {{ARTICLE}}",
+                                shipped: "hi {{ARTICLE}}", edited: false, filled: true, tokens: ["ARTICLE", "BRAND"] }, null);
+  assert.ok(/\{\{ARTICLE\}\}/.test(html) && /\{\{BRAND\}\}/.test(html), "the placeholders are not shown");
+  assert.ok(/Keep every one of them/.test(html), "and he is not told to keep them");
+  /* a format rulebook has no blanks of its own: the two names in its developer header describe
+     which slot the file feeds, and warning him to keep a placeholder it does not have would be a
+     warning about nothing */
+  const rule = A.agPromptHtml({ name: "write/formats/listicle", title: "Listicle", note: "n", text: "x",
+                                shipped: "x", edited: false, filled: false, tokens: ["FORMAT_RULE"] }, null);
+  assert.ok(!/Keep every one of them/.test(rule), "a rulebook is told to keep placeholders it has not got");
+});
+
+test("the Library says what shape each article was written to", () => {
+  const html = A.agLibraryHtml([{ id: "x", title: "Cost per hire", status: "ready", words: 2400,
+                                  format: "listicle", format_label: "Listicle", created_at: "2026-09-09T10:00:00Z" }]);
+  assert.ok(/Listicle/.test(html), "the format is not on the row");
+  /* a row whose run never reached the router shows no format rather than a guess */
+  const none = A.agLibraryHtml([{ id: "y", title: "Half done", status: "writing", created_at: "2026-09-09T10:00:00Z" }]);
+  assert.ok(!/Listicle/.test(none) && !/undefined/.test(none), "an unrouted row invented one: " + none);
+});
+
+test("the prompt list scrolls in its own box and does not take the screen", () => {
+  const flat = CSS.replace(/\s+/g, "");
+  const m = flat.match(/\.ag-promptlist\{[^}]*max-height:(\d+)vh/);
+  assert.ok(m, ".ag-promptlist has no max-height, so it fills the screen");
+  assert.ok(Number(m[1]) <= 50, "the list is still tall: " + m[1] + "vh");
+  assert.ok(/\.ag-promptlist\{[^}]*overflow-y:auto/.test(flat), "and it does not scroll on its own");
+  /* every colour on this screen comes from a token, so light, dark and a changed accent follow */
+  const mine = CSS.slice(CSS.indexOf("/* ── the Prompts tab"));
+  const literals = mine.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g) || [];
+  assert.strictEqual(literals.length, 0, "a hard-coded colour on the Prompts tab: " + literals);
+});
+
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
 async function atest(name, fn){
   try { await fn(); pass++; console.log("ok   - " + name); }
@@ -1111,6 +1250,83 @@ async function atest(name, fn){
     A.apiGet = prev;
   });
 
+  await atest("opening a prompt reads it from the server and shows what it says now", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    const asked = [];
+    const prev = A.apiGet;
+    A.apiGet = async (p) => { asked.push(p); return { name: "write/readable", title: "Rewriting it to be read",
+      note: "n", text: "THE CURRENT TEXT", shipped: "THE CURRENT TEXT", edited: false, tokens: ["ARTICLE"], lines: 292 }; };
+    await A.agAction("promptopen", { getAttribute: k => k === "data-arg" ? "write/readable" : "" });
+    A.apiGet = prev;
+    assert.ok(asked.some(p => /\/prompts\/one\?name=write%2Freadable$/.test(p)), "asked for the prompt: " + asked.join(", "));
+    assert.strictEqual(a.panel.view, "prompt");
+    assert.strictEqual(a.panel.data.text, "THE CURRENT TEXT", "it opens showing what it currently says");
+    assert.ok(/as it shipped/.test(A.agPanelHtml(a)), "and says whose version it is");
+    assert.ok(/THE CURRENT TEXT/.test(A.agPromptHtml(a.panel.data, null)), "on screen, before he edits anything");
+  });
+
+  await atest("saving a prompt posts the whole text, and the panel becomes his version", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    a.panel = { run_id: null, name: "write/readable", view: "prompt", loading: false,
+                title: "Rewriting it to be read", data: { name: "write/readable", text: "old", tokens: ["ARTICLE"], edited: false } };
+    a.promptEdit = { text: "MY OWN RULES {{ARTICLE}}", busy: false, msg: "" };
+    let sent = null;
+    const prevP = A.apiPost, prevG = A.apiGet;
+    A.apiPost = async (p, b) => { sent = { path: p, b }; return { name: b.name, title: "Rewriting it to be read",
+      text: b.text, shipped: "old", edited: true, tokens: ["ARTICLE"], lines: 1 }; };
+    A.apiGet = async () => promptsPayload(["write/readable"]);
+    await A.agAction("promptsave", { getAttribute: () => "" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.ok(sent && /\/prompts\/save$/.test(sent.path), "posted to the save route: " + (sent && sent.path));
+    assert.strictEqual(sent.b.name, "write/readable", "with the prompt named");
+    assert.strictEqual(sent.b.text, "MY OWN RULES {{ARTICLE}}", "and the text whole");
+    assert.strictEqual(a.promptEdit, null, "the editor closes");
+    assert.strictEqual(a.panel.data.text, "MY OWN RULES {{ARTICLE}}", "the panel shows what he saved");
+    assert.strictEqual(a.panel.data.edited, true, "and knows it is his now");
+    const panel = A.agPanelHtml(a);
+    assert.ok(/Reset to what shipped/.test(panel), "so Reset is offered");
+    assert.ok(/your version, used by the next article/.test(panel),
+              "and the line under the title still says it shipped that way");
+  });
+
+  await atest("a save that drops a {{TOKEN}} is refused, and his words stay on screen with the reason", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    a.panel = { run_id: null, name: "write/readable", view: "prompt", loading: false, title: "Rewriting it to be read",
+                data: { name: "write/readable", text: "old {{ARTICLE}}", tokens: ["ARTICLE"], edited: false } };
+    a.promptEdit = { text: "I deleted the placeholder", busy: false, msg: "" };
+    const prev = A.apiPost;
+    A.apiPost = async () => { throw new Error("This version is missing a placeholder the agent fills in: {{ARTICLE}}. Put it back exactly as written, or the next article will be written from a prompt with a hole in it."); };
+    await A.agAction("promptsave", { getAttribute: () => "" });
+    A.apiPost = prev;
+    assert.strictEqual(a.promptEdit.text, "I deleted the placeholder", "nothing he typed is thrown away");
+    assert.ok(/\{\{ARTICLE\}\}/.test(a.promptEdit.msg), "the missing placeholder is named: " + a.promptEdit.msg);
+    assert.strictEqual(a.panel.data.text, "old {{ARTICLE}}", "and the saved prompt is untouched");
+    assert.ok(/hole in it/.test(A.agPromptHtml(a.panel.data, a.promptEdit)), "the reason is beside the button, not in a toast");
+  });
+
+  await atest("Reset asks the server to put the prompt back, and the panel says it shipped that way", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    a.panel = { run_id: null, name: "write/blend", view: "prompt", loading: false, title: "Blend",
+                data: { name: "write/blend", text: "his version {{ARTICLE}}", shipped: "what shipped {{ARTICLE}}",
+                        tokens: ["ARTICLE"], edited: true } };
+    let sent = null;
+    const prevP = A.apiPost, prevG = A.apiGet;
+    A.apiPost = async (p, b) => { sent = { path: p, b }; return { name: b.name, title: "Blend",
+      text: "what shipped {{ARTICLE}}", shipped: "what shipped {{ARTICLE}}", tokens: ["ARTICLE"], edited: false }; };
+    A.apiGet = async () => promptsPayload([]);
+    await A.agAction("promptreset", { getAttribute: () => "" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.ok(sent && /\/prompts\/reset$/.test(sent.path), "posted to the reset route: " + (sent && sent.path));
+    assert.strictEqual(sent.b.name, "write/blend");
+    assert.strictEqual(a.panel.data.text, "what shipped {{ARTICLE}}", "the shipped text is back");
+    assert.strictEqual(a.panel.data.edited, false);
+    assert.ok(!/Reset to what shipped/.test(A.agPanelHtml(a)), "and there is nothing left to reset");
+  });
+
   await atest("a row being written puts the poll on its fast cadence, on the one timer there is", async () => {
     const a = agReset();
     a.chat = { runs: [{ run_id: "r1", status: "done" }] };
@@ -1126,6 +1342,68 @@ async function atest(name, fn){
     assert.ok(/agLiveRun\(\) \|\| \(a && a\.view === "library" && agLibWriting\(a\)\)/.test(poll),
               "the Library case rides the existing cadence: " + poll.slice(poll.indexOf("const live")));
     assert.strictEqual((poll.match(/setInterval/g) || []).length, 1, "still exactly one interval");
+  });
+
+  /* ── the engine half, in Python ───────────────────────────────────────────────
+     Everything above proves the SCREEN behaves. What it cannot prove is the thing
+     that actually matters: that a prompt he saved is the one the next article is
+     written from. That lives in seo_agent/prompts/store.py, so it is checked here
+     by running that module, through the same interpreter run_all.sh picks (the
+     project venv when there is one). It imports nothing but the standard library
+     and seo_agent.store, so it runs anywhere this repo does. */
+  await atest("in the engine: his edit is what the next run loads, Reset puts it back, and a broken template is refused", async () => {
+    const cp = require("child_process"), os = require("os");
+    const venv = path.join(__dirname, ".venv", "bin", "python");
+    const PY = fs.existsSync(venv) ? venv : "python3";
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), "seo-prompts-"));
+    const script = [
+      "from seo_agent.prompts import store as ps",
+      "assert ps.install(), 'install() did nothing'",
+      "from seo_agent.tools import _shared as sh",
+      "name = 'write/blend'",
+      "shipped = ps.shipped_text(name)",
+      "assert shipped.strip(), 'no shipped prompt to start from'",
+      "assert sh.load_prompt(name).startswith(shipped[:40]), 'the door does not serve the shipped prompt'",
+      "ps.save(name, 'MY OWN RULES\\n' + shipped)",
+      // the override is beside knowledge, under the data dir, and never in the app bundle
+      "assert ps.override_path(name).startswith(ps.store.data_dir()), ps.override_path(name)",
+      "assert not ps.override_path(name).startswith(ps.SHIPPED), 'it wrote into the app bundle'",
+      "assert open(ps.shipped_path(name)).read() == shipped, 'the shipped file was written over'",
+      // what the NEXT RUN loads, through the door every step calls
+      "assert sh.load_prompt(name).startswith('MY OWN RULES'), 'a run would not load his version'",
+      "ps.reset(name)",
+      "assert sh.load_prompt(name).startswith(shipped[:40]), 'Reset did not restore the shipped text'",
+      "assert not ps.is_edited(name)",
+      // a save that loses a placeholder is refused, and nothing is written
+      "try:",
+      "    ps.save(name, 'every placeholder deleted')",
+      "    raise SystemExit('a save that dropped every {{TOKEN}} was ACCEPTED')",
+      "except ps.PromptError as e:",
+      "    assert '{{' in str(e), 'the refusal does not name the placeholder: %s' % e",
+      "assert not ps.is_edited(name), 'a refused save still wrote a file'",
+      // a format rulebook is never filled, so its developer header is his to delete; a token he
+      // INVENTS is still refused there, because a rulebook's words are injected into a real prompt
+      "rule = 'write/formats/listicle'",
+      "assert '{{' in ps.shipped_text(rule), 'the fixture no longer has a token in its header'",
+      "ps.save(rule, '## Structure\\nNine items, never eight.')",
+      "assert ps.is_edited(rule), 'he could not delete a header that only describes the plumbing'",
+      "import seo_agent.write._common as C",
+      "assert 'Nine items' in C.format_rules('listicle'), 'the rulebook a run reads is not his'",
+      "ps.reset(rule)",
+      "try:",
+      "    ps.save(rule, '## Structure\\nUse {{MADE_UP}} here.')",
+      "    raise SystemExit('an invented {{TOKEN}} in a rulebook was ACCEPTED')",
+      "except ps.PromptError as e:",
+      "    assert 'MADE_UP' in str(e), e",
+      "print('PROMPT-STORE-OK')",
+    ].join("\n");
+    const r = cp.spawnSync(PY, ["-c", script], {
+      cwd: __dirname, encoding: "utf8",
+      env: Object.assign({}, process.env, { PYTHONPATH: __dirname, SEO_AGENT_DATA: data, SEO_AGENT_NO_CLI: "1" }),
+    });
+    fs.rmSync(data, { recursive: true, force: true });
+    assert.ok(/PROMPT-STORE-OK/.test(r.stdout || ""),
+              "the prompt store failed:\n" + ((r.stderr || "") + (r.stdout || "")).trim().split("\n").slice(-6).join("\n"));
   });
 
   console.log("\n" + "-".repeat(60));

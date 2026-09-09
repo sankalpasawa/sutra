@@ -19,7 +19,8 @@
 const AG_API = "/api/agents/seo";
 const AG_STAGES = [["setup", "Setup"], ["topic", "Topic"], ["research", "Research"], ["blueprint", "Blueprint"], ["draft", "Draft"]];
 const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas", research_brief: "Research brief",
-                        blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page" };
+                        blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page",
+                        prompt: "Prompt" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
@@ -133,7 +134,7 @@ function agBlocks(md){
 function agS(){
   if (typeof S === "undefined") return null;
   if (!S.ag) S.ag = {
-    view: "chat",                 /* chat | knowledge | memory | library | tools | connections */
+    view: "chat",                 /* chat | knowledge | memory | prompts | library | tools | connections */
     chats: null, chatId: null, chat: null,   /* chat = {chat, messages, runs} */
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
@@ -144,6 +145,7 @@ function agS(){
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
     compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
     fileEdit: null,
+    prompts: null, promptEdit: null,   /* the Prompts tab's payload, and the open editor's draft */
   };
   return S.ag;
 }
@@ -574,7 +576,11 @@ function agSideHtml(a){
   const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
   const brand = (a.knowledge && a.knowledge.company && a.knowledge.company.brand) || "";
   const openIdeas = a.assets && a.assets.built ? (a.assets.counts || {}).open : null;
+  /* Prompts sits with Memory and not with Tools: both are things the owner tells the agent about
+     how to write, and neither is a thing the agent does. The count is how many he has changed. */
+  const ownPrompts = a.prompts && a.prompts.edited ? a.prompts.edited.length : null;
   const rows = [["knowledge", "Knowledge", AG_ICON.doc, null], ["memory", "Memory", AG_ICON.star, a.memory ? a.memory.active : null],
+                ["prompts", "Prompts", AG_ICON.pencil, ownPrompts || null],
                 ["assets", "Asset ideas", AG_ICON.spark, openIdeas || null],
                 ["library", "Library", AG_ICON.check, a.library ? a.library.length : null], ["tools", "Tools", AG_ICON.spark, null],
                 ["connections", "Connections", AG_ICON.link, null]];
@@ -948,7 +954,10 @@ function agIdeaHtml(d){
 function agPanelHtml(a){
   const p = a.panel; if (!p) return "";
   const title = p.title || AG_VIEW_TITLE[p.view] || p.name;
-  let body, footer = "";
+  /* the line under the title. Every view but one takes it from the panel; the prompt view decides
+     it HERE, from the data on screen, so it cannot still say "as it shipped" a moment after he
+     saved his own version. */
+  let body, footer = "", sub = p.subtitle;
   const live = agLiveRun();
   const atCheckpoint = live && live.status === "waiting" && live.waiting_on && live.waiting_on.kind === "artifact"
                        && live.run_id === p.run_id && live.waiting_on.artifact === p.name;
@@ -967,6 +976,12 @@ function agPanelHtml(a){
   } else if (p.view === "brand_file"){
     body = agBrandFileHtml(p.data, a.fileEdit);
     footer = a.fileEdit ? "" : `<button class="btn" type="button" data-ag="fileedit">Edit</button>${p.back ? `<button class="btn" type="button" data-ag="back">Back to the pack</button>` : ""}`;
+  } else if (p.view === "prompt"){
+    body = agPromptHtml(p.data, a.promptEdit);
+    if (p.data) sub = p.data.edited ? "your version, used by the next article" : "as it shipped";
+    footer = a.promptEdit ? "" : `<button class="btn pri" type="button" data-ag="promptedit">Edit</button>
+      ${p.data && p.data.edited ? `<button class="btn" type="button" data-ag="promptreset">Reset to what shipped</button>` : ""}
+      <span class="sp">${p.data && p.data.edited ? "This is your version. The next article uses it." : "This is what shipped."}</span>`;
   } else if (p.view === "idea"){
     body = agIdeaHtml(p.data);
   } else if (p.view === "page"){
@@ -990,7 +1005,7 @@ function agPanelHtml(a){
       ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
       <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
   } else body = `<pre class="ag-detail">${agEsc(JSON.stringify(p.data, null, 2))}</pre>`;
-  return `<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(p.subtitle || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
+  return `<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
       <button class="ib" type="button" data-ag="closepanel" aria-label="Close the panel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="ag-pb">${body}</div>
     ${footer ? `<div class="ag-pf">${footer}</div>` : ""}`;
@@ -1399,6 +1414,16 @@ function agMileStripHtml(id, miles, writing){
    It offers no Open and no Mark ready while it is writing. There is nothing whole to open yet, and
    the run would overwrite a state set by hand when it finishes. The way into a half-made article
    is the strip, which is the point of the strip. */
+/* WHAT SHAPE THIS ARTICLE WAS WRITTEN TO, on the Library row. The archetype is decided once, at
+   the route step, and the server reads it back off the run that made the article; the plain name
+   comes from the server too, from the same list the Prompts tab names the format rules by, so the
+   two screens cannot end up calling one shape by two names. A row whose run never got as far as
+   the router simply has no format, and shows none rather than guessing one. */
+function agLibFormat(it){
+  const label = (it && (it.format_label || it.format)) || "";
+  return label ? `<span title="The format this article was written to">${agEsc(label)}</span>` : "";
+}
+
 function agLibraryHtml(items){
   const list = items || [];
   const bin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
@@ -1416,7 +1441,7 @@ function agLibraryHtml(items){
          before it has a title, and the row renames itself the moment there is one. */
       const name = (writing && it.request) || it.title;
       return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span></div>
-        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
+        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}${agLibFormat(it)}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
         ${agMileStripHtml(it.id, miles, writing)}</div>
         <div class="ra">${writing ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
           <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${status === "ready" ? "draft" : "ready"}">${status === "ready" ? "Back to draft" : "Mark ready"}</button>`}
@@ -1424,6 +1449,85 @@ function agLibraryHtml(items){
     }).join("")
       : `<div class="ag-row"><div class="ri"><div class="rn">Nothing here yet</div><div class="rd">Ask for an article and its row appears here straight away, filling in as each piece is made.</div></div></div>`}
   </div>`;
+}
+
+/* ── the Prompts tab ───────────────────────────────────────────────────────────────────────
+   The craft of this agent is in its prompts, and the craft is the owner's. This screen is where
+   he changes it without a developer: open one, edit it, save, and the very next article is
+   written from his version.
+
+   Two halves, in the order he asked for them. Across the top, the whole write phase as a phrase
+   per step, so he can see where the thing he is about to edit actually sits. Below it, the
+   prompts themselves in ONE scrolling box that deliberately does not fill the screen.
+
+   THE FORMAT RULES COME FIRST, in the flow and in the list. They are not part of the architect;
+   they are what it obeys, and they decide what a section must contain. Nothing in the flow is
+   marked as missing or not running: every station in it ships in this release.
+
+   Nothing here concerns the word count. That is one question asked during a run, and it is not a
+   setting. */
+
+function agFlowHtml(flow){
+  const rows = flow || [];
+  if (!rows.length) return "";
+  return `<div class="ag-flow" aria-label="How an article gets written, step by step">
+    ${rows.map(st => `<div class="ag-flowrow ${st.rules ? "rules" : ""}">
+      <div class="fh">${agEsc(st.title)}</div>
+      <ol class="fs">${(st.steps || []).map(s => `<li>${agEsc(s)}</li>`).join("")}</ol>
+    </div>`).join("")}
+  </div>`;
+}
+
+function agPromptRowHtml(p, open){
+  const n = p.lines || 0;
+  return `<button class="ag-file ${open === p.name ? "on" : ""}" type="button" data-ag="promptopen" data-arg="${agEsc(p.name)}">
+    <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
+    <span class="ft"><span class="fn">${agEsc(p.title)}${p.edited ? ` <span class="pill p-acc">yours</span>` : ""}</span>
+      <span class="fd">${agEsc(p.note || "")}</span></span>
+    <span class="fm">${agEsc(agNum(n))} line${n === 1 ? "" : "s"}</span></button>`;
+}
+
+function agPromptsHtml(d, a){
+  const groups = (d && d.groups) || [];
+  const open = a && a.panel && a.panel.view === "prompt" ? a.panel.name : "";
+  const edited = (d && d.edited) || [];
+  return `<div class="ag-view"><h2>Prompts</h2>
+    <p class="lead">The words the agent writes by. Open one, change it, save it, and the next article is written from your version. Your copy lives with your own files, so an update to the app never overwrites it, and Reset puts a prompt back to what shipped.</p>
+    <h3 class="sec">How an article gets written</h3>
+    ${agFlowHtml(d && d.flow)}
+    <h3 class="sec">The prompts${edited.length ? ` <small>${agEsc(edited.length)} changed by you</small>` : ""}</h3>
+    <div class="ag-promptlist">
+      ${groups.map(g => `<div class="ag-promptgroup">
+        <div class="gh">${agEsc(g.title)}</div>
+        <p class="gn">${agEsc(g.note || "")}</p>
+        <div class="ag-files">${(g.prompts || []).map(p => agPromptRowHtml(p, open)).join("")}</div>
+      </div>`).join("")}
+      ${groups.length ? "" : `<div class="ag-row"><div class="ri"><div class="rn">Nothing to show</div>
+        <div class="rd">The prompts could not be read. The agent may not be installed yet.</div></div></div>`}
+    </div>
+  </div>`;
+}
+
+/* One prompt in the review panel. It opens showing what it currently says, so he edits rather than
+   starts from nothing, and the placeholders the code fills are listed above it: they are the one
+   thing in the file he must not delete, and a save that has lost one is refused with the missing
+   ones named.
+   The strip is drawn only when the server says this prompt IS filled. A format rulebook is not:
+   its words are lifted whole into another prompt, so it has no blanks of its own, and telling him
+   to keep placeholders it does not have would be a warning about nothing. */
+function agPromptHtml(d, edit){
+  if (!d) return `<div class="zero"><h4>Nothing to show</h4></div>`;
+  const toks = d.filled ? (d.tokens || []) : [];
+  const head = `${d.note ? `<div class="ag-why">${agEsc(d.note)}</div>` : ""}
+    ${toks.length ? `<div class="ag-toks"><span class="tl">The agent fills these in. Keep every one of them.</span>
+      ${toks.map(t => `<code>{{${agEsc(t)}}}</code>`).join("")}</div>` : ""}`;
+  if (edit) return `<div class="ag-editbox">${head}
+    <textarea data-agprompttext class="tall" spellcheck="false" aria-label="The prompt">${agEsc(edit.text != null ? edit.text : d.text)}</textarea>
+    ${edit.msg ? `<div class="ag-err">${agEsc(edit.msg)}</div>` : ""}
+    <div class="row"><button class="btn pri" type="button" data-ag="promptsave" ${edit.busy ? "disabled" : ""}>${edit.busy ? "Saving…" : "Save"}</button>
+      <button class="btn" type="button" data-ag="promptcancel">Cancel</button>
+      <span class="sp">Saved to your own copy, never over what shipped</span></div></div>`;
+  return `${head}<pre class="ag-prompttext">${agEsc(d.text)}</pre>`;
 }
 
 function agToolsHtml(tools){
@@ -1585,6 +1689,7 @@ function agDraw(force){
     const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
       : a.view === "assets" ? agAssetsHtml(a.assets, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
+      : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
       : a.view === "library" ? agLibraryHtml(a.library)
       : a.view === "tools" ? agToolsHtml(a.tools)
       : agConnectionsHtml(a.conns, a.health, a.connForm);
@@ -1685,6 +1790,8 @@ async function agBootLoad(){
     await agLoadChat((live || a.chats[0]).id, true);
   }
   try { a.memory = await agApi("/memory"); } catch (e) {}
+  /* the sidebar says how many prompts he has changed, so the payload is wanted before he opens the tab */
+  try { a.prompts = await agApi("/prompts"); } catch (e) {}
   try { a.library = await agApi("/library"); } catch (e) {}
   try { a.knowledge = await agApi("/knowledge"); } catch (e) {}
   try { a.cta = await agApi("/knowledge/cta"); } catch (e) {}
@@ -1786,6 +1893,29 @@ async function agOpenBrandFile(name, back, label){
   agDraw();
 }
 
+/* One prompt, opened in the review panel. It always fetches, so what he reads is what is on disk
+   right now and not a copy the list happened to be holding: the list carries a line count, this
+   carries the text a run would load. */
+async function agOpenPrompt(name){
+  const a = agS();
+  a.panel = { run_id: null, name, view: "prompt", data: null, loading: true, error: null,
+              title: "Prompt", subtitle: name, readOnly: false };
+  a.promptEdit = null; a.fileEdit = null; a.libEdit = null;
+  agDraw();
+  try {
+    const d = await agApi(`/prompts/one?name=${encodeURIComponent(name)}`);
+    if (!a.panel || a.panel.name !== name) return;      /* he clicked something else meanwhile */
+    a.panel.data = d; a.panel.title = d.title || name;
+    a.panel.loading = false;   /* the subtitle is agPanelHtml's, so it follows a save and a reset */
+  } catch (e) {
+    if (a.panel && a.panel.name === name){
+      a.panel.loading = false;
+      a.panel.error = "Could not read this prompt: " + String((e && e.message) || e);
+    }
+  }
+  agDraw();
+}
+
 async function agOpenPage(url){
   const a = agS();
   a.panel = { run_id: null, name: "page:" + url, view: "page", data: null, loading: true, error: null, title: "Page", subtitle: agPath(url) };
@@ -1860,6 +1990,7 @@ async function agAction(act, el){
       if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
+      if (arg === "prompts"){ a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null; }
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); }
@@ -1895,7 +2026,7 @@ async function agAction(act, el){
       else await agOpenArtifact(run, arg, el.getAttribute("data-view") || "article");
       break;
     }
-    case "closepanel": a.panel = null; a.fileEdit = null; a.libEdit = null; agDraw(); break;
+    case "closepanel": a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null; agDraw(); break;
     case "back": {
       const live = agLiveRun();
       if (live && live.waiting_on && live.waiting_on.artifact === "brand") await agOpenArtifact(live.run_id, "brand", "brand_pack");
@@ -2046,6 +2177,50 @@ async function agAction(act, el){
       catch (e) { agToast("Could not save: " + (e.message || e)); }
       agDraw(); break;
     }
+    /* prompts: open one in the panel, edit it, save it, or put it back to what shipped */
+    case "promptopen": {
+      /* clicking the one already open shuts it, the same as every other list on this screen */
+      if (a.panel && a.panel.view === "prompt" && a.panel.name === arg){ a.panel = null; a.promptEdit = null; agDraw(true); break; }
+      await agOpenPrompt(arg); break;
+    }
+    case "promptedit": {
+      const d = a.panel && a.panel.data; if (!d) break;
+      /* it opens holding what the prompt currently says, so he edits rather than starts from
+         nothing; the draft lives on a.promptEdit the way the Library editor's does */
+      a.promptEdit = { text: d.text || "", busy: false, msg: "" };
+      agDraw();
+      if (typeof document !== "undefined")
+        setTimeout(() => { const t = document.querySelector("[data-agprompttext]"); if (t) t.focus(); }, 0);
+      break;
+    }
+    case "promptcancel": a.promptEdit = null; agDraw(); break;
+    case "promptsave": {
+      const p3 = a.panel, ed = a.promptEdit; if (!p3 || !ed) break;
+      const ta = typeof document !== "undefined" ? document.querySelector("[data-agprompttext]") : null;
+      const text = ta ? ta.value : String(ed.text || "");
+      a.promptEdit = { text, busy: true, msg: "" }; agDraw();
+      try {
+        p3.data = await agPostApi("/prompts/save", { name: p3.name, text });
+        a.promptEdit = null;
+        a.prompts = await agApi("/prompts").catch(() => a.prompts);
+        agToast("Saved. The next article uses it.");
+      } catch (e) {
+        /* the refusal is a sentence written for him (a missing {{TOKEN}}, most likely), so it
+           goes where he is looking, not into a toast that fades */
+        a.promptEdit = { text, busy: false, msg: String((e && e.message) || e) };
+      }
+      agDraw(); break;
+    }
+    case "promptreset": {
+      const p4 = a.panel; if (!p4) break;
+      try {
+        p4.data = await agPostApi("/prompts/reset", { name: p4.name });
+        a.promptEdit = null;
+        a.prompts = await agApi("/prompts").catch(() => a.prompts);
+        agToast("Back to what shipped");
+      } catch (e) { agToast("Could not reset: " + ((e && e.message) || e)); }
+      agDraw(); break;
+    }
     /* memory, library */
     case "addmem": {
       const inp = document.querySelector("[data-agmem]"); const text = inp ? inp.value.trim() : ""; if (!text) break;
@@ -2179,6 +2354,7 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     else if (t.matches("[data-aglibtitle]")){ if (a.libEdit) a.libEdit.title = t.value; }
     else if (t.matches("[data-aglibbody]")){ if (a.libEdit) a.libEdit.draft = t.value; }
     else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
+    else if (t.matches("[data-agprompttext]")){ if (a.promptEdit){ a.promptEdit.text = t.value; a.promptEdit.msg = ""; } }
     else if (t.matches("[data-agdfs]")){
       const f = a.connForm || {}; f[t.getAttribute("data-agdfs")] = t.value; f.msg = ""; a.connForm = f;
     }
