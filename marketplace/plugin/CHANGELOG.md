@@ -2,6 +2,27 @@
 
 **status**: active · **updated**: 2026-09-09
 
+## 2.250.1 (2026-09-09)
+
+**A sheet of ideas the workflow already produced can be loaded straight in.** Somebody who has run
+the original `02-asset-engine` by hand does not have to pay for it twice: its `clubbed-ideas.csv`
+loads into the Asset ideas tab in the shape a built sheet has. Columns are read by name, so their
+order does not matter, and a file that is not a sheet is refused naming the column it wanted.
+
+Two things it will not invent. The merged sheet carries no linkability score, so a loaded idea is
+unscored rather than scored zero, because a zero reads exactly like a real rejection. And the fit
+tag IS the outcome of the original's ownability test, so that verdict is carried rather than
+guessed at.
+
+**Three things found by loading the owner's own 1,892 ideas into it**, none of which a test would
+have caught. The list drew every row at once: 41,000 elements and a page 165,000 pixels tall, which
+is not a list anybody can use. It pages twenty-five at a time now, with the same control the site
+catalogue already uses, so there is one idiom on that screen and not two. The summary sentence
+reached the screen reading "1892 ideas from competitor-study, model-other-niches", which is right in
+a file path and wrong in a sentence a person reads; there is one table of plain names now and
+anything writing a line for the screen goes through it. And the ids were minted without their band,
+so a loaded sheet could have collided with a built one.
+
 ## 2.250.0 (2026-09-09)
 
 **Sutra can now work out WHAT to write, not just write it.** Layer 02 of the workflow, the asset

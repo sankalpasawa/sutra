@@ -354,3 +354,27 @@ def parse_gate_answer(kind, text, proposed):
         # a name the proposal already carried keeps its evidence; a new one is taken at face value
         out.append(hit if hit is not None else ({"domain": v} if "." in v else {"name": v}))
     return out
+
+
+# What each method is CALLED on screen. The builders name themselves after the original's folders
+# ("model-other-niches"), which is right in a file path and wrong in a sentence a person reads.
+# One table, used by anything that writes a line for the screen. (2026-09-09: the imported sheet's
+# summary reached the tab reading "1892 ideas from competitor-study, model-other-niches".)
+METHOD_NAMES = {
+    "competitors": "the competitor study", "competitor-study": "the competitor study",
+    "formats": "other industries", "model-other-niches": "other industries",
+    "trends": "what your audience argues about", "study-trends": "what your audience argues about",
+    "imported": "a sheet you loaded",
+}
+
+
+def method_name(m):
+    return METHOD_NAMES.get(m, m)
+
+
+def method_list(names):
+    """"a, b and c" — an Oxford-free list a person reads, never a comma-joined slug dump."""
+    out = [method_name(n) for n in (names or [])]
+    if len(out) <= 1:
+        return out[0] if out else ""
+    return ", ".join(out[:-1]) + " and " + out[-1]

@@ -774,6 +774,15 @@ def api_library_delete(item_id: str):
 
 # ---- asset ideas ---------------------------------------------------------------------------------
 
+def _plain_methods(line):
+    """Any method slug left in a sentence becomes what a person calls it. The builders name
+    themselves after the original's folders, which is right in a path and wrong on screen."""
+    from seo_agent.assets import _common as acm
+    for slug, name in sorted(acm.METHOD_NAMES.items(), key=lambda kv: -len(kv[0])):
+        line = line.replace(slug, name)
+    return line
+
+
 def _assets_payload():
     from seo_agent.assets import _common as acm
     rows = acm.ideas()
@@ -793,7 +802,7 @@ def _assets_payload():
         "counts": acm.counts(rows),
         "methods_run": ran,
         "methods": states,
-        "methods_line": m.get("line") or "",
+        "methods_line": _plain_methods(m.get("line") or ""),
         "methods_blocked": sorted([k for k, v in states.items() if v != "ran"]),
         "next": ({"id": nxt["id"], "title": nxt.get("title", ""), "angle": nxt.get("angle", ""),
                   "format": nxt.get("format", ""), "method": nxt.get("method") or [],

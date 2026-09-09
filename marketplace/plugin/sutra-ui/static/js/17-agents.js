@@ -1236,7 +1236,13 @@ function agAssetsHtml(as, a){
   const blocked = as.methods_blocked || [];
   const rows = as.rows || [];
   const filt = (a && a.assetFilter) || "open";
-  const shown = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
+  const matching = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
+  // Paged, and not optionally. The owner's own run produced 1,892 ideas; drawn in one go that is
+  // 41,000 DOM nodes and a page 165,000 pixels tall, which is not a list anybody can use. Found by
+  // loading his real sheet, 2026-09-09. Same page size and same control as the site catalogue, so
+  // there is one idiom on this screen and not two.
+  const off = Math.min((a && a.assetOffset) || 0, Math.max(0, matching.length - 1));
+  const shown = matching.slice(off, off + AG_IDEA_LIMIT);
   return `<div class="ag-view wide"><h2>Asset ideas</h2>
     <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
       ${as.methods_line ? agEsc(as.methods_line)
@@ -1264,6 +1270,10 @@ function agAssetsHtml(as, a){
         `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
     </div>
 
+    ${matching.length > AG_IDEA_LIMIT ? `<div class="ag-pager" style="margin:0 0 8px">
+      <span>${agEsc(agNum(off + 1))}–${agEsc(agNum(Math.min(matching.length, off + shown.length)))} of ${agEsc(agNum(matching.length))}</span>
+      <button class="btn" type="button" data-ag="ideaprev" ${off <= 0 ? "disabled" : ""}>Previous</button>
+      <button class="btn" type="button" data-ag="ideanext" ${off + shown.length >= matching.length ? "disabled" : ""}>Next</button></div>` : ""}
     ${shown.length ? `<table class="ag-pages"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th></tr></thead><tbody>${shown.map(r => `<tr>
       <td><button class="ag-pagelink" type="button" data-ag="ideaopen" data-arg="${agEsc(r.id)}">${agEsc(r.title || r.id)}</button>
         <div class="h">${agEsc((r.angle || "").slice(0, 110))}</div>
@@ -1277,8 +1287,14 @@ function agAssetsHtml(as, a){
 }
 
 /* The method names as a person would say them, never as the folder is called. */
+const AG_IDEA_LIMIT = 25;      // one page of the sheet, the same as the site catalogue's table
 const AG_METHOD_NAMES = {"competitors": "the competitor study", "formats": "other industries",
-                         "trends": "what your audience argues about"};
+                         "trends": "what your audience argues about",
+                         // the builders' own METHOD constants, as the workflow names them
+                         "competitor-study": "the competitor study",
+                         "model-other-niches": "other industries",
+                         "study-trends": "what your audience argues about",
+                         "imported": "a sheet you loaded"};
 function agMethodName(m){ return AG_METHOD_NAMES[m] || m; }
 
 function agMemoryHtml(m, form){
@@ -1771,7 +1787,9 @@ async function agAction(act, el){
       catch (e) { agToast("Could not drop it: " + (e && e.message || e)); }
       agDraw(true); break;
     }
-    case "assetfilter": a.assetFilter = arg; agDraw(true); break;
+    case "assetfilter": a.assetFilter = arg; a.assetOffset = 0; agDraw(true); break;
+    case "ideaprev": a.assetOffset = Math.max(0, ((a.assetOffset || 0) - AG_IDEA_LIMIT)); agDraw(true); break;
+    case "ideanext": a.assetOffset = (a.assetOffset || 0) + AG_IDEA_LIMIT; agDraw(true); break;
     case "ideaopen": {
       a.panel = { run_id: null, name: "idea:" + arg, view: "idea", data: null, loading: true,
                   error: null, title: "Asset idea", subtitle: arg };
