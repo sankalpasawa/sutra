@@ -144,6 +144,61 @@ def search(queries, route_name, exclude=(), per_query=URLS_PER_QUERY):
     return urls, 0.0
 
 
+def search_many(queries, route_name, say=lambda *a: None, exclude=(), per_query=URLS_PER_QUERY):
+    """Candidate urls for MANY queries at once: ({query: [urls]}, cost_usd, [queries never searched]).
+
+    ONE QUEUED BATCH INSTEAD OF ONE LIVE SEARCH PER QUERY, which is what the original does and what
+    the price says to do: $0.0006 a queued search against $0.002 live (tools/dfs.SERP_QUEUED_USD and
+    SERP_LIVE_USD, both his measurements). The hunt plans its queries for every claim before it
+    searches for any of them, so there is nothing to wait for and no reason to pay live rates — a
+    single article's hunt can run to hundreds of searches, and it is the owner's account.
+
+    The third value is the queries that never came back. A query in that list was NOT searched, and
+    the difference matters more here than anywhere: a claim whose search failed must be left
+    unverified, and a claim whose search returned nothing is a claim with no source. Reading one as
+    the other is how a run reports a clean article it never checked.
+
+    The model route has no batch to speak of, so it falls back to one `search` call over all the
+    queries at once — which is what it already did — and the result is spread across them.
+    """
+    queries = [str(q).strip() for q in (queries or []) if str(q).strip()]
+    queries = list(dict.fromkeys(queries))
+    if not queries:
+        return {}, 0.0, []
+    if route_name != "dataforseo":
+        urls, cost = search(queries, route_name, exclude=exclude, per_query=per_query)
+        # The model answers with one list for all the queries, so every query is handed the same
+        # list. It is what the single-query path did too; the batch shape just makes it explicit.
+        return ({q: list(urls) for q in queries} if urls else {}), cost, ([] if urls else list(queries))
+    company = C.sh.company()
+    say("Searching for every claim at once",
+        "%d searches in one queued batch, about $%.2f — a live search each would be about $%.2f"
+        % (len(queries), len(queries) * dfs.SERP_QUEUED_USD, len(queries) * dfs.SERP_LIVE_USD))
+    try:
+        got = dfs.serp_batch(queries, location_name=company.get("location_name"),
+                             language_code=company.get("language_code"),
+                             depth=per_query, say=say)
+    except Exception as e:  # noqa: BLE001 — a batch that fails is a search that did not happen
+        say("The search batch failed", "%s. Nothing was checked against a fresh search."
+            % str(e)[:120])
+        return {}, 0.0, list(queries)
+    if got.get("demo"):
+        # Same rule as `search`: demo rows are made-up urls and researching from them would put
+        # invented sources in a real article. A demo answer is no answer.
+        return {}, 0.0, list(queries)
+    skip = {str(u).rstrip("/").lower() for u in exclude}
+    out = {}
+    for q, urls in (got.get("urls") or {}).items():
+        keep = []
+        for u in urls or []:
+            k = str(u).rstrip("/").lower()
+            if k in skip or k.endswith(evidence._SKIP_SUFFIXES):
+                continue
+            keep.append(u)
+        out[q] = keep[:per_query]
+    return out, float(got.get("cost") or 0.0), list(got.get("missing") or [])
+
+
 def read_pages(urls, want, page_chars=PAGE_CHARS):
     """Read urls in order until `want` of them load. Returns [(url, text)].
 

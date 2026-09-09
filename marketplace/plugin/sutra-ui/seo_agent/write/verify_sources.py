@@ -14,7 +14,9 @@ Writes: the SAME plan shape, sources verified; the card fixes (corrected source_
      the way the original did: source-queries.md plans the queries from the gloss AND the verbatim, so
      the subject is in the query; the search and the page reads are the same ones enrich uses; and the
      same source-judge decides. The FIRST page that supports the claim wins and becomes the card's
-     source.
+     source. Every claim's queries are planned first and then bought in ONE queued batch, deduped
+     across claims, because the queue costs a third of what a live search does and nothing here is
+     waiting on any one answer (2026-09-10; see _hunt_many).
   5. A FAILED HUNT NEVER DESTROYS EVIDENCE (2026-09-10). When the hunt comes back empty the card
      loses the url that was proven wrong, is stamped `needs_source`, and STAYS IN THE PLAN. It used
      to be deleted outright whenever it was numeric and had nothing left, which meant a fact the
@@ -39,7 +41,9 @@ from . import enrich
 HUNT_QUERIES_PER_CLAIM = 3    # queries planned per claim (the original's QUERIES_PER_CLAIM)
 HUNT_PAGES_PER_CLAIM = 4      # pages actually opened and judged before a claim is given up on
 HUNT_MAX = 250                # claims hunted per article, an unattended-run safety cap
-HUNT_WORKERS = 4              # claims hunted at once
+HUNT_WORKERS = 4              # claims READ AND JUDGED at once, once the batch has come back.
+#                               The searching is not in here any more: it is one queued batch
+#                               for the whole group, so there is nothing per-claim to parallelise.
 
 _NUM = C._NUM
 
@@ -95,7 +99,8 @@ def _judge(card, url, page):
         return False, ""
     try:
         r = llm.json_call(C.prompt("source-judge", gloss=card.get("gloss", ""), verbatim=card.get("verbatim", ""),
-                                   url=url, page=_page_window(card.get("verbatim", ""), page))) or {}
+                                   url=url, page=_page_window(card.get("verbatim", ""), page)),
+                       timeout=C.LONG_CALL_TIMEOUT) or {}
         return bool(r.get("supports")), str(r.get("quote") or "")
     except Exception:       # noqa: BLE001
         return False, ""
@@ -117,7 +122,9 @@ def _worthy_ids(cards):
     def _one(batch):
         block = "\n".join("- id%s: %s" % (c["card_id"], (c.get("verbatim") or c.get("gloss") or "")[:400])
                           for c in batch)
-        r = llm.json_call(C.prompt("verify-worthy", cards=block)) or {}
+        # One call carries C.VERIFY_BATCH (80) cards, so it gets the write phase's ceiling and
+        # not the section-sized default. See C.LONG_CALL_TIMEOUT.
+        r = llm.json_call(C.prompt("verify-worthy", cards=block), timeout=C.LONG_CALL_TIMEOUT) or {}
         return {C.nid(x) for x in (r.get("verify") or [])}
 
     with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
@@ -130,23 +137,22 @@ def _worthy_ids(cards):
     return worthy, failed_batches
 
 
-def _hunt_one(card, route_name):
-    """Find a page that really supports ONE claim. (url, quote, queries, searched).
-
-    Same machinery as enrich: plan the queries, search, read the pages, judge. The judge is the one
-    already used above, so a hunted source has to clear exactly the bar the original source failed.
-    """
+def _plan_queries(card):
+    """The search queries for ONE claim, planned from the gloss AND the verbatim so the subject is
+    in the query. [] means the planning failed, which is never a reason to cut a card."""
     try:
         q = llm.json_call(C.prompt("source-queries", gloss=card.get("gloss", ""),
-                                   verbatim=card.get("verbatim", ""), n=HUNT_QUERIES_PER_CLAIM)) or {}
+                                   verbatim=card.get("verbatim", ""), n=HUNT_QUERIES_PER_CLAIM),
+                          timeout=C.LONG_CALL_TIMEOUT) or {}
     except Exception:  # noqa: BLE001 — a failed plan is a claim left unverified, never a crash
-        return None, "", [], False
-    queries = [str(x).strip() for x in (q.get("queries") or []) if str(x).strip()][:HUNT_QUERIES_PER_CLAIM]
-    if not queries:
-        return None, "", [], False
-    urls, _cost = enrich.search(queries, route_name, exclude=card.get("source_urls") or ())
-    if not urls:
-        return None, "", queries, False
+        return []
+    return [str(x).strip() for x in (q.get("queries") or []) if str(x).strip()][:HUNT_QUERIES_PER_CLAIM]
+
+
+def _judge_candidates(card, urls):
+    """Read the candidate pages in rank order; the first one an AI judge confirms wins.
+    (url, quote). The judge is the one used above, so a hunted source clears exactly the bar the
+    original source failed."""
     checked = 0
     for u in urls:
         if checked >= HUNT_PAGES_PER_CLAIM:
@@ -157,31 +163,67 @@ def _hunt_one(card, route_name):
         checked += 1
         ok, quote = _judge(card, u, page)
         if ok:
-            return u, quote, queries, True
-    return None, "", queries, True
+            return u, quote
+    return None, ""
 
 
 def _hunt_many(cards, route_name, say, what):
-    """Hunt a batch of claims in parallel. {card_id: (url, quote, queries, searched)}."""
+    """Hunt a whole group of claims. {card_id: (url, quote, queries, searched)}.
+
+    PLAN EVERY QUERY, THEN BUY THEM ALL IN ONE BATCH (2026-09-10). This used to fire one live
+    search per claim, which is the most expensive way there is to buy a page of Google: $0.002 a
+    search against $0.0006 through the standard queue, so three and a third times the price, on
+    every article, on the owner's own account. The original has always batched it
+    (04-write-phase/scripts/verify_sources.py::_dfs_batch_serp). Nothing about the hunt's judgment
+    changes — the same queries are planned, the same pages are read, the same judge decides — only
+    where the urls are bought.
+
+    The queries are also DEDUPED across claims before they are bought. Two claims about the same
+    figure plan the same query, and there is no reason to pay for it twice.
+
+    A query that never came back is not a query that found nothing: `searched` stays False for a
+    claim whose every query is missing, and a claim that was not searched is left unverified rather
+    than stripped of its source.
+    """
     cards = list(cards)[:HUNT_MAX]
     if not cards:
         return {}
     say("Hunting a replacement source for %s" % C.sh.plural(len(cards), what),
         "planning the search from the claim itself, then reading the pages that come back")
+    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+        plans = list(ex.map(_plan_queries, cards))
+
+    every = [q for qs in plans for q in qs]
+    exclude = {u for c in cards for u in (c.get("source_urls") or []) if u}
+    found, _cost, missing = enrich.search_many(every, route_name, say, exclude=exclude)
+    missing = set(missing)
+
+    def finish(i):
+        card, qs = cards[i], plans[i]
+        if not qs:
+            return None, "", [], False                     # planning failed — never a cut signal
+        if all(q in missing or q not in found for q in qs):
+            return None, "", qs, False                     # the SEARCH failed — never a cut signal
+        urls = enrich._interleave([found.get(q) or [] for q in qs])
+        if not urls:
+            return None, "", qs, True                      # searched, and there was nothing there
+        try:
+            hit, quote = _judge_candidates(card, urls)
+        except Exception:  # noqa: BLE001 — one claim that blows up is one claim left unverified,
+            return None, "", qs, False                     # never the whole hunt going down with it
+        return hit, quote, qs, True
+
     out = {}
     with ThreadPoolExecutor(max_workers=HUNT_WORKERS) as ex:
-        futs = {ex.submit(_hunt_one, c, route_name): c for c in cards}
-        for f in as_completed(futs):
-            c = futs[f]
-            try:
-                res = f.result()
-            except Exception:  # noqa: BLE001
-                res = (None, "", [], False)
-            out[C.nid(c["card_id"])] = res
-            if res[0]:
-                say("New source found for a claim", "%s -> %s" % ((c.get("gloss") or "")[:70], res[0]))
-            else:
-                say("No replacement source for a claim", (c.get("gloss") or "")[:90])
+        results = list(ex.map(finish, range(len(cards))))
+    for card, res in zip(cards, results):
+        out[C.nid(card["card_id"])] = res
+        if res[0]:
+            say("New source found for a claim", "%s -> %s" % ((card.get("gloss") or "")[:70], res[0]))
+        elif not res[3]:
+            say("A claim could not be searched at all", (card.get("gloss") or "")[:90])
+        else:
+            say("No replacement source for a claim", (card.get("gloss") or "")[:90])
     return out
 
 

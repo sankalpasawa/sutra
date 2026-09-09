@@ -118,8 +118,13 @@ def judge(row, pages, co):
     against, so a wording that is not one of the four never reaches the file.
     """
     shown = pages[:rc.TOPK]        # the read window: the judge sees these and cites only these
+    # ...and how much of each of them it reads is this workflow's own number, four times the
+    # research flow's. It was reading 3,000 characters of a page — the value the mid-article
+    # spoke check uses, where the answer has to come back fast — while deciding whether the
+    # company should go and build the thing. The original gives this caller 12,000.
     out = ownpage.reuse_judge(row.get("title") or "", row.get("angle") or "",
-                              shown, co, fmt=row.get("format") or "content asset")
+                              shown, co, fmt=row.get("format") or "content asset",
+                              doc_chars=rc.ASSET_JUDGE_DOC_CHARS)
     verdict = (out.get("verdict") or "").strip().lower()
     if verdict not in cm.REUSE_VERDICTS:
         verdict = "brand new"

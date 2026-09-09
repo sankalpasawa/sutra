@@ -16,6 +16,7 @@ demoed end to end without an account. Every demo row carries "_demo": True, so a
 fake number can never be mistaken for a real one downstream.
 """
 import hashlib
+import time
 
 import httpx
 
@@ -81,6 +82,25 @@ def post(path, payload):
     data = r.json()
     # They answer 200 with the real verdict inside the body, so the HTTP code alone is
     # no proof the call worked. 20000 is their "ok".
+    code = data.get("status_code")
+    if code is not None and code != 20000:
+        raise RuntimeError("DataForSEO refused the call (%s): %s"
+                           % (code, data.get("status_message", "no message")))
+    return data
+
+
+def get(path):
+    """The same call, for the endpoints that only answer to GET (the queue's tasks_ready and
+    task_get). Same credential, same 20000 discipline, same one place."""
+    auth = _auth()
+    if auth is None:
+        raise NoCredentials(
+            "DataForSEO is not connected. Add dataforseo_login and dataforseo_password "
+            "in the Connections tab."
+        )
+    r = httpx.get(BASE + path, auth=auth, timeout=TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
     code = data.get("status_code")
     if code is not None and code != 20000:
         raise RuntimeError("DataForSEO refused the call (%s): %s"
@@ -294,14 +314,15 @@ def ranked_keywords_bulk(domain, location_name, language_code, limit=1000, max_r
     server-side: the same offset can return 28 rows on one call and 676 on the next, so a short
     page is re-asked ONCE and the larger answer wins. total_count also overstates what they will
     serve (the tail is etv~0); the shortfall is the vendor's and is visible in rows vs total_count.
-    max_rows is a loud safety ceiling, never a silent cap: the caller sees it in the counts.
+    max_rows is a loud safety ceiling, never a silent cap: a pull that stops on it comes back with
+    a `capped` sentence saying so, which the caller prints and puts in the run's meta.
     """
     if demo_mode():
         return _demo_ranked_bulk(domain, limit)
     location_name, language_code = market(location_name, language_code)
     limit = max(1, _int(limit, 1000))
     rows, offset, total, cost = [], 0, None, 0.0
-    partial = None
+    partial = capped = None
     while True:
         task = {"target": bare_domain(domain), "location_name": location_name,
                 "language_code": language_code, "limit": limit, "offset": offset,
@@ -336,11 +357,24 @@ def ranked_keywords_bulk(domain, location_name, language_code, limit=1000, max_r
                 items = items2
         rows += [_bulk_row(it) for it in items if (it or {}).get("keyword_data")]
         offset += limit
-        if offset >= total or not items or offset >= max_rows:
+        if offset >= max_rows and offset < (total or 0):
+            # THE CEILING SAYS SO NOW (2026-09-10). This branch used to be folded into the break
+            # below, so a pull that stopped because it hit max_rows returned exactly like a pull
+            # that reached the end of the data: no note, nothing on screen. The docstring here and
+            # the comment on foundation/settings.TRAFFIC_MAX_ROWS both promise "a loud safety
+            # ceiling, never a silent cap", and neither was true — the site's whole tail was
+            # dropped and the run reported a clean finish. The caller prints this sentence.
+            capped = ("stopped at %d of %d rows: the %d-row safety ceiling was reached, so the rest "
+                      "of this domain's keywords are not in the figures"
+                      % (len(rows), total or 0, max_rows))
+            break
+        if offset >= total or not items:
             break
     out = {"rows": rows, "total_count": total or 0, "cost_usd": round(cost, 4)}
     if partial:
         out["partial"] = partial
+    if capped:
+        out["capped"] = capped
     return out
 
 
@@ -611,6 +645,163 @@ def serp_advanced(keyword, depth=20, paa_click_depth=3, ai_overview=True,
         task["load_async_ai_overview"] = True
     data = post("/serp/google/organic/live/advanced", [task])
     return {"extract": serp_extract(keyword, _items(data)), "cost": _cost(data)}
+
+
+# ---- the queued SERP batch: many searches, a third of the price ---------------------------------
+# TWO WAYS TO BUY A GOOGLE PAGE, AND THEY ARE NOT THE SAME PRICE. Both numbers below are his,
+# measured, and written down twice in his own tree (04-write-phase/scripts/verify_sources.py's
+# _dfs_batch_serp docstring and write-phase-architecture.md: "searches ~$0.002 live / $0.0006
+# queued"). The live endpoint answers inside the reply and costs about three and a third times as
+# much. The queue takes every query in one post, makes you wait, and is the right trade whenever
+# the answers are all wanted at once and nothing is watching the clock — which is exactly the
+# replacement-source hunt, where one article plans hundreds of queries in a single step.
+SERP_LIVE_USD = 0.002        # /serp/google/organic/live/advanced, per search
+SERP_QUEUED_USD = 0.0006     # task_post + task_get/regular, per search — about a third of live
+#
+# ...AND THE COLLECTION HAS TWO PRICES TOO. `task_get/advanced` silently costs about double
+# `task_get/regular` (his measurement), and the hunt only ever reads organic urls off the result,
+# which regular carries. So: post standard, collect REGULAR. Changing that one word here doubles
+# the bill for data nobody reads.
+BATCH_FETCH = "regular"
+BATCH_POST_SIZE = 100        # tasks DataForSEO accepts in one task_post
+BATCH_WAIT = 900             # seconds spent POLLING for results before falling back to the endgame
+BATCH_POLL_GAP = 15          # seconds between polls of tasks_ready
+BATCH_TRIES = 3              # re-poll a slow batch this many times. The tasks are already posted and
+#                              PAID FOR, so waiting longer costs nothing at all.
+BATCH_DRAIN_ROUNDS = 8       # rounds spent clearing a full ready-list before posting (see below)
+
+
+def _batch_urls(data, depth):
+    """The organic urls off one collected task, best first, or None when the task is NOT DONE.
+
+    None and [] are different answers and the difference is the whole point. A task still in the
+    queue answers task_get with a 200 and a top-level 20000, and its "in queue" verdict is one
+    level down, on the task. Reading that as an empty result would record "this search found
+    nothing" for a search that has not run yet — and a claim with no source is a claim that gets
+    its source stripped, so a task read too early costs a real fact.
+    """
+    tasks = (data or {}).get("tasks") or []
+    task = (tasks[0] if tasks else None) or {}
+    if task.get("status_code") != 20000:
+        return None                                  # in queue, or failed: come back for it
+    result = task.get("result") or []
+    items = ((result[0] if result else None) or {}).get("items") or []
+    return [i.get("url") for i in items
+            if isinstance(i, dict) and i.get("type") == "organic" and i.get("url")][:_int(depth, 10)]
+
+
+def _drain_ready():
+    """Clear the ready-list before posting.
+
+    tasks_ready returns AT MOST 1000 entries. A run that dies mid-collection leaves its finished
+    tasks on that list for good, and once 1000 have piled up a later run's tasks can never appear
+    on it: the new run polls a permanently full list until it gives up. He hit this for real on
+    2026-08-02 with 4,387 stale tasks banked. So the shelf is cleared first, and whatever is on it
+    is collected whether it is ours or not.
+    """
+    for _ in range(BATCH_DRAIN_ROUNDS):
+        try:
+            r = get("/serp/google/organic/tasks_ready")
+        except Exception:  # noqa: BLE001 — a drain that cannot run is not a reason to skip the batch
+            return
+        ids = [x.get("id") for x in ((( r.get("tasks") or [{}])[0] or {}).get("result") or [])
+               if isinstance(x, dict) and x.get("id")]
+        if not ids:
+            return
+        for t in ids:
+            try:
+                get("/serp/google/organic/task_get/%s/%s" % (BATCH_FETCH, t))
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def serp_batch(queries, location_name=None, language_code=None, depth=10, say=None):
+    """Many organic searches through the STANDARD QUEUE, in one go.
+
+    Returns {"urls": {query: [url]}, "cost": float, "missing": [query], "demo": bool}. A query in
+    `missing` never came back; that is a search that did not happen, and the caller must treat it
+    as "not searched", never as "nothing found".
+
+    The flow is his, three fixes and all (see _drain_ready for the first):
+      2. RESULTS ARE KEPT AS THEY ARRIVE, not at the end. He had one article fetch 945 results and
+         report total failure because a wrapper timeout threw away everything already collected.
+      3. THE DEADLINE GUARDS POLLING ONLY. Collecting hundreds of finished tasks used to run into
+         the same clock as waiting for them, so the collection itself timed out; and an ENDGAME
+         asks for whatever is left BY ID, which does not depend on the ready-list at all.
+    And the retry above them: DataForSEO's queue can run slower than one BATCH_WAIT window, so a
+    poor yield is re-polled rather than accepted. His old loop only retried on a MALFORMED reply, so
+    a well-formed "nothing ready yet" read as the final answer — which is how one article had 745
+    of 745 queries silently abandoned and 428 claims shipped unverified under a report reading
+    "0 cut".
+    """
+    queries = [str(q).strip() for q in (queries or []) if str(q).strip()]
+    queries = list(dict.fromkeys(queries))
+    if not queries:
+        return {"urls": {}, "cost": 0.0, "missing": [], "demo": False}
+    if demo_mode():
+        return {"urls": {q: [r["url"] for r in _demo_serp_extract(q, depth)["top_organic"]] for q in queries},
+                "cost": 0.0, "missing": [], "demo": True}
+    if not _can_pay():
+        return {"urls": {}, "cost": 0.0, "missing": list(queries), "demo": True,
+                "skipped": "the DataForSEO balance is too low, so no search was bought"}
+    location_name, language_code = market(location_name, language_code)
+    _drain_ready()
+
+    got, cost, id2q = {}, 0.0, {}
+    for i in range(0, len(queries), BATCH_POST_SIZE):
+        chunk = queries[i:i + BATCH_POST_SIZE]
+        tasks = [{"keyword": q, "location_name": location_name, "language_code": language_code,
+                  "depth": _int(depth, 10)} for q in chunk]
+        data = post("/serp/google/organic/task_post", tasks)
+        cost += _cost(data)
+        for t, q in zip((data.get("tasks") or []), chunk):
+            if isinstance(t, dict) and t.get("id"):
+                id2q[t["id"]] = q
+
+    def collect(tid):
+        q = id2q.get(tid)
+        if q is None:
+            return False
+        try:
+            data = get("/serp/google/organic/task_get/%s/%s" % (BATCH_FETCH, tid))
+        except Exception:  # noqa: BLE001 — a hiccup: try again next round
+            return False
+        urls = _batch_urls(data, depth)
+        if urls is None:                       # still in the queue: NOT an empty result
+            return False
+        got[q] = urls                          # kept the moment we have it, fix 2
+        return True
+
+    for attempt in range(BATCH_TRIES):
+        deadline = time.time() + BATCH_WAIT
+        while id2q and time.time() < deadline:           # fix 3: the deadline guards POLLING only
+            time.sleep(BATCH_POLL_GAP)
+            try:
+                r = get("/serp/google/organic/tasks_ready")
+            except Exception:  # noqa: BLE001
+                continue
+            ready = [x["id"] for x in (((r.get("tasks") or [{}])[0] or {}).get("result") or [])
+                     if isinstance(x, dict) and x.get("id") in id2q]
+            for tid in ready:
+                if collect(tid):
+                    id2q.pop(tid, None)
+        for tid in list(id2q):                           # ENDGAME: by id, no ready-list involved
+            if collect(tid):
+                id2q.pop(tid, None)
+        if not id2q:
+            break
+        if say and attempt < BATCH_TRIES - 1:
+            say("Waiting on the search batch",
+                "%d of %d searches are not back yet, so it is waiting again (try %d of %d). They are "
+                "already paid for, so this costs nothing."
+                % (len(id2q), len(queries), attempt + 2, BATCH_TRIES))
+
+    missing = [q for q in queries if q not in got]
+    if missing and say:
+        say("Part of the search batch never came back",
+            "%d of %d searches did not return after %d attempts. Those claims are left UNCHECKED, "
+            "not deleted." % (len(missing), len(queries), BATCH_TRIES))
+    return {"urls": got, "cost": round(cost, 6), "missing": missing, "demo": False}
 
 
 def serp_extract(keyword, items):

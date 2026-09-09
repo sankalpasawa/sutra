@@ -40,12 +40,15 @@ import re
 import time
 import urllib.parse
 
+import numpy as np
+
 from .. import llm
 from .. import store
 from ..brand import _common as bcm
 from ..brand import field_sources as fs
 from ..research import reddit
 from ..tools import _shared as sh
+from ..tools import voyage
 from . import _common as cm
 
 OUTPUT = "trends.json"
@@ -79,6 +82,9 @@ TENSION_MAX_PHRASES = 15  # ...same alarm, on phrases
 MISC_MAX_PCT = 15.0       # misc above this share of posts means the sort was lazy
 REMINE_MIN = 3            # the original: "for every group of 3+ posts sharing an issue, promote it"
 DEDUP_SIM = 0.85          # two tension SENTENCES merge only when this similar: true duplicates only
+#                           (the original's ST_MERGE_SIM, and the same 0.85). It is a COSINE between
+#                           the two sentences' embeddings; see the meaning section below.
+MEANING_TOPK = 6          # neighbours weighed per item when nominating a merge (merge.DEDUP_TOPK)
 IDEA_CTX_CHARS = 6000     # of each brand document per idea call
 EMOTIONS = ("anger", "anxiety", "disbelief", "ridicule")     # closed set, 2d
 AUDIENCES = ("employer", "candidate", "both")                # closed set, 2d
@@ -382,16 +388,40 @@ def _phrase_posts(phrases, only=None):
     return m
 
 
+# ---- grouping by MEANING, not by wording ---------------------------------------------------------
+# The whole point of this stage, and the original measured it: 425 posts yielded 1,224 distinct
+# phrases and only 18 of them repeated word for word (3-study-trends/scripts/step_2b_tensions.py,
+# 2026-07-22). "Recurrence lives at the level of meaning, not exact string." So he EMBEDS the
+# phrases and clusters them before the model names them, and merges the tension sentences that come
+# back by cosine. Sutra was doing both by shared words, which answers a different question — "were
+# these written alike?" — and on his own numbers would find 18 repeats where there are hundreds.
+#
+# NOTHING NEW IS BUILT HERE. The vectors are tools/voyage.embed and the cosine-plus-union-find is
+# the shape assets/merge.py::clusters already uses for its dedup; this is that machinery pointed at
+# phrases and at tension sentences.
+#
+# ONE THING OF HIS IS NOT PORTED, and it is written down rather than quietly skipped: he clusters
+# the phrases with sklearn KMeans into a controlled number of groups, because he measured that a
+# plain threshold merge on this dense space produced four mega-blobs whose naming call hung. sklearn
+# is not a dependency of this app and requirements.txt takes pure-Python wheels only, so instead of
+# clustering the phrases this ORDERS them by meaning and cuts the order into shards of the size the
+# consolidate call already takes. Each call then sees phrases that mean similar things instead of
+# phrases that happened to be scraped together, which is the part that matters, and there is no
+# cluster count to tune and no blob to hang on.
+#
+# WITH NO VOYAGE KEY there is no second way worth inventing, so the word-overlap path below stays as
+# the fallback, unchanged, and the run says out loud which route it took.
+
 def _words(sentence):
     return {w for w in re.findall(r"[a-z']+", (sentence or "").lower()) if len(w) > 3}
 
 
 def _same_pain(a, b):
-    """Two tension SENTENCES that are really the same pain named twice.
+    """Two tension SENTENCES that are really the same pain named twice, judged on WORDING.
 
-    Deliberately tight. The original's own instruction is keep-specific: merging near-misses squashes
-    distinct pains together, which is the exact failure the merge check exists to prevent. The real
-    cut is stage 3's brand-scope filter, not this.
+    The fallback for a run with no Voyage key. Deliberately tight. The original's own instruction is
+    keep-specific: merging near-misses squashes distinct pains together, which is the exact failure
+    the merge check exists to prevent. The real cut is stage 3's brand-scope filter, not this.
     """
     wa, wb = _words(a), _words(b)
     if not wa or not wb:
@@ -399,10 +429,98 @@ def _same_pain(a, b):
     return len(wa & wb) / float(len(wa | wb)) >= DEDUP_SIM
 
 
+def _vectors(texts):
+    """Unit-length embeddings for `texts`, or None when this run cannot embed.
+
+    None is a route, not an error: the caller falls back to wording and says so. Normalised here
+    because everything downstream reads a dot product as a cosine, and a vector that arrived
+    un-normalised would quietly make every threshold mean something else.
+    """
+    texts = list(texts)
+    if not texts or not voyage.available():
+        return None
+    try:
+        V = np.nan_to_num(np.asarray(voyage.embed(texts, "document"), dtype=np.float32))
+    except Exception:   # noqa: BLE001 — an embedding outage is the fallback route, never a crash
+        return None
+    if V.ndim != 2 or len(V) != len(texts):
+        return None
+    n = np.linalg.norm(V, axis=1, keepdims=True)
+    return V / np.where(n == 0, 1.0, n)
+
+
+def _meaning_groups(V, sim):
+    """Index groups whose vectors sit within `sim` cosine of one another. Union-find over the
+    nearest MEANING_TOPK neighbours, which is assets/merge.py::clusters' own nomination shape."""
+    n = len(V)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(n):
+        sims = V @ V[i]
+        sims[i] = -1.0
+        for j in np.argsort(-sims)[:MEANING_TOPK]:
+            j = int(j)
+            if sims[j] < sim:
+                break                                   # sorted, so nothing after this clears it
+            a, b = find(i), find(j)
+            if a != b:
+                parent[a] = b
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+
+def _by_meaning(texts):
+    """`texts` reordered so that ones meaning the same thing sit together: a greedy walk from each
+    item to its nearest unvisited neighbour. Returns the index order, or None with no embeddings.
+
+    This is what makes a shard a neighbourhood instead of a slice of the scrape order."""
+    V = _vectors(texts)
+    if V is None or len(V) < 2:
+        return None
+    S = V @ V.T
+    np.fill_diagonal(S, -1.0)
+    left = set(range(len(V)))
+    order, cur = [], 0
+    while left:
+        if cur not in left:
+            cur = min(left)
+        order.append(cur)
+        left.discard(cur)
+        if not left:
+            break
+        row = S[cur].copy()
+        row[[i for i in range(len(V)) if i not in left]] = -2.0
+        cur = int(np.argmax(row))
+    return order
+
+
 def _candidates(co, phrase_posts, say):
-    """First pass: phrases grouped into candidate tensions. Sharded when the list is long."""
+    """First pass: phrases grouped into candidate tensions. Sharded when the list is long.
+
+    THE SHARDS ARE NEIGHBOURHOODS, not slices of the scrape order. A phrase can only be consolidated
+    with the phrases in its own call, so cutting the list in arrival order asks the model to find
+    recurrence among phrases that have nothing to do with each other, and hides the repeats that are
+    spread across the list. Ordering by meaning first puts a pain's several wordings in the same
+    call. See the meaning section above for why this is an ordering rather than his KMeans.
+    """
     items = list(phrase_posts.items())
+    order = _by_meaning([ph for ph, _ids in items]) if len(items) > CONSOLIDATE_SHARD else None
+    if order:
+        items = [items[i] for i in order]
     shards = [items[i:i + CONSOLIDATE_SHARD] for i in range(0, len(items), CONSOLIDATE_SHARD)]
+    if len(shards) > 1:
+        say("Grouped the phrases by meaning before reading them",
+            ("%d phrases sorted by meaning into %d calls" % (len(items), len(shards))) if order else
+            ("%d phrases in %d calls, in the order they were found — there is no Voyage key, so they "
+             "could not be sorted by meaning" % (len(items), len(shards))))
 
     def one(shard):
         block = "\n".join("- %s  [%s]" % (ph, ", ".join(ids)) for ph, ids in shard)
@@ -477,16 +595,43 @@ def _gate(co, cands, phrase_posts, say):
     return out, blocks
 
 
-def _settle(tensions, phrase_posts, start=1):
-    """Merge true duplicates, drop the fragments, hand out codes. One phrase lives in one tension."""
-    final = []
-    for t in sorted(tensions, key=lambda x: -len(x["phrases"])):
-        for f in final:
-            if _same_pain(f["tension"], t["tension"]):
-                f["phrases"] = sorted(set(f["phrases"]) | set(t["phrases"]))
-                break
-        else:
-            final.append(dict(t))
+def _settle(tensions, phrase_posts, start=1, say=None):
+    """Merge true duplicates, drop the fragments, hand out codes. One phrase lives in one tension.
+
+    Two tensions are the same pain when their SENTENCES mean the same thing, at DEDUP_SIM cosine —
+    the original's own test and its own 0.85. The wording test is the fallback for a run that
+    cannot embed, and the route is said out loud either way, because "we merged nothing" means two
+    different things depending on which one ran.
+    """
+    ranked = sorted(tensions, key=lambda x: -len(x["phrases"]))
+    V = _vectors([t["tension"] for t in ranked])
+    if V is not None:
+        # Representative = the candidate with the most phrases, which is what `ranked` puts first
+        # in each group; its phrases pool with the rest, exactly as the original merges them.
+        final = []
+        for g in _meaning_groups(V, DEDUP_SIM):
+            g = sorted(g)
+            lead = dict(ranked[g[0]])
+            lead["phrases"] = sorted({ph for i in g for ph in ranked[i]["phrases"]})
+            final.append(lead)
+        final.sort(key=lambda x: -len(x["phrases"]))
+        if say:
+            say("Merged the tensions that name the same pain",
+                "%d named, %d left after matching them by meaning" % (len(ranked), len(final)))
+    else:
+        final = []
+        for t in ranked:
+            for f in final:
+                if _same_pain(f["tension"], t["tension"]):
+                    f["phrases"] = sorted(set(f["phrases"]) | set(t["phrases"]))
+                    break
+            else:
+                final.append(dict(t))
+        if say:
+            say("Merged the tensions that name the same pain",
+                "%d named, %d left. There is no Voyage key, so they were matched on shared WORDS "
+                "and not on meaning: two names for one pain that share no words both survive."
+                % (len(ranked), len(final)))
     seen, kept = set(), []
     for t in final:
         t["phrases"] = [p for p in t["phrases"] if p not in seen]
@@ -550,7 +695,7 @@ def consolidate(co, phrases, say, redo=False):
         return []
     cands = _candidates(co, phrase_posts, say)
     checked, blocks = _gate(co, cands, phrase_posts, say)
-    tensions = _settle(checked, phrase_posts)
+    tensions = _settle(checked, phrase_posts, say=say)
     orphans = [ph for ph in phrase_posts if not any(ph in t["phrases"] for t in tensions)]
     # merge-check.md FIRST, always. Stage 5 compares its timestamp with the tension records.
     cm.save(_w("merge-check.md"), _merge_check_md(co, tensions, blocks, orphans))
@@ -598,7 +743,7 @@ def _remine(co, misc_ids, phrases, posts, tensions, say):
         return [], "misc holds %d posts but almost no phrases, so there was nothing to promote" % len(misc_ids), {}
     cands = _candidates(co, phrase_posts, say)
     checked, blocks = _gate(co, cands, phrase_posts, say)
-    fresh = _settle(checked, phrase_posts, start=len(tensions) + 1)
+    fresh = _settle(checked, phrase_posts, start=len(tensions) + 1, say=say)
     if not fresh:
         return [], "no group of shared pain came out of the %d misc posts" % len(misc_ids), {}
     by_id = {p["post_id"]: p for p in posts}

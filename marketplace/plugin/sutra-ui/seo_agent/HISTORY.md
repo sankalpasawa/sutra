@@ -332,6 +332,94 @@ the eighteen, plus the eight things he could see were broken on screen, plus thr
     refresh now writes to its own work folder and only ever reads the full read's files, which also
     stops it corrupting `index_site`'s resume state.
 
+## 2.255.0 — the team workspace, and the six smaller findings
+
+Five people on one team. One person sets up; nobody else builds a knowledge base. His design: each
+company brings its OWN Supabase project, so the data lives in the company's own account.
+
+`seo_agent/workspace/` — ten modules, 4,500 lines, three suites. Ten tables with row-level security,
+a `changes` log written by database TRIGGERS rather than by the client, a storage bucket, and a
+knowledge pack split in two.
+
+### The things that were nearly wrong, and how they were caught
+
+57. **A routine trim would have deleted 12,000 pages from every teammate's catalogue.** The `pages`
+    table holds only what changed since the last pack and is cleared when a new one is built. But a
+    cleared row and "this page is gone from the site" reach the other four Macs as the same event,
+    and the owner had just ruled that the pack rebuilds on EVERY refresh. So every click would have
+    wiped everyone. A gone page is now `op='gone'`, an update; a delete means housekeeping and is
+    ignored. Found by the sync agent reading the pack's design rather than its own.
+58. **A change could be lost for ever, silently.** `bigserial` allocates at INSERT, not at COMMIT,
+    so a writer holding id 7 open while another commits id 8 lets a poller record "I am up to 8" and
+    never see 7. Nothing errors; two people simply disagree from then on. Fixed by reading only rows
+    older than a lag window, with `changes.at` defaulting to `clock_timestamp()` — `now()` is
+    transaction START time, the wrong clock, and would have defeated the guard it powers.
+59. **And the lag window was being computed from the Mac's clock.** A slow clock costs latency; a
+    FAST one reads rows still in flight and reopens the race, on one person's machine, unreproducible.
+    It now takes the server's clock from the `Date` header, believes a backwards skew always and a
+    forwards one only within a day, and lags MORE when it has never seen one.
+60. **Trusting the server's own filter was not enough either.** `id` and `at` are separate column
+    defaults evaluated microseconds apart, so `at` is very nearly but not exactly monotonic in `id`.
+    The filter now asks wider than the cutoff and stops at the first genuinely-too-new row.
+61. **A timestamp comparison that failed by one second, in the losing direction.** PostgREST returns
+    `…:00.123456+00:00`; the filter wrote `…:00Z`; `.` sorts below `Z`, so a row a fraction too new
+    compared as old enough. Parsed now, never string-compared.
+62. **The core pack's bytes changed whenever the INDEX was rebuilt**, because its manifest carried
+    the index's page counts — so two identical cores hashed differently and the split's whole premise
+    was false. Caught by a round-trip test: a teammate rebuilt the core he had been sent and got a
+    different file.
+63. **Installing the pack could report a meaning index that was half absent.** Files moved one at a
+    time, and in the window between them `_index.status()` said `built: True` over vectors that were
+    not all there — a crash, not a degrade. The two files it gates on now move last.
+64. **The owner's own ruling was decorative.** He asked that one click update everybody AND the
+    joining copy. The rebuilder existed, the refresh existed, and nothing called one from the other.
+65. **The poller only ran while the Connections tab was open**, so a teammate working in Chat and
+    Library all morning heard about nothing anybody else did. "Nobody presses sync" was untrue.
+    It starts with the backend now.
+66. **Nothing in the engine wrote the `members` row**, so "who is in it" would have been permanently
+    empty and every change's `actor` would have pointed at a member that did not exist.
+
+### What the measurements changed
+
+67. **The pack is 205 MB zipped, not the ~100 MB the plan estimated** — 337 MB raw, and 84% of it is
+    float32 vectors that deflate to 0.89. And **Supabase Free caps one stored object at 50 MB**, so a
+    single-object pack could not exist on the plan the whole design rests on. Packs are stored as
+    numbered parts with the checksum sidecar written LAST, so a half-finished upload can never read
+    as a finished one.
+68. **So the pack was split**, and it is what makes "about a minute" honest: core (catalogue, page
+    text, brand) is **33.6 MB and 2.9 s**, the meaning index is the other 171.5 MB and republishes
+    only when its own content hash moves. A normal refresh uploads 33.6 MB — about 30 s on a 10 Mbps
+    line. Neither half may be deferred, and both are pinned by tests: one publishes twice with
+    nothing changed and asserts a new core each time; another appends one line to the index and
+    asserts it republishes on the next call. **The UI prints the stage, never a time.**
+69. **Pinning the bucket's file-size limit at the obvious 40 MiB would have shrunk the parts to 36** —
+    the pin becoming the thing it was added to prevent. 45 MiB, chosen from both ends, because
+    "50 MB" is ambiguous by four megabytes and a guess fails on somebody's project and nobody else's.
+
+### The six smaller findings he approved
+
+70. **The source hunt cost 3.33x what it should**, his own measurement: $0.002 live against $0.0006
+    queued, with a note that the advanced fetch silently doubles it. Now one batched standard-queue
+    call. A queued task answering "in queue" nested one level down had read as "this search found
+    nothing" and would have stripped a real source.
+71. **The planner timed out at 300s where his is 2400, and the retry was a dead branch** — the
+    transient list has included "timeout" since it was written, but the code raised a type the
+    handler never caught. Months of a retry that looked handled and was not.
+72. **The reuse judge finding was HALF WRONG, and building it blind would have broken the research
+    flow.** Both 3,000 and 12,000 are his numbers, for two different steps. Sutra had ported only the
+    3,000 and pointed both callers at it, so the asset engine judged on a quarter of its evidence
+    while the research flow was correct all along.
+73. Trends now group by meaning, not word overlap — his own note says recurrence lives at meaning
+    (425 posts, 1,224 phrases, 18 repeating verbatim). His sklearn clustering was deliberately NOT
+    copied: it is not in the bundle, and he had recorded that a plain threshold merge produced one
+    584-phrase mega-cluster that hung.
+74. CTA pages can guarantee their URLs are live again — his crawl gives him that for free and a
+    person typing a URL into the Knowledge screen does not. Bounded probes, a 60s whole-check budget,
+    and an unchecked URL is reported rather than dropped.
+75. The traffic ceiling says so out loud, on the pull and on every later run that reuses the file.
+    Both source files claimed it was loud and the cap had been folded into the same `break` as
+    reaching the end of the data, so it returned identically.
+
 ### Not done, and said so
 
 - STORM does not ship. `research/evidence.py` is the named substitute (see Layer 03).

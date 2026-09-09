@@ -40,6 +40,22 @@ def _text(prompt, system=None, **kw):
 llm.json_call = _json
 llm.text = _text
 
+# --- the CTA liveness probe: offline, and scripted per url ---------------------------------------
+# `cta.rebuild` probes every url before it writes the file, so without this the suite would make
+# real requests to example.com (which resolves, and answers 404 to every made-up path — so the
+# whole list would be "proven dead"). PROBE is the one swap point, the way write/_common.ALIVE is.
+from seo_agent.brand import cta as _ctaprobe
+PROBED = []                     # every url the check actually asked about
+PROBE_ANSWERS = {}              # url -> (state, why); anything not listed answers live
+
+
+def _probe(url):
+    PROBED.append(url)
+    return PROBE_ANSWERS.get(url, (_ctaprobe.LIVE, ""))
+
+
+_ctaprobe.PROBE = _probe
+
 FAILS = []
 
 
@@ -707,6 +723,55 @@ ok("a page the person already listed is not written a second time by the crawl",
 ok("the crawl's other pages are still there", any(not r["mine"] for r in _after), [(r["url"], r["mine"]) for r in _after])
 ok("the file the writer reads still parses to the same urls",
    set(re.findall(r"^- Page: (\S+)", brand("cta-pages.md"), re.M)) == {r["url"] for r in _after})
+
+# EVERY URL ON THE LIST RESOLVES. The original builds this file from the crawl and states it at the
+# top ("Every URL here was fetched and is live"); Sutra dropped the guarantee, and this list can
+# hold a url no crawl ever fetched because a person types one in. A dead url here becomes a dead
+# link in the close of a published article.
+ok("the rebuild actually probed every url it was about to write",
+   PROBED and {r["url"] for r in _after} <= set(PROBED), (len(PROBED), [r["url"] for r in _after]))
+ok("and the file says so in its own words",
+   "answered when they were last checked" in brand("cta-pages.md"),
+   brand("cta-pages.md").split("\n")[:8])
+
+# a dead generated row is DROPPED with its reason; a dead row of the PERSON's is kept and marked,
+# because the other promise this file makes is that their rows survive a rebuild.
+PROBE_ANSWERS["https://example.com/product/cohort-builder"] = (ctamod.GONE, "the page answered 404")
+PROBE_ANSWERS["https://example.com/brand-new-page/"] = (ctamod.GONE, "the page answered 404")
+PROBE_ANSWERS["https://example.com/pricing/"] = (ctamod.UNCHECKED, "could not reach it (ReadTimeout)")
+features.run({"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}, say, redo=True)
+_dead = brand("cta-pages.md")
+_urls = re.findall(r"^- Page: (\S+)", _dead, re.M)
+ok("a generated row proven dead is dropped from the list",
+   "https://example.com/product/cohort-builder" not in _urls, _urls)
+ok("...and the reason is at the foot, where every other drop is recorded",
+   "cohort-builder  — the page answered 404" in _dead, _dead.split("## Dropped, and why")[-1][:300])
+ok("a PERSON's row proven dead is KEPT and marked, never removed by a rebuild",
+   "https://example.com/brand-new-page/" in _urls and "- Checked: gone" in _dead, _urls)
+ok("a url that could not be CHECKED is kept and reported, never dropped",
+   "https://example.com/pricing/" in _urls and "- Checked: unchecked — could not reach it" in _dead, _urls)
+ok("the top line counts all three, so a reader knows what the list is worth",
+   "did NOT and are marked dead" in _dead and "could not be checked" in _dead, _dead.split("\n")[:10])
+ok("a verdict survives a save from the Knowledge screen, which never re-probes",
+   any(r["url"] == "https://example.com/pricing/" for r in ctamod.parse(_dead)[0])
+   and [r["live"] for r in ctamod.parse(_dead)[0] if r["url"] == "https://example.com/pricing/"] == ["unchecked"],
+   [(r["url"], r["live"]) for r in ctamod.parse(_dead)[0]])
+ok("...and a Checked line is never mistaken for one of the page's product facts",
+   all("Checked:" not in f for r in ctamod.parse(_dead)[0] for f in r["features"]),
+   [r["features"] for r in ctamod.parse(_dead)[0]])
+# the budget: whatever has not answered when the clock runs out is UNCHECKED, not dead.
+_slow = ctamod.PROBE
+_budget = ctamod.LIVE_BUDGET
+try:
+    import time as _t
+    ctamod.PROBE = lambda u: (_t.sleep(2), (ctamod.LIVE, ""))[1]
+    ctamod.LIVE_BUDGET = 0.05
+    _v = ctamod.verify(["https://example.com/slow"])
+    ok("a probe that outruns the whole check's budget reads as unchecked, never as gone",
+       _v["https://example.com/slow"][0] == ctamod.UNCHECKED and "ran out of time" in _v["https://example.com/slow"][1], _v)
+finally:
+    ctamod.PROBE, ctamod.LIVE_BUDGET = _slow, _budget
+PROBE_ANSWERS.clear()
 
 print("\n0 type-roles: the plain-English names")
 _roles = brand("type-roles.json")

@@ -16,6 +16,8 @@ Rules (each priced or measured):
   near-duplicate keywords onto core_keyword taking each core's MAX etv once). Emitting both
   keeps the distortion visible. Downstream ranks by the CLEANED figure.
 - Demo rows (no credentials) are never cached: the moment real credentials arrive, the real pull runs.
+- The TRAFFIC_MAX_ROWS ceiling is LOUD. A pull that stops on it says so in the run and in `meta`,
+  every time the figures are used, including on a later run that reuses the saved pull.
 """
 import os
 
@@ -79,6 +81,15 @@ def _pull(site, say, market):
     if res.get("partial"):
         doc["partial"] = res["partial"]
         say("The traffic pull is partial", res["partial"] + "; the rows bought so far are kept and joined")
+    if res.get("capped"):
+        # A CAP THAT NOBODY IS TOLD ABOUT IS A WRONG NUMBER (2026-09-10). This is a different fact
+        # from `partial`: partial means the pull was cut short by the money or by an outage, capped
+        # means WE stopped it on purpose at TRAFFIC_MAX_ROWS. Both leave the figures short of the
+        # truth, and only one of them was ever said out loud. A big site would quietly report the
+        # traffic of its first 50,000 keywords as if that were all of it.
+        doc["capped"] = res["capped"]
+        say("The traffic pull hit its row ceiling", res["capped"]
+            + ". Raise the ceiling and re-run with a redo if you need the whole tail.")
     return doc, None
 
 
@@ -91,6 +102,11 @@ def run(site, say, rows, redo_traffic=False):
     if doc and doc.get("domain") == site["host"] and not redo_traffic:
         say("Reused the saved traffic pull", "%d rows from %s; the paid pull is never repeated by accident"
             % (len(doc.get("rows") or []), doc.get("market", "")))
+        if doc.get("capped"):
+            # The ceiling has to be as loud on the tenth run as on the first. The saved file is
+            # reused for every later run, so a cap said once and then forgotten is a cap nobody
+            # remembers by the time they read the figures.
+            say("These saved figures were capped", doc["capped"] + ". They have been reused as they are.")
     else:
         try:
             doc, skipped = _pull(site, say, market)
@@ -127,5 +143,8 @@ def run(site, say, rows, redo_traffic=False):
             % (hit, len(rows), " (demo data)" if doc.get("demo") else ""))
     meta = {"demo": bool(doc and doc.get("demo")), "market": market_label, "ranked_pages": len(per_url), "rows": len((doc or {}).get("rows") or []),
             "total_count": (doc or {}).get("total_count", 0), "cost_usd": (doc or {}).get("cost_usd", 0.0),
-            "demo": bool((doc or {}).get("demo")), "skipped": skipped, "matched_pages": hit}
+            "demo": bool((doc or {}).get("demo")), "skipped": skipped, "matched_pages": hit,
+            # Carried so the summary can repeat it: a figure that is short of the truth has to say
+            # so wherever it is read, not only in the line that scrolled past during the run.
+            "capped": (doc or {}).get("capped"), "partial": (doc or {}).get("partial")}
     return {"per_url": per_url, "top_pages": top_pages, "meta": meta}

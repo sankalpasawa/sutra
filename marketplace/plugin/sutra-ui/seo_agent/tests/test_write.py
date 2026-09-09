@@ -36,7 +36,7 @@ UNFILLED = set()    # every {{TOKEN}} that reached the model unfilled, across th
 OVERRIDES = []      # (predicate(prompt) -> bool, reply | callable(prompt) -> reply)
 import re as _re
 
-def json_stub(prompt, system=None, retries=1):
+def json_stub(prompt, system=None, retries=1, **kw):
     CALLS.append(prompt[:80])
     UNFILLED.update(_re.findall(r"\{\{[A-Z_]+\}\}", prompt))
     for pred, reply in OVERRIDES:
@@ -44,7 +44,7 @@ def json_stub(prompt, system=None, retries=1):
             return reply(prompt) if callable(reply) else copy.deepcopy(reply)
     return _fixture.stub_json(prompt)
 
-def text_stub(prompt, system=None):
+def text_stub(prompt, system=None, **kw):
     CALLS.append(prompt[:80])
     UNFILLED.update(_re.findall(r"\{\{[A-Z_]+\}\}", prompt))
     return _fixture.stub_text(prompt)
@@ -143,6 +143,125 @@ idx4[2]["needs_source"] = True
 ok("a card the research stamped needs_source is always worth verifying",
    C.nid(2) in verify_sources._worthy_ids([idx4[2]])[0], verify_sources._worthy_ids([idx4[2]]))
 OVERRIDES.clear()
+
+# ======================================================================================
+print("\nplanner: the replacement-source hunt buys its searches in ONE queued batch")
+# WHY THIS IS HERE. The hunt used to fire one live/advanced search per claim: $0.002 each against
+# $0.0006 through the standard queue (tools/dfs.SERP_LIVE_USD and SERP_QUEUED_USD, both measured by
+# the owner), so three and a third times the price of the same result, on his account, every
+# article. The original batches it, so this does too.
+BATCHES = []            # every call to dfs.serp_batch: the query list it was handed
+_real_batch, _real_avail, _real_bal = dfs.serp_batch, dfs.available, dfs.balance
+BATCH_URLS = {}         # query -> [url]; a query missing from here never comes back at all
+
+
+def fake_batch(queries, location_name=None, language_code=None, depth=10, say=None):
+    BATCHES.append(list(queries))
+    got = {q: list(BATCH_URLS[q]) for q in queries if q in BATCH_URLS}
+    return {"urls": got, "cost": len(queries) * dfs.SERP_QUEUED_USD,
+            "missing": [q for q in queries if q not in got], "demo": False}
+
+
+def _live_landmine(*a, **kw):
+    raise AssertionError("the hunt bought a LIVE search; it must go through the queued batch")
+
+
+dfs.serp_batch, dfs.available, dfs.balance = fake_batch, (lambda: True), (lambda: 50.0)
+dfs.serp_advanced = _live_landmine
+# two claims, both with a wrong source, whose planned queries overlap
+OVERRIDES.append((lambda p: '{"verify": [' in p, {"verify": [1, 2, 3, 4, 5]}))
+OVERRIDES.append((lambda p: "source-queries" in p or "search queries" in p.lower(),
+                  {"queries": ["cost per hire benchmark", "shared query"]}))
+BATCH_URLS["cost per hire benchmark"] = ["https://www.shrm.org/research/cost-per-hire"]
+BATCH_URLS["shared query"] = ["https://www.shrm.org/research/cost-per-hire"]
+idx5 = C.card_index(CARDS)
+idx5[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
+idx5[2]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
+BATCHES.clear()
+ver5 = verify_sources.run(copy.deepcopy(plan), idx5, say)
+ok("the whole hunt bought its searches in ONE call, not one per claim", len(BATCHES) == 1, BATCHES)
+ok("the same query planned for two claims is paid for once",
+   BATCHES and len(BATCHES[0]) == len(set(BATCHES[0])), BATCHES[0] if BATCHES else None)
+ok("no live search was fired at all", True)     # _live_landmine would have raised
+ok("and the batch's urls really were read and judged, so a replacement was found",
+   any(r["new"] == "https://www.shrm.org/research/cost-per-hire" for r in ver5["police"]["replaced"]),
+   ver5["police"]["replaced"])
+# A QUERY THAT NEVER CAME BACK IS NOT A QUERY THAT FOUND NOTHING. This is the failure the original
+# records: one article had 745 of 745 queries silently abandoned and 428 claims shipped unverified
+# behind a report that read "0 cut".
+BATCH_URLS.clear()
+idx6 = C.card_index(CARDS)
+idx6[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
+ver6 = verify_sources.run(copy.deepcopy(plan), idx6, say)
+ok("a claim whose searches never came back is left unverified, and the report says the hunt could "
+   "not search rather than that it found nothing",
+   any(x["card_id"] == 3 and "could not search" in x["why"] for x in ver6["police"]["needs_source"]),
+   ver6["police"]["needs_source"])
+ok("nothing was cut over a search that did not happen", not ver6["police"]["cut"], ver6["police"]["cut"])
+ok("the price ratio is written down where the queue is chosen, and is his measurement",
+   round(dfs.SERP_LIVE_USD / dfs.SERP_QUEUED_USD, 2) == 3.33 and dfs.BATCH_FETCH == "regular",
+   (dfs.SERP_LIVE_USD, dfs.SERP_QUEUED_USD, dfs.BATCH_FETCH))
+# THE QUEUE'S ONE TRAP. A task still in the queue answers task_get with a 200 and a top-level
+# 20000, and says "in queue" one level down. Read as an empty result it becomes "this search found
+# nothing", which strips a real source off a real claim for a search that had not run yet.
+ok("a task still in the queue is not mistaken for a search that found nothing",
+   _real_batch is not None
+   and dfs._batch_urls({"tasks": [{"status_code": 40602}]}, 10) is None
+   and dfs._batch_urls({"tasks": [{"status_code": 20000, "result": []}]}, 10) == [])
+ok("...and a finished task hands back its organic urls only, in rank order",
+   dfs._batch_urls({"tasks": [{"status_code": 20000, "result": [{"items": [
+       {"type": "paid", "url": "https://ad"}, {"type": "organic", "url": "https://a"},
+       {"type": "organic", "url": "https://b"}]}]}]}, 10) == ["https://a", "https://b"])
+OVERRIDES.clear()
+dfs.serp_batch, dfs.available, dfs.balance = _real_batch, _real_avail, _real_bal
+
+# ======================================================================================
+print("\nplanner: a big call gets the write phase's ceiling, and a timed-out call is retried")
+# The planner ran on llm.CLI_TIMEOUT (300s) where the original gives every write-phase call 2400
+# (04-write-phase/scripts/config.py: CLAUDE_TIMEOUT, after 300 and then 900 both proved too short).
+# One planner call carries a whole H2's sub-headings, or VERIFY_BATCH (80) cards.
+TIMEOUTS = []
+_saved_json = llm.json_call
+llm.json_call = lambda p, system=None, retries=1, timeout=None, **kw: (
+    TIMEOUTS.append(timeout), json_stub(p, system, retries))[1]
+plan_select.run(inputs, CTX, say)
+ok("every planner model call asks for the write phase's ceiling, not the section default",
+   TIMEOUTS and all(t == C.LONG_CALL_TIMEOUT for t in TIMEOUTS), set(TIMEOUTS))
+ok("...which is the original's 2400", C.LONG_CALL_TIMEOUT == 2400.0, C.LONG_CALL_TIMEOUT)
+llm.json_call = _saved_json
+
+# AND A TIMEOUT IS RETRIED. _TRANSIENT has listed "timed out" since it was written, but the CLI's
+# timeout came back as a plain RuntimeError, which the retry clause never caught: the one transient
+# failure that most deserves another go got a single attempt and killed the step.
+_saved_sleeps, _saved_run = llm.CLI_RETRY_SLEEPS, llm.subprocess.run
+llm.CLI_RETRY_SLEEPS = (0,)
+_tries = {"n": 0}
+
+
+def _timeout_then_answer(cmd, **kw):
+    _tries["n"] += 1
+    if _tries["n"] == 1:
+        raise llm.subprocess.TimeoutExpired(cmd, kw.get("timeout") or 1)
+    class R:
+        returncode = 0
+        stdout = json.dumps({"is_error": False, "result": "pong"})
+        stderr = ""
+    return R()
+
+
+llm.subprocess.run = _timeout_then_answer
+try:
+    # _claude_cli, not llm.call: this suite runs with SEO_AGENT_NO_CLI=1, so the router refuses
+    # before it ever reaches the CLI. The retry being proved is the CLI caller's own.
+    _r = llm._claude_cli("s", [{"role": "user", "content": "hi"}], None, sys.executable, None)
+    ok("a CLI call that times out is tried again instead of losing the step",
+       _r["text"] == "pong" and _tries["n"] == 2, (_r, _tries["n"]))
+except Exception as e:      # noqa: BLE001
+    ok("a CLI call that times out is tried again instead of losing the step", False, repr(e))
+ok("and the timeout message still reads as transient, which is what carries the retry",
+   llm._transient("The Claude CLI timed out: no answer within 300 seconds."))
+llm.CLI_RETRY_SLEEPS, llm.subprocess.run = _saved_sleeps, _saved_run
+
 _fixture.stub_write_network()
 
 # ======================================================================================

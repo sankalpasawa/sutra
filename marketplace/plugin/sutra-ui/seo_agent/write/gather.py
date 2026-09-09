@@ -48,7 +48,7 @@ def _vet_lists(ctx, brand, paa, related, table_stakes, say):
             questions="\n".join("- " + q for q in paa) or "(none)",
             related="\n".join("- " + q for q in related) or "(none)",
             table_stakes="\n".join("- " + q for q in table_stakes) or "(none)",
-            max_table_stakes=C.MAX_TABLE_STAKES)) or {}
+            max_table_stakes=C.MAX_TABLE_STAKES), timeout=C.LONG_CALL_TIMEOUT) or {}
     except Exception as e:      # noqa: BLE001
         # SAY SO. A silent fallback is a silent downgrade: three articles once shipped with unfiltered
         # lists before anyone noticed.

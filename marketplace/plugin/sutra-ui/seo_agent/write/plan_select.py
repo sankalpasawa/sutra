@@ -142,7 +142,9 @@ def run(inputs, ctx, say=lambda *a: None):
     def _tag(i):
         sec = sections[i]
         p = base.replace("{{H2}}", sec["h2"]).replace("{{H3S}}", _render_h3_block(sec["h3s"]))
-        r = llm.json_call(p) or {}
+        # C.LONG_CALL_TIMEOUT, not the default: one call carries a whole H2's sub-headings with
+        # every card under them. See the constant for what the five-minute default cost.
+        r = llm.json_call(p, timeout=C.LONG_CALL_TIMEOUT) or {}
         return i, r.get("h3s") or []
 
     say("Judging every sub-section", "%d sections, one call each" % len(sections))
@@ -214,7 +216,8 @@ def run(inputs, ctx, say=lambda *a: None):
         try:
             r = llm.json_call(C.prompt("place-orphans", title=ctx["title"], angle=ctx["angle"],
                                        spine=C.or_na(ctx, "spine"), world_not_about=C.or_na(ctx, "not_about"),
-                                       survivors=surv_block, orphans=orph_block)) or {}
+                                       survivors=surv_block, orphans=orph_block),
+                              timeout=C.LONG_CALL_TIMEOUT) or {}
         except Exception:       # noqa: BLE001 — the code fallback places every orphan anyway
             r = {}
         chosen = {}

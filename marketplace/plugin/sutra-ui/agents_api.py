@@ -17,10 +17,13 @@ Origin and panel-token checks are the app-level middleware's job (app.py:_origin
 so a POST here is already known to come from this panel or from a local, origin-less
 client.
 """
+import importlib
 import os
 import re
 import threading
+import time
 import traceback
+import uuid
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
@@ -37,6 +40,22 @@ router = APIRouter(prefix="/api/agents/seo", tags=["agents"])
 # loop on a background THREAD, not in a subprocess, so patching once covers every run this app
 # serves. Nothing outside this app is touched, which is the ruling: "it only changes the Sutra app".
 prompt_store.install()
+
+# AND THE TEAM POLLER, FOR THE SAME REASON. A workspace's whole promise is "nobody presses sync",
+# and starting it from the Connections tab's own route made that quietly untrue: a teammate who
+# worked all morning in Chat and Library heard about nothing anybody else had done, because the one
+# screen that starts the poller was never open. It belongs here, in the process the run happens in.
+#
+# It deliberately does NOT check whether a workspace is configured. With none, the poller sits in
+# its backoff doing nothing and picks one up by itself the moment Create or Join finishes. Refusing
+# to start without one would mean somebody has to remember to start it afterwards, and that is
+# exactly the thing nobody remembers. `start()` is idempotent and thread-safe, so the route below
+# keeping its own call is a belt, not a second poller. (2026-09-10.)
+try:
+    from seo_agent.workspace import sync as _ws_sync
+    _ws_sync.start()
+except Exception:  # noqa: BLE001 — no workspace, no network, a missing module: the app still boots
+    pass
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -522,15 +541,27 @@ def api_save_cta(body: dict = Body(...)):
 
 @router.post("/knowledge/refresh")
 def api_knowledge_refresh(body: dict = Body(default={})):
-    """Bring the catalogue up to date. With preview=true it reports and changes nothing."""
+    """Bring the catalogue up to date. With preview=true it reports and changes nothing.
+
+    A REAL refresh also asks for the shared knowledge pack to be rebuilt, which is the owner's
+    ruling in WORKSPACE-PLAN section 2: one click updates everybody AND the copy a new joiner
+    downloads. He does not wait for the second half — ws_pack_refresh returns at once and the
+    rebuild runs behind him as the quiet line at the foot of the screen. It is fired AFTER the
+    refresh has succeeded, because a pack rebuilt from a catalogue that failed is worse than no
+    rebuild, and it can never turn a working refresh into an error: it swallows everything,
+    including having no workspace at all.
+    """
     ctx = {"chat_id": "knowledge", "run_id": "refresh", "emit": lambda **kw: None}
     try:
         from seo_agent.tools import refresh_site
-        return refresh_site.run(ctx, preview=bool(body.get("preview")),
-                                include_unchecked=bool(body.get("include_unchecked")),
-                                use_archive=bool(body.get("use_archive")))
+        out = refresh_site.run(ctx, preview=bool(body.get("preview")),
+                               include_unchecked=bool(body.get("include_unchecked")),
+                               use_archive=bool(body.get("use_archive")))
     except Exception as e:  # noqa: BLE001
         return _bad(str(e)[:300], 500)
+    if not body.get("preview") and isinstance(out, dict) and not out.get("error"):
+        ws_pack_refresh("the catalogue was refreshed")
+    return out
 
 
 @router.get("/knowledge/changes")
@@ -747,6 +778,745 @@ def api_save_connections(body: dict = Body(...)):
 @router.get("/tools")
 def api_tools():
     return registry.for_screen()
+
+
+# ---- the team workspace --------------------------------------------------------------------
+# Five people, one Supabase project the company owns (design/WORKSPACE-PLAN.md). One person
+# presses Create; everybody else pastes a link. The thinking lives in seo_agent/workspace/ —
+# these routes are the panel's half: validate what was typed, put the slow part on a thread,
+# and let the screen poll one dict.
+#
+# WHAT THIS FILE DOES NOT DECIDE. It never decides that a workspace exists. schema.create()
+# already runs verify() whichever route it took and hands back {"ok": bool}; this file reads
+# that flag and nothing else. A route that inferred success from "the POST came back" is the
+# one failure spec section 10 names by hand, and the way to keep it out is to have no code
+# here that could.
+#
+# THE TOKEN. It arrives in one request body, is passed as one argument, and the argument is
+# rebound to "" as the call returns. It is never a field on the job the screen polls, never a
+# key in connections.json, and never in a message. schema.run_sql puts it in a header and
+# builds no error text from headers, so the scrub below is defence in depth rather than the
+# only line — but the messages it guards are drawn on a screen, so it stays.
+
+_WS_MODS = ("client", "schema", "link", "pack", "sync")
+
+# The six settings are client.SETTINGS and are the engine's to write. `workspace_name` is the
+# panel's own: it is what the tab calls the workspace, and client.save_settings refuses keys it
+# does not know, so it goes in beside them rather than through them (see design/HANDOFF-W4.md).
+_WS_NAME_KEY = "workspace_name"
+
+_WS_TOKEN = re.compile(r"sbp_[A-Za-z0-9_-]{8,}")
+
+# How long the member list may be reused before it is read again. The screen polls once a
+# second while a job is running, and "who is in the team" does not change once a second.
+_WS_MEMBERS_TTL = 20.0
+
+_ws_job = None
+_ws_job_lock = threading.Lock()
+_ws_members = {"at": 0.0, "rows": []}
+# The last answer schema.verify() gave, and when. Cached because verify probes ten tables and
+# the bucket -- eleven calls -- and the screen polls this route once a second while a job runs.
+_ws_checked = {"at": 0.0, "res": None}
+# What the quiet line reads off. Set only by the pack progress callback below, so it can only
+# ever say what the pack is actually doing.
+_ws_pack = {"state": "idle", "note": ""}
+_ws_rebuilder_ref = [None]
+
+
+def _ws():
+    """The workspace engine's modules, or None when this build has no seo_agent/workspace/.
+
+    Resolved per call and never at import, so the panel loads, draws and says something useful
+    on a checkout where the package is missing or half-landed.
+    """
+    try:
+        workspace = importlib.import_module("seo_agent.workspace")
+    except Exception:
+        return None
+    out = {}
+    for n in _WS_MODS:
+        m = getattr(workspace, n, None)
+        if m is None:
+            try:
+                m = importlib.import_module("seo_agent.workspace." + n)
+            except Exception:
+                m = None
+        out[n] = m
+    return out
+
+
+def _ws_ready(mods, *names):
+    return bool(mods) and all(mods.get(n) is not None for n in names)
+
+
+def _ws_scrub(msg, *secrets):
+    """No secret reaches the screen, whatever an error string happens to carry."""
+    s = str(msg or "")
+    for v in secrets:
+        v = str(v or "")
+        if len(v) >= 6:
+            s = s.replace(v, "…")
+    return _WS_TOKEN.sub("sbp_…", s)[:400]
+
+
+# ---- what was typed, checked before anything is started -------------------------------------
+# The engine refuses a bad key too, and says so well. These run FIRST anyway, because they run
+# in the request rather than on the thread: a person who pasted the secret key gets the sentence
+# back on the button press instead of watching a spinner start and then fail.
+
+def _ws_check_url(url):
+    if not (url or "").strip():
+        return "Paste the project URL first."
+    if not re.match(r"^https://[a-z0-9]{16,40}\.supabase\.(co|in|net)/?$", (url or "").strip(), re.I):
+        return ("That does not look like a Supabase project URL. It reads "
+                "https://abcdefghijklmnop.supabase.co and is on the project's settings page, "
+                "under Data API.")
+    return ""
+
+
+def _ws_check_key(key):
+    """The publishable key, and only that one. Naming the key somebody pasted by mistake is the
+    difference between fixing it in ten seconds and giving up."""
+    k = (key or "").strip()
+    if not k:
+        return "Paste the publishable key first."
+    if k.startswith("sb_publishable_"):
+        return ""
+    if k.startswith("sb_secret_"):
+        return ("That is the secret key. It gets past every row rule, so Sutra never asks for "
+                "it and it must never go in a share link. The one to paste starts with "
+                "sb_publishable_ and is on the same Data API page.")
+    if k.startswith("eyJ"):
+        return ("That is a service role JWT, an admin key. Sutra never asks for one. The key to "
+                "paste starts with sb_publishable_ and is on the project's Data API page.")
+    if k.startswith("sbp_"):
+        return ("That is a personal access token, not a project key. Sutra asks for that one "
+                "later, at the moment it creates the tables. The key here starts with "
+                "sb_publishable_.")
+    return ("That key is not this project's publishable key. The publishable key starts with "
+            "sb_publishable_ and is on the project's Data API page.")
+
+
+def _ws_check_token(token):
+    t = (token or "").strip()
+    if not t:
+        return "Paste the token first."
+    if not t.startswith("sbp_"):
+        return ("A Supabase personal access token starts with sbp_. You make one at "
+                "supabase.com/dashboard/account/tokens.")
+    return ""
+
+
+# ---- the one running job ----------------------------------------------------------------
+# In memory, never on disk. A job that did not finish has created nothing that survives a
+# restart, and a job state read back after a crash would be exactly the "half-made workspace
+# drawn as if it worked" the plan forbids.
+
+def _ws_start_job(kind):
+    global _ws_job
+    with _ws_job_lock:
+        _ws_job = {"kind": kind, "phase": "starting", "step": "", "pct": None,
+                   "done_bytes": 0, "total_bytes": 0, "error": None, "paste": None,
+                   "link": "", "started_at": time.time(), "finished_at": None}
+        return dict(_ws_job)
+
+
+def _ws_say(**kw):
+    """Move the job on. Every field the screen draws is set here and nowhere else."""
+    with _ws_job_lock:
+        if _ws_job is not None:
+            _ws_job.update(kw)
+
+
+def _ws_get_job():
+    with _ws_job_lock:
+        return dict(_ws_job) if _ws_job else None
+
+
+def _ws_fail(what, do):
+    _ws_say(phase="failed", error={"what": what, "do": do}, finished_at=time.time())
+
+
+def _ws_paste_route(res, why=""):
+    """THE PASTE ROUTE IS A ROUTE, NOT A FAILURE STATE.
+
+    There may never be a personal access token on a given machine — there is not one on the
+    owner's — so pasting the script into Supabase's own SQL Editor is a first-class way to set
+    a workspace up, and for many people it will be the only one. schema.create() returns it
+    fully formed: the script, the deep link to that project's editor, the reason this route is
+    the one on offer, and the next step. This reshapes it for the screen and invents no part
+    of it. The screen draws it as a route, with its own heading and its own button.
+    """
+    _ws_say(phase="paste", step="", pct=None, paste={
+        "sql": str((res or {}).get("sql") or ""),
+        "editor_url": str((res or {}).get("editor_url") or "https://supabase.com/dashboard"),
+        "why": _ws_scrub(why or (res or {}).get("reason") or ""),
+        "next": str((res or {}).get("next") or ""),
+    })
+
+
+# ---- credentials -------------------------------------------------------------------------
+
+def _ws_settings(mods):
+    client = (mods or {}).get("client")
+    if client is None:
+        return {}
+    try:
+        return client.settings()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _ws_name():
+    return str(store.connections().get(_WS_NAME_KEY) or "")
+
+
+def _ws_save_name(name):
+    c = store.connections()
+    if str(name or "").strip():
+        c[_WS_NAME_KEY] = str(name).strip()[:80]
+    else:
+        c.pop(_WS_NAME_KEY, None)
+    store.save_connections(c)
+
+
+def _ws_member_id(mods):
+    """This person's id. Made once and then kept, because it is what their writes are stamped
+    with: a new one on every join would read as a new person joining every time."""
+    s = _ws_settings(mods)
+    return str(s.get("member_id") or "").strip() or uuid.uuid4().hex[:16]
+
+
+def _ws_link(mods, s):
+    lk = (mods or {}).get("link")
+    if lk is None:
+        return ""
+    url, key, wid = (s.get("workspace_url") or ""), (s.get("workspace_key") or ""), (s.get("workspace_id") or "")
+    if not (url and key and wid):
+        return ""
+    try:
+        return str(lk.make_link(url, key, wid) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _ws_announce(mods, member_id, name):
+    """Put this person in the `members` table, so section 3's "who is in it" has something to read.
+
+    THIS ROUTES TO THE ENGINE AND WRITES NOTHING ITSELF. It used to build the row here, which made
+    the panel a second writer into Supabase: the engine owns what a member row looks like, and two
+    definitions of it in two files drift the first time a column is added. `client.register_member`
+    is idempotent on member_id, so a retried create or a rejoin cannot mint a duplicate person.
+    (2026-09-10 — the stopgap existed only because nothing in the engine wrote the row at all, and
+    "who is in it" would have been permanently empty.)
+
+    Never fatal: a workspace whose member row did not land still works, and failing a whole join
+    over a display name would be the tail wagging the dog.
+    """
+    client = (mods or {}).get("client")
+    if client is None or not member_id:
+        return
+    try:
+        client.register_member(name)
+    except Exception:  # noqa: BLE001
+        pass
+    _ws_members["at"] = 0.0
+
+
+def _ws_forget_checks():
+    """Anything that changed the workspace makes the cached verify stale."""
+    _ws_checked["at"], _ws_checked["res"] = 0.0, None
+    _ws_members["at"] = 0.0
+
+
+def _ws_member_rows(mods):
+    """Who is in the team, read at most every _WS_MEMBERS_TTL seconds. The screen polls this
+    route once a second while a job runs, and a network call per second to answer a question
+    whose answer changes twice a year is not a cost worth paying."""
+    client = (mods or {}).get("client")
+    if client is None:
+        return []
+    now = time.time()
+    if now - _ws_members["at"] < _WS_MEMBERS_TTL:
+        return list(_ws_members["rows"])
+    try:
+        rows = client.select("members", order="joined_at", limit=50,
+                             columns="member_id,name,joined_at,last_seen_at") or []
+    except Exception:  # noqa: BLE001
+        # Offline, or asleep. Keep showing the last answer rather than telling him the team
+        # emptied out because the wifi dropped.
+        _ws_members["at"] = now - (_WS_MEMBERS_TTL / 2)
+        return list(_ws_members["rows"])
+    _ws_members["at"], _ws_members["rows"] = now, list(rows)
+    return list(rows)
+
+
+def _ws_start_poller(mods):
+    """Keep the one background poller running whenever a workspace is connected.
+
+    THE PLAN'S "FOREVER AFTER" IS THIS FUNCTION. Section 1 ends "nobody presses sync, nobody
+    imports anything", and nothing else in the app starts sync's poller — so without this a
+    workspace would be set up perfectly and then never hear about a single change anybody
+    else made. sync.start is idempotent, so calling it from every read of this route costs an
+    is_alive() check and survives an app restart, which is the case a one-shot call at create
+    time would miss.
+    """
+    sync = (mods or {}).get("sync")
+    if sync is None:
+        return
+    try:
+        sync.start()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _ws_verify(mods, force=False):
+    """Is this workspace actually finished? schema.verify()'s dict, unchanged, at most once a
+    minute.
+
+    THIS IS WHY IT IS HERE AT ALL. A project can have all ten tables and no knowledge bucket:
+    the storage policies do not always attach, and the tables survive when they do not. That
+    workspace looks connected -- there is a URL, a key and an id in connections.json -- and
+    nobody can ever join it, because the pack has nowhere to live. client.configured() cannot
+    see that; it only reads settings, on purpose, because it is asked on every render. So the
+    tab asks this as well, and draws "connected" only when this says ok.
+    """
+    schema = (mods or {}).get("schema")
+    if schema is None:
+        return None
+    now = time.time()
+    if not force and _ws_checked["res"] is not None and now - _ws_checked["at"] < 60.0:
+        return _ws_checked["res"]
+    try:
+        res = schema.verify() or {}
+    except Exception as e:  # noqa: BLE001
+        # Offline, or the project is asleep. That is not "your workspace is broken", so the
+        # last real answer stands and the tab says nothing new.
+        if _ws_checked["res"] is not None:
+            return _ws_checked["res"]
+        return {"ok": None, "reason": _ws_scrub(e), "missing": [], "bucket": None}
+    _ws_checked["at"], _ws_checked["res"] = now, res
+    return res
+
+
+# ---- the pack, and the quiet line -----------------------------------------------------------
+# Section 2's ruling: one click updates everybody AND the joining copy, and he does not wait
+# for the pack. pack.Rebuilder is the engine's implementation of exactly that — request()
+# returns at once and coalesces a burst into one rebuild — so the panel's whole job is to fire
+# it after a refresh and to carry its progress out to the quiet line.
+
+def _ws_pack_progress(stage, done=0, total=0, note=""):
+    stage = str(stage or "")
+    if stage in ("start", "build", "pack", "verify"):
+        _ws_pack["state"] = "building"
+    elif stage in ("upload", "publish"):
+        _ws_pack["state"] = "uploading"
+    elif stage in ("done", "error"):
+        _ws_pack["state"] = "idle"
+    _ws_pack["note"] = str(note or "")
+
+
+def _ws_rebuilder(mods):
+    if _ws_rebuilder_ref[0] is not None:
+        return _ws_rebuilder_ref[0]
+    if not _ws_ready(mods, "pack", "client", "sync"):
+        return None
+    client, pack, sync = mods["client"], mods["pack"], mods["sync"]
+    try:
+        _ws_rebuilder_ref[0] = pack.Rebuilder(
+            client, progress=_ws_pack_progress, cursor=lambda: sync.last_seen_id(client))
+    except Exception:  # noqa: BLE001
+        return None
+    return _ws_rebuilder_ref[0]
+
+
+def ws_pack_refresh(reason=""):
+    """Ask for the shared pack to be rebuilt, and return immediately.
+
+    Called from the catalogue refresh, which is the click section 2 is about. It never raises
+    and never blocks: a person with no workspace, or no network, must not have a working
+    refresh turned into an error by a feature he has not set up.
+    """
+    mods = _ws()
+    if not mods:
+        return False
+    try:
+        if not mods["client"].configured():
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    rb = _ws_rebuilder(mods)
+    if rb is None:
+        return False
+    try:
+        rb.request(reason or "the catalogue was refreshed")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# ---- create ------------------------------------------------------------------------------
+
+def _ws_create_worker(url, key, name, member_id, member_name, token, confirm=False):
+    """Set the workspace up, prove it is there, upload the pack, then hand back the link.
+
+    ONE WORKER, TWO DOORS, ONE VERDICT. `confirm=True` is the paste route's "I've run it"
+    button: schema.confirm() verifies and remembers. Otherwise schema.create() runs the script
+    if it was given a token and verifies either way. Both come back with a single `ok`, and
+    that flag is the only thing this function reads to decide anything.
+
+    `token` is optional and dies with this function: one argument, one call, rebound to "" in
+    that call's `finally`, before anything else can raise with it still in scope.
+    """
+    mods = _ws()
+    schema, pack, client, sync = mods["schema"], mods["pack"], mods["client"], mods["sync"]
+    try:
+        _ws_say(phase="tables",
+                step="Checking your project" if confirm else "Setting up your workspace", pct=5)
+        try:
+            res = (schema.confirm(url, key) if confirm
+                   else schema.create(url, key, token=token or None)) or {}
+        except Exception as e:  # noqa: BLE001
+            # schema could not even turn this into the paste route itself. Offer the route
+            # anyway, with the reason: a person must never be stuck.
+            _ws_paste_route({"sql": _ws_sql(mods), "editor_url": _ws_editor(mods, url)},
+                            _ws_scrub(e, token))
+            return
+        finally:
+            token = ""
+
+        # THE ONE FLAG. schema ran verify() itself, whichever door this came through, and
+        # verify is the only function allowed to say a workspace is ready. Note what `ok` false
+        # covers: no token yet, a script that half-applied, AND a project whose tables are all
+        # there but whose knowledge bucket is not — a workspace nobody could ever join. All
+        # three are the same state to a person: not finished, and here is what to do.
+        if not res.get("ok"):
+            _ws_paste_route(res)
+            return
+
+        ws_id = str(res.get("workspace_id") or "")
+        client.save_settings(member_id=member_id, member_name=member_name)
+        _ws_save_name(name)
+        if name:
+            try:
+                client.update("workspace", {"id": ws_id}, {"name": name})
+            except Exception:  # noqa: BLE001
+                pass          # the local name still shows; a display name is not worth failing on
+        _ws_announce(mods, member_id, member_name)
+        _ws_forget_checks()
+
+        _ws_say(phase="pack", step="Uploading the knowledge pack", pct=45,
+                link=_ws_link(mods, _ws_settings(mods)))
+
+        def on_progress(stage, done=0, total=0, note=""):
+            _ws_pack_progress(stage, done, total, note)
+            base = 45 if str(stage) in ("build", "pack", "start") else 70
+            span = 25 if base == 45 else 25
+            pct = base + int(span * (float(done) / float(total))) if total else base
+            _ws_say(pct=max(45, min(97, pct)), done_bytes=int(done or 0),
+                    total_bytes=int(total or 0), step=str(note or "Uploading the knowledge pack"))
+
+        try:
+            pack.publish(client, last_seen_id=sync.last_seen_id(client), progress=on_progress)
+        except Exception as e:  # noqa: BLE001
+            # The workspace EXISTS — verify said so — so this is not a failed create. Calling
+            # it one would throw away ten real tables and the saved credentials to tidy a screen.
+            _ws_say(phase="done", step="", pct=100, link=_ws_link(mods, _ws_settings(mods)),
+                    finished_at=time.time(),
+                    error={"what": "The workspace is made and the link works, but the knowledge "
+                                   "pack did not finish uploading: " + _ws_scrub(e),
+                           "do": "Nothing is lost. Press Check for changes on the Knowledge tab "
+                                 "and it uploads again. Until it does, a teammate cannot join."})
+            return
+        finally:
+            _ws_pack["state"] = "idle"
+
+        _ws_say(phase="done", step="", pct=100, link=_ws_link(mods, _ws_settings(mods)),
+                finished_at=time.time())
+    except Exception as e:  # noqa: BLE001
+        _ws_fail("The workspace could not be created: " + _ws_scrub(e, token),
+                 "Check the project is awake in the Supabase dashboard, then press Try again.")
+
+
+def _ws_sql(mods):
+    try:
+        return mods["schema"].sql()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _ws_editor(mods, url):
+    try:
+        return mods["schema"].editor_url(mods["schema"].project_ref(url))
+    except Exception:  # noqa: BLE001
+        return "https://supabase.com/dashboard"
+
+
+def _ws_begin(body, confirm):
+    """The shared front half of create and confirm: check what was typed, then put the slow
+    part on a thread. Nothing here decides anything about the workspace itself."""
+    mods = _ws()
+    if not _ws_ready(mods, "schema", "pack", "link", "client", "sync"):
+        return _bad("The team workspace is not in this build of Sutra, so nothing was "
+                    "attempted. Update Sutra and try again.", 501)
+
+    url = str(body.get("url") or "").strip().rstrip("/")
+    key = str(body.get("key") or "").strip()
+    name = str(body.get("name") or "").strip()[:80]
+    token = str(body.get("token") or "").strip()
+
+    for problem in (_ws_check_url(url), _ws_check_key(key)):
+        if problem:
+            return _bad(problem)
+    # THE TOKEN IS OPTIONAL. There is not one on the owner's machine and there may never be,
+    # so a create with no token is not a mistake — it is the paste route, which comes straight
+    # back with the script. Only a token that is present and malformed is refused, and it is
+    # refused HERE, in the request, so nobody watches a spinner start and then fail.
+    if token:
+        problem = _ws_check_token(token)
+        if problem:
+            return _bad(problem)
+
+    s = _ws_settings(mods)
+    member_id = _ws_member_id(mods)
+    member_name = (str(body.get("member_name") or "").strip()
+                   or str(s.get("member_name") or "").strip() or "The owner")[:80]
+    _ws_start_job("create")
+    if not _spawn("workspace", lambda: _ws_create_worker(url, key, name, member_id,
+                                                         member_name, token, confirm)):
+        return _bad("A workspace job is already running. Wait for it to finish.", 409)
+    return {"started": True}
+
+
+@router.post("/workspace/create")
+def api_workspace_create(body: dict = Body(...)):
+    """Start a workspace on a Supabase project the company owns.
+
+    `token` is optional. With one, schema.create runs the script through the management API and
+    then verifies. Without one, it verifies anyway and hands back the paste route — which is a
+    route, not a refusal, and is how the owner's own first run is expected to go.
+    """
+    return _ws_begin(body, confirm=False)
+
+
+@router.post("/workspace/confirm")
+def api_workspace_confirm(body: dict = Body(...)):
+    """The paste route's "I've run it" button. schema.confirm verifies and remembers.
+
+    A route of its own rather than a flag on create, because the two are different questions:
+    create asks "set this up", confirm asks "is it set up now". They share a worker so that
+    both are judged by the same verify and can never drift into two definitions of ready.
+    """
+    return _ws_begin(body, confirm=True)
+
+
+# ---- join --------------------------------------------------------------------------------
+
+def _ws_join_worker(url, key, ws_id, name, member_id):
+    mods = _ws()
+    schema, pack, client, sync = mods["schema"], mods["pack"], mods["client"], mods["sync"]
+    try:
+        _ws_say(phase="verify", step="Checking the workspace is there", pct=1)
+        try:
+            v = schema.verify(url, key) or {}
+        except Exception as e:  # noqa: BLE001
+            _ws_fail("Sutra could not reach that workspace: " + _ws_scrub(e),
+                     "Check you are online. A free Supabase project that has been idle for a "
+                     "week takes about a minute to wake up, so try again in a minute.")
+            return
+        if not v.get("ok"):
+            # verify() has already written the sentence for a person, and it names the actual
+            # thing that is wrong — no tables, some tables, tables it cannot read with this
+            # key, or tables with no knowledge bucket behind them. It is passed through
+            # UNCHANGED. Rewriting it is how a message ends up blaming the project URL for a
+            # storage problem, which is a mistake this feature has already made once.
+            _ws_fail(str(v.get("reason") or "That workspace is not finished."),
+                     "Nothing on this Mac was touched. Ask whoever set it up to open their "
+                     "Connections tab — it will show them the same thing and what to do — "
+                     "then send you the link again.")
+            return
+
+        client.save_settings(workspace_url=url, workspace_key=key,
+                             workspace_id=str(v.get("workspace_id") or ws_id),
+                             member_id=member_id, member_name=name)
+        _ws_announce(mods, member_id, name)
+        _ws_forget_checks()
+        try:
+            row = client.one("workspace", columns="name") or {}
+            _ws_save_name(row.get("name") or "")
+        except Exception:  # noqa: BLE001
+            pass
+
+        _ws_say(phase="download", step="Downloading the team's knowledge", pct=1)
+
+        def on_progress(stage, done=0, total=0, note=""):
+            pct = int(100 * (float(done) / float(total))) if total else 0
+            _ws_say(pct=max(0, min(99, pct)), done_bytes=int(done or 0),
+                    total_bytes=int(total or 0),
+                    step=str(note or "Downloading the team's knowledge"))
+
+        try:
+            got = pack.join(client, progress=on_progress) or {}
+        except Exception as e:  # noqa: BLE001
+            # Joined but not filled. Say exactly that: the credentials are real, and pressing
+            # Try again resumes rather than starting over.
+            _ws_fail("You are on the team, but the knowledge did not finish coming down: "
+                     + _ws_scrub(e),
+                     "Press Try again. Nothing you have on this Mac was touched.")
+            return
+
+        # WHERE TO REPLAY FROM. pack.join returns the boundary the pack was built at; saving it
+        # as last_seen_id is what makes the next poll pick up exactly the changes the pack does
+        # not already contain. Too low replays them twice, too high loses them for good.
+        #
+        # catch_up() SAVES THAT BOUNDARY AND THEN DRAINS IT IMMEDIATELY, rather than saving it and
+        # waiting for the poller's next tick. Downloading 33.6 MB takes long enough that changes
+        # land while it runs, so a joiner who is handed the files and nothing else is knowingly
+        # stale the second they are told they are done, with nothing on screen saying so. It never
+        # raises: a join that fetched the whole pack must not report failure because the poll after
+        # it hit a flat network. (2026-09-10.)
+        try:
+            from seo_agent.workspace import sync as _ws_sync_join
+            _ws_sync_join.catch_up(client, replay_from=got.get("replay_from"))
+        except Exception:  # noqa: BLE001
+            pass
+        _ws_say(phase="done", step="", pct=100, finished_at=time.time())
+    except Exception as e:  # noqa: BLE001
+        _ws_fail("Joining did not finish: " + _ws_scrub(e),
+                 "Check you are online and press Try again.")
+
+
+@router.post("/workspace/join")
+def api_workspace_join(body: dict = Body(...)):
+    """Paste the link, type a name, press Done. The link carries the project URL, the
+    publishable key and the workspace id, and nothing in it can make or drop a table."""
+    mods = _ws()
+    if not _ws_ready(mods, "schema", "pack", "link", "client", "sync"):
+        return _bad("The team workspace is not in this build of Sutra, so nothing was "
+                    "attempted. Update Sutra and try again.", 501)
+
+    raw = str(body.get("link") or "").strip()
+    name = str(body.get("name") or "").strip()[:80]
+    if not raw:
+        return _bad("Paste the link your teammate sent you.")
+    if not name:
+        return _bad("Type the name your team will see beside your work.")
+    try:
+        url, key, ws_id = mods["link"].read_link(raw)
+    except Exception as e:  # noqa: BLE001
+        # link.read_link says what is wrong with a link better than a generic sentence can.
+        return _bad(_ws_scrub(e) or "That link could not be read. Copy it again from your "
+                    "teammate's Connections tab — it is one long line with no spaces in it.")
+    url = str(url or "").strip().rstrip("/")
+    problem = _ws_check_url(url) or _ws_check_key(str(key or ""))
+    if problem:
+        return _bad("That link is not a Sutra workspace link. " + problem)
+    if not str(ws_id or "").strip():
+        return _bad("That link is missing the workspace it points at. Ask for it again.")
+
+    _ws_start_job("join")
+    member_id = _ws_member_id(mods)
+    if not _spawn("workspace", lambda: _ws_join_worker(url, str(key), str(ws_id), name, member_id)):
+        return _bad("A workspace job is already running. Wait for it to finish.", 409)
+    return {"started": True}
+
+
+# ---- what is true right now ----------------------------------------------------------------
+
+@router.get("/workspace")
+def api_workspace(check: int = 0):
+    """The resting state and the running job, in the one read the screen polls.
+
+    `link` is here on purpose. It carries the publishable key, which the plan puts in the link
+    by design: it can read and write this workspace's rows, bounded by row rules, and nothing
+    else. The two credentials that are NOT here and never will be are the secret key and the
+    personal access token.
+    """
+    mods = _ws()
+    job = _ws_get_job()
+    blank = {"installed": bool(mods), "configured": False, "verify": None, "workspace": None,
+             "me": None, "members": [], "link": "", "sync": None, "job": job}
+    if not _ws_ready(mods, "client", "link", "sync"):
+        return blank
+    try:
+        configured = bool(mods["client"].configured())
+    except Exception:  # noqa: BLE001
+        configured = False
+    if not configured:
+        return blank
+    s = _ws_settings(mods)
+    try:
+        st = mods["sync"].status() or {}
+    except Exception:  # noqa: BLE001
+        st = {}
+    out = st.get("outbox") or {}
+    # `check` is the screen saying "the Connections tab is open, so a network round trip is
+    # worth it". Off that tab this route is polled only to keep the quiet line honest, and
+    # eleven probes for a footnote would be a poor trade.
+    _ws_start_poller(mods)
+    checked = _ws_verify(mods) if check else _ws_checked["res"]
+    return {
+        "installed": True,
+        "configured": True,
+        "verify": checked,
+        "workspace": {"name": _ws_name() or "The team workspace",
+                      "url": s.get("workspace_url") or "", "id": s.get("workspace_id") or ""},
+        "me": {"member_id": s.get("member_id") or "", "name": s.get("member_name") or ""},
+        "members": _ws_member_rows(mods),
+        "link": _ws_link(mods, s),
+        "sync": {"pending": int(out.get("queued") or 0),
+                 "pack_state": _ws_pack["state"],
+                 "last_seen_at": st.get("updated_at"),
+                 "stuck": st.get("stuck") or None},
+        "job": job,
+    }
+
+
+@router.post("/workspace/dismiss")
+def api_workspace_dismiss(body: dict = Body(default={})):
+    """Forget a job that has stopped, so the section goes back to its resting state.
+
+    A route of its own rather than a flag on one of the other four, because "clear this screen"
+    is not "leave the team" and must never be able to become it by a typo. A job still RUNNING
+    is refused: throwing away the only record of a worker that is still making tables is how a
+    half-made workspace ends up on screen as if nothing had happened.
+    """
+    global _ws_job
+    with _ws_job_lock:
+        job = dict(_ws_job) if _ws_job else None
+        if job and job.get("phase") in ("starting", "tables", "verify", "pack", "download"):
+            return _bad("That job is still running. Let it finish or fail before clearing it.", 409)
+        _ws_job = None
+    return {"ok": True}
+
+
+@router.post("/workspace/leave")
+def api_workspace_leave(body: dict = Body(default={})):
+    """Stop being on the team.
+
+    Local knowledge is untouched: it is this person's own copy, it is what Sutra reads from
+    (plan section 6), and deleting it would take their work away rather than a workspace.
+    Nothing is dropped in Supabase either — leaving is not ending the team's data.
+    """
+    global _ws_job
+    mods = _ws()
+    if _ws_ready(mods, "sync"):
+        try:
+            mods["sync"].stop()          # stop listening before the credentials go
+        except Exception:  # noqa: BLE001
+            pass
+    if _ws_ready(mods, "client"):
+        try:
+            mods["client"].forget()
+        except Exception:  # noqa: BLE001
+            pass
+    _ws_save_name("")
+    _ws_forget_checks()
+    _ws_members["rows"] = []
+    _ws_rebuilder_ref[0] = None
+    with _ws_job_lock:
+        _ws_job = None
+    return {"ok": True}
 
 
 # ---- prompts -------------------------------------------------------------------------------------

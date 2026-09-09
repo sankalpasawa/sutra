@@ -114,7 +114,18 @@ MIN_INTERNAL_LINKS = 3
 INLINE_LINKS_CAP = 5
 
 # ---- model calls ----------------------------------------------------------------------------------
-LONG_CALL_TIMEOUT = 2400.0          # a whole-article round trip needs more than one section's timeout
+# 2400 is the write phase's one call ceiling, and it is the original's (04-write-phase/scripts/
+# config.py: CLAUDE_TIMEOUT = 2400, arrived at after 300 and then 900 both proved too short). A
+# timeout should catch a HUNG process, not a BIG one, and every step here that hands the model a
+# lot at once is big: a whole-article round trip, and the planner's batched judgment calls.
+#
+# THE PLANNER RAN AT 300 (fixed 2026-09-10). Only blend, wrapper, coherence and readable raised the
+# ceiling, so select and verify_sources kept llm.CLI_TIMEOUT — five minutes for a tag pass over a
+# whole section menu, or a verify-worthy call carrying VERIFY_BATCH (80) cards. A planner call that
+# ran long was killed, and a killed call was not retried, so a slow run lost the plan for no reason
+# at all. The planner's calls now pass this ceiling per call, which is what llm.call asks for
+# ("per call, never a global swap"); long_call() below stays for the whole-article steps.
+LONG_CALL_TIMEOUT = 2400.0
 
 ARCHETYPES = {
     "answer-bait-definitional", "how-to-guide", "listicle", "comparison-rankings", "glossary",

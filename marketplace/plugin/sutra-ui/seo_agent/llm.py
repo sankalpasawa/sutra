@@ -213,7 +213,13 @@ def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=N
     for attempt in range(attempts):
         try:
             return _claude_cli_once(cmd, prompt, binary, timeout)
-        except ModelError as e:
+        # RuntimeError, not just ModelError (2026-09-10). _TRANSIENT has listed "timed out" and
+        # "timeout" since the day it was written, but a timeout does not come back as a ModelError:
+        # _claude_cli_once turns subprocess.TimeoutExpired into a plain RuntimeError, which this
+        # clause never caught. So the one transient failure that most deserves another go — the CLI
+        # took too long — was the one that got a single attempt and killed the step. NoKey is not a
+        # RuntimeError, so a sign-in problem still surfaces at once instead of being retried.
+        except RuntimeError as e:
             if attempt + 1 < attempts and _transient(str(e)):
                 wait = CLI_RETRY_SLEEPS[attempt]
                 if on_retry:
@@ -235,7 +241,9 @@ def _claude_cli_once(cmd, prompt, binary, timeout=None):
         p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=limit, env=_cli_env())
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude CLI gave no answer within %d seconds." % int(limit))
+        # The wording carries the retry: _transient() reads the message, and "timed out" is one of
+        # the keys it looks for. Reword this and the retry above silently stops happening.
+        raise RuntimeError("The Claude CLI timed out: no answer within %d seconds." % int(limit))
     except OSError as e:
         raise RuntimeError("Could not start the Claude CLI at %s: %s" % (binary, e))
 

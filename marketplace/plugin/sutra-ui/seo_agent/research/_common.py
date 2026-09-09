@@ -72,7 +72,17 @@ N_RETRIEVE = 40              # dense candidates before the reranker
 RERANK_DOC_CHARS = 4000      # chars of each page the reranker reads (title[:200] + body)
 TOPK = 7                     # pages kept after reranking
 ALPHA = 0.5                  # title weight in the blended score
+# TWO CALLERS, TWO READ WINDOWS, AND THEY ARE BOTH HIS (2026-09-10). The reuse judgment is one
+# prompt with two callers, and the original gives each its own window on purpose:
+#   14-research-conductor/reuse_one.py  DOC_CHARS = 3000   — one minted keyword, mid-article,
+#     judged as fast as it can be, and this is the value below.
+#   5-reuse-check/scripts/config.py     JUDGE_DOC_CHARS = 12000 — the asset engine, deciding
+#     whether to spend weeks building a thing, so it reads the candidate pages properly.
+# Only the 3,000 was ported, so the asset engine was deciding on a quarter of the evidence its
+# own workflow hands the judge. The judge now takes the window as an argument and each caller
+# passes its own; the number below stays the research flow's, unchanged.
 JUDGE_DOC_CHARS = 3000       # chars of each page the reuse judge reads (reuse_one.DOC_CHARS)
+ASSET_JUDGE_DOC_CHARS = 12000   # ...and for the asset engine (5-reuse-check config.JUDGE_DOC_CHARS)
 REUSE_VERDICTS = ("Already have it", "Improve existing", "Build from parts", "Brand new")
 LOCALES = {"de", "fr", "es", "it", "pt", "nl", "pl", "ru", "ja", "zh", "ko", "ar", "tr", "sv", "da",
            "fi", "no", "cs", "hu", "ro", "el", "he", "id", "th", "vi", "uk", "hi", "ms"}

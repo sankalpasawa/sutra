@@ -38,8 +38,11 @@ def ok(label, cond, extra=""):
     return cond
 
 
+SAY = []            # the run's own words, for the checks that prove a route was named out loud
+
+
 def say(label, note=""):
-    pass
+    SAY.append((label, note))
 
 
 # --- the fake niche ------------------------------------------------------------------------------
@@ -477,6 +480,66 @@ ok("an unjudged score is None, never a zero that reads as a real verdict",
    _out[0]["linkability"]["score"] is None and _out[0]["ownability"]["verdict"] is None,
    _out[0]["linkability"])
 ok("nothing is built from an unjudged tension", trends.ideas(CO, _out, say) == [])
+
+# --- 6. recurrence is matched at MEANING, not at wording ------------------------------------------
+print("\ntensions are merged by meaning, not by shared words")
+# The whole point of this stage, and the original measured it: 425 posts gave 1,224 distinct phrases
+# and only 18 repeated word for word (3-study-trends/scripts/step_2b_tensions.py, 2026-07-22).
+# Sutra was merging on a Jaccard of the words, which finds the 18 and misses the rest.
+from seo_agent.tools import voyage as _voy
+_SAME = [{"tension": "Employers advertise remote roles that turn out to be onsite.",
+          "phrases": ["fake remote listings", "secretly onsite"]},
+         {"tension": "Companies post work-from-anywhere jobs and then demand office attendance.",
+          "phrases": ["remote then RTO"]}]
+ok("the two sentences share almost no words, so the wording test keeps them apart",
+   not trends._same_pain(_SAME[0]["tension"], _SAME[1]["tension"]))
+
+_real_embed, _real_avail = _voy.embed, _voy.available
+import numpy as _np
+_VECS = {_SAME[0]["tension"]: [1.0, 0.0], _SAME[1]["tension"]: [0.98, 0.199]}   # cosine ~0.98
+_EMBEDDED = []
+
+
+def _fake_embed(texts, input_type="document"):
+    _EMBEDDED.append(list(texts))
+    return _np.asarray([_VECS.get(t, [0.0, 1.0]) for t in texts], dtype=_np.float32)
+
+
+_voy.embed, _voy.available = _fake_embed, (lambda: True)
+try:
+    _merged = trends._settle([dict(t, phrases=list(t["phrases"])) for t in _SAME], {}, say=say)
+    ok("with embeddings the same pain named two ways becomes ONE tension",
+       len(_merged) == 1, [t["tension"] for t in _merged])
+    ok("and it carries every phrase both wordings brought with them",
+       _merged and set(_merged[0]["phrases"]) == {"fake remote listings", "secretly onsite", "remote then RTO"},
+       _merged[0]["phrases"] if _merged else None)
+    ok("no real embedding call was made", _EMBEDDED and all(isinstance(t, str) for b in _EMBEDDED for t in b))
+    ok("the threshold is the original's own 0.85", trends.DEDUP_SIM == 0.85, trends.DEDUP_SIM)
+    # ...and the phrases are ordered by meaning before they are sharded, so a pain's several
+    # wordings land in the same consolidate call instead of wherever the scrape put them.
+    _many = {("phrase %d" % i): ["p%d" % i] for i in range(trends.CONSOLIDATE_SHARD + 5)}
+    _EMBEDDED.clear()
+    trends._candidates(CO, _many, say)
+    ok("a phrase list too long for one call is sorted by meaning before it is cut into calls",
+       _EMBEDDED and len(_EMBEDDED[0]) == len(_many), [len(b) for b in _EMBEDDED])
+finally:
+    _voy.embed, _voy.available = _real_embed, _real_avail
+
+# NO VOYAGE KEY IS A ROUTE, NOT A FAILURE. It degrades to the wording test and says which one ran.
+_voy.available = lambda: False
+SAY.clear()
+try:
+    _fell_back = trends._settle([dict(t, phrases=list(t["phrases"])) for t in _SAME], {}, say=say)
+    ok("with no Voyage key it falls back to the word test rather than failing, and the cost is "
+       "visible: the second wording is not recognised as the same pain, so its phrase is lost to "
+       "the fragments instead of joining the tension it belongs to",
+       len(_fell_back) == 1
+       and set(_fell_back[0]["phrases"]) == {"fake remote listings", "secretly onsite"},
+       [(t["tension"], t["phrases"]) for t in _fell_back])
+    ok("...and the run says so out loud, so 'nothing merged' cannot be mistaken for 'nothing to merge'",
+       any("no Voyage key" in n for _l, n in SAY), SAY[-3:])
+finally:
+    _voy.available = _real_avail
 
 print("\nStubbed model and Reddit. Proves the plumbing, the gates and the code-enforced rules, not "
       "whether the tensions or the ideas are any good.")

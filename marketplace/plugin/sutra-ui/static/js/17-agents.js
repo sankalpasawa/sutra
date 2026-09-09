@@ -146,6 +146,10 @@ function agS(){
     compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
     fileEdit: null,
     prompts: null, promptEdit: null,   /* the Prompts tab's payload, and the open editor's draft */
+    /* the team workspace. `ws` is GET /workspace exactly as the server sent it -- including the
+       running job -- and `wsForm` is the draft in the create/join boxes. The personal access
+       token is deliberately NOT in this list and must never be added to it. */
+    ws: null, wsForm: null,
   };
   return S.ag;
 }
@@ -1623,13 +1627,293 @@ function agToolsHtml(tools){
   </div>`;
 }
 
-function agConnectionsHtml(c, h, form){
+/* ── the team workspace ────────────────────────────────────────────────────────
+   Five people, one Supabase project the company owns. One person presses Create and gets a
+   link; everybody else pastes that link once. After that nobody presses sync and nobody
+   imports anything (design/WORKSPACE-PLAN.md, section 1).
+
+   THREE THINGS THIS BLOCK IS BUILT AROUND, all from the plan's section 10.
+
+   * "Created" is drawn from ONE field and one only: a job the server moved to `done`, which
+     the server moves only after schema.verify() has seen every table. There is no branch here
+     that infers success from a request that came back.
+   * The personal access token is asked for at the moment it is used, in its own step, with the
+     one line that says what it is for. It is never put on S.ag, never rendered into an input's
+     value, and never drawn back. agTokenTyped() is the whole of how it survives a redraw.
+   * Every failure gets two sentences: what failed, and what to do about it. The server writes
+     both; this only draws them. And whenever the seamless route stops for any reason at all,
+     the SQL fallback is already on screen with the reason above it, so there is no state a
+     person can reach where the next move is not in front of them. */
+
+const AG_WS_BUSY = ["starting", "tables", "verify", "pack", "download"];
+const AG_WS_PACK_BUSY = ["building", "uploading", "packing"];
+
+function agBytes(n){
+  n = Number(n) || 0;
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
+  if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+  return (n / 1073741824).toFixed(1) + " GB";
+}
+
+function agWsJobLive(ws){
+  const j = ws && ws.job;
+  return !!(j && AG_WS_BUSY.indexOf(j.phase) !== -1);
+}
+
+/* What is happening right now, in his words rather than a state name. Read from the server's
+   sync block and nothing else: a line invented on the client would keep saying "updating" long
+   after the upload finished, which is the same class of lie as an unverified "created". */
+function agWsNowLine(sync){
+  if (!sync) return "";
+  const pend = Number(sync.pending) || 0;
+  if (pend > 0) return pend === 1 ? "1 change waiting to go up" : pend + " changes waiting to go up";
+  if (AG_WS_PACK_BUSY.indexOf(String(sync.pack_state || "")) !== -1) return "Updating the copy for new joiners";
+  if (String(sync.pack_state || "") === "unknown") return "";
+  return "Up to date";
+}
+
+/* The quiet line, section 2's whole concession. He clicks Update, the click finishes in about
+   two seconds, and this appears at the bottom of whatever screen he is on until the pack has
+   been rebuilt. Never a modal, never a bar to watch, never something he has to dismiss — and
+   never shown from a guess: it is on while the server says the pack is being rebuilt, and off
+   the moment the server says it is not. */
+function agQuietHtml(a){
+  const sync = a && a.ws && a.ws.sync;
+  if (!sync || AG_WS_PACK_BUSY.indexOf(String(sync.pack_state || "")) === -1) return "";
+  return `<span class="d"></span>Updating the copy for new joiners`;
+}
+
+function agWsLinkRowHtml(link){
+  if (!link) return "";
+  return `<div class="ag-wslink"><code>${agEsc(link)}</code>
+    <button class="btn" type="button" data-ag="wscopylink">Copy link</button></div>`;
+}
+
+function agWsMembersHtml(members, meId){
+  const list = members || [];
+  if (!list.length) return `<div class="rd">Nobody has joined yet. Send the link.</div>`;
+  return `<div class="ag-wsmembers">${list.map(m => {
+    const me = m && m.member_id && meId && m.member_id === meId;
+    const seen = agAgoWords(m && m.last_seen_at);
+    return `<span class="ag-wsmember"><b>${agEsc((m && m.name) || "Somebody")}</b>${me ? ` <i>you</i>` : ""}${seen ? ` <span class="h">${agEsc(seen)}</span>` : ""}</span>`;
+  }).join("")}</div>`;
+}
+
+/* A job in flight. Create gets a spinner and a coarse percentage because nothing about making
+   nine tables is measurable in bytes; join gets the real thing, because the download IS bytes
+   and a five-minute wait behind a spinner that could mean anything is the reason section 1
+   asked for a bar. When the server has not been told a total, this says how much has come down
+   and draws NO bar rather than an invented one. */
+function agWsJobHtml(job){
+  const pct = job.pct == null ? null : Math.max(0, Math.min(100, Number(job.pct) || 0));
+  const known = Number(job.total_bytes) > 0;
+  const bar = job.kind === "join"
+    ? (known
+        ? `<div class="ag-bar"><i style="width:${Math.max(0, Math.min(100, Math.round(100 * job.done_bytes / job.total_bytes)))}%"></i></div>
+           <div class="rm"><span>${agEsc(agBytes(job.done_bytes))} of ${agEsc(agBytes(job.total_bytes))}</span><span>about five minutes on a normal line</span></div>`
+        : `<div class="rm"><span>${agEsc(agBytes(job.done_bytes))} so far</span><span>the total is not known yet</span></div>`)
+    : (pct == null ? "" : `<div class="ag-bar"><i style="width:${pct}%"></i></div>`);
+  const head = job.kind === "join" ? "Joining the workspace" : "Creating your workspace";
+  return `<div class="ag-row writing"><div class="ri">
+    <div class="rn"><span class="pill p-acc"><i class="spin"></i>working</span>${agEsc(head)}</div>
+    <div class="rd">${agEsc(job.step || head)}</div>
+    ${bar}
+  </div></div>`;
+}
+
+/* THE SETUP SCRIPT, AND IT IS A ROUTE RATHER THAN AN ERROR.
+
+   There may be no Supabase access token on this machine, and pasting the script into
+   Supabase's own SQL Editor is then how a workspace gets made — not a workaround for a thing
+   that broke. So it is drawn the way a step is drawn: its own heading, four numbered moves,
+   the script, and one button at the end. No red, no apology.
+
+   The line above it is whatever schema said, verbatim. It covers four different situations —
+   no token was given, the script half-applied, the tables cannot be read with this key, or
+   the tables are there but the knowledge bucket is not — and schema's sentence names which
+   one. Rewriting it here is how a message ends up blaming the project URL for a storage
+   problem, which this feature has already done once. */
+function agWsPasteHtml(pv, busy){
+  return `<div class="ag-row ask"><div class="ri">
+    <div class="rn">Run the setup script<span class="ag-status"><i class="dot warn"></i>one paste, about thirty seconds</span></div>
+    ${pv.why ? `<div class="rd">${agEsc(pv.why)}</div>` : ""}
+    <ol class="ag-wssteps"><li>Open your project's SQL Editor.</li>
+      <li>Paste this script in.</li>
+      <li>Press Run. It either all works or none of it does, and running it twice is harmless.
+        The last line it prints says whether the workspace is ready.</li>
+      <li>Come back here and press <b>I've run it</b>.</li></ol>
+    <pre class="ag-prompttext">${agEsc(pv.sql || "")}</pre>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" type="button" data-ag="wscopysql">Copy the script</button>
+      ${pv.editor_url ? `<a class="btn" href="${agEsc(pv.editor_url)}" target="_blank" rel="noopener">Open the SQL Editor</a>` : ""}
+      <button class="btn pri" type="button" data-ag="wssqldone" ${busy ? "disabled" : ""}>${busy ? "Checking…" : "I've run it"}</button>
+      <button class="btn" type="button" data-ag="wscancel">Cancel</button>
+    </div>
+  </div></div>`;
+}
+
+function agWsFailedHtml(job){
+  const e = job.error || {};
+  return `<div class="ag-row"><div class="ri">
+    <div class="rn">${job.kind === "join" ? "Joining did not finish" : "The workspace was not created"}
+      <span class="ag-status"><i class="dot bad"></i>nothing was left half-made</span></div>
+    <div class="ag-err" style="margin:8px 0 0"><b>${agEsc(e.what || "It did not finish.")}</b>
+      ${e.do ? `<div style="margin-top:4px">${agEsc(e.do)}</div>` : ""}</div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn pri" type="button" data-ag="wsretry">Try again</button>
+      <button class="btn" type="button" data-ag="wscancel">Start over</button></div>
+  </div></div>`;
+}
+
+/* The two boxes and the button section 1 names, and a third box for the access token.
+
+   WHY THE TOKEN IS ON THIS FORM AND NOT BEHIND ITS OWN STEP. There is no Supabase access
+   token on the owner's machine and there may never be one, so the setup script route is not a
+   consolation prize: for many people it is the only way through, and hiding it behind a step
+   that asks for a credential first would put a locked door in front of the open one. So the
+   token is optional, labelled with what it does and that it is not kept, and pressing Create
+   with the box empty is a perfectly ordinary thing to do — the script comes straight back. */
+function agWsCreateFormHtml(f){
+  return `<div class="ag-row"><div class="ri">
+    <div class="rn">Create a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
+    <div class="rd">Make a free project at Supabase, then paste its two public details here. The data
+      stays in your own Supabase account and nobody else's, and the free tier is more room than a
+      team of five will fill.</div>
+    <div class="ag-form" style="margin-top:10px">
+      <div class="row"><a class="btn" href="https://supabase.com/dashboard/projects" target="_blank" rel="noopener">Go to Supabase</a>
+        <span class="sp">then Project Settings → Data API</span></div>
+      <label><b>Project URL</b><input type="text" data-agws="url" autocomplete="off" spellcheck="false" placeholder="https://abcdefghijklmnop.supabase.co" value="${agEsc(f.url || "")}"></label>
+      <label><b>Publishable key</b><input type="text" data-agws="key" autocomplete="off" spellcheck="false" placeholder="sb_publishable_…" value="${agEsc(f.key || "")}"></label>
+      <label><b>What to call it</b><input type="text" data-agws="name" autocomplete="off" placeholder="Testlify" value="${agEsc(f.name || "")}"></label>
+      <label><b>Access token <span class="ag-opt">optional</span></b>
+        <input type="password" data-agws="token" autocomplete="off" spellcheck="false" placeholder="sbp_… — leave this empty to set the tables up yourself">
+        <span class="ag-hint">With one, Sutra makes the tables for you. It is used for that one
+          request and thrown away: never written to disk, never kept, never in the link. Leave it
+          empty and Sutra hands you the script to paste into Supabase instead —
+          <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">where tokens live</a>.</span></label>
+      ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
+      <div class="row"><button class="btn pri" type="button" data-ag="wsgo" ${f.busy ? "disabled" : ""}>${f.busy ? "Working…" : "Create"}</button>
+        <button class="btn" type="button" data-ag="wscancel">Cancel</button></div>
+    </div></div></div>`;
+}
+
+function agWsJoinFormHtml(f){
+  return `<div class="ag-row"><div class="ri">
+    <div class="rn">Join a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
+    <div class="rd">Paste the link whoever set it up sent you, and say what your team should see
+      beside your work. Then the team's Library, ideas and prompts become yours.</div>
+    <div class="ag-form" style="margin-top:10px">
+      <label><b>The link</b><input type="text" data-agws="link" autocomplete="off" spellcheck="false" placeholder="sutra-ws-…" value="${agEsc(f.link || "")}"></label>
+      <label><b>Your name</b><input type="text" data-agws="name" autocomplete="off" placeholder="Ravi" value="${agEsc(f.name || "")}"></label>
+      ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
+      <div class="row"><button class="btn pri" type="button" data-ag="wsjoingo">Done</button>
+        <button class="btn" type="button" data-ag="wscancel">Cancel</button>
+        <span class="sp">the download takes about five minutes</span></div>
+    </div></div></div>`;
+}
+
+/* Connected. Section 3's four things and nothing else: the name, who is in it, the link with a
+   copy button, and what is happening right now. The link lives here for good — that is where
+   somebody comes back to when a sixth person joins in March. */
+function agWsRestingHtml(ws, justDone){
+  const w = ws.workspace || {};
+  const now = agWsNowLine(ws.sync);
+  const warn = justDone && justDone.error ? justDone.error : null;
+  const n = (ws.members || []).length;
+  return `${justDone ? `<div class="ag-row"><div class="ri"><div class="rn">${justDone.kind === "join" ? "You are on the team" : "Your workspace is ready"}
+      <span class="ag-status"><i class="dot ok"></i>every table checked</span></div>
+      <div class="rd">${justDone.kind === "join"
+        ? "Your Library, ideas and prompts are the team's now. Nobody presses sync again."
+        : "Send the link below to the rest of the team. Nothing in it can make or drop a table."}</div>
+      ${warn ? `<div class="ag-err" style="margin:8px 0 0"><b>${agEsc(warn.what)}</b>${warn.do ? `<div style="margin-top:4px">${agEsc(warn.do)}</div>` : ""}</div>` : ""}
+      </div></div>` : ""}
+    <div class="ag-row"><div class="ri">
+      <div class="rn">${agEsc(w.name || "The team workspace")}
+        <span class="ag-status"><i class="dot ok"></i>connected</span></div>
+      <div class="rd">${agEsc(w.url || "")}</div>
+      <div class="rm" style="margin-top:8px"><span>${n === 1 ? "1 person" : n + " people"}</span>${now ? `<span>${agEsc(now)}</span>` : ""}</div>
+      ${agWsMembersHtml(ws.members, ws.me && ws.me.member_id)}
+      ${agWsLinkRowHtml(ws.link)}
+      <div class="row" style="margin-top:10px"><button class="btn" type="button" data-ag="wsleave">Leave the workspace</button>
+        <span class="sp">your own copy stays exactly as it is</span></div>
+    </div></div>`;
+}
+
+/* THE UNFINISHED WORKSPACE, which is a real state and not a theory.
+
+   A project can end up with all ten tables and no knowledge bucket: the storage policies do
+   not always attach, and the tables survive when they do not. There is a URL, a key and an id
+   in connections.json, so everything that only reads settings thinks this is connected — and
+   nobody can ever join it, because the pack has nowhere to live. So the tab does not draw
+   "connected" from having credentials. It draws it from schema.verify(), and when verify says
+   no it says so and puts the script back in front of the person with verify's own reason. */
+function agWsUnfinishedHtml(ws, pv, busy){
+  const why = (ws.verify && ws.verify.reason) || "";
+  return `<div class="ag-row"><div class="ri">
+      <div class="rn">${agEsc((ws.workspace && ws.workspace.name) || "The team workspace")}
+        <span class="ag-status"><i class="dot warn"></i>not finished</span></div>
+      <div class="rd">${agEsc(why || "This project is not set up as a workspace yet.")}</div>
+      <div class="rm" style="margin-top:8px"><span>${agEsc((ws.workspace && ws.workspace.url) || "")}</span></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn pri" type="button" data-ag="wssqldone" ${busy ? "disabled" : ""}>${busy ? "Checking…" : "Check again"}</button>
+        <button class="btn" type="button" data-ag="wsleave">Leave the workspace</button>
+        <span class="sp">nobody can join until this is finished</span></div>
+    </div></div>
+    ${pv ? agWsPasteHtml(pv, busy) : ""}`;
+}
+
+function agWsHtml(ws, f){
+  f = f || {};
+  const head = `<h3 class="sec">Team workspace</h3>`;
+  if (ws && ws.installed === false)
+    return `${head}<div class="ag-row"><div class="ri"><div class="rn">Not in this build
+      <span class="ag-status"><i class="dot warn"></i>nothing to set up yet</span></div>
+      <div class="rd">The team workspace ships with a later version of Sutra. Nothing here is broken and nothing needs doing.</div></div></div>`;
+
+  const job = ws && ws.job;
+  if (job && AG_WS_BUSY.indexOf(job.phase) !== -1) return head + agWsJobHtml(job);
+  if (job && job.phase === "paste" && job.paste) return head + agWsPasteHtml(job.paste, !!f.busy);
+  if (job && job.phase === "failed") return head + agWsFailedHtml(job);
+
+  /* Credentials are not evidence. verify() is, and only an explicit false is treated as one:
+     a null means nobody has been able to ask yet (offline, or the tab has only just opened),
+     and answering an unasked question either way would be inventing the answer. */
+  if (ws && ws.configured && ws.verify && ws.verify.ok === false)
+    return head + agWsUnfinishedHtml(ws, job && job.phase === "paste" ? job.paste : null, !!f.busy);
+
+  /* The "ready" greeting is a moment, not a state. It rides on the job the server is still
+     holding, and stops being drawn once that job is a quarter of an hour old, so a tab left
+     open all afternoon settles back to the plain connected row on its own. */
+  const fresh = job && job.phase === "done" && job.finished_at
+    && (Date.now() / 1000 - Number(job.finished_at)) < 900;
+  if (ws && ws.configured) return head + agWsRestingHtml(ws, fresh ? job : null);
+
+  if (f.mode === "create") return head + agWsCreateFormHtml(f);
+  if (f.mode === "join") return head + agWsJoinFormHtml(f);
+  return `${head}<div class="ag-row"><div class="ri">
+    <div class="rn">Work as a team<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
+    <div class="rd">One person makes the workspace on the company's own Supabase project; everybody else
+      pastes the link once. After that the Library, the ideas and the prompts are the team's, and
+      nobody presses sync ever again.</div>
+    <div class="row" style="margin-top:10px"><button class="btn pri" type="button" data-ag="wscreate">Create workspace</button>
+      <button class="btn" type="button" data-ag="wsjoin">Join workspace</button></div>
+  </div></div>`;
+}
+
+
+function agConnectionsHtml(c, h, form, ws, wsForm){
   const dfs = !!(c && c.dataforseo_login && c.dataforseo_password);
   const voy = !!(c && c.voyage_key);
   const prov = h ? h.model_provider : null;
   form = form || {};
+  /* The workspace goes first because it is the one section that is about the TEAM rather than
+     about this Mac, and because the person who has just been sent a link came to this tab for
+     it. The lead below counts nothing: a typed number over a list that grows is the mistake the
+     Tools tab already made once. */
   return `<div class="ag-view"><h2>Connections</h2>
-    <p class="lead">Three things the agent needs. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
+    <p class="lead">What the agent needs, and how this Mac joins the rest of the team. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
+    ${agWsHtml(ws, wsForm)}
     <h3 class="sec">Model</h3>
     <div class="ag-row"><div class="ri"><div class="rn">${prov === "claude-cli" ? "Claude, through the command line" : prov ? agEsc(prov) : "No model available"}
         <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov ? "connected" : "not signed in"}</span></div>
@@ -1676,6 +1960,27 @@ function agToast(msg){
 
 function agRoot(){ return typeof document === "undefined" ? null : document.getElementById("agRoot"); }
 
+/* Is there a personal access token sitting in the box right now? Read from the DOM, answered as
+   a boolean, and the value itself is never returned, copied or stored -- this exists so agDraw
+   can leave the field alone, which is the whole of how the token survives a poll. */
+function agTokenTyped(){
+  if (typeof document === "undefined") return false;
+  const el = document.querySelector('[data-agws="token"]');
+  return !!(el && el.value);
+}
+
+/* Take the token out of the box and hand it over exactly once. The caller sends it and lets it
+   go; nothing else in this file ever sees it. Clearing the input first is what un-blocks the
+   redraw above, and means a screenshot taken a second later has nothing on it. */
+function agTakeToken(){
+  if (typeof document === "undefined") return "";
+  const el = document.querySelector('[data-agws="token"]');
+  if (!el) return "";
+  const v = el.value || "";
+  el.value = "";
+  return v;
+}
+
 function agEnsureObserver(){
   if (agObs || typeof MutationObserver === "undefined" || typeof document === "undefined") return;
   const target = document.getElementById("panes") || document.body;
@@ -1695,7 +2000,7 @@ function agMountIfNeeded(){
   if (!root.dataset.agLive){
     root.dataset.agLive = "1";
     root.innerHTML = `<aside class="ag-side" id="agSide" aria-label="SEO Writer"></aside>
-      <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="pc" id="agComposer"></div></section>
+      <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="ag-quiet" id="agQuiet" role="status" hidden></div><div class="pc" id="agComposer"></div></section>
       <aside class="ag-panel" id="agPanel" aria-label="Review"></aside>`;
     agDraw(true);
     agStartPoll();
@@ -1771,10 +2076,15 @@ function agDraw(force){
       : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
       : a.view === "library" ? agLibraryHtml(a.library)
       : a.view === "tools" ? agToolsHtml(a.tools)
-      : agConnectionsHtml(a.conns, a.health, a.connForm);
+      : agConnectionsHtml(a.conns, a.health, a.connForm, a.ws, a.wsForm);
     const searching = document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-agpageq]");
     const sel = searching ? document.activeElement.selectionStart : null;
-    if (agSetHtml("agScroll", html) && searching){
+    /* Every other field on this screen survives the four-second poll because the input handler
+       keeps it on S.ag and the renderer prints it back. The personal access token may do
+       neither, so the only way it can survive is for the poll not to touch it: while something
+       is typed in that one box, this view holds still. Pressing Create clears the box first,
+       so the redraw that follows is never blocked by it. */
+    if (!agTokenTyped() && agSetHtml("agScroll", html) && searching){
       const q = document.querySelector("[data-agpageq]"); if (q){ try { q.focus({ preventScroll: true }); q.setSelectionRange(sel, sel); } catch (e) {} }
     }
     if (a.view === "knowledge" && a.mapOn) agDrawMap();
@@ -1790,6 +2100,8 @@ function agDraw(force){
     const back = document.querySelector(typing.sel);
     if (back){ try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.from, typing.to); } catch (e) {} }
   }
+  const quiet = document.getElementById("agQuiet");
+  if (quiet){ const q = agQuietHtml(a); agSetHtml("agQuiet", q); quiet.hidden = !q; }
   if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
   a.lastView = a.view;
 }
@@ -1813,7 +2125,7 @@ function agStartPoll(){
     if (!(typeof document !== "undefined" && document.hidden)){
       try { await agRefresh(); } catch (e) { a.error = String(e && e.message || e); }
     }
-    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a));
+    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a)) || agWsJobLive(a && a.ws);
     agPollTimer = setTimeout(tick, live ? AG_POLL_LIVE_MS : AG_POLL_IDLE_MS);
   };
   agPollTimer = setTimeout(tick, 400);
@@ -1856,6 +2168,19 @@ async function agRefresh(){
       a.library = await agApi("/library").catch(() => a.library);
     }
     if (agRefreshN % 8 === 1 || (live && agRefreshN % 20 === 0)){ a.health = await agApi("/health"); }
+    /* The workspace, on three cadences and for three reasons: every tick while a job is running
+       (a bar that updates every four seconds is not a bar), every tick on the Connections tab
+       (who is in it, and what is happening right now), and every eighth tick everywhere else --
+       which is only there so the quiet line can appear at the bottom of whatever screen he is
+       on after he presses Update. */
+    if (agWsJobLive(a.ws) || a.view === "connections" || agRefreshN % 8 === 3){
+      /* check=1 is the screen saying "this tab is open, a round trip is worth it": the server
+         then re-reads schema.verify rather than handing back what it last knew. Off the tab
+         this poll only feeds the quiet line, and eleven probes for a footnote is a poor
+         trade, so it asks for nothing. */
+      const q = (a.view === "connections" && !agWsJobLive(a.ws)) ? "/workspace?check=1" : "/workspace";
+      a.ws = await agApi(q).catch(() => a.ws);
+    }
   } finally { agRefreshBusy = false; }
   agDraw();
 }
@@ -1869,6 +2194,7 @@ async function agBootLoad(){
     await agLoadChat((live || a.chats[0]).id, true);
   }
   try { a.memory = await agApi("/memory"); } catch (e) {}
+  try { a.ws = await agApi("/workspace"); } catch (e) {}
   /* the sidebar says how many prompts he has changed, so the payload is wanted before he opens the tab */
   try { a.prompts = await agApi("/prompts"); } catch (e) {}
   try { a.library = await agApi("/library"); } catch (e) {}
@@ -2058,6 +2384,36 @@ async function agAnswer(answer){
   a.busy = false; agDraw(true);
 }
 
+/* One post, one re-read, one draw -- and the server's own sentence when it refuses. A refusal
+   here is a wrong key or a link that will not parse, which the server answers with what is
+   wrong and what to do about it; putting a status code on screen instead is the failure mode
+   spec section 10 names by hand. */
+async function agWsPost(path, body){
+  const a = agS();
+  try {
+    await agPostApi(path, body);
+  } catch (e) {
+    const f = a.wsForm || {};
+    f.msg = String((e && e.message) || e);   /* the server's sentence, never a status code */
+    f.busy = false;
+    a.wsForm = f;
+    a.ws = await agApi("/workspace?check=1").catch(() => a.ws);
+    agDraw(); return false;
+  }
+  a.ws = await agApi("/workspace?check=1").catch(() => a.ws);
+  agDraw(); return true;
+}
+
+/* Put the section back to its resting state. The server is asked to forget the finished job
+   first -- it refuses while one is still running, which is the point -- and then GET /workspace
+   is read again rather than patched in memory, so what is drawn is what is true. */
+async function agWsClear(){
+  const a = agS();
+  try { await agPostApi("/workspace/dismiss", {}); } catch (e) {}
+  try { a.ws = await agApi("/workspace?check=1"); } catch (e) {}
+  agDraw();
+}
+
 async function agAction(act, el){
   const a = agS(); if (!a) return;
   const arg = el.getAttribute("data-arg") || "";
@@ -2072,7 +2428,7 @@ async function agAction(act, el){
       if (arg === "prompts"){ a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null; }
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
-      if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); }
+      if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
       agDraw(true); break;
     }
     case "play": a.view = "chat"; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
@@ -2468,6 +2824,84 @@ async function agAction(act, el){
       catch (e) { a.connForm = { vmsg: "Could not disconnect: " + (e.message || e) }; }
       agDraw(); break;
     }
+
+    /* ── the team workspace ───────────────────────────────────────────────────
+       Nothing in here decides that a workspace exists. Every one of these arms either opens a
+       box, or posts and then re-reads GET /workspace and draws whatever the server said. The
+       server moves a job to `done` only after schema.verify() has seen every table, so "created"
+       cannot be printed from a request that merely came back. */
+    /* Every arm that changes what this section is showing empties the token box first, and
+       throws the value away. agDraw holds the view still while there is something in that box
+       (it is the one field it cannot re-render), so a Cancel pressed over a typed token would
+       otherwise leave the form frozen on screen with nothing to explain it. */
+    case "wscreate": agTakeToken(); a.wsForm = { mode: "create", url: "", key: "", name: "" }; agDraw(); break;
+    case "wsjoin": agTakeToken(); a.wsForm = { mode: "join", link: "", name: "" }; agDraw(); break;
+    case "wscancel": agTakeToken(); a.wsForm = null; await agWsClear(); break;
+    /* Create. The token box may be empty and that is an ordinary thing: with no token the
+       server hands back the setup script, which is a route rather than a refusal. The token,
+       if there is one, comes out of the DOM here and goes nowhere else. */
+    case "wsgo": {
+      const f = a.wsForm || {};
+      if (!String(f.url || "").trim() || !String(f.key || "").trim()){
+        f.msg = "Both the project URL and the publishable key are needed."; a.wsForm = f; agDraw(); break;
+      }
+      const token = agTakeToken();
+      f.busy = true; f.msg = ""; a.wsForm = f; agDraw();
+      const body = { url: f.url, key: f.key, name: f.name };
+      if (token) body.token = token;
+      await agWsPost("/workspace/create", body);
+      const g = a.wsForm; if (g) g.busy = false;
+      agDraw(); break;
+    }
+    /* "I've run it", and the Check again on an unfinished workspace: the same question either
+       way -- is it set up NOW -- and the same answer, schema.verify's. */
+    case "wssqldone": {
+      const f = a.wsForm || {};
+      const ws = a.ws || {};
+      f.busy = true; a.wsForm = f; agDraw();
+      const w = ws.workspace || {};
+      await agWsPost("/workspace/confirm", {
+        url: f.url || w.url || "", key: f.key || "", name: f.name || w.name || "" });
+      const g = a.wsForm; if (g) g.busy = false;
+      agDraw(); break;
+    }
+    case "wsjoingo": {
+      agTakeToken();
+      const f = a.wsForm || {};
+      if (!String(f.link || "").trim() || !String(f.name || "").trim()){
+        f.msg = "Paste the link and type the name your team will see."; a.wsForm = f; agDraw(); break;
+      }
+      await agWsPost("/workspace/join", { link: f.link, name: f.name });
+      break;
+    }
+    case "wsretry": {
+      agTakeToken();
+      const job = a.ws && a.ws.job;
+      a.wsForm = Object.assign({ mode: job && job.kind === "join" ? "join" : "create" }, a.wsForm,
+                               { busy: false, msg: "" });
+      await agWsClear(); break;
+    }
+    case "wscopylink": {
+      const link = (a.ws && a.ws.link) || "";
+      if (!link){ agToast("There is no link yet"); break; }
+      try { await navigator.clipboard.writeText(link); agToast("Link copied. Send it to the team."); }
+      catch (e) { agToast("Could not copy"); }
+      break;
+    }
+    case "wscopysql": {
+      const pv = a.ws && a.ws.job && a.ws.job.paste;
+      if (!pv || !pv.sql){ agToast("There is nothing to copy"); break; }
+      try { await navigator.clipboard.writeText(pv.sql); agToast("Script copied"); }
+      catch (e) { agToast("Could not copy"); }
+      break;
+    }
+    case "wsleave": {
+      if (typeof confirm === "function" && !confirm("Leave the workspace? Your own Library, ideas and prompts stay exactly as they are on this Mac, and nothing is deleted from Supabase.")) break;
+      try { await agPostApi("/workspace/leave", {}); a.wsForm = null; agToast("Left the workspace"); }
+      catch (e) { agToast("Could not leave: " + (e && e.message || e)); }
+      a.ws = await agApi("/workspace?check=1").catch(() => a.ws);
+      agDraw(); break;
+    }
     default: break;
   }
 }
@@ -2512,6 +2946,14 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
       const f = a.connForm || {}; f[t.getAttribute("data-agdfs")] = t.value; f.msg = ""; a.connForm = f;
     }
     else if (t.matches("[data-agvoy]")){ const f = a.connForm || {}; f.voyage = t.value; f.vmsg = ""; a.connForm = f; }
+    /* THE ONE FIELD THAT IS NEVER KEPT. Everything typed on this screen lands on S.ag so a
+       redraw can print it back; the personal access token must not, so it is dropped here and
+       lives only in the input until agTakeToken empties it. */
+    else if (t.matches("[data-agws]")){
+      const k = t.getAttribute("data-agws");
+      if (k === "token") return;
+      const f = a.wsForm || {}; f[k] = t.value; f.msg = ""; a.wsForm = f;
+    }
   });
   document.addEventListener("change", (ev) => {
     const t = ev.target; if (!t || !t.matches) return;

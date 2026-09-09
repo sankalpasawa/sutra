@@ -393,6 +393,36 @@ bad_links = [(x["id"], u) for x in rows for u in x["reuse"]["links"]
 ok("every chosen link is one retrieval found; the judge invented none", not bad_links, bad_links)
 ok("run() reports the verdict counts", sum(r["counts"].values()) == len(rows), r["counts"])
 
+# THE ASSET ENGINE READS FOUR TIMES WHAT THE ARTICLE FLOW DOES, and both numbers are his. The
+# original gives 5-reuse-check's judge JUDGE_DOC_CHARS = 12000, and the mid-article spoke check
+# (14-research-conductor/scripts/reuse_one.py) DOC_CHARS = 3000. Only the 3,000 was ported, so this
+# builder — the one deciding whether to go and build a thing — was reading a quarter of the page.
+print("\nreuse: the read window is the asset engine's, not the article flow's")
+from seo_agent.research import _common as _rc, ownpage as _ownpage
+from seo_agent.tools import _shared as _sh
+ok("the two windows are named apart, with the asset engine's four times the other",
+   _rc.JUDGE_DOC_CHARS == 3000 and _rc.ASSET_JUDGE_DOC_CHARS == 12000,
+   (_rc.JUDGE_DOC_CHARS, _rc.ASSET_JUDGE_DOC_CHARS))
+_long = "cost per hire benchmark data. " * 900        # ~27,000 chars, past both windows
+_saved_bodies = _sh.page_bodies
+_sh.page_bodies = lambda: {"https://example.com/long": _long}
+_pages = [{"url": "https://example.com/long", "title": "Long", "score": 0.9}]
+try:
+    JUDGE_PROMPTS.clear()
+    _ownpage.reuse_judge("a topic", "an angle", _pages, co)
+    _article_window = len(JUDGE_PROMPTS[-1])
+    JUDGE_PROMPTS.clear()
+    # same fmt as the call above, so the ONLY difference between the two prompts is the window
+    reuse.judge({"title": "a topic", "angle": "an angle", "format": "article"}, _pages, co)
+    _asset_window = len(JUDGE_PROMPTS[-1])
+    ok("the article flow's judge still reads its own 3,000 characters of a page",
+       _rc.JUDGE_DOC_CHARS <= _article_window < _rc.JUDGE_DOC_CHARS + 3000, _article_window)
+    ok("the asset engine's judge reads the full 12,000, so it decides on the evidence and not a "
+       "quarter of it", _asset_window - _article_window
+       == _rc.ASSET_JUDGE_DOC_CHARS - _rc.JUDGE_DOC_CHARS, (_article_window, _asset_window))
+finally:
+    _sh.page_bodies = _saved_bodies
+
 print("\nreuse: resume")
 n = calls()
 reuse.run(co, say)

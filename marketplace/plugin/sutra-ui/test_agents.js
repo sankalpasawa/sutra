@@ -28,6 +28,9 @@ const ctx = {
   SCREENS: {}, TITLES: {}, S: {}, console,
   apiGet: async () => ({}), apiPost: async () => ({}),
   setTimeout, clearTimeout, setInterval, clearInterval, Date, JSON, Math, Number, String, Array, Object, RegExp, encodeURIComponent, isNaN,
+  /* left undefined on purpose: the module guards every DOM reach with typeof, and a test that
+     needs one swaps in the smallest stand-in it can and puts it back afterwards */
+  document: undefined, confirm: undefined, navigator: undefined,
 };
 vm.createContext(ctx);
 vm.runInContext(SRC, ctx, { filename: "17-agents.js" });
@@ -1392,6 +1395,272 @@ test("the prompt list scrolls in its own box and does not take the screen", () =
   assert.strictEqual(literals.length, 0, "a hard-coded colour on the Prompts tab: " + literals);
 });
 
+
+/* ── the team workspace (design/WORKSPACE-PLAN.md) ─────────────────────────────
+   Section 1 is the acceptance test and it is written in the owner's own words, so these
+   assert the words: "Go to Supabase", two boxes, a Create button, a spinner, then the link
+   with a copy button. Section 10 is the bar, and the three tests at the end of this block are
+   that bar: success only from verify, a failure that says what to do, and a token that goes
+   nowhere near S.ag or the screen. */
+
+const WSF = { installed: true, configured: false, workspace: null, me: null, members: [],
+              link: "", sync: null, job: null };
+function wsdoc(over){ return Object.assign({}, WSF, over || {}); }
+
+test("not connected, the workspace offers exactly two ways in and promises nothing else", () => {
+  const html = A.agWsHtml(wsdoc(), null);
+  assert.ok(/Team workspace/.test(html), "it has a section of its own at the top of Connections");
+  assert.ok(/data-ag="wscreate"/.test(html) && /data-ag="wsjoin"/.test(html), "create and join");
+  assert.ok(!/data-ag="wscopylink"/.test(html), "there is no link to copy yet");
+  assert.ok(/nobody presses sync/.test(html), "and it says the thing the plan promises");
+});
+
+test("Create asks for the two things section 1 names, and a way to go and get them", () => {
+  const html = A.agWsHtml(wsdoc(), { mode: "create" });
+  assert.ok(/Go to Supabase/.test(html), "the button that opens the browser");
+  assert.ok(/href="https:\/\/supabase\.com\/dashboard\/projects"/.test(html), "and it really goes there");
+  assert.ok(/data-agws="url"/.test(html) && /Project URL/.test(html), "box one");
+  assert.ok(/data-agws="key"/.test(html) && /sb_publishable_…/.test(html), "box two, the publishable one");
+  assert.ok(/data-ag="wsgo"/.test(html) && />Create</.test(html), "and the Create button");
+});
+
+/* THE TOKEN BOX IS OPTIONAL AND SAYS SO. There is no access token on the owner's machine and
+   there may never be one, so a step that demanded one before showing the setup script would
+   put a locked door in front of the open one. It is a third box, marked optional, with the one
+   line that says what it does and that it is not kept. */
+test("the access token is optional, says what it is for, and is never echoed back", () => {
+  const html = A.agWsHtml(wsdoc(), { mode: "create" });
+  assert.ok(/data-agws="token"/.test(html) && /type="password"/.test(html));
+  assert.ok(/optional/.test(html), "marked optional");
+  assert.ok(/thrown away|never written to disk|never kept/i.test(html), "and says it is not kept");
+  assert.ok(/leave this empty/i.test(html), "and that going without one is a real choice");
+  const box = html.slice(html.indexOf('data-agws="token"'));
+  assert.ok(!/value=/.test(box.slice(0, 200)), "the token input carries no value attribute at all");
+  assert.ok(!/\(set\)/.test(html), "and no (set) placeholder: nothing is ever set");
+});
+
+test("creating draws a spinner that says what it is doing, and a bar it does not have to watch", () => {
+  const html = A.agWsHtml(wsdoc({ job: { kind: "create", phase: "tables", step: "Creating your workspace", pct: 5 } }), null);
+  assert.ok(/Creating your workspace/.test(html), "his words, on screen");
+  assert.ok(/class="spin"/.test(html), "the spinner");
+  assert.ok(/ag-bar/.test(html));
+  assert.ok(!/data-ag="wscopylink"/.test(html), "and no link yet: nothing has been verified");
+});
+
+test("uploading the pack is its own step, so a long silence is never unexplained", () => {
+  const html = A.agWsHtml(wsdoc({ job: { kind: "create", phase: "pack", step: "Uploading the knowledge pack", pct: 60 } }), null);
+  assert.ok(/Uploading the knowledge pack/.test(html));
+  assert.ok(/width:60%/.test(html));
+});
+
+/* THE BAR, first half: "created" is drawn from ONE thing, a server job that reached `done`,
+   and the server reaches `done` only after schema.verify() has seen every table. There is no
+   branch in the renderer that can print it from anything else. */
+test("nothing says the workspace is ready until the server says the job is done", () => {
+  const mid = A.agWsHtml(wsdoc({ configured: true, job: { kind: "create", phase: "pack", pct: 60 } }), null);
+  assert.ok(!/Your workspace is ready/.test(mid), "not while the pack is still going up");
+  const fell = A.agWsHtml(wsdoc({ configured: true, job: { kind: "create", phase: "paste", paste: { sql: "create table x();", editor_url: "https://e" } } }), null);
+  assert.ok(!/Your workspace is ready/.test(fell), "and not while the script is still waiting to be pasted");
+  const done = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+    job: { kind: "create", phase: "done", finished_at: Date.now() / 1000 } }), null);
+  assert.ok(/Your workspace is ready/.test(done) && /every table checked/.test(done));
+});
+
+test("once it is made, the link is on the tab with a copy button, and stays there", () => {
+  const ws = wsdoc({ configured: true, link: "sutra-ws-eyJ1IjoiaHR0cHM6Ly94In0",
+    workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+    members: [{ member_id: "m1", name: "Devansh", last_seen_at: new Date().toISOString() }],
+    me: { member_id: "m1", name: "Devansh" }, sync: { pending: 0, pack_state: "idle" } });
+  const fresh = A.agWsHtml(ws, null);
+  assert.ok(/sutra-ws-eyJ1IjoiaHR0cHM6Ly94In0/.test(fresh) && /data-ag="wscopylink"/.test(fresh));
+  /* and a fortnight later, with no job left anywhere, it is still there */
+  const later = A.agWsHtml(Object.assign({}, ws, { job: null }), null);
+  assert.ok(/data-ag="wscopylink"/.test(later), "the link does not leave with the job that made it");
+  assert.ok(!/Your workspace is ready/.test(later), "only the greeting does");
+});
+
+test("the resting state is the four things section 3 asks for and nothing more", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+    me: { member_id: "m1", name: "Devansh" },
+    members: [{ member_id: "m1", name: "Devansh", last_seen_at: new Date().toISOString() },
+              { member_id: "m2", name: "Ravi", last_seen_at: new Date(Date.now() - 3600000).toISOString() }],
+    sync: { pending: 0, pack_state: "idle" } }), null);
+  assert.ok(/Testlify/.test(html), "the name");
+  assert.ok(/Devansh/.test(html) && /Ravi/.test(html) && /2 people/.test(html), "who is in it");
+  assert.ok(/<i>you<\/i>/.test(html), "and which one he is");
+  assert.ok(/an hour ago/.test(html), "when the other one was last seen");
+  assert.ok(/data-ag="wscopylink"/.test(html), "the link with its copy button");
+  assert.ok(/Up to date/.test(html), "and what is happening right now");
+});
+
+test("what is happening right now is read from the server, never guessed", () => {
+  assert.strictEqual(A.agWsNowLine({ pending: 0, pack_state: "idle" }), "Up to date");
+  assert.strictEqual(A.agWsNowLine({ pending: 0, pack_state: "building" }), "Updating the copy for new joiners");
+  assert.strictEqual(A.agWsNowLine({ pending: 3, pack_state: "idle" }), "3 changes waiting to go up");
+  assert.strictEqual(A.agWsNowLine({ pending: 1, pack_state: "idle" }), "1 change waiting to go up");
+  assert.strictEqual(A.agWsNowLine(null), "", "nothing known, nothing claimed");
+  assert.strictEqual(A.agWsNowLine({ pending: 0, pack_state: "unknown" }), "",
+                     "and 'unknown' is not quietly rounded up to 'Up to date'");
+});
+
+/* SECTION 2, THE OWNER'S RULING. He does not wait for the pack. The click finishes; this line
+   appears at the foot of whatever screen he is on and leaves on its own. Never a modal, never a
+   bar, never a thing to dismiss -- and never drawn from a guess: it is on exactly while the
+   server says the pack is being rebuilt. */
+test("the quiet line is a line, is driven by the server, and is nothing else", () => {
+  const a = agReset();
+  a.ws = { sync: { pending: 0, pack_state: "building" } };
+  const on = A.agQuietHtml(a);
+  assert.ok(/Updating the copy for new joiners/.test(on), "his sentence, exactly");
+  assert.ok(!/<button|role="dialog"|ag-bar|%/.test(on), "no button, no modal, no progress bar");
+  a.ws = { sync: { pending: 0, pack_state: "idle" } };
+  assert.strictEqual(A.agQuietHtml(a), "", "and it leaves when the server says the pack is done");
+  a.ws = null;
+  assert.strictEqual(A.agQuietHtml(a), "", "with nothing known it says nothing");
+});
+
+test("joining asks for the link and a name, and warns how long the download is", () => {
+  const html = A.agWsHtml(wsdoc(), { mode: "join" });
+  assert.ok(/data-agws="link"/.test(html) && /data-agws="name"/.test(html));
+  assert.ok(/data-ag="wsjoingo"/.test(html) && />Done</.test(html), "the button is Done, as he said");
+  assert.ok(/five minutes/.test(html));
+});
+
+/* "a real progress bar for the ~5 minute download (bytes of total, not a fake spinner)" */
+test("the join bar is real bytes, and draws no bar at all when the total is not known", () => {
+  const real = A.agWsHtml(wsdoc({ job: { kind: "join", phase: "download", step: "Downloading the team's knowledge",
+                                         done_bytes: 26214400, total_bytes: 104857600, pct: 25 } }), null);
+  assert.ok(/25 MB of 100 MB/.test(real), "bytes of total, in words a person reads");
+  assert.ok(/ag-bar/.test(real) && /width:25%/.test(real));
+  const blind = A.agWsHtml(wsdoc({ job: { kind: "join", phase: "download", done_bytes: 1048576, total_bytes: 0 } }), null);
+  assert.ok(/1.0 MB so far/.test(blind) && /total is not known/.test(blind));
+  assert.ok(!/ag-bar/.test(blind), "a bar that cannot mean anything is not drawn");
+});
+
+test("a finished join says the thing that actually changed for him", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://x.supabase.co", id: "w1" },
+    members: [], sync: { pending: 0, pack_state: "idle" },
+    job: { kind: "join", phase: "done", finished_at: Date.now() / 1000 } }), null);
+  assert.ok(/You are on the team/.test(html));
+  assert.ok(/Library, ideas and prompts are the team's/.test(html));
+});
+
+/* THE SETUP SCRIPT IS A ROUTE, NOT AN ERROR STATE. Whether it came up because no token was
+   given, because the script half-applied, or because the tables are there and the knowledge
+   bucket is not, it is drawn the same way: a heading, the steps, the script, one button. */
+test("the setup script is drawn as a route, with schema's own reason above it", () => {
+  const html = A.agWsHtml(wsdoc({ job: { kind: "create", phase: "paste", paste: {
+    sql: "create table if not exists public.workspace ();",
+    editor_url: "https://supabase.com/dashboard/project/abc/sql/new",
+    why: "Sutra has no access token, so it cannot create the tables for you. Nothing has been created yet." } } }), null);
+  assert.ok(/Run the setup script/.test(html), "its own heading, not an error heading");
+  assert.ok(!/could not|failed|went wrong|Cancel the/i.test(html.slice(0, html.indexOf("<ol"))),
+            "and nothing above the steps reads as a failure");
+  assert.ok(/Sutra has no access token/.test(html), "schema's reason, verbatim");
+  assert.ok(/create table if not exists public\.workspace/.test(html), "the script itself");
+  assert.ok(/data-ag="wscopysql"/.test(html), "with a copy button");
+  assert.ok(/href="https:\/\/supabase\.com\/dashboard\/project\/abc\/sql\/new"/.test(html), "and a link to the editor");
+  assert.ok(/data-ag="wssqldone"/.test(html) && /I've run it/.test(html), "and one way onward");
+  assert.ok(!/sbp_/.test(html), "and no token anywhere in it");
+});
+
+/* THE STATE THE PLAN'S OWN RISK NOTE NAMES. The storage policies do not always attach, and the
+   tables survive when they do not. That workspace has a URL, a key and an id -- everything
+   that reads settings calls it connected -- and nobody can ever join it. */
+test("tables but no bucket reads as not finished, never as connected and never as a fresh start", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+    members: [], sync: { pending: 0, pack_state: "idle" },
+    verify: { ok: false, bucket: false, missing: [],
+              reason: "The tables are there but the knowledge bucket is not, so no teammate could download the knowledge pack." } }), null);
+  assert.ok(/not finished/.test(html), "it says so");
+  assert.ok(!/>connected</.test(html), "and never says connected");
+  assert.ok(/knowledge bucket is not/.test(html), "with verify's own sentence, which names the real thing");
+  assert.ok(!/data-ag="wscreate"/.test(html), "not a fresh start either: no Create button");
+  assert.ok(/data-ag="wssqldone"/.test(html), "and a way to check again once it is fixed");
+});
+
+test("a workspace nobody has been able to check yet is not called broken", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://x.supabase.co", id: "w1" },
+    members: [], sync: { pending: 0, pack_state: "idle" }, verify: null }), null);
+  assert.ok(!/not finished/.test(html), "a question nobody has asked has no answer");
+  assert.ok(/data-ag="wscopylink"/.test(html));
+});
+
+/* SECTION 10: every failure says what failed and what to do, and no failure leaves a half-made
+   workspace on screen as if it had worked. */
+test("a failure names what failed and what to do, and claims nothing was made", () => {
+  const html = A.agWsHtml(wsdoc({ job: { kind: "join", phase: "failed", error: {
+    what: "That link points at a project that is not set up as a workspace — members missing.",
+    do: "Ask whoever set it up to send the link from their Connections tab again." } } }), null);
+  assert.ok(/not set up as a workspace/.test(html), "what failed");
+  assert.ok(/Ask whoever set it up/.test(html), "what to do");
+  assert.ok(/nothing was left half-made/.test(html));
+  assert.ok(/data-ag="wsretry"/.test(html) && /data-ag="wscancel"/.test(html));
+  assert.ok(!/data-ag="wscopylink"/.test(html), "and no link: there is nothing to share");
+});
+
+/* A create whose tables verified but whose pack upload stumbled is NOT a failed create -- nine
+   real tables exist and the link works. Saying otherwise would throw them away. */
+test("a workspace that was made but whose pack stalled is drawn as made, with the caveat", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "sutra-ws-abc",
+    workspace: { name: "Testlify", url: "https://x.supabase.co", id: "w1" }, members: [],
+    sync: { pending: 0, pack_state: "idle" },
+    job: { kind: "create", phase: "done", finished_at: Date.now() / 1000,
+           error: { what: "the knowledge pack did not finish uploading", do: "Press Update on the Knowledge tab." } } }), null);
+  assert.ok(/Your workspace is ready/.test(html), "it was made, and verify said so");
+  assert.ok(/data-ag="wscopylink"/.test(html), "the link works and is offered");
+  assert.ok(/did not finish uploading/.test(html) && /Press Update/.test(html), "and the caveat is not hidden");
+});
+
+test("the workspace section is the first thing on the Connections tab", () => {
+  const html = A.agConnectionsHtml({ dataforseo_login: true }, { model_provider: "claude-cli" }, null,
+                                   wsdoc(), null);
+  assert.ok(html.indexOf("Team workspace") < html.indexOf("DataForSEO"), "above the agent's own keys");
+  assert.ok(html.indexOf("Team workspace") < html.indexOf(">Model<"));
+  /* three older tests call this with three arguments; it must still draw */
+  const old = A.agConnectionsHtml({ dataforseo_login: true }, { model_provider: "claude-cli" }, null);
+  assert.ok(/Team workspace/.test(old) && /DataForSEO/.test(old));
+});
+
+test("a build without the engine says so plainly instead of offering a button that cannot work", () => {
+  const html = A.agWsHtml(wsdoc({ installed: false }), null);
+  assert.ok(/Not in this build/.test(html));
+  assert.ok(!/data-ag="wscreate"/.test(html) && !/data-ag="wsjoin"/.test(html));
+  assert.ok(/nothing needs doing/.test(html), "and it does not read as a fault");
+});
+
+test("agBytes never invents precision", () => {
+  assert.strictEqual(A.agBytes(0), "0 B");
+  assert.strictEqual(A.agBytes(999), "999 B");
+  assert.strictEqual(A.agBytes(104857600), "100 MB");
+  assert.strictEqual(A.agBytes(1048576), "1.0 MB");
+  assert.strictEqual(A.agBytes(1073741824 * 2), "2.0 GB");
+});
+
+/* Everything drawn here goes through agEsc, the way every other renderer in this file does. A
+   workspace name and a member name both come off the network. */
+test("a workspace name and a member name are escaped", () => {
+  const html = A.agWsHtml(wsdoc({ configured: true, link: "<img src=x>",
+    workspace: { name: "<script>alert(1)</script>", url: "https://x.supabase.co", id: "w" },
+    members: [{ member_id: "m", name: "<b>evil</b>", last_seen_at: null }],
+    me: { member_id: "m", name: "x" }, sync: { pending: 0, pack_state: "idle" } }), null);
+  assert.ok(!/<script>/.test(html) && /&lt;script&gt;/.test(html));
+  assert.ok(!/<b>evil<\/b>/.test(html));
+  assert.ok(!/<img src=x>/.test(html));
+});
+
+test("the workspace stylesheet keeps to the palette", () => {
+  const mine = CSS.slice(CSS.indexOf("/* ── the team workspace (Connections tab)"));
+  assert.ok(mine.length > 400, "found the block");
+  const literals = mine.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g) || [];
+  assert.strictEqual(literals.length, 0, "a hard-coded colour in the workspace CSS: " + literals);
+});
+
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
 async function atest(name, fn){
   try { await fn(); pass++; console.log("ok   - " + name); }
@@ -1758,6 +2027,221 @@ async function atest(name, fn){
     fs.rmSync(data, { recursive: true, force: true });
     assert.ok(/PROMPT-STORE-OK/.test(r.stdout || ""),
               "the prompt store failed:\n" + ((r.stderr || "") + (r.stdout || "")).trim().split("\n").slice(-6).join("\n"));
+  });
+
+
+  /* ── the team workspace, driven through the real actions ────────────────────
+     The renderers above prove what is drawn; these prove what is SENT, because the one thing a
+     rendered-DOM test cannot see is a token that quietly stayed behind. */
+
+  /* A tiny document, only as much of one as agTakeToken and agTokenTyped read. It exists so the
+     token can be put in a box and then looked for afterwards. */
+  function wsDoc(tokenValue){
+    const box = { value: tokenValue, getAttribute: () => "token", matches: () => true };
+    return { querySelector: sel => (sel === '[data-agws="token"]' ? box : null),
+             querySelectorAll: () => [], getElementById: () => null,
+             activeElement: null, box: box };
+  }
+
+  await atest("Create posts the token exactly once, and it is gone from everywhere afterwards", async () => {
+    const a = agReset();
+    a.ws = null; a.wsForm = { mode: "create", url: "https://abcdefghijklmnop.supabase.co",
+                              key: "sb_publishable_abc", name: "Testlify" };
+    const doc = wsDoc("sbp_verysecrettoken");
+    const prevDoc = A.document, prevPost = A.apiPost, prevGet = A.apiGet;
+    A.document = doc;
+    const posts = [];
+    A.apiPost = async (path, b) => { posts.push([path, b]); return { started: true }; };
+    A.apiGet = async () => ({ installed: true, configured: false,
+                              job: { kind: "create", phase: "tables", step: "Setting up your workspace", pct: 5 } });
+    try { await A.agAction("wsgo", { getAttribute: () => "" }); }
+    finally { A.document = prevDoc; A.apiPost = prevPost; A.apiGet = prevGet; }
+
+    const create = posts.filter(p => /\/workspace\/create$/.test(p[0]));
+    assert.strictEqual(create.length, 1, "one create, not two");
+    assert.strictEqual(create[0][1].token, "sbp_verysecrettoken", "the token went with it");
+    assert.strictEqual(create[0][1].url, "https://abcdefghijklmnop.supabase.co");
+    assert.strictEqual(create[0][1].key, "sb_publishable_abc");
+    /* and now the three places it must not be */
+    assert.strictEqual(doc.box.value, "", "the box is emptied the moment it is read");
+    assert.strictEqual(JSON.stringify(a.wsForm).indexOf("sbp_"), -1, "nothing of it on S.ag");
+    assert.strictEqual(JSON.stringify(a.ws || {}).indexOf("sbp_"), -1, "and nothing of it came back");
+  });
+
+  /* An empty token box is not a mistake. It is the setup-script route, and the server answers
+     it with the script rather than with a refusal, so the button must go through. */
+  await atest("Create with an empty token box goes through, with no token field at all", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "create", url: "https://abcdefghijklmnop.supabase.co", key: "sb_publishable_abc" };
+    const prevDoc = A.document, prevPost = A.apiPost, prevGet = A.apiGet;
+    A.document = wsDoc("");
+    const posts = [];
+    A.apiPost = async (p, b) => { posts.push([p, b]); return { started: true }; };
+    A.apiGet = async () => ({ installed: true, configured: false, job: { kind: "create", phase: "paste",
+      paste: { sql: "create table if not exists public.workspace ();", editor_url: "https://e",
+               why: "Sutra has no access token, so it cannot create the tables for you." } } });
+    try { await A.agAction("wsgo", { getAttribute: () => "" }); }
+    finally { A.document = prevDoc; A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.strictEqual(posts.length, 1, "it was sent");
+    assert.strictEqual(posts[0][1].token, undefined, "with no token field at all");
+    assert.strictEqual(a.ws.job.phase, "paste", "and the script is what comes back");
+    assert.ok(/Run the setup script/.test(A.agWsHtml(a.ws, a.wsForm)), "drawn as a route");
+  });
+
+  await atest("Create with a box empty asks for it instead of sending half a form", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "create", url: "", key: "sb_publishable_abc" };
+    const prevPost = A.apiPost;
+    const posts = [];
+    A.apiPost = async p => { posts.push(p); return {}; };
+    try { await A.agAction("wsgo", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; }
+    assert.strictEqual(posts.length, 0, "nothing was sent");
+    assert.ok(/project URL and the publishable key/.test(a.wsForm.msg));
+  });
+
+  /* THE BAR: "a wrong key says 'that key is not for this project', not a status code." The
+     server writes that sentence; this proves the screen prints it rather than a code. */
+  await atest("a refusal from the server is shown in its own words", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "create", url: "https://abcdefghijklmnop.supabase.co", key: "sb_secret_oops" };
+    const prevDoc = A.document, prevPost = A.apiPost, prevGet = A.apiGet;
+    A.document = wsDoc("sbp_tok");
+    A.apiPost = async () => { throw new Error("That is the secret key. It gets past every row rule, so Sutra never asks for it."); };
+    A.apiGet = async () => ({ installed: true, configured: false, job: null });
+    try { await A.agAction("wsgo", { getAttribute: () => "" }); }
+    finally { A.document = prevDoc; A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.ok(/That is the secret key/.test(a.wsForm.msg), "the sentence, not a code: " + a.wsForm.msg);
+    assert.ok(!/\b(400|403|409|500)\b/.test(a.wsForm.msg));
+    assert.ok(/data-agws="url"/.test(A.agWsHtml(a.ws, a.wsForm)), "and he is back at the boxes");
+  });
+
+  /* "I've run it" and "Check again" are the same question, and it is a DIFFERENT route from
+     create: confirm asks "is it set up now", which is the only question verify can answer. */
+  await atest("I have run it asks the confirm route, which is verify and nothing else", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "create", url: "https://abcdefghijklmnop.supabase.co", key: "sb_publishable_abc", name: "Testlify" };
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const posts = [];
+    A.apiPost = async (p, b) => { posts.push([p, b]); return { started: true }; };
+    A.apiGet = async () => ({ installed: true, configured: true, link: "sutra-ws-abc",
+      workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+      members: [], me: { member_id: "m1" }, sync: { pending: 0, pack_state: "idle" },
+      verify: { ok: true, reason: "Workspace ready." },
+      job: { kind: "create", phase: "done", finished_at: Date.now() / 1000 } });
+    try { await A.agAction("wssqldone", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.strictEqual(posts[0][0], "/api/agents/seo/workspace/confirm");
+    assert.strictEqual(posts[0][1].token, undefined, "and never a token");
+    assert.ok(/Your workspace is ready/.test(A.agWsHtml(a.ws, a.wsForm)),
+              "and only NOW, after the server verified, does it say so");
+  });
+
+  /* Check again on an unfinished workspace has no form behind it: the URL has to come off the
+     workspace the tab is already showing, or the route gets an empty body and refuses. */
+  await atest("Check again on an unfinished workspace sends the project it is looking at", async () => {
+    const a = agReset();
+    a.wsForm = null;
+    a.ws = { installed: true, configured: true, link: "sutra-ws-abc",
+             workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+             members: [], sync: { pending: 0, pack_state: "idle" },
+             verify: { ok: false, reason: "The tables are there but the knowledge bucket is not." } };
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const posts = [];
+    A.apiPost = async (p, b) => { posts.push([p, b]); return { started: true }; };
+    A.apiGet = async () => a.ws;
+    try { await A.agAction("wssqldone", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.strictEqual(posts[0][0], "/api/agents/seo/workspace/confirm");
+    assert.strictEqual(posts[0][1].url, "https://abcdefghijklmnop.supabase.co");
+  });
+
+  /* agDraw holds this view still while there is something in the token box, because that box
+     is the one field it cannot re-render. So an arm that changes what the section shows has to
+     empty it, or the screen freezes with nothing on it to say why. */
+  await atest("Cancel empties the token box, so the view is never left frozen", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "create", url: "https://abcdefghijklmnop.supabase.co", key: "sb_publishable_abc" };
+    const doc = wsDoc("sbp_halftyped");
+    const prevDoc = A.document, prevPost = A.apiPost, prevGet = A.apiGet;
+    A.document = doc;
+    A.apiPost = async () => ({ ok: true });
+    A.apiGet = async () => ({ installed: true, configured: false, job: null });
+    try { await A.agAction("wscancel", { getAttribute: () => "" }); }
+    finally { A.document = prevDoc; A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.strictEqual(doc.box.value, "", "the box is empty, so agDraw is free to redraw");
+    assert.strictEqual(a.wsForm, null);
+    /* and the discarded token went nowhere */
+    assert.strictEqual(JSON.stringify(a.ws).indexOf("sbp_"), -1);
+  });
+
+  await atest("Done on the join screen sends the link and the name, and nothing else", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "join", link: "sutra-ws-abc", name: "Ravi" };
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const posts = [];
+    A.apiPost = async (p, b) => { posts.push([p, b]); return { started: true }; };
+    A.apiGet = async () => ({ installed: true, configured: false,
+      job: { kind: "join", phase: "download", done_bytes: 1024, total_bytes: 104857600 } });
+    try { await A.agAction("wsjoingo", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.strictEqual(posts[0][0], "/api/agents/seo/workspace/join");
+    assert.strictEqual(JSON.stringify(posts[0][1]), JSON.stringify({ link: "sutra-ws-abc", name: "Ravi" }));
+  });
+
+  await atest("join refuses to start with a box empty rather than sending half of it", async () => {
+    const a = agReset();
+    a.wsForm = { mode: "join", link: "sutra-ws-abc", name: "" };
+    const prevPost = A.apiPost;
+    const posts = [];
+    A.apiPost = async p => { posts.push(p); return {}; };
+    try { await A.agAction("wsjoingo", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; }
+    assert.strictEqual(posts.length, 0);
+    assert.ok(/type the name/i.test(a.wsForm.msg));
+  });
+
+  /* Cancel and Start over have to clear the job on the SERVER. Clearing it only on this side
+     would put the same fallback screen back on the next poll, four seconds later. */
+  await atest("Cancel clears the job on the server, not just on this screen", async () => {
+    const a = agReset();
+    a.ws = { installed: true, configured: false, job: { kind: "create", phase: "paste", paste: { sql: "x" } } };
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const posts = [];
+    A.apiPost = async (p, b) => { posts.push(p); return { ok: true }; };
+    A.apiGet = async () => ({ installed: true, configured: false, job: null });
+    try { await A.agAction("wscancel", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+    assert.ok(posts.indexOf("/api/agents/seo/workspace/dismiss") !== -1, "it asked the server to forget it");
+    assert.strictEqual(a.wsForm, null);
+    assert.strictEqual(a.ws.job, null);
+  });
+
+  await atest("Leaving asks first, then re-reads rather than assuming it worked", async () => {
+    const a = agReset();
+    a.ws = { installed: true, configured: true, link: "sutra-ws-abc", workspace: { name: "T" }, members: [] };
+    const prevPost = A.apiPost, prevGet = A.apiGet, prevConfirm = A.confirm;
+    const posts = [];
+    A.confirm = () => true;
+    A.apiPost = async p => { posts.push(p); return { ok: true }; };
+    A.apiGet = async () => ({ installed: true, configured: false, job: null, link: "", members: [] });
+    try { await A.agAction("wsleave", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.apiGet = prevGet; A.confirm = prevConfirm; }
+    assert.ok(posts.indexOf("/api/agents/seo/workspace/leave") !== -1);
+    assert.strictEqual(a.ws.configured, false, "and what is drawn is what the server said, not what we hoped");
+  });
+
+  await atest("saying no to the Leave question leaves everything alone", async () => {
+    const a = agReset();
+    a.ws = { installed: true, configured: true, link: "sutra-ws-abc" };
+    const prevPost = A.apiPost, prevConfirm = A.confirm;
+    const posts = [];
+    A.confirm = () => false;
+    A.apiPost = async p => { posts.push(p); return {}; };
+    try { await A.agAction("wsleave", { getAttribute: () => "" }); }
+    finally { A.apiPost = prevPost; A.confirm = prevConfirm; }
+    assert.strictEqual(posts.length, 0);
+    assert.strictEqual(a.ws.configured, true);
   });
 
   console.log("\n" + "-".repeat(60));

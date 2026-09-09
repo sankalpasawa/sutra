@@ -236,6 +236,8 @@ def fake_bulk(domain, location_name, language_code, limit=1000, max_rows=50000):
 dfs.available = lambda: True
 dfs.demo_mode = lambda: False
 dfs.balance = lambda: 12.5
+REAL_BULK = dfs.ranked_keywords_bulk        # kept, so the ceiling checks at the foot can drive the
+#                                             real client and not this stand-in
 dfs.ranked_keywords_bulk = fake_bulk
 
 # --- keep the shared fixture files safe for the suites that run after this one -----------------------
@@ -748,6 +750,74 @@ finally:
 ok("a hung extract is KILLED at the cap, not waited out", _dt < 5, "%.1fs" % _dt)
 ok("and the page is recorded as unreadable, never as blank text that reads like a real page",
    _row["extractor"] == "timeout" and _row["body_status"] == "failed", _row["extractor"])
+
+# --- the row ceiling is LOUD -----------------------------------------------------------------------
+# foundation/settings.py calls TRAFFIC_MAX_ROWS "a loud safety ceiling (never a silent cap)" and
+# dfs.ranked_keywords_bulk's docstring says the same. Neither was true: the pull stopped on it and
+# came back looking exactly like a pull that had reached the end of the data, so a big site's
+# figures were the first 50,000 keywords reported as if they were all of it.
+print("\nthe traffic row ceiling says so")
+from seo_agent.foundation import traffic as _traffic
+_SAID = []
+
+
+def _say(label, note=""):
+    _SAID.append((label, note))
+
+
+_capped_note = ("stopped at 50000 of 900000 rows: the 50000-row safety ceiling was reached, so the "
+                "rest of this domain's keywords are not in the figures")
+_saved_bulk = dfs.ranked_keywords_bulk
+dfs.ranked_keywords_bulk = lambda domain, location_name, language_code, limit=1000, max_rows=50000: {
+    "rows": list(FAKE_ROWS), "total_count": 900000, "cost_usd": 5.0, "capped": _capped_note}
+_site = {"host": "ceiling.test", "work": tempfile.mkdtemp(prefix="ceiling-")}
+try:
+    _r = _traffic.run(_site, _say, [], redo_traffic=True)
+    ok("a pull that stops on the ceiling says so, in the run's own words",
+       any("ceiling" in l.lower() for l, _n in _SAID)
+       and any("not in the figures" in n for _l, n in _SAID), _SAID)
+    ok("...and the figures carry it, so a reader of the summary sees it too",
+       _r["meta"].get("capped") == _capped_note, _r["meta"].get("capped"))
+    # the saved pull is reused on every later run, so the cap has to be as loud the tenth time
+    _SAID.clear()
+    _traffic.run(_site, _say, [], redo_traffic=False)
+    ok("a reused pull that was capped repeats the warning rather than going quiet",
+       any("capped" in l.lower() for l, _n in _SAID), _SAID)
+finally:
+    dfs.ranked_keywords_bulk = _saved_bulk
+    shutil.rmtree(_site["work"], ignore_errors=True)
+
+# and the client really does set it, rather than the note being something only the test knows about
+_posted = {"n": 0}
+
+
+_TOTAL = 5000
+
+
+def _fake_post(path, payload):
+    _posted["n"] += 1
+    off = payload[0]["offset"]
+    n = max(0, min(1000, _TOTAL - off))
+    return {"tasks": [{"status_code": 20000, "cost": 0.11,
+                       "result": [{"total_count": _TOTAL,
+                                   "items": [{"keyword_data": {"keyword": "k%d" % (off + i),
+                                                               "keyword_info": {"search_volume": 10}},
+                                              "ranked_serp_element": {"serp_item": {"url": "https://x/%d" % i}}}
+                                             for i in range(n)]}]}]}
+
+
+_saved_post, _saved_demo, _saved_bal = dfs.post, dfs.demo_mode, dfs.balance
+dfs.post, dfs.demo_mode, dfs.balance = _fake_post, (lambda: False), (lambda: 50.0)
+try:
+    _out = REAL_BULK("x.test", "United States", "en", limit=1000, max_rows=2000)
+    ok("the client stops at the ceiling and hands back the sentence that explains why",
+       len(_out["rows"]) == 2000 and "safety ceiling was reached" in (_out.get("capped") or ""),
+       (len(_out["rows"]), _out.get("capped")))
+    _out2 = REAL_BULK("x.test", "United States", "en", limit=1000, max_rows=50000)
+    ok("a pull that reaches the end of the data is NOT reported as capped",
+       len(_out2["rows"]) == _TOTAL and not _out2.get("capped"), (len(_out2["rows"]), _out2.get("capped")))
+finally:
+    dfs.post, dfs.demo_mode, dfs.balance = _saved_post, _saved_demo, _saved_bal
 
 print("\nFake site, stubbed DataForSEO. Proves the rules and the plumbing, not the extractor on real HTML.")
 if FAILS:

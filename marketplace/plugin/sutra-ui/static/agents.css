@@ -612,3 +612,52 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
    row stacks: the station name on its own line, its phrases under it. */
 .ag.haspanel .ag-flowrow{flex-direction:column;gap:3px}
 .ag.haspanel .ag-flowrow .fh{flex:none}
+
+/* ── the team workspace (Connections tab) ────────────────────────────────────
+   Nothing new in the vocabulary: the section is ag-row / ag-form / ag-status like every other
+   connection. These five rules are only the pieces those did not already have -- a progress
+   bar, a link that must wrap and stay selectable, and the people in the team. */
+
+/* One bar, two jobs. Creating a workspace drives it off a coarse percentage; joining drives it
+   off real bytes, and when the total is unknown the renderer draws no bar at all rather than a
+   bar that means nothing. */
+.ag-bar{height:5px;border-radius:3px;background:var(--inset);border:1px solid var(--line-soft);
+  overflow:hidden;margin:9px 0 0}
+.ag-bar i{display:block;height:100%;background:var(--acc);border-radius:3px;
+  transition:width .25s ease}
+
+/* The link stays in this tab for good, so it has to be readable at a glance and selectable by
+   hand as well as by the button -- somebody will always want to paste it into chat themselves. */
+.ag-wslink{display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 10px;
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:8px}
+.ag-wslink code{flex:1;min-width:0;font:500 10.5px/1.5 var(--mono);color:var(--ink);
+  overflow-wrap:anywhere;user-select:all}
+.ag-wslink .btn{flex:none}
+
+.ag-wsmembers{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ag-wsmember{display:inline-flex;align-items:baseline;gap:5px;padding:3px 9px;border-radius:20px;
+  background:var(--inset);border:1px solid var(--line-soft);font-size:11.5px;color:var(--ink)}
+.ag-wsmember b{font-weight:600}
+.ag-wsmember i{font-style:normal;font-size:10px;color:var(--acc);text-transform:uppercase;letter-spacing:.06em}
+.ag-wsmember .h{color:var(--faint);font-size:10.5px}
+
+/* The optional access-token box. The word "optional" and the line under the field are the
+   whole of how a person knows the setup-script route is a real choice rather than a dead end,
+   so they are styled to be read, not to be skipped. */
+.ag-opt{font:500 9.5px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  border:1px solid var(--line);border-radius:20px;padding:2px 6px;margin-left:6px;vertical-align:1px}
+.ag-hint{font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:2px}
+.ag-hint a{color:var(--acc)}
+
+.ag-wssteps{margin:9px 0 10px;padding-left:18px;font-size:11.5px;color:var(--muted);line-height:1.7}
+
+/* THE QUIET LINE (plan section 2). He presses Update, the click finishes in about two seconds,
+   and the pack rebuild he was never going to wait for says so here -- at the foot of whatever
+   screen he is on, in the colour of a footnote. It is not a modal, it takes no click to
+   dismiss, and it holds nothing up. It leaves when the server says the rebuild is done. */
+.ag-quiet{flex:none;padding:6px 18px;border-top:1px solid var(--line-soft);background:var(--card);
+  font-size:11px;color:var(--faint);display:flex;align-items:center;gap:7px}
+.ag-quiet .d{width:5px;height:5px;border-radius:50%;background:var(--acc);flex:none;
+  animation:agpulse 1.9s ease-in-out infinite}
+@keyframes agpulse{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ag-quiet .d{animation:none;opacity:.7}}

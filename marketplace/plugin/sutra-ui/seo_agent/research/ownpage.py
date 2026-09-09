@@ -120,18 +120,27 @@ def harvest(pages, say=None):
     return cards, failed
 
 
-def reuse_judge(topic, angle, pages, company, fmt="article"):
-    """{verdict, chosen_links, why}: should we build this, or do we already have it?"""
+def reuse_judge(topic, angle, pages, company, fmt="article", doc_chars=None):
+    """{verdict, chosen_links, why}: should we build this, or do we already have it?
+
+    doc_chars is how much of each candidate page the judge reads. It defaults to the research
+    flow's window; the asset engine passes its own, larger one. See _common.JUDGE_DOC_CHARS for
+    why there are two and which caller owns each.
+    """
     if not pages:
         return {"verdict": "Brand new", "chosen_links": [], "why": "no existing page came close enough to read"}
+    window = int(doc_chars or _c.JUDGE_DOC_CHARS)
     bodies = sh.page_bodies()
     block = "\n\n".join("[%d] %s — %s\n%s" % (i + 1, p.get("title") or "", p["url"],
-                                            (bodies.get(p["url"].rstrip("/"), "") or "")[:_c.JUDGE_DOC_CHARS]
+                                            (bodies.get(p["url"].rstrip("/"), "") or "")[:window]
                                             or "(no text on file)")
                         for i, p in enumerate(pages))
     tok = _c.company_tokens(company)
     p = _c.prompt("reuse-judge", brand=tok["brand"], asset=topic, angle=angle or "", format=fmt, candidates=block)
-    raw = llm.text(p) or ""
+    # The judge reads up to TOPK whole pages, which at the asset engine's window is ~84,000
+    # characters in one call. That is a document-scale read, not a section-scale one, so it gets
+    # the document-scale ceiling. A ceiling is not a cost: a short call still returns when it does.
+    raw = llm.text(p, timeout=llm.LONG_TIMEOUT) or ""
     v = re.search(r"(?im)^\s*Reuse verdict:\s*(.+)$", raw)
     ch = re.search(r"(?im)^\s*Chosen links:\s*(.+)$", raw)
     why = re.search(r"(?im)^\s*Why:\s*(.+)$", raw)

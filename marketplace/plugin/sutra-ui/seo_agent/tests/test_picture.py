@@ -214,7 +214,7 @@ print("\ngather builds it at the end, after the filter, with one model call and 
 GCALLS = []
 
 
-def _stub(prompt, system=None, retries=1):
+def _stub(prompt, system=None, retries=1, **kw):   # **kw: steps pass a per-call `timeout`
     GCALLS.append(prompt[:80])
     if '"keep_table_stakes"' in prompt:
         # keep two of the four questions, one of the three related searches
