@@ -791,6 +791,170 @@ test("an empty article is not a save", () => {
   assert.strictEqual(a.libEdit.draft, "   \n  ", "with what he typed still there");
 });
 
+/* ── the live Library: a row is born when the run starts and fills in ──────────
+   Since 2026-09-09 the Library is where he watches an article being made, because the
+   checkpoints that used to stop and show him each piece are gone. The risk the whole
+   shape is designed against: a person opening the tab mid-run sees half a thing, and
+   unless the state reads at a glance the tab looks full of broken articles. So these
+   check the three states apart, and check that a row from the OLD payload is untouched. */
+const LIB_MILES = (over) => [
+  { key: "research", label: "Researched", note: "the brief this article is built on", exists: true, at: "2026-09-09T09:00:00Z" },
+  { key: "picture", label: "The search picture", note: "what the search results show", exists: true, at: "2026-09-09T09:05:00Z" },
+  { key: "plan", label: "Planned", note: "the headings and the evidence", exists: false, at: null },
+  { key: "draft", label: "Written", note: "the article as the writer left it", exists: false, at: null },
+  { key: "edited", label: "Edited", note: "what each editing pass changed", exists: false, at: null },
+].map(m => Object.assign(m, (over || {})[m.key] || {}));
+
+test("a row being written says so, and shows how far it has got", () => {
+  const html = A.agLibraryHtml([{ id: "run-c1-r1", title: "Writing…", status: "writing", words: 0,
+                                  request: "Write an article about cost per hire",
+                                  created_at: "2026-09-09T09:00:00Z", milestones: LIB_MILES() }]);
+  assert.ok(/class="ag-row writing"/.test(html), "the row itself is marked, so it can carry the accent edge");
+  assert.ok(/Write an article about cost per hire/.test(html),
+            "it is named by what he asked for, because the pill beside it already says writing");
+  assert.ok(html.indexOf(">Writing…") === -1, "so the placeholder name never says the same thing twice");
+  assert.ok(/<span class="pill p-acc"><i class="spin" aria-hidden="true"><\/i>writing<\/span>/.test(html),
+            "accent pill with a turning marker, never a grey one: " + (html.match(/<span class="pill[^]*?<\/span>/) || [""])[0]);
+  assert.ok(html.indexOf("<span>2 of 5 done</span>") !== -1, "it counts the pieces instead of 0 words");
+  assert.ok(/<span>started /.test(html), "and dates itself from the start, not from a save");
+  assert.ok(!/data-ag="libopen"/.test(html), "no Open: there is nothing whole to open yet");
+  assert.ok(!/data-ag="libstatus"/.test(html), "and no Mark ready, which the run would overwrite at finish");
+  assert.ok(/data-ag="libdel"/.test(html), "Delete stays");
+});
+
+test("a milestone that exists is clickable; one that does not is greyed and not a button", () => {
+  const html = A.agLibraryHtml([{ id: "run-c1-r1", title: "Writing…", status: "writing", words: 0,
+                                  created_at: "2026-09-09T09:00:00Z", milestones: LIB_MILES() }]);
+  const strip = html.slice(html.indexOf('class="ag-miles"'), html.indexOf("</div>", html.indexOf('class="ag-miles"')));
+  assert.ok(/<button class="ag-mile done" type="button" data-ag="libmile" data-arg="run-c1-r1" data-name="research"/.test(strip),
+            "the made one is a button carrying the row and the key: " + strip.slice(0, 200));
+  assert.ok(/data-name="picture"/.test(strip) && /The search picture/.test(strip),
+            "the search picture is one of them, in plain words");
+  assert.ok(/<span class="ag-mile cur"[^>]*title="being made now"><i aria-hidden="true"><\/i>Planned<\/span>/.test(strip),
+            "the next one is marked as being made now, not as missing: " + strip);
+  assert.ok(/<span class="ag-mile todo"[^>]*>.*?Written/.test(strip), "the ones after it are just ahead");
+  assert.ok(strip.indexOf('data-name="plan"') === -1 && strip.indexOf('data-name="draft"') === -1,
+            "nothing that does not exist is clickable");
+  assert.ok(!/disabled/.test(strip), "and they are spans, not disabled buttons, so there is nothing to tab to");
+  assert.ok(/title="the brief this article is built on · /.test(strip), "a made one says what it is and when");
+});
+
+test("a row born before the run knew what it was asked keeps the placeholder name", () => {
+  const html = A.agLibraryHtml([{ id: "run-c1-r1", title: "Writing…", status: "writing", words: 0,
+                                  created_at: "2026-09-09T09:00:00Z", milestones: LIB_MILES() }]);
+  assert.ok(/Writing…/.test(html), "no request on the row, so the placeholder stands rather than a blank line");
+  assert.ok(/class="ag-row writing"/.test(html), "and it still reads as in progress");
+});
+
+test("a finished row keeps every button it had, and its strip is all done with nothing turning", () => {
+  const all = LIB_MILES({ plan: { exists: true, at: "2026-09-09T09:10:00Z" },
+                          draft: { exists: true, at: "2026-09-09T09:30:00Z" },
+                          edited: { exists: true, at: "2026-09-09T09:40:00Z" } });
+  const html = A.agLibraryHtml([{ id: "2026-09-09-cost-per-hire", title: "Cost per hire", status: "ready",
+                                  words: 1840, primary_keyword: "cost per hire", created_at: "2026-09-09T09:00:00Z",
+                                  milestones: all }]);
+  assert.ok(!/class="ag-row writing"/.test(html), "no accent edge on finished work");
+  assert.ok(/<span class="pill p-ok">ready to read<\/span>/.test(html), "the green pill, and no spinner in it");
+  assert.ok(html.indexOf("<span>1,840 words</span>") !== -1, "the word count is back where the count of pieces was");
+  assert.ok(/data-ag="libopen"/.test(html) && /data-ag="libstatus"/.test(html) && /data-ag="libdel"/.test(html),
+            "Open, Back to draft and Delete all still there");
+  assert.ok(html.indexOf('class="ag-mile cur"') === -1, "nothing is being made now");
+  assert.ok((html.match(/class="ag-mile done"/g) || []).length === 5, "all five open the panel, which is how you reach a finished plan");
+});
+
+test("a row from the payload the server sent BEFORE milestones renders exactly as it did", () => {
+  /* no status, no milestones: the shape library_list returned until 2026-09-09 */
+  const old = [{ id: "2026-09-01-hiring", title: "Hiring", words: 1200, primary_keyword: "hiring",
+                 created_at: "2026-09-01T09:00:00Z" }];
+  const html = A.agLibraryHtml(old);
+  assert.ok(/<span class="pill p-mut">draft<\/span>/.test(html), "the muted draft pill, word for word as before");
+  assert.ok(html.indexOf('class="ag-miles"') === -1, "and no strip at all, rather than an empty or broken one");
+  assert.ok(html.indexOf("<span>1,200 words</span>") !== -1, "the word count, not a count of pieces");
+  assert.ok(html.indexOf("<span>started ") === -1, "and no start time, because a saved row has no run to start");
+  assert.ok(/data-ag="libopen" data-arg="2026-09-01-hiring"/.test(html), "Open");
+  assert.ok(/data-ag="libstatus" data-arg="2026-09-01-hiring" data-status="ready">Mark ready</.test(html), "Mark ready");
+  assert.ok(/data-ag="libdel" data-arg="2026-09-01-hiring"/.test(html), "Delete");
+  assert.ok(!/class="ag-row writing"/.test(html), "and it is not mistaken for something in flight");
+});
+
+test("the three states are told apart by more than one thing each", () => {
+  const row = (status) => A.agLibraryHtml([{ id: "x", title: "T", status, words: 10,
+                                             created_at: "2026-09-09T09:00:00Z", milestones: LIB_MILES() }]);
+  const w = row("writing"), r = row("ready"), p = row("published");
+  /* the pill colour */
+  assert.ok(/pill p-acc/.test(w) && /pill p-ok/.test(r) && /pill p-acc/.test(p), "each draws a pill from the existing set");
+  /* the word */
+  assert.ok(/>writing</.test(w) && />ready to read</.test(r) && />published</.test(p), "and each says a different word");
+  /* the turning marker and the accent edge belong to writing ALONE, which is what makes a
+     half-made row read as purposeful rather than as a failure */
+  assert.ok(/class="spin"/.test(w), "writing turns");
+  assert.ok(!/class="spin"/.test(r) && !/class="spin"/.test(p), "nothing else does");
+  assert.ok(/ag-row writing/.test(w) && !/ag-row writing/.test(r) && !/ag-row writing/.test(p),
+            "and only writing carries the accent edge");
+  /* and only writing names a step as happening now */
+  assert.ok(/ag-mile cur/.test(w) && !/ag-mile cur/.test(r) && !/ag-mile cur/.test(p),
+            "a stopped or finished row's gaps are gaps, not promises");
+});
+
+test("every colour the new Library rules use is a token, so both themes follow", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+  const block = css.slice(css.indexOf(".ag-row.writing"), css.indexOf(".ag-form{"));
+  assert.ok(block.length > 200, "the live-Library block is there");
+  const literals = block.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g);
+  assert.strictEqual(literals, null, "a raw colour crept in: " + literals);
+  assert.ok(/\.ag-row\.writing\{border-color:var\(--acc\)/.test(block), "the writing edge is the accent token");
+  assert.ok(/\.ag-mile\.done i\{background:var\(--ok\)\}/.test(block), "a done milestone is the ok token");
+  assert.ok(/\.ag-mile\.cur\{color:var\(--acc\)/.test(block), "the one being made now is the accent token");
+  assert.ok(/prefers-reduced-motion[^]*\.ag-mile\.cur i\{animation:none\}/.test(css),
+            "and the movement is dropped for anyone who asked for that");
+});
+
+/* ── the artifact that is announced but never waited on ────────────────────── */
+test("artifact_ready draws a quiet line with NONE of the checkpoint chrome", () => {
+  const evs = [{ t: "2026-09-09T09:00:00Z", type: "artifact_ready", view: "research_brief",
+                 artifact: "research.json", label: "the research" }];
+  const out = A.agStepsFromEvents(evs, { status: "running" });
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].kind, "ready", "its own kind, not the waiting 'artifact' kind");
+  assert.strictEqual(out[0].live, undefined, "nothing is live about it, so nothing waits on it");
+  const html = A.agEntryHtml(out[0], { run_id: "r1" });
+  assert.ok(/class="ag-step quiet"/.test(html), "it borrows the log_step note vocabulary: " + html);
+  assert.ok(/class="ag-note"/.test(html), "a note, not a card");
+  assert.ok(!/ag-card/.test(html) && !/ag-artcard/.test(html), "no checkpoint card");
+  assert.ok(!/data-ag="approve/.test(html) && !/Go ahead/.test(html), "no approve button");
+  assert.ok(!/Waiting for you/.test(html) && !/Review/.test(html), "and it never says it is waiting");
+  assert.ok(!/p-warn/.test(html) && !/var\(--warn/.test(html), "no warning colour");
+  assert.strictEqual(A.agGlyph(out[0]), "", "and no icon, only the small grey dot .quiet draws");
+});
+
+test("the announced artifact is clickable, to the same panel the checkpoint used to open", () => {
+  const e = { kind: "ready", artifact: "research.json", view: "research_brief", label: "the research", t: "t" };
+  const html = A.agEntryHtml(e, { run_id: "r7" });
+  assert.ok(/Ready to read: /.test(html), "the copy says it exists, not that it needs him: " + html);
+  assert.ok(/data-ag="open" data-arg="research.json"[^>]*data-view="research_brief"[^>]*data-run="r7"/.test(html.replace(/\s+/g, " ")),
+            "one link, carrying the artifact, the view and the run");
+  assert.ok(/>the research</.test(html), "and the label the server wrote, used as it came");
+  const open = A.agEntryHtml(e, { run_id: "r7", panel: { name: "research.json", run_id: "r7" } });
+  assert.ok(/ag-openlink open/.test(open), "the one already on screen marks itself");
+});
+
+test("an artifact_ready in the middle of a run does not become the end of the transcript", () => {
+  const evs = [
+    { t: "2026-09-09T09:00:00Z", type: "step_started", id: "s1", label: "Researching", tool: "run_research", stage: "research" },
+    { t: "2026-09-09T09:04:00Z", type: "step_finished", id: "s1", ms: 240000 },
+    { t: "2026-09-09T09:04:01Z", type: "artifact_ready", view: "research_brief", artifact: "research.json", label: "the research" },
+    { t: "2026-09-09T09:04:02Z", type: "step_started", id: "s2", label: "Planning", tool: "plan_article", stage: "blueprint" },
+  ];
+  const out = A.agStepsFromEvents(evs, { status: "running" });
+  /* JSON, not deepStrictEqual: the module runs in a vm realm, so its arrays are not the host's */
+  assert.strictEqual(JSON.stringify(out.map(e => e.kind)), '["step","ready","step"]', "it sits where it happened");
+  assert.strictEqual(out[1].stage, "research", "stamped with the stage that was open, so it groups with it");
+  assert.strictEqual(out[2].state, "run", "and the run carried straight on underneath it");
+  const groups = A.agStageGroups(out);
+  const research = groups.find(g => g.stage === "research");
+  assert.ok(research && !research.waiting, "the research stage is NOT marked as waiting for him");
+});
+
 /* ── the CSS the layout leans on ───────────────────────────────────────────── */
 const CSS = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
 test("opening the panel no longer changes the document's HEIGHT under the reader", () => {
@@ -891,6 +1055,77 @@ async function atest(name, fn){
     assert.ok(/disk is full/.test(a.libEdit.error), "and the reason is his: " + a.libEdit.error);
     assert.strictEqual(a.panel.data.text, "old body", "the saved article is untouched");
     assert.ok(/disk is full/.test(A.agLibEditHtml(a.panel, a.libEdit)), "on screen, beside the button");
+  });
+
+  await atest("clicking a milestone opens THAT part in the panel, read-only, named for a person", async () => {
+    const a = agReset(); const seen = [];
+    const prev = A.apiGet;
+    A.apiGet = async (p) => { seen.push(p); return { key: "plan", label: "Planned", note: "the headings and the evidence",
+                                                    file: "blueprint.json", data: { h1: "Cost per hire", sections: [{ id: "s1", h2: "What it costs", job: "explain" }] } }; };
+    await A.agAction("libmile", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "plan", "data-label": "Planned" })[k] || "" });
+    A.apiGet = prev;
+    assert.ok(/\/library\/run-c1-r1\/artifact\/plan$/.test(seen[0]), "it asks for that row's own file: " + seen[0]);
+    assert.strictEqual(a.panel.view, "blueprint", "the plan opens in the plan view, not a new one");
+    assert.strictEqual(a.panel.title, "Planned", "titled the way the strip named it");
+    assert.strictEqual(a.panel.subtitle, "the headings and the evidence", "and says what it is");
+    assert.strictEqual(a.panel.run_id, null, "no run is answering, so there is no run on the panel");
+    assert.strictEqual(a.panel.readOnly, true);
+    const html = A.agPanelHtml(a);
+    assert.ok(/Cost per hire/.test(html), "the plan is on screen");
+    assert.ok(!/data-ag="bpedit"/.test(html) && !/data-ag="bpmove"/.test(html),
+              "with no control that would post an edit to a run that is not there");
+    assert.ok(!/data-ag="approvert"/.test(html), "and nothing to approve: the run is not waiting on this");
+  });
+
+  await atest("a milestone the server cannot serve yet says so, instead of sitting on Reading…", async () => {
+    const a = agReset();
+    const prev = A.apiGet;
+    A.apiGet = async () => { throw new Error("that part of this article has not been written yet"); };
+    await A.agAction("libmile", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "draft" })[k] || "" });
+    A.apiGet = prev;
+    assert.strictEqual(a.panel.loading, false, "it stops reading");
+    assert.ok(/has not been written yet/.test(a.panel.error), "and passes the server's words on: " + a.panel.error);
+    assert.ok(/has not been written yet/.test(A.agPanelHtml(a)), "on screen, in the panel");
+  });
+
+  await atest("the Library refreshes itself ONLY while it is in front of him and something is moving", async () => {
+    const a = agReset(); a.chat = null;
+    const calls = [];
+    const prev = A.apiGet;
+    const lib = (p) => /\/library$/.test(p);
+    A.apiGet = async (p) => { calls.push(p); return lib(p) ? [{ id: "x", status: "writing" }] : []; };
+
+    a.view = "library"; a.library = [{ id: "x", status: "writing" }];
+    await A.agRefresh();
+    assert.ok(calls.some(lib), "a row being written is refetched: " + calls.join(", "));
+
+    calls.length = 0;
+    a.library = [{ id: "x", status: "ready" }];
+    await A.agRefresh();
+    assert.ok(!calls.some(lib), "nothing moving, nothing fetched: " + calls.join(", "));
+
+    calls.length = 0;
+    a.view = "knowledge"; a.library = [{ id: "x", status: "writing" }];
+    await A.agRefresh();
+    assert.ok(!calls.some(lib), "and not while he is on another screen: " + calls.join(", "));
+    A.apiGet = prev;
+  });
+
+  await atest("a row being written puts the poll on its fast cadence, on the one timer there is", async () => {
+    const a = agReset();
+    a.chat = { runs: [{ run_id: "r1", status: "done" }] };
+    assert.strictEqual(A.agLiveRun(), null, "no live run in the loaded chat");
+    a.view = "library"; a.library = [{ id: "x", status: "writing" }];
+    assert.strictEqual(A.agLibWriting(a), true, "but a row is still being written");
+    a.library = [{ id: "x", status: "ready" }];
+    assert.strictEqual(A.agLibWriting(a), false);
+    assert.strictEqual(A.agLibWriting({}), false, "and an empty screen is not 'writing'");
+    /* the fast/idle choice is one expression over both, so there is no second clock */
+    const src = fs.readFileSync(path.join(__dirname, "static", "js", "17-agents.js"), "utf8");
+    const poll = src.slice(src.indexOf("function agStartPoll"), src.indexOf("function agStopPoll"));
+    assert.ok(/agLiveRun\(\) \|\| \(a && a\.view === "library" && agLibWriting\(a\)\)/.test(poll),
+              "the Library case rides the existing cadence: " + poll.slice(poll.indexOf("const live")));
+    assert.strictEqual((poll.match(/setInterval/g) || []).length, 1, "still exactly one interval");
   });
 
   console.log("\n" + "-".repeat(60));

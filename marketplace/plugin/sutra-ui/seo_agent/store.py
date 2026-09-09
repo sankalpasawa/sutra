@@ -375,24 +375,244 @@ def save_connections(data):
 
 
 # ---- library ---------------------------------------------------------------------------
+#
+# A Library row used to be born once, at the end, when a draft was approved. The owner asked for
+# the opposite (2026-09-09): the row appears when the article STARTS and fills in as the run makes
+# things, so he can watch it and open any half-finished piece without the agent stopping to show
+# him. That is `library_start` at the top of a run and `library_finish` at the end of it.
+#
+# The thing that makes it cheap: NOTHING IS COPIED WHILE THE RUN IS LIVE. A run already writes
+# every step's file to chats/<chat>/runs/<run>/artifacts/, and a Library row already carries
+# chat_id and run_id, so the progress strip is DERIVED from the run's own folder every time it is
+# asked for. Nothing can drift from the run, and a run that dies half way leaves a row that
+# honestly shows how far it got. The copies into the Library folder still happen, but only once,
+# at finish, so a finished article survives its chat being deleted.
+
+# The five things a person watches for, in the order the strip shows them, and the file each one
+# is read from. `needs` is a second file that must also be there before the milestone counts.
+#
+# `edited` reads write-report.json, which is the only file in a run that records what the editing
+# passes (coherence, readable, sentences, slop, links, clean) actually changed. It needs draft.md
+# too, because write_article ALSO writes write-report.json when the plan fails its freeze check
+# and no draft is ever written; without that guard the strip would show "edited" lit above a draft
+# that does not exist.
+MILESTONES = [
+    {"key": "research", "label": "Researched",
+     "note": "the brief this article is built on", "file": "research.json"},
+    {"key": "plan", "label": "Planned",
+     "note": "the headings, the evidence behind each one and the links", "file": "blueprint.json"},
+    # AFTER the plan, not before it. The search picture is written at the end of the gather step,
+    # and gather is planner step 1 INSIDE write_article, which only runs once the blueprint exists.
+    # Listing it earlier would light the strip out of order and read as a step that had been
+    # skipped. (Caught on integration, 2026-09-09: the contract and the design doc disagreed about
+    # where it is written, and the code settles it.)
+    {"key": "picture", "label": "The search picture",
+     "note": "what the search results show, and which questions were kept",
+     "file": "search-picture.md"},
+    {"key": "draft", "label": "Written",
+     "note": "the article as the writer left it", "file": "draft.md"},
+    {"key": "edited", "label": "Edited",
+     "note": "what each editing pass changed", "file": "write-report.json", "needs": "draft.md"},
+]
+
+MILESTONE_FILES = {m["key"]: m["file"] for m in MILESTONES}
+
+
+def library_item_id(chat_id, run_id):
+    """The id of the row for this run. Decided in ONE place, and derived only from the run.
+
+    A finished item used to be `<date>-<slug-of-the-title>`. At run start there is no title, and
+    the rename at the end must NOT move the row, or the screen loses the thing it was watching.
+    So the id is the run's own identity: `run-<chat_id>-<run_id>`.
+
+    Three reasons for that shape and no other:
+      * it is a pure function of (chat_id, run_id), so `library_start` is idempotent by
+        construction: call it twice and it computes the same id and finds the row already there;
+      * it holds nothing that changes, so the rename at finish touches the title and never the id;
+      * there is deliberately NO date in it. A date looks tidy in a folder listing, but a run that
+        starts at 23:55 and finishes at 00:05 would compute two different ids and leave two rows,
+        which is the exact bug this whole change exists to avoid.
+
+    It is lowercase letters, digits and hyphens only, so it is safe as a folder name and safe in a
+    URL path, and it stays inside the 80 characters the API's id check allows.
+    """
+    return ("run-%s-%s" % (chat_id, run_id))[:80]
+
+
+def _stat(path):
+    try:
+        return os.stat(path)
+    except OSError:
+        return None
+
+
+def _at(st):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)) if st else None
+
+
+def milestones(chat_id, run_id):
+    """What this run has actually produced so far, read from the run's own artifacts folder.
+
+    Derived, never stored. One os.stat per named file (five, and one shared with `needs`), which
+    is why this is cheap enough to run for every row of `library_list` on every poll of the
+    Library screen: a row already costs one JSON read, and five stats beside it do not register.
+
+    A milestone that is not there yet comes back with `exists: false` so the screen can grey it,
+    rather than being left out, because the strip has to show the whole journey from the start.
+
+    An empty list means "we cannot know": the run folder is gone (an old row whose chat was
+    deleted). That is deliberately different from five falses, which means "we looked and the run
+    never got that far". A finished article whose chat was deleted must not read as a broken one.
+    """
+    if not chat_id or not run_id:
+        return []
+    arts = os.path.join(run_dir(chat_id, run_id), "artifacts")
+    if not os.path.isdir(arts):
+        return []
+    cache = {}
+
+    def st(name):
+        if name not in cache:
+            cache[name] = _stat(os.path.join(arts, name))
+        return cache[name]
+
+    out = []
+    for m in MILESTONES:
+        s = st(m["file"])
+        # a zero-byte file is a step that crashed mid-write, not a step that finished
+        ok = bool(s) and s.st_size > 0
+        if ok and m.get("needs"):
+            n = st(m["needs"])
+            ok = bool(n) and n.st_size > 0
+        out.append({"key": m["key"], "label": m["label"], "note": m["note"], "file": m["file"],
+                    "exists": ok, "at": _at(s) if ok else None,
+                    "bytes": s.st_size if ok else 0})
+    return out
+
+
+def _copy_into(src, dest):
+    """Copy one file, atomically, the way every other save here works: temp file in the SAME
+    folder, then rename over the target. A crash mid-copy leaves the old complete file."""
+    d = os.path.dirname(dest)
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with open(src, "rb") as s, os.fdopen(fd, "wb") as t:
+            t.write(s.read())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _write_text(path, text):
+    """Atomic text write. Used for draft.md, which used to be written straight over itself: a
+    crash there destroyed the article and left half of a new one in its place."""
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text or "")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def library_start(chat_id, run_id, request_text=""):
+    """Put the row on the Library screen NOW, at the top of the run, and return its id.
+
+    The row is born with the only two things that are true this early: a placeholder name
+    ("Writing…") and the state `writing`. Everything else fills itself in, because the strip is
+    derived from the run rather than written here.
+
+    Idempotent, and not by luck: the id is a pure function of the run (see `library_item_id`), so
+    a second call finds the row already on disk and returns the same id without touching it. Two
+    threads racing to start the same run therefore cannot make two rows.
+    """
+    item_id = library_item_id(chat_id, run_id)
+    d = os.path.join(library_dir(), item_id)
+    p = os.path.join(d, "meta.json")
+    have = read_json(p)
+    if have:
+        return have.get("id") or item_id
+    meta = {"id": item_id, "title": "Writing…", "status": "writing",
+            "chat_id": chat_id, "run_id": run_id,
+            "request": (request_text or "").strip()[:400],
+            "words": 0, "created_at": now(), "started_at": now()}
+    write_json(p, meta)
+    return item_id
+
+
+def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_id=None):
+    """Give the row its real name, mark it ready, and write the article into it. Returns the meta.
+
+    The rename is a rename and nothing else: the id the row was born with is the id it keeps, or
+    the screen loses the row a person was watching mid-run.
+
+    `item_id` may be None. Old runs exist that never called `library_start`, and the publish route
+    can be fired on any run at all, so a finish with no row simply makes one. `chat_id` and
+    `run_id` may come as keyword arguments or inside `meta_extra`, whichever the caller finds
+    easier; with them the new row gets the run's own id, so a `library_start` fired later for the
+    same run still lands on this row instead of making a second one.
+
+    This is also the ONE moment anything is copied. While the run is live the strip is derived
+    from the run's folder; at finish the research, the plan and the topic list are copied in
+    beside the article so that deleting the chat later does not empty the Library.
+    """
+    extra = dict(meta_extra or {})
+    chat_id = chat_id or extra.get("chat_id")
+    run_id = run_id or extra.get("run_id")
+    d = os.path.join(library_dir(), item_id) if item_id else None
+    meta = read_json(os.path.join(d, "meta.json")) if d else None
+    if not meta:
+        # an id the caller named is honoured even when the row is not there yet: it may be the id
+        # the screen is already holding. Only a finish with no id at all mints one.
+        item_id = item_id or (library_item_id(chat_id, run_id) if chat_id and run_id
+                              else time.strftime("%Y-%m-%d") + "-" + slug(title))
+        d = os.path.join(library_dir(), item_id)
+        meta = read_json(os.path.join(d, "meta.json")) or {
+            "id": item_id, "chat_id": chat_id, "run_id": run_id, "created_at": now()}
+    meta["id"] = item_id                      # never re-minted: the row keeps the id it was born with
+    meta["title"] = title
+    meta["status"] = "ready"
+    meta["words"] = len((draft_md or "").split())
+    meta["finished_at"] = now()
+    # the row already knows its run when it was started; a finish that names one wins, a finish
+    # that names none must not blank what is there
+    if chat_id:
+        meta["chat_id"] = chat_id
+    if run_id:
+        meta["run_id"] = run_id
+    extra.pop("chat_id", None)
+    extra.pop("run_id", None)
+    meta.update(extra)
+    os.makedirs(d, exist_ok=True)
+    _write_text(os.path.join(d, "draft.md"), draft_md or "")
+    if meta.get("chat_id") and meta.get("run_id"):
+        for name in ("research.json", "blueprint.json", "topics.json"):
+            src = artifact_path(meta["chat_id"], meta["run_id"], name)
+            if os.path.exists(src):
+                _copy_into(src, os.path.join(d, name))
+    write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
 
 def library_save(chat_id, run_id, title, draft_md, meta_extra=None):
-    item_id = time.strftime("%Y-%m-%d") + "-" + slug(title)
-    d = os.path.join(library_dir(), item_id)
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, "draft.md"), "w", encoding="utf-8") as f:
-        f.write(draft_md or "")
-    for name in ("research.json", "blueprint.json", "topics.json"):
-        src = artifact_path(chat_id, run_id, name)
-        if os.path.exists(src):
-            with open(src, encoding="utf-8") as s, open(os.path.join(d, name), "w", encoding="utf-8") as t:
-                t.write(s.read())
-    meta = {"id": item_id, "title": title, "status": "draft",
-            "chat_id": chat_id, "run_id": run_id,
-            "words": len((draft_md or "").split()), "created_at": now()}
-    meta.update(meta_extra or {})
-    write_json(os.path.join(d, "meta.json"), meta)
-    return item_id
+    """The old one-shot save, kept because callers and tests still say it. It is now a thin call
+    onto `library_finish`, so a run that already has a live row is UPDATED and never doubled."""
+    meta = library_finish(library_item_id(chat_id, run_id), title, draft_md, meta_extra,
+                          chat_id=chat_id, run_id=run_id)
+    return meta["id"]
 
 
 def library_update(item_id, draft_md, title=None):
@@ -427,11 +647,20 @@ def library_update(item_id, draft_md, title=None):
 
 
 def library_list():
+    """Every row, newest first, each carrying its own progress strip.
+
+    The strip is on the LIST and not only on the single item, because the Library screen polls
+    this route while a run is going and the whole point of the change is watching a row fill in.
+    It is affordable: a row already costs one JSON read, and `milestones` adds five os.stat calls
+    beside it (one for a row whose run folder is gone, which is the common case for old rows).
+    """
     out = []
     if os.path.isdir(library_dir()):
         for name in os.listdir(library_dir()):
             m = read_json(os.path.join(library_dir(), name, "meta.json"))
             if m:
+                m.setdefault("status", "draft")
+                m["milestones"] = milestones(m.get("chat_id"), m.get("run_id"))
                 out.append(m)
     return sorted(out, key=lambda m: m.get("created_at", ""), reverse=True)
 
@@ -448,7 +677,47 @@ def library_get(item_id):
         meta["draft"] = ""
     meta["research"] = read_json(os.path.join(d, "research.json"))
     meta["blueprint"] = read_json(os.path.join(d, "blueprint.json"))
+    meta.setdefault("status", "draft")
+    meta["milestones"] = milestones(meta.get("chat_id"), meta.get("run_id"))
     return meta
+
+
+def library_artifact(item_id, name):
+    """One milestone's file, read out of the RUN, for the panel to show. None when there is none.
+
+    `name` is a milestone key ("plan") or the file it stands for ("blueprint.json"); the key is
+    what the screen should send, the filename is accepted because the strip already carries it.
+
+    This is a file-serving path, so it is gated twice, in this order:
+      1. containment — the resolved real path must sit inside this run's own artifacts folder, so
+         a name like "../../../etc/passwd" gets nothing even if it slipped past the route's regex;
+      2. an allow-list — only the five milestone files are servable. The run folder holds keys,
+         state and every work file, and none of that is this route's business.
+    Order matters: containment is checked first so that it is the rule doing the work, rather than
+    the allow-list quietly hiding a traversal hole.
+    """
+    meta = read_json(os.path.join(library_dir(), item_id, "meta.json"))
+    if not meta or not meta.get("chat_id") or not meta.get("run_id"):
+        return None
+    fname = MILESTONE_FILES.get(name, name)
+    arts = os.path.realpath(os.path.join(run_dir(meta["chat_id"], meta["run_id"]), "artifacts"))
+    p = os.path.realpath(os.path.join(arts, fname))
+    if p != arts and not p.startswith(arts + os.sep):
+        return None
+    if os.path.basename(p) not in set(MILESTONE_FILES.values()):
+        return None
+    st = _stat(p)
+    if not st or not st.st_size:
+        return None
+    spec = next(m for m in MILESTONES if m["file"] == os.path.basename(p))
+    row = {"key": spec["key"], "label": spec["label"], "note": spec["note"],
+           "file": spec["file"], "bytes": st.st_size, "at": _at(st)}
+    if spec["file"].endswith(".json"):
+        row["data"] = read_json(p)
+    else:
+        with open(p, encoding="utf-8") as f:
+            row["text"] = f.read()
+    return row
 
 
 def library_delete(item_id):

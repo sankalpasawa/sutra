@@ -2,6 +2,43 @@
 
 **status**: active · **updated**: 2026-09-09
 
+## 2.251.0 (2026-09-09)
+
+**The agent stops interrupting you.** A run used to stop five times. It now stops twice, at the two
+that are decisions rather than reviews: which topic, and whether the draft is finished. The brand
+pack, the research brief and the plan are written, announced in one line, and passed. The rule is
+written into the code for whoever wants to add a stop later: the test is whether the agent genuinely
+cannot continue without an answer, and "look at this" is not that.
+
+**Nothing is lost, because the Library now shows the work as it is made.** A row appears the moment
+an article starts and fills in piece by piece: researched, planned, the search picture, written,
+edited. Each one clickable. A run that crashes leaves a row honestly showing how far it got.
+
+The row is derived from the run, never copied out of it, so it cannot drift from what actually
+happened, and a list of 300 rows with the full strip reads in 14 milliseconds. Its id is a pure
+function of the run, which makes opening it idempotent by construction: two threads racing cannot
+make two rows, and the rename at the end cannot move a row somebody is watching. A row whose run
+folder is gone shows no strip at all rather than five empty boxes, because "we cannot know" and "it
+never got that far" are different facts.
+
+**The search picture.** One readable page of what the search results actually said: the keyword and
+its numbers, who ranks, what they all cover, what none of them cover, what to avoid, the questions
+worth answering, and who the article is written for. Pure assembly, no model call, so what you read
+is what the steps produced rather than a summary of it. It counts both filter stages and lists the
+questions that were set aside, so "22 elsewhere and 9 here" is answerable instead of looking like
+things went missing.
+
+**An article run no longer starts when it cannot measure anything.** The old balance guard sat below
+the first step and behind a resume check, so a resumed run skipped it entirely and then quietly
+substituted placeholder figures for every search call. That is the twenty minutes of work on numbers
+nobody measured. It is now one pre-flight at the top that refuses before anything starts, naming the
+balance, the floor and both ways out. It fails OPEN in every direction: no credentials, an
+unreadable balance, a changed response shape, or nothing paid left to run all proceed, because a
+network blip must never stop somebody writing. The floor is resolved at import, so a constant that
+vanishes is an error rather than a guard that silently passes everything.
+
+A placeholder run is still possible, but only by asking for it in so many words.
+
 ## 2.250.1 (2026-09-09)
 
 **A sheet of ideas the workflow already produced can be loaded straight in.** Somebody who has run

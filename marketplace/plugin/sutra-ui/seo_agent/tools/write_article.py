@@ -121,6 +121,13 @@ def run(ctx, redo=False):
 
     # ---------------- PLANNER ----------------
     inputs = step("gather", "Gathering the material", lambda: gather.run(blueprint, research, cards, say))
+    # The search picture, saved the moment the lists are clean. It does NOT stop the run: the owner
+    # reads it while the article is being written, or afterwards, or never (2026-09-09). Re-saved on a
+    # resume too, which is free: gather carries the markdown in its own work file.
+    if inputs.get("search_picture"):
+        store.save_artifact(chat_id, run_id, "search-picture.md", inputs["search_picture"])
+        say("The search picture is ready to read",
+            "What the search results said, and which questions were kept for this article")
     try:
         routed = step("route", "Deciding the article's format", lambda: fmt_router.run(inputs, research, say))
     except ValueError as e:

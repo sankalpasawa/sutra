@@ -2,7 +2,14 @@
 
 Reads:  blueprint.json (the sections menu, h1, keyword set, persona, format), research.json (the world,
         the spine, the keywords, the SERP lists, the winners study, the build spec) and cards.json.
-Writes: {"group_a": the article's settings, "group_b": the selection raw material, "vet": the audit}.
+Writes: {"group_a": the article's settings, "group_b": the selection raw material, "vet": the audit,
+        "search_picture": the markdown of what the search results said}.
+
+THE SEARCH PICTURE is built here and nowhere else, because THIS is the moment the lists are clean.
+It is pure assembly (research/render.py::search_picture), no model call, and the step still knows
+nothing about the run folder: it returns the markdown and write_article.py saves it as
+search-picture.md. The owner asked for one readable file he can open while the article is being
+written, instead of being stopped to approve things (2026-09-09).
 
 Everything is a clean lift except ONE model call, vet-lists.md, which keeps only the People-Also-Ask
 questions, related searches and table-stakes topics a reader of THIS article would care about. The
@@ -15,7 +22,9 @@ would push the article toward being the tenth copy of a page that already ranks.
 first; that order is used downstream. Capped at MAX_TABLE_STAKES.
 """
 from .. import llm
+from ..research import render
 from . import _common as C
+from .plan_select import tag_maps
 
 
 def _vet_kept(kept, originals):
@@ -155,7 +164,17 @@ def run(blueprint, research, cards, say=lambda *a: None):
         "paa_pool": paa_k,
         "related_searches": related_k,
     }
+    # The search picture. Built from the SAME variables the lists above were vetted into, so the
+    # page and the plan can never disagree about what was kept. Nothing is decided here.
+    vetted = {"paa_raw": paa, "paa_kept": paa_k, "related_raw": related, "related_kept": related_k,
+              "table_stakes_raw": common, "table_stakes_kept": stakes,
+              "persona": group_a["persona"]}      # the reader the writer targets, not a second pick
+    if vet.get("failed"):
+        vetted["note"] = ("The filter could not run for this article, so these lists are unfiltered: %s"
+                          % vet["failed"])
+    picture = render.search_picture(research, vetted, tag_maps(group_b))
+
     n_cards = sum(len(s["evidence"]) + sum(len(h["evidence"]) for h in s["h3"]) for s in menu)
     say("Gathered the material", "%d sections, %d facts, word band %d to %d"
         % (len(menu), n_cards, group_a["word_band"]["min"], group_a["word_band"]["max"]))
-    return {"group_a": group_a, "group_b": group_b, "vet": vet}
+    return {"group_a": group_a, "group_b": group_b, "vet": vet, "search_picture": picture}

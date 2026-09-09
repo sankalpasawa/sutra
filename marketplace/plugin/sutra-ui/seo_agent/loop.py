@@ -170,6 +170,32 @@ def _run_tool(chat_id, run_id, name, args, step_id=None):
     return mod.run(ctx, **(args or {}))
 
 
+# Which checkpoints still STOP the run, and which are now just published.
+#
+# The owner's call, 2026-09-09, once every output began landing in the Library as it is made:
+# a checkpoint that only SHOWS him something has stopped earning its interruption, because he can
+# read the same thing in the Library whenever he likes. What survives is the two that are not
+# reviews at all:
+#
+#   topic_list — a decision only he can make. The agent cannot know which idea he wants.
+#   article    — the last moment before something becomes finished work.
+#
+# The brand pack, the research brief and the plan are now written, announced, and passed. They were
+# the three that interrupted him five times a run to say "look at this", and the answer was almost
+# always yes. Nothing is lost: they are in the Library, readable at any point, and a run that made
+# a bad plan is still stopped at the draft.
+#
+# Do not add a view here without the same argument. Every stop costs a person their attention, and
+# the test is whether the agent genuinely cannot continue without an answer.
+WAITING_VIEWS = ("topic_list", "article")
+
+# The three tools that only ever run while making an article. The first of them to finish opens the
+# Library row, so a person can watch it fill in instead of being stopped and shown things.
+ARTICLE_TOOLS = ("run_research", "build_blueprint", "write_article")
+VIEW_LABEL = {"brand_pack": "the brand pack", "research_brief": "the research",
+              "blueprint": "the plan", "topic_list": "the topics", "article": "the draft"}
+
+
 def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
     fields = {"status": "waiting",
               "waiting_on": dict(payload, kind=kind, call_id=call_id)}
@@ -401,14 +427,27 @@ def step(chat_id, run_id):
                 return store.get_state(chat_id, run_id)
 
             if name == "show_artifact":
-                store.save_messages(chat_id, messages)
                 view = args.get("view", "article")
-                _wait(chat_id, run_id, "artifact", call_id, {
-                    "artifact": args.get("path", ""),
-                    "view": view,
-                    "prompt": args.get("prompt", "Have a look before I carry on.")},
-                    stage=VIEW_STAGE.get(view))
-                return store.get_state(chat_id, run_id)
+                if view in WAITING_VIEWS:
+                    store.save_messages(chat_id, messages)
+                    _wait(chat_id, run_id, "artifact", call_id, {
+                        "artifact": args.get("path", ""),
+                        "view": view,
+                        "prompt": args.get("prompt", "Have a look before I carry on.")},
+                        stage=VIEW_STAGE.get(view))
+                    return store.get_state(chat_id, run_id)
+                # Everything else is PUBLISHED, not waited on. See WAITING_VIEWS for why.
+                if VIEW_STAGE.get(view):
+                    store.patch_state(chat_id, run_id, stage=VIEW_STAGE[view])
+                store.emit(chat_id, run_id, "artifact_ready", view=view,
+                           artifact=args.get("path", ""),
+                           label=VIEW_LABEL.get(view, view.replace("_", " ")))
+                results.append({"type": "tool_result", "tool_use_id": call_id, "content": {
+                    "shown": True, "waited": False,
+                    "note": ("It is on screen and in the Library. Do NOT ask whether it looks "
+                             "right and do NOT wait: carry straight on to the next step. Say in "
+                             "one short sentence what you made and that it is there to read.")}})
+                continue
 
             # --- non-pausing UI tools ----------------------------------------------------
             if name == "log_step":
@@ -457,6 +496,17 @@ def step(chat_id, run_id):
             try:
                 out = _run_tool(chat_id, run_id, name, args, step_id=step_id)
                 ms = int((time.time() - t0) * 1000)
+                # A Library row is born here, not at loop.start, because not every run is an
+                # article: indexing a site or refreshing the catalogue must not leave a row behind.
+                # These three tools only ever run for an article, and library_start is idempotent
+                # by construction (its id is a pure function of the run), so whichever fires first
+                # makes the row and the others find it.
+                if name in ARTICLE_TOOLS and not (out or {}).get("error"):
+                    try:
+                        store.library_start(chat_id, run_id,
+                                            (store.get_state(chat_id, run_id) or {}).get("request", ""))
+                    except Exception:   # noqa: BLE001 — a row we cannot open must never lose the run
+                        pass
                 store.emit(chat_id, run_id, "step_finished", id=step_id,
                            label=registry.label(name), ms=ms,
                            summary=(out or {}).get("summary", ""))
@@ -627,6 +677,8 @@ def save_to_library(chat_id, run_id, title=None):
     kw = rs.get("keywords") or {}
     primary = kw.get("primary") or rs.get("primary_keyword") or {}
     idea_id = (state.get("idea_id") or "").strip()
+    # RENAME the row this run already opened, never make a second one. library_save routes through
+    # library_finish with the run named, so a run whose row was never opened still gets exactly one.
     item = store.library_save(chat_id, run_id, title, draft, {
         "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary),
         "idea_id": idea_id})

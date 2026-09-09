@@ -18,6 +18,9 @@ next reads it, so a crash resumes where it stopped and a paid call is never repe
                          the reuse verdict
     persona              the one reader this is written for, decided once and reused by the blueprint
 
+Before step 0b there is the credit pre-flight. If the numbers cannot be bought, the run refuses at
+the top rather than starting and quietly filling itself with placeholders (see _preflight).
+
 Two rules run through all of it. Nothing invented: every number comes from DataForSEO, every fact
 is a card with a quote and a source. Code counts, the model judges: the filters, the substring
 checks, the caps and the completeness boxes are all code.
@@ -57,7 +60,109 @@ def _compat(research):
     return research
 
 
-def run(ctx, topic, angle="", redo=False, **_ignored):
+# ---- the credit pre-flight ---------------------------------------------------------------------
+# Resolved at import, not inside the guard. Found 2026-09-09: the first version of the same guard
+# in front of serp_advanced named a constant that did not exist, so the check threw, was swallowed,
+# and the guard failed open without anyone noticing until it was run. A name resolved here breaks
+# loudly at import instead, and test_credit_guard asserts it is real.
+MIN_CREDITS = _c.MIN_CREDITS
+
+# Every step of this run that costs money, by the name of the _work file it writes. Nothing else
+# in run() spends. The evidence pair is either/or: the research conversation ("curate") writes its
+# own file, and the plain keyword read ("evidence") only runs when the conversation came back with
+# nothing, so a finished run has one of the two and never both.
+PAID_STEPS = ("pool", "metrics", "serp", "gap-evidence")
+EVIDENCE_STEPS = ("curate", "evidence")
+
+
+def _paid_work_left(ctx, redo):
+    """Is there anything left in this run that has to be bought?
+
+    A resume whose paid steps are all on disk spends nothing, so refusing it would only stand
+    between a person and the brief he has already paid for. redo re-runs everything, so it always
+    means yes.
+    """
+    if redo:
+        return True
+    if any(_c.load_work(ctx, name) is None for name in PAID_STEPS):
+        return True
+    return all(_c.load_work(ctx, name) is None for name in EVIDENCE_STEPS)
+
+
+def _read_balance():
+    """The DataForSEO balance in dollars, or None when it cannot be read.
+
+    FAILS OPEN, and deliberately in both directions. dfs.balance() already answers None rather
+    than raising on a network blip; this wraps it again in case a stub, a future version or a
+    changed response shape raises instead, and treats anything that is not a number as unknown.
+    None means "unknown, go ahead". The owner's connection drops several times a day, and a blip
+    must never be the reason he cannot write. The paid steps report their own failure loudly.
+    """
+    try:
+        bal = dfs.balance()
+    except Exception:      # noqa: BLE001 - a broken balance check must never stop a run
+        return None
+    try:
+        return None if bal is None else float(bal)
+    except (TypeError, ValueError):
+        return None
+
+
+def _preflight(ctx, redo, placeholder_numbers, say):
+    """Refuse at the top when the numbers cannot be bought. Returns (refusal, demo, note).
+
+    refusal is what run() returns when the run must not start, in the shape learn_brand uses when
+    there is no measured traffic: a summary, and an error that names what is missing and both ways
+    out. demo says every number in this run is a placeholder. note is the line that goes into
+    research.json so the file says so too.
+
+    Why it sits at the very top, 2026-09-09. The balance was minus seven cents. The free keyword
+    steps ran, the paid calls quietly swapped in demo data (dfs.serp_advanced falls back rather
+    than firing calls that would only be refused), and the run carried on for another twenty
+    minutes to produce an article built on estimates. The owner: "why should it even go further if
+    there is no DataForSEO? It never misfires. It is pointless, a very bad experience."
+
+    Two rules hold here. The balance is read ONCE per run, never per step, because reading it is
+    itself an API call. And the check fails OPEN: an unreadable balance proceeds.
+
+    Refusing is the default, not the only answer. A person may want the shape of an article without
+    paying for it, so placeholder_numbers=True runs it on demo figures, every one of them flagged.
+    That has to be asked for; it is never what happens on its own.
+    """
+    if dfs.demo_mode():
+        say("Using demo search data", "No DataForSEO login, so none of these numbers are real")
+        return None, True, "demo data: no DataForSEO login, so no number here is real"
+    if not _paid_work_left(ctx, redo):
+        return None, False, ""
+    bal = _read_balance()
+    if bal is None:
+        say("Could not read the DataForSEO balance",
+            "Going ahead. A paid step says so itself if it cannot pay")
+        return None, False, ""
+    if bal >= MIN_CREDITS:
+        say("Checked the DataForSEO balance", "%.2f dollars available" % bal)
+        return None, False, ""
+    if placeholder_numbers:
+        say("Running on placeholder numbers because you asked for it",
+            "The balance is $%.2f, so nothing in this brief is measured" % bal)
+        return None, True, ("demo data: you asked for the run with the balance at $%.2f, so no "
+                            "number here is real" % bal)
+    say("Not enough DataForSEO balance to start", "The balance is $%.2f and a run needs $%.2f"
+        % (bal, MIN_CREDITS))
+    return ({"summary": "The research did not start: there is not enough DataForSEO balance to "
+                        "buy the numbers ($%.2f on the account)." % bal,
+             "error": ("Every number in a research brief is bought from DataForSEO: the search "
+                       "volumes, the difficulty, the live search results and the pages that win. "
+                       "The balance is $%.2f and a run needs at least $%.2f, so not one figure in "
+                       "this brief would be measured, and twenty minutes of writing on estimates "
+                       "is worse than no writing at all. Top up the DataForSEO account and ask me "
+                       "again, or tell me you want it anyway and I will run it on placeholder "
+                       "numbers with every one of them marked as not real (call run_research again "
+                       "with placeholder_numbers set to true). I will not guess at this."
+                       % (bal, MIN_CREDITS))}, False, "")
+
+
+def run(ctx, topic, angle="", redo=False, placeholder_numbers=False, **_ignored):
     topic = (topic or "").strip()
     angle = (angle or "").strip()
     if not topic:
@@ -65,8 +170,14 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
     chat_id, run_id = ctx["chat_id"], ctx["run_id"]
     say = sh.reporter(ctx, "run_research")
     company = sh.company()
-    demo = dfs.demo_mode()
     notes = []
+
+    # ---- the credit pre-flight, before a single step starts ------------------------------------
+    refusal, demo, demo_note = _preflight(ctx, redo, bool(placeholder_numbers), say)
+    if refusal:
+        return refusal
+    if demo_note:
+        notes.append(demo_note)
 
     def step(name, produce):
         out, reused = _c.cached(ctx, name, redo, produce)
@@ -76,19 +187,6 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
     w, reused = step("world", lambda: world.run(topic, company))
     say("Drew the line around the subject" + (" (kept from last time)" if reused else ""),
         "Not about: " + w["not_about"][:150])
-
-    # ---- the pre-flight, only when something is about to be spent -------------------------------
-    if _c.load_work(ctx, "pool") is None or redo:
-        if demo:
-            say("Using demo search data", "No DataForSEO login, so none of these numbers are real")
-            notes.append("demo data: no DataForSEO login, so no number here is real")
-        else:
-            bal = dfs.balance()
-            if bal is not None and bal < _c.MIN_CREDITS:
-                return {"summary": "Not enough DataForSEO balance to research with (%.2f dollars)." % bal,
-                        "error": "DataForSEO balance is $%.2f; research needs real numbers" % bal}
-            say("Checked the DataForSEO balance",
-                "%.2f dollars available" % bal if bal is not None else "Could not read the balance; going ahead")
 
     # ---- 1. the brief: seeds → net → filter → numbers → judge -----------------------------------
     sd, _ = step("seeds", lambda: seeds.run(topic, angle, w, company))
@@ -313,7 +411,9 @@ def run(ctx, topic, angle="", redo=False, **_ignored):
     if cann.get("hit"):
         summary += ". You already rank #%s for it via %s" % (cann["hit"]["rank"], cann["hit"]["url"])
     if demo:
-        summary += " (demo data, no DataForSEO login, so the numbers are not real)"
+        # Two ways a run ends up on demo figures (no login, or a balance too low and you asked for
+        # it anyway). The pre-flight decided which, once; this only says it.
+        summary += " (%s)" % demo_note.replace("demo data: ", "demo data, ", 1)
     if own.get("note"):
         summary += ". " + own["note"].capitalize()
     return {"summary": summary, "artifact": "research.json", "cost_usd": research["cost_usd"]}

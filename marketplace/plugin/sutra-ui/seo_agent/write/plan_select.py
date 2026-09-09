@@ -62,12 +62,21 @@ def _render_h3_block(h3s):
     return "\n".join(lines)
 
 
-def _tag_maps(b):
-    """Mint per-article IDs: kind -> {id: original text} (G1.., T1.., Q1.., R1..)."""
+def tag_maps(b):
+    """Mint per-article IDs: kind -> {id: original text} (G1.., T1.., Q1.., R1..).
+
+    PUBLIC because the search picture (research/render.py::search_picture) prints the same ids
+    beside the same items, so a person reading "paa: Q3" in the plan can find Q3 on that page.
+    It is minted from group_b, which nothing between gather and select touches, so both callers
+    get the same ids from the same lists. Do not make the minting depend on anything else.
+    """
     lists = {"gap": b.get("gaps_to_own", []), "common-h2": b.get("winners_common_h2s", []),
              "paa": b.get("paa_pool", []), "related": b.get("related_searches", [])}
     return {kind: {"%s%d" % (_ID_PREFIX[kind], i + 1): x for i, x in enumerate(items)}
             for kind, items in lists.items()}
+
+
+_tag_maps = tag_maps        # the old private name, kept: the write suite calls it
 
 
 def _id_block(maps, kind):
@@ -118,7 +127,7 @@ def run(inputs, ctx, say=lambda *a: None):
     a, b = inputs["group_a"], inputs["group_b"]
     brand = C.company()
     sections = _normalise_sections(b["sections_menu"])
-    maps = _tag_maps(b)
+    maps = tag_maps(b)
 
     base = C.prompt("tag-h3s", brand=brand["brand"], about=brand["about"],
                     title=ctx["title"] or "(none)", angle=ctx["angle"] or "(none)",

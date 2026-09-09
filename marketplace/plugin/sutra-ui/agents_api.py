@@ -738,6 +738,26 @@ def api_library_item(item_id: str):
     return it or _bad("not found", 404)
 
 
+@router.get("/library/{item_id}/artifact/{name}")
+def api_library_artifact(item_id: str, name: str):
+    """One milestone's file, straight out of the run that made it.
+
+    This is what makes the live Library worth having: the owner asked to be able to open any
+    half-finished piece of a run without the agent stopping to show it to him (2026-09-09). The
+    row on screen carries a strip of milestones; this route is what a click on one of them reads.
+
+    Nothing is copied to serve it. The row knows its chat and its run, and the file is read from
+    that run's artifacts folder, so what the panel shows is the run's own file and cannot drift
+    from it. `name` is the milestone key the strip carries ("plan"), or the file it stands for.
+    """
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    if not _NAME.match(name or ""):
+        return _bad("bad name")
+    row = store.library_artifact(item_id, name)
+    return row or _bad("that part of this article has not been written yet", 404)
+
+
 @router.post("/library/{item_id}/save")
 def api_library_save_edit(item_id: str, body: dict = Body(...)):
     """Save an edited article back over itself. The person's version is the truth from then on.
@@ -855,6 +875,31 @@ def api_asset_status(idea_id: str, body: dict = Body(...)):
 
 # ---- health ------------------------------------------------------------------------------------
 
+def _dfs_credit():
+    """Whether an article run can actually measure anything, for the screen to say so up front.
+
+    Three rules, and each one exists because getting it wrong is worse than not showing it:
+
+    * The floor comes from `run_research.MIN_CREDITS`, never a literal. The screen and the guard
+      that refuses the run must agree, and two copies of a number always drift.
+    * `enough` is True when the balance is UNKNOWN, matching the guard's fail-open. The owner's
+      connection drops constantly; a screen that reads "blocked" on every network blip is worse
+      than one that says nothing.
+    * Cached through `loop._cached_balance`, 300 seconds. Reading a balance is itself an API call
+      and /health is polled, so an uncached read here would be its own bug.
+    """
+    try:
+        from seo_agent.tools import _shared as _sh, dfs as _dfs, run_research as _rr
+        mode = _sh.dfs_mode(_dfs)
+        if mode != "live":
+            return {"mode": mode, "balance": None, "floor": _rr.MIN_CREDITS, "enough": mode == "demo"}
+        bal = loop._cached_balance(_dfs)
+        return {"mode": mode, "balance": bal, "floor": _rr.MIN_CREDITS,
+                "enough": bal is None or bal >= _rr.MIN_CREDITS}
+    except Exception:   # noqa: BLE001 — health must answer even when this cannot
+        return {"mode": "unknown", "balance": None, "floor": None, "enough": True}
+
+
 @router.get("/health")
 def api_health():
     _sync_claude_bin()
@@ -871,6 +916,7 @@ def api_health():
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()
                                and (c.get("dataforseo_password") or "").strip()),
+            "dataforseo_credit": _dfs_credit(),
             "voyage": bool((c.get("voyage_key") or "").strip()),
             "site_indexed": bool(idx.get("pages")) if isinstance(idx, dict) else False,
             "page_index": page_index,

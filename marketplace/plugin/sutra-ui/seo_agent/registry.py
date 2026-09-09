@@ -6,8 +6,9 @@ lever that makes it choose correctly.
 
 No credit gates. Every tool runs when the model calls it; paid steps do their own
 DataForSEO balance pre-flight and say plainly when they skipped a paid call. The user is
-still in control through the checkpoints: `show_artifact` stops and waits at the brand
-pack, the topics, the research brief, the blueprint and the draft.
+still in control at the two checkpoints that are real decisions: `show_artifact` stops
+and waits at the topics and at the draft. The brand pack, the research and the plan are
+shown and passed; they land in the Library and the user reads them when they choose.
 
 `gate` is kept for the loop (all "auto" now). `module` is the tool's module path relative
 to this package; loop.py resolves it against the package, never against sys.path.
@@ -49,11 +50,15 @@ UI_TOOLS = [
     {
         "name": "show_artifact",
         "description": (
-            "Show the user something you made and wait for them to approve or edit it. The five "
-            "checkpoints: the brand pack after setup (view brand_pack, path brand), the topics "
-            "(topic_list, topics.json), the research brief (research_brief, research.json), the "
-            "blueprint (blueprint, blueprint.json) and the draft (article, draft.md). Returns the "
-            "artifact, which may have been edited."
+            "Put something you made in front of the user. TWO of these stop and wait for an "
+            "answer, because the answer is a decision only they can make: the topics "
+            "(topic_list, topics.json) and the draft (article, draft.md). "
+            "THREE are shown and NOT waited on, because they land in the Library where the user "
+            "reads them whenever they like: the brand pack (brand_pack, path brand), the research "
+            "(research_brief, research.json) and the plan (blueprint, blueprint.json). For those "
+            "three, say in ONE short sentence what you made and that it is there to read, then "
+            "carry straight on. Never ask 'does this look right' about them and never wait for a "
+            "reply you were not promised."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": True,
         "input_schema": {"type": "object", "properties": {
@@ -270,6 +275,10 @@ WORK_TOOLS = [
         "input_schema": {"type": "object", "properties": {
             "topic": {"type": "string", "description": "The working title."},
             "angle": {"type": "string", "description": "The angle, if the user gave one."},
+            "placeholder_numbers": {"type": "boolean", "description":
+                "Run on placeholder figures when the DataForSEO balance is too low to measure "
+                "anything. ONLY when the person has asked for it in so many words. Never set it "
+                "to get past a refusal on your own judgement."},
         }, "required": ["topic"]},
         "plain": {
             "does": "Researches one topic: real keyword numbers, who ranks, what they cover, the gap, evidence with sources, and which of your pages belong in it.",

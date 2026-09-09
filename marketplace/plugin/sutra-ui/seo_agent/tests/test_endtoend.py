@@ -131,9 +131,17 @@ for kind, what in seen:
 
 artifacts = [w for k, w in seen if k == "artifact"]
 approvals = [w for k, w in seen if k == "approval"]
-ok("four artifact stops, not five", len(artifacts) == 4, artifacts)
-ok("in the right order",
-   artifacts == ["topic_list", "research_brief", "blueprint", "article"], artifacts)
+# TWO stops now, not four. The brand pack, the research and the plan are shown and passed, because
+# every output lands in the Library as it is made and a checkpoint that only SAYS "look at this"
+# has stopped earning its interruption. What survives is the two that are real decisions: which
+# topic, and whether the draft is finished. (The owner's call, 2026-09-09.)
+ok("two artifact stops: the ones that are decisions, not reviews", len(artifacts) == 2, artifacts)
+ok("in the right order", artifacts == ["topic_list", "article"], artifacts)
+ok("the research and the plan were SHOWN, not waited on",
+   {"research_brief", "blueprint"} <= {e.get("view") for e in store.get_events(chat, run) if e.get("type") == "artifact_ready"},
+   sorted({e.get("view") for e in store.get_events(chat, run) if e.get("type") == "artifact_ready"}))
+ok("and the run never stopped for them",
+   not ({"research_brief", "blueprint"} & set(artifacts)), artifacts)
 ok("nothing stopped for approval (no credit gates)", approvals == [], approvals)
 ok("the run finished", s["status"] == "done", s.get("error"))
 
@@ -175,6 +183,21 @@ lib = store.library_list()
 ok("library lists it", any(x.get("id") == item_id for x in lib), [x.get("id") for x in lib])
 item = store.library_get(item_id) or {}
 ok("the item carries the draft", len(item.get("draft", "")) > 100, len(item.get("draft", "")))
+# ONE row for the whole run, born at the first article step and renamed at the end. Two rows here
+# would mean a person watching a run fill in loses it the moment it finishes.
+_rows = store.library_list()
+ok("exactly one library row for the run, not two", len(_rows) == 1, [r["id"] for r in _rows])
+ok("the row it filled in is the row it finished", _rows[0]["id"] == item_id, (_rows[0]["id"], item_id))
+ok("the row was renamed, not left as Writing", _rows[0]["title"] != "Writing…", _rows[0]["title"])
+ok("its id is the run's, so the rename could not have moved it",
+   _rows[0]["id"].startswith("run-"), _rows[0]["id"])
+ok("a finished run lights every milestone, in the order it produced them",
+   [m["key"] for m in _rows[0]["milestones"] if m["exists"]]
+   == ["research", "plan", "picture", "draft", "edited"],
+   [(m["key"], m["exists"]) for m in _rows[0]["milestones"]])
+ok("every milestone is named for a person, not by its file",
+   all(m["label"] and m["note"] and not m["label"].endswith(".json")
+       for m in _rows[0]["milestones"]))
 ok("the item carries its research", bool(item.get("research")))
 
 print("\nmemory")

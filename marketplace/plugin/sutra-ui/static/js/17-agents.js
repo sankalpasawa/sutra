@@ -22,6 +22,29 @@ const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas",
                         blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
+
+/* THE LIVE LIBRARY (2026-09-09). The Library used to mean "finished articles". It now holds a row
+   from the moment a run starts, because the checkpoints that used to stop and show him each piece
+   are gone: the research, the plan and the brand pack are announced and the run carries straight
+   on, so the Library is where he watches an article being made.
+   The cost of that is the thing to design against: a person opening the tab mid-run sees half a
+   thing, and unless the state is readable at a glance the tab reads as full of broken articles.
+   So a row being written is the only one that carries the accent, a turning marker and a count of
+   how far it has got, which is the same accent-means-working vocabulary the chat already uses. */
+const AG_LIB_STATE = {                        /* status -> [existing pill class, the word on screen] */
+  writing:   ["p-acc", "writing"],            /* accent: working, the same as .ag-stage.cur */
+  ready:     ["p-ok",  "ready to read"],
+  published: ["p-acc", "published"],          /* unchanged from before the live Library */
+};
+/* The plain name for each milestone. The server sends `label` already written for a person, so
+   this is only the fallback for a row whose payload predates it, never a second copy in use. */
+const AG_MILE_LABEL = { research: "Researched", picture: "The search picture", plan: "Planned",
+                        draft: "Written", edited: "Edited" };
+/* Which panel each milestone opens in. Every one of these renderers already exists; "edited" has
+   no view of its own, and an empty string falls to agPanelHtml's plain-JSON branch on purpose
+   rather than inventing a screen for a report nobody asked to see prettily. */
+const AG_MILE_VIEW = { research: "research_brief", picture: "article", plan: "blueprint",
+                       draft: "article", edited: "" };
 const AG_MAX_SUBS = 8;
 const AG_LINK_WEAK = 0.45;      /* mirrors LINK_WEAK_SCORE in the engine: below this a link is flagged weak */
 const AG_PAGE_LIMIT = 5;        /* rows in the page table, and the step the pager takes; the server defaults to the same */
@@ -137,6 +160,12 @@ function agLastRun(){
   const runs = a.chat.runs || [];
   return runs.length ? runs[runs.length - 1] : null;
 }
+/* Is any Library row still being written? agLiveRun only knows about the chat that is LOADED, and
+   the Library is a screen you sit on without a chat open, so this is the second thing that makes a
+   poll worth doing quickly. It reads the rows we already have, never the network. */
+function agLibWriting(a){
+  return ((a && a.library) || []).some(it => it && it.status === "writing");
+}
 
 /* ── projections (pure) ────────────────────────────────────────────────────── */
 
@@ -206,6 +235,16 @@ function agStepsFromEvents(events, state){
         }
         break;
       }
+      /* An artifact that was MADE, not one that is waiting. Since 2026-09-09 the research, the
+         plan and the brand pack no longer stop the run: they are written, announced with this
+         event, and the next step starts underneath. So it is deliberately not a `waiting` row and
+         carries no `live` flag, no call_id and no answer. `label` arrives already written for a
+         person ("the research"), so nothing here maps the view to a name a second time. */
+      case "artifact_ready":
+        flushLead();
+        push({ kind: "ready", artifact: ev.artifact || "", view: ev.view || "article",
+               label: ev.label || "", t: ev.t });
+        break;
       case "memory_saved": flushLead(); push({ kind: "mem", text: ev.text || "", t: ev.t }); break;
       case "edited": flushLead(); push({ kind: "edited", artifact: ev.artifact || "", block: ev.block || "",
                                              instruction: ev.instruction || "", t: ev.t }); break;
@@ -288,6 +327,8 @@ function agGlyph(e){
   if (e.kind === "step") return e.state === "ok" ? AG_ICON.check : e.state === "bad" ? AG_ICON.x : "";
   if (e.kind === "ask" || e.kind === "approval") return AG_ICON.ask;
   if (e.kind === "artifact") return AG_ICON.doc;
+  /* "ready" is deliberately absent: a made-and-announced artifact gets no icon, only the small
+     grey dot .ag-step.quiet draws, so it does not carry the weight the checkpoint doc glyph does */
   if (e.kind === "mem") return AG_ICON.star;
   if (e.kind === "failed" || e.kind === "stopped") return AG_ICON.x;
   return "";
@@ -374,6 +415,20 @@ function agEntryHtml(e, ctx){
           <span><span class="at">${agEsc(title)}</span><span class="as">${e.live ? "Waiting for you" : agEsc(e.answer || "reviewed")}</span></span>
           <span class="ac">${isOpen ? "Open" : "Review"} ${AG_ICON.arrow}</span>
         </button></div>`;
+    }
+    /* The quiet twin of the "artifact" row above. That one is a checkpoint: a card, a doc glyph,
+       a Review button and a run held still behind it. This one must read as a line you pass over
+       unless you want it, because the run has already moved on to the next step and five of these
+       in a transcript must not feel like five interruptions. So it borrows the log_step note
+       vocabulary exactly: .quiet (the small grey dot, no icon), no card, no pill, no warn colour
+       and no button of its own. The only thing you can act on is the label, as an inline link. */
+    case "ready": {
+      const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
+      const label = e.label || (AG_VIEW_TITLE[e.view] || "it").toLowerCase();
+      return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span>
+        <div class="ag-note">Ready to read: <button class="ag-openlink ${isOpen ? "open" : ""}" type="button"
+          data-ag="open" data-arg="${agEsc(e.artifact)}" data-view="${agEsc(e.view)}" data-run="${agEsc(ctx.run_id || "")}"
+          >${agEsc(label)}</button>. It is in the Library too.</div></div>`;
     }
     case "mem":
       return `<div class="ag-step mem"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
@@ -674,7 +729,12 @@ function agBytes(n){
   return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
 }
 
-function agBlueprintHtml(bp, edit, checks){
+/* `readOnly` exists for one caller: a plan opened from a Library row. That panel has no run_id
+   (it reads the file through the Library, not through the run), so the reorder and the per-section
+   rewrite would post to a run that is not there. Drawing a control that cannot work is worse than
+   not drawing it, so read-only leaves the plan and drops the three buttons. Every other caller
+   passes three arguments and is untouched. */
+function agBlueprintHtml(bp, edit, checks, readOnly){
   if (!bp) return `<div class="zero"><h4>Nothing to show</h4></div>`;
   const secs = bp.sections || [];
   const ks = bp.keyword_set || {};
@@ -694,9 +754,9 @@ function agBlueprintHtml(bp, edit, checks){
         <div class="bh"><span class="n">${i + 1}</span><span class="bt">${agEsc(heading || "")}</span>
           ${s.target_keyword ? `<span class="pill p-acc" title="Keyword this heading carries">${agEsc(s.target_keyword)}</span>` : ""}
           ${ev != null ? `<span class="bw">${ev} facts</span>` : s.words ? `<span class="bw">${agEsc(s.words)}w</span>` : ""}
-          <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(id)}" data-dir="-1" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${AG_ICON.up}</button>
+          ${readOnly ? "" : `<button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(id)}" data-dir="-1" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${AG_ICON.up}</button>
           <button class="ib" type="button" data-ag="bpmove" data-arg="${agEsc(id)}" data-dir="1" aria-label="Move down" ${i === secs.length - 1 ? "disabled" : ""}>${AG_ICON.down}</button>
-          <button class="ib" type="button" data-ag="bpedit" data-arg="${agEsc(id)}" aria-label="Ask for a change to this section" title="Rewrite this section only">${AG_ICON.pencil}</button></div>
+          <button class="ib" type="button" data-ag="bpedit" data-arg="${agEsc(id)}" aria-label="Ask for a change to this section" title="Rewrite this section only">${AG_ICON.pencil}</button>`}</div>
         <div class="bc">${agEsc(job || "")}
           ${(s.h3 || []).length ? `<ul class="ag-h3s">${s.h3.map(h => `<li>${agEsc(h.h3)}${(h.evidence || []).length ? ` <small>${h.evidence.length} facts</small>` : ""}</li>`).join("")}</ul>` : ""}
           ${links.length ? `<div class="bl">Links to your pages: ${links.map(u => `<a href="${agEsc(u)}" target="_blank" rel="noopener">${agEsc(agPath(u))}</a>`).join(" · ")}</div>` : ""}
@@ -916,7 +976,7 @@ function agPanelHtml(a){
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert">Approve &amp; continue</button>
       <button class="btn" type="button" data-ag="changes" data-text="About the research: ">Ask for changes</button>`;
   } else if (p.view === "blueprint"){
-    body = agBlueprintHtml(p.data, a.bpEdit, p.checks);
+    body = agBlueprintHtml(p.data, a.bpEdit, p.checks, !!p.readOnly);
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert" ${a.busy ? "disabled" : ""}>Approve &amp; continue</button>
       <button class="btn" type="button" data-ag="changes" data-text="About the plan: ">Ask for changes</button>
       <span class="sp">${p.dirty ? "Reordered · saved on approve" : ""}</span>`;
@@ -1309,16 +1369,60 @@ function agMemoryHtml(m, form){
   </div>`;
 }
 
+/* One row's progress strip: the smaller sibling of agStagesHtml in the chat, in the same three
+   states and the same colours (done, the one being worked on now, still ahead). It has to stay one
+   line, because the Library is a list you scan and not a dashboard, so it is chips with a dot each
+   and nothing else. A milestone that exists is a button that opens that file in the panel; one
+   that does not is a <span>, never a disabled button, so there is nothing to click and nothing to
+   reach with the keyboard. No milestones at all means the payload predates them, and the strip is
+   simply not drawn: the row keeps exactly the shape it had. */
+function agMileStripHtml(id, miles, writing){
+  const list = miles || [];
+  if (!list.length) return "";
+  /* only a row still being written has a "now" step; a stopped run's gaps are gaps, not promises */
+  const nextIdx = writing ? list.findIndex(m => !m.exists) : -1;
+  return `<div class="ag-miles" aria-label="What is made so far">${list.map((m, i) => {
+    const label = m.label || AG_MILE_LABEL[m.key] || m.key;
+    if (!m.exists){
+      const cur = i === nextIdx;
+      return `<span class="ag-mile ${cur ? "cur" : "todo"}" title="${agEsc(cur ? "being made now" : "not made yet")}"><i aria-hidden="true"></i>${agEsc(label)}</span>`;
+    }
+    return `<button class="ag-mile done" type="button" data-ag="libmile" data-arg="${agEsc(id)}" data-name="${agEsc(m.key)}" data-label="${agEsc(label)}"
+      title="${agEsc((m.note || label) + (m.at ? " · " + agAgo(m.at) : ""))}"><i aria-hidden="true"></i>${agEsc(label)}</button>`;
+  }).join("")}</div>`;
+}
+
+/* The Library. A row is born the moment a run starts (see AG_LIB_STATE), so this list mixes
+   articles being written with articles that are done, and the whole job of the markup is making
+   that difference obvious in a glance down the page: a row being written is the only one with the
+   accent edge, a turning marker in its pill and a count of how far it has got.
+   It offers no Open and no Mark ready while it is writing. There is nothing whole to open yet, and
+   the run would overwrite a state set by hand when it finishes. The way into a half-made article
+   is the strip, which is the point of the strip. */
 function agLibraryHtml(items){
   const list = items || [];
+  const bin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
   return `<div class="ag-view"><h2>Library</h2>
-    <p class="lead">Finished articles. Nothing leaves this Mac; publishing is your step.</p>
-    ${list.length ? list.map(it => `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(it.title)} <span class="pill ${it.status === "ready" ? "p-ok" : it.status === "published" ? "p-acc" : "p-mut"}">${agEsc(it.status || "draft")}</span></div>
-        <div class="rm"><span>${agEsc(agNum(it.words))} words</span>${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}<span>${agEsc(agAgo(it.created_at))}</span></div></div>
-        <div class="ra"><button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
-          <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${it.status === "ready" ? "draft" : "ready"}">${it.status === "ready" ? "Back to draft" : "Mark ready"}</button>
-          <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></div>`).join("")
-      : `<div class="ag-row"><div class="ri"><div class="rn">Nothing saved yet</div><div class="rd">When a draft is done, “Save to Library” in the review panel puts it here.</div></div></div>`}
+    <p class="lead">Every article, from the moment it starts. A row appears as soon as the agent begins and fills in piece by piece, so you can read any part of one while the rest is still being made. Nothing leaves this Mac; publishing is your step.</p>
+    ${list.length ? list.map(it => {
+      const status = it.status || "draft";
+      const writing = status === "writing";
+      const miles = it.milestones || [];
+      const done = miles.filter(m => m.exists).length;
+      const state = AG_LIB_STATE[status] || ["p-mut", status];
+      /* A row born at run start is called "Writing…" until the real title exists, and the pill
+         beside it already says writing, so the name is saying nothing twice. What he asked for is
+         on the row (`request`), so use that: it is the only thing that identifies the article
+         before it has a title, and the row renames itself the moment there is one. */
+      const name = (writing && it.request) || it.title;
+      return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span></div>
+        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
+        ${agMileStripHtml(it.id, miles, writing)}</div>
+        <div class="ra">${writing ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
+          <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${status === "ready" ? "draft" : "ready"}">${status === "ready" ? "Back to draft" : "Mark ready"}</button>`}
+          <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article">${bin}</button></div></div>`;
+    }).join("")
+      : `<div class="ag-row"><div class="ri"><div class="rn">Nothing here yet</div><div class="rd">Ask for an article and its row appears here straight away, filling in as each piece is made.</div></div></div>`}
   </div>`;
 }
 
@@ -1512,7 +1616,10 @@ function agGrow(ta){
   ta.style.height = Math.min(160, Math.max(22, ta.scrollHeight)) + "px";
 }
 
-/* Polling: one second while a run is live, four when idle, none when hidden. */
+/* Polling: one second while a run is live, four when idle, none when hidden.
+   A Library row being written counts as live too. It is the same timer and the same two speeds,
+   not a second clock: watching a row fill in is exactly the case the fast cadence was built for,
+   and the milestones would otherwise never appear without a manual reload. */
 function agStartPoll(){
   if (agPollTimer) return;
   const tick = async () => {
@@ -1522,7 +1629,7 @@ function agStartPoll(){
     if (!(typeof document !== "undefined" && document.hidden)){
       try { await agRefresh(); } catch (e) { a.error = String(e && e.message || e); }
     }
-    const live = agLiveRun();
+    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a));
     agPollTimer = setTimeout(tick, live ? AG_POLL_LIVE_MS : AG_POLL_IDLE_MS);
   };
   agPollTimer = setTimeout(tick, 400);
@@ -1557,6 +1664,12 @@ async function agRefresh(){
         const c = chats.find(x => x.id === a.chatId);
         if (c && a.chat && c.updated_at !== (a.chat.chat || {}).updated_at) await agLoadChat(a.chatId, true);
       }
+    }
+    /* The Library refreshes itself only while it is the screen in front of him AND something can
+       change on it: a run going, or a row still being written. Off that screen, or with nothing
+       moving, this stays exactly as quiet as it was before the live Library existed. */
+    if (a.view === "library" && (live || agLibWriting(a))){
+      a.library = await agApi("/library").catch(() => a.library);
     }
     if (agRefreshN % 8 === 1 || (live && agRefreshN % 20 === 0)){ a.health = await agApi("/health"); }
   } finally { agRefreshBusy = false; }
@@ -1630,6 +1743,36 @@ async function agOpenArtifact(runId, name, view, extra){
       a.panel.write = await agApi(base + "write-report.json").catch(() => null);
     }
   } catch (e) { if (a.panel){ a.panel.loading = false; a.panel.error = String(e && e.message || e); } }
+  agDraw();
+}
+
+/* Opening one milestone of a Library row. It reads the run's own file THROUGH the Library, so a
+   piece can be read while the run that is making it carries on, and nothing has to be copied to
+   serve it. Read-only by construction: the panel has no run_id, because there is no run to answer.
+   Built to survive a server that has not caught up. The route is new, and an older one answers
+   404 for every name; a failure has to land as a sentence in the panel rather than leaving it on
+   "Reading…" for ever, so the catch says what happened in his words. */
+async function agOpenLibMilestone(itemId, key, label){
+  const a = agS();
+  const name = "lib:" + itemId + ":" + key;
+  a.panel = { run_id: null, name, view: AG_MILE_VIEW[key] || "", data: null, loading: true, error: null,
+              title: label || AG_MILE_LABEL[key] || key, subtitle: "", readOnly: true, libMile: key };
+  a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
+  a.trail = []; a.workOpen = null;
+  agDraw();
+  try {
+    const d = await agApi(`/library/${encodeURIComponent(itemId)}/artifact/${encodeURIComponent(key)}`);
+    if (!a.panel || a.panel.name !== name) return;           /* he clicked something else meanwhile */
+    a.panel.data = (d && d.data != null) ? d.data : { text: (d && d.text) || "" };
+    a.panel.title = (d && d.label) || a.panel.title;
+    a.panel.subtitle = (d && (d.note || d.file)) || "";
+    a.panel.loading = false;
+  } catch (e) {
+    if (a.panel && a.panel.name === name){
+      a.panel.loading = false;
+      a.panel.error = "Could not read this part: " + String(e && e.message || e);
+    }
+  }
   agDraw();
 }
 
@@ -1923,6 +2066,13 @@ async function agAction(act, el){
         a.libEdit = null; }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
       agDraw(); break;
+    }
+    case "libmile": {
+      const key = el.getAttribute("data-name") || "";
+      /* clicking the one already open shuts it, the same as the transcript's artifact card */
+      if (a.panel && a.panel.name === "lib:" + arg + ":" + key){ a.panel = null; agDraw(); }
+      else await agOpenLibMilestone(arg, key, el.getAttribute("data-label") || "");
+      break;
     }
     case "libedit": {
       const p2 = a.panel; if (!p2) break;

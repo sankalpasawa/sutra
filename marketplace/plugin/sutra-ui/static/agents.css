@@ -111,6 +111,15 @@
 .ag-subs .trow .tsum{font-family:var(--sans)}
 .ag-more{background:none;border:0;color:var(--faint);font:500 10.5px/1 var(--sans);cursor:pointer;padding:3px 0;text-align:left}
 .ag-more:hover{color:var(--acc)}
+/* An artifact that was MADE, not one that is waiting: an inline link inside a quiet note, so the
+   eye passes over it unless it wants it. Nothing here may look like the checkpoint card above it,
+   which is why this is a word in a sentence and not a button with a border. */
+.ag-openlink{background:none;border:0;padding:0;cursor:pointer;color:var(--ink);
+  font:500 12px/1.5 var(--sans);text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:var(--line)}
+.ag-openlink:hover{color:var(--acc);text-decoration-color:var(--acc)}
+.ag-openlink.open{color:var(--acc);text-decoration-color:var(--acc)}
+.ag-openlink:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:3px}
 .ag-detail{margin-top:5px;font:11px/1.45 var(--mono);color:var(--faint);white-space:pre-wrap;max-height:180px;overflow:auto;
   background:var(--inset);border:1px solid var(--line-soft);border-radius:6px;padding:7px 9px}
 .ag-prose{margin-top:8px;font-size:12.5px;color:var(--ink)}
@@ -331,6 +340,32 @@
 .ag-row .rm{font:500 10.5px/1 var(--mono);color:var(--faint);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
 .ag-row .ra{flex:none;display:flex;gap:6px;align-items:center}
 .ag-row.off{opacity:.55}
+
+/* ── the live Library: a row is born when the run starts and fills in ──────────
+   The Library no longer means "finished articles", so the three states have to be
+   readable in a glance down a scanned list or the tab looks full of broken work.
+   A row being written is the ONLY one with the accent edge and the turning marker
+   in its pill, which is the same accent-means-working vocabulary the chat's stage
+   strip and the running-step spinner already use. Every colour is a token, so the
+   dark theme and the accent picker follow without a second rule. */
+.ag-row.writing{border-color:var(--acc);background:var(--acc-bg)}
+.ag-row .pill .spin{display:inline-block;width:7px;height:7px;border-radius:50%;
+  border:1.5px solid currentColor;border-top-color:transparent;vertical-align:-1px;
+  margin-right:5px;animation:sutraSpin .8s linear infinite}
+
+/* the progress strip: the smaller sibling of .ag-stages in the chat, same three states.
+   One line, chips only, because the Library is a list you scan and not a dashboard. */
+.ag-miles{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:7px}
+.ag-mile{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border:0;border-radius:5px;
+  background:none;font:500 10.5px/1.6 var(--sans);color:var(--faint)}
+.ag-mile i{width:5px;height:5px;border-radius:50%;background:var(--line);flex:none}
+.ag-mile.done{color:var(--muted);cursor:pointer}
+.ag-mile.done i{background:var(--ok)}
+.ag-mile.done:hover{background:var(--card);color:var(--ink)}
+.ag-mile.done:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-mile.cur{color:var(--acc);background:var(--card)}
+.ag-mile.cur i{background:var(--acc);animation:sutraPulse 1.4s ease-in-out infinite}
+.ag-mile.todo{color:var(--faint);opacity:.65}
 .ag-form{display:flex;flex-direction:column;gap:9px;max-width:440px}
 .ag-form label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 .ag-form label b{color:var(--ink);font-weight:500;font-size:12px}
@@ -439,6 +474,10 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 @media (prefers-reduced-motion:reduce){
   .ag-step.run .ag-glyph::before{animation:none;border-top-color:var(--acc);opacity:.6}
   .ag-runhead .ag-fold svg,.ag-switch::after,.ag-toast{transition:none}
+  /* the writing row still reads as writing without moving: the marker stays a ring, the
+     "now" dot stays solid accent, and the accent edge is doing most of the work anyway */
+  .ag-row .pill .spin{animation:none;border-top-color:currentColor;opacity:.6}
+  .ag-mile.cur i{animation:none}
 }
 @media (max-width:1100px){
   .ag.haspanel .ag-panel{min-width:300px;width:50%}

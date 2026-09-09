@@ -524,43 +524,6 @@ def _pool_row(it, src):
             "kd": kp.get("keyword_difficulty"), "comp": ki.get("competition_level"), "src": src}
 
 
-def keyword_pool(seed, limit=200, location_name="United States", language_code="en"):
-    """The TIGHT net for the research engine: phrases that contain the seed, ONE seed per call (the
-    endpoint allows no more). The same endpoint as keyword_suggestions() above, kept apart because
-    this one returns the original engine's pool row shape and the cost of the call.
-    Returns {"rows": [{kw, vol, kd, comp, src}], "cost": float}."""
-    if demo_mode():
-        return {"rows": _demo_suggestions(seed, limit), "cost": 0.0, "demo": True}
-    data = post("/dataforseo_labs/google/keyword_suggestions/live", [{
-        "keyword": seed, "location_name": location_name, "language_code": language_code,
-        "limit": _int(limit, 200), "order_by": ["keyword_info.search_volume,desc"]}])
-    rows = [_pool_row(it, "tight") for it in _items(data) if (it or {}).get("keyword")]
-    return {"rows": rows, "cost": _cost(data)}
-
-
-def keyword_overview(keywords, location_name="United States", language_code="en"):
-    """Volume + KD + INTENT for a list (their cap is 700 per call).
-    Returns {"rows": [{kw, vol, kd, intent}] sorted by volume desc, "cost": float}."""
-    kws = _seeds(keywords)[:700]
-    if not kws:
-        return {"rows": [], "cost": 0.0}
-    if demo_mode():
-        return {"rows": _demo_overview(kws), "cost": 0.0, "demo": True}
-    data = post("/dataforseo_labs/google/keyword_overview/live", [{
-        "location_name": location_name, "language_code": language_code, "keywords": kws}])
-    rows = []
-    for it in _items(data):
-        it = it or {}
-        ki = it.get("keyword_info") or {}
-        kp = it.get("keyword_properties") or {}
-        si = it.get("search_intent_info") or {}
-        if it.get("keyword"):
-            rows.append({"kw": it.get("keyword"), "vol": ki.get("search_volume"),
-                         "kd": kp.get("keyword_difficulty"), "intent": si.get("main_intent")})
-    rows.sort(key=lambda x: -(x["vol"] or 0))
-    return {"rows": rows, "cost": _cost(data)}
-
-
 _PAY = {"at": 0.0, "ok": None}
 
 
@@ -578,6 +541,52 @@ def _can_pay(ttl=300.0):
         _PAY["ok"] = True
     _PAY["at"] = now
     return _PAY["ok"]
+
+
+def keyword_pool(seed, limit=200, location_name="United States", language_code="en"):
+    """The TIGHT net for the research engine: phrases that contain the seed, ONE seed per call (the
+    endpoint allows no more). The same endpoint as keyword_suggestions() above, kept apart because
+    this one returns the original engine's pool row shape and the cost of the call.
+    Returns {"rows": [{kw, vol, kd, comp, src}], "cost": float}."""
+    if demo_mode():
+        return {"rows": _demo_suggestions(seed, limit), "cost": 0.0, "demo": True}
+    # The same can-pay guard serp_advanced got on 2026-09-04, on the two endpoints it was not put
+    # on. Without it the three research calls disagreed: a balance that cannot pay made the SERP
+    # step degrade to demo rows and this one crash on a refusal. One rule for all three.
+    if not _can_pay():
+        return {"rows": _demo_suggestions(seed, limit), "cost": 0.0, "demo": True,
+                "skipped": "the DataForSEO balance is too low, so these keywords are demo data"}
+    data = post("/dataforseo_labs/google/keyword_suggestions/live", [{
+        "keyword": seed, "location_name": location_name, "language_code": language_code,
+        "limit": _int(limit, 200), "order_by": ["keyword_info.search_volume,desc"]}])
+    rows = [_pool_row(it, "tight") for it in _items(data) if (it or {}).get("keyword")]
+    return {"rows": rows, "cost": _cost(data)}
+
+
+def keyword_overview(keywords, location_name="United States", language_code="en"):
+    """Volume + KD + INTENT for a list (their cap is 700 per call).
+    Returns {"rows": [{kw, vol, kd, intent}] sorted by volume desc, "cost": float}."""
+    kws = _seeds(keywords)[:700]
+    if not kws:
+        return {"rows": [], "cost": 0.0}
+    if demo_mode():
+        return {"rows": _demo_overview(kws), "cost": 0.0, "demo": True}
+    if not _can_pay():          # see keyword_pool: one can-pay rule across the three research calls
+        return {"rows": _demo_overview(kws), "cost": 0.0, "demo": True,
+                "skipped": "the DataForSEO balance is too low, so these numbers are demo data"}
+    data = post("/dataforseo_labs/google/keyword_overview/live", [{
+        "location_name": location_name, "language_code": language_code, "keywords": kws}])
+    rows = []
+    for it in _items(data):
+        it = it or {}
+        ki = it.get("keyword_info") or {}
+        kp = it.get("keyword_properties") or {}
+        si = it.get("search_intent_info") or {}
+        if it.get("keyword"):
+            rows.append({"kw": it.get("keyword"), "vol": ki.get("search_volume"),
+                         "kd": kp.get("keyword_difficulty"), "intent": si.get("main_intent")})
+    rows.sort(key=lambda x: -(x["vol"] or 0))
+    return {"rows": rows, "cost": _cost(data)}
 
 
 def serp_advanced(keyword, depth=20, paa_click_depth=3, ai_overview=True,
@@ -626,6 +635,46 @@ def serp_extract(keyword, items):
     return {"keyword": keyword, "features": dict(Counter(i.get("type") for i in items)),
             "top_organic": top, "featured_snippet": snippet, "paa": paa,
             "ai_overview": ai_ov, "related_searches": related}
+
+
+# ---- the asset engine's calls -------------------------------------------------------------------
+# Two named wrappers so assets/competitors.py stops reaching for dfs.post() and the private
+# _items() unwrapper. The credential and the shape-untangling stay in this one file, which is the
+# whole point of it. Both return the raw items, because the asset engine reads different fields out
+# of each row than the research engine does, and the row shaping belongs with the reader.
+#
+# Neither one has a demo fallback and neither one calls _can_pay(). The asset engine runs its own
+# pre-flight (assets/competitors.paid_route) before its first paid call, and a second floor here
+# would be the same decision made in two places. Without credentials post() raises NoCredentials,
+# which is right: an empty list would read as "this company has no competitors".
+
+def competitors_domain(target, location_name=None, language_code=None, limit=100,
+                       exclude_top_domains=True, item_types=("organic",)):
+    """Domains that rank for the same keywords as target, most overlap first.
+
+    Returns {"items": [raw rows], "cost": float}. Each row carries domain plus
+    metrics.organic.{count, etv}. A candidate GENERATOR, never the answer: the overlap ranking
+    puts general-interest sites near the top, so the caller still has to judge the list.
+    """
+    loc, lang = market(location_name, language_code)
+    data = post("/dataforseo_labs/google/competitors_domain/live", [{
+        "target": bare_domain(target), "location_name": loc, "language_code": lang,
+        "limit": _int(limit, 100), "exclude_top_domains": bool(exclude_top_domains),
+        "item_types": list(item_types or ["organic"])}])
+    return {"items": _items(data), "cost": _cost(data)}
+
+
+def domain_pages(target, limit=100, order_by=("page_summary.referring_domains,desc",)):
+    """The pages on one domain that earn links, most referring domains first.
+
+    Returns {"items": [raw rows], "cost": float}. The page address is in the row's `page` field on
+    this endpoint, not `url`; reading `url` gives an empty column that looks like no data.
+    """
+    task = {"target": bare_domain(target), "limit": _int(limit, 100)}
+    if order_by:
+        task["order_by"] = list(order_by)
+    data = post("/backlinks/domain_pages/live", [task])
+    return {"items": _items(data), "cost": _cost(data)}
 
 
 # ---- demo data for the research calls (same rules: stable, flagged, never mistaken for real) ----
