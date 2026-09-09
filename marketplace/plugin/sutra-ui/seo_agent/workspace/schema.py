@@ -90,6 +90,51 @@ def sql():
         return f.read()
 
 
+# A PERSON PASTING THIS IS NOT READING IT. schema.sql is 565 lines and 33,671 characters, and
+# 18,600 of those are developer notes: why clock_timestamp() and not now(), why 45 MiB and not 40,
+# what the bigserial race is. Every word of that earns its place IN THE REPO, where the next person
+# to edit the file needs it. On screen, in front of somebody who has been told this takes thirty
+# seconds, it is a wall of text that reads as "this is complicated and probably fragile" — which is
+# the opposite of true, and the opposite of what the paste route is for. (2026-09-10, after the
+# owner opened the screen and asked why he was being shown all this.)
+#
+# So the pasted script is the SQL with the essay taken out: 300 lines instead of 565. What survives
+# is a short header saying what it does, and the "what you should see when this works" block, which
+# is the one comment a person actually uses.
+#
+# ONLY WHOLE-LINE COMMENTS ARE REMOVED. An inline `--` could sit inside a string literal, and
+# stripping one would corrupt the SQL rather than tidy it, so those are left exactly where they are.
+# The file on disk is never modified; this is a view of it.
+
+PASTE_HEADER = """-- Sutra team workspace — the setup script.
+--
+-- Safe to run twice: it either all works or none of it does.
+-- The last line it prints tells you whether the workspace is ready.
+"""
+
+# The one comment block a person reads rather than skips, kept whole.
+_KEEP_FROM = "-- 8. WHAT YOU SHOULD SEE WHEN THIS WORKS"
+
+
+def paste_sql():
+    """schema.sql with the developer notes stripped, for the screen."""
+    out, keeping = [], False
+    for line in sql().splitlines():
+        bare = line.lstrip()
+        if bare.startswith("--"):
+            if _KEEP_FROM in line:
+                keeping = True
+            if not keeping:
+                continue
+        elif keeping and bare:
+            keeping = False
+        out.append(line)
+    text = "\n".join(out)
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    return PASTE_HEADER + text.lstrip("\n")
+
+
 def project_ref(url):
     """The project ref out of a project URL: https://vxhx....supabase.co -> vxhx....
 
@@ -129,7 +174,7 @@ def fallback(reason, ref=None, url=None):
         "route": "paste",
         "ok": False,                 # not ready until verify() says so
         "reason": reason,
-        "sql": sql(),
+        "sql": paste_sql(),
         "editor_url": editor_url(ref) if ref else "https://supabase.com/dashboard",
         "next": "Open the SQL Editor, paste the script, press Run, then come back and press "
                 "'I've run it'. The script ends by printing whether the workspace is ready.",

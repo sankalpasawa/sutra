@@ -826,7 +826,8 @@ result = schema.create(URL, KEY)
 ok("with no token, create offers the paste route rather than failing",
    result["route"] == "paste" and result["ok"] is False)
 ok("the paste route carries the reason", "no access token" in result["reason"].lower())
-ok("the paste route carries the script itself", result["sql"] == schema.sql())
+ok("the paste route carries the script itself, as a person reads it and not as the repo keeps it",
+   result["sql"] == schema.paste_sql() and "begin;" in result["sql"])
 ok("and the SQL Editor link for this exact project",
    result["editor_url"].endswith("/vxhxlgtmbuajgwlvhecu/sql/new"))
 ok("and tells the person what to do next", "paste" in result["next"].lower())
@@ -863,7 +864,8 @@ ok("a rejected token falls back to the paste route automatically",
    result["route"] == "paste" and result["ok"] is False)
 ok("and the fallback shows WHY route 1 could not be used",
    "could not run the setup" in result["reason"].lower(), result["reason"])
-ok("and still carries the script, so the person is never stuck", result["sql"] == schema.sql())
+ok("and still carries the script, so the person is never stuck",
+   result["sql"] == schema.paste_sql() and "commit;" in result["sql"])
 
 # THE HAPPY PATH. STUB-PROVED, NOT LIVE-PROVED: no Supabase personal access token existed on
 # this machine when this was written, so the management API's 2xx has never been seen for real.
@@ -1109,6 +1111,43 @@ ok("the token is only ever a parameter, never a stored setting",
    "sbp_" not in " ".join(client.SETTINGS) and "token" not in " ".join(client.SETTINGS))
 ok("connections.json is the only place settings are kept, and store already keeps it 0600",
    "save_connections" in sources["client.py"])
+
+print("\nthe pasted script is the SQL, not the essay about it")
+# The owner opened the paste screen and asked why he was being shown 33,671 characters, most of
+# them developer notes about bigserial races and why 45 MiB and not 40. Every word earns its place
+# in the repo; none of it earns a place in front of somebody who was told this takes thirty
+# seconds. (2026-09-10)
+_full, _paste = schema.sql(), schema.paste_sql()
+ok("the pasted script is far shorter than the file on disk",
+   len(_paste) < len(_full) * 0.6, (len(_full), len(_paste)))
+ok("and it is still ONE transaction, so it all works or none of it does",
+   _paste.count("begin;") == 1 and _paste.count("commit;") == 1,
+   (_paste.count("begin;"), _paste.count("commit;")))
+# The stripping must never remove a statement. These are one line from each section of the file,
+# so a change that eats a whole block fails here rather than on somebody's project.
+for _needed in ("create table if not exists public.workspace", "create table if not exists public.changes",
+                "create or replace function public.log_change", "create or replace trigger pages_changed",
+                "alter table public.ideas       enable row level security", "create policy changes_read",
+                "insert into storage.buckets", "create policy knowledge_replace",
+                "as verdict"):
+    ok("still there: %s" % _needed[:52], _needed in _paste)
+ok("the header tells a person the two things they need to know",
+   "Safe to run twice" in _paste and "whether the workspace is ready" in _paste)
+ok("the one comment block a person actually reads is kept",
+   "WHAT YOU SHOULD SEE WHEN THIS WORKS" in _paste)
+# `bigserial` and `clock_timestamp()` are still in there — they are the COLUMN DEFINITION, which
+# is SQL and must survive. What must not survive is the essay ABOUT them.
+ok("the deep rationale is gone, while the column it describes stays",
+   "id           bigserial   primary key" in _paste
+   and "at           timestamptz not null default clock_timestamp()" in _paste
+   and "THE RACE (found 2026-09-10)" not in _paste
+   and "WHY 47185920 (45 MiB) AND NOT A ROUNDER 40" not in _paste,
+   [w for w in ("THE RACE (found 2026-09-10)", "WHY 47185920 (45 MiB) AND NOT A ROUNDER 40")
+    if w in _paste])
+ok("the file on disk is untouched: stripping is a VIEW, never an edit",
+   len(schema.sql()) == len(_full) and "bigserial" in schema.sql())
+ok("and the paste route hands back the stripped version, not the file",
+   schema.fallback("no token", url="https://abcdefghijklmnop.supabase.co")["sql"] == _paste)
 
 print("\nStubbed wire, no network. Proves the link cannot carry a secret or any SQL, the retry "
       "rule is 5xx-and-dropped-connections only, verify() is the one voice that says 'ready', "
