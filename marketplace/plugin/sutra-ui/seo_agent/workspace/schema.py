@@ -33,6 +33,7 @@ Sutra compares its own SCHEMA_VERSION against it and applies the missing steps i
 Without this every future change breaks every existing workspace.
 """
 import os
+import time
 import re
 
 from . import client, link
@@ -40,6 +41,11 @@ from ._common import TOKEN_ADVICE, TableMissing, WorkspaceError, request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQL_FILE = os.path.join(HERE, "schema.sql")
+
+# HOW LONG TO GIVE POSTGREST'S SCHEMA CACHE before believing a table is missing. Two short waits,
+# so a healthy workspace is never delayed and a freshly created one is not called broken. Seconds,
+# in order. See verify() for the incident these exist because of.
+CACHE_RETRY_WAITS = (1.5, 3.0)
 
 # Bump this when you add a MIGRATIONS entry, never on its own. The two must move together:
 # the version says what the code expects, the list says how to get there.
@@ -236,19 +242,43 @@ def verify(url=None, key=None):
                 "bucket": False, "workspace_id": "", "schema_version": 0,
                 "reason": "No project URL and key yet, so there is nothing to check."}
 
+    # A TABLE REPORTED MISSING IS RE-ASKED BEFORE IT IS BELIEVED, and this is not belt and braces.
+    # The owner's first real run created all ten tables and was told five were missing seconds
+    # later (2026-09-09). PostgREST serves /rest/v1 from a CACHED copy of the schema, so a table
+    # created a moment ago answers PGRST205 -- byte-identical to the answer for a table that was
+    # never created. schema.sql now ends with `notify pgrst, 'reload schema'` to make the reload
+    # immediate, but that only helps a workspace built by THIS version of the script, and a reload
+    # is not instantaneous even then. So a "missing" verdict is slept on and re-asked before it is
+    # reported, and only a table missing on BOTH passes counts.
+    #
+    # The cost is paid only when something looks wrong: a healthy workspace never sleeps at all.
     present, missing, unreadable = [], [], {}
-    for table in TABLES:
-        try:
-            # limit=0 asks PostgREST to name the table and hand back no rows, so the check
-            # costs nothing even against `pages`, which can carry whole page bodies.
-            client.select(table, limit=0, url=url, key=key)
-            present.append(table)
-        except TableMissing:
-            missing.append(table)
-        except WorkspaceError as e:
-            # A table that exists but refuses to be read is NOT present. Counting it as
-            # present would be the exact failure this function exists to stop.
-            unreadable[table] = str(e)
+
+    def _probe(names):
+        found, gone, bad = [], [], {}
+        for table in names:
+            try:
+                # limit=0 asks PostgREST to name the table and hand back no rows, so the check
+                # costs nothing even against `pages`, which can carry whole page bodies.
+                client.select(table, limit=0, url=url, key=key)
+                found.append(table)
+            except TableMissing:
+                gone.append(table)
+            except WorkspaceError as e:
+                # A table that exists but refuses to be read is NOT present. Counting it as
+                # present would be the exact failure this function exists to stop.
+                bad[table] = str(e)
+        return found, gone, bad
+
+    present, missing, unreadable = _probe(TABLES)
+    for wait in CACHE_RETRY_WAITS:
+        if not missing:
+            break
+        time.sleep(wait)
+        again, missing, more_bad = _probe(missing)
+        present.extend(again)
+        unreadable.update(more_bad)
+    present = [t for t in TABLES if t in present]     # keep the declared order, not probe order
 
     bucket = False
     bucket_error = ""

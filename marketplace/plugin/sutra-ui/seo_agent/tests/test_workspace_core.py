@@ -669,9 +669,17 @@ print("\n5. verify() — the single most important function in the package")
 def project(tables=schema.TABLES, bucket=True, workspace_row=True, refuse=()):
     """A fake Supabase project: which tables exist, whether the bucket does, what refuses."""
     def answer(method, url, params, body):
-        if "/storage/v1/bucket/" in url:
-            return (FakeResponse(200, {"id": "knowledge"}) if bucket else
-                    FakeResponse(400, {"statusCode": "404", "message": "Bucket not found"}))
+        # THE CUPBOARD IS PROVED BY A ROUND TRIP, NOT BY READING THE BUCKET'S RECORD, so the fake
+        # answers object endpoints. A publishable key cannot read storage.buckets even when the
+        # bucket is fine, which is the bug this shape exists because of (2026-09-09).
+        if "/storage/v1/object/" in url:
+            if not bucket:
+                return FakeResponse(400, {"statusCode": "403", "message":
+                                          "new row violates row-level security policy"})
+            return FakeResponse(200, {"Key": url.rsplit("/storage/v1/object/", 1)[-1]})
+        if "/storage/v1/bucket" in url:
+            # The old door. Left answering "not found" on purpose: nothing may depend on it again.
+            return FakeResponse(400, {"statusCode": "404", "message": "Bucket not found"})
         name = url.rsplit("/rest/v1/", 1)[-1]
         if name in refuse:
             return FakeResponse(403, {"message": "new row violates row-level security policy"})
@@ -1041,8 +1049,10 @@ try:
                 if bump:
                     state["version"] = int(bump.group(1))
                 return FakeResponse(201, [])
-            if "/storage/v1/bucket/" in url:
-                return FakeResponse(200, {"id": "knowledge"})
+            if "/storage/v1/object/" in url:
+                return FakeResponse(200, {"Key": "knowledge/probe"})
+            if "/storage/v1/bucket" in url:
+                return FakeResponse(400, {"statusCode": "404", "message": "Bucket not found"})
             name = url.rsplit("/rest/v1/", 1)[-1]
             if name not in schema.TABLES:
                 return FakeResponse(404, {"code": "PGRST205", "message": "Could not find the table"})
@@ -1111,6 +1121,42 @@ ok("the token is only ever a parameter, never a stored setting",
    "sbp_" not in " ".join(client.SETTINGS) and "token" not in " ".join(client.SETTINGS))
 ok("connections.json is the only place settings are kept, and store already keeps it 0600",
    "save_connections" in sources["client.py"])
+
+print("\nthe two bugs the owner's first real run found")
+# BOTH OF THESE SHIPPED GREEN AND BOTH WERE WRONG. They are the reason a live run was worth more
+# than any number of stubbed ones. (2026-09-09)
+
+# 1. bucket_exists asked whether the bucket's RECORD was readable, not whether a file could be
+#    stored. Measured on his project: GET /storage/v1/bucket/knowledge -> 404 NoSuchBucket, while
+#    upload, download, replace and delete all returned 200. The bucket was there the whole time;
+#    a publishable key simply cannot read storage.buckets. verify() then called a working
+#    workspace broken and sent him back to the setup script.
+_bsrc = sources["client.py"]
+_probe = _bsrc[_bsrc.index("def bucket_exists"):]
+_probe = _probe[:_probe.index("\ndef ", 10)] if "\ndef " in _probe[10:] else _probe
+# Assert on the CODE, not the docstring: the docstring quotes the old endpoint as evidence of
+# what was measured, and it should keep doing so.
+_body = _probe.split('"""', 2)[-1]
+ok("the cupboard check writes a file rather than reading the bucket's record",
+   "/storage/v1/object/" in _body and "/storage/v1/bucket/" not in _body, _body[:200])
+ok("and the docstring still carries the measurement that proved it",
+   "NoSuchBucket" in _probe and "200" in _probe)
+ok("and it reads the file back, because an upload that 200s and cannot be read is not storage",
+   _probe.count("request(") >= 3)
+ok("and tidies the probe away without letting a failed tidy fail the check",
+   "finally:" in _probe)
+
+# 2. verify() believed PostgREST the first time it said a table was missing. His run created all
+#    ten and was told five were absent seconds later: PostgREST answers from a cached schema, and
+#    PGRST205 for "created a moment ago" is byte-identical to PGRST205 for "never existed".
+ok("a missing table is re-asked before it is believed", bool(schema.CACHE_RETRY_WAITS))
+ok("and the waits are short, so a healthy workspace is never delayed",
+   sum(schema.CACHE_RETRY_WAITS) <= 6, schema.CACHE_RETRY_WAITS)
+ok("the setup script tells PostgREST to reload rather than leaving it to chance",
+   "notify pgrst" in schema.sql())
+ok("and it does so AFTER commit, since a notify inside the transaction fires on commit anyway "
+   "but a reader racing it would still see the old cache",
+   schema.sql().index("notify pgrst") > schema.sql().index("commit;"))
 
 print("\nthe pasted script is the SQL, not the essay about it")
 # The owner opened the paste screen and asked why he was being shown 33,671 characters, most of

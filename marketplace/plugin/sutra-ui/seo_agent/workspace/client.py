@@ -495,14 +495,51 @@ def objects(bucket, prefix="", limit=100, url=None, key=None):
 
 
 def bucket_exists(bucket=BUCKET, url=None, key=None):
-    """Whether the bucket schema.sql was supposed to create is actually there.
+    """Whether the pack can actually be stored: not whether the bucket RECORD is readable.
 
-    verify() needs this and must not treat its absence as a crash: a workspace with tables and
-    no bucket is a real, reportable state, not an error. A 404 comes back as False.
+    THIS ASKED THE WRONG QUESTION AND TOLD THE OWNER HIS SETUP HAD FAILED WHEN IT HAD NOT
+    (2026-09-09, his first real run). It read GET /storage/v1/bucket/<name>, which reads the
+    bucket's row in storage.buckets. Measured on his live project:
+
+        GET  /storage/v1/bucket             -> 200 []                    (empty!)
+        GET  /storage/v1/bucket/knowledge   -> 400 {"statusCode":"404","code":"NoSuchBucket"}
+        POST /storage/v1/object/knowledge/probe/hello.txt   -> 200       (it uploaded)
+        GET  /storage/v1/object/knowledge/probe/hello.txt   -> 200 b'one'
+        DELETE  the same                                    -> 200
+
+    The bucket was there the whole time and all four operations worked. What a publishable key
+    cannot do is READ storage.buckets, because schema.sql grants policies on storage.OBJECTS and
+    Supabase ships none on storage.buckets for anon. So "I cannot see the bucket's row" was being
+    reported as "there is no bucket", and verify() then called a working workspace broken.
+
+    The question that matters is "can the pack be stored", so that is the question this asks: it
+    writes a tiny object, reads it back, and deletes it. That is the same round trip pack.py makes,
+    through the same policies, with the same key. A bucket whose record we cannot read but whose
+    objects we can write is a perfectly good bucket; one whose record reads fine but rejects an
+    upload is useless, and the old check called that one healthy.
+
+    Never raises: a workspace with no working cupboard is a real state verify() must report, not
+    an error. The probe key is unique per call so two Sutras checking at once cannot collide, and
+    the delete is best-effort — a stray probe file is harmless next to a false failure.
     """
     if url is None or key is None:
         url, key, _ = _conn()
-    resp = request("GET", "%s/storage/v1/bucket/%s" % (url.rstrip("/"), bucket),
-                   "check the %s cupboard" % bucket,
-                   headers=headers(key=key), allow_404=True)
-    return resp.status_code < 300
+    base = url.rstrip("/")
+    path = "%s/storage/v1/object/%s/.sutra-probe/%s" % (base, bucket, uuid.uuid4().hex)
+    try:
+        wrote = request("POST", path, "check the %s cupboard" % bucket,
+                        headers={**headers(key=key), "Content-Type": "application/octet-stream",
+                                 "x-upsert": "true"},
+                        content=b"sutra", allow_404=True)
+        if wrote.status_code >= 300:
+            return False
+        read = request("GET", path, "check the %s cupboard" % bucket,
+                       headers=headers(key=key), allow_404=True)
+        return read.status_code < 300
+    except WorkspaceError:
+        return False
+    finally:
+        try:
+            request("DELETE", path, "tidy the probe", headers=headers(key=key), allow_404=True)
+        except Exception:  # noqa: BLE001 — a leftover probe file is not worth a failure
+            pass

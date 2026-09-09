@@ -508,6 +508,14 @@ $storage$;
 
 commit;
 
+-- TELL POSTGREST THE TABLES EXIST. Without this, the owner's first real run reported five of the
+-- ten tables missing seconds after creating all ten (2026-09-09). PostgREST serves /rest/v1 from a
+-- CACHED copy of the schema and refreshes it on its own schedule, so a table created a moment ago
+-- answers PGRST205 "Could not find the table in the schema cache" -- which is indistinguishable
+-- from "this table was never created" unless you know to wait. Everything had worked; the check
+-- ran too early. This makes the reload immediate instead of eventual.
+notify pgrst, 'reload schema';
+
 -- ---------------------------------------------------------------------------------------
 -- 8. WHAT YOU SHOULD SEE WHEN THIS WORKS
 -- ---------------------------------------------------------------------------------------
