@@ -1,8 +1,28 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-08
+**status**: active · **updated**: 2026-09-09
 
-## v2.246.1 (2026-09-08, HEAD)
+## v2.247.0 (2026-09-09, HEAD)
+
+Codex is a provider you can actually chat with. Signing in has worked since 2.246.0, but the row
+said so itself: there was no chat adapter, so the account sat there unusable. There is one now,
+with its own runtime, readiness check and install path.
+
+The model picker is the part that had to be built sideways. codex-cli 0.153.2 publishes no model
+list at all -- re-measured on 2026-09-08, because "no model list" is the kind of claim that rots:
+`codex models` is not a subcommand, `codex exec --help` documents `-m, --model <MODEL>` without
+enumerating one, and the app-server schema carries no roster. Passing a name anyway is worse than
+being refused: `-m gpt-5-codex` was ACCEPTED and warned that metadata was missing and had been
+replaced with fallback values, which degrades the run quietly. So the authoritative source is the
+operator's own configuration -- the top-level `model` in `$CODEX_HOME/config.toml`, plus any
+`-p/--profile` overlay -- surfaced beside "let codex decide", which sends no flag at all.
+
+The Usage screen reads the ChatGPT plan allowance straight from the CLI's own
+`account/rateLimits/read`, costing no model turn, and states plainly that an API-key sign-in
+reports no allowance rather than rendering an empty fold. Anthropic's account panel is kept off
+Codex sessions for the same reason.
+
+## v2.246.1 (2026-09-08)
 
 The 2.246.0 build never produced a DMG, and what stopped it was worse than the signing error it
 appeared to be. The packager upgrade in 2.246.0 turned every relative symlink in the bundled
