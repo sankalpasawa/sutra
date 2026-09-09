@@ -203,7 +203,15 @@ class Fetcher:
         self.say = on_event or (lambda label, note="": None)
         self.client = httpx.Client(headers=dict(settings.HEADERS), timeout=settings.FETCH_TIMEOUT,
                                    follow_redirects=True, transport=TRANSPORT)
-        self.stats = {"network": 0, "cache": 0, "retries": 0, "cooldowns": 0, "fetch_failed": 0}
+        self.stats = {"network": 0, "cache": 0, "retries": 0, "cooldowns": 0, "fetch_failed": 0,
+                      "forced": 0}
+        # Every get() on this Fetcher goes to the network, cache or no cache. It is off for a
+        # catalogue run (the cache is the whole point: fetch once, re-parse forever) and ON for a
+        # refresh's survey, which asks the finders for the site's CURRENT list of addresses.
+        # Found 2026-09-10: the survey read the sitemaps and the CMS listing straight out of the
+        # cache, so it compared last week's list against last week's list. It could not see a new
+        # page, a removed page, or a newer lastmod, and every refresh reported nothing to do.
+        self.always_refetch = False
         self._buckets, self._buckets_lock = {}, threading.Lock()
         self._robots, self._robots_lock = {}, threading.Lock()
         self._dead, self._dead_lock = {}, threading.Lock()
@@ -369,11 +377,14 @@ class Fetcher:
         """Fetch a URL through the cache. Returns FetchResult.
 
         - cached & not force -> served from disk, ZERO network calls
-        - force -> unconditional refetch, replaces the cache
+        - force (or self.always_refetch) -> unconditional refetch, replaces the cache
         - 403/cf-mitigated -> cooldown + slower bucket, few retries, then raises Blocked
         - retries exhausted -> a FetchResult with status 0 (no answer) or the answered 5xx,
           NOT cached, so a later run retries. One bad URL must never end a whole-site run.
         """
+        force = force or self.always_refetch
+        if force:
+            self.stats["forced"] += 1
         hit = None if force else self.cached(url)
         if hit:
             self.stats["cache"] += 1

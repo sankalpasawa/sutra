@@ -133,9 +133,15 @@ def _knowledge_block(site):
     tail = ("\nSetup is complete. Do NOT run index_site, build_page_index or learn_brand again unless the user "
             "asks for a rebuild. Go straight to the article." if done else
             "\nFinish setup first, in the order above, then the article.")
-    # The asset sheet, when there is one. This is CONTEXT, not an instruction: the chip on the
-    # Asset ideas tab carries the id as data and is the real path. This line only stops the model
-    # claiming there are no ideas when a sheet is sitting right there.
+    # The asset sheet. This is CONTEXT, not an instruction: the chip on the Asset ideas tab carries
+    # the id as data and is the real path. The built line only stops the model claiming there are no
+    # ideas when a sheet is sitting right there.
+    #
+    # The NOT-BUILT line is the other half, and it was missing (2026-09-09). Absence of a line is
+    # not a state a model can act on: asked "what should I write?", with nothing saying the engine
+    # had never run, it would invent a topic rather than say the sheet does not exist yet. The
+    # owner's words: "it should say 'hey look, you've not updated the asset engine yet'. That's how
+    # precise I want it to be."
     try:
         from .tools import build_assets as _ba
         a = _ba.status()
@@ -144,6 +150,10 @@ def _knowledge_block(site):
                          % (a["total"], a["counts"].get("open", 0),
                             ("; next up is %s — %s" % (a["next"]["id"], a["next"]["title"][:70]))
                             if a["next"] else ""))
+        else:
+            lines.append("- Asset ideas: NO sheet. The asset engine has never run, so there is "
+                         "nothing to pick from. If they ask what to write, say that and offer "
+                         "build_assets. Do not invent a topic to fill the gap.")
     except Exception:   # noqa: BLE001 — a sheet we cannot read must not stop the run starting
         pass
 

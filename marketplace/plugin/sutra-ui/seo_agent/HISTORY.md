@@ -194,11 +194,159 @@ badly short in two. Both are now closed.
 23. The research conversation's progress line reported every page as newly read even when it had
     been read already.
 
+## 2.254.0 — the audit's findings, built
+
+An audit of his 223 scripts and 119 prompts against Sutra found 25 gaps. He ruled on every one:
+eighteen to build, four to skip with his reasons recorded, and the workspace held. This release is
+the eighteen, plus the eight things he could see were broken on screen, plus three he asked for.
+
+### The eight things that were broken on screen
+
+24. **"Check for changes" and "Import a traffic file" did nothing.** Both endpoints were healthy the
+    whole time — `refresh_site.run(preview=True)` was proved against his own 11,656-page catalogue,
+    and `traffic_import.apply` imported from both a path and pasted text. `agAction` simply had no
+    arm for either button, so the click fell through to `default: break`. A silent no-op is worse
+    than a missing button, because there is nothing to report.
+25. The traffic import button is gone. The importer stays and the agent offers it in chat when an
+    account runs dry, which is the only moment it was ever for.
+26. Chats from VS Code and elsewhere stopped appearing in Sutra's own chat list.
+27. The right-hand panel no longer renders beside the SEO Writer at all.
+28. Three of the twelve work tools had no plain name, so the Tools tab drew "Refresh site",
+    "Import traffic" and "Build assets" between "Learning the brand" and "Writing the article".
+    `registry.label()` falls back to the function name with its underscores taken out, and that
+    fallback looks like a name, which is why it survived. Two tests now refuse it.
+29. "Improve one of our existing pages" is deleted. It was a starter button with nothing behind it,
+    written before the reuse check existed.
+30. The Library's Format column reads the archetype off the article, not off the run, so an article
+    still says what shape it was written to after its run folder is gone.
+31. The byline questions are gone entirely: two interview questions, `voices.md`, its builder, the
+    "Who writes" row and the byline half of the writer brief. His call. The brief is built from
+    three sources now, not four.
+
+### The eighteen findings
+
+32. **`refresh_site` never re-read a changed page.** Two independent causes. The survey read the
+    sitemaps and the CMS listing out of the raw cache, so it compared last week's list against
+    itself; and the fetch pass could not refetch even when asked, because a page already read sits
+    in the frontier as `done` and no worker ever claims it. The reported "N re-read" is now counted
+    from what provably came off the wire.
+33. **A failed catalogue gate stops the run.** His exits with "the catalogue is NOT trustworthy
+    yet"; Sutra reported it and carried on, so a brand pack could be built on a catalogue that
+    failed its own counting. Nothing is written now, and the refusal names what failed. This is the
+    400-page-catalogue failure mode, closed.
+34. Extraction has a real 20-second per-page kill and 4 worker processes, his numbers. It was
+    restored without the guard trafilatura needs, so one page could hang a whole crawl.
+35. The WordPress enumeration bisects again, 100 → 50 → 25 → 5 → 1. A large site was silently
+    truncated. (The audit said it bisects the date range; his script bisects the page size. What the
+    file does is what shipped.)
+36. JavaScript-rendered pages get the fifth rung of his ladder — rendered in the browser Sutra
+    already ships — instead of being recorded as failed.
+37. **The gap fill is the real research conversation.** He re-runs the full four-researcher
+    conversation per gap; Sutra did one keyword search, so the holes that mattered most got the
+    thinnest answer. He called this the most important finding.
+38. **A dossier under 1,500 words is refused, with one retry.** His reason, quoted: "a dud run
+    poisons everything downstream." A 300-word dossier used to pass silently.
+39. **A number can no longer be credited to a page that never said it.** A numeric card that lost
+    its citation used to be handed the whole section's source list, up to ten pages. It is now
+    matched against the passages the researchers actually read, or stamped `needs_source`.
+40. A failed source hunt no longer deletes cards. Both cut paths became keep-strip-flag.
+41. The digit guard is back: every figure in the draft checked against the cards, in code, once, at
+    the end. Every step-level guard he has was already here; none of them could see whether a
+    figure was real to begin with.
+42. The brand-section rule matches his 2026-09-05 review: never volunteer a limitation. Sutra
+    shipped the pre-fix wording while already carrying the post-fix rule byte-identical in two
+    format profiles, so two of its own files disagreed.
+43. **The relevance recheck.** It reads the finished sheet whole and proposes drops, because the
+    generator is generous judging one page at a time. Atomic per idea, never per group; an idea
+    backed by 50+ domains is never even shown to the judge; every verdict and every drop is written
+    to an audit file. A proposed drop keeps its row and its proof and is ranked last rather than
+    deleted, because Sutra's sheet is live and a consequence-free proposal would leave junk at
+    rank 1. The 15% cap gained a floor of three, or on a sheet of two dozen ideas one honest drop
+    is 17% and the pass refuses itself for ever.
+44. Competitor candidates are enriched and every domain is checked to resolve before anything is
+    paid for. Without enrichment his own run missed vervoe, criteriacorp, eskill and testdome;
+    without validation he paid for two domains that did not exist. When *nothing* resolves, that is
+    our network and not a dead list, so everything is kept and said out loud.
+45. Soft-404s and duplicate bodies are killed. 70 rows in his real run were "Page Not Found" served
+    with a 200; in Sutra they became content ideas.
+46. Semantic dedup inside the competitor pool, his G2.5, worth 97 merges a string key misses. The
+    comment justifying its absence — "each method already de-duplicated its own pool" — was false
+    for competitors, whose only dedup was a normalised string key.
+47. Format canonicalisation, his F0. He measured 127 distinct labels across 1,202 pages, so one
+    strong format read as three weak ones, which is the only question the step exists to answer.
+48. `tool_escalation` reaches the sheet. Step B asked for it and wrote it; the assembler never
+    copied it, so every method-2 idea arrived flagged False. A comment claimed the schema had
+    nowhere to record it, which had not been true since the schema was written.
+49. **`pricing.md`.** Some product facts are drawn by JavaScript and are in neither the catalogue
+    nor the raw HTML — his whole pricing table is one, verified 2026-07-20. He solved it with a
+    hand-written seed file, and Sutra read that file and called it authoritative while having no
+    way on earth to write it: not a question, not an editor, not a row on any screen. It now has a
+    door in the Knowledge tab, the builder puts a blank form on disk so the door is never disabled,
+    and saving it rebuilds `features.md` from the cached crawl in two model calls. One hop, and no
+    further, by his decision. The old seed file is read and migrated once so nobody's typing is
+    lost.
+
+### The three he asked for
+
+50. **The system prompt knows the state.** It had a four-step setup that never mentioned the asset
+    engine or the interview, both of which had already shipped, so a new company was offered
+    neither. It is now a table of every state the run can be in and what to do in each. The one he
+    named: asked what to write with no asset sheet, it says the engine has not run rather than
+    inventing a topic. `loop.py` says "Asset ideas: NO sheet" out loud, because the absence of a
+    line is not a state a model can act on.
+51. **"This isn't coming out right."** `find_prompt` hands the agent the map of all fourteen
+    editable prompts and, on request, one prompt's live text. The agent names the step, quotes the
+    lines and proposes replacement wording; the person edits it in the Prompts tab. The tool has no
+    write path — not a disabled one, none — and a test asserts that, because an agent that quietly
+    rewrites its own instructions is a thing nobody can debug afterwards.
+52. One design pass over the Knowledge and Asset ideas screens rather than six patches.
+
+### Found while merging, not by testing
+
+53. **`check_internal_links` could only ever fail.** `site_urls()` returns `(set, domain)` and the
+    caller read the pair as one value, so every URL was compared against a 2-tuple and came back
+    missing, and the honest "no site index on file" warning was unreachable because a 2-tuple is
+    always truthy. The suite had accepted "fail or warn", which is exactly how it survived. The
+    passing case is now asserted in both directions.
+54. `index_site`'s schema advertised "Default 3000" for `max_pages`. The default is 0, no cap. A
+    model that believed it would have capped a large site and then been refused by finding 33 with
+    no way to explain why.
+55. **A refresh counted pages the last read had deliberately thrown away as NEW.** Soft-404s,
+    robots-disallowed pages, machine paths and collapsed redirect aliases were all re-fetched every
+    single time, and the aliases came back into the catalogue as separate pages duplicating their
+    canonical target. So the first honest number the fixed button would have shown was wrong, and
+    the catalogue would have grown a little every time it was clicked. They are now a fourth pile,
+    reported as "already judged and dropped by the last read" with the reason for each, and an
+    address can only return if the site says it changed since the moment we judged it. A second
+    guard resolves genuinely-new addresses through their redirect and canonical before adding them,
+    which catches the case the buckets cannot know about.
+56. **And the other direction was worse: one broken sitemap file could delete every page it
+    listed.** A page was ruled gone if any sitemap answered at all — but a child sitemap returning
+    a 500, or timing out (which arrives as status 0), is filed as blocked and simply returns fewer
+    URLs. On a site with a dozen child sitemaps, one bad response silently deleted a twelfth of the
+    catalogue. Same for a CMS content type whose endpoint broke. A page is now gone only when every
+    source that found it was asked again AND answered for that page, decided per page rather than
+    per site, so one broken file costs only its own pages. Writing the test found the second-order
+    version: the survey was overwriting the full read's URL listings, so a failure would have become
+    the new baseline and the next check would have deleted everything the first one protected. A
+    refresh now writes to its own work folder and only ever reads the full read's files, which also
+    stops it corrupting `index_site`'s resume state.
+
 ### Not done, and said so
 
 - STORM does not ship. `research/evidence.py` is the named substitute (see Layer 03).
-- The paid replacement-source hunt and the paid enrichment search in the write phase are skipped and reported.
-- Voices from the field (Reddit/Blind/LinkedIn per article) is not ported.
-- The ranked net (s1b) needs the asset engine's vetted competitor URLs, which this agent does not have.
+- ~~The paid replacement-source hunt and the paid enrichment search in the write phase are skipped
+  and reported.~~ **Both shipped in 2.253.0.**
+- ~~Voices from the field (Reddit/Blind/LinkedIn per article) is not ported.~~ **Shipped in
+  2.253.0.** Reddit reads through a real browser: plain HTTP gets a 403, and old.reddit serves a
+  login page with a 200, which is worse.
+- ~~The ranked net (s1b) needs the asset engine's vetted competitor URLs, which this agent does not
+  have.~~ **Dropped by the owner, 2026-09-09:** *"you can skip this competitor keyword thing for
+  sure, remove it, don't include it at all."* Not to be raised again.
+- The `{{MEMORY}}` block appended to seven write prompts tells the model that a user's saved rules
+  "win over any rule above that they contradict". That is a live override channel which could in
+  principle defeat the fabrication rule, the product rule or the banned openers. It is not a bug
+  anyone has hit and it was not in scope for this release, so it ships as it is — recorded here
+  because it deserves a bound and nobody should discover it by accident.
 - The bundled app has no Playwright; it uses the shell's window. A source checkout without Playwright says plainly that a challenged site needs the app.
 - The wrapper's FAQ and close are not run through the source check, so a number there can be unsupported. The body is checked; the wrapper is the next place to check.

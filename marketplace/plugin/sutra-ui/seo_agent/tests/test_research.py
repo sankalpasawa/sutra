@@ -15,7 +15,8 @@ from seo_agent.tests import _fixture
 _fixture.setup()
 from seo_agent import llm, store
 from seo_agent.tools import _index, _shared as sh, dfs
-from seo_agent.research import _common as _c, evidence, expand, faq_order, gap_check, keywords, serp, topic_gate, web
+from seo_agent.research import (_common as _c, curate, dossier, evidence, expand, faq_order,
+                                gap_check, keywords, serp, source_match, topic_gate, web)
 
 llm.json_call = _fixture.stub_json
 llm.text = _fixture.stub_text
@@ -144,6 +145,87 @@ out = run_research.run(ctx_for(r0), topic="Operator education (a buyer's guide)"
 ok("below $0.50 returns an error naming the balance", "balance is $0.20" in (out.get("error") or ""), out)
 ok("and spends nothing", not [c for c in _fixture.DFS_CALLS if "labs" in c[0] or "serp" in c[0]])
 
+# ---- the offline source recovery, and the needs_source stamp ---------------------------------------
+# A dossier sentence that loses its [n] marker used to be handed the WHOLE SECTION's source list.
+# That reads as an attribution and is not one: the figure ends up credited to pages that never said
+# it, and it ships as a citation. A numeric card now gets matched against the passages the
+# researchers actually read, and gets NO source at all when it cannot be matched.
+print("\nthe offline source recovery")
+PAGES_FOR_MATCH = [
+    {"url": "https://ranked.example.org/cost",
+     "passages": ["Employers report a blended internal figure near $4,700 per hire for mid-size teams, "
+                  "once the recruiter's time is counted."]},
+    {"url": "https://other.example.org/unrelated",
+     "passages": ["This page is about office furniture and mentions nothing about hiring at all."]},
+]
+MATCH_IDX = source_match.build_index(PAGES_FOR_MATCH)
+ok("has_number ignores one-digit noise and finds a real figure",
+   source_match.has_number("a blended figure near $4,700 per hire") and not source_match.has_number("step 3 of 4"))
+url, phrase = source_match.recover("A blended internal figure near $4,700 per hire is reported for mid-size teams.", MATCH_IDX)
+ok("a lifted numeric claim is matched back to the one page that carried it",
+   url == "https://ranked.example.org/cost" and phrase, (url, phrase))
+ok("a figure nothing retrieved ever stated is left unmatched",
+   source_match.recover("Turnover costs reached $98,412 per department.", MATCH_IDX) == (None, None))
+ok("no index means no source, never a guess", source_match.recover("$4,700 per hire", []) == (None, None))
+
+DOC_NO_CITE = {"sources": [{"n": 1, "url": "https://ranked.example.org/cost", "title": "Cost"},
+                           {"n": 2, "url": "https://other.example.org/unrelated", "title": "Other"}],
+               "sections": [{"title": "What it costs", "md":
+                             "A blended internal figure near $4,700 per hire is reported for mid-size teams. "
+                             "Turnover costs reached $98,412 per department. "
+                             "Teams consistently forget to count the internal share.",
+                             "sources": ["https://ranked.example.org/cost",
+                                         "https://other.example.org/unrelated"]}]}
+har_test = dossier.harvest(DOC_NO_CITE, PAGES_FOR_MATCH)
+by_gloss = {c["verbatim"][:20]: c for c in har_test["cards"]}
+recovered = [c for c in har_test["cards"] if c.get("source_recovered")]
+flagged = [c for c in har_test["cards"] if c.get("needs_source")]
+ok("a figure whose sentence lost its [n] is traced back to the real page",
+   len(recovered) == 1 and recovered[0]["source_urls"] == ["https://ranked.example.org/cost"], recovered)
+ok("a figure nothing supports carries NO source at all, and is stamped needs_source",
+   len(flagged) == 1 and flagged[0]["source_urls"] == [] and "98,412" in flagged[0]["verbatim"], flagged)
+ok("a claim with no number keeps its section\'s sources, as a cross-source claim should",
+   any(not c.get("needs_source") and not c.get("source_recovered") and len(c["source_urls"]) == 2
+       for c in har_test["cards"]), [(c["verbatim"][:30], c["source_urls"]) for c in har_test["cards"]])
+ok("the harvest counts both, so the run can report them",
+   har_test["recovered_sources"] == 1 and har_test["needs_source"] == 1, har_test)
+
+# ---- the dossier health gate ----------------------------------------------------------------------
+# A dud research run used to pass in silence: the interviews ran, the section writes came back
+# near-empty, and a 300-word dossier became the foundation of the blueprint, the plan and the
+# article. His conductor refuses under STORM_MIN_WORDS and re-runs the research ONCE.
+print("\nthe dossier health gate")
+_fixture.stub_dfs(balance=12.5)
+ok("the floor and the retry budget are his numbers", (_c.DOSSIER_MIN_WORDS, _c.DOSSIER_RETRIES) == (1500, 1),
+   (_c.DOSSIER_MIN_WORDS, _c.DOSSIER_RETRIES))
+ok("a stub-length dossier is refused and a real one is not",
+   dossier.healthy({"words": 300}) == (300, False) and dossier.healthy({"words": 1500})[1]
+   and dossier.healthy({"words": 9000})[1])
+# Drive the refusal by raising the floor out of reach for one run, rather than by making the stub
+# write a bad dossier: the stub is shared with every other suite, and the thing under test here is
+# what the run DOES when the dossier is short, not what makes it short.
+_conversations = []
+_real_curate_run = curate.run
+def _counted_curate(*a, **k):
+    _conversations.append(1)
+    return _real_curate_run(*a, **k)
+curate.run = _counted_curate
+_c.DOSSIER_MIN_WORDS = 10 ** 6
+r_thin = store.new_run(chat, "a thin dossier")
+out_thin = research(ctx_for(r_thin), topic="Operator education (a buyer's guide)", angle="what changes after")
+curate.run = _real_curate_run
+ok("a dossier under the floor stops the run instead of poisoning everything after it",
+   "{:,}".format(_c.DOSSIER_MIN_WORDS) in (out_thin.get("error") or "") and not out_thin.get("artifact"),
+   out_thin)
+ok("and the refusal is a person's English, naming the size and what to do",
+   "words" in (out_thin.get("error") or "") and "run the research again" in (out_thin.get("error") or "").lower(),
+   out_thin.get("error"))
+ok("it tried the interviews a second time before giving up", len(_conversations) == 2, len(_conversations))
+ok("nothing downstream was written from the thin run",
+   store.load_artifact(chat, r_thin, "research.json") is None
+   and store.load_artifact(chat, r_thin, "cards.json") is None)
+_c.DOSSIER_MIN_WORDS = 1500
+
 # ---- the whole run --------------------------------------------------------------------------------
 print("\nrun_research, end to end")
 _fixture.stub_dfs(balance=12.5)
@@ -232,7 +314,26 @@ ok("every trail entry names a file that really exists",
 ok("our own domain is never outside evidence", not any("example.com" in c["source_urls"][0] for c in ev_cards))
 ok("gap check judged the checklist items", len(rs["gap_check"]["items"]) >= 3 and all(i["verdict"] in ("covered", "partial", "no") for i in rs["gap_check"]["items"]))
 ok("gap check caps at 3 questions (the stub asked for 4)", len(rs["gap_check"]["queries"]) == 3, len(rs["gap_check"]["queries"]))
-ok("the gap rounds added cards", any(c["origin"].startswith("gap/") for c in ev_cards))
+# ---- the gap fill is the real research conversation, not a keyword lookup ------------------
+# His 12-gap-check re-runs STORM ITSELF per gap query, four perspectives and four turns, carrying
+# the article's spine. Sutra answered the same gap with one keyword search, so the holes that
+# matter most — the gaps we can own — got the thinnest evidence in the run.
+rounds = rs["gap_check"]["fill_rounds"]
+ok("every gap question got its own round, one per query",
+   len(rounds) == len(rs["gap_check"]["queries"]), rounds)
+ok("each round was the research conversation, not a keyword read",
+   rounds and all(r["route"] == "the research conversation" for r in rounds), [r["route"] for r in rounds])
+ok("each round asked real questions rather than running one search",
+   rounds and all(r["questions"] >= 2 for r in rounds), [r["questions"] for r in rounds])
+ok("each round wrote its own dossier and lifted facts out of it",
+   rounds and all(r["harvested"] >= 1 for r in rounds), [r["harvested"] for r in rounds])
+_main_vb = {c["verbatim"] for c in ev_cards if not c["origin"].startswith("gap/")}
+_gap_vb = [c["verbatim"] for c in ev_cards if c["origin"].startswith("gap/")]
+ok("a fact the main round already carries is never filed again by a gap round",
+   not (set(_gap_vb) & _main_vb), sorted(set(_gap_vb) & _main_vb)[:2])
+ok("whatever a gap round does keep came out of its own dossier",
+   all(c["origin"].startswith("gap/dossier/") for c in ev_cards if c["origin"].startswith("gap/")),
+   [c["origin"] for c in ev_cards if c["origin"].startswith("gap/")][:3])
 ok("ownpage cards come from the index and carry internal_link",
    own_cards and all(c["internal_link"] and c["internal_link"].startswith("https://example.com") for c in own_cards), len(own_cards))
 ok("ownpage verbatim is the code-sliced section text", all(c["heading"] for c in own_cards))
@@ -257,13 +358,30 @@ cards2 = store.load_artifact(chat, run, "cards.json") or []
 scored = store.load_artifact(chat, run, "_work/scored-cards.json") or {}
 ok("returns a summary and no error", bool(out.get("summary")) and not out.get("error"), out.get("error"))
 ok("h1 is the topic", bp.get("h1") == "Operator education (a buyer's guide)")
-numeric_history = [c for c in cards2 if "history" in c["verbatim"].lower() and "1990" in c["verbatim"]]
-plain_history = [c for c in cards2 if "history of the movement" in c["verbatim"].lower()]
 kept_ids = set(scored.get("kept_ids") or [])
+# PROTECT, driven straight at the filter rather than through whichever step happened to read a raw
+# page. The rule is what matters: a card the judge scores off-spine survives anyway when it carries
+# a figure, and the same card without one does not.
+from seo_agent.research import score_cards
+_protect_pair = [
+    {"id": 9001, "tag": "evidence", "gloss": "how far the field goes back",
+     "verbatim": "The history of the field goes back to 1990 and 42 early programmes.",
+     "source_urls": ["https://ranked.example.org/a"]},
+    {"id": 9002, "tag": "evidence", "gloss": "the field's history in general",
+     "verbatim": "The history of the movement is long and contested.",
+     "source_urls": ["https://ranked.example.org/a"]},
+]
+_kept_pair, _prep = score_cards.run(_protect_pair, rs["topic"], rs["angle"], rs["persona"],
+                                    {"spine": rs["spine"], "about": rs["world"]["about"],
+                                     "not_about": rs["world"]["not_about"]},
+                                    "Example — practitioner-led business programmes")
 ok("PROTECT keeps a low-relevance card that carries a number",
-   numeric_history and all(c["id"] in kept_ids and c["protected"] and c["relevance"] == 0 for c in numeric_history))
-ok("a low-relevance card without a number is dropped", plain_history and all(c["id"] not in kept_ids for c in plain_history))
-ok("drops are on record with a reason", all(d.get("reason") for d in scored["report"]["dropped"]) and scored["report"]["dropped_count"] > 0)
+   [c["id"] for c in _kept_pair] == [9001] and _protect_pair[0]["protected"]
+   and _protect_pair[0]["relevance"] == 0, (_kept_pair, _protect_pair[0]))
+ok("a low-relevance card without a number is dropped",
+   [d["id"] for d in _prep["dropped"]] == [9002], _prep["dropped"])
+ok("drops are on record with a reason",
+   all(d.get("reason") for d in _prep["dropped"]) and _prep["dropped_count"] > 0, _prep["dropped"])
 placed = []
 for s in bp["sections"]:
     placed += s["evidence"]

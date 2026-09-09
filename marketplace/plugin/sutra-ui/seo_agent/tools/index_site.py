@@ -18,7 +18,8 @@ The stages live in seo_agent/foundation/, one module each; this file sequences t
   4. TRAFFIC — one bulk DataForSEO pull, cached so it never repeats by accident, raw and cleaned
      figures per page, joined by match key.
   5. GATES — enumeration accounting, response integrity, extraction coverage, the traffic
-     cross-check. A failed gate is REPORTED in the tool's note, never raised.
+     cross-check. A failed counting gate STOPS the run: nothing is saved and nothing downstream
+     is built on a catalogue that failed its own checks.
   6. WRITE — site_index.json, content-database.jsonl, top-pages.json, catalogue-report.json,
      brand/company.json.
 
@@ -225,9 +226,35 @@ def _write_knowledge(site, rows, tr, report, wp_doc):
     return company
 
 
+# ---- a catalogue that failed its own checks ------------------------------------------------------
+
+class CatalogueNotTrusted(RuntimeError):
+    """A counting gate failed, so the catalogue was not saved. A RuntimeError like every other
+    tool refusal: the loop turns it into a plain message to the user, never a crash."""
+
+
+def _not_trusted(stoppers, host, capped):
+    """The message the person reads. It names what failed, in their words, and what to do next."""
+    what = "; ".join("%s — %s" % (g["name"], g["detail"]) for g in stoppers)
+    fix = ("Run it again without a page cap: a cap is what made this one a sample."
+           if capped else
+           "Most often the site refused or throttled part of the read, and it answers a few "
+           "minutes later. Read what the check says above, fix that, and run index_site again.")
+    return ("The catalogue of %s did not pass its own checks, so it has NOT been saved. "
+            "%d check(s) failed: %s. "
+            "Nothing is built on a catalogue that failed its checks — that is how a 400-page "
+            "sample of an 11,917-page site once became the whole brand pack. Any catalogue "
+            "already on file is untouched, and every page read this time is kept, so running "
+            "index_site again resumes where this stopped instead of starting over. %s "
+            "The full report is saved as catalogue-report.json. If the shortfall is one you "
+            "already know about and you want the catalogue anyway, run index_site again with "
+            "accept_failed_checks set." % (host, len(stoppers), what, fix))
+
+
 # ---- the tool ----------------------------------------------------------------------------------
 
-def run(ctx, domain, max_pages=0, redo=False, redo_traffic=False, force_crawl=False):
+def run(ctx, domain, max_pages=0, redo=False, redo_traffic=False, force_crawl=False,
+        accept_failed_checks=False):
     say = sh.reporter(ctx, "index_site")
     roots = _roots(domain)
     # 0 means no cap, which is what the original workflow ships. A cap is a user's explicit
@@ -300,6 +327,21 @@ def run(ctx, domain, max_pages=0, redo=False, redo_traffic=False, force_crawl=Fa
         failed = [g for g in report["gates"] if not g["pass"]]
         say("Checked the catalogue", ("all %d checks passed" % len(report["gates"])) if not failed else
             "%d of %d checks failed: %s" % (len(failed), len(report["gates"]), "; ".join(g["name"] for g in failed)))
+
+        # The original exits here with "the catalogue is NOT trustworthy yet". The agent reported
+        # it and carried on, which is how a catalogue that had just failed its own counting gates
+        # still became site_index.json and then the whole brand pack (found live 2026-09-04). The
+        # report is saved either way, so the person can read exactly what failed; the catalogue
+        # is not.
+        stoppers = gates.blockers(report)
+        if stoppers and not accept_failed_checks:
+            store.save_knowledge("catalogue-report.json", report)
+            say("Stopped: the catalogue is not trustworthy yet",
+                "; ".join(g["name"] for g in stoppers))
+            raise CatalogueNotTrusted(_not_trusted(stoppers, host, bool(max_pages)))
+        if stoppers:
+            say("Saving a catalogue that failed its own checks",
+                "you asked for it anyway: %s" % "; ".join(g["name"] for g in stoppers))
 
         # 6. WRITE
         company = _write_knowledge(site, rows, tr, report, wp)

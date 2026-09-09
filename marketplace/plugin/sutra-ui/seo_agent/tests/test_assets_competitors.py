@@ -15,12 +15,15 @@ import os
 import re
 import sys
 
+import numpy as np
+
 from seo_agent.tests import _fixture
 _fixture.setup()
 from seo_agent import llm, store                                  # noqa: E402
 from seo_agent.assets import _common as cm                        # noqa: E402
 from seo_agent.assets import competitors as C                     # noqa: E402
-from seo_agent.tools import dfs                                   # noqa: E402
+from seo_agent.assets import formats as F                         # noqa: E402
+from seo_agent.tools import dfs, voyage                           # noqa: E402
 from seo_agent.research import web                                # noqa: E402
 
 FAILS = []
@@ -28,6 +31,9 @@ CALLS = {"json": 0, "text": 0}
 UNFILLED = []               # any prompt that still carries a {{TOKEN}} when it reaches the model
 DFS_CALLS = []              # every (endpoint, payload) the fake answered
 FETCHED = []
+SHORTLIST_PROMPTS = []      # what the shortlister was actually shown
+RESOLVED = []               # every domain the validation step checked
+HOMEPAGES = []              # every homepage the enrichment step read
 
 
 def ok(label, cond, extra=""):
@@ -54,11 +60,31 @@ def _json(prompt, system=None, retries=1, **kw):
     p = prompt
 
     if '"excluded_notable"' in p:                       # competitors-shortlist
+        SHORTLIST_PROMPTS.append(p)
         return {"competitors": [
             {"domain": "rival-one.com", "group": "DIRECT", "why": "same product, same buyer"},
             {"domain": "rival-two.com", "group": "ADJACENT", "why": "owns the audience"},
             {"domain": "example.com", "group": "DIRECT", "why": "this is us and must be dropped"}],
             "excluded_notable": ["hbr.org: general business media"], "note": ""}
+
+    if '"junk"' in p and '"map"' in p:                  # formats-canonicalise (the F0 tidier)
+        labels = [ln.split(" — ", 1)[1] for ln in p.splitlines()
+                  if re.match(r"^\d+ — ", ln)]
+        # Every "... page" variant is one shape; a help-centre article is not a content asset.
+        def canon(lab):
+            low = lab.lower()
+            if "glossary" in low:
+                return "Glossary or dictionary"
+            if "help" in low or "support article" in low:
+                return "Help-centre article"
+            return lab
+        return {"map": {lab: canon(lab) for lab in labels},
+                "junk": ["Help-centre article"], "note": ""}
+
+    if "same BUILD" in p or "possibly overlapping" in p:   # competitors-dedup (G2.5)
+        ids = [int(ln.split("id=", 1)[1].split(" ", 1)[0].strip(" ·"))
+               for ln in p.splitlines() if ln.strip().startswith("- id=")]
+        return {"groups": [{"action": "same", "ids": ids, "keep": ids[0]}] if len(ids) > 1 else []}
 
     if '"tags"' in p:                                   # competitors-tag-format
         out = []
@@ -166,6 +192,44 @@ def stub_dfs(balance=12.5):
     dfs.post = post
 
 
+def stub_network():
+    """The two free HTTP steps A1b and A1c, stubbed at the function the module calls.
+
+    Both reach the open internet with plain urllib, so without this the suite would resolve real
+    domains and read real homepages. It also matters for correctness: `rival-two.com` does not
+    exist, and the repair rule turned it into `rivaltwo.com`, which does — a real company, silently
+    substituted into the study. The stub says which domains are live and nothing guesses.
+    """
+    live = {"rival-one.com", "rival-two.com", "scribd.com", "makipeople.com"}
+
+    def resolves(domain):
+        RESOLVED.append(domain)
+        return domain in live
+    C.resolves = resolves
+
+    def homepage(domain):
+        HOMEPAGES.append(domain)
+        return {"title": "%s — hiring assessments" % domain.split(".")[0],
+                "description": "We sell skills tests to hiring teams."}
+    C._homepage = homepage
+
+
+def stub_voyage(same=()):
+    """Embeddings we control: titles listed in `same` sit on one axis, everything else is its own."""
+    def embed(texts, input_type="document"):
+        rows = []
+        for t in texts:
+            v = np.zeros(len(texts) + 1, dtype=np.float32)
+            if any(k.lower() in str(t).lower() for k in same):
+                v[0] = 1.0
+            else:
+                v[len(rows) + 1] = 1.0
+            rows.append(v / (np.linalg.norm(v) + 1e-9))
+        return np.array(rows, dtype=np.float32)
+    voyage.embed = embed
+    voyage.available = lambda: True
+
+
 def stub_web():
     def fetch(url, tries=3):
         FETCHED.append(url)
@@ -178,6 +242,8 @@ def stub_web():
 
 
 stub_web()
+stub_network()
+stub_voyage()
 
 CO = {"brand": "Example", "domain": "example.com", "brand_oneliner": "Example, for operators",
       "niche_definition": "executive education", "location_name": "United States",
@@ -418,6 +484,181 @@ ok("a second run reuses the finished file and calls no model",
 
 
 # ================================================================================================
+print("\nA1b: telling the shortlister what each candidate IS")
+
+enriched = cm.read("_work/competitors/candidates-enriched.json") or []
+ok("every candidate carries the company's own description, from its own homepage",
+   enriched and all(r.get("description") for r in enriched), enriched[:1])
+ok("every candidate's homepage really was read",
+   {r["domain"] for r in enriched} <= set(HOMEPAGES), sorted(set(HOMEPAGES)))
+_n_read = len(HOMEPAGES)
+C._enrich(cm.read("_work/competitors/candidates.json") or {}, say)
+ok("a homepage already read is never read a second time",
+   len(HOMEPAGES) == _n_read, len(HOMEPAGES) - _n_read)
+ok("and the shortlister was SHOWN the description, not just the domain and a keyword count",
+   SHORTLIST_PROMPTS and "We sell skills tests to hiring teams." in SHORTLIST_PROMPTS[0],
+   SHORTLIST_PROMPTS[:1])
+ok("enrichment is free: it cost no paid call",
+   not any("competitors_domain" in pth for pth, _t in DFS_CALLS[len(DFS_CALLS):]), True)
+
+blank = C._enrich({"rows": []}, say)
+ok("an empty candidate list is not a crash", blank == {"rows": []}, blank)
+
+
+# ================================================================================================
+print("\nA1c: no paying for a domain that does not resolve")
+
+ok("a live domain passes straight through",
+   [r["domain"] for r in C._validate([{"domain": "rival-one.com", "kind": "direct"}],
+                                     {"rows": []}, say)] == ["rival-one.com"])
+
+# The owner's real scar: `maki.people` is the company Maki People at makipeople.com, and the engine
+# paid for the dead one because nobody checked.
+swapped = C._validate([{"domain": "rival-one.com", "kind": "direct"},
+                       {"domain": "maki.people", "kind": "direct"}],
+                      {"rows": [{"domain": "makipeople.com"}]}, say)
+ok("a dead domain is swapped for the live company it plainly is",
+   [r["domain"] for r in swapped] == ["rival-one.com", "makipeople.com"], swapped)
+ok("and the swap is recorded, never silent",
+   (cm.read("_work/competitors/domain-validation.json") or {}).get("swapped")
+   == [{"from": "maki.people", "to": "makipeople.com"}],
+   cm.read("_work/competitors/domain-validation.json"))
+
+dropped_dead = C._validate([{"domain": "nothing-here.example", "kind": "direct"},
+                            {"domain": "rival-one.com", "kind": "direct"}], {"rows": []}, say)
+ok("a dead domain with no live alternative is dropped BEFORE anything is spent on it",
+   [r["domain"] for r in dropped_dead] == ["rival-one.com"], dropped_dead)
+ok("and the drop is written down with its reason",
+   (cm.read("_work/competitors/domain-validation.json") or {}).get("dropped"),
+   cm.read("_work/competitors/domain-validation.json"))
+
+_saved_resolves = C.resolves
+C.resolves = lambda d: False
+allsame = C._validate([{"domain": "rival-one.com"}, {"domain": "rival-two.com"}], {"rows": []}, say)
+ok("when NOT ONE domain answers that is this machine's network, not two dead companies, so "
+   "nothing is dropped", len(allsame) == 2, allsame)
+C.resolves = _saved_resolves
+
+ok("a brand name typed where a domain belongs is repaired, not inherited",
+   "makipeople.com" in C._repairs("maki.people"), C._repairs("maki.people"))
+ok("the near-match only ever comes from the real candidate list, which demonstrably exists",
+   C._near("maki.people", ["makipeople.com", "elsewhere.com"]) == "makipeople.com")
+
+
+# ================================================================================================
+print("\nsoft 404s and one template served at many addresses")
+
+soft = [{"competitor": "a.com", "url": "https://a.com/%d" % i, "read_status": "ok",
+         "body": "Page not found. The page you are looking for does not exist."} for i in range(2)]
+real = [{"competitor": "a.com", "url": "https://a.com/real", "read_status": "ok",
+         "body": "A real article about hiring, at length. " * 30}]
+n_soft, n_dupe = C._kill_soft_404s(soft + real)
+ok("a Page Not Found body served with HTTP 200 is FETCH FAILED, not a content idea",
+   n_soft == 2 and all(r["read_status"] == "FETCH FAILED" for r in soft), [r["read_status"] for r in soft])
+ok("it is labelled soft-404, so the tally says WHY rather than just how many",
+   all(r["read_method"] == "soft-404" for r in soft), soft[0])
+ok("its body is emptied, so nothing downstream can read an error page as a page",
+   all(r["body"] == "" for r in soft))
+ok("a real article beside it is untouched", real[0]["read_status"] == "ok" and real[0]["body"])
+
+tmpl = [{"competitor": "b.com", "url": "https://b.com/%d" % i, "read_status": "ok",
+         "body": "one and the same template"} for i in range(C.DUP_BODY_ALARM)]
+few = [{"competitor": "c.com", "url": "https://c.com/%d" % i, "read_status": "ok",
+        "body": "shared, but only twice"} for i in range(2)]
+_s, n_dupe = C._kill_soft_404s(tmpl + few)
+ok("%d pages on one site sharing one byte-identical body is a template, not content"
+   % C.DUP_BODY_ALARM,
+   n_dupe == C.DUP_BODY_ALARM and all(r["read_status"] == "FETCH FAILED" for r in tmpl))
+ok("...and the label says how many shared it",
+   tmpl[0]["read_method"] == "duplicate-body x%d" % C.DUP_BODY_ALARM, tmpl[0]["read_method"])
+ok("two pages sharing a body is a repeat for the pooling step, not an error page",
+   all(r["read_status"] == "ok" for r in few))
+
+split = [{"competitor": "d.com", "url": "https://d.com/%d" % i, "read_status": "ok",
+          "body": "one and the same template"} for i in range(C.DUP_BODY_ALARM)]
+split += [{"competitor": "e.com", "url": "https://e.com/%d" % i, "read_status": "ok",
+           "body": "one and the same template"} for i in range(C.DUP_BODY_ALARM)]
+_s, n_split = C._kill_soft_404s(split)
+ok("the template check is per competitor: two sites are not one site",
+   n_split == 2 * C.DUP_BODY_ALARM, n_split)
+
+
+# ================================================================================================
+print("\nF0: one canonical name per format, and the shapes nobody studies")
+
+labelled = [{"format": "Glossary / dictionary page"}, {"format": "Glossary or dictionary"},
+            {"format": "Glossary page"}, {"format": "How-to guide"},
+            {"format": "Help centre article"}]
+canon = F.canonicalise(labelled, say)
+ok("the tagger's three ways of saying one shape become one, so a strong format stops reading as "
+   "three weak ones",
+   len({r["format"] for r in labelled if "lossary" in r["format"]}) == 1,
+   [r["format"] for r in labelled])
+ok("it reports what it merged", canon["labels"] == 5 and canon["canonical"] < 5, canon)
+ok("a shape that is not a content asset at all is flagged",
+   labelled[-1]["format_junk"] is True and labelled[0]["format_junk"] is False, labelled[-1])
+forgotten = [{"format": "Kept"}, {"format": "Also kept"}]
+F.canonicalise(forgotten, say, mapping={"map": {}, "junk": []})
+ok("a label the model forgets keeps its own name rather than becoming a blank",
+   [r["format"] for r in forgotten] == ["Kept", "Also kept"], forgotten)
+one_label = [{"format": "How-to guide"}]
+before = CALLS["json"]
+F.canonicalise(one_label, say)
+ok("one label is nothing to merge, so it costs no model call", CALLS["json"] == before)
+
+canon_file = cm.read("_work/competitors/format-canonical.json") or {}
+ok("the run wrote the mapping, so every merge is inspectable",
+   canon_file.get("map") and "labels" in canon_file, canon_file)
+
+
+# ================================================================================================
+print("\nG2.5: the same build written twice")
+
+def _idea(title, fmt, url, domains, gap="thin"):
+    return {"title": title, "format": fmt, "angle": "our angle", "tool_escalation": "",
+            "members": [{"url": url, "competitor": url.split("/")[2], "domains_follow": domains,
+                         "domains_total": domains, "backlinks": domains * 3}],
+            "competitors": [url.split("/")[2]], "pooled_follow_domains": domains,
+            "pooled_backlinks": domains * 3, "gaps": [{"url": url, "gap": gap}]}
+
+twins = [_idea("Python Skills Test", "Quiz or free test", "https://a.com/py", 120),
+         _idea("Coding Assessment (Python)", "Quiz or free test", "https://b.com/py", 40),
+         _idea("Salary Benchmark Report", "Data report", "https://c.com/pay", 90)]
+stub_voyage(same=("Python Skills Test", "Coding Assessment"))
+notes = []
+merged = C._dedup(twins, CO, say, notes)
+ok("the same build under two names becomes ONE idea, which the string key never caught",
+   len(merged) == 2, [r["title"] for r in merged])
+survivor = next((r for r in merged if "Python" in r["title"]), None)
+ok("the survivor keeps ALL the proof, so the merge makes the evidence stronger, not shorter",
+   survivor and sorted(m["url"] for m in survivor["members"])
+   == ["https://a.com/py", "https://b.com/py"], survivor and survivor["members"])
+ok("and its pooled link count is the sum of both, not one of them",
+   survivor and survivor["pooled_follow_domains"] == 160, survivor)
+ok("and both competitors are credited", survivor and survivor["competitors"] == ["a.com", "b.com"],
+   survivor and survivor["competitors"])
+ok("a genuinely different idea is left alone",
+   any(r["title"] == "Salary Benchmark Report" for r in merged), [r["title"] for r in merged])
+report = cm.read("_work/competitors/dedup-report.json") or {}
+ok("every cluster the model saw is written down, so no merge is silent",
+   report.get("same") == 1 and report.get("clusters"), report)
+
+stub_voyage(same=())
+ok("no near twin means nothing is sent to the model at all",
+   len(C._dedup(list(twins), CO, say, [])) == len(twins))
+
+_avail = voyage.available
+voyage.available = lambda: False
+notes = []
+kept_nokey = C._dedup([_idea("A", "x", "https://a.com/1", 1), _idea("B", "y", "https://b.com/1", 1)],
+                      CO, say, notes)
+ok("with no Voyage key the pool is kept whole and the sheet SAYS it still carries the twins",
+   len(kept_nokey) == 2 and notes and "no Voyage key" in notes[0], notes)
+voyage.available = _avail
+stub_voyage()
+
+
+# ================================================================================================
 print("\nthe traps step G is designed against")
 
 notes = []
@@ -465,7 +706,7 @@ print("\nprompts")
 ok("every {{TOKEN}} in every prompt this builder sends was filled before the model saw it",
    not UNFILLED, UNFILLED[:3])
 for name in ("competitors-shortlist", "competitors-tag-format", "competitors-reason",
-             "competitors-score"):
+             "competitors-score", "competitors-dedup"):
     ok("prompts/assets/%s.md exists" % name,
        os.path.exists(os.path.join(cm.PROMPTS, name + ".md")))
 

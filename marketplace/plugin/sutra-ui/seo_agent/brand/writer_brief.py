@@ -11,7 +11,7 @@ Step 2 assemble the brief from everything kept, resolving the places the sources
        failure mode that matters. brand/writer-brief-rulings.md (hand-written house decisions) outranks
        the sources; it is instantiated from the template when missing.
 
-Reads:  brand/brand-voice.md · brand/style-guide.md · brand/voices.md · brand/writing-integrity.md
+Reads:  brand/brand-voice.md · brand/style-guide.md · brand/writing-integrity.md
 Writes: brand/_work/writer-brief/{classified.json, dropped.md} · brand/writer-brief-rulings.md · brand/writer-brief.md
 """
 import re
@@ -28,7 +28,12 @@ WORK = "_work/writer-brief/"
 #   features.md           -> a product catalogue. Not rules about writing.
 #   persona.md            -> describes the reader, not the company's own voice.
 #   writing-examples.md   -> five complete published articles. Whole finished pages, not rules.
-SOURCE_FILES = ["brand-voice.md", "style-guide.md", "voices.md", "writing-integrity.md"]
+#
+# voices.md was the fourth source. It is not an exclusion, it is gone: the byline feature was
+# deleted whole on 2026-09-09 ("remove completely everything about the byline questions, everything
+# from Sutra for now"), so the brief no longer says who signs an article, and the template's "Who is
+# writing" section went with it. Nothing else about the brief changed.
+SOURCE_FILES = ["brand-voice.md", "style-guide.md", "writing-integrity.md"]
 WB_SECTION_CAP = 40000      # per source file into a classify prompt
 
 DROP_REASONS = {
@@ -226,7 +231,7 @@ def run(co, say, redo=False):
         say("Kept writer-brief.md", "already built; ask for a redo to rebuild it")
         return {"files": [OUTPUT, RULINGS], "needs_review": []}
     if not any(cm.exists(n) for n in SOURCE_FILES):
-        raise RuntimeError("None of the source files exist yet (%s); build the voice, style guide and voices first." % ", ".join(SOURCE_FILES))
+        raise RuntimeError("None of the source files exist yet (%s); build the voice, the style guide and the integrity rules first." % ", ".join(SOURCE_FILES))
     data = classify(co, say, redo=redo)
     sections = data.get("sections") or []
     _draft, want, missing = assemble(co, sections, say)

@@ -434,10 +434,50 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     dos = har = None
     if cur.get("turns"):
         dos, _ = step("dossier", lambda: dossier.build(cur, article_brief, say=say))
-        har, _ = step("dossier-cards", lambda: dossier.harvest(dos, say=say))
+        # ---- the dossier health gate (8.19) ----------------------------------------------------
+        # His conductor refuses a dossier under config.STORM_MIN_WORDS and retries the whole
+        # research step ONCE before giving up, because "a dud STORM run poisons everything
+        # downstream". Sutra let a 300-word dossier through in silence and built the blueprint, the
+        # plan and the article on top of it. Same floor, same single retry, and the refusal says
+        # plainly what happened instead of shipping a brief nobody can use.
+        words, ok = dossier.healthy(dos)
+        for _attempt in range(_c.DOSSIER_RETRIES):
+            if ok:
+                break
+            say("The research came back too thin (%s, under %s)"
+                % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS)),
+                "A healthy dossier runs to thousands of words. Running the interviews again, once")
+            cur, _ = _c.cached(ctx, "curate", True, lambda: curate.run(
+                topic, angle, spine_ctx, company, own_domain=company.get("domain") or "", say=say))
+            reused_cur = False
+            if not cur.get("turns"):
+                dos = None
+                break
+            dos, _ = _c.cached(ctx, "dossier", True, lambda: dossier.build(cur, article_brief, say=say))
+            words, ok = dossier.healthy(dos)
+        if dos is not None and not ok:
+            say("Stopping: the research is too thin to build on",
+                "%s after a second attempt, and the floor is %s"
+                % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS)))
+            return {"summary": "The research did not produce enough material to write from, so the "
+                               "run stopped rather than building on it.",
+                    "error": ("The research team ran, and the write-up came back at %s. A real "
+                              "dossier for a topic like this runs to thousands; anything under %s "
+                              "means the research effectively failed even though nothing crashed. I "
+                              "tried a second time and got the same result. Everything after this "
+                              "step is built on the dossier — the facts, the plan, the article — so "
+                              "a thin one quietly turns into an article with almost nothing behind "
+                              "it. Run the research again, or give me a narrower topic with more "
+                              "written about it."
+                              % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS))),
+                    "artifact": None}
+        if dos is not None:
+            har, _ = step("dossier-cards", lambda: dossier.harvest(dos, cur.get("pages"), say=say))
     if har and har.get("cards"):
         ev = {"cards": har["cards"], "pages": cur["pages"], "cost": cur.get("cost") or 0.0,
               "skipped": [], "dropped_verbatims": har.get("dropped_verbatims") or 0,
+              "recovered_sources": har.get("recovered_sources") or 0,
+              "needs_source": har.get("needs_source") or 0,
               "team": cur.get("team") or [], "turns": cur["turns"], "queries": cur.get("queries") or [],
               "dossier_words": dos.get("words") or 0, "sources": dos.get("sources") or []}
         reused = reused_cur
@@ -480,7 +520,9 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     say("Checked the evidence against what matters",
         "%s of %s covered; %s to fill" % (len(gap["items"]) - len(misses), _plural(len(gap["items"]), "item"),
                                           _plural(len(gap["queries"]), "question")))
-    fill, _ = step("gap-evidence", lambda: _fill(gap["queries"], company, ev, demo, say))
+    fill, _ = step("gap-evidence", lambda: _fill(gap["queries"], company, ev, demo, say,
+                                                 angle=angle, spine_ctx=spine_ctx,
+                                                 article_brief=article_brief))
     if gap["queries"]:
         say("Filled the gaps with %s" % _plural(len(fill["cards"]), "more card"),
             "; ".join(q["query"][:60] for q in gap["queries"]))
@@ -517,6 +559,10 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
         "persona": per,
         "evidence": {"pages": ev["pages"], "skipped": ev.get("skipped") or [], "cards": len(ev["cards"]),
                      "dropped_verbatims": ev.get("dropped_verbatims", 0),
+                     # the offline source recovery: figures traced back to the page that stated them,
+                     # and figures that could not be and are marked needs_source instead
+                     "recovered_sources": ev.get("recovered_sources", 0),
+                     "needs_source": sum(1 for c in cards if c.get("needs_source")),
                      # the research conversation, so the brief can show what was actually asked
                      "team": ev.get("team") or [], "questions": len(ev.get("turns") or []),
                      "searches": len(ev.get("queries") or []),
@@ -527,7 +573,8 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
                      "dossier_words": ev.get("dossier_words") or 0,
                      "dossier_sources": ev.get("sources") or []},
         "gap_check": {"items": [{k: v[k] for k in ("id", "type", "item", "verdict", "why") if k in v} for v in gap["items"]],
-                      "queries": gap["queries"], "filled": fill.get("pages") or []},
+                      "queries": gap["queries"], "filled": fill.get("pages") or [],
+                      "fill_rounds": fill.get("rounds") or []},
         "reuse": own.get("reuse"),
         "own_pages": own.get("pages") or [],
         "cost_usd": _cost(pool, met, sp, ev, fill),
@@ -570,21 +617,67 @@ def _numbered(cards):
     return out
 
 
-def _fill(queries, company, ev, demo, say):
-    """One more evidence round per gap question, skipping pages the first round already read."""
+def _fill(queries, company, ev, demo, say, angle="", spine_ctx=None, article_brief=""):
+    """The gap fill: a REAL research conversation per gap question, not a keyword lookup.
+
+    12-gap-check/scripts/rerun_storm.py runs STORM's own runner once per gap query
+    (`--turns 4 --topk 5 --perspectives 4`), carrying the article's spine file so the fill research
+    "stays inside the article's world instead of running blind", and saves each as its own iteration
+    beside the main dossier.
+
+    Sutra answered the same gap with ONE keyword search over ten SERP results (2026-09-10). That is
+    backwards: the gap check exists to find the holes that matter most — the gaps we can own, the
+    thing the article is supposed to be differentiated on — and they were getting the thinnest
+    evidence in the whole run. This runs the same machinery step 2 runs, so there is one conversation
+    engine in this package and not two: the gap query becomes the research subject, the article's own
+    spine and world ride along unchanged, the answers are written up as a dossier, and the cards are
+    lifted out of that. A question whose conversation comes back with nothing falls back to the plain
+    keyword read, for the same reason step 2 does: some evidence beats none.
+    """
     if not queries:
-        return {"cards": [], "pages": [], "cost": 0.0}
-    seen = [p["url"] for p in ev.get("pages") or []]
-    out = {"cards": [], "pages": [], "cost": 0.0}
+        return {"cards": [], "pages": [], "cost": 0.0, "rounds": []}
+    own = company.get("domain") or ""
+    seen = {p["url"] for p in (ev.get("pages") or []) if p.get("url")}
+    # The facts the main round already carries, so a gap round that lands on the same page does not
+    # file the same sentence twice as a second card.
+    known = {_c.norm(c.get("verbatim", "")) for c in (ev.get("cards") or [])}
+    out = {"cards": [], "pages": [], "cost": 0.0, "rounds": []}
     for q in queries:
-        got = evidence.gather([q["query"]], company, own_domain=company.get("domain") or "", exclude=seen,
-                              max_pages=_c.EVIDENCE_SERP_DEPTH, demo=demo, say=say)
-        for c in got["cards"]:
+        say("Researching the gap: %s" % q["query"][:70],
+            "The same four-researcher conversation the main round ran, aimed at this one hole")
+        cur = curate.run(q["query"], angle, spine_ctx, company, own_domain=own,
+                         max_pages=_c.GAP_FILL_MAX_PAGES, say=say)
+        cards, pages, cost = [], [], cur.get("cost") or 0.0
+        if cur.get("turns"):
+            dos = dossier.build(cur, article_brief or curate._article_block(q["query"], angle, spine_ctx), say=say)
+            har = dossier.harvest(dos, cur.get("pages"), say=say)
+            cards = har.get("cards") or []
+            pages = [{"url": p.get("url"), "title": p.get("title") or "",
+                      "word_count": p.get("word_count")} for p in (cur.get("pages") or [])]
+            route = "the research conversation"
+        if not cards:
+            # nothing came back from the interviews: the narrower read, rather than an unfilled gap
+            got = evidence.gather([q["query"]], company, own_domain=own, exclude=seen,
+                                  max_pages=_c.EVIDENCE_SERP_DEPTH, demo=demo, say=say)
+            cards = got.get("cards") or []
+            pages = list(got.get("pages") or [])
+            cost += got.get("cost") or 0.0
+            route = "the plain keyword read (the conversation returned nothing)"
+        fresh = []
+        for c in cards:
+            key = _c.norm(c.get("verbatim", ""))
+            if key in known:
+                continue
+            known.add(key)
             c["origin"] = "gap/" + c.get("origin", "")
-        out["cards"] += got["cards"]
-        out["pages"] += [dict(p, query=q["query"]) for p in got["pages"]]
-        out["cost"] += got.get("cost") or 0.0
-        seen += [p["url"] for p in got["pages"]]
+            fresh.append(c)
+        out["cards"] += fresh
+        out["pages"] += [dict(p, query=q["query"]) for p in pages]
+        out["cost"] += cost
+        out["rounds"].append({"query": q["query"], "route": route, "harvested": len(cards),
+                              "cards": len(fresh), "pages": len(pages),
+                              "questions": len(cur.get("turns") or [])})
+        seen |= {p["url"] for p in pages if p.get("url")}
     out["cost"] = round(out["cost"], 6)
     return out
 

@@ -13,8 +13,11 @@ Two stages:
      rung 2  the DOM text of the noise-stripped live page — longest wins, ties to the CMS body
      rung 3  JSON-LD articleBody / <article> baseline
      floor   the whole document's text, last resort only
+     rung 4  the page RENDERED in a real browser, for a page whose HTML is an empty app root
      else    body_status = failed  (NEVER silently blank)
-   No browser render: a page whose HTML holds no text is recorded as failed, and the gate says so.
+
+   Every page is extracted in a worker PROCESS with a wall-clock kill, because trafilatura hangs
+   on some real pages and a hung page must cost that page, not the crawl.
 
 2. DE-BOILERPLATE across the whole site, per language. A line that appears on >= DEBOILER_FRAC of
    a language's pages is site chrome (menu / header / footer) — a UNIQUE article sentence appears
@@ -23,16 +26,20 @@ Two stages:
    and not a guess, decides what is chrome.
 """
 import collections
+import concurrent.futures as _fut
 import copy
 import json
 import os
 import re
+import signal
 import statistics
+from concurrent.futures.process import BrokenProcessPool
 
 from bs4 import BeautifulSoup, NavigableString
 from bs4.element import Comment, Declaration, Doctype, ProcessingInstruction
 
 from .. import store
+from ..tools import _browser
 from . import settings
 from .urls import store_norm
 
@@ -184,6 +191,22 @@ def _jsonld_body(soup):
     return best.strip()
 
 
+# The four app roots every mainstream JavaScript framework ships with. A page is only judged by
+# what it MEASURABLY holds, never by a framework marker alone: an empty root next to a full page
+# of text is a widget, and this must not send that page to the browser.
+_APP_ROOTS = ["root", "app", "__next", "___gatsby"]
+
+
+def _spa_root(soup):
+    """Is this page's HTML an empty app shell — text only after JavaScript runs?"""
+    body = soup.body
+    if body is None:
+        return False
+    if len(" ".join(body.get_text(" ").split())) >= 200:
+        return False
+    return soup.find(id=_APP_ROOTS) is not None
+
+
 def _meta(soup, rec):
     title = rec.get("title") or ""
     if not title:
@@ -321,7 +344,210 @@ def extract_one(url, rec, live_html, rest_html):
             if len(h) > len(best):
                 best, best_name = h, "html2txt"
 
+        # rung 4 — nothing in the HTML but an empty app root: the text of this page only exists
+        # after a browser has run its JavaScript. Hand it to the render pass, which the PARENT
+        # runs (a render is a real page load, so it is batched and capped, not done per row here).
+        if len(best) < settings.EXTRACT_FAIL_CHARS and _spa_root(clean):
+            row = _row(url, rec, best, best_name or "none", title, desc, lang, h1, og)
+            row["body_status"] = "spa_candidate"
+            return row
+
     return _row(url, rec, best, best_name or "none", title, desc, lang, h1, og)
+
+
+# ---- one page, wall-clock-capped, inside a worker process --------------------------------------
+
+class _Timeout(Exception):
+    """The wall clock ran out on one page's extract."""
+
+
+def _fire(*_):
+    raise _Timeout()
+
+
+def _arm(seconds):
+    """Set the wall-clock kill for this page, and say whether it is armed.
+
+    Only the MAIN thread of a process may install a signal handler, and the serial fallback runs
+    inside whatever thread called the tool, so failing to arm is normal and must never stop the
+    extract — it only means that one page has no hard kill. In the pool, every worker IS a main
+    thread, which is the whole reason the pool is processes.
+    """
+    try:
+        signal.signal(signal.SIGALRM, _fire)
+        signal.alarm(max(1, int(seconds)))
+        return True
+    except (ValueError, AttributeError):        # not the main thread, or no SIGALRM (Windows)
+        return False
+
+
+def _worker(payload):
+    """One page, with a HARD wall-clock kill.
+
+    trafilatura hangs on some real pages — that is the measured reason the original ran extraction
+    in four processes with a SIGALRM per page, and the reason the agent's own restored trafilatura
+    rung needs the same guard. A signal, not a wait: a thread cannot be interrupted at all, and a
+    plain timeout that only stops WAITING leaves the hung page burning a core for the rest of the
+    run. Never raises: a page that cannot be read comes back as a row that says so.
+    """
+    url, rec, live_html, rest_html = payload
+    armed = _arm(settings.EXTRACT_TIMEOUT)
+    try:
+        return extract_one(url, rec, live_html, rest_html)
+    except _Timeout:
+        return _row(url, rec, "", "timeout", rec.get("title", ""), rec.get("description", ""), "")
+    except Exception as e:  # noqa: BLE001 — a broken page must never kill the run
+        return _row(url, rec, "", "error:%s" % type(e).__name__, rec.get("title", ""),
+                    rec.get("description", ""), "")
+    finally:
+        if armed:
+            signal.alarm(0)
+
+
+def _serial(payloads, say, first=1, total=None):
+    rows = []
+    total = len(payloads) if total is None else total
+    for i, payload in enumerate(payloads, first):
+        rows.append(_worker(payload))
+        if i % 200 == 0:
+            say("Still extracting", "%d of %d pages" % (i, total))
+    return rows
+
+
+def _kill_pool(ex):
+    """Stop the worker processes NOW. The pool's own shutdown WAITS for them, so a page hung
+    somewhere a signal cannot reach would hold the whole run open at the end of the pass."""
+    for proc in list((getattr(ex, "_processes", None) or {}).values()):
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001 — it may already be gone
+            pass
+    try:
+        ex.shutdown(wait=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _pool(workers):
+    """A pool of FORKED workers, or None when this runtime cannot give us one.
+
+    Fork, named explicitly, never the platform default. A SPAWNED worker re-imports the program's
+    __main__ module, and __main__ here is whatever launched the agent — the app's entry point, a
+    test suite, a script. Measured 2026-09-10 on the first parallel run: macOS defaults to spawn,
+    so each worker re-executed the whole calling program, and its cleanup deleted the raw cache
+    the run was still reading. Fork inherits the parent's memory instead, which is also what lets
+    a caller's settings (a lowered timeout in a test) reach the workers at all.
+    """
+    import multiprocessing
+    try:
+        ctx = multiprocessing.get_context("fork")
+    except ValueError:                          # a platform with no fork (Windows)
+        return None
+    return _fut.ProcessPoolExecutor(max_workers=workers, mp_context=ctx)
+
+
+def _extract_all(payloads, say):
+    """Every page, in EXTRACT_WORKERS processes, each page capped at EXTRACT_TIMEOUT seconds."""
+    workers = max(1, int(settings.EXTRACT_WORKERS))
+    if workers < 2 or len(payloads) < 2:
+        return _serial(payloads, say)
+    try:
+        ex = _pool(workers)
+    except Exception as e:  # noqa: BLE001 — a runtime that cannot fork still has to catalogue
+        ex = None
+        say("Reading the pages one at a time",
+            "the extractor could not start its worker processes (%s)" % str(e)[:80])
+    if ex is None:
+        return _serial(payloads, say)
+    rows = []
+    futs = {ex.submit(_worker, p): p for p in payloads}
+    # A budget for the WHOLE pass, on top of the per-page alarm: if a page ever hangs somewhere a
+    # signal cannot interrupt (a C loop inside a parser), the run must still end. Three times the
+    # per-page cap over every batch is far more than a real pass needs.
+    budget = settings.EXTRACT_TIMEOUT * 3 * (len(payloads) // workers + 1) + 60
+    try:
+        for i, fut in enumerate(_fut.as_completed(futs, timeout=budget), 1):
+            rows.append(fut.result())
+            if i % 200 == 0:
+                say("Still extracting", "%d of %d pages" % (i, len(payloads)))
+    except _fut.TimeoutError:
+        stuck = [p for f, p in futs.items() if not f.done()]
+        _kill_pool(ex)
+        for url, rec, _live, _rest in stuck:
+            rows.append(_row(url, rec, "", "timeout", rec.get("title", ""), rec.get("description", ""), ""))
+        say("Some pages never finished being read",
+            "%d of %d pages were still running after %d seconds and were stopped; they are "
+            "recorded as unreadable, not left to hold the run open" % (len(stuck), len(payloads), budget))
+        return rows
+    except BrokenProcessPool:
+        _kill_pool(ex)
+        done = {r["url"] for r in rows}
+        left = [p for p in payloads if p[0] not in done]
+        say("The extractor's worker processes stopped",
+            "reading the remaining %d pages one at a time instead" % len(left))
+        return rows + _serial(left, say, first=len(rows) + 1, total=len(payloads))
+    ex.shutdown(wait=True)
+    return rows
+
+
+# ---- rung 4: the page as a browser sees it ------------------------------------------------------
+
+def _render(urls, say):
+    """The rendered HTML of pages whose text only exists once JavaScript has run.
+
+    Sutra already ships a browser for the sites that answer plain requests with a bot challenge
+    (the app's own hidden window, or Playwright on a developer machine), and _browser picks
+    whichever is there. Without one, these pages stay failed and the report says why — the same
+    answer the crawler gives a challenged site, never a pretend-empty page.
+    """
+    kind = _browser.available()
+    if not kind:
+        say("Some pages need a browser to read",
+            "%d pages hold no text until their JavaScript runs, and no browser is available here, "
+            "so they are recorded as unreadable. Inside the Sutra app this works through the "
+            "app's own window." % len(urls))
+        return {}
+    say("Reading the pages that only exist once their JavaScript runs",
+        "%d of them, through %s" % (len(urls), "the app's window" if kind == "shell" else kind))
+    out = {}
+    for url in urls:
+        try:
+            r = _browser.fetch(url)
+        except Exception as e:  # noqa: BLE001 — one page the browser chokes on is that page's problem
+            say("A page would not render", "%s (%s)" % (url, str(e)[:100]))
+            continue
+        if int(r.get("status") or 0) == 200 and (r.get("text") or "").strip():
+            out[url] = r["text"]
+    return out
+
+
+def _render_pass(rows, pages, say):
+    """Re-extract every spa_candidate from its rendered HTML. Returns how many were rescued."""
+    spa = [r for r in rows if r["body_status"] == "spa_candidate"]
+    if not spa:
+        return 0
+    cap = settings.SPA_RENDER_CAP
+    if len(spa) > cap:
+        say("Too many pages need a browser to read",
+            "%d of them; the first %d are rendered and the rest are recorded as unreadable, "
+            "because a render is seconds per page" % (len(spa), cap))
+    rendered = _render([r["url"] for r in spa[:cap]], say)
+    rescued = 0
+    for row in spa:
+        html = rendered.get(row["url"])
+        if html:
+            fresh = extract_one(row["url"], pages.get(row["url"]) or {}, html.encode("utf-8"), None)
+            if len(fresh["body"]) > len(row["body"]):
+                fresh["extractor"] = "browser"
+                row.update(fresh)
+                if row["body_status"] != "failed":
+                    rescued += 1
+                continue
+        # nothing rendered it, or the render held no more than the HTML did: honest failure
+        row["body_status"] = "failed"
+    if rescued:
+        say("Read them in the browser", "%d pages came back with text that their HTML did not hold" % rescued)
+    return rescued
 
 
 # ---- the CMS bodies, re-read OFFLINE from the cached API pages ---------------------------------
@@ -400,21 +626,18 @@ def run(fx, site, say, reconciled):
     say("Extracting the text", "%d pages, offline from the saved copies; the site's own text for %d of them"
         % (len(pages), len(rest)))
 
-    rows = []
-    for i, (url, rec) in enumerate(pages.items(), 1):
-        # OFFLINE by contract — reconcile already fetched every page into the raw cache, so read the
-        # CACHE, never the network. A page absent from the cache is one reconcile could not get; its
-        # body_status records that.
+    # OFFLINE by contract — reconcile already fetched every page into the raw cache, so read the
+    # CACHE, never the network. A page absent from the cache is one reconcile could not get; its
+    # body_status records that.
+    payloads = []
+    for url, rec in pages.items():
         r = fx.cached(url)
         live = (r.content if r and r.status == 200 and "html" in (r.content_type or "").lower() else None)
-        try:
-            row = extract_one(url, rec, live, rest.get(url))
-        except Exception as e:                        # a broken page must not kill the run
-            row = _row(url, rec, "", "error:%s" % type(e).__name__, rec.get("title", ""),
-                       rec.get("description", ""), "")
-        rows.append(row)
-        if i % 200 == 0:
-            say("Still extracting", "%d of %d pages" % (i, len(pages)))
+        payloads.append((url, rec, live, rest.get(url)))
+    rows = _extract_all(payloads, say)
+
+    # rung 4 — the pages whose HTML was an empty app root, rendered in the browser
+    _render_pass(rows, pages, say)
 
     # STAGE 2 — de-boilerplate the whole site, per language (the one cleaning step)
     deboilerplate(rows, say)

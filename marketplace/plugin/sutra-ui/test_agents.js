@@ -300,13 +300,28 @@ test("a brief from before the research team shows no team block and never breaks
   assert(html.indexOf("Old run") !== -1 || html.indexOf("x") !== -1, "the old brief still renders");
 });
 
-test("Knowledge offers a check for changes and a traffic import, and never a chat log", () => {
+test("Knowledge offers a check for changes, and never a chat log", () => {
   const k = { site_index: { domain: "x.com", page_count: 100, pages: [] }, report: {}, brand: { files: [] } };
-  A.S.ag.refresh = null; A.S.ag.trafficForm = null;
+  A.S.ag.refresh = null;
   const html = A.agKnowledgeHtml(k, A.S.ag);
   assert(html.indexOf('data-ag="refreshcheck"') !== -1, "a check button");
-  assert(html.indexOf('data-ag="trafficimport"') !== -1, "and an import button");
   assert(/only what is new or has changed/.test(html), "and says it does not re-read the site");
+});
+
+/* The traffic importer was built for one incident -- a DataForSEO balance at minus seven cents,
+   mid-build -- and it is not a thing anybody sets out to do from a settings tab. The tool and
+   POST /knowledge/traffic both stay, for the chat to offer when an account runs dry; what goes
+   is the standing affordance and everything that only existed to serve it. */
+test("the traffic import is not a button, and nothing of its form is left behind", () => {
+  const k = { site_index: { domain: "x.com", page_count: 100, pages: [] }, report: {}, brand: { files: [] } };
+  A.S.ag.refresh = null;
+  const html = A.agKnowledgeHtml(k, A.S.ag);
+  assert(html.indexOf("trafficimport") === -1, "no button on the catalogue heading row");
+  assert(html.indexOf("data-agtraffic") === -1, "and no path box anywhere on the tab");
+  assert(!/Import a traffic file/.test(html), "and it is not offered in words either");
+  assert(SRC.indexOf("trafficgo") === -1 && SRC.indexOf("trafficcancel") === -1,
+         "the actions that only served that form are gone with it");
+  assert(SRC.indexOf("trafficForm") === -1, "and so is the state it parked its draft on");
 });
 
 test("a refresh shows ONE line while it works, then what it found, then what changed", () => {
@@ -337,15 +352,34 @@ test("a refresh shows ONE line while it works, then what it found, then what cha
   a.refresh = null;
 });
 
-test("the traffic import asks for a path and never invents a figure", () => {
+test("with nothing happening, the refresh box draws nothing at all", () => {
   const a = A.S.ag;
-  a.refresh = null; a.trafficForm = { path: "" };
-  const h = A.agRefreshHtml(a);
-  assert(h.indexOf("data-agtraffic") !== -1, "a path box");
-  assert(/page address column and a traffic column/.test(h), "and says what the file must have");
-  assert(h.indexOf('data-ag="trafficgo"') !== -1 && h.indexOf('data-ag="trafficcancel"') !== -1, "import or cancel");
-  a.trafficForm = null;
+  a.refresh = null;
+  assert.strictEqual(A.agRefreshHtml(a), "", "no state, no box");
 });
+
+/* THE TEST THAT WOULD HAVE CAUGHT IT. "Check for changes" and "Import a traffic file" both had a
+   button, four rendered states and a working route -- and agAction had no arm for either, so the
+   click reached `default: break` and nothing happened, with nothing anywhere to say so. A dead
+   button is worse than a missing one: the person is told the feature exists.
+
+   So this is structural, not a list of the buttons that exist today: every literal data-ag the
+   renderers emit must have a case in agAction. Add a button without wiring it and this goes red. */
+test("every button the screen draws has an arm in agAction -- no silent no-ops", () => {
+  const body = SRC.slice(SRC.indexOf("async function agAction"), SRC.indexOf("/* \u2500\u2500 wiring:"));
+  assert.ok(body.length > 400, "found the agAction body to read");
+  const emitted = new Set();
+  const re = /data-ag="([a-z][a-z0-9]*)"/g;
+  let m;
+  while ((m = re.exec(SRC))) emitted.add(m[1]);
+  const armed = new Set();
+  const rc = /case "([a-z][a-z0-9]*)":/g;
+  while ((m = rc.exec(body))) armed.add(m[1]);
+  assert.ok(emitted.size > 25, "found the buttons, got " + emitted.size);
+  const dead = [...emitted].filter(x => !armed.has(x)).sort();
+  assert.strictEqual(dead.join(", "), "", "these buttons do nothing when clicked: " + dead.join(", "));
+});
+
 
 test("the stage bar names five stages and says what the run is doing, never a credit", () => {
   const html = A.agStagesHtml({ stage: "research", status: "running", credits_spent: 11 });
@@ -366,6 +400,17 @@ test("the hero says plainly when there is no model, no DataForSEO and no Voyage 
   const fresh = A.agHeroHtml({ model_provider: "claude-cli", dataforseo: true, voyage: true, site_indexed: false, page_index: { built: false }, brand_ready: false });
   assert.ok(/Set up for my website/.test(fresh), "a fresh install offers setup first");
 });
+
+/* Written before the reuse check existed and never wired to anything: no tool takes a page and
+   rebuilds it, so the chip filled the composer with a sentence the agent could only improvise
+   around. Deleted, not rewired -- there is no step to point it at. */
+test("the hero does not offer to improve an existing page", () => {
+  const ok = A.agHeroHtml({ model_provider: "claude-cli", dataforseo: true, voyage: true, site_indexed: true, page_index: { built: true }, brand_ready: true });
+  assert.ok(!/Improve one of our existing pages/.test(ok), "the button is gone");
+  assert.ok(!/Improve our page/.test(ok), "and so is the message it wrote");
+  assert.ok(SRC.indexOf("Improve one of our existing pages") === -1, "nothing of it is left in the source");
+  assert.strictEqual((ok.match(/class="ag-play"/g) || []).length, 2, "two plays left, both real");
+});
 test("agSetupOf: the index is a soft step without a Voyage key, so setup can still be ready", () => {
   const s = A.agSetupOf({ model_provider: "claude-cli", site_indexed: true, voyage: false, page_index: { built: false }, brand_ready: true });
   assert.strictEqual(s.ready, true);
@@ -383,6 +428,71 @@ test("the tools screen is plain English: what, when, needs, how long", () => {
   assert.ok(/What it does/.test(html) && /When it runs/.test(html) && /What it needs/.test(html) && /How long/.test(html));
   assert.ok(/Reading the website/.test(html));
   assert.ok(!/gate|credit|module/i.test(html));
+});
+
+/* The lead said "the seven things the agent can do" over eleven rows, and had done since the
+   eleventh tool landed; there are twelve now. DERIVED, so it cannot go stale again. */
+test("the tools lead counts the tools it is actually drawing", () => {
+  const tool = n => ({ name: n, label: "L" + n, does: "d" });
+  const twelve = A.agToolsHtml("abcdefghijkl".split("").map(tool));
+  assert.ok(/The twelve things the agent can do/.test(twelve), "twelve rows, twelve: " + twelve.slice(0, 200));
+  assert.ok(!/seven things|eleven things/.test(twelve), "and never a number somebody typed");
+  assert.ok(/The three things the agent can do/.test(A.agToolsHtml("abc".split("").map(tool))));
+  assert.ok(/The one thing the agent can do,/.test(A.agToolsHtml([tool("a")])), "and one is singular");
+});
+
+/* The sentence also used to claim "the last four run for every article". True only by an accident
+   of ordering, and false the day find_prompt was appended -- it is a support tool, not a per-
+   article step. A positional claim about a list another team owns cannot be kept true. */
+test("the tools lead makes no claim about which rows are the per-article ones", () => {
+  const tool = n => ({ name: n, label: "L" + n, does: "d" });
+  const html = A.agToolsHtml("abcdefghijkl".split("").map(tool));
+  const lead = html.slice(html.indexOf('class="lead"'), html.indexOf("</p>"));
+  assert.ok(!/last (four|three|two|\d)/.test(lead), "no positional claim: " + lead);
+  assert.ok(/writing steps run again for every article/.test(lead), "it says the useful thing anyway");
+  assert.strictEqual((lead.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g) || []).length,
+                     1, "and exactly one number in the sentence, the derived one: " + lead);
+});
+
+/* registry.LABELS is the ONE place a tool's plain name is decided, and as of 2026-09-09 it covers
+   all twelve. The screen carried a stand-in map for the three it was missing; that is deleted, so
+   this asserts against the REAL registry rather than against fabricated rows -- if a tool is added
+   upstream without a label, this is where it shows up as code on a screen. */
+test("no tool is listed under its function name", () => {
+  const cp = require("child_process"), os = require("os");
+  const venv = path.join(__dirname, ".venv", "bin", "python");
+  const PY = fs.existsSync(venv) ? venv : "python3";
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), "seo-tools-"));
+  const r = cp.spawnSync(PY, ["-c", "import json;from seo_agent import registry;print(json.dumps(registry.for_screen()))"], {
+    cwd: __dirname, encoding: "utf8",
+    env: Object.assign({}, process.env, { PYTHONPATH: __dirname, SEO_AGENT_DATA: data, SEO_AGENT_NO_CLI: "1" }),
+  });
+  fs.rmSync(data, { recursive: true, force: true });
+  const line = (r.stdout || "").trim().split("\n").pop();
+  let tools = null;
+  try { tools = JSON.parse(line); } catch (e) { tools = null; }
+  if (!tools) return;                 /* no engine in this checkout: nothing to assert against */
+  assert.ok(tools.length >= 12, "every work tool, got " + tools.length);
+  const html = A.agToolsHtml(tools);
+  const raw = tools.filter(t => {
+    const d = String(t.name).replace(/_/g, " ");
+    return A.agToolName(t) === d.charAt(0).toUpperCase() + d.slice(1) || A.agToolName(t) === d;
+  }).map(t => t.name);
+  assert.strictEqual(raw.join(", "), "", "these are listed under their function name: " + raw.join(", "));
+  assert.ok(/Catching up on what changed/.test(html), "refresh_site reads as a sentence");
+  assert.ok(/Loading a traffic file you already have/.test(html), "and so does import_traffic");
+  assert.ok(/Working out what is worth writing/.test(html), "and build_assets");
+  assert.ok(!/>Refresh site<|>Import traffic<|>Build assets<|>Find prompt</.test(html), "no raw name on screen");
+});
+
+/* The label is the ENGINE'S to decide -- one place, not two. The fallback exists only so a tool
+   added upstream before its label is written still draws a row rather than an empty cell. */
+test("the screen draws the label the engine sends, and only falls back when there is none", () => {
+  assert.ok(SRC.indexOf("AG_TOOL_NAMES") === -1, "the stand-in map is deleted, not left dormant");
+  assert.strictEqual(A.agToolName({ name: "refresh_site", label: "Catching the site up" }),
+                     "Catching the site up", "the engine's word is the word");
+  assert.strictEqual(A.agToolName({ name: "some_new_tool" }), "some new tool",
+                     "and a tool with no label still draws something readable");
 });
 test("the brand pack lists every file with its purpose, and never nags about confirming one", () => {
   const html = A.agBrandPackHtml({ files: [{ name: "writer-brief.md", exists: true, words: 1660, flags: 0 }, { name: "stats.md", exists: true, words: 400, flags: 12 }], needs_review: ["stats.md: 12 rows to confirm"] });
@@ -483,8 +593,8 @@ test("the catalogue's controls sit on its heading row, not in its body", () => {
   const html = A.agKnowledgeHtml(kdoc(), a);
   const head = html.slice(html.indexOf("The site catalogue"), html.indexOf("The site catalogue") + 700);
   assert.ok(/data-ag="refreshcheck"/.test(head), "check for changes is on the heading row");
-  assert.ok(/data-ag="trafficimport"/.test(head), "so is the traffic import");
   assert.ok(/data-ag="map"/.test(head), "and the map");
+  assert.ok(!/data-ag="trafficimport"/.test(head), "the traffic import is not a button any more");
   assert.ok(/only what is new or has changed/.test(html), "it still says it does not re-read the site");
 });
 
@@ -577,15 +687,99 @@ test("the brief that is not written yet still gets its heading, and no Open", ()
   assert.ok(/Not written yet/.test(none));
 });
 
-test("who writes is one file, and says it is not in use yet", () => {
+/* THE EXTRAS ROW IS GENERIC, and this is the test that says so rather than a comment claiming it.
+   It matters twice right now. The byline feature ("Who writes", voices.md) is being deleted from
+   the engine: the row goes when the engine stops listing the file, with no change here and no
+   special case -- the empty case at the bottom is that promise. And a knowledge file the engine
+   ADDS -- pricing.md, "Prices and hidden facts", which a person types into -- appears on its own,
+   under the engine's own label, which is what the file used here is. */
+test("a knowledge file the engine lists gets its own section, whatever the file is", () => {
   const a = agReset();
-  const html = A.agKnowledgeHtml(kdoc(), a);
-  assert.ok(/<h3 class="sec">Who writes<\/h3>/.test(html), "its label is the heading, and is not repeated in the row");
-  assert.ok((html.match(/>Who writes</g) || []).length === 1, "said once on screen, never repeated in the row");
-  assert.ok(/Who signs the writing\./.test(html), "the row says what the file is");
-  assert.ok(/not in use yet/.test(html) && /data-arg="voices.md"/.test(html));
+  const extras = [{ name: "pricing.md", label: "Prices and hidden facts",
+                    note: "What each plan costs and what the site does not say out loud.",
+                    exists: true, words: 240, in_use: true }];
+  const html = A.agKnowledgeHtml(kdoc({ brand: Object.assign({}, KBRAND, { extras }) }), a);
+  assert.ok(/<h3 class="sec">Prices and hidden facts<\/h3>/.test(html),
+            "the engine's label is the heading, and is not repeated in the row");
+  assert.ok((html.match(/>Prices and hidden facts</g) || []).length === 1, "said once on screen");
+  assert.ok(/What each plan costs/.test(html), "the row says what the file is");
+  assert.ok(/data-arg="pricing.md"/.test(html), "and opens that file");
+  assert.ok(SRC.indexOf("pricing.md") !== -1 && SRC.indexOf("Prices and hidden facts") !== -1,
+            "the brand-pack panel's file list -- the one hardcoded list on this screen -- knows it too");
+
+  const off = [{ name: "voices.md", label: "Who writes", note: "Who signs the writing.",
+                 exists: true, words: 120, in_use: false }];
+  const byline = A.agKnowledgeHtml(kdoc({ brand: Object.assign({}, KBRAND, { extras: off }) }), a);
+  assert.ok(/not in use yet/.test(byline), "in_use false is said plainly, never left to look built");
+
   const none = A.agKnowledgeHtml(kdoc({ brand: Object.assign({}, KBRAND, { extras: [] }) }), a);
-  assert.ok(!/Who writes/.test(none), "nothing to show, no heading");
+  assert.ok(!/Who writes/.test(none) && !/Prices and hidden facts/.test(none),
+            "and a file the engine stops listing takes its whole section with it -- no special case");
+});
+
+/* PRICING.MD IS THE FIRST FILE IN THE PRODUCT A PERSON IS EXPECTED TO TYPE INTO rather than
+   review, and the failure mode is known: the old seed file shipped blank, looked like something
+   that had not been built yet, and stayed blank for months. So the inputs section is drawn as an
+   ask -- its own row state, a primary button, and a door that lands in the editor. */
+const INPUT_ROW = { name: "pricing.md", label: "Prices and hidden facts",
+                    note: "Anything your site draws with JavaScript, so a crawler cannot see it.",
+                    exists: true, words: 205, filled: false };
+const withInputs = rows => kdoc({ brand: Object.assign({}, KBRAND, { inputs: rows }) });
+
+test("a file a person fills in is drawn as an ask, not as another empty artifact", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(withInputs([INPUT_ROW]), a);
+  assert.ok(/<h3 class="sec">Prices and hidden facts<\/h3>/.test(html), "it gets its own section");
+  assert.ok(/ag-row ask/.test(html), "drawn as a row that is asking for something");
+  assert.ok(/yours to write/.test(html), "and says whose job it is");
+  assert.ok(/Nothing has been written here yet/.test(html), "and says so in words");
+  assert.ok(/data-ag="inputwrite"/.test(html) && /Write it/.test(html), "the door is Write, not Open");
+  assert.ok(/class="btn pri"/.test(html.slice(html.indexOf("ag-row ask"))), "and it is the primary button on the row");
+  const none = A.agKnowledgeHtml(withInputs([]), a);
+  assert.ok(!/inputwrite/.test(none), "no inputs, no section");
+});
+
+/* THE WHOLE REASON `filled` EXISTS. The blank form is 205 real words on disk, so a word count
+   alone calls an untouched file filled the day it is created -- which is exactly how the seed
+   file this replaces stayed empty for months. */
+test("a blank form is never mistaken for a written one, whatever its word count", () => {
+  const a = agReset();
+  const blank = A.agKnowledgeHtml(withInputs([INPUT_ROW]), a);
+  assert.ok(/ag-row ask/.test(blank), "205 words of blank form is still an ask");
+  assert.ok(/the blank form/.test(blank) && !/205 words/.test(blank),
+            "and its length is not reported as if somebody had written it");
+
+  const written = A.agKnowledgeHtml(withInputs([Object.assign({}, INPUT_ROW, { words: 211, filled: true })]), a);
+  assert.ok(!/ag-row ask/.test(written), "once it is written the row settles down");
+  assert.ok(/you wrote this/.test(written) && /211 words/.test(written), "and reports what is in it");
+  assert.ok(/>Open</.test(written) && !/Write it/.test(written), "an ask that keeps asking is noise");
+});
+
+test("an engine too old to say whether it is filled keeps asking, rather than assuming", () => {
+  const a = agReset();
+  const old = Object.assign({}, INPUT_ROW); delete old.filled;
+  assert.ok(/ag-row ask/.test(A.agKnowledgeHtml(withInputs([old]), a)),
+            "asking twice costs far less than never asking");
+});
+
+/* One file, one description. The Knowledge screen and the brand-pack panel both name pricing.md,
+   and describing it two ways would be two answers to the same question. */
+test("pricing.md is described the same way wherever it is named", () => {
+  assert.ok(/Anything your site draws with JavaScript, so a crawler cannot see it/.test(SRC),
+            "the engine's own wording is the wording used here");
+  assert.ok(!/the things the site does not say out loud/.test(SRC), "and the divergent one is gone");
+  assert.ok(/beats anything we read off the site/.test(SRC),
+            "including the half that says a typed fact outranks the crawl");
+});
+
+/* The byline is being deleted from the product. The Knowledge tab needed nothing (above); the
+   brand-pack panel's file list is hardcoded, so its row had to go by hand or it would have sat
+   there saying "not built yet" for ever. */
+test("the byline file is gone from the brand pack panel", () => {
+  assert.ok(SRC.indexOf("voices.md") === -1, "no row for it in AG_BRAND_FILES");
+  assert.ok(!/Bylines/.test(SRC), "and nothing on the screen says Bylines");
+  const html = A.agBrandPackHtml({ files: [{ name: "brand-voice.md", exists: true, words: 900 }] }, {});
+  assert.ok(!/voices\.md|Bylines/.test(html), "and none is drawn");
 });
 
 test("the nineteen tiles and the yellow banner are gone from Knowledge", () => {
@@ -955,8 +1149,84 @@ test("an artifact_ready in the middle of a run does not become the end of the tr
   assert.ok(research && !research.waiting, "the research stage is NOT marked as waiting for him");
 });
 
+/* ── the Asset ideas tab: what "Next up" is offering ──────────────────────── */
+/* "okay next up, oh this is the next topic, all of that's not clear" (owner, 2026-09-09). Two
+   uppercase words over a title read as a section label, not an offer: it said neither WHICH idea
+   this is nor what pressing either button would do. */
+const ASSETS = {
+  built: true, total: 1892, counts: { open: 214, done: 6, dropped: 3 },
+  methods_line: "All three methods contributed.",
+  next: { id: "a-17", title: "The hiring-assessment benchmark report",
+          angle: "Nobody has published the pass rates by role.",
+          format: "Original research", method: ["competitors", "trends"],
+          linkability: { score: 3, of: 4 } },
+  rows: [{ id: "a-17", title: "The hiring-assessment benchmark report", angle: "Pass rates by role.",
+           status: "open", format: "Original research", method: ["competitors"],
+           linkability: { score: 3, of: 4 }, reuse: { verdict: "no" } }],
+};
+test("the next idea says which idea it is, not just Next up", () => {
+  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+  const html = A.agAssetsHtml(ASSETS, a);
+  assert.ok(/The idea to write next/.test(html), "it is named as an idea, not labelled Next up");
+  assert.ok(!/>Next up</.test(html), "and the bare label is gone");
+  assert.ok(/top of the 214 still to write/.test(html), "and it says where this one came from");
+  assert.ok(/The hiring-assessment benchmark report/.test(html), "the idea itself");
+});
+test("the next idea's evidence is labelled, not one dot-separated run", () => {
+  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+  const html = A.agAssetsHtml(ASSETS, a);
+  const card = html.slice(html.indexOf("ag-nextidea"), html.indexOf("ag-editrow", html.indexOf("ag-nextidea")));
+  assert.ok(/<dt>Shape<\/dt><dd>Original research<\/dd>/.test(card), "the shape is under its own label");
+  assert.ok(/<dt>Found by<\/dt>/.test(card) && /the competitor study and what your audience argues about/.test(card),
+            "and so is where it came from, in words: " + card.slice(-260));
+  assert.ok(/<dt>Would anyone cite it<\/dt><dd>3 out of 4<\/dd>/.test(card),
+            "and the score is attached to the question it answers");
+});
+test("the next idea says what each of its two buttons does", () => {
+  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+  const html = A.agAssetsHtml(ASSETS, a);
+  assert.ok(/starts the research on it/.test(html), "what Write this one does");
+  assert.ok(/drops it off the sheet and the next-ranked idea moves up/.test(html), "and what Not this one does");
+  assert.ok(/data-ag="ideawrite"/.test(html) && /data-ag="ideadrop"/.test(html), "both still act");
+});
+test("nothing left to write draws no next-idea card at all", () => {
+  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+  const html = A.agAssetsHtml(Object.assign({}, ASSETS, { next: null }), a);
+  assert.ok(!/ag-nextidea/.test(html) && /Nothing left to write/.test(html));
+});
+
 /* ── the CSS the layout leans on ───────────────────────────────────────────── */
 const CSS = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+
+/* THE LOOK (owner, 2026-09-09): section headings "darker and bigger", table borders darker "so a
+   section is visibly a section". Both are overrides inside .ag against panel.css's global
+   h3.sec (10px uppercase at --faint) and against --line-soft, which on the light theme is very
+   nearly the page colour. No new colour system: every value below is an existing token. */
+test("section headings on this screen are darker and bigger than the global micro-label", () => {
+  const rule = CSS.slice(CSS.indexOf(".ag .ag-view h3.sec{"), CSS.indexOf("}", CSS.indexOf(".ag .ag-view h3.sec{")));
+  assert.ok(rule.length > 20, "the override exists");
+  assert.ok(/var\(--ink\)/.test(rule), "darker: --ink, not the global --faint");
+  assert.ok(/text-transform:none/.test(rule), "and not shouted");
+  const size = /\b(\d+(?:\.\d+)?)px\/[\d.]+/.exec(rule);
+  assert.ok(size && Number(size[1]) >= 13, "bigger than the global 10px, got " + (size && size[1]));
+  assert.ok(/border-bottom:1px solid var\(--line\)/.test(rule), "with a rule under it, so a section looks like one");
+});
+test("the catalogue table's borders are the darker line, and it closes", () => {
+  const tbl = CSS.slice(CSS.indexOf(".ag-pages{"), CSS.indexOf(".ag-pages td.n"));
+  assert.ok(/border-top:1px solid var\(--line\)/.test(tbl) && /border-bottom:1px solid var\(--line\)/.test(tbl),
+            "the table is bounded top and bottom");
+  assert.ok(/\.ag-pages th\{[^}]*border-bottom:1px solid var\(--line\)/.test(tbl),
+            "and the head sits on the darker rule, not --line-soft");
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(tbl), "still no hardcoded colour");
+});
+test("every class the reworked next-idea card uses is actually styled", () => {
+  [".ag-nextidea .nl", ".ag-nextidea .nl .nq", ".ag-nextidea .nf", ".ag-nextidea .nf dt",
+   ".ag-nextidea .nf dd", ".ag-nextidea .nh"].forEach(c => {
+    assert.ok(CSS.indexOf(c) !== -1, c + " has no rule in agents.css");
+  });
+  const card = CSS.slice(CSS.indexOf(".ag-nextidea{"), CSS.indexOf(".ag-idea{"));
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(card), "no hardcoded colour on the card");
+});
 test("opening the panel no longer changes the document's HEIGHT under the reader", () => {
   assert.ok(CSS.indexOf(".ag.haspanel .ag-file .fd{display:none}") === -1,
             "the rule that hid every blurb the moment the panel opened is gone");
@@ -1129,6 +1399,90 @@ async function atest(name, fn){
 }
 
 (async () => {
+  /* THE TWO-STEP REFRESH, driven through the real action. This is the feature that failed
+     silently: button, four rendered states and a working route all present, and no arm in
+     agAction, so the click reached `default: break`. Both calls are asserted, because "it looked
+     like it worked" is exactly what the broken version did.
+     Preview reads and changes nothing; only the second press, which he has to make, writes. */
+  await atest("check for changes previews, then only a second press updates the catalogue", async () => {
+    const a = agReset();
+    const calls = [];
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    A.apiPost = async (path, b) => {
+      /* recorded by ROUTE, not by position: an unrelated poll firing between the two presses
+         must not be able to shift what this test thinks it asserted */
+      if (/\/knowledge\/refresh$/.test(path)) calls.push([path, b]);
+      if (b && b.preview)
+        return { new: 3, gone: 0, changed: 0, unchecked: 11656, preview: true,
+                 report: "# What changed on testlify.com", summary: "3 new, 0 gone, 0 changed." };
+      return { summary: "3 pages added, 0 removed, 0 re-read.", added: 3, removed: 0, rebuilt: 0 };
+    };
+    A.apiGet = async () => ({});
+    try {
+      await A.agAction("refreshcheck", { getAttribute: () => "" });
+      assert.strictEqual(calls.length, 1, "exactly one call, to the refresh route");
+      assert.strictEqual(calls[0][1].preview, true, "the first press previews and touches nothing");
+      assert.ok(a.refresh && a.refresh.preview, "the counts land on the state");
+      assert.strictEqual(a.refresh.preview.new, 3);
+      const h = A.agRefreshHtml(a);
+      assert.ok(/3 new/.test(h), "and are reported: " + h.slice(0, 200));
+      assert.ok(/11,656 pages give no date/.test(h), "could-not-check-cheaply included");
+      assert.ok(/data-ag="refreshreport"/.test(h), "the markdown report has a door");
+
+      await A.agAction("refreshgo", { getAttribute: () => "" });
+      assert.strictEqual(calls.length, 2, "and the second press is a second call");
+      assert.ok(!calls[1][1].preview, "the second press is the real one, not another preview");
+      assert.ok(a.refresh.done && /3 pages added/.test(a.refresh.done), "and it reports what it did");
+      assert.ok(/data-ag="refreshchanges"/.test(A.agRefreshHtml(a)), "with a way to read what changed");
+
+      await A.agAction("refreshcancel", { getAttribute: () => "" });
+      assert.strictEqual(a.refresh, null, "close puts the box away");
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+  });
+
+  /* A refresh that SURVIVED a total refusal reports `error` beside a summary rather than failing
+     the request. Saying "Done" over that would be a lie about the one thing he is watching. */
+  await atest("a refresh the site refused says so, and never says Done", async () => {
+    const a = agReset();
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    A.apiPost = async () => ({ summary: "Nothing was added.", error: "The site refused every page.",
+                               added: 0, removed: 0, rebuilt: 0 });
+    A.apiGet = async () => ({});
+    try {
+      await A.agAction("refreshgo", { getAttribute: () => "" });
+      assert.ok(a.refresh.error && !a.refresh.done, "an error, not a Done");
+      assert.ok(/refused every page/.test(A.agRefreshHtml(a)) && /class="msg err"/.test(A.agRefreshHtml(a)),
+                "and it reads as a failure");
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+  });
+
+  await atest("a check that cannot reach the server says so, instead of sitting on the spinner", async () => {
+    const a = agReset();
+    const prevPost = A.apiPost;
+    A.apiPost = async () => { throw new Error("connection refused"); };
+    try {
+      await A.agAction("refreshcheck", { getAttribute: () => "" });
+      assert.ok(a.refresh.error && /connection refused/.test(a.refresh.error), "the reason is on screen");
+      assert.ok(!a.refresh.busy, "and the spinner is gone");
+    } finally { A.apiPost = prevPost; }
+  });
+
+  /* The change report is a REPORT: the engine writes it, there is nothing on disk for a save to
+     land on, so the panel that shows it offers no Edit. */
+  await atest("what changed opens in the panel, read-only", async () => {
+    const a = agReset();
+    const prevGet = A.apiGet;
+    A.apiGet = async () => ({ text: "# What changed on testlify.com\n\n## New pages (3)" });
+    try {
+      a.refresh = { done: "3 pages added." };
+      await A.agAction("refreshchanges", { getAttribute: () => "" });
+      assert.ok(a.panel && a.panel.view === "brand_file", "it opens in the panel");
+      assert.ok(/New pages \(3\)/.test(a.panel.data.text), "holding the real report");
+      const html = A.agPanelHtml(a);
+      assert.ok(!/data-ag="fileedit"/.test(html), "and nothing offers to edit a report");
+    } finally { A.apiGet = prevGet; a.panel = null; }
+  });
+
   await atest("saving the link list posts the WHOLE list, in display order, and clears the draft", async () => {
     const a = agReset();
     a.cta = { domain: "testlify.com", rows: [{ url: "https://testlify.com/pricing/", note: "price", mine: false }] };

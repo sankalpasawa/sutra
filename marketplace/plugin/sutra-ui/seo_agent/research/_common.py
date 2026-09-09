@@ -43,6 +43,21 @@ PASSAGE_CHARS = 1200         # the original retriever's passage size ...
 PASSAGES_PER_PAGE = 14       # ... and its cap per page
 HARVEST_RETRIES = 2          # 13: re-run a page that yields 0 cards this many extra times
 PAGE_FETCH_WORKERS = 4       # parallel page reads (free)
+# GATE: 14-research-conductor/scripts/config.py::STORM_MIN_WORDS, his number and his reasoning.
+# "a healthy STORM article is ~9k words; a failed/stub run is ~300. Below this = FAILED run." The
+# conversation and the section writes can all return something and still leave a stub behind, and a
+# dud dossier poisons every step after it (few cards -> own pages dominate -> the citations become
+# almost all our own site). One retry, then the run stops rather than building on it.
+DOSSIER_MIN_WORDS = 1500
+DOSSIER_RETRIES = 1          # his loop is `for attempt in (1, 2)`: one retry, then give up
+
+# ---- the gap fill (12-gap-check/scripts/rerun_storm.py) ------------------------------------------
+# A found gap re-runs the RESEARCH CONVERSATION, not a keyword search: his rerun_storm fires STORM's
+# own runner per gap query with --turns 4 --topk 5 --perspectives 4 and the article's spine file, so
+# the fill stays inside the article's world. Page cap: the main round reads up to curate.MAX_PAGES
+# (140) for a whole article; one gap is one hole and up to GAP_MAX_QUERIES of them run, so each gets
+# a smaller net rather than three more full rounds.
+GAP_FILL_MAX_PAGES = 40
 
 # ---- 12-gap-check/scripts/config.py --------------------------------------------------------------
 JUDGED_TYPES = ("gap_we_own",     # competitor-read -> gaps_to_own (THE priority — the differentiator)

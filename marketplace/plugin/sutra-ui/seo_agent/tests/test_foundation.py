@@ -15,7 +15,9 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import threading
+import time
 
 import httpx
 
@@ -99,6 +101,21 @@ def urlset(paths):
             + "".join("<url><loc>%s%s</loc><lastmod>2026-01-02</lastmod></url>" % (ROOT, p) for p in paths)
             + "</urlset>")
 SITEMAP_PAGES = urlset(PAGES_URLS)
+# The site as it is AFTER someone publishes and rewrites: /about carries a newer last-changed
+# date and /brand-new appears. Nothing else moves. Switched on by MUTATED, for the refresh test.
+MUTATED = {"on": False}
+REWRITTEN = "Rewritten in September: we now score every submission blind. "
+# /about-us is new to the sitemap and is not a new PAGE: it redirects to /about, which the
+# catalogue already holds. A refresh must not file it as a second copy of that page.
+SITEMAP_PAGES_AFTER = ("<?xml version='1.0' encoding='UTF-8'?><urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>"
+                       + "".join("<url><loc>%s%s</loc><lastmod>%s</lastmod></url>"
+                                 % (ROOT, p_, "2027-01-01" if p_ == "/about" else "2026-01-02")
+                                 for p_ in PAGES_URLS + ["/brand-new", "/about-us"])
+                       + "</urlset>")
+# A source that FAILS is not a source that said "gone". Both of these switch one source to a
+# server error while the rest of the site answers normally.
+SITEMAP_FAIL = {"on": False}
+WP_FAIL = {"on": False}
 SITEMAP_POSTS = urlset(["/blog/post-1", "/blog/post-2", "/blog/post-3"])   # no trailing slash: the CMS form must win
 
 ROBOTS = ("User-agent: *\nDisallow: /private/\n"
@@ -139,7 +156,10 @@ def handler(request):
     if path == "/sitemap_index.xml":
         return httpx.Response(200, text=SITEMAP_INDEX, headers={"content-type": XML})
     if path == "/sitemap-pages.xml":
-        return httpx.Response(200, text=SITEMAP_PAGES, headers={"content-type": XML})
+        if SITEMAP_FAIL["on"]:
+            return httpx.Response(500, text="server error")
+        return httpx.Response(200, text=SITEMAP_PAGES_AFTER if MUTATED["on"] else SITEMAP_PAGES,
+                              headers={"content-type": XML})
     if path == "/sitemap-posts.xml":
         return httpx.Response(200, text=SITEMAP_POSTS, headers={"content-type": XML})
     if path == "/blocked-sitemap.xml":
@@ -147,6 +167,8 @@ def handler(request):
     if path == "/wp-json/wp/v2/types":
         return httpx.Response(200, json=WP_TYPES)
     if path == "/wp-json/wp/v2/posts":
+        if WP_FAIL["on"]:
+            return httpx.Response(500, text="the content system fell over")
         pg = int(url.params.get("page", "1"))
         if pg > 1:
             return httpx.Response(400, json={"code": "rest_post_invalid_page_number"})
@@ -155,6 +177,12 @@ def handler(request):
         return httpx.Response(401, json={"code": "rest_forbidden"})
     if path == "/":
         return H(home())
+    if path == "/about" and MUTATED["on"]:
+        return H(page("About", "About", extra="<p>%s</p>" % (REWRITTEN * 6)))
+    if path == "/brand-new":
+        return H(page("Brand new", "Brand new"))
+    if path == "/about-us":
+        return httpx.Response(301, headers={"location": ROOT + "/about"})
     if path in ("/about", "/pricing", "/features", "/team", "/careers", "/contact", "/archive-only-alive"):
         return H(page(path.strip("/").title(), path.strip("/").title()))
     if path == "/guide/main":
@@ -359,17 +387,33 @@ try:
     ok("redo keeps the cached traffic pull", pulls["n"] == 1, pulls["n"])
     ok("redo reports the same catalogue", out3.get("page_count") == out.get("page_count"))
 
-    print("\nmax_pages is honoured")
+    print("\nmax_pages is honoured, and a catalogue that fails its checks STOPS the run")
     for d in (work,):
         shutil.rmtree(d, ignore_errors=True)
-    out4 = index_site.run(ctx, domain=HOST, max_pages=5)
+    before = store.knowledge("site_index.json") or {}
+    stop = ""
+    try:
+        index_site.run(ctx, domain=HOST, max_pages=5)
+        ok("a capped read stops the run instead of saving a sample as the whole site", False)
+    except index_site.CatalogueNotTrusted as e:
+        stop = str(e)
+        ok("a capped read stops the run instead of saving a sample as the whole site", True)
     rep4 = store.knowledge("catalogue-report.json") or {}
-    ok("only max_pages are read and the rest are recorded", out4.get("page_count") <= 5 and rep4.get("found_urls", 0) > rep4.get("read_urls", 0), (rep4.get("found_urls"), rep4.get("read_urls")))
     g4 = {x["name"]: x for x in rep4["gates"]}["enumeration accounting"]
-    # the original fails the run rather than ship a short catalogue; here the gate fails and says so
-    ok("a capped read FAILS the accounting gate, so a sample never reads as the whole site", not g4["pass"], g4["detail"])
+    ok("the report is still written, so the person can read what failed", not g4["pass"], g4["detail"])
     ok("and the gate says how many were missed and that a cap did it",
        "never read" in g4["detail"] and "capped the read at 5" in g4["detail"], g4["detail"])
+    ok("the refusal is plain English: what failed, what it means, what to do",
+       all(bit in stop for bit in ("enumeration accounting", "has NOT been saved", "never read",
+                                   "without a page cap", "catalogue-report.json")), stop[:200])
+    ok("the catalogue already on file was NOT replaced by the sample",
+       (store.knowledge("site_index.json") or {}).get("page_count") == before.get("page_count"),
+       (store.knowledge("site_index.json") or {}).get("page_count"))
+    ok("the traffic cross-check is a finding, not a stopper, so a missing ranking page never "
+       "throws a good catalogue away",
+       {x["name"]: x for x in rep4["gates"]}["traffic cross-check"]["stops"] is False)
+    out4 = index_site.run(ctx, domain=HOST, max_pages=5, accept_failed_checks=True)
+    ok("a person who knows it is short can ask for it anyway", out4.get("page_count") <= 5 and rep4.get("found_urls", 0) > rep4.get("read_urls", 0), (rep4.get("found_urls"), rep4.get("read_urls")))
     ok("the summary says how many were found vs read", "found" in out4.get("summary", "") and "read" in out4.get("summary", ""), out4.get("summary"))
 
     print("\nthe cap is part of the stage reuse key")
@@ -379,6 +423,101 @@ try:
     rep5 = store.knowledge("catalogue-report.json") or {}
     g5 = {x["name"]: x for x in rep5["gates"]}["enumeration accounting"]
     ok("and with nothing left unread the gate passes again", g5["pass"], g5["detail"])
+
+    print("\na refresh genuinely re-reads a page that changed")
+    # The site moves on: /about is rewritten (and says so with a newer last-changed date) and
+    # /brand-new is published. Both halves of the old bug are pinned here — the survey used to
+    # read the SAVED sitemap, so it could not see either, and the fetch used to be served from
+    # the saved copy, so a "re-read" page came back with its old text.
+    from seo_agent.tools import refresh_site as rs
+    cdb = os.path.join(store.knowledge_dir(), "content-database.jsonl")
+    def db_rows():
+        return {json.loads(l)["url"]: json.loads(l)
+                for l in open(cdb, encoding="utf-8") if l.strip()}
+    NEW_TEXT = REWRITTEN.strip()[:40]
+    ok("the page about to change is on file WITHOUT the new text",
+       NEW_TEXT not in (db_rows().get(ROOT + "/about", {}).get("body") or ""))
+    MUTATED["on"] = True
+    n_about = LOG.count(("GET", HOST, "/about"))
+    surveyed = rs.survey(ctx, say=lambda *a, **k: None)
+    ok("the survey asks the site again, so it sees the page published since the last read",
+       ROOT + "/brand-new" in surveyed["new"], surveyed["new"][:5])
+    ok("and it sees the one page whose last-changed date moved, and only that one",
+       surveyed["changed"] == [ROOT + "/about"], surveyed["changed"])
+    ok("a survey reads no pages, only listings", LOG.count(("GET", HOST, "/about")) == n_about)
+    out6 = rs.run(ctx, redo_traffic=False)
+    ok("the changed page was fetched off the site again, not served from the saved copy",
+       LOG.count(("GET", HOST, "/about")) > n_about, LOG.count(("GET", HOST, "/about")) - n_about)
+    after = db_rows()
+    ok("so the catalogue now holds the page as it is NOW",
+       NEW_TEXT in (after.get(ROOT + "/about", {}).get("body") or ""), (after.get(ROOT + "/about") or {}).get("body", "")[:120])
+    ok("the number reported as re-read is the number actually read again",
+       out6.get("rebuilt") == 1, (out6.get("rebuilt"), out6.get("summary")))
+    ok("the page published since the last read was added", ROOT + "/brand-new" in after)
+    ok("and the report says what happened in plain English",
+       "re-read" in (store.knowledge("catalogue-changes.md") or ""))
+    # /about-us is new to the sitemap and is not a new page: it redirects to /about, which we hold.
+    ok("an address that is really an existing page is left out, not filed as a second copy",
+       out6.get("duplicates") == 1 and ROOT + "/about-us" not in after, (out6.get("duplicates"), ROOT + "/about-us" in after))
+    ok("and the person is told it was a duplicate, not told nothing",
+       "already in the catalogue" in (store.knowledge("catalogue-changes.md") or ""))
+
+    print("\nan address the last full read judged is not a new page")
+    # The site is back to its usual list, which still contains every address reconcile fetched and
+    # threw away: five soft 404s, a robots-disallowed page, an image, and two duplicate addresses.
+    MUTATED["on"] = False
+    dropped7 = (store.read_json(os.path.join(work, "reconciled.json")) or {}).get("dropped") or {}
+    junk = (list(dropped7["soft_404"]) + list(dropped7["robots"]) + list(dropped7["non_content"])
+            + list(dropped7["collapsed"]))
+    s7 = rs.survey(ctx, say=lambda *a, **k: None)
+    listed = [u for u in junk if rs._norm(u) in s7["current"]]
+    ok("the site really does still list the addresses the last read dropped", len(listed) >= 5, len(listed))
+    ok("not one of them is counted as a new page",
+       not [u for u in listed if rs._norm(u) in s7["new"]], [u for u in listed if rs._norm(u) in s7["new"]])
+    ok("each is reported as already judged instead, with the reason in the person's words",
+       all(rs._norm(u) in s7["judged"] for u in listed) and
+       any("empty template" in w for w in s7["judged_why"].values()), s7["judged_why"])
+    prev7 = rs.run(ctx, preview=True)
+    ok("the headline count says so rather than hiding them inside 'new'",
+       "already judged" in prev7["summary"] and prev7["judged"] >= 5, prev7["summary"])
+    ok("and the preview changed nothing", store.knowledge("catalogue-changes.md") is not None)
+
+    print("\na refresh does not re-add what the last read threw away")
+    out7 = rs.run(ctx, redo_traffic=False)
+    have7 = {rs._norm(p_["url"]) for p_ in (store.knowledge("site_index.json") or {}).get("pages") or []}
+    ok("none of them is in the catalogue afterwards",
+       not [u for u in listed if rs._norm(u) in have7], [u for u in listed if rs._norm(u) in have7])
+    ok("nothing was added at all this time", out7.get("added") == 0, out7.get("summary"))
+    # /brand-new came only from the sitemap, the sitemap answered in full, and it is not listed
+    # any more: that is the whole of the evidence "gone" is allowed to rest on.
+    ok("a page the site really did stop listing IS removed, so the check still works",
+       out7.get("removed") == 1 and ROOT + "/brand-new" not in have7, (out7.get("removed"), out7.get("summary")))
+
+    print("\na source that failed can never delete a page")
+    SITEMAP_FAIL["on"] = True
+    s8 = rs.survey(ctx, say=lambda *a, **k: None)
+    ok("the survey notices the sitemap did not answer", "sitemap" in s8["partial"], s8["partial"])
+    ok("so the file that failed gets no vote on the pages it used to list",
+       "sitemap-pages" in s8["partial"]["sitemap"], s8["partial"]["sitemap"])
+    ok("and NOT ONE page is reported gone, though its listing vanished", s8["gone"] == [], s8["gone"][:5])
+    ok("the pages it used to list are left alone instead", len(s8["unjudged"]) >= 5, len(s8["unjudged"]))
+    ok("the report names the source that could not answer, so the person can see why",
+       "did not answer" in rs.run(ctx, preview=True)["report"])
+    # The trap this nearly fell into: the survey writes its own listing, so a failure could become
+    # the new baseline and the SECOND check would delete everything the first one protected.
+    s8b = rs.survey(ctx, say=lambda *a, **k: None)
+    ok("a second check with the same failure still refuses — a failure never becomes the new normal",
+       s8b["gone"] == [] and "sitemap" in s8b["partial"], (s8b["gone"][:3], s8b["partial"]))
+    ok("because a refresh never writes over what the full read established",
+       len((store.read_json(os.path.join(work, "urls-sitemap.json")) or {}).get("urls") or {}) > 15,
+       len((store.read_json(os.path.join(work, "urls-sitemap.json")) or {}).get("urls") or {}))
+    SITEMAP_FAIL["on"] = False
+    WP_FAIL["on"] = True
+    s9 = rs.survey(ctx, say=lambda *a, **k: None)
+    ok("the same holds for the content system: a broken type is not a deletion",
+       "post" in (s9["partial"].get("wp") or ""), s9["partial"])
+    ok("and again nothing is judged gone", s9["gone"] == [], s9["gone"][:5])
+    WP_FAIL["on"] = False
 
 
 except Exception as e:
@@ -459,6 +598,156 @@ ok("a sitemap date parses, with or without a timezone",
    rs._parse_lastmod("") is None)
 ok("a newer sitemap date than our fetch means the page changed",
    rs._parse_lastmod("2026-09-05") > rs._parse_lastmod("2026-09-04"))
+
+print("\nthe CMS's own list survives a record the site itself cannot render")
+# A CMS that cannot render ONE item answers 5xx for the WHOLE 100-item batch that item lands in.
+# Without bisection the agent gave up on the type and its other 249 items went with it.
+from seo_agent.foundation import enumerate_wp  # noqa: E402
+
+WP_HOST, WP_TOTAL, POISON = "wp.test", 250, 137
+ASKED = []                      # (rest_base, per_page, page) of every listing call
+
+
+def wp_handler(request):
+    u = request.url
+    if u.path == "/robots.txt":
+        return httpx.Response(200, text="User-agent: *\nAllow: /\n", headers={"content-type": "text/plain"})
+    if u.path == "/wp-json/wp/v2/types":
+        return httpx.Response(200, json={"post": {"rest_base": "posts"}, "note": {"rest_base": "notes"}})
+    base = u.path.rsplit("/", 1)[-1]
+    per, pg = int(u.params.get("per_page", "100")), int(u.params.get("page", "1"))
+    ASKED.append((base, per, pg))
+    start = (pg - 1) * per                       # 0-based index of this range's first item
+    if start >= WP_TOTAL:
+        return httpx.Response(400, json={"code": "rest_post_invalid_page_number"})
+    items = list(range(start + 1, min(start + per, WP_TOTAL) + 1))
+    # posts: ONE poisoned record. notes: every seventh — an endpoint that is simply broken.
+    if any((i == POISON) if base == "posts" else (i % 7 == 0) for i in items):
+        return httpx.Response(500, text="fatal error rendering this record")
+    return httpx.Response(200, headers={"X-WP-Total": str(WP_TOTAL)},
+                          json=[{"link": "https://%s/p/%d" % (WP_HOST, i), "type": "post",
+                                 "title": {"rendered": "Item %d" % i}, "excerpt": {"rendered": ""},
+                                 "content": {"rendered": "<p>body</p>"}, "modified": "2026-01-01"}
+                                for i in items])
+
+
+fetchmod.TRANSPORT = httpx.MockTransport(wp_handler)
+_wp_dir = tempfile.mkdtemp(prefix="seo-wp-test-")
+_wp_work = os.path.join(_wp_dir, "_work")
+_wpfx = fetchmod.Fetcher(_wp_work, os.path.join(_wp_dir, "_raw"))
+try:
+    doc = enumerate_wp.run(_wpfx, {"root": "https://" + WP_HOST, "host": WP_HOST,
+                                   "work": _wp_work, "wordpress_url": ""},
+                           lambda *a, **k: None)
+finally:
+    _wpfx.close()
+    fetchmod.TRANSPORT = None
+posts = (doc.get("types") or {}).get("post") or {}
+ok("the healthy items around the bad record are kept, not lost with it",
+   posts.get("collected") == WP_TOTAL - 1, posts)
+ok("the item the site cannot render is recorded by position, as a known gap",
+   posts.get("unreadable") == [POISON], posts.get("unreadable"))
+ok("the accounting still adds up to the site's own count",
+   posts.get("collected", 0) + len(posts.get("unreadable") or []) + posts.get("withheld", 0) == WP_TOTAL, posts)
+ok("the bad item is the only one missing from the list",
+   len(doc["urls"]) == WP_TOTAL - 1 and "https://%s/p/%d" % (WP_HOST, POISON) not in doc["urls"], len(doc["urls"]))
+ladder = sorted({per for b, per, _pg in ASKED if b == "posts"}, reverse=True)
+ok("it narrowed the range 100 -> 50 -> 25 -> 5 -> 1, each size dividing the last",
+   ladder == [100, 50, 25, 5, 1], ladder)
+ok("a type where EVERY probe fails is reported unavailable, not filled with invented gaps",
+   "note" in (doc.get("unavailable") or {}) and "note" not in (doc.get("types") or {}), doc.get("unavailable"))
+ok("and it says the endpoint is failing rather than its records",
+   "endpoint is failing" in doc["unavailable"]["note"]["reason"], doc["unavailable"]["note"]["reason"])
+shutil.rmtree(_wp_dir, ignore_errors=True)
+
+print("\nthe browser rung: a page whose text only exists once its JavaScript has run")
+from seo_agent.foundation import extract as _ex2  # noqa: E402
+from seo_agent.tools import _browser as _br  # noqa: E402
+
+SPA_URL, FLAT_URL = "https://spa.test/dashboard", "https://spa.test/plain"
+SPA_HTML = ("<!doctype html><html lang='en'><head><title>Dashboard</title></head><body>"
+            "<div id='__next'></div><script>window.__NEXT_DATA__=" + ("'padding'" * 400) +
+            "</script></body></html>")
+RENDERED = ("<!doctype html><html lang='en'><head><title>Dashboard</title></head><body><main>"
+            "<h1>Your dashboard</h1><p>%s</p></main></body></html>" % (LONG * 3))
+
+
+class _FakeFx:
+    """Just enough Fetcher for extract: the raw cache, and nothing else."""
+
+    def __init__(self, pages):
+        self.pages = pages
+
+    def cached(self, url):
+        html = self.pages.get(url)
+        if html is None:
+            return None
+        return fetchmod.FetchResult(url, url, 200, html.encode("utf-8"), "text/html", {}, True)
+
+
+def _extract_fixture():
+    site = {"host": "spa.test", "work": tempfile.mkdtemp(prefix="seo-spa-test-")}
+    rec = {"pages": {SPA_URL: {"type": "app", "sources": ["sitemap"]},
+                     FLAT_URL: {"type": "page", "sources": ["sitemap"]}}}
+    return _FakeFx({SPA_URL: SPA_HTML, FLAT_URL: page("Plain", "Plain")}), site, rec
+
+
+asked_browser = []
+_real_avail, _real_fetch = _br.available, _br.fetch
+_br.available = lambda: "shell"
+_br.fetch = lambda url, timeout=60: (asked_browser.append(url) or
+                                     {"status": 200, "url": url, "text": RENDERED,
+                                      "content_type": "text/html", "headers": {}})
+try:
+    _fx2, _site2, _rec2 = _extract_fixture()
+    got = {r["url"]: r for r in _ex2.run(_fx2, _site2, lambda *a, **k: None, _rec2)}
+    ok("the JavaScript page was read through the browser", got[SPA_URL]["extractor"] == "browser",
+       got[SPA_URL]["extractor"])
+    ok("and its text is the text a visitor sees",
+       "Your dashboard" in got[SPA_URL]["body"] and got[SPA_URL]["body_status"] == "ok",
+       got[SPA_URL]["body"][:120])
+    ok("only the empty page went to the browser; a page that already had text never did",
+       asked_browser == [SPA_URL], asked_browser)
+    ok("no page is left half-judged", not any(r["body_status"] == "spa_candidate" for r in got.values()))
+    shutil.rmtree(_site2["work"], ignore_errors=True)
+
+    asked_browser[:] = []
+    _br.available = lambda: None
+    _fx2, _site2, _rec2 = _extract_fixture()
+    got = {r["url"]: r for r in _ex2.run(_fx2, _site2, lambda *a, **k: None, _rec2)}
+    ok("with no browser anywhere the page is recorded as unreadable, never as blank text",
+       got[SPA_URL]["body_status"] == "failed" and not asked_browser, got[SPA_URL]["body_status"])
+    ok("and the page that needed no browser is unaffected", got[FLAT_URL]["body_status"] in ("ok", "stub"))
+    shutil.rmtree(_site2["work"], ignore_errors=True)
+finally:
+    _br.available, _br.fetch = _real_avail, _real_fetch
+
+print("\na page that hangs costs that page, not the whole crawl")
+ok("the wall-clock cap and the worker count are the original's numbers",
+   (settings.EXTRACT_TIMEOUT, settings.EXTRACT_WORKERS) == (20, 4),
+   (settings.EXTRACT_TIMEOUT, settings.EXTRACT_WORKERS))
+_pool = _ex2._pool(2)
+ok("extraction really runs in separate processes, which is what makes the kill possible",
+   _pool is not None and _pool.submit(os.getpid).result(timeout=60) != os.getpid())
+if _pool is not None:
+    _pool.shutdown(wait=True)
+_payloads = [("https://hang.test/%d" % i, {"type": "page", "sources": []},
+              page("P%d" % i, "P%d" % i).encode("utf-8"), None) for i in range(6)]
+_rows = _ex2._extract_all(_payloads, lambda *a, **k: None)
+ok("every page comes back from the pool, once each",
+   sorted(r["url"] for r in _rows) == sorted(p_[0] for p_ in _payloads), len(_rows))
+_saved_timeout, _real_one = settings.EXTRACT_TIMEOUT, _ex2.extract_one
+settings.EXTRACT_TIMEOUT = 1
+_ex2.extract_one = lambda *a, **k: time.sleep(60)
+try:
+    _t0 = time.time()
+    _row = _ex2._worker(("https://hang.test/stuck", {"type": "page", "sources": []}, b"<html></html>", None))
+    _dt = time.time() - _t0
+finally:
+    settings.EXTRACT_TIMEOUT, _ex2.extract_one = _saved_timeout, _real_one
+ok("a hung extract is KILLED at the cap, not waited out", _dt < 5, "%.1fs" % _dt)
+ok("and the page is recorded as unreadable, never as blank text that reads like a real page",
+   _row["extractor"] == "timeout" and _row["body_status"] == "failed", _row["extractor"])
 
 print("\nFake site, stubbed DataForSEO. Proves the rules and the plumbing, not the extractor on real HTML.")
 if FAILS:

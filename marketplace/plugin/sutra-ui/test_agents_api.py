@@ -295,6 +295,15 @@ class TestAgentsApi(unittest.TestCase):
         self.assertIn("run_research", names)
         self.assertIn("learn_brand", names)
         self.assertIn("build_page_index", names)
+        self.assertIn("find_prompt", names, "the twelfth tool: which prompt owns a complaint")
+        # No tool may reach the screen under its own function name. registry.LABELS is the one
+        # place that decides it, and its fallback -- name.replace("_"," ").capitalize() -- is a
+        # leak, not a safety net: "Refresh site" sat in this list beside "Learning the brand"
+        # until 2026-09-09. The screen's stand-in for that is deleted, so this is the guard.
+        for t in tools:
+            derived = t["name"].replace("_", " ")
+            self.assertNotIn(t["label"], (derived, derived.capitalize()),
+                             "%s has no row in registry.LABELS" % t["name"])
         rr = [t for t in tools if t["name"] == "run_research"][0]
         for k in ("label", "does", "when", "needs", "takes"):
             self.assertTrue(rr.get(k), k)
@@ -307,6 +316,81 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         k = self.client.get(BASE + "/knowledge").json()
         self.assertEqual(k["competitors"]["competitors"], ["a.com", "b.com"])
+
+    def test_24_the_knowledge_payload_separates_files_a_person_fills_in(self):
+        """"Files a machine built" and "files you have to write" are different things, and the
+        screen can only say so if the payload does. pack.inputs() is the engine's own list;
+        this asserts the route carries it, in the shape the other two file lists use."""
+        k = self.client.get(BASE + "/knowledge").json()
+        brand = k.get("brand") or {}
+        self.assertIn("inputs", brand, "the Knowledge payload must carry the typed-in files")
+        self.assertIsInstance(brand["inputs"], list)
+        names = {r["name"] for r in brand["inputs"]}
+        self.assertIn("pricing.md", names, "pricing.md is the first of them")
+        row = [r for r in brand["inputs"] if r["name"] == "pricing.md"][0]
+        for key in ("name", "label", "note", "exists", "words", "filled"):
+            self.assertIn(key, row, key)
+        self.assertEqual(row["label"], "Prices and hidden facts")
+        # `filled` is the one field the screen cannot derive for itself. The blank form is real
+        # text on disk, so a word count alone calls an untouched file filled the day it is
+        # created -- which is how the seed file this replaces stayed empty for months.
+        self.assertIsInstance(row["filled"], bool)
+        # An input is not also an extra or a source of the brief: three lists, no overlap, or the
+        # screen draws the same file twice under two different headings.
+        self.assertNotIn("pricing.md", {r["name"] for r in brand.get("extras") or []})
+        self.assertNotIn("pricing.md", {r["name"] for r in brand.get("built_from") or []})
+
+    def test_24b_words_alone_cannot_tell_a_blank_form_from_a_written_file(self):
+        """The blank form is real text, so it has a word count of its own. `filled` is what the
+        screen branches on; asserting the two move independently is the whole point."""
+        from seo_agent.brand import features, pack
+        store.save_knowledge("brand/pricing.md", features.cm.template("pricing"))
+        blank = [r for r in pack.inputs() if r["name"] == "pricing.md"][0]
+        self.assertGreater(blank["words"], 0, "a blank form is not zero words")
+        self.assertFalse(blank["filled"], "and is still nobody's answer")
+
+        store.save_knowledge("brand/pricing.md",
+                             features.cm.template("pricing") + "\n\nStarter is $29 a month.")
+        written = [r for r in pack.inputs() if r["name"] == "pricing.md"][0]
+        self.assertTrue(written["filled"], "one typed line is the difference")
+
+        k = self.client.get(BASE + "/knowledge").json()
+        got = [r for r in k["brand"]["inputs"] if r["name"] == "pricing.md"][0]
+        self.assertTrue(got["filled"], "and the route carries it through")
+
+    def test_25_saving_pricing_marks_product_facts_for_rebuild(self):
+        """pricing.md is the one brand file whose save has to propagate: features.md, the file the
+        writer reads for product claims, is filled FROM it. The save MARKS and returns; it must not
+        sit through a rebuild that costs model calls, and no model is stubbed in for this test --
+        if the hook did any model work, this would hang or fail rather than pass."""
+        from seo_agent.brand import features
+        stamp = os.path.join(store.knowledge_dir(), "brand", features.STAMP)
+
+        # No features.md yet: pricing_saved() has nothing to mark, and the save still succeeds.
+        r = self.client.post(BASE + "/knowledge/brand/pricing.md",
+                             json={"text": "Starter is $29 a month."}, headers=HDR)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.client.get(BASE + "/knowledge/brand/pricing.md").json()["text"],
+                         "Starter is $29 a month.")
+        self.assertFalse(os.path.exists(stamp), "nothing built, nothing to mark")
+
+        # With features.md on disk, the same save leaves the stamp that makes the next
+        # brand-pack run rebuild it -- and touches nothing else.
+        store.save_knowledge("brand/" + features.OUTPUT, "# Product facts\n\nStarter: $19.")
+        r = self.client.post(BASE + "/knowledge/brand/pricing.md",
+                             json={"text": "Starter is $39 a month."}, headers=HDR)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(os.path.exists(stamp), "the rebuild is marked as due")
+        self.assertEqual(store.knowledge("brand/" + features.OUTPUT),
+                         "# Product facts\n\nStarter: $19.",
+                         "the save marks; it does NOT rebuild in the request")
+
+        # ONE hop, and only for this file. Saving any other brand file leaves no stamp.
+        os.remove(stamp)
+        r = self.client.post(BASE + "/knowledge/brand/style-guide.md",
+                             json={"text": "Sentence case."}, headers=HDR)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(os.path.exists(stamp), "only pricing.md propagates")
 
     def test_30_the_panel_ships_the_agents_module_and_stylesheet(self):
         html = self.client.get("/").text

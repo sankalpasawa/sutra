@@ -1,5 +1,12 @@
-"""The coverage gates + the honest report. In the original a failed gate failed the run (exit 1);
-here it is REPORTED (the tool's note carries it) so the agent tells the user, never raises.
+"""The coverage gates + the honest report.
+
+A failed gate STOPS the run, exactly as the original does ("the catalogue is NOT trustworthy
+yet"). The agent used to report the failure and carry on, so a catalogue that had just failed its
+own checks was still saved and the whole brand pack was built on it — found live 2026-09-04, when
+400 of 11,917 URLs were read, every check that mattered failed, and nothing on screen or in the
+files admitted it. Each gate carries `stops`: the three HARD gates below stop the run; the traffic
+cross-check reports its provable gaps and does not (a ranking page the catalogue lacks is a
+finding to act on, not a reason to throw the catalogue away — the original lists them too).
 
 Reads:  the extracted rows, reconciled.json, urls-wp.json, urls-sitemap.json, urls-archive.json,
         the raw-cache metadata, and the traffic view.
@@ -36,6 +43,11 @@ def _confidence(is_wp, unavailable, fetch):
                 "but %d type(s) never did (%s), so total coverage is short by an unknown amount"
                 % (len(unavailable), ", ".join(sorted(unavailable))))
     return "full: the site's own page counts were verified for every content type"
+
+
+def blockers(report):
+    """The failed gates that stop the run. One definition, so no caller invents its own."""
+    return [g for g in report.get("gates") or [] if not g.get("pass") and g.get("stops")]
 
 
 def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_urls):
@@ -91,7 +103,7 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
                         % (len(dropped["unread"]), len(dropped["unread"]) + len(reconciled.get("pages") or {}),
                            " (you capped the read at %s)" % cap if cap else ""))
         detail = "; ".join(problems)
-    gates.append({"name": "enumeration accounting", "pass": not problems, "detail": detail})
+    gates.append({"name": "enumeration accounting", "pass": not problems, "stops": True, "detail": detail})
 
     # ---- gate 2: response integrity --------------------------------------------------------------
     truncated, unclosed = [], 0
@@ -116,7 +128,7 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
             unclosed += 1
     if unclosed:
         warnings.append("%d documents without a closing </html> (some servers truncate their own responses)" % unclosed)
-    gates.append({"name": "response integrity", "pass": not truncated,
+    gates.append({"name": "response integrity", "pass": not truncated, "stops": True,
                   "detail": ("every saved page is as long as the server said it was" if not truncated else
                              "%d pages arrived shorter than their declared length (first: %s)"
                              % (len(truncated), ", ".join(truncated[:3])))})
@@ -138,7 +150,7 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
         if d["coverage"] < settings.GATE_PER_TYPE:
             problems.append("type %s: %.1f%% (%d of %d had no readable text), below %.0f%%"
                             % (t, d["coverage"] * 100, d["failed"], d["rows"], settings.GATE_PER_TYPE * 100))
-    gates.append({"name": "extraction coverage", "pass": not problems,
+    gates.append({"name": "extraction coverage", "pass": not problems, "stops": True,
                   "detail": ("%.1f%% of pages yielded readable text, and every type is above %.0f%%"
                              % (overall * 100, settings.GATE_PER_TYPE * 100)) if not problems else "; ".join(problems)})
 
@@ -158,7 +170,10 @@ def run(fx, site, rows, reconciled, wp, sm, archive, traffic, found_urls, read_u
         detail = "%d pages that rank in search are missing from the catalogue (first: %s)" % (len(gaps), ", ".join(gaps[:3]))
     else:
         detail = "every own-site page that ranks in search is in the catalogue"
-    gates.append({"name": "traffic cross-check", "pass": not gaps, "detail": detail})
+    # NOT a stopper: a page that ranks and is missing is a gap to chase, and on a real site one
+    # of them (an app subdomain, a page behind a login) is normal. The original lists them in the
+    # report and fails only on the three counting gates above.
+    gates.append({"name": "traffic cross-check", "pass": not gaps, "stops": False, "detail": detail})
 
     st = dict(reconciled.get("stats") or {})
     st["archive_unchecked"] = len(archive.get("unchecked") or [])

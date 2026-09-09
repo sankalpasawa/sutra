@@ -7,6 +7,11 @@ change, and the only honest way to say "nothing else moved" is to compare every 
 and count. Without it, "nothing was lost" is a claim rather than a fact, and a model that
 quietly reworded three paragraphs looks exactly like one that behaved.
 
+The digit guard is the third. Every step of the write phase already proves that IT invented no
+number, by comparing its own output against its own input; none of them can see whether the figure
+was real in the first place. This one asks that once, at the end, against the cards the research
+bought (checks/digit_guard.py).
+
 The orphaned-reference check is the sneaky one. Delete a section and the article still says
 "as we covered earlier" four paragraphs later. Nothing errors. No link breaks. It simply
 reads as broken to the first person who gets there, which is usually a reader rather than
@@ -18,7 +23,7 @@ can be proved from data already on disk says fail.
 import concurrent.futures
 import re
 
-from . import (ai_writing, artifact, is_same_site, item, norm_url,
+from . import (ai_writing, artifact, digit_guard, is_same_site, item, norm_url,
                     primary_keyword, result, site_index, site_urls)
 
 LINK_TIMEOUT = 5.0            # seconds per external link, checked concurrently
@@ -115,9 +120,16 @@ def check_only_target_changed(md, previous):
 # ---- 2. internal links point at pages that exist -------------------------------------------
 
 def check_internal_links(md, ctx):
-    idx = site_index(ctx) or {}
-    domain = idx.get("domain")
-    known = site_urls(ctx)
+    # UNPACK THE TUPLE. site_urls() returns (set, domain) and this read the pair as one value, so
+    # `url not in known` compared a string against a 2-tuple and was true every time: the check
+    # reported every internal link as pointing at a page that does not exist. `if not known` was
+    # dead the same way, a 2-tuple always being truthy, so the honest "no site index on file" warn
+    # could never fire either. Found 2026-09-10.
+    #
+    # The DOMAIN comes from site_urls too, not from the raw index. site_urls lower-cases and strips
+    # it before building the set, so normalising this side with the raw value would rebuild the same
+    # URL two different ways and fail a link that is genuinely there.
+    known, domain = site_urls(ctx)
     if not known:
         return result("internal_links_resolve", "warn",
                       "No site index on file, so internal links cannot be verified.")
@@ -314,5 +326,6 @@ def run(md, previous=None, ctx=None):
         check_orphaned_references(md),
         check_keyword(md, ctx),
         check_claims_have_sources(md),
+        digit_guard.check(md, ctx),
         ai_writing.check(md, voice=voice),
     ]

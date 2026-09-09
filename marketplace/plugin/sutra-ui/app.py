@@ -865,11 +865,102 @@ def sessions_page() -> str:
     return (HERE / "static" / "sessions.html").read_text(encoding="utf-8")
 
 
+#: Escape hatch: list EVERY transcript on the machine, the way this endpoint did
+#: before the scoping below. For diagnosing "where did my chat go", never for normal
+#: use -- an unscoped list is the bug this constant exists to be able to reproduce.
+SESSION_LIST_UNSCOPED = os.environ.get("SUTRA_UI_ALL_CHATS", "") == "1"
+
+
+def _owned_transcripts():
+    """(mtime, source, id, path) for every transcript a SUTRA chat claims, newest first.
+
+    chat_store's reverse index is the whole definition of "a Sutra chat" and there is no
+    second one: every chat sent through this panel is bound to a sutra_id on its first
+    turn (ws_chat calls chat_store.create/resolve, then switch.confirm, which reindexes),
+    so a transcript with no row in that index was written by something else.
+
+    RESOLVED, NOT SCANNED. The obvious shape -- page through list_sessions and drop the
+    rows that do not match -- costs a title parse for every transcript it walks past, and
+    on the founder's disk (20,255 transcripts, one of them his) that measured 3.5-5s per
+    rail refresh for a single row. This asks the opposite question: it takes the handful of
+    ids the index names and goes straight to their files. session_reader.index() is the one
+    glob, it is STAT-ONLY (0.11s for those 20,255), and it is already what the transcript
+    watcher polls every second -- so nothing here is a new kind of read. Cost is flat in
+    the number of chats the person actually has.
+
+    Nothing is opened here. The caller parses titles for the ONE page it is about to
+    return, which is what makes this cheap.
+    """
+    try:
+        owned = chat_store.index() or {}
+    except Exception:   # noqa: BLE001 -- an unreadable index must not empty the rail
+        return []
+    cands = []
+    claude_ids = {k.split(":", 1)[1] for k in owned if k.startswith("claude:")}
+    if claude_ids:
+        disk = sr.index()          # stat-only, one glob of ~/.claude/projects
+        for sid in claude_ids:
+            rec = disk.get(sid)
+            if not rec:
+                continue           # claimed by a chat, no longer on disk
+            f = sr.PROJECTS / rec["project"] / (sid + ".jsonl")
+            try:
+                cands.append((int(f.stat().st_mtime), "claude", sid, f))
+            except OSError:
+                continue           # removed between the glob and here
+    # The other two trees have their own layouts and no cheap whole-tree index, but they
+    # are also a handful of rows: resolve each claimed id on its own. read_resolve_path is
+    # the read-only resolver that spans all three trees (never resolve_path, which the
+    # write paths share).
+    for key in owned:
+        provider, _, sid = key.partition(":")
+        if provider == "claude" or not sid:
+            continue
+        f = sr.read_resolve_path(sid)
+        if f is None:
+            continue
+        try:
+            cands.append((int(f.stat().st_mtime), provider, sid, f))
+        except OSError:
+            continue
+    cands.sort(key=lambda c: c[0], reverse=True)
+    return cands
+
+
+def _session_row(source, path, project_cwd):
+    """One transcript in the shape list_sessions returns, whichever tree it is in.
+
+    These are session_reader's own per-tree readers, the same three list_sessions calls
+    in its own window loop -- reached directly because this endpoint picks its window by
+    id rather than by position. Private, and deliberately so: they are the read half of a
+    module whose write half must never be pointed at another vendor's tree.
+    """
+    if source == "claude":
+        return sr._claude_session_meta(path)
+    if source == "codex":
+        return sr._codex_session_meta(path)
+    return sr._gemini_session_meta(path, project_cwd)
+
+
 @app.get("/api/sessions")
 def api_sessions(limit: int = 100, offset: int = 0):
-    """One page of sessions, newest first. `offset` walks back into history so
-    the panel can fetch more as it scrolls; a page shorter than `limit` means
-    the end. See session_reader.list_sessions for the offset-stability note.
+    """One page of SUTRA'S OWN chats, newest first. `offset` walks back into history
+    so the panel can fetch more as it scrolls; a page shorter than `limit` means the
+    end.
+
+    SUTRA'S OWN, AND THAT IS THE POINT (owner, 2026-09-09). session_reader.list_sessions
+    enumerates every transcript on the machine -- ~/.claude/projects/*/*.jsonl plus the
+    codex and deepseek trees -- because it is also the reader behind "open this id" and
+    has to be able to see everything. This endpoint is not that: it fills the app's own
+    Chats folder, and it was handing that folder every conversation the founder had ever
+    had in VS Code, in a terminal, or in any other tool that writes to the same directory.
+    Measured on his disk: 20,255 transcripts listed, one of which was a Sutra chat. They
+    are not Sutra's chats and he does not want them in Sutra's list.
+
+    Scoped HERE rather than in session_reader because list_sessions is shared with the id
+    resolvers, which must keep seeing every file -- a chat opened by id, or reached by a
+    provider switch, still resolves exactly as it did. SUTRA_UI_ALL_CHATS=1 puts the old
+    unscoped list back for diagnosis.
 
     EACH ROW ALSO CARRIES THE SUTRA CHAT IT BELONGS TO, and that is what makes a
     provider switch survive a refresh. The browser holds `sutra_id` in memory
@@ -887,32 +978,29 @@ def api_sessions(limit: int = 100, offset: int = 0):
     is the question a rail row raises. No second mapping is introduced, and a
     row whose id belongs to no chat simply carries None.
     """
-    rows = sr.list_sessions(limit, offset)
+    limit = max(0, int(limit or 0))
+    offset = max(0, int(offset or 0))
+    if SESSION_LIST_UNSCOPED:
+        rows = sr.list_sessions(limit, offset)
+    else:
+        window = _owned_transcripts()[offset:offset + limit]
+        # Built only for the page being returned, and only when a row needs it.
+        project_cwd = (sr._gemini_project_cwd_map()
+                       if any(src == "deepseek" for _, src, _, _ in window) else {})
+        rows = []
+        for _mtime, source, _sid, path in window:
+            try:
+                row = _session_row(source, path, project_cwd)
+            except OSError:
+                row = None         # deleted while this page was being built
+            if row is not None:
+                rows.append(row)
     for row in rows:
         try:
             row["sutra_id"] = chat_store.resolve(row.get("source"), row.get("id"))
         except Exception:   # noqa: BLE001 -- a bad index must not empty the rail
             row["sutra_id"] = None
     return rows
-
-
-# ---------------------------------------------------------------- live sync ---
-# Sutra READS Claude's transcripts, and until now it read them once, at boot.
-# Anything typed in Claude afterwards was invisible until the panel was reloaded,
-# which makes the two look like separate programs that happen to share a folder.
-# This is the half that makes them one thing: the server watches the transcript
-# directory and tells the panel what changed, as it changes.
-#
-# STAT POLLING, NOT FILESYSTEM EVENTS. FSEvents/watchdog would be tidier and is a
-# dependency this runtime does not have -- the bundled Python ships exactly
-# fastapi, uvicorn and websockets, and adding one to a 95MB payload for a 1-second
-# timer is a bad trade. sr.index() opens no files, so the poll costs one stat per
-# transcript and is flat in history size.
-#
-# SSE, NOT A WEBSOCKET. The traffic is one-way and the browser reconnects on its
-# own; a socket would be a second lifecycle to get wrong for no gain.
-SESSION_POLL_S = 1.5
-SESSION_HEARTBEAT_S = 25        # keeps proxies and idle timeouts from closing it
 
 
 @app.get("/api/sessions/stream")

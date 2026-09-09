@@ -105,6 +105,26 @@ def research_doc(research, keywords_md, snapshot_md, winners_md, trail_rows):
                                                        _plural(len(ev.get("dossier_sources") or []), "source")))
     else:
         how.append("Evidence came from reading the pages that rank for the keyword set, one pass.")
+    # THE GAP FILL, named for what it actually was. A gap the research missed is re-researched with
+    # the same four-researcher conversation (12-gap-check re-runs STORM itself), so the brief has to
+    # say so — a reader who sees "3 gaps filled" deserves to know whether that was a conversation or
+    # a single search, and the fallback route is named when it was taken.
+    rounds = (research.get("gap_check") or {}).get("fill_rounds") or []
+    for r in rounds:
+        how.append("Gap re-researched — \"%s\": %s, %s asked, %s found."
+                   % (r.get("query", ""), r.get("route", ""), _plural(r.get("questions", 0), "question"),
+                      _plural(r.get("cards", 0), "fact")))
+    # THE UNSOURCED FIGURES. A number whose page could not be pinned down is stamped needs_source and
+    # carries NO url, so nothing downstream can cite it as sourced. Saying it here is the difference
+    # between a known hole and a silent one.
+    if ev.get("recovered_sources"):
+        how.append("%s that lost its citation was traced back to the page that stated it, by matching "
+                   "the claim against the passages the researchers actually read."
+                   % _plural(ev["recovered_sources"], "figure"))
+    if ev.get("needs_source"):
+        how.append("⚠️ %s could not be traced to a page and %s marked **needs_source**: no source is "
+                   "attached, and the write phase re-checks every one before it may be used."
+                   % (_plural(ev["needs_source"], "figure"), "is" if ev["needs_source"] == 1 else "are"))
 
     parts = [
         "# Research brief — %s" % (research.get("topic") or "this article"),

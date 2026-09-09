@@ -116,7 +116,7 @@ _prev_data = os.environ.get("SEO_AGENT_DATA", "")
 os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="seo-onboard-behaviour-")
 store.set_data_dir(os.environ["SEO_AGENT_DATA"])
 _fixture.setup()
-from seo_agent.brand import _common as cm, brand_facts, voices
+from seo_agent.brand import _common as cm, brand_facts
 from seo_agent.tools import _shared as sh, onboard
 
 llm.json_call = lambda prompt, system=None, retries=1, **kw: _fixture.stub_json(prompt, system, retries)
@@ -134,8 +134,8 @@ while s["status"] == "waiting" and (s.get("waiting_on") or {}).get("interview"):
 ok("every question was still put, one at a time", asked == onboard.IDS, asked)
 ok("skipping the lot does not stall the run", s["status"] == "done", s["status"])
 led = onboard.ledger().get("answers") or {}
-ok("all six are on record as skipped, none as an empty answer",
-   len(led) == 6 and all(a["state"] == "skipped" and a["text"] == "" for a in led.values()), led)
+ok("all four are on record as skipped, none as an empty answer",
+   len(led) == 4 and all(a["state"] == "skipped" and a["text"] == "" for a in led.values()), led)
 ok("no competitor list was invented from an empty answer",
    store.knowledge("competitors.json") is None, store.knowledge("competitors.json"))
 
@@ -153,13 +153,9 @@ ok("the machine still drafted the numbers the site does publish",
    brand_facts.already_drafted(stats_after), stats_after[:400])
 ok("and the record of what was asked survived it",
    "<!-- setup-interview:start -->" in stats_after)
-vout = voices.run(sh.company(), lambda a, b="": None)
-ok("voices.md is kept as the team's own file, never regenerated",
-   "voices.md" in (vout.get("files") or []) and "Asked at setup" in (store.knowledge("brand/voices.md") or ""))
-
 print("\nan interview that was abandoned picks up where it stopped")
 store.save_knowledge("brand/_interview/answers.json", {})
-for f in ("stats.md", "stories.md", "voices.md"):
+for f in ("stats.md", "stories.md"):
     p = cm.path(f)
     if os.path.exists(p):
         os.remove(p)

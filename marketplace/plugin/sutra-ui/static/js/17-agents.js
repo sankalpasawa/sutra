@@ -139,7 +139,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, refresh: null, trafficForm: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, refresh: null, draft: "", scroll: null, stick: true,
     health: null, knowledge: null, cta: null, ctaForm: null, memory: null, library: null, tools: null, conns: null,
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
@@ -547,8 +547,11 @@ function agHeroHtml(health, conns){
      "Suggest six topics we could own."],
     ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. You review at each of the four stops.",
      "Write an article about "],
-    ["Improve one of our existing pages", "Names the page, checks what ranks around it, and rebuilds it from the evidence.",
-     "Improve our page "],
+    /* A third play -- rewrite one of the pages we already have -- was DELETED (owner,
+       2026-09-09). It was written before the reuse check existed and nothing was ever wired
+       behind it: no tool takes a page and rebuilds it, so the chip filled the composer with a
+       sentence the agent could only improvise around. Deleted rather than rewired: there is no
+       step to point it at. The plays left are the two the engine can actually run. */
   ] : [
     ["Set up for my website", "Reads every page, indexes them by meaning, and learns how you write, who you write for and what you sell. Runs once.",
      "Set up for my website: "],
@@ -840,7 +843,14 @@ function agArticleHtml(md, edit, last, readOnly, extra){
     }).join("")}</div>`;
 }
 
-/* The brand pack: every file the setup built, what each is for, and what needs a look. */
+/* The brand pack: every file the setup built, what each is for, and what needs a look.
+
+   THIS LIST IS HARDCODED, and it is the one file list on this screen that is. The Knowledge tab
+   itself renders generically (agBriefHtml from brand.built_from, agExtrasHtml from brand.extras,
+   both straight off pack.py), so a file the engine adds appears there on its own with the
+   engine's own label. Here a file the engine adds but this list does not know still appears --
+   agBrandPackHtml's `extra` bucket catches it -- but only under its raw filename, with no
+   description. So a NEW knowledge door wants a row here to read properly. */
 const AG_BRAND_FILES = [
   ["company.json", "The company record", "Name, website, one line on what they do, the market. The agent asks you to confirm the one-liner."],
   ["writer-brief.md", "Writer brief", "The one page every article is written from: what they believe, how they sound, words they use and refuse."],
@@ -848,12 +858,12 @@ const AG_BRAND_FILES = [
   ["style-guide.md", "Style guide", "Capitalisation, numbers, punctuation, house spelling, words to avoid."],
   ["persona.md", "Readers", "Who the articles are written for. Three or four reader types and how to pick one."],
   ["features.md", "Product facts", "What they sell, integrations, pricing, proof. The close reads this."],
+  ["pricing.md", "Prices and hidden facts", "Anything your site draws with JavaScript, so a crawler cannot see it. Prices, plans, trial length. Type it here and it beats anything we read off the site."],
   ["cta-pages.md", "Pages a call to action may link to", "The short list the article's close is allowed to point at."],
   ["stats.md", "Real numbers", "Figures about the company, drafted from its own pages. Edit any row and your version is the truth."],
   ["stories.md", "Customer stories", "Named customer results, drafted from the site. Edit any entry and your version is the truth."],
   ["brand-cards.json", "Brand cards", "The numbers and stories as placeable facts, each with its source."],
   ["writing-examples.md", "Worked examples", "The best on-voice articles, annotated."],
-  ["voices.md", "Bylines", "Who signs the writing. Filled by the team."],
   ["writer-brief-rulings.md", "Rulings", "Decisions that outrank everything else in the brief."],
   ["writing-integrity.md", "Writing integrity", "The honesty contract: no invented customers, no hype, cite properly."],
   ["field-sources.md", "Where the audience talks", "The checked communities where practitioners argue in public."],
@@ -975,7 +985,10 @@ function agPanelHtml(a){
       <span class="sp">Open a file to read or edit it</span>`;
   } else if (p.view === "brand_file"){
     body = agBrandFileHtml(p.data, a.fileEdit);
-    footer = a.fileEdit ? "" : `<button class="btn" type="button" data-ag="fileedit">Edit</button>${p.back ? `<button class="btn" type="button" data-ag="back">Back to the pack</button>` : ""}`;
+    /* A REPORT is not a brand file. The refresh's change report borrows this view because it is
+       the same thing on screen -- markdown in the panel -- but it is written BY the engine and
+       there is nothing on disk for a save to land on, so a read-only panel gets no Edit. */
+    footer = (p.readOnly || a.fileEdit) ? "" : `<button class="btn" type="button" data-ag="fileedit">Edit</button>${p.back ? `<button class="btn" type="button" data-ag="back">Back to the pack</button>` : ""}`;
   } else if (p.view === "prompt"){
     body = agPromptHtml(p.data, a.promptEdit);
     if (p.data) sub = p.data.edited ? "your version, used by the next article" : "as it shipped";
@@ -1015,8 +1028,8 @@ function agPanelHtml(a){
 
 /* Keeping the catalogue current. One line that replaces itself while it works, then a link to
    what changed. Never a chat log: a person watching an update wants one line, not a transcript.
-   The two buttons that START it sit on the catalogue heading row (agCatControlsHtml); this
-   renders only what is happening right now, and nothing at all when nothing is. */
+   The button that STARTS it sits on the catalogue heading row (agCatControlsHtml); this renders
+   only what is happening right now, and nothing at all when nothing is. */
 function agRefreshHtml(a){
   const r = a.refresh || null;
   let box = "";
@@ -1030,6 +1043,7 @@ function agRefreshHtml(a){
         : `<b>${agEsc(agNum(n.new))} new</b>, ${agEsc(agNum(n.gone))} gone, ${agEsc(agNum(n.changed))} rewritten.${n.unchecked ? ` ${agEsc(agNum(n.unchecked))} pages give no date, so they cannot be checked without reading them.` : ""}`}</div>
       <div class="ag-editrow">
         ${nothing ? "" : `<button class="btn pri" type="button" data-ag="refreshgo">Update the catalogue</button>`}
+        ${nothing || !r.report ? "" : `<button class="btn" type="button" data-ag="refreshreport">See the list</button>`}
         <button class="btn" type="button" data-ag="refreshcancel">${nothing ? "Close" : "Not now"}</button>
       </div></div>`;
   } else if (r && r.done) {
@@ -1041,24 +1055,21 @@ function agRefreshHtml(a){
     box = `<div class="ag-refresh"><div class="msg err">${agEsc(r.error)}</div>
       <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
   }
-  return box + (a.trafficForm ? `<div class="ag-libedit" style="margin-top:8px">
-      <label class="ag-lbl">Where the traffic file is on this Mac</label>
-      <input class="in" type="text" data-agtraffic placeholder="/Users/you/Desktop/top-pages.csv" value="${agEsc(a.trafficForm.path || "")}" />
-      <div class="ag-editrow">
-        <button class="btn pri" type="button" data-ag="trafficgo" ${a.trafficForm.busy ? "disabled" : ""}>${a.trafficForm.busy ? "Reading…" : "Import"}</button>
-        <button class="btn" type="button" data-ag="trafficcancel">Cancel</button>
-        <span class="ag-sub">A CSV with a page address column and a traffic column.</span>
-        ${a.trafficForm.error ? `<span class="ag-err">${agEsc(a.trafficForm.error)}</span>` : ""}
-      </div></div>` : "");
+  return box;
 }
 
 /* The small controls that belong to the catalogue, on its heading row rather than in the body:
-   the map, and the two ways to bring the catalogue up to date. */
+   the map, and the one way to bring the catalogue up to date.
+
+   THE TRAFFIC IMPORT IS NOT A BUTTON (owner, 2026-09-09). It was built for one incident -- a
+   DataForSEO balance at minus seven cents, mid-build -- and it is not a thing anybody sets out
+   to do from a settings tab. The IMPORTER is untouched: POST /knowledge/traffic still works and
+   the agent still offers it in the chat when an account runs dry, which is the only moment it
+   makes sense. What is gone is the standing affordance. */
 function agCatControlsHtml(a, canMap){
   return `<div class="ag-secctl">
     ${canMap ? `<button class="btn" type="button" data-ag="map">${a.mapOn ? "Hide the map" : "Show the map"}</button>` : ""}
     <button class="btn" type="button" data-ag="refreshcheck" title="Reads only what is new or has changed, not the whole site.">Check for changes</button>
-    <button class="btn" type="button" data-ag="trafficimport">Import a traffic file</button>
   </div>`;
 }
 
@@ -1129,8 +1140,41 @@ function agBriefHtml(brand, open){
     <div class="ag-brief">${agMd(br.text || "")}</div>`;
 }
 
+/* THE FILES A PERSON FILLS IN, and the one empty state in the product that matters most.
+
+   Every other unbuilt file on this screen is something the machine will get to. This one is not:
+   only a person can supply it. pricing.md holds what a site draws with JavaScript -- prices,
+   plans, trial length -- which a crawler can never see, and features.md, the file the writer reads
+   for product claims, is filled FROM it. Nobody fills it in and the articles go on quoting prices
+   scraped off stale translated pages. So an unfilled one is drawn as an ASK: an accent edge, a
+   primary button, the reason in the row, and a door that lands in the editor rather than in a
+   read-only view with an Edit button to find.
+
+   FILLED IS THE ENGINE'S WORD, not a word count. The blank form is real text on disk (205 words
+   of it), so `words` alone would have called an untouched form filled and stopped asking on the
+   day it was created -- which is precisely how the seed file this replaces stayed empty for
+   months. pack.inputs() carries `filled` from features.untouched(); the count is reported beside
+   it, never instead of it.
+
+   Once it IS filled the row settles down: same section, ordinary weight, and the button becomes
+   Open. An ask that keeps asking after it has been answered is just noise. */
+function agInputsHtml(brand){
+  const list = (brand && brand.inputs) || [];
+  return list.map(f => {
+    /* `filled` absent means an older engine that cannot tell: keep asking rather than assume it
+       is done -- the cost of asking twice is far below the cost of never asking. */
+    const filled = f.filled === true;
+    return `<h3 class="sec">${agEsc(f.label || f.name)}</h3>
+    <div class="ag-row${filled ? "" : " ask"}"><div class="ri">
+      <div class="rn">${agEsc(f.note || f.name)} <span class="pill ${filled ? "p-ok" : "p-ask"}">${filled ? "you wrote this" : "yours to write"}</span></div>
+      ${filled ? "" : `<div class="rd">Nothing has been written here yet. Nobody can read these off your website, and the agent will not guess at them.</div>`}
+      <div class="rm"><span>${agEsc(f.name)}</span><span>${f.exists ? (filled ? agEsc(agNum(f.words)) + " words" : "the blank form") : "not started"}</span></div></div>
+      <div class="ra"><button class="btn ${filled ? "" : "pri"}" type="button" data-ag="inputwrite" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}">${filled ? "Open" : "Write it"}</button></div></div>`;
+  }).join("");
+}
+
 /* A file the pack carries but nothing reads yet. Its own heading, because its label IS the
-   heading ("Who writes"), and said plainly to be idle rather than left to look built. */
+   heading, and said plainly to be idle rather than left to look built. */
 function agExtrasHtml(brand){
   const list = (brand && brand.extras) || [];
   return list.map(f => `<h3 class="sec">${agEsc(f.label || f.name)}</h3>
@@ -1186,6 +1230,7 @@ function agKnowledgeHtml(k, a){
   const indexed = !!idx.page_count;
   const mapReady = !!pi.built;
   const extras = agExtrasHtml(k.brand);
+  const inputs = agInputsHtml(k.brand);
   return `<div class="ag-view wide"><h2>Knowledge</h2>
     <p class="lead">Everything the agent knows about ${agEsc(co.brand || idx.domain || "the business")}. Click anything to read it.</p>
 
@@ -1221,6 +1266,8 @@ function agKnowledgeHtml(k, a){
       : `<div class="ag-row"><div class="ri"><div class="rn">No site catalogue yet</div><div class="rd">In the chat, give the agent the website. It reads every page and what each ranks for, and the catalogue appears here.</div></div></div>`}
 
     ${agBriefHtml(k.brand, !!(a.detailOpen && a.detailOpen.builtfrom))}
+
+    ${inputs}
 
     ${extras}
 
@@ -1318,6 +1365,10 @@ function agAssetsHtml(as, a){
   // there is one idiom on this screen and not two.
   const off = Math.min((a && a.assetOffset) || 0, Math.max(0, matching.length - 1));
   const shown = matching.slice(off, off + AG_IDEA_LIMIT);
+  /* "Next up" told him nothing about WHERE this idea came from ("okay next up, oh this is the
+     next topic, all of that's not clear" -- owner, 2026-09-09). It is the top-ranked idea of the
+     ones still open, so the card says exactly that and how many are behind it. */
+  const open1 = c.open || 0;
   return `<div class="ag-view wide"><h2>Asset ideas</h2>
     <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
       ${as.methods_line ? agEsc(as.methods_line)
@@ -1325,15 +1376,21 @@ function agAssetsHtml(as, a){
         : "All three methods contributed."}</p>
 
     ${nx ? `<div class="ag-nextidea">
-      <div class="nl">Next up</div>
+      <div class="nl">The idea to write next${open1 ? `<span class="nq">top of the ${agEsc(agNum(open1))} still to write</span>` : ""}</div>
       <div class="nt">${agEsc(nx.title)}</div>
       <div class="nd">${agEsc(nx.angle || "")}</div>
-      <div class="nm">${agEsc(nx.format || "")}${(nx.method || []).length ? " · found by " + agEsc((nx.method || []).map(agMethodName).join(" and ")) : ""}${nx.linkability && nx.linkability.score ? ` · ${agEsc(nx.linkability.score)}/${agEsc(nx.linkability.of || 4)} on whether anyone would cite it` : ""}</div>
+      <dl class="nf">
+        ${nx.format ? `<div><dt>Shape</dt><dd>${agEsc(nx.format)}</dd></div>` : ""}
+        ${(nx.method || []).length ? `<div><dt>Found by</dt><dd>${agEsc((nx.method || []).map(agMethodName).join(" and "))}</dd></div>` : ""}
+        ${nx.linkability && nx.linkability.score ? `<div><dt>Would anyone cite it</dt><dd>${agEsc(nx.linkability.score)} out of ${agEsc(nx.linkability.of || 4)}</dd></div>` : ""}
+      </dl>
       <div class="ag-editrow">
         <button class="btn pri" type="button" data-ag="ideawrite" data-arg="${agEsc(nx.id)}"
           data-text="${agEsc("Write this asset idea: " + nx.title)}">Write this one</button>
         <button class="btn" type="button" data-ag="ideadrop" data-arg="${agEsc(nx.id)}">Not this one</button>
       </div>
+      <p class="nh"><b>Write this one</b> opens the chat and starts the research on it.
+        <b>Not this one</b> drops it off the sheet and the next-ranked idea moves up here.</p>
       <div class="nw">This can still be turned down later. The topic gate reads the live search
         results, and if they argue for a different intent than this idea assumes, it stops rather
         than write the wrong article.</div>
@@ -1530,11 +1587,33 @@ function agPromptHtml(d, edit){
   return `${head}<pre class="ag-prompttext">${agEsc(d.text)}</pre>`;
 }
 
+/* The tool's name in words. registry.label() is the ONE place that decides it -- it covers every
+   work tool -- and this only has a fallback at all so a tool added upstream before its label is
+   written still draws a row instead of an empty cell. The screen carried a stand-in map for the
+   three tools LABELS was missing until 2026-09-09; the labels landed upstream and it was deleted,
+   which is what a display fallback is for. */
+function agToolName(t){
+  return (t && t.label) || String((t && t.name) || "").replace(/_/g, " ");
+}
+
 function agToolsHtml(tools){
   const list = tools || [];
+  /* The count is DERIVED, never typed. It said "the seven things" over eleven rows for as long as
+     the eleventh tool had existed, and there are twelve now -- because a sentence with a number
+     in it goes stale the day the list grows and nobody thinks to look at the paragraph above it.
+
+     AND THERE IS ONLY ONE NUMBER IN IT. The sentence used to go on to say "the last four run for
+     every article", which was true only by an accident of ordering: find_prompt was added at the
+     end of the list and is not a per-article step at all, so the claim was false the day it
+     landed. A positional claim about a list somebody else owns cannot be kept true, so it is
+     gone, and what is left says the same useful thing without counting anything. */
+  const n = list.length;
+  const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+                 "ten", "eleven", "twelve", "thirteen", "fourteen"];
+  const count = n < words.length ? words[n] : String(n);
   return `<div class="ag-view"><h2>Tools</h2>
-    <p class="lead">The seven things the agent can do, in the order they usually run. Setup runs once. The last four run for every article, and you look at the result of each before the next starts.</p>
-    ${list.map((t, i) => `<div class="ag-row"><div class="ri"><div class="rn"><span class="n">${i + 1}</span>${agEsc(t.label || String(t.name || "").replace(/_/g, " "))}</div>
+    <p class="lead">The ${agEsc(count)} thing${n === 1 ? "" : "s"} the agent can do, in the order they usually run. Setup runs once. The writing steps run again for every article, and you look at the result of each before the next starts.</p>
+    ${list.map((t, i) => `<div class="ag-row"><div class="ri"><div class="rn"><span class="n">${i + 1}</span>${agEsc(agToolName(t))}</div>
         <dl class="ag-kv" style="margin:8px 0 0">
           <dt>What it does</dt><dd>${agEsc(t.does || t.description || "")}</dd>
           ${t.when ? `<dt>When it runs</dt><dd>${agEsc(t.when)}</dd>` : ""}
@@ -2130,6 +2209,20 @@ async function agAction(act, el){
     }
     /* knowledge */
     case "brandfile": await agOpenBrandFile(arg, !!(a.panel && a.panel.view === "brand_pack"), el.getAttribute("data-label") || ""); break;
+    /* A form opens IN the editor. "Open", read a blank template, hunt for Edit, then type is
+       three steps in front of the one thing this file exists for. Same route and same save as
+       brandfile -- only the state it lands in differs. */
+    case "inputwrite": {
+      await agOpenBrandFile(arg, false, el.getAttribute("data-label") || "");
+      const d = a.panel && a.panel.data;
+      if (a.panel && !a.panel.error){
+        a.fileEdit = { text: d && typeof d.text === "string" ? d.text : "" };
+        agDraw();
+        if (typeof document !== "undefined")
+          setTimeout(() => { const t = document.querySelector("[data-agfiletext]"); if (t) t.focus(); }, 0);
+      }
+      break;
+    }
     case "fileedit": { const d = a.panel && a.panel.data; a.fileEdit = { text: d && typeof d.text === "string" ? d.text : JSON.stringify(d, null, 2) }; agDraw(); break; }
     case "filecancel": a.fileEdit = null; agDraw(); break;
     case "filesave": {
@@ -2164,6 +2257,66 @@ async function agAction(act, el){
       if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(e => { agToast(String(e.message || e)); return null; }); agDraw(); }
       break;
     }
+
+    /* ── keeping the catalogue current ────────────────────────────────────────
+       These five were the silent failure. The button, agRefreshHtml's four states and
+       POST /knowledge/refresh all existed and all worked -- both routes were verified
+       against the owner's own catalogue, 2026-09-09 -- but agAction had no arm for
+       "refreshcheck", so the click fell through to `default: break` and NOTHING happened,
+       with no error anywhere to say so.
+
+       Two steps, never one. `preview: true` reads the site's current address list, reports
+       the four piles and touches nothing; only refreshgo, which he has to press, writes.
+       That split is the tool's own contract (refresh_site.run) and it is what keeps a
+       stray click on a settings tab from re-reading a 12,000-page site. */
+    case "refreshcheck": {
+      a.refresh = { busy: true, step: "Asking the site for its current list…" };
+      agDraw();
+      try {
+        const r = await agPostApi("/knowledge/refresh", { preview: true });
+        a.refresh = { preview: { new: r.new, gone: r.gone, changed: r.changed, unchecked: r.unchecked },
+                      report: r.report || "" };
+      } catch (e) { a.refresh = { error: "Could not check the site: " + (e && e.message || e) }; }
+      agDraw(); break;
+    }
+    case "refreshgo": {
+      a.refresh = { busy: true, step: "Reading the pages that are new or have changed…" };
+      agDraw();
+      try {
+        const r = await agPostApi("/knowledge/refresh", {});
+        /* The tool reports a refusal it survived -- every page blocked, catalogue untouched --
+           as an `error` beside a summary, not as a failed request. Saying "Done" over that
+           would be a lie about the one thing he is watching. */
+        a.refresh = r.error ? { error: r.error }
+          : { done: [r.summary, r.note].filter(Boolean).join(" ") };
+        /* the counts on the heading line and the page table are both stale now */
+        a.knowledge = await agApi("/knowledge").catch(() => a.knowledge);
+        if (a.pages) await agLoadPages(0);
+      } catch (e) { a.refresh = { error: "The refresh did not finish: " + (e && e.message || e) }; }
+      agDraw(); break;
+    }
+    /* What changed, in full. The preview holds its report in memory (nothing has been written
+       yet); after a real refresh the engine has saved it as catalogue-changes.md, so that is
+       read back rather than kept on the state. */
+    case "refreshreport": {
+      const text = (a.refresh && a.refresh.report) || "";
+      if (!text) break;
+      a.panel = { run_id: null, name: "catalogue-changes.md", view: "brand_file",
+                  data: { text }, loading: false, error: null,
+                  title: "What a refresh would change", subtitle: "nothing has been written yet",
+                  readOnly: true };
+      a.fileEdit = null; agDraw(); break;
+    }
+    case "refreshchanges": {
+      a.panel = { run_id: null, name: "catalogue-changes.md", view: "brand_file", data: null,
+                  loading: true, error: null, title: "What changed", subtitle: "catalogue-changes.md",
+                  readOnly: true };
+      a.fileEdit = null; agDraw();
+      try { const d = await agApi("/knowledge/changes"); a.panel.data = { text: (d && d.text) || "" }; a.panel.loading = false; }
+      catch (e) { a.panel.loading = false; a.panel.error = "Could not read the change report: " + (e && e.message || e); }
+      agDraw(); break;
+    }
+    case "refreshcancel": a.refresh = null; agDraw(); break;
     case "saveco": {
       const rec = {};
       document.querySelectorAll("[data-agco]").forEach(i => { rec[i.getAttribute("data-agco")] = i.value; });

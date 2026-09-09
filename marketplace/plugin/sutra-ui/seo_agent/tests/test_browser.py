@@ -130,6 +130,20 @@ try:
 finally:
     httpx.get = real_get
 
+print("\nthe extractor's render rung uses the very same browser")
+# A page whose HTML is an empty app root has no text until JavaScript runs. The crawler already
+# owns a browser for challenged sites; the extractor's last rung borrows it rather than filing
+# every JavaScript-rendered page as unreadable.
+from seo_agent.foundation import extract as EX  # noqa: E402
+
+SPA = "https://walled.example/spa"
+PAGES[SPA] = ("text/html", "<html><body><main><h1>Rendered</h1><p>" + "real words " * 60 + "</p></main></body></html>")
+row = {"url": SPA, "body": "", "body_status": "spa_candidate", "extractor": "none", "type": "page"}
+EX._render_pass([row], {SPA: {"type": "page", "sources": []}}, lambda *a, **k: None)
+ok("a JavaScript-only page is read by rendering it", row["extractor"] == "browser" and "Rendered" in row["body"], row)
+ok("through the same shell service the crawler uses", CALLS[-1][2] == SPA, CALLS[-1])
+ok("and the row is a real read, not a failure", row["body_status"] == "ok", row["body_status"])
+
 print("\nno browser at all")
 del os.environ["SEO_AGENT_BROWSER_FETCH"]
 import importlib

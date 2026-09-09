@@ -96,6 +96,83 @@ def plain(cell):
     return _EMPHASIS.sub("", cell or "").strip()
 
 
+# ---- format labels: the canonical set (the original's step F0) -----------------------------------
+#
+# WHY THIS LIVES HERE, in the formats module, and is not a method of its own. It is a FORMAT-LABEL
+# tidier: hand it a bag of shape labels and it hands back one canonical name per label, plus the
+# shapes that are not content assets at all. It reads no method's ideas and writes no method's
+# file, so a builder calling it is not a builder seeing another builder's output — the three
+# finders still never meet before the merge.
+#
+# WHY IT EXISTS AT ALL. A format tagger runs in independent batches and names the same shape
+# differently in each one. Measured on the owner's real run (2026-07-20): 127 distinct labels
+# across 1,202 pages, including SIX ways to say "product or solution page" and three ways to say
+# "press release". That splits the signal — one strong format reads as three weak ones — and
+# "which SHAPE earns the links" is the exact question the format table exists to answer, so a
+# split label does not weaken the answer, it destroys it.
+#
+# The merge is a JUDGMENT, not a string match ("Statistics roundup" gathers other people's numbers,
+# "Data report" is the company's own study, and they are different shapes), so it is a model call
+# with the criteria in the prompt file.
+CANON_MIN_LABELS = 2        # below this there is nothing to merge and the call is not worth making
+
+
+def canonicalise(rows, say=None, mapping=None):
+    """F0. One canonical name per format label, and the shapes that are not content assets flagged.
+
+    Reads:  `rows`, each carrying a `format` label
+    Writes: nothing of its own. It rewrites `format` and sets `format_junk` on the rows it was
+            handed and returns the mapping, so the caller stays the one place that saves a file.
+
+    Returns {"map": {label: canonical}, "junk": [canonical, ...], "note": str, "labels": int,
+             "canonical": int, "relabelled": int}. Pass `mapping` to re-apply a mapping decided on
+    an earlier run rather than paying for the judgment twice.
+
+    A label the model forgets to map keeps its own name rather than becoming an empty string: the
+    prompt says every label must come back, and this is what happens when it does not. Losing a
+    label to a blank would move every page carrying it into one nameless bucket, which is the exact
+    failure this step exists to prevent.
+    """
+    counts = {}
+    for r in rows:
+        counts[(r.get("format") or "").strip() or "untagged"] = \
+            counts.get((r.get("format") or "").strip() or "untagged", 0) + 1
+    if mapping is None:
+        if len(counts) < CANON_MIN_LABELS:
+            mapping = {"map": {k: k for k in counts}, "junk": [], "note": ""}
+        else:
+            labels = "\n".join("%d — %s" % (n, lab)
+                                for lab, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+            try:
+                mapping = llm.json_call(sh.fill(cm.prompt("formats-canonicalise"), labels=labels)) or {}
+            except Exception as e:      # noqa: BLE001. A tidier that fails leaves the labels as they are
+                if say:
+                    say("Could not tidy the format labels", str(e)[:160])
+                mapping = {"map": {k: k for k in counts}, "junk": [], "note": ""}
+    m = mapping.get("map") or {}
+    junk = {j for j in (mapping.get("junk") or []) if j}
+    relabelled = 0
+    for r in rows:
+        old = (r.get("format") or "").strip() or "untagged"
+        new = str(m.get(old) or "").strip() or old      # an unmapped label keeps its own name
+        if new != old:
+            relabelled += 1
+        r["format"] = new
+        r["format_junk"] = new in junk
+    out = dict(mapping)
+    out["map"] = {k: (str(m.get(k) or "").strip() or k) for k in counts}
+    out["junk"] = sorted(junk)
+    out["labels"] = len(counts)
+    out["canonical"] = len(set(out["map"].values()))
+    out["relabelled"] = relabelled
+    if say:
+        say("Merged the format labels into one set",
+            "%d labels became %d; %s relabelled; %s are not content assets at all"
+            % (out["labels"], out["canonical"], sh.plural(relabelled, "page"),
+               sh.plural(len(out["junk"]), "shape")))
+    return out
+
+
 # ---- step A: the swipe library ------------------------------------------------------------------
 
 def swipe_table():
@@ -329,6 +406,18 @@ def _idea_row(n, a):
     row["title"] = a["asset"]
     row["angle"] = a["distinct_angle"]
     row["format"] = a["format"]
+    # THE BUILD FLAG, carried rather than dropped. Step B already asks the model for
+    # `tool_escalation` and `what_it_would_be` and writes both into adaptations.json, and
+    # `_common.blank_idea` has held both fields since the schema was written — but this assembler
+    # never copied them across, so every method-2 idea reached the merge flagged False with an
+    # empty description. The merge then had nothing to pool onto a survivor and the write phase
+    # could not tell a document from a piece of software, which is the exact failure the flag was
+    # added for after the owner's engine turned 1,143 of 2,213 ideas into calculators. The
+    # normalisation is the trends builder's, in the same words, so one flag means one thing on all
+    # three pools. Found 2026-09-10.
+    build = str(a.get("tool_escalation") or "").strip()
+    row["tool_escalation"] = bool(build) and build.lower() not in ("no", "none", "false")
+    row["what_it_would_be"] = str(a.get("what_it_would_be") or "").strip() or build
     example = plain(a["example"])
     urls = _URL.findall(example)
     row["proof"] = [{"url": u, "domains": None, "what": example} for u in urls] or \
@@ -567,17 +656,26 @@ def review_notes(rows, filtered, adaptations):
                      "format field, not the title; picking the shape first is what turned a whole "
                      "pool into calculators once before." % (len(shape), "; ".join(r["title"] for r in shape[:3])))
 
-    # The schema has nowhere to record that an idea needs a real build, so the honest flag the
-    # original insists on ("never hidden") is surfaced here and kept in adaptations.json.
-    keep_ids = {r["id"] for r in rows}
-    needs_build = [a for i, a in (filtered.get("adaptation") or {}).items()
-                   if i in keep_ids and a.get("tool_escalation")]
+    # The flag now travels ON the row (`tool_escalation`, with `what_it_would_be` beside it), which
+    # is what the schema always had room for and what the merge and the write phase both read. This
+    # note is the human half of "flagged, never hidden": the row carries the fact, the note makes
+    # sure a person sees it. Read off the rows, not off the working file, so it can never disagree
+    # with what shipped.
+    # WHICH ideas comes off the rows, so the note can never name an idea that did not ship or miss
+    # one that did. The one-line REASON comes from the adaptation that raised it, which is where
+    # that sentence was written; the row's own description of the asset stands in when there is no
+    # adaptation on file.
+    adapted = filtered.get("adaptation") or {}
+    needs_build = [r for r in rows if r.get("tool_escalation")]
     if needs_build:
+        def why(r):
+            return (str((adapted.get(r["id"]) or {}).get("tool_escalation") or "").strip()
+                    or r.get("what_it_would_be") or "a build, not a document")
         notes.append("formats.json: %d of these cannot be written from desk research — they need a "
-                     "real build or data nobody holds yet (%s). The reason per idea is in "
-                     "_work/formats/adaptations.json under tool_escalation."
-                     % (len(needs_build), "; ".join("%s: %s" % (a["asset"][:40], a["tool_escalation"])
-                                                    for a in needs_build[:3])))
+                     "real build or data nobody holds yet (%s). Each row carries the flag and what "
+                     "it would be; the reason is in _work/formats/adaptations.json."
+                     % (len(needs_build), "; ".join("%s: %s" % (r["title"][:40], why(r)[:60])
+                                                    for r in needs_build[:3])))
 
     unscored = [r["id"] for r in rows if r.get("beatability") is None or not r.get("effort")]
     if unscored:

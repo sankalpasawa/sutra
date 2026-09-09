@@ -4476,5 +4476,108 @@ class TestDeclarationsInThePage(unittest.TestCase):
                                 side_effect=RuntimeError("boom")):
             self.assertEqual(A._declarations_attr(), "")
 
+class TestChatsAreSutrasOwn(unittest.TestCase):
+    """GET /api/sessions fills the app's own Chats folder, and it must list only chats that
+    HAPPENED IN SUTRA.
+
+    session_reader.list_sessions enumerates every transcript on the machine, because it is also
+    the reader behind "open this id" and has to see everything. This endpoint is not that, and it
+    was handing the Chats folder every conversation the founder had ever had in VS Code, in a
+    terminal, or in anything else that writes to ~/.claude/projects. Measured on his disk before
+    the fix: 20,255 transcripts listed, one of which was a Sutra chat.
+
+    In-process rather than through the uvicorn subprocess the rest of this file uses: the point
+    of the test is which files on disk are and are not listed, so it has to own both trees --
+    ~/.claude/projects and ~/.sutra-ui/chats -- and a subprocess would read the real ones.
+    """
+
+    def setUp(self):
+        import session_reader, chat_store
+        from pathlib import Path
+        self.tmp = tempfile.mkdtemp(prefix="sutra-chats-test-")
+        self.projects = Path(self.tmp) / "projects"
+        (self.projects / "myproject").mkdir(parents=True)
+        self.ids = {}
+        for key, title in (("mine", "A chat started in Sutra"),
+                           ("vscode", "A chat from VS Code"),
+                           ("terminal", "A chat from a terminal")):
+            sid = "%s-0000-0000-0000-00000000000%d" % (key[:8].ljust(8, "0"), len(self.ids))
+            (self.projects / "myproject" / (sid + ".jsonl")).write_text(
+                json.dumps({"type": "user", "cwd": "/w", "gitBranch": "main",
+                            "message": {"role": "user", "content": title}}) + "\n",
+                encoding="utf-8")
+            self.ids[key] = sid
+        # All THREE trees, not just Claude's: list_sessions globs the codex and deepseek roots
+        # too, so leaving those pointed at the real home would let this machine's own transcripts
+        # into a test about which transcripts get listed.
+        empty = Path(self.tmp) / "no-such-tree"
+        self._patches = [mock.patch.object(session_reader, "PROJECTS", self.projects),
+                         mock.patch.object(session_reader, "GEMINI_ROOT", empty),
+                         mock.patch.object(session_reader, "CODEX_ROOT", empty)]
+        for pt in self._patches:
+            pt.start()
+        self.chats = os.path.join(self.tmp, "chats")
+        os.makedirs(self.chats)
+        # A real chat_store index, written the way chat_store writes it: only "mine" is claimed.
+        with open(os.path.join(self.chats, "_index.json"), "w", encoding="utf-8") as f:
+            json.dump({"claude:" + self.ids["mine"]: "a" * 32}, f)
+        self._env = mock.patch.dict(os.environ, {"SUTRA_UI_CHATS": self.chats})
+        self._env.start()
+        self.assertEqual(len(chat_store.index()), 1, "the fixture index is what this test thinks")
+
+    def tearDown(self):
+        self._env.stop()
+        for pt in self._patches:
+            pt.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_chats_that_happened_in_sutra_are_listed(self):
+        import app as A
+        rows = A.api_sessions(limit=100, offset=0)
+        self.assertEqual([r["id"] for r in rows], [self.ids["mine"]],
+                         "a transcript no Sutra chat claims does not belong in Sutra's list")
+        self.assertEqual(rows[0]["title"], "A chat started in Sutra")
+        self.assertEqual(rows[0]["sutra_id"], "a" * 32, "the row still carries the chat it belongs to")
+
+    def test_a_transcript_the_chat_claims_but_disk_lost_is_skipped_not_faked(self):
+        import app as A
+        os.remove(self.projects / "myproject" / (self.ids["mine"] + ".jsonl"))
+        self.assertEqual(A.api_sessions(limit=100, offset=0), [],
+                         "a row the operator cannot open is worse than no row")
+
+    def test_paging_walks_the_owned_chats_and_ends(self):
+        """Filtering INSIDE one window would return short pages, and a short page is how the
+        client knows it has reached the end -- so it would stop after the first screen. The page
+        is picked from the owned set instead, so offset means what it says."""
+        import app as A, chat_store
+        with open(os.path.join(self.chats, "_index.json"), "w", encoding="utf-8") as f:
+            json.dump({"claude:" + self.ids[k]: chr(97 + i) * 32
+                       for i, k in enumerate(("mine", "vscode", "terminal"))}, f)
+        self.assertEqual(len(chat_store.index()), 3)
+        page1 = A.api_sessions(limit=2, offset=0)
+        page2 = A.api_sessions(limit=2, offset=2)
+        self.assertEqual(len(page1), 2)
+        self.assertEqual(len(page2), 1, "the last page is short, which is how the end is known")
+        self.assertEqual(A.api_sessions(limit=2, offset=3), [], "and past the end is empty")
+        got = [r["id"] for r in page1 + page2]
+        self.assertEqual(sorted(got), sorted(self.ids.values()), "every owned chat, exactly once")
+
+    def test_the_escape_hatch_puts_the_unscoped_list_back(self):
+        """An unscoped list is the bug this constant exists to be able to reproduce -- for
+        diagnosing "where did my chat go", never for normal use."""
+        import app as A
+        with mock.patch.object(A, "SESSION_LIST_UNSCOPED", True):
+            rows = A.api_sessions(limit=100, offset=0)
+        self.assertEqual(len(rows), 3, "every transcript on disk, the way it used to be")
+
+    def test_scoping_never_reaches_into_the_reader_every_id_lookup_shares(self):
+        """The filter lives in the endpoint, not in session_reader: list_sessions is shared with
+        the id resolvers, and a chat opened by id or reached by a provider switch must still
+        resolve. If this ever moves down a layer, those break silently."""
+        import session_reader
+        self.assertEqual(len(session_reader.list_sessions(100, 0)), 3,
+                         "the reader still sees every transcript on disk")
+
+
 if __name__ == "__main__":
     unittest.main()

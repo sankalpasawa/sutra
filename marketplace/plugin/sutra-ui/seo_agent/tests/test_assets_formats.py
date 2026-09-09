@@ -281,6 +281,32 @@ ok("the adapt prompt is handed the scope, the voice, the product and the numbers
    and "Skills tests" in adapt_prompt and "Payroll" in adapt_prompt)
 ok("the adapt prompt refuses to ask for a brand fit", "Do NOT return a brand fit" in adapt_prompt)
 
+print("\nB — the build flag reaches the ROW, it is not left in the working file")
+built = [r for r in rows if r["tool_escalation"]]
+desk = [r for r in rows if not r["tool_escalation"]]
+ok("an idea that needs a real build says so ON THE ROW, which is what the merge and the write "
+   "phase read; it used to be asked for, written to adaptations.json and then dropped here",
+   len(built) == 1 and "Calculator" in built[0]["title"], [(r["title"], r["tool_escalation"]) for r in rows])
+ok("and the row says what the thing actually is, so the flag is never a bare boolean",
+   built and built[0]["what_it_would_be"].startswith("A four-input form"),
+   built and built[0].get("what_it_would_be"))
+ok("an idea a writer could build from desk research is NOT flagged",
+   desk and all(r["tool_escalation"] is False for r in desk),
+   [(r["title"], r["tool_escalation"]) for r in desk])
+ok("every row still carries exactly the shared schema and nothing else",
+   all(set(r) == set(cm.blank_idea("a2001", formats.METHOD)) for r in rows))
+
+print("\nF0 — one canonical name per format label")
+labels = [{"format": "Solution / product overview page"}, {"format": "Solution/product page"},
+          {"format": "How-to guide"}, {"format": "Login page"}]
+canon = formats.canonicalise(labels, say)
+ok("the tidier returns a mapping that accounts for every label it was given",
+   set(canon["map"]) == {r for r in ("Solution / product overview page", "Solution/product page",
+                                     "How-to guide", "Login page")}, canon["map"])
+ok("it never leaves a row with a blank format", all(r["format"] for r in labels), labels)
+ok("it marks every row junk or not, so nothing downstream has to guess",
+   all("format_junk" in r for r in labels), labels)
+
 print("\nC — the real gate, and the one place brand_fit is decided")
 kept_ids = {r["id"] for r in rows}
 ok("the idea that fails ownability is dropped",
@@ -385,7 +411,8 @@ print("\nprompts")
 ok("no prompt reached the model with an unfilled {{TOKEN}}", not UNFILLED, UNFILLED[:2])
 ok("every prompt this builder owns is on disk",
    all(os.path.exists(os.path.join(cm.PROMPTS, n + ".md")) for n in
-       ("formats-swipe-library", "formats-extra", "formats-prescreen", "formats-adapt", "formats-score")))
+       ("formats-swipe-library", "formats-extra", "formats-prescreen", "formats-adapt",
+        "formats-score", "formats-canonicalise")))
 
 print("\nStubbed model. Proves the plumbing, the code-enforced rules and resume, not judgment quality.")
 if FAILS:

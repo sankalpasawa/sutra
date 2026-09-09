@@ -7,16 +7,18 @@ Step 1 discover the commercial/product pages: code filters by the classified com
        types plus the recipe's URL signals; big kinds are capped per kind by traffic (FT_KIND_CAP).
 Step 2 collect the facts, one model call per page with the recipe's exact eight categories. Resumable.
 Step 3 fill the schema: pure assembly. Appendix A, the consolidation method and the mapping table are
-       lifted verbatim. A human-verified seed (brand/_seed/features-seed.md), when present, wins.
+       lifted verbatim. brand/pricing.md, the facts a person typed in by hand, wins over the crawl.
 Step 4 the quality gate (completeness, facts-only, consolidation), looped back to step 3, capped at 3.
 Step 5 the CTA page list: code only, from the crawl. features.md is prose a model wrote; a wrong URL in
        a call to action sends a reader to the wrong page, so the link targets are never a model's. The
        file's format belongs to brand/cta.py, which the Knowledge screen writes through too, so a page
        the owner added by hand survives this rebuild instead of being overwritten by it.
 
-Reads:  the catalogue, brand/type-roles.json, brand/brand-voice.md (pitch wording), brand/_seed/features-seed.md.
-Writes: brand/_work/features/{source-pages.json, facts.json, gate-round-N.json} · brand/features.md · brand/cta-pages.md
+Reads:  the catalogue, brand/type-roles.json, brand/brand-voice.md (pitch wording), brand/pricing.md.
+Writes: brand/pricing.md (the empty form, once) · brand/_work/features/{source-pages.json, facts.json,
+        gate-round-N.json, pricing-stamp.json} · brand/features.md · brand/cta-pages.md
 """
+import hashlib
 import json
 import re
 
@@ -27,6 +29,21 @@ from . import cta
 OUTPUT = "features.md"
 CTA_OUTPUT = cta.OUTPUT          # the format, and the file name, belong to brand/cta.py
 WORK = "_work/features/"
+
+# THE FACTS A CRAWLER CANNOT REACH. Some pages draw their prices with JavaScript, so those facts
+# are in neither the site catalogue nor the raw HTML; only a person with a browser can read them.
+# Testlify's whole pricing table is one, verified 2026-07-20 against testlify.com/pricing/.
+#
+# The original called this file `_seed/features-seed.md` and had a person fill it in by hand
+# (3-features/scripts/run_features.py::_seed). Sutra read the same path and called it authoritative
+# while nothing could ever write it: it is not a name the Knowledge tab offers, and the API's
+# filename rule rejects any path with a slash in it, so it could only ever be empty (finding 8.21).
+# Renamed to pricing.md on the owner's word, 2026-09-09: "we will not call it features seed or md,
+# we will call it pricing.md". Flat, at the top of the brand folder, so it is a plain name the
+# Knowledge tab can open, edit and save like any other brand file.
+PRICING = "pricing.md"
+LEGACY_PRICING = "_seed/features-seed.md"   # what the original called it; read once, then migrated
+STAMP = WORK + "pricing-stamp.json"         # the pricing.md that features.md was last filled from
 
 FT_KIND_CAP = 25            # product/competitor pages per kind, by traffic (pricing/compare/homepage/integrations always all)
 FT_BODY_CAP = 12000         # chars of one page body per facts prompt
@@ -122,6 +139,92 @@ def collect(co, pages, say, redo=False):
     return facts
 
 
+# ---- pricing.md: the human half of the facts ---------------------------------------------------
+
+def _squash(text):
+    """Whitespace collapsed, so a stray blank line is not mistaken for something somebody typed."""
+    return " ".join((text or "").split())
+
+
+def untouched(text):
+    """Is this still the blank form, with nothing typed into it?
+
+    Compared against the template itself rather than hunting for a placeholder marker. A person who
+    types their prices but leaves a line of the form's own wording behind still gets their prices
+    used, which is the only direction this is allowed to be wrong in: silently dropping the one
+    thing a crawler could never reach is the failure that matters.
+    """
+    return not (text or "").strip() or _squash(text) == _squash(cm.template("pricing"))
+
+
+def pricing():
+    """brand/pricing.md — the human-verified facts, or "" while the form is still blank.
+
+    Falls back to the original's own path and migrates it across, once. The owner has real prices
+    sitting in `_seed/features-seed.md` from before the rename and they must not be lost. The old
+    file is left where it is: it is his text, and deleting somebody's file to tidy up a rename is
+    not this builder's call.
+    """
+    text = cm.read(PRICING)
+    if not untouched(text):
+        return text
+    old = cm.read(LEGACY_PRICING)
+    if (old or "").strip():
+        cm.save(PRICING, old)
+        return old
+    return ""
+
+
+def ensure_pricing(say):
+    """Put the blank form on disk when it is not there. A file that does not exist has no door in
+    the Knowledge tab — nothing to open, nothing to type into — which is exactly how the seed
+    stayed permanently empty. The form is instantiated the way brand/writer_brief.py instantiates
+    its rulings file: present, obviously blank, and never mistaken for content by pricing()."""
+    if cm.exists(PRICING):
+        return False
+    cm.save(PRICING, cm.template("pricing"))
+    say("Put out the prices form", "brand/pricing.md — type in what your site draws with JavaScript")
+    return True
+
+
+def _fingerprint(text):
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _stamp():
+    cm.save(STAMP, {"pricing": _fingerprint(pricing()), "at": cm.today()})
+
+
+HAND_EDITED = "changed-by-hand"      # never equals a fingerprint, which is 64 hex characters
+
+
+def pricing_saved():
+    """Somebody saved pricing.md. Mark features.md as due a rebuild and return whether it is.
+
+    Called from the save that a person's edit goes through. It does no model work of its own: the
+    rebuild is slow, and a save must come back straight away.
+    """
+    if not cm.exists(OUTPUT):
+        return False                 # nothing built yet; the ordinary build will read pricing.md
+    cm.save(STAMP, {"pricing": HAND_EDITED, "at": cm.today()})
+    return True
+
+
+def pricing_stale():
+    """Was features.md filled from a different pricing.md than the one on disk now?
+
+    A MISSING stamp is not staleness. A features.md built before this stamp existed is no evidence
+    that anything changed, and a rebuild costs model calls; the stamp appears the first time fill()
+    runs, and from then on every change is caught.
+    """
+    if not cm.exists(OUTPUT):
+        return False
+    stamp = cm.read(STAMP)
+    if not isinstance(stamp, dict) or "pricing" not in stamp:
+        return False
+    return stamp["pricing"] != _fingerprint(pricing())
+
+
 # ---- steps 3 + 4 ------------------------------------------------------------------------------
 
 def _pool(facts):
@@ -134,7 +237,7 @@ def _pool(facts):
 
 
 def fill(co, facts, say, redo_notes=""):
-    seed = cm.read("_seed/features-seed.md")     # HUMAN-VERIFIED facts the crawler cannot reach; authoritative
+    seed = pricing()                 # HUMAN-VERIFIED facts the crawler cannot reach; authoritative
     voice = cm.read("brand-voice.md")[:VOICE_CHARS]
     p = cm.fill(cm.prompt("fill-schema"), brand=co["brand"], niche=co.get("niche_definition") or "",
                 schema=cm.template("features-schema"), method=cm.template("features-method"),
@@ -142,9 +245,18 @@ def fill(co, facts, say, redo_notes=""):
                 redo_notes=("\nREDO NOTES (fix these):\n%s\n" % redo_notes) if redo_notes else "")
     draft = cm.strip_fence(llm.text(p, timeout=llm.LONG_TIMEOUT))   # a whole document in one call
     cm.save(OUTPUT, draft)
-    say("Filled features.md", "%d words%s%s" % (cm.words(draft), "; the human-verified seed was applied" if seed else "",
+    _stamp()                         # this features.md was filled from THIS pricing.md
+    say("Filled features.md", "%d words%s%s" % (cm.words(draft), "; your typed-in prices were applied" if seed else "",
                                                  " (rebuilt with the gate's notes)" if redo_notes else ""))
     return draft
+
+
+def _flag_notes(draft):
+    n = cm.count_lines(draft, "⚑ HUMAN DECISION")
+    # The flag stays IN the document, where the quality gate depends on it and a reader sees the
+    # reasoning beside it. It is no longer counted at the owner: he asked for every "to confirm"
+    # badge gone, and a number with a symbol in front of it is exactly that.
+    return ["features.md: %d places where the pages disagreed and someone has to choose" % n] if n else []
 
 
 def gate(co, draft, round_n, say):
@@ -153,6 +265,50 @@ def gate(co, draft, round_n, say):
     cm.save(WORK + "gate-round-%d.json" % round_n, v)
     say("Quality gate, round %d" % round_n, "pass" if v.get("overall_pass") else "fail")
     return v
+
+
+def fill_and_gate(co, facts, say):
+    """Fill the schema, then the quality gate, looping back into the fill up to GATE_ROUNDS times.
+    Returns (draft, notes). The first build and a pricing.md rebuild both run exactly this."""
+    notes = []
+    draft = fill(co, facts, say)
+    for n in range(1, GATE_ROUNDS + 1):
+        v = gate(co, draft, n, say)
+        if v.get("overall_pass"):
+            break
+        if n < GATE_ROUNDS:
+            draft = fill(co, facts, say, redo_notes=str(v.get("redo_notes") or ""))
+        else:
+            notes.append("features.md: the quality gate still failed after %d rounds; the draft ships with its verdict" % n)
+    return draft, notes
+
+
+def rebuild_from_pricing(co, say):
+    """pricing.md changed under a features.md that was already built, so fill it again.
+
+    NO CRAWL. _work/features/facts.json is what the pages themselves said, and a price the crawler
+    could never see does not change any of it; only the fill and the gate run again. Returns None
+    when those cached facts are not on file, and the caller then runs the whole builder.
+
+    THE CHAIN IS ONE HOP, DELIBERATELY (the owner's decision, 2026-09-09):
+
+        pricing.md  ->  features.md            rebuilt, here
+        features.md ->  writing-integrity.md   NOT rebuilt, his call
+                    ->  writer-brief.md        NOT rebuilt, his call
+
+    His words: "we can skip writing integrity, we can skip the writer brief as well. So just update
+    the features.md, which is used while writing the final article." write/wrapper.py opens
+    features.md fresh for every article, so the writer picks up a new price with no rebuild at all.
+    Do not "fix" this by extending the chain.
+    """
+    facts = cm.read(WORK + "facts.json")
+    if not isinstance(facts, list) or not facts:
+        say("Cannot rebuild from your prices alone", "the pages this pack was read from are not on file, so the whole builder runs")
+        return None
+    say("Your prices changed", "filling features.md again from the %d pages already read; nothing is read again" % len(facts))
+    draft, notes = fill_and_gate(co, facts, say)
+    notes += _flag_notes(draft)
+    return {"files": [OUTPUT] + ([CTA_OUTPUT] if cm.exists(CTA_OUTPUT) else []), "needs_review": notes}
 
 
 # ---- step 5: the CTA page list (code only) -----------------------------------------------------
@@ -198,6 +354,13 @@ def build_cta_pages(co, facts, pages, say):
 # ---- the builder ------------------------------------------------------------------------------
 
 def run(co, say, redo=False):
+    # The form first, always: a file that is not on disk has no door in the Knowledge tab, and a
+    # door nobody can open is how the seed stayed empty for good.
+    ensure_pricing(say)
+    if cm.exists(OUTPUT) and not redo and pricing_stale():
+        out = rebuild_from_pricing(co, say)
+        if out is not None:
+            return out
     cm.require_traffic("The product facts builder")
     if cm.exists(OUTPUT) and cm.exists(CTA_OUTPUT) and not redo:
         say("Kept features.md and cta-pages.md", "already built; ask for a redo to rebuild them")
@@ -211,22 +374,9 @@ def run(co, say, redo=False):
         say("Kept features.md", "already built")
         draft = cm.read(OUTPUT)
     else:
-        draft = fill(co, facts, say)
-        for n in range(1, GATE_ROUNDS + 1):
-            v = gate(co, draft, n, say)
-            if v.get("overall_pass"):
-                break
-            if n < GATE_ROUNDS:
-                draft = fill(co, facts, say, redo_notes=str(v.get("redo_notes") or ""))
-            else:
-                notes.append("features.md: the quality gate still failed after %d rounds; the draft ships with its verdict" % n)
-    n_flags = cm.count_lines(draft, "⚑ HUMAN DECISION")
-    if n_flags:
-        # The flag stays IN the document, where the quality gate depends on it and a reader sees
-        # the reasoning beside it. It is no longer counted at the owner: he asked for every "to
-        # confirm" badge gone, and a number with a symbol in front of it is exactly that.
-        notes.append("features.md: %d places where the pages disagreed and someone has to choose"
-                     % n_flags)
+        draft, gate_notes = fill_and_gate(co, facts, say)
+        notes += gate_notes
+    notes += _flag_notes(draft)
     rows, _dropped = build_cta_pages(co, facts, pages, say)
     if not rows:
         notes.append("cta-pages.md: no page survived the filters, so a close has nothing to link to")

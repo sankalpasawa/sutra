@@ -1141,7 +1141,17 @@ function render(){
   document.getElementById("app").classList.toggle("railcol", !!S.ui.navCollapsed);
 
   const [t,src] = TITLES[S.screen];
-  const open = S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
+  /* AGENTS OPENS ALONE (owner, 2026-09-09: the right-hand panel "should never appear there at
+     all", not "should be tidied"). The Agents destination is not a screen with a pane beside it:
+     .pane.agwide already carries three columns of its own -- agent, conversation, review panel --
+     and takes `flex:1 1 100%` for exactly that reason. Any session pane left open from Chats was
+     still rendered after it, so an unrelated conversation sat on the right of the SEO Writer and
+     squeezed all three columns, on a screen nobody had asked to share.
+     S.openPanes is NOT touched: those panes are still open, the rail still lists them, and
+     leaving Agents brings them back exactly as they were. This decides only what PAINTS. */
+  const soloScreen = S.screen === "agents";
+  const open = soloScreen ? []
+    : S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
   const bCol = !!S.ui.paneCollapsed.browse;
   /* a dragged width wins over the default flex ratio; without a drag the pane
      keeps the original `flex:1 1 480px` and nothing about the layout changed.
@@ -1209,7 +1219,7 @@ function render(){
              aria-orientation="vertical" aria-label="Resize the browse pane
              (left and right arrows adjust, home resets)"></button>` : ""))
     + open.map(sessionPane).join("")
-    + (bClosed && !open.length
+    + (bClosed && !open.length && !soloScreen
         ? `<p style="padding:24px 28px;font-size:12px;color:var(--faint)">
              Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
   if (panesEl && panesEl.__lastPanesHtml !== panesHtml){

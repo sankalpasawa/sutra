@@ -15,6 +15,5 @@ optional: with no file there, the build resolves everything itself.
 
 ## What tends to need a row
 
-- **The byline**, when the voices file offers several and the company has settled on one.
 - **A term with an exception**, when the company would rather lose the exception than keep the ambiguity.
 - **A position the company has changed** since the source documents were written.

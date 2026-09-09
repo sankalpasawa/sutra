@@ -16,13 +16,20 @@ Rules (all measured):
   "media" (the platform's file library — attachments, not site pages).
 - per_page=100 exactly (101 -> HTTP 400).
 - "No more data" is ONLY rest_post_invalid_page_number; any other failure retries in fetch.
-- Pagination is driven by the authoritative X-WP-Total, not by "a short page means the end".
-- A persistent 5xx makes the whole TYPE unavailable: its size is UNKNOWN (reported, never assumed
-  empty). The original bisected to corner one poisoned record; the agent does not — it reports.
+- Pagination is driven by the authoritative X-WP-Total, not by "a short page means the end" —
+  after a bisection a page IS legitimately short, and short must never mean the end.
+- A CMS that cannot render ONE item answers 5xx for the WHOLE batch that item lands in. Retrying
+  it can never succeed and giving up on the type would throw away the healthy items around it, so
+  the failing range is BISECTED until the poison is cornered at a single item, recorded in
+  `unreadable` by position. One unrenderable item costs itself, never its type.
+- More than MAX_UNREADABLE_PER_TYPE items failing individually means the ENDPOINT is failing, not
+  its records: stop bisecting and report the whole TYPE as unavailable, its size UNKNOWN (never
+  assumed empty), rather than minting one false "gap" per item.
 - 401/403 on page 1 = not publicly listable (skipped, not a failure).
 - An HTML body where JSON was expected = BLOCKED (loud), never an empty layer.
-- collected + withheld == X-WP-Total, where withheld is what the CMS counts but declines to serve
-  an anonymous client (private/draft/protected). A shortfall WITH errors is never read benignly.
+- collected + unreadable + withheld == X-WP-Total, where withheld is what the CMS counts but
+  declines to serve an anonymous client (private/draft/protected). A shortfall WITH errors is
+  never read benignly: that reading is only available when every request answered 200.
 
 The rendered bodies stay in fetch's raw cache (api_page says which cached API page holds each
 URL's content) — extract.py re-reads them OFFLINE; this file stays light.
@@ -59,20 +66,42 @@ def _code(text):
         return ""
 
 
-def _page(fx, slug, base, api, page, state):
-    """One page of a type's results. Returns the item list, or None at the genuine end."""
-    url = "%s/%s?per_page=%d&page=%d&_fields=%s" % (api, base, settings.WP_PER_PAGE, page, FIELDS)
-    r = fx.get(url)
+def _largest_proper_divisor(n):
+    """The biggest d < n that divides n — the bisection ladder for a page size (100 -> 50 -> 25 ->
+    5 -> 1). A DIVISOR keeps every sub-page aligned to the parent's item range, so the `page`
+    arithmetic stays exact; halving an odd size would straddle boundaries and silently re-ask the
+    wrong items."""
+    for d in range(n // 2, 0, -1):
+        if n % d == 0:
+            return d
+    return 1
+
+
+def _page(fx, slug, base, api, page, state, per_page=None, unreadable=None):
+    """One page of a type's results. Returns the item list, or None at the genuine end.
+
+    On a persistent SERVER error this range is re-asked in smaller aligned slices until the item
+    the CMS cannot render is cornered alone and recorded in `unreadable` by position. Measured on
+    a real site: one unrenderable record 5xx'd its whole 100-item page and would otherwise have
+    cost that type's other 150 items.
+    """
+    per_page = settings.WP_PER_PAGE if per_page is None else per_page
+    unreadable = [] if unreadable is None else unreadable
+    full = per_page == settings.WP_PER_PAGE          # a full-size page, not a bisection probe
+    url = "%s/%s?per_page=%d&page=%d&_fields=%s" % (api, base, per_page, page, FIELDS)
+    # The parent range already proved this fails persistently, so a probe does not re-prove it
+    # six times over: that turns cornering one bad record into minutes of retries.
+    r = fx.get(url, attempts=None if full else settings.BISECT_ATTEMPTS)
     if r.status == 400:
         if _code(r.text) == "rest_post_invalid_page_number":
             return None                              # the one GENUINE end-of-data signal
         raise _TypeUnavailable("unexpected HTTP 400 at page %d: %s" % (page, r.text[:120]))
-    if r.status in (401, 403) and page == 1:
+    if r.status in (401, 403) and page == 1 and full:
         raise _NotListable("not publicly listable (HTTP %d)" % r.status)
     if r.status == 404:
         # A type can be DECLARED in /types while its collection route is never registered. The
         # CMS says so precisely — trust its own error code, don't infer it from the bare 404.
-        if _code(r.text) == "rest_no_route" and page == 1:
+        if _code(r.text) == "rest_no_route" and page == 1 and full:
             raise _NotListable("declared by the CMS but has no collection route")
         raise _TypeUnavailable("HTTP 404 at page %d" % page)
     if r.status == 200:
@@ -94,8 +123,26 @@ def _page(fx, slug, base, api, page, state):
         raise _TypeUnavailable("no response from the server at page %d — a network failure, not a "
                                "CMS error (%s)" % (page, r.headers.get("_fetch_error", "")))
     if 500 <= r.status < 600:
-        raise _TypeUnavailable("HTTP %d at page %d — the CMS cannot render this range; its size is "
-                               "unknown from this source" % (r.status, page))
+        # A persistent server error on a RANGE. Any error here forfeits the benign reading of a
+        # later shortfall (run() checks state["errors"]): a server that is failing is not a server
+        # that is declining.
+        state["errors"] = state.get("errors", 0) + 1
+        start = (page - 1) * per_page                # 0-based index of this range's first item
+        if per_page == 1:
+            unreadable.append(start + 1)
+            # A poisoned record is rare and isolated. Many of them in one type means the ENDPOINT
+            # is broken, so every further probe just mints another false "gap" — stop and say so.
+            if len(unreadable) > settings.MAX_UNREADABLE_PER_TYPE:
+                raise _TypeUnavailable("%d items failed individually (HTTP %d) — the endpoint is "
+                                       "failing, not its records" % (len(unreadable), r.status))
+            return []
+        d = _largest_proper_divisor(per_page)
+        out = []
+        for k in range(per_page // d):
+            got = _page(fx, slug, base, api, start // d + k + 1, state, per_page=d,
+                        unreadable=unreadable)
+            out += got or []                         # None here is a short slice, never the end
+        return out
     raise _TypeUnavailable("unexpected HTTP %d at page %d" % (r.status, page))
 
 
@@ -147,17 +194,18 @@ def run(fx, site, say):
     # 2) paginate every type; assert X-WP-Total per type
     urls, per_type, unavailable, blocked = {}, {}, {}, []
     for slug, base, api in rest_bases:
-        state, items = {"total": None, "saw_200": False}, []
+        state, items, unreadable = {"total": None, "saw_200": False}, [], []
         try:
-            first = _page(fx, slug, base, api, 1, state)
+            first = _page(fx, slug, base, api, 1, state, unreadable=unreadable)
             items = first or []
             total = state["total"]
             if total is None:
                 raise _TypeUnavailable("answered 200 but sent no X-WP-Total header — its size cannot be verified"
                                        if state["saw_200"] else "no count header was ever served")
-            # Drive pagination from the AUTHORITATIVE count, never from "this page looks short".
+            # Drive pagination from the AUTHORITATIVE count, never from "this page looks short" —
+            # after a bisection a page is legitimately short.
             for page in range(2, -(-total // settings.WP_PER_PAGE) + 1):
-                got = _page(fx, slug, base, api, page, state)
+                got = _page(fx, slug, base, api, page, state, unreadable=unreadable)
                 if got is None:
                     break
                 items += got
@@ -192,12 +240,26 @@ def run(fx, site, say):
                 "api_page": it.get("_api_page", ""),
             }
         collected = len(items)
-        # Every request answered 200 (anything else raised above), so a shortfall means the CMS is
-        # DECLINING, not failing: records an anonymous client may not read.
-        withheld = max(0, total - collected)
+        withheld = max(0, total - collected - len(unreadable))
+        if withheld and state.get("errors"):
+            # A shortfall is this engine's most dangerous symptom (2,000 of 3,623 pages once went
+            # missing this way), so it may only be read benignly under a strict condition: every
+            # request for this type answered 200. Then the server is not failing, it is DECLINING
+            # — its count includes records an anonymous client may not read. With an error in the
+            # run that reading is void, and an unexplained shortfall is never called "withheld".
+            unavailable[slug] = {"rest_base": base, "reason":
+                                 "collected %d + %d unreadable is %d short of the CMS's own count "
+                                 "%d, with %d request error(s) — the difference is unexplained, so "
+                                 "this type's size is not trusted"
+                                 % (collected, len(unreadable), withheld, total, state["errors"])}
+            say("A content type does not add up", "%s: %s" % (slug, unavailable[slug]["reason"][:140]))
+            continue
         per_type[slug] = {"rest_base": base, "total": total, "collected": collected,
-                          "unreadable": [], "withheld": withheld}
+                          "unreadable": unreadable, "withheld": withheld}
         note = "%d of %d" % (collected, total) + ((", %d not served to the public" % withheld) if withheld else "")
+        if unreadable:
+            note += (", %d the site itself cannot render (item %s) — a known gap, not a lost page"
+                     % (len(unreadable), ", ".join(str(i) for i in unreadable[:5])))
         say("Listed %s" % slug, note)
 
     doc = {"domain": site["host"], "skipped": None, "wordpress_url": root, "types": per_type,

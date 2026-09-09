@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
+from . import source_match
 
 MAX_SECTIONS = 8
 PASSAGES_PER_SOURCE = 6      # per section, per source, best first
@@ -105,6 +106,20 @@ def build(curated, article, say=None):
             "sources": [{"n": index[u], "url": u, "title": pages[u].get("title", "")} for u in order]}
 
 
+def healthy(doc):
+    """Is this dossier a real one, or did the write-up come back a stub? (words, ok).
+
+    The gate, ported from `14-research-conductor/scripts/run_research.py::_storm_ok` +
+    `config.STORM_MIN_WORDS`. The conversation can finish, the section writes can all return
+    something, and the dossier still land at a few hundred words because the write calls came back
+    near-empty. His reasoning, kept: a healthy dossier runs to thousands of words and a failed one
+    to a few hundred, so the floor separates them cleanly, and a dud is not allowed through because
+    everything downstream is built on it.
+    """
+    words = int((doc or {}).get("words") or 0)
+    return words, words >= _c.DOSSIER_MIN_WORDS
+
+
 def sources_block(sources):
     """The numbered source list, for the harvest and for the run's saved dossier."""
     return "\n".join("[%d] %s — %s" % (s["n"], s.get("title") or "", s["url"]) for s in sources)
@@ -115,13 +130,22 @@ def sources_block(sources):
 _CITE = None
 
 
-def harvest(doc, say=None):
+def harvest(doc, pages=None, say=None):
     """Cards out of the dossier, one parallel call per section, the way harvest_storm.py does.
 
     Every verbatim is checked as a real substring of the section it claims to come from, and its
     [n] markers are resolved through the dossier's own source index. A card whose quote is not
     really there is dropped and counted; a card with no resolvable citation keeps its section's
     sources, so a cross-source claim never loses its provenance.
+
+    THE ONE EXCEPTION IS A NUMBER (2026-09-10, porting harvest_storm.py's fallback). The section's
+    source list is provenance for a cross-source claim, but for a FIGURE it reads as an attribution
+    and is not one: the number ends up credited to up to ten pages, most of which never said it, and
+    that ships as a citation in a real article. So a numeric card with no [n] goes through
+    source_match.recover first — an offline match of the claim against the passages the research
+    actually retrieved, free and with no model call. Matched, it gets that one real URL and
+    `source_recovered`. Unmatched, it gets NO url and is stamped `needs_source`, which the write
+    phase's verifier and the research doc both read.
     """
     import re
     global _CITE
@@ -130,7 +154,8 @@ def harvest(doc, say=None):
     by_n = {s["n"]: s["url"] for s in (doc.get("sources") or [])}
     sections = [s for s in (doc.get("sections") or []) if s.get("md")]
     if not sections:
-        return {"cards": [], "dropped_verbatims": 0}
+        return {"cards": [], "dropped_verbatims": 0, "recovered_sources": 0, "needs_source": 0}
+    index = source_match.build_index(pages)
 
     def one(sec):
         text = sec["md"]
@@ -143,7 +168,7 @@ def harvest(doc, say=None):
                 out = []
             if isinstance(out, dict):
                 out = out.get("cards") or []
-            cards, dropped = [], 0
+            cards, dropped, recovered, unsourced = [], 0, 0, 0
             for c in (out or []):
                 if not isinstance(c, dict):
                     continue
@@ -154,23 +179,41 @@ def harvest(doc, say=None):
                 if _c.norm(vb) not in norm_text:        # anti-fabrication: it must really be there
                     dropped += 1
                     continue
+                card = {"gloss": gloss, "verbatim": vb, "source_urls": [],
+                        "internal_link": None, "tag": "evidence",
+                        "heading": sec["title"][:120],
+                        "origin": "dossier/%s" % sec["title"][:60]}
                 urls = [by_n[int(n)] for n in _CITE.findall(vb) if int(n) in by_n]
-                if not urls:
+                if not urls and source_match.has_number(vb):
+                    url, _phrase = source_match.recover(vb, index)
+                    if url:
+                        urls = [url]
+                        card["source_recovered"] = True
+                        recovered += 1
+                    else:
+                        # NO url. A number credited to a page that never carried it is worse than a
+                        # number openly marked as unsourced, and the stamp is what the verifier reads.
+                        card["needs_source"] = True
+                        unsourced += 1
+                elif not urls:
                     urls = list(sec.get("sources") or [])   # a cross-source claim keeps its section's
-                cards.append({"gloss": gloss, "verbatim": vb, "source_urls": urls,
-                              "internal_link": None, "tag": "evidence",
-                              "heading": sec["title"][:120],
-                              "origin": "dossier/%s" % sec["title"][:60]})
+                card["source_urls"] = urls
+                cards.append(card)
             if cards:
-                return cards, dropped
-        return [], 0
+                return cards, dropped, recovered, unsourced
+        return [], 0, 0, 0
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         results = list(pool.map(one, sections))
-    cards = [c for rows, _ in results for c in rows]
-    dropped = sum(d for _, d in results)
+    cards = [c for rows, _d, _r, _u in results for c in rows]
+    dropped = sum(r[1] for r in results)
+    recovered = sum(r[2] for r in results)
+    unsourced = sum(r[3] for r in results)
     if say:
         say("Pulled %d fact%s out of the dossier" % (len(cards), "" if len(cards) == 1 else "s"),
             "One card per distinct fact, quoted word for word"
-            + ("; %d quotes did not match and were thrown out" % dropped if dropped else ""))
-    return {"cards": cards, "dropped_verbatims": dropped}
+            + ("; %d quotes did not match and were thrown out" % dropped if dropped else "")
+            + ("; %d figure(s) traced back to the page that stated them" % recovered if recovered else "")
+            + ("; %d figure(s) could not be traced and are marked needs_source" % unsourced if unsourced else ""))
+    return {"cards": cards, "dropped_verbatims": dropped,
+            "recovered_sources": recovered, "needs_source": unsourced}

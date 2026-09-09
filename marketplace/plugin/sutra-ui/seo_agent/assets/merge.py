@@ -66,6 +66,33 @@ POOL_BLANKS = ("format", "angle", "brand_fit", "transplant_from", "beatability",
 
 FIT_ORDER = {"CORE": 0, "TRANSPLANT": 1, "ADJACENT": 2}
 
+# --- step 3: the relevance recheck (the original's E7) -------------------------------------------
+# WHY THE STEP EXISTS. Every idea on this sheet was already reasoned about — but by a pass that saw
+# ONE competitor page, ONE imported format or ONE audience tension at a time, and a judge reading
+# one thing at a time is generous. So junk survives: self-referential product and pricing pages the
+# URL filter never caught ("<Company> Pricing Calculator"), and off-brand subjects the per-page skip
+# missed. This pass is the opposite: it reads the FINISHED idea, with the brand scope in front of
+# it, and removes the obvious junk only. The owner added it on 2026-07-22 for exactly that.
+#
+# FOUR RULES, all four the original's:
+#   ATOMIC      one verdict per idea, never per group. Good data hides inside a bad group.
+#   PROTECT     an idea whose proof carries RELEVANCE_PROTECT_DOMAINS or more linking domains is
+#               never even shown to the judge, so it cannot be dropped whatever the judge thinks.
+#               The measurement is harder evidence than an opinion.
+#   CAPPED      a judge that wants to drop more than RELEVANCE_DROP_CAP of the sheet is wrong about
+#               the sheet, not right about the ideas. The whole pass is refused and says so.
+#   PROPOSE     it proposes; it never deletes. Every drop, with its reason, goes to an audit file.
+RELEVANCE_BATCH = 30            # ideas per judge call. Title and angle only, so they fit comfortably
+RELEVANCE_PROTECT_DOMAINS = 50  # follow domains across an idea's proof above which it is untouchable
+RELEVANCE_DROP_CAP = 0.15       # more than this proposed and the pass is refused, not applied
+# ...but a fraction alone cannot govern a small sheet. His pools run to a couple of thousand ideas,
+# where 15% is three hundred; Sutra's can be a couple of dozen, where 15% is three and a single
+# honest drop out of six reads as 17% and refuses itself. That would make the pass unable to ever
+# do anything on exactly the sheets a person is most likely to be looking at. So the cap is the
+# LOOSER of the two: a percentage on a big sheet, a small absolute number on a small one. The rule
+# it is enforcing is unchanged — a judge that wants to gut the sheet has misread the scope.
+RELEVANCE_MIN_DROPS = 3         # always allowed, however small the sheet
+
 
 # ---- step 1: stack -----------------------------------------------------------------------------
 
@@ -157,10 +184,19 @@ def _methods_line(methods):
 def clusters(rows, say):
     """Groups of rows an embedding thinks might be the same idea. Cross-method pairs only.
 
-    Each method already de-duplicated its own pool, so a within-method pair here is either a repeat
-    that method chose to keep or a pair it already judged distinct. Re-litigating it would be a
-    second opinion on a decision that is not this step's to make. The original restricts the
-    nomination the same way, for the same reason.
+    A within-method pair is that method's own business: it is either a repeat the method chose to
+    keep or a pair it already judged distinct, and re-litigating it here would be a second opinion
+    on a decision that is not this step's to make. The original restricts the nomination the same
+    way, for the same reason.
+
+    THAT ONLY HOLDS BECAUSE EACH METHOD REALLY DOES DE-DUPLICATE ITSELF, and on 2026-09-09 this
+    comment claimed it as a fact when it was not one. The competitor pool was de-duplicated by
+    `competitors._collapse`, a normalised STRING key, which merges "Python Skills Test" with
+    "Python Skills Test (Free)" and leaves "Coding Assessment (Python)" beside it as a separate
+    idea — the owner measured 97 such pairs on one real pool. So this step skipped the pair AND
+    method 1 had never judged it, and the near twins reached the sheet. `competitors._dedup` now
+    does the same embed-then-adjudicate pass inside that pool, which is what makes the sentence
+    above true rather than merely written down.
     """
     texts = [("%s — %s" % (r.get("title") or "", r.get("angle") or "")).strip(" —") for r in rows]
     V = np.nan_to_num(np.asarray(voyage.embed(texts, "document"), dtype=np.float32))
@@ -312,6 +348,107 @@ def dedup(rows, brand, say):
     return kept, report
 
 
+# ---- step 3: the relevance recheck --------------------------------------------------------------
+
+def _domains(row):
+    """The linking domains behind an idea, summed across its proof. The same number `rank` uses."""
+    return sum(int(p.get("domains") or 0) for p in (row.get("proof") or []) if isinstance(p, dict))
+
+
+def relevance(rows, scope, brand, say):
+    """Step 3. Read the finished sheet with fresh eyes and PROPOSE the ideas that do not belong.
+
+    Reads:  the deduplicated sheet, and assets/scope.md — the same ownership anchor all three
+            methods judged against, so the recheck and the methods argue from one document
+    Writes: assets/_work/merge/relevance-verdicts.json   every verdict, keep and drop alike
+            assets/_work/merge/relevance-drops.json      just the proposed drops, with reasons
+
+    Returns (rows, report). Nothing is removed from the sheet. A proposed drop is written onto its
+    row as `relevance` and the row keeps its place, its reason and its proof, where a person can
+    read the reason and disagree with it.
+
+    THE ONE PLACE THIS PARTS COMPANY WITH THE ORIGINAL, and why. His step proposes into a file and
+    a person then re-runs it with --apply to remove the rows; between the two there is no
+    consequence at all. Sutra's sheet is live — `_common.next_open` offers the top-ranked open idea
+    as the next thing to write — so a proposal with no consequence would leave a "<Company> Pricing
+    Calculator" sitting at rank 1, which is the exact outcome the step exists to prevent. So a
+    proposed drop is ranked LAST instead, beside the ideas a method judged unownable, which is the
+    treatment this file already gives a verdict of that kind. Visible, reversible, and nothing is
+    deleted.
+
+    The judge is handed the brand scope, never just the titles. A model asked "does this belong?"
+    without being shown what belongs guesses generously, and generously here means dropping real
+    ideas: the same failure once fired a uniqueness flag on 14 of 18 sections.
+    """
+    if not rows:
+        return rows, {"judged": 0, "proposed": 0, "protected": 0, "applied": False, "drops": []}
+
+    # PROTECT first, and by never asking. An idea this well proven cannot be dropped by a judge, so
+    # sending it costs money for an answer that would be ignored.
+    protected = [r for r in rows if _domains(r) >= RELEVANCE_PROTECT_DOMAINS]
+    candidates = [r for r in rows if _domains(r) < RELEVANCE_PROTECT_DOMAINS]
+    batches = [candidates[i:i + RELEVANCE_BATCH] for i in range(0, len(candidates), RELEVANCE_BATCH)]
+
+    def one(batch):
+        block = "\n".join(
+            "- id=%s · %s · [%s] · %s · angle: %s"
+            % (r.get("id"), (r.get("title") or "")[:110], r.get("format") or "?",
+               r.get("brand_fit") or "?", (r.get("angle") or "")[:130]) for r in batch)
+        out = llm.json_call(sh.fill(cm.prompt("merge-relevance"), brand=brand,
+                                    scope=scope or "(no brand scope on file)", rows=block)) or {}
+        verdicts = out.get("verdicts") if isinstance(out, dict) else out
+        return {str(v.get("id")): v for v in (verdicts or []) if isinstance(v, dict)}
+
+    got = {}
+    for _b, res, _err in bcm.parallel(one, batches, say=say,
+                                      label="Rechecking the ideas against the brand scope", every=5):
+        # A batch that failed leaves its ideas with no verdict, which reads as KEEP below. The
+        # conservative direction, and the one the original takes when a call errors.
+        if res:
+            got.update(res)
+
+    drops, verdicts = [], []
+    for r in rows:
+        v = got.get(str(r.get("id"))) or {}
+        drop = str(v.get("decision") or "").strip().upper() == "DROP"
+        why = str(v.get("reason") or "").strip() if drop else ""
+        verdicts.append({"id": r.get("id"), "title": r.get("title", ""),
+                         "decision": "DROP" if drop else "KEEP", "why": why,
+                         "judged": bool(v), "domains": _domains(r)})
+        if drop:
+            drops.append({"id": r.get("id"), "title": r.get("title", ""),
+                          "format": r.get("format", ""), "brand_fit": r.get("brand_fit", ""),
+                          "domains": _domains(r), "why": why})
+
+    share = len(drops) / max(len(rows), 1)
+    allowed = max(RELEVANCE_DROP_CAP * len(rows), RELEVANCE_MIN_DROPS)
+    capped = len(drops) > allowed
+    report = {"judged": len(candidates), "protected": len(protected), "proposed": len(drops),
+              "share": round(share, 4), "cap": RELEVANCE_DROP_CAP, "allowed": int(allowed),
+              "applied": not capped, "drops": drops, "at": store.now()}
+    cm.save(WORK + "relevance-verdicts.json", verdicts)
+    cm.save(WORK + "relevance-drops.json", report)
+
+    if capped:
+        # The cap is a statement about the JUDGE, not about the sheet. A pass that wants to throw
+        # away a fifth of the ideas has misread the scope, and applying it would gut a real sheet
+        # on one bad answer. So nothing is marked at all and a person is told the number.
+        say("Refused the relevance recheck",
+            "it wanted to drop %d of %d ideas (%.0f%%), past the %d this pass is allowed, so "
+            "nothing was marked" % (len(drops), len(rows), 100 * share, int(allowed)))
+        return rows, report
+
+    by_id = {d["id"]: d for d in drops}
+    for r in rows:
+        d = by_id.get(r.get("id"))
+        if d:
+            r["relevance"] = {"verdict": "drop proposed", "why": d["why"]}
+    say("Rechecked the ideas against the brand scope",
+        "%d proposed for dropping and ranked last, none deleted; %s were too well proven to be "
+        "questioned" % (len(drops), sh.plural(len(protected), "idea")))
+    return rows, report
+
+
 # ---- ranking -----------------------------------------------------------------------------------
 
 def rank(rows):
@@ -319,11 +456,12 @@ def rank(rows):
 
     The order, in keys:
       1. an idea a method judged this company CANNOT credibly own goes last, whatever else it
-         scores. It is not dropped: the row and its reason stay on the sheet where a person can
-         argue with them, and dropping is the finding method's call, not the merge's. An idea
-         nobody judged is a different thing and is NOT sent to the bottom here: it ranks normally
-         and is counted into a review note instead, because `judged: False` means the question was
-         never put, not that the answer was no.
+         scores, and so does one the relevance recheck proposed dropping. Neither is deleted: the
+         row and its reason stay on the sheet where a person can argue with them, and dropping is
+         the finding method's call, not the merge's. An idea nobody judged is a different thing and
+         is NOT sent to the bottom here: it ranks normally and is counted into a review note
+         instead, because `judged: False` means the question was never put, not that the answer
+         was no.
       2. brand fit, CORE before TRANSPLANT before ADJACENT. The original's first key.
       3. the Linkability score. This is where Sutra's ranking parts company with the original,
          which summed follow-domains and Reddit post counts to keep a strong trends idea from
@@ -336,10 +474,11 @@ def rank(rows):
     """
     def key(r):
         own = (r.get("ownability") or {}).get("verdict")
+        proposed = bool((r.get("relevance") or {}).get("verdict"))
         link = (r.get("linkability") or {}).get("score") or 0
         domains = sum(int(p.get("domains") or 0) for p in (r.get("proof") or [])
                       if isinstance(p, dict))
-        return (own is False,
+        return (own is False or proposed,
                 FIT_ORDER.get(str(r.get("brand_fit") or "").strip().upper(), 3),
                 -int(link), -len(r.get("method") or []), -domains, -len(r.get("proof") or []),
                 str(r.get("id") or ""))
@@ -380,6 +519,25 @@ def run(co, say, redo=False):
         notes.append("ideas.json: there is no Voyage key, so the same idea found by two methods is "
                      "still on the sheet twice. Add a key in Connections and redo the merge.")
         say("Skipped the duplicate check", "no Voyage key, so nothing could be matched by meaning")
+
+    # Step 3: the relevance recheck. It reads the FINISHED idea rather than the page or the post it
+    # came from, so it runs after the dedup (one verdict per surviving idea, not one per copy) and
+    # before the ranking (a proposed drop has to be able to reach the bottom of the sheet).
+    kept, recheck = relevance(kept, cm.read("scope.md") or "",
+                              co.get("brand") or "this company", say)
+    if recheck.get("proposed") and not recheck.get("applied"):
+        notes.append("ideas.json: the relevance recheck wanted to drop %d of %d ideas (%.0f%%), "
+                     "past the %d it is allowed, so it was refused and nothing was marked. That "
+                     "normally means scope.md does not say enough about what this company is NOT. "
+                     "Read _work/merge/relevance-drops.json."
+                     % (recheck["proposed"], len(kept), 100 * recheck["share"],
+                        recheck.get("allowed", 0)))
+    elif recheck.get("proposed"):
+        notes.append("ideas.json: %s do not look like they belong to this company, so they are "
+                     "ranked last rather than removed (%s). The reason for each is in "
+                     "_work/merge/relevance-drops.json; nothing was deleted."
+                     % (sh.plural(recheck["proposed"], "idea"),
+                        "; ".join(d["title"][:50] for d in recheck["drops"][:3])))
 
     ordered = rank(kept)
     for r in ordered:

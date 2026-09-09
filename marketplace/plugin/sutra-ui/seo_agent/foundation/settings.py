@@ -51,6 +51,12 @@ ROBOTS_DELAY_CAP = 30       # obey a Crawl-delay, but never slower than this
 
 # ---- enumeration (Stage 3) --------------------------------------------------------------------
 WP_PER_PAGE = 100           # WP REST page size (101 -> HTTP 400)
+MAX_UNREADABLE_PER_TYPE = 5 # more individually-failing items than this means the TYPE's endpoint
+                            # is broken, not its records — stop bisecting and report the type as
+                            # UNAVAILABLE rather than minting one false "gap" per item.
+BISECT_ATTEMPTS = 2         # retries per bisection probe when cornering an unrenderable item.
+                            # The parent range already proved the failure is persistent, so the
+                            # full FETCH_ATTEMPTS ladder would burn minutes re-proving it.
 SITEMAP_DEPTH_CAP = 5       # nested sitemap-index recursion cap (with cycle detection)
 ARCHIVE_MAX_PER_MIN = 55    # public-archive query ceiling (60/min hard; blocks double on repeat)
 ARCHIVE_429_SLEEP = 70      # seconds to sit out when the archive says slow down
@@ -76,6 +82,19 @@ SOFT404_MAX_WORDS = 150
 # ---- extraction (Stage 4) ---------------------------------------------------------------------
 EXTRACT_FAIL_CHARS = 250    # below this = failed -> escalate to the next ladder rung
 EXTRACT_STUB_CHARS = 400    # 250-400 = genuine stub, recorded as such
+EXTRACT_TIMEOUT = 20        # seconds of wall clock per page, then the extract is KILLED. The
+                            # original built this because trafilatura hangs on some real pages,
+                            # and the agent restored trafilatura without it: one page could stall
+                            # a whole crawl with nothing on screen to say why. The kill is a
+                            # SIGALRM inside the worker PROCESS, because trafilatura's own timeout
+                            # is signal-based and a thread cannot be interrupted at all.
+EXTRACT_WORKERS = 4         # extractor processes. Processes, not threads: the timeout above is a
+                            # signal, and only a process can be told to stop. Extraction is
+                            # offline (it reads the raw cache), so this touches no request rate.
+SPA_RENDER_CAP = 500        # rung 4 renders at most this many JS-only pages in the browser. A
+                            # render is seconds, not milliseconds, so an all-SPA site of thousands
+                            # of pages would run for hours. Past the cap the pages are recorded as
+                            # failed with the reason named, never silently dropped.
 FLAG_MEDIAN_FRAC = 0.25     # body < 25% of its type's median -> flagged for review
 REST_MIN_SHARE = 0.5        # the CMS-returned body is accepted outright only if it is at least
                             # this share of the LIVE page's text. Below it the CMS field is a

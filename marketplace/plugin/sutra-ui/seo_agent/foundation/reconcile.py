@@ -108,12 +108,23 @@ def _union(layers):
     return {rec["url"]: rec for rec in groups.values()}
 
 
-def _fetch_pass(fx, site, pages, say):
-    """Make sure every page is in the raw cache (resumable). Returns the fetch verdicts."""
+def _fetch_pass(fx, site, pages, say, force=()):
+    """Make sure every page is in the raw cache (resumable). Returns the fetch verdicts.
+
+    `force` names the URLs that must come from the NETWORK this pass, cache or no cache. A first
+    read never needs it; a refresh does, and the refresh had neither half of it. Found 2026-09-10:
+    a page the sitemap said had changed was (a) still sitting in the frontier as 'done' from the
+    first read, so no worker ever claimed it, and (b) served from the raw cache when one did. The
+    refresh then extracted the OLD saved copy and reported it as "re-read". Two lines, both here,
+    and the count was a lie for every changed page.
+    """
     urls = sorted(pages.keys())
+    force = set(force)
     fx.frontier_add(urls)
     fx.frontier_retry_failed(urls)
-    verdict = {"site_blocked": None, "circuit_broken": False, "page_blocked": 0}
+    if force:
+        fx.frontier_reset(sorted(force))          # 'done' from an earlier run = never handed out
+    verdict = {"site_blocked": None, "circuit_broken": False, "page_blocked": 0, "refetched": 0}
     shared = {"fail_streak": 0, "done": 0, "ok": 0, "stop": False}
     guard = threading.Lock()
     root = site["root"] + "/"
@@ -125,12 +136,15 @@ def _fetch_pass(fx, site, pages, say):
                 return                         # queue drained
             failed = False
             try:
-                r = fx.get(url)
+                r = fx.get(url, force=url in force)
                 failed = r.status == 0 or r.status >= 500
                 if failed:
                     fx.frontier_fail(url, "fetch failed (HTTP %d)" % r.status)
                 else:
                     fx.frontier_done(url)
+                    if url in force and not r.from_cache:
+                        with guard:            # what was PROVABLY read again, for the honest count
+                            verdict["refetched"] += 1
             except RobotsDisallowed:
                 fx.frontier_fail(url, "robots")
             except Blocked as e:

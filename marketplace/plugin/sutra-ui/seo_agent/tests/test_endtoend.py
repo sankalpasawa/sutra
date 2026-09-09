@@ -74,14 +74,37 @@ def ok(label, cond, extra=""):
 
 print("\ntools")
 tools = registry.WORK_TOOLS
-ok("eleven work tools: the seven that make an article, keeping Knowledge current, the setup "
-   "interview, and working out what is worth writing",
-   len(tools) == 11, [t["name"] for t in tools])
+# NAMES, NOT A COUNT. This assertion has been a hand-typed number three times now, and each time a
+# tool was added the failure said "12 != 11", which tells you nothing about which one arrived or
+# whether it was meant to. The set says what is missing and what is unexpected, by name.
+EXPECTED_WORK_TOOLS = {
+    "index_site", "build_page_index", "refresh_site", "import_traffic",   # Knowledge
+    "onboard", "learn_brand",                                             # the setup interview and the brand pack
+    "build_assets", "suggest_topics",                                     # working out what is worth writing
+    "run_research", "build_blueprint", "write_article",                   # making one article
+    "find_prompt",                                                        # which prompt owns a complaint
+}
+ok("the work tools are exactly the ones we mean to ship",
+   {t["name"] for t in tools} == EXPECTED_WORK_TOOLS,
+   {"missing": sorted(EXPECTED_WORK_TOOLS - {t["name"] for t in tools}),
+    "unexpected": sorted({t["name"] for t in tools} - EXPECTED_WORK_TOOLS)})
 ok("refreshing the catalogue, importing traffic, asking the setup questions and building the asset "
    "ideas are tools, not hidden buttons",
    {"refresh_site", "import_traffic", "onboard", "build_assets"} <= {t["name"] for t in tools})
 # The engine stops twice for a person, so the registry has to say it pauses. A tool the loop will
 # stop on that claims it does not is how a run looks hung to everyone watching it.
+# A MISSING LABEL IS INVISIBLE WITHOUT THIS. registry.label() falls back to the function name with
+# its underscores removed, which looks like a name and is not one: three tools shipped to the Tools
+# tab as "Refresh site", "Import traffic" and "Build assets" for months (owner finding 1.6). The
+# fallback can never be the answer for a tool we ship.
+ok("every work tool has a plain human name, not its function name",
+   all(t["name"] in registry.LABELS for t in tools),
+   [t["name"] for t in tools if t["name"] not in registry.LABELS])
+ok("and no name on the Tools screen is a function name wearing a capital letter",
+   not [r for r in registry.for_screen()
+        if r["label"] == r["name"].replace("_", " ").capitalize()],
+   [r["label"] for r in registry.for_screen()
+    if r["label"] == r["name"].replace("_", " ").capitalize()])
 ok("the asset engine declares that it pauses, because it stops twice for the user",
    next(t for t in tools if t["name"] == "build_assets")["pauses"] is True)
 ok("no credit gates: every work tool runs when called", all(t["gate"] == "auto" and not t.get("cost_credits") for t in tools))

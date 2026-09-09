@@ -90,13 +90,20 @@ WORK_TOOLS = [
             "Catalogue the company's whole website: every page, its full text with headings, "
             "and what each page ranks for. Finds pages from the CMS, the sitemaps, the web "
             "archive and a crawl, and checks its own coverage. Run ONCE at setup, FIRST, as soon "
-            "as you know the domain. Takes a while on a big site; it reports progress."
+            "as you know the domain. Takes a while on a big site; it reports progress. If the "
+            "catalogue fails its own coverage checks it is NOT saved and the tool says what "
+            "failed: read that to the user and fix the cause before running it again."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": False,
         "est_minutes": 15, "module": "tools.index_site",
         "input_schema": {"type": "object", "properties": {
             "domain": {"type": "string", "description": "The site, e.g. example.com"},
-            "max_pages": {"type": "integer", "description": "Cap on pages read. Default 3000."},
+            "max_pages": {"type": "integer", "description": "Cap on pages read. Default 0, meaning "
+                                                            "no cap: read the whole site."},
+            "accept_failed_checks": {"type": "boolean", "description":
+                "Save the catalogue even though it failed its own coverage checks. Only ever "
+                "after the person has read WHY it failed and said to go ahead anyway; never on "
+                "your own initiative, and never as a retry for the same failure."},
         }, "required": ["domain"]},
         "plain": {
             "does": "Reads the whole website and saves every page's text, headings and rankings.",
@@ -187,7 +194,7 @@ WORK_TOOLS = [
             "redo": {"type": "boolean", "description": "Ask every question again from the start. Default false."},
         }},
         "plain": {
-            "does": "Asks you the handful of things it cannot read off your website: your real numbers, your story, your byline and your rivals.",
+            "does": "Asks you the handful of things it cannot read off your website: your real numbers, your story and your rivals.",
             "when": "Once, when you first set up, after the site is read and before the brand pack is built.",
             "needs": "Nothing but you. Every question can be skipped.",
             "takes": "A few minutes, at your pace.",
@@ -325,6 +332,30 @@ WORK_TOOLS = [
             "takes": "Thirty minutes to an hour.",
         },
     },
+    {
+        "name": "find_prompt",
+        "description": (
+            "Find which prompt owns something the user disliked about how articles come out. Use "
+            "when the complaint is about how it ALWAYS reads — the intros are too long, it keeps "
+            "using the same sentence shape, the FAQ is padding — not about a single draft. Call it "
+            "with no name to get all fourteen editable prompts and what each one is responsible "
+            "for, then again with the one you picked to read its wording. Then quote the lines "
+            "causing it, propose replacement wording, and send them to the Prompts tab to make the "
+            "edit. You propose, they edit: there is no tool that lets you change a prompt yourself."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": False,
+        "est_minutes": 0, "module": "tools.find_prompt",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Leave empty for the whole list. Then the exact "
+                                                      "name from that list, e.g. write/wrapper."},
+        }},
+        "plain": {
+            "does": "Works out which prompt is behind something you did not like, and shows you its wording.",
+            "when": "When you say a thing always comes out wrong, not just in this article.",
+            "needs": "Nothing.",
+            "takes": "A moment.",
+        },
+    },
 ]
 
 ALL = UI_TOOLS + WORK_TOOLS
@@ -361,15 +392,24 @@ def est_minutes(name):
     return t.get("est_minutes", 0) if t else 0
 
 
+# EVERY WORK TOOL NEEDS A ROW HERE. label() falls back to the function name with its underscores
+# taken out, and that fallback is not a safety net, it is a leak: the Tools tab drew "Refresh site",
+# "Import traffic" and "Build assets" between "Learning the brand" and "Writing the article", so
+# three rows out of eleven read as code (owner finding 1.6, 2026-09-09). test_endtoend asserts the
+# work-tool set by name; this dict must cover all of it.
 LABELS = {
     "index_site": "Reading the website",
     "build_page_index": "Indexing the pages by meaning",
+    "refresh_site": "Catching up on what changed",
+    "import_traffic": "Loading a traffic file you already have",
     "onboard": "Asking the setup questions",
     "learn_brand": "Learning the brand",
+    "build_assets": "Working out what is worth writing",
     "suggest_topics": "Finding topic ideas",
     "run_research": "Researching the topic",
     "build_blueprint": "Building the article plan",
     "write_article": "Writing the article",
+    "find_prompt": "Finding which prompt owns that",
 }
 
 

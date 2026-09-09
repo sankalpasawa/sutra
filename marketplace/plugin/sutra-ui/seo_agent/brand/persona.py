@@ -2,7 +2,11 @@
 
 Port of 5-persona/scripts/run_persona.py. One model call with the recipe's exact prompt (lifted
 verbatim into prompts/brand/persona.md) and brand-voice.md pasted in. The one rule: a persona is
-the READER, never the author byline, and it is never named in the article.
+the READER, never whoever signs the article, and it is never named in the article.
+
+His run_persona.py:41 words that rule "never the author byline". The word went on 2026-09-09 with
+the rest of the byline feature ("remove completely everything about the byline questions, everything
+from Sutra for now"), because Sutra no longer has such a thing to point at. The rule is unchanged.
 
 Reads:  brand/brand-voice.md (its Audience Understanding section is the raw material).
 Writes: brand/_work/persona/personas.json · brand/persona.md
@@ -19,7 +23,7 @@ MIN_PERSONAS, MAX_PERSONAS = 3, 4
 def render(co, out):
     personas = out.get("personas") or []
     lines = ["# %s Reader Personas" % co["brand"], "",
-             "> A persona is the READER we write TO — never the author byline. Think about the persona;",
+             "> A persona is the READER we write TO — never whoever signs it. Think about the persona;",
              "> NEVER name or address them explicitly in the article. (persona.workflow.md, the one rule)", "",
              "| Persona | Who | Reads | Cares about | Depth & angle | Not this |",
              "|---|---|---|---|---|---|"]

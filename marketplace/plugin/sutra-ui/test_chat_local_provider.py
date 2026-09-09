@@ -755,14 +755,23 @@ class ReconnectAfterRefresh(_Server):
         self.assertEqual(row.get("sutra_id"), a,
                          "the row does not name its chat: %r" % (row,))
 
-    def test_a_row_belonging_to_no_chat_carries_none(self):
-        """A transcript written outside the panel has no chat record. It must
-        list, and say so, rather than be dropped or invent an id."""
+    def test_a_transcript_written_outside_the_panel_is_not_sutras_chat(self):
+        """REVERSED on the owner's ruling, 2026-09-09. This used to assert that a transcript
+        written outside the panel still LISTS, carrying sutra_id: None -- honest, and exactly the
+        behaviour he asked to be rid of. /api/sessions fills Sutra's own Chats folder, and it was
+        filling it with every conversation he had ever had in VS Code or a terminal (20,255 of
+        them on his disk, one of which was a Sutra chat).
+
+        The invariant this class exists to protect is untouched and is asserted by its sibling
+        above: a row that IS listed still names the chat it belongs to, which is what puts ?sutra=
+        on the first reconnect. Nothing about resolving or opening a foreign transcript BY ID
+        changed -- session_reader still sees every file, which is what test_app.py's
+        TestChatsAreSutrasOwn pins."""
         src = "c1a70000-0000-4000-8000-00000000e002"
         self._claude_transcript(src)
         rows = {r["id"]: r for r in self._rows()}
-        self.assertIn(src, rows)
-        self.assertIsNone(rows[src].get("sutra_id"))
+        self.assertNotIn(src, rows,
+                         "a transcript no Sutra chat claims does not belong in Sutra's list")
 
     def test_reconnecting_with_the_recovered_id_keeps_codex(self):
         """THE HEADLINE. The client sends the ?sutra= it read off the rail, and

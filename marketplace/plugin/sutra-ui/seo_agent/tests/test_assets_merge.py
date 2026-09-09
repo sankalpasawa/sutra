@@ -33,6 +33,7 @@ FAILS = []
 CALLS = {"json": 0, "text": 0}
 UNFILLED = []
 JUDGE_PROMPTS = []
+RELEVANCE_PROMPTS = []      # what the relevance recheck was actually shown
 
 
 def ok(label, cond, extra=""):
@@ -65,6 +66,19 @@ def _json(prompt, system=None, retries=1, **kw):
     CALLS["json"] += 1
     if "{{" in prompt:
         UNFILLED.append(prompt[:80])
+    if "FINAL relevance pass" in prompt:
+        # A well-behaved judge: the payroll idea is a different product world, everything else
+        # belongs. The ids come back exactly as they were given.
+        RELEVANCE_PROMPTS.append(prompt)
+        out = []
+        for ln in prompt.splitlines():
+            if not ln.strip().startswith("- id="):
+                continue
+            rid = ln.split("id=", 1)[1].split(" ", 1)[0].strip(" ·")
+            off = "payroll" in ln.lower()
+            out.append({"id": rid, "decision": "DROP" if off else "KEEP",
+                        "reason": "payroll is somebody else's product" if off else ""})
+        return {"verdicts": out}
     if "de-duplicating a CLUSTER" in prompt:
         ids = _ids(prompt)
         low = prompt.lower()
@@ -176,6 +190,9 @@ def plant_pools():
 
 # ==== merge ==========================================================================================
 
+cm.save("scope.md", "# What Example can own\nPractitioner-led programmes for operators.\n"
+                    "We are NOT a payroll tool and NOT a job board.\n")
+
 print("merge: stacking the three pools")
 plant_pools()
 stub_bucket_embeddings()
@@ -263,6 +280,61 @@ ok("on a tie the heavier proof wins", rows[0]["title"] == "Cost of a Bad Hire, b
    rows[0]["title"])
 ok("run() reports what a person needs to see", out["count"] == 6 and out["multi_method"] == 2
    and out["methods"]["ran"] == 3, out)
+
+print("\nmerge: the relevance recheck (the original's E7)")
+verdicts = cm.read("_work/merge/relevance-verdicts.json") or []
+drops = cm.read("_work/merge/relevance-drops.json") or {}
+payroll = next((r for r in rows if r["title"].startswith("Vendor-neutral payroll")), None)
+
+ok("the judge was shown the BRAND SCOPE, not just a list of titles",
+   RELEVANCE_PROMPTS and "NOT a payroll tool" in RELEVANCE_PROMPTS[0],
+   RELEVANCE_PROMPTS[:1])
+ok("the off-brand idea was proposed for dropping, with the reason on the row",
+   payroll and payroll["relevance"]["verdict"] == "drop proposed"
+   and "payroll" in payroll["relevance"]["why"], payroll and payroll.get("relevance"))
+ok("PROPOSED, never deleted: the row is still on the sheet where a person can argue with it",
+   payroll is not None and payroll in rows)
+ok("...and it is ranked last rather than offered as the next thing to write",
+   payroll and payroll["rank"] == len(rows), payroll and payroll["rank"])
+ok("an idea that belongs carries no relevance verdict at all",
+   all(not (r.get("relevance") or {}).get("verdict") for r in rows if r is not payroll),
+   [(r["id"], r.get("relevance")) for r in rows])
+ok("every verdict is written down, keeps as well as drops, so the pass is auditable",
+   len(verdicts) == len(rows) and {v["decision"] for v in verdicts} == {"KEEP", "DROP"},
+   [(v["id"], v["decision"]) for v in verdicts])
+ok("and the drops are written separately, each with its reason",
+   drops.get("proposed") == 1 and drops["drops"][0]["why"], drops.get("drops"))
+ok("a person is told, in plain English, and told nothing was deleted",
+   any("ranked last rather than removed" in n for n in out["needs_review"]), out["needs_review"])
+
+# PROTECT. The bad-hire idea carries 136 linking domains across its pooled proof, well over the
+# floor, so the judge is never even asked about it: a measurement is harder evidence than a verdict.
+ok("an idea with real backlink proof is never even shown to the judge",
+   drops.get("protected") == 2 and not any("Bad Hire" in p for p in RELEVANCE_PROMPTS),
+   (drops.get("protected"), [p[-400:] for p in RELEVANCE_PROMPTS]))
+ok("the protect floor is the original's number", merge.RELEVANCE_PROTECT_DOMAINS == 50)
+
+protected_row = dict(cm.blank_idea("a9001", "competitors"), title="A payroll thing anyway",
+                     proof=[{"url": "https://x.com/1", "domains": 60}])
+kept_p, rep_p = merge.relevance([protected_row], "scope", "Example", say)
+ok("...so even a payroll idea survives if the measurement vouches for it",
+   not (kept_p[0].get("relevance") or {}).get("verdict") and rep_p["protected"] == 1, rep_p)
+
+# THE CAP. A judge that wants to gut the sheet is wrong about the sheet, not right about the ideas.
+greedy = [dict(cm.blank_idea("a900%d" % i, "competitors"), title="A payroll thing %d" % i,
+               proof=[{"url": "https://x.com/%d" % i, "domains": 1}]) for i in range(10)]
+kept_c, rep_c = merge.relevance(greedy, "scope", "Example", say)
+ok("a pass that wants to drop more than %.0f%% of the sheet is refused, not applied"
+   % (100 * merge.RELEVANCE_DROP_CAP),
+   rep_c["proposed"] == 10 and rep_c["applied"] is False, rep_c)
+ok("the cap is the looser of the percentage and a small absolute number, so a six-idea sheet is "
+   "not forbidden from dropping its one piece of junk",
+   rep_c["allowed"] == merge.RELEVANCE_MIN_DROPS and merge.RELEVANCE_MIN_DROPS == 3, rep_c)
+ok("...and NOTHING is marked when it is refused, so one bad answer cannot gut the sheet",
+   all(not (r.get("relevance") or {}).get("verdict") for r in kept_c),
+   [r.get("relevance") for r in kept_c])
+ok("the refusal is still written to the audit file, with every drop it wanted",
+   (cm.read("_work/merge/relevance-drops.json") or {}).get("applied") is False)
 
 print("\nmerge: resume")
 n = calls()

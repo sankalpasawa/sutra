@@ -1,20 +1,23 @@
 """learn_brand.py — build the brand pack: how this company writes and what it sells, from its own pages.
 
-The port of the workflow's Layer 01 (brand context). Twelve builders run in the original order, each
+The port of the workflow's Layer 01 (brand context). Eleven builders run in the original order, each
 one a module in brand/, each writing its files under knowledge/brand/ before the next one reads them:
 
      0 type-roles         what THIS company's page types hold (stat / story / commercial / editorial)
      1 brand-facts        stats.md · stories.md (machine drafts, marked; the human confirms by editing)
      2 brand-voice        page-shortlist.md · brand-voice.md (+ the one-liner into company.json)
      3 style-guide        style-guide.md
-     4 features           features.md · cta-pages.md
+     4 features           pricing.md (the form you type prices into) · features.md · cta-pages.md
      5 writing-examples   writing-examples.md
      6 persona            persona.md
-     7 voices             voices.md (the team's byline questionnaire)
-     8 writing-integrity  writing-integrity.md · seo-aeo-geo-checklist.md
-     9 writer-brief       writer-brief.md · writer-brief-rulings.md
-    10 brand-cards        brand-cards.json
-    11 field-sources      field-sources.md
+     7 writing-integrity  writing-integrity.md · seo-aeo-geo-checklist.md
+     8 writer-brief       writer-brief.md · writer-brief-rulings.md
+     9 brand-cards        brand-cards.json
+    10 field-sources      field-sources.md
+
+The original's twelfth was `voices`, which laid out voices.md for the team to fill in with their
+bylines. Deleted 2026-09-09 on the owner's word: "remove completely everything about the byline
+questions, everything from Sutra for now."
 
 Resumable: a builder whose files exist is skipped unless `redo` is set or `only` names it. One
 builder failing is said and the rest still run (a later builder that needs the missing file says so
@@ -23,7 +26,7 @@ itself). The human gates of the original are checkpoints here: everything is sav
 """
 from .. import store
 from ..brand import (brand_cards, brand_facts, brand_voice, features, field_sources, pack, persona,
-                     style_guide, type_roles, voices, writer_brief, writing_examples, writing_integrity)
+                     style_guide, type_roles, writer_brief, writing_examples, writing_integrity)
 from . import _shared as sh
 
 # (key, module, the files that mark it done), in the original's run order
@@ -32,10 +35,9 @@ BUILDERS = [
     ("brand-facts", brand_facts, ["stats.md", "stories.md"]),
     ("brand-voice", brand_voice, ["brand-voice.md"]),
     ("style-guide", style_guide, ["style-guide.md"]),
-    ("features", features, ["features.md", "cta-pages.md"]),
+    ("features", features, ["features.md", "cta-pages.md"]),   # and brand/pricing.md, the form
     ("writing-examples", writing_examples, ["writing-examples.md"]),
     ("persona", persona, ["persona.md"]),
-    ("voices", voices, ["voices.md"]),
     ("writing-integrity", writing_integrity, ["writing-integrity.md", "seo-aeo-geo-checklist.md"]),
     ("writer-brief", writer_brief, ["writer-brief.md"]),
     ("brand-cards", brand_cards, ["brand-cards.json"]),
@@ -82,9 +84,13 @@ def run(ctx, redo=False, only=None):
         if wanted and key not in wanted:
             continue
         force = redo or key in wanted
-        # brand-facts decides per file whether a draft is due (a confirmed file is never touched), so
-        # it always gets a look; the others are done once their files exist.
-        if not force and key != "brand-facts" and all(sh.brand_file(f) or store.knowledge("brand/" + f) for f in outputs):
+        # brand-facts decides per file whether a draft is due (a confirmed file is never touched),
+        # so it always gets a look. features gets one too when brand/pricing.md has changed under
+        # it: somebody typed in a price the crawler cannot see, and features.md is the file that
+        # has to carry it. That rebuild reuses the pages already read, so it costs no crawl.
+        # The rest are done once their files exist.
+        always_look = key == "brand-facts" or (key == "features" and features.pricing_stale())
+        if not force and not always_look and all(sh.brand_file(f) or store.knowledge("brand/" + f) for f in outputs):
             say("Already built: %s" % key, ", ".join(outputs))
             files += outputs
             skipped.append(key)

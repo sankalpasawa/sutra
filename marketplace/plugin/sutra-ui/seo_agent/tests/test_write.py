@@ -115,11 +115,33 @@ ok("a wrong page plus an unreadable backup -> needs a source, not cut",
    any(x["card_id"] == 3 for x in pol["needs_source"]) and not any(x["card_id"] == 3 for x in pol["cut"]), pol["needs_source"])
 ok("the proven-bad url is stripped from the card", idx2[3]["source_urls"] == ["https://dead.example.org/mirror"] and idx2[3].get("needs_source"))
 ok("the hunt is declared skipped", "skipped" in pol["hunt"] and "DataForSEO" in pol["hunt"])
+# A FAILED HUNT MUST NEVER DELETE A CARD. This used to cut the card outright — numeric, one source,
+# the source proven wrong, no replacement found — and with it went its H3. The claim itself was never
+# disproved, only the page behind it, so a deletion loses a fact the research paid for and leaves
+# nothing on screen to say a fact has gone. Kept, stripped of the bad url, and flagged.
 idx3 = C.card_index(CARDS)
 idx3[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
 ver3 = verify_sources.run(copy.deepcopy(plan), idx3, say)
-ok("a numeric card with only a wrong source is cut", any(x["card_id"] == 3 for x in ver3["police"]["cut"]))
-ok("its H3 dies with it", not any(h["h3"] == "The benchmark" for s in ver3["plan"]["sections"] for h in s["h3s"]))
+pol3 = ver3["police"]
+ok("a numeric card whose only source is wrong is KEPT and flagged, never cut",
+   any(x["card_id"] == 3 for x in pol3["needs_source"]) and not pol3["cut"], pol3["cut"])
+ok("the proven-wrong url is stripped and the card carries the stamp",
+   idx3[3]["source_urls"] == [] and idx3[3].get("needs_source"), idx3[3])
+ok("the fix written back to the plan says needs_source, so the writer sees it",
+   ver3["card_fixes"][3]["needs_source"] and not ver3["card_fixes"][3]["source_urls"], ver3["card_fixes"].get(3))
+ok("its H3 survives with it", any(h["h3"] == "The benchmark" for s in ver3["plan"]["sections"] for h in s["h3s"]))
+ok("nothing at all was dropped from the plan",
+   not pol3["dropped_h3s"] and not pol3["dropped_sections"], (pol3["dropped_h3s"], pol3["dropped_sections"]))
+ok("freeze turns the flag into a note a person reads, and never blocks on it",
+   any("without a checked source" in n for n in freeze.run(copy.deepcopy(ver3["plan"]), pol3)["soft"]),
+   freeze.run(copy.deepcopy(ver3["plan"]), pol3)["soft"])
+# A card the RESEARCH already stamped needs_source skips the "is this worth checking?" judgment: it
+# is the one card known to be unsourced, so leaving it to a model that might answer no is the one
+# way it slips through unexamined.
+idx4 = C.card_index(CARDS)
+idx4[2]["needs_source"] = True
+ok("a card the research stamped needs_source is always worth verifying",
+   C.nid(2) in verify_sources._worthy_ids([idx4[2]])[0], verify_sources._worthy_ids([idx4[2]]))
 OVERRIDES.clear()
 _fixture.stub_write_network()
 
@@ -234,6 +256,24 @@ prose, prov, dropped = write_body.provenance("Costs run to $4,700 [c1]. Soft cos
 ok("foreign ids are dropped from the prose", "[c99]" not in prose and "[c77]" not in prose and "c2]" in prose, prose)
 ok("and counted", dropped == 2, dropped)
 ok("provenance lists only this section's cards", [p["card_id"] for p in prov] == [1, 2] and prov[0]["is_number"])
+
+print("\nwriter: the brand section never volunteers a weakness")
+# His 2026-09-05 Testlify review cut the "name at least one honest limitation" clause: a published
+# article states honest scope and stops. Sutra's own format files already said so
+# (formats/listicle.md, formats/comparison-rankings.md) while write_body.py still asked for a
+# limitation, so the two disagreed about the same section.
+import inspect as _inspect
+_wb_src = _inspect.getsource(write_body)
+ok("the brand-section rule forbids volunteering a limitation",
+   "Never volunteer a limitation, weakness or gap" in _wb_src)
+# The instruction was split across two source lines, so the fragment is what to look for. The
+# module still carries the words "honest limitation" in the comment recording the removal.
+ok("and no longer asks the writer to name one", "least one honest limitation" not in _wb_src)
+ok("it says what IS allowed, so the rule is not just a ban",
+   "Scope stated plainly is fine" in _wb_src)
+ok("it agrees with the format files that carry the same rule",
+   all("never write a limitation line for it" in C.sh.load_prompt("write/formats/" + f)
+       for f in ("listicle", "comparison-rankings")))
 
 print("\nwriter: blend guards are all-or-nothing")
 secs = [{"headline": "A", "prose": "First fact [c1]. Second fact [c2]."}, {"headline": "B", "prose": "Third fact [c3]. Fourth [c4]."}]

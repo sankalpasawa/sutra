@@ -227,6 +227,12 @@ def blank_idea(idea_id, method):
         "tool_escalation": False, "what_it_would_be": "",
         "proof": [], "rank": None,
         "reuse": {"verdict": "", "links": [], "why": ""},
+        # The merge's relevance recheck, and Sutra's own field. Blank means the question was never
+        # put; "drop proposed" means that pass read the finished idea against the brand scope and
+        # says it does not belong. It is a PROPOSAL and never a deletion: the row keeps its place
+        # and its reason, and `merge.rank` sends it to the bottom rather than removing it, so a
+        # person can read the reason and disagree.
+        "relevance": {"verdict": "", "why": ""},
         "status": "open",
         "built": {"library_id": "", "run_id": "", "at": "", "how": ""},
     }

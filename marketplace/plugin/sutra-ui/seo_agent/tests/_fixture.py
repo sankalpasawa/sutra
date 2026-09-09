@@ -618,11 +618,14 @@ def _brand_text(p):
         kept = p.split("## What you are given", 1)[-1].split("## Resolving", 1)[0]
         rows = [ln for ln in kept.splitlines() if ln.strip().startswith("|")]
         table = "\n".join(dict.fromkeys(rows)) or "| Write this | Not this | Why |\n|---|---|---|"
-        return ("# Writer brief — %s\n\n> What makes %s's writing its own.\n\n## Who is writing\n%s Team, in the first person plural.\n\n"
+        # NO "## Who is writing" SECTION. The real template lost it when the byline feature was
+        # deleted (2026-09-09), and a stub that emits a section the builder can no longer produce is
+        # a fixture describing a document that does not exist.
+        return ("# Writer brief — %s\n\n> What makes %s's writing its own.\n\n"
                 "## What we believe\n1. Practitioners, not lecturers.\n\n## Naming %s\nWrite %s, capitalised.\n\n"
                 "## How our writing sounds\nDirect. A number before an adjective.\n\n## Words we use\n%s\n\n"
                 "## House spelling\ntime-to-hire, skills assessment\n\n## Phrases we never use\n- leverage\n- seamless\n\n"
-                "## Competitors\n*(nothing recorded)*\n" % (brand, brand, brand, brand, brand, table))
+                "## Competitors\n*(nothing recorded)*\n" % (brand, brand, brand, brand, table))
     if "## The subreddits, already checked" in p:            # write-field-sources
         def names(block):
             out = []
@@ -1177,6 +1180,18 @@ def _research_json(p):
     return None
 
 
+# The bulk of a stubbed dossier section. Every sentence is under thirty characters, which is the bar
+# the harvest stub uses, so none of them can become a card: this changes the dossier's LENGTH and
+# nothing else. Sized so two sections clear the 1,500-word floor with room to spare.
+_DOSSIER_BULK = "\n\n" + (
+    "That is the headline. It holds at most sizes. The band has been stable. "
+    "Nobody disputes the range. Finance sees it apart. Teams rarely track it. "
+    "The gap shows in audits. Recruiters say the same. The detail is in notes. "
+    "The trend repeats yearly. Two sources agree here. A third is less sure. "
+    "The split is well known. It is not a new claim. The rest is commentary. "
+) * 25
+
+
 def _research_conversation_text(p):
     """The three text calls of the research conversation, plus the dossier section write."""
     if "YOUR PERSONA BESIDES BEING A WRITER" in p:                             # ask-question
@@ -1189,10 +1204,19 @@ def _research_conversation_text(p):
                 "reports a blended figure near $4,700 per hire [2]. Both sources agree the internal "
                 "share is the one teams forget to count [1][2].")
     if "CAPTURE THE EVIDENCE, not to" in p:                                    # write-dossier-section
+        # THE THREE CITED SENTENCES ARE THE FIXTURE. The harvest reads the first four sentences over
+        # thirty characters, so those three are what become cards, and nothing about them has moved.
+        # What follows them is BULK, added 2026-09-10: run_research now refuses a dossier under
+        # _common.DOSSIER_MIN_WORDS (1,500 — his STORM_MIN_WORDS), because a stub-length dossier
+        # poisons every step built on it. A real section runs to hundreds of words and this one ran
+        # to forty, so every suite that drives a run was refused. The filler sentences are all under
+        # thirty characters, so the harvest steps straight over them and every card, count and id in
+        # every suite is exactly what it was.
         return ("## What the measurement actually costs\n\n"
                 "The published agency band runs 15 to 25 percent of first-year salary [1]. "
                 "A blended internal figure near $4,700 per hire is reported for mid-size teams [2]. "
-                "Read together, the two sources show the internal share is the one teams forget [1][2].")
+                "Read together, the two sources show the internal share is the one teams forget [1][2]."
+                + _DOSSIER_BULK)
     return None
 
 

@@ -237,7 +237,7 @@ ok("the hunt report says how many were replaced, and names its route",
 ok("the good source was never re-hunted", JUDGED.count("https://good.example.org/cost-per-hire") == 1)
 ok("it logged live", bool(said("Hunting a replacement")) and bool(said("New source found")), [s[0] for s in SAY])
 
-print("\nverify_sources: when the hunt finds nothing, the old honest behaviour holds")
+print("\nverify_sources: when the hunt finds nothing, the card is kept and flagged")
 REPLIES[:] = [
     (lambda p: '{"verify": [' in p, {"verify": [1, 2]}),
     (lambda p: '"supports"' in p, _judge_reply),
@@ -247,9 +247,15 @@ REPLIES[:] = [
 ]
 idx_b = C.card_index(CARDS)
 ver_b = verify_sources.run(copy.deepcopy(PLAN), idx_b, say)
-ok("a numeric claim with no page behind it and no replacement is cut",
-   [x["card_id"] for x in ver_b["police"]["cut"]] == [2], ver_b["police"]["cut"])
-ok("the cut says the hunt ran and found nothing", "hunt" in ver_b["police"]["cut"][0]["why"])
+# A failed hunt used to DELETE the card. The claim was never disproved — only the page behind it —
+# so a deletion threw away a fact the research paid for and left nothing on screen to say so.
+ok("a numeric claim with no page behind it and no replacement is KEPT, never cut",
+   [x["card_id"] for x in ver_b["police"]["needs_source"]] == [2] and not ver_b["police"]["cut"],
+   (ver_b["police"]["needs_source"], ver_b["police"]["cut"]))
+ok("the flag says the hunt ran and found nothing", "hunt" in ver_b["police"]["needs_source"][0]["why"])
+ok("the card keeps its claim, loses the bad url and carries the stamp",
+   idx_b[2].get("needs_source") and idx_b[2]["source_urls"] == [] and idx_b[2].get("verbatim"), idx_b[2])
+ok("its H3 is still in the plan", any(h["card_ids"] for s in ver_b["plan"]["sections"] for h in s["h3s"]))
 ok("the good card still survives", 1 in ver_b["police"]["kept_ok"])
 
 # ======================================================================================

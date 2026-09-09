@@ -18,10 +18,12 @@ from seo_agent import llm, store
 # --- stub the model, counting calls so resume can be proven ------------------------------------
 CALLS = {"json": 0, "text": 0}
 UNFILLED = []          # any prompt that still carries a {{TOKEN}} when it reaches the model
+SEEN = []              # every prompt, so a test can prove what actually reached the model
 
 
 def _json(prompt, system=None, retries=1, **kw):
     CALLS["json"] += 1
+    SEEN.append(prompt)
     if "{{" in prompt:
         UNFILLED.append(prompt[:80])
     return _fixture.stub_json(prompt, system, retries)
@@ -29,6 +31,7 @@ def _json(prompt, system=None, retries=1, **kw):
 
 def _text(prompt, system=None, **kw):
     CALLS["text"] += 1
+    SEEN.append(prompt)
     if "{{" in prompt:
         UNFILLED.append(prompt[:80])
     return _fixture.stub_text(prompt, system)
@@ -136,7 +139,7 @@ r = store.new_run(c, "brand pack")
 events = []
 ctx = {"chat_id": c, "run_id": r, "emit": lambda **kw: events.append(kw)}
 
-from seo_agent.tools import learn_brand
+from seo_agent.tools import _shared as sh, learn_brand, onboard
 from seo_agent.brand import (_common as cm, brand_cards, brand_facts, features, pack, style_guide,
                              type_roles, writer_brief)
 from seo_agent.brand import cta as ctamod        # `cta` below is the FILE's text, read at step 4
@@ -318,6 +321,35 @@ rows_, dropped_ = features.cta_rows(
 ok("cta_rows(): at most three features per page, article-shaped URLs dropped",
    len(rows_) == 1 and len(rows_[0]["features"]) == 3 and dropped_[0][1].startswith("reads as an article"))
 
+print("\n4 features: pricing.md, the facts a crawler cannot reach")
+# Finding 8.21: features.py read a human-verified seed and called it authoritative, and nothing in
+# Sutra could write it. The file now exists as a blank form the moment the builder runs, so the
+# Knowledge tab has a door to open.
+ok("the blank form is on disk, so there is something to open and type into", cm.exists("pricing.md"))
+ok("a blank form is not content: the builder is handed nothing",
+   features.pricing() == "" and features.untouched(brand("pricing.md")))
+ok("pricing.md sits in the pack immediately before the file it feeds",
+   pack.FILES.index("pricing.md") == pack.FILES.index("features.md") - 1, pack.FILES)
+ok("it has a plain name and a line saying what it is for",
+   pack.LABELS["pricing.md"][0] == "Prices and hidden facts" and "JavaScript" in pack.LABELS["pricing.md"][1])
+ok("pack.inputs() lists it in the same row shape the rest of the screen uses",
+   [f["name"] for f in pack.inputs()] == ["pricing.md"]
+   and set(pack.inputs()[0]) == {"name", "label", "note", "exists", "words", "filled"}, pack.inputs())
+# WORDS CANNOT ANSWER THIS. The blank form is real text on disk and counts about 200 words, so a
+# screen deciding "has anybody written in this?" from the word count would call an untouched form
+# filled and stop asking. That is precisely how the seed file this replaces stayed empty (8.21).
+ok("a blank form reports itself as not filled in, even though it has 200 words of its own",
+   pack.inputs()[0]["filled"] is False and pack.inputs()[0]["words"] > 100, pack.inputs())
+_before = brand("pricing.md")
+cm.save("pricing.md", _before + "\n\nStarter $69/mo, 100 candidate credits a year, 3 users.\n")
+ok("and one line typed into it flips that, without the word count saying anything useful",
+   pack.inputs()[0]["filled"] is True, pack.inputs())
+cm.save("pricing.md", _before)
+ok("the old seed path is not read while pricing.md is there", not cm.exists("_seed/features-seed.md"))
+ok("nothing is stale straight after a build", not features.pricing_stale())
+ok("the SEED-WINS rule is still exactly what the original says",
+   "the SEED WINS" in cm.prompt("fill-schema") and "AUTHORITATIVE" in cm.prompt("fill-schema"))
+
 print("\n5 writing-examples")
 # a writing example is a published article: never the homepage, a commercial page, or nav furniture
 from seo_agent.brand import writing_examples as _we
@@ -346,16 +378,28 @@ ok("scores are saved without the bodies", isinstance(sc, list) and sc and all("b
 
 print("\n6 persona")
 pe = brand("persona.md")
-ok("persona.md has the table and the READER-not-byline warning",
+ok("persona.md has the table and the reader-not-author warning",
    "| Persona | Who | Reads | Cares about | Depth & angle | Not this |" in pe and "READER we write TO" in pe
    and "## How to pick the persona for an article" in pe)
 ok("three personas", pe.count("| **") == 3, pe.count("| **"))
 
-print("\n7 voices")
-vo = brand("voices.md")
-ok("voices.md is the questionnaire with the default byline", "## Default byline — Example Team" in vo
-   and "## Auto-route rules" in vo and "*(ask" in vo)
-ok("needs_review asks the team to fill it", any(n.startswith("voices.md") for n in out["needs_review"]))
+print("\n7 the byline feature is gone")
+# Deleted whole on 2026-09-09, the owner's words: "remove completely everything about the byline
+# questions, everything from Sutra for now." Not disabled — removed, so nothing can quietly wire
+# a half-built questionnaire back in.
+ok("no voices.md is written, and nothing lists one",
+   not cm.exists("voices.md") and "voices.md" not in pack.FILES and "voices.md" not in pack.LABELS
+   and "voices.md" not in writer_brief.SOURCE_FILES)
+ok("there is no builder to run", not any(k == "voices" for k, _m, _f in learn_brand.BUILDERS)
+   and "voices" not in learn_brand.KEYS)
+ok("and no setup question to ask",
+   [q for q, _f in onboard.QUESTIONS] == ["numbers", "origin-story", "lesson-learned", "competitors"]
+   and onboard.BRAND_FILES == ["stats.md", "stories.md"], onboard.QUESTIONS)
+ok("their prompt files are gone too",
+   not os.path.exists(os.path.join(sh.PROMPTS, "onboard", "byline.md"))
+   and not os.path.exists(os.path.join(sh.PROMPTS, "onboard", "founder-voice.md")))
+ok("the writer brief no longer has a section about who signs it",
+   "## Who is writing" not in cm.template("writer-brief") and "byline" not in cm.template("writer-brief-rulings"))
 
 print("\n8 writing-integrity + checklist")
 wi = brand("writing-integrity.md")
@@ -370,7 +414,7 @@ ok("seo-aeo-geo-checklist.md is the verbatim gate", ck == cm.template("seo-aeo-g
 
 print("\n9 writer-brief")
 wb = brand("writer-brief.md")
-for h in ("## Who is writing", "## What we believe", "## Naming Example", "## How our writing sounds", "## Words we use",
+for h in ("## What we believe", "## Naming Example", "## How our writing sounds", "## Words we use",
           "## House spelling", "## Phrases we never use", "## Competitors"):
     ok("writer-brief.md has %s" % h, h in wb)
 ok("the rulings file was instantiated from the template", "# House decisions — Example" in brand("writer-brief-rulings.md"))
@@ -458,6 +502,60 @@ try:
     ok("an unknown builder name is refused", False, "no raise")
 except ValueError as e:
     ok("an unknown builder name is refused", "Unknown builder" in str(e))
+
+print("\npricing.md -> features.md, the one hop")
+# The whole point of the file: a person types in a price the crawler cannot see, and the product
+# facts the writer reads are filled again from it. Reusing the cached facts, so NO page is read
+# again, and rebuilding features.md and nothing else (the owner's call: "we can skip writing
+# integrity, we can skip the writer brief as well").
+_PRICES = ("# Prices and hidden facts\n\n## Pricing and plans\n\n"
+           "Starter is $69 a month billed annually, 100 credits a year. The trial runs 7 days "
+           "with no card, and there is a 30-day money-back guarantee.\n")
+_facts_before = brand("_work/features/facts.json")
+_stamps = {f: os.path.getmtime(cm.path(f)) for f in
+           ("_work/features/source-pages.json", "writing-integrity.md", "writer-brief.md")}
+cm.save("pricing.md", _PRICES)                     # a person types their prices in the Knowledge tab
+ok("what a person typed is content, and it is what the builder reads", features.pricing() == _PRICES)
+ok("features.md is stale, because it was filled from a different pricing.md", features.pricing_stale())
+n_calls, n_seen = calls(), len(SEEN)
+out4 = learn_brand.run(ctx)
+ok("the pack rebuilt features.md rather than reporting it already built",
+   any(e["label"] == "Your prices changed" for e in events), [e["label"] for e in events][-6:])
+ok("the typed-in prices reached the fill prompt as the authoritative seed",
+   any("$69 a month" in t and "the SEED WINS" in t for t in SEEN[n_seen:]),
+   [t[:60] for t in SEEN[n_seen:]])
+ok("no page was read again: the crawled facts were reused as they were",
+   brand("_work/features/facts.json") == _facts_before)
+ok("and the page list was not rebuilt either",
+   os.path.getmtime(cm.path("_work/features/source-pages.json")) == _stamps["_work/features/source-pages.json"])
+ok("a rebuild is one fill and one gate, not a crawl", calls() - n_calls == 2, calls() - n_calls)
+ok("features.md is in the files it reports", "features.md" in (out4.get("files") or []), out4.get("files"))
+ok("THE CHAIN IS ONE HOP: writing-integrity.md and writer-brief.md are left alone",
+   all(os.path.getmtime(cm.path(f)) == _stamps[f] for f in ("writing-integrity.md", "writer-brief.md")))
+ok("and it is not stale any more", not features.pricing_stale())
+n_calls = calls()
+learn_brand.run(ctx)
+ok("so the next run goes back to keeping what is built", calls() == n_calls, calls() - n_calls)
+
+# The save hook: a person editing the file marks features.md for a rebuild without doing the slow
+# work inside the save itself.
+ok("saving pricing.md by hand marks features.md for a rebuild",
+   features.pricing_saved() is True and features.pricing_stale())
+features._stamp()
+ok("and stamping it settles it again", not features.pricing_stale())
+
+# The owner has real prices in the original's path. They are migrated across, never lost.
+_now = brand("pricing.md")
+os.remove(cm.path("pricing.md"))
+cm.save("_seed/features-seed.md", "# Features seed\n\nStarter $99/mo. Annual billing saves 30%.\n")
+ok("with no pricing.md, the original's own seed file is read", "Starter $99/mo" in features.pricing())
+ok("and it is migrated to pricing.md, so it is editable from then on",
+   cm.exists("pricing.md") and "Starter $99/mo" in brand("pricing.md"))
+ok("the old file is left where it is: deleting somebody's text is not this builder's call",
+   cm.exists("_seed/features-seed.md"))
+os.remove(cm.path("_seed/features-seed.md"))
+cm.save("pricing.md", _now)
+features._stamp()
 
 print("\npack.summary()")
 ps = pack.summary()
@@ -688,16 +786,16 @@ ok("brief carries exists, words and the text verbatim",
    _b["brief"]["exists"] and _b["brief"]["words"] > 50 and _b["brief"]["text"] == brand("writer-brief.md"))
 # The owner asked that this door show "only the actual files which were used". So the assertion is
 # against what writer_brief.py actually reads, not against what anyone assumed. features.md is
-# EXCLUDED there by name; voices.md IS one of its four classified sources.
+# EXCLUDED there by name. voices.md was a fourth source until the byline feature was deleted.
 ok("built_from is exactly what the brief is really assembled from, in build order",
    [f["name"] for f in _b["built_from"]]
-   == ["brand-voice.md", "style-guide.md", "persona.md", "voices.md", "writing-integrity.md",
+   == ["brand-voice.md", "style-guide.md", "persona.md", "writing-integrity.md",
        "writer-brief-rulings.md"],
    [f["name"] for f in _b["built_from"]])
 ok("features.md is NOT one of them: the builder excludes it by name",
    "features.md" not in pack.built_from_names() and "features.md" not in writer_brief.SOURCE_FILES)
-ok("voices.md IS one of them, so calling it unused would be a lie on screen",
-   "voices.md" in pack.built_from_names() and "voices.md" in writer_brief.SOURCE_FILES)
+ok("the deleted voices.md is not offered as a source either",
+   "voices.md" not in pack.built_from_names())
 ok("built_from is derived from the builder, not typed out",
    set(pack.built_from_names())
    <= (set(writer_brief.SOURCE_FILES) | {writer_brief.RULINGS, "persona.md"}))
@@ -705,9 +803,9 @@ ok("every built_from row carries a plain name, a note, exists and a word count",
    all(set(f) == {"name", "label", "note", "exists", "words"} and f["label"] and f["note"] for f in _b["built_from"]),
    _b["built_from"][0])
 ok("a file that is not there is included, marked not built, so the screen can grey it",
-   [f["exists"] for f in pack.built_from()] == [True] * 6
+   [f["exists"] for f in pack.built_from()] == [True] * 5
    and (lambda: (os.remove(cm.path("persona.md")),
-                 [f["exists"] for f in pack.built_from()])[1])() == [True, True, False, True, True, True])
+                 [f["exists"] for f in pack.built_from()])[1])() == [True, True, False, True, True])
 shutil.copyfile(cm.path("writer-brief.md"), cm.path("persona.md"))   # put a file back where one was
 ok("extras is features.md, and it is honestly marked as in use",
    [(f["name"], f["in_use"]) for f in _b["extras"]] == [("features.md", True)], _b["extras"])

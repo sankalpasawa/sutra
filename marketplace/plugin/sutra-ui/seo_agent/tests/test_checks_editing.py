@@ -161,6 +161,62 @@ ok("'no source in sight' is not a citation",
 ok("'according to X' is a citation",
    dc.check_claims_have_sources("# T\n\nGrowth hit 47%, according to NASSCOM.")["status"] == "pass")
 
+print("\ndraft checks: the digit guard — a figure in the draft traces to a card")
+# The write phase already stops a REWRITE from inventing a number (coherence, slop, sentences,
+# readable all compare their own output against their own input). None of them can see whether the
+# figure was real to begin with, so this is the one that asks, at the end, against the evidence.
+from seo_agent.checks import digit_guard
+GUARD_CARDS = [{"gloss": "cost per hire", "verbatim": "The average cost per hire was $4,700 in 2023."},
+               {"gloss": "structured interview validity",
+                "verbatim": "Structured interviews sit near 0.51 validity in the meta-analysis."}]
+GCTX = {"cards.json": GUARD_CARDS, "brand_text": ""}
+ok("a figure lifted from a card passes",
+   digit_guard.check("# T\n\nThe average cost per hire was $4,700.", GCTX)["status"] == "pass")
+invented = digit_guard.check("# T\n\nHiring costs rose 62% last year.", GCTX)
+ok("a percentage in no card fails, and the finding names the figure",
+   invented["status"] == "fail" and "62" in invented["items"][0]["fix"], invented)
+ok("a mangled figure is caught: $4,700 typed as $47,000",
+   digit_guard.check("# T\n\nThe average cost per hire was $47,000.", GCTX)["status"] == "fail")
+ok("a year is not a statistic",
+   digit_guard.check("# T\n\nThe programme launched in 2019.", GCTX)["status"] == "pass")
+ok("a step count and a small number in passing are not statistics",
+   digit_guard.check("# T\n\nIt takes 3 steps, and two of the four teams agreed.", GCTX)["status"] == "pass")
+ok("a figure from the company\'s own stats file counts as traced",
+   digit_guard.check("# T\n\nWe run 3,500 assessments.",
+                     {"cards.json": GUARD_CARDS, "brand_text": "We run 3,500 assessments."})["status"] == "pass")
+ok("with no cards on file it warns rather than calling the writer a fabricator",
+   digit_guard.check("# T\n\n40% of teams never measure it.", {})["status"] == "warn")
+ok("one figure repeated is one finding, not five",
+   len(digit_guard.check("# T\n\nIt rose 62%.\n\nStill 62%.\n\nAgain, 62%.", GCTX)["items"]) == 1)
+ok("the guard runs as part of the draft checks",
+   "figures_trace_to_evidence" in {c["name"] for c in run_checks("draft", GOOD_DRAFT)})
+
+print("\ninternal links: the check can PASS, not only fail")
+# The old assertion accepted fail-or-warn, which is exactly how this survived: site_urls() returns
+# (set, domain) and the caller read the pair as one value, so every internal link compared a string
+# against a 2-tuple and came back missing. A check that can only ever fail is not a check. So the
+# real-link case is asserted, in both directions, with a planted index (2026-09-10).
+from seo_agent.checks import draft_checks
+REAL_INDEX = {"domain": "Example.com",          # deliberately mixed case: site_urls lower-cases it
+              "pages": [{"url": "https://example.com/pricing/"},
+                        {"url": "https://example.com/about"}]}
+c = draft_checks.check_internal_links(
+    "Read [our pricing](https://example.com/pricing) and [about us](https://example.com/about).",
+    {"site_index": REAL_INDEX})
+ok("a link to a page that IS in the index passes", c["status"] == "pass", (c["status"], c.get("detail")))
+ok("and it says how many it checked", "2" in c.get("detail", ""), c.get("detail"))
+
+c2 = draft_checks.check_internal_links(
+    "Read [our pricing](https://example.com/pricing) and [ghost](https://example.com/nope).",
+    {"site_index": REAL_INDEX})
+ok("one invented link among real ones fails", c2["status"] == "fail", c2.get("detail"))
+ok("and only the invented one is named",
+   len(c2.get("items", [])) == 1 and "nope" in str(c2["items"][0]), c2.get("items"))
+
+c3 = draft_checks.check_internal_links("Read [x](https://example.com/pricing).",
+                                       {"site_index": {"domain": "example.com", "pages": []}})
+ok("no index on file warns instead of failing every link", c3["status"] == "warn", c3.get("detail"))
+
 print("\ndiff")
 d = make_diff("one\ntwo\nthree", "one\ntwo CHANGED\nthree")
 kinds = [x["type"] for x in d]

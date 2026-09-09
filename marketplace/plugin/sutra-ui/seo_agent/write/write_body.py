@@ -200,8 +200,16 @@ def run(st, idx, ctx, say=lambda *a: None):
     def _write(sec):
         head = (sec.get("headline") or "").strip()
         is_brand = brand["brand"].lower() in head.lower()
-        rule = (("This section IS about %s. Cover it factually and fairly from the facts above, name at "
-                 "least one honest limitation, and never oversell or invent a capability.") % brand["brand"]
+        # 2026-09-05 (his Testlify review): the "name one honest limitation" clause is GONE. A
+        # published article must never volunteer the publisher's own weaknesses — honest scope, no
+        # self-criticism. Sutra shipped the pre-fix line while already carrying the post-fix rule in
+        # formats/listicle.md and formats/comparison-rankings.md ("never write a limitation line for
+        # it"), so two of its own write-phase files told the writer opposite things.
+        rule = (("This section IS about %s. Cover it factually and fairly from the facts above, and "
+                 "never oversell or invent a capability. Never volunteer a limitation, weakness or gap "
+                 "of %s: state what it does and who it is for, then stop. Scope stated plainly is fine "
+                 "(built for X); a drawback written as a drawback is not.")
+                % (brand["brand"], brand["brand"])
                 if is_brand else
                 ("Name %s as little as you can. This article earns trust by being useful, not by selling. "
                  "If naming it is genuinely the clearest way to make a point the section is already making, "

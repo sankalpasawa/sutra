@@ -428,11 +428,14 @@ def _brand_knowledge():
         return {"brand": sh.company()["brand"],
                 "brief": pack.brief(),
                 "built_from": pack.built_from(),
+                # Files a PERSON fills in, kept apart from the ones a builder wrote. Same row
+                # shape as built_from and extras, so the screen renders it the same way.
+                "inputs": pack.inputs(),
                 "extras": pack.extras(),
                 "cta": {"count": cta.count()}}
     except Exception:  # noqa: BLE001 -- the engine may not be installed yet; show an empty pack
         return {"brand": "", "brief": {"exists": False, "words": 0, "text": ""},
-                "built_from": [], "extras": [], "cta": {"count": 0}}
+                "built_from": [], "inputs": [], "extras": [], "cta": {"count": 0}}
 
 
 @router.get("/knowledge")
@@ -657,6 +660,21 @@ def api_save_brand_file(name: str, body: dict = Body(...)):
         if not isinstance(data, str):
             return _bad("text is needed")
     store.save_knowledge("brand/" + name, data)
+    # PRICING.MD IS THE ONE BRAND FILE A SAVE HAS TO PROPAGATE. It carries facts the crawler can
+    # never reach -- prices a site draws with JavaScript -- and features.md, the file the writer
+    # reads for product claims, is filled FROM it. MARKING is all that happens here: the rebuild
+    # reuses the cached crawl and still costs two model calls, which a save must not sit and wait
+    # for. features.pricing_saved() writes one stamp file and returns whether a rebuild is due; it
+    # touches nothing else and calls no model (verified against the function, 2026-09-09).
+    # The chain is ONE hop by the owner's decision: pricing.md -> features.md, and no further.
+    # Without this the feature still works -- the fingerprint makes the next brand-pack run
+    # rebuild -- so a failure here is not a failed save, and the save still stands.
+    if name == "pricing.md":
+        try:
+            from seo_agent.brand import features
+            features.pricing_saved()
+        except Exception:  # noqa: BLE001 -- the engine may not be installed
+            pass
     return {"ok": True}
 
 
@@ -805,7 +823,11 @@ def _run_format(chat_id, run_id):
 def api_library():
     rows = store.library_list()
     for r in rows:
-        arch = _run_format(r.get("chat_id"), r.get("run_id"))
+        # The row's OWN meta first, the run second. loop.save_to_library writes the archetype onto
+        # the row now, and that is the durable answer: a run folder can be deleted and its article
+        # kept, and a finished article should still be able to say what shape it was written to.
+        # Reading the run is the fallback for rows written before that landed. (2026-09-09.)
+        arch = (r.get("format_archetype") or "").strip() or _run_format(r.get("chat_id"), r.get("run_id"))
         r["format"] = arch
         # the plain name comes from the prompt store, the same place the Prompts tab gets it, so
         # the two screens can never call the same shape by two different names

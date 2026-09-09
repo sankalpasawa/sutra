@@ -1,21 +1,25 @@
 """onboard.py — the setup interview: the questions the original workflow puts to a human.
 
-Layer 01 of the original workflow has twelve builders and three of them cannot finish without a
-person. `0-brand-facts/templates/stats.md` ends in "Seeds to mine (ask the team)".
-`templates/stories.md` ends in "The interview (ask the team)". `6-voices/voices.workflow.md` is
-four questions and nothing else: its builder drafts NOTHING, it only lays out the skeleton and
-waits. Sutra's port wrote all three files and then nobody ever asked, so `voices.md` shipped with
-seven `*(ask)*` placeholders in it and stayed that way forever. The user was never told there was
-anything to answer.
+Layer 01 of the original workflow has builders that cannot finish without a person.
+`0-brand-facts/templates/stats.md` ends in "Seeds to mine (ask the team)".
+`templates/stories.md` ends in "The interview (ask the team)". Sutra's port wrote those files and
+then nobody ever asked, so they shipped with their placeholders in and stayed that way forever.
+The user was never told there was anything to answer.
 
-This asks. Six questions, one at a time, in the chat, at setup. Every one is skippable and a skip
+This asks. Four questions, one at a time, in the chat, at setup. Every one is skippable and a skip
 is recorded AS a skip, so a brand file can tell "we asked and they had nothing" apart from "nobody
 ever asked". The second is a bug; the first is a fact about the company.
 
+THE TWO BYLINE QUESTIONS WERE DELETED, 2026-09-09. "Who do articles get published under" and "who
+signs the leadership pieces" were asked here and filed into brand/voices.md. The owner's words:
+"remove completely everything about the byline questions, everything from Sutra for now." The
+questions, their prompt files, voices.md and the builder that laid it out are all gone. If bylines
+come back, they come back as a whole feature, not as two questions with nowhere to land.
+
 Reads:  knowledge/brand/company.json (for {{BRAND}}) and prompts/onboard/<id>.md.
 Writes: knowledge/brand/_interview/answers.json    the ledger, and the single source of truth
-        knowledge/brand/stats.md, stories.md, voices.md   a managed block, rendered from it
-        knowledge/competitors.json                        the competitor answer, when one is given
+        knowledge/brand/stats.md, stories.md       a managed block, rendered from it
+        knowledge/competitors.json                 the competitor answer, when one is given
 
 The ledger is the value; the markdown blocks are a rendering of it. Every answer rewrites its
 whole block, so the two can never drift, and a crash halfway through the interview leaves the
@@ -58,12 +62,10 @@ QUESTIONS = [
     ("numbers", "stats.md"),
     ("origin-story", "stories.md"),
     ("lesson-learned", "stories.md"),
-    ("byline", "voices.md"),
-    ("founder-voice", "voices.md"),
     ("competitors", None),               # its home is knowledge/competitors.json, not a brand file
 ]
 IDS = [q for q, _f in QUESTIONS]
-BRAND_FILES = ["stats.md", "stories.md", "voices.md"]
+BRAND_FILES = ["stats.md", "stories.md"]
 
 
 # ---- the questions themselves ------------------------------------------------------------------

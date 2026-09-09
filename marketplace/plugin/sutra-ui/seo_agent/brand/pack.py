@@ -18,8 +18,12 @@ from . import writer_brief
 
 # Every brand file, in build order, with the ORIGINAL's structure. This order is the pack's own
 # build order, so anything that wants "in the order these come into existence" reads it from here.
+# pricing.md is the one INPUT in this list rather than an output: nothing builds it, a person types
+# it, and brand/features.py fills features.md from it. It sits where it is read, immediately before
+# features.md, and it is here so the screen gives it a door — a file that is not listed cannot be
+# opened, which is exactly how the old seed file stayed empty for good (finding 8.21).
 FILES = ["type-roles.json", "stats.md", "stories.md", "page-shortlist.md", "brand-voice.md",
-         "style-guide.md", "features.md", "cta-pages.md", "writing-examples.md", "persona.md", "voices.md",
+         "style-guide.md", "pricing.md", "features.md", "cta-pages.md", "writing-examples.md", "persona.md",
          "writing-integrity.md", "writer-brief.md", "writer-brief-rulings.md", "brand-cards.json",
          "field-sources.md", "seo-aeo-geo-checklist.md"]
 
@@ -47,9 +51,10 @@ def summary():
 # but write/wrapper.py reads it directly for the product claims and the close. So it is used, and it
 # belongs beside the brief rather than inside the list of the brief's own sources.
 #
-# voices.md is NOT here. It is in writer_brief.SOURCE_FILES: the classifier genuinely reads it, so
-# claiming it is not in use would be a lie on screen. It sits inside "how this was built", where a
-# person can open it and answer its questions.
+# voices.md used to be listed under "how this was built", as one of the brief's four classified
+# sources. The whole byline feature was deleted on 2026-09-09 ("remove completely everything about
+# the byline questions, everything from Sutra for now"), so the file, its builder and its two setup
+# questions are gone and the brief is built from three sources, not four.
 EXTRAS = ["features.md"]
 
 # Plain names and one line each, for a screen where "writing-integrity.md" means nothing to anybody.
@@ -59,8 +64,10 @@ LABELS = {
     "features.md": ("Product facts", "What the company sells, and the proof behind each claim."),
     "writing-integrity.md": ("Writing integrity", "The honesty rules: no invented customers, no hype."),
     "writer-brief-rulings.md": ("Your rulings", "Decisions made by hand. These outrank everything else."),
-    "voices.md": ("Who writes", "Who signs the writing. The team fills this in."),
     "persona.md": ("Readers", "Who each article is written to. Never named in the article itself."),
+    "pricing.md": ("Prices and hidden facts",
+                   "Anything your site draws with JavaScript, so a crawler cannot see it. Prices, "
+                   "plans, trial length. Type it here and it beats anything we read off the site."),
 }
 
 
@@ -86,6 +93,29 @@ def built_from_names():
     """
     want = set(writer_brief.SOURCE_FILES) | {writer_brief.RULINGS, "persona.md"}
     return [n for n in FILES if n in want]
+
+
+# The files a PERSON fills in, which a builder then reads. Not outputs, and not sources of the
+# brief either, so they belong in neither list above. One so far.
+INPUTS = ["pricing.md"]
+
+
+def inputs():
+    """The typed-in files, for the screen.
+
+    `filled` is the difference between the blank form and a file somebody has actually written in,
+    and `words` cannot tell them apart: the blank form is real text on disk, so it has a word count
+    of its own. The screen needs the difference because the known failure mode of a typed-in file is
+    that it ships blank, reads as something not built yet, and stays blank for months. That is
+    exactly what happened to the seed file this one replaces (finding 8.21).
+    """
+    from . import features
+    rows = []
+    for n in INPUTS:
+        r = _row(n)
+        r["filled"] = bool(r["exists"]) and not features.untouched(_text(n))
+        rows.append(r)
+    return rows
 
 
 def brief():

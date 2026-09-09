@@ -11,13 +11,17 @@ The original's steps, kept in order, each writing one named file the next step r
 
   A   candidates, then a shortlist of 15, split direct or adjacent   _work/competitors/candidates.json
                                                                      _work/competitors/shortlist.json
+  A1b what each candidate says it does, so the shortlist can judge   _work/competitors/candidates-enriched.json
   A4  THE GATE. A person approves the list before anything is spent  _work/competitors/approved.json
+  A1c every approved domain resolves, before a penny is spent        _work/competitors/domain-validation.json
   B   each competitor's link-earning pages. PAID.                    _work/competitors/pages/<domain>.json
   C   the top pages filtered down to the replicable ones             _work/competitors/filter-report.json
   D   every kept page tagged by FORMAT, never by topic               _work/competitors/master.json
+  F0  the tagger's label variants merged into one canonical set      _work/competitors/format-canonical.json
   E   every kept page read in full, no page faked from its title     _work/competitors/read-tally.json
   F   aggregate by format across every competitor                    _work/competitors/format-summary.json
   G   every row turned into an idea, judged against the brand scope  _work/competitors/ideas-raw.json
+  G2.5 the same build written twice merged, by meaning not spelling  _work/competitors/dedup-report.json
   H   deliver                                                        assets/competitors.json
 
 Reads:  assets/scope.md (builder 0, the anchor every method judges against; never rebuilt here)
@@ -36,15 +40,22 @@ worth an idea at all; the idea's own verdicts come from the two shared tests in 
 `ownability()` and `linkability()`, which all three methods call in the same words. Ranking, the
 merge across methods and the reuse verdict belong to `merge.py`, not to this file.
 """
+import hashlib
 import re
 import statistics
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qsl, urlencode, urlsplit
+
+import numpy as np
 
 from .. import llm
 from .. import store
 from ..tools import _shared as sh
+from ..tools import voyage
 from . import _common as cm
+from . import formats as fmt
 
 try:
     from ..tools import dfs
@@ -72,6 +83,29 @@ COMPETITOR_CALL_COST = 0.035    # roughly what one domain_pages pull costs, for 
 # ---- step A ----------------------------------------------------------------------------------
 CANDIDATE_LIMIT = 200           # how many domains the overlap API returns for the model to judge from
 SHORTLIST_N = 15                # the original's number: about 10 direct plus about 5 adjacent
+
+# ---- step A1b, telling the shortlister WHAT each candidate is ------------------------------------
+# The overlap API returns `domain · keywords · etv` and nothing else, so a model asked to shortlist
+# from it is guessing a company's business from its NAME. Measured on the owner's own run
+# (2026-07-20): it missed vervoe.com, criteriacorp.com, eskill.com and testdome.com, four genuine
+# direct rivals that were sitting in the candidate list it had read. Nothing was wrong with the
+# data; the model simply could not tell what those companies do. So each candidate's homepage is
+# read for its <title> and meta description — what the company says it is, in its own words.
+# Free (plain HTTP, no API), cached, and never fatal: a candidate that will not load goes to the
+# model with no description, exactly as before.
+ENRICH_TOP = 80                 # candidates enriched, in the API's own overlap order
+ENRICH_WORKERS = 8              # homepages read at once
+ENRICH_TIMEOUT = 12             # seconds per homepage, then give up on it
+
+# ---- step A1c, never trust a domain, whoever supplied it -----------------------------------------
+# Measured on the owner's run (2026-07-20): three approved competitors came back from the paid pull
+# with ZERO pages, and two of them were not small companies — they were dead domains that never
+# resolve. `maki.people` is the company Maki People at makipeople.com; `wecp.io` is WeCP at
+# wecreateproblems.com. Both were operator-supplied and the engine trusted them, so money went on
+# calls for domains that cannot exist. An operator typing a brand name instead of a domain, or a
+# slightly wrong TLD, is an ordinary mistake and the engine has to catch it rather than inherit it.
+RESOLVE_TIMEOUT = 10            # seconds to wait for any HTTP answer at all
+RESOLVE_WORKERS = 8
 
 # ---- step B ----------------------------------------------------------------------------------
 PAGES_PER_COMPETITOR = 300      # the original takes the top 300 by referring domains
@@ -120,6 +154,19 @@ TAG_WORKERS = 4                 # tagging calls in flight at once
 READ_WORKERS = 6                # page fetches in flight. HTTP, not model calls, so its own number
 MIN_BODY_WORDS = 80             # under this the page did not really load: FETCH FAILED, never a title
 READ_CHARS = 6000               # of a page's text handed to the reasoning pass, title and headings first
+# A SOFT 404 is a "Page Not Found" served with HTTP 200. The fetcher cannot see it, because as far
+# as HTTP is concerned the page loaded. Seventy rows in the owner's real run came back this way and
+# had to be reclassified BY HAND afterwards; unspotted, each one becomes a content idea built on an
+# error page. Two checks catch them, and they are the same two the site catalogue uses:
+#   1. the body's own words, read at the top of the page where the message always sits, and
+#   2. a repeated body — N pages on one site sharing a byte-identical body is a template, not
+#      content, which catches the soft 404s whose wording this list has never seen.
+SOFT_404 = re.compile(
+    r"\b(page not found|404 error|page you (are|were) looking for (does not|doesn't) exist|"
+    r"this page (does not|doesn't) exist|nothing (was )?found|content not available|"
+    r"sorry,? (we )?(can'?t|could not|couldn'?t) find)\b", re.I)
+SOFT_404_CHARS = 1200           # of the body checked. The message is at the top or it is not the page
+DUP_BODY_ALARM = 8              # identical bodies on one competitor before the group is a template
 
 # ---- step F --------------------------------------------------------------------------------------
 FORMAT_MIN_COMPETITORS = 3      # a format one competitor happens to own is not a proven format
@@ -143,6 +190,21 @@ GAP_PER_ROWS = 5
 # pulled hundreds of linking domains. This is the PROTECT half of the filter, and it exists because
 # the load-bearing item is usually the one buried in an unpromising group.
 PROTECT_DOMAINS = 100
+
+# ---- step G2.5, the same BUILD under two names -------------------------------------------------
+# `_collapse` below is a STRING key and merges only titles that are identical once normalised. The
+# owner measured what that misses on his real pool: 97 merges, "Python Skills Test" against "Coding
+# Assessment (Python)" — the same thing to build, worded differently, so the key never matched. The
+# fix is the textbook entity resolution and it is the same two-part shape the merge across methods
+# already uses: an embedding NOMINATES near neighbours, and the model DECIDES on the small cluster
+# it nominated. The embedding never merges on its own, because a glossary and a test library can
+# sit at 0.75 and merging those two would be wrong.
+DEDUP_THRESHOLD = 0.80   # cosine to become a merge CANDIDATE. Measured by the owner on real titles
+#                          (voyage-4-large): true twins ~0.83, genuinely different ideas 0.5-0.66,
+#                          and a danger band 0.72-0.80 where different builds look close. Set to
+#                          gather candidates generously and let the model separate them.
+DEDUP_TOPK = 6           # nearest neighbours considered per idea
+DEDUP_MAX_CLUSTER = 10   # a cluster is cut into slices of this size before the model sees it
 
 
 class Blocked(RuntimeError):
@@ -335,6 +397,93 @@ def _derive(co, say):
     return out
 
 
+# ---- STEP A1b: say what each candidate actually IS -------------------------------------------------
+
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/122.0 Safari/537.36")
+_TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+_DESC_TAG = re.compile(
+    r"""<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["'](.*?)["']""",
+    re.I | re.S)
+_DESC_TAG_REVERSED = re.compile(
+    r"""<meta[^>]+content=["'](.*?)["'][^>]*(?:name|property)=["'](?:description|og:description)["']""",
+    re.I | re.S)
+_HTML_TAG = re.compile(r"<[^>]+>")
+_ENTITIES = (("&amp;", "&"), ("&#39;", "'"), ("&quot;", '"'), ("&nbsp;", " "),
+             ("&lt;", "<"), ("&gt;", ">"))
+
+
+def _clean_meta(text):
+    out = _HTML_TAG.sub(" ", text or "")
+    for a, b in _ENTITIES:
+        out = out.replace(a, b)
+    return re.sub(r"\s+", " ", out).strip()[:220]
+
+
+def _homepage(domain):
+    """A candidate's own words about itself: {title, description}. Best effort and never raises.
+
+    Deliberately a plain urllib GET rather than the research fetcher: this reads the first 180KB of
+    a homepage for two tags, not a whole article, and it must not be able to pull a browser render
+    or a retry ladder into the free half of a paid run.
+    """
+    for scheme in ("https://", "https://www."):
+        try:
+            req = urllib.request.Request(scheme + domain, headers={"User-Agent": _UA})
+            with urllib.request.urlopen(req, timeout=ENRICH_TIMEOUT) as r:
+                html = r.read(180_000).decode("utf-8", "ignore")
+        except Exception:      # noqa: BLE001. A candidate that will not load simply has no description
+            continue
+        t = _TITLE_TAG.search(html)
+        d = _DESC_TAG.search(html) or _DESC_TAG_REVERSED.search(html)
+        title = _clean_meta(t.group(1) if t else "")
+        desc = _clean_meta(d.group(1) if d else "")
+        if title or desc:
+            return {"title": title, "description": desc}
+    return {"title": "", "description": ""}
+
+
+def _enrich(cands, say, redo=False):
+    """A1b. Every candidate carries what its company says it does, before anyone judges it.
+
+    Reads:  _work/competitors/candidates.json
+    Writes: _work/competitors/candidates-enriched.json  the same rows plus title and description
+
+    The shortlist prompt already tells the model to read a candidate's description and trust it over
+    the domain name. Until this step existed there were no descriptions to read, so that instruction
+    was aimed at a blank. Cached per run and resumable: a homepage already read is not read again.
+    """
+    name = WORK + "candidates-enriched.json"
+    rows = list(cands.get("rows") or [])
+    if not rows:
+        return cands
+    done = {}
+    if cm.exists(name) and not redo:
+        done = {r["domain"]: r for r in (cm.read(name) or []) if r.get("domain")}
+    todo = [r for r in rows[:ENRICH_TOP] if r["domain"] not in done]
+    if todo:
+        say("Reading what each candidate says it does",
+            "%s to read, free and in parallel" % sh.plural(len(todo), "homepage"))
+        with ThreadPoolExecutor(max_workers=ENRICH_WORKERS) as ex:
+            futs = {ex.submit(_homepage, r["domain"]): r for r in todo}
+            for fut in as_completed(futs):
+                r = futs[fut]
+                try:
+                    r.update(fut.result())
+                except Exception:      # noqa: BLE001. Never fatal; the row just carries no description
+                    r.update({"title": "", "description": ""})
+                done[r["domain"]] = r
+    merged = [done.get(r["domain"], r) for r in rows]        # original order; past ENRICH_TOP, no description
+    cm.save(name, merged)
+    got = sum(1 for r in merged if r.get("title") or r.get("description"))
+    say("Worked out what the candidates are",
+        "%d of %d now carry the company's own description" % (got, len(merged)))
+    out = dict(cands)
+    out["rows"] = merged
+    out["enriched"] = got
+    return out
+
+
 # ---- STEP A2 and A3: the shortlist, split direct or adjacent ---------------------------------------
 
 def _shortlist(co, cands, say, redo=False):
@@ -367,6 +516,13 @@ def _shortlist(co, cands, say, redo=False):
             bits.append("%s shared keywords" % r["keywords"])
         if r.get("why"):
             bits.append(r["why"])
+        # The company's own words, from step A1b. This is the half of the row that lets the model
+        # tell a rival from a site that happens to rank for the same phrase; without it the
+        # prompt's "read each candidate's description" instruction is aimed at nothing.
+        about = " — ".join(x for x in ((r.get("title") or "").strip(),
+                                       (r.get("description") or "").strip()) if x)
+        if about:
+            bits.append(about)
         return " · ".join(bits)
 
     out = llm.json_call(sh.fill(cm.prompt("competitors-shortlist"),
@@ -461,6 +617,135 @@ def _save_knowledge_competitors(rows, say):
     store.save_knowledge("competitors.json", {"competitors": out, "approved_at": store.now()})
     say("Saved the competitor list", "%s, in Knowledge where everything else reads it"
         % sh.plural(len(out), "competitor"))
+
+
+# ---- STEP A1c: every domain resolves, BEFORE a penny is spent ---------------------------------------
+
+def resolves(domain):
+    """Is there anything at all at this domain? Any HTTP answer counts, a 403 included: a real
+    server refusing us still proves the domain exists. Only "nothing answered" means dead."""
+    for scheme in ("https://", "https://www."):
+        try:
+            req = urllib.request.Request(scheme + domain, headers={"User-Agent": _UA}, method="HEAD")
+            urllib.request.urlopen(req, timeout=RESOLVE_TIMEOUT)
+            return True
+        except urllib.error.HTTPError:
+            return True                      # 403 or 404 from a real server: the domain is live
+        except Exception:      # noqa: BLE001. DNS failure, refused connection, timeout: try the next scheme
+            continue
+    return False
+
+
+def _repairs(dead):
+    """Obvious repairs for a domain that does not resolve, and nothing clever.
+
+    A brand's WORDS can sit either side of the dot, so the odd-looking "TLD" is often part of the
+    name: `maki.people` is the company Maki People at makipeople.com. Every repair is only used if
+    it actually resolves, so a wrong guess can never enter the study.
+    """
+    parts = [x for x in (dead or "").split(".") if x]
+    out = []
+    if len(parts) > 1:
+        joined = "".join(parts)                       # maki.people -> makipeople
+        out += [joined + ".com", "-".join(parts) + ".com"]
+        head = "".join(parts[:-1])                    # or the last part really is the TLD
+        out += [head + ".com", head.replace("-", "") + ".com"]
+    flat = (dead or "").replace("-", "")
+    if flat != dead:
+        out.append(flat)
+    seen, uniq = set(), []
+    for d in out:
+        if d and d != dead and d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def _near(dead, candidate_domains):
+    """A candidate that is plainly the same company: `maki.people` next to `makipeople.com`. The
+    candidate list is real API data, so anything in it demonstrably exists."""
+    stem = (dead or "").split(".")[0].replace("-", "")
+    flat = (dead or "").replace(".", "").replace("-", "")
+    for d in candidate_domains:
+        dflat = d.replace(".", "").replace("-", "")
+        if dflat.startswith(flat) or (flat and flat.startswith(dflat.split("com")[0])) \
+                or (len(stem) >= 4 and dflat.startswith(stem)):
+            return d
+    return None
+
+
+def _validate(comps, cands, say):
+    """A1c. Every approved domain resolves, or it is swapped for one that does, or it is dropped.
+
+    Reads:  the approved list, and _work/competitors/candidates.json for near-matches
+    Writes: _work/competitors/domain-validation.json  every swap and every drop, with its reason
+
+    This runs on the whole approved list, model-picked and person-typed alike, and it runs BEFORE
+    the paid pull, because the whole point is not to pay for a domain that cannot exist.
+
+    ONE SAFETY THE ORIGINAL DOES NOT NEED. His script is run by hand, so a machine with no network
+    simply fails in front of him. This one runs unattended, and "nothing resolved" would then read
+    as "every competitor is dead" and empty the study. So when NOT ONE domain answers, that is
+    treated as our network being down rather than as a verdict on the list: everything is kept and
+    the run says so.
+    """
+    if not comps:
+        return comps
+    with ThreadPoolExecutor(max_workers=RESOLVE_WORKERS) as ex:
+        futs = {ex.submit(resolves, r["domain"]): r for r in comps}
+        for fut in as_completed(futs):
+            try:
+                futs[fut]["resolved"] = bool(fut.result())
+            except Exception:      # noqa: BLE001
+                futs[fut]["resolved"] = False
+    if not any(r.get("resolved") for r in comps):
+        say("Could not check the competitor domains",
+            "not one of %d answered, which is this machine's network rather than %d dead domains, "
+            "so the list was kept as approved" % (len(comps), len(comps)))
+        cm.save(WORK + "domain-validation.json",
+                {"checked": len(comps), "swapped": [], "dropped": [],
+                 "note": "no domain answered at all; treated as a network failure, nothing dropped",
+                 "at": store.now()})
+        for r in comps:
+            r.pop("resolved", None)
+        return comps
+
+    candidate_domains = [r["domain"] for r in (cands.get("rows") or []) if r.get("domain")]
+    kept, swapped, dropped = [], [], []
+    for r in comps:
+        if r.get("resolved"):
+            kept.append(r)
+            continue
+        dead = r["domain"]
+        # In order: an alias the shortlist itself offered, then a near-match in the real candidate
+        # list, then an obvious repair. Each is only taken if it too resolves.
+        alt = next((a for a in (r.get("aliases") or []) if resolves(a)), None)
+        if not alt:
+            near = _near(dead, candidate_domains)
+            alt = near if (near and resolves(near)) else None
+        if not alt:
+            alt = next((x for x in _repairs(dead) if resolves(x)), None)
+        if alt:
+            r["swapped_from"] = dead
+            r["domain"] = alt
+            r.setdefault("aliases", []).append(dead)
+            swapped.append({"from": dead, "to": alt})
+            kept.append(r)
+        else:
+            dropped.append({"domain": dead,
+                            "why": "the domain does not resolve and no live alternative was found"})
+    for r in kept:
+        r.pop("resolved", None)
+    cm.save(WORK + "domain-validation.json",
+            {"checked": len(comps), "swapped": swapped, "dropped": dropped, "at": store.now()})
+    if swapped or dropped:
+        say("Checked every competitor domain before spending anything",
+            "%d live · %s · %s"
+            % (len(kept) - len(swapped),
+               ", ".join("%s does not resolve, using %s" % (x["from"], x["to"]) for x in swapped)
+               or "nothing swapped",
+               ", ".join("%s dropped, dead domain" % x["domain"] for x in dropped) or "nothing dropped"))
+    return kept
 
 
 # ---- STEP B: each competitor's link-earning pages (PAID) ---------------------------------------------
@@ -699,6 +984,51 @@ def _tag(rows, co, say):
 
 # ---- STEP E: read every kept page in full ----------------------------------------------------------
 
+def _kill_soft_404s(rows):
+    """Mark the rows that answered 200 with an error page. Returns (soft 404s, duplicate bodies).
+
+    Seventy rows in the owner's real run were "Page Not Found" pages served with HTTP 200. Nothing
+    upstream can see them: DataForSEO recorded a 200, the fetcher got a page, and the reasoning
+    pass would happily write an idea off "the page you are looking for does not exist". They are
+    caught here, after the read and before anything reads a body, and marked FETCH FAILED like any
+    other page that did not really load, so the same one rule covers both.
+
+    The duplicate-body check is per competitor and byte-exact on purpose. It is looking for ONE
+    template served at many addresses — the site's own 404 page, or a JavaScript shell that renders
+    nothing — and a site's real articles are never byte-identical to each other. Below
+    DUP_BODY_ALARM the repeat is left alone: two or three pages sharing a body is a content
+    problem for `_collapse` to pool, not an error page.
+    """
+    soft = 0
+    for r in rows:
+        if r.get("read_status") != "ok":
+            continue
+        if SOFT_404.search((r.get("body") or "")[:SOFT_404_CHARS]):
+            r["read_status"] = "FETCH FAILED"
+            r["read_method"] = "soft-404"
+            r["read_error"] = "answered HTTP 200 with a Page Not Found body"
+            r["body"] = ""
+            soft += 1
+    by_comp = {}
+    for r in rows:
+        if r.get("read_status") == "ok":
+            key = (r.get("competitor") or "",
+                   hashlib.sha256((r.get("body") or "").encode("utf-8")).hexdigest())
+            by_comp.setdefault(key, []).append(r)
+    dupe = 0
+    for group in by_comp.values():
+        if len(group) < DUP_BODY_ALARM:
+            continue
+        for r in group:
+            r["read_status"] = "FETCH FAILED"
+            r["read_method"] = "duplicate-body x%d" % len(group)
+            r["read_error"] = ("%d pages on this site returned one byte-identical body, so it is a "
+                               "template rather than content" % len(group))
+            r["body"] = ""
+            dupe += 1
+    return soft, dupe
+
+
 def _read(rows, say):
     """E. The step that gets skipped. Do not skip it.
 
@@ -741,7 +1071,15 @@ def _read(rows, say):
             r["read_status"] = "FETCH FAILED"
             r["read_error"] = str(err)[:160]
             failed += 1
-    tally = {"rows": len(rows), "read": read, "failed": failed, "at": store.now()}
+    soft, dupe = _kill_soft_404s(rows)
+    read -= soft + dupe
+    failed += soft + dupe
+    if soft or dupe:
+        say("Threw out the pages that only looked like they loaded",
+            "%d said Page Not Found while answering 200, %d were one template served at many "
+            "addresses" % (soft, dupe))
+    tally = {"rows": len(rows), "read": read, "failed": failed, "soft_404": soft,
+             "duplicate_body": dupe, "at": store.now()}
     cm.save(WORK + "read-tally.json", tally)
     # The check the original demands in words, made an assertion so it cannot be quietly untrue.
     assert read + failed == len(rows), "the read tally does not add up: %r" % tally
@@ -926,6 +1264,183 @@ def _collapse(rows, say):
     out.sort(key=lambda r: -r["pooled_follow_domains"])
     say("Pooled the repeats", "%d ideas from %d pages" % (len(out), len(rows)))
     return out
+
+
+def _pool_ideas(survivor, dead):
+    """Fold one collapsed idea into another: the survivor takes ALL of the proof, never a subset.
+
+    The whole reason a merge is worth doing is that it makes the evidence stronger. Several
+    competitors having built the same thing is validation, so the backing pages, the per-page gaps
+    and the pooled link counts accumulate; a merge that kept one row and threw the other's proof
+    away would trade the one fact worth having for a shorter list.
+    """
+    seen = {m["url"] for m in survivor.get("members") or []}
+    for m in dead.get("members") or []:
+        if m["url"] not in seen:
+            survivor.setdefault("members", []).append(m)
+            seen.add(m["url"])
+    have = {(g.get("url"), g.get("gap")) for g in survivor.get("gaps") or []}
+    for g in dead.get("gaps") or []:
+        if (g.get("url"), g.get("gap")) not in have:
+            survivor.setdefault("gaps", []).append(g)
+            have.add((g.get("url"), g.get("gap")))
+    survivor["competitors"] = sorted({m["competitor"] for m in survivor.get("members") or []})
+    survivor["pooled_follow_domains"] = sum(m.get("domains_follow") or 0
+                                            for m in survivor.get("members") or [])
+    survivor["pooled_backlinks"] = sum(m.get("backlinks") or 0 for m in survivor.get("members") or [])
+    # A build flag survives the merge. It is a property of the ASSET, so if the thing needs
+    # software it needs software whichever of the two rows noticed.
+    if not str(survivor.get("tool_escalation") or "").strip():
+        survivor["tool_escalation"] = dead.get("tool_escalation") or ""
+    return survivor
+
+
+def _clusters(rows, say):
+    """Groups of ideas an embedding thinks might be the same build, for the model to decide on.
+
+    What is embedded is the BUILD IDENTITY — the title and the format, not the angle — because two
+    near-twins describe one build in different words and it is the words of the angle that pull
+    them apart. Union-find over "i and j are within the threshold" edges; an idea with no near twin
+    never reaches the model at all.
+    """
+    texts = [("%s — %s" % (r.get("title") or "", r.get("format") or "")).strip(" —") for r in rows]
+    V = np.nan_to_num(np.asarray(voyage.embed(texts, "document"), dtype=np.float32))
+    n = len(rows)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    edges = 0
+    for i in range(n):
+        sims = V @ V[i]
+        sims[i] = -1.0
+        for j in np.argsort(-sims)[:DEDUP_TOPK]:
+            j = int(j)
+            if sims[j] < DEDUP_THRESHOLD:
+                continue
+            a, b = find(i), find(j)
+            if a != b:
+                parent[a] = b
+                edges += 1
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    out = []
+    for g in groups.values():
+        if len(g) < 2:
+            continue
+        for k in range(0, len(g), DEDUP_MAX_CLUSTER):
+            out.append(g[k:k + DEDUP_MAX_CLUSTER])
+    say("Looked for the same build written twice",
+        "%s nominated %s to read; the rest have no near twin"
+        % (sh.plural(edges, "close pair"), sh.plural(len(out), "cluster")))
+    return out
+
+
+def _dedup(rows, co, say, notes):
+    """G2.5. Merge the ideas that are the same BUILD, and leave the rest alone.
+
+    Reads:  the collapsed ideas
+    Writes: _work/competitors/dedup-report.json  every cluster the model saw and what it decided
+
+    `_collapse` above is a string key and catches only titles that are identical once normalised.
+    That misses the near twins, and the owner measured how many: 97 merges on his real pool, of
+    which "Python Skills Test" against "Coding Assessment (Python)" is the shape of every one — the
+    same thing to build, different words. So this runs after it, on the same rows, and decides by
+    meaning what the key could not decide by spelling.
+
+    Two rules keep it honest, and they are the two the cross-method merge already follows:
+      1. THE EMBEDDING ONLY NOMINATES. A model turned loose on every idea at once merges everything
+         into vague categories, which is how a pool of grounded ideas once became broad headings and
+         a blind quality score fell from 4.6 to 3.4. It only ever sees a handful of ideas together.
+      2. SEPARATE IS THE DEFAULT, and a cluster the model cannot answer for stays separate. Keeping
+         two ideas that were one is recoverable; merging two that were not is not.
+    """
+    if len(rows) < 2:
+        return rows
+    if not voyage.available():
+        # No embeddings means no way to nominate a pair, and asking the model about every pair of a
+        # few hundred ideas is not a substitute. The string key still ran, so the pool is real; it
+        # just still carries the near twins, and it has to say so rather than look deduplicated.
+        say("Skipped the near-twin check", "no Voyage key, so nothing could be matched by meaning")
+        notes.append("competitors.json: there is no Voyage key, so two ideas that are the same "
+                     "build under different names are both still on the sheet. Add a key in "
+                     "Connections and redo this method.")
+        return rows
+    try:
+        cls = _clusters(rows, say)
+    except Exception as e:      # noqa: BLE001. A failed embedding must not lose the pool
+        say("Could not match the ideas by meaning", str(e)[:160])
+        notes.append("competitors.json: the near-twin check could not run (%s), so the pool may "
+                     "carry the same build under two names." % str(e)[:120])
+        return rows
+    if not cls:
+        cm.save(WORK + "dedup-report.json", {"same": 0, "combined": 0, "kept": len(rows),
+                                             "clusters": []})
+        return rows
+
+    def one(cl):
+        block = "\n".join(
+            "- id=%d · %s · [%s] · angle: %s"
+            % (i, (rows[i].get("title") or "")[:90], rows[i].get("format") or "?",
+               (rows[i].get("angle") or "")[:120]) for i in cl)
+        out = llm.json_call(sh.fill(cm.prompt("competitors-dedup"),
+                                    brand=co.get("brand") or "this company", cluster=block)) or {}
+        groups = out.get("groups") if isinstance(out, dict) else out
+        return [g for g in (groups or []) if isinstance(g, dict)]
+
+    report, same_ct, combine_ct = [], 0, 0
+    gone = set()
+    for cl, groups, err in _fanout(one, cls, G2_WORKERS, say, "Reading the possible twins", 10):
+        report.append({"cluster": cl,
+                       "titles": [(rows[i].get("title") or "")[:70] for i in cl],
+                       "groups": groups or [], "error": str(err)[:120] if err else ""})
+        for g in (groups or []):
+            ids = []
+            for raw_id in (g.get("ids") or []):
+                try:
+                    i = int(raw_id)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= i < len(rows) and i not in gone and i not in ids:
+                    ids.append(i)
+            if len(ids) < 2:
+                continue                      # nothing left to merge, or an id the model invented
+            action = str(g.get("action") or "").strip().lower()
+            if action == "same":
+                try:
+                    keep = int(g.get("keep"))       # a model that answers "3" means the id 3
+                except (TypeError, ValueError):
+                    keep = None
+                keep = keep if keep in ids else ids[0]
+                for other in ids:
+                    if other != keep:
+                        _pool_ideas(rows[keep], rows[other])
+                        gone.add(other)
+                        same_ct += 1
+            elif action == "combine" and str(g.get("new_title") or "").strip():
+                keep = ids[0]
+                rows[keep]["title"] = g["new_title"].strip()
+                if str(g.get("new_angle") or "").strip():
+                    rows[keep]["angle"] = g["new_angle"].strip()
+                rows[keep]["combined_from"] = ids
+                for other in ids[1:]:
+                    _pool_ideas(rows[keep], rows[other])
+                    gone.add(other)
+                    combine_ct += 1
+
+    kept = [r for i, r in enumerate(rows) if i not in gone]
+    kept.sort(key=lambda r: -(r.get("pooled_follow_domains") or 0))
+    cm.save(WORK + "dedup-report.json", {"same": same_ct, "combined": combine_ct,
+                                         "kept": len(kept), "clusters": report})
+    say("Merged the ideas that are the same build",
+        "%d ideas became %d; %d were the same thing written twice and %d were combined into a "
+        "richer one" % (len(rows), len(kept), same_ct, combine_ct))
+    return kept
 
 
 def _traps(rows, notes):
@@ -1135,6 +1650,10 @@ def run(co, say, redo=False):
     notes = []
     # A: candidates, shortlist, and the gate. All free, all before a penny is spent.
     cands = _candidates(co, say, redo)
+    # A1b, before anyone judges the list: what each candidate says it does, in its own words. The
+    # shortlist prompt is written to read that description and trust it over the domain name, and
+    # without this step there was none to read.
+    cands = _enrich(cands, say, redo)
     short = _shortlist(co, cands, say, redo)
     comps = approved()
     if comps is None:
@@ -1147,6 +1666,25 @@ def run(co, say, redo=False):
         raise Blocked("You looked at the competitor list and kept nobody on it, so there is nothing "
                       "to study. Name the companies you would rather I looked at in Knowledge and "
                       "ask me again.")
+    # A1c, still free and still before the paid step: a domain that does not resolve is repaired
+    # or dropped here, never paid for. This runs on the approved list, so a name a person typed is
+    # checked exactly like one the model picked.
+    comps = _validate(comps, cands, say)
+    validation = cm.read(WORK + "domain-validation.json") or {}
+    for swap in validation.get("swapped") or []:
+        notes.append("competitors.json: %s does not resolve, so %s was studied instead. If that is "
+                     "the wrong company, correct the list in Knowledge and redo this method."
+                     % (swap["from"], swap["to"]))
+    if validation.get("dropped"):
+        notes.append("competitors.json: %s could not be studied because the domain does not "
+                     "resolve and no live alternative was found: %s. Nothing was spent on them."
+                     % (sh.plural(len(validation["dropped"]), "competitor"),
+                        ", ".join(d["domain"] for d in validation["dropped"])))
+    if not comps:
+        raise Blocked("Not one of the approved competitor domains resolves, so there is nothing to "
+                      "study and nothing was spent. Check the spelling of the names in Knowledge — "
+                      "a brand name typed where a domain belongs is the usual cause — and ask me "
+                      "again.")
     _save_knowledge_competitors(comps, say)
 
     # B: the paid pull. Refuses before the first call when there is no balance.
@@ -1167,7 +1705,26 @@ def run(co, say, redo=False):
                          "Worth a look at _work/competitors/filter-report.json."
                          % (LOW_KEEP_ALARM, ", ".join(alarms)))
         kept = _tag(kept, co, say)
-        kept, tally = _read(kept, say)
+        # F0. The tagger names the same shape differently in each batch, so its labels are merged
+        # into one canonical set BEFORE anything groups by format. It also names the shapes that
+        # are not content assets at all, and those are skipped rather than fetched: the owner
+        # measured 306 of 1,202 pages as junk that was scraped and then thrown away. Deciding the
+        # format first makes them free.
+        canon = fmt.canonicalise(kept, say)
+        cm.save(WORK + "format-canonical.json", canon)
+        junk = [r for r in kept if r.get("format_junk")]
+        for r in junk:
+            r["read_status"] = "SKIPPED (not a content asset)"
+            r["body"] = ""
+            r["headings"] = ""
+        _read_rows, tally = _read([r for r in kept if not r.get("format_junk")], say)
+        tally = dict(tally)
+        tally["skipped"] = len(junk)         # the counts have to reconcile against the whole sheet
+        cm.save(WORK + "read-tally.json", tally)
+        if junk:
+            notes.append("competitors.json: %s were shapes nobody studies — %s — so they were "
+                         "never fetched and no idea was built on them."
+                         % (sh.plural(len(junk), "page"), ", ".join(canon["junk"][:4])))
         cm.save(WORK + "master.json", kept)
         master = kept
     else:
@@ -1184,8 +1741,10 @@ def run(co, say, redo=False):
                       "off. This is usually a network problem or every site refusing the fetch. "
                       "Nothing was invented from the page titles.")
 
-    # F: the answer this method exists to produce.
-    fmt_summary = _aggregate(master, say)
+    # F: the answer this method exists to produce. The shapes F0 marked as not content assets are
+    # out of it: counting a help-centre article as a "format that earns links" is the same split
+    # signal F0 exists to remove, from the other direction.
+    fmt_summary = _aggregate([r for r in master if not r.get("format_junk")], say)
 
     # G: rows into ideas, the repeats pooled, the traps checked, then judged and cut.
     raw, holes = _reason(readable, scope, co, comps, say)
@@ -1193,6 +1752,10 @@ def run(co, say, redo=False):
         notes.append("competitors.json: %d pages never came back from the reasoning pass and are "
                      "not represented in the ideas." % holes)
     ideas = _collapse(raw, say)
+    # G2.5. The string key above catches the identical titles; this catches the same build written
+    # differently, which is the 97 merges it misses. It runs BEFORE the ids are minted so the pool
+    # still numbers from a1001 with no gaps.
+    ideas = _dedup(ideas, co, say, notes)
     # The id is minted once, here, and carried. `new_id` puts it in this method's own band (a1001
     # up) because the three finders never see each other's files and would otherwise all start at
     # a0001, handing the merge three different ideas wearing one id.

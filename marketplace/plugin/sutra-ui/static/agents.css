@@ -275,10 +275,19 @@
 .ag-list a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
 .ag-gap{border-left:2px solid var(--acc);background:var(--acc-bg);padding:9px 12px;border-radius:0 7px 7px 0;
   font-size:12px;color:var(--ink);line-height:1.55;margin:0 0 12px}
-.ag-pages{width:100%;border-collapse:collapse;font-size:11.5px;margin:0 0 12px}
-.ag-pages th{text-align:left;font:600 9.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
-  padding:0 8px 6px 0;border-bottom:1px solid var(--line-soft)}
-.ag-pages td{padding:6px 8px 6px 0;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--ink)}
+/* Rules at --line, not --line-soft (owner, 2026-09-09: "table borders darker, so a section is
+   visibly a section"). --line-soft is a hairline meant for dividing rows INSIDE one card; used
+   as a table's only structure it left the rows floating with nothing holding them, and on the
+   light theme it is very nearly the page colour. The head keeps the heavier rule so the columns
+   read as headings, the body rows sit on the plain one, and the table closes with a rule of its
+   own so it ends somewhere. Same two tokens the rest of the screen uses -- no new colours. */
+.ag-pages{width:100%;border-collapse:collapse;font-size:11.5px;margin:0 0 12px;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ag-pages th{text-align:left;font:600 9.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  padding:8px 10px 7px 0;border-bottom:1px solid var(--line);background:var(--th-bg)}
+.ag-pages tbody tr:last-child td{border-bottom:0}
+.ag-pages td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--ink)}
+.ag-pages tbody tr:hover td{background:var(--sepia)}
 .ag-pages td.n{font-family:var(--mono);color:var(--faint);width:22px}
 .ag-pages td .h{color:var(--muted);font-size:11px;margin-top:1px}
 .ag-pages td a{color:var(--ink);text-decoration:none}
@@ -326,14 +335,34 @@
 .ag-view{padding:18px 20px;max-width:78ch;margin:0 auto}
 .ag-view h2{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px;color:var(--ink)}
 .ag-view > p.lead{color:var(--muted);margin:0 0 16px;font-size:12.5px;max-width:60ch}
-.ag-view h3.sec{margin-top:18px}
+/* SECTION HEADINGS (owner, 2026-09-09: "darker and bigger"). panel.css sets h3.sec globally to
+   10px uppercase at --faint -- a micro-label, right for a dense control panel and wrong for a
+   reference document where these six ("The company", "The site catalogue", "The writer brief",
+   "Product facts", "Links the close may point at", "Competitors") are the only landmarks on a
+   long scroll. Overridden INSIDE .ag only, so every other screen keeps the label it was designed
+   with. Sentence case, because they are written as phrases and shouting "LINKS THE CLOSE MAY
+   POINT AT" is not calm. The hairline under each one is what makes a section look like a
+   section, and it is the same --line the tables now use. */
+.ag .ag-view h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:30px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag .ag-view h3.sec small{font-size:11.5px}
+/* the first heading on a view does not need to push away from the lead paragraph twice */
+.ag .ag-view > h3.sec:first-of-type{margin-top:20px}
 /* a section whose controls belong beside its name, not buried in its body */
-.ag-sechead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:18px}
-.ag-sechead h3.sec{margin-top:0;flex:1;min-width:0}
+.ag-sechead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:30px 0 10px;
+  padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag .ag-sechead h3.sec{margin:0;padding:0;border-bottom:0;flex:1;min-width:0}
 .ag-secctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .ag-secctl .btn{padding:4px 9px;font-size:10.5px}
-.ag-row{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:9px;
+.ag-row{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
   background:var(--inset);margin-bottom:7px}
+/* A row that is asking for something, rather than reporting something. The one place it is used
+   is a file a person has to type into, and the whole point is that it must not read as another
+   built artifact sitting there empty -- which is how the old seed file stayed blank for months.
+   An accent edge and a warm ground, both existing tokens; nothing louder than that. */
+.ag-row.ask{border-color:var(--acc);border-left-width:3px;background:var(--sepia)}
+.ag-row.ask .rn{align-items:baseline}
+.pill.p-ask{background:var(--acc-bg);color:var(--acc)}
 .ag-row .ri{min-width:0;flex:1}
 .ag-row .rn{font-weight:600;color:var(--ink);font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .ag-row .rd{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
@@ -494,13 +523,30 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 /* ── asset ideas ─────────────────────────────────────────────────────────────
    The next idea is the one row a person acts on, so it gets the weight of a card
    and everything else is a table under it. */
-.ag-nextidea{border:1px solid var(--line);border-radius:10px;background:var(--inset);
-  padding:14px 16px;margin:2px 0 4px}
-.ag-nextidea .nl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
-  margin:0 0 6px}
-.ag-nextidea .nt{font-size:15px;font-weight:620;line-height:1.35;color:var(--ink);margin:0 0 5px}
-.ag-nextidea .nd{font-size:12.5px;line-height:1.55;color:var(--ink);margin:0 0 7px}
-.ag-nextidea .nm{font-size:11.5px;color:var(--muted);margin:0 0 11px}
+/* "Next up" was two uppercase words over a title, and it read as a section label rather than an
+   offer -- "okay next up, oh this is the next topic, all of that's not clear" (owner,
+   2026-09-09). Three things fix it and none of them is a new colour: the label became a
+   sentence that says WHICH idea this is and how many are behind it; the run-on meta line became
+   a labelled list, so "3 out of 4" is attached to the question it answers; and a line under the
+   buttons says what each one does. The card keeps the accent edge so it still reads as the one
+   row on this tab a person is meant to act on. */
+.ag-nextidea{border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:10px;
+  background:var(--inset);padding:15px 17px;margin:2px 0 6px}
+.ag-nextidea .nl{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  font:620 12.5px/1.3 var(--sans);color:var(--ink);margin:0 0 8px}
+.ag-nextidea .nl .nq{font:500 11px/1.3 var(--sans);color:var(--muted)}
+.ag-nextidea .nt{font-size:16px;font-weight:620;line-height:1.35;color:var(--ink);margin:0 0 6px}
+.ag-nextidea .nd{font-size:12.5px;line-height:1.55;color:var(--ink);margin:0 0 11px}
+/* the meta, as label/value pairs rather than one dot-separated run */
+.ag-nextidea .nf{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 13px;
+  padding:10px 0 0;border-top:1px solid var(--line-soft)}
+.ag-nextidea .nf > div{min-width:0}
+.ag-nextidea .nf dt{font:600 9.5px/1 var(--sans);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 4px}
+.ag-nextidea .nf dd{margin:0;font-size:12px;color:var(--ink)}
+/* what the two buttons actually do, said once, under them */
+.ag-nextidea .nh{font-size:11.5px;line-height:1.5;color:var(--muted);margin:9px 0 0}
+.ag-nextidea .nh b{color:var(--ink);font-weight:600}
 .ag-nextidea .nw{font-size:11.5px;line-height:1.5;color:var(--muted);margin:10px 0 0;
   padding-top:9px;border-top:1px solid var(--line-soft)}
 .ag-nextidea .ag-editrow{margin:0}

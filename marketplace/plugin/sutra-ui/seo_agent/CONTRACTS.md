@@ -1,8 +1,10 @@
 # seo_agent build contract (read fully before writing a line)
 
 The agent is a faithful port of the SEO workflow at
-`/Users/devanshasawa/Desktop/SEO by Devansh/Backlink gets Automated/workflows/` (layers 00, 01, 03, 04;
-02 is skipped except the Voyage page index, already ported in `tools/_index.py` + `tools/voyage.py`).
+`/Users/devanshasawa/Desktop/SEO by Devansh/Backlink gets Automated/workflows/` — ALL FIVE layers.
+Layer 02, the asset engine, shipped in 2.250.0 and lives in `assets/`; the line that used to say it
+was skipped predates it. Read ONLY that folder: `pillar-cluster-strategy` and the other siblings in
+the `SEO by Devansh` tree are off limits.
 READ THE ORIGINAL SCRIPT AND PROMPT for every step you port. Copy prompts near-verbatim into
 `prompts/<area>/<name>.md`; replace company-specific tokens with `{{BRAND}}` etc. Keep the original
 constants and their comments. Where the original has a rule enforced in code, enforce it in code here.
@@ -52,11 +54,25 @@ Keep `text` (first 400 chars) too, older code reads it.
 
 ## Brand files (knowledge/brand/), in build order, each with the ORIGINAL's structure
 type-roles.json · stats.md · stories.md · page-shortlist.md · brand-voice.md · style-guide.md ·
-features.md · cta-pages.md · writing-examples.md · persona.md · voices.md · writing-integrity.md ·
+pricing.md · features.md · cta-pages.md · writing-examples.md · persona.md · writing-integrity.md ·
 writer-brief.md · writer-brief-rulings.md · brand-cards.json · field-sources.md · seo-aeo-geo-checklist.md
 
-`opinions.md` was removed in 2.248.0: nothing ever read it, and it asked for an interview whose
-answers no step used.
+`pricing.md` is the one file in that list a PERSON writes and no builder does: prices, plans, trial
+length, and anything else a site draws with JavaScript, which a crawler cannot reach at all. His own
+pipeline solved this the same way (`_seed/features-seed.md`), and Sutra read that file and called it
+authoritative while having no way on earth to write it. Saving `pricing.md` rebuilds `features.md`
+and **nothing else** — one hop, by the owner's decision (2026-09-09): *"we can skip writing
+integrity, we can skip the writer brief as well. Pricing.md and then features.md. That's it."*
+
+`voices.md` and the byline questions were removed on 2026-09-09, on the owner's word: *"remove
+completely everything about the byline questions, everything from Sutra for now."* The writer brief
+is built from three sources now, not four.
+
+`opinions.md` was removed in 2.248.0. **The reason given at the time was wrong** and is corrected
+here so nobody repeats it: the claim "nothing ever read it" came from grepping Sutra alone. His
+`02-asset-engine/1-competitor-study/scripts/step_g0_scope.py:31` does read it, folding it into the
+brand-scope prompt. The owner retook the decision on the true premise (2026-09-09) and it stays
+removed: *"forget opinions.md."* Not to be raised again.
 
 A row the machine drafted carries the hidden marker `<!--d-->` and nothing a reader can see. A row
 a person edits loses it, and a rebuild never touches a row without it. `<!--d-->` is stripped by

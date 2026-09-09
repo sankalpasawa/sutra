@@ -14,13 +14,19 @@ Writes: the SAME plan shape, sources verified; the card fixes (corrected source_
      the way the original did: source-queries.md plans the queries from the gloss AND the verbatim, so
      the subject is in the query; the search and the page reads are the same ones enrich uses; and the
      same source-judge decides. The FIRST page that supports the claim wins and becomes the card's
-     source. Only when the hunt comes back empty does the old behaviour apply: the card loses the bad
-     url and is marked needs_source, and it is CUT only when it is numeric and has no source left,
-     because a number with no page behind it cannot be published.
-  5. Every url proven wrong is remembered; every other used card citing it loses that url too (a bad
+     source.
+  5. A FAILED HUNT NEVER DESTROYS EVIDENCE (2026-09-10). When the hunt comes back empty the card
+     loses the url that was proven wrong, is stamped `needs_source`, and STAYS IN THE PLAN. It used
+     to be deleted outright whenever it was numeric and had nothing left, which meant a fact the
+     research paid for disappeared with no trace in the article and nothing on screen to say a fact
+     had gone. Losing a card silently is worse than shipping a flagged one: a flagged card is a
+     question a person can answer, a deleted one is a hole nobody knows about. Every kept-and-flagged
+     card is listed in the police log, counted in freeze's soft notes, and re-checked by the draft's
+     digit guard before the article is called finished.
+  6. Every url proven wrong is remembered; every other used card citing it loses that url too (a bad
      page is bad for every card that cites it). A prose card keeps its claim and loses the source; a
      numeric one is re-hunted, because for a number the hunt actually works.
-  6. An H3 that loses all its cards dies with them; a section that loses all its H3s dies too.
+  7. Nothing here removes an H3 or a section any more, because nothing here removes a card.
 """
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -97,8 +103,15 @@ def _judge(card, url, page):
 
 def _worthy_ids(cards):
     """The AI pass: which numeric cards genuinely need a verified source. Batched; a failed batch's cards
-    are treated as NOT worthy (kept unverified, never deleted unjudged)."""
-    worthy, failed_batches = set(), 0
+    are treated as NOT worthy (kept unverified, never deleted unjudged).
+
+    A card the research already stamped `needs_source` skips the judgment entirely and is worthy by
+    construction. The stamp means the research could not find the page that carried the figure, so
+    there is nothing for the AI to weigh: it is the one kind of card that is KNOWN to be unsourced,
+    and asking whether it is worth checking would sometimes answer no and let it through unexamined.
+    """
+    worthy = {C.nid(c.get("card_id")) for c in cards if c.get("needs_source")}
+    failed_batches = 0
     batches = [cards[i:i + C.VERIFY_BATCH] for i in range(0, len(cards), C.VERIFY_BATCH)]
 
     def _one(batch):
@@ -247,21 +260,23 @@ def run(plan, idx, say=lambda *a: None):
             _record(c, "source replaced by the hunt")
             continue
         c["source_urls"] = keep
+        c["needs_source"] = True
         why_hunt = ("the replacement hunt found no page that supports it" if ok_search
                     else "the replacement hunt could not search (" + route_note + ")")
         if keep:                                     # an unloadable url remains: unproven, not wrong
-            c["needs_source"] = True
             needs_source.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
                                  "why": "its loaded source(s) did not support it, the remaining url could not "
                                         "be read, and " + why_hunt})
             _record(c, "source proven wrong, one unreadable url kept, no replacement found")
         else:
-            cut.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
-                        "old": (wrong or [None])[0],
-                        "why": ("no source url" if verdict == "no-url" else "source did not support the claim")
-                               + ", " + why_hunt
-                               + "; a numeric fact with no page behind it is not published"})
-            _record(c, "cut")
+            # KEPT AND FLAGGED, never deleted. The claim itself was never disproved — only the page
+            # behind it was — so the evidence stays and the missing source becomes a visible question.
+            needs_source.append({"card_id": c["card_id"], "claim": (c.get("gloss") or "")[:140],
+                                 "why": ("no source url" if verdict == "no-url" else "source did not support the claim")
+                                        + ", " + why_hunt
+                                        + "; the fact is KEPT with no source attached and flagged, "
+                                          "because deleting it would lose it with nothing on screen to say so"})
+            _record(c, "source proven wrong, no replacement found, kept and flagged")
 
     # --- phase 2b: PROPAGATE. A url proven wrong is wrong for EVERY card citing it. --------------
     judged = {c["card_id"] for c, *_ in bad}
@@ -298,10 +313,13 @@ def run(plan, idx, say=lambda *a: None):
             propagated.append({"card_id": cid, "replaced": False, "kept_other_url": True})
             _record(c, "lost a url proven wrong elsewhere; another source remains")
         elif C.has_number(c.get("verbatim", "")):
-            cut.append({"card_id": cid, "claim": (c.get("gloss") or "")[:140], "old": None,
-                        "why": "cites a url proven wrong; numeric, no other source, and the hunt found no replacement"})
-            propagated.append({"card_id": cid, "replaced": False, "cut": True})
-            _record(c, "cut (propagated)")
+            # Same rule as above: a bad page is a reason to strip the source, never to delete the fact.
+            c["needs_source"] = True
+            needs_source.append({"card_id": cid, "claim": (c.get("gloss") or "")[:140],
+                                 "why": "cites a url proven wrong; numeric, no other source, and the hunt "
+                                        "found no replacement — KEPT with no source attached and flagged"})
+            propagated.append({"card_id": cid, "replaced": False, "kept_unsourced": True})
+            _record(c, "source stripped, claim kept and flagged")
         else:
             c["needs_source"] = True
             unsourced.append({"card_id": cid, "claim": (c.get("gloss") or "")[:140],
@@ -309,18 +327,12 @@ def run(plan, idx, say=lambda *a: None):
                                      "KEPT and the source stripped rather than deleted unjudged"})
             _record(c, "source stripped, claim kept")
 
-    # --- phase 3: apply the cuts to the plan (H3s/sections die with their last card) ---
-    cut_ids = {C.nid(x["card_id"]) for x in cut}
+    # --- phase 3: nothing to apply. Source verification no longer removes a card, so it cannot take
+    # an H3 or a section down with it. The keys stay so the run report and freeze keep their shape,
+    # and `cut` stays as the empty list it now always is: a reader of a run from before 2026-09-10
+    # will find entries there, and a reader of one after will find the same facts under needs_source.
     dropped_h3s, dropped_secs = [], []
-    for sec in plan["sections"]:
-        for h in sec["h3s"]:
-            h["card_ids"] = [cid for cid in h["card_ids"] if C.nid(cid) not in cut_ids]
-        for h in [h for h in sec["h3s"] if not h["card_ids"]]:
-            dropped_h3s.append({"h3": h["h3"], "from_h2": sec["h2"], "why": "all cards cut by source verification"})
-        sec["h3s"] = [h for h in sec["h3s"] if h["card_ids"]]
-    for sec in [s for s in plan["sections"] if not s["h3s"]]:
-        dropped_secs.append(sec["h2"])
-    plan["sections"] = [sec for sec in plan["sections"] if sec["h3s"]]
+    assert not cut, "source verification must never delete a card; see the module docstring, rule 5"
 
     police = {
         "kept_ok": [c["card_id"] for c in kept_ok],
@@ -342,6 +354,6 @@ def run(plan, idx, say=lambda *a: None):
                      "unloadable": len(unverifiable)},
     }
     say("Source check done", "%d confirmed, %d could not be read (kept), %d given a new source, "
-                             "%d still need one, %d cut"
-        % (len(kept_ok), len(unverifiable), len(replaced), len(needs_source) + len(unsourced), len(cut)))
+                             "%d kept and flagged as still needing one. Nothing was deleted."
+        % (len(kept_ok), len(unverifiable), len(replaced), len(needs_source) + len(unsourced)))
     return {"plan": plan, "card_fixes": fixes, "police": police}
