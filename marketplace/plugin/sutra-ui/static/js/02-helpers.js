@@ -37,6 +37,192 @@ function pushPane(id){
   }
 }
 
+/* ── in-chat provider requests ────────────────────────────────────────────────
+   "Using Codex, implement this" switches THIS CHAT to Codex, permanently, and
+   leaves the global Settings default alone. This is the detector; the switch
+   itself is the existing machinery (a socket reopened with ?provider=, then
+   switch.plan/confirm on the server).
+
+   WHY THIS IS IN THE BROWSER AND NOT IN app.py. The provider decides which
+   binary is spawned and which protocol the runtime speaks, and both are fixed
+   when the socket opens (app.py:2158). The decision therefore has to be made
+   BEFORE the socket is chosen. A server-side parser would be reading the text
+   down a socket already bound to the wrong provider.
+
+   That placement is safe because this function only PROPOSES. Whether a
+   provider may actually be selected is decided by ws_chat's readiness gate,
+   which refuses an unknown id and an unrunnable one and is the same gate
+   save_settings applies. Nothing here can route a turn to a provider that is
+   not Ready to use.
+
+   CONSERVATIVE ON PURPOSE, v1. A false positive is not free: a switch replays
+   the whole conversation to another vendor, which costs real tokens. So a bare
+   mention never switches, and only five explicit frames match:
+
+       use/using <P> ...        "use Codex", "using Codex, implement this"
+       switch to <P>            "switch this chat to Codex"
+       run/do/handle this in <P>  "run this in Codex"
+       <P>: ...                 "Codex: implement this"
+       @<P> ...                 "@codex do this"
+
+   DELIBERATELY NOT MATCHED IN v1, and each for a reason rather than an
+   oversight: "ask <P> to ..." and "let's try <P>" (natural, but a step further
+   from an instruction than the five above); "with <P>, ..." ("with codex
+   failing, ..." is the same opening and means the opposite); and every model
+   name -- "opus", "sonnet", "gpt" are not providers, and "use opus" is a MODEL
+   request this would otherwise answer with a PROVIDER switch. Widening the set
+   is a product decision, not a bug fix.
+
+   Takes its data rather than reading globals, so it is testable on its own
+   bytes: `aliases` is SEED.provider_aliases (server-authored -- provider names
+   live in providers._CATALOG and nowhere else), `runnableIds` the ids the
+   server currently reports as runnable. */
+var PROVIDER_INTENT_PREFIX = "(?:(?:please|now|then|ok|okay|lets|let's)[,\\s]+)*";
+
+/* Everything a provider name must NOT be read out of. Each is replaced with a
+   space rather than deleted, so words either side cannot be glued into a new
+   match that was never typed. */
+function stripProviderNoise(text){
+  return String(text || "")
+    .replace(/```[\s\S]*?```/g, " ")      /* fenced code */
+    .replace(/~~~[\s\S]*?~~~/g, " ")
+    .replace(/`[^`]*`/g, " ")             /* inline code */
+    .replace(/"[^"]*"/g, " ")             /* quoted discussion */
+    .replace(/[“][^”]*[”]/g, " ")
+    .replace(/\S*[\/\\]\S*/g, " ")        /* paths, @openai/codex */
+    .replace(/\b[\w-]+\.[\w.]+\b/g, " ")  /* codex_runtime.py, providers.codex */
+    .replace(/\b\w*_\w[\w_]*\b/g, " ")    /* snake_case identifiers */
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* A question is not an instruction. "why did Codex fail?" must never switch.
+   `do` is absent from the leading set on purpose -- "do this in Codex" is an
+   imperative that happens to start with an interrogative-looking word. */
+var PROVIDER_INTENT_QUESTION =
+  /^(?:why|what|whats|what's|how|does|did|can|could|should|is|are|was|were|which|who|whom|when|where)\b/i;
+
+/* Read backwards from a match: a negated instruction is the opposite of one. */
+var PROVIDER_INTENT_NEGATION =
+  /\b(?:dont|don't|do not|never|without|instead of|rather than|not|no need to|stop using|avoid)\s*$/i;
+
+function providerIntentFrames(alias){
+  const a = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  return [
+    new RegExp("^" + PROVIDER_INTENT_PREFIX + "(?:using|use)\\s+" + a + "\\b", "i"),
+    new RegExp("^" + PROVIDER_INTENT_PREFIX
+               + "(?:switch|change|move)\\s+(?:this\\s+chat\\s+)?(?:to|over\\s+to)\\s+"
+               + a + "\\b", "i"),
+    new RegExp("\\b(?:run|do|handle)\\s+(?:this|it|that)\\s+"
+               + "(?:in|on|with|via|through|using)\\s+" + a + "\\b", "i"),
+    new RegExp("^" + a + "\\s*[,:]\\s+", "i"),
+    new RegExp("^@" + a + "\\b", "i"),
+  ];
+}
+
+/* null                          -> no provider request; send normally
+   {target, ready:true}          -> switch this chat to `target`
+   {target, ready:false, reason} -> asked for, cannot be run; DO NOT switch
+   {ambiguous:true, targets}     -> more than one named; DO NOT switch          */
+/* Does the message OPEN with a directive that has something after it?
+
+   This exists to keep the question guards below from swallowing an
+   INSTRUCTION WHOSE PAYLOAD IS A QUESTION. "Using Codex, what is 17 x 6?" ends
+   in a question mark and is not a question about Codex -- it is an order to
+   use Codex, and the thing being asked is the work. Measured live: it returned
+   null, so nothing switched, Claude answered, and the pane truthfully labelled
+   itself Claude. "Codex: what is 17 x 6?" failed the same way.
+
+   THREE THINGS KEEP THIS FROM BECOMING A WIDER MATCHER:
+
+     * only the ANCHORED frames count (use/using <P>, switch to <P>, "<P>:",
+       "@<P>"). Frame 2, "run this in <P>", is unanchored by design so it can
+       match mid-sentence -- which is exactly what makes "how do I run this in
+       Codex?" a question, so it must NOT qualify a message as a directive.
+     * the match has to start at index 0. "should I use Codex?" contains
+       "use Codex" and opens with "should", so it stays a question.
+     * something has to FOLLOW it. "use Codex?" is a hedge with no payload and
+       keeps its old answer of null; "use Codex, do X?" is an order.
+
+   The frame set is unchanged. This narrows a guard that was too broad; it does
+   not widen what counts as a provider request. */
+function providerIntentOpensWithDirective(clean, map){
+  for (const spelling of Object.keys(map || {})){
+    const frames = providerIntentFrames(spelling);
+    for (const i of [0, 1, 3, 4]){          /* anchored only -- never frame 2 */
+      const m = frames[i].exec(clean);
+      /* PUNCTUATION IS NOT A PAYLOAD. "use Codex?" leaves "?" after the
+         frame, and .trim() calls that content -- which would turn the one
+         hedge this guard is meant to keep rejecting into a switch. The
+         remainder has to carry an actual character. */
+      if (!m || m.index !== 0) continue;
+      if (clean.slice(m[0].length).replace(/[\s?.!,;:'"-]+/g, "")) return true;
+    }
+  }
+  return false;
+}
+
+function detectProviderIntent(text, aliases, runnableIds){
+  const clean = stripProviderNoise(text);
+  if (!clean) return null;
+
+  const map = aliases || {};
+  /* The question guards apply only to a message that does NOT open with an
+     explicit directive. See providerIntentOpensWithDirective for why that is a
+     narrowing rather than a widening. */
+  if (!providerIntentOpensWithDirective(clean, map)){
+    if (/\?\s*$/.test(clean)) return null;            /* a question, not an order */
+    if (PROVIDER_INTENT_QUESTION.test(clean)) return null;
+  }
+
+  /* THE WHOLE MESSAGE **AND** EACH CLAUSE, and both are needed.
+     Anchored frames are what keep "add codex to the list" and "never use
+     codex" from matching -- the instruction has to START the text it is read
+     out of. But a real instruction is often the SECOND clause ("implement the
+     parser, then switch to Codex"), which an anchor on the whole message can
+     never see. So the frames run against the message and against each clause,
+     and the results are unioned.
+     The whole message is kept in the list rather than replaced by its clauses
+     because one frame spans a comma by design: "Codex: implement this" and
+     "codex, implement this" are the <P>-leads-the-sentence form, and splitting
+     first would cut the very punctuation that frame matches on. */
+  const clauses = [clean].concat(
+    clean.split(/[.;\n]+|,\s*/).map(c => c.trim()).filter(Boolean));
+  /* Longest alias first so "openai codex" is tried before "codex" -- they
+     resolve to the same id, so this is about matching the whole name the
+     operator typed, not about precedence between providers. */
+  const spellings = Object.keys(map).sort((a, b) => b.length - a.length);
+  const hits = [];
+  for (const spelling of spellings){
+    let found = false;
+    for (const part of clauses){
+      for (const re of providerIntentFrames(spelling)){
+        const m = re.exec(part);
+        if (!m) continue;
+        /* The frame matched -- but a negation immediately before it inverts
+           it. Checked on the text preceding the MATCH within its own clause,
+           which is what lets "don't use Claude, use Codex" resolve to Codex
+           rather than to nothing. */
+        if (PROVIDER_INTENT_NEGATION.test(part.slice(0, m.index))) continue;
+        found = true;
+        break;
+      }
+      if (found) break;
+    }
+    if (found && hits.indexOf(map[spelling]) === -1) hits.push(map[spelling]);
+  }
+  if (!hits.length) return null;
+  /* Two providers named in one message is not a switch, it is a sentence we
+     cannot act on without guessing. Guessing here would move a chat somewhere
+     the operator did not choose. */
+  if (hits.length > 1) return { ambiguous: true, targets: hits };
+
+  const target = hits[0];
+  const ready = (runnableIds || []).indexOf(target) !== -1;
+  return ready ? { target: target, ready: true }
+               : { target: target, ready: false };
+}
+
 function turnUid(t){
   if (t && !t.uid) t.uid = "t" + (++_UID);
   return t ? t.uid : "";
@@ -180,8 +366,110 @@ function uploadAttachment(sid, file){
   fr.readAsDataURL(file);
 }
 
+/* Act on an in-chat provider request, if this message is one.
+
+   Returns true when the message must NOT be sent yet -- the only such case is
+   a pane mid-reply, where dropping the socket would discard an answer the
+   operator is waiting on. Everything else either switches or falls through and
+   sends normally.
+
+   WHAT THIS DOES NOT DO, and the list matters as much as what it does:
+     * it never writes Settings. The global default governs new chats and every
+       chat that has not asked for something else, and an in-chat request is
+       explicitly not a vote about it. POST /api/providers/active is not called
+       from here and must not be.
+     * it never routes ONE turn. The socket is reopened on the target and the
+       chat stays there, because the server records the move as a segment.
+     * it never decides readiness. `runnable` comes from the server's provider
+       table; ws_chat refuses an unrunnable id again on connect. */
+function applyProviderRequest(s, text){
+  if (!s) return false;
+  delete S.chatProviderNote[s.id];
+  /* AN EMPTY PROVIDERS MEANS "NOT FETCHED", NEVER "NOTHING IS READY", and the
+     difference is a sentence that is either true or false in front of an
+     operator. GET /api/providers describes EVERY catalogued provider whatever
+     its readiness (discover_providers walks all of _CATALOG), so a loaded
+     table is never empty -- length zero is the boot window, or a fetch that
+     failed. Read as a readiness answer it made `runnable` [], which marked
+     every target not-ready and printed "OpenAI Codex is not ready to use" over
+     a perfectly good Codex.
+     The same not-loaded-versus-empty distinction paneDeclProvider was split
+     for, on the same state, in the same boot window. */
+  const loaded = (PROVIDERS || []).length > 0;
+  const runnable = (PROVIDERS || []).filter(p => p.runnable).map(p => p.id);
+  const want = detectProviderIntent(text, (SEED || {}).provider_aliases, runnable);
+  if (!want) return false;
+
+  if (want.ambiguous){
+    /* Answerable without the table: two names is two names whether or not
+       either can run, so this keeps its own reply during the boot window. */
+    S.chatProviderNote[s.id] = "That named " + want.targets.map(providerLabel).join(" and ")
+      + ", so nothing was switched — say which one to use.";
+    return false;
+  }
+  /* DEFER, rather than invent an answer in either direction. Guessing "ready"
+     would propose a provider that may not be installed; guessing "not ready"
+     is the false statement this guard exists to remove. Holding the message is
+     the only option that asserts nothing -- and it is the same shape as the
+     mid-reply case below, which also declines to send and says why.
+     Deliberately BEFORE the readiness branch and after the ambiguity one, so
+     the only thing withheld is the verdict that actually needs the table. */
+  if (!loaded){
+    S.chatProviderNote[s.id] = "Still checking which providers are ready — your "
+      + "message was not sent. Try again in a moment.";
+    return true;
+  }
+  if (!want.ready){
+    /* RECOGNISED AND REFUSED, which is the honest answer and not the same as
+       silence. The provider table already carries the specific reason (not
+       installed, not signed in, no chat adapter in this build), so it is shown
+       rather than a generic one invented here. */
+    const p = (PROVIDERS || []).find(x => x.id === want.target) || {};
+    S.chatProviderNote[s.id] = providerLabel(want.target) + " is not ready to use"
+      + (p.reason ? " — " + p.reason : "") + ". This chat stayed on "
+      + providerLabel(paneProvider(s)) + ".";
+    return false;
+  }
+  /* ALREADY THERE. No socket drop, no replay, no marker: the server would
+     answer NOT_NEEDED anyway, and re-opening the socket would cost a cold
+     start to arrive where the chat already is. */
+  if (want.target === paneProvider(s)) return false;
+
+  /* A pane mid-reply is spared, exactly as the Settings handler spares it and
+     for the same reason -- closing the socket now would throw away the reply
+     being written. Said out loud rather than silently ignoring the request,
+     because a provider instruction that does nothing and says nothing reads
+     as a broken detector. */
+  if (streamingFor(s.id) || sideStreamingFor(s.id)){
+    S.chatProviderNote[s.id] = "Finish or stop the running turn first — switching to "
+      + providerLabel(want.target) + " now would discard the reply it is still writing.";
+    return true;
+  }
+
+  /* The socket is bound to its provider at spawn, so the switch IS the
+     reconnect. claudeWsUrl reads this on the way out and the server does the
+     rest: switch.plan replays the conversation to the target, the operator's
+     message rides along at the end of it, and switch.confirm records the
+     segment that keeps the chat there. */
+  S.chatProvider[s.id] = want.target;
+  closeClaudeChannel(s.id, { force: true });
+  return false;
+}
+
 async function submitTurn(text, sessionId){
   const { session, result } = await runTask(text, sessionId);
+  /* BEFORE askClaude, because the socket it would otherwise reuse is the one
+     bound to the OLD provider. After runTask, because the turn has to exist to
+     be rendered against and the classify round-trip is unrelated to this. */
+  if (applyProviderRequest(session, text)){
+    /* Refused for now (a reply is streaming). The turn was created by runTask
+       and would sit forever with no answer, so it is taken back out rather
+       than left as a ghost the operator has to wonder about. */
+    const i = session.turns.indexOf(result);
+    if (i !== -1) session.turns.splice(i, 1);
+    render();
+    return;
+  }
   render();
   askClaude(session, result);
 }
@@ -339,6 +627,15 @@ const S = {
      native session ids and one of these. Learned from the server's provider
      frame rather than minted here, so the two cannot disagree. */
   sutraId:{},
+  /* A pending in-chat provider request, per chat. One-shot -- see
+     sessProviderRequest/claudeWsUrl. The chat's DURABLE provider is not here
+     and never will be: it is provider_history on the server, which is what
+     keeps a switch alive across a reload this map does not survive. */
+  chatProvider:{},
+  /* What to say about the last in-chat provider request that did NOT switch:
+     a name we could not run, or two names in one message. Rendered by the
+     composer; cleared when the next message is sent. */
+  chatProviderNote:{},
   /* sessionId -> the last switch frame the server sent, so the thread can show
      a marker at the point the provider changed (or say why it did not). */
   switchNote:{},

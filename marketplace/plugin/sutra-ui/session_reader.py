@@ -355,6 +355,146 @@ def _gemini_transcript(f: Path, project_cwd: Dict[str, str]) -> Dict:
     return {"cwd": project_cwd.get(project, ""), "branch": "", "messages": messages}
 
 
+#: The framing replay.render puts around a carried-over conversation. Matched
+#: here ONLY to skip such a turn when choosing a title: the first user message
+#: in a codex thread born from a provider switch is the entire prior
+#: conversation, and titling from it would name every switched chat after the
+#: preamble instead of after what the operator asked.
+#:
+#: RESTATED RATHER THAN IMPORTED, deliberately. transcript_ir imports THIS
+#: module (transcript_ir.py:63) for codex_resolve_path, so importing it back
+#: would be a cycle. Both copies are pinned together by
+#: test_codex_listing.test_replay_markers_match_transcript_ir.
+#: rollout-<ISO timestamp>-<thread id>. The timestamp is the fixed-width half,
+#: so it is what the pattern pins; the id is whatever follows and is validated
+#: separately by _CODEX_ID.
+_CODEX_ROLLOUT = re.compile(
+    r"\Arollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(?P<sid>.+)\Z")
+
+_REPLAY_FENCE = re.compile(r"</?transcript-[0-9a-f]{8,}>")
+_REPLAY_PREAMBLE = "You are taking over an in-progress working session"
+
+#: How many records to read looking for a title. A codex rollout opens with
+#: session_meta and the operator's first message is within the first few
+#: records in 13/13 measured; a switched chat's replay turn can be ~1MB on one
+#: line, so this bounds the read rather than the byte count.
+_CODEX_TITLE_SCAN = 40
+
+
+def _codex_session_meta(f: Path) -> Optional[dict]:
+    """One codex rollout, in the same shape the other two providers return.
+
+    THE ID IS THE FILENAME, not a field, and that is measured: the last
+    hyphen-joined component of the stem equals session_meta.payload.session_id
+    in 13/13 rollouts (see codex_resolve_path, which relies on the same fact).
+    So a listing never has to open a file to know what it is looking at --
+    only to title it.
+
+    cwd and branch come from the session_meta record codex writes first
+    (payload.cwd, payload.git.branch). Claude carries the same two fields on
+    its own head record, so the rail's project grouping needs no codex-specific
+    handling.
+
+    ROLE "developer" IS DROPPED, the same rule from_codex_file applies for the
+    same measured reason: codex records its own base instructions as developer
+    messages, and a title taken from one would name the chat after codex's
+    system prompt.
+    """
+    # The id is EVERYTHING AFTER THE TIMESTAMP in rollout-<ISO>-<id>, parsed by
+    # the part of the name whose shape is fixed rather than by counting the
+    # id's own hyphens. Splitting on "-" and taking the last five components
+    # assumed a 5-group UUID; every rollout measured has one, but a 4-group id
+    # then silently absorbs a piece of the timestamp and yields
+    # "01-01a08191-7175-..." -- an id that matches nothing, so the session is
+    # listed under a name no lookup can resolve. Found by driving a real turn
+    # rather than by a fixture, which is why the fixtures all had five.
+    m = _CODEX_ROLLOUT.match(f.stem)
+    sid = m.group("sid") if m else ""
+    if not _CODEX_ID.match(sid or ""):
+        return None
+
+    cwd = branch = ""
+    title = ""
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= _CODEX_TITLE_SCAN:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                payload = d.get("payload") or {}
+                if not isinstance(payload, dict):
+                    continue
+                if d.get("type") == "session_meta":
+                    cwd = payload.get("cwd") or ""
+                    git = payload.get("git")
+                    if isinstance(git, dict):
+                        branch = git.get("branch") or ""
+                    continue
+                if title or d.get("type") != "response_item":
+                    continue
+                if payload.get("role") != "user":
+                    continue
+                text = _codex_text(payload.get("content"))
+                if not text or not text.strip():
+                    continue
+                if _REPLAY_FENCE.search(text) and _REPLAY_PREAMBLE in text:
+                    continue      # a carried-over conversation, not a prompt
+                # THE SAME TWO RULES THE CLAUDE PARSER APPLIES, and they are
+                # not optional here: codex prepends its own machine preamble to
+                # the first user message, so without the `<` skip EVERY codex
+                # row in the rail read "<recommended_plugins>" (measured: 30 of
+                # 30 on the founder's disk). _strip_injected is the existing
+                # helper for that preamble and is reused rather than reinvented.
+                t = _strip_injected(text).strip().replace("\n", " ")
+                if t and not t.startswith("<"):
+                    title = t[:90]
+    except OSError:
+        return None
+
+    st = f.stat()
+    return {
+        "id": sid,
+        # "(no prompt)" is Claude's own fallback string, reused so the rail
+        # renders an untitled codex thread exactly as it renders an untitled
+        # Claude one.
+        "title": (title or "(no prompt)")[:90],
+        # Codex writes no analogue of Claude's custom-title/ai-title records,
+        # so the only two answers here are "prompt" and "none" -- the same
+        # vocabulary _claude_session_meta uses, so a client branching on this
+        # field needs no codex arm.
+        "title_source": "prompt" if title else "none",
+        "project": f.parent.name,
+        "cwd": cwd,
+        "branch": branch,
+        "mtime": int(st.st_mtime),
+        "size": st.st_size,
+        "source": "codex",
+    }
+
+
+def _codex_text(content) -> str:
+    """Text of one codex `content` list. A trimmed copy of
+    transcript_ir._codex_text, restated for the same no-cycle reason as the
+    replay markers above -- and narrower on purpose: a LIST ROW needs the first
+    line of prose, never the image placeholders or the uncapped concatenation
+    the replay path builds."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for c in content:
+        if isinstance(c, dict) and isinstance(c.get("text"), str):
+            parts.append(c["text"])
+    return "\n".join(parts)
+
+
 def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
     """Most-recent sessions across all projects AND all providers, newest first
     -- Claude transcripts under ~/.claude/projects plus DeepSeek transcripts
@@ -388,7 +528,22 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
     """
     claude_files = list(PROJECTS.glob("*/*.jsonl")) if PROJECTS.exists() else []
     gemini_files = list(GEMINI_ROOT.glob("tmp/*/chats/session-*.jsonl")) if GEMINI_ROOT.exists() else []
-    if not claude_files and not gemini_files:
+    # CODEX ADDED 2026-09-09, and its absence was a DISAPPEARING CHAT, not a
+    # missing badge. A chat whose only transcript lives in codex's tree was
+    # returned by nothing here, and adoptRealSessions replaces the rail
+    # wholesale with what this function returns -- so the chat vanished on the
+    # next refresh while its record sat intact in ~/.sutra-ui/chats. Measured
+    # on the founder's disk: 55 rows, 43 claude + 12 deepseek, 0 codex, with
+    # two codex-only chats on disk and neither listed.
+    #
+    # The gap dates from the codex adapter (48622b4), which added
+    # codex_resolve_path -- lookup BY ID, which is why switching always worked
+    # -- and never extended the enumeration. Same root, same layout constant:
+    # the recursive glob mirrors codex_resolve_path's, so a change to codex's
+    # YYYY/MM/DD nesting costs nothing in either place.
+    codex_files = (list(CODEX_ROOT.glob("sessions/**/rollout-*.jsonl"))
+                   if CODEX_ROOT.exists() else [])
+    if not claude_files and not gemini_files and not codex_files:
         return []
 
     def _mtime(p: Path) -> float:
@@ -398,7 +553,8 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
             return 0.0
 
     entries = sorted(
-        [("claude", f) for f in claude_files] + [("deepseek", f) for f in gemini_files],
+        [("claude", f) for f in claude_files] + [("deepseek", f) for f in gemini_files]
+        + [("codex", f) for f in codex_files],
         key=lambda e: _mtime(e[1]), reverse=True,
     )
     offset = max(0, offset)
@@ -410,6 +566,14 @@ def list_sessions(limit: int = 100, offset: int = 0) -> List[dict]:
         try:
             if source == "claude":
                 out.append(_claude_session_meta(f))
+            elif source == "codex":
+                # Same None-means-skip contract _gemini_session_meta already
+                # uses, for the same reason: a rollout whose id cannot be read
+                # out of its filename is not a session this panel can open, and
+                # a row the operator cannot click is worse than no row.
+                meta = _codex_session_meta(f)
+                if meta is not None:
+                    out.append(meta)
             else:
                 meta = _gemini_session_meta(f, project_cwd)
                 if meta is not None:
@@ -745,10 +909,57 @@ def _parse_transcript(f) -> Dict:
     return {"cwd": cwd, "branch": branch, "messages": messages}
 
 
+def read_resolve_path(session_id: str):
+    """The file behind any listed session id, across ALL THREE trees.
+
+    SEPARATE FROM resolve_path() FOR THE REASON codex_resolve_path IS.
+    resolve_path is shared with the two WRITE paths -- append_title() appends a
+    Claude-shaped record to whatever it resolves, and relocate() MOVES the file
+    -- so teaching it about codex would silently point both at another vendor's
+    tree. This one is read-only by construction and exists because
+    list_sessions now returns codex rows: a row the rail can show and nothing
+    can open is worse than no row, which is the same rule _codex_session_meta
+    applies when it skips an unidentifiable rollout.
+    """
+    p = resolve_path(session_id)
+    if p is not None:
+        return p
+    return codex_resolve_path(session_id)
+
+
+def _codex_transcript(f: Path) -> Dict:
+    """One codex rollout in the {cwd, branch, messages} shape the other two
+    readers return.
+
+    PARSED BY transcript_ir, NOT BY A SECOND PARSER HERE. from_codex_file
+    already reads this format -- measured against 13 real rollouts, with the
+    developer-role and reasoning rules that took a commit to establish -- and a
+    copy of it in this module would drift from the one the provider switch
+    replays through, so a chat could render one way and carry over another.
+
+    IMPORTED INSIDE THE FUNCTION because transcript_ir imports this module
+    (transcript_ir.py:63) for codex_resolve_path. At call time both modules are
+    fully initialised, so the cycle that a top-level import would create does
+    not exist here.
+    """
+    import transcript_ir   # noqa: PLC0415 -- see the docstring: cycle at import time
+    ir = transcript_ir.from_codex_file(f) or {}
+    messages = []
+    for turn in ir.get("turns") or []:
+        text = "\n".join(b.get("text") or "" for b in (turn.get("blocks") or [])
+                          if b.get("type") in ("text", "tool_result"))
+        if not text.strip():
+            continue
+        messages.append({"role": turn.get("role") or "user", "text": text})
+    return {"cwd": ir.get("cwd") or "", "branch": ir.get("branch") or "",
+            "messages": messages}
+
+
 def read_session(session_id: str) -> Optional[Dict]:
     """Parse one session transcript into chat-renderable messages. Read-only.
-    Checks Claude's tree first, then DeepSeek's -- same {id, cwd, branch,
-    messages} shape either way, so the caller never needs to know which."""
+    Checks Claude's tree first, then DeepSeek's, then Codex's -- same
+    {id, cwd, branch, messages} shape whichever it was, so the caller never
+    needs to know which."""
     if "/" in session_id or "\\" in session_id or ".." in session_id:
         return None  # path-traversal guard
     matches = list(PROJECTS.glob("*/" + session_id + ".jsonl"))
@@ -759,6 +970,13 @@ def read_session(session_id: str) -> Optional[Dict]:
     f = _gemini_resolve_path(session_id)
     if f is not None:
         return {"id": session_id, **_gemini_transcript(f, _gemini_project_cwd_map())}
+    # CODEX LAST, and only since its rows started appearing in the rail. The
+    # order matters no more than the other two -- an id belongs to exactly one
+    # tree -- but keeping the new arm last leaves both existing lookups on the
+    # byte-identical path they were on.
+    f = codex_resolve_path(session_id)
+    if f is not None:
+        return {"id": session_id, **_codex_transcript(f)}
     return None
 
 

@@ -790,6 +790,13 @@ def _declarations_attr() -> str:
             "provider": providers.active_provider() or "",
             "turn_options_by_provider": providers.all_turn_options_by_provider(),
             "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
+            # {spelling: provider_id} for in-chat provider requests. Shipped
+            # here for the same reason as the two maps above -- the composer
+            # must be able to recognise "using Codex, ..." on the first paint,
+            # before any fetch resolves -- and shipped AT ALL so provider names
+            # exist in exactly one place (providers._CATALOG). A copy in JS
+            # would drift silently the day a provider is renamed.
+            "provider_aliases": providers.provider_aliases(),
         }
         return _html_escape(json.dumps(decl, separators=(",", ":")), quote=True)
     except Exception:
@@ -862,8 +869,31 @@ def sessions_page() -> str:
 def api_sessions(limit: int = 100, offset: int = 0):
     """One page of sessions, newest first. `offset` walks back into history so
     the panel can fetch more as it scrolls; a page shorter than `limit` means
-    the end. See session_reader.list_sessions for the offset-stability note."""
-    return sr.list_sessions(limit, offset)
+    the end. See session_reader.list_sessions for the offset-stability note.
+
+    EACH ROW ALSO CARRIES THE SUTRA CHAT IT BELONGS TO, and that is what makes a
+    provider switch survive a refresh. The browser holds `sutra_id` in memory
+    only, so a reload loses it; the pane then reconnects with no ?sutra=, and
+    ws_chat's chat-local step (_chat_local_provider) is keyed entirely on that
+    parameter -- it returns immediately on an empty one and never reads the
+    record that holds the answer. Resolution fell through to the GLOBAL default,
+    so a chat switched to Codex came back on Claude, and the in-loop seed
+    recovery then found the chat too late to change the provider and performed a
+    real Codex -> Claude carry-over instead. Measured live: "OpenAI Codex ->
+    Claude Code, turns 1-2 carried over" on a chat nobody had asked to move.
+
+    chat_store.resolve() is the existing reverse-index lookup and is used as-is:
+    it answers exactly "which chat owns this provider-native session id", which
+    is the question a rail row raises. No second mapping is introduced, and a
+    row whose id belongs to no chat simply carries None.
+    """
+    rows = sr.list_sessions(limit, offset)
+    for row in rows:
+        try:
+            row["sutra_id"] = chat_store.resolve(row.get("source"), row.get("id"))
+        except Exception:   # noqa: BLE001 -- a bad index must not empty the rail
+            row["sutra_id"] = None
+    return rows
 
 
 # ---------------------------------------------------------------- live sync ---
@@ -2110,6 +2140,63 @@ def _seed_is_another_providers(seed, active_id, sutra_id):
     return False
 
 
+def _chat_local_provider(sutra_id):
+    """The provider THIS CHAT is already running on, when it can still be run.
+
+    THE CHAT-LOCAL PROVIDER IS NOT A NEW PIECE OF STATE. It is the provider of
+    the chat's last segment -- `provider_history[-1]["provider"]`, written by
+    switch.confirm() on every successful switch since piece 7. This function
+    only READS it. Nothing here writes settings.json, and that is the whole
+    point: a chat may run on Codex while the global default stays Claude.
+
+    WHY THIS HAS TO EXIST AT ALL, and what was broken without it. The browser
+    holds `sutra_id` in memory only (02-helpers.js:341), and claudeWsUrl sent
+    no ?provider=, so EVERY reconnect resolved through active_provider_detail()
+    -- the global default. A chat switched to Codex therefore reverted to
+    Claude on the next connect, and because ?sutra= was still sent, switch.plan
+    saw active_segment=codex against target=claude and REPLAYED THE ENTIRE
+    CONVERSATION BACK TO CLAUDE. A silent un-switch that cost a full carry-over.
+    Reading the chat's own record here is what makes the switch stick across a
+    reload, a server restart, and a dropped socket.
+
+    RUNNABLE IS RE-CHECKED, NOT ASSUMED. A provider that was ready when the
+    segment was written can be uninstalled or signed out afterwards. Returning
+    it anyway would push the failure down into the spawn, which is the exact
+    failure mode providers.py was written to prevent. The one readiness
+    mechanism is providers.provider_by_id(...)["runnable"] -- the same gate the
+    ?provider= arm below applies, and the same one save_settings applies. No
+    second notion of readiness is introduced here.
+
+    Returns (provider_id, ignored) -- `ignored` is None unless a recorded
+    provider had to be dropped, in which case it is one entry in
+    active_provider_detail()'s own `ignored` shape, so the UI renders it through
+    the path that already exists for a dropped Settings choice rather than a
+    new one invented for this case.
+    """
+    if not sutra_id:
+        return None, None
+    try:
+        rec = chat_store.load(sutra_id)
+    except Exception:   # noqa: BLE001 -- a bad record must not kill the connect
+        return None, None
+    if rec is None:
+        return None, None
+    pid = (chat_store.active_segment(rec) or {}).get("provider")
+    if not pid:
+        # A chat that exists but has never been sent anywhere. It has no
+        # provider of its own yet, so the global default is the right answer --
+        # which is what returning None asks the caller to do.
+        return None, None
+    prov = providers.provider_by_id(pid)
+    if prov is None:
+        return None, {"source": "chat-history", "id": pid,
+                      "reason": "unknown provider id"}
+    if not prov["runnable"]:
+        return None, {"source": "chat-history", "id": pid,
+                      "reason": prov["reason"]}
+    return prov["id"], None
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     """Chat <-> background `claude -p`. One subprocess per message; --resume keeps
@@ -2178,7 +2265,29 @@ async def ws_chat(ws: WebSocket):
             return
         detail = {"id": want["id"], "source": "chat", "ignored": []}
     else:
-        detail = providers.active_provider_detail()
+        # CHAT-LOCAL BEFORE GLOBAL. The precedence is now:
+        #
+        #   1. ?provider=          explicit switch request        (arm above)
+        #   2. this chat's own last segment                       (here)
+        #   3. active_provider_detail()  env -> settings -> first runnable
+        #
+        # Step 2 is what makes an in-chat switch STICKY without touching
+        # settings.json: the chat carries its own answer in provider_history,
+        # so Chat A can sit on Codex while the global default -- and therefore
+        # every new chat and every chat that never switched -- stays Claude.
+        #
+        # A DROPPED RECORDED PROVIDER IS SAID OUT LOUD, through the `ignored`
+        # list active_provider_detail already publishes for a dropped Settings
+        # choice. Falling back silently would answer as Claude on a chat the
+        # operator moved to Codex, with nothing on screen to explain it.
+        chat_pid, chat_ignored = _chat_local_provider(sutra_id)
+        if chat_pid:
+            detail = {"id": chat_pid, "source": "chat-history", "ignored": []}
+        else:
+            detail = providers.active_provider_detail()
+            if chat_ignored:
+                detail = dict(detail, ignored=[chat_ignored]
+                              + list(detail.get("ignored") or []))
     active_id = detail["id"]
     if active_id is None:
         lines = ["  - %s: %s" % (p["id"], p["reason"] or "?")
@@ -2418,6 +2527,57 @@ async def ws_chat(ws: WebSocket):
             model = payload.get("model")
             if not msg.strip():
                 continue
+
+            # ---- the chat id can arrive with the MESSAGE, not the URL --------
+            # A pane opened from the transcript rail knows a native session id
+            # (07-loaders.js adoptRealSessions attaches one to every listed
+            # transcript) but NOT the sutra chat id: the browser learns that
+            # only from a `provider` or `chat` frame, and both need a socket
+            # that does not exist yet. So the first message after opening such a
+            # chat arrives with `resume` set and `?sutra=` absent.
+            #
+            # WHAT THAT COST, measured on disk 2026-09-09. seed_switch is
+            # bool(sutra_id), so it was false; switch.plan never ran, and the
+            # conversation was not carried anywhere. The seed guard below is
+            # `_seed_is_another_providers(seed, active_id, sutra_id)`, which
+            # short-circuits to False on an empty sutra_id -- so a CLAUDE id was
+            # adopted on a CODEX pane, passed as `codex exec resume <claude id>`,
+            # echoed back by codex as its own thread id (codex_runtime.py:522),
+            # missed by the resolve() below, and written to a BRAND NEW chat
+            # record. One switch produced: a forked chat, no carried context,
+            # and a codex segment naming a session that exists only in claude's
+            # tree. Two such records are on the founder's disk.
+            #
+            # THE LOOKUP ALREADY EXISTED AND IS DOCUMENTED FOR EXACTLY THIS.
+            # chat_store.resolve's own docstring: "the lookup ws_chat needs on
+            # reconnect: the browser hands back a native session id, and the
+            # panel has to find the Sutra chat it belongs to -- which may have
+            # started on the OTHER provider." It was only ever called AFTER the
+            # turn, and only with `active_id` -- the provider being switched TO
+            # -- which can never match a seed minted by the one being left. So
+            # this asks every segment provider, before the switch decision
+            # instead of after it. No new index, no new state.
+            if not sutra_id and seed and isinstance(seed, str):
+                for _pid in chat_store.SEGMENT_PROVIDERS:
+                    try:
+                        _found = chat_store.resolve(_pid, seed)
+                    except Exception:   # noqa: BLE001 -- a bad index must not kill a turn
+                        _found = None
+                    if _found:
+                        sutra_id = _found
+                        # RE-ARM. seed_switch was computed from an empty
+                        # sutra_id at connect; the chat is now known, so the
+                        # carry-over this connection is owed can still happen.
+                        # Set here rather than at connect because that is the
+                        # first moment the id exists.
+                        seed_switch = True
+                        # TELL THE CLIENT, or it re-learns this on every single
+                        # connect and only for as long as it still holds a
+                        # resumable seed. The frame is the one the minting path
+                        # below already sends; the client stores it
+                        # (01-state.js) and the next socket carries ?sutra=.
+                        await ws.send_json({"type": "chat", "sutra_id": sutra_id})
+                        break
 
             # ---- carry the conversation across a provider switch ------------
             # The operator picked a different provider, the socket reopened on

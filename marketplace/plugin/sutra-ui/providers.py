@@ -1161,6 +1161,59 @@ _CATALOG = (
 )
 
 
+#: EXTRA SPELLINGS an operator may reasonably type for a provider, beyond its
+#: catalogue id and its display name (both of which provider_aliases() derives
+#: automatically -- they are NOT repeated here).
+#:
+#: WHY THIS LIVES BESIDE _CATALOG. The panel detects an in-chat provider request
+#: ("using Codex, ...") in the browser, because the provider is fixed when the
+#: socket opens and the decision has to be made before that. The NAMES it
+#: matches on must still come from here: a second copy in JS would drift the
+#: day a provider is added or renamed, and the drift would be silent -- an
+#: alias that no longer matches simply stops switching, with nothing to say so.
+#: So the table ships to the client through _declarations_attr (app.py), the
+#: same channel turn_options_by_provider already rides.
+#:
+#: DELIBERATELY SHORT, and model names are deliberately absent. "opus",
+#: "sonnet" and "gpt" are not provider names: the first two are entries in
+#: Claude's own model picker, so "use opus" is a MODEL request that this table
+#: would silently answer with a PROVIDER switch. Adding them is a product
+#: decision, not an oversight.
+_PROVIDER_ALIAS_EXTRAS = {
+    "claude": ("claude code",),
+    "codex": ("openai codex",),
+    "deepseek": ("deep seek",),
+    "gemini": ("gemini cli",),
+}
+
+
+def provider_aliases():
+    """{spelling: provider_id} for every catalogued provider, lowercased.
+
+    Every id and every display name is included automatically, so a provider
+    added to _CATALOG is matchable the moment it exists rather than when
+    someone remembers this function.
+
+    EVERY provider is listed, including ones with no adapter. `gemini` is
+    matchable on purpose: "use Gemini" should be RECOGNISED and then refused
+    with the reason it cannot run, which is what the readiness gate already
+    says. Leaving it out would make the same sentence do nothing at all, and
+    silence reads as a bug in the detector rather than an answer about Gemini.
+    Whether a matched provider may actually be selected is decided by
+    `runnable`, never here.
+    """
+    out = {}
+    for spec in _CATALOG:
+        pid = spec["id"]
+        out[pid.lower()] = pid
+        name = (spec.get("name") or "").strip().lower()
+        if name:
+            out[name] = pid
+        for extra in _PROVIDER_ALIAS_EXTRAS.get(pid, ()):
+            out[extra] = pid
+    return out
+
+
 #: Claude Desktop's bundle. It is NOT the Claude Code CLI and ships no `claude`
 #: binary -- verified by searching the installed bundle for any executable of
 #: that name and finding none. Someone who installed Desktop has nothing Sutra

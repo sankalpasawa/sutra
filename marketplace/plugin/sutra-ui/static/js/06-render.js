@@ -157,7 +157,38 @@ function agentDetailHtml(meta, messages){
    paneDeclProvider below for the one kind of question that can be answered
    earlier, and why this one cannot. */
 function paneProvider(s){
-  return (s && s.channel && s.channel.id) || (SETTINGS || {}).provider;
+  /* `s.source` sits between the two for ONE window: a chat reopened from the
+     rail before its socket exists. The chat's real answer lives server-side in
+     provider_history, which only the ws `provider` frame can report -- but the
+     rail already knows which provider WROTE this chat's transcript
+     (GET /api/sessions -> session_reader), and for a chat that has switched
+     that is the provider it switched TO. So a Codex chat reopened from the
+     rail no longer paints Claude's model list for the window before its first
+     message. Still a hint, not the answer: the frame overwrites it the moment
+     it lands, which is why it ranks below s.channel and not above. */
+  return (s && s.channel && s.channel.id)
+      || (s && s.source)
+      || (SETTINGS || {}).provider;
+}
+/* IS THIS CHAT GOVERNED BY THE GLOBAL SETTING, or by its own choice?
+
+   Answered off the SERVER's provider frame rather than any local state,
+   because `source` is how ws_chat actually resolved the provider and nothing
+   in the browser can know better:
+
+     "chat"          an explicit ?provider= -- the in-chat request that switched it
+     "chat-history"  the chat's own provider_history segment (app.py _chat_local_provider)
+     env/settings/fallback   the global default
+
+   Used by the Settings handler to leave chat-local chats alone, and by the
+   composer to stop promising that a global change will move them. A pane with
+   no socket yet answers false: nothing has told us otherwise, and claiming a
+   chat is pinned when it may not be would strand it on a provider the operator
+   never chose. */
+function providerIsChatLocal(sid){
+  const s = (S.sessions || []).find(x => x.id === sid);
+  const src = s && s.channel && s.channel.source;
+  return src === "chat" || src === "chat-history";
 }
 /* THE SAME PANE, for a DIFFERENT KIND OF QUESTION -- and the split is the fix
    for a real defect, not a convenience.

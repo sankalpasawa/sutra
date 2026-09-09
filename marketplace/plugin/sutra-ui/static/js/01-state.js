@@ -673,6 +673,24 @@ function adoptRealSessions(rows){
      second one. Without this the rail grows a twin: one live in-memory row and
      one read-only-looking copy of the same thread. */
   const owned = new Set(local.map(s => s.claude_session).filter(Boolean));
+  /* THE CHAT EACH TRANSCRIPT BELONGS TO, learned here so a provider switch
+     survives a refresh. S.sutraId is memory-only, so a reload empties it; the
+     pane then reconnects with no ?sutra=, ws_chat's chat-local step returns
+     immediately on the empty parameter, and a chat switched to Codex comes back
+     on the GLOBAL default -- with the seed recovery finding it too late and
+     replaying Codex -> Claude for a switch nobody asked for.
+
+     Written for EVERY row, before the map: the three branches below return an
+     in-flight session, an on-screen one, or a fresh object, and this mapping is
+     true of all of them. A row whose id belongs to no chat carries null, and
+     null must NOT overwrite an id a live socket already learned from its own
+     `chat` frame -- that frame is the more recent fact. */
+  (rows || []).forEach(r => {
+    if (r && r.id && r.sutra_id){
+      if (!S.sutraId) S.sutraId = {};
+      S.sutraId[r.id] = r.sutra_id;
+    }
+  });
   const real = (rows || []).filter(r => !owned.has(r.id)).map(r => {
     if (busy.has(r.id)) return busy.get(r.id);          /* in-flight: untouched */
     const k = openLoaded.get(r.id);
@@ -1249,16 +1267,33 @@ function sessSutraId(sid){
   if (sid && S.sutraId && S.sutraId[sid]) return String(S.sutraId[sid]).trim();
   return "";
 }
+/* An in-chat provider request waiting to be spent, for one chat. ONE-SHOT:
+   set when "use Codex" is detected, read by the next socket this chat opens,
+   and cleared there. It does NOT have to persist, because the switch it starts
+   is recorded server-side as a provider_history segment -- and ws_chat resolves
+   a chat with no ?provider= from that segment. So the request moves the chat
+   once; the chat's own record keeps it there. */
+function sessProviderRequest(sid){
+  if (sid && S.chatProvider && S.chatProvider[sid]) return String(S.chatProvider[sid]).trim();
+  return "";
+}
 function claudeWsUrl(sid){
   const base = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/chat";
   const q = [];
   const cwd = sid ? sessCwd(sid) : "";
   if (cwd) q.push("cwd=" + encodeURIComponent(cwd));
-  /* No provider param. Provider is chosen in Settings and nowhere else
-     (founder direction 2026-09-03), so the server's own resolution IS the
-     answer -- sending one from here could only ever disagree with it. The
-     server still accepts ?provider= and refuses an unrunnable one; nothing in
-     this client sends it. */
+  /* PROVIDER IS SENT ONLY TO SWITCH, never to restate the status quo.
+     It is not a per-pane preference: the global Settings default still governs
+     new chats and every chat that never asked for anything else, and an
+     ordinary turn sends no provider at all so the server answers from the
+     chat's own provider_history (app.py _chat_local_provider) or, failing
+     that, from Settings. Sending a provider on every connect would put the
+     client's stale idea of the chat ahead of the record, which is the one
+     thing that must not happen after a switch the server confirmed.
+     The server validates it and refuses an unknown or unrunnable id, so this
+     proposes and ws_chat disposes. */
+  const want = sid ? sessProviderRequest(sid) : "";
+  if (want) q.push("provider=" + encodeURIComponent(want));
   const sutra = sid ? sessSutraId(sid) : "";
   if (sutra) q.push("sutra=" + encodeURIComponent(sutra));
   return q.length ? base + "?" + q.join("&") : base;
@@ -1369,6 +1404,12 @@ function claudeChannel(s, side){
   const ws = new WebSocket(claudeWsUrl(s.id));
   ch = { ws:ws, sid:s.id, key:key, side:!!side, open:false, queue:[], pending:[],
          turn:null, last:null, lastError:null, cwd:sessCwd(s.id) };
+  /* SPENT. The URL above carried it, so the request has done its work: the
+     server will switch this chat and record the segment, and every later
+     socket resolves from that record instead. Leaving it set would re-send
+     ?provider= on every reconnect -- harmless while it agrees with the record,
+     and a silent override of a LATER switch the moment it does not. */
+  if (S.chatProvider) delete S.chatProvider[s.id];
   CLAUDE_SOCKETS.set(key, ch);
   ws.onopen = ()=>{ ch.open = true; ch.queue.splice(0).forEach(m=>ws.send(m)); };
   ws.onmessage = ev=>{
@@ -1435,6 +1476,19 @@ function claudeChannel(s, side){
          and two places holding the same failure is how one of them goes stale. */
       if (!S.switchNote) S.switchNote = {};
       S.switchNote[s.id] = f;
+      /* THE SAME TOAST A SETTINGS SWITCH ALREADY USES (pushPane -> showNudge
+         with .provtoast), not a second notification system. It fires here
+         rather than at detection time because only the server can say the
+         switch actually happened -- the carry-over can still be refused for a
+         transcript it cannot read or a payload that will not fit, and a toast
+         announcing a move that did not occur is the failure the switch marker
+         exists to prevent. The marker in the thread carries the detail and the
+         refusal reason; this is the glance. */
+      if (f.ok && typeof showNudge === "function"){
+        const el = showNudge("This chat now uses "
+                             + providerLabel(f.target) + ".", 5000);
+        if (el) el.className += " provtoast";
+      }
       scheduleRender();
     } else if (f.type === "mode_note"){
       /* The permission mode this pane asked for is NOT the one running, and the

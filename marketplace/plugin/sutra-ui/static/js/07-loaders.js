@@ -813,10 +813,27 @@ function wire(){
                     A pane mid-reply is left alone: closing it would discard a
                     reply the operator is waiting on. That pane finishes on the
                     old provider and moves on its next message. */
-                 let kept = 0;
+                 let kept = 0, local = 0;
                  [...CLAUDE_SOCKETS.keys()].forEach(k=>{
                    const sid = k.replace(/::side$/, "");
                    if (streamingFor(sid) || sideStreamingFor(sid)){ kept++; return; }
+                   /* A CHAT THAT CHOSE ITS OWN PROVIDER IS NOT GOVERNED BY THIS
+                      SETTING, so this must not touch it. The global default
+                      governs new chats and chats that never asked; a chat moved
+                      to Codex by an in-chat request stays on Codex until another
+                      request moves it.
+
+                      Read off the SERVER's provider frame, never from a local
+                      guess: `source` is how ws_chat resolved the provider, and
+                      "chat" (an explicit ?provider=) and "chat-history" (the
+                      chat's own provider_history segment) are exactly the two
+                      answers that mean "not from Settings". Dropping such a
+                      socket would be harmless on its own -- the server would
+                      resolve it back to the same provider from the record --
+                      but it would cold-start the CLI and, on a chat whose
+                      record had not landed yet, hand it to the new global
+                      default instead. */
+                   if (providerIsChatLocal(sid)){ local++; return; }
                    const ch = CLAUDE_SOCKETS.get(k);
                    try { ch.ws.close(); } catch (e) {}
                    CLAUDE_SOCKETS.delete(k);
@@ -832,7 +849,10 @@ function wire(){
                     after a switch belongs to the OTHER provider. */
                  if (typeof loadUsage === "function") loadUsage(true);
                  S.setOk = "new chats and your next message use " + r.active + "."
-                         + (kept ? " A chat is still replying and will move after it finishes." : "");
+                         + (kept ? " A chat is still replying and will move after it finishes." : "")
+                         + (local ? " " + local + " chat" + (local > 1 ? "s that were" : " that was")
+                                    + " switched inside the chat itself " + (local > 1 ? "keep" : "keeps")
+                                    + " its own provider." : "");
                  /* CONFIRMED ON THE CHAT SURFACE, NOT HERE. S.setOk above is
                     this screen's own receipt. The fact an operator wants --
                     which provider is this chat about to use -- is wanted when

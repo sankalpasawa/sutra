@@ -608,5 +608,59 @@ class DeepSeekNeedsAKeyToBeRunnable(unittest.TestCase):
         self.assertEqual(providers._CATALOG[-1]["id"], "deepseek")
 
 
+class ProviderAliases(unittest.TestCase):
+    """The names an in-chat provider request may be typed as.
+
+    WHY THIS IS A TEST AND NOT A COMMENT. The detector runs in the browser
+    (the provider is fixed when the socket opens, so the decision has to be
+    made before that), but provider NAMES live in _CATALOG. The table is
+    shipped to the client through _declarations_attr rather than copied into
+    JS, and these assertions are what stop the copy from reappearing or the
+    shipped table from drifting away from the catalogue.
+    """
+
+    def test_every_catalogued_provider_is_matchable_by_id_and_by_name(self):
+        al = providers.provider_aliases()
+        for spec in providers._CATALOG:
+            self.assertEqual(al.get(spec["id"].lower()), spec["id"],
+                             "%s is not matchable by its own id" % spec["id"])
+            self.assertEqual(al.get(spec["name"].lower()), spec["id"],
+                             "%s is not matchable by its display name"
+                             % spec["id"])
+
+    def test_a_provider_with_no_adapter_is_still_matchable(self):
+        """gemini must be RECOGNISED and then refused with the reason it
+        cannot run. Leaving it out would make "use Gemini" do nothing at all,
+        and silence reads as a broken detector rather than an answer about
+        Gemini. Whether it may be SELECTED is decided by `runnable`, which is
+        a different question and a different mechanism."""
+        self.assertEqual(providers.provider_aliases().get("gemini"), "gemini")
+        self.assertFalse(providers.provider_by_id("gemini")["adapter"])
+
+    def test_no_model_name_is_an_alias(self):
+        """"opus" and "sonnet" are entries in Claude's OWN model picker, and
+        "gpt" is not a provider at all. An alias here would answer a model
+        request with a provider switch -- a chat moved to another vendor
+        because the operator asked for a different Claude."""
+        al = providers.provider_aliases()
+        for word in ("opus", "sonnet", "haiku", "gpt", "gpt-5", "chatgpt",
+                     "openai", "anthropic"):
+            self.assertNotIn(word, al, "%r must not select a provider" % word)
+
+    def test_the_shipped_table_is_what_the_js_test_asserts_against(self):
+        """test_provider_intent.js hardcodes the alias map it exercises. That
+        fixture is only honest while it matches the real thing, so the drift
+        is caught HERE -- in the language that owns the catalogue -- rather
+        than discovered when a renamed provider silently stops switching."""
+        import json
+        import re
+        src = Path(__file__).with_name("test_provider_intent.js").read_text()
+        m = re.search(r"const ALIASES = (\{.*?\});", src, re.S)
+        self.assertTrue(m, "the JS fixture no longer declares ALIASES")
+        fixture = json.loads(re.sub(r",(\s*\})", r"\1", m.group(1)))
+        self.assertEqual(fixture, providers.provider_aliases(),
+                         "test_provider_intent.js is testing a stale alias map")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

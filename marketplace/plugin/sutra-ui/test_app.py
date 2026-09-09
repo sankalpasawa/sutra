@@ -1426,7 +1426,13 @@ class TestApp(unittest.TestCase):
         if not rows:
             self.skipTest("no sessions on this machine")
         for r in rows:
-            p = session_reader.resolve_path(r["id"])
+            # read_resolve_path, not resolve_path: list_sessions returns codex
+            # rows since 2026-09-09, and resolve_path is deliberately NOT
+            # extended to codex because it is shared with append_title() and
+            # relocate(), both of which WRITE. The read-only resolver is the
+            # one that spans all three trees, and "is this a real file" is a
+            # read question. The invariant is unchanged.
+            p = session_reader.read_resolve_path(r["id"])
             self.assertIsNotNone(p, "session %r resolves to no file on disk -- "
                                      "it was invented" % r["id"])
             self.assertEqual(r["size"], os.path.getsize(p),
@@ -1459,6 +1465,28 @@ class TestApp(unittest.TestCase):
                     try:
                         ev = json.loads(line)
                     except ValueError:
+                        continue
+                    # A THIRD RECORD SHAPE since list_sessions started
+                    # returning codex rows (2026-09-09). Codex writes
+                    # {"type":"response_item","payload":{"role":"user",
+                    #  "content":[{"type":"input_text","text":...}]}} where
+                    # Claude writes {"type":"user","message":{...}}. Without
+                    # this arm no codex prompt is ever extracted, `prompts` is
+                    # empty, and every honest codex title reads as manufactured.
+                    # The invariant does not loosen -- the title must still be
+                    # the head of a real prompt in this very file. Only the set
+                    # of shapes a prompt can be written in grew.
+                    if ev.get("type") == "response_item":
+                        pl = ev.get("payload")
+                        if isinstance(pl, dict) and pl.get("role") == "user":
+                            c = pl.get("content")
+                            if isinstance(c, str):
+                                prompts.append(c)
+                            elif isinstance(c, list):
+                                prompts.append("\n".join(
+                                    b.get("text", "") for b in c
+                                    if isinstance(b, dict)
+                                    and isinstance(b.get("text"), str)))
                         continue
                     if ev.get("type") != "user":
                         continue
@@ -2214,8 +2242,17 @@ class TestChatProviderParam(unittest.TestCase):
                       "creating one, or one conversation becomes two records")
         self.assertIn("chat_store.create(", src, "nothing mints a chat record")
         # The mint has to sit AFTER the session id is known: it is keyed on it.
+        # THE MINT is what cannot precede the transport, and chat_store.create
+        # is the mint. The "chat" frame is no longer a reliable marker for it:
+        # since 2026-09-09 the handler also RECOVERS an existing chat id from
+        # the `resume` seed BEFORE the turn -- a pane opened from the rail has
+        # no ?sutra= to send, and without that recovery the switch forked a new
+        # chat and wrote the source provider's id onto the target's segment.
+        # Recovery reads an id that already exists; minting invents one keyed
+        # to a session that must therefore exist first. Only the second has an
+        # ordering constraint.
         self.assertLess(src.index("register_runtime(session_id, rt)"),
-                        src.index('"type": "chat", "sutra_id"'),
+                        src.index("chat_store.create("),
                         "the chat id is keyed to the native session, so it "
                         "cannot be minted before the transport returns one")
 
@@ -4391,17 +4428,26 @@ class TestDeclarationsInThePage(unittest.TestCase):
         state = (Path(__file__).parent / "static" / "js" / "01-state.js").read_text()
         self.assertIn('meta[name="sutra-declarations"]', state)
 
-    def test_it_carries_the_three_facts_the_client_gates_on(self):
+    def test_it_carries_the_facts_the_client_gates_on(self):
+        """FOUR since 2026-09-09. `provider_aliases` joined the three because
+        it answers the same KIND of question as the other two maps -- a static
+        declaration the composer needs on the FIRST paint, before any fetch
+        resolves -- and because provider names must exist in exactly one place
+        (providers._CATALOG). The in-chat provider detector runs in the
+        browser, so without this it would have needed its own copy of every
+        provider name, and the copy would drift silently."""
         import json as _json
         import app as A
         decl = _json.loads(__import__("html").unescape(A._declarations_attr()))
         self.assertEqual(set(decl), {"provider", "turn_options_by_provider",
-                                     "permission_modes_by_provider"})
+                                     "permission_modes_by_provider",
+                                     "provider_aliases"})
         import providers
         self.assertEqual(decl["turn_options_by_provider"],
                          providers.all_turn_options_by_provider())
         self.assertEqual(decl["permission_modes_by_provider"],
                          providers.all_permission_modes_by_provider())
+        self.assertEqual(decl["provider_aliases"], providers.provider_aliases())
 
     def test_it_is_safe_inside_an_html_attribute(self):
         """It lands in a double-quoted `content`. An unescaped quote would end

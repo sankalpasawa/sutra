@@ -61,7 +61,7 @@ function grab(src, name) {
 
 const sandbox = {
   location: { protocol: "http:", host: "127.0.0.1:7000" },
-  S: { cwd: {}, sutraId: {}, sessions: [] },
+  S: { cwd: {}, sutraId: {}, sessions: [], chatProvider: {}, chatProviderNote: {} },
   SETTINGS: { workdir: "/home/op/work" },
   /* providerUsage resolves the provider's DECLARED usage kind before reading
      any state -- the `else` it replaced handed every non-DeepSeek provider
@@ -79,17 +79,43 @@ new vm.Script([
   grab(helpers, "providerUsage"),
   grab(state, "sessCwd"),
   grab(state, "sessSutraId"),
+  grab(state, "sessProviderRequest"),
   grab(state, "claudeWsUrl"),
-].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage,usageKindOf};",
+].join("\n") + "\n;globalThis.__T={sessSutraId,claudeWsUrl,providerUsage,usageKindOf,"
+              + "sessProviderRequest};",
   { filename: "01-state.js#extract" }).runInContext(sandbox);
 const T = sandbox.__T;
 
-test("the client never sends a provider on the socket url", () => {
-  // Provider is the server's own resolution now; a param from here could only
-  // ever disagree with it.
+test("an ordinary turn still sends no provider on the socket url", () => {
+  // THE DEFAULT IS UNCHANGED and this is the case that must stay that way.
+  // With no pending request the server answers from the chat's own
+  // provider_history, or from Settings -- and a provider sent on every connect
+  // would put the client's stale idea of the chat ahead of the record.
   sandbox.S.cwd = { s1: "/home/op/x" }; sandbox.S.sutraId = { s1: "abc" };
+  sandbox.S.chatProvider = {};
   assert(!T.claudeWsUrl("s1").includes("provider="),
-         "provider is chosen in Settings; the client must not send one");
+         "a turn that asked for nothing must not name a provider");
+});
+
+test("a detected in-chat request DOES send the provider", () => {
+  // This is the whole switch mechanism: the socket is bound to its provider at
+  // spawn, so the request rides the URL of the socket that replaces it.
+  sandbox.S.cwd = {}; sandbox.S.sutraId = { s1: "abc" };
+  sandbox.S.chatProvider = { s1: "codex" };
+  const u = T.claudeWsUrl("s1");
+  assert(u.includes("provider=codex"), "the request never reached the url: " + u);
+  assert(u.includes("sutra=abc"),
+         "without the chat id the server cannot carry the conversation over");
+  sandbox.S.chatProvider = {};
+});
+
+test("the request is per chat, never global", () => {
+  sandbox.S.cwd = {}; sandbox.S.sutraId = { s1: "abc", s2: "def" };
+  sandbox.S.chatProvider = { s1: "codex" };
+  assert(T.claudeWsUrl("s1").includes("provider=codex"));
+  assert(!T.claudeWsUrl("s2").includes("provider="),
+         "one chat's request leaked onto another chat's socket");
+  sandbox.S.chatProvider = {};
 });
 
 test("the chat id still rides the url, so history can be carried", () => {
@@ -156,13 +182,27 @@ test("the composer row has no click targets or handlers", () => {
 });
 
 test("nothing renders when fewer than two providers can run", () => {
-  assert(/usable\.length < 2/.test(SW) && /return ""/.test(SW),
+  // Still guarded on the same condition; the return is now `noteRow`, which
+  // is "" whenever there is nothing to report. Behaviour is asserted in
+  // section 6 ("one runnable provider and nothing to report..."); this keeps
+  // the GUARD itself from being deleted by accident.
+  assert(/usable\.length < 2/.test(SW),
          "naming the only possible answer is noise on every turn");
+  assert(/return noteRow/.test(SW),
+         "the guard must still return the empty-unless-refused row");
 });
 
 test("nothing renders before anything has spawned", () => {
-  assert(/if \(!running\) return ""/.test(SW),
-         "with no provider frame there is no honest answer to give");
+  // Still true for the ORDINARY case -- with no provider frame there is no
+  // honest answer to give about what is running.
+  assert(/if \(!running\) return noteRow/.test(SW),
+         "the unspawned pane no longer takes its own branch -- and it must "
+         + "return noteRow, because a REFUSED provider request still has to "
+         + "speak there: 'use Gemini' in a brand-new chat is exactly that "
+         + "case, and silence reads as a broken detector");
+  // noteRow is built BEFORE both quiet-row guards, or either one swallows it.
+  assert(SW.indexOf("const noteRow") < SW.indexOf("usable.length < 2"),
+         "the refusal is built after a guard that can return without it");
 });
 
 test("it reports what the SERVER resolved, not a local preference", () => {
@@ -186,22 +226,57 @@ test("the read-only row is styled as a label, not a button", () => {
 
 /* ── 3. selection lives in Settings, and drops the sockets ───────────────── */
 
-test("no per-session provider state remains", () => {
+test("no per-session provider PREFERENCE remains", () => {
+  // The dead state is still dead. `S.chatProvider` is not a revival of it: a
+  // preference is read on every connect and would outrank the record, whereas
+  // that map is a ONE-SHOT request cleared by the socket that spends it (see
+  // claudeChannel). The durable answer lives in provider_history, server-side.
   ["provider:{}", "providerError:null"].forEach(f =>
     assert(!helpers.replace(/\s/g, "").includes(f.replace(/\s/g, "")),
            "S still carries " + f + " with no control to set it"));
   assert(!/function setSessProvider\(/.test(state),
          "the per-session setter must be gone, not merely unreferenced");
+  assert(/delete S\.chatProvider\[s\.id\]/.test(state),
+         "the request must be spent when the socket carrying it is created, "
+         + "or it would re-send on every reconnect and override a later switch");
 });
 
 test("changing the Settings provider drops the open chat sockets", () => {
   // Otherwise the next prompt rides an existing socket to the OLD provider
   // while the UI claims the new one.
-  const i = loaders.indexOf('apiPost("/api/providers/active"');
-  assert(i > 0, "the Settings provider handler is gone");
-  const body = loaders.slice(i, i + 2000);
+  // provHandlerSrc(), not a fixed 2000-char window: the window fell out of
+  // range the moment a comment was added inside the handler, which is the
+  // exact fragility the extractor below this file's own comment was written
+  // for.
+  const body = provHandlerSrc();
   assert(body.includes("CLAUDE_SOCKETS.delete"), "sockets are not dropped");
   assert(body.includes("ws.close"), "sockets are not closed");
+});
+
+test("...but it does NOT drop a chat that chose its own provider", () => {
+  // Settings = Claude, Chat A = Codex. Changing the global default to DeepSeek
+  // must move new chats and leave Chat A alone -- that is the whole point of a
+  // chat-local switch, and dropping A's socket would hand it to the new
+  // default on its next message.
+  const body = provHandlerSrc();
+  assert(/providerIsChatLocal\(/.test(body),
+         "the handler cannot tell a chat-local pane from a governed one");
+  assert(/local\+\+|local \+= 1/.test(body),
+         "a spared chat is not counted, so the receipt cannot mention it");
+});
+
+test("chat-local is read off the SERVER's provider frame", () => {
+  // Not from S.chatProvider (one-shot, already spent) and not from SETTINGS.
+  // `source` is how ws_chat actually resolved the provider, and it is the only
+  // thing that knows about provider_history.
+  const i = render.indexOf("function providerIsChatLocal(");
+  assert(i > 0, "providerIsChatLocal is gone");
+  const body = render.slice(i, i + 600);
+  assert(/channel/.test(body) && /source/.test(body),
+         "it must read the provider frame's source field");
+  assert(/"chat"/.test(body) && /"chat-history"/.test(body),
+         "both chat-scoped sources must count: an explicit ?provider= and the "
+         + "chat's own recorded segment");
 });
 
 test("a pane mid-reply is spared", () => {
@@ -688,6 +763,556 @@ test("the stale-bundle message is one sentence and names no internals", () => {
   assert(/update the sutra app/i.test(msg), "it no longer names the actual fix");
   assert((msg.match(/\./g) || []).length === 1,
          "more than one sentence -- there is exactly one thing to do");
+});
+
+/* ── 6. a chat may run on its own provider while Settings stays put ───────── */
+
+/* Settings = Claude, Chat A = Codex (server said source:"chat-history"),
+   Chat B = Claude, Chat C has never spawned. */
+const CHAT_LOCAL_SESSIONS = [
+  { id: "A", channel: { id: "codex", source: "chat-history" } },
+  { id: "B", channel: { id: "claude", source: "settings" } },
+  { id: "C" },
+  { id: "D", source: "codex" },     /* reopened from the rail, no socket yet */
+];
+
+const UI = (() => {
+  const box = {
+    S: { sessions: CHAT_LOCAL_SESSIONS, chatProviderNote: {} },
+    SETTINGS: { provider: "claude" },
+    PROVIDERS: [{ id: "claude", name: "Claude Code", runnable: true },
+                { id: "codex", name: "OpenAI Codex", runnable: true },
+                { id: "deepseek", name: "DeepSeek", runnable: true }],
+    esc: (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c =>
+           ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    console,
+  };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grab(render, "paneProvider"),
+    grab(render, "providerIsChatLocal"),
+    grab(chat, "providerLabel"),
+    grab(chat, "providerSwitcherHtml"),
+  ].join("\n") + "\n;globalThis.__U={paneProvider,providerIsChatLocal,providerSwitcherHtml};",
+    { filename: "ui#extract" }).runInContext(box);
+  return { box, fns: box.__U };
+})();
+
+test("paneProvider answers the CHAT's provider, not the global default", () => {
+  eq(UI.fns.paneProvider(CHAT_LOCAL_SESSIONS[0]), "codex",
+     "Chat A is on codex; Settings says claude");
+  eq(UI.fns.paneProvider(CHAT_LOCAL_SESSIONS[1]), "claude", "Chat B");
+});
+
+test("an unspawned pane falls back to the global default", () => {
+  eq(UI.fns.paneProvider(CHAT_LOCAL_SESSIONS[2]), "claude",
+     "nothing is known about C yet, so Settings is the honest answer");
+});
+
+test("a chat reopened from the rail uses its transcript's provider", () => {
+  // The window before the first message. Without this a Codex chat reopened
+  // from the rail paints Claude's model list, Claude's permission set and
+  // Claude's usage kind -- for precisely as long as the operator is looking at
+  // the menu before asking anything.
+  eq(UI.fns.paneProvider(CHAT_LOCAL_SESSIONS[3]), "codex");
+});
+
+test("providerIsChatLocal separates governed chats from pinned ones", () => {
+  assert(UI.fns.providerIsChatLocal("A") === true, "A chose codex itself");
+  assert(UI.fns.providerIsChatLocal("B") === false, "B is on the global default");
+  assert(UI.fns.providerIsChatLocal("C") === false,
+         "nothing has told us C is pinned, and guessing would strand it");
+});
+
+test("the composer row names the chat's provider and says it is chat-local", () => {
+  const html = UI.fns.providerSwitcherHtml("A");
+  assert(/OpenAI Codex/.test(html), "the row does not name codex: " + html);
+  assert(/this chat only/.test(html), "nothing marks it as chat-local: " + html);
+  assert(/provlocal/.test(html), "the chip is not styled as divergent");
+});
+
+test("a chat-local pane is NOT told the global default will take over", () => {
+  // The defect this replaces: `dflt !== running` rendered "next message uses
+  // Claude Code" over a chat pinned to Codex -- a promise the Settings handler
+  // no longer keeps, because it now spares that socket.
+  const html = UI.fns.providerSwitcherHtml("A");
+  assert(!/next message uses/.test(html),
+         "a false promise survives on a chat-local pane: " + html);
+});
+
+test("a governed pane still states a pending Settings change", () => {
+  // Unchanged behaviour for the chats the global default really does govern.
+  UI.box.SETTINGS = { provider: "deepseek" };
+  try {
+    const html = UI.fns.providerSwitcherHtml("B");
+    assert(/next message uses/.test(html) && /DeepSeek/.test(html),
+           "a pane whose socket predates a Settings change must say both: " + html);
+  } finally { UI.box.SETTINGS = { provider: "claude" }; }
+});
+
+test("a refused provider request speaks even on a pane that never spawned", () => {
+  UI.box.S.chatProviderNote = { C: "Gemini CLI is not ready to use — no chat adapter yet." };
+  try {
+    const html = UI.fns.providerSwitcherHtml("C");
+    assert(/Gemini CLI is not ready/.test(html),
+           "the refusal was swallowed on an unspawned pane: " + JSON.stringify(html));
+    assert(/provnote/.test(html), "no style hook for the note");
+  } finally { UI.box.S.chatProviderNote = {}; }
+});
+
+test("a refusal speaks even when only ONE provider can run", () => {
+  // The likeliest place to type "use Codex" and be refused is a machine that
+  // cannot run Codex -- and that is exactly the machine whose row returns
+  // early because a one-item provider list is noise. The note must outrank
+  // that rule, or an explicit instruction is answered by nothing at all.
+  const prev = UI.box.PROVIDERS;
+  UI.box.PROVIDERS = [{ id: "claude", name: "Claude Code", runnable: true }];
+  UI.box.S.chatProviderNote = { B: "OpenAI Codex is not ready to use — nobody is signed in." };
+  try {
+    const html = UI.fns.providerSwitcherHtml("B");
+    assert(/not ready to use/.test(html),
+           "the refusal was swallowed by the one-provider guard: "
+           + JSON.stringify(html));
+  } finally { UI.box.PROVIDERS = prev; UI.box.S.chatProviderNote = {}; }
+});
+
+test("one runnable provider and nothing to report still renders nothing", () => {
+  const prev = UI.box.PROVIDERS;
+  UI.box.PROVIDERS = [{ id: "claude", name: "Claude Code", runnable: true }];
+  try {
+    eq(UI.fns.providerSwitcherHtml("B"), "",
+       "naming the only possible answer is noise on every turn");
+  } finally { UI.box.PROVIDERS = prev; }
+});
+
+test("with nothing to report an unspawned pane still renders nothing", () => {
+  eq(UI.fns.providerSwitcherHtml("C"), "",
+     "naming a provider no socket has resolved would be a guess");
+});
+
+/* ── 7. the switch never touches the global default ──────────────────────── */
+
+function applySrc() {
+  const i = helpers.indexOf("function applyProviderRequest(");
+  assert(i >= 0, "applyProviderRequest is gone");
+  let j = helpers.indexOf("{", i), depth = 0;
+  for (let k = j; k < helpers.length; k++) {
+    if (helpers[k] === "{") depth++;
+    else if (helpers[k] === "}") { depth--; if (depth === 0) return helpers.slice(i, k + 1); }
+  }
+  throw new Error("unbalanced braces");
+}
+const APPLY = applySrc();
+
+test("an in-chat switch never writes the global provider", () => {
+  // THE LOCKED CONSTRAINT. Settings.provider governs new chats and chats that
+  // never asked; an in-chat request is explicitly not a vote about it.
+  assert(!/providers\/active/.test(APPLY),
+         "the in-chat path posts to the global provider endpoint");
+  assert(!/api\/settings/.test(APPLY), "the in-chat path writes settings");
+  assert(!/SETTINGS\s*=/.test(APPLY), "the in-chat path reassigns SETTINGS");
+});
+
+test("a request for the provider already running does nothing at all", () => {
+  // No socket drop, no replay, no marker: the server would answer NOT_NEEDED
+  // and the reconnect would cost a cold start to arrive where it already is.
+  assert(/want\.target === paneProvider\(s\)/.test(APPLY),
+         "the same-provider case is not short-circuited");
+});
+
+test("readiness is the server's answer, never a local one", () => {
+  assert(/p\.runnable/.test(APPLY) || /runnable/.test(APPLY),
+         "the runnable list must come from the provider table");
+  assert(/want\.ready/.test(APPLY), "the detector's readiness verdict is ignored");
+});
+
+test("the boot window never claims a provider is unready", () => {
+  /* PROVIDERS is [] until GET /api/providers resolves, and GET /api/providers
+     returns EVERY catalogued provider whatever its readiness -- so empty means
+     NOT FETCHED, never "nothing is ready". Read as a readiness answer it
+     printed "OpenAI Codex is not ready to use" over a Codex that was fine.
+     The guard must DEFER (hold the message, assert nothing) rather than
+     invent a verdict in either direction. */
+  assert(/const loaded = \(PROVIDERS \|\| \[\]\)\.length > 0/.test(APPLY),
+         "not-loaded is not distinguished from nothing-is-ready");
+  const notLoaded = APPLY.indexOf("if (!loaded)");
+  const notReady = APPLY.indexOf("if (!want.ready)");
+  assert(notLoaded > 0 && notReady > 0, "one of the two branches is gone");
+  assert(notLoaded < notReady,
+         "the readiness verdict is reached before the table is known to exist");
+  const body = APPLY.slice(notLoaded, notReady);
+  assert(/return true/.test(body), "the message is sent anyway -- it must defer");
+  assert(!/not ready/i.test(body),
+         "the boot window still asserts a readiness verdict it cannot have");
+});
+
+test("a pane mid-reply is spared, as the Settings handler spares it", () => {
+  assert(/streamingFor\(/.test(APPLY) && /sideStreamingFor\(/.test(APPLY),
+         "switching now would discard the reply being written");
+});
+
+test("the switch is the reconnect -- no per-turn routing was introduced", () => {
+  assert(/closeClaudeChannel\(/.test(APPLY),
+         "the socket is bound to its provider at spawn, so the switch must "
+         + "drop it");
+  assert(/S\.chatProvider\[s\.id\] =/.test(APPLY),
+         "the request never reaches the url builder");
+});
+
+/* BEHAVIOURAL, on the real bytes: applyProviderRequest executed with the exact
+   state the boot window presents. The source-level test above pins the shape of
+   the guard; this one pins what an operator actually sees. */
+function runApply(providers, text) {
+  const box = {
+    S: { chatProviderNote: {}, chatProvider: {}, sessions: [] },
+    PROVIDERS: providers,
+    SEED: { provider_aliases: { "codex": "codex", "claude": "claude" } },
+    paneProvider: () => "claude",
+    providerLabel: (id) => ({ codex: "OpenAI Codex", claude: "Claude Code" }[id] || id),
+    streamingFor: () => false,
+    sideStreamingFor: () => false,
+    closed: 0,
+    console,
+  };
+  box.closeClaudeChannel = () => { box.closed++; };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grabVarLike(helpers, "PROVIDER_INTENT_PREFIX"),
+    grabVarLike(helpers, "PROVIDER_INTENT_QUESTION"),
+    grabVarLike(helpers, "PROVIDER_INTENT_NEGATION"),
+    grab(helpers, "stripProviderNoise"),
+    grab(helpers, "providerIntentFrames"),
+    grab(helpers, "providerIntentOpensWithDirective"),
+    grab(helpers, "detectProviderIntent"),
+    grab(helpers, "applyProviderRequest"),
+  ].join("\n") + "\n;globalThis.__A=applyProviderRequest;",
+    { filename: "apply#extract" }).runInContext(box);
+  const held = box.__A({ id: "A" }, text);
+  return { held, note: box.S.chatProviderNote.A, want: box.S.chatProvider.A,
+           closed: box.closed };
+}
+
+/* The full table GET /api/providers returns -- every catalogued provider,
+   whatever its readiness. This is why an EMPTY list can only mean not-fetched. */
+const TABLE_READY = [{ id: "claude", name: "Claude Code", runnable: true },
+                     { id: "codex", name: "OpenAI Codex", runnable: true }];
+const TABLE_CODEX_OUT = [{ id: "claude", name: "Claude Code", runnable: true },
+                         { id: "codex", name: "OpenAI Codex", runnable: false,
+                           reason: "nobody is signed in" }];
+
+test("BOOT WINDOW: 'use Codex' before the table loads defers, and says nothing false", () => {
+  const r = runApply([], "use Codex");
+  assert(r.held === true, "the message was sent on a verdict we cannot have");
+  assert(!/not ready/i.test(r.note || ""),
+         "still claims Codex is unready during the boot window: " + r.note);
+  assert(/still checking/i.test(r.note || ""), "no honest note: " + r.note);
+  assert(r.want === undefined, "a switch was proposed without a provider table");
+  assert(r.closed === 0, "the socket was dropped on an unvalidated switch");
+});
+
+test("LOADED + ready: unchanged -- the switch happens", () => {
+  const r = runApply(TABLE_READY, "use Codex");
+  assert(r.held === false, "a valid switch must not defer");
+  assert(r.want === "codex", "the request was not recorded: " + r.want);
+  assert(r.closed === 1, "the socket was not dropped, so nothing reconnects");
+  assert(r.note === undefined, "a successful switch needs no note: " + r.note);
+});
+
+test("LOADED + genuinely unready: unchanged -- refused, with the real reason", () => {
+  const r = runApply(TABLE_CODEX_OUT, "use Codex");
+  assert(r.held === false, "a refusal must not hold the message");
+  assert(/not ready to use/.test(r.note || ""), "the refusal lost its wording: " + r.note);
+  assert(/nobody is signed in/.test(r.note || ""),
+         "the provider table's own reason is no longer shown: " + r.note);
+  assert(r.want === undefined, "an unready provider was proposed");
+  assert(r.closed === 0, "the socket was dropped for a switch that cannot happen");
+});
+
+test("BOOT WINDOW: a non-request is still not a request", () => {
+  // The guard must not turn every message into a deferral just because the
+  // table is missing -- only ones that actually named a provider.
+  const r = runApply([], "implement the parser");
+  assert(r.held === false, "an ordinary message was held during boot");
+  assert(r.note === undefined, "an ordinary message got a provider note");
+});
+
+test("BOOT WINDOW: ambiguity still answers without the table", () => {
+  const r = runApply([], "use Codex, then switch to Claude");
+  assert(r.held === false, "ambiguity needs no provider table, so it must not defer");
+  assert(/say which one/.test(r.note || ""), "lost the ambiguity note: " + r.note);
+});
+
+test("side chats do not switch the chat's provider", () => {
+  // askSide deliberately bypasses submitTurn (it files no placement), and that
+  // is also what keeps an exploratory branch from moving the whole chat.
+  const i = helpers.indexOf("function askSide(");
+  const body = helpers.slice(i, helpers.indexOf("\n}", i));
+  assert(!/applyProviderRequest/.test(body),
+         "a side chat must not move the chat's provider");
+  assert(/askClaude\(s, turn, true\)/.test(body), "askSide changed shape");
+});
+
+/* ── 8. end to end, on the real bytes: the founder's own sequence ────────── */
+
+/* detectProviderIntent -> S.chatProvider -> claudeWsUrl, composed. The unit
+   tests above prove each piece; this proves the JOIN, which is where a feature
+   assembled from three files actually breaks. Nothing is mocked but the
+   globals the two functions read. */
+const E2E = (() => {
+  const box = {
+    location: { protocol: "http:", host: "127.0.0.1:7000" },
+    S: { cwd: {}, sutraId: { A: "aaaa", B: "bbbb" }, chatProvider: {} },
+    SETTINGS: { workdir: "" },
+    console,
+  };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grabVarLike(helpers, "PROVIDER_INTENT_PREFIX"),
+    grabVarLike(helpers, "PROVIDER_INTENT_QUESTION"),
+    grabVarLike(helpers, "PROVIDER_INTENT_NEGATION"),
+    grab(helpers, "stripProviderNoise"),
+    grab(helpers, "providerIntentFrames"),
+    grab(helpers, "providerIntentOpensWithDirective"),
+    grab(helpers, "detectProviderIntent"),
+    grab(state, "sessCwd"),
+    grab(state, "sessSutraId"),
+    grab(state, "sessProviderRequest"),
+    grab(state, "claudeWsUrl"),
+  ].join("\n") + "\n;globalThis.__E={detectProviderIntent,claudeWsUrl};",
+    { filename: "e2e#extract" }).runInContext(box);
+  return box;
+})();
+
+function grabVarLike(src, name) {
+  const start = src.indexOf("var " + name + " =");
+  assert(start >= 0, "could not find var " + name);
+  const end = src.indexOf(";\n", start);
+  return src.slice(start, end + 1);
+}
+
+const ALIASES_E2E = { "claude": "claude", "claude code": "claude",
+                      "codex": "codex", "openai codex": "codex",
+                      "gemini": "gemini", "deepseek": "deepseek" };
+const READY = ["claude", "codex", "deepseek"];
+
+/* One turn, as submitTurn would run it: detect, then (if it switched) let the
+   next socket carry the request. Returns the URL that socket would open. */
+function turn(chatId, text) {
+  const want = E2E.__E.detectProviderIntent(text, ALIASES_E2E, READY);
+  if (want && want.ready) E2E.S.chatProvider[chatId] = want.target;
+  const url = E2E.__E.claudeWsUrl(chatId);
+  delete E2E.S.chatProvider[chatId];   /* claudeChannel spends it on creation */
+  return url;
+}
+
+test("E2E: 'Using Codex, implement this' opens Chat A on codex, with its id", () => {
+  const u = turn("A", "Using Codex, implement this");
+  assert(u.includes("provider=codex"), "the chat did not switch: " + u);
+  assert(u.includes("sutra=aaaa"),
+         "without the chat id the server cannot replay the conversation: " + u);
+});
+
+test("E2E: the NEXT turn in Chat A names no provider", () => {
+  // Sticky is the SERVER's job from here: provider_history holds codex, and
+  // ws_chat resolves a socket with no ?provider= from it. Re-sending it would
+  // put the client's idea of the chat ahead of the record.
+  const u = turn("A", "and now add the tests");
+  assert(!u.includes("provider="), "the request was re-sent: " + u);
+  assert(u.includes("sutra=aaaa"));
+});
+
+test("E2E: Chat B is untouched by Chat A's switch", () => {
+  const u = turn("B", "carry on");
+  assert(!u.includes("provider="), "Chat A's switch leaked onto Chat B: " + u);
+});
+
+test("E2E: 'Use Claude for this' switches Chat A back", () => {
+  const u = turn("A", "Use Claude for this");
+  assert(u.includes("provider=claude"), "the chat did not switch back: " + u);
+});
+
+test("E2E: a bare mention in Chat A changes nothing", () => {
+  const u = turn("A", "Codex would probably do this differently");
+  assert(!u.includes("provider="), "a mention moved the chat: " + u);
+});
+
+test("E2E: a provider that is not ready never reaches the url", () => {
+  const u = turn("A", "use Gemini");
+  assert(!u.includes("provider="),
+         "an unrunnable provider was proposed to the server: " + u);
+});
+
+/* ── 9. the REAL first-turn ordering, on a brand-new chat ─────────────────
+   Section 8 above composes detect -> S.chatProvider -> claudeWsUrl by hand.
+   That helper asserted the pieces agree; it could not have caught the bug the
+   founder hit, because it never ran submitTurn and therefore never asked
+   whether the request SURVIVES to the socket the real client opens.
+
+   This drives the actual chain -- submitTurn -> applyProviderRequest ->
+   askClaude -> claudeChannel -> claudeWsUrl -> new WebSocket(...) -- with a
+   stub WebSocket that records the URL it was constructed with. That URL is the
+   only thing the server ever sees, so it is the only honest assertion about
+   whether a switch happened.
+
+   THE BUG IT PINS: "Using Codex, what is 17 x 6?" is an INSTRUCTION whose
+   payload is a question. detectProviderIntent rejected any message ending in
+   "?" before it looked at a single frame, so nothing switched, the socket
+   opened with no provider, the server fell back to Claude, and Claude answered
+   102 while the pane truthfully badged itself Claude. Nothing downstream was
+   wrong -- nothing had asked it to switch. */
+async function firstTurn(text, opts) {
+  const urls = [];
+  const box = {
+    location: { protocol: "http:", host: "127.0.0.1:7000" },
+    S: { cwd: {}, sutraId: {}, sessions: [], chatProvider: {}, chatProviderNote: {},
+         model: {}, turnOpts: {}, sideTurns: {} },
+    SETTINGS: { provider: "claude", workdir: "" },
+    SEED: { provider_aliases: { "codex": "codex", "claude": "claude" } },
+    PROVIDERS: (opts && opts.providers) || [
+      { id: "claude", name: "Claude Code", runnable: true },
+      { id: "codex", name: "OpenAI Codex", runnable: true }],
+    CLAUDE_SOCKETS: new Map(),
+    console,
+    /* the pieces submitTurn leans on that are not under test */
+    render: () => {}, scheduleRender: () => {}, renderNow: () => {},
+    groundingPrefix: () => "",
+    providerLabel: (id) => id,
+    paneProvider: (s) => (s && s.channel && s.channel.id) || box.SETTINGS.provider,
+    streamingFor: () => false, sideStreamingFor: () => false,
+    resumableId: () => null,
+    sessCwd: () => "",
+    WebSocket: function (url) { urls.push(url); this.readyState = 0;
+                               this.send = () => {}; this.close = () => {}; },
+  };
+  box.WebSocket.CONNECTING = 0; box.WebSocket.OPEN = 1;
+  /* runTask does a /api/classify round trip that has nothing to do with
+     provider routing; the SESSION it returns is what matters here. */
+  box.runTask = async (t, sid) => {
+    let s = box.S.sessions.find(x => x.id === sid);
+    if (!s) { s = { id: sid || "s1", turns: [], local: true }; box.S.sessions.push(s); }
+    const result = { text: t, response: "", tools: [] };
+    s.turns.push(result);
+    return { session: s, result };
+  };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grabVarLike(helpers, "PROVIDER_INTENT_PREFIX"),
+    grabVarLike(helpers, "PROVIDER_INTENT_QUESTION"),
+    grabVarLike(helpers, "PROVIDER_INTENT_NEGATION"),
+    grab(helpers, "stripProviderNoise"),
+    grab(helpers, "providerIntentFrames"),
+    grab(helpers, "providerIntentOpensWithDirective"),
+    grab(helpers, "detectProviderIntent"),
+    grab(helpers, "applyProviderRequest"),
+    grab(helpers, "turnUid"),
+    grab(helpers, "askClaude"),
+    grab(helpers, "submitTurn"),
+    grab(state, "chanKey"),
+    grab(state, "sessSutraId"),
+    grab(state, "sessProviderRequest"),
+    grab(state, "claudeWsUrl"),
+    grab(state, "claudeChannel"),
+    grab(state, "closeClaudeChannel"),
+    grab(state, "failChannel"),
+    "let _UID = 0;",
+  ].join("\n") + "\n;globalThis.__F=submitTurn;",
+    { filename: "firstturn#extract" }).runInContext(box);
+  await box.__F(text, "s1");
+  return { urls, note: box.S.chatProviderNote.s1, box };
+}
+
+test("REAL PATH: a brand-new chat opens its socket on codex", async () => {
+  // The founder's exact message. Before the fix this opened a socket with no
+  // provider at all, so the server resolved Claude and answered it.
+  const { urls } = await firstTurn("Using Codex, what is 17 × 6?");
+  assert(urls.length === 1, "expected exactly one socket, got " + urls.length);
+  assert(/[?&]provider=codex(&|$)/.test(urls[0]),
+         "the socket opened WITHOUT provider=codex: " + urls[0]);
+});
+
+test("REAL PATH: the request survives to socket construction, not just to state", async () => {
+  // claudeChannel deletes S.chatProvider the moment it builds the socket, and
+  // applyProviderRequest force-closes the channel just before askClaude
+  // reopens it. The ordering has to leave the request readable in between.
+  const { urls, box } = await firstTurn("Using Codex, implement this");
+  assert(/provider=codex/.test(urls[0]), "the request never reached the url");
+  assert(box.S.chatProvider.s1 === undefined,
+         "the one-shot was not spent, so it would re-send on every reconnect");
+});
+
+test("REAL PATH: an ordinary first turn opens with no provider", async () => {
+  const { urls } = await firstTurn("what is 17 × 6?");
+  assert(urls.length === 1, "expected one socket");
+  assert(!/provider=/.test(urls[0]),
+         "a message that asked for nothing named a provider: " + urls[0]);
+});
+
+test("REAL PATH: naming the provider already in use opens no second socket", async () => {
+  const { urls } = await firstTurn("Using Claude, what is 17 × 6?");
+  assert(urls.length === 1, "a redundant switch cold-started an extra socket");
+  assert(!/provider=/.test(urls[0]), "a no-op switch still named a provider");
+});
+
+test("REAL PATH: the boot window sends nothing at all", async () => {
+  // PROVIDERS empty = not fetched. The turn is held, so no socket is opened
+  // and no verdict about Codex is asserted.
+  const { urls, note } = await firstTurn("Using Codex, what is 17 × 6?",
+                                         { providers: [] });
+  assert(urls.length === 0, "a socket opened before readiness was known");
+  assert(/still checking/i.test(note || ""), "no honest note: " + note);
+  assert(!/not ready/i.test(note || ""), "asserted a verdict it cannot have");
+});
+
+/* ── 10. the rail re-supplies the chat id after a refresh ─────────────────
+   S.sutraId is memory-only, so a reload empties it. Without it claudeWsUrl
+   sends no ?sutra=, ws_chat's chat-local step returns on the empty parameter,
+   and a chat switched to Codex reconnects on the GLOBAL default -- then the
+   seed recovery finds it too late and replays Codex -> Claude. Measured live:
+   "OpenAI Codex -> Claude Code, turns 1-2 carried over". */
+
+test("adoptRealSessions stores the chat id every row now carries", () => {
+  const body = grab(state, "adoptRealSessions");
+  assert(/S\.sutraId\[r\.id\] = r\.sutra_id/.test(body),
+         "the rail never stores the chat id, so ?sutra= stays absent");
+  assert(/r && r\.id && r\.sutra_id/.test(body),
+         "a null sutra_id must not overwrite an id a live socket already "
+         + "learned from its own chat frame");
+  assert(body.indexOf("S.sutraId[r.id]") < body.indexOf("const real ="),
+         "the mapping must be written for EVERY row, before the map -- the "
+         + "three branches there return in-flight, on-screen and fresh "
+         + "sessions, and it is true of all of them");
+});
+
+test("the stored id is what claudeWsUrl then sends", () => {
+  const box = {
+    location: { protocol: "http:", host: "127.0.0.1:7000" },
+    S: { cwd: {}, sutraId: {}, chatProvider: {} },
+    SETTINGS: { workdir: "" },
+    console,
+  };
+  box.globalThis = box;
+  vm.createContext(box);
+  new vm.Script([
+    grab(state, "sessCwd"),
+    grab(state, "sessSutraId"),
+    grab(state, "sessProviderRequest"),
+    grab(state, "claudeWsUrl"),
+  ].join("\n") + "\n;globalThis.__W=claudeWsUrl;",
+    { filename: "wsurl#extract" }).runInContext(box);
+
+  const SID = "01a08572-164d-75d0";
+  const CHAT = "aaaabbbbccccddddeeeeffff00001111";
+  box.S.sutraId[SID] = CHAT;              // exactly what adoptRealSessions writes
+  const u = box.__W(SID);
+  assert(u.indexOf("sutra=" + CHAT) !== -1,
+         "the recovered chat id never reaches the socket: " + u);
+  assert(u.indexOf("provider=") === -1,
+         "a reconnect must not name a provider; the server resolves it from "
+         + "the chat's own record: " + u);
 });
 
 console.log("\n" + pass + " passed, " + fail + " failed");

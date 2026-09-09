@@ -1380,10 +1380,20 @@ function providerLabel(pid){
 }
 function providerSwitcherHtml(sid){
   const usable = (PROVIDERS || []).filter(p => p.runnable);
+  /* A REFUSED REQUEST OUTRANKS EVERY QUIET-ROW RULE BELOW, so it is built
+     first. On a machine with ONE runnable provider, "use Codex" is both the
+     likeliest thing to be refused and the case the early return below would
+     have swallowed -- leaving an explicit instruction answered by nothing at
+     all, which reads as a broken detector rather than as an answer about
+     Codex. */
+  const note = S.chatProviderNote[sid];
+  const noteHtml = note ? `<span class="provnote">${esc(note)}</span>` : "";
+  const noteRow = noteHtml
+    ? `<div class="provrow" role="status" aria-label="AI provider">${noteHtml}</div>` : "";
   /* NOTHING TO SAY when the machine can only run one thing. A one-item row
      would imply a choice that does not exist, and naming the only possible
      answer to "which provider?" is noise on every turn. */
-  if (usable.length < 2) return "";
+  if (usable.length < 2) return noteRow;
   /* READ-ONLY (founder direction 2026-09-03). Provider is chosen in Settings
      and nowhere else, so this is an INDICATOR, not a control: no buttons, no
      handlers, nothing focusable. It exists only because with two runnable
@@ -1396,16 +1406,32 @@ function providerSwitcherHtml(sid){
      this row can make honestly. */
   const sess = (S.sessions || []).find(x => x.id === sid) || {};
   const running = ((sess.channel || {}).id) || "";
-  if (!running) return "";        /* nothing spawned yet: no answer to give */
+  /* Nothing spawned yet: no honest answer about what is RUNNING -- but a
+     refusal still speaks, which is what noteRow carries. */
+  if (!running) return noteRow;
+  /* THIS CHAT CHOSE ITS OWN PROVIDER, so the global default does not govern it
+     and must not be advertised as its future. The old line here read
+     `dflt !== running -> "next message uses <default>"`, which after an
+     in-chat switch was a false promise: the chat is pinned by its own
+     provider_history segment and a Settings change will not move it. */
+  const local = providerIsChatLocal(sid);
   const dflt = ((SETTINGS || {}).provider) || "";
   /* Settings changed under a live socket. The next prompt will open a new one
      on the new provider (see the Settings handler, which drops the sockets), so
-     this states both facts rather than picking one and being half right. */
-  const pending = dflt && dflt !== running
+     this states both facts rather than picking one and being half right.
+     Suppressed for a chat-local pane, whose socket that handler now spares. */
+  const pending = (!local && dflt && dflt !== running)
     ? `<span class="provpend">next message uses ${esc(providerLabel(dflt))}</span>` : "";
+  /* Named for WHERE the choice came from, because that is the question a
+     divergent row raises: this chat says Codex and Settings says Claude, and
+     an operator has to be able to tell which one is wrong. */
+  const why = local ? "Set in this chat — Settings still says "
+                      + (providerLabel(dflt) || "something else")
+                    : "Chosen in Settings";
   return `<div class="provrow" role="status" aria-label="AI provider">
-      <span class="provnow" title="Chosen in Settings">${esc(providerLabel(running))}</span>
-      ${pending}
+      <span class="provnow${local ? " provlocal" : ""}" title="${esc(why)}">${esc(providerLabel(running))}</span>
+      ${local ? `<span class="provpend">this chat only</span>` : ""}
+      ${pending}${noteHtml}
     </div>`;
 }
 /* providerOverridesHtml lived here. It listed the chats whose provider

@@ -1295,6 +1295,15 @@
   .provnow{color:var(--muted);font:600 10px/1 var(--mono);padding:6px 10px;
     border:1px solid var(--line);border-radius:6px;background:var(--inset)}
   .provpend{color:var(--acc);font:600 10px/1.4 var(--mono)}
+  /* THIS CHAT CHOSE ITS OWN PROVIDER. Same chip, accent border: the row is
+     saying something different from Settings and has to look like it means to,
+     or it reads as the stale label it used to be. */
+  .provnow.provlocal{color:var(--acc);
+    border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
+  /* A provider request that did NOT switch -- a name that cannot run, or two
+     names in one message. Wraps, because it carries the provider table's own
+     reason and those are sentences, not labels. */
+  .provnote{color:var(--muted);font:500 10px/1.45 var(--mono);flex:1 1 100%}
   /* The switch marker. A provider change is a fact about the conversation, so
      it reads as a thread event rather than chrome -- and a FAILED carry-over
      carries the block colour, because a new provider answering turn 51 as
