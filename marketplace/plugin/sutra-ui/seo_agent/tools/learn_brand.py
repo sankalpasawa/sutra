@@ -4,7 +4,7 @@ The port of the workflow's Layer 01 (brand context). Twelve builders run in the 
 one a module in brand/, each writing its files under knowledge/brand/ before the next one reads them:
 
      0 type-roles         what THIS company's page types hold (stat / story / commercial / editorial)
-     1 brand-facts        stats.md · stories.md · opinions.md (⚠️ candidates; the human confirms)
+     1 brand-facts        stats.md · stories.md (machine drafts, marked; the human confirms by editing)
      2 brand-voice        page-shortlist.md · brand-voice.md (+ the one-liner into company.json)
      3 style-guide        style-guide.md
      4 features           features.md · cta-pages.md
@@ -29,7 +29,7 @@ from . import _shared as sh
 # (key, module, the files that mark it done), in the original's run order
 BUILDERS = [
     ("type-roles", type_roles, ["type-roles.json"]),
-    ("brand-facts", brand_facts, ["stats.md", "stories.md", "opinions.md"]),
+    ("brand-facts", brand_facts, ["stats.md", "stories.md"]),
     ("brand-voice", brand_voice, ["brand-voice.md"]),
     ("style-guide", style_guide, ["style-guide.md"]),
     ("features", features, ["features.md", "cta-pages.md"]),

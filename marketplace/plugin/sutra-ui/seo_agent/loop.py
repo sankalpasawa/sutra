@@ -108,10 +108,35 @@ def _knowledge_block(site):
     brief = store.knowledge("brand/writer-brief.md")
     lines.append("- Brand pack: built (writer brief on file)." if isinstance(brief, str) and brief.strip()
                  else "- Brand pack: not built. Run learn_brand after the site is read.")
+    # Whether the setup questions have been put to them. Without this line the model has no way to
+    # know, so it either never asks or asks a user who has already answered, and both are the same
+    # bug the block above was written to stop: setup redone because nothing said it was done.
+    interview = None
+    try:
+        from .tools import onboard as _onboard
+        interview = _onboard.status()
+        if interview["asked"]:
+            lines.append("- Setup questions: already put to them, %d answered and %d passed over. "
+                         "Do NOT ask them again unless they ask you to."
+                         % (interview["answered"], interview["skipped"]))
+        elif interview["started"]:
+            lines.append("- Setup questions: started but not finished (%d of %d). Run onboard to "
+                         "pick up at the next one." % (interview["done"], interview["total"]))
+        else:
+            lines.append("- Setup questions: never asked. Run onboard once the site is read and "
+                         "BEFORE learn_brand.")
+    except Exception:  # noqa: BLE001 — a missing ledger must never break the prompt
+        pass
+
     done = pages and isinstance(brief, str) and brief.strip()
     tail = ("\nSetup is complete. Do NOT run index_site, build_page_index or learn_brand again unless the user "
             "asks for a rebuild. Go straight to the article." if done else
             "\nFinish setup first, in the order above, then the article.")
+    # An install from before the interview existed has a finished pack and an unasked user. Say so
+    # rather than letting "setup is complete" read as "there is nothing left to ask".
+    if done and interview and not interview["asked"]:
+        tail += (" One thing IS still outstanding: the setup questions have never been put to them. "
+                 "Run onboard once, then carry on.")
     return "## What is already in Knowledge\n\n" + "\n".join(lines) + tail
 
 
@@ -143,11 +168,72 @@ def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
 
 
 STAGE_FOR = {"index_site": "setup", "build_page_index": "setup", "learn_brand": "setup",
-             "refresh_site": "setup", "import_traffic": "setup",
+             "onboard": "setup", "refresh_site": "setup", "import_traffic": "setup",
              "suggest_topics": "topic", "run_research": "research",
              "build_blueprint": "blueprint", "write_article": "draft"}
 VIEW_STAGE = {"brand_pack": "setup", "topic_list": "topic", "research_brief": "research",
               "blueprint": "blueprint", "article": "draft"}
+
+
+def _ask_interview(chat_id, run_id, call_id, ask):
+    """One setup question, through the SAME checkpoint every approval already uses.
+
+    The kind stays "question" on purpose. The screen already draws that kind, with its option
+    chips and its free-text box, and a new kind would have drawn nothing at all until the front
+    end caught up. What marks it as part of the interview is the `interview` field, which carries
+    the id of the question the answer belongs to, so resume() files it without guessing by order.
+
+    Every question is skippable, and the skip is an option the user picks rather than a silence we
+    infer. A run that never asked and a user who had nothing to say must not look the same.
+    """
+    from .tools import onboard
+    _wait(chat_id, run_id, "question", call_id, {
+        "question": ask.get("question", ""),
+        "why": ask.get("why", ""),
+        "interview": ask.get("id", ""),
+        "step": ask.get("step"), "of": ask.get("of"),
+        "options": [{"label": onboard.SKIP_LABEL}]}, stage="setup")
+
+
+def _resume_interview(chat_id, run_id, waiting, messages, answer):
+    """File the answer, then ask the next question or hand the model the finished interview.
+
+    The whole interview is ONE tool call, so it gets ONE tool result, at the end. The model never
+    sees a half-answered interview: it cannot then decide to ask the rest itself, in its own
+    words, and drop the answers into a message instead of a file.
+    """
+    from .tools import onboard
+    call_id = waiting.get("call_id")
+    text, skipped = onboard.read_answer(answer)
+    try:
+        onboard.record(waiting.get("interview"), text, skipped=skipped)
+    except Exception as e:  # noqa: BLE001 — a question we cannot file must not strand the run
+        store.emit(chat_id, run_id, "step_failed", label=registry.label("onboard"),
+                   reason=str(e)[:400], detail=traceback.format_exc()[-1200:], recovering=True)
+    store.emit(chat_id, run_id, "resumed", by="user",
+               answer=("Skipped" if skipped else text[:200]))
+
+    step_id = "s%d" % (int(time.time() * 1000) % 100000)
+    store.emit(chat_id, run_id, "step_started", id=step_id,
+               label=registry.label("onboard"), tool="onboard", stage="setup")
+    t0 = time.time()
+    try:
+        out = _run_tool(chat_id, run_id, "onboard", {}, step_id=step_id)
+    except Exception as e:  # noqa: BLE001
+        out = {"error": str(e)[:600],
+               "hint": "The setup questions could not be finished. Say so in one line and carry on."}
+    store.emit(chat_id, run_id, "step_finished", id=step_id, label=registry.label("onboard"),
+               ms=int((time.time() - t0) * 1000), summary=(out or {}).get("summary", ""))
+
+    if isinstance(out, dict) and out.get("ask"):
+        _ask_interview(chat_id, run_id, call_id, out["ask"])
+        return store.get_state(chat_id, run_id)
+
+    messages.append({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
+    store.save_messages(chat_id, messages)
+    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+    return step(chat_id, run_id)
 
 
 def step(chat_id, run_id):
@@ -281,6 +367,13 @@ def step(chat_id, run_id):
                 store.emit(chat_id, run_id, "step_finished", id=step_id,
                            label=registry.label(name), ms=ms,
                            summary=(out or {}).get("summary", ""))
+                # A tool that came back with a question for the user (the setup interview) waits
+                # here instead of answering the model. Same _wait, same resume, no second
+                # mechanism: the tool decides WHAT to ask, the loop decides that we stop.
+                if isinstance(out, dict) and out.get("ask"):
+                    store.save_messages(chat_id, messages)
+                    _ask_interview(chat_id, run_id, call_id, out["ask"])
+                    return store.get_state(chat_id, run_id)
                 if registry.cost(name):
                     s = store.get_state(chat_id, run_id)
                     store.patch_state(chat_id, run_id,
@@ -325,6 +418,11 @@ def resume(chat_id, run_id, answer):
 
     if not isinstance(answer, dict):
         answer = {"text": str(answer)}
+
+    # A setup-interview answer goes into a file, not into the conversation. It is checked before
+    # the ordinary question branch because it looks exactly like one on the wire.
+    if w.get("interview"):
+        return _resume_interview(chat_id, run_id, w, messages, answer)
 
     if w.get("kind") == "approval":
         tool = w.get("tool")

@@ -472,8 +472,16 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&l
    which cannot appear in escaped output, so later passes cannot corrupt them. */
 const MD_URL_OK = /^https?:\/\//i;
 
+/* An HTML comment is markdown's own way of carrying a machine tag a reader must not see. We use
+   three: <!--d--> marks a row the machine drafted, <!--mine--> a call-to-action link a person
+   added, and <!-- setup-interview --> delimits the answers from first-run setup. Stripped here,
+   and deliberately AFTER esc(): removing "<!--...-->" from raw source could splice two halves of
+   a tag back together ("<sc<!---->ript>"), so the strip only ever runs over already-inert text.
+   The raw editor still shows the tag, which is how a person removes it to confirm a row. */
+const MD_COMMENT = /&lt;!--[\s\S]*?--&gt;/g;
+
 function mdHtml(src){
-  let t = esc(src).replace(/\r\n?/g, "\n");
+  let t = esc(src).replace(/\r\n?/g, "\n").replace(MD_COMMENT, "");
   const slot = [];
   const park = html => "\u0000" + (slot.push(html) - 1) + "\u0000";
 

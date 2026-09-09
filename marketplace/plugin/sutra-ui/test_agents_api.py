@@ -215,6 +215,43 @@ class TestAgentsApi(unittest.TestCase):
         self.assertTrue(self.client.post(BASE + "/library/%s/delete" % item, headers=HDR).json()["ok"])
         self.assertEqual(self.client.get(BASE + "/library/%s" % item).status_code, 404)
 
+    def test_17_a_saved_article_can_be_edited_in_place(self):
+        """POST /library/<id>/save. The Library is a place to fix a sentence, not a read-only
+        archive, so the person's edit goes back over the article and becomes the truth."""
+        if not hasattr(store, "library_update"):
+            self.skipTest("store.library_update is missing from seo_agent/store.py: the route "
+                          "cannot save until it is restored (it was lost with the old clone)")
+        item = store.library_save("c", "r", "Draft title", "# Draft title\n\nThe first body.\n")
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"title": "A better title", "draft": "# A better title\n\nThe edited body.\n"},
+                             headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["title"], "A better title")
+        self.assertEqual(r.json()["words"], len("# A better title\n\nThe edited body.\n".split()))
+        back = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertIn("The edited body.", back["draft"], "the edit is what reads back")
+        self.assertNotIn("The first body.", back["draft"], "and the old body is gone, not appended to")
+        self.assertEqual(back["title"], "A better title")
+        # an empty article is not a save: it would silently destroy the article
+        for bad in ("", "   ", None, 12):
+            r = self.client.post(BASE + "/library/%s/save" % item, json={"draft": bad}, headers=HDR)
+            self.assertEqual(r.status_code, 400, "draft=%r" % bad)
+            self.assertEqual(r.json()["detail"], "an empty article is not a save")
+        self.assertIn("The edited body.", self.client.get(BASE + "/library/%s" % item).json()["draft"],
+                      "a refused save leaves the article exactly as it was")
+        # an id for an article that is not there
+        self.assertEqual(self.client.post(BASE + "/library/no-such-article/save",
+                                          json={"draft": "x"}, headers=HDR).status_code, 404)
+        self.assertEqual(self.client.post(BASE + "/library/..%2Fetc/save",
+                                          json={"draft": "x"}, headers=HDR).status_code, 404)
+        # no title given: the article keeps the one it had, and a long one is trimmed
+        r = self.client.post(BASE + "/library/%s/save" % item, json={"draft": "# x\n\nbody\n"}, headers=HDR)
+        self.assertEqual(r.json()["title"], "A better title")
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"title": "T" * 400, "draft": "# x\n\nbody\n"}, headers=HDR)
+        self.assertEqual(len(r.json()["title"]), 160, "a title is trimmed, never rejected")
+        store.library_delete(item)
+
     # ---- settings ---------------------------------------------------------------------
 
     def test_20_connections_never_echo_secrets_and_refuse_api_keys(self):

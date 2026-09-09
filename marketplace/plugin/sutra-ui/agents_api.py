@@ -233,7 +233,13 @@ def api_artifact(chat_id: str, run_id: str, name: str):
 
 
 def _brand_pack():
-    """The brand pack as the screen shows it: one row per file, with review flags."""
+    """Which brand files exist and how long each is. Nothing else.
+
+    It used to carry a flag count per file, and the count of drafted rows became a list of chores
+    on the owner's own screen (2026-09-09). The flags still live in the documents, where the
+    quality gates read them; they are no longer counted at anybody. Two callers need this: /health,
+    to answer "is the pack built", and the brand checkpoint's artifact.
+    """
     try:
         from seo_agent.brand import pack
         out = pack.summary()
@@ -242,8 +248,7 @@ def _brand_pack():
         if not any(f.get("name") == "company.json" for f in out.get("files", [])):
             rec = store.knowledge("brand/company.json")
             out.setdefault("files", []).insert(0, {"name": "company.json", "exists": bool(rec),
-                                                   "words": len(__import__("json").dumps(rec or {}).split()),
-                                                   "flags": 0 if (rec or {}).get("brand_oneliner") else 1})
+                                                   "words": len(__import__("json").dumps(rec or {}).split())})
         return out
     except Exception:  # noqa: BLE001 -- the builder may not be installed yet; list what is on disk
         files = []
@@ -251,9 +256,8 @@ def _brand_pack():
             base = name.split("/", 1)[1]
             text = store.knowledge(name)
             body = text if isinstance(text, str) else __import__("json").dumps(text)
-            files.append({"name": base, "exists": True, "words": len(body.split()),
-                          "flags": body.count("\u26a0")})
-        return {"files": files, "needs_review": []}
+            files.append({"name": base, "exists": True, "words": len(body.split())})
+        return {"files": files}
 
 
 @router.post("/runs/{chat_id}/{run_id}/artifact/{name}")
@@ -352,6 +356,69 @@ def api_publish(chat_id: str, run_id: str, body: dict = Body(default={})):
 
 # ---- knowledge / memory / connections / tools ----------------------------------------------
 
+def _type_names(types):
+    """{type: what a person calls it}, for the types this catalogue actually holds.
+
+    The names were decided once, by the builder that classified the types, and saved beside the
+    roles in brand/type-roles.json. Nothing is named a second time here.
+    """
+    try:
+        from seo_agent.brand import type_roles
+        return type_roles.display_names(sorted(types))
+    except Exception:  # noqa: BLE001 -- an unbuilt pack is a screen with slugs on it, not a 500
+        return {}
+
+
+def _primary_language():
+    return ((store.knowledge("brand/company.json") or {}).get("language_code") or "en")[:2].lower()
+
+
+def _page_language(page, primary):
+    """Which language a catalogue row is in. Decided HERE and nowhere else, because two places
+    decide it — the tally on the Knowledge screen and the filter behind the page list — and if
+    they disagreed the screen would say "English 9,858" and then show 9,889 rows. An untagged row
+    is the site's own language: 31 of the owner's 12,318 pages have no `lang`, and they are
+    English pages, not pages in no language.
+    """
+    return (page.get("lang") or "").strip().lower()[:2] or primary
+
+
+def _languages(pages):
+    """({code: how many pages}, {code: the language's name}), summing to the whole catalogue.
+
+    The list exists to show what the site was TRANSLATED into. The owner's site carries about
+    2,400 translated pages across thirteen languages, and Swedish mixed into his English is the
+    confusion the language filter was added to end.
+    """
+    from seo_agent.foundation import urls as U
+    primary, out = _primary_language(), {}
+    for p in pages:
+        code = _page_language(p, primary)
+        if code:
+            out[code] = out.get(code, 0) + 1
+    return out, {c: U.language_name(c) for c in out}
+
+
+def _brand_knowledge():
+    """The brand half of the Knowledge screen: the one page a writer reads, what it was built
+    from, and how long the call-to-action list is.
+
+    Deliberately NOT the old file-by-file pack with its review flags. A person opening this wants
+    to read the brief and see the chain behind it, not to be handed a list of chores.
+    """
+    try:
+        from seo_agent.brand import cta, pack
+        from seo_agent.tools import _shared as sh
+        return {"brand": sh.company()["brand"],
+                "brief": pack.brief(),
+                "built_from": pack.built_from(),
+                "extras": pack.extras(),
+                "cta": {"count": cta.count()}}
+    except Exception:  # noqa: BLE001 -- the engine may not be installed yet; show an empty pack
+        return {"brand": "", "brief": {"exists": False, "words": 0, "text": ""},
+                "built_from": [], "extras": [], "cta": {"count": 0}}
+
+
 @router.get("/knowledge")
 def api_knowledge():
     """Everything the Knowledge screen shows, light. Page bodies and the embedding map have
@@ -364,22 +431,74 @@ def api_knowledge():
     types = {}
     for p in pages:
         types[p.get("type") or "page"] = types.get(p.get("type") or "page", 0) + 1
-    light.update({"page_count": len(pages), "types": types,
+    langs, lang_names = _languages(pages)
+    light.update({"page_count": len(pages), "types": types, "type_names": _type_names(types),
+                  "languages": langs, "language_names": lang_names,
                   "ranking_pages": sum(1 for p in pages if p.get("top_keyword")),
+                  # Whether a traffic pull ever happened. The screen needs to tell "nobody ranks"
+                  # apart from "we have not connected search traffic yet", and printing 0 for the
+                  # second one reads as the first.
+                  "has_traffic": any(p.get("top_keyword") for p in pages),
                   "ok_pages": sum(1 for p in pages if (p.get("body_status") or "ok") == "ok")})
     try:
         from seo_agent.tools import _index
         page_index = _index.status()
     except Exception:  # noqa: BLE001
         page_index = {"built": False}
+    company = store.knowledge("brand/company.json") or {}
+    # The screen opens the page list filtered to the company's own language, so this field has to
+    # be there even on a record written before the field existed.
+    company.setdefault("language_code", "en")
     return {"site_index": light,
             "report": store.knowledge("catalogue-report.json"),
             "top_pages": (store.knowledge("top-pages.json") or [])[:25],
             "page_index": page_index,
-            "brand": _brand_pack(),
-            "company": store.knowledge("brand/company.json") or {},
+            "brand": _brand_knowledge(),
+            "company": company,
             "brand_voice": store.knowledge("brand_voice.json"),
             "competitors": store.knowledge("competitors.json")}
+
+
+@router.get("/knowledge/cta")
+def api_cta():
+    """The pages an article's close is allowed to link to."""
+    from seo_agent.brand import cta
+    from seo_agent.foundation import urls as U
+    from seo_agent.tools import _shared as sh
+    return {"rows": cta.rows(), "domain": U.bare_host(sh.company().get("domain"))}
+
+
+@router.post("/knowledge/cta")
+def api_save_cta(body: dict = Body(...)):
+    """The whole list, in the order the person wants it. Every row saved here is theirs from then
+    on, and the features builder re-emits them above its own rows rather than over them.
+
+    A url the catalogue has never seen is accepted and comes back with an empty title: the page may
+    have been published since the last crawl, and making him re-crawl to add a link he knows is
+    live would be the tool arguing with him. A url on somebody else's domain is refused, because
+    the close links to his own product or to nothing.
+    """
+    from seo_agent.brand import cta
+    from seo_agent.foundation import urls as U
+    from seo_agent.tools import _shared as sh
+    rows = body.get("rows")
+    if not isinstance(rows, list):
+        return _bad("send the whole list as \"rows\", in the order you want it")
+    co = sh.company()
+    wanted, seen = [], set()
+    for r in rows:
+        if not isinstance(r, dict):
+            return _bad("every row needs a url and a note")
+        url = str(r.get("url") or "").strip()
+        why = cta.check(url, co.get("domain"))
+        if why:
+            return _bad(why)
+        key = url.rstrip("/").lower()
+        if key in seen:              # the same page twice is one row, not an error
+            continue
+        seen.add(key)
+        wanted.append({"url": url, "note": str(r.get("note") or "").strip()[:300]})
+    return {"rows": cta.save(co["brand"], wanted), "domain": U.bare_host(co.get("domain"))}
 
 
 @router.post("/knowledge/refresh")
@@ -424,9 +543,15 @@ def api_knowledge_traffic(body: dict = Body(...)):
 
 
 @router.get("/knowledge/pages")
-def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str = ""):
-    """A page of the catalogue: searchable by title or url, filterable by type, sorted by
-    traffic then title. Light rows only."""
+def api_knowledge_pages(offset: int = 0, limit: int = 5, q: str = "", type: str = "", lang: str = ""):
+    """A page of the catalogue: searchable by title or url, filterable by type and by language,
+    sorted by traffic then title. Light rows only.
+
+    `limit` defaults to five. It used to be twenty-five, which on a 12,318-page site filled the
+    screen with rows nobody had asked to see; the list is a sample with a search box, not a table
+    of contents. `lang` is two letters, and a row with no lang counts as the company's own
+    language, because that is what an untagged page is.
+    """
     idx = store.knowledge("site_index.json") or {}
     pages = idx.get("pages") if isinstance(idx, dict) else (idx if isinstance(idx, list) else [])
     pages = pages or []
@@ -436,6 +561,9 @@ def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str
                  or ql in (p.get("top_keyword") or "").lower()]
     if type:
         pages = [p for p in pages if (p.get("type") or "page") == type]
+    if lang:
+        want, primary = lang.strip().lower()[:2], _primary_language()
+        pages = [p for p in pages if _page_language(p, primary) == want]
     # Traffic first, then the fullest pages. Found live 2026-09-04: with no traffic pulled, every
     # page sorted equal and the 31 pages whose text failed came out on top, so a catalogue that is
     # 99.7% clean opened on a screen of red. A page that could not be read is never the first row.
@@ -449,7 +577,7 @@ def api_knowledge_pages(offset: int = 0, limit: int = 50, q: str = "", type: str
     for p in pages[offset:offset + limit]:
         rows.append({k: p.get(k) for k in ("url", "type", "title", "word_count", "body_status",
                                              "traffic", "traffic_clean", "top_keyword", "intent",
-                                             "position", "modified", "source")})
+                                             "position", "modified", "source", "lang")})
     return {"total": len(pages), "offset": offset, "rows": rows}
 
 
@@ -600,6 +728,25 @@ def api_library_item(item_id: str):
         return _bad("bad id")
     it = store.library_get(item_id)
     return it or _bad("not found", 404)
+
+
+@router.post("/library/{item_id}/save")
+def api_library_save_edit(item_id: str, body: dict = Body(...)):
+    """Save an edited article back over itself. The person's version is the truth from then on.
+
+    A saved article is a document, not a transcript: fixing a sentence should not need a live
+    run. Title and body only; status has its own route and the rest is provenance.
+    """
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    it = store.library_get(item_id)
+    if not it:
+        return _bad("not found", 404)
+    draft = body.get("draft")
+    if not isinstance(draft, str) or not draft.strip():
+        return _bad("an empty article is not a save")
+    title = (body.get("title") or it.get("title") or "").strip()[:160]
+    return store.library_update(item_id, draft, title) or _bad("could not save", 500)
 
 
 @router.post("/library/{item_id}/status")

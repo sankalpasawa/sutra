@@ -34,7 +34,8 @@ import os
 import time
 
 from .. import store
-from ..foundation import enumerate_sitemap, enumerate_wp, extract, fetch as fetchmod, reconcile
+from ..foundation import (enumerate_sitemap, enumerate_wp, extract, fetch as fetchmod,
+                          reconcile, urls)
 from ..foundation import traffic as trafficmod
 from . import _shared as sh
 
@@ -281,6 +282,14 @@ def run(ctx, preview=False, include_unchecked=False, use_archive=False, redo_tra
                         "no traffic figure until it is.")
 
     pages = sorted(known.values(), key=lambda p: p.get("url") or "")
+    # A refresh fetches and extracts directly, so it never runs reconcile's own inference pass and
+    # every page it added arrived with no type at all. Found 2026-09-09 on the first live refresh:
+    # 584 untyped pages went into the catalogue, out of reach of every builder that picks pages by
+    # type. One call over the merged set, which also repairs any language-typed row already there.
+    retyped, _was = reconcile.retype_catalogue(pages)
+    if retyped:
+        say("Filed the pages by kind", "%d pages had no kind on record, or had a language where "
+                                      "their kind should be" % retyped)
     idx["pages"] = pages
     idx["page_count"] = len(pages)
     idx["indexed_at"] = store.now()

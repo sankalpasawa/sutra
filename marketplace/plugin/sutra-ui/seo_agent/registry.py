@@ -165,6 +165,30 @@ WORK_TOOLS = [
         },
     },
     {
+        "name": "onboard",
+        "description": (
+            "Put the setup questions to the user, one at a time, in the chat: the numbers their "
+            "site does not publish, why the company was built, something that did not work, who "
+            "articles are published under, who signs the leadership pieces, and who they compete "
+            "with. Six short questions, every one skippable. Run ONCE at setup, after index_site "
+            "and BEFORE learn_brand, because three of the answers belong in files learn_brand "
+            "instantiates and it never overwrites a file that already has them. It knows who has "
+            "been asked already and says so, so calling it twice is safe. Pass redo=true ONLY "
+            "when the user asks to go through the questions again."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": True,
+        "est_minutes": 3, "module": "tools.onboard",
+        "input_schema": {"type": "object", "properties": {
+            "redo": {"type": "boolean", "description": "Ask every question again from the start. Default false."},
+        }},
+        "plain": {
+            "does": "Asks you the handful of things it cannot read off your website: your real numbers, your story, your byline and your rivals.",
+            "when": "Once, when you first set up, after the site is read and before the brand pack is built.",
+            "needs": "Nothing but you. Every question can be skipped.",
+            "takes": "A few minutes, at your pace.",
+        },
+    },
+    {
         "name": "learn_brand",
         "description": (
             "Build the brand pack from the company's own pages: how they write, what they sell, "
@@ -306,6 +330,7 @@ def est_minutes(name):
 LABELS = {
     "index_site": "Reading the website",
     "build_page_index": "Indexing the pages by meaning",
+    "onboard": "Asking the setup questions",
     "learn_brand": "Learning the brand",
     "suggest_topics": "Finding topic ideas",
     "run_research": "Researching the topic",

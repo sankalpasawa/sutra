@@ -24,6 +24,7 @@ const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 const AG_MAX_SUBS = 8;
 const AG_LINK_WEAK = 0.45;      /* mirrors LINK_WEAK_SCORE in the engine: below this a link is flagged weak */
+const AG_PAGE_LIMIT = 5;        /* rows in the page table, and the step the pager takes; the server defaults to the same */
 
 /* ── tiny helpers ──────────────────────────────────────────────────────────── */
 function agEsc(x){
@@ -33,7 +34,9 @@ function agEsc(x){
 }
 function agMd(text){
   if (typeof mdHtml === "function") { try { return mdHtml(String(text || "")); } catch (e) {} }
-  return "<div class=\"md-p\">" + agEsc(text).replace(/\n\n+/g, "</div><div class=\"md-p\">") + "</div>";
+  // the same machine tags mdHtml hides; this branch escapes for itself, so it strips for itself
+  return "<div class=\"md-p\">" + agEsc(text).replace(/&lt;!--[\s\S]*?--&gt;/g, "")
+    .replace(/\n\n+/g, "</div><div class=\"md-p\">") + "</div>";
 }
 function agDur(ms){
   ms = Math.max(0, ms | 0);
@@ -61,6 +64,19 @@ function agAgo(iso){
   if (d < 3600000) return Math.floor(d / 60000) + "m ago";
   if (d < 86400000) return Math.floor(d / 3600000) + "h ago";
   return Math.floor(d / 86400000) + "d ago";
+}
+/* agAgo is the short form the run log wants ("1h ago"). The catalogue line is a
+   sentence a person reads, so it gets words: "read an hour ago". */
+function agAgoWords(iso){
+  const ms = agMs(iso); if (isNaN(ms)) return "";
+  const d = Date.now() - ms;
+  if (d < 60000) return "just now";
+  const mins = Math.floor(d / 60000);
+  if (mins < 60) return mins === 1 ? "a minute ago" : mins + " minutes ago";
+  const hrs = Math.floor(d / 3600000);
+  if (hrs < 24) return hrs === 1 ? "an hour ago" : hrs + " hours ago";
+  const days = Math.floor(d / 86400000);
+  return days === 1 ? "yesterday" : days + " days ago";
 }
 function agWords(md){ return String(md || "").trim().split(/\s+/).filter(Boolean).length; }
 function agDomain(url){
@@ -100,10 +116,10 @@ function agS(){
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
     picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, refresh: null, trafficForm: null, draft: "", scroll: null, stick: true,
-    health: null, knowledge: null, memory: null, library: null, tools: null, conns: null,
-    pages: null, pageQ: "", pageType: "", map: null, mapOn: false,
+    health: null, knowledge: null, cta: null, ctaForm: null, memory: null, library: null, tools: null, conns: null,
+    pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
-    compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, detailOpen: {},
+    compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
     fileEdit: null,
   };
   return S.ag;
@@ -765,9 +781,8 @@ const AG_BRAND_FILES = [
   ["persona.md", "Readers", "Who the articles are written for. Three or four reader types and how to pick one."],
   ["features.md", "Product facts", "What they sell, integrations, pricing, proof. The close reads this."],
   ["cta-pages.md", "Pages a call to action may link to", "The short list the article's close is allowed to point at."],
-  ["stats.md", "Real numbers", "Figures about the company drafted from the site. Rows marked ⚠️ need your confirmation."],
-  ["stories.md", "Customer stories", "Named results drafted from the site. Confirm before they can be cited."],
-  ["opinions.md", "Opinions", "What the company believes. Only a person fills this."],
+  ["stats.md", "Real numbers", "Figures about the company, drafted from its own pages. Edit any row and your version is the truth."],
+  ["stories.md", "Customer stories", "Named customer results, drafted from the site. Edit any entry and your version is the truth."],
   ["brand-cards.json", "Brand cards", "The numbers and stories as placeable facts, each with its source."],
   ["writing-examples.md", "Worked examples", "The best on-voice articles, annotated."],
   ["voices.md", "Bylines", "Who signs the writing. Filled by the team."],
@@ -784,18 +799,25 @@ function agBrandPackHtml(pack, opts){
   const files = (pack && pack.files) || [];
   const byName = {};
   for (const f of files) byName[f.name] = f;
-  const review = (pack && pack.needs_review) || [];
   const known = AG_BRAND_FILES.map(r => r[0]);
   const extra = files.filter(f => known.indexOf(f.name) === -1 && f.exists);
   const built = files.filter(f => f.exists).length;
-  return `<p class="ag-sub" style="margin:0 0 10px">${built} of ${AG_BRAND_FILES.length} files built${review.length ? ` · <b style="color:var(--warn)">${review.length} need a look</b>` : ""}</p>
-    ${review.length ? `<div class="note w" style="margin:0 0 12px"><b>Confirm these before they are used.</b><ul class="ag-list" style="margin:6px 0 0">${review.map(r => `<li>${agEsc(r)}</li>`).join("")}</ul></div>` : ""}
+  /* A standing screen carries no nags; a live moment does. At a checkpoint the agent has
+     stopped and is waiting on a person, so what it is waiting for is the panel's whole job.
+     The Knowledge tab is a reference screen and shows none of this. The CALLER decides that,
+     never the data, so the same payload reads two ways in the two places. `confirm` is the
+     field to send; `needs_review` is the older name and is still read so the checkpoint keeps
+     working while the builders are rewritten. */
+  const ask = opts.atCheckpoint ? ((pack && (pack.confirm || pack.needs_review)) || []) : [];
+  return `<p class="ag-sub" style="margin:0 0 10px">${built} of ${AG_BRAND_FILES.length} files built</p>
+    ${ask.length ? `<div class="ag-card" style="margin:0 0 12px"><div class="q">Before I carry on, there ${ask.length === 1 ? "is one thing" : "are " + ask.length + " things"} I need you to decide.</div>
+      <ul class="ag-list" style="margin:8px 0 0">${ask.map(r => `<li>${agEsc(typeof r === "string" ? r : (r.question || r.text || ""))}</li>`).join("")}</ul></div>` : ""}
     <div class="ag-files">${AG_BRAND_FILES.map(r => {
       const f = byName[r[0]];
       const ok = !!(f && f.exists);
       return `<button class="ag-file ${ok ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(r[0])}" ${ok ? "" : "disabled"}>
         <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
-        <span class="ft"><span class="fn">${agEsc(r[1])}${f && f.flags ? ` <span class="pill p-warn">${agEsc(f.flags)} to confirm</span>` : ""}</span><span class="fd">${agEsc(r[2])}</span></span>
+        <span class="ft"><span class="fn">${agEsc(r[1])}</span><span class="fd">${agEsc(r[2])}</span></span>
         <span class="fm">${ok ? (f.words ? agEsc(agNum(f.words)) + " words" : "built") : "not built yet"}</span></button>`;
     }).join("")}${extra.map(f => `<button class="ag-file" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}"><span class="fi" aria-hidden="true">${AG_ICON.doc}</span><span class="ft"><span class="fn">${agEsc(f.name)}</span></span><span class="fm">${agEsc(agNum(f.words))} words</span></button>`).join("")}</div>`;
 }
@@ -820,6 +842,23 @@ function agPageHtml(d){
     <div class="ag-doc">${agMd(d.text)}</div>`;
 }
 
+/* A saved article is a document: edit the words and save over it, no run needed. The draft
+   lives on a.libEdit the way a.ctaForm holds the link list, so a redraw between keystrokes
+   cannot throw away what he has typed, and the word count is his own text's, not a stale one. */
+function agLibEditHtml(p, ed){
+  return `<div class="ag-libedit">
+    <label class="ag-lbl">Title</label>
+    <input class="in" type="text" data-aglibtitle value="${agEsc(ed.title || "")}" aria-label="Title" />
+    <label class="ag-lbl">The article</label>
+    <textarea class="in ta" data-aglibbody rows="26" spellcheck="true" aria-label="The article">${agEsc(ed.draft || "")}</textarea>
+    <div class="ag-editrow">
+      <button class="btn pri" type="button" data-ag="libsave" data-arg="${agEsc(p.libId)}" ${ed.busy ? "disabled" : ""}>${ed.busy ? "Saving…" : "Save"}</button>
+      <button class="btn" type="button" data-ag="libcancel">Cancel</button>
+      <span class="ag-sub">${agEsc(agNum(agWords(ed.draft)))} words</span>
+      ${ed.error ? `<span class="ag-err">${agEsc(ed.error)}</span>` : ""}
+    </div></div>`;
+}
+
 function agPanelHtml(a){
   const p = a.panel; if (!p) return "";
   const title = p.title || AG_VIEW_TITLE[p.view] || p.name;
@@ -835,7 +874,7 @@ function agPanelHtml(a){
       <button class="btn" type="button" data-ag="changes" data-text="Different ideas, please. This time ">Ask for different ideas</button>
       <span class="sp">${a.picked ? "" : "Pick one to continue"}</span>`;
   } else if (p.view === "brand_pack"){
-    body = agBrandPackHtml(p.data);
+    body = agBrandPackHtml(p.data, { atCheckpoint });
     if (atCheckpoint) footer = `<button class="btn pri" type="button" data-ag="approvert">Looks right, continue</button>
       <button class="btn" type="button" data-ag="changes" data-text="About the brand pack: ">Ask for changes</button>
       <span class="sp">Open a file to read or edit it</span>`;
@@ -854,8 +893,10 @@ function agPanelHtml(a){
       <button class="btn" type="button" data-ag="changes" data-text="About the plan: ">Ask for changes</button>
       <span class="sp">${p.dirty ? "Reordered · saved on approve" : ""}</span>`;
   } else if (p.view === "article"){
-    body = agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly, { links: p.links, write: p.write });
-    if (p.readOnly) footer = `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+    body = (p.libId && a.libEdit) ? agLibEditHtml(p, a.libEdit)
+      : agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly, { links: p.links, write: p.write });
+    if (p.readOnly) footer = a.libEdit ? ""
+      : `${p.libId ? `<button class="btn pri" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit</button>` : ""}<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
       ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
@@ -870,39 +911,34 @@ function agPanelHtml(a){
 /* ── settings views ────────────────────────────────────────────────────────── */
 
 /* Keeping the catalogue current. One line that replaces itself while it works, then a link to
-   what changed. Never a chat log: a person watching an update wants one line, not a transcript. */
+   what changed. Never a chat log: a person watching an update wants one line, not a transcript.
+   The two buttons that START it sit on the catalogue heading row (agCatControlsHtml); this
+   renders only what is happening right now, and nothing at all when nothing is. */
 function agRefreshHtml(a){
   const r = a.refresh || null;
+  let box = "";
   if (r && r.busy) {
-    return `<div class="ag-refresh busy"><span class="spin" aria-hidden="true"></span><span class="msg">${agEsc(r.step || "Working…")}</span></div>`;
-  }
-  if (r && r.preview) {
+    box = `<div class="ag-refresh busy"><span class="spin" aria-hidden="true"></span><span class="msg">${agEsc(r.step || "Working…")}</span></div>`;
+  } else if (r && r.preview) {
     const n = r.preview;
     const nothing = !n.new && !n.gone && !n.changed;
-    return `<div class="ag-refresh">
+    box = `<div class="ag-refresh">
       <div class="msg">${nothing ? "Nothing has changed since the last read."
         : `<b>${agEsc(agNum(n.new))} new</b>, ${agEsc(agNum(n.gone))} gone, ${agEsc(agNum(n.changed))} rewritten.${n.unchecked ? ` ${agEsc(agNum(n.unchecked))} pages give no date, so they cannot be checked without reading them.` : ""}`}</div>
       <div class="ag-editrow">
         ${nothing ? "" : `<button class="btn pri" type="button" data-ag="refreshgo">Update the catalogue</button>`}
         <button class="btn" type="button" data-ag="refreshcancel">${nothing ? "Close" : "Not now"}</button>
       </div></div>`;
-  }
-  if (r && r.done) {
-    return `<div class="ag-refresh done">
+  } else if (r && r.done) {
+    box = `<div class="ag-refresh done">
       <div class="msg"><b>Done.</b> ${agEsc(r.done)}</div>
       <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshchanges">See what changed</button>
         <button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
-  }
-  if (r && r.error) {
-    return `<div class="ag-refresh"><div class="msg err">${agEsc(r.error)}</div>
+  } else if (r && r.error) {
+    box = `<div class="ag-refresh"><div class="msg err">${agEsc(r.error)}</div>
       <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
   }
-  return `<div class="ag-editrow" style="margin:10px 0 2px">
-    <button class="btn" type="button" data-ag="refreshcheck">Check for changes</button>
-    <button class="btn" type="button" data-ag="trafficimport">Import a traffic file</button>
-    <span class="ag-sub">Reads only what is new or has changed, not the whole site.</span>
-  </div>
-  ${a.trafficForm ? `<div class="ag-libedit" style="margin-top:8px">
+  return box + (a.trafficForm ? `<div class="ag-libedit" style="margin-top:8px">
       <label class="ag-lbl">Where the traffic file is on this Mac</label>
       <input class="in" type="text" data-agtraffic placeholder="/Users/you/Desktop/top-pages.csv" value="${agEsc(a.trafficForm.path || "")}" />
       <div class="ag-editrow">
@@ -910,7 +946,105 @@ function agRefreshHtml(a){
         <button class="btn" type="button" data-ag="trafficcancel">Cancel</button>
         <span class="ag-sub">A CSV with a page address column and a traffic column.</span>
         ${a.trafficForm.error ? `<span class="ag-err">${agEsc(a.trafficForm.error)}</span>` : ""}
-      </div></div>` : ""}`;
+      </div></div>` : "");
+}
+
+/* The small controls that belong to the catalogue, on its heading row rather than in the body:
+   the map, and the two ways to bring the catalogue up to date. */
+function agCatControlsHtml(a, canMap){
+  return `<div class="ag-secctl">
+    ${canMap ? `<button class="btn" type="button" data-ag="map">${a.mapOn ? "Hide the map" : "Show the map"}</button>` : ""}
+    <button class="btn" type="button" data-ag="refreshcheck" title="Reads only what is new or has changed, not the whole site.">Check for changes</button>
+    <button class="btn" type="button" data-ag="trafficimport">Import a traffic file</button>
+  </div>`;
+}
+
+/* The one line about the catalogue. With no search traffic connected the middle clause is left
+   out and said plainly at the end, because "0 rank for something" reads as a failure. */
+function agCatLine(idx){
+  const traffic = idx.has_traffic != null ? !!idx.has_traffic : !!idx.ranking_pages;
+  const parts = [agEsc(agNum(idx.page_count)) + " pages"];
+  if (traffic) parts.push(agEsc(agNum(idx.ranking_pages)) + " rank for something");
+  parts.push(agEsc(agNum(idx.ok_pages)) + " with full text");
+  if (idx.indexed_at) parts.push("read " + agEsc(agAgoWords(idx.indexed_at)));
+  if (!traffic) parts.push("search traffic not connected yet");
+  return parts.join(" · ");
+}
+
+/* Which language the page list is showing. About a fifth of the owner's pages are
+   translations, so an unfiltered list drops Swedish and Japanese rows into an English one,
+   which is the confusion this whole screen exists to remove. So the default is the site's own
+   language, from the company record. null means he has not chosen and gets that default; ""
+   means he chose All; a code means he chose that one. On a site with only one language there
+   is nothing to filter, so the default is All and no control is drawn. */
+function agEffLang(a, idx, co){
+  if (a.pageLang != null) return a.pageLang;
+  if (!Object.keys((idx && idx.languages) || {}).length) return "";
+  return String((co && co.language_code) || "").trim().toLowerCase();
+}
+
+/* Why the row count is smaller than the catalogue. A filtered list that does not say it is
+   filtered is the same confusion in a different place. */
+function agPagesNote(bits, total){
+  return bits.length ? ` · ${bits.join(", ")} · ${agEsc(agNum(total))} pages in all` : "";
+}
+
+/* The map of the pages. agDrawMap paints the canvas after agDraw; this is only its frame. */
+function agMapHtml(a){
+  return `<div class="ag-map"><canvas id="agMap" width="900" height="520" aria-label="Map of your pages"></canvas>
+    <div class="ag-maptip" id="agMapTip" hidden></div>
+    <div class="ag-mapcap">pages that mean similar things sit close together, hover to read, click to open</div>
+    ${a.map ? `<div class="ag-maplegend">${agMapLegend(a.map)}</div>` : `<div class="rd" style="padding:10px">Loading the map…</div>`}</div>`;
+}
+
+/* The writer brief, whole, on the page. One document to read, and one door behind which the
+   files it was assembled from wait for anyone who wants them. */
+function agBriefHtml(brand, open){
+  const b = brand || {};
+  const br = b.brief || {};
+  const name = b.brand || "the business";
+  if (!br.exists) return `<div class="ag-row"><div class="ri"><div class="rn">Not written yet</div>
+      <div class="rd">Built during setup from the site's own pages: what they believe, how they sound, the words they use and refuse.</div></div></div>`;
+  const built = b.built_from || [];
+  return `<p class="ag-sub" style="margin:0 0 10px">This is what the writer reads before writing an article about ${agEsc(name)}.</p>
+    <div class="ag-brief">${agMd(br.text || "")}</div>
+    ${built.length ? `<button class="ag-more" type="button" data-ag="detail" data-arg="builtfrom" aria-expanded="${open ? "true" : "false"}">${open ? "Hide how this was built" : "See how this was built"}</button>` : ""}
+    ${open && built.length ? `<div class="ag-files" style="margin-top:6px">${built.map(f => `<button class="ag-file ${f.exists ? "" : "off"}" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}" ${f.exists ? "" : "disabled"}>
+        <span class="fi" aria-hidden="true">${AG_ICON.doc}</span>
+        <span class="ft"><span class="fn">${agEsc(f.label || f.name)}</span><span class="fd">${agEsc(f.note || "")}</span></span>
+        <span class="fm">${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></button>`).join("")}</div>` : ""}`;
+}
+
+/* A file the pack carries but nothing reads yet. Its own heading, because its label IS the
+   heading ("Who writes"), and said plainly to be idle rather than left to look built. */
+function agExtrasHtml(brand){
+  const list = (brand && brand.extras) || [];
+  return list.map(f => `<h3 class="sec">${agEsc(f.label || f.name)}</h3>
+    <div class="ag-row ${f.exists ? "" : "off"}"><div class="ri">
+      <div class="rn">${agEsc(f.note || f.name)} <span class="pill p-mut">not in use yet</span></div>
+      <div class="rm"><span>${agEsc(f.name)}</span><span>${f.exists ? (f.words ? agEsc(agNum(f.words)) + " words" : "written") : "not written yet"}</span></div></div>
+      ${f.exists ? `<div class="ra"><button class="btn" type="button" data-ag="brandfile" data-arg="${agEsc(f.name)}" data-label="${agEsc(f.label || f.name)}">Open</button></div>` : ""}</div>`).join("");
+}
+
+/* The pages an article's close is allowed to send a reader to. The crawl suggests some; the
+   owner adds, removes and saves. The draft lives on a.ctaForm until Save, exactly the way the
+   competitors box and the company form hold their draft. */
+function agCtaHtml(cta, form){
+  const rows = (form && form.rows) || (cta && cta.rows) || [];
+  const dom = (cta && cta.domain) || "";
+  return `<p class="ag-sub" style="margin:0 0 8px">The only pages the last line of an article may send a reader to${dom ? ", on " + agEsc(dom) : ""}.</p>
+    <div class="ag-ctalist">${rows.length ? rows.map((r, i) => `<div class="ag-ctarow${r.mine ? " mine" : ""}">
+        <input type="text" data-agcta="url" data-i="${i}" value="${agEsc(r.url || "")}" placeholder="https://${agEsc(dom || "example.com")}/pricing" aria-label="Page address">
+        <input type="text" data-agcta="note" data-i="${i}" value="${agEsc(r.note || "")}" placeholder="when to point here" aria-label="When to point here">
+        <span class="ag-ctasrc">${r.mine ? "yours" : "suggested"}</span>
+        <button class="ib" type="button" data-ag="ctadel" data-arg="${i}" aria-label="Remove this page" title="Remove this page"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        ${r.title === "" && r.url ? `<div class="ag-ctanote">This page is not in the catalogue yet, so there is nothing read about it. The link still works.</div>` : ""}
+      </div>`).join("") : `<div class="rd">No pages yet. Add the one an article should send a reader to.</div>`}</div>
+    <div class="ag-editrow" style="margin-top:8px">
+      <button class="btn" type="button" data-ag="ctaadd">Add a page</button>
+      <button class="btn pri" type="button" data-ag="ctasave" ${form && form.busy ? "disabled" : ""}>${form && form.busy ? "Saving…" : "Save"}</button>
+      <span class="ag-sub">${form && form.msg ? agEsc(form.msg) : "A page you add stays; rebuilding the pack never removes it."}</span>
+    </div>`;
 }
 
 function agKnowledgeHtml(k, a){
@@ -918,18 +1052,28 @@ function agKnowledgeHtml(k, a){
   if (!k) return `<div class="ag-view"><h2>Knowledge</h2><p class="lead">Reading…</p></div>`;
   const idx = k.site_index || {};
   const co = k.company || {};
-  const rep = k.report || {};
   const pi = k.page_index || {};
   const pages = a.pages || null;
-  const gates = rep.gates || [];
   const types = idx.types || {};
+  const typeNames = idx.type_names || {};
   const typeList = Object.keys(types).sort((x, y) => types[y] - types[x]);
+  const langs = idx.languages || {};
+  const langNames = idx.language_names || {};
+  const own = String(co.language_code || "").trim().toLowerCase();
+  const eff = agEffLang(a, idx, co);
+  /* the site's own language leads the list even when no row carries it explicitly: the
+     catalogue leaves the primary language blank, so it would otherwise have no option */
+  const langList = Object.keys(langs).sort((x, y) => langs[y] - langs[x]).filter(c => c !== own);
+  if (own && Object.keys(langs).length) langList.unshift(own);
+  const langLabel = c => langNames[c] || (c === own ? "the site's own language" : c);
   const comps = k.competitors; const compList = Array.isArray(comps) ? comps : (comps && (comps.competitors || comps.domains)) || [];
   const compText = a.compForm && a.compForm.text != null ? a.compForm.text : compList.map(c => typeof c === "string" ? c : (c.domain || c.name || "")).join("\n");
   const cf = a.coForm || {};
   const indexed = !!idx.page_count;
+  const mapReady = !!pi.built;
+  const extras = agExtrasHtml(k.brand);
   return `<div class="ag-view wide"><h2>Knowledge</h2>
-    <p class="lead">Everything the agent knows about ${agEsc(co.brand || idx.domain || "the business")}. Big and searched, not pasted into every prompt. Click anything to read it.</p>
+    <p class="lead">Everything the agent knows about ${agEsc(co.brand || idx.domain || "the business")}. Click anything to read it.</p>
 
     <h3 class="sec">The company</h3>
     <div class="ag-row"><div class="ri">
@@ -943,33 +1087,32 @@ function agKnowledgeHtml(k, a){
         <div class="row"><button class="btn pri" type="button" data-ag="saveco">Save</button><span class="sp">${cf.msg ? agEsc(cf.msg) : co.wordpress_url ? "WordPress site · read through its own API" : ""}</span></div>
       </div></div></div>
 
-    <h3 class="sec">The site catalogue</h3>
+    <div class="ag-sechead"><h3 class="sec">The site catalogue</h3>${indexed ? agCatControlsHtml(a, mapReady) : ""}</div>
     ${indexed ? `<div class="ag-row"><div class="ri">
-        <div class="rn">${agEsc(idx.domain || "your site")} <span class="pill p-ok">${agEsc(agNum(idx.page_count))} pages</span>${rep.confidence ? `<span class="pill ${/^full/i.test(rep.confidence) ? "p-ok" : "p-warn"}" title="${agEsc(rep.confidence)}">${agEsc(String(rep.confidence).split(/[:\s(]/)[0].toLowerCase())} confidence</span>` : ""}</div>
-        <div class="rd">${agEsc(agNum(idx.ranking_pages))} pages rank for something · ${agEsc(agNum(idx.ok_pages))} with full text${idx.indexed_at ? " · read " + agEsc(agAgo(idx.indexed_at)) : ""}</div>
-        ${gates.length ? `<div class="ag-checks" style="margin:8px 0 4px">${gates.map(g => `<span class="ag-check ${g.pass ? "" : "warn"}" title="${agEsc(g.detail || "")}">${g.pass ? "✓" : "!"} ${agEsc(g.name)}</span>`).join("")}</div>` : ""}
+        <div class="rn">${agEsc(idx.domain || "your site")}</div>
+        <div class="rd">${agCatLine(idx)}</div>
         ${agRefreshHtml(a)}
-        ${typeList.length ? `<div class="rm">${typeList.slice(0, 8).map(t => `<span>${agEsc(t)} <b>${agEsc(agNum(types[t]))}</b></span>`).join("")}</div>` : ""}
+        ${a.mapOn && mapReady ? agMapHtml(a) : ""}
+        ${typeList.length ? `<div class="rm">${typeList.slice(0, 8).map(t => `<span>${agEsc(typeNames[t] || t)} <b>${agEsc(agNum(types[t]))}</b></span>`).join("")}</div>` : ""}
         <div class="ag-addrow" style="margin:12px 0 8px"><input type="search" data-agpageq placeholder="Search pages by title, address or keyword" value="${agEsc(a.pageQ || "")}" aria-label="Search pages">
-          <select data-agpagetype aria-label="Page type"><option value="">All types</option>${typeList.map(t => `<option value="${agEsc(t)}" ${a.pageType === t ? "selected" : ""}>${agEsc(t)}</option>`).join("")}</select></div>
-        ${pages ? `<table class="ag-pages"><thead><tr><th>Page</th><th>Type</th><th>Visits/mo</th><th>Ranks for</th><th>Text</th></tr></thead><tbody>${(pages.rows || []).map(p => `<tr><td><button class="ag-pagelink" type="button" data-ag="page" data-arg="${agEsc(p.url)}">${agEsc(p.title || agPath(p.url))}</button><div class="h">${agEsc(agPath(p.url))}</div></td><td class="m">${agEsc(p.type || "")}</td><td class="m">${(p.traffic_clean || p.traffic) ? agEsc(agNum(p.traffic_clean || p.traffic)) : "—"}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small class="m">#${agEsc(p.position)}</small>` : "") : "—"}</td><td class="m">${p.body_status === "ok" ? agEsc(agNum(p.word_count)) + "w" : agEsc(p.body_status || "")}</td></tr>`).join("")}</tbody></table>
-          <div class="ag-pager"><span>${agEsc(agNum(pages.offset + 1))}–${agEsc(agNum(Math.min(pages.total, pages.offset + (pages.rows || []).length)))} of ${agEsc(agNum(pages.total))}</span>
+          <select data-agpagetype aria-label="Page type"><option value="">All types</option>${typeList.map(t => `<option value="${agEsc(t)}" ${a.pageType === t ? "selected" : ""}>${agEsc(typeNames[t] || t)}</option>`).join("")}</select>
+          ${langList.length ? `<select data-agpagelang aria-label="Language">${langList.map(c => `<option value="${agEsc(c)}" ${eff === c ? "selected" : ""}>${agEsc(langLabel(c))}</option>`).join("")}<option value="" ${eff === "" ? "selected" : ""}>All languages</option></select>` : ""}</div>
+        ${pages ? `<table class="ag-pages"><thead><tr><th>Page</th><th>Type</th><th>Visits/mo</th><th>Ranks for</th><th>Text</th></tr></thead><tbody>${(pages.rows || []).map(p => `<tr><td><button class="ag-pagelink" type="button" data-ag="page" data-arg="${agEsc(p.url)}">${agEsc(p.title || agPath(p.url))}</button><div class="h">${agEsc(agPath(p.url))}</div></td><td class="m">${agEsc(typeNames[p.type] || p.type || "")}</td><td class="m">${(p.traffic_clean || p.traffic) ? agEsc(agNum(p.traffic_clean || p.traffic)) : "—"}</td><td>${p.top_keyword ? agEsc(p.top_keyword) + (p.position ? ` <small class="m">#${agEsc(p.position)}</small>` : "") : "—"}</td><td class="m">${p.body_status === "ok" ? agEsc(agNum(p.word_count)) + "w" : agEsc(p.body_status || "")}</td></tr>`).join("")}</tbody></table>
+          <div class="ag-pager"><span>${agEsc(agNum(pages.offset + 1))}–${agEsc(agNum(Math.min(pages.total, pages.offset + (pages.rows || []).length)))} of ${agEsc(agNum(pages.total))}${agPagesNote([
+              a.pageQ ? `matching "${agEsc(a.pageQ)}"` : "",
+              a.pageType ? agEsc(typeNames[a.pageType] || a.pageType) : "",
+              eff ? "in " + agEsc(langLabel(eff)) : ""].filter(Boolean), idx.page_count)}</span>
             <button class="btn" type="button" data-ag="pagesprev" ${pages.offset <= 0 ? "disabled" : ""}>Previous</button><button class="btn" type="button" data-ag="pagesnext" ${pages.offset + (pages.rows || []).length >= pages.total ? "disabled" : ""}>Next</button></div>` : `<div class="rd">Loading pages…</div>`}
       </div></div>`
       : `<div class="ag-row"><div class="ri"><div class="rn">No site catalogue yet</div><div class="rd">In the chat, give the agent the website. It reads every page and what each ranks for, and the catalogue appears here.</div></div></div>`}
 
-    <h3 class="sec">Pages indexed by meaning</h3>
-    ${pi.built ? `<div class="ag-row"><div class="ri">
-        <div class="rn">Page index <span class="pill p-ok">${agEsc(agNum(pi.pages))} pages · ${agEsc(agNum(pi.chunks))} passages</span></div>
-        <div class="rd">Every page's title and text turned into meaning vectors${pi.model ? ` (${agEsc(pi.model)})` : ""}${pi.built_at ? `, built ${agEsc(agAgo(pi.built_at))}` : ""}. This is how the agent finds the right page of yours to link to from each section.</div>
-        <div class="row" style="margin-top:8px"><button class="btn ${a.mapOn ? "" : "pri"}" type="button" data-ag="map">${a.mapOn ? "Hide the map" : "Show the map of your pages"}</button><span class="sp">${a.mapOn && a.map ? `${agEsc(agNum(a.map.n))} pages · pages that mean similar things sit close together · hover to read, click to open` : ""}</span></div>
-        ${a.mapOn ? `<div class="ag-map"><canvas id="agMap" width="900" height="520" aria-label="Map of the pages by meaning"></canvas><div class="ag-maptip" id="agMapTip" hidden></div>${a.map ? `<div class="ag-maplegend">${agMapLegend(a.map)}</div>` : `<div class="rd" style="padding:10px">Loading the map…</div>`}</div>` : ""}
-      </div></div>`
-      : `<div class="ag-row"><div class="ri"><div class="rn">Not built yet</div><div class="rd">${a.health && !a.health.voyage ? "Needs a Voyage key in Connections (free). Then ask the agent to index the pages by meaning." : indexed ? "Ask the agent to index the pages by meaning. It runs once and takes a minute per thousand pages." : "Built right after the site is read."}</div></div></div>`}
+    <h3 class="sec">The writer brief</h3>
+    ${agBriefHtml(k.brand, !!(a.detailOpen && a.detailOpen.builtfrom))}
 
-    <h3 class="sec">The brand pack</h3>
-    ${k.brand && (k.brand.files || []).some(f => f.exists) ? agBrandPackHtml(k.brand, { inline: true })
-      : `<div class="ag-row"><div class="ri"><div class="rn">Not built yet</div><div class="rd">Built during setup from the site's own pages: voice, style, products, readers, real numbers, stories, and the writer brief every article follows.</div></div></div>`}
+    ${extras}
+
+    <h3 class="sec">Links the close may point at</h3>
+    ${agCtaHtml(a.cta, a.ctaForm)}
 
     <h3 class="sec">Competitors · one domain per line</h3>
     <div class="ag-form"><label><textarea data-agcomps rows="5" class="mono">${agEsc(compText)}</textarea></label>
@@ -1090,7 +1233,7 @@ function agConnectionsHtml(c, h, form){
       </div></div></div>
     <h3 class="sec">Voyage · pages indexed by meaning</h3>
     <div class="ag-row"><div class="ri"><div class="rn">Voyage <span class="ag-status"><i class="dot ${voy ? "ok" : "warn"}"></i>${voy ? "connected" : "not connected"}</span></div>
-      <div class="rd">Turns every page into meaning vectors so the agent can find the right page of yours to link to from each section, and check whether you already cover a topic. The free tier is enough for a whole site.</div>
+      <div class="rd">Reads every page and works out what it is about, so the agent can find the right page of yours to link to from each section, and tell whether you already write about a topic. The free tier is enough for a whole site.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>API key</b><input type="password" data-agvoy="key" autocomplete="off" placeholder="${voy ? "•••••• (set)" : "pa-… from dash.voyageai.com"}" value="${agEsc(form.voyage || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savevoy">Save</button>${voy ? `<button class="btn" type="button" data-ag="clearvoy">Disconnect</button>` : ""}<span class="sp">${form.vmsg ? agEsc(form.vmsg) : ""}</span></div>
@@ -1155,11 +1298,39 @@ function agSetHtml(id, html){
   el.__agHtml = html; el.innerHTML = html; return true;
 }
 
+/* Opening the review panel narrows this column: .haspanel gives 46% of the row to the panel,
+   so every block in the settings document rewraps and the company form drops to one column.
+   The browser keeps the same scrollTop through that, but the content that lives at that pixel
+   is no longer the content that lived there, and when the document gets shorter the browser
+   clamps scrollTop as well. Both read as the page jumping. The chat view never shows it
+   because agDraw puts that column back where it was on every redraw; the settings views had
+   nothing of the kind. So: note which block is at the top of the viewport before the class
+   flips, and put it back there after. Reading and setting scrollTop is what agDraw already
+   does for the chat, so this stays inside that precedent. */
+function agScrollAnchor(scroll){
+  const view = scroll && scroll.firstElementChild; if (!view) return null;
+  const kids = view.children || []; const base = scroll.getBoundingClientRect().top;
+  let anc = null;
+  for (let i = 0; i < kids.length; i++){
+    const top = kids[i].getBoundingClientRect().top - base;
+    if (top <= 1) anc = { idx: i, delta: top }; else break;
+  }
+  return anc;
+}
+function agScrollRestore(scroll, anc){
+  if (!scroll || !anc) return;
+  const view = scroll.firstElementChild; if (!view) return;
+  const el = (view.children || [])[anc.idx]; if (!el) return;
+  scroll.scrollTop += (el.getBoundingClientRect().top - scroll.getBoundingClientRect().top) - anc.delta;
+}
+
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
+  const scroll = document.getElementById("agScroll");
+  const panelFlips = root.classList.contains("haspanel") !== !!a.panel;
+  const anchor = (panelFlips && a.view !== "chat" && scroll) ? agScrollAnchor(scroll) : null;
   root.classList.toggle("haspanel", !!a.panel);
   agSetHtml("agSide", agSideHtml(a));
-  const scroll = document.getElementById("agScroll");
   const nearBottom = scroll ? (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60) : true;
   if (a.view === "chat"){
     const last = agLastRun();
@@ -1196,7 +1367,17 @@ function agDraw(force){
     if (a.view === "knowledge" && a.mapOn) agDrawMap();
     const comp = document.getElementById("agComposer"); if (comp){ comp.hidden = true; }
   }
-  agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "");
+  /* the Library editor redraws while he types (the word count is live), so put the caret back
+     exactly where the composer branch above puts its own */
+  const act = document.activeElement;
+  const typing = act && act.matches && act.matches("[data-aglibbody],[data-aglibtitle]")
+    ? { sel: act.getAttribute("data-aglibbody") != null ? "[data-aglibbody]" : "[data-aglibtitle]",
+        from: act.selectionStart, to: act.selectionEnd } : null;
+  if (agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "") && typing){
+    const back = document.querySelector(typing.sel);
+    if (back){ try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.from, typing.to); } catch (e) {} }
+  }
+  if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
   a.lastView = a.view;
 }
 
@@ -1268,6 +1449,7 @@ async function agBootLoad(){
   try { a.memory = await agApi("/memory"); } catch (e) {}
   try { a.library = await agApi("/library"); } catch (e) {}
   try { a.knowledge = await agApi("/knowledge"); } catch (e) {}
+  try { a.cta = await agApi("/knowledge/cta"); } catch (e) {}
   agDraw(true);
 }
 
@@ -1302,7 +1484,7 @@ function agMaybeOpenCheckpoint(state){
 async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
-  a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null;
+  a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -1326,11 +1508,11 @@ async function agOpenArtifact(runId, name, view, extra){
   agDraw();
 }
 
-async function agOpenBrandFile(name, back){
+async function agOpenBrandFile(name, back, label){
   const a = agS();
   a.panel = { run_id: null, name: "brand/" + name, view: "brand_file", data: null, loading: true, error: null,
-              title: (AG_BRAND_FILES.find(r => r[0] === name) || [name, name])[1], subtitle: name, back: !!back };
-  a.fileEdit = null; agDraw();
+              title: label || (AG_BRAND_FILES.find(r => r[0] === name) || [name, name])[1], subtitle: name, back: !!back };
+  a.fileEdit = null; a.libEdit = null; agDraw();
   try { a.panel.data = await agApi(`/knowledge/brand/${encodeURIComponent(name)}`); a.panel.loading = false; }
   catch (e) { a.panel.loading = false; a.panel.error = String(e && e.message || e); }
   agDraw();
@@ -1345,9 +1527,20 @@ async function agOpenPage(url){
   agDraw();
 }
 
+/* The list as it stands on screen: the draft if there is one, otherwise what the server sent.
+   Always a fresh copy, so a draft edit never writes into a.cta behind Save's back. */
+function agCtaRows(a){
+  const src = (a.ctaForm && a.ctaForm.rows) || (a.cta && a.cta.rows) || [];
+  /* title rides along so an edit does not lose it; it is never posted back */
+  return src.map(r => ({ url: r.url || "", note: r.note || "", mine: !!r.mine, title: r.title }));
+}
+
 async function agLoadPages(offset){
   const a = agS();
-  const params = `offset=${encodeURIComponent(offset || 0)}&limit=25&q=${encodeURIComponent(a.pageQ || "")}&type=${encodeURIComponent(a.pageType || "")}`;
+  const k = a.knowledge || {};
+  const lang = agEffLang(a, k.site_index || {}, k.company || {});
+  const params = `offset=${encodeURIComponent(offset || 0)}&limit=${AG_PAGE_LIMIT}&q=${encodeURIComponent(a.pageQ || "")}`
+    + `&type=${encodeURIComponent(a.pageType || "")}&lang=${encodeURIComponent(lang)}`;
   try { a.pages = await agApi(`/knowledge/pages?${params}`); } catch (e) { a.pages = { total: 0, offset: 0, rows: [] }; }
   agDraw();
 }
@@ -1391,7 +1584,7 @@ async function agAction(act, el){
     case "chat": a.view = "chat"; await agLoadChat(arg, false); break;
     case "view": {
       a.view = arg; a.panel = null;
-      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
+      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
@@ -1428,7 +1621,7 @@ async function agAction(act, el){
       else await agOpenArtifact(run, arg, el.getAttribute("data-view") || "article");
       break;
     }
-    case "closepanel": a.panel = null; a.fileEdit = null; agDraw(); break;
+    case "closepanel": a.panel = null; a.fileEdit = null; a.libEdit = null; agDraw(); break;
     case "back": {
       const live = agLiveRun();
       if (live && live.waiting_on && live.waiting_on.artifact === "brand") await agOpenArtifact(live.run_id, "brand", "brand_pack");
@@ -1496,7 +1689,7 @@ async function agAction(act, el){
       break;
     }
     /* knowledge */
-    case "brandfile": await agOpenBrandFile(arg, !!(a.panel && a.panel.view === "brand_pack")); break;
+    case "brandfile": await agOpenBrandFile(arg, !!(a.panel && a.panel.view === "brand_pack"), el.getAttribute("data-label") || ""); break;
     case "fileedit": { const d = a.panel && a.panel.data; a.fileEdit = { text: d && typeof d.text === "string" ? d.text : JSON.stringify(d, null, 2) }; agDraw(); break; }
     case "filecancel": a.fileEdit = null; agDraw(); break;
     case "filesave": {
@@ -1511,9 +1704,21 @@ async function agAction(act, el){
       } catch (e) { a.fileEdit = { text: ta.value, busy: false, msg: "Could not save: " + (e.message || e) }; }
       agDraw(); break;
     }
+    /* the pages a close may point at: the draft lives on a.ctaForm until Save, the same way
+       the competitors box and the company form hold theirs */
+    case "ctaadd": { const rows = agCtaRows(a); rows.push({ url: "", note: "", mine: true }); a.ctaForm = { rows }; agDraw(); break; }
+    case "ctadel": { const rows = agCtaRows(a); rows.splice(Number(arg), 1); a.ctaForm = { rows }; agDraw(); break; }
+    case "ctasave": {
+      const rows = agCtaRows(a);
+      const send = rows.map(r => ({ url: String(r.url || "").trim(), note: String(r.note || "").trim() })).filter(r => r.url);
+      a.ctaForm = { rows, busy: true }; agDraw();
+      try { a.cta = await agPostApi("/knowledge/cta", { rows: send }); a.ctaForm = null; agToast("Saved"); }
+      catch (e) { a.ctaForm = { rows, busy: false, msg: "Could not save: " + (e.message || e) }; }
+      agDraw(); break;
+    }
     case "page": await agOpenPage(arg); break;
-    case "pagesprev": await agLoadPages(Math.max(0, ((a.pages && a.pages.offset) || 0) - 25)); break;
-    case "pagesnext": await agLoadPages(((a.pages && a.pages.offset) || 0) + 25); break;
+    case "pagesprev": await agLoadPages(Math.max(0, ((a.pages && a.pages.offset) || 0) - AG_PAGE_LIMIT)); break;
+    case "pagesnext": await agLoadPages(((a.pages && a.pages.offset) || 0) + AG_PAGE_LIMIT); break;
     case "map": {
       a.mapOn = !a.mapOn; agDraw();
       if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(e => { agToast(String(e.message || e)); return null; }); agDraw(); }
@@ -1547,8 +1752,35 @@ async function agAction(act, el){
     }
     case "libopen": {
       try { const it = await agApi(`/library/${encodeURIComponent(arg)}`);
-        a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false, readOnly: true, title: it.title, subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` }; }
+        a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false,
+                    readOnly: true, libId: it.id, title: it.title, subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
+        a.libEdit = null; }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
+      agDraw(); break;
+    }
+    case "libedit": {
+      const p2 = a.panel; if (!p2) break;
+      a.libEdit = { title: p2.title || "", draft: (p2.data && p2.data.text) || "", busy: false, error: "" };
+      agDraw();
+      setTimeout(() => { const t = document.querySelector("[data-aglibbody]"); if (t) t.focus(); }, 0);
+      break;
+    }
+    case "libcancel": a.libEdit = null; agDraw(); break;
+    case "libsave": {
+      const ed = a.libEdit; if (!ed) break;
+      const title = String(ed.title || "").trim(), draft = String(ed.draft || "");
+      if (!draft.trim()){ a.libEdit = { title, draft, busy: false, error: "An empty article is not a save." }; agDraw(); break; }
+      a.libEdit = { title, draft, busy: true, error: "" }; agDraw();
+      try {
+        const m = await agPostApi(`/library/${encodeURIComponent(arg)}/save`, { draft, title });
+        a.library = await agApi("/library").catch(() => a.library);
+        if (a.panel){
+          a.panel.data = { text: draft };
+          a.panel.title = (m && m.title) || title;
+          a.panel.subtitle = `${agNum(m && m.words)} words · ${(m && m.status) || "draft"} · edited by you`;
+        }
+        a.libEdit = null; agToast("Saved");
+      } catch (e) { a.libEdit = { title, draft, busy: false, error: String((e && e.message) || e) }; }
       agDraw(); break;
     }
     case "libstatus": {
@@ -1624,6 +1856,12 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     else if (t.matches("[data-agmem]")){ a.memForm = { text: t.value }; }
     else if (t.matches("[data-agco]")){ const f = a.coForm || {}; document.querySelectorAll("[data-agco]").forEach(i => { f[i.getAttribute("data-agco")] = i.value; }); f.msg = ""; a.coForm = f; }
     else if (t.matches("[data-agpageq]")){ a.pageQ = t.value; clearTimeout(agSearchTimer); agSearchTimer = setTimeout(() => agLoadPages(0), 250); }
+    else if (t.matches("[data-agcta]")){
+      const rows = agCtaRows(a); const i = Number(t.getAttribute("data-i"));
+      if (rows[i]){ rows[i][t.getAttribute("data-agcta")] = t.value; rows[i].mine = true; a.ctaForm = { rows }; }
+    }
+    else if (t.matches("[data-aglibtitle]")){ if (a.libEdit) a.libEdit.title = t.value; }
+    else if (t.matches("[data-aglibbody]")){ if (a.libEdit) a.libEdit.draft = t.value; }
     else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
     else if (t.matches("[data-agdfs]")){
       const f = a.connForm || {}; f[t.getAttribute("data-agdfs")] = t.value; f.msg = ""; a.connForm = f;
@@ -1631,9 +1869,10 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     else if (t.matches("[data-agvoy]")){ const f = a.connForm || {}; f.voyage = t.value; f.vmsg = ""; a.connForm = f; }
   });
   document.addEventListener("change", (ev) => {
-    const t = ev.target; if (!t || !t.matches || !t.matches("[data-agpagetype]")) return;
+    const t = ev.target; if (!t || !t.matches) return;
     const a = agS(); if (!a) return;
-    a.pageType = t.value; agLoadPages(0);
+    if (t.matches("[data-agpagetype]")){ a.pageType = t.value; agLoadPages(0); }
+    else if (t.matches("[data-agpagelang]")){ a.pageLang = t.value; agLoadPages(0); }
   });
   document.addEventListener("scroll", (ev) => {
     const el = ev.target; if (!el || el.id !== "agScroll") return;

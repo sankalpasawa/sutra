@@ -20,6 +20,7 @@ import re
 from .. import llm
 from .. import store
 from . import _common as cm
+from . import brand_facts
 
 OUTPUT = "brand-cards.json"
 WORK = "_work/brand-cards/"
@@ -58,9 +59,12 @@ def results_cards(say):
         if not story or not url:
             skipped += 1
             continue
-        unconfirmed = "⚠️" in title
-        out.append({"gloss": point or title.replace("⚠️", "").strip(),
-                    "verbatim": ("%s. %s" % (title.replace("⚠️", "").strip(), story)).strip(),
+        # A story nobody has approved yet still becomes a card, marked. brand_facts owns what that
+        # marker looks like, so ask it rather than testing for a symbol here: the symbol changed.
+        unconfirmed = brand_facts.is_draft(title)
+        clean = title.replace(brand_facts.DRAFT, "").replace(brand_facts.LEGACY, "").strip()
+        out.append({"gloss": point or clean,
+                    "verbatim": ("%s. %s" % (clean, story)).strip(),
                     "number": number, "source_urls": [url], "tag": "brand-result", "confirmed": not unconfirmed})
     cm.save(WORK + "results.json", out)
     say("Parsed the customer results", "%d entries%s" % (len(out), ("; %d skipped (no story text or no source URL)" % skipped) if skipped else ""))
@@ -169,7 +173,7 @@ def build(co, research, results, research_url, say):
     if no_source:
         notes.append("brand-cards.json: %d customer results carry no source URL" % len(no_source))
     if unconfirmed:
-        notes.append("brand-cards.json: %d result cards come from ⚠️ unconfirmed stories" % len(unconfirmed))
+        notes.append("brand-cards.json: %d result cards come from stories nobody has approved yet" % len(unconfirmed))
     if research and not research_url:
         say("The research is unpublished", "cards carry a written citation and no link; set research_url in the company record once it has a public home")
     return pool, notes

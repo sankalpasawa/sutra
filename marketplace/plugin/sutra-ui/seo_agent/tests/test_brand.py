@@ -137,7 +137,9 @@ events = []
 ctx = {"chat_id": c, "run_id": r, "emit": lambda **kw: events.append(kw)}
 
 from seo_agent.tools import learn_brand
-from seo_agent.brand import _common as cm, brand_facts, writer_brief, brand_cards, features, style_guide, pack
+from seo_agent.brand import (_common as cm, brand_cards, brand_facts, features, pack, style_guide,
+                             type_roles, writer_brief)
+from seo_agent.brand import cta as ctamod        # `cta` below is the FILE's text, read at step 4
 
 
 def brand(name):
@@ -166,21 +168,26 @@ print("\n1 brand-facts")
 stats = brand("stats.md")
 ok("stats.md keeps the template's rule header", "# Stats — Example" in stats and "> **Rule:**" in stats)
 ok("stats.md has the three tables", all(h in stats for h in ("## Product / scale", "## Results / proof", "## Credibility")))
-ok("stats.md rows are marked ⚠️ with a source URL", "| Customers | 1,500+ | ⚠️ https://example.com/" in stats)
+ok("stats.md rows carry the invisible draft marker and a source URL",
+   "| Customers | 1,500+ | https://example.com/" in stats and "\"Trusted by 1,500+ teams\" |<!--d-->" in stats)
+ok("no warning symbol reaches the file", "⚠️" not in stats and "⚠️" not in cm.template("stats"))
 ok("stats rows were deduped across pages", stats.count("| Customers |") == 1, stats.count("| Customers |"))
 ok("the drafted rows sit under the right bucket",
    stats.index("## Results / proof") < stats.index("| Time-to-hire cut |") < stats.index("## Credibility"))
 stories = brand("stories.md")
 ok("stories.md keeps its headings", "## Stories" in stories and "## The interview" in stories)
-ok("stories are ⚠️ entries in the template's format", "### ⚠️ Acme cut its hiring time" in stories
+ok("stories are marked entries in the template's format", "### Acme cut its hiring time<!--d-->" in stories
    and "- Point it makes:" in stories and "- Source: https://example.com/customers/acme" in stories)
+ok("no warning symbol reaches stories.md either", "⚠️" not in stories and "⚠️" not in cm.template("stories"))
 ok("the stories placeholder was replaced", "*(none yet)*" not in stories.split("## The interview")[0])
-opinions = brand("opinions.md")
-ok("opinions.md is the interview, untouched by the machine", "## The interview" in opinions and "*(none yet)*" in opinions)
-ok("needs_review names the ⚠️ rows", any(n.startswith("stats.md:") and "⚠️" in n for n in out["needs_review"]), out["needs_review"])
+ok("opinions.md is gone: no builder writes it and no file lists it",
+   not cm.exists("opinions.md") and "opinions.md" not in pack.FILES and "opinions.md" not in brand_facts.FILES)
+ok("brand-facts asks for nothing: no row counts, no symbols, no opinions interview",
+   not any(n.startswith(("stats.md", "stories.md", "opinions.md")) for n in out["needs_review"])
+   and not any("⚠️" in n for n in out["needs_review"]), out["needs_review"])
 
 print("\n1 brand-facts: the seed rule")
-confirmed = stats.replace("| Customers | 1,500+ | ⚠️ https://example.com/ — \"Trusted by 1,500+ teams\" |",
+confirmed = stats.replace("| Customers | 1,500+ | https://example.com/ — \"Trusted by 1,500+ teams\" |<!--d-->",
                           "| Customers | 1,500+ | https://example.com/ — confirmed by: Dev, 2026-01-02 |")
 ok("the test set up a confirmed row", brand_facts.human_confirmed(confirmed) and not brand_facts.human_confirmed(stats))
 cm.save("stats.md", confirmed)
@@ -189,12 +196,19 @@ n0 = calls()
 brand_facts.run({"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}, say, redo=True)
 ok("a confirmed stats.md is never clobbered", brand("stats.md") == confirmed)
 ok("new candidates go beside it", cm.exists("_drafts/stats-new-candidates.md")
-   and "## Product / scale" in brand("_drafts/stats-new-candidates.md") and "⚠️" in brand("_drafts/stats-new-candidates.md"))
+   and "## Product / scale" in brand("_drafts/stats-new-candidates.md")
+   and "<!--d-->" in brand("_drafts/stats-new-candidates.md") and "⚠️" not in brand("_drafts/stats-new-candidates.md"))
 ok("redo re-read the pages", calls() > n0)
-ok("opinions.md was left alone by the redo", brand("opinions.md") == opinions)
-ok("a redo replaces the drafted stories instead of appending a second copy", brand("stories.md").count("### ⚠️") == 2, brand("stories.md").count("### ⚠️"))
-ok("strip_drafts(): the ⚠️ rows go, a confirmed row stays", brand_facts.strip_drafts(confirmed, "stats").count("| Customers |") == 1
-   and not any("⚠️" in ln for ln in brand_facts.strip_drafts(confirmed, "stats").splitlines() if ln.startswith("|")))
+def marked_stories(text=None):
+    """Drafted story ENTRIES, not every mention of the marker: the template's rule line names the
+    tag so a person can find it, and counting raw occurrences counts that line too."""
+    return sum(1 for ln in (text if text is not None else brand("stories.md")).splitlines()
+               if ln.startswith("### ") and brand_facts.is_draft(ln))
+
+
+ok("a redo replaces the drafted stories instead of appending a second copy", marked_stories() == 2, marked_stories())
+ok("strip_drafts(): the marked rows go, a confirmed row stays", brand_facts.strip_drafts(confirmed, "stats").count("| Customers |") == 1
+   and not any(brand_facts.is_draft(ln) for ln in brand_facts.strip_drafts(confirmed, "stats").splitlines() if ln.startswith("|")))
 ok("a bare template is not 'confirmed'", not brand_facts.human_confirmed(cm.template("stats")))
 
 print("\n2 brand-voice")
@@ -351,8 +365,10 @@ bc = brand("brand-cards.json")
 ok("brand-cards.json has research and results lists", isinstance(bc, dict) and isinstance(bc.get("research"), list) and isinstance(bc.get("results"), list))
 ok("ids start at 8001 and run without gaps", [c["id"] for c in bc["research"] + bc["results"]] == list(range(8001, 8001 + len(bc["research"]) + len(bc["results"]))))
 ok("customer results were parsed from stories.md by code", len(bc["results"]) == 2 and all(c["tag"] == "brand-result" and c["source_urls"] for c in bc["results"]), bc["counts"])
-ok("results from ⚠️ stories are marked unconfirmed", all(c.get("confirmed") is False for c in bc["results"])
-   and any("unconfirmed" in n for n in out["needs_review"]))
+ok("results from unapproved stories are marked unconfirmed", all(c.get("confirmed") is False for c in bc["results"])
+   and any("nobody has approved" in n for n in out["needs_review"]), out["needs_review"])
+ok("and the card's text carries no marker", all("<!--d-->" not in c["verbatim"] and "⚠️" not in c["verbatim"]
+                                                for c in bc["results"]), [c["verbatim"][:40] for c in bc["results"]])
 ok("no research study in a bare stats.md means no research cards", bc["counts"]["research"] == 0)
 # now a study in stats.md, in the shape the original expected: a ## block with ### questions under it
 study = (brand("stats.md") + "\n\n## The study\n**The Example Hiring Survey 2026** — 128 HR and TA practitioners, fielded in May.\n\n"
@@ -409,9 +425,256 @@ ps = pack.summary()
 names = [f["name"] for f in ps["files"]]
 ok("lists every brand file in build order", names[0] == "type-roles.json" and "writer-brief.md" in names and names[-1] == "seo-aeo-geo-checklist.md")
 ok("every file exists after a full run", all(f["exists"] for f in ps["files"]), [f["name"] for f in ps["files"] if not f["exists"]])
-ok("flags are counted from the files", any("⚠️" in x for f in ps["files"] if f["name"] == "stats.md" for x in f["flags"]))
-ok("needs_review points at the human gates", any(n.startswith("voices.md") for n in ps["needs_review"])
-   and any(n.startswith("opinions.md") for n in ps["needs_review"]))
+ok("no flags and no needs_review reach the screen any more",
+   set(ps) == {"files"} and all(set(f) == {"name", "exists", "words"} for f in ps["files"]),
+   (sorted(ps), sorted(ps["files"][0])))
+
+print("\nthe invisible draft marker, end to end")
+# The round trip that matters: draft -> a person confirms one row -> redraft. The confirmed row must
+# still be there afterwards, and the machine's own rows must be replaced rather than doubled.
+_ROUND = ("# Stats — Example\n\n"
+          "## Product / scale\n| Stat | Value | Source-note |\n|---|---|---|\n"
+          "| Customers | 1,500+ | https://example.com/ — \"quote\" |<!--d-->\n"
+          "| Cohorts | 40 | https://example.com/ — confirmed by: Dev, 2026-01-02 |\n")
+ok("a marked row is a draft and an unmarked one is confirmed",
+   brand_facts.already_drafted(_ROUND) and brand_facts.human_confirmed(_ROUND))
+ok("stripping the drafts keeps the confirmed row and loses the marked one",
+   "| Cohorts |" in brand_facts.strip_drafts(_ROUND, "stats")
+   and "| Customers |" not in brand_facts.strip_drafts(_ROUND, "stats"))
+ok("a file of nothing but drafts is not 'confirmed'",
+   not brand_facts.human_confirmed(_ROUND.replace("| Cohorts | 40 | https://example.com/ — confirmed by: Dev, 2026-01-02 |", "")))
+ok("a bare template is not 'confirmed' and is not 'drafted'",
+   not brand_facts.human_confirmed(cm.template("stats")) and not brand_facts.already_drafted(cm.template("stats")))
+
+# tools/onboard.py is a SECOND writer into these two files: it puts the setup interview's answers
+# into a delimited block. Those answers are the owner's prose, not rows anybody confirmed, and if
+# the gate read them as confirmed then answering one question would cost him the whole machine
+# draft. onboard.py keeps tables and ### headings out of its block for exactly that reason; the
+# gate masks the block as well, so an answer's own words can never trip it either.
+_IVIEW = ("<!-- setup-interview:start -->\n\n## Asked at setup\n\n"
+          "**What numbers do you publish?**\n\n"
+          "### Our figures | 1,500 | teams |\nWe say 1,500 teams everywhere.\n\n"
+          "*(the team, 2026-09-09)*\n\n<!-- setup-interview:end -->\n")
+_PLAIN = cm.template("stats")
+ok("an interview answer, even one shaped like a row or a heading, is not a confirmation",
+   not brand_facts.human_confirmed(_PLAIN + "\n" + _IVIEW),
+   [l for l in _IVIEW.splitlines() if l.startswith(("|", "###"))])
+ok("and it does not read as a machine draft either", not brand_facts.already_drafted(_PLAIN + "\n" + _IVIEW))
+ok("a confirmed row OUTSIDE the block still counts",
+   brand_facts.human_confirmed(_IVIEW + "\n| Customers | 1,500 | https://example.com/ — confirmed by: Dev |"))
+ok("stripping the drafts never touches the interview block",
+   brand_facts.strip_drafts(_IVIEW + "\n| x | y | z |<!--d-->\n", "stats").count("### Our figures") == 1
+   and "<!-- setup-interview:end -->" in brand_facts.strip_drafts(_IVIEW, "stats"))
+ok("and neither does the migration off the old symbol",
+   brand_facts.migrate("# S\n\n" + _IVIEW.replace("1,500 teams", "1,500 ⚠️ teams") + "\n| a | b | ⚠️ c |\n", "stats")
+   .count("⚠️") == 1)
+
+# the whole point: answer a question, then draft, and the machine's own rows still appear
+_kd = cm.path("stats.md")
+cm.save("stats.md", cm.template("stats").replace("{{BRAND}}", "Example") + "\n" + _IVIEW)
+brand_facts.run({"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}, say)
+ok("after an interview answer, the machine still drafts the numbers the site publishes",
+   "| Customers | 1,500+ |" in brand("stats.md") and brand_facts.already_drafted(brand("stats.md")),
+   brand("stats.md")[:200])
+ok("and the interview answer is still in the file, untouched",
+   "<!-- setup-interview:start -->" in brand("stats.md") and "We say 1,500 teams everywhere." in brand("stats.md"))
+
+# a legacy file, exactly as the owner's installed app holds it
+_LEGACY = ("# Stats — Testlify (canonical real numbers)\n\n"
+           "> Machine-drafted 2026-09-09 from 62 pages: 35 unique candidates. EVERY row marked ⚠️ is unconfirmed.\n\n"
+           "> **Rule:** when writing, pull numbers from this file. Anything marked ⚠️ is\n"
+           "> unconfirmed (machine-drafted) — confirm before\n"
+           "> using in published copy. A confirmed row loses its ⚠️.\n\n"
+           "## Product / scale\n| Stat | Value | Source-note |\n|---|---|---|\n"
+           "| talent teams | 1,500+ | ⚠️ https://testlify.com/ — \"1,500+talent teams\" |\n"
+           "| cohorts run | 40 | https://testlify.com/ — confirmed by: Dev |\n")
+ok("a legacy ⚠️ row still reads as a draft, not as confirmed",
+   brand_facts.already_drafted(_LEGACY) and brand_facts.is_draft("| x | y | ⚠️ z |"))
+ok("and the confirmed row beside it still reads as confirmed", brand_facts.human_confirmed(_LEGACY))
+_MIG = brand_facts.migrate(_LEGACY, "stats")
+ok("migrating clears every warning symbol", "⚠️" not in _MIG, [l for l in _MIG.splitlines() if "⚠️" in l])
+ok("the drafted row keeps its meaning, its number and its source",
+   "| talent teams | 1,500+ | https://testlify.com/ — \"1,500+talent teams\" |<!--d-->" in _MIG
+   and brand_facts.already_drafted(_MIG))
+ok("the confirmed row is untouched by the migration",
+   "| cohorts run | 40 | https://testlify.com/ — confirmed by: Dev |" in _MIG and brand_facts.human_confirmed(_MIG))
+ok("the paragraph that explained the symbol is replaced whole, not left in half",
+   "unconfirmed (machine-drafted) — confirm before" not in _MIG and "> **Rule:** when writing" in _MIG
+   and "Machine-drafted 2026-09-09" not in _MIG)
+ok("migrating a file that is already clean changes nothing", brand_facts.migrate(_MIG, "stats") == _MIG)
+
+# and through the builder: a legacy file the builder decides to KEEP is still cleaned
+cm.save("stats.md", _LEGACY)
+_n = calls()
+brand_facts.run({"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}, say)
+ok("a legacy file the builder keeps is still migrated on the next run",
+   "⚠️" not in brand("stats.md") and "<!--d-->" in brand("stats.md"))
+ok("and it was migrated without re-reading a single page", calls() == _n, calls() - _n)
+cm.save("stats.md", study)          # put the study back for anything downstream
+
+print("\nthe CTA page list: brand/cta.py")
+_before = brand("cta-pages.md")
+_rows = ctamod.rows()
+ok("every generated row parses back out of the file it was written to",
+   _rows and all(r["url"].startswith("http") for r in _rows) and not any(r["mine"] for r in _rows), _rows[:2])
+ok("the row order is the file's order, homepage first",
+   _rows[0]["url"] == "https://example.com/", [r["url"] for r in _rows])
+ok("a generated row's note falls back to its kind", _rows[0]["note"] == "homepage", _rows[0])
+ok("the title is looked up from the catalogue",
+   _rows[0]["title"] == "Example: education for operators", _rows[0]["title"])
+
+# the save round trip: the person's whole list, in their order, one page not in the catalogue
+_saved = ctamod.save("Example", [
+    {"url": "https://example.com/pricing/", "note": "send everyone here"},
+    {"url": "https://example.com/brand-new-page/", "note": "shipped after the last crawl"},
+    {"url": "https://example.com/", "note": ""},
+])
+ok("save/load round trip: the same rows come back in the same order",
+   [r["url"] for r in _saved] == [r["url"] for r in ctamod.rows()]
+   == ["https://example.com/pricing/", "https://example.com/brand-new-page/", "https://example.com/"], [r["url"] for r in _saved])
+ok("every saved row is the person's", all(r["mine"] for r in _saved), _saved)
+ok("the note the person typed comes back verbatim", _saved[0]["note"] == "send everyone here", _saved[0])
+ok("a page the catalogue has never seen is allowed, and comes back with an empty title",
+   _saved[1]["url"] == "https://example.com/brand-new-page/" and _saved[1]["title"] == "", _saved[1])
+ok("a page the catalogue knows still gets its title", _saved[2]["title"] == "Example: education for operators", _saved[2])
+_txt = brand("cta-pages.md")
+ok("the writer's parser still finds every url: `- Page:` lines, one per row",
+   re.findall(r"^- Page: (\S+)", _txt, re.M)[:3]
+   == ["https://example.com/pricing/", "https://example.com/brand-new-page/", "https://example.com/"],
+   re.findall(r"^- Page: (\S+)", _txt, re.M)[:3])
+ok("the mine marker never lands inside the url the parser captures", "<!--mine-->" not in "".join(re.findall(r"^- Page: (\S+)", _txt, re.M)))
+ok("the crawl's own detail survived the person's save (the writer reads this text)",
+   "- Kind: homepage" in _txt and "## Dropped, and why" in _txt)
+
+# validation
+_co = {"domain": "example.com"}
+ok("a url on somebody else's domain is refused",
+   "not on example.com" in ctamod.check("https://rival.com/pricing", "example.com"), ctamod.check("https://rival.com/pricing", "example.com"))
+ok("something that is not a web address is refused", ctamod.check("pricing", "example.com").endswith("http:// or https://."))
+ok("a url the catalogue has never seen is NOT refused", ctamod.check("https://example.com/brand-new-page/", "example.com") == "")
+ok("www and the apex are the same site", ctamod.check("https://www.example.com/x", "example.com") == "")
+
+# the rebuild: the person's rows must survive the features builder running again
+_n = calls()
+features.run({"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}, say, redo=True)
+_after = ctamod.rows()
+_mine = [r for r in _after if r["mine"]]
+ok("a person-authored row survives a features rebuild",
+   [r["url"] for r in _mine] == ["https://example.com/pricing/", "https://example.com/brand-new-page/", "https://example.com/"],
+   [r["url"] for r in _mine])
+ok("and it is re-emitted ABOVE the generated rows",
+   [r["mine"] for r in _after] == sorted([r["mine"] for r in _after], reverse=True), [(r["url"], r["mine"]) for r in _after])
+ok("the person's note survived the rebuild too", _mine[0]["note"] == "send everyone here", _mine[0])
+ok("a page the person already listed is not written a second time by the crawl",
+   len([r for r in _after if r["url"].rstrip("/") == "https://example.com"]) == 1, [r["url"] for r in _after])
+ok("the crawl's other pages are still there", any(not r["mine"] for r in _after), [(r["url"], r["mine"]) for r in _after])
+ok("the file the writer reads still parses to the same urls",
+   set(re.findall(r"^- Page: (\S+)", brand("cta-pages.md"), re.M)) == {r["url"] for r in _after})
+
+print("\n0 type-roles: the plain-English names")
+_roles = brand("type-roles.json")
+ok("type-roles.json carries a display name for every type it was shown",
+   isinstance(_roles.get("display_names"), dict) and set(_roles["display_names"]) >= {"page", "post", "product"},
+   _roles.get("display_names"))
+ok("a name was decided for every type, with no second model call",
+   all(isinstance(v, str) and v for v in _roles["display_names"].values()), _roles["display_names"])
+ok("pretty() is the floor under a name the model left out",
+   type_roles.pretty("test-library") == "Test library" and type_roles.pretty("hr_glossary") == "Hr glossary"
+   and type_roles.pretty("") == "", type_roles.pretty("test-library"))
+ok("display_names() answers for the types asked about, never for others",
+   set(type_roles.display_names(["post", "made-up-type"])) == {"post", "made-up-type"}
+   and type_roles.display_names(["made-up-type"])["made-up-type"] == "Made up type",
+   type_roles.display_names(["post", "made-up-type"]))
+
+print("\n8 writing-integrity: Rule 1's product boundary")
+from seo_agent.brand import writing_integrity as wi
+_keep = {n: brand(n) for n in ("features.md", "writer-brief.md", "writing-integrity.md")}
+_co8 = {"brand": "Example", "domain": "example.com", "niche_definition": "", "language_code": "en"}
+
+
+def _boundary(features_text, brief_text, co=None):
+    cm.save("features.md", features_text)
+    cm.save("writer-brief.md", brief_text)
+    return wi.product_is_not(co or _co8)
+
+
+def _rule1():
+    """Rebuild writing-integrity.md and hand back Rule 1's is-NOT slot as it ships."""
+    wi.run(_co8, say, redo=True)
+    return brand("writing-integrity.md")
+
+
+# FILLS: the only true boundary in the owner's whole pack is one item with no comma in it
+ok("a one-item boundary fills the slot",
+   _boundary("# F\n\nNothing about boundaries here.\n", "# B\n\nExample is not another ATS. We test skills.\n")
+   == "another ATS", _boundary("# F\n", "# B\n\nExample is not another ATS.\n"))
+ok("and Rule 1 ships filled, not as a decision for a person",
+   "another ATS" in _rule1() and wi.SLOT_IS_NOT not in _rule1())
+ok("a sentence-initial It works too",
+   _boundary("# F\n\nWe test skills. It is not an ATS.\n", "# B\n") == "ATS")
+ok("a comma list still works, and the longest match in a file wins",
+   _boundary("# F\n\nIt is not an ATS. It is not an ATS, an HRIS, or a job board.\n", "# B\n")
+   == "ATS, an HRIS, or a job board")
+ok("features.md outranks the writer brief",
+   _boundary("# F\n\nIt is not a payroll tool.\n", "# B\n\nExample is not another ATS.\n") == "payroll tool")
+ok("a lowercase brand in the record still matches how the pages spell it",
+   _boundary("# F\n", "# B\n\nExample is not another ATS.\n", {"brand": "example"}) == "another ATS")
+
+# DOES NOT FILL: the false positive that used to be the only thing the pattern found
+_INCL = "# F\n\nWe build a community where inclusion is not only valued but prioritized every day.\n"
+ok("a sentence about inclusion is not a product boundary", _boundary(_INCL, "# B\n") == "",
+   repr(_boundary(_INCL, "# B\n")))
+ok("and Rule 1 stays a marked decision rather than shipping that",
+   wi.SLOT_IS_NOT in _rule1() and "inclusion" not in _rule1())
+ok("`is not only / just / merely` is rhetoric, never a boundary",
+   all(_boundary("# F\n\nIt is not %s a test library.\n" % w, "# B\n") == "" for w in ("only", "just", "merely")))
+ok("`it is not` inside a word never matches",
+   _boundary("# F\n\nthe quality is not measured by seat count here\n", "# B\n") == "")
+ok("neither file saying anything leaves the slot empty, never invented",
+   _boundary("# F\n\nNothing.\n", "# B\n\nNothing.\n") == "" and wi.SLOT_IS_NOT in _rule1())
+_rec = store.knowledge("brand/company.json")
+store.save_knowledge("brand/company.json", dict(_rec, product_is_not="a payroll system or an HRIS"))
+_boundary("# F\n", "# B\n\nExample is not another ATS.\n")
+ok("the record's own product_is_not outranks anything read out of the pack",
+   "a payroll system or an HRIS" in _rule1() and "another ATS" not in _rule1())
+store.save_knowledge("brand/company.json", _rec)
+for _n, _v in _keep.items():
+    cm.save(_n, _v)
+ok("the files this section borrowed were put back", brand("writer-brief.md") == _keep["writer-brief.md"])
+
+print("\nthe /knowledge brand shape")
+_b = {"brand": "Example", "brief": pack.brief(), "built_from": pack.built_from(),
+      "extras": pack.extras(), "cta": {"count": ctamod.count()}}
+ok("brief carries exists, words and the text verbatim",
+   _b["brief"]["exists"] and _b["brief"]["words"] > 50 and _b["brief"]["text"] == brand("writer-brief.md"))
+# The owner asked that this door show "only the actual files which were used". So the assertion is
+# against what writer_brief.py actually reads, not against what anyone assumed. features.md is
+# EXCLUDED there by name; voices.md IS one of its four classified sources.
+ok("built_from is exactly what the brief is really assembled from, in build order",
+   [f["name"] for f in _b["built_from"]]
+   == ["brand-voice.md", "style-guide.md", "persona.md", "voices.md", "writing-integrity.md",
+       "writer-brief-rulings.md"],
+   [f["name"] for f in _b["built_from"]])
+ok("features.md is NOT one of them: the builder excludes it by name",
+   "features.md" not in pack.built_from_names() and "features.md" not in writer_brief.SOURCE_FILES)
+ok("voices.md IS one of them, so calling it unused would be a lie on screen",
+   "voices.md" in pack.built_from_names() and "voices.md" in writer_brief.SOURCE_FILES)
+ok("built_from is derived from the builder, not typed out",
+   set(pack.built_from_names())
+   <= (set(writer_brief.SOURCE_FILES) | {writer_brief.RULINGS, "persona.md"}))
+ok("every built_from row carries a plain name, a note, exists and a word count",
+   all(set(f) == {"name", "label", "note", "exists", "words"} and f["label"] and f["note"] for f in _b["built_from"]),
+   _b["built_from"][0])
+ok("a file that is not there is included, marked not built, so the screen can grey it",
+   [f["exists"] for f in pack.built_from()] == [True] * 6
+   and (lambda: (os.remove(cm.path("persona.md")),
+                 [f["exists"] for f in pack.built_from()])[1])() == [True, True, False, True, True, True])
+shutil.copyfile(cm.path("writer-brief.md"), cm.path("persona.md"))   # put a file back where one was
+ok("extras is features.md, and it is honestly marked as in use",
+   [(f["name"], f["in_use"]) for f in _b["extras"]] == [("features.md", True)], _b["extras"])
+ok("cta is a count and nothing else", set(_b["cta"]) == {"count"} and _b["cta"]["count"] == len(ctamod.rows()), _b["cta"])
+ok("no needs_review and no flags anywhere in the shape",
+   "needs_review" not in _b and "flags" not in repr(_b)[:200] and not any("flags" in f for f in _b["built_from"]))
 
 print("\nlearn_voice: the alias")
 from seo_agent.tools import learn_voice

@@ -10,7 +10,9 @@ Step 3 fill the schema: pure assembly. Appendix A, the consolidation method and 
        lifted verbatim. A human-verified seed (brand/_seed/features-seed.md), when present, wins.
 Step 4 the quality gate (completeness, facts-only, consolidation), looped back to step 3, capped at 3.
 Step 5 the CTA page list: code only, from the crawl. features.md is prose a model wrote; a wrong URL in
-       a call to action sends a reader to the wrong page, so the link targets are never a model's.
+       a call to action sends a reader to the wrong page, so the link targets are never a model's. The
+       file's format belongs to brand/cta.py, which the Knowledge screen writes through too, so a page
+       the owner added by hand survives this rebuild instead of being overwritten by it.
 
 Reads:  the catalogue, brand/type-roles.json, brand/brand-voice.md (pitch wording), brand/_seed/features-seed.md.
 Writes: brand/_work/features/{source-pages.json, facts.json, gate-round-N.json} · brand/features.md · brand/cta-pages.md
@@ -20,9 +22,10 @@ import re
 
 from .. import llm
 from . import _common as cm
+from . import cta
 
 OUTPUT = "features.md"
-CTA_OUTPUT = "cta-pages.md"
+CTA_OUTPUT = cta.OUTPUT          # the format, and the file name, belong to brand/cta.py
 WORK = "_work/features/"
 
 FT_KIND_CAP = 25            # product/competitor pages per kind, by traffic (pricing/compare/homepage/integrations always all)
@@ -49,7 +52,6 @@ SKIP = re.compile(r"/(compare-planos|comparer-les-plans|pricing-new|compare-test
 # A page whose URL reads like an article, not a product. The crawler files some of these as product
 # pages because they carry a product CTA block.
 ARTICLEY = re.compile(r"interview-questions|-to-ask-|how-to-|top-\d", re.I)
-DROPPED_SHOWN = 60
 
 
 # ---- step 1 -----------------------------------------------------------------------------------
@@ -183,25 +185,14 @@ def cta_rows(facts, pages):
 
 
 def build_cta_pages(co, facts, pages, say):
+    """The crawl's half of the list. brand/cta.py merges it under the rows a person added by hand
+    and does the writing, so this step never decides what the file looks like."""
     rows, dropped = cta_rows(facts, pages)
-    out = ["# %s — pages a call to action may link to" % co["brand"], "",
-           "Built by code from the site crawl. Every URL here was fetched and is live.",
-           "The close of an article links to ONE of these and nothing else.", "",
-           "%d pages. %d candidates were dropped; the reasons are at the foot." % (len(rows), len(dropped)), ""]
-    for r in rows:
-        out.append("## %s" % (r["title"] or r["url"]))
-        out.append("- Page: %s" % r["url"])
-        out.append("- Kind: %s  ·  %s visits a month" % (r["kind"], format(r["traffic"], ",")))
-        for x in r["features"]:
-            out.append("- %s" % x)
-        out.append("")
-    out += ["---", "", "## Dropped, and why", ""]
-    out += ["- %s  — %s" % (u, w) for u, w in dropped[:DROPPED_SHOWN]]
-    if len(dropped) > DROPPED_SHOWN:
-        out.append("- ... and %d more" % (len(dropped) - DROPPED_SHOWN))
-    cm.save(CTA_OUTPUT, "\n".join(out) + "\n")
-    say("Built the CTA page list", "%d linkable pages, %d dropped" % (len(rows), len(dropped)))
-    return rows, dropped
+    kept, _d = cta.rebuild(co["brand"], rows, dropped)
+    mine = sum(1 for r in kept if r.get("mine"))
+    say("Built the CTA page list", "%d linkable pages%s, %d dropped"
+        % (len(kept), (" (%d of them yours, kept)" % mine) if mine else "", len(dropped)))
+    return kept, dropped
 
 
 # ---- the builder ------------------------------------------------------------------------------
@@ -231,7 +222,11 @@ def run(co, say, redo=False):
                 notes.append("features.md: the quality gate still failed after %d rounds; the draft ships with its verdict" % n)
     n_flags = cm.count_lines(draft, "⚑ HUMAN DECISION")
     if n_flags:
-        notes.append("features.md: %d ⚑ HUMAN DECISION flags to settle" % n_flags)
+        # The flag stays IN the document, where the quality gate depends on it and a reader sees
+        # the reasoning beside it. It is no longer counted at the owner: he asked for every "to
+        # confirm" badge gone, and a number with a symbol in front of it is exactly that.
+        notes.append("features.md: %d places where the pages disagreed and someone has to choose"
+                     % n_flags)
     rows, _dropped = build_cta_pages(co, facts, pages, say)
     if not rows:
         notes.append("cta-pages.md: no page survived the filters, so a close has nothing to link to")

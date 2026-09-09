@@ -156,6 +156,18 @@
 .ag-workfile pre{margin:0;padding:9px 11px;font:11px/1.5 var(--mono);color:var(--muted);
   white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
 
+/* editing a saved article: it is a document, so the words are edited directly. The traffic
+   import form and the link list borrow the same row and label vocabulary. */
+.ag-libedit{display:flex;flex-direction:column;gap:6px}
+.ag-lbl{font:600 10.5px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-top:4px}
+.ag-libedit .in{width:100%;box-sizing:border-box;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;color:var(--ink);font:13px/1.6 var(--sans)}
+.ag-libedit .in:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-libedit textarea.ta{font:12.5px/1.7 var(--mono);resize:vertical;min-height:340px;white-space:pre-wrap}
+.ag-editrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ag-editrow .ag-sub{margin-left:auto}
+.ag-editrow .ag-err{color:var(--block);font-size:11.5px}
+
 /* keeping the catalogue current: one line while it works, then what changed */
 .ag-refresh{margin:10px 0 2px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--inset)}
 .ag-refresh .msg{font-size:12.5px;color:var(--ink);line-height:1.5}
@@ -306,6 +318,11 @@
 .ag-view h2{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px;color:var(--ink)}
 .ag-view > p.lead{color:var(--muted);margin:0 0 16px;font-size:12.5px;max-width:60ch}
 .ag-view h3.sec{margin-top:18px}
+/* a section whose controls belong beside its name, not buried in its body */
+.ag-sechead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:18px}
+.ag-sechead h3.sec{margin-top:0;flex:1;min-width:0}
+.ag-secctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ag-secctl .btn{padding:4px 9px;font-size:10.5px}
 .ag-row{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:9px;
   background:var(--inset);margin-bottom:7px}
 .ag-row .ri{min-width:0;flex:1}
@@ -355,6 +372,27 @@
   padding:5px 8px;border-radius:6px;max-width:250px;box-shadow:var(--shadow);z-index:3}
 .ag-maplegend{display:flex;gap:12px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid var(--line-soft);font:500 10.5px/1 var(--sans);color:var(--muted)}
 .ag-maplegend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.ag-mapcap{padding:7px 10px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--muted)}
+
+/* the writer brief: one document you read straight down, with the files behind one door */
+.ag-brief{border:1px solid var(--line-soft);border-radius:9px;background:var(--inset);padding:14px 16px;
+  margin:0 0 6px;font-size:12.5px;line-height:1.65;color:var(--ink)}
+.ag-brief .md-p{margin:0 0 9px}
+.ag-brief .md-h{margin:14px 0 6px}
+.ag-brief .md-l{margin:0 0 9px;padding-left:20px}
+.ag-brief>*:last-child{margin-bottom:0}
+.ag-view .ag-more{font-size:11.5px;color:var(--muted);padding:6px 0}
+
+/* the pages a close may point at: what the crawl suggested, and what the owner added */
+.ag-ctalist{display:flex;flex-direction:column;gap:6px}
+.ag-ctarow{display:flex;gap:7px;align-items:center;border-left:2px solid var(--line);padding-left:9px}
+.ag-ctarow.mine{border-left-color:var(--acc)}
+.ag-ctarow input{flex:1;min-width:0}
+.ag-ctarow input+input{flex:.7}
+.ag-ctasrc{flex:none;width:62px;text-align:right;font:500 10px/1 var(--mono);color:var(--faint)}
+.ag-ctarow.mine .ag-ctasrc{color:var(--acc)}
+.ag-ctarow{flex-wrap:wrap}
+.ag-ctanote{flex:1 0 100%;font-size:11px;color:var(--muted);line-height:1.45;padding:1px 0 2px}
 .ag-files{display:flex;flex-direction:column;gap:6px}
 .ag-file{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
   background:var(--inset);border:1px solid var(--line-soft);border-radius:9px;padding:9px 12px}
@@ -399,8 +437,10 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
   .ag.haspanel .ag-panel{min-width:300px;width:50%}
   .ag-side{width:200px}
 }
-/* the review panel takes half the row; the brand pack in the Knowledge column drops its blurbs then */
-.ag.haspanel .ag-file .fd{display:none}
-.ag.haspanel .ag-file{align-items:center}
+/* The review panel takes half the row. It used to hide every file blurb as well, which changed
+   the settings document's HEIGHT the instant the panel opened and made the left column jump;
+   the nineteen-tile grid that rule was written for is gone, so the rule is gone with it. What
+   is left only changes the WIDTH, and agDraw's scroll anchor holds the reader's place through
+   the rewrap. */
 .ag.haspanel .ag-view.wide{max-width:none}
 .ag.haspanel .ag-form .two{grid-template-columns:1fr}

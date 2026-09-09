@@ -1,8 +1,8 @@
 # Stats — {{BRAND}} (canonical real numbers)
 
-> **Rule:** when writing, pull numbers from this file. Never round, never invent. Anything marked ⚠️ is
-> unconfirmed (machine-drafted from the company's own site, not verified by the team) — confirm before
-> using in published copy. A confirmed row loses its ⚠️ and gains "confirmed by: <name + date>".
+> **Rule:** when writing, pull numbers from this file. Never round, never invent. A row the machine
+> drafted from the company's own site ends with a hidden `<!--d-->` tag; check the number against its
+> source, then delete that tag and add "confirmed by: <name + date>". Rows without the tag are yours.
 
 ## How to add one
 ```

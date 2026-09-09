@@ -5,8 +5,10 @@ The originals ship writing-integrity.md to each company's brand-context by copy,
 verbatim. This builder does the same:
 
 - {{PRODUCT_IS}}: the brand one-liner from company.json, plus the Core Value Proposition names from
-  features.md when it exists. Nothing else is derivable without inventing, so
-- {{PRODUCT_IS_NOT}} stays a marked slot for a human unless the record carries `product_is_not`.
+  features.md when it exists.
+- {{PRODUCT_IS_NOT}}: the boundary sentence the pack already wrote down, lifted out of features.md
+  or the writer brief. The record's own `product_is_not` outranks both. When no file states a
+  boundary the slot stays marked for a human: the machine never invents one.
 
 Writes: brand/writing-integrity.md · brand/seo-aeo-geo-checklist.md (verbatim copy)
 """
@@ -34,29 +36,57 @@ def product_is(co):
     return " — ".join(parts)
 
 
-# "It is not an ATS, an HRIS, ..." style sentences the pack already contains. The boundary was
-# always written down; it was simply never wired into Rule 1, so the shipped file asked a human
-# for something two other files already answered (found 2026-09-09).
-_NOT_RE = re.compile(
-    r"(?:it|%s)\s+is\s+not\s+(?:an?\s+)?(?P<list>[^.;\n]{10,220})", re.I)
+# "Testlify is not another ATS" style sentences the pack already contains. The boundary was always
+# written down; it was simply never wired into Rule 1, so the shipped file asked a human for
+# something two other files already answered (found 2026-09-09).
+#
+# Every piece of this pattern is load-bearing, and each one is here because the first version got
+# it wrong. Verified 2026-09-09 against a 96-minute rebuild on the owner's real 12,318-page site,
+# where the slot shipped unfilled while the answer sat in writer-brief.md:
+#
+#  * CASE-SENSITIVE, and "It" only at the start of a sentence. Compiled re.I with a bare `it`, the
+#    pattern matched inside any word: the one thing it found in features.md was the middle of
+#    "...ity where inclusion is not only valued but prioritized", which is a sentence about
+#    workplace inclusion and not a product boundary at all.
+#  * The BRAND stays case-insensitive, scoped to its own group, because a company record may spell
+#    it "testlify" while the pages say "Testlify".
+#  * A floor of 3 characters, not 10. The only true boundary in the owner's whole pack is
+#    "another ATS", and "an ATS" is six characters; a ten-character floor rejects the real answers
+#    and keeps only the wordy ones.
+#  * NO comma rule. It used to demand a list of several things, which no honest boundary sentence
+#    has to be, and which is why the real one never got through. That rule was also the only thing
+#    keeping the "inclusion" false positive out, so one bug was hiding the other; both go together.
+#  * The article strip does not fire on "another", because there is no space after "an". That is
+#    deliberate and left alone: "another ATS" is how a person would say it.
+_NOT_RE = (r"(?:(?:^|(?<=[.\n]\s))It|(?i:%s))\s+is\s+not\s+(?:an?\s+)?(?P<list>[^.;\n]{3,220})")
+
+# A sentence that says the product is not ONLY something is a rhetorical flourish about how much
+# it does, not a line drawn around what it does not do. "It is not just a test library" is a boast.
+_RHETORIC = ("only", "just", "merely")
 
 
 def product_is_not(co):
-    """What the product is NOT, lifted from features.md or the writer brief. "" when neither says."""
+    """What the product is NOT, lifted from features.md or the writer brief. "" when neither says.
+
+    Never invents. An empty answer is the right answer when the pack does not state a boundary,
+    and the caller leaves Rule 1's slot marked for a person to fill.
+    """
     brand = re.escape((co.get("brand") or "").strip() or "the product")
-    pat = re.compile(_NOT_RE.pattern % brand, re.I)
+    pat = re.compile(_NOT_RE % brand)
     for name in ("features.md", "writer-brief.md"):
         text = cm.read(name)
         if not text:
             continue
         best = ""
         for m in pat.finditer(text):
-            phrase = " ".join(m.group("list").split())
-            # the useful ones list several things; "is not finished" is a different sentence
-            if phrase.count(",") >= 1 and len(phrase) > len(best):
+            phrase = " ".join(m.group("list").split()).rstrip(" ,")
+            words = set(re.findall(r"[a-z]+", phrase.lower()))
+            if words & set(_RHETORIC):
+                continue
+            if len(phrase) > len(best):
                 best = phrase
         if best:
-            return best.rstrip(" ,")
+            return best
     return ""
 
 

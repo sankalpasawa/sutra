@@ -1,9 +1,9 @@
 # Stories — {{BRAND}} (approved anecdotes)
 
 > **Rule:** real, approved anecdotes only. One per post max. Never invent. Each story needs a point and,
-> where possible, a number from `stats.md`. Machine-drafted candidates (from the company's own success-story
-> pages) are marked ⚠️ until a human approves them; the interview questions below mine the stories the
-> website doesn't tell.
+> where possible, a number from `stats.md`. An entry the machine drafted from the company's own
+> success-story pages ends its heading with a hidden `<!--d-->` tag; delete that tag once you have
+> approved it. The interview questions below mine the stories the website doesn't tell.
 
 ## How to add one
 ```

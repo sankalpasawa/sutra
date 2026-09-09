@@ -42,7 +42,7 @@ from bs4 import BeautifulSoup
 from .. import store
 from . import settings
 from .fetch import Blocked, RobotsDisallowed
-from .urls import is_non_content, match_key, own_host, store_norm
+from .urls import content_segments, is_non_content, match_key, own_host, store_norm, type_from_path
 
 _NOT_FOUND_RE = re.compile(r"\b(page not found|404|nothing (was )?found|doesn.t exist)\b", re.I)
 PREFER = {"wp": 0, "sitemap": 1, "archive": 2, "crawl": 3}
@@ -347,21 +347,18 @@ def run(fx, site, say):
                 del pages[url]
 
     # 6) type inference for non-CMS pages: majority type per first path segment ------------------
+    # The language prefix is stripped before the segment is read, so /de/hr-glossary/x votes with
+    # and types as /hr-glossary/x. See urls.type_from_path for why that matters.
     seg_type = {}
     for url, rec in pages.items():
         if rec.get("type"):
-            seg = _up.urlsplit(url).path.strip("/").split("/", 1)[0]
-            seg_type.setdefault(seg, {}).setdefault(rec["type"], 0)
-            seg_type[seg][rec["type"]] += 1
+            segs = content_segments(url)
+            if segs:
+                seg_type.setdefault(segs[0], {}).setdefault(rec["type"], 0)
+                seg_type[segs[0]][rec["type"]] += 1
     for url, rec in pages.items():
         if not rec.get("type"):
-            path = _up.urlsplit(url).path.strip("/")
-            seg = path.split("/", 1)[0]
-            votes = seg_type.get(seg)
-            if votes:
-                rec["type"] = max(votes, key=votes.get)
-            else:
-                rec["type"] = seg if seg and "/" in path else "pages"
+            rec["type"] = type_from_path(url, seg_type)
 
     for rec in pages.values():                       # json-serialisable
         rec["sources"] = sorted(rec["sources"])
@@ -380,3 +377,41 @@ def run(fx, site, say):
     say("Settled the page list", "%d real pages; dropped %d gone, %d empty templates, %d duplicate addresses, %d off-site"
         % (stats["final"], stats["dead"], stats["soft_404"], stats["collapsed"], stats["offsite"]))
     return doc
+
+
+def retype_catalogue(pages):
+    """Repair the `type` of every catalogue row that carries a language code or nothing at all.
+
+    Two ways a row ends up wrong. A localised path (/de/hr-glossary/x) used to type as "de", which
+    made thirteen of one site's thirty-nine types languages. And a page added by a refresh arrived
+    with no type, because a refresh extracts directly and never ran the inference pass above.
+
+    Rows whose type came from the content system are the vote and are never touched. Returns
+    (n_repaired, {old_type: n}) so the caller can say what it changed.
+    """
+    from .urls import content_segments, is_language_tag, type_from_path
+    rows = [r for r in (pages or []) if isinstance(r, dict) and r.get("url")]
+
+    def broken(r):
+        t = (r.get("type") or "").strip()
+        return (not t) or is_language_tag(t)
+
+    votes = {}
+    for r in rows:
+        if broken(r):
+            continue
+        segs = content_segments(r["url"])
+        if segs:
+            votes.setdefault(segs[0], {}).setdefault(r["type"], 0)
+            votes[segs[0]][r["type"]] += 1
+
+    fixed, was = 0, {}
+    for r in rows:
+        if not broken(r):
+            continue
+        new = type_from_path(r["url"], votes)
+        if new and new != r.get("type"):
+            was[r.get("type") or "(none)"] = was.get(r.get("type") or "(none)", 0) + 1
+            r["type"] = new
+            fixed += 1
+    return fixed, was

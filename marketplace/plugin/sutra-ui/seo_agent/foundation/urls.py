@@ -159,3 +159,88 @@ def bare_host(domain):
         d = host_of(d)
     d = d.split("/")[0].split("?")[0]
     return d[4:] if d.startswith("www.") else d
+
+
+# ── the language prefix, and what a page's TYPE is when the CMS did not say ──────────────────────
+# A localised site puts the language first in the path (/de/hr-glossary/x). Read naively, that
+# first segment becomes the page's "type". Found 2026-09-09 on the first real site: 2,299 pages
+# were typed da/ja/ar/el/es/pl/pt-br/de/fr/no/nl/sv/it, so thirteen of the catalogue's
+# thirty-nine "types" were languages and the type filter was unusable. The language belongs in
+# the row's own `lang` field, which the extractor already fills from <html lang>; it is never a
+# kind of page. An explicit ISO 639-1 list, never a two-letter regex: "it", "no", "is" and "in"
+# are real path segments on plenty of sites, and only a known code may steal the first slot.
+LANGUAGE_SEGMENTS = frozenset("""
+aa ab af ak am ar as ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz
+ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie
+ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu
+lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt
+qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn
+to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu
+""".split())
+
+# The full language names, so a filter reads "German" and not "de". Only the ones a site is
+# realistically translated into; anything else falls back to the code itself.
+LANGUAGE_NAMES = {
+    "ar": "Arabic", "bg": "Bulgarian", "bn": "Bengali", "cs": "Czech", "da": "Danish",
+    "de": "German", "el": "Greek", "en": "English", "es": "Spanish", "et": "Estonian",
+    "fa": "Persian", "fi": "Finnish", "fr": "French", "he": "Hebrew", "hi": "Hindi",
+    "hr": "Croatian", "hu": "Hungarian", "id": "Indonesian", "it": "Italian", "ja": "Japanese",
+    "ko": "Korean", "lt": "Lithuanian", "lv": "Latvian", "ms": "Malay", "nb": "Norwegian",
+    "nl": "Dutch", "nn": "Norwegian", "no": "Norwegian", "pl": "Polish", "pt": "Portuguese",
+    "ro": "Romanian", "ru": "Russian", "sk": "Slovak", "sl": "Slovenian", "sr": "Serbian",
+    "sv": "Swedish", "th": "Thai", "tr": "Turkish", "uk": "Ukrainian", "vi": "Vietnamese",
+    "zh": "Chinese",
+}
+
+
+def is_language_tag(s):
+    """Is this WHOLE string a language tag: "de", "pt-br", "zh-Hant"? The whole string, never a
+    prefix. Found 2026-09-09 by running the repair: matching on the part before the first hyphen
+    read "hr-glossary" as Croatian and retyped 859 real glossary pages.
+    """
+    t = (s or "").strip().lower().replace("_", "-")
+    if not t:
+        return False
+    head, _, region = t.partition("-")
+    if head not in LANGUAGE_SEGMENTS:
+        return False
+    return not region or (2 <= len(region) <= 4 and region.isalnum())
+
+
+def language_name(code):
+    """"German" for "de", "de-at" or "DE". The code itself when it is not one we name."""
+    c = (code or "").strip().lower().replace("_", "-")
+    return LANGUAGE_NAMES.get(c) or LANGUAGE_NAMES.get(c.split("-")[0]) or (c or "")
+
+
+def path_language(url):
+    """The language tag a URL carries in its FIRST path segment, or "". "de" for /de/x, "pt" for
+    /pt-br/x. Only the first segment is looked at: /blog/de-vs-en is an article, not German."""
+    for seg in _up.urlsplit(url).path.strip("/").split("/"):
+        return seg.lower().replace("_", "-").partition("-")[0] if is_language_tag(seg) else ""
+    return ""
+
+
+def content_segments(url):
+    """A URL's path segments with any leading language tag removed. This is what a type is read
+    from, so /de/hr-glossary/abc types as hr-glossary exactly like /hr-glossary/abc does."""
+    parts = [p for p in _up.urlsplit(url).path.strip("/").split("/") if p]
+    if parts and path_language(url):
+        parts = parts[1:]
+    return parts
+
+
+def type_from_path(url, votes=None, default="pages"):
+    """The kind of page a URL looks like, when the content system did not say.
+
+    `votes` is {first-segment: {type: count}} gathered from the pages whose type IS known, so a
+    site's own naming wins over the path. The language prefix is stripped first, which is the
+    whole point: the German copy of a glossary page is a glossary page.
+    """
+    parts = content_segments(url)
+    seg = parts[0] if parts else ""
+    if votes:
+        v = votes.get(seg)
+        if v:
+            return max(v, key=v.get)
+    return seg if seg and len(parts) > 1 else default

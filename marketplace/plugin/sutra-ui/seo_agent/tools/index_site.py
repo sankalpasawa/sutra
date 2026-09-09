@@ -199,10 +199,14 @@ def _write_knowledge(site, rows, tr, report, wp_doc):
     elif not (store.knowledge("top-pages.json") or []):
         store.save_knowledge("top-pages.json", [])
     store.save_knowledge("catalogue-report.json", report)
+    # Last word on the type column, after every source has had its say: a language prefix is a
+    # language, never a kind of page, and no row leaves here untyped.
+    light = [_light_row(r) for r in rows]
+    reconcile.retype_catalogue(light)
     store.save_knowledge("site_index.json", {
         "domain": site["host"],
         "page_count": len(rows),
-        "pages": [_light_row(r) for r in rows],
+        "pages": light,
         "indexed_at": store.now(),
         "confidence": report["confidence"],
         "report": {"confidence": report["confidence"],

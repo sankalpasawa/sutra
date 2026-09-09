@@ -14,6 +14,11 @@ Classify every type into the roles it serves (a type can serve several, or none)
 - "editorial": articles/blog/glossary/guides — the company's educational writing.
 - "machine": types that are navigation, media, authors, language-duplicates, or CMS internals — no role.
 
+Also name every type as a person would say it out loud, in "display_names": the slug turned into
+plain English, capitalised as the company itself capitalises it. "test-library" -> "Test library",
+"hr-glossary" -> "HR glossary", "successstory" -> "Customer stories". Two to three words, no
+punctuation, no explanation. Every type in the table gets one, including the ones with no role.
+
 Rules:
 - judge from the SAMPLES, not the type's name — names lie across CMSs
 - a language-duplicate type (same content translated) = "machine" (we read the primary language)
@@ -21,6 +26,7 @@ Rules:
 
 Return ONLY JSON:
 {"stat_types": ["..."], "story_types": ["..."], "commercial_types": ["..."], "editorial_types": ["..."],
+ "display_names": {"<type>": "<what a person calls it>"},
  "notes": "one line on anything surprising"}
 
 THE TYPE TABLE:

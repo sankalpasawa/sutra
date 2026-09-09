@@ -28,7 +28,6 @@ WORK = "_work/writer-brief/"
 #   features.md           -> a product catalogue. Not rules about writing.
 #   persona.md            -> describes the reader, not the company's own voice.
 #   writing-examples.md   -> five complete published articles. Whole finished pages, not rules.
-#   opinions.md           -> an empty template with no opinions recorded in it.
 SOURCE_FILES = ["brand-voice.md", "style-guide.md", "voices.md", "writing-integrity.md"]
 WB_SECTION_CAP = 40000      # per source file into a classify prompt
 

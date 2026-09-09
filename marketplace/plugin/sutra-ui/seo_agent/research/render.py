@@ -162,8 +162,9 @@ def bundle(research, trail_rows, brand_files):
         ("**Style and mechanics** — Knowledge › style-guide.md", ["style-guide.md"]),
         ("**Product facts** — Knowledge › features.md", ["features.md"]),
         ("**SEO/AEO/GEO checklist** — Knowledge › seo-aeo-geo-checklist.md", ["seo-aeo-geo-checklist.md"]),
-        ("**Cite-from material** — Knowledge › stats.md, opinions.md, stories.md",
-         ["stats.md", "opinions.md", "stories.md"]),
+        # opinions.md was deleted in 2.248.0: nothing ever read it, and it asked the owner to answer
+        # an interview whose answers no step used.
+        ("**Cite-from material** — Knowledge › stats.md, stories.md", ["stats.md", "stories.md"]),
         ("**Worked examples** — Knowledge › writing-examples.md", ["writing-examples.md"]),
         ("**Writing integrity** — Knowledge › writing-integrity.md", ["writing-integrity.md"]),
         ("**The writer brief** — Knowledge › writer-brief.md", ["writer-brief.md"]),

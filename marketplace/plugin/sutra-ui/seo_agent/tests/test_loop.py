@@ -44,7 +44,9 @@ llm.call = fake_call
 c = store.new_chat("loop test")
 r = store.new_run(c, "test topic")
 FAILS = []
+CHECKS = [0]
 def ok(label, cond, extra=""):
+    CHECKS[0] += 1
     if not cond:
         FAILS.append(label)
     print(("  PASS  " if cond else "  FAIL  ") + label +
@@ -118,8 +120,97 @@ shutil.rmtree(store.chat_dir(c3))
 print("\nevents in run 1:", evs)
 shutil.rmtree(store.chat_dir(c)); shutil.rmtree(store.chat_dir(c2))
 
+# --- the setup interview -------------------------------------------------------------------
+# Its own data dir. This writes real brand files (stats.md, stories.md, voices.md) and every
+# suite in one run shares SEO_AGENT_DATA, so left where it is it would hand test_brand a set of
+# files a person had already half-filled in.
+import tempfile
+_prev_data = os.environ.get("SEO_AGENT_DATA", "")
+os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="seo-onboard-loop-")
+store.set_data_dir(os.environ["SEO_AGENT_DATA"])
+_fixture.setup()
+from seo_agent.tools import onboard
+
+def one_call(name, args=None):
+    """A model that calls one tool and then says a sentence."""
+    seq = [{"text": "", "tool_calls": [{"id": "ob1", "name": name, "input": args or {}}]},
+           {"text": "Noted, thank you.", "tool_calls": []}]
+    i = {"n": 0}
+    def call(system, messages, tools=None, model=None, **kw):
+        r = seq[min(i["n"], len(seq) - 1)]; i["n"] += 1; return r
+    return call
+
+print("\nthe setup interview")
+llm.call = one_call("onboard")
+c4 = store.new_chat("interview"); r4 = store.new_run(c4, "setup")
+s = loop.start(c4, r4, "set me up")
+ok("the interview asks its first question and stops",
+   s["status"] == "waiting" and (s.get("waiting_on") or {}).get("interview") == "numbers", s.get("waiting_on"))
+ok("it waits as an ordinary question, so the screen already knows how to draw it",
+   s["waiting_on"]["kind"] == "question" and s["waiting_on"]["question"].strip().endswith("?"))
+ok("every question offers a skip",
+   any(o.get("label") == onboard.SKIP_LABEL for o in s["waiting_on"]["options"]))
+ok("it says which question this is", s["waiting_on"]["step"] == 1 and s["waiting_on"]["of"] == 6,
+   (s["waiting_on"].get("step"), s["waiting_on"].get("of")))
+
+s = loop.resume(c4, r4, {"text": "1,200 companies in 40 countries."})
+ok("the answer lands in the file that wanted it, verbatim",
+   "1,200 companies in 40 countries." in (store.knowledge("brand/stats.md") or ""))
+ok("and it moves straight on to the next question",
+   (s.get("waiting_on") or {}).get("interview") == "origin-story", s.get("waiting_on"))
+
+s = loop.resume(c4, r4, {"choice": onboard.SKIP_LABEL})
+led = onboard.ledger().get("answers") or {}
+ok("a skip is recorded as a skip, not as an empty answer",
+   led.get("origin-story", {}).get("state") == "skipped"
+   and led.get("origin-story", {}).get("text") == ""
+   and led.get("numbers", {}).get("state") == "answered", led)
+ok("and the skip is visible in the file, not only in the ledger",
+   "Not answered" in (store.knowledge("brand/stories.md") or ""))
+
+for said in ("We shipped a video interview nobody used, and cut it.",
+             "Example Team, https://example.com/author/team",
+             "Ada Lovelace, CEO, https://example.com/author/ada",
+             "rival-one.com and https://www.rival-two.com/pricing"):
+    s = loop.resume(c4, r4, {"text": said})
+
+ok("the run carries on by itself once the questions are done", s["status"] == "done", s["status"])
+results = [b for m in store.get_messages(c4) if isinstance(m.get("content"), list)
+           for b in m["content"] if b.get("type") == "tool_result"]
+ok("six questions, ONE tool result: the model never sees a half-finished interview",
+   len(results) == 1, len(results))
+ok("the answer the model finally sees says what was answered and what was passed over",
+   "5 of 6 answered" in str(results[0]["content"].get("summary", "")), results[0]["content"])
+ok("the competitor answer went to competitors.json, addresses only",
+   [r["domain"] for r in (store.knowledge("competitors.json") or {}).get("competitors", [])]
+   == ["rival-one.com", "rival-two.com"], store.knowledge("competitors.json"))
+ok("the byline answer went to voices.md", "Ada Lovelace" in (store.knowledge("brand/voices.md") or ""))
+ok("the interview is closed", onboard.status()["asked"] is True and onboard.status()["skipped"] == 1,
+   onboard.status())
+ok("the system prompt now tells the model not to ask again",
+   "Do NOT ask them again" in loop._knowledge_block(store.knowledge("site_index.json") or {}))
+
+llm.call = one_call("onboard")
+c5 = store.new_chat("asked already"); r5 = store.new_run(c5, "setup again")
+s = loop.start(c5, r5, "set me up")
+ok("a second run does not ask again", s["status"] == "done", s.get("waiting_on"))
+ok("it says so rather than saying nothing",
+   any("already put to them" in str((e.get("summary") or "")) for e in store.get_events(c5, r5)))
+
+llm.call = one_call("onboard", {"redo": True})
+c6 = store.new_chat("ask me again"); r6 = store.new_run(c6, "redo")
+s = loop.start(c6, r6, "go through the setup questions again")
+ok("but it does ask again when the user asks it to",
+   s["status"] == "waiting" and (s.get("waiting_on") or {}).get("interview") == "numbers", s.get("waiting_on"))
+loop.stop(c6, r6)
+
+for x in (c4, c5, c6):
+    shutil.rmtree(store.chat_dir(x), ignore_errors=True)
+os.environ["SEO_AGENT_DATA"] = _prev_data
+store.set_data_dir(_prev_data or None)
+
 print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))
     sys.exit(1)
-print("all %d checks passed" % 24)
+print("all %d checks passed" % CHECKS[0])

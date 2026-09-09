@@ -51,11 +51,26 @@ traffic, traffic_clean, top_keyword, intent, keywords:[{keyword, position, volum
 Keep `text` (first 400 chars) too, older code reads it.
 
 ## Brand files (knowledge/brand/), in build order, each with the ORIGINAL's structure
-type-roles.json · stats.md · stories.md · opinions.md · page-shortlist.md · brand-voice.md · style-guide.md ·
+type-roles.json · stats.md · stories.md · page-shortlist.md · brand-voice.md · style-guide.md ·
 features.md · cta-pages.md · writing-examples.md · persona.md · voices.md · writing-integrity.md ·
 writer-brief.md · writer-brief-rulings.md · brand-cards.json · field-sources.md · seo-aeo-geo-checklist.md
-Human gates become checkpoints: the tool saves everything, then the agent shows the pack (`show_artifact`
-view `brand_pack`) for the user to confirm; ⚠️ rows stay marked until confirmed.
+
+`opinions.md` was removed in 2.248.0: nothing ever read it, and it asked for an interview whose
+answers no step used.
+
+A row the machine drafted carries the hidden marker `<!--d-->` and nothing a reader can see. A row
+a person edits loses it, and a rebuild never touches a row without it. `<!--d-->` is stripped by
+`mdHtml` on the read view and left visible in the raw editor, which is how a person removes it.
+Legacy `⚠️` rows are still recognised on read and migrated on the next run.
+
+Human gates become checkpoints: the tool saves everything, then the agent shows the pack
+(`show_artifact` view `brand_pack`) for the user to confirm. The standing Knowledge screen never
+nags; only a live checkpoint says what it is waiting for.
+
+## Setup order
+`index_site` -> `onboard` (the first-run interview, six skippable questions, runs once) -> `learn_brand`.
+`onboard` waits through the ordinary `_wait(kind="question")`, records to `brand/_interview/answers.json`
+(`answered` | `skipped` | absent), and returns ONE tool result after the last question.
 
 ## Artifacts per run (chats/<c>/runs/<r>/artifacts/)
 - `topics.json`         {topics:[{id, topic, angle, why_us, sparked_by, est_volume, est_difficulty}], recommended}

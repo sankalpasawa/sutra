@@ -395,6 +395,37 @@ def library_save(chat_id, run_id, title, draft_md, meta_extra=None):
     return item_id
 
 
+def library_update(item_id, draft_md, title=None):
+    """Write an edited article back over itself, and re-count it.
+
+    A saved article is a document, not a transcript of a run: fixing a sentence should not need a
+    live agent. Title and body only. Status has its own route, and everything else in the meta is
+    provenance that an edit must not rewrite.
+
+    Restored 2026-09-09. It was built, then lost when a corrupted git store forced a fresh clone,
+    which left the Library read-only with the route calling a function that was no longer there.
+
+    The body is written through a temp file in the same folder and renamed over the target, like
+    every other save here: a crash mid-write must leave the old complete article, never half of a
+    new one.
+    """
+    d = os.path.join(library_dir(), item_id)
+    meta = read_json(os.path.join(d, "meta.json"))
+    if not meta:
+        return None
+    path = os.path.join(d, "draft.md")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(draft_md)
+    os.replace(tmp, path)
+    meta["words"] = len(draft_md.split())
+    if title:
+        meta["title"] = title
+    meta["edited_at"] = now()
+    write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
+
 def library_list():
     out = []
     if os.path.isdir(library_dir()):

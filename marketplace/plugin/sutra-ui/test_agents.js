@@ -201,14 +201,19 @@ test("the article view addresses blocks by the same ids the server uses", () => 
   BLK.ids.forEach(id => assert.ok(html.indexOf('data-blk="' + id + '"') !== -1, "block " + id + " rendered"));
   assert.ok(/data-ag="artedit" data-arg="p0"/.test(html));
 });
-test("a library item opens read-only: no edit affordance, copy only", () => {
+test("a read-only article never offers the per-block editor, and a Library one offers Edit", () => {
   const S = A.S; S.ag = null;
   const a = A.agS();
   a.panel = { run_id: "r1", name: "draft.md", view: "article", data: { text: "# T\n\nbody" }, loading: false, readOnly: true, title: "Saved one" };
-  const html = A.agPanelHtml(a);
-  assert.ok(!/data-ag="artedit"/.test(html));
+  let html = A.agPanelHtml(a);
+  assert.ok(!/data-ag="artedit"/.test(html), "no per-block editor on a read-only draft");
   assert.ok(/data-ag="copymd"/.test(html));
   assert.ok(/Saved one/.test(html));
+  assert.ok(!/data-ag="libedit"/.test(html), "an artifact with no library id offers no Edit");
+  a.panel.libId = "lib7";
+  html = A.agPanelHtml(a);
+  assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "a saved article does");
+  assert.ok(/data-ag="copymd"/.test(html), "and can still be copied");
 });
 test("the log groups its rows by stage, one line each, and only the running one is open", () => {
   const evs = [
@@ -379,12 +384,13 @@ test("the tools screen is plain English: what, when, needs, how long", () => {
   assert.ok(/Reading the website/.test(html));
   assert.ok(!/gate|credit|module/i.test(html));
 });
-test("the brand pack lists every file with its purpose and flags the rows to confirm", () => {
+test("the brand pack lists every file with its purpose, and never nags about confirming one", () => {
   const html = A.agBrandPackHtml({ files: [{ name: "writer-brief.md", exists: true, words: 1660, flags: 0 }, { name: "stats.md", exists: true, words: 400, flags: 12 }], needs_review: ["stats.md: 12 rows to confirm"] });
   assert.ok(/Writer brief/.test(html) && /1,660 words/.test(html));
-  assert.ok(/12 to confirm/.test(html));
   assert.ok(/data-ag="brandfile" data-arg="stats.md"/.test(html));
   assert.ok(/not built yet/.test(html), "unbuilt files are listed so the user knows what is coming");
+  assert.ok(!/\d+ to confirm/.test(html), "no N-to-confirm pill anywhere");
+  assert.ok(!/Confirm these before they are used/.test(html), "and no yellow banner");
 });
 test("the links block shows each placed link with its match score and flags a weak one", () => {
   const html = A.agLinksHtml({ placed: [{ kind: "inline", anchor: "cost per hire", url: "https://x.com/hr-glossary/cost-per-hire/", section: "S1", rr: 0.95 },
@@ -408,6 +414,446 @@ test("connections never echoes a secret: inputs are empty, placeholders say (set
   assert.ok(/Disconnect/.test(html));
 });
 
-console.log("\n" + "-".repeat(60));
-console.log("agents screen: " + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+
+/* ── the Knowledge tab, rebuilt: a quiet document ──────────────────────────── */
+const KIDX = { domain: "testlify.com", page_count: 12318, ranking_pages: 2188, ok_pages: 12287,
+               indexed_at: new Date(Date.now() - 3600000).toISOString(), has_traffic: true,
+               types: { "test-library": 8000, "hr-glossary": 900 },
+               type_names: { "test-library": "Test library", "hr-glossary": "HR glossary" },
+               languages: { de: 412, ja: 88 }, language_names: { de: "German", ja: "Japanese" } };
+const KBRAND = { brand: "Testlify",
+  brief: { exists: true, words: 1660, text: "## How we sound\n\nPlain, specific, never breathless." },
+  built_from: [{ name: "brand-voice.md", label: "Brand voice", note: "How the brand sounds.", exists: true, words: 900 },
+               { name: "writer-brief-rulings.md", label: "Rulings", note: "Decisions that outrank the rest.", exists: false, words: 0 }],
+  extras: [{ name: "voices.md", label: "Who writes", note: "Who signs the writing.", exists: true, words: 120, in_use: false }],
+  cta: { count: 2 } };
+function kdoc(over){
+  return Object.assign({ site_index: KIDX, report: { gates: [] }, page_index: { built: true, pages: 12318 },
+                         company: { brand: "Testlify", language_code: "en" }, brand: KBRAND, competitors: [] }, over || {});
+}
+function agReset(){
+  const a = A.agS();
+  a.pages = null; a.pageQ = ""; a.pageType = ""; a.pageLang = null; a.map = null; a.mapOn = false;
+  a.libEdit = null; a.knowledge = null;
+  a.refresh = null; a.trafficForm = null; a.compForm = null; a.coForm = null;
+  a.cta = null; a.ctaForm = null; a.detailOpen = {}; a.panel = null;
+  return a;
+}
+
+test("the four gate chips are gone from the screen, whatever the report still carries", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc({ report: { gates: [
+    { name: "enumeration accounting", pass: true, detail: "every url accounted for" },
+    { name: "response integrity", pass: false, detail: "" },
+    { name: "extraction coverage", pass: true, detail: "" },
+    { name: "traffic check", pass: true, detail: "" }] }, confidence: "full: enumeration accounting passed" }), a);
+  assert.ok(!/ag-check/.test(html), "no chips are drawn");
+  assert.ok(!/enumeration|accounting|response integrity|extraction|coverage/i.test(html),
+            "and none of those words reach the screen");
+});
+
+test("the catalogue line is one sentence, and says so plainly when traffic is not connected", () => {
+  const a = agReset();
+  const on = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(on.indexOf("12,318 pages · 2,188 rank for something · 12,287 with full text · read an hour ago") !== -1,
+            "the line the owner kept: " + (on.match(/12,318 pages[^<]*/) || [""])[0]);
+  const off = A.agKnowledgeHtml(kdoc({ site_index: Object.assign({}, KIDX, { has_traffic: false, ranking_pages: 0 }) }), a);
+  assert.ok(off.indexOf("12,318 pages · 12,287 with full text · read an hour ago · search traffic not connected yet") !== -1,
+            "no traffic, no zero: " + (off.match(/12,318 pages[^<]*/) || [""])[0]);
+  assert.ok(!/0 pages rank|0 rank for something/.test(off), "never a zero dressed up as a count");
+});
+
+test("the meaning-index section is gone; its one good sentence is the map's caption", () => {
+  const a = agReset();
+  let html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(!/Pages indexed by meaning|Page index/.test(html), "the section is gone");
+  assert.ok(!/passages|vectors|embedding/i.test(html), "and its vocabulary with it");
+  assert.ok(!/ag-mapcap/.test(html), "no caption while the map is shut");
+  assert.ok(/data-ag="map"/.test(html) && /ag-secctl/.test(html), "the map button moved to the heading row");
+  a.mapOn = true;
+  html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/id="agMap"/.test(html), "the canvas is the same canvas");
+  assert.ok(html.indexOf("pages that mean similar things sit close together, hover to read, click to open") !== -1,
+            "the sentence became the caption");
+  a.mapOn = false;
+});
+
+test("the catalogue's controls sit on its heading row, not in its body", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  const head = html.slice(html.indexOf("The site catalogue"), html.indexOf("The site catalogue") + 700);
+  assert.ok(/data-ag="refreshcheck"/.test(head), "check for changes is on the heading row");
+  assert.ok(/data-ag="trafficimport"/.test(head), "so is the traffic import");
+  assert.ok(/data-ag="map"/.test(head), "and the map");
+  assert.ok(/only what is new or has changed/.test(html), "it still says it does not re-read the site");
+});
+
+test("the type filter carries real type names, and the languages are their OWN filter", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  const type = html.slice(html.indexOf("data-agpagetype"), html.indexOf("data-agpagelang"));
+  assert.ok(/>Test library</.test(type) && /value="test-library"/.test(type), "a real name, not the slug");
+  assert.ok(!/>de</.test(type) && !/>ja</.test(type), "no language codes in the type list");
+  const lang = html.slice(html.indexOf("data-agpagelang"));
+  assert.ok(/value="de"[^>]*>German</.test(lang), "German, not de: " + lang.slice(0, 200));
+  assert.ok(/value="ja"[^>]*>Japanese</.test(lang));
+  assert.ok(html.indexOf("data-agpagetype") < html.indexOf("data-agpagelang"), "language comes after type");
+  const none = A.agKnowledgeHtml(kdoc({ site_index: Object.assign({}, KIDX, { languages: {} }) }), a);
+  assert.ok(!/data-agpagelang/.test(none), "one language, no filter");
+});
+
+test("the page table asks the server for FIVE rows, and passes the language filter", () => {
+  const a = agReset(); const seen = [];
+  const prev = A.apiGet;
+  A.apiGet = async (p) => { seen.push(p); return { total: 0, offset: 0, rows: [] }; };
+  a.pageType = "hr-glossary"; a.pageLang = "de";
+  A.agLoadPages(0);
+  A.apiGet = prev;
+  assert.strictEqual(seen.length, 1, "one call");
+  assert.ok(/[?&]limit=5(&|$)/.test(seen[0]), "five rows, not twenty-five: " + seen[0]);
+  assert.ok(/[?&]lang=de(&|$)/.test(seen[0]), "the language rides along: " + seen[0]);
+  assert.ok(/[?&]type=hr-glossary(&|$)/.test(seen[0]), "and the type still does");
+  a.pageType = ""; a.pageLang = "";
+});
+
+test("the pager steps by five, so page two starts at row six", () => {
+  const a = agReset(); const seen = [];
+  a.pages = { total: 40, offset: 0, rows: [] };
+  const prev = A.apiGet;
+  A.apiGet = async (p) => { seen.push(p); return { total: 40, offset: 5, rows: [] }; };
+  A.agAction("pagesnext", { getAttribute: () => "" });
+  A.apiGet = prev;
+  assert.ok(/offset=5(&|$)/.test(seen[0]), "next asks for row six: " + seen[0]);
+  a.pages = null;
+});
+
+test("the writer brief is on the page in full, with the files it was built from behind one door", () => {
+  const a = agReset();
+  let html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/<h3 class="sec">The writer brief<\/h3>/.test(html), "its own section");
+  assert.ok(html.indexOf("This is what the writer reads before writing an article about Testlify.") !== -1,
+            "the one line above it");
+  assert.ok(/class="ag-brief"/.test(html) && /never breathless/.test(html), "the brief itself, rendered");
+  assert.ok(/data-ag="detail" data-arg="builtfrom"/.test(html) && /See how this was built/.test(html), "and the door");
+  assert.ok(/aria-expanded="false"/.test(html.slice(html.indexOf("builtfrom") - 120, html.indexOf("builtfrom") + 60)));
+  const shut = A.agBriefHtml(KBRAND, false);
+  assert.ok(!/data-ag="brandfile"/.test(shut), "shut, the brief shows no files at all");
+
+  a.detailOpen = { builtfrom: true };
+  html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/data-ag="brandfile" data-arg="brand-voice.md" data-label="Brand voice"/.test(html), "open, each file is clickable");
+  assert.ok(/Rulings/.test(html) && /ag-file off/.test(html) && /not written yet/.test(html), "a missing one is greyed, not hidden");
+  assert.ok(!/company\.json|page-shortlist|type-roles|stats\.md|stories\.md/.test(html),
+            "and ONLY the files the brief was built from");
+  a.detailOpen = {};
+});
+
+test("who writes is one file, and says it is not in use yet", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/<h3 class="sec">Who writes<\/h3>/.test(html), "its label is the heading, and is not repeated in the row");
+  assert.ok((html.match(/>Who writes</g) || []).length === 1, "said once on screen, never repeated in the row");
+  assert.ok(/Who signs the writing\./.test(html), "the row says what the file is");
+  assert.ok(/not in use yet/.test(html) && /data-arg="voices.md"/.test(html));
+  const none = A.agKnowledgeHtml(kdoc({ brand: Object.assign({}, KBRAND, { extras: [] }) }), a);
+  assert.ok(!/Who writes/.test(none), "nothing to show, no heading");
+});
+
+test("the nineteen tiles and the yellow banner are gone from Knowledge", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(!/The brand pack/.test(html), "no brand-pack section");
+  assert.ok(!/note w/.test(html) && !/Confirm these before they are used/.test(html), "no yellow banner");
+  assert.ok(!/\d+ to confirm/.test(html), "no N-to-confirm pill");
+});
+
+test("the pages a close may point at: what the crawl found, and what the owner added", () => {
+  const a = agReset();
+  a.cta = { domain: "testlify.com", rows: [
+    { url: "https://testlify.com/pricing/", note: "when price is the question", title: "Pricing", mine: false },
+    { url: "https://testlify.com/demo/", note: "", title: "", mine: true }] };
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/<h3 class="sec">Links the close may point at<\/h3>/.test(html));
+  assert.ok(/value="https:\/\/testlify.com\/pricing\/"/.test(html), "the address is editable");
+  assert.ok(/value="when price is the question"/.test(html), "so is the note");
+  assert.ok(/class="ag-ctarow"/.test(html) && /class="ag-ctarow mine"/.test(html), "his rows look different from the crawl's");
+  assert.ok(/>suggested</.test(html) && /"ag-ctasrc">yours</.test(html), "and say which is which");
+  assert.ok(/data-ag="ctaadd"/.test(html) && /data-ag="ctadel" data-arg="1"/.test(html) && /data-ag="ctasave"/.test(html),
+            "add, remove, save");
+  const empty = (function(){ const b = agReset(); b.cta = { domain: "testlify.com", rows: [] };
+    return A.agKnowledgeHtml(kdoc(), b); })();
+  assert.ok(/No pages yet/.test(empty) && /data-ag="ctaadd"/.test(empty), "an empty list still offers a row");
+});
+
+test("adding and removing a link edits the draft, never the saved list", () => {
+  const a = agReset();
+  a.cta = { domain: "testlify.com", rows: [{ url: "https://testlify.com/pricing/", note: "n", mine: false }] };
+  A.agAction("ctaadd", { getAttribute: () => "" });
+  assert.strictEqual(a.ctaForm.rows.length, 2, "a blank row appears");
+  assert.strictEqual(a.ctaForm.rows[1].mine, true, "and it is his");
+  assert.strictEqual(a.cta.rows.length, 1, "the saved list has not moved");
+  A.agAction("ctadel", { getAttribute: k => k === "data-arg" ? "0" : "" });
+  assert.strictEqual(a.ctaForm.rows.length, 1);
+  assert.strictEqual(a.ctaForm.rows[0].url, "", "the right row went");
+  assert.strictEqual(a.cta.rows.length, 1, "still not the saved list");
+});
+
+test("the tab still draws against the payload the server sends TODAY, mid-rebuild", () => {
+  const a = agReset();
+  /* no has_traffic, no languages, no type_names, and the old brand pack shape */
+  const old = { site_index: { domain: "testlify.com", page_count: 12318, ranking_pages: 2188, ok_pages: 12287, types: { "test-library": 8000 } },
+                report: null, page_index: { built: false, pages: 0, chunks: 0 }, company: { brand: "Testlify" },
+                brand: { files: [{ name: "company.json", exists: false, words: 1, flags: 1 }] }, competitors: [] };
+  const html = A.agKnowledgeHtml(old, a);
+  assert.ok(html.indexOf("12,318 pages · 2,188 rank for something · 12,287 with full text") !== -1,
+            "the line still reads, with no indexed_at to date it");
+  assert.ok(!/data-agpagelang/.test(html), "no languages, no language filter");
+  assert.ok(!/data-ag="map"/.test(html), "no page index, no map button");
+  assert.ok(/Not written yet/.test(html), "no brief in the payload, so it says so");
+  assert.ok(/No pages yet/.test(html) && /data-ag="ctaadd"/.test(html), "and the link list still offers a row");
+});
+
+
+/* ── the language filter starts where the owner actually reads ─────────────── */
+test("the page list opens in the site's own language, and All is still one click away", () => {
+  const a = agReset();
+  const html = A.agKnowledgeHtml(kdoc(), a);
+  const sel = html.slice(html.indexOf("data-agpagelang"));
+  assert.ok(/<option value="en" selected>/.test(sel), "the site's own language is selected: " + sel.slice(0, 220));
+  assert.ok(/<option value="de" >German</.test(sel.replace(/\s+>/g, " >")), "the translations are still offered");
+  assert.ok(/<option value="" >All languages</.test(sel.replace(/\s+>/g, " >")), "and so is All");
+  assert.strictEqual(A.agEffLang(a, KIDX, { language_code: "en" }), "en", "not chosen means the site's own");
+  a.pageLang = "";
+  assert.strictEqual(A.agEffLang(a, KIDX, { language_code: "en" }), "", "an explicit All is honoured, not overridden");
+  const html2 = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/<option value="" selected>All languages</.test(html2.slice(html2.indexOf("data-agpagelang"))), "and shows as chosen");
+});
+
+test("one language on the site means no default and no filter at all", () => {
+  const a = agReset();
+  const mono = { site_index: Object.assign({}, KIDX, { languages: {}, language_names: {} }) };
+  assert.strictEqual(A.agEffLang(a, mono.site_index, { language_code: "en" }), "",
+                     "nothing to filter, so nothing is filtered");
+  assert.ok(!/data-agpagelang/.test(A.agKnowledgeHtml(kdoc(mono), a)), "and no control is drawn");
+});
+
+test("the fetch sends the site's own language without the owner choosing it", () => {
+  const a = agReset(); const seen = [];
+  a.knowledge = kdoc();
+  const prev = A.apiGet;
+  A.apiGet = async (p) => { seen.push(p); return { total: 0, offset: 0, rows: [] }; };
+  A.agLoadPages(0);
+  A.apiGet = prev;
+  assert.ok(/[?&]lang=en(&|$)/.test(seen[0]), "the default rides on the request: " + seen[0]);
+});
+
+test("a filtered list says WHY it is shorter than the catalogue", () => {
+  const a = agReset();
+  a.pages = { total: 9858, offset: 0, rows: [{ url: "https://testlify.com/a/", title: "A", type: "hr-glossary", body_status: "ok", word_count: 10 }] };
+  let html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(html.indexOf("1–1 of 9,858 · in the site&#39;s own language · 12,318 pages in all") !== -1,
+            "with no real name in the payload it still reads: " + (html.match(/1–1 of[^<]*/) || [""])[0]);
+  const named = kdoc({ site_index: Object.assign({}, KIDX, { language_names: { en: "English", de: "German", ja: "Japanese" } }) });
+  html = A.agKnowledgeHtml(named, a);
+  assert.ok(html.indexOf("1–1 of 9,858 · in English · 12,318 pages in all") !== -1,
+            "and names the language when the payload knows it: " + (html.match(/1–1 of[^<]*/) || [""])[0]);
+  a.pageType = "hr-glossary"; a.pageQ = "cost";
+  html = A.agKnowledgeHtml(named, a);
+  assert.ok(html.indexOf('matching "cost", HR glossary, in English · 12,318 pages in all') !== -1,
+            "every filter is named: " + (html.match(/1–1 of[^<]*/) || [""])[0]);
+  a.pageQ = ""; a.pageType = ""; a.pageLang = "";
+  html = A.agKnowledgeHtml(kdoc(), a);
+  assert.ok(/1–1 of 9,858<\/span>/.test(html), "nothing filtered, nothing to explain");
+});
+
+/* ── a link to a page the crawl has not read ───────────────────────────────── */
+test("a link to a page we have not read says so, as information and not as a failure", () => {
+  const a = agReset();
+  a.cta = { domain: "testlify.com", rows: [
+    { url: "https://testlify.com/pricing/", note: "", title: "Pricing", mine: false },
+    { url: "https://testlify.com/brand-new/", note: "", title: "", mine: true }] };
+  const html = A.agCtaHtml(a.cta, null);
+  assert.strictEqual((html.match(/ag-ctanote/g) || []).length, 1, "only the unread row says anything");
+  assert.ok(html.indexOf("This page is not in the catalogue yet, so there is nothing read about it. The link still works.") !== -1,
+            "allowed, and said");
+  assert.ok(!/ag-err|error|failed|invalid/i.test(html), "it never reads as a failure");
+  A.agAction("ctaadd", { getAttribute: () => "" });
+  const drafted = A.agCtaHtml(a.cta, a.ctaForm);
+  assert.strictEqual((drafted.match(/ag-ctanote/g) || []).length, 1,
+                     "the blank row he just added is not accused of anything");
+  assert.strictEqual(a.ctaForm.rows[0].title, "Pricing", "a title survives an edit to the draft");
+});
+
+/* ── a standing screen carries no nags; a live moment does ─────────────────── */
+const PACK = { files: [{ name: "persona.md", exists: true, words: 400 }],
+               confirm: ["Three reader types are drafted. Which of them do we actually write for?",
+                         "Nobody has said who signs these articles."] };
+test("at a checkpoint the agent says what it is waiting for, as a question and not a warning", () => {
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", waiting_on: { kind: "artifact", artifact: "brand", view: "brand_pack" } }] };
+  a.panel = { run_id: "r1", name: "brand", view: "brand_pack", data: PACK, loading: false };
+  const html = A.agPanelHtml(a);
+  assert.ok(/Before I carry on, there are 2 things I need you to decide\./.test(html), "the agent asks");
+  assert.ok(/Which of them do we actually write for\?/.test(html) && /who signs these articles/.test(html),
+            "and names each one");
+  assert.ok(!/p-warn|note w/.test(html), "no warning colour, no yellow banner");
+  assert.ok(!/\d+ to confirm/.test(html), "and no badge with a number on it");
+  assert.ok(/class="ag-card"/.test(html), "it is the card the agent already waits in");
+  const one = A.agBrandPackHtml({ files: [], confirm: ["Only this one."] }, { atCheckpoint: true });
+  assert.ok(/there is one thing I need you to decide/.test(one), "one question is not '1 things'");
+});
+
+test("the same payload nags nobody on the standing screen", () => {
+  const a = agReset();
+  assert.ok(!/I need you to decide/.test(A.agBrandPackHtml(PACK, {})), "no caller, no ask");
+  assert.ok(!/I need you to decide/.test(A.agBrandPackHtml(PACK, { atCheckpoint: false })), "not at a checkpoint, no ask");
+  const k = kdoc({ brand: Object.assign({}, KBRAND, { confirm: PACK.confirm, needs_review: PACK.confirm }) });
+  const html = A.agKnowledgeHtml(k, a);
+  assert.ok(!/I need you to decide/.test(html) && !/write for\?/.test(html), "and the Knowledge tab never asks");
+  assert.ok(!/ag-card/.test(html), "there is no waiting card on a reference screen");
+});
+
+/* ── the Library editor, back ──────────────────────────────────────────────── */
+test("the Library editor puts the title and the whole article in front of him", () => {
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = { run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+              libId: "lib7", title: "Cost per hire", data: { text: "# Cost per hire\n\nSix hundred words." } };
+  A.agAction("libedit", { getAttribute: k => k === "data-arg" ? "lib7" : "" });
+  assert.strictEqual(a.libEdit.title, "Cost per hire", "the title is loaded from the panel");
+  assert.strictEqual(a.libEdit.draft, "# Cost per hire\n\nSix hundred words.", "and the body");
+  const html = A.agPanelHtml(a);
+  assert.ok(/data-aglibtitle value="Cost per hire"/.test(html), "the title is editable");
+  assert.ok(/data-aglibbody[^>]*>. Cost per hire/.test(html.replace(/#/g, ".")), "so is the article");
+  assert.ok(/data-ag="libsave" data-arg="lib7"/.test(html) && /data-ag="libcancel"/.test(html), "save and cancel");
+  assert.ok(/>7 words</.test(html), "the count is of HIS text: " + (html.match(/>\d+ words</) || [""])[0]);
+  assert.ok(!/data-ag="libedit"/.test(html), "and the Edit button steps aside while he edits");
+});
+
+test("cancel throws the draft away and never touches the saved article", () => {
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = { run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+              libId: "lib7", title: "Cost per hire", data: { text: "the saved words" } };
+  A.agAction("libedit", { getAttribute: () => "lib7" });
+  a.libEdit.draft = "words he typed and thought better of";
+  a.libEdit.title = "a title he thought better of";
+  A.agAction("libcancel", { getAttribute: () => "" });
+  assert.strictEqual(a.libEdit, null, "the draft is gone");
+  assert.strictEqual(a.panel.data.text, "the saved words", "the saved article never moved");
+  assert.strictEqual(a.panel.title, "Cost per hire");
+  assert.ok(/data-ag="libedit"/.test(A.agPanelHtml(a)), "and Edit is offered again");
+});
+
+test("an empty article is not a save", () => {
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = { run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+              libId: "lib7", title: "T", data: { text: "body" } };
+  a.libEdit = { title: "T", draft: "   \n  ", busy: false, error: "" };
+  let posted = false;
+  const prev = A.apiPost; A.apiPost = async () => { posted = true; return {}; };
+  A.agAction("libsave", { getAttribute: () => "lib7" });
+  A.apiPost = prev;
+  assert.strictEqual(posted, false, "nothing is sent");
+  assert.ok(/An empty article is not a save/.test(a.libEdit.error), "and he is told why");
+  assert.strictEqual(a.libEdit.draft, "   \n  ", "with what he typed still there");
+});
+
+/* ── the CSS the layout leans on ───────────────────────────────────────────── */
+const CSS = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+test("opening the panel no longer changes the document's HEIGHT under the reader", () => {
+  assert.ok(CSS.indexOf(".ag.haspanel .ag-file .fd{display:none}") === -1,
+            "the rule that hid every blurb the moment the panel opened is gone");
+  assert.ok(/\.ag\.haspanel \.ag-view\.wide\{max-width:none\}/.test(CSS), "the width rule stays");
+  assert.ok(typeof A.agScrollAnchor === "function" && typeof A.agScrollRestore === "function",
+            "and agDraw has something to hold the reader's place with");
+});
+test("every new class the Knowledge tab uses is actually styled", () => {
+  ["ag-sechead", "ag-secctl", "ag-mapcap", "ag-brief", "ag-ctalist", "ag-ctarow", "ag-ctasrc",
+   "ag-ctanote", "ag-editrow", "ag-libedit", "ag-lbl"].forEach(c => {
+    assert.ok(CSS.indexOf("." + c) !== -1, "." + c + " has no rule in agents.css");
+  });
+  assert.ok(!/#[0-9a-fA-F]{3,6}/.test(CSS.slice(CSS.indexOf(".ag-sechead"))), "no hardcoded colour after the new block");
+});
+
+/* the save round-trips, so it runs after the synchronous suite and reports with it */
+async function atest(name, fn){
+  try { await fn(); pass++; console.log("ok   - " + name); }
+  catch (e){ fail++; console.log("FAIL - " + name); console.log("       " + (e && e.message)); }
+}
+
+(async () => {
+  await atest("saving the link list posts the WHOLE list, in display order, and clears the draft", async () => {
+    const a = agReset();
+    a.cta = { domain: "testlify.com", rows: [{ url: "https://testlify.com/pricing/", note: "price", mine: false }] };
+    a.ctaForm = { rows: [{ url: "https://testlify.com/pricing/", note: "price", mine: false },
+                         { url: " https://testlify.com/demo/ ", note: "a look first", mine: true },
+                         { url: "", note: "half typed", mine: true }] };
+    let body = null;
+    const prev = A.apiPost;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { domain: "testlify.com", rows: b.rows.map(r => Object.assign({ mine: true, title: "" }, r)) }; };
+    await A.agAction("ctasave", { getAttribute: () => "" });
+    A.apiPost = prev;
+    assert.ok(body && /\/knowledge\/cta$/.test(body.path), "posted to /knowledge/cta: " + (body && body.path));
+    assert.strictEqual(body.b.rows.length, 2, "the empty row is not sent");
+    assert.strictEqual(body.b.rows[0].url, "https://testlify.com/pricing/", "in display order");
+    assert.strictEqual(body.b.rows[1].url, "https://testlify.com/demo/", "and trimmed");
+    assert.strictEqual(a.ctaForm, null, "the draft is dropped once it is saved");
+    assert.strictEqual(a.cta.rows.length, 2, "and the saved list is what came back");
+  });
+
+  await atest("a save that fails keeps the draft on screen and says why", async () => {
+    const a = agReset();
+    a.ctaForm = { rows: [{ url: "https://testlify.com/demo/", note: "", mine: true }] };
+    const prev = A.apiPost;
+    A.apiPost = async () => { throw new Error("that address is not on testlify.com"); };
+    await A.agAction("ctasave", { getAttribute: () => "" });
+    A.apiPost = prev;
+    assert.strictEqual(a.ctaForm.rows.length, 1, "nothing he typed is thrown away");
+    assert.ok(/not on testlify\.com/.test(a.ctaForm.msg), "and the reason is his: " + a.ctaForm.msg);
+    assert.ok(/not on testlify\.com/.test(A.agCtaHtml(a.cta, a.ctaForm)), "on the screen, beside the button");
+  });
+
+  await atest("saving a Library article posts the title and the body, and the panel shows the saved one", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    a.panel = { run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+                libId: "lib7", title: "Old title", data: { text: "old body" } };
+    a.libEdit = { title: "  Cost per hire  ", draft: "new body, longer", busy: false, error: "" };
+    let body = null;
+    const prevP = A.apiPost, prevG = A.apiGet;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { id: "lib7", title: "Cost per hire", words: 3, status: "draft" }; };
+    A.apiGet = async () => ([{ id: "lib7", title: "Cost per hire" }]);
+    await A.agAction("libsave", { getAttribute: k => k === "data-arg" ? "lib7" : "" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.ok(body && /\/library\/lib7\/save$/.test(body.path), "posted to the save endpoint: " + (body && body.path));
+    assert.strictEqual(body.b.title, "Cost per hire", "the title is trimmed before it goes");
+    assert.strictEqual(body.b.draft, "new body, longer", "the body goes whole");
+    assert.strictEqual(a.libEdit, null, "the editor closes");
+    assert.strictEqual(a.panel.data.text, "new body, longer", "the panel shows what he saved");
+    assert.ok(/edited by you/.test(a.panel.subtitle), "and says he did it: " + a.panel.subtitle);
+  });
+
+  await atest("a Library save that fails keeps every word he typed on screen", async () => {
+    const S = A.S; S.ag = null;
+    const a = A.agS();
+    a.panel = { run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+                libId: "lib7", title: "T", data: { text: "old body" } };
+    a.libEdit = { title: "T", draft: "the words he wants kept", busy: false, error: "" };
+    const prev = A.apiPost;
+    A.apiPost = async () => { throw new Error("the disk is full"); };
+    await A.agAction("libsave", { getAttribute: () => "lib7" });
+    A.apiPost = prev;
+    assert.strictEqual(a.libEdit.draft, "the words he wants kept", "nothing is thrown away");
+    assert.ok(/disk is full/.test(a.libEdit.error), "and the reason is his: " + a.libEdit.error);
+    assert.strictEqual(a.panel.data.text, "old body", "the saved article is untouched");
+    assert.ok(/disk is full/.test(A.agLibEditHtml(a.panel, a.libEdit)), "on screen, beside the button");
+  });
+
+  console.log("\n" + "-".repeat(60));
+  console.log("agents screen: " + pass + " passed, " + fail + " failed");
+  process.exit(fail ? 1 : 0);
+})();
