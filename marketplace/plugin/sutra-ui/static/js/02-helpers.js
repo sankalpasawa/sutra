@@ -1678,41 +1678,174 @@ function renderRail(){
        operator's work when it was an index of the subset that happened to
        route -- the most expensive kind of wrong, because it reads as complete.
        (founder, 2026-09-02) */
+    /* ONE department group: a collapsible header plus its chats.
+       Reuses the .rgrph/.rgtog/.rgchev shape the plane groups already use and
+       panel.css already styles -- the CSS for it survived the deletion of
+       project grouping, so this is the mechanism coming back with a new key
+       rather than a second collapse invented beside the first.
+
+       DEFAULT EXPANDED, and only an explicit collapse is stored: a stored map
+       that had to list every open group would make a NEW department (one you
+       have never seen) arrive collapsed and easy to miss.
+
+       The header holds TWO controls. The toggle owns the name and count; the +
+       sits outside it, because nesting a button inside a button is invalid and
+       because clicking + must start a chat rather than fold the group away
+       under the cursor. */
+    const deptGroup = (key, label, rows, plus, trailer, total) => {
+      const shut = !!(S.ui.sessCollapsed && S.ui.sessCollapsed[key]);
+      const bodyId = "dg-" + hashKey(key);
+      /* The department's REAL size when the importer recorded one, else the
+         number of rows here. `total` may legitimately exceed rows.length: the
+         chat list holds one page, the department holds everything. */
+      const n = (typeof total === "number") ? total : rows.length;
+      /* An enumerated department with no row here states WHY, rather than
+         rendering as a heading over a void the operator has to guess at.
+
+         The two numbers mean different things and the sentence must not blur
+         them (owner, 2026-09-09): `n` is every session in that project on this
+         machine, while the rows are SUTRA'S OWN chats -- /api/sessions was
+         scoped to the chats this app started, because listing every transcript
+         on the disk handed the founder 20,255 conversations from other tools.
+         So a department can hold 939 sessions and no Sutra chat at all, and
+         saying "none on this page" would be a plain lie about pagination. */
+      const body = rows.length
+        ? rows.map(s=>sessRow(s, trailer ? trailer(s) : undefined)).join("")
+        : `<li class="rempty">${n ? esc(n + " session" + (n === 1 ? "" : "s")
+                                       + " here, none started in Sutra yet")
+                                 : "nothing here yet"}</li>`;
+      return `<div class="rgrp rgrph ${shut ? "collapsed" : ""}">
+          <button type="button" class="rgtog" data-deptcollapse="${esc(key)}"
+                  aria-expanded="${!shut}" aria-controls="${bodyId}"
+                  title="${shut ? "Expand" : "Collapse"} ${esc(label)}">
+            <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="3" aria-hidden="true">
+              <path d="M9 6l6 6-6 6"/></svg>
+            <span class="rgn">${label}</span>
+            <span class="rgc">${n}</span>
+          </button>${plus || ""}
+        </div>
+        <ul class="rlist" id="${bodyId}" ${shut ? "hidden" : ""}>${body}</ul>`;
+    };
+    /* THE AXIS IS THE CHAT'S DIRECTORY, NOT ITS TURNS (founder, 2026-09-08).
+       Every Claude project is now a department (project_import.py), so the
+       working directory a chat runs in answers "whose is this" for the WHOLE
+       list. Partitioning on turn placements only ever covered the subset that
+       routed: a terminal transcript carries domain:null by design, an unread
+       one has turns:[], and askSide skips classification deliberately
+       (:98-113). Measured on the founder's machine the day this changed:
+       378/400 sessions resolve by cwd, and all 22 that do not are /private/tmp
+       scratchpads the importer excludes on purpose. The old axis placed 0 of
+       them, because the wipe took every placement with it.
+
+       Still a PARTITION, not a filter: every chat appears exactly once, under
+       its department or under one catch-all that says WHY. `s.department` is
+       resolved server-side (app.py _with_departments) and is null -- a stated
+       answer -- when no imported project contains the cwd. */
+    /* Drop collapse keys for departments that no longer exist. Refs are never
+       reused (placement_engine.py), so a stale key can never fold the wrong
+       group -- but it never goes away either, and a rebuilt registry orphans
+       one per collapsed group at a stroke (measured: 8 of 9 stored keys on the
+       founder's machine after one re-import). That is the same dead map the
+       2026-09-02 note refused to carry forward.
+
+       GUARDED ON DOMAINS BEING LOADED. With an empty tree every key looks
+       stale, and pruning then would silently discard the operator's real
+       layout on any boot where the org fetch has not landed yet. */
+    if (S.ui.sessCollapsed && Array.isArray(DOMAINS) && DOMAINS.length){
+      const liveRefs = new Set(DOMAINS.map(d => d.ref));
+      let dropped = 0;
+      Object.keys(S.ui.sessCollapsed).forEach(k => {
+        if (k === "dept:__none__") return;          /* names an absence, not a ref */
+        if (!liveRefs.has(k.slice("dept:".length))){
+          delete S.ui.sessCollapsed[k]; dropped++;
+        }
+      });
+      if (dropped) saveLayout();
+    }
     const g = {};
-    S.sessions.forEach(s=>s.turns.forEach(t=>{
-      if (!t.domain) return; (g[t.domain.ref]=g[t.domain.ref]||[]).push({s,t}); }));
-    /* A group whose ref is not in the registry renders nothing, so its sessions
-       must NOT count as filed -- otherwise they fall between a group that
-       claimed them and a group that never drew, which is how the partition
-       would quietly stop being one. */
-    const groups = Object.entries(g)
-      .filter(([ref]) => byRef(ref))
-      .sort((a,b)=>dPath(a[0]).localeCompare(dPath(b[0]),undefined,{numeric:true}));
+    S.sessions.forEach(s=>{
+      const d = s.department; if (!d || !d.ref) return;
+      (g[d.ref] = g[d.ref] || {dept:d, items:[]}).items.push(s);
+    });
+    /* EVERY DEPARTMENT, NOT ONLY THE ONES WITH A CHAT ON THIS PAGE (founder,
+       2026-09-09). The list above is built from S.sessions, which is ONE PAGE
+       of 100, so a department whose newest chat is older than that page simply
+       vanished -- 8 of 24 showed on the founder's machine, against a Claude
+       project list that shows every project. A list that silently omits
+       two-thirds of itself is the defect; an empty group is not.
+
+       Only departments carrying a `cwd` are enumerated: that field is what
+       project_import writes on an imported project, so hand-made org nodes
+       (which are not chat containers) stay out of the chat list.
+
+       GUARDED ON DOMAINS: with the tree unloaded this adds nothing and the
+       view degrades to exactly its old behaviour rather than emptying. */
+    const imported = (Array.isArray(DOMAINS) ? DOMAINS : []).filter(d => d && d.cwd);
+    imported.forEach(d => {
+      const slot = g[d.ref] || (g[d.ref] = {dept:{ref:d.ref, name:d.name, cwd:d.cwd},
+                                            items:[]});
+      /* The TRUE size, written by the importer across all three session
+         stores. The heading counted the loaded page and said "90" for a
+         project holding 941; a count wrong by 10x is worse than none. */
+      if (typeof d.sessions === "number") slot.total = d.sessions;
+    });
+    /* Sorted by the registry path when the org tree is loaded (so children sit
+       under their parent), and by name when it is not. The NAME comes off the
+       session row rather than the tree, so a department still renders when the
+       tree has not loaded -- the old code dropped any group byRef() could not
+       resolve, which turned the partition back into a filter at boot. */
+    const groups = Object.values(g).sort((a,b)=>{
+      const pa = dPath(a.dept.ref) || "", pb = dPath(b.dept.ref) || "";
+      return (pa && pb)
+        ? pa.localeCompare(pb, undefined, {numeric:true})
+        : a.dept.name.localeCompare(b.dept.name);
+    });
     const filed = new Set();
-    groups.forEach(([,items]) => items.forEach(x => filed.add(x.s.id)));
+    groups.forEach(gr => gr.items.forEach(s => filed.add(s.id)));
     html = groups
-      .map(([ref,items])=>{
-        const d = byRef(ref);
-        const held = items.filter(x=>x.t.mode==="floor").length;
-        const uniq = [...new Map(items.map(x=>[x.s.id,x.s])).values()];
-        return `<div class="rgrp">${esc(dPath(ref))} ${esc(d.name)}${held?` · ${held} held`:""}</div>
-          <ul class="rlist">${pinFirst(uniq).map(s=>
-            sessRow(s, `<span>${items.filter(x=>x.s.id===s.id).length} turn(s) here</span>`)
-          ).join("")}</ul>`;
+      .map(({dept,items,total})=>{
+        const uniq = pinFirst([...new Map(items.map(s=>[s.id,s])).values()]);
+        const path = dPath(dept.ref);
+        /* The + starts a chat IN this department: newSession is handed the
+           department's own cwd, so the chat runs there and the server resolves
+           it back to this same node once its transcript lands. That is what
+           makes a department able to hold many chats rather than one. */
+        const plus = dept.cwd
+          ? `<button class="rgadd" type="button" data-act="dept-new"
+                     data-cwd="${esc(dept.cwd)}" data-ref="${esc(dept.ref)}"
+                     data-name="${esc(dept.name)}"
+                     title="New chat in ${esc(dept.name)}"
+                     aria-label="New chat in ${esc(dept.name)}">+</button>`
+          : "";
+        return deptGroup("dept:" + dept.ref,
+                         `${path?esc(path)+" ":""}${esc(dept.name)}`,
+                         uniq, plus, undefined, total);
       }).join("");
-    /* One reason per chat, stated rather than guessed. The four are genuinely
-       different situations and a bare "unfiled" would flatten them into one
-       shrug; only the last is the engine declining to place something it read. */
+    /* One reason per chat, stated rather than guessed -- the 2026-09-02 rule,
+       kept. The REASONS changed with the axis (2026-09-08): they used to
+       describe why a chat's TURNS carried no placement ("not read yet", "ran
+       outside the panel"), and neither is a reason any more, because a
+       department now comes from the chat's directory and that is known
+       without reading a single turn. The three below are the ways a directory
+       can fail to name a department, and they deliberately mirror the
+       importer's own skip reasons (project_import.py _is_junk) so the panel
+       states the SAME reason the import stated rather than a second opinion. */
+    const SCRATCH = ["/private/tmp", "/tmp", "/var/folders"];
     const unfiledWhy = s =>
-        s.loadState === "unread"          ? "not read yet"
-      : !s.turns.length                   ? "no turns recorded"
-      : s.turns.every(t => t.transcript)  ? "ran outside the panel"
-      :                                     "no department matched";
+        !s.cwd ? "no folder recorded"
+      : SCRATCH.some(p => s.cwd === p || s.cwd.startsWith(p + "/"))
+              ? "scratch folder, not imported"
+      :         "folder is not an imported project";
     const unfiled = S.sessions.filter(s => !filed.has(s.id));
-    if (unfiled.length) html += `
-      <div class="rgrp">No department yet · ${unfiled.length}</div>
-      <ul class="rlist">${pinFirst(unfiled).map(s=>
-        sessRow(s, `<span>${esc(unfiledWhy(s))}</span>`)).join("")}</ul>`;
+    /* The catch-all collapses like any other group -- on a machine with a lot
+       of scratch work it is the longest one on the list, and it is the one
+       whose contents you least often need open. Its key is a constant rather
+       than a ref because it names an absence; "dept:" keeps it inside the same
+       prefix filter loadLayout adopts. */
+    if (unfiled.length) html += deptGroup(
+      "dept:__none__", "No department yet", pinFirst(unfiled), "",
+      s => `<span>${esc(unfiledWhy(s))}</span>`);
     /* Empty now means EMPTY -- with the partition in place the only way to
        render nothing is to have no sessions at all, so this says that and
        stops claiming anything about where the missing ones went. */

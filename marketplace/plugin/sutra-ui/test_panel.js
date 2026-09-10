@@ -808,8 +808,13 @@ test("14e. an assistant block with no recorded prompt is marked orphan, not give
 /* Mirrors loadLayout()'s defaults. Every new persisted layout key must be added
    here too -- this is a whole-object deepEq, so a new default reads as a
    corruption failure until the fixture catches up. */
+/* Pins the EXACT default layout, so a new field cannot be added without a
+   deliberate edit here -- which is the point: loadLayout's output is persisted
+   to every operator's browser, and a field added by accident is a migration
+   nobody designed. sessCollapsed joined it on 2026-09-09 for department-group
+   collapse in Chats -> Dept (01-state.js). */
 const LAYOUT_DEFAULTS = { paneCollapsed: {}, folds: {}, browseW: null, browseClosed: false,
-                          navCollapsed: false, planeSections: {},
+                          navCollapsed: false, planeSections: {}, sessCollapsed: {},
                           dest: "now", destSel: {}, railOpen: null,
                           balanceTab: "today" };
 
