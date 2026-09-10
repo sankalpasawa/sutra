@@ -551,15 +551,27 @@ function railW(){
   } catch (e) {}
   return w;
 }
+/* ONE SAFE SETTER. The panel's scripts are concatenated into panel.html and test_panel.js
+   runs that whole blob inside a Node `vm` whose document.documentElement.style is a stub with
+   no setProperty. A bare call here is a TypeError at LOAD time, which does not fail a test --
+   it kills the file before a single test runs, and the DMG build with it (2026-09-10). Any
+   top-level DOM poke on this page has to survive a document that is only half a document. */
+function railVar(w){
+  try {
+    const el = document.documentElement;
+    if (el && el.style && typeof el.style.setProperty === "function")
+      el.style.setProperty("--railw", w + "px");
+  } catch (e) {}
+}
 function railSetW(w){
   w = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(w)));
-  document.documentElement.style.setProperty("--railw", w + "px");
+  railVar(w);
   try { localStorage.setItem("sutra.railW", String(w)); } catch (e) {}
   return w;
 }
 /* Put the stored width on the page before anything paints, so a reload never flashes 224px
    and then jumps to the width the person actually chose. */
-document.documentElement.style.setProperty("--railw", railW() + "px");
+railVar(railW());
 
 function railDragInit(){
   const grip = document.getElementById("railDrag");
