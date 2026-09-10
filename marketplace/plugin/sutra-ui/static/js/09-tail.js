@@ -526,23 +526,141 @@ if (typeof setInterval !== "undefined" && typeof document !== "undefined"
   });
 }
 
-/* One click hides the whole sidebar and the panes take the freed column.
-   The toggle lives in the masthead so it stays reachable when the rail is gone. */
-const railToggle = document.getElementById("railToggle");
-const railShow = document.getElementById("railShow");
-if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
-railToggle.onclick = ()=>{
-  S.ui.navCollapsed = !S.ui.navCollapsed;
-  railToggle.setAttribute("aria-pressed", String(!!S.ui.navCollapsed));
-  railToggle.setAttribute("aria-label", S.ui.navCollapsed ? "Show the navigation" : "Hide the navigation");
-  railToggle.title = railToggle.getAttribute("aria-label");
-  saveLayout();
+/* ── the sidebar's drag edge ───────────────────────────────────────────────────────────
+   Owner, 2026-09-10: "make the left one collapsable, something like I could click on the
+   centre and slide left to collapse it, like I have it in VS Code."
+
+   Three gestures on one strip, which is what makes it feel like VS Code rather than a
+   button pretending to be one:
+     drag right/left  -> the rail resizes live, clamped to [RAIL_MIN, RAIL_MAX]
+     drag past the floor -> it collapses, rather than shrinking to an unusable sliver
+     click (no drag)  -> collapse, or reopen at the width you last chose
+   Arrow keys move it too, because a separator that only answers the mouse is unreachable
+   for anyone who does not use one.
+
+   The width lives in localStorage, not on the server: it is this window on this machine,
+   and it has to be right on the first painted frame rather than after a round trip. */
+const RAIL_MIN = 176, RAIL_MAX = 420, RAIL_DEF = 224;
+const RAIL_SHUT_AT = 132;      /* dragged narrower than this, it closes instead of getting silly */
+
+function railW(){
+  let w = RAIL_DEF;
+  try {
+    const r = parseInt(localStorage.getItem("sutra.railW") || "", 10);
+    if (r >= RAIL_MIN && r <= RAIL_MAX) w = r;
+  } catch (e) {}
+  return w;
+}
+function railSetW(w){
+  w = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(w)));
+  document.documentElement.style.setProperty("--railw", w + "px");
+  try { localStorage.setItem("sutra.railW", String(w)); } catch (e) {}
+  return w;
+}
+/* Put the stored width on the page before anything paints, so a reload never flashes 224px
+   and then jumps to the width the person actually chose. */
+document.documentElement.style.setProperty("--railw", railW() + "px");
+
+function railDragInit(){
+  const grip = document.getElementById("railDrag");
+  if (!grip || grip.dataset.wired === "1") return;
+  grip.dataset.wired = "1";
+  let from = 0, base = 0, moved = false, live = false;
+
+  const move = (e) => {
+    if (!live) return;
+    const dx = e.clientX - from;
+    if (Math.abs(dx) > 3) moved = true;
+    if (S.ui.navCollapsed){
+      /* Dragging out from the collapsed state: the rail reappears as soon as the pointer
+         passes the floor, so you can pull it back open in one gesture. */
+      if (e.clientX > RAIL_SHUT_AT){ S.ui.navCollapsed = false; railPaint(); railSetW(e.clientX); }
+      return;
+    }
+    const w = base + dx;
+    if (w < RAIL_SHUT_AT){ S.ui.navCollapsed = true; railPaint(); return; }
+    railSetW(w);
+  };
+  const up = () => {
+    if (!live) return;
+    live = false;
+    grip.classList.remove("dragging");
+    document.body.classList.remove("railresizing");
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+    /* A press that never moved is a CLICK, and a click toggles. Without this the strip would
+       only ever resize and the "click the centre" half of the ask would not exist. */
+    if (!moved) railToggleNow();
+    else saveLayout();
+  };
+
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    live = true; moved = false;
+    from = e.clientX;
+    base = S.ui.navCollapsed ? 0 : (document.querySelector(".rail") || {}).offsetWidth || railW();
+    grip.classList.add("dragging");
+    document.body.classList.add("railresizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  });
+
+  grip.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (k === "Enter" || k === " "){ e.preventDefault(); railToggleNow(); return; }
+    if (k !== "ArrowLeft" && k !== "ArrowRight") return;
+    e.preventDefault();
+    const step = e.shiftKey ? 32 : 8;
+    if (S.ui.navCollapsed){
+      if (k === "ArrowRight"){ S.ui.navCollapsed = false; railPaint(); saveLayout(); }
+      return;
+    }
+    const now = (document.querySelector(".rail") || {}).offsetWidth || railW();
+    const next = now + (k === "ArrowRight" ? step : -step);
+    if (next < RAIL_SHUT_AT){ S.ui.navCollapsed = true; railPaint(); saveLayout(); return; }
+    railSetW(next);
+    saveLayout();
+  });
+}
+
+/* One place paints the collapsed/open state, so the button, the drag and the keyboard all
+   leave the DOM saying exactly the same thing. */
+function railPaint(){
+  const t = document.getElementById("railToggle");
+  const g = document.getElementById("railDrag");
+  const shut = !!S.ui.navCollapsed;
+  if (t){
+    t.setAttribute("aria-pressed", String(shut));
+    t.setAttribute("aria-label", shut ? "Show the navigation" : "Hide the navigation");
+    t.title = t.getAttribute("aria-label");
+  }
+  if (g){
+    g.setAttribute("aria-expanded", String(!shut));
+    g.title = shut ? "Drag right or click to show the sidebar" : "Drag to resize · click to hide";
+  }
   render();
   /* Collapsing frees ~460px of chrome; expanding takes it back. An open
      terminal must re-clamp exactly like it does when the plane flips
      (2.118.1), or it either wastes the freed width or covers the detail. */
   if (S.termOpen && typeof applyTermW === "function") applyTermW(S.termW || 460);
-};
+}
+
+function railToggleNow(){
+  S.ui.navCollapsed = !S.ui.navCollapsed;
+  railPaint();
+  saveLayout();
+}
+
+/* One click hides the whole sidebar and the panes take the freed column.
+   The toggle lives in the masthead so it stays reachable when the rail is gone. */
+const railToggle = document.getElementById("railToggle");
+const railShow = document.getElementById("railShow");
+if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
+railToggle.onclick = railToggleNow;
+railDragInit();
 
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
    carry data-screen and ride the existing screen delegation unchanged. */

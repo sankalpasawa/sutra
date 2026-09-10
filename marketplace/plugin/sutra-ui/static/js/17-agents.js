@@ -173,7 +173,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, viewBusy: null, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
        counts have already been re-read, so one finished run re-reads them once. */
@@ -415,6 +415,15 @@ function agStepOpen(e, ctx){
 
 function agAskOpen(e, ctx){
   return !!(ctx.stepOpen && ctx.stepOpen[e.id || e.t]);
+}
+
+const AG_VIEW_WORD = { knowledge: "Knowledge", assets: "the asset ideas", memory: "what it remembers",
+                       prompts: "the prompts", library: "the Library", tools: "the tools",
+                       connections: "the connections" };
+
+function agViewLoadingHtml(view){
+  return `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span>
+    <span>Opening ${agEsc(AG_VIEW_WORD[view] || "this")}\u2026</span></div>`;
 }
 
 function agGlyph(e){
@@ -2732,7 +2741,16 @@ function agDraw(force){
     agSetHtml("agStages", "");
     /* a settings view is a new document: start it at the top, not where the chat was */
     if (scroll && a.lastView !== a.view) scroll.scrollTop = 0;
-    const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
+    /* A TAB YOU HAVE NEVER OPENED SAYS SO WHILE IT LOADS. Now that the tab paints before its
+       fetch, a first visit would otherwise render the view's own empty state -- "No articles
+       yet", "Nothing saved" -- for as long as the request takes, which is a lie that then
+       flickers into the truth. Only a tab holding NOTHING shows this; a second visit keeps last
+       time's rows on screen and refreshes them in place, with no flicker at all. */
+    const held = { knowledge: a.knowledge, assets: a.assets, memory: a.memory, prompts: a.prompts,
+                   library: a.library, tools: a.tools, connections: a.conns };
+    const cold = a.viewBusy === a.view && (held[a.view] === null || held[a.view] === undefined);
+    const html = cold ? agViewLoadingHtml(a.view)
+      : a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
       : a.view === "assets" ? agAssetsHtml(a.assets, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
       : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
@@ -3253,14 +3271,27 @@ async function agAction(act, el){
     case "new": a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.view = "chat"; a.guideDive = null; a.draft = ""; a.focusComposer = true; agDraw(true); break;
     case "chat": a.view = "chat"; a.guideDive = null; await agLoadChat(arg, false); break;
     case "view": {
+      /* THE TAB PAINTS FIRST, THE NETWORK COMES SECOND (owner, 2026-09-10: "there is some
+         latency when going from one tab to the next one"). This used to await every fetch
+         BEFORE its first agDraw, so a click sat on the old tab for as long as the server took
+         and the app felt stuck. Now the new tab is on screen before a single request goes out;
+         whatever it holds from last time shows immediately and the answer redraws over it.
+         `viewBusy` is what lets a never-opened tab say "loading" instead of "nothing here". */
       a.view = arg; a.panel = null; a.guideDive = null;
-      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
+      a.viewBusy = arg;
+      agDraw(true);
+      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); if (a.view === arg){ a.viewBusy = null; agDraw(true); } await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
       if (arg === "prompts"){ a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null; }
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
+      /* A LATE ANSWER FOR A TAB YOU HAVE LEFT REDRAWS NOTHING. Click Library then Tools quickly
+         and Library's response lands second; without this guard it would paint Library back
+         over the tab you are actually looking at. */
+      if (a.view !== arg) break;
+      a.viewBusy = null;
       agDraw(true); break;
     }
     case "play": a.view = "chat"; a.guideDive = null; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;

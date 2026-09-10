@@ -69,7 +69,7 @@
      layout is byte-identical to the two-column one until the terminal is opened.
      It must be a GRID ITEM rather than a child of .panes: render() replaces
      .panes wholesale and would kill the PTY. */
-  .app{display:grid;grid-template-columns:224px 1fr var(--termw, 0px);gap:9px;background:var(--surface);
+  .app{display:grid;position:relative;grid-template-columns:var(--railw,224px) 1fr var(--termw, 0px);gap:9px;background:var(--surface);
        border:0;border-radius:0;padding:9px;height:100vh;min-height:0;box-shadow:none;
        /* padding must live INSIDE 100vh or the app is 18px taller than the window */
        box-sizing:border-box}
@@ -85,8 +85,8 @@
   /* ── v3.3 second plane (PLAN-25 S5) ──────────────────────────────────────
      Gated on .app.threecol, which nothing sets until S7. minmax(0,1fr) on the
      detail track so plane + terminal open together can never overflow. */
-  .app.threecol{grid-template-columns:224px 240px minmax(0,1fr) var(--termw, 0px)}
-  .app.threecol.noplane{grid-template-columns:224px minmax(0,1fr) var(--termw, 0px)}
+  .app.threecol{grid-template-columns:var(--railw,224px) 240px minmax(0,1fr) var(--termw, 0px)}
+  .app.threecol.noplane{grid-template-columns:var(--railw,224px) minmax(0,1fr) var(--termw, 0px)}
   .app.threecol.noplane .plane{display:none}
   /* v3.4: the lane toggle collapses BOTH fixed lanes. Without these rules
      railcol left the 4-track grid intact, so the plane slid into the rail's
@@ -152,7 +152,34 @@
 
   /* rail */
   .rail{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
-        display:flex;flex-direction:column;min-height:0}
+        display:flex;flex-direction:column;min-height:0;position:relative}
+
+  /* THE SIDEBAR'S DRAG EDGE (owner, 2026-09-10: "click on the centre and slide left to
+     collapse it like I have it in VS Code"). The strip is 10px of hit area hanging off the
+     rail's right edge, but only a 1px line and a small centre grip ever paint, so at rest it
+     reads as the border it sits on. It appears on hover or keyboard focus, like VS Code's. */
+  /* .app is padding:9px with a 9px gap, so the rail's right edge sits at 9 + railw. The strip
+     is centred on it: 11px of hit area for a 1px line, which is what makes it grabbable. */
+  .raildrag{position:absolute;top:9px;bottom:9px;width:11px;z-index:5;
+    left:calc(9px + var(--railw,224px) - 1px);
+    cursor:col-resize;display:flex;align-items:center;justify-content:center;
+    background:none;border:0;padding:0;-webkit-user-select:none;user-select:none;touch-action:none}
+  .raildrag::before{content:"";position:absolute;top:0;bottom:0;left:5px;width:1px;
+    background:var(--acc);opacity:0;transition:opacity .12s ease}
+  .raildrag:hover::before,.raildrag:focus-visible::before,.raildrag.dragging::before{opacity:.85}
+  .raildrag .grip{position:relative;width:5px;height:34px;border-radius:3px;background:var(--line);
+    opacity:0;transition:opacity .12s ease,background .12s ease}
+  .raildrag:hover .grip,.raildrag:focus-visible .grip,.raildrag.dragging .grip{opacity:1;background:var(--acc)}
+  .raildrag:focus-visible{outline:none}
+  /* While a drag is live the whole window keeps the resize cursor and stops selecting text,
+     otherwise dragging across the panes highlights everything it crosses. */
+  body.railresizing{cursor:col-resize;-webkit-user-select:none;user-select:none}
+  /* Collapsed, the rail is gone, so its edge has to live on the window instead or there is
+     nothing to drag back. It stays a thin invisible strip down the left. */
+  /* Collapsed, there is no rail to hang off, so the edge pins to the window's left edge and
+     stays the way back. The railcol padding-left is 46px, so it sits clear of the show button. */
+  .app.railcol .raildrag{left:0;top:0;bottom:0;width:10px}
+  .app.railcol .raildrag .grip{height:46px}
   .rtop{display:flex;align-items:center;gap:8px;padding:11px 11px 9px}
   /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
      white in the light theme: that made the brand mark read white-on-gold in light mode and
