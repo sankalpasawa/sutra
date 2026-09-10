@@ -470,14 +470,27 @@
      lives in here, so nothing else moves. */
   .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
       align-items:center;gap:8px;flex-wrap:wrap;position:relative}
-  .pc input,.pc textarea{flex:1;background:none;border:0;color:var(--ink);font:400 12px var(--sans);outline:none;min-width:0}
+  /* THE BOX YOU TYPE IN HAS TO LOOK LIKE A BOX YOU TYPE IN (owner, 2026-09-10: "the chat bar is
+     always supposed to be highlighted, so the user knows where the chat bar is"). It was
+     `background:none;border:0` — placeholder text floating on the pane with nothing around it,
+     indistinguishable from a caption until you clicked it.
+     Every colour here is a token, so it follows the theme picker at the foot of the rail. The
+     focus ring is border + halo rather than an outline, which is the shape the rest of the app
+     already uses for a focused field, and it is why the outline rule below is left switched off:
+     two rings on one control is worse than none. */
+  .pc input,.pc textarea{flex:1;min-width:0;color:var(--ink);font:400 12px var(--sans);
+    background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:8px 11px;
+    outline:none;transition:border-color .12s ease,box-shadow .12s ease}
+  .pc input:hover,.pc textarea:hover{border-color:var(--acc)}
+  .pc input:focus,.pc textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
   /* The rule above sets outline:none and the only candidate override
      (input:focus-visible, earlier in source, and not matching textarea at all)
      therefore loses -- so the most-used control in the app was the one control
      with no focus ring. Placed AFTER both rules so it wins on source order.
      Covers the side-chat input for free: same .pc ancestor. */
-  .pc input:focus-visible,.pc textarea:focus-visible{outline:2px solid var(--acc);
-    outline-offset:2px;border-radius:4px}
+  /* Deliberately NOT an outline any more: :focus above draws a border and a halo, and stacking an
+     outline on top of that gives the most-used control in the app two rings. The comment above
+     this rule used to explain why it existed; the reason is now met by a stronger treatment. */
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
   .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}

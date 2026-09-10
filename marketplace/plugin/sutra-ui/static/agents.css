@@ -38,7 +38,7 @@
 
 /* ── conversation column ──────────────────────────────────────────────────── */
 .ag-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;background:var(--card)}
-.ag-stages{display:flex;align-items:center;gap:2px;padding:8px 16px;border-bottom:1px solid var(--line-soft);
+.ag-stages{display:flex;align-items:center;gap:2px;padding:8px 18px;border-bottom:1px solid var(--line-soft);
   font-size:10.5px;color:var(--faint);min-height:34px;flex-wrap:wrap}
 .ag-stage{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;font-weight:500}
 .ag-stage i{width:6px;height:6px;border-radius:50%;background:var(--line);display:inline-block}
@@ -50,10 +50,31 @@
 .ag-stages .sp b{color:var(--ink);font-weight:600}
 
 .ag-scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;padding:16px 18px}
-.ag-scroll > *{max-width:78ch;margin-left:auto;margin-right:auto}
+/* THE CONVERSATION'S LEFT EDGE (owner, 2026-09-10: "why is it leaving out the space on the left
+   while I am chatting... I feel like it is wasting the space over there").
+   The cause was this rule's own margin-left:auto. The measure limit beside it is doing real work
+   -- an 80-character line is about where prose stops being readable, and the run log is prose --
+   so the limit STAYS and the column moves left instead of the text being stretched to fill.
+   Centring a 78ch measure inside a ~670px column is what put a dead strip down the left, and
+   both gutters with it. The settings views and the review panel keep their own margin:0 auto
+   (.ag-view, further down this file, which wins on source order): a reference document reads
+   better centred, a conversation does not. */
+/* AND THE RIGHT EDGE, an hour later. Left-aligning a 78ch measure moved the whole gutter to the
+   other side: on a wide window the conversation ended two thirds across and the rest was blank
+   ("now the right one has become empty white space"). Centring put slack on both sides,
+   left-aligning put it all on one. Neither used it.
+   The answer is that PROSE and STRUCTURE want different widths. A sentence stops being readable
+   somewhere around 80 characters, so paragraphs keep a measure. A step row, an artifact card or a
+   table is not prose and has no such limit -- those fill the column, which is what makes the
+   space look used rather than abandoned. */
+.ag-scroll > *{max-width:min(100%,124ch);margin-left:0;margin-right:auto}
+.ag-scroll .ag-body,
+.ag-scroll .ag-title,
+.ag-scroll .ag-hero p,
+.ag-scroll .ag-say{max-width:78ch}
 
 /* the hero, shown when a chat is empty */
-.ag-hero{padding:26px 6px 10px}
+.ag-hero{padding:26px 0 10px}
 .ag-hero h2{font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px;color:var(--ink)}
 .ag-hero p{color:var(--muted);margin:0 0 16px;max-width:60ch;font-size:12.5px}
 .ag-plays{display:flex;flex-direction:column;gap:8px}
@@ -143,7 +164,7 @@
 .ag-stagehead.run .chev,.ag-stagehead.wait .chev{color:var(--acc)}
 .ag-stagehead.bad b{color:var(--block)}
 .ag-stagehead.wait .what{color:var(--acc)}
-.ag-stagebody{margin:6px 0 10px 0;padding-left:2px;display:flex;flex-direction:column;gap:11px}
+.ag-stagebody{margin:6px 0 10px 0;padding-left:0;display:flex;flex-direction:column;gap:11px}
 .ag-stagebody[hidden]{display:none}
 /* a summary is a line, not a paragraph: the detail is one click away inside the stage */
 .ag-step.ok .ag-body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -237,18 +258,71 @@
 .ag-artcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .ag-artcard .ai{width:28px;height:28px;border-radius:7px;background:var(--acc-bg);color:var(--acc);display:grid;place-items:center;flex:none}
 .ag-artcard .ai svg{width:14px;height:14px}
-.ag-artcard .at{font-family:var(--serif);font-size:14px;font-weight:600;color:var(--ink);line-height:1.25}
-.ag-artcard .as{font-size:11px;color:var(--muted);margin-top:2px}
+/* BOTH ARE display:block. They are inline spans in the markup, and .as already carried a
+   margin-top that only a block can honour — so they ran together on one line and every artifact
+   card in the app read "Topic ideasanswered". Visible in every screenshot of a finished run
+   since the card shipped. (2026-09-10) */
+.ag-artcard .at{display:block;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--ink);line-height:1.25}
+.ag-artcard .as{display:block;font-size:11px;color:var(--muted);margin-top:2px}
 .ag-artcard .ac{margin-left:auto;flex:none;font:500 10.5px/1 var(--sans);color:var(--muted);display:inline-flex;align-items:center;gap:4px}
 .ag-artcard:hover .ac{color:var(--acc)}
 .ag-artcard.open{border-color:var(--acc);background:var(--acc-bg)}
 
 /* composer — the same .pc / .send vocabulary as a chat pane */
-.ag-main .pc{padding:9px 12px}
+/* ── THE COMPOSER ─────────────────────────────────────────────────────────────
+   (owner, 2026-09-10: "the chat bar is always supposed to be highlighted, so the
+   user knows where the chat bar is, and proper blinking when the cursor goes over
+   there", and "that outline bolding should happen based on the colour theme which
+   a user chooses on the left bottom".)
+   It used to be a bare textarea and a round button on the page's own ground, with
+   nothing but a hairline above them, so it read as part of the page rather than as
+   somewhere to type. Now the pair sit inside .ag-field, which carries the edge:
+     rest    -- 1px --line on --inset, the same border-and-ground every other input
+                on this screen already has (.ag-row, .ag-libedit .in)
+     hover   -- the accent edge, so it answers a pointer
+     focus   -- the accent edge AND a 3px --acc-bg halo, which is exactly the focus
+                shape .ag-libedit .in already uses; the halo is what separates focus
+                from hover
+   The accent picker at the bottom left sets --acc inline on :root and --acc-bg is
+   mixed from it per theme (panel.css, "v3.3 accent colour"), so BOTH states follow
+   the chosen colour and the chosen theme with no second palette here. There is not
+   a literal colour in this block.
+   The caret is left native and pinned to --ink, the highest-contrast token there
+   is: it is the blinking the owner is asking for, and --ink is the one colour that
+   cannot come out faint against this ground whichever theme or accent is picked. */
+/* the same 18px left edge and the same 78ch measure as .ag-scroll above it, so the box you
+   type in sits under the conversation rather than beside it */
+.ag-main .pc{display:block;padding:10px 18px 12px;border-top:1px solid var(--line-soft)}
 .ag-main .pc[hidden]{display:none}   /* .pc is display:flex, which beats the hidden attribute */
-.ag-main .pc textarea{resize:none;max-height:160px;line-height:1.45;padding:4px 2px;font-size:12.5px}
+/* THE FIELD MATCHES THE CONVERSATION ABOVE IT, not the prose measure. It was 78ch, copied from
+   the old text measure, and the conversation has since gone to 124ch — so the box you type in
+   stopped short of the messages and read as a narrow strip in a wide column (owner, 2026-09-10:
+   "the chat bar in the agent is left aligned, it should be a big bar covering properly").
+   A composer is not prose. There is no reading-width argument for an input: it should line up
+   with the widest thing above it, and it now does. */
+.ag-field{display:flex;align-items:flex-end;gap:8px;max-width:min(100%,124ch);background:var(--inset);
+  border:1px solid var(--line);border-radius:10px;padding:7px 8px 7px 11px;
+  transition:border-color .14s ease,box-shadow .14s ease,background .14s ease}
+.ag-field:hover{border-color:var(--acc)}
+.ag-field:focus-within{border-color:var(--acc);background:var(--card);
+  box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-field.busy{border-color:var(--line-soft);background:var(--inset)}
+.ag-field.busy:hover{border-color:var(--line-soft)}
+.ag-main .pc textarea{flex:1;min-width:0;resize:none;max-height:160px;line-height:1.5;
+  padding:3px 0;font-size:12.5px;background:none;border:0;color:var(--ink);caret-color:var(--ink)}
+/* the field owns the focus ring now, so the control inside must not draw a second one
+   two pixels away from it. Overrides .pc textarea:focus-visible in panel.css, which is
+   the only reason that rule can be dropped here without leaving the box unmarked. */
+.ag-main .pc textarea:focus,.ag-main .pc textarea:focus-visible{outline:none}
+.ag-main .pc textarea::placeholder{color:var(--faint)}
+.ag-main .pc textarea:disabled{color:var(--muted);cursor:default}
+.ag-main .pc .send{align-self:flex-end;margin-bottom:1px}
+/* white, not --on-acc: --block is a mid-dark red in BOTH themes while --on-acc flips to
+   near-black on the dark one, which would put dark text on that red. Unchanged from
+   before this pass; there is no --on-block token to reach for. */
 .ag-main .pc .send.stop{background:var(--block);color:#fff}
 .ag-main .pc .send[disabled]{opacity:.35;cursor:default}
+@media (prefers-reduced-motion:reduce){.ag-field{transition:none}}
 .ag-cstate{width:100%;display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--faint);padding:0 2px 2px}
 .ag-cstate .dot{width:6px;height:6px}
 .ag-cstate .dot.run{background:var(--ok)}
@@ -683,3 +757,272 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
   animation:agpulse 1.9s ease-in-out infinite}
 @keyframes agpulse{0%,100%{opacity:.35}50%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.ag-quiet .d{animation:none;opacity:.7}}
+
+/* ══ THE MARKETPLACE ══════════════════════════════════════════════════════════
+   The Agents tab opens here now, on a shelf, and the SEO Writer's three columns
+   are somewhere you go from it. This is allowed to be the most generous screen in
+   the app -- a serif heading with room around it, one card with weight -- while
+   still being made of the same six tokens as every other screen. No new colours,
+   no new type scale: --serif at a bigger size, --line for the rules, --acc for the
+   one thing you can press. Restraint is the house style; this is the same house,
+   with the furniture further apart. */
+.ag.ismarket{display:block;flex:1;min-width:0;overflow-y:auto}
+.ag-mktwrap{min-height:100%;background:var(--bg)}
+/* LEFT, not centred (owner: "on the left we see SEO writer"). Same call as the conversation
+   one screen over: the measure limit stays and the column moves left, so a wide window
+   gives the shelf more room rather than more empty margin on both sides. */
+/* position:relative so the mark can be placed against this box rather than the scrolling page */
+.ag-mkt{max-width:74ch;margin:0;padding:52px 30px 44px 34px;position:relative}
+/* THE UNDERLAY. Behind and to the RIGHT of the card, running off into the space one agent leaves
+   empty, rather than centred behind the text where it would sit under every word.
+   OPACITY IS THE WHOLE JUDGEMENT. It is a watermark, not a picture: at .07 it gives the space a
+   shape and the card still reads as if nothing were behind it. If it ever competes with the text,
+   it is too strong — turn it DOWN, never up. Dark themes get a touch more, because a low-opacity
+   accent disappears entirely against a dark ground while the same value glares on light. */
+/* NAMED ag-sutramark, NOT ag-mark: `.ag-mark` is already the 28px badge at the top of this file,
+   and a watermark inheriting a badge's box is the sort of collision that shows up as a mystery
+   later. A test caught it. */
+.ag-sutramark{position:absolute;top:50%;left:52%;width:min(112%,860px);height:auto;
+  transform:translateY(-46%);opacity:.20;pointer-events:none;z-index:0;overflow:visible}
+:root[data-theme="dark"] .ag-sutramark,.dark .ag-sutramark{opacity:.30}
+/* everything real sits above it. z-index only, no stacking context of its own. */
+.ag-mkt > *:not(.ag-sutramark){position:relative;z-index:1}
+/* it arrives with the shelf and then stays still. No idle animation, ever. */
+/* THE MARK NEVER ANIMATES. It faded in with the shelf, which meant it faded in AGAIN every
+   time somebody came back from an agent — reading as the logo suddenly lighting up rather
+   than as a background (owner, 2026-09-10: "when I go back the logo gets highlighted
+   suddenly"). A watermark that announces itself on every navigation is not a watermark. It
+   is simply there, always, at the same strength. */
+@media (max-width:900px){ .ag-sutramark{display:none} }   /* stacked layout has no room to place it well */
+.ag-mkth{margin-bottom:6px}
+/* the company the agents work for. DATA: absent on a fresh install and the header
+   reads correctly without it, which is why it sits above the title rather than
+   inside it -- nothing below has to rewrap when it is not there. */
+.ag-mktfor{font:600 10px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--acc);margin-bottom:11px}
+.ag-mkt h1{font-family:var(--serif);font-size:36px;font-weight:600;letter-spacing:-.03em;
+  line-height:1.08;margin:0 0 10px;color:var(--ink)}
+.ag-mkt > .ag-mkth p{margin:0;color:var(--muted);font-size:13px;line-height:1.6;max-width:56ch}
+.ag .ag-mkt h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:38px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag-mkt .note{margin:12px 0 0}
+/* THE PROMISE AT THE FOOT OF THE SHELF. Deliberately the loudest thing on the screen: it is the
+   only place the product says what it is going to be, and it is standing in for an empty shelf.
+   Serif, dark, large, with a hairline running out to both edges so it reads as a designed
+   statement rather than a leftover sentence. */
+.ag-more{display:flex;align-items:center;gap:18px;margin:46px 0 10px}
+.ag-more .r{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+.ag-more .r:last-child{background:linear-gradient(90deg,var(--line),transparent)}
+.ag-more p{margin:0;text-align:center;font-family:var(--serif);color:var(--ink);
+  font-size:26px;line-height:1.25;letter-spacing:-.02em;font-weight:600}
+.ag-more em{font-style:normal;color:var(--acc)}
+@media (max-width:720px){ .ag-more p{font-size:20px} .ag-more{gap:10px;margin-top:32px} }
+
+/* the shelf. One column: the card is on the left and stays there, and a second
+   agent later drops in underneath without a layout to rethink. */
+.ag-cards{display:flex;flex-direction:column;gap:10px}
+.ag-mktcard{display:flex;align-items:flex-start;gap:15px;width:100%;text-align:left;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 18px 17px;
+  color:inherit;font:inherit;position:relative;overflow:hidden;
+  transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.ag-mktcard:hover{border-color:var(--acc);background:var(--sepia);transform:translateY(-1px)}
+.ag-mktcard:active{transform:scale(.988);transition-duration:.06s}
+/* THE CARD ANSWERS THE PRESS. Without it the opening begins somewhere else on the screen and the
+   thing you actually clicked never acknowledges you — which is what makes a transition feel
+   bolted on rather than caused. A press, then the columns arrive. (2026-09-10) */
+.ag-mktcard:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ag-mktcard .cm{width:38px;height:38px;border-radius:10px;background:var(--acc-bg);color:var(--acc);
+  display:grid;place-items:center;flex:none;font:700 16px/1 var(--serif)}
+.ag-mktcard .cb{flex:1;min-width:0;display:block}
+.ag-mktcard .ct{display:block;font-family:var(--serif);font-size:17px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink);line-height:1.25}
+.ag-mktcard .cd{display:block;font-size:12px;color:var(--muted);line-height:1.55;margin-top:5px;max-width:54ch}
+.ag-mktcard .cs{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--muted)}
+.ag-mktcard .cs .dot.warn{background:var(--warn)}
+.ag-mktcard .cs .dot.bad{background:var(--block)}
+/* the facts. Each one is a number that was READ; a fact still in flight is not
+   drawn at all, so this row is never a line of zeroes standing in for ignorance. */
+.ag-mktcard .cf{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:11px;color:var(--faint)}
+.ag-mktcard .cf b{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.ag-mktcard .cn{display:block;margin-top:9px;font-size:11.5px;color:var(--acc)}
+.ag-mktcard .cg{flex:none;align-self:center;font:500 11px/1 var(--sans);color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 11px;white-space:nowrap}
+.ag-mktcard:hover .cg{border-color:var(--acc);color:var(--acc)}
+
+/* the way back out, at the top of the agent's own column */
+.ag-back{display:flex;align-items:center;gap:6px;width:calc(100% - 20px);margin:9px 10px 0;
+  background:none;border:0;cursor:pointer;text-align:left;padding:5px 6px;border-radius:6px;
+  color:var(--faint);font:500 11px/1.3 var(--sans)}
+.ag-back:hover{background:var(--acc-bg);color:var(--acc)}
+.ag-back:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+/* ── the first run ────────────────────────────────────────────────────────────
+   Where the hero sits, the first time this agent is opened -- and only then, which
+   agFirstRun decides from real state. It is longer than the hero on purpose and it
+   ends in the hero's own play chip, so there is one door into setup, not two. */
+.ag-intro{padding:22px 0 14px}
+.ag-intro .ag-mark.big{width:40px;height:40px;border-radius:11px;font-size:17px;margin-bottom:13px}
+.ag-intro h2{font-family:var(--serif);font-size:27px;font-weight:600;letter-spacing:-.025em;
+  margin:0 0 9px;color:var(--ink);line-height:1.12}
+.ag-intro .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65;max-width:58ch}
+.ag .ag-intro h3.sec{font:620 13px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.ag-needs{list-style:none;margin:0;padding:0}
+.ag-needs li{display:grid;grid-template-columns:14px auto 1fr;align-items:baseline;gap:4px 9px;
+  padding:6px 0;font-size:12px;color:var(--muted);line-height:1.5}
+.ag-needs li b{color:var(--ink);font-weight:600;white-space:nowrap}
+.ag-needs li span{min-width:0}
+.ag-needs li i{width:7px;height:7px;border-radius:50%;background:var(--line);
+  display:inline-block;justify-self:center;transform:translateY(-1px)}
+.ag-needs li.ok i{background:var(--ok)}
+.ag-needs li.req i{background:var(--acc)}
+.ag-firsts{margin:0;padding-left:19px;font-size:12px;color:var(--ink);line-height:1.7}
+.ag-firsts li::marker{color:var(--faint);font-family:var(--mono);font-size:10.5px}
+.ag-firsts li.ok{color:var(--muted)}
+.ag-intro .i4{margin-top:24px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.ag-intro .i4 .ag-play{max-width:none}
+.ag-skip{background:none;border:0;cursor:pointer;padding:2px 0;color:var(--faint);
+  font:400 11px/1.3 var(--sans);text-decoration:underline;text-underline-offset:3px}
+.ag-skip:hover{color:var(--acc)}
+.ag-skip:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ag-intro .i5{margin-top:16px}
+
+/* ── arrival ──────────────────────────────────────────────────────────────────
+   "Something which opens in a very crazy manner." The way to honour that is speed
+   and stagger, not length: the whole thing is over in about a third of a second,
+   the pieces arrive in the order you would read them, and NOTHING waits on it --
+   the agent is in the DOM, loading and clickable from the first frame, because
+   these are opacity and transform only and the class is dropped once it has run.
+   An impatient person must never sit through this, least of all twice. */
+/* THE ARRIVAL, made bigger because the first version could not be seen (owner, 2026-09-10: "I
+   don't see any animation, something crazy, when I click on that SEO writer"). It was a 9px rise
+   over .30s, which is the sort of motion you feel rather than notice.
+   More travel, a touch of scale on the column you are actually looking at, and a stagger wide
+   enough to read as three things arriving in order. STILL under half a second end to end, and
+   still nothing waits on it -- the agent is live the moment it paints. A dramatic opening you
+   have to sit through twice is worse than none, and that limit has not moved. */
+@keyframes agRise{from{opacity:0;transform:translateY(16px) scale(.99)}to{opacity:1;transform:none}}
+@keyframes agSlide{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}
+.ag-enter .ag-side{animation:agSlide .40s cubic-bezier(.16,.84,.30,1) both}
+.ag-enter .ag-main{animation:agRise .46s cubic-bezier(.16,.84,.30,1) .07s both}
+.ag-enter .ag-panel{animation:agRise .46s cubic-bezier(.16,.84,.30,1) .13s both}
+.ag-enter .ag-mkth{animation:agRise .42s cubic-bezier(.16,.84,.30,1) both}
+.ag-enter .ag-mkt > h3.sec{animation:agRise .42s cubic-bezier(.16,.84,.30,1) .08s both}
+.ag-enter .ag-cards{animation:agRise .44s cubic-bezier(.16,.84,.30,1) .14s both}
+.ag-enter .ag-more{animation:agRise .42s cubic-bezier(.22,.72,.28,1) .16s both}
+/* the introduction reveals in reading order, once, and only on a first open */
+.ag-intro .i1{animation:agRise .32s cubic-bezier(.22,.72,.28,1) both}
+.ag-intro .i2{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .07s both}
+.ag-intro .i3{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .13s both}
+.ag-intro .i4{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .19s both}
+.ag-intro .i5{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .24s both}
+/* THE LIMIT ON ALL OF IT. Asked for no motion, there is none, and every element is
+   simply there -- no delay, no transform, nothing left half-faded. */
+@media (prefers-reduced-motion:reduce){
+  .ag-enter .ag-side,.ag-enter .ag-main,.ag-enter .ag-panel,
+  .ag-enter .ag-mkth,.ag-enter .ag-mkt > h3.sec,.ag-enter .ag-cards,.ag-enter .ag-more,
+  .ag-intro .i1,.ag-intro .i2,.ag-intro .i3,.ag-intro .i4,.ag-intro .i5{
+    animation:none;opacity:1;transform:none}
+  .ag-mktcard{transition:none}
+  .ag-mktcard:hover{transform:none}
+}
+
+/* narrow: the shelf keeps its air but stops wasting it */
+@media (max-width:640px){
+  .ag-mkt{padding:34px 18px 30px 20px}
+  .ag-mkt h1{font-size:28px}
+  .ag-mktcard{flex-wrap:wrap}
+  .ag-mktcard .cg{align-self:flex-start}
+}
+
+/* ══ THE GUIDE ════════════════════════════════════════════════════════════════
+   What the agent's middle column opens on. It is a document, not a dashboard, so it
+   borrows the marketplace's furniture one size down: the serif title, the 14px
+   sentence-case section heading with a hairline under it, and --acc reserved for the
+   things you can press. No new colour system and no new type scale -- every value
+   below is a token or a size the file already uses. */
+/* THE GUIDE USES THE COLUMN. It was capped at 78ch, so on a wide window the section rules and
+   the tab table stopped two thirds across and the screen read as truncated rather than composed
+   (owner, 2026-09-10: "why does it not cover entire screen, same issue as earlier").
+   Same rule as the conversation: STRUCTURE fills the width, PROSE keeps a measure. The headings,
+   their rules and the table now run the full column; the paragraphs below still stop where a line
+   stops being comfortable to read, which is the one thing a wide window must not take away. */
+.ag-guide{padding:24px 0 16px;max-width:min(100%,124ch)}
+.ag-guide h2{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.025em;
+  margin:0 0 10px;color:var(--ink);line-height:1.12}
+.ag-guide .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65;max-width:72ch}
+.ag .ag-guide h3.sec,.ag .ag-dive h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;
+  text-transform:none;color:var(--ink);margin:28px 0 12px;padding-bottom:7px;
+  border-bottom:1px solid var(--line)}
+.ag-guide .gp{color:var(--muted);margin:0 0 10px;font-size:12.5px;line-height:1.65;max-width:72ch}
+.ag-guide .gp:last-child{margin-bottom:0}
+
+/* the four steps. The numeral is the landmark, so it is set in the mono face the rest of
+   the screen counts in, and it sits in its own column rather than in the text. */
+.ag-gsteps{list-style:none;margin:0;padding:0;counter-reset:agstep}
+.ag-gsteps li{counter-increment:agstep;display:grid;grid-template-columns:22px 1fr;gap:11px;
+  padding:7px 0;font-size:12.5px;line-height:1.6;color:var(--ink);max-width:62ch}
+.ag-gsteps li::before{content:counter(agstep);font:600 11px/1.55 var(--mono);color:var(--acc);
+  font-variant-numeric:tabular-nums}
+
+/* the command to type. It is a line of input, so it is drawn as input: mono, boxed, and
+   quiet -- it must not read as a button, because it is not one. */
+.ag-gcmd{margin:0 0 12px}
+.ag-gcmd code{display:inline-block;font:500 12.5px/1.5 var(--mono);color:var(--ink);
+  background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+
+/* the tab table. Two columns on a wide pane, and the name stacks above its line when the
+   column gets narrow rather than squeezing the sentence into four words a line. */
+.ag-gtabs{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:0 18px;align-items:baseline}
+.ag-gtabs dt{font:600 12.5px/1.6 var(--sans);color:var(--ink);padding:6px 0;white-space:nowrap}
+.ag-gtabs dd{margin:0;padding:6px 0;font-size:12.5px;line-height:1.6;color:var(--muted);max-width:56ch}
+@media (max-width:620px){
+  .ag-gtabs{grid-template-columns:1fr;gap:0}
+  .ag-gtabs dt{padding-bottom:0}
+  .ag-gtabs dd{padding-top:2px;padding-bottom:10px}
+}
+
+/* the five doors. One column, so a sixth would drop in underneath without a layout to
+   rethink -- the same call the shelf makes with its cards. */
+.ag-gdives{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ag-gdive{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  text-align:left;cursor:pointer;background:var(--inset);border:1px solid var(--line);
+  border-radius:9px;padding:11px 13px;color:inherit;font:inherit;
+  transition:border-color .16s ease,background .16s ease}
+.ag-gdive span{font-family:var(--serif);font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.3}
+.ag-gdive svg{flex:none;color:var(--faint)}
+.ag-gdive:hover{border-color:var(--acc);background:var(--acc-bg)}
+.ag-gdive:hover svg{color:var(--acc)}
+.ag-gdive:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+
+/* ── a deep dive, in place of the guide ───────────────────────────────────────
+   Same column, same width, same composer underneath. The Back control is drawn by one
+   function and is the first thing in every dive, so it is in the same place on all five
+   and does not move as you go between them. */
+.ag-dive{padding:24px 0 16px;max-width:78ch}
+.ag-dive .d0{margin-bottom:14px}
+.ag-diveback{display:inline-flex;align-items:center;gap:6px;background:none;border:0;cursor:pointer;
+  padding:5px 8px 5px 6px;margin-left:-6px;border-radius:6px;color:var(--faint);
+  font:500 11px/1.3 var(--sans)}
+.ag-diveback:hover{background:var(--acc-bg);color:var(--acc)}
+.ag-diveback:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-dive h2{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:-.02em;
+  margin:0 0 14px;color:var(--ink);line-height:1.15}
+.ag-dive .d2 p{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--muted);max-width:62ch}
+.ag-dive .d2 p:first-child{color:var(--ink)}
+.ag-dive .d2 p:last-child{margin-bottom:0}
+
+/* the arrival, the same one the introduction uses: quick, staggered in reading order, and
+   over before anybody could be waiting on it. NOTHING here gates the text -- these are
+   opacity and transform only, so the guide is readable and the composer usable from the
+   first frame whether the animation runs or not. */
+.ag-enter .ag-guide .g1{animation:agRise .32s cubic-bezier(.22,.72,.28,1) both}
+.ag-enter .ag-guide .g2{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .06s both}
+.ag-enter .ag-guide .g3{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .11s both}
+.ag-enter .ag-guide .g4{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .16s both}
+.ag-enter .ag-guide .g5{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .21s both}
+@media (prefers-reduced-motion:reduce){
+  .ag-enter .ag-guide .g1,.ag-enter .ag-guide .g2,.ag-enter .ag-guide .g3,
+  .ag-enter .ag-guide .g4,.ag-enter .ag-guide .g5{animation:none;opacity:1;transform:none}
+  .ag-gdive{transition:none}
+}

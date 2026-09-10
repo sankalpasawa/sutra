@@ -254,6 +254,12 @@ const EPILOGUE = `
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
   gvChipHtml, routingChart, turnBlock, gvHasCapture, pushPane, MAX_PANES,
   rowMeta, rowWorkspace, workspaceLabel,
+  /* the empty-chat rule: New chat reuses a chat nobody typed in rather than
+     minting a second one. chatUntouched is the whole safety argument, so it is
+     pinned on its own -- a predicate that says "empty" about a chat with a
+     message, a draft, a rename or a run in flight is how real work is lost. */
+  newSession, startNewChat, chatUntouched, reusableEmptyChat, NEW_CHAT_TITLE,
+  sessionBusy, sessCwd,
   /* Teamsutra seeded chat: the budgeter is pure string assembly, exported so
      tests can prove the 8000-char server cap is never silently exceeded */
   tsBuildSeed, TS_SEED_MAX, openTeamsutraChat,
@@ -3611,6 +3617,197 @@ test("43c. the stylesheet lets six panes overflow into horizontal scroll, never 
   assert.ok(/\.pane\{[^}]*flex:\s*1 0 380px/.test(css), "each pane floors at 380px");
 });
 
+/* ── the composer reads as a field ─────────────────────────────────────────────
+   The owner could not find the chat bar: it was placeholder text on the pane with
+   `background:none;border:0` around it. Asserted in CSS because that is where the
+   fault was, and asserted as TOKENS because the ring has to follow the theme
+   picker rather than being one hardcoded colour. (2026-09-10) */
+test("the chat composer looks like something you type in, in every theme", () => {
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "static/panel.css"), "utf8");
+  const rest = /\.pc input,\.pc textarea\{([^}]*)\}/.exec(css);
+  assert.ok(rest, "the composer input has a rule");
+  assert.ok(/border:1px solid var\(--line\)/.test(rest[1]), "a visible edge at rest");
+  assert.ok(/background:var\(--inset\)/.test(rest[1]), "and a field background");
+  assert.ok(!/border:0/.test(rest[1]), "not borderless any more");
+
+  const focus = /\.pc input:focus,\.pc textarea:focus\{([^}]*)\}/.exec(css);
+  assert.ok(focus, "and a focus rule");
+  assert.ok(/var\(--acc\)/.test(focus[1]) && /var\(--acc-bg\)/.test(focus[1]),
+    "focus uses the ACCENT tokens, so it follows the theme rather than one fixed colour");
+  assert.ok(/\.pc input:hover,\.pc textarea:hover\{[^}]*var\(--acc\)/.test(css),
+    "and it answers a hover, so it reads as interactive before you click");
+  assert.ok(!/\.pc input:focus-visible[^{]*\{[^}]*outline:2px/.test(css),
+    "the old outline is gone: border + halo already draws the ring, two is worse than none");
+});
+
+/* ── empty chats · New chat REUSES a chat nobody typed in ────────────────
+   The Chats list filled with "New session · 0 turns" rows: one per click of
+   New chat, six of them in front of the single real conversation, with nothing
+   to tell them apart. The rule is "do not create a second empty chat", never
+   "delete the empty ones" -- so most of what is pinned here is the other
+   direction: every kind of chat that must NOT be mistaken for empty, because a
+   wrong answer there hands the operator's blank pane to work they had started.
+*/
+function emptyChatFixture(fn){
+  const saved = {
+    sessions: T.S.sessions, openPanes: T.S.openPanes, cwd: T.S.cwd,
+    composerText: T.S.composerText, attach: T.S.attach, model: T.S.model,
+    turnOpts: T.S.turnOpts, sideTurns: T.S.sideTurns, sideText: T.S.sideText,
+    sutraId: T.S.sutraId, chatProvider: T.S.chatProvider,
+    pinned: T.S._pinned, unread: T.S._unread, groups: T.S._groups,
+  };
+  T.S.sessions = []; T.S.openPanes = []; T.S.cwd = {};
+  T.S.composerText = {}; T.S.attach = {}; T.S.model = {};
+  T.S.turnOpts = {}; T.S.sideTurns = {}; T.S.sideText = {};
+  T.S.sutraId = {}; T.S.chatProvider = {};
+  T.S._pinned = new Set(); T.S._unread = new Set(); T.S._groups = {};
+  const sockets = [...T.CLAUDE_SOCKETS.keys()];
+  try { fn(); } finally {
+    [...T.CLAUDE_SOCKETS.keys()].forEach(k => { if (!sockets.includes(k)) T.CLAUDE_SOCKETS.delete(k); });
+    Object.assign(T.S, {
+      sessions: saved.sessions, openPanes: saved.openPanes, cwd: saved.cwd,
+      composerText: saved.composerText, attach: saved.attach, model: saved.model,
+      turnOpts: saved.turnOpts, sideTurns: saved.sideTurns, sideText: saved.sideText,
+      sutraId: saved.sutraId, chatProvider: saved.chatProvider,
+      _pinned: saved.pinned, _unread: saved.unread, _groups: saved.groups,
+    });
+  }
+}
+
+test("empty chat: New chat twice with nothing typed leaves ONE chat", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("/w");
+    const b = T.startNewChat("/w");
+    assert.strictEqual(T.S.sessions.length, 1,
+      "the second click must reuse the blank chat, not mint a second row");
+    assert.strictEqual(a.id, b.id, "the same chat comes back");
+    assert.strictEqual(T.S.openPanes.filter(x => x === a.id).length, 1,
+      "and it is still open exactly once");
+  });
+});
+
+test("empty chat: New chat AFTER a real message mints a second chat", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("/w");
+    a.turns.push({ text: "ship the release notes", response: "", tools: [] });
+    const b = T.startNewChat("/w");
+    assert.strictEqual(T.S.sessions.length, 2, "a chat with a message is not empty");
+    assert.notStrictEqual(a.id, b.id);
+    assert.strictEqual(a.turns.length, 1, "the earlier chat keeps its message");
+  });
+});
+
+test("empty chat: a chat the operator NAMED is never treated as empty", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("/w");
+    a.title = "Pricing rewrite";        /* exactly what renameSession() writes */
+    assert.strictEqual(T.chatUntouched(a), false, "a named chat is somebody's");
+    const b = T.startNewChat("/w");
+    assert.strictEqual(T.S.sessions.length, 2, "the named chat must survive untouched");
+    assert.strictEqual(a.title, "Pricing rewrite");
+    assert.notStrictEqual(a.id, b.id);
+  });
+});
+
+test("empty chat: a turn-less chat with a run IN FLIGHT survives", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("/w");
+    /* A socket holding a queued turn: the window between "send pressed" and the
+       first frame, where the chat has no turn on it yet. */
+    T.CLAUDE_SOCKETS.set(T.chanKey(a.id, false),
+      { open: true, ws: {}, queue: [], pending: [{ text: "hi" }], turn: null });
+    assert.strictEqual(T.sessionBusy(a.id), true, "the fixture must really be busy");
+    assert.strictEqual(T.chatUntouched(a), false, "work in flight is not emptiness");
+    const b = T.startNewChat("/w");
+    assert.strictEqual(T.S.sessions.length, 2, "the in-flight chat must not be reused");
+    assert.notStrictEqual(a.id, b.id);
+  });
+});
+
+test("empty chat: every per-chat store the operator can write blocks reuse", () => {
+  /* One case per store, each proving the SAME thing: a blank-looking chat that
+     someone has already put something into is not a chat to hand back. */
+  const cases = {
+    "a typed but unsent message": (s) => { T.S.composerText[s.id] = "draft I have not sent"; },
+    "a pending attachment":       (s) => { T.S.attach[s.id] = [{ ref: "f1", pending: true }]; },
+    "a chosen model":             (s) => { T.S.model[s.id] = "opus"; },
+    "a per-turn option":          (s) => { T.S.turnOpts[s.id] = { effort: "high" }; },
+    "a side chat":                (s) => { T.S.sideTurns[s.id] = [{ text: "branch" }]; },
+    "a side-chat draft":          (s) => { T.S.sideText[s.id] = "half a question"; },
+    "a durable chat record":      (s) => { T.S.sutraId[s.id] = "0".repeat(32); },
+    "a resumable session id":     (s) => { s.claude_session = "abc-123"; },
+    "a provider frame":           (s) => { s.channel = { provider: "claude" }; },
+    "an in-chat provider switch": (s) => { T.S.chatProvider[s.id] = "codex"; },
+    "a pin":                      (s) => { T.S._pinned.add(s.id); },
+    "an unread mark":             (s) => { T.S._unread.add(s.id); },
+    "a group":                    (s) => { T.S._groups[s.id] = "Launch"; },
+    "a fork marker":              (s) => { s.fork = true; s.forkOf = "s-9"; },
+  };
+  for (const [what, mark] of Object.entries(cases)) {
+    emptyChatFixture(() => {
+      const a = T.startNewChat("/w");
+      mark(a);
+      assert.strictEqual(T.chatUntouched(a), false, what + " must make a chat non-empty");
+      T.startNewChat("/w");
+      assert.strictEqual(T.S.sessions.length, 2, what + " must not be reused away");
+    });
+  }
+});
+
+test("empty chat: a transcript on disk is never in scope", () => {
+  emptyChatFixture(() => {
+    assert.strictEqual(T.chatUntouched(
+      { id: "s-real", title: T.NEW_CHAT_TITLE, real: true, local: false, turns: [] }), false,
+      "a real transcript is a file, and this rule only ever governs panel-minted chats");
+    assert.strictEqual(T.chatUntouched(
+      { id: "s-gone", title: T.NEW_CHAT_TITLE, local: true, vanished: true, turns: [] }), false);
+    assert.strictEqual(T.chatUntouched(null), false);
+    assert.strictEqual(T.chatUntouched(undefined), false);
+  });
+});
+
+test("empty chat: a blank chat in ANOTHER folder is not the chat this click asked for", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("/repo/one");
+    const b = T.startNewChat("/repo/two");
+    assert.strictEqual(T.S.sessions.length, 2, "a different folder means a different chat");
+    assert.strictEqual(T.S.cwd[a.id], "/repo/one", "the first chat keeps its folder");
+    assert.strictEqual(T.S.cwd[b.id], "/repo/two");
+    const c = T.startNewChat("/repo/two");
+    assert.strictEqual(c.id, b.id, "the same folder reuses the blank chat in it");
+  });
+});
+
+test("empty chat: the department + adopts a blank chat, but never re-files a filed one", () => {
+  emptyChatFixture(() => {
+    const a = T.startNewChat("");                       /* no folder, no department */
+    const b = T.startNewChat("", { ref: "dref-s", name: "Sutra" });
+    assert.strictEqual(b.id, a.id, "an unfiled blank chat is what the + should use");
+    assert.strictEqual(b.department.ref, "dref-s", "and it takes the department on");
+    const c = T.startNewChat("", { ref: "dref-other", name: "Ops" });
+    assert.strictEqual(T.S.sessions.length, 2, "a chat already filed elsewhere is left alone");
+    assert.strictEqual(a.department.ref, "dref-s", "its department is not rewritten");
+    assert.strictEqual(c.department.ref, "dref-other");
+  });
+});
+
+test("empty chat: reuse is wired to the New chat gestures ONLY", () => {
+  const loaders = require("fs").readFileSync(__dirname + "/static/js/07-loaders.js", "utf8");
+  const boot = require("fs").readFileSync(__dirname + "/static/js/08-boot.js", "utf8");
+  assert.ok(/getElementById\("newSession"\)\.onclick = \(\) =>\s*startNewChat\(/.test(loaders),
+    "the rail's New chat button goes through startNewChat");
+  assert.ok(/dept-new"\){[\s\S]{0,400}?startNewChat\(/.test(loaders),
+    "the + on a department heading goes through startNewChat");
+  assert.ok(/startNewChat\(sessCwd\(focused\)/.test(boot),
+    "Cmd+N goes through startNewChat, or the keyboard mints what the button reuses");
+  /* The named chats mint their own row on purpose: reusing the operator's blank
+     pane for one would put a title and a seeded system prompt they never asked
+     for on the chat in front of them. */
+  assert.ok(/function forkSession\(sid\)\{[\s\S]{0,200}?newSession\(sessCwd\(sid\)\)/.test(loaders),
+    "fork still mints its own chat");
+});
+
 /* ── 44 · chat-row metadata in USER language (founder 2026-08-24) ────────── */
 
 test("44a. an unopened session says 'not opened yet' — no file size, no 'transcript'", () => {
@@ -6232,4 +6429,163 @@ test("53h. selecting one of the landed models is what gets sent", () => {
     assert.ok(sel && / selected/.test(sel.attrs),
       "the chosen model is not the selected option: " + JSON.stringify(optionsIn(h)));
   });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   54. Clicking a chat opens it in a pane — on the Chats destination, after
+       any visit to Agents
+
+   THE BUG (owner, 2026-09-10): "clicking a chat in the Chats list does not
+   open it. The whole area to the right of the list stays empty." Reading the
+   open path proves nothing, because the open path is correct: the row's
+   [data-open] handler runs, markRead/pushPane/ensureTranscript all fire, and
+   S.openPanes ends up holding the chat. It is render() that then paints
+   nothing, and only after Agents has been visited once.
+
+   WHY A SECOND MOUNT. The suite's main sandbox hands out a FRESH element for
+   every getElementById, so the delegated #app click listener is registered on
+   a node nobody can reach and #panes.innerHTML is written to a throwaway. This
+   mounts the same concatenated source against a DOM that keeps its elements,
+   so the test can dispatch a real click at the real listener and then read the
+   real #panes markup — driving the bug rather than describing it.
+   ══════════════════════════════════════════════════════════════════════════ */
+function mountPanel(){
+  const byId = {};
+  const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  function matchSel(n, sel){
+    let m = /^\[data-([a-z0-9-]+)\]$/i.exec(sel);
+    if (m) return n.dataset[camel(m[1])] !== undefined;
+    m = /^\.([a-z0-9_-]+)$/i.exec(sel);
+    if (m) return n.classList.contains(m[1]);
+    m = /^#([a-z0-9_-]+)$/i.exec(sel);
+    if (m) return n.id === m[1];
+    return false;    /* nothing else is dispatched on in this test */
+  }
+  function mk(tag, id){
+    const n = {
+      tagName: (tag || "div").toUpperCase(), id: id || "", innerHTML: "", textContent: "",
+      value: "", disabled: false, hidden: false, dataset: {}, style: {},
+      _attrs: {}, _parent: null, _listeners: {},
+      classList: { _s: new Set(),
+        add(...c){ c.forEach(x => this._s.add(x)); },
+        remove(...c){ c.forEach(x => this._s.delete(x)); },
+        contains(c){ return this._s.has(c); },
+        toggle(c, f){ if (f === undefined){ this._s.has(c) ? this._s.delete(c) : this._s.add(c); return this._s.has(c); }
+                      f ? this._s.add(c) : this._s.delete(c); return !!f; } },
+      setAttribute(k, v){ this._attrs[k] = String(v); },
+      getAttribute(k){ return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+      hasAttribute(k){ return Object.prototype.hasOwnProperty.call(this._attrs, k); },
+      removeAttribute(k){ delete this._attrs[k]; },
+      addEventListener(t, fn){ (this._listeners[t] = this._listeners[t] || []).push(fn); },
+      removeEventListener(){}, appendChild(c){ c._parent = this; return c; }, remove(){},
+      focus(){ doc.activeElement = this; }, blur(){}, setSelectionRange(){}, scrollTo(){},
+      contains(){ return false; },
+      getBoundingClientRect(){ return { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }; },
+      closest(sel){ let p = this; while (p){ if (matchSel(p, sel)) return p; p = p._parent; } return null; },
+      querySelector(){ return null; }, querySelectorAll(){ return []; },
+    };
+    n.content = n;
+    return n;
+  }
+  const doc = {
+    activeElement: null, documentElement: mk("html"),
+    createElement: t => mk(t),
+    /* THE WHOLE POINT: one element per id, for the life of the mount. */
+    getElementById(id){ return byId[id] || (byId[id] = mk("div", id)); },
+    querySelector(){ return mk("div"); }, querySelectorAll(){ return []; },
+    _listeners: {},
+    addEventListener(t, fn){ (this._listeners[t] = this._listeners[t] || []).push(fn); },
+  };
+  doc.body = doc.getElementById("__body");
+  const box = {
+    console: { log(){}, warn(){}, error(){} },
+    document: doc,
+    themeBtn: mk("button"), navOrg: mk("div"), navChange: mk("div"), navRuntime: mk("div"),
+    localStorage: { _m: {}, getItem(k){ return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
+                    setItem(k, v){ this._m[k] = String(v); }, removeItem(k){ delete this._m[k]; } },
+    sessionStorage: { _m: {}, getItem(k){ return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
+                      setItem(k, v){ this._m[k] = String(v); }, removeItem(k){ delete this._m[k]; } },
+    matchMedia: () => ({ matches: false, addEventListener(){} }),
+    location: { protocol: "http:", host: "127.0.0.1:7000" },
+    innerWidth: 1440,
+    navigator: { clipboard: { writeText: () => Promise.resolve() } },
+    WebSocket: function WebSocketStub(){ this.readyState = 0; this.send = () => {}; this.close = () => {}; },
+    setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+    requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+    Date, Math, JSON, Set, Map, Promise, Object, Array, String, Number, Boolean, RegExp, Error,
+    fetch: () => new Promise(() => {}),      /* never settles, as in the main sandbox */
+  };
+  box.window = box; box.globalThis = box;
+  box.WebSocket.CONNECTING = 0; box.WebSocket.OPEN = 1;
+  vm.createContext(box);
+  new vm.Script(source + `;globalThis.__P = { S, render, goDest, openScreen, startNewChat };`,
+                { filename: "panel.html#openpane" }).runInContext(box);
+  const P = box.__P;
+  const app = doc.getElementById("app"), panes = doc.getElementById("panes");
+  return {
+    P, doc, panes,
+    /* A real row button under a real .srow, dispatched at the real delegated
+       listener -- the same object the browser hands it. */
+    clickRow(sid){
+      const li = mk("li"); li.classList.add("srow"); li.dataset.sid = sid;
+      const btn = mk("button"); btn.classList.add("rowopen"); btn.dataset.open = sid; btn._parent = li;
+      (app._listeners.click || []).forEach(fn => fn({ target: btn, stopPropagation(){}, preventDefault(){} }));
+      return btn;
+    },
+    seed(){
+      P.S.sessions = [
+        { id: "s-dust", title: "Dust spaces and connections", created_ms: 1, updated_ms: 2,
+          turns: [], local: true, loadState: "live" },
+      ];
+      P.S.openPanes = [];
+    },
+  };
+}
+
+test("54a. the delegated listener is reachable and a row click opens the pane on Chats", () => {
+  const m = mountPanel();
+  m.seed();
+  m.P.goDest("chats");
+  m.clickRow("s-dust");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m.P.S.openPanes)), ["s-dust"],
+    "the [data-open] branch must reach pushPane");
+  assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML),
+    "the clicked chat must paint a pane; #panes was: " + JSON.stringify(m.panes.innerHTML.slice(0, 120)));
+});
+
+test("54b. THE BUG: after one visit to Agents, a chat click still opens on Chats", () => {
+  /* The owner's exact route: Chats -> Agents -> Chats -> click a chat.
+     goDest("chats") sets S.ui.browseClosed and NOTHING resets S.screen, so
+     S.screen was still "agents" and the solo-screen rule blanked every pane on
+     a destination Agents is not even showing on. Before the fix this asserted
+     an empty #panes -- not a mispainted one, an EMPTY string. */
+  const m = mountPanel();
+  m.seed();
+  m.P.goDest("chats");
+  m.P.goDest("agents");
+  m.P.goDest("chats");
+  m.clickRow("s-dust");
+  assert.strictEqual(m.P.S.screen, "agents",
+    "precondition: S.screen is deliberately left on agents -- that is what makes this a trap");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m.P.S.openPanes)), ["s-dust"],
+    "the click path itself was never the fault");
+  assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML),
+    "clicking a chat on the Chats destination must open it even after Agents has been visited; "
+    + "#panes was: " + JSON.stringify(m.panes.innerHTML.slice(0, 120)));
+});
+
+test("54c. Agents still opens ALONE — the rule the fix must not undo", () => {
+  const m = mountPanel();
+  m.seed();
+  m.P.goDest("chats");
+  m.clickRow("s-dust");
+  assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML), "open it first");
+  m.P.goDest("agents");
+  assert.ok(!/data-sess="s-dust"/.test(m.panes.innerHTML),
+    "no session pane may paint beside the Agents screen");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(m.P.S.openPanes)), ["s-dust"],
+    "and the pane is still OPEN -- Agents decides what paints, never what is open");
+  m.P.goDest("chats");
+  assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML),
+    "leaving Agents brings the pane back exactly as it was");
 });

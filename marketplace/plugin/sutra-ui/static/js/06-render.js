@@ -1141,6 +1141,13 @@ function render(){
   document.getElementById("app").classList.toggle("railcol", !!S.ui.navCollapsed);
 
   const [t,src] = TITLES[S.screen];
+  /* The browse pane closes like a session pane closes: it is a VIEW, and the
+     rail keeps every way back to it. Closed emits no section at all -- a hidden
+     pane would still own #scBody and every handler wired into it. Picking any
+     Home item reopens it (07-loaders' data-screen handler).
+     READ BY soloScreen just below, which is why it is computed here rather
+     than beside the markup that emits it. */
+  const bClosed = !!S.ui.browseClosed;
   /* AGENTS OPENS ALONE (owner, 2026-09-09: the right-hand panel "should never appear there at
      all", not "should be tidied"). The Agents destination is not a screen with a pane beside it:
      .pane.agwide already carries three columns of its own -- agent, conversation, review panel --
@@ -1148,8 +1155,18 @@ function render(){
      still rendered after it, so an unrelated conversation sat on the right of the SEO Writer and
      squeezed all three columns, on a screen nobody had asked to share.
      S.openPanes is NOT touched: those panes are still open, the rail still lists them, and
-     leaving Agents brings them back exactly as they were. This decides only what PAINTS. */
-  const soloScreen = S.screen === "agents";
+     leaving Agents brings them back exactly as they were. This decides only what PAINTS.
+
+     WHAT "THERE" MEANS IS THE BROWSE PANE (owner, 2026-09-10). S.screen is the
+     screen the BROWSE PANE would paint, and nothing resets it when the operator
+     leaves for a destination that has no browse pane: goDest("chats") only sets
+     S.ui.browseClosed. So after one visit to Agents, S.screen stayed "agents"
+     while the operator was back on Chats -- and this rule then blanked every
+     session pane there, including the one they had just clicked. Clicking a
+     chat did nothing visible, and the "Nothing is open" hint below was
+     suppressed too, so the whole right-hand side went empty with no statement.
+     Agents is solo only while the Agents screen is actually on screen. */
+  const soloScreen = !bClosed && S.screen === "agents";
   const open = soloScreen ? []
     : S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
   const bCol = !!S.ui.paneCollapsed.browse;
@@ -1184,11 +1201,6 @@ function render(){
     : pinBrowse
       ? ` style="flex:0 0 ${clampBrowseW(S.ui.browseW)}px;max-width:none"`
       : ` style="flex:1 1 auto;max-width:none"`;
-  /* The browse pane closes like a session pane closes: it is a VIEW, and the
-     rail keeps every way back to it. Closed emits no section at all -- a hidden
-     pane would still own #scBody and every handler wired into it. Picking any
-     Home item reopens it (07-loaders' data-screen handler). */
-  const bClosed = !!S.ui.browseClosed;
   /* r8: the same unchanged-HTML skip #143 gave #scBody, for the WHOLE panes
      row — idle websocket frames stop killing hover states and swapping
      buttons mid-click. Streaming panes change the string every frame, so

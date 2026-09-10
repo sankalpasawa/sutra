@@ -656,6 +656,11 @@ function kdoc(over){
 }
 function agReset(){
   const a = A.agS();
+  /* Every test below this line is about the SEO Writer's own screen, so it starts INSIDE the
+     agent. The tab itself now opens on the marketplace (S.ag.screen defaults to "market"), and
+     the tests for that are the marketplace block near the end -- they set the screen themselves
+     rather than relying on this. */
+  a.screen = "agent"; a.introSkip = false;
   a.pages = null; a.pageQ = ""; a.pageType = ""; a.pageLang = null; a.map = null; a.mapOn = false;
   a.libEdit = null; a.knowledge = null;
   a.refresh = null; a.refreshSeen = null; a.refreshPollErr = null; a.compForm = null; a.coForm = null;
@@ -1577,6 +1582,32 @@ test("nothing says the workspace is ready until the server says the job is done"
   assert.ok(/Your workspace is ready/.test(done) && /every table checked/.test(done));
 });
 
+test("an artifact card stacks its title and its state instead of running them together", () => {
+  /* Every finished run showed "Topic ideasanswered": .at and .as are inline spans, and .as
+     carried a margin-top only a block can honour. Asserted in CSS because that is where the bug
+     was — the markup was always right. (2026-09-10) */
+  const css = A.__css || require("fs").readFileSync(
+    require("path").join(__dirname, "static/agents.css"), "utf8");
+  const at = /\.ag-artcard \.at\{([^}]*)\}/.exec(css);
+  const as = /\.ag-artcard \.as\{([^}]*)\}/.exec(css);
+  assert.ok(at && /display:block/.test(at[1]), "the title is a block");
+  assert.ok(as && /display:block/.test(as[1]), "and so is the line under it");
+});
+
+test("the composer lines up with the conversation above it, not with the prose measure", () => {
+  /* It was 78ch, copied from the text measure, while the conversation went to 124ch — so the box
+     you type in stopped two thirds across a wide column. An input has no reading width. */
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "static/agents.css"), "utf8");
+  const f = /\.ag-field\{([^}]*)\}/.exec(css);
+  assert.ok(f, "the field has a rule");
+  assert.ok(/max-width:min\(100%,124ch\)/.test(f[1]), "same ceiling as .ag-scroll > *");
+  assert.ok(!/max-width:78ch/.test(f[1]), "not the prose measure any more");
+  const scroll = /\.ag-scroll > \*\{([^}]*)\}/.exec(css);
+  assert.ok(scroll && /124ch/.test(scroll[1]),
+    "and the two are still the same number, so they cannot drift apart");
+});
+
 /* NO UPDATE BUTTON, and this asserts its ABSENCE on purpose (2026-09-10).
 
    There was one for about an hour. A workspace created by this build is born current, so a
@@ -1798,6 +1829,521 @@ test("the workspace stylesheet keeps to the palette", () => {
   assert.ok(mine.length > 400, "found the block");
   const literals = mine.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g) || [];
   assert.strictEqual(literals.length, 0, "a hard-coded colour in the workspace CSS: " + literals);
+});
+
+
+/* ══ THE MARKETPLACE ══════════════════════════════════════════════════════════
+   The Agents tab opens on a shelf, not on the SEO Writer. These prove the three
+   things that can go wrong with a shelf: it shows agents that do not exist, it
+   prints a company name that is really a placeholder, or it claims a state it
+   never read. */
+
+/* the shelf as it is on a machine that has never run the agent */
+function mktBlank(){
+  const a = A.agS();
+  a.screen = "market"; a.introSkip = false;
+  a.health = null; a.library = null; a.knowledge = null;
+  a.marketBusy = false; a.marketErr = null;
+  a.chat = null; a.chatId = null; a.chats = null;
+  return a;
+}
+const MKT_FRESH = { ok: true, model_provider: "claude-cli", dataforseo: false, voyage: false,
+                    site_indexed: false, page_index: { built: false }, brand_ready: false, chats: 0 };
+const MKT_LIVED = { ok: true, model_provider: "claude-cli", dataforseo: true, voyage: true,
+                    site_indexed: true, page_index: { built: true }, brand_ready: true, chats: 4 };
+
+test("the tab's shelf has a heading and exactly ONE agent, with nothing invented beside it", () => {
+  const a = mktBlank(); a.health = MKT_LIVED;
+  const html = A.agMarketHtml(a);
+  assert.ok(/<h1>Agents<\/h1>/.test(html), "the heading");
+  assert.strictEqual((html.match(/class="ag-mktcard"/g) || []).length, 1, "one card, no more");
+  assert.ok(/SEO Writer/.test(html));
+  assert.ok(!/coming soon/i.test(html), "no fake inventory");
+  assert.ok(!/disabled/.test(html), "and nothing greyed out to stand in for it");
+  /* one plain line is allowed to say more is coming; a drawn placeholder is not */
+  /* The empty shelf is a PROMISE, not a footnote apologising for itself (owner, 2026-09-10:
+     "one dark crazy line... saying we are bringing more, fasten your seatbelt"). */
+  assert.ok(/ag-more/.test(html) && /Fasten your seatbelt/.test(html),
+    "one designed line, not a paragraph of explanation");
+  assert.ok(!/they are real rather than before/.test(html), "the old footnote is gone");
+});
+
+test("the company name is DATA: printed when the brand record has one", () => {
+  const a = mktBlank(); a.health = MKT_LIVED;
+  a.knowledge = { company: { brand: "Northwind Bakery" }, site_index: { page_count: 12 } };
+  const html = A.agMarketHtml(a);
+  assert.ok(/Northwind Bakery/.test(html), "the name the record carries");
+  assert.ok(/ag-mktfor/.test(html));
+});
+
+test("and absent CLEANLY when there is no company yet, which is everyone's first day", () => {
+  const a = mktBlank(); a.health = MKT_FRESH;
+  for (const kn of [null, {}, { company: {} }, { company: { brand: "" } }, { company: { brand: "   " } }]){
+    a.knowledge = kn;
+    const html = A.agMarketHtml(a);
+    assert.strictEqual(A.agBrandName(a), "", "no name, for " + JSON.stringify(kn));
+    assert.ok(!/ag-mktfor/.test(html), "and nothing is drawn where it would go");
+    assert.ok(/<h1>Agents<\/h1>/.test(html), "the header still reads");
+  }
+});
+
+/* sh.company() answers the literal "this company" when it knows nothing. That is a fallback, and
+   a fallback printed as a company name is a placeholder pretending to be data. */
+test("the engine's \"this company\" fallback is never printed as a company name", () => {
+  const a = mktBlank(); a.health = MKT_FRESH;
+  a.knowledge = { company: { brand: "this company" }, brand: { brand: "this company" } };
+  assert.strictEqual(A.agBrandName(a), "");
+  assert.ok(!/this company/i.test(A.agMarketHtml(a)));
+  assert.ok(!/this company/i.test(A.agSideHtml(a)), "and not in the agent's sidebar either");
+});
+
+test("no company name is HARDCODED anywhere in the screen or its stylesheet", () => {
+  assert.ok(!/testlify/i.test(SRC), "a company name baked into 17-agents.js");
+  assert.ok(!/testlify/i.test(CSS), "a company name baked into agents.css");
+});
+
+test("a company name carrying markup is escaped, on the shelf and in the sidebar", () => {
+  const a = mktBlank(); a.health = MKT_LIVED;
+  a.knowledge = { company: { brand: '<img src=x onerror=alert(1)>Acme' } };
+  for (const html of [A.agMarketHtml(a), A.agSideHtml(a)]){
+    assert.ok(!/<img src=x/.test(html));
+    assert.ok(/&lt;img src=x/.test(html));
+  }
+});
+
+test("the card claims NOTHING before it has read anything", () => {
+  const a = mktBlank();               /* health null: nothing has landed */
+  const html = A.agMarketHtml(a);
+  assert.ok(/checking…/.test(html), "it says it is checking, because that is all it knows");
+  for (const claim of ["set up and ready", "not set up yet", "setup unfinished", "no model available"])
+    assert.ok(html.indexOf(claim) === -1, "it claimed \"" + claim + "\" having read nothing");
+  assert.ok(!/class="cf"/.test(html), "no facts row at all, rather than a row of zeroes");
+  assert.ok(!/\bchats\b/.test(html) && !/Library/.test(html));
+});
+
+test("every fact on the card is a number that was READ, and a fact not read is left off", () => {
+  const a = mktBlank();
+  a.health = MKT_LIVED;               /* chats: 4 */
+  a.library = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  a.knowledge = { company: { brand: "Acme" }, site_index: { page_count: 148 } };
+  let html = A.agMarketHtml(a);
+  assert.ok(/<b>3<\/b> articles in the Library/.test(html), "the Library's own length");
+  assert.ok(/<b>4<\/b> chats/.test(html), "health's own count");
+  assert.ok(/<b>148<\/b> pages catalogued/.test(html), "the catalogue's own count");
+  /* the two routes behind the Library and the catalogue can fail on their own; when they do,
+     their fact is absent, not zero */
+  a.library = null; a.knowledge = null;
+  html = A.agMarketHtml(a);
+  assert.ok(!/Library/.test(html) && !/catalogued/.test(html), "not read, not drawn");
+  assert.ok(/<b>4<\/b> chats/.test(html), "and the one that did land is still there");
+  /* zero is a real answer once the route has answered */
+  a.library = []; a.knowledge = { site_index: { page_count: 0 } };
+  html = A.agMarketHtml(a);
+  assert.ok(/<b>0<\/b> articles in the Library/.test(A.agMarketHtml(a)), "an answered zero is drawn");
+});
+
+test("a first run gets no row of zeroes, because \"not set up yet\" already said it", () => {
+  const a = mktBlank();
+  a.health = MKT_FRESH; a.library = []; a.knowledge = { company: {}, site_index: { page_count: 0 } };
+  const html = A.agMarketHtml(a);
+  assert.strictEqual(A.agFirstRun(a), true);
+  assert.ok(!/class="cf"/.test(html), "three zeroes restating the state pill");
+  assert.ok(/not set up yet/.test(html) && /Give it your website once/.test(html),
+            "what it says instead is the thing worth saying");
+  /* and the moment there IS something, the facts come back */
+  a.library = [{ id: "x" }];
+  assert.ok(/class="cf"/.test(A.agMarketHtml(a)));
+});
+
+test("the card's state pill is agSetupOf's answer, never a guess", () => {
+  const a = mktBlank();
+  a.health = MKT_LIVED;
+  assert.ok(/set up and ready/.test(A.agMarketHtml(a)));
+  a.health = Object.assign({}, MKT_LIVED, { model_provider: null });
+  assert.ok(/no model available/.test(A.agMarketHtml(a)));
+  a.health = Object.assign({}, MKT_LIVED, { brand_ready: false });
+  const half = A.agMarketHtml(a);
+  assert.ok(/setup unfinished/.test(half), "half-done is its own state, not ready and not first-run");
+  assert.ok(/Next: brand pack built/.test(half), "and it names the step that is missing");
+  a.health = MKT_FRESH;
+  assert.ok(/not set up yet/.test(A.agMarketHtml(a)));
+});
+
+test("a route that failed says so, and does not pretend the agent is unopenable", () => {
+  const a = mktBlank(); a.marketErr = "Connection refused";
+  const html = A.agMarketHtml(a);
+  assert.ok(/Could not read the agent's state/.test(html) && /Connection refused/.test(html));
+  assert.ok(/data-ag="open"/.test(html), "the door is still there");
+});
+
+/* ── first run, decided from real state ───────────────────────────────────── */
+
+test("first run is decided from REAL state, and is unknown until state arrives", () => {
+  const a = mktBlank();
+  assert.strictEqual(A.agFirstRun(a), null, "no health, no answer -- not a guess of true");
+  a.health = MKT_FRESH;
+  assert.strictEqual(A.agFirstRun(a), true, "nothing on disk: this is somebody's first sight of it");
+  /* any ONE of the six real signals means this agent has been used before */
+  const signals = [
+    ["a catalogue", () => { a.health = Object.assign({}, MKT_FRESH, { site_indexed: true }); }],
+    ["a page index", () => { a.health = Object.assign({}, MKT_FRESH, { page_index: { built: true } }); }],
+    ["a brand pack", () => { a.health = Object.assign({}, MKT_FRESH, { brand_ready: true }); }],
+    ["a chat", () => { a.health = Object.assign({}, MKT_FRESH, { chats: 1 }); }],
+    ["a company record", () => { a.health = MKT_FRESH; a.knowledge = { company: { brand: "Acme" } }; }],
+    ["an article", () => { a.health = MKT_FRESH; a.library = [{ id: "x" }]; }],
+  ];
+  for (const [what, set] of signals){
+    a.health = MKT_FRESH; a.knowledge = null; a.library = null;
+    set();
+    assert.strictEqual(A.agFirstRun(a), false, what + " means it is not a first run");
+  }
+});
+
+test("the introduction is what an empty chat shows on a FIRST open, the hero on every other", () => {
+  const a = agReset(); a.chat = null; a.knowledge = null; a.library = null;
+  a.health = MKT_FRESH;
+  assert.ok(/ag-intro/.test(A.agTranscriptHtml(a)), "first open: the introduction");
+  a.health = MKT_LIVED;
+  const back = A.agTranscriptHtml(a);
+  assert.ok(!/ag-intro/.test(back) && /ag-hero/.test(back), "a returning open goes straight to the hero");
+  /* and unknown is not treated as first: no health, no introduction */
+  a.health = null;
+  assert.ok(!/ag-intro/.test(A.agTranscriptHtml(a)));
+});
+
+test("the introduction says what it needs and what it does first, all of it read from health", () => {
+  const a = mktBlank(); a.health = MKT_FRESH;
+  const html = A.agIntroHtml(a);
+  assert.ok(/What it needs/.test(html) && /What it puts in place first/.test(html));
+  assert.ok(/Your website/.test(html), "the one thing that is required");
+  /* and its state is READ: nothing indexed yet, so it is not drawn as done */
+  assert.ok(/class="req">\s*<i aria-hidden="true"><\/i><b>Your website/.test(html),
+            "the required-but-missing marker, not the done one");
+  assert.ok(/<b>Your website<\/b><span>The address is the only thing/.test(html));
+  const read = A.agIntroHtml({ health: Object.assign({}, MKT_FRESH, { site_indexed: true }) });
+  assert.ok(/class="ok">\s*<i aria-hidden="true"><\/i><b>Your website<\/b><span>Read\./.test(read),
+            "and done only once health says the site was read");
+  assert.ok(/DataForSEO/.test(html) && /Not connected/.test(html), "health said it is not connected");
+  assert.ok(/Voyage/.test(html) && /Not set/.test(html));
+  /* the four things it does first are agSetupOf's steps, in the engine's order */
+  for (const step of A.agSetupOf(MKT_FRESH).steps) assert.ok(html.indexOf(step.label) !== -1, step.label);
+  const on = A.agIntroHtml(Object.assign({}, a, { health: MKT_LIVED }));
+  assert.ok(/DataForSEO<\/b><span>Connected\./.test(on), "and says connected when health says so");
+  assert.ok(!/Not connected/.test(on));
+});
+
+test("the introduction ends in the door, and the door is the hero's own play", () => {
+  const a = mktBlank(); a.health = MKT_FRESH;
+  const html = A.agIntroHtml(a);
+  assert.ok(/data-ag="play" data-text="Set up for my website: "/.test(html),
+            "one door into setup, the same one the hero uses");
+  assert.ok(/data-ag="introskip"/.test(html), "and a way past it");
+});
+
+test("no model available is said on the introduction too, not only on the hero", () => {
+  const a = mktBlank(); a.health = Object.assign({}, MKT_FRESH, { model_provider: null });
+  assert.ok(/No model is available/.test(A.agIntroHtml(a)));
+  assert.ok(!/No model is available/.test(A.agIntroHtml(Object.assign({}, a, { health: MKT_FRESH }))));
+});
+
+test("skipping the introduction is for this sitting only and claims nothing about setup", () => {
+  const a = agReset(); a.chat = null; a.health = MKT_FRESH; a.knowledge = null; a.library = null;
+  assert.ok(/ag-intro/.test(A.agTranscriptHtml(a)));
+  a.introSkip = true;
+  assert.ok(/ag-hero/.test(A.agTranscriptHtml(a)), "skipped: the hero, with its plays");
+  assert.strictEqual(A.agFirstRun(a), true, "and the real state is untouched by the skip");
+});
+
+/* ══ THE GUIDE ════════════════════════════════════════════════════════════════
+   The agent's middle column opens on a guide, not on the last conversation. These prove
+   the four things that can go wrong with a screen made almost entirely of agreed copy:
+   the words get quietly reworded, the tab table drifts from the sidebar it is describing,
+   a slot that is really data gets a placeholder typed into it, or one of the five doors
+   leads nowhere. */
+
+/* the two sentences that must survive EXACTLY. Not a summary of them and not a normalised
+   copy -- the strings as design/AGENT-GUIDE-COPY.md has them, matched against the HTML the
+   renderer actually emits, so a reword anywhere in the chain goes red. */
+const GUIDE_VERBATIM = [
+  "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.",
+  "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.",
+  "It learns your brand from those pages: how you sound, what you sell, who you write for.",
+];
+/* the five, id and heading, written out here rather than read from the module: a test that
+   asked the source for the headings could not notice one being changed. */
+const DIVES = [["site", "How it reads your site"], ["brand", "How it learns your brand"],
+               ["worth", "How it decides what is worth writing"],
+               ["research", "How it researches a topic"], ["write", "How it writes the article"]];
+const DIVE_VERBATIM = {
+  site: "Most tools crawl a site by following links, which misses anything the homepage does not link to.",
+  brand: "It never asks you to describe your own voice. People are bad at that. It reads your best pages and works it out.",
+  worth: "Three methods, kept deliberately apart so they cannot agree with each other by accident.",
+  research: "It buys real keyword numbers instead of guessing at them, and it reads the pages that currently rank to see what they cover and what they all miss.",
+  write: "The plan comes first: which sections, in what order, which facts belong in each, and how long each one should run.",
+};
+
+function guideBlank(){
+  const a = agReset();
+  a.view = "guide"; a.guideDive = null;
+  a.chat = null; a.chatId = null; a.chats = [];
+  a.health = MKT_FRESH; a.knowledge = null; a.cta = null; a.tools = null; a.library = null;
+  return a;
+}
+
+test("the guide draws all six parts of the copy: title, line, four steps, how to start, the table, the five doors", () => {
+  const a = guideBlank();
+  const html = A.agGuideHtml(a);
+  assert.ok(/<h2>The SEO writer<\/h2>/.test(html), "the heading, exactly as written");
+  assert.ok(/How it works/.test(html) && /To start/.test(html)
+            && /What each tab holds/.test(html) && /Understand it better/.test(html),
+            "the four section headings");
+  const steps = html.slice(html.indexOf("<ol"), html.indexOf("</ol>"));
+  assert.strictEqual((steps.match(/<li>/g) || []).length, 4, "four numbered steps");
+  assert.strictEqual((html.match(/<dt>/g) || []).length, 7, "seven tab rows");
+  assert.strictEqual((html.match(/data-ag="dive"/g) || []).length, 5, "five doors, no more and no fewer");
+  assert.ok(/To get started, go to the chat box below/.test(html));
+});
+
+test("the copy is VERBATIM -- a reword of any of these sentences goes red", () => {
+  const a = guideBlank();
+  const html = A.agGuideHtml(a);
+  for (const s of GUIDE_VERBATIM)
+    assert.ok(html.indexOf(s) !== -1, "this sentence is no longer on the guide word for word:\n  " + s);
+  /* and the source carries them once each, so there is no second copy to drift from */
+  for (const s of GUIDE_VERBATIM.slice(0, 2))
+    assert.strictEqual(SRC.split(s).length - 1, 1, "the sentence is written twice in the source: " + s);
+});
+
+test("every deep dive's opening sentence is VERBATIM too", () => {
+  for (const id of Object.keys(DIVE_VERBATIM)){
+    const html = A.agDiveHtml(id);
+    assert.ok(html.indexOf(DIVE_VERBATIM[id]) !== -1,
+              "the " + id + " dive has been reworded:\n  " + DIVE_VERBATIM[id]);
+  }
+});
+
+/* THE TABLE DESCRIBES THE SIDEBAR, so the sidebar is the truth. Read the names out of the
+   nav the sidebar actually draws and out of the table, and require the same seven -- a tab
+   renamed on one side and not the other is a guide that sends people to a tab that is not
+   there any more. */
+test("the tab table's left column is the sidebar's own names, exactly", () => {
+  const a = guideBlank(); a.health = MKT_LIVED;
+  const side = A.agSideHtml(a);
+  const nav = side.slice(side.indexOf('<ul class="nav">'));
+  const fromSidebar = (nav.match(/<\/svg>([^<]+)/g) || []).map(m => m.replace("</svg>", "").trim());
+  const fromTable = A.agGuideTabNames();
+  assert.strictEqual(fromSidebar.length, 7, "found the sidebar's seven tabs, got " + fromSidebar.join(", "));
+  /* joined rather than deep-compared: the table's array is built inside the vm realm and a
+     cross-realm deepStrictEqual fails on the prototype, not on the names */
+  assert.strictEqual(fromTable.slice().sort().join(" | "), fromSidebar.slice().sort().join(" | "),
+    "the table and the sidebar disagree:\n  table:   " + fromTable.join(", ") + "\n  sidebar: " + fromSidebar.join(", "));
+  /* and each name is drawn on the guide as its own row */
+  const html = A.agGuideHtml(a);
+  for (const n of fromSidebar) assert.ok(html.indexOf("<dt>" + n + "</dt>") !== -1, n + " has no row");
+});
+
+/* ── the two slots that are real state ────────────────────────────────────── */
+
+test("the guide names no website at all, so there is nothing to get wrong", () => {
+  /* It used to print `Set up <domain>` in a mono block, read from the company record. The record
+     was right and it was never hardcoded — but a command box made a two-word instruction look
+     like something to copy, and the owner asked for it gone. Removing it also removed the last
+     place this screen had to know a site's name. (2026-09-10) */
+  const withSite = mktBlank(); withSite.health = MKT_LIVED;
+  withSite.knowledge = { company: { domain: "https://www.northwind.co.uk/" } };
+  const html = A.agGuideHtml(withSite);
+  assert.ok(!/<code>/.test(html), "no command box");
+  assert.ok(!/northwind/.test(html), "and not even a site it genuinely knows");
+  assert.ok(/go to the chat box below/.test(html), "it says where to type");
+  assert.ok(/asks you the questions it needs answered/.test(html),
+    "and that they do not have to know the right words, which is the point");
+  const blank = mktBlank(); blank.health = MKT_LIVED;
+  assert.strictEqual(A.agGuideHtml(blank).replace(/\s+/g, " "),
+                     html.replace(/\s+/g, " "),
+                     "and a machine with no company reads identically, because nothing is filled in");
+});
+
+test("no domain is HARDCODED in the screen or its stylesheet", () => {
+  for (const [what, text] of [["17-agents.js", SRC], ["agents.css", CSS]]){
+    const hits = (text.match(/\b(?:yourcompany|yoursite|mysite|acme|northwind)\.[a-z]{2,}/gi) || []);
+    assert.strictEqual(hits.join(", "), "", "a stand-in domain baked into " + what);
+  }
+});
+
+test("the tool count comes from the registry's own list, through /tools", () => {
+  const a = guideBlank();
+  a.tools = new Array(12).fill(0).map((_, i) => ({ name: "t" + i }));
+  assert.ok(/The twelve things it can do, in plain words\./.test(A.agGuideHtml(a)));
+  /* it is a COUNT, not a word somebody typed: grow the list and the sentence follows */
+  a.tools = new Array(13).fill(0).map((_, i) => ({ name: "t" + i }));
+  assert.ok(/The thirteen things it can do/.test(A.agGuideHtml(a)));
+  assert.ok(!/twelve/.test(A.agGuideHtml(a)), "the old number is not left behind anywhere");
+});
+
+test("and with /tools unanswered the sentence is DROPPED, not filled with a guess", () => {
+  const a = guideBlank(); a.tools = null;
+  const html = A.agGuideHtml(a);
+  assert.ok(/<dt>Tools<\/dt>/.test(html), "the row is still there, because the sidebar has the tab");
+  assert.ok(/<dt>Tools<\/dt><dd><\/dd>/.test(html), "and its line is empty rather than invented");
+  for (const w of ["twelve", "eleven", "thirteen", "all the things"])
+    assert.ok(html.indexOf(w) === -1, "it guessed: " + w);
+});
+
+test("no count anywhere on the guide is a literal typed into the copy", () => {
+  const a = guideBlank(); a.tools = null;
+  const html = A.agGuideHtml(a) + A.agDiveHtml("site") + A.agDiveHtml("brand")
+    + A.agDiveHtml("worth") + A.agDiveHtml("research") + A.agDiveHtml("write");
+  /* the numbers the DIVES carry are prose about the method, not state: "four sources",
+     "a dozen files", "eight rulebooks", "11,000 pages" are the copy's own examples and stay.
+     What must never appear is a count of THIS install that nobody read. */
+  assert.ok(html.indexOf("pages catalogued") === -1);
+  assert.ok(html.indexOf("articles in the Library") === -1);
+  assert.ok(!/\b\d+ chats\b/.test(html));
+});
+
+/* ── the five deep dives ──────────────────────────────────────────────────── */
+
+test("each deep dive replaces the guide IN PLACE and carries its own heading", () => {
+  const a = guideBlank();
+  for (const [id, heading] of DIVES){
+    a.guideDive = id;
+    const html = A.agGuideHtml(a);
+    assert.ok(/class="ag-dive"/.test(html), id + " did not render");
+    assert.ok(!/class="ag-guide"/.test(html), id + " drew the guide as well as itself");
+    assert.ok(html.indexOf("<h2>" + heading + "</h2>") !== -1, id + " lost its heading");
+    assert.ok(!/class="ag-modal"|role="dialog"/.test(html), "a dive is not a modal");
+  }
+});
+
+test("a dive's heading is the same words as the link that opened it", () => {
+  const a = guideBlank();
+  const guide = A.agGuideHtml(a);
+  for (const d of DIVES){
+    assert.ok(guide.indexOf("<span>" + d[1] + "</span>") !== -1, "no link reading " + d[1]);
+    assert.ok(A.agDiveHtml(d[0]).indexOf("<h2>" + d[1] + "</h2>") !== -1);
+  }
+});
+
+test("the way back is in the SAME position on all five, and it is one function's output", () => {
+  const back = A.agDiveBackHtml();
+  for (const d of DIVES){
+    const html = A.agDiveHtml(d[0]);
+    assert.ok(html.indexOf(back) !== -1, d[0] + " draws its own Back rather than the shared one");
+    /* first thing inside the dive, before the heading, on every one of them */
+    assert.ok(html.indexOf(back) < html.indexOf("<h2>"), "Back is below the heading on " + d[0]);
+    assert.strictEqual(html.indexOf(back), html.indexOf('<div class="d0">'), "Back moved on " + d[0]);
+  }
+  assert.ok(/data-ag="guideback"/.test(back) && />Back<\/button>|Back<\/button>/.test(back));
+});
+
+test("every string the guide and its dives escape, so copy carrying markup cannot inject", () => {
+  const a = guideBlank();
+  a.knowledge = { company: { domain: '<img src=x onerror=alert(1)>evil.com' } };
+  const html = A.agGuideHtml(a);
+  assert.ok(!/<img src=x/.test(html));
+});
+
+/* ── the stylesheet ───────────────────────────────────────────────────────── */
+
+test("the guide's stylesheet keeps to the palette and gates nothing on motion", () => {
+  const mine = CSS.slice(CSS.indexOf("/* ══ THE GUIDE"));
+  assert.ok(mine.length > 800, "found the block");
+  const literals = mine.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g) || [];
+  assert.strictEqual(literals.length, 0, "a hard-coded colour in the guide CSS: " + literals);
+  assert.ok(/prefers-reduced-motion/.test(mine), "asked for no motion, there must be none");
+  /* the arrival is opacity and transform only: nothing that could hold the text back */
+  const anim = mine.slice(mine.indexOf(".ag-enter .ag-guide"));
+  assert.ok(!/visibility|display:none/.test(anim), "the arrival hides the guide while it runs");
+});
+
+/* ── the way back out ─────────────────────────────────────────────────────── */
+
+test("the agent's sidebar carries the way back to the shelf, on every view", () => {
+  const a = agReset(); a.health = MKT_LIVED; a.chats = [];
+  for (const view of ["chat", "knowledge", "library", "connections"]){
+    a.view = view;
+    assert.ok(/data-ag="market"/.test(A.agSideHtml(a)), "no way out of " + view);
+  }
+});
+
+/* ── the stylesheet ───────────────────────────────────────────────────────── */
+
+test("the marketplace stylesheet keeps to the palette", () => {
+  const mine = CSS.slice(CSS.indexOf("/* ══ THE MARKETPLACE"));
+  assert.ok(mine.length > 800, "found the block");
+  const literals = mine.match(/#[0-9a-fA-F]{3,8}\b|\brgba?\(/g) || [];
+  assert.strictEqual(literals.length, 0, "a hard-coded colour in the marketplace CSS: " + literals);
+});
+
+/* "Nothing may delay the agent being usable", and asked for no motion there must be none. Every
+   selector this block animates has to be turned off again in the reduced-motion rule, or somebody
+   who asked for stillness gets an element stuck at opacity 0. */
+test("every animated marketplace selector is switched off under prefers-reduced-motion", () => {
+  /* comments carry selector-shaped text; strip them or a sentence gets audited as a rule */
+  const mine = CSS.slice(CSS.indexOf("/* ══ THE MARKETPLACE")).replace(/\/\*[\s\S]*?\*\//g, "");
+  const rm = mine.slice(mine.indexOf("@media (prefers-reduced-motion:reduce)"));
+  assert.ok(rm.length > 100, "the reduced-motion block exists");
+  const animated = [];
+  const re = /([^{}]+)\{[^{}]*animation:(?!none)[^{}]*\}/g;
+  let m;
+  while ((m = re.exec(mine))){
+    for (const sel of m[1].split(",")) { const s = sel.trim(); if (s && s[0] !== "@") animated.push(s); }
+  }
+  assert.ok(animated.length >= 8, "found the animated selectors, got " + animated.length);
+  const off = animated.filter(s => rm.indexOf(s) === -1);
+  assert.strictEqual(off.join(", "), "", "these keep animating when asked not to: " + off.join(", "));
+});
+
+/* The whole arrival has to be over before anybody could be annoyed by it, and the class that
+   carries it is dropped afterwards so a redraw or a remount never replays it. */
+test("the Sutra mark is decoration: themed, behind, silent and unreachable", () => {
+  /* The owner asked for the empty space to carry something. The risk with a watermark is that it
+     competes with the text, so what is asserted here is mostly RESTRAINT. (2026-09-10) */
+  const a = mktBlank(); a.health = MKT_LIVED;
+  const html = A.agMarketHtml(a);
+  assert.ok(/class="ag-sutramark"/.test(html), "the mark is on the shelf");
+  assert.ok(/aria-hidden="true"/.test(html) && /focusable="false"/.test(html),
+    "a screen reader never meets it and it is not in the tab order");
+  assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(html.slice(html.indexOf("ag-sutramark"), html.indexOf("</svg>"))),
+    "NO literal colour: every stroke is var(--acc), so it follows the theme picker");
+  assert.strictEqual((html.match(/var\(--acc\)/g) || []).length >= 4, true,
+    "and it uses the accent for the strokes, the centre and the glow");
+
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "static/agents.css"), "utf8");
+  const m = /\.ag-sutramark\{([^}]*)\}/.exec(css);
+  assert.ok(m, "the mark has a rule");
+  assert.ok(/pointer-events:none/.test(m[1]), "it can never swallow a click");
+  assert.ok(/position:absolute/.test(m[1]) && /z-index:0/.test(m[1]), "it sits behind");
+  const op = Number((/opacity:([\d.]+)/.exec(m[1]) || [])[1]);
+  /* The ceiling was .12 on my first guess and the mark was invisible on screen — the owner could
+     not see it at all ("the diagram is too light, not able to see"). Raised deliberately after
+     looking at it rendered rather than reasoning about it. It is still bounded: past about a
+     third it stops being a watermark and starts competing with the card sitting on top of it. */
+  assert.ok(op > 0 && op <= 0.35,
+    "a watermark, not a picture: " + op + " competes with the text on top of it");
+  assert.ok(/:root\[data-theme="dark"\] \.ag-sutramark[^{]*\{[^}]*opacity:/.test(css),
+    "dark gets its own value: a faint accent vanishes on a dark ground and glares on a light one");
+  assert.ok(/\.ag-mkt > \*:not\(\.ag-sutramark\)\{[^}]*z-index:1/.test(css),
+    "and everything real is explicitly above it");
+  assert.ok(!/\.ag-sutramark\{[^}]*animation:(?!\s*none)/.test(m[1]),
+    "it does NOT animate at rest: a background that never stops moving is exhausting");
+});
+
+test("the arrival animation is short, and its cleanup timer outlasts it", () => {
+  const mine = CSS.slice(CSS.indexOf("/* ══ THE MARKETPLACE")).replace(/\/\*[\s\S]*?\*\//g, "");
+  const secs = (mine.match(/animation:\s*ag\w+\s+([\d.]+)s[^;}]*/g) || []).map(x => {
+    const d = x.match(/([\d.]+)s\s+cubic[^;}]*?(?:\s([\d.]+)s)?\s+both/);
+    return (Number(d && d[1]) || 0) + (Number(d && d[2]) || 0);
+  });
+  assert.ok(secs.length >= 8, "found the durations");
+  const longest = Math.max.apply(null, secs);
+  assert.ok(longest <= 0.6, "the slowest piece takes " + longest + "s; nobody should sit through that");
+  /* a top-level `const` never lands on the vm context, so read the number from the source */
+  const enter = Number((SRC.match(/const AG_ENTER_MS = (\d+);/) || [])[1]);
+  assert.ok(enter > 0, "found AG_ENTER_MS");
+  assert.ok(enter >= longest * 1000, "the class would be pulled mid-animation");
+  assert.ok(enter <= 1000, "and it must not linger");
 });
 
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
@@ -2479,6 +3025,269 @@ async function atest(name, fn){
     finally { A.apiPost = prevPost; A.confirm = prevConfirm; }
     assert.strictEqual(posts.length, 0);
     assert.strictEqual(a.ws.configured, true);
+  });
+
+
+  /* ── the guide's own arms, driven through agAction ──────────────────────── */
+  await atest("opening a dive and coming back are both arms, and back lands on the guide itself", async () => {
+    const a = guideBlank();
+    await A.agAction("dive", { getAttribute: k => (k === "data-arg" ? "research" : "") });
+    assert.strictEqual(a.view, "guide");
+    assert.strictEqual(a.guideDive, "research");
+    assert.ok(/How it researches a topic/.test(A.agGuideHtml(a)));
+    await A.agAction("guideback", { getAttribute: () => "" });
+    assert.strictEqual(a.guideDive, null);
+    assert.ok(/class="ag-guide"/.test(A.agGuideHtml(a)), "back to the guide, on the same screen");
+  });
+
+  await atest("a dive id that does not exist leaves the screen exactly where it was", async () => {
+    const a = guideBlank(); a.guideDive = "brand";
+    await A.agAction("dive", { getAttribute: k => (k === "data-arg" ? "nonsense" : "") });
+    assert.strictEqual(a.guideDive, "brand", "the guide was blanked by an unknown id");
+    assert.strictEqual(A.agDiveHtml("nonsense"), "");
+  });
+
+  await atest("leaving the guide for a chat or a tab closes the dive behind you", async () => {
+    const a = guideBlank(); a.guideDive = "write";
+    const prevGet = A.apiGet;
+    A.apiGet = async () => ({});
+    try { await A.agAction("view", { getAttribute: k => (k === "data-arg" ? "library" : "") }); }
+    finally { A.apiGet = prevGet; }
+    assert.strictEqual(a.view, "library");
+    assert.strictEqual(a.guideDive, null, "the dive would have been waiting on the way back in");
+  });
+
+  /* ══ THE TAB'S ROUTE, DRIVEN THROUGH THE REAL MOUNT ════════════════════════
+     The renderers above prove what is drawn. These prove what HAPPENS: that opening
+     the tab paints the shelf and asks the server for nothing the shelf does not
+     show, that choosing the agent still gives you the whole agent, and that there
+     is a way back that leaves nothing running behind it. */
+
+  /* As much of a document as agMountIfNeeded, agEnterScreen and agDraw actually touch.
+     Elements are made on demand and kept, so a test can ask afterwards which parts of
+     the screen were ever painted at all. */
+  function mktEl(id){
+    const set = new Set();
+    return { id, innerHTML: "", hidden: false, value: "", dataset: {},
+             scrollTop: 0, scrollHeight: 0, clientHeight: 0,
+             classList: { add: c => set.add(c), remove: c => set.delete(c),
+                          contains: c => set.has(c),
+                          toggle: (c, on) => { if (on === undefined) return set.has(c) ? set.delete(c) : set.add(c);
+                                               return on ? set.add(c) : set.delete(c); } },
+             closest: () => null, contains: () => false,
+             querySelector: () => null, querySelectorAll: () => [],
+             getBoundingClientRect: () => ({ top: 0 }) };
+  }
+  function mktDoc(){
+    const els = {};
+    return { hidden: false, activeElement: null, els,
+             getElementById: id => (els[id] || (els[id] = mktEl(id))),
+             querySelector: () => null, querySelectorAll: () => [] };
+  }
+  const mktFlush = () => new Promise(r => setTimeout(r, 6));
+  function mktServer(asked, health){
+    return async (p) => {
+      asked.push(p);
+      if (/\/health$/.test(p)) return health;
+      if (/\/library$/.test(p)) return [];
+      if (/\/chats$/.test(p)) return [];
+      return {};
+    };
+  }
+  const arg = v => ({ getAttribute: k => (k === "data-arg" ? v : "") });
+
+  await atest("the Agents tab opens on the marketplace and does NOT boot the SEO Writer", async () => {
+    A.S.ag = null;                       /* a tab opening for the first time */
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
+    try {
+      A.agMountIfNeeded();
+      await mktFlush(); await mktFlush();
+      const a = A.agS();
+      assert.strictEqual(a.screen, "market", "the tab lands on the shelf");
+      assert.ok(/ag-mkt\b/.test(doc.els.agMarket.innerHTML), "and the shelf is what got painted");
+      assert.ok(/SEO Writer/.test(doc.els.agMarket.innerHTML));
+      /* the three columns were never even created */
+      assert.ok(!doc.els.agSide && !doc.els.agScroll && !doc.els.agComposer,
+                "an agent column was painted on a screen that has no agent open");
+      /* and none of the agent's own routes were asked for */
+      const boot = asked.filter(p => /\/chats|\/memory|\/prompts|\/workspace|\/tools|\/connections|\/runs\//.test(p));
+      assert.strictEqual(boot.join(", "), "", "the agent was booted anyway: " + boot.join(", "));
+      /* exactly the three the shelf draws from, and nothing else */
+      assert.deepStrictEqual(asked.slice().sort(),
+        ["/api/agents/seo/health", "/api/agents/seo/knowledge", "/api/agents/seo/library"]);
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  await atest("choosing the agent opens it, boots it, and the whole view still renders", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
+    try {
+      A.agMountIfNeeded();
+      await mktFlush(); await mktFlush();
+      asked.length = 0;
+      await A.agAction("open", arg("seo"));
+      const a = A.agS();
+      assert.strictEqual(a.screen, "agent");
+      /* THE ROOM IS UNCHANGED: the same sidebar, the same conversation column, the same composer */
+      assert.ok(/ag-agent/.test(doc.els.agSide.innerHTML) && /SEO Writer/.test(doc.els.agSide.innerHTML));
+      assert.ok(/ag-guide/.test(doc.els.agScroll.innerHTML), "the conversation column drew the guide");
+      assert.ok(/data-agask/.test(doc.els.agComposer.innerHTML), "and so did the composer");
+      assert.ok(/data-ag="market"/.test(doc.els.agSide.innerHTML), "with the way back on it");
+      /* the arrival animation is ON, and the boot went out in the same breath rather than after it */
+      assert.ok(doc.els.agRoot.classList.contains("ag-enter"), "the arrival runs");
+      await mktFlush(); await mktFlush();
+      assert.ok(asked.some(p => /\/chats$/.test(p)), "the agent was booted: " + asked.join(", "));
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  await atest("an agent id the shelf does not have opens nothing", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
+    try {
+      A.agMountIfNeeded(); await mktFlush();
+      await A.agAction("open", arg("does-not-exist"));
+      assert.strictEqual(A.agS().screen, "market");
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  await atest("there is a way back, and the shelf keeps no clock running behind it", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
+    try {
+      A.agMountIfNeeded(); await mktFlush(); await mktFlush();
+      await A.agAction("open", arg("seo"));
+      await mktFlush(); await mktFlush();
+      await A.agAction("market", arg(""));
+      const a = A.agS();
+      assert.strictEqual(a.screen, "market");
+      assert.ok(/ag-mkt\b/.test(doc.els.agMarket.innerHTML), "the shelf is back");
+      /* the poll may still have a tick in flight; it must find nothing to do */
+      asked.length = 0;
+      await A.agRefresh();
+      assert.strictEqual(asked.join(", "), "", "the shelf polled the agent's routes: " + asked.join(", "));
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  /* THE DOOR OPENS ON THE GUIDE, whatever is behind it (owner, 2026-09-10: "always when I open
+     the agent it should always open blank, not a chat which is always opened"). A fresh machine
+     and one with four chats and a catalogue behind it land on exactly the same screen -- the
+     guide is not a first-run screen, it is the door.
+     The introduction and the hero are unchanged and still what an EMPTY CHAT shows; the pure
+     renderer tests above hold that rule, and it is a different screen from this one. */
+  await atest("opening the agent lands on the guide, on a fresh machine and a lived-in one alike", async () => {
+    for (const health of [MKT_FRESH, MKT_LIVED]){
+      A.S.ag = null;
+      const doc = mktDoc(), asked = [];
+      const prevDoc = A.document, prevGet = A.apiGet;
+      A.document = doc; A.apiGet = mktServer(asked, health);
+      try {
+        A.agMountIfNeeded(); await mktFlush(); await mktFlush();
+        await A.agAction("open", arg("seo"));
+        await mktFlush(); await mktFlush();
+        const drawn = doc.els.agScroll.innerHTML;
+        assert.strictEqual(A.agS().view, "guide", "chats=" + health.chats);
+        assert.ok(drawn.indexOf("ag-guide") !== -1, "the guide is what got painted, chats=" + health.chats);
+        assert.ok(drawn.indexOf("ag-intro") === -1 && drawn.indexOf("ag-hero") === -1,
+                  "and not the introduction or the hero");
+        assert.ok(/data-agask/.test(doc.els.agComposer.innerHTML) && !doc.els.agComposer.hidden,
+                  "the box is there and usable from the first frame");
+        assert.ok(/The SEO writer/.test(drawn) && /Understand it better/.test(drawn));
+      } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+    }
+  });
+
+  /* THE OTHER HALF OF THE SAME RULE. Nothing was taken away: the chats are still listed, the
+     boot no longer opens one, and one click still resumes any of them. */
+  await atest("no chat is restored on boot, and the recent ones still open on a click", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    const chats = [{ id: "c9", title: "The pricing piece", updated_at: "2026-09-10T09:00:00Z", live: "waiting" },
+                   { id: "c8", title: "An older one", updated_at: "2026-09-09T09:00:00Z", live: "" }];
+    A.document = doc;
+    A.apiGet = async (p) => {
+      asked.push(p);
+      if (/\/health$/.test(p)) return MKT_LIVED;
+      if (/\/chats$/.test(p)) return chats;
+      if (/\/chats\/c9$/.test(p)) return { chat: chats[0], messages: [], runs: [] };
+      if (/\/library$/.test(p)) return [];
+      if (/\/tools$/.test(p)) return new Array(12).fill(0).map((_, i) => ({ name: "t" + i }));
+      return {};
+    };
+    try {
+      A.agMountIfNeeded(); await mktFlush(); await mktFlush();
+      await A.agAction("open", arg("seo"));
+      await mktFlush(); await mktFlush(); await mktFlush();
+      const a = A.agS();
+      assert.strictEqual(a.chatId, null, "a chat was opened for him: " + a.chatId);
+      assert.ok(asked.every(p => !/\/chats\/c9/.test(p)), "boot pulled a conversation nobody asked for");
+      /* even though one of them is WAITING on an answer -- which the sidebar marks, and which
+         is where the decision was made; see the note in agBootLoad */
+      assert.ok(/data-ag="chat" data-arg="c9"/.test(doc.els.agSide.innerHTML), "the chat is listed");
+      assert.ok(/class="dot wait"/.test(doc.els.agSide.innerHTML), "and marked as waiting for him");
+      /* one click and it is back */
+      await A.agAction("chat", arg("c9"));
+      await mktFlush();
+      assert.strictEqual(A.agS().chatId, "c9");
+      assert.strictEqual(A.agS().view, "chat");
+      assert.ok(asked.some(p => /\/chats\/c9$/.test(p)), "the chat was actually loaded");
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  /* the count on the guide is the registry's, and it arrives with the boot rather than waiting
+     for somebody to open the Tools tab */
+  await atest("the boot reads /tools, so the guide's one count is real by the time it is drawn", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc;
+    A.apiGet = async (p) => {
+      asked.push(p);
+      if (/\/health$/.test(p)) return MKT_LIVED;
+      if (/\/chats$/.test(p)) return [];
+      if (/\/library$/.test(p)) return [];
+      if (/\/tools$/.test(p)) return new Array(12).fill(0).map((_, i) => ({ name: "t" + i }));
+      return {};
+    };
+    try {
+      A.agMountIfNeeded(); await mktFlush(); await mktFlush();
+      await A.agAction("open", arg("seo"));
+      await mktFlush(); await mktFlush(); await mktFlush();
+      assert.ok(asked.some(p => /\/tools$/.test(p)), "the boot never asked: " + asked.join(", "));
+      assert.ok(/The twelve things it can do, in plain words\./.test(doc.els.agScroll.innerHTML),
+                "the sentence did not fill in");
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  /* a deep dive is drawn into the SAME element the guide was, and the composer never moves */
+  await atest("a deep dive replaces the guide in the same column, and back returns to it", async () => {
+    A.S.ag = null;
+    const doc = mktDoc(), asked = [];
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
+    try {
+      A.agMountIfNeeded(); await mktFlush(); await mktFlush();
+      await A.agAction("open", arg("seo"));
+      await mktFlush(); await mktFlush();
+      const composerBefore = doc.els.agComposer.innerHTML;
+      await A.agAction("dive", arg("write"));
+      const drawn = doc.els.agScroll.innerHTML;
+      assert.ok(/ag-dive/.test(drawn) && !/ag-guide/.test(drawn), "the dive took the guide's place");
+      assert.ok(/How it writes the article/.test(drawn));
+      assert.ok(/data-ag="guideback"/.test(drawn), "with the way back on it");
+      assert.strictEqual(doc.els.agComposer.innerHTML, composerBefore, "the box moved or was redrawn");
+      assert.strictEqual(doc.els.agComposer.hidden, false, "and it is still usable");
+      await A.agAction("guideback", arg(""));
+      assert.ok(/ag-guide/.test(doc.els.agScroll.innerHTML), "and back is the guide itself");
+    } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
   });
 
   console.log("\n" + "-".repeat(60));

@@ -343,7 +343,9 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (mod && !e.shiftKey && (e.key === "n" || e.key === "N")){
       e.preventDefault();
-      newSession(sessCwd(focused) || "");
+      /* Same path as the rail's New chat button, so the keyboard cannot mint an
+         empty chat the button would have reused (07-loaders, the empty-chat rule). */
+      startNewChat(sessCwd(focused) || "");
       return;
     }
     if (mod && (e.key === "[" || e.key === "]")){

@@ -1133,6 +1133,68 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(agents_api._ws_scrub("bad key sb_secret_xyz123", "sb_secret_xyz123"),
                          "bad key …")
 
+    # ---- what the Agents marketplace reads ------------------------------------------
+
+    def test_29_the_marketplace_reads_only_routes_that_already_exist(self):
+        """The Agents tab opens on a shelf, and the shelf is drawn from three routes this
+        screen already had: /health for the setup state and the chat count, /library for the
+        article count, /knowledge for the company record. There is deliberately no fourth
+        route and no second place the company name is decided -- this asserts the three
+        carry what the card needs, in the shape it reads them in."""
+        h = self.client.get(BASE + "/health").json()
+        for key in ("model_provider", "site_indexed", "page_index", "brand_ready", "chats"):
+            self.assertIn(key, h, key)
+        self.assertIsInstance(h["chats"], int)
+        self.assertIsInstance(h["page_index"], dict)
+        self.assertIn("built", h["page_index"])
+
+        self.assertIsInstance(self.client.get(BASE + "/library").json(), list)
+
+        k = self.client.get(BASE + "/knowledge").json()
+        self.assertIn("company", k, "the company RECORD is what the name comes from")
+        self.assertIsInstance(k["company"], dict)
+        self.assertIn("page_count", k["site_index"], "and the catalogue's own count")
+
+    def test_29b_the_company_record_is_empty_until_somebody_fills_it_in(self):
+        """A fresh install has no company, and the marketplace has to read correctly with the
+        name absent -- that is the normal state for everyone. The RECORD is the source
+        precisely because it stays empty; sh.company() answers the literal "this company"
+        when it knows nothing, which is a fallback and not a name, and the screen drops it.
+        Runs in its own data dir so an earlier test's writes cannot make this pass."""
+        import importlib
+        import tempfile as _tf
+
+        from seo_agent import store as _store
+        fresh = _tf.mkdtemp(prefix="seo-agent-fresh-")
+        old = os.environ["SEO_AGENT_DATA"]
+        os.environ["SEO_AGENT_DATA"] = fresh
+        try:
+            importlib.reload(_store)
+            self.assertEqual((_store.knowledge("brand/company.json") or {}).get("brand"), None,
+                             "a fresh install has no company name anywhere")
+            from seo_agent.tools import _shared as sh
+            importlib.reload(sh)
+            self.assertEqual(sh.company()["brand"], "this company",
+                             "and the engine's fallback is a placeholder, not a name -- "
+                             "which is why the screen reads the record and not this")
+        finally:
+            os.environ["SEO_AGENT_DATA"] = old
+            importlib.reload(_store)
+            from seo_agent.tools import _shared as sh2
+            importlib.reload(sh2)
+            shutil.rmtree(fresh, ignore_errors=True)
+
+    def test_29c_a_saved_company_name_reaches_the_route_the_shelf_reads(self):
+        """And when there IS one, it comes back on /knowledge.company.brand -- the one field
+        agBrandName reads, and the same one the agent's own sidebar has always used."""
+        rec = store.knowledge("brand/company.json") or {}
+        try:
+            store.save_knowledge("brand/company.json", dict(rec, brand="Northwind Bakery"))
+            k = self.client.get(BASE + "/knowledge").json()
+            self.assertEqual(k["company"]["brand"], "Northwind Bakery")
+        finally:
+            store.save_knowledge("brand/company.json", rec)
+
     def test_30_the_panel_ships_the_agents_module_and_stylesheet(self):
         html = self.client.get("/").text
         self.assertIn("/static/js/17-agents.js", html)

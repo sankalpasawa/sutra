@@ -57,6 +57,12 @@ const AG_MILE_VIEW = { research: "research_brief", picture: "article", plan: "bl
 const AG_MAX_SUBS = 8;
 const AG_LINK_WEAK = 0.45;      /* mirrors LINK_WEAK_SCORE in the engine: below this a link is flagged weak */
 const AG_PAGE_LIMIT = 5;        /* rows in the page table, and the step the pager takes; the server defaults to the same */
+/* How long the arrival animation is allowed to hold the .ag-enter class, in ms. It is the whole
+   staged reveal plus a little, and it is a CLEANUP timer, not a gate: the agent is in the DOM,
+   loading and usable from the first frame, and this only decides when the class stops being
+   there so a later remount does not replay it. Keep it short -- nobody should sit through this
+   twice, let alone notice it the second time. */
+const AG_ENTER_MS = 780;   // must OUTLAST the longest arrival (.46s + .13s delay) or it is cut short
 
 /* ── tiny helpers ──────────────────────────────────────────────────────────── */
 function agEsc(x){
@@ -142,7 +148,27 @@ function agBlocks(md){
 function agS(){
   if (typeof S === "undefined") return null;
   if (!S.ag) S.ag = {
-    view: "chat",                 /* chat | knowledge | memory | prompts | library | tools | connections */
+    /* THE TAB'S OWN ROUTE (owner, 2026-09-10: "the agents tab will be turned into an agents
+       marketplace... I don't want the SEO writer to open automatically"). `screen` is where the
+       Agents tab is, and it is the outer of the two routes on this file: "market" is the shelf of
+       agents, "agent" is the SEO Writer's three columns. `view` below is the INNER route, and it
+       only means anything once screen is "agent". The tab always opens on the marketplace; the
+       agent is somewhere you go, and the way back is the button in its sidebar. */
+    screen: "market",             /* market | agent */
+    /* is a shelf fill in flight, and did the last one fail. The card never branches on "have we
+       loaded"; it branches on whether each payload is null, which is the same question asked of
+       the thing itself rather than of a flag beside it. */
+    marketBusy: false, marketErr: null,
+    /* the session-only "I have read the introduction". It claims nothing about setup -- whether
+       the introduction is due at all is decided from real state by agFirstRun, never a flag. */
+    introSkip: false,
+    /* THE INNER ROUTE, and it now opens on "guide" (owner, 2026-09-10: "always when I open the
+       agent it should always open blank, not a chat which is always opened"). The guide is the
+       door: the recent chats are still in the sidebar and one click still resumes any of them,
+       and typing in the box starts a new chat exactly as it did. `guideDive` is which of the
+       five deep dives has replaced the guide on that same screen, null being the guide itself. */
+    view: "guide",                /* guide | chat | knowledge | memory | prompts | library | tools | connections */
+    guideDive: null,              /* null | site | brand | worth | research | write */
     chats: null, chatId: null, chat: null,   /* chat = {chat, messages, runs} */
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
@@ -323,6 +349,32 @@ function agSetupOf(h){
   return { steps, ready: !missing, next: missing ? missing.id : "" };
 }
 
+/* THE COMPANY NAME, decided in ONE place and read from the brand record.
+   `knowledge.company` is knowledge/brand/company.json exactly as it was written, so a fresh
+   install has nothing there and this answers "" -- which is the normal state for everyone who has
+   not set the agent up yet, and every caller has to read correctly with the name absent.
+   The brand pack's own `brand` field is deliberately NOT the source: sh.company() falls back to
+   the literal "this company" when it knows nothing, and a fallback printed as a company name is a
+   placeholder pretending to be data. Anything arriving here that reads like that fallback is
+   dropped for the same reason. Never a hardcoded name, here or anywhere else on this screen. */
+function agBrandName(a){
+  const n = String((a && a.knowledge && a.knowledge.company && a.knowledge.company.brand) || "").trim();
+  return (!n || n.toLowerCase() === "this company") ? "" : n;
+}
+
+/* Has this agent ever been used? true = show the introduction, false = go straight in,
+   null = we have not read enough to say, so say nothing.
+   Decided from real state only: a catalogue, a page index, a brand pack, a company record, a
+   saved article, or a chat that already happened. There is no "seen the intro" flag behind this,
+   because a flag would go on claiming after the state it stood for had changed. */
+function agFirstRun(a){
+  const h = a && a.health;
+  if (!h) return null;
+  const seen = !!(h.site_indexed || h.brand_ready || (h.page_index || {}).built
+                  || (h.chats || 0) > 0 || agBrandName(a) || ((a.library || []).length > 0));
+  return !seen;
+}
+
 /* ── renderers (pure, return HTML strings) ─────────────────────────────────── */
 
 const AG_ICON = {
@@ -332,6 +384,7 @@ const AG_ICON = {
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 16h6"/></svg>',
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1.1 5.8L12 16.8l-5.3 2.8 1.1-5.8L3.5 9.7l5.9-.8z"/></svg>',
   arrow: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  left: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
   pencil: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/></svg>',
   up: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -587,13 +640,382 @@ function agHeroHtml(health, conns){
   </div>`;
 }
 
+
+/* ── the marketplace ───────────────────────────────────────────────────────────
+   What the Agents tab opens on. One shelf, and on it every agent this install
+   actually has. There is exactly one, the SEO Writer, and there are no greyed-out
+   "coming soon" cards beside it: an honest empty shelf is better than invented
+   inventory, and one plain line says more is coming without drawing a thing that
+   is not there. Nothing on this screen may claim a state it has not read, so every
+   fact on the card comes from a payload that has arrived, and a fact still in
+   flight is left out rather than printed as a zero. */
+
+/* One fact on the card: a label, and either a number that was read or nothing.
+   `n` of null means "not read yet" and the fact is dropped -- which is the whole
+   difference between "no articles" and "we have not looked". */
+function agMktFact(n, one, many){
+  if (n == null) return "";
+  return `<span class="f"><b>${agEsc(agNum(n))}</b> ${agEsc(n === 1 ? one : many)}</span>`;
+}
+
+/* The SEO Writer's card. Everything on it traces to a route:
+     the state pill and the setup line   → GET /health, through agSetupOf
+     "articles in the Library"           → GET /library, its length
+     "chats"                             → GET /health, its `chats`
+     "pages catalogued"                  → GET /knowledge, site_index.page_count
+   Before /health has landed the card says it is checking, because at that moment
+   the only true thing it knows is that it does not know. */
+function agSeoCardHtml(a){
+  const h = a.health;
+  const setup = agSetupOf(h);
+  const first = agFirstRun(a);
+  const state = !h ? ["", "checking…"]
+    : !h.model_provider ? ["bad", "no model available"]
+    : first ? ["", "not set up yet"]
+    : setup.ready ? ["run", "set up and ready"]
+    : ["warn", "setup unfinished"];
+  const kn = a.knowledge || null;
+  const pages = kn && kn.site_index ? kn.site_index.page_count : null;
+  /* On a confirmed first run every one of these is zero by definition -- that is what first run
+     MEANS -- so the row is three zeroes saying what "not set up yet" already said. Left off there,
+     and left off per fact when its route has not answered. Nothing is hidden that is not either
+     already stated or not yet known. */
+  const facts = first !== false ? "" : [
+    agMktFact(a.library ? a.library.length : null, "article in the Library", "articles in the Library"),
+    agMktFact(h ? (h.chats || 0) : null, "chat", "chats"),
+    agMktFact(pages, "page catalogued", "pages catalogued"),
+  ].filter(Boolean).join("");
+  /* The one line under the name is what the agent is FOR, and it does not change with state.
+     What changes is the line under the facts: the next thing this install needs. */
+  const missing = setup.steps.find(s => !s.ok && !s.soft);
+  const next = !h ? "" : first ? "Give it your website once and it does the rest of the setup itself."
+    : !missing ? "" : `Next: ${agEsc(missing.label.toLowerCase())}.`;
+  return `<button class="ag-mktcard" type="button" data-ag="open" data-arg="seo"
+      aria-label="Open the SEO Writer">
+    <span class="cm" aria-hidden="true">S</span>
+    <span class="cb">
+      <span class="ct">SEO Writer</span>
+      <span class="cd">Researches a topic with real keyword numbers, reads what already ranks, gathers evidence with sources, plans the article and writes it in your voice.</span>
+      <span class="cs"><i class="dot ${state[0]}" aria-hidden="true"></i>${agEsc(state[1])}</span>
+      ${facts ? `<span class="cf">${facts}</span>` : ""}
+      ${next ? `<span class="cn">${next}</span>` : ""}
+    </span>
+    <span class="cg" aria-hidden="true">Open ${AG_ICON.arrow}</span>
+  </button>`;
+}
+
+/* The shelf itself. The heading, the company the agents are working for when there IS one, the
+   one card, and one line about the rest. The company name is data: absent on a fresh install,
+   and the header reads perfectly well without it. */
+/* THE MARK BEHIND THE SHELF. One agent leaves a great deal of empty room, and the owner asked for
+   the space to carry something rather than just be blank: "a big circle with the Sutra logo... as
+   an underlay, and maybe a glow. The background should be matched with whatever theme it is."
+
+   It is drawn rather than an image because it has to follow the theme picker: every stroke, the
+   centre and all three gradient stops are var(--acc), so a red theme gives a red mark and a dark
+   theme gives that theme's accent, with no per-theme code at all. An <img> cannot read a CSS
+   variable, which is why it is inline.
+
+   It is DECORATION and behaves like it: aria-hidden, not focusable, pointer-events:none, and
+   turned down far enough that nothing on top of it is harder to read. Too faint is the right way
+   to be wrong here. It does not move: a background that never stops moving is exhausting to work
+   beside, so it only ever arrives with the rest of the shelf. (2026-09-10) */
+const AG_MARK = `
+      <svg class="ag-sutramark" viewBox="-420 -420 840 840" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="agSutraGlow">
+            <stop offset="0%" stop-color="var(--acc)" stop-opacity=".22"/>
+            <stop offset="55%" stop-color="var(--acc)" stop-opacity=".07"/>
+            <stop offset="100%" stop-color="var(--acc)" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <circle r="410" fill="url(#agSutraGlow)"/>
+        <g fill="none" stroke="var(--acc)" stroke-width="2.6" stroke-linejoin="round">
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(0)" opacity="0.72"/>
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(60)" opacity="0.72"/>
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(120)" opacity="0.72"/>
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(180)" opacity="0.72"/>
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(240)" opacity="0.72"/>
+            <path d="M0 0A188 188 0 0 1 0 -300 A188 188 0 0 1 0 0" transform="rotate(300)" opacity="0.72"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(30)" opacity="0.55"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(90)" opacity="0.55"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(150)" opacity="0.55"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(210)" opacity="0.55"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(270)" opacity="0.55"/>
+            <path d="M0 0A122 122 0 0 1 0 -196 A122 122 0 0 1 0 0" transform="rotate(330)" opacity="0.55"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(0)" opacity="0.42"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(60)" opacity="0.42"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(120)" opacity="0.42"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(180)" opacity="0.42"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(240)" opacity="0.42"/>
+            <path d="M0 0A70 70 0 0 1 0 -112 A70 70 0 0 1 0 0" transform="rotate(300)" opacity="0.42"/>
+          <circle r="382" stroke-dasharray="2 9" stroke-width="2.4" opacity=".55" stroke-linecap="round"/>
+          <circle r="368" stroke-dasharray="1 16" stroke-width="3.4" opacity=".38" stroke-linecap="round"/>
+        </g>
+        <circle r="15" fill="var(--acc)" opacity=".72"/>
+      </svg>
+    `;
+
+function agMarketHtml(a){
+  const brand = agBrandName(a);
+  return `<div class="ag-mkt">
+    ${AG_MARK}
+    <header class="ag-mkth">
+      ${brand ? `<div class="ag-mktfor">${agEsc(brand)}</div>` : ""}
+      <h1>Agents</h1>
+      <p>They do a whole job in front of you, naming every step before they take it.</p>
+    </header>
+    <h3 class="sec">On the shelf</h3>
+    <div class="ag-cards">${agSeoCardHtml(a)}</div>
+    ${a.marketErr ? `<div class="note b" role="status"><b>Could not read the agent's state.</b> ${agEsc(a.marketErr)} The agent still opens.</div>` : ""}
+    <!-- ONE LINE, NOT A PARAGRAPH OF APOLOGY. It said "one agent today, others are being built,
+         and they will appear here when they are real" — accurate, and it read like a footnote
+         explaining an empty shelf. The owner asked for the opposite: "one dark crazy line,
+         decorated or designed, saying we are bringing more, fasten your seatbelt". So the empty
+         shelf stops being an absence being excused and becomes the promise. (2026-09-10) -->
+    <div class="ag-more" role="note">
+      <span class="r"></span>
+      <p><em>More are coming.</em><br>Fasten your seatbelt.</p>
+      <span class="r"></span>
+    </div>
+  </div>`;
+}
+
+/* ── the first run ─────────────────────────────────────────────────────────────
+   Opening an agent for the first time should read as an introduction, not a form. This is what
+   sits where the hero sits, decided by agFirstRun from real state, and it ends in the door: the
+   same play chip the hero uses, so there is no second way into setup to keep in step.
+   Every claim on it is read. What it needs is health's own answer; what it will do first is the
+   four setup steps agSetupOf already names, in the order the engine takes them. */
+function agIntroHtml(a){
+  const h = a.health;
+  const setup = agSetupOf(h);
+  /* [name, what to say, is it in place, is it required]. The third field is READ, never assumed:
+     the website row went out green once because it was hardcoded true, which told somebody with
+     nothing set up that the one required thing was done. */
+  const needs = [
+    ["Your website", h && h.site_indexed ? "Read." : "The address is the only thing you have to give it.",
+     !!(h && h.site_indexed), true],
+    ["DataForSEO", h && h.dataforseo ? "Connected." : "Not connected. Without it, keyword volumes, difficulty and who ranks are demo numbers.", !!(h && h.dataforseo), false],
+    ["A Voyage key", h && h.voyage ? "Connected." : "Not set. Without it, pages are matched by words rather than meaning, so internal links are weaker. The key is free.", !!(h && h.voyage), false],
+  ];
+  return `<div class="ag-intro">
+    <div class="i1">
+      <div class="ag-mark big" aria-hidden="true">S</div>
+      <h2>The SEO Writer</h2>
+      <p class="l">It reads your website once, learns how you write and what you sell, and then
+         writes articles about the topics you name: real keyword numbers, the pages that beat you
+         today, evidence with its sources, a plan, and a draft in your own voice. You see every
+         stage before it moves on.</p>
+    </div>
+    <div class="i2">
+      <h3 class="sec">What it needs</h3>
+      <ul class="ag-needs">${needs.map(n => `<li class="${n[2] ? "ok" : n[3] ? "req" : "soft"}">
+        <i aria-hidden="true"></i><b>${agEsc(n[0])}</b><span>${agEsc(n[1])}</span></li>`).join("")}</ul>
+    </div>
+    <div class="i3">
+      <h3 class="sec">What it puts in place first</h3>
+      <ol class="ag-firsts">${setup.steps.map(s => `<li class="${s.ok ? "ok" : ""}">${agEsc(s.label)}</li>`).join("")}</ol>
+      <p class="ag-hint">It runs once, on its own, and tells you as it goes.</p>
+    </div>
+    <div class="i4">
+      <button class="ag-play" type="button" data-ag="play" data-text="Set up for my website: ">
+        <span class="pi"><span class="pt">Set up for my website</span>
+          <span class="pd">Type the address and it starts. Nothing else is needed.</span></span>
+        <span class="go">Let's go ${AG_ICON.arrow}</span></button>
+      <button class="ag-skip" type="button" data-ag="introskip">Skip the introduction</button>
+    </div>
+    ${h && !h.model_provider ? `<div class="i5"><div class="note b"><b>No model is available.</b> The agent runs on the <code>claude</code> command line, billed to your Claude subscription. Open a terminal, run <code>claude</code> once and sign in, then come back.</div></div>` : ""}
+  </div>`;
+}
+
+/* ── THE GUIDE ─────────────────────────────────────────────────────────────────
+   What the agent's middle column opens on, every time (owner, 2026-09-10: "always when I open
+   the agent it should always open blank, not a chat which is always opened"). The recent chats
+   stay in the sidebar and one click still resumes any of them; the door simply opens here.
+
+   The words are design/AGENT-GUIDE-COPY.md, verbatim. They are not to be rewritten, improved or
+   added to here: this file's job is to draw them and to fill the two slots that are real state.
+   Everything else on this screen is a fixed string, which is why the tables below are data
+   rather than template literals -- a slot that is not filled has to be droppable, and a sentence
+   welded into markup cannot be dropped.
+
+   THE TWO REAL SLOTS, and nothing else:
+     the domain in "Set up ..."          -> agSiteDomain, from the company record / catalogue
+     the count in the Tools row          -> GET /tools, whose source is seo_agent/registry.py
+   Neither has a placeholder. Not known means the phrase is not drawn. */
+
+/* THE DOMAIN, decided in ONE place, the way agBrandName decides the company name.
+   Three payloads can carry it and they are asked in the order of how deliberate they are: the
+   company record is what somebody typed or the setup wrote, site_index.domain is what the
+   catalogue actually read, and /knowledge/cta's `domain` is the engine's own bare host. A fresh
+   install has none of the three and this answers "" -- which every caller must read correctly,
+   because that is the normal state on day one. Never a hardcoded domain, and never an example
+   standing in for one. */
+function agSiteDomain(a){
+  const kn = (a && a.knowledge) || {};
+  const raw = String((kn.company && kn.company.domain) || (kn.site_index && kn.site_index.domain)
+                     || (a && a.cta && a.cta.domain) || "").trim();
+  if (!raw) return "";
+  /* the record may hold a full url or a bare host; the sentence wants the host */
+  const host = raw.replace(/^[a-z]+:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0].trim();
+  return host.indexOf(".") > 0 ? host : "";
+}
+
+/* The number of tools, as the word the sentence needs, or "" when /tools has not answered.
+   The list is the registry's, exactly as the Tools tab reads it, so the guide and that tab can
+   never disagree about how many there are. agToolsHtml has said "the twelve things" from a
+   count since the day it said "seven" over eleven rows; this is the same discipline, one screen
+   earlier. */
+const AG_COUNT_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight",
+                        "nine", "ten", "eleven", "twelve", "thirteen", "fourteen"];
+function agCountWord(n){
+  if (n == null || isNaN(Number(n))) return "";
+  n = Number(n);
+  return n < AG_COUNT_WORDS.length ? AG_COUNT_WORDS[n] : String(n);
+}
+
+/* THE TAB TABLE. The left column is the tab name exactly as the sidebar draws it -- the sidebar
+   is the truth and this list follows it, which agGuideTabNames and its test hold in step. The
+   Tools row's description is a function because it carries the one count on this screen; every
+   other description is a fixed string from the copy. */
+const AG_GUIDE_TABS = [
+  ["Knowledge", "Everything it knows about your site and your brand. Open any file and edit it."],
+  ["Asset ideas", "The ranked list of things worth writing. Tick them off as they get written."],
+  ["Library", "Finished articles."],
+  ["Prompts", "The instructions it actually writes by. Change the wording and the next article uses your version."],
+  ["Memory", "Rules you have told it to remember for every article."],
+  ["Tools", null],
+  ["Connections", "Your keys, and the workspace your team joins."],
+];
+function agGuideTabNames(){ return AG_GUIDE_TABS.map(t => t[0]); }
+
+/* The copy that is a whole paragraph is a single-line string on purpose. Wrapped into the
+   template literal it would carry the source file's own newlines and indentation into the DOM,
+   and the test that holds these sentences verbatim could then only match a normalised copy of
+   them -- which is exactly the loophole a later reword would slip through. */
+const AG_GUIDE_LEAD = "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.";
+/* NO COMMAND BOX. It printed `Set up <your domain>` in a mono block, which read as a thing to
+   copy and made a two-word instruction look like a command line. The owner: "need not show
+   like a chat button below, just say them to type this in the chat section, that is it."
+   Dropping it also removes the last place the guide had to name the site at all. (2026-09-10) */
+const AG_GUIDE_TYPE = "To get started, go to the chat box below and type what you want. You do not need to know the right words for it: the agent asks you the questions it needs answered, one at a time.";
+const AG_GUIDE_AFTER = "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.";
+
+const AG_GUIDE_STEPS = [
+  "It reads your site. Every page, all the text, and what each page already ranks for.",
+  "It learns your brand from those pages: how you sound, what you sell, who you write for.",
+  "It works out what is worth writing and gives you a ranked list of ideas.",
+  "You pick one. It researches it, plans it, writes it, and edits it in several passes.",
+];
+
+/* THE FIVE DEEP DIVES. [id, heading, [paragraph, ...]] -- the heading is also the link's label on
+   the main screen, so the two can never drift apart, and the paragraphs are the copy's own
+   paragraph breaks. Each one REPLACES the guide on this same screen (owner: "the same blank
+   screen would change"): not a modal, not a new pane, and the way back sits in the same place on
+   all five so it does not move as you go between them. */
+const AG_DIVES = [
+  ["site", "How it reads your site", [
+    "Most tools crawl a site by following links, which misses anything the homepage does not link to.",
+    "This one asks four sources and compares them: your sitemaps, your content system if you have one, the web archive's record of your site, and a crawl. Four answers about the same site, cross-checked against each other.",
+    "Then it checks its own work. If the sitemaps list 11,000 pages and it only managed to read 400, it says so rather than calling the job done.",
+    "Every page's full text is saved with its headings intact, so a later step can quote it. It also pulls what each page already ranks for, which is how it knows which of your pages matter. A page drawn by JavaScript gets opened in a real browser, because there is nothing to read in the HTML.",
+  ]],
+  ["brand", "How it learns your brand", [
+    "It never asks you to describe your own voice. People are bad at that. It reads your best pages and works it out.",
+    "A dozen files get built in order, each one using the ones before it: how you sound, your house style, what you sell and the proof behind every claim, who you are writing for, the numbers and customer stories you are allowed to cite, and the honesty rules.",
+    "All of it ends in one page the writer reads before it writes a word.",
+    "Some facts a crawler can never reach. Prices drawn by JavaScript are the usual one. So there is a file you type in yourself, and what you type there beats anything read off the site.",
+  ]],
+  ["worth", "How it decides what is worth writing", [
+    "Three methods, kept deliberately apart so they cannot agree with each other by accident.",
+    "It studies what actually earns links in your industry. It looks at formats that work in other industries and asks whether they would work in yours. And it reads where practitioners argue in public, to find what people keep coming back to.",
+    "Every idea then faces the same two questions. Could you own this better than anyone else? And would a stranger link to it?",
+    "Only after that are the three lists merged, and duplicates are found by meaning rather than by matching words, because the same idea rarely gets written the same way twice.",
+    "You get one ranked sheet. Two moments in the middle stop and ask you.",
+  ]],
+  ["research", "How it researches a topic", [
+    "It buys real keyword numbers instead of guessing at them, and it reads the pages that currently rank to see what they cover and what they all miss.",
+    "Then the part that makes the difference: four researchers with different backgrounds interview an expert about your topic, each question shaped by the last answer. That conversation becomes a written dossier, and the facts are lifted out of it with their sources attached.",
+    "If a hole is found in the evidence, it runs the whole conversation again for that hole alone rather than papering over it.",
+    "Every number has to trace back to a page that actually said it. One that cannot is marked, not quietly attributed to something nearby.",
+  ]],
+  ["write", "How it writes the article", [
+    "The plan comes first: which sections, in what order, which facts belong in each, and how long each one should run.",
+    "The shape depends on what kind of article it is. A comparison is built differently from a how-to, and there are eight rulebooks for the eight shapes.",
+    "Then each section is written from its own facts, in your voice.",
+    "Then it edits, and this is most of the work: it reads the whole thing for coherence, rewrites it to be read rather than skimmed, reshapes the sentences so the prose does not march, removes the tells of machine writing, lays in links to your own pages, and checks every number against the source it came from.",
+    "You see the draft before anything is saved.",
+  ]],
+];
+function agDive(id){ return AG_DIVES.find(d => d[0] === id) || null; }
+
+/* The one control that must not move between the five. Drawn by ONE function, placed first in
+   every dive, so "the same position on all five" is a property of the code and not of five
+   copies that have to be kept in line. */
+function agDiveBackHtml(){
+  return `<div class="d0"><button class="ag-diveback" type="button" data-ag="guideback">${AG_ICON.left}Back</button></div>`;
+}
+
+function agDiveHtml(id){
+  const d = agDive(id);
+  if (!d) return "";
+  return `<div class="ag-dive">
+    ${agDiveBackHtml()}
+    <div class="d1"><h2>${agEsc(d[1])}</h2></div>
+    <div class="d2">${d[2].map(p => `<p>${agEsc(p)}</p>`).join("")}</div>
+  </div>`;
+}
+
+/* The main screen. Every sentence on it is the copy; the only two things decided at draw time
+   are the domain and the tool count, and each is left OUT when it is not known rather than
+   filled with something that looks like it was read. */
+function agGuideHtml(a){
+  if (a && a.guideDive) return agDiveHtml(a.guideDive);
+  const domain = agSiteDomain(a);
+  /* "Set up <domain>". With a domain it is the command to type; without one the slot is not
+     drawn at all, because a domain nobody gave us is not ours to print. */
+  const tools = agCountWord(a && a.tools ? a.tools.length : null);
+  return `<div class="ag-guide">
+    <div class="g1">
+      <h2>The SEO writer</h2>
+      <p class="l">${agEsc(AG_GUIDE_LEAD)}</p>
+    </div>
+    <div class="g2">
+      <h3 class="sec">How it works</h3>
+      <ol class="ag-gsteps">${AG_GUIDE_STEPS.map(s => `<li>${agEsc(s)}</li>`).join("")}</ol>
+    </div>
+    <div class="g3">
+      <h3 class="sec">To start</h3>
+      <p class="gp">${agEsc(AG_GUIDE_TYPE)}</p>
+      <p class="gp">${agEsc(AG_GUIDE_AFTER)}</p>
+    </div>
+    <div class="g4">
+      <h3 class="sec">What each tab holds</h3>
+      <dl class="ag-gtabs">${AG_GUIDE_TABS.map(t => {
+        /* the Tools row's sentence carries the one count on this screen; no count, no sentence */
+        const desc = t[1] != null ? t[1]
+          : tools ? `The ${tools} things it can do, in plain words.` : "";
+        return `<dt>${agEsc(t[0])}</dt><dd>${agEsc(desc)}</dd>`;
+      }).join("")}</dl>
+    </div>
+    <div class="g5">
+      <h3 class="sec">Understand it better</h3>
+      <ul class="ag-gdives">${AG_DIVES.map(d => `<li><button class="ag-gdive" type="button"
+        data-ag="dive" data-arg="${agEsc(d[0])}"><span>${agEsc(d[1])}</span>${AG_ICON.arrow}</button></li>`).join("")}</ul>
+    </div>
+  </div>`;
+}
+
 function agSideHtml(a){
   const chats = a.chats || [];
   const h = a.health;
   const setup = agSetupOf(h);
   const dotCls = !h ? "" : !h.model_provider ? "bad" : !setup.ready ? "warn" : "run";
   const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
-  const brand = (a.knowledge && a.knowledge.company && a.knowledge.company.brand) || "";
+  /* one company name on this screen, agBrandName's, so the sidebar and the marketplace can never
+     disagree about what it is or about it being absent */
+  const brand = agBrandName(a);
   const openIdeas = a.assets && a.assets.built ? (a.assets.counts || {}).open : null;
   /* Prompts sits with Memory and not with Tools: both are things the owner tells the agent about
      how to write, and neither is a thing the agent does. The count is how many he has changed. */
@@ -604,7 +1026,11 @@ function agSideHtml(a){
                 ["library", "Library", AG_ICON.check, a.library ? a.library.length : null], ["tools", "Tools", AG_ICON.spark, null],
                 ["connections", "Connections", AG_ICON.link, null]];
   const connWarn = h && (!h.dataforseo || !h.voyage);
-  return `<div class="ag-agent">
+  /* THE WAY BACK OUT. The agent is now somewhere you navigate INTO, so it has to be somewhere you
+     can leave, and the top of its own column is the one place that is true of every view on it --
+     the chat, the seven settings screens and an open review panel alike. */
+  return `<button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button>
+    <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
       <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
     </div>
@@ -637,14 +1063,27 @@ function agComposerHtml(a){
   const step = live && live.current_step ? live.current_step.replace(/_/g, " ") : (live ? live.stage : "");
   const state = running ? `<span class="ag-cstate"><i class="dot run"></i>the agent is working · ${agEsc(step)}</span>`
     : waiting ? `<span class="ag-cstate"><i class="dot wait"></i>waiting for you</span>` : "";
+  /* THE BOX HAS AN EDGE (owner, 2026-09-10: "the chat bar is always supposed to be highlighted,
+     so the user knows where the chat bar is"). The textarea and the send button are wrapped in
+     one element so the FIELD can carry the border, the hover and the focus ring, rather than
+     three loose controls sitting on the page looking like part of it. The wrapper is what
+     :focus-within lights up, so clicking anywhere in the box reads as focused -- which is what
+     it actually is. `busy` is the run's own state, so a disabled box looks disabled rather than
+     looking broken. */
   return `${state}
-    <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
-    ${running ? `<button class="send stop" type="button" data-ag="stop" aria-label="Stop this run" title="Stop — the run halts after the current step"><svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>`
-             : `<button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>`}`;
+    <div class="ag-field${running ? " busy" : ""}">
+      <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
+      ${running ? `<button class="send stop" type="button" data-ag="stop" aria-label="Stop this run" title="Stop — the run halts after the current step"><svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>`
+               : `<button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>`}
+    </div>`;
 }
 
 function agTranscriptHtml(a){
-  if (!a.chat || !(a.chat.runs || []).length) return agHeroHtml(a.health, a.conns);
+  /* An empty conversation is either somebody's first sight of this agent or their hundredth. The
+     introduction is drawn only for the first, decided by agFirstRun from real state, so a
+     returning open goes straight to the hero and its two plays. */
+  if (!a.chat || !(a.chat.runs || []).length)
+    return (agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns);
   const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
 }
@@ -1864,7 +2303,7 @@ function agWsCreateFormHtml(f){
         <span class="sp">then Project Settings → Data API</span></div>
       <label><b>Project URL</b><input type="text" data-agws="url" autocomplete="off" spellcheck="false" placeholder="https://abcdefghijklmnop.supabase.co" value="${agEsc(f.url || "")}"></label>
       <label><b>Publishable key</b><input type="text" data-agws="key" autocomplete="off" spellcheck="false" placeholder="sb_publishable_…" value="${agEsc(f.key || "")}"></label>
-      <label><b>What to call it</b><input type="text" data-agws="name" autocomplete="off" placeholder="Testlify" value="${agEsc(f.name || "")}"></label>
+      <label><b>What to call it</b><input type="text" data-agws="name" autocomplete="off" placeholder="Our team" value="${agEsc(f.name || "")}"></label>
       <label><b>Access token <span class="ag-opt">optional</span></b>
         <input type="password" data-agws="token" autocomplete="off" spellcheck="false" placeholder="sbp_… — leave this empty to set the tables up yourself">
         <span class="ag-hint">With one, Sutra makes the tables for you. It is used for that one
@@ -2087,6 +2526,37 @@ function agEnsureObserver(){
   agMountIfNeeded();
 }
 
+/* The two shells this tab can hold. Painted once per mount, and again when `screen` changes;
+   everything inside them is agDraw's, as it always was. */
+const AG_SHELL_AGENT = `<aside class="ag-side" id="agSide" aria-label="SEO Writer"></aside>
+      <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="ag-quiet" id="agQuiet" role="status" hidden></div><div class="pc" id="agComposer"></div></section>
+      <aside class="ag-panel" id="agPanel" aria-label="Review"></aside>`;
+const AG_SHELL_MARKET = `<div class="ag-mktwrap" id="agMarket" aria-label="Agents"></div>`;
+
+/* Paint the shell for the screen we are on, and load what that screen needs. One function, so
+   mounting into a fresh pane and moving between the two screens take exactly the same path.
+   `enter` asks for the one-shot arrival animation; the class is dropped again once it has run so
+   a later redraw or remount does not replay it. */
+function agEnterScreen(root, enter){
+  const a = agS(); if (!a || !root) return;
+  const market = a.screen !== "agent";
+  root.innerHTML = market ? AG_SHELL_MARKET : AG_SHELL_AGENT;
+  root.classList.toggle("ismarket", market);
+  root.classList.remove("haspanel");
+  root.classList.toggle("ag-enter", !!enter);
+  if (enter && typeof setTimeout === "function")
+    setTimeout(() => { const r = agRoot(); if (r) r.classList.remove("ag-enter"); }, AG_ENTER_MS);
+  agDraw(true);
+  if (market){
+    /* nothing on the shelf moves on its own, so the shelf keeps no clock running */
+    agStopPoll();
+    agMarketLoad();
+  } else {
+    agStartPoll();
+    agBootLoad();
+  }
+}
+
 function agMountIfNeeded(){
   const root = agRoot();
   const pane = root && root.closest ? root.closest(".pane") : null;
@@ -2096,12 +2566,8 @@ function agMountIfNeeded(){
   if (pane) pane.classList.add("agwide");
   if (!root.dataset.agLive){
     root.dataset.agLive = "1";
-    root.innerHTML = `<aside class="ag-side" id="agSide" aria-label="SEO Writer"></aside>
-      <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="ag-quiet" id="agQuiet" role="status" hidden></div><div class="pc" id="agComposer"></div></section>
-      <aside class="ag-panel" id="agPanel" aria-label="Review"></aside>`;
-    agDraw(true);
-    agStartPoll();
-    agBootLoad();
+    /* A remount is render() repainting the pane, not somebody arriving, so it never animates. */
+    agEnterScreen(root, false);
   }
 }
 
@@ -2139,6 +2605,9 @@ function agScrollRestore(scroll, anc){
 
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
+  /* The marketplace is one block and has no columns, no panel and no composer, so it leaves
+     before any of that machinery runs. */
+  if (a.screen !== "agent"){ agSetHtml("agMarket", agMarketHtml(a)); return; }
   const scroll = document.getElementById("agScroll");
   const panelFlips = root.classList.contains("haspanel") !== !!a.panel;
   const anchor = (panelFlips && a.view !== "chat" && scroll) ? agScrollAnchor(scroll) : null;
@@ -2153,16 +2622,19 @@ function agDraw(force){
       if (a.stick && (nearBottom || force)) scroll.scrollTop = scroll.scrollHeight;
       else if (a.scroll != null && force) scroll.scrollTop = a.scroll;
     }
-    const comp = document.getElementById("agComposer");
-    if (comp){
-      const had = document.activeElement && comp.contains(document.activeElement);
-      const before = had ? document.activeElement.selectionStart : null;
-      if (agSetHtml("agComposer", agComposerHtml(a)) || force){
-        const ta = comp.querySelector("[data-agask]");
-        if (ta){ ta.value = a.draft || ""; agGrow(ta); if (had || a.focusComposer){ try { ta.focus({ preventScroll: true }); if (before != null) ta.setSelectionRange(before, before); else ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} a.focusComposer = false; } }
-      }
-      comp.hidden = false;
-    }
+    agDrawComposer(a, force);
+  } else if (a.view === "guide"){
+    /* THE GUIDE. One document in the same column the conversation uses, with the composer left
+       exactly where it was and exactly as usable -- typing in it starts a new chat, which is
+       the only way off this screen that anybody has to learn. Nothing here waits on a payload:
+       the guide is drawn from the copy on the first frame and the two real slots fill in behind
+       it when their routes answer. */
+    agSetHtml("agStages", "");
+    /* the guide and each of its five dives is a new document, so it starts at the top rather
+       than wherever the last one was scrolled to */
+    if (scroll && (a.lastView !== a.view || a.lastDive !== a.guideDive)) scroll.scrollTop = 0;
+    agSetHtml("agScroll", agGuideHtml(a));
+    agDrawComposer(a, force);
   } else {
     agSetHtml("agStages", "");
     /* a settings view is a new document: start it at the top, not where the chat was */
@@ -2200,7 +2672,23 @@ function agDraw(force){
   const quiet = document.getElementById("agQuiet");
   if (quiet){ const q = agQuietHtml(a); agSetHtml("agQuiet", q); quiet.hidden = !q; }
   if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
-  a.lastView = a.view;
+  a.lastView = a.view; a.lastDive = a.guideDive;
+}
+
+/* The composer, drawn identically for the two views that have one: the conversation and the
+   guide. It was inline in agDraw's chat branch and is a function now for one reason -- the box
+   on the guide has to be the SAME box, with the same draft, the same caret handling and the
+   same run state, rather than a second one that drifts from it. */
+function agDrawComposer(a, force){
+  const comp = document.getElementById("agComposer");
+  if (!comp) return;
+  const had = document.activeElement && comp.contains(document.activeElement);
+  const before = had ? document.activeElement.selectionStart : null;
+  if (agSetHtml("agComposer", agComposerHtml(a)) || force){
+    const ta = comp.querySelector("[data-agask]");
+    if (ta){ ta.value = a.draft || ""; agGrow(ta); if (had || a.focusComposer){ try { ta.focus({ preventScroll: true }); if (before != null) ta.setSelectionRange(before, before); else ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} a.focusComposer = false; } }
+  }
+  comp.hidden = false;
 }
 
 function agGrow(ta){
@@ -2243,6 +2731,9 @@ let agRefreshBusy = false, agRefreshN = 0;
 async function agRefresh(){
   if (agRefreshBusy) return; agRefreshBusy = true;
   const a = agS();
+  /* the shelf has no clock (agEnterScreen stops it), and a tick that arrives from a timer already
+     in flight must not start pulling a chat's events behind it */
+  if (a && a.screen !== "agent"){ agRefreshBusy = false; return; }
   try {
     agRefreshN++;
     const live = agLiveRun();
@@ -2295,14 +2786,47 @@ async function agRefresh(){
   agDraw();
 }
 
+/* THE MARKETPLACE'S ONE LOAD. Three routes the agent screen already uses, and no fourth source:
+     /health    → is there a model, is the site read, is the brand pack built, how many chats
+     /library   → how many articles there are
+     /knowledge → the company record the name comes from, and the catalogue's page count
+   /health lands first and is drawn on its own, because it carries the state pill and it is the
+   quickest of the three; the other two fill their facts in behind it. A route that fails leaves
+   its fact off the card rather than putting a zero there, and says so once at the bottom. */
+async function agMarketLoad(){
+  const a = agS(); if (!a || a.marketBusy) return;
+  a.marketBusy = true; a.marketErr = null;
+  try {
+    try { a.health = await agApi("/health"); }
+    catch (e) { a.marketErr = String((e && e.message) || e); }
+    agDraw();
+    const [lib, kn] = await Promise.all([
+      agApi("/library").catch(() => null),
+      agApi("/knowledge").catch(() => null),
+    ]);
+    if (lib) a.library = lib;
+    if (kn) a.knowledge = kn;
+  } finally { a.marketBusy = false; }
+  agDraw();
+}
+
 async function agBootLoad(){
   const a = agS();
   try { a.health = await agApi("/health"); } catch (e) {}
   try { a.chats = await agApi("/chats"); } catch (e) { a.chats = []; }
-  if (!a.chatId && a.chats && a.chats.length){
-    const live = a.chats.find(c => c.live === "waiting" || c.live === "running");
-    await agLoadChat((live || a.chats[0]).id, true);
-  }
+  /* THE LAST CHAT IS NOT RESTORED (owner, 2026-09-10). Booting used to open the most recent
+     chat -- preferring a live one -- so opening the agent dropped you into a conversation. The
+     chats are all still here, in the sidebar, and one click resumes any of them; the door just
+     opens on the guide instead.
+
+     A RUN IN FLIGHT. This is the case worth thinking about, because a run WAITING on an answer
+     is blocked until somebody opens it. It still lands on the guide, deliberately: nothing is
+     hidden that was not already only in the sidebar, and the row for that chat carries the live
+     dot (.dot.run / .dot.wait) that agSideHtml has always drawn, so a run that needs you is
+     marked in the one place every chat is listed. Auto-opening it would be the behaviour the
+     owner asked to remove, and the old code was not a notification anyway -- on a machine with
+     nothing live it silently opened the most recent chat, which is as likely to be the wrong
+     one. The run does not stop, and one click is still all it takes to get back to it. */
   try { a.memory = await agApi("/memory"); } catch (e) {}
   try { a.ws = await agApi("/workspace"); } catch (e) {}
   /* the sidebar says how many prompts he has changed, so the payload is wanted before he opens the tab */
@@ -2310,6 +2834,10 @@ async function agBootLoad(){
   try { a.library = await agApi("/library"); } catch (e) {}
   try { a.knowledge = await agApi("/knowledge"); } catch (e) {}
   try { a.cta = await agApi("/knowledge/cta"); } catch (e) {}
+  /* the guide says how many things the agent can do, and the number is the registry's -- so the
+     payload is wanted before he opens the Tools tab, exactly as /prompts is above. A route that
+     fails leaves a.tools null and the sentence is not drawn at all. */
+  try { a.tools = await agApi("/tools"); } catch (e) {}
   agDraw(true);
 }
 
@@ -2601,10 +3129,38 @@ async function agAction(act, el){
   const a = agS(); if (!a) return;
   const arg = el.getAttribute("data-arg") || "";
   switch (act){
-    case "new": a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.view = "chat"; a.draft = ""; a.focusComposer = true; agDraw(true); break;
-    case "chat": a.view = "chat"; await agLoadChat(arg, false); break;
+    /* ── the tab's own route: the shelf, and the door into an agent ─────────── */
+    /* Opening an agent. The shell is swapped and agBootLoad started in the same breath, so the
+       arrival animation runs over an agent that is already loading. Nothing here waits on it. */
+    case "open": {
+      if (arg && arg !== "seo") break;      /* one agent; an unknown id opens nothing */
+      /* THE DOOR OPENS ON THE GUIDE, always -- not on the last conversation and not on a
+         half-finished run. agBootLoad no longer restores a chat; see the note there for what
+         happens to a run that is in flight. */
+      a.screen = "agent"; a.view = "guide"; a.guideDive = null; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "market": {
+      a.screen = "market"; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    /* "I have read this" -- for this sitting only, and it claims nothing about setup */
+    case "introskip": a.introSkip = true; agDraw(true); break;
+    /* THE FIVE DEEP DIVES, in place. The dive replaces the guide in the SAME column (owner:
+       "the same blank screen would change") -- it is not a modal and not a new pane, so there
+       is no second surface to close and the composer never moves. An id the list does not have
+       leaves the guide where it is rather than blanking the screen. */
+    case "dive": {
+      if (!agDive(arg)) break;
+      a.view = "guide"; a.guideDive = arg; a.panel = null; agDraw(true); break;
+    }
+    case "guideback": a.view = "guide"; a.guideDive = null; agDraw(true); break;
+    case "new": a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.view = "chat"; a.guideDive = null; a.draft = ""; a.focusComposer = true; agDraw(true); break;
+    case "chat": a.view = "chat"; a.guideDive = null; await agLoadChat(arg, false); break;
     case "view": {
-      a.view = arg; a.panel = null;
+      a.view = arg; a.panel = null; a.guideDive = null;
       if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
@@ -2614,7 +3170,7 @@ async function agAction(act, el){
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
       agDraw(true); break;
     }
-    case "play": a.view = "chat"; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
+    case "play": a.view = "chat"; a.guideDive = null; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
     case "send": { const ta = document.querySelector("[data-agask]"); await agSend(ta ? ta.value : a.draft); break; }
     case "stop": { const live = agLiveRun(); if (!live) break;
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));

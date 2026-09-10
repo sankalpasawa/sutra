@@ -1976,9 +1976,12 @@ document.getElementById("app").addEventListener("click", e=>{
        + on a department heading has no session to name -- it is what creates
        one. Routing it through sessAction made the button silently inert. */
     if (act.dataset.act === "dept-new"){
-      newSession(act.dataset.cwd || "", {ref:act.dataset.ref,
-                                         name:act.dataset.name,
-                                         cwd:act.dataset.cwd});
+      /* startNewChat, not newSession: the + is a New chat gesture like the
+         other two, and reuses the focused chat when it is still untouched AND
+         carries no other department (see the empty-chat rule below). */
+      startNewChat(act.dataset.cwd || "", {ref:act.dataset.ref,
+                                           name:act.dataset.name,
+                                           cwd:act.dataset.cwd});
       return;
     }
     sessAction(act.dataset.act, act.dataset.sid, act.dataset.group); return; }
@@ -2059,8 +2062,9 @@ document.addEventListener("click", e=>{
    disk and the server resolves its cwd (app.py _with_departments) -- the two
    paths agree because the department's own cwd is what gets passed here, so
    the server resolves the same node the operator clicked. */
+const NEW_CHAT_TITLE = "New session";
 function newSession(cwd, department){
-  const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
+  const s = { id:"s-"+(++SID), title:NEW_CHAT_TITLE, created_ms:NOW, updated_ms:NOW,
               turns:[], local:true, loadState:"live",
               department: department || null };
   /* BOTH fields, deliberately. S.cwd is the override map sessCwd()/claudeWsUrl()
@@ -2076,13 +2080,105 @@ function newSession(cwd, department){
   const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
   return s;
 }
+/* ══════════════════════ the empty-chat rule ══════════════════════
+   New chat on a chat that is STILL EMPTY reuses that chat instead of minting a
+   second one. Without this, every click added a row and the Chats list filled
+   with "New session · 0 turns" entries nobody had typed in -- six of them, in
+   front of the one real conversation, with nothing to tell them apart.
+
+   NOTHING IS DELETED HERE, AND THE ROWS ALREADY ON SCREEN ARE LEFT ALONE.
+   A local chat exists in S.sessions and nowhere else: saveLayout() persists
+   S.ui and never the session list, and a chat reaches disk only when a turn is
+   sent (the server mints its chat_store record after the transport returns a
+   session id, app.py ws_chat). So today's empties clear themselves on the next
+   launch, and sweeping them would buy that for the price of a delete predicate
+   one missed field away from taking somebody's work with it. Not a trade worth
+   making when the rule below stops them being created at all.
+
+   "EMPTY" IS THE STRICTEST READING, and it is chatUntouched() below: zero
+   turns, still carrying the minted title, and not one of the per-chat stores
+   written to. Anything a person did here -- a message typed and not sent, a
+   file attached, a model or folder or per-turn option chosen, a side chat, a
+   pin, a group, a rename -- makes the chat theirs, and a chat that is theirs is
+   never reused. Work in flight is covered twice: submitTurn() pushes its turn
+   into s.turns BEFORE the socket opens, so a running chat is never turn-less,
+   and sessionBusy() (streaming, side-streaming, a socket holding a live or
+   queued turn) is asked anyway. */
+function chatUntouched(s){
+  if (!s || !s.id) return false;
+  /* Minted in this panel and never written to disk. A `real` chat is a
+     transcript file under a provider's project tree and is never in scope. */
+  if (!s.local || s.real || s.vanished) return false;
+  /* The title newSession() minted, unchanged. Every other way a local chat is
+     born names itself -- "Fork of ...", a run thread, Balance, Help, Optimus --
+     and renameSession() writes the name the operator chose straight onto
+     s.title. A named chat is somebody's. */
+  if (s.title !== NEW_CHAT_TITLE) return false;
+  if (s.fork || s.forkOf) return false;
+  /* Nothing said in the thread or in its side chat, and nothing being said. */
+  if ((s.turns || []).length) return false;
+  if (((S.sideTurns || {})[s.id] || []).length) return false;
+  if (((S.sideText || {})[s.id] || "").trim()) return false;
+  if (sessionBusy(s.id)) return false;
+  /* Never bound to a provider session or a durable chat record. Either one
+     means a socket ran for this chat and the server knows about it. */
+  if (s.claude_session || s.channel || (S.sutraId || {})[s.id]) return false;
+  /* Typed, attached or configured -- the work that exists before a first send.
+     S.attach may hold entries still uploading; those count as work too. */
+  if (((S.composerText || {})[s.id] || "").trim()) return false;
+  if (((S.attach || {})[s.id] || []).length) return false;
+  if ((S.model || {})[s.id]) return false;
+  if ((S.chatProvider || {})[s.id]) return false;
+  if (Object.keys((S.turnOpts || {})[s.id] || {}).length) return false;
+  /* Marked in the rail. Pinned/unread/group persist to localStorage, so they
+     outlive the chat object -- the plainest statement of intent there is. */
+  if (isPinned(s.id) || isUnread(s.id) || groupMap()[s.id]) return false;
+  return true;
+}
+/* The chat a New chat gesture should reuse, or null to mint one.
+   Only ever THE FOCUSED CHAT -- the one the operator is looking at, which is
+   the one the complaint is about ("I clicked New chat, never typed, clicked it
+   again"). An untouched chat further down the list is left where it is: hauling
+   a row the operator had moved on from back under their cursor is a surprise,
+   and quietly leaving it costs one stale row that clears on the next launch. */
+function reusableEmptyChat(cwd, department){
+  const sid = S.openPanes[S.openPanes.length - 1];
+  if (!sid) return null;
+  const s = (S.sessions || []).find(x => x.id === sid);
+  if (!chatUntouched(s)) return null;
+  /* The gesture carries a target folder, and the + on a department heading
+     carries a department. Reuse only where they cannot conflict: the blank
+     chat records the same one, or records none yet (startNewChat then writes
+     it -- lossless, there is nothing there to overwrite). A blank chat already
+     pointed somewhere else is not the chat this click asked for. */
+  const haveCwd = (S.cwd && S.cwd[s.id]) || s.cwd || "";
+  if (haveCwd && haveCwd !== (cwd || "")) return null;
+  const haveDept = (s.department && s.department.ref) || "";
+  if (haveDept && haveDept !== ((department && department.ref) || "")) return null;
+  return s;
+}
+/* THE one entry point for every "New chat" gesture: the rail button, Cmd+N and
+   the + on a department heading. Deliberately NOT for fork, run threads,
+   Balance, Help or Optimus -- each of those mints a chat with a name and a
+   seeded system prompt of its own, and dropping one onto the operator's blank
+   pane would put a title they did not ask for on the chat in front of them. */
+function startNewChat(cwd, department){
+  const s = reusableEmptyChat(cwd, department);
+  if (!s) return newSession(cwd, department);
+  if (cwd && !((S.cwd && S.cwd[s.id]) || s.cwd)){ S.cwd[s.id] = cwd; s.cwd = cwd; }
+  if (department && !s.department) s.department = department;
+  pushPane(s.id);
+  render();
+  const inp = document.querySelector('[data-sask="'+s.id+'"]'); if (inp) inp.focus();
+  return s;
+}
 /* With no argument the new session falls through to SETTINGS.workdir, which
    defaults to ~/sutra-ui-workspace -- a directory the operator never works in.
    Running `claude` in the repo they were discussing and hitting /resume then
    lists nothing, because claude only shows the project dir for the cwd you are
    standing in. Default to the folder in view instead. */
 document.getElementById("newSession").onclick = () =>
-  newSession(sessCwd(S.openPanes[S.openPanes.length - 1]) || "");
+  startNewChat(sessCwd(S.openPanes[S.openPanes.length - 1]) || "");
 /* theme */
 (function(){
   const r=document.documentElement, KEY="sutra.panel.theme";

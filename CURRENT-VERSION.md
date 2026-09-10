@@ -41,6 +41,39 @@ on syncing — a newer Sutra growing a table is not a broken workspace — and `
 rather than queues** a row its workspace cannot take, because the outbox retries for ever in order
 and one undeliverable row would hold every idea, article and prompt edit behind it.
 
+## v2.257.0 (2026-09-10, HEAD)
+
+**The Agents tab is a marketplace, and opening an agent explains itself.** It used to drop straight
+into the last conversation. Now the tab opens on a shelf — the company name, one card for the one
+agent that exists, and no greyed-out placeholders for things nobody has built — and opening the
+agent lands on a guide rather than a chat: what it does in four steps, where to type to begin, what
+each of the seven tabs holds, and five doors that explain the site read, the brand pack, the asset
+engine, the research and the writer, each replacing the screen in place with a way back. The copy
+is short on purpose and every word of it is in `design/AGENT-GUIDE-COPY.md`, with a test pinning
+distinctive sentences so a later edit cannot quietly reword them. The screen names no website at
+all: it used to print `Set up <domain>` from the company record, which was correct and never
+hardcoded, but a command box made a two-word instruction look like something to copy.
+
+**Three layout faults, all mine.** Left-aligning the conversation moved the whole gutter to the
+right instead of removing it; prose and structure want different widths, so paragraphs keep a
+measure and step rows, cards and tables now fill the column. The composer was capped at the old
+prose measure and stopped two thirds across — an input has no reading width. And the main chat
+composer had `background:none;border:0`, so the most-used control in the app was placeholder text
+floating on the pane; it is a real field now, with a hover and a focus ring drawn from the theme
+picker's own tokens.
+
+**Clicking a chat opened nothing, and it was a fix from the same morning.** `S.screen` stays
+`"agents"` after one visit to the Agents tab, and the new Agents-opens-alone rule read that as
+"paint no session panes" — everywhere, for ever. One line. It explains both halves of the report:
+with panes suppressed, New chat looked dead too, because its row appeared and no pane could.
+
+**Also:** pressing New chat while the current chat is untouched now reuses it instead of minting
+another (the empties that pile up live only in the browser and clear on relaunch, so nothing is
+deleted to achieve it); every artifact card stopped reading "Topic ideasanswered", two inline spans
+styled as though stacked; and the shelf carries a drawn Sutra mark whose every stroke is
+`var(--acc)`, so it follows the theme picker with no per-theme code, sits behind everything,
+catches no clicks and never animates.
+
 ## v2.256.1 (2026-09-10)
 
 **A setup that did not finish was forgotten entirely.** The owner created his team workspace and the
