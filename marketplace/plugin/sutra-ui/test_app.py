@@ -162,6 +162,10 @@ class TestApp(unittest.TestCase):
         cls.port = _free_port()
         env = dict(os.environ)
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        # This class seeds a fixture org and asserts its exact shape, so the
+        # boot-time project import must not add the operator's own projects
+        # to it -- a second writer moves every d-path ordinal.
+        env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env.pop("SUTRA_UI_PERMISSION_MODE", None)  # exercise the real default
         cls.proc = subprocess.Popen(
             [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
@@ -1663,6 +1667,10 @@ class TestDeepSeekSpawnedModel(unittest.TestCase):
         cls.port = _free_port()
         env = dict(os.environ)
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        # This class seeds a fixture org and asserts its exact shape, so the
+        # boot-time project import must not add the operator's own projects
+        # to it -- a second writer moves every d-path ordinal.
+        env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env.pop("ANTHROPIC_API_KEY", None)
         env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
         env["SUTRA_UI_DEEPSEEK_BIN"] = shim
@@ -1861,6 +1869,10 @@ class TestDeepSeekPermissionMode(unittest.TestCase):
         cls.port = _free_port()
         env = dict(os.environ)
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        # This class seeds a fixture org and asserts its exact shape, so the
+        # boot-time project import must not add the operator's own projects
+        # to it -- a second writer moves every d-path ordinal.
+        env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env.pop("ANTHROPIC_API_KEY", None)
         env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
         env["SUTRA_UI_DEEPSEEK_BIN"] = shim
@@ -2139,6 +2151,10 @@ class TestChatProviderParam(unittest.TestCase):
         cls.port = _free_port()
         env = dict(os.environ)
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        # This class seeds a fixture org and asserts its exact shape, so the
+        # boot-time project import must not add the operator's own projects
+        # to it -- a second writer moves every d-path ordinal.
+        env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env.pop("ANTHROPIC_API_KEY", None)   # that refusal is another test's job
         env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
         cls.proc = subprocess.Popen(
@@ -2302,6 +2318,10 @@ class TestChatRefusesApiKey(unittest.TestCase):
         cls.port = _free_port()
         env = dict(os.environ)
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
+        # This class seeds a fixture org and asserts its exact shape, so the
+        # boot-time project import must not add the operator's own projects
+        # to it -- a second writer moves every d-path ordinal.
+        env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
         # belt and braces: if the refusal ever regresses, the spawn fails
         # instead of running a real, billable claude turn.

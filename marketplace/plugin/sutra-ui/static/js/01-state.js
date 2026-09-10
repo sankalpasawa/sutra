@@ -232,7 +232,7 @@ const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,
-                navCollapsed:false, planeSections:{},
+                navCollapsed:false, planeSections:{}, sessCollapsed:{},
                 dest:"now", destSel:{}, railOpen:null,
                 balanceTab:"today" };
   if (raw && typeof raw === "object"){
@@ -258,11 +258,22 @@ function loadLayout(){
         if (k.indexOf(":") !== -1) out.planeSections[k] = !!raw.planeSections[k];
       });
     }
-    /* sessCollapsed is NOT adopted (2026-09-02). It only ever held collapsed
-       PROJECT groups, and Project grouping is gone; carrying the keys forward
-       would leave every operator's stored layout holding a map that nothing
-       reads. Dropping an unreadable key loses nothing -- the groups it named
-       do not exist. */
+    /* sessCollapsed is adopted again (2026-09-08), for DEPARTMENT groups.
+       It was dropped on 2026-09-02 for the honest reason that it only held
+       collapsed PROJECT groups and project grouping had gone -- a map nothing
+       read. Departments are now the grouping the session list has, so the key
+       has a reader again and comes back rather than gaining a near-twin.
+
+       Keys are "dept:<ref>", never "dept:<name>": a department renamed in the
+       registry must keep its collapsed state, and two departments may share a
+       leaf name under different parents. Old "project:<cwd>" keys are dropped
+       by the same prefix filter -- they name groups that do not exist. */
+    if (raw.sessCollapsed && typeof raw.sessCollapsed === "object"){
+      out.sessCollapsed = {};
+      Object.keys(raw.sessCollapsed).forEach(k => {
+        if (k.indexOf("dept:") === 0) out.sessCollapsed[k] = !!raw.sessCollapsed[k];
+      });
+    }
     /* v3.3 destination (PLAN-25 S3/S10). Migration: an operator whose stored
        shell was the Code tab lands in Chats — the same surface renamed. The
        railTab field itself is retired; only the migration still reads it. */
@@ -699,6 +710,10 @@ function adoptRealSessions(rows){
       k.mtime = r.mtime; if (r.size) k.size = r.size;
       if (r.mtime) k.updated_ms = r.mtime * 1000;
       if (r.cwd) k.cwd = r.cwd; if (r.branch) k.branch = r.branch;
+      /* `undefined` means the server did not answer (old build, registry
+         unreadable); `null` is a real answer meaning "no department owns this
+         cwd". Only the first should leave a previous answer standing. */
+      if (r.department !== undefined) k.department = r.department;
       return k;
     }
     return {
@@ -706,6 +721,12 @@ function adoptRealSessions(rows){
       title: r.title || "(no prompt)",
       real: true, local: false,
       project: r.project || "", cwd: r.cwd || "", branch: r.branch || "",
+      /* The department owning this session's working directory, resolved
+         server-side from the imported project tree (app.py _with_departments).
+         null = no imported project contains this cwd, which is a stated answer
+         and not a missing one -- the Dept view says which of the reasons it is
+         rather than filing the chat under a guess. */
+      department: r.department || null,
       /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
          the file's last write — genuinely "updated", not a fabricated "created". */
       created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,

@@ -1,8 +1,43 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-09
+**status**: active · **updated**: 2026-09-10
 
-## v2.253.0 (2026-09-09, HEAD)
+## v2.256.0 (2026-09-10, HEAD)
+
+**Every project you have worked in is a department, and chats live under them.** A new operator
+installed Sutra and the Org screen was empty -- the one surface that makes this different from a
+chat client had nothing in it, while the machine already knew what they work on. `project_import.py`
+reads the three stores Claude itself uses (the desktop app's session store, `~/.claude.json`, and
+`~/.claude/projects`) and mints one department per project, nested by directory containment. It runs
+from an app startup hook, so onboarding is plain code with no model in the loop, and a project
+started later appears on the next launch. Add-only: wiping stays behind an explicit CLI flag,
+because a boot path that can delete a registry is one crash-loop away from doing it repeatedly.
+
+Reading only `~/.claude/projects` -- the obvious source -- found **12 projects where the union finds
+23**. It cannot see a project whose sessions ran in the desktop app (bahi-khata, cover-letter,
+lenovo-case-study) nor one the CLI merely remembers (hokage-desk, kaguya, nakama-cli-suite,
+sovereign-ai). A department's identity is its **cwd, not its name**: labels change -- a project is
+named after its git remote when the directory IS the repo root, which is how Claude labels them, so
+`live-contest-event-leaderboard` shows as *Live Contest Event Dashboard* -- and minting by name
+produced a duplicate that left two departments claiming one directory. The naive form of that rule
+was wrong for 2 of the 3 projects it touched: a subdirectory reports its parent's remote, which
+would have folded `sutra/marketplace/plugin/sutra-ui` into *Sutra*.
+
+**Chats group by department, keyed on the working directory rather than turn placements.** That
+axis only ever covered the subset that routed -- a terminal transcript carries `domain:null` by
+design, an unread one has no turns, and `askSide` skips classification deliberately -- and it placed
+0 of 400 sessions after a registry rebuild. Headings carry the department's real size, not the
+number of chats on the loaded page (it read *90* for a project holding *939*), every department is
+listed rather than only those with a recent chat, and groups collapse, persisted per department ref.
+
+**The company name is derived from the machine, never a literal.** The registry root and the
+identity footer read "Asawa Inc." -- so a stranger who installed Sutra was shown someone else's
+company as the root of their own org and offered "CEO of Asawa Inc." as their role. The root is now
+read from the account (`SUTRA_ORG_NAME`, then the account full name, then the login name), the role
+label is composed from the registry root, and a superseded role is cleared rather than left in
+storage naming a company the operator never had.
+
+## v2.253.0 (2026-09-09)
 
 **Reddit reads again, and it was blocking three things at once.** Every plain request from this
 machine came back 403, and old.reddit answered a login page with a success code, which is why one

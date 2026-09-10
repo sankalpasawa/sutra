@@ -1971,11 +1971,36 @@ document.getElementById("app").addEventListener("click", e=>{
   }
   const act = e.target.closest("[data-act]");
   if (act){ e.stopPropagation();
+    /* Handled HERE, not in sessAction: that function opens with a
+       `S.sessions.find(id === sid)` guard and returns when it misses, and the
+       + on a department heading has no session to name -- it is what creates
+       one. Routing it through sessAction made the button silently inert. */
+    if (act.dataset.act === "dept-new"){
+      newSession(act.dataset.cwd || "", {ref:act.dataset.ref,
+                                         name:act.dataset.name,
+                                         cwd:act.dataset.cwd});
+      return;
+    }
     sessAction(act.dataset.act, act.dataset.sid, act.dataset.group); return; }
   /* Collapse/expand ONE plane group. Checked BEFORE [data-screen] because the
      header sits in the same delegated listener; a row click must still open its
      screen, and the header must not. Persisted per "<dest>:<label>", default
      expanded, so the store only holds groups the operator explicitly closed. */
+  /* Collapse/expand ONE department group in the chat list. Same shape as the
+     plane-group collapse below, different store: plane groups are keyed
+     "<dest>:<label>" in planeSections, departments "dept:<ref>" in
+     sessCollapsed. renderRail() repaints the list -- renderPlane() would not,
+     because the chats plane hosts the session surface rather than rows. */
+  const dc = e.target.closest("[data-deptcollapse]");
+  if (dc){
+    const key = dc.dataset.deptcollapse;
+    S.ui.sessCollapsed = S.ui.sessCollapsed || {};
+    if (S.ui.sessCollapsed[key]) delete S.ui.sessCollapsed[key];
+    else S.ui.sessCollapsed[key] = true;
+    saveLayout();
+    renderRail();
+    return;
+  }
   const pc = e.target.closest("[data-planecollapse]");
   if (pc){
     const key = pc.dataset.planecollapse;
@@ -2028,9 +2053,16 @@ document.addEventListener("click", e=>{
    as its working-directory override (the same per-session mechanism the composer's
    folder chip writes), which is the entire point of a + that lives on a project
    heading -- starting a session "in" a project means starting it in that folder. */
-function newSession(cwd){
+/* `department` is the department this chat belongs to, passed when the chat is
+   started FROM a department (the + on a department heading). A chat started
+   anywhere else leaves it null and inherits one once its transcript lands on
+   disk and the server resolves its cwd (app.py _with_departments) -- the two
+   paths agree because the department's own cwd is what gets passed here, so
+   the server resolves the same node the operator clicked. */
+function newSession(cwd, department){
   const s = { id:"s-"+(++SID), title:"New session", created_ms:NOW, updated_ms:NOW,
-              turns:[], local:true, loadState:"live" };
+              turns:[], local:true, loadState:"live",
+              department: department || null };
   /* BOTH fields, deliberately. S.cwd is the override map sessCwd()/claudeWsUrl()
      read (so the session really runs in that folder); s.cwd is what the rail's
      project grouping and projOf() read. Writing only the first meant the + on a
@@ -2076,15 +2108,40 @@ document.getElementById("newSession").onclick = () =>
    backend read — that wiring is a later, separate decision. */
 (function(){
   const KEY = "sutra.panel.role";
-  /* The holding's operating identities. Static by design: roles are a founder
-     decision, not a discovery — extending this list is a one-line change. */
-  const ROLES = [
-    { name:"CEO of Asawa Inc.", who:"holding" },
-    { name:"CEO of Sutra",      who:"subsidiary" }
-  ];
+  /* ROLES ARE DERIVED FROM THE REGISTRY, NOT DECLARED HERE (founder,
+     2026-09-09). This was a literal pair -- "CEO of Asawa Inc." and "CEO of
+     Sutra" -- so every operator who installed Sutra was offered the founder's
+     own companies as the identity they act under. A default that names someone
+     else's company is not a default, it is a mislabel.
+
+     The root domain IS the company (project_import mints it from the machine's
+     own account name), so the role reads off the tree rather than keeping a
+     second, hand-maintained copy of the same fact. One source: rename the root
+     in Org and the footer follows.
+
+     Deeper roles ("CEO of <subsidiary>") are a later decision -- v3.4's
+     scopeOrgForRole already resolves a role to a subtree, so adding them is a
+     matter of listing more nodes here, not new machinery. */
+  const ROLE_UNSET = "Set your company";
+  function orgName(){
+    if (!Array.isArray(DOMAINS) || !DOMAINS.length) return "";
+    const root = DOMAINS.find(d => !d.parent_ref);
+    return (root && root.name || "").trim();
+  }
+  function roles(){
+    const org = orgName();
+    /* Before the org has loaded there is no honest label to show, so the menu
+       says so rather than inventing a company. It repaints when loadOrg lands. */
+    return org ? [{ name:"CEO of " + org, who:"company" }]
+               : [{ name:ROLE_UNSET,      who:"not set yet" }];
+  }
   const rd = ()=>{ try{ return localStorage.getItem(KEY) }catch(e){ return null } };
   const wr = v =>{ try{ localStorage.setItem(KEY, v) }catch(e){} };
-  const current = ()=> ROLES.some(x=>x.name===rd()) ? rd() : ROLES[0].name;
+  /* A stored role that no longer exists falls back to the first live one --
+     which is also how an operator upgrading from the hardcoded pair stops
+     seeing "CEO of Asawa Inc." without any migration step. */
+  const current = ()=>{ const list = roles(); const saved = rd();
+                        return list.some(x=>x.name===saved) ? saved : list[0].name; };
 
   const idEl = document.getElementById("identity");
   const btn  = document.getElementById("idBtn");
@@ -2093,9 +2150,16 @@ document.getElementById("newSession").onclick = () =>
   if (!idEl || !btn || !menu || !list) return;
 
   function paintRole(){
+    /* Drop a stored role the registry no longer offers -- once the tree is
+       loaded, so a boot-time paint (when every role looks stale) cannot erase
+       a legitimate choice. current() already ignores it; this stops the dead
+       string sitting in the operator's storage naming a company they never
+       had, which is the same dead-key rule the collapse map follows. */
+    const live = roles();
+    if (orgName() && rd() && !live.some(x => x.name === rd())) wr(live[0].name);
     const roleEl = document.getElementById("idRole");
     if (roleEl) roleEl.textContent = current();
-    list.innerHTML = ROLES.map(x=>`
+    list.innerHTML = live.map(x=>`
       <li><button type="button" data-role="${x.name}" aria-current="${x.name===current()}">
         ${x.name}<span class="idwho">${x.who}</span></button></li>`).join("");
   }
@@ -2124,6 +2188,12 @@ document.getElementById("newSession").onclick = () =>
   /* The scope resolver (loadOrg) needs the acting role but must not reach into
      this closure; publish the read-only accessor. */
   globalThis.panelRole = current;
+  /* The footer paints once, at boot, BEFORE the org tree has loaded -- so the
+     first paint necessarily shows the unset label. loadOrg calls this when the
+     tree lands, which is the moment the company name first exists. Without it
+     the operator stares at "Set your company" for a whole session while the
+     Org screen two panes away shows the company perfectly well. */
+  globalThis.paintPanelRole = paintRole;
 })();
 /* ── opening a screen, from ANY entry point (2.118.1 hotfix) ────────────────
    The lazy loaders used to live only inside the click delegation, so entering
@@ -2409,6 +2479,9 @@ async function loadOrg(){
   META.history_derived = history.meta.derived;
   META.domain_index_lines = history.meta.domain_index_lines;
   META.legacy_events = history.meta.legacy_events;
+  /* The company name only exists once the tree is here, and the identity
+     footer painted before that. Repaint it now. */
+  if (typeof paintPanelRole === "function") paintPanelRole();
   invalidateSim();
 }
 

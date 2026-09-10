@@ -206,6 +206,15 @@ def org_tree(include_retired: bool = False, all_tenants: bool = False,
             # let the panel recompute identically once the adapter wiring
             # in app.py's /panel lands.
             "tenant_id": d.get("tenant_id"),
+            # Written by project_import: the working directory this department
+            # IS, and the true number of sessions in it across all three of the
+            # machine's session stores. The Chats -> Dept headings read
+            # `sessions` so they state the department's real size rather than
+            # counting whichever page of chats the panel has loaded. Both are
+            # absent (None) on a department minted by any other path, and every
+            # reader must treat them as optional.
+            "cwd": d.get("cwd"),
+            "sessions": d.get("sessions"),
             "description": d.get("description"),
             "mint_evidence": d.get("mint_evidence") or [],
             "ts_minted_ms": d.get("ts_minted_ms"),

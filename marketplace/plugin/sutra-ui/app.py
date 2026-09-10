@@ -30,6 +30,7 @@ import log_reader as lr
 import session_reader as sr
 import connectors_api
 import org_api
+import project_import as pi
 import providers
 import chat_store
 import secrets as _secrets
@@ -942,6 +943,42 @@ def _session_row(source, path, project_cwd):
     return sr._gemini_session_meta(path, project_cwd)
 
 
+def _with_departments(rows):
+    """Attach the department that owns each session's working directory.
+
+    WHY HERE AND NOT IN session_reader. That module is a read-only browser over
+    transcript files and knows nothing about the registry; keeping the join out
+    of it means a broken or empty registry can never stop sessions listing.
+
+    WHY cwd AND NOT TURN PLACEMENTS. The Dept view partitioned on `turn.domain`,
+    which is a real signal but an incomplete one: a transcript that ran in the
+    terminal carries domain:null by design, an unread one has no turns at all,
+    and `askSide` skips classification deliberately (02-helpers.js:98-113). So
+    the axis only ever covered the subset that happened to route. Every session
+    has a cwd, and since 2026-09-08 every Claude project IS a department
+    (project_import.py), so cwd answers for the whole list rather than part of
+    it. Turn placements still render -- this decides which GROUP a chat sits in.
+
+    A session under no imported project gets department=None. That is the same
+    rule teamsutra states for tasks (teamsutra.py:110): a wrong address is the
+    failure the placement layer exists to remove, so an unknown one stays null
+    rather than being rounded to the nearest plausible department.
+
+    Fails soft: any registry error leaves the rows exactly as they arrived."""
+    try:
+        depts = pi.imported_departments()
+    except Exception as exc:                              # noqa: BLE001
+        print("[app] department join skipped: %s" % exc, file=sys.stderr)
+        return rows
+    if not depts:
+        return rows
+    for r in rows:
+        d = pi.department_for_cwd(r.get("cwd"), depts)
+        r["department"] = ({"ref": d["ref"], "name": d["name"], "cwd": d.get("cwd")}
+                           if d else None)
+    return rows
+
+
 @app.get("/api/sessions")
 def api_sessions(limit: int = 100, offset: int = 0):
     """One page of SUTRA'S OWN chats, newest first. `offset` walks back into history
@@ -1000,7 +1037,10 @@ def api_sessions(limit: int = 100, offset: int = 0):
             row["sutra_id"] = chat_store.resolve(row.get("source"), row.get("id"))
         except Exception:   # noqa: BLE001 -- a bad index must not empty the rail
             row["sutra_id"] = None
-    return rows
+    # AND the department that owns each row's working directory, so the Chats
+    # rail can group by department. Runs last and fails soft, so an unreadable
+    # registry costs the grouping and never the list. See _with_departments.
+    return _with_departments(rows)
 
 
 @app.get("/api/sessions/stream")
@@ -1660,6 +1700,43 @@ async def _default_delegate_spawner(mission):
     return await shadow_runner.spawn_delegate_session(
         _shadow_args, _shadow_workdir_for_delegates(),
         _delegate_manifest(mission), register_runtime)
+
+
+@app.on_event("startup")
+async def _import_projects_as_departments():
+    """Onboarding, done by code: every project on this machine becomes a
+    department before the operator does anything (founder, 2026-09-08).
+
+    HERE AND NOT AT IMPORT, for the same reason as the hook below: the test
+    suites import app.py in-process and must not mint into whatever registry
+    they happen to be pointed at. A startup hook fires only in a real server.
+
+    ADD-ONLY. sync() never wipes -- a boot path that can delete a registry is
+    one crash-loop away from doing it repeatedly. It mints what is missing and
+    links what already exists, so this is safe on every launch and is also how
+    a project you started yesterday shows up today.
+
+    FAILS SOFT AND LOUD. A registry that cannot be written must not stop the
+    panel serving; it must also not fail silently, or the operator is left
+    looking at an empty Org screen with no reason given.
+    """
+    # OPT-OUT FOR SEEDED REGISTRIES. test_app.py stands up a real server against
+    # a fixture org and asserts exact d-paths; minting the operator's own
+    # projects into it gives that registry a second writer and the ordinals
+    # move. Anything that seeds a registry and then asserts its shape sets this.
+    if os.environ.get("SUTRA_SKIP_PROJECT_IMPORT"):
+        return
+    try:
+        result = pi.sync()
+    except Exception as exc:                              # noqa: BLE001
+        print("[app] project import skipped: %s" % exc, file=sys.stderr)
+        return
+    if result["created"]:
+        print("[app] departments created from your projects: %s"
+              % ", ".join(result["created"]), file=sys.stderr)
+    else:
+        print("[app] departments already current (%d linked, %d skipped)"
+              % (result["linked"], result["skipped"]), file=sys.stderr)
 
 
 @app.on_event("startup")

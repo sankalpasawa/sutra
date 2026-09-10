@@ -220,24 +220,297 @@ test("dept: every chat is rendered, filed or not", () => {
   T.S.ui = T.loadLayout();
   const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
   T.S.sgroup = "dept";
-  /* the three ways a chat can carry no department, plus one that carries one */
+  /* The three ways a chat can carry no department, plus one that carries one.
+     The AXIS changed on 2026-09-08 -- a department comes from the chat's
+     working directory (every Claude project is a department, project_import.py)
+     rather than from its turns' placements -- so these fixtures describe
+     directories, not turns. The INVARIANT this test exists for is unchanged
+     and is what the assertions below still check: every chat renders, the
+     catch-all is labelled and counted, and each chat gets a stated reason
+     rather than one flattened shrug. */
   T.S.sessions = [
-    { id:"s-unread",   title:"never opened",       real:true,  loadState:"unread",
-      turns:[], updated_ms:1 },
-    { id:"s-terminal", title:"ran in the terminal", real:true, loadState:"ok",
-      turns:[{ transcript:true, domain:null, mode:"transcript" }], updated_ms:2 },
-    { id:"s-nomatch",  title:"engine placed nothing", real:false, loadState:"ok",
-      turns:[{ domain:null, mode:"none" }], updated_ms:3 },
+    { id:"s-nocwd",   title:"no folder recorded",   real:true, loadState:"unread",
+      cwd:"", turns:[], updated_ms:1 },
+    { id:"s-scratch", title:"ran in a scratchpad",  real:true, loadState:"ok",
+      cwd:"/private/tmp/claude-501/x/scratchpad", turns:[], updated_ms:2 },
+    { id:"s-elsewhere", title:"folder never imported", real:false, loadState:"ok",
+      cwd:"/Users/x/somewhere-else", turns:[], updated_ms:3 },
   ];
   T.renderRail();
   const out = T.document.getElementById("sessions").innerHTML;
   for (const s of T.S.sessions)
     assert(out.indexOf('data-sid="' + s.id + '"') !== -1,
            s.id + " was dropped from the department view");
-  assert(/No department yet · 3/.test(out), "the catch-all must be labelled and counted");
-  for (const why of ["not read yet", "ran outside the panel", "no department matched"])
+  /* Label and count live in separate spans since the group became collapsible
+     (2026-09-08); both must still be there -- a catch-all that does not say how
+     many chats it holds is the thing this test exists to prevent. */
+  assert(/<span class="rgn">No department yet<\/span>/.test(out),
+         "the catch-all must be labelled");
+  assert(/No department yet<\/span>\s*<span class="rgc">3<\/span>/.test(out),
+         "the catch-all must be counted");
+  for (const why of ["no folder recorded", "scratch folder, not imported",
+                     "folder is not an imported project"])
     assert(out.indexOf(why) !== -1, "missing reason: " + why);
   T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
+test("dept: chats group under the department that owns their folder", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  /* `department` is resolved server-side from the chat's cwd
+     (app.py _with_departments). Two chats in one department must produce ONE
+     heading holding both -- a department that can only hold a single chat is
+     the thing this feature exists to stop. */
+  const sutra = { ref:"dref-s", name:"Sutra", cwd:"/d/sutra" };
+  T.S.sessions = [
+    { id:"s-a", title:"first",  real:true, loadState:"ok", turns:[],
+      cwd:"/d/sutra", department:sutra, updated_ms:2 },
+    { id:"s-b", title:"second", real:true, loadState:"ok", turns:[],
+      cwd:"/d/sutra/deep", department:sutra, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert((out.match(/class="rgrp rgrph/g) || []).length === 1,
+         "two chats in one department must share one heading");
+  assert(/Sutra<\/span>\s*<span class="rgc">2<\/span>/.test(out),
+         "the heading must count the chats it holds");
+  for (const id of ["s-a", "s-b"])
+    assert(out.indexOf('data-sid="' + id + '"') !== -1, id + " was dropped");
+  assert(out.indexOf("No department yet") === -1,
+         "a filed chat must not also appear in the catch-all");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
+test("dept: the + starts a chat in that department's own folder", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  T.S.sessions = [
+    { id:"s-a", title:"first", real:true, loadState:"ok", turns:[], cwd:"/d/sutra",
+      department:{ ref:"dref-s", name:"Sutra", cwd:"/d/sutra" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  /* The cwd on the button is what newSession receives, and it is the
+     DEPARTMENT's directory rather than the clicked chat's -- otherwise a new
+     chat started from a heading would inherit a subdirectory and could resolve
+     to a different (deeper) department than the one it was started from. */
+  assert(/data-act="dept-new"/.test(out), "the department heading needs a +");
+  assert(/data-cwd="\/d\/sutra"/.test(out), "the + must carry the department's own cwd");
+  assert(/data-ref="dref-s"/.test(out), "the + must carry the department ref");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
+test("dept: a department with no folder gets no + rather than a broken one", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  /* A department minted by some other path carries no cwd. Rendering a + for
+     it would open a chat in whatever the default workdir is and file it
+     somewhere else entirely -- a button that lies about what it does. */
+  T.S.sessions = [
+    { id:"s-a", title:"first", real:true, loadState:"ok", turns:[], cwd:"/d/x",
+      department:{ ref:"dref-n", name:"No Folder" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("No Folder") !== -1, "the department must still render");
+  assert(out.indexOf('data-act="dept-new"') === -1,
+         "a department with no cwd must not offer a +");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+});
+test("dept: a group collapses, hiding its chats but not its count", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  const sutra = { ref:"dref-s", name:"Sutra", cwd:"/d/sutra" };
+  T.S.sessions = [
+    { id:"s-a", title:"first",  real:true, loadState:"ok", turns:[],
+      cwd:"/d/sutra", department:sutra, updated_ms:2 },
+    { id:"s-b", title:"second", real:true, loadState:"ok", turns:[],
+      cwd:"/d/sutra", department:sutra, updated_ms:1 },
+  ];
+  T.renderRail();
+  let out = T.document.getElementById("sessions").innerHTML;
+  assert(/data-deptcollapse="dept:dref-s"/.test(out), "the heading must be a toggle");
+  assert(/aria-expanded="true"/.test(out), "a group defaults to expanded");
+  assert(!/<ul class="rlist"[^>]*hidden/.test(out), "an expanded group must not be hidden");
+
+  T.S.ui.sessCollapsed = { "dept:dref-s": true };
+  T.renderRail();
+  out = T.document.getElementById("sessions").innerHTML;
+  assert(/rgrp rgrph collapsed/.test(out), "a collapsed group needs the class the chevron keys off");
+  assert(/aria-expanded="false"/.test(out), "collapsed must be announced");
+  assert(/<ul class="rlist"[^>]*hidden/.test(out), "a collapsed group must hide its chats");
+  /* The count stays readable while collapsed: a folded group that also hides
+     how much it holds gives no reason to unfold it. */
+  assert(/<span class="rgc">2<\/span>/.test(out), "the count must survive collapsing");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup; T.S.ui = T.loadLayout();
+});
+test("dept: collapse is keyed by ref, so a rename keeps the group folded", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  T.S.ui.sessCollapsed = { "dept:dref-s": true };
+  T.S.sessions = [
+    { id:"s-a", title:"first", real:true, loadState:"ok", turns:[], cwd:"/d/sutra",
+      department:{ ref:"dref-s", name:"Renamed In The Registry", cwd:"/d/sutra" },
+      updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(/rgrp rgrph collapsed/.test(out),
+         "a department renamed in the registry must stay collapsed");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup; T.S.ui = T.loadLayout();
+});
+test("dept: the catch-all collapses too, and keeps its per-chat reasons", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  T.S.sgroup = "dept";
+  T.S.sessions = [
+    { id:"s-x", title:"unplaced", real:true, loadState:"ok", turns:[],
+      cwd:"/private/tmp/scratch", updated_ms:1 },
+  ];
+  T.renderRail();
+  let out = T.document.getElementById("sessions").innerHTML;
+  assert(/data-deptcollapse="dept:__none__"/.test(out), "the catch-all must collapse too");
+  assert(out.indexOf("scratch folder, not imported") !== -1,
+         "the per-chat reason must survive the shared group renderer");
+
+  T.S.ui.sessCollapsed = { "dept:__none__": true };
+  T.renderRail();
+  out = T.document.getElementById("sessions").innerHTML;
+  assert(/<ul class="rlist"[^>]*hidden/.test(out), "the collapsed catch-all must hide its chats");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup; T.S.ui = T.loadLayout();
+});
+/* DOMAINS is a module-level `let`, not part of T's export list, so it is read
+   and written through the sandbox the same way scopeOrgForRole is. */
+const getDomains = () => vm.runInContext("DOMAINS", sandbox);
+const setDomains = list =>
+  vm.runInContext("DOMAINS = " + JSON.stringify(list), sandbox);
+
+test("dept: every imported department is listed, not only ones with a loaded chat", () => {
+  /* The defect: the list was built from S.sessions -- ONE PAGE of 100 -- so a
+     department whose newest chat is older than that page vanished entirely.
+     8 of 24 showed, against a Claude project list that shows every project. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([
+    { ref:"r",  parent_ref:null, name:"Co" },
+    { ref:"d1", parent_ref:"r", name:"Loaded",   cwd:"/d/one", sessions:5 },
+    { ref:"d2", parent_ref:"r", name:"Unloaded", cwd:"/d/two", sessions:3 },
+    { ref:"d3", parent_ref:"r", name:"Empty",    cwd:"/d/three", sessions:0 },
+    { ref:"d4", parent_ref:"r", name:"HandMade" },   /* no cwd: not a chat container */
+  ]);
+  T.S.sessions = [
+    { id:"s-a", title:"a", real:true, loadState:"ok", turns:[], cwd:"/d/one",
+      department:{ ref:"d1", name:"Loaded", cwd:"/d/one" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  for (const n of ["Loaded", "Unloaded", "Empty"])
+    assert(out.indexOf(n) !== -1, n + " must be listed");
+  assert(out.indexOf("HandMade") === -1,
+         "a department with no cwd is not a chat container and must stay out");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains); T.S.ui = T.loadLayout();
+});
+test("dept: the heading shows the department's real size, not the loaded page", () => {
+  /* It read "90" for a project holding 941. A count wrong by 10x is worse
+     than no count. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([{ ref:"r", parent_ref:null, name:"Co" },
+              { ref:"d1", parent_ref:"r", name:"Big", cwd:"/d/big", sessions:941 }]);
+  T.S.sessions = [
+    { id:"s-a", title:"a", real:true, loadState:"ok", turns:[], cwd:"/d/big",
+      department:{ ref:"d1", name:"Big", cwd:"/d/big" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(/<span class="rgc">941<\/span>/.test(out),
+    "the heading must state the department's true size");
+  assert(!/<span class="rgc">1<\/span>/.test(out),
+    "it must not report the number of chats on this page");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains); T.S.ui = T.loadLayout();
+});
+test("dept: an enumerated department with nothing on this page says which", () => {
+  /* Two different situations, two different sentences -- a heading over a void
+     makes the operator guess whether the department is empty or just paged out. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([{ ref:"r", parent_ref:null, name:"Co" },
+              { ref:"d1", parent_ref:"r", name:"Older", cwd:"/d/a", sessions:7 },
+              { ref:"d2", parent_ref:"r", name:"Fresh", cwd:"/d/b", sessions:0 }]);
+  T.S.sessions = [];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("7 sessions here, none started in Sutra yet") !== -1,
+    "a department with sessions but no Sutra chat must say which");
+  assert(out.indexOf("nothing here yet") !== -1,
+    "a genuinely empty department must say THAT instead");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains); T.S.ui = T.loadLayout();
+});
+test("dept: an unloaded org tree degrades to the loaded-page grouping", () => {
+  /* The guard. With DOMAINS empty the enumeration adds nothing and the view
+     behaves exactly as it did before -- it must not empty itself at boot. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([]);
+  T.S.sessions = [
+    { id:"s-a", title:"a", real:true, loadState:"ok", turns:[], cwd:"/d/one",
+      department:{ ref:"d1", name:"Loaded", cwd:"/d/one" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("Loaded") !== -1, "the loaded chat's department must still group");
+  assert(out.indexOf('data-sid="s-a"') !== -1, "and its chat must still render");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains); T.S.ui = T.loadLayout();
+});
+test("dept: collapse keys for departments that no longer exist are pruned", () => {
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([{ ref:"dref-live", name:"Live", parent_ref:null }]);
+  T.S.ui.sessCollapsed = { "dept:dref-live":true, "dept:dref-gone":true,
+                           "dept:__none__":true };
+  T.S.sessions = [
+    { id:"s-a", title:"a", real:true, loadState:"ok", turns:[], cwd:"/d/live",
+      department:{ ref:"dref-live", name:"Live", cwd:"/d/live" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  assert(T.S.ui.sessCollapsed["dept:dref-live"] === true, "a live key must survive");
+  assert(!("dept:dref-gone" in T.S.ui.sessCollapsed), "an orphaned key must be pruned");
+  assert(T.S.ui.sessCollapsed["dept:__none__"] === true,
+         "the catch-all names an absence, not a ref, and must never be pruned");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains);
+  T.S.ui = T.loadLayout();
+});
+test("dept: an unloaded org tree prunes nothing", () => {
+  /* With DOMAINS empty every key looks orphaned. Pruning then would discard
+     the operator's real layout on any boot where the org fetch has not landed
+     yet -- the failure would be silent and total. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  T.S.sgroup = "dept";
+  setDomains([]);
+  T.S.ui.sessCollapsed = { "dept:dref-a":true, "dept:dref-b":true };
+  T.S.sessions = [
+    { id:"s-a", title:"a", real:true, loadState:"ok", turns:[], cwd:"/d/x",
+      department:{ ref:"dref-a", name:"A", cwd:"/d/x" }, updated_ms:1 },
+  ];
+  T.renderRail();
+  assert(Object.keys(T.S.ui.sessCollapsed).length === 2,
+         "nothing may be pruned while the tree is unknown");
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains);
+  T.S.ui = T.loadLayout();
 });
 test("dept: a group whose ref left the registry does not swallow its chats", () => {
   T.S.ui = T.loadLayout();
@@ -564,6 +837,96 @@ test("only SCOPED plane-collapse keys are adopted from stored layout", () => {
     "an unscoped legacy key must not be adopted");
   assert(!/out\.planeSections = raw\.railSections/.test(state),
     "the untranslatable railSections migration must be gone");
+});
+
+test("identity: no company name is hardcoded in the role list", () => {
+  /* The regression. ROLES was the literal pair "CEO of Asawa Inc." / "CEO of
+     Sutra" -- the founder's own companies -- so every operator who installed
+     Sutra was offered someone else's identity to act under. */
+  const src = JS("07-loaders.js");
+  const roleBlock = src.slice(src.indexOf('const KEY = "sutra.panel.role"'),
+                              src.indexOf("globalThis.panelRole"));
+  assert(roleBlock.length > 200, "the identity block must be findable");
+  assert(!/name:\s*"CEO of (Asawa|Sutra)/.test(roleBlock),
+    "a company name is hardcoded in the role list");
+  assert(/"CEO of "\s*\+\s*org/.test(roleBlock),
+    "the role must be composed from the registry root, not declared");
+});
+test("identity: the role reads the company off the registry root", () => {
+  const prevDomains = getDomains();
+  setDomains([{ ref:"r", parent_ref:null, name:"Acme Ltd" },
+              { ref:"c", parent_ref:"r", name:"Child" }]);
+  assert.strictEqual(vm.runInContext("panelRole()", sandbox), "CEO of Acme Ltd");
+  /* Renaming the root renames the role -- one source of truth, not two. */
+  setDomains([{ ref:"r", parent_ref:null, name:"Renamed Co" }]);
+  assert.strictEqual(vm.runInContext("panelRole()", sandbox), "CEO of Renamed Co");
+  setDomains(prevDomains);
+});
+test("identity: before the org loads the footer says so rather than inventing one", () => {
+  /* paintRole runs at boot, BEFORE loadOrg. Showing a guessed company there
+     would be a fact the operator never entered. */
+  const prevDomains = getDomains();
+  setDomains([]);
+  const role = vm.runInContext("panelRole()", sandbox);
+  assert(!/CEO of/.test(role), "no company may be claimed before the tree loads");
+  assert(role.trim().length, "but the label must not be blank either");
+  setDomains(prevDomains);
+});
+test("identity: a stored role naming a company that is gone is not shown", () => {
+  /* How an operator upgrading from the hardcoded pair stops seeing
+     "CEO of Asawa Inc." -- no migration step, the stale value simply loses. */
+  const prevDomains = getDomains();
+  setDomains([{ ref:"r", parent_ref:null, name:"Acme Ltd" }]);
+  storage._m["sutra.panel.role"] = "CEO of Asawa Inc.";
+  assert.strictEqual(vm.runInContext("panelRole()", sandbox), "CEO of Acme Ltd");
+  delete storage._m["sutra.panel.role"];
+  setDomains(prevDomains);
+});
+test("identity: the superseded role is cleared from storage, not just ignored", () => {
+  /* Ignoring it leaves the old company's name sitting in the operator's
+     storage forever -- the same dead-key problem the collapse map has. */
+  const prevDomains = getDomains();
+  setDomains([{ ref:"r", parent_ref:null, name:"Acme Ltd" }]);
+  storage._m["sutra.panel.role"] = "CEO of Asawa Inc.";
+  vm.runInContext("paintPanelRole()", sandbox);
+  assert.strictEqual(storage.getItem("sutra.panel.role"), "CEO of Acme Ltd",
+    "a superseded role must be rewritten, not left in place");
+  delete storage._m["sutra.panel.role"];
+  setDomains(prevDomains);
+});
+test("identity: a boot-time paint with no tree must not erase a stored role", () => {
+  /* Before loadOrg every role looks stale. Rewriting then would destroy a
+     legitimate choice on every cold start. */
+  const prevDomains = getDomains();
+  setDomains([]);
+  storage._m["sutra.panel.role"] = "CEO of Acme Ltd";
+  vm.runInContext("paintPanelRole()", sandbox);
+  assert.strictEqual(storage.getItem("sutra.panel.role"), "CEO of Acme Ltd",
+    "an unloaded tree must not rewrite stored state");
+  delete storage._m["sutra.panel.role"];
+  setDomains(prevDomains);
+});
+test("identity: loadOrg repaints the role once the company exists", () => {
+  /* Without this the operator stares at the unset label for a whole session
+     while the Org screen two panes away shows the company perfectly well. */
+  const src = JS("07-loaders.js");
+  const body = src.slice(src.indexOf("async function loadOrg()"),
+                         src.indexOf("async function loadRuntime()"));
+  assert(/paintPanelRole\(\)/.test(body),
+    "loadOrg must repaint the identity footer when the tree lands");
+});
+
+test("only dept: collapse keys are adopted, stale project: ones are dropped", () => {
+  /* sessCollapsed was retired on 2026-09-02 holding "project:<cwd>" keys and
+     revived on 2026-09-08 holding "dept:<ref>". An old stored layout must not
+     resurrect groups that no longer exist, so adoption is prefix-filtered --
+     asserted against the source, the same way the plane-collapse key filter
+     above is (localStorage is not shimmed in this harness). */
+  const state = JS("01-state.js");
+  assert(/k\.indexOf\("dept:"\) === 0/.test(state),
+    "sessCollapsed must adopt only dept:-prefixed keys");
+  assert(/sessCollapsed:\{\}/.test(state),
+    "sessCollapsed must have a default so a first run has no undefined map");
 });
 
 
