@@ -36,6 +36,7 @@ import secrets as _secrets
 import shadow_egress
 import switch
 import switch_egress
+import fanout
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
                              register_runtime, unregister_runtime,
@@ -327,7 +328,7 @@ def _sutra_allow_hook():
 
 
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
-                     opts=None, stream_input=False):
+                     opts=None, stream_input=False, mcp=True):
     """The full argv for one turn.
 
     Separated from the socket loop so it is testable without a subprocess, and
@@ -338,6 +339,14 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     prompt plus `--input-format stream-json`, so messages arrive on stdin as
     JSON frames and one process serves many turns. Verified against the binary:
     two messages, one process, one session id, both answered.
+
+    mcp=False omits Sutra's own MCP server and its allow-hook. DEFAULT TRUE, so
+    every existing caller builds a byte-identical argv -- pinned by
+    test_fanout.test_build_agent_args_default_is_unchanged. It exists for the
+    fan-out worker (worker.py): a throwaway sub-task has no business writing
+    proposals through mcp__sutra__*, and each --mcp-config spawns another
+    python server, which at three concurrent workers is three of them for
+    tools none of those turns should be calling.
     """
     opts = opts if isinstance(opts, dict) else {}
     args = [agent_bin, "-p"]
@@ -356,7 +365,7 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     # approval prompt, because a -p run has nobody to answer one -- the call
     # would stall the turn. They are safe to pre-allow precisely because the
     # mutating ones only write an inert proposal (see proposals.py).
-    mcp_cfg = _sutra_mcp_config()
+    mcp_cfg = _sutra_mcp_config() if mcp else ""
     if mcp_cfg:
         args += ["--mcp-config", mcp_cfg, "--strict-mcp-config"]
         # AND the hook that makes them reachable. MEASURED, not assumed: with
@@ -2536,6 +2545,19 @@ async def ws_chat(ws: WebSocket):
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
 
+    #: The live /fanout orchestration for this socket, or None. A MUTABLE CELL
+    #: rather than a plain name because `_reader` below closes over it and has
+    #: to see a value assigned later, in the turn loop.
+    #:
+    #: WHY IT HAS TO EXIST AT ALL: the stop handler signals `rt`, the PANE's
+    #: runtime -- and during a fan-out that runtime has not been spawned yet.
+    #: The live children are locals inside worker.run_one, so without this a
+    #: Stop would signal a process that does not exist while up to three real
+    #: CLI processes kept running, and a disconnect would orphan them.
+    #: None for every ordinary turn, which is why nothing below changes shape
+    #: for a message that is not a fan-out.
+    fanout_live = {"orch": None}
+
     async def _reader():
         try:
             while True:
@@ -2547,6 +2569,13 @@ async def ws_chat(ws: WebSocket):
                 if not isinstance(payload, dict):
                     payload = {"message": str(payload)}
                 if payload.get("type") == "stop":
+                    # FAN-OUT WORKERS FIRST, then the pane. Their order matters
+                    # only in that both must happen: cancel() is a synchronous,
+                    # idempotent no-op when nothing is fanning out, so the
+                    # existing single-provider stop path is unchanged.
+                    orch = fanout_live["orch"]
+                    if orch is not None:
+                        orch.cancel()
                     # Set the flag BEFORE killing: the stdout loop can end between
                     # the signal and the assignment, and would then report the
                     # operator's own interrupt as a crash.
@@ -2687,6 +2716,25 @@ async def ws_chat(ws: WebSocket):
             # very record the next switch reads.
             operator_msg = msg
 
+            # ---- /fanout: RECOGNISE here, RUN after `start` -----------------
+            # Two string operations on the operator's own text, before anything
+            # else looks at it. The normal-chat fast path is this `if` and
+            # nothing more: no provider call, no planner, no allocation, and
+            # `fanout_req` stays None all the way down, so every branch below
+            # behaves exactly as it did.
+            #
+            # READ FROM operator_msg, NOT msg, and the distinction is not
+            # cosmetic: switch.plan may replace `msg` with a transcript replay
+            # a few lines below, and the operator's command would then be
+            # buried inside 200KB of recording where startswith cannot see it.
+            #
+            # RECOGNITION AND EXECUTION ARE SPLIT because the client binds a
+            # token stream to a queued turn on the `start` frame
+            # (01-state.js: ch.pending.shift()). Emitting progress -- or an
+            # error -- before that frame would land it on no turn at all.
+            fanout_req = (fanout.parse_request(operator_msg)
+                          if fanout.should_orchestrate(operator_msg) else None)
+
             switch_note = None
             if seed_switch:
                 seed_switch = False   # once per connection, whatever happens
@@ -2695,8 +2743,25 @@ async def ws_chat(ws: WebSocket):
                     # because the budget depends on WHICH model will answer
                     # (Haiku 4.5 is 200K where its siblings are 1M) and the
                     # payload has to be sized before it is built.
+                    # THE REPLAY'S CLOSING LINE CARRIES THE OPERATOR'S REQUEST,
+                    # AND `/fanout ...` IS NOT ONE. replay._closing appends
+                    # next_message verbatim under "The operator's next message
+                    # follows", so a raw command would arrive at the incoming
+                    # provider as a literal it has never heard of, attached to
+                    # a transcript it is being asked to continue. The JOB is
+                    # what the operator actually asked for, so that is what the
+                    # carry-over states.
+                    #
+                    # NOTHING ABOUT SWITCHING CHANGES. plan() still receives a
+                    # next_message string and treats it identically; only WHICH
+                    # string differs, and only on a turn that is already a
+                    # fan-out. `fanout_req` is None for every other message, so
+                    # this expression is `msg` verbatim.
                     plan = switch.plan(
-                        sutra_id, active_id, next_message=msg,
+                        sutra_id, active_id,
+                        next_message=(fanout_req["job"]
+                                      if fanout_req and fanout_req["ok"]
+                                      else msg),
                         model=(providers.clean_model(model, active_id)
                                or providers.stored_model(active_id)))
                     if plan.get("switch"):
@@ -2907,6 +2972,83 @@ async def ws_chat(ws: WebSocket):
                 # (recorded from inside the spawned process by
                 # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
+
+            # ---- /fanout: the orchestration itself --------------------------
+            # AFTER `start`, so every frame below lands on a turn the client
+            # has already bound; BEFORE the spawn, so the parent provider is
+            # started once, with the finished synthesis prompt, and answers it
+            # as an ordinary turn. Everything past this block is untouched.
+            #
+            # THE ARGV IS ALREADY BUILT ABOVE AND THAT IS SAFE ON ALL THREE
+            # PATHS -- none of them carries the message in argv. Claude's
+            # stream_input=True branch omits the positional prompt,
+            # build_codex_args ends the argv with `-` and delivers on stdin,
+            # and build_acp_args never took a message. So rewriting `msg` here
+            # reaches the provider and changes no command line.
+            if fanout_req is not None:
+                if not fanout_req["ok"]:
+                    # Malformed command. Close the turn honestly rather than
+                    # spending a provider call to explain a typo.
+                    await ws.send_json({"type": "error",
+                                        "detail": fanout_req["error"]})
+                    await ws.send_json({"type": "done", "session": session_id})
+                    continue
+                orch = fanout.Orchestration()
+                fanout_live["orch"] = orch
+                try:
+                    fo = await fanout.run(
+                        fanout_req["job"], active_id, workdir, perm_mode,
+                        emit=ws.send_json, orch=orch)
+                except Exception as exc:      # noqa: BLE001
+                    fo = {"ok": False, "reason": "internal-error", "tasks": [],
+                          "detail": "the fan-out could not run (%s)" % exc}
+                finally:
+                    # Guarantees no child survives on ANY path -- including the
+                    # exception one, where run()'s own cleanup did not finish.
+                    # Then drop the handle, so a stop arriving later on this
+                    # socket cannot sweep a job that is already done.
+                    orch.cancel()
+                    fanout_live["orch"] = None
+                # `fo["reason"]`, NOT orch.cancelled: the finally above sets
+                # that flag on every path, so testing it here would read as a
+                # condition and behave as a constant. run() reports whether the
+                # operator actually stopped it.
+                if fo.get("reason") == "cancelled":
+                    # The operator pressed stop DURING the fan-out. No parent
+                    # turn runs: they asked for it to end, and spending a
+                    # synthesis call would be the opposite of stopping.
+                    rt.stopped = False
+                    await ws.send_json({"type": "stopped", "session": session_id})
+                    continue
+                # THE COMMAND WORD IS NOT PART OF THE QUESTION, and the
+                # PLACEMENT grounding is. Rebuilding `prefix + job` keeps the
+                # ADR-028 block the client attached to this turn -- so a
+                # fan-out turn reaches the provider with exactly the grounding
+                # an ordinary turn would have had -- while dropping the
+                # `/fanout` token, which is a Sutra trigger and means nothing
+                # to a model. When a switch already rewrote `msg` into a
+                # replay, that payload is kept as-is: its closing line was
+                # built from the job (see the switch.plan call above).
+                base = (fanout_req["prefix"] + fanout_req["job"]
+                        if msg == operator_msg else msg)
+                if fo.get("ok"):
+                    msg = fanout.compose(base, fanout_req["job"], fo["tasks"])
+                else:
+                    # FALL BACK, never fabricate. Planning failed, the job did
+                    # not decompose, or every worker died -- the operator still
+                    # gets a real answer from the parent provider, to their
+                    # ORIGINAL words, and is told the fan-out did not happen.
+                    await ws.send_json({
+                        "type": "tool", "phase": "start", "id": "fanout-plan",
+                        "name": "fan-out", "summary": fo.get("detail")
+                        or "not run", "command": "", "caller": None})
+                    await ws.send_json({
+                        "type": "tool", "phase": "end", "id": "fanout-plan",
+                        "ok": False, "output": fo.get("detail") or ""})
+                    # Same rebuild as the success path: the operator still
+                    # gets a real answer to their real question, grounded.
+                    msg = base
+
             if not alive:
                 if active_id in ("deepseek", "codex"):
                     # The `deepseek` command npm publishes is a shim beginning
@@ -3236,6 +3378,13 @@ async def ws_chat(ws: WebSocket):
         # Killing any still-running child too -- a disconnected browser must not
         # leave a `claude` process running against the operator's plan.
         reader_task.cancel()
+        # A disconnected browser must not leave WORKERS running either. Same
+        # rule the line below has always applied to the pane's own child, now
+        # covering the fan-out's children -- which are the ones nothing else
+        # holds a handle to. No-op when no fan-out ran.
+        orch = fanout_live["orch"]
+        if orch is not None:
+            orch.cancel()
         rt.kill_group()
         unregister_runtime(session_id, rt)
 
