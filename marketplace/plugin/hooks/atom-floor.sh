@@ -296,3 +296,42 @@ atom_floor_check() {
   } 2>/dev/null
   return 0
 }
+
+# ── Hook entrypoint (2026-09-10) ─────────────────────────────────────────────
+# hooks.json wires this file directly, but it is a function library: executed
+# on its own it was a silent no-op fleet-wide. The sibling dispatch-gate.sh
+# runner sources this file and enforces the floor itself, so when it exists
+# this runner DELEGATES (exit 0) rather than journaling every call twice. It
+# enforces on its own only in a stripped install with no sibling. Mode and
+# delegation rules mirror dispatch-gate.sh: .claude/dispatch-mode hard|warn,
+# default warn; the holding orchestrator, when present, is the single enforcer.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  _AF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  _AF_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  [ -f "$_AF_DIR/dispatch-gate.sh" ] && exit 0
+  [ -f "$_AF_ROOT/holding/hooks/dispatcher-pretool.sh" ] && exit 0
+  _AF_MODE=$(tr -d '[:space:]' < "$_AF_ROOT/.claude/dispatch-mode" 2>/dev/null)
+  case "$_AF_MODE" in hard|warn) ;; *) _AF_MODE="warn" ;; esac
+  _AF_IN=$(cat 2>/dev/null || true)
+  if ! command -v jq >/dev/null 2>&1 || [ -z "$_AF_IN" ]; then
+    # Malformed invocation fails closed in hard mode (codex P1, 2026-09-10).
+    [ "$_AF_MODE" = "hard" ] && { echo "BLOCKED — ATOM FLOOR (HARD): hook input cannot be evaluated (no jq or empty stdin)" >&2; exit 2; }
+    exit 0
+  fi
+  _AF_TOOL=$(printf '%s' "$_AF_IN" | jq -r '.tool_name // empty' 2>/dev/null)
+  _AF_FILE=$(printf '%s' "$_AF_IN" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+  _AF_CMD=$(printf '%s' "$_AF_IN" | jq -r '.tool_input.command // empty' 2>/dev/null)
+  atom_floor_check "$_AF_TOOL" "$_AF_FILE" "$_AF_CMD" || true
+  if [ "${ATOM_FLOOR_VERDICT:-allow}" = "block" ]; then
+    if [ "$_AF_MODE" = "hard" ]; then
+      {
+        echo "BLOCKED — ATOM FLOOR (HARD): no open Work-Atom for session ${CLAUDE_CODE_SESSION_ID:-?}."
+        echo "  Open one first: sutra-atom open --goal '<observable outcome>' --verify-template <file-exists|grep-count|named-test> --verify-arg <...>"
+        echo "  Kill-switch: touch ~/.atom-floor-disabled  (founder revoke only)"
+      } >&2
+      exit 2
+    fi
+    echo "ATOM FLOOR (WARN): no open Work-Atom for session ${CLAUDE_CODE_SESSION_ID:-?}. Promote: echo hard > .claude/dispatch-mode" >&2
+  fi
+  exit 0
+fi
