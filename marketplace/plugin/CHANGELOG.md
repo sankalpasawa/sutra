@@ -2,6 +2,10 @@
 
 **status**: active · **updated**: 2026-09-10
 
+## 2.258.1 (2026-09-10)
+
+- A repo with no `.claude/dispatch-mode` file leaked the shell's own "No such file" line to stderr on every gated call (redirection order; caught by the fleet-shaped smoke test). Both runners now test readability first. Runner test 24/24.
+
 ## 2.258.0 (2026-09-10)
 
 - **The dispatch gate and atom floor now actually run on every install.** Both hooks were wired in `hooks.json` but shipped as function libraries with no entrypoint, so outside the holding repo they were silent no-ops. `dispatch-gate.sh` gains a runner (reads the hook JSON, derives targets through one shared `dispatch_gate_targets`, enforces floor + envelope + Agent model binding), `atom-floor.sh` delegates to it, and the 2026-09-08 model-alias bridge, codex `-m` parsing, WORKROOT check and CLASS>=4 workflow floor are promoted from holding L1 to plugin L0 (`hooks/lib/wf-evidence.sh` added).

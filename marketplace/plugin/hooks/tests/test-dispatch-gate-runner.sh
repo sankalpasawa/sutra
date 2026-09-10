@@ -49,6 +49,8 @@ echo "dispatch-gate runner (hook-shaped stdin)"
 reset; rm -f "$T/.claude/dispatch-mode"
 check "no mode file = warn: Edit w/o atom passes"      0 "$(run "$(j Edit file_path "$T/holding/a.md")")"
 grep -q 'ATOM FLOOR (WARN)' "$T/err" && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "  FAIL warn advisory text missing"; }
+# 2.258.1: a missing mode file must not leak the shell's own redirection error.
+grep -q 'No such file' "$T/err" && { FAIL=$((FAIL+1)); echo "  FAIL missing mode file leaks a shell error to stderr"; } || PASS=$((PASS+1))
 mode warn
 check "warn: Edit w/o atom passes"                     0 "$(run "$(j Edit file_path "$T/holding/a.md")")"
 check "warn: empty stdin passes"                       0 "$(run "")"

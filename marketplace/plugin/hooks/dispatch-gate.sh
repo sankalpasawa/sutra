@@ -457,7 +457,10 @@ dispatch_gate_targets() {
 # BLOCK in hard mode, never a silent allow (codex P1).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   [ -f "$_DG_ROOT/holding/hooks/dispatcher-pretool.sh" ] && exit 0
-  _DG_MODE=$(tr -d '[:space:]' < "$_DG_ROOT/.claude/dispatch-mode" 2>/dev/null)
+  # Redirection order matters: `< file 2>/dev/null` still prints the shell's
+  # own "No such file" for a missing mode file, on every fleet call.
+  _DG_MODE=""
+  [ -r "$_DG_ROOT/.claude/dispatch-mode" ] && _DG_MODE=$(tr -d '[:space:]' 2>/dev/null < "$_DG_ROOT/.claude/dispatch-mode")
   case "$_DG_MODE" in hard|warn) ;; *) _DG_MODE="warn" ;; esac
   _dg_emit() { # $1=title $2=reason -> stderr; exit 2 in hard, exit 0 in warn
     if [ "$_DG_MODE" = "hard" ]; then

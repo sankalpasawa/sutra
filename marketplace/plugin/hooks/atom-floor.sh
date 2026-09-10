@@ -310,7 +310,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   _AF_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   [ -f "$_AF_DIR/dispatch-gate.sh" ] && exit 0
   [ -f "$_AF_ROOT/holding/hooks/dispatcher-pretool.sh" ] && exit 0
-  _AF_MODE=$(tr -d '[:space:]' < "$_AF_ROOT/.claude/dispatch-mode" 2>/dev/null)
+  _AF_MODE=""
+  [ -r "$_AF_ROOT/.claude/dispatch-mode" ] && _AF_MODE=$(tr -d '[:space:]' 2>/dev/null < "$_AF_ROOT/.claude/dispatch-mode")
   case "$_AF_MODE" in hard|warn) ;; *) _AF_MODE="warn" ;; esac
   _AF_IN=$(cat 2>/dev/null || true)
   if ! command -v jq >/dev/null 2>&1 || [ -z "$_AF_IN" ]; then
