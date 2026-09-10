@@ -1185,6 +1185,22 @@ def _ws_create_worker(url, key, name, member_id, member_name, token, confirm=Fal
         finally:
             token = ""
 
+        # REMEMBER THE PROJECT BEFORE JUDGING IT, and this is not a tidy-up — it is the fix for a
+        # real one (2026-09-10). The owner created his workspace, verify() wrongly called it
+        # incomplete, and this function returned here without saving a thing. The tables, the
+        # triggers and the bucket were all sitting in his Supabase project, and Sutra had no idea
+        # they existed: next time he opened Connections it offered him a blank Create form, as if
+        # nothing had ever happened.
+        #
+        # The URL and the key are HIS INPUT and they are valid whether or not the script finished.
+        # Losing them turns "not finished, here is what to do" into "start again from nothing", and
+        # it breaks the button that is supposed to rescue him: "I've run it" has to check the same
+        # project, and it cannot if nobody wrote down which project that was.
+        #
+        # So an unfinished setup is now a RESUMABLE state, which is what the screen already draws.
+        client.save_settings(workspace_url=url, workspace_key=key)
+        _ws_save_name(name)
+
         # THE ONE FLAG. schema ran verify() itself, whichever door this came through, and
         # verify is the only function allowed to say a workspace is ready. Note what `ok` false
         # covers: no token yet, a script that half-applied, AND a project whose tables are all
@@ -1196,7 +1212,6 @@ def _ws_create_worker(url, key, name, member_id, member_name, token, confirm=Fal
 
         ws_id = str(res.get("workspace_id") or "")
         client.save_settings(member_id=member_id, member_name=member_name)
-        _ws_save_name(name)
         if name:
             try:
                 client.update("workspace", {"id": ws_id}, {"name": name})

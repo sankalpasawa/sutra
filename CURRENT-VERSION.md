@@ -2,7 +2,72 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.256.0 (2026-09-10, HEAD)
+## v2.256.1 (2026-09-10, HEAD)
+
+**A setup that did not finish was forgotten entirely.** The owner created his team workspace and the
+next day Connections offered him a blank Create form, as if nothing had happened. Nothing was wrong
+in Supabase: the ten tables, nine triggers and the knowledge bucket were all there. Sutra had no
+idea they existed, because `_ws_create_worker` returned on a false verdict before saving anything,
+and the verdict had been wrong (see 2.255.2). So the bad answer did not just mislead him once; it
+threw away the project details and left nothing to come back to. The URL and key are **his input
+and are valid whether or not the script finished**, so they are saved as soon as the setup call
+returns, before its verdict is read. An unfinished setup is now a resumable state, which is what the
+screen was already drawing. `verify()` is still the only voice that says a workspace is ready: no
+pack is uploaded and no link is shown until it does. Two test assertions were stale the same way and
+said something weaker than they meant -- "nothing was saved: no half-made workspace" conflated
+nothing half-made in Supabase, which is right, with nothing remembered on this Mac, which was the
+bug.
+
+## v2.255.2 (2026-09-09)
+
+**The workspace was built correctly and told him it had failed.** Both bugs shipped green and
+neither could have been found without running against a real Supabase project. The cupboard check
+read the bucket's *record* rather than trying to *store a file*: measured live, `GET /bucket/knowledge`
+answers 404 while upload, download, replace and delete all return 200, because a publishable key
+cannot read `storage.buckets` even when the bucket is fine. It now writes a small object, reads it
+back and deletes it -- the same round trip the real upload makes. And `verify()` believed the API the
+first time it said a table was missing: PostgREST answers from a **cached** schema, so a table
+created a moment ago returns the byte-identical error to one that never existed. The script now ends
+with `notify pgrst, 'reload schema'`, and a "missing" verdict is slept on and re-asked before it is
+reported. A healthy workspace never sleeps at all.
+
+## v2.255.1 (2026-09-09)
+
+**The setup script showed the SQL, not the essay about it.** 18,600 of its 33,671 characters were
+developer notes -- why `clock_timestamp()` and not `now()`, why 45 MiB and not 40. Every word earns
+its place in the repo; none of it earns a place in front of somebody told this takes thirty seconds.
+The screen gets 326 lines instead of 565. The file on disk is untouched: it is a view, and a test
+asserts that.
+
+## v2.255.0 (2026-09-09)
+
+**The team workspace.** Five people, one team, on the company's own Supabase project. Ten modules,
+ten tables, a change log written by database **triggers** rather than by the client -- an app that
+dies between writing a row and logging it would otherwise leave a change nobody ever hears about.
+Three things were nearly very wrong: a routine trim would have deleted 12,000 pages from every
+teammate's catalogue, because clearing rows and "these pages are gone from the site" arrive as the
+same event; a change could vanish for ever, because row numbers are handed out when a write *starts*,
+so a reader can record "I am up to 8" and never see 7; and the guard for that was read off the local
+clock, where a fast Mac reopens the hole unreproducibly. Measurement beat the estimates: the pack is
+**205 MB zipped, not the ~100 MB planned**, over a **50 MB single-object cap** that would have
+refused it outright. Splitting it into a 33.6 MB core and a 171.5 MB index makes a normal refresh
+2.9 s and 33.6 MB. Also: the six approved Tier-3 findings, including a source hunt costing 3.33x
+what it should and a planner retry that had been a dead branch for months.
+
+## v2.254.0 (2026-09-09)
+
+**The audit's findings, the eight broken things, and a file only a person can write.** Two dead
+buttons had the same cause and it was not the endpoints -- `agAction` had no arm for either, so the
+click fell through to `default: break`. Making "Check for changes" work uncovered two worse bugs
+behind it: it never actually re-read a changed page while reporting that it had, and **one broken
+sitemap file could delete every page it listed**, because a child sitemap returning 500 is filed as
+blocked and simply returns fewer URLs. `pricing.md` gave the brand pack a door a crawler cannot
+open: facts drawn by JavaScript sit in neither the crawl nor the raw HTML, and the engine had been
+reading such a file and calling it authoritative while nothing in the product could write it. A
+failed catalogue gate now stops the run instead of letting a brand pack build on a catalogue that
+failed its own counting.
+
+## v2.256.0 (2026-09-10)
 
 **Every project you have worked in is a department, and chats live under them.** A new operator
 installed Sutra and the Org screen was empty -- the one surface that makes this different from a

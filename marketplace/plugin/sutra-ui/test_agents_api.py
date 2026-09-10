@@ -652,7 +652,18 @@ class TestAgentsApi(unittest.TestCase):
         # is not ours to trust, and this one is drawn on a screen.
         self.assertNotIn("sbp_thesecrettoken", json.dumps(j))
         self.assertIn("sbp_…", fb["why"])
-        self.assertFalse(j["configured"], "and nothing was saved: no half-made workspace")
+
+        # NOTHING WAS CREATED, BUT THE PROJECT IS REMEMBERED. This assertion used to read
+        # "nothing was saved: no half-made workspace", which conflated two different things
+        # (2026-09-10). Nothing half-made in SUPABASE is right and still asserted below. Nothing
+        # remembered on this Mac was the bug: it was the TOKEN that was rejected, not the key, so
+        # throwing away a perfectly good URL and key sends the person back to a blank form to
+        # retype what was never wrong — and leaves "I've run it" with no project to check.
+        self.assertEqual(rec["published"], 0, "nothing half-made: no pack went anywhere")
+        self.assertEqual(j["link"], "", "and no link, because there is no verified workspace yet")
+        from seo_agent.workspace import client as wclient
+        self.assertEqual(wclient.settings()["workspace_url"], self.URL,
+                         "but the project they named is kept, so the script route can finish it")
 
     def test_45_a_create_that_did_not_verify_is_never_reported_as_created(self):
         """The failure the plan singles out. The script ran, the tables did not all appear,
@@ -666,10 +677,29 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(j["job"]["phase"], "paste")
         self.assertNotEqual(j["job"]["phase"], "done")
         self.assertIn("members, changes", j["job"]["paste"]["why"])
-        self.assertFalse(j["configured"])
         self.assertEqual(j["link"], "")
         self.assertEqual(rec["published"], 0,
                          "and no pack was uploaded to a workspace that is not there")
+
+        # BUT THE PROJECT IS REMEMBERED, and that is the point of the whole test (2026-09-10).
+        # This used to assert configured was False, which read as caution and was the bug: the
+        # owner's real workspace WAS created, verify wrongly called it incomplete, and the worker
+        # returned without saving anything. His tables, triggers and bucket were sitting in
+        # Supabase and Sutra had no idea, so the next time he opened Connections it offered him a
+        # blank Create form as if nothing had happened.
+        #
+        # The URL and key are his input and are valid whether or not the script finished. Keeping
+        # them is what makes "not finished, here is what to do" a resumable state rather than
+        # "start again from nothing" — and "I've run it" cannot check the same project unless
+        # somebody wrote down which project it was.
+        from seo_agent.workspace import client as wclient
+        saved = wclient.settings()
+        self.assertEqual(saved["workspace_url"], self.URL,
+                         "the project must be remembered even though setup did not finish")
+        self.assertEqual(saved["workspace_key"], self.PUB)
+        self.assertTrue(j["configured"], "there is somewhere to talk to, so say so")
+        self.assertFalse((j.get("verify") or {}).get("ok"),
+                         "but verify is still the only voice that says it is ready")
 
     def test_46_the_setup_script_route_is_the_default_and_ends_at_the_same_verify(self):
         """No token is not an error. There is not one on the owner's machine, so pressing
