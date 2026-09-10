@@ -539,29 +539,210 @@ def api_save_cta(body: dict = Body(...)):
     return {"rows": cta.save(co["brand"], wanted), "domain": U.bare_host(co.get("domain"))}
 
 
-@router.post("/knowledge/refresh")
-def api_knowledge_refresh(body: dict = Body(default={})):
-    """Bring the catalogue up to date. With preview=true it reports and changes nothing.
+# ---- keeping the catalogue current -----------------------------------------------------------
+# THE BUG THIS SHAPE EXISTS FOR (owner, 2026-09-10). This route used to hand refresh_site an emit
+# that threw every line away -- `"emit": lambda **kw: None` -- and then block until the whole
+# survey came back. refresh_site says a great deal while it works ("Read the sitemaps", "The site
+# lists 11,656 pages now", "The site's firewall pushed back, waiting 120s"), and all of it went
+# into that no-op. The screen had nothing to draw but one fixed sentence, so a run sitting out six
+# minutes of firewall cooldowns looked exactly like a run that had hung, and exactly like a run
+# that had finished.
+#
+# So it is now the same shape as the workspace job above, deliberately: one job in memory, the
+# work on a thread, every line the engine says recorded as it arrives, and one GET the screen
+# polls on the same cadence. refresh_site IS one of the twelve tools, and the button now reports
+# what a tool run reports -- the tool's own label from the registry, and its own substep lines.
+#
+# NOTHING HERE WRITES A PROGRESS LINE OF ITS OWN. Every word the screen shows was said by the
+# engine. A line invented from "he pressed the button" is the bug, not the fix.
+
+_KN_KEY = "knowledge-refresh"          # the worker slot, so two refreshes can never overlap
+_KN_MAX_STEPS = 200                    # a long run is bounded; the screen shows the tail anyway
+_kn_job = None
+_kn_job_lock = threading.Lock()
+# A wait the engine announced. It hands the number over as a FIELD (`wait_seconds`, set by
+# fetch.py where it sits out a firewall cooldown), so nothing here has to read prose to tell
+# "waiting on a slow site" apart from "working".
+#
+# The regex is the fallback for a line that carries the sentence but not the field — an older
+# engine, or a caller that has not been given the field yet. It is deliberately second: reading
+# the number out of somebody else's wording was the whole arrangement until 2026-09-10, and it
+# was one reworded sentence away from silently turning every cooldown back into something that
+# looks like progress, with no test able to catch it because the sentence and the reader live in
+# different packages.
+_KN_WAIT = re.compile(r"waiting\s+(\d+)\s*s\b", re.I)
+
+
+def _kn_worker_alive():
+    with _lock:
+        t = _workers.get(_KN_KEY)
+    return bool(t and t.is_alive())
+
+
+def _kn_start_job(mode):
+    global _kn_job
+    with _kn_job_lock:
+        _kn_job = {"mode": mode, "phase": "running", "tool": "refresh_site",
+                   "label": registry.LABELS.get("refresh_site") or "refresh_site",
+                   "steps": [], "waiting": None, "result": None, "error": None, "spawned": False,
+                   "started_at": time.time(), "updated_at": time.time(), "finished_at": None}
+        return dict(_kn_job)
+
+
+def _kn_say(**kw):
+    """Move the job on. Every field the screen draws is set here and nowhere else."""
+    with _kn_job_lock:
+        if _kn_job is not None:
+            _kn_job.update(kw)
+
+
+def _kn_stop(phase, **kw):
+    """Land the job. One door for both endings, so a stopped job can never still be running."""
+    now = time.time()
+    _kn_say(phase=phase, finished_at=now, updated_at=now, waiting=None, **kw)
+
+
+def _kn_emit(**kw):
+    """One line from the engine, recorded exactly as the engine said it.
+
+    The tools report through sh.reporter, which calls emit(type="substep_finished", label=...,
+    note=...). A line with a label is a line for the person; anything else is dropped rather than
+    guessed at. Neither label nor note is reworded here or on the screen -- they are already
+    written for a person, and a second wording would drift from the first.
+    """
+    label = str(kw.get("label") or "").strip()
+    if not label:
+        return
+    note = str(kw.get("note") or "").strip()
+    at = time.time()
+    wait_seconds = kw.get("wait_seconds")
+    if wait_seconds is None:
+        m = _KN_WAIT.search(note)
+        wait_seconds = int(m.group(1)) if m else None
+    else:
+        try:
+            wait_seconds = int(wait_seconds)
+        except (TypeError, ValueError):
+            wait_seconds = None
+    with _kn_job_lock:
+        if _kn_job is None or _kn_job.get("phase") != "running":
+            return                      # a line arriving after the end never revives the spinner
+        steps = _kn_job["steps"]
+        steps.append({"label": label[:200], "note": note[:400], "at": at})
+        del steps[:-_KN_MAX_STEPS]
+        # A wait the engine ANNOUNCED, carried with its own number so the screen can say "waiting"
+        # instead of drawing a working step. The next line clears it, because that line is the
+        # proof the wait is over.
+        _kn_job["waiting"] = ({"seconds": min(3600, wait_seconds), "since": at}
+                              if wait_seconds else None)
+        _kn_job["updated_at"] = at
+
+
+def _kn_get_job():
+    """The job as it stands, with the one correction the screen cannot make for itself.
+
+    A spinner trusts "phase == running". A worker that died without reaching its own except --
+    the interpreter going down, the thread killed -- would leave that true for ever, which is the
+    spinner-after-the-work-stopped this whole change is about. So a job still marked running whose
+    worker is gone is reported as failed. `spawned` is checked because between starting the job
+    and starting its thread there is no worker yet, and that instant is not a crash.
+    """
+    with _kn_job_lock:
+        if _kn_job is None:
+            return None
+        if _kn_job.get("phase") == "running" and _kn_job.get("spawned") and not _kn_worker_alive():
+            _kn_job.update(phase="failed", finished_at=time.time(), waiting=None,
+                           error="The refresh stopped without saying why. Nothing was changed.")
+        job = dict(_kn_job)
+        # the worker appends to `steps` while this is being serialised, so it is copied under
+        # the lock rather than handed out live
+        job["steps"] = list(job["steps"])
+        return job
+
+
+def _kn_worker(preview, include_unchecked, use_archive):
+    """The refresh itself, on a thread.
+
+    ctx carries a REAL emit and the tool's own step id, so sh.reporter parents each substep to the
+    tool exactly as it does inside a run: it is the same tool, and only the door differs.
 
     A REAL refresh also asks for the shared knowledge pack to be rebuilt, which is the owner's
     ruling in WORKSPACE-PLAN section 2: one click updates everybody AND the copy a new joiner
-    downloads. He does not wait for the second half — ws_pack_refresh returns at once and the
+    downloads. He does not wait for the second half -- ws_pack_refresh returns at once and the
     rebuild runs behind him as the quiet line at the foot of the screen. It is fired AFTER the
     refresh has succeeded, because a pack rebuilt from a catalogue that failed is worse than no
     rebuild, and it can never turn a working refresh into an error: it swallows everything,
     including having no workspace at all.
     """
-    ctx = {"chat_id": "knowledge", "run_id": "refresh", "emit": lambda **kw: None}
+    ctx = {"chat_id": "knowledge", "run_id": "refresh", "step_id": "refresh_site",
+           "emit": _kn_emit}
     try:
         from seo_agent.tools import refresh_site
-        out = refresh_site.run(ctx, preview=bool(body.get("preview")),
-                               include_unchecked=bool(body.get("include_unchecked")),
-                               use_archive=bool(body.get("use_archive")))
-    except Exception as e:  # noqa: BLE001
-        return _bad(str(e)[:300], 500)
-    if not body.get("preview") and isinstance(out, dict) and not out.get("error"):
-        ws_pack_refresh("the catalogue was refreshed")
-    return out
+        out = refresh_site.run(ctx, preview=preview, include_unchecked=include_unchecked,
+                               use_archive=use_archive)
+    except Exception as e:  # noqa: BLE001 -- a crash on a thread must land on the screen
+        _kn_stop("failed", error=str(e)[:300] or e.__class__.__name__)
+        return
+    if not isinstance(out, dict):
+        _kn_stop("failed", error="The refresh returned nothing, so nothing was changed.")
+        return
+    if out.get("error"):
+        # A refusal the tool SURVIVED -- every page blocked, catalogue untouched -- comes back as
+        # an error beside a summary rather than as a raised exception. It is a failure on the
+        # screen, and it asks for no pack rebuild: the catalogue it would rebuild from did not
+        # change.
+        _kn_stop("failed", error=str(out["error"])[:400], result=out)
+        return
+    _kn_stop("done", result=out)
+    if not preview:
+        try:
+            ws_pack_refresh("the catalogue was refreshed")
+        except Exception:  # noqa: BLE001 -- a working refresh is never turned into a failure
+            pass
+
+
+@router.post("/knowledge/refresh")
+def api_knowledge_refresh(body: dict = Body(default={})):
+    """Start bringing the catalogue up to date, and return at once.
+
+    With preview=true it reports and changes nothing; without it, it writes. Both go on a thread
+    and both report the same way, because the person watching cannot tell which of the two is the
+    slow one and should not have to.
+
+    The answer is NOT in this response. GET /knowledge/refresh is what the screen watches, and it
+    carries the engine's lines while they arrive and the counts when they land.
+    """
+    if _kn_worker_alive():
+        return _bad("A refresh is already running. Wait for it to finish.", 409)
+    preview = bool(body.get("preview"))
+    include_unchecked = bool(body.get("include_unchecked"))
+    use_archive = bool(body.get("use_archive"))
+    _kn_start_job("preview" if preview else "apply")
+    if not _spawn(_KN_KEY, lambda: _kn_worker(preview, include_unchecked, use_archive)):
+        return _bad("A refresh is already running. Wait for it to finish.", 409)
+    _kn_say(spawned=True)
+    return {"started": True, "job": _kn_get_job()}
+
+
+@router.get("/knowledge/refresh")
+def api_knowledge_refresh_state():
+    """What the refresh is doing right now, in the engine's own words. The one read the card
+    polls: the lines so far, whether it is sitting out a wait the site imposed, and, when it is
+    over, the counts or the reason."""
+    return {"job": _kn_get_job()}
+
+
+@router.post("/knowledge/refresh/dismiss")
+def api_knowledge_refresh_dismiss(body: dict = Body(default={})):
+    """Put the card away once the refresh has stopped. A job still RUNNING is refused, because
+    "clear this box" must never be able to hide work that is still going."""
+    global _kn_job
+    job = _kn_get_job()
+    if job and job.get("phase") == "running":
+        return _bad("That refresh is still running. Let it finish or fail before clearing it.", 409)
+    with _kn_job_lock:
+        _kn_job = None
+    return {"ok": True}
 
 
 @router.get("/knowledge/changes")
@@ -672,6 +853,18 @@ def api_brand_file(name: str):
         return _bad("bad name")
     v = store.knowledge("brand/" + name)
     if v is None:
+        # A FILE A PERSON TYPES IN IS NEVER A 404. The blank form only reaches disk when the
+        # brand-pack builder runs, so a pack built before that form existed has no copy of it,
+        # and this screen still offers a door to it (the owner, 2026-09-10). brand/_common.read
+        # hands back the blank form for exactly those names, so what a person opens is the form
+        # they are being asked to fill in rather than an error. Any other missing name is still
+        # a 404, which is the truth for it.
+        try:
+            from seo_agent.brand import _common as bcm
+            if bcm.is_input(name):
+                return {"name": name, "text": bcm.read(name)}
+        except Exception:  # noqa: BLE001 -- the engine may not be installed yet
+            pass
         return _bad("not found", 404)
     return v if isinstance(v, (dict, list)) else {"name": name, "text": v}
 
@@ -700,12 +893,19 @@ def api_save_brand_file(name: str, body: dict = Body(...)):
     # The chain is ONE hop by the owner's decision: pricing.md -> features.md, and no further.
     # Without this the feature still works -- the fingerprint makes the next brand-pack run
     # rebuild -- so a failure here is not a failed save, and the save still stands.
-    if name == "pricing.md":
-        try:
-            from seo_agent.brand import features
-            features.pricing_saved()
-        except Exception:  # noqa: BLE001 -- the engine may not be installed
-            pass
+    # ...and it is also the one brand file that travels on the LIVE pipe. It is small, and a
+    # person typed it, so it is a row in `brand_inputs` rather than a wait for the next pack
+    # rebuild (design/WORKSPACE-PLAN.md section 3; features.md next door is 13,219 machine-written
+    # words and stays in the pack). brand/_common.input_saved does both halves: the stamp above,
+    # and the push. It never writes the file (this route already did) and it never raises: a save
+    # that reached disk has succeeded, and no workspace, no network, or a workspace a version
+    # behind must not turn it into a failed save.
+    try:
+        from seo_agent.brand import _common as bcm
+        if bcm.is_input(name):
+            bcm.input_saved(name, data)
+    except Exception:  # noqa: BLE001 -- the engine may not be installed
+        pass
     return {"ok": True}
 
 
@@ -1325,6 +1525,51 @@ def api_workspace_confirm(body: dict = Body(...)):
     return _ws_begin(body, confirm=True)
 
 
+@router.post("/workspace/update")
+def api_workspace_update(body: dict = Body(default={})):
+    """Bring an existing workspace up to the schema this Sutra expects.
+
+    A workspace made before a change cannot get a new table from the setup script: every statement
+    in it is `create ... if not exists`, and the tables are already there. schema.migrate() applies
+    only the steps that workspace has not run, in order, each in its own transaction with its own
+    version bump, and stops at the first failure. With no personal access token it comes back as
+    the paste route carrying JUST those steps, never the whole create script.
+
+    It is never run automatically: it needs a token or a person pasting into the SQL Editor, and
+    both of those are somebody's choice to make.
+    """
+    mods = _ws()
+    if not _ws_ready(mods, "schema", "client"):
+        return _bad("The team workspace is not in this build of Sutra, so nothing was "
+                    "attempted. Update Sutra and try again.", 501)
+    token = str(body.get("token") or "").strip()
+    if token:
+        problem = _ws_check_token(token)
+        if problem:
+            return _bad(problem)
+
+    def work():
+        try:
+            res = mods["schema"].migrate(token=token or None) or {}
+        except Exception as e:  # noqa: BLE001
+            _ws_fail("The update could not run.", _ws_scrub(e, token))
+            return
+        if res.get("route") == "paste":
+            _ws_paste_route(res, res.get("reason") or "")
+            return
+        if res.get("ok"):
+            _ws_verify(mods, force=True)          # the cached verdict is now out of date
+            _ws_say(phase="done", step=str(res.get("reason") or "Workspace updated."),
+                    finished_at=time.time())
+        else:
+            _ws_fail("The update did not finish.", _ws_scrub(res.get("reason") or "", token))
+
+    _ws_start_job("update")
+    if not _spawn("workspace", work):
+        return _bad("A workspace job is already running. Wait for it to finish.", 409)
+    return {"started": True}
+
+
 # ---- join --------------------------------------------------------------------------------
 
 def _ws_join_worker(url, key, ws_id, name, member_id):
@@ -1482,6 +1727,11 @@ def api_workspace(check: int = 0):
         "sync": {"pending": int(out.get("queued") or 0),
                  "pack_state": _ws_pack["state"],
                  "last_seen_at": st.get("updated_at"),
+                 # THE SAME NEWS FROM THE OTHER DIRECTION. verify().needs_update is "this
+                 # workspace is a version behind"; this one is "somebody has already saved
+                 # something that could not be sent because of it". Either is enough to offer
+                 # the update; the screen shows it once, not twice.
+                 "needs_update": st.get("needs_update") or None,
                  "stuck": st.get("stuck") or None},
         "job": job,
     }

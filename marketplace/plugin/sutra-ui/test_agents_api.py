@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 import unittest
 
@@ -818,35 +819,205 @@ class TestAgentsApi(unittest.TestCase):
         agents_api._ws_pack_progress("error", 0, 0, "no network")
         self.assertEqual(agents_api._ws_pack["state"], "idle", "a failed rebuild is not a running one")
 
+    # ---- the catalogue refresh: the telling, not the work -------------------------------
+    # THE BUG THESE EXIST FOR (owner, 2026-09-10). The route handed refresh_site an emit that
+    # threw every line away and then blocked until the whole run came back, so the screen had
+    # one fixed sentence to draw and a six-minute run looked exactly like a hang. The work was
+    # always right; only the telling was missing. Each of these asks a different half of "can
+    # he tell what is happening": do the engine's lines arrive, does a wait read as a wait,
+    # does a finish land the counts, and does a failure ever leave something spinning.
+
+    def _kn_reset(self):
+        agents_api._kn_job = None
+
+    def _kn_settle(self, tries=400):
+        """Poll the way the screen does, until the job stops. The work is on a thread."""
+        for _ in range(tries):
+            job = (self.client.get(BASE + "/knowledge/refresh").json() or {}).get("job")
+            if job and job.get("phase") != "running":
+                return job
+            time.sleep(0.01)
+        raise AssertionError("the refresh never stopped; last job %s" % job)
+
+    def _kn_stub(self, fn):
+        import seo_agent.tools.refresh_site as rs
+        old = rs.run
+        rs.run = fn
+        self.addCleanup(setattr, rs, "run", old)
+
+    def test_54_every_line_the_engine_says_reaches_the_screen(self):
+        """The whole fix. refresh_site talks all the way through -- "Read the sitemaps", "The
+        site lists 11,656 pages now" -- and every one of those lines used to go into a no-op
+        emit. They are recorded now, in the engine's own words, and handed to the one read the
+        card polls."""
+        self._kn_reset()
+
+        def fake(ctx, **kw):
+            say = ctx["emit"]
+            say(type="substep_finished", label="Asking the site for its current list",
+                note="no pages are read yet, only their addresses")
+            say(type="substep_finished", label="The site lists 11,656 pages now",
+                note="4,201 of them carry a last-changed date")
+            say(type="thinking")                      # no label: not a line for a person
+            return {"summary": "3 new, 0 gone, 0 changed. Nothing has been changed yet.",
+                    "preview": True, "new": 3, "gone": 0, "changed": 0, "unchecked": 11656,
+                    "report": "# What changed"}
+        self._kn_stub(fake)
+
+        r = self.client.post(BASE + "/knowledge/refresh", json={"preview": True}, headers=HDR)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json().get("started"), "the press starts it and returns")
+        job = self._kn_settle()
+        labels = [s["label"] for s in job["steps"]]
+        self.assertEqual(labels, ["Asking the site for its current list",
+                                  "The site lists 11,656 pages now"],
+                         "the engine's lines, in order, and nothing invented beside them")
+        self.assertEqual(job["steps"][0]["note"], "no pages are read yet, only their addresses",
+                         "the note is carried word for word, never reworded")
+        self.assertTrue(job["steps"][0]["at"] and job["steps"][1]["at"] >= job["steps"][0]["at"])
+        self.assertEqual(job["phase"], "done")
+        self.assertEqual(job["mode"], "preview")
+        self.assertEqual(job["result"]["new"], 3, "and the counts land on the same job")
+        self.assertEqual(job["label"], "Catching up on what changed",
+                         "headed by the tool's own name, from the registry")
+
+    def test_55_a_wait_the_site_imposed_is_marked_as_waiting(self):
+        """The six minutes the owner could not account for. fetch.py announces a firewall
+        cooldown BEFORE it sits through one, with its own number, so a wait can be drawn as a
+        wait rather than as a step that is working."""
+        self._kn_reset()
+
+        def fake(ctx, **kw):
+            say = ctx["emit"]
+            say(type="substep_finished", label="The site's firewall pushed back",
+                note="waiting 120s before trying https://testlify.com/blog/ again, and slowing "
+                     "to one request every 1.2s")
+            job = agents_api._kn_get_job()
+            assert job["waiting"] == {"seconds": 120, "since": job["steps"][-1]["at"]}, job["waiting"]
+            say(type="substep_finished", label="Read them", note="214 of 214 came back with text")
+            assert agents_api._kn_get_job()["waiting"] is None, "the next line ends the wait"
+            return {"summary": "214 pages added.", "added": 214}
+        self._kn_stub(fake)
+
+        self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
+        job = self._kn_settle()
+        self.assertEqual(job["phase"], "done")
+        self.assertIsNone(job["waiting"], "a finished job is never still waiting")
+
+    def test_55b_the_wait_is_a_number_the_engine_hands_over_not_prose_we_parse(self):
+        """The seam this closes (2026-09-10). The wait was told apart from work by regexing
+        "waiting 120s" out of the engine's sentence. It worked, and it was one reworded sentence
+        away from silently turning every cooldown back into something that looks like progress —
+        with nothing able to catch it, because the sentence and the reader live in different
+        packages and no test spanned both.
+
+        fetch.py now passes `wait_seconds` as a field. The regex stays as the fallback for a line
+        that carries the sentence and not the field, so an older engine still degrades to what it
+        did before rather than to nothing."""
+        self._kn_reset()
+
+        def fake(ctx, **kw):
+            say = ctx["emit"]
+            # THE SENTENCE SAYS NOTHING ABOUT WAITING. Only the field does, so this line can only
+            # be read as a wait by the mechanism under test.
+            say(type="substep_finished", label="The site pushed back",
+                note="sitting this one out for a bit", wait_seconds=90)
+            assert agents_api._kn_get_job()["waiting"] == {
+                "seconds": 90, "since": agents_api._kn_get_job()["steps"][-1]["at"]}, "field ignored"
+            say(type="substep_finished", label="Carried on", note="")
+            assert agents_api._kn_get_job()["waiting"] is None
+            # AND THE FALLBACK STILL WORKS: sentence, no field.
+            say(type="substep_finished", label="Pushed back again",
+                note="waiting 45s before trying https://x.test/ again")
+            assert (agents_api._kn_get_job()["waiting"] or {}).get("seconds") == 45, "fallback lost"
+            say(type="substep_finished", label="Done", note="")
+            return {"summary": "fine.", "added": 0}
+        self._kn_stub(fake)
+
+        self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
+        job = self._kn_settle()
+        self.assertEqual(job["phase"], "done")
+        self.assertIsNone(job["waiting"])
+
+    def test_56_a_refresh_that_failed_never_leaves_something_spinning(self):
+        """Three ways it can stop, and not one of them may still read as running."""
+        # it raised
+        self._kn_reset()
+        self._kn_stub(lambda ctx, **kw: (_ for _ in ()).throw(RuntimeError("the site is unreachable")))
+        self.client.post(BASE + "/knowledge/refresh", json={"preview": True}, headers=HDR)
+        job = self._kn_settle()
+        self.assertEqual(job["phase"], "failed")
+        self.assertIn("unreachable", job["error"])
+        self.assertTrue(job["finished_at"])
+
+        # it survived a total refusal: an error beside a summary, not a raise
+        self._kn_reset()
+        self._kn_stub(lambda ctx, **kw: {"summary": "Nothing was added.", "added": 0,
+                                         "error": "The site refused every page (cf-mitigated)."})
+        self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
+        job = self._kn_settle()
+        self.assertEqual(job["phase"], "failed", "a refusal is not a finish")
+        self.assertIn("refused every page", job["error"])
+        self.assertEqual(job["result"]["summary"], "Nothing was added.",
+                         "and what it did manage to say is kept beside the reason")
+
+        # and the one no except can catch: the worker is simply gone
+        self._kn_reset()
+        agents_api._kn_start_job("apply")
+        agents_api._kn_say(spawned=True)
+        job = self.client.get(BASE + "/knowledge/refresh").json()["job"]
+        self.assertEqual(job["phase"], "failed", "a running job with no worker is not running")
+        self.assertIn("stopped without saying why", job["error"])
+
+    def test_57_two_refreshes_can_never_overlap(self):
+        """One site, one survey. The second press is refused rather than quietly doubling the
+        fetches, and the refusal says what to do."""
+        self._kn_reset()
+        gate = threading.Event()
+        self._kn_stub(lambda ctx, **kw: (gate.wait(5), {"summary": "done.", "added": 0})[1])
+        self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
+        r = self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("already running", r.json()["detail"])
+        d = self.client.post(BASE + "/knowledge/refresh/dismiss", json={}, headers=HDR)
+        self.assertEqual(d.status_code, 409, "and a running job cannot be cleared away either")
+        gate.set()
+        self._kn_settle()
+        self.assertEqual(self.client.post(BASE + "/knowledge/refresh/dismiss", json={},
+                                          headers=HDR).status_code, 200)
+        self.assertIsNone(self.client.get(BASE + "/knowledge/refresh").json()["job"],
+                          "and then the card has nothing to draw")
+
     def test_53_a_refresh_asks_for_a_pack_rebuild_and_never_fails_because_of_one(self):
         """One click updates everybody AND the joining copy. It must also be impossible for the
         workspace half to break the catalogue half for somebody who has no workspace."""
         self._ws_engine()
+        self._kn_reset()
         asked = []
         real = agents_api.ws_pack_refresh
         agents_api.ws_pack_refresh = lambda reason="": asked.append(reason) or True
         self.addCleanup(setattr, agents_api, "ws_pack_refresh", real)
 
-        import seo_agent.tools.refresh_site as rs
-        old = rs.run
-        rs.run = lambda ctx, **kw: ({"new": 3, "gone": 0, "changed": 0, "preview": True}
-                                    if kw.get("preview") else
-                                    {"summary": "3 pages added.", "added": 3})
-        self.addCleanup(setattr, rs, "run", old)
+        self._kn_stub(lambda ctx, **kw: ({"new": 3, "gone": 0, "changed": 0, "preview": True}
+                                         if kw.get("preview") else
+                                         {"summary": "3 pages added.", "added": 3}))
 
         self.client.post(BASE + "/knowledge/refresh", json={"preview": True}, headers=HDR)
+        self._kn_settle()
         self.assertEqual(asked, [], "a preview writes nothing, so it rebuilds nothing")
         r = self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(self._kn_settle()["phase"], "done")
         self.assertEqual(len(asked), 1, "a real refresh asks for the rebuild")
 
-        # ...and the real one, with no workspace at all, still returns rather than raising
+        # ...and the real one, with no workspace at all, still finishes rather than raising
         agents_api.ws_pack_refresh = real
         agents_api._ws_wipe_for_test = None
         from seo_agent.workspace import client as wclient
         wclient.forget()
         r = self.client.post(BASE + "/knowledge/refresh", json={}, headers=HDR)
         self.assertEqual(r.status_code, 200, "no workspace is not an error on the Knowledge tab")
+        self.assertEqual(self._kn_settle()["phase"], "done")
 
     def test_53b_tables_with_no_bucket_never_read_as_connected(self):
         """The plan's own named risk. The storage policies do not always attach and the tables

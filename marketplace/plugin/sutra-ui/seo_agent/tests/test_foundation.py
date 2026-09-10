@@ -819,6 +819,51 @@ try:
 finally:
     dfs.post, dfs.demo_mode, dfs.balance = _saved_post, _saved_demo, _saved_bal
 
+print("\na site that is not WordPress any more answers at once, and costs nothing")
+# THE OWNER'S OWN SITE, 2026-09-10. testlify.com moved off WordPress, so /wp-json/wp/v2/types
+# answers 403 and always will. `_is_block` reads any 403 as a firewall, so the probe sat out three
+# 120-second cooldowns — SIX MINUTES — before giving up on an endpoint that cannot ever exist.
+#
+# And the delay was the smaller half. Six minutes of retrying tripped the site's rate limiter, so
+# the SITEMAP step that follows, the only page list a site with no CMS API has, was then refused
+# too. The refresh spent its whole budget being told no, and our own retrying is what caused it.
+#
+# So the timing is asserted, not just the outcome: with a REAL cooldown configured, the probe must
+# still return immediately. An assertion on the message alone would pass even if it slept.
+_gone_wp = "gone-wp.test"
+def _gone_handler(request):
+    return httpx.Response(403, text="Forbidden")
+
+fetchmod.TRANSPORT = httpx.MockTransport(_gone_handler)
+_saved_cooldown = settings.FIREWALL_COOLDOWN
+settings.FIREWALL_COOLDOWN = 5          # a real one: three of these is the 15s we must NOT spend
+_gone_dir = tempfile.mkdtemp(prefix="seo-gonewp-test-")
+_gone_fx = fetchmod.Fetcher(os.path.join(_gone_dir, "_work"), os.path.join(_gone_dir, "_raw"))
+_said = []
+try:
+    _t0 = time.time()
+    _gone_doc = enumerate_wp.run(_gone_fx, {"root": "https://" + _gone_wp, "host": _gone_wp,
+                                            "work": os.path.join(_gone_dir, "_work"),
+                                            "wordpress_url": ""},
+                                 lambda a, b="", **k: _said.append((a, b)))
+    _took = time.time() - _t0
+finally:
+    _gone_fx.close()
+    fetchmod.TRANSPORT = None
+    settings.FIREWALL_COOLDOWN = _saved_cooldown
+
+ok("a 403 on the WordPress probe returns AT ONCE, with no cooldown spent",
+   _took < 2.0, "took %.1fs, so it sat out cooldowns" % _took)
+ok("and the run carries on rather than raising", isinstance(_gone_doc, dict), _gone_doc)
+ok("it is reported as 'not WordPress', not as a firewall problem",
+   any("No content system" in a for a, _b in _said), _said)
+ok("and it names the sitemaps as the source instead, so the reader knows what happens next",
+   any("sitemap" in b.lower() for _a, b in _said), _said)
+ok("the host is NOT marked as blocked, so the sitemap fetch that follows starts clean",
+   not _gone_fx.host_given_up("https://" + _gone_wp + "/sitemap.xml"))
+ok("no cooldown was counted against it", _gone_fx.stats.get("cooldowns", 0) == 0,
+   _gone_fx.stats)
+
 print("\nFake site, stubbed DataForSEO. Proves the rules and the plumbing, not the extractor on real HTML.")
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))

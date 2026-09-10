@@ -41,7 +41,7 @@ import re
 
 from .. import store
 from . import settings
-from .fetch import Blocked, RobotsDisallowed
+from .fetch import host_of, Blocked, RobotsDisallowed
 
 FIELDS = "link,type,title,excerpt,content,modified"
 
@@ -158,15 +158,26 @@ def run(fx, site, say):
     api_root = root + "/wp-json"
     core = api_root + "/wp/v2"                       # the type INDEX always lives in core
 
-    # 1) ask the site what content types it has — never assume
+    # 1) ask the site what content types it has — never assume.
+    #
+    # THIS IS A PROBE, NOT A FETCH, so it takes one attempt and no cooldowns (fetch.get's
+    # `discovery` argument, and its docstring carries the incident). A site that has moved off
+    # WordPress answers 403 or 404 here and always will: that is the ANSWER, not a firewall to
+    # sit out. The owner's own site did exactly this and cost six minutes per refresh, then
+    # tripped its rate limiter so the sitemap step that follows was refused too.
     try:
-        r = fx.get(core + "/types")
+        r = fx.get(core + "/types", discovery=True)
     except RobotsDisallowed:
         say("Skipped the content system", "robots.txt does not allow reading its listing")
         return _skipped(site, "robots.txt disallows the REST API")
     except Blocked as e:
-        say("Skipped the content system", "the site refused the request")
-        return _skipped(site, "blocked: %s" % str(e)[:160])
+        # REPORTED AS "NOT WORDPRESS", NOT AS "BLOCKED", because for this step they are the same
+        # outcome: no page list from a CMS. Saying "the site refused the request" sends somebody
+        # looking for a firewall problem on a site that simply is not WordPress any more.
+        say("No content system to ask",
+            "%s did not answer as a WordPress site, so its own page list is not available. "
+            "The sitemaps are the source instead." % host_of(core))
+        return _skipped(site, "no WordPress REST API: %s" % str(e)[:160])
     body = r.text.strip()
     if r.status != 200 or body[:1] != "{":
         why = ("no WordPress REST API answered at %s (HTTP %d)" % (core + "/types", r.status)

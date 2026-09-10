@@ -97,7 +97,11 @@ def built_from_names():
 
 # The files a PERSON fills in, which a builder then reads. Not outputs, and not sources of the
 # brief either, so they belong in neither list above. One so far.
-INPUTS = ["pricing.md"]
+#
+# DERIVED, never typed out again: brand/_common.INPUTS is where the class is decided (it maps each
+# one to the blank form that stands in for it), and FILES is where the order is decided. A second
+# hand-written list here would be a second thing to keep in step with both.
+INPUTS = [n for n in FILES if cm.is_input(n)]
 
 
 def inputs():
@@ -108,13 +112,24 @@ def inputs():
     of its own. The screen needs the difference because the known failure mode of a typed-in file is
     that it ships blank, reads as something not built yet, and stays blank for months. That is
     exactly what happened to the seed file this one replaces (finding 8.21).
+
+    A FILE THAT IS NOT ON DISK IS THE BLANK FORM, NOT AN ABSENCE. The form only reaches disk when
+    the brand-pack builder runs, so a pack built before it existed has no copy -- and this screen
+    still offered a door to it, which answered 404 (the owner, 2026-09-10). cm.read() stands the
+    template in, so `exists` here means "there is a form to open", `words` counts the text the
+    person will actually be shown, and `filled` is still the only word for "has anybody typed in
+    it". The two states the screen draws -- the blank form, and a file somebody wrote -- are the
+    two states there are; "on disk but untouched" and "not created yet" are not a difference a
+    person can see, and pretending they are is what put a door in front of a missing file.
     """
     from . import features
     rows = []
     for n in INPUTS:
-        r = _row(n)
-        r["filled"] = bool(r["exists"]) and not features.untouched(_text(n))
-        rows.append(r)
+        label, note = LABELS.get(n, (n, ""))
+        text = _text(n)
+        rows.append({"name": n, "label": label, "note": note,
+                     "exists": bool(str(text).strip()), "words": cm.words(text),
+                     "filled": not features.untouched(text, n)})
     return rows
 
 

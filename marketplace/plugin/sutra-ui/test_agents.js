@@ -327,31 +327,141 @@ test("the traffic import is not a button, and nothing of its form is left behind
   assert(SRC.indexOf("trafficForm") === -1, "and so is the state it parked its draft on");
 });
 
-test("a refresh shows ONE line while it works, then what it found, then what changed", () => {
+/* ── the refresh card: what it is doing, said in the engine's words ────────────
+   THE BUG THESE EXIST FOR (owner, 2026-09-10). The card drew a spinner beside ONE FIXED
+   SENTENCE for the whole run, because the route threw every line refresh_site emitted into a
+   no-op emit. A run that sat in six minutes of firewall cooldowns therefore looked exactly like
+   a hang, and exactly like a finish. So each of these asks the same question in a different
+   state: can he tell working from waiting from stopped from done, and is every word of it the
+   engine's? */
+const kjob = (o) => Object.assign({
+  mode: "preview", phase: "running", label: "Catching up on what changed", steps: [],
+  waiting: null, result: null, error: null, spawned: true,
+  started_at: Date.now() / 1000, updated_at: Date.now() / 1000, finished_at: null }, o || {});
+
+test("while it works the card shows the engine's last line, and the ones before it", () => {
   const a = A.S.ag;
-  a.refresh = { busy: true, step: "Asking the site for its current list…" };
+  const now = Date.now() / 1000;
+  a.refresh = kjob({ steps: [
+    { label: "Asking the site for its current list", note: "no pages are read yet, only their addresses", at: now - 40 },
+    { label: "Read the sitemaps", note: "14 sitemap files", at: now - 30 },
+    { label: "The site lists 11,656 pages now", note: "every address the sitemaps and the CMS list", at: now - 2 }],
+    updated_at: now - 2 });
+  const h = A.agRefreshHtml(a);
+  assert(/class="spin"/.test(h), "it is working, so it spins");
+  assert(h.indexOf("The site lists 11,656 pages now") !== -1, "the line the engine last said is on top");
+  assert(h.indexOf("every address the sitemaps and the CMS list") !== -1, "with its own note");
+  assert((h.match(/class="msg"/g) || []).length === 1, "one line on top, never a log");
+  assert(h.indexOf("Read the sitemaps") !== -1 && h.indexOf("Asking the site") !== -1,
+         "and what it said before is behind it: " + h.slice(0, 200));
+  assert(h.indexOf("<li>") < h.indexOf("Read the sitemaps"), "the earlier lines are the trail");
+  assert(h.indexOf("Catching up on what changed") !== -1, "headed by the tool's own name");
+  a.refresh = null;
+});
+
+/* Every word of progress must be the engine's. A sentence written here would keep saying the
+   same thing whatever the engine was doing -- which is precisely what the old card did. */
+test("the card invents no progress line of its own", () => {
+  /* the comments still tell the story of the bug, so the CODE is what is read here */
+  const code = SRC.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert(code.indexOf("Asking the site for its current list") === -1,
+         "the fixed sentence that made a six-minute run look like a hang is gone from the client");
+  assert(code.indexOf("Reading the pages that are new or have changed") === -1,
+         "and so is the one the second button drew");
+  const a = A.S.ag;
+  a.refresh = kjob({ steps: [], updated_at: Date.now() / 1000 });
+  const h = A.agRefreshHtml(a);
+  assert(/Nothing back from it yet/.test(h), "with no line yet it says exactly that: " + h.slice(0, 200));
+  a.refresh = null;
+});
+
+/* WAITING IS NOT WORKING. fetch.py announces a firewall cooldown before it sits through one,
+   and the owner's run spent six minutes in those. A wait drawn as work is a claim of progress. */
+test("a wait the site imposed is drawn as waiting, not as working", () => {
+  const a = A.S.ag;
+  const now = Date.now() / 1000;
+  a.refresh = kjob({ mode: "apply",
+    steps: [{ label: "The site's firewall pushed back",
+              note: "waiting 120s before trying https://testlify.com/blog/ again, and slowing to one request every 1.2s",
+              at: now - 30 }],
+    waiting: { seconds: 120, since: now - 30 }, updated_at: now - 30 });
+  const h = A.agRefreshHtml(a);
+  assert(!/class="spin"/.test(h), "no working spinner while nothing is being read");
+  assert(/class="hold"/.test(h), "a held mark instead");
+  assert(/Waiting on the site/.test(h), "and it says so: " + h.slice(0, 240));
+  assert(/30s of 2m/.test(h), "with how long it has waited of how long it said: " + h.slice(0, 300));
+  assert(h.indexOf("The site&#39;s firewall pushed back") !== -1 || h.indexOf("firewall pushed back") !== -1,
+         "the engine's own line is still the line");
+  a.refresh = null;
+});
+
+/* A run can go quiet for minutes between lines. Quiet must read as alive -- the server has
+   already checked the worker is there -- and never as finished. */
+test("a run that has said nothing for minutes reads as alive, never as done", () => {
+  const a = A.S.ag;
+  const now = Date.now() / 1000;
+  a.refresh = kjob({ mode: "apply",
+    steps: [{ label: "Reading 214 pages", note: "only the ones that are new or have changed", at: now - 200 }],
+    updated_at: now - 200 });
+  const h = A.agRefreshHtml(a);
+  assert(/class="spin"/.test(h), "still working");
+  assert(/Still going/.test(h) && /nothing new for 3m 20s/.test(h), "and it says how long it has been quiet: " + h.slice(0, 260));
+  assert(!/Done/.test(h), "quiet is not finished");
+  assert(h.indexOf('data-ag="refreshchanges"') === -1, "and offers nothing to read yet");
+  /* a line that has only just arrived is not worth a gap line */
+  a.refresh = kjob({ steps: [{ label: "Read the sitemaps", note: "", at: now - 1 }], updated_at: now - 1 });
+  assert(!/Still going/.test(A.agRefreshHtml(a)), "a fresh line needs no explaining");
+  a.refresh = null;
+});
+
+test("a finished check replaces the spinner with the counts", () => {
+  const a = A.S.ag;
+  a.refresh = kjob({ phase: "done", finished_at: Date.now() / 1000,
+                     result: { new: 37, gone: 4, changed: 112, unchecked: 900, report: "# What changed" } });
   let h = A.agRefreshHtml(a);
-  assert(/class="spin"/.test(h) && h.indexOf("Asking the site") !== -1, "one line and a spinner");
-  assert((h.match(/class="msg"/g) || []).length === 1, "exactly one line, never a log");
-
-  a.refresh = { preview: { new: 37, gone: 4, changed: 112, unchecked: 900 } };
-  h = A.agRefreshHtml(a);
-  assert(/37 new/.test(h) && /4 gone/.test(h) && /112 rewritten/.test(h), "the counts: " + h.slice(0, 160));
-  assert(/900 pages give no date/.test(h), "and says what it could not check");
+  assert(!/class="spin"/.test(h), "nothing is still working");
+  assert(/37 new/.test(h) && /4 gone/.test(h) && /112 rewritten/.test(h), "the counts: " + h.slice(0, 200));
+  assert(/900 pages give no date/.test(h), "and what could not be checked cheaply");
   assert(h.indexOf('data-ag="refreshgo"') !== -1, "nothing happens until you say go");
+  assert(h.indexOf('data-ag="refreshreport"') !== -1, "the list has a door");
 
-  a.refresh = { preview: { new: 0, gone: 0, changed: 0, unchecked: 0 } };
+  a.refresh = kjob({ phase: "done", finished_at: Date.now() / 1000,
+                     result: { new: 0, gone: 0, changed: 0, unchecked: 0 } });
   h = A.agRefreshHtml(a);
   assert(/Nothing has changed/.test(h) && h.indexOf('data-ag="refreshgo"') === -1,
          "with nothing to do there is nothing to press");
 
-  a.refresh = { done: "584 pages added, 0 removed." };
+  a.refresh = kjob({ mode: "apply", phase: "done", finished_at: Date.now() / 1000,
+                     result: { summary: "3 pages added, 0 removed, 0 re-read.", added: 3 } });
   h = A.agRefreshHtml(a);
-  assert(/Done\./.test(h) && h.indexOf('data-ag="refreshchanges"') !== -1, "done, and a way to read it");
+  assert(/Done\./.test(h) && /3 pages added/.test(h), "what it did, in the engine's own count");
+  assert(!/class="spin"/.test(h) && h.indexOf('data-ag="refreshchanges"') !== -1, "done, and a way to read it");
+  a.refresh = null;
+});
 
-  a.refresh = { error: "The site refused every page." };
-  h = A.agRefreshHtml(a);
+/* A failure that looks like progress is worse than the silence this replaced. */
+test("a refresh that stopped replaces the spinner with the reason", () => {
+  const a = A.S.ag;
+  a.refresh = kjob({ mode: "apply", phase: "failed", finished_at: Date.now() / 1000,
+    error: "The site refused every page (cf-mitigated). Nothing was changed, so the catalogue is exactly as it was.",
+    result: { summary: "Nothing was added: not one of the 214 pages could be read." },
+    steps: [{ label: "Reading 214 pages", note: "", at: Date.now() / 1000 - 60 }] });
+  const h = A.agRefreshHtml(a);
+  assert(!/class="spin"/.test(h) && !/class="hold"/.test(h), "nothing spins after the work has stopped");
   assert(/refused every page/.test(h) && /class="msg err"/.test(h), "a failure says so plainly");
+  assert(/not one of the 214 pages could be read/.test(h), "and the summary beside it is kept");
+  assert(!/Done/.test(h), "and never a Done over the top of it");
+  assert(h.indexOf('data-ag="refreshcancel"') !== -1, "with a way to put it away");
+  a.refresh = null;
+});
+
+/* The one failure the server never sees: the press that never reached it. */
+test("a job the server has forgotten leaves nothing spinning", () => {
+  const a = A.S.ag;
+  a.refresh = kjob({ phase: "failed", finished_at: Date.now() / 1000, spawned: true,
+    error: "The refresh stopped without saying why. Nothing was changed." });
+  const h = A.agRefreshHtml(a);
+  assert(!/class="spin"/.test(h) && /stopped without saying why/.test(h));
   a.refresh = null;
 });
 
@@ -548,7 +658,7 @@ function agReset(){
   const a = A.agS();
   a.pages = null; a.pageQ = ""; a.pageType = ""; a.pageLang = null; a.map = null; a.mapOn = false;
   a.libEdit = null; a.knowledge = null;
-  a.refresh = null; a.trafficForm = null; a.compForm = null; a.coForm = null;
+  a.refresh = null; a.refreshSeen = null; a.refreshPollErr = null; a.compForm = null; a.coForm = null;
   a.cta = null; a.ctaForm = null; a.detailOpen = {}; a.panel = null;
   return a;
 }
@@ -1467,6 +1577,50 @@ test("nothing says the workspace is ready until the server says the job is done"
   assert.ok(/Your workspace is ready/.test(done) && /every table checked/.test(done));
 });
 
+/* A workspace made before a table existed. Added 2026-09-10, when pricing.md moved onto the live
+   pipe and needed a table the owner's real workspace does not have: the setup script cannot add
+   one, because every statement in it is `create ... if not exists` and his tables are already
+   there. Only the migration steps can, and nothing runs those unasked. */
+const WS_CONNECTED = { configured: true, link: "sutra-ws-eyJ1IjoiaHR0cHM6Ly94In0",
+  workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
+  members: [{ member_id: "m1", name: "Devansh", last_seen_at: new Date().toISOString() }],
+  me: { member_id: "m1", name: "Devansh" }, sync: { pending: 0, pack_state: "idle" } };
+
+test("a workspace a version behind offers the update, and is still drawn as connected", () => {
+  const ws = wsdoc(Object.assign({}, WS_CONNECTED, {
+    verify: { ok: true, needs_update: true, schema_version: 2 } }));
+  const html = A.agWsHtml(ws, null);
+  assert.ok(/data-ag="wsupdate"/.test(html), "the button is there");
+  assert.ok(/version 2/.test(html), "and it says which version it is on");
+  assert.ok(/dot ok"><\/i>connected/.test(html),
+    "STILL CONNECTED: verify says ok, and everything that already synced goes on syncing");
+  assert.ok(!/not finished/.test(html), "a newer Sutra growing a table is not a broken workspace");
+  assert.ok(/data-ag="wscopylink"/.test(html), "and the link is untouched");
+});
+
+test("the same news from the sync side shows the offer once, not twice", () => {
+  const both = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, {
+    verify: { ok: true, needs_update: true, schema_version: 2 },
+    sync: { pending: 1, pack_state: "idle",
+            needs_update: { kind: "brand_inputs", have: 2, needs: 3,
+                            why: "A price you saved is waiting for this update." } } })), null);
+  assert.strictEqual((both.match(/data-ag="wsupdate"/g) || []).length, 1, "one button, not two");
+  assert.ok(/A price you saved is waiting/.test(both), "and it uses the reason it was given");
+
+  /* sync alone is enough: somebody has already saved something that could not be sent */
+  const syncOnly = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, {
+    verify: { ok: true },
+    sync: { pending: 1, pack_state: "idle",
+            needs_update: { kind: "brand_inputs", have: 2, needs: 3, why: "Waiting." } } })), null);
+  assert.ok(/data-ag="wsupdate"/.test(syncOnly), "either source is enough on its own");
+});
+
+test("a workspace that is up to date is never asked to update", () => {
+  const html = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, { verify: { ok: true } })), null);
+  assert.ok(!/data-ag="wsupdate"/.test(html), "no offer when there is nothing to offer");
+  assert.ok(!/An update is available/.test(html));
+});
+
 test("once it is made, the link is on the tab with a copy button, and stays there", () => {
   const ws = wsdoc({ configured: true, link: "sutra-ws-eyJ1IjoiaHR0cHM6Ly94In0",
     workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
@@ -1669,39 +1823,61 @@ async function atest(name, fn){
 
 (async () => {
   /* THE TWO-STEP REFRESH, driven through the real action. This is the feature that failed
-     silently: button, four rendered states and a working route all present, and no arm in
-     agAction, so the click reached `default: break`. Both calls are asserted, because "it looked
-     like it worked" is exactly what the broken version did.
-     Preview reads and changes nothing; only the second press, which he has to make, writes. */
-  await atest("check for changes previews, then only a second press updates the catalogue", async () => {
+     silently twice: first with no arm in agAction at all, so the click reached `default: break`;
+     then with the arm in, but the press waiting on the whole run behind one fixed sentence.
+     A press now STARTS the tool and returns, and the card is filled by polling the job the
+     server keeps. Preview reads and changes nothing; only the second press, which he has to
+     make, writes. */
+  await atest("a press starts the tool, and the card fills with what the engine says", async () => {
     const a = agReset();
-    const calls = [];
+    const posts = [];
+    let job = null;
+    const now = () => Date.now() / 1000;
     const prevPost = A.apiPost, prevGet = A.apiGet;
     A.apiPost = async (path, b) => {
       /* recorded by ROUTE, not by position: an unrelated poll firing between the two presses
          must not be able to shift what this test thinks it asserted */
-      if (/\/knowledge\/refresh$/.test(path)) calls.push([path, b]);
-      if (b && b.preview)
-        return { new: 3, gone: 0, changed: 0, unchecked: 11656, preview: true,
-                 report: "# What changed on testlify.com", summary: "3 new, 0 gone, 0 changed." };
-      return { summary: "3 pages added, 0 removed, 0 re-read.", added: 3, removed: 0, rebuilt: 0 };
+      if (/\/knowledge\/refresh$/.test(path)){
+        posts.push([path, b]);
+        job = { mode: b && b.preview ? "preview" : "apply", phase: "running", steps: [],
+                label: "Catching up on what changed", waiting: null, result: null, error: null,
+                spawned: true, started_at: now(), updated_at: now(), finished_at: null };
+        return { started: true, job };
+      }
+      return {};
     };
-    A.apiGet = async () => ({});
+    A.apiGet = async (path) => (/\/knowledge\/refresh$/.test(path) ? { job } : {});
     try {
       await A.agAction("refreshcheck", { getAttribute: () => "" });
-      assert.strictEqual(calls.length, 1, "exactly one call, to the refresh route");
-      assert.strictEqual(calls[0][1].preview, true, "the first press previews and touches nothing");
-      assert.ok(a.refresh && a.refresh.preview, "the counts land on the state");
-      assert.strictEqual(a.refresh.preview.new, 3);
+      assert.strictEqual(posts.length, 1, "exactly one call, to the refresh route");
+      assert.strictEqual(posts[0][1].preview, true, "the first press previews and touches nothing");
+      assert.strictEqual(a.refresh.phase, "running", "and the card is live at once");
+      assert.ok(!a.refresh.result, "with nothing claimed about what it found");
+
+      /* the engine says something; the poll is what puts it on screen */
+      job.steps.push({ label: "The site lists 11,656 pages now",
+                       note: "every address the sitemaps and the CMS list", at: now() });
+      job.updated_at = now();
+      await A.agPollRefresh();
+      assert.ok(/11,656 pages now/.test(A.agRefreshHtml(a)), "the engine's line reaches the screen");
+
+      job.phase = "done"; job.finished_at = now();
+      job.result = { new: 3, gone: 0, changed: 0, unchecked: 11656, preview: true,
+                     report: "# What changed on testlify.com" };
+      await A.agPollRefresh();
       const h = A.agRefreshHtml(a);
-      assert.ok(/3 new/.test(h), "and are reported: " + h.slice(0, 200));
+      assert.ok(/3 new/.test(h), "the counts land where the spinner was: " + h.slice(0, 200));
       assert.ok(/11,656 pages give no date/.test(h), "could-not-check-cheaply included");
+      assert.ok(!/class="spin"/.test(h), "and nothing is left spinning");
       assert.ok(/data-ag="refreshreport"/.test(h), "the markdown report has a door");
 
       await A.agAction("refreshgo", { getAttribute: () => "" });
-      assert.strictEqual(calls.length, 2, "and the second press is a second call");
-      assert.ok(!calls[1][1].preview, "the second press is the real one, not another preview");
-      assert.ok(a.refresh.done && /3 pages added/.test(a.refresh.done), "and it reports what it did");
+      assert.strictEqual(posts.length, 2, "and the second press is a second call");
+      assert.ok(!posts[1][1].preview, "the second press is the real one, not another preview");
+      job.phase = "done"; job.finished_at = now();
+      job.result = { summary: "3 pages added, 0 removed, 0 re-read.", added: 3 };
+      await A.agPollRefresh();
+      assert.ok(/3 pages added/.test(A.agRefreshHtml(a)), "and it reports what it did");
       assert.ok(/data-ag="refreshchanges"/.test(A.agRefreshHtml(a)), "with a way to read what changed");
 
       await A.agAction("refreshcancel", { getAttribute: () => "" });
@@ -1709,31 +1885,107 @@ async function atest(name, fn){
     } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
   });
 
-  /* A refresh that SURVIVED a total refusal reports `error` beside a summary rather than failing
-     the request. Saying "Done" over that would be a lie about the one thing he is watching. */
+  /* A refresh that SURVIVED a total refusal comes back as a stopped job carrying the reason.
+     Saying "Done" over that would be a lie about the one thing he is watching. */
   await atest("a refresh the site refused says so, and never says Done", async () => {
     const a = agReset();
     const prevPost = A.apiPost, prevGet = A.apiGet;
-    A.apiPost = async () => ({ summary: "Nothing was added.", error: "The site refused every page.",
-                               added: 0, removed: 0, rebuilt: 0 });
-    A.apiGet = async () => ({});
+    const job = { mode: "apply", phase: "failed", steps: [], label: "Catching up on what changed",
+                  waiting: null, spawned: true, finished_at: Date.now() / 1000,
+                  updated_at: Date.now() / 1000, started_at: Date.now() / 1000,
+                  error: "The site refused every page.",
+                  result: { summary: "Nothing was added.", added: 0, removed: 0, rebuilt: 0 } };
+    A.apiPost = async () => ({ started: true, job });
+    A.apiGet = async (path) => (/\/knowledge\/refresh$/.test(path) ? { job } : {});
     try {
       await A.agAction("refreshgo", { getAttribute: () => "" });
-      assert.ok(a.refresh.error && !a.refresh.done, "an error, not a Done");
-      assert.ok(/refused every page/.test(A.agRefreshHtml(a)) && /class="msg err"/.test(A.agRefreshHtml(a)),
-                "and it reads as a failure");
+      const h = A.agRefreshHtml(a);
+      assert.strictEqual(a.refresh.phase, "failed", "a failure, not a Done");
+      assert.ok(/refused every page/.test(h) && /class="msg err"/.test(h), "and it reads as a failure");
+      assert.ok(!/class="spin"/.test(h), "with nothing left spinning");
+      assert.ok(!/Done\./.test(h), "and no Done over the top of it");
     } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
   });
 
+  /* The one failure the server never hears about: the press that never reached it. Nothing will
+     ever poll this away, so the click itself has to say it. */
   await atest("a check that cannot reach the server says so, instead of sitting on the spinner", async () => {
     const a = agReset();
-    const prevPost = A.apiPost;
+    const prevPost = A.apiPost, prevGet = A.apiGet;
     A.apiPost = async () => { throw new Error("connection refused"); };
+    A.apiGet = async () => ({});
     try {
       await A.agAction("refreshcheck", { getAttribute: () => "" });
       assert.ok(a.refresh.error && /connection refused/.test(a.refresh.error), "the reason is on screen");
-      assert.ok(!a.refresh.busy, "and the spinner is gone");
-    } finally { A.apiPost = prevPost; }
+      assert.strictEqual(a.refresh.phase, "failed", "and it is over");
+      assert.ok(!/class="spin"/.test(A.agRefreshHtml(a)), "and the spinner is gone");
+      /* a poll that finds no job must not wipe the only record of this one */
+      await A.agPollRefresh();
+      assert.ok(a.refresh && /connection refused/.test(a.refresh.error), "a poll cannot clear it");
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
+  });
+
+  /* A second press while one is running is refused by the server. What he should then see is
+     the run that IS going, not a red box about his click. */
+  await atest("a press refused because one is already running shows the run that is going", async () => {
+    const a = agReset();
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const job = { mode: "apply", phase: "running", label: "Catching up on what changed",
+                  steps: [{ label: "Reading 214 pages", note: "", at: Date.now() / 1000 }],
+                  waiting: null, result: null, error: null, spawned: true,
+                  started_at: Date.now() / 1000, updated_at: Date.now() / 1000, finished_at: null };
+    A.apiPost = async () => { throw new Error("A refresh is already running. Wait for it to finish."); };
+    A.apiGet = async (path) => (/\/knowledge\/refresh$/.test(path) ? { job } : {});
+    try {
+      await A.agAction("refreshcheck", { getAttribute: () => "" });
+      assert.ok(A.agRefreshLive(a.refresh), "the running job is what is drawn");
+      assert.ok(/Reading 214 pages/.test(A.agRefreshHtml(a)), "in the engine's words");
+      assert.ok(!/already running/.test(A.agRefreshHtml(a)), "and not a box about the click");
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; a.refresh = null; }
+  });
+
+  /* A card that is no longer being told anything must not go on spinning as if it were: that
+     is the same lie in a different place. */
+  await atest("a card that has lost the server says so rather than spinning on an old frame", async () => {
+    const a = agReset();
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const job = { mode: "apply", phase: "running", label: "Catching up on what changed",
+                  steps: [{ label: "Reading 214 pages", note: "", at: Date.now() / 1000 }],
+                  waiting: null, result: null, error: null, spawned: true,
+                  started_at: Date.now() / 1000, updated_at: Date.now() / 1000, finished_at: null };
+    A.apiPost = async () => ({ started: true, job });
+    A.apiGet = async () => { throw new Error("connection refused"); };
+    try {
+      await A.agAction("refreshgo", { getAttribute: () => "" });
+      assert.ok(A.agRefreshLive(a.refresh), "the job it was handed is still the job it holds");
+      await A.agPollRefresh(); await A.agPollRefresh();
+      assert.strictEqual(a.refreshPollErr.n, 3, "the failures are counted, not swallowed");
+      const h = A.agRefreshHtml(a);
+      assert.ok(/Not hearing from Sutra/.test(h), "and the card says so: " + h.slice(0, 260));
+      assert.ok(/what it last said/.test(h), "naming what it is showing for what it is");
+      A.apiGet = async () => ({ job });
+      await A.agPollRefresh();
+      assert.strictEqual(a.refreshPollErr, null, "one good read clears it");
+      assert.ok(!/Not hearing/.test(A.agRefreshHtml(a)));
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; a.refresh = null; a.refreshPollErr = null; }
+  });
+
+  /* A refresh he started, then walked away from, is still his to watch when he comes back. */
+  await atest("the Knowledge tab picks up a refresh that was already running", async () => {
+    const a = agReset();
+    a.view = "knowledge";
+    const prevGet = A.apiGet;
+    const job = { mode: "apply", phase: "running", label: "Catching up on what changed",
+                  steps: [{ label: "Reading 214 pages", note: "only the ones that are new", at: Date.now() / 1000 }],
+                  waiting: null, result: null, error: null, spawned: true,
+                  started_at: Date.now() / 1000 - 90, updated_at: Date.now() / 1000, finished_at: null };
+    A.apiGet = async (path) => (/\/knowledge\/refresh$/.test(path) ? { job } : {});
+    try {
+      assert.strictEqual(a.refresh, null, "the screen knows nothing yet");
+      await A.agPollRefresh();
+      assert.ok(A.agRefreshLive(a.refresh), "and then it does");
+      assert.ok(/Reading 214 pages/.test(A.agRefreshHtml(a)), "drawn where it stands");
+    } finally { A.apiGet = prevGet; a.view = "chat"; a.refresh = null; }
   });
 
   /* The change report is a REPORT: the engine writes it, there is nothing on disk for a save to

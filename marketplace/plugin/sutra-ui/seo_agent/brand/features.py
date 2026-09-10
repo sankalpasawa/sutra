@@ -146,15 +146,20 @@ def _squash(text):
     return " ".join((text or "").split())
 
 
-def untouched(text):
+def untouched(text, name=PRICING):
     """Is this still the blank form, with nothing typed into it?
 
     Compared against the template itself rather than hunting for a placeholder marker. A person who
     types their prices but leaves a line of the form's own wording behind still gets their prices
     used, which is the only direction this is allowed to be wrong in: silently dropping the one
     thing a crawler could never reach is the failure that matters.
+
+    `name` says WHICH form, so this answers the question for the whole class of typed-in files
+    rather than for pricing.md alone; brand/_common.INPUTS is the one list of them. A file that is
+    not on disk reads as its blank form (cm.read), so it lands here as untouched too, which is the
+    honest answer: nobody has typed in it.
     """
-    return not (text or "").strip() or _squash(text) == _squash(cm.template("pricing"))
+    return not (text or "").strip() or _squash(text) == _squash(cm.blank_form(name))
 
 
 def pricing():
@@ -182,7 +187,7 @@ def ensure_pricing(say):
     its rulings file: present, obviously blank, and never mistaken for content by pricing()."""
     if cm.exists(PRICING):
         return False
-    cm.save(PRICING, cm.template("pricing"))
+    cm.save(PRICING, cm.blank_form(PRICING))
     say("Put out the prices form", "brand/pricing.md — type in what your site draws with JavaScript")
     return True
 

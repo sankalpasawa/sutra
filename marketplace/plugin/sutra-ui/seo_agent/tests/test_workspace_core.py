@@ -666,7 +666,8 @@ ok("a bucket that is there reads as present", client.bucket_exists("knowledge") 
 print("\n5. verify() — the single most important function in the package")
 
 
-def project(tables=schema.TABLES, bucket=True, workspace_row=True, refuse=()):
+def project(tables=schema.TABLES, bucket=True, workspace_row=True, refuse=(),
+            version=schema.SCHEMA_VERSION):
     """A fake Supabase project: which tables exist, whether the bucket does, what refuses."""
     def answer(method, url, params, body):
         # THE CUPBOARD IS PROVED BY A ROUND TRIP, NOT BY READING THE BUCKET'S RECORD, so the fake
@@ -687,7 +688,7 @@ def project(tables=schema.TABLES, bucket=True, workspace_row=True, refuse=()):
             return FakeResponse(404, {"code": "PGRST205", "message":
                                       "Could not find the table 'public.%s' in the schema cache" % name})
         if name == "workspace" and params.get("limit") == 1:
-            return FakeResponse(200, [{"id": "ws-abc", "schema_version": schema.SCHEMA_VERSION,
+            return FakeResponse(200, [{"id": "ws-abc", "schema_version": version,
                                        "name": "Team workspace", "pack_version": 0,
                                        "index_version": 0, "bucket_ready": bucket}]
                                 if workspace_row else [])
@@ -719,7 +720,36 @@ seen = schema.verify(URL, KEY)
 ok("an empty project is not ready, and says nothing has been created yet",
    seen["ok"] is False and "nothing has been created" in seen["reason"].lower(), seen["reason"])
 ok("and it does not raise — an un-built workspace is a finding, not a crash",
-   sorted(seen["missing"]) == sorted(schema.TABLES))
+   sorted(seen["missing"]) == sorted(schema.BASE_TABLES), seen["missing"])
+
+# A WORKSPACE A VERSION BEHIND IS BEHIND, NOT BROKEN, and this is the check that keeps the owner's
+# live project out of a dead end. `brand_inputs` arrived at version 3; his workspace is on 2. If
+# verify() counted it as MISSING it would report his workspace not ready — and migrate() refuses to
+# migrate a workspace verify() has not called ready, so the one operation that could add the table
+# would be the one operation he could not run.
+BEHIND = [t for t in schema.TABLES if t != "brand_inputs"]
+route(project(tables=BEHIND, version=2))
+seen = schema.verify(URL, KEY)
+ok("a workspace one migration behind still verifies as ready", seen["ok"] is True, seen["reason"])
+ok("the table that migration adds is reported as BEHIND, never as missing",
+   seen["behind"] == ["brand_inputs"] and seen["missing"] == [], (seen["behind"], seen["missing"]))
+ok("and it says an update is available, and what is not syncing until it is run",
+   seen["needs_update"] is True and "version 2" in seen["reason"]
+   and "types in" in seen["reason"], seen["reason"])
+ok("so migrate() is offered the step rather than blocked",
+   [v for v, _w, _sql in schema.pending(seen["schema_version"])] == [3],
+   schema.pending(seen["schema_version"]))
+route(project())
+seen = schema.verify(URL, KEY)
+ok("a workspace on the current version is up to date",
+   seen["ok"] is True and seen["behind"] == [] and seen["needs_update"] is False, seen)
+# And the same table missing on a workspace that CLAIMS version 3 is a real fault, not a version
+# gap: the migration says it ran, so the table has to be there.
+route(project(tables=BEHIND, version=schema.SCHEMA_VERSION))
+seen = schema.verify(URL, KEY)
+ok("a table missing from a workspace that claims to have run the migration IS missing",
+   seen["ok"] is False and seen["missing"] == ["brand_inputs"] and seen["behind"] == [],
+   (seen["missing"], seen["behind"]))
 
 route(project(tables=[t for t in schema.TABLES if t != "changes"]))
 seen = schema.verify(URL, KEY)
@@ -1010,6 +1040,45 @@ if real:
        "begin;" not in real[0][2].lower() and "commit;" not in real[0][2].lower())
     ok("and it does not bump the version itself, so the bump can never be in a separate transaction",
        "schema_version" not in real[0][2].lower())
+# THE SECOND ONE, AND THE OWNER'S LIVE WORKSPACE DEPENDS ON IT. `brand_inputs` is the table that
+# carries pricing.md to the team in seconds instead of minutes, and his workspace is on version 2,
+# where `create table if not exists` in schema.sql does nothing at all — the tables are already
+# there. This step is the only way that table can ever reach it.
+three = [m for m in schema.MIGRATIONS if m[0] == 3]
+ok("there is a migration that adds brand_inputs", len(three) == 1)
+if three:
+    step = three[0][2].lower()
+    ok("it creates the table, idempotently",
+       "create table if not exists public.brand_inputs" in step)
+    ok("and arms the same trigger every other domain table has, so the LOG is still written by "
+       "the database and never by a client",
+       "create or replace trigger brand_inputs_changed" in step
+       and "execute function public.log_change()" in step)
+    ok("and turns on row level security with a policy scoped to this workspace",
+       "enable row level security" in step
+       and "using (workspace_id = public.current_workspace_id())" in step
+       and "with check (workspace_id = public.current_workspace_id())" in step)
+    ok("and grants the publishable key the rows, since RLS is what bounds it",
+       "grant select, insert, update, delete on public.brand_inputs to anon, authenticated" in step)
+    ok("its policy is dropped before it is created — Postgres has no create policy if not exists",
+       step.index("drop policy if exists brand_inputs_all") < step.index("create policy brand_inputs_all"))
+    ok("it tells PostgREST to reload, or the new table answers PGRST205 until the cache turns over",
+       "notify pgrst" in step)
+    ok("it carries no begin/commit of its own — migration_sql wraps it",
+       "begin;" not in step and "commit;" not in step)
+    ok("and it does not bump the version itself", "schema_version" not in step)
+    ok("it says what it does in words, for the person who has to paste it",
+       "brand" in three[0][1].lower() and len(three[0][1]) > 20, three[0][1])
+
+# ONE TABLE, TWO FILES THAT CANNOT IMPORT EACH OTHER: what schema.sql creates for a FRESH workspace
+# and what the migration adds to an OLD one have to be the same table, or two workspaces of the
+# same version would disagree about what they hold.
+ok("what the migration adds is what schema.sql creates for a fresh workspace",
+   "create table if not exists public.brand_inputs" in re.sub(r"\s+", " ", schema.sql()).lower())
+ok("and schema.TABLES is the two lists joined: the baseline, plus what migrations added",
+   set(schema.TABLES) == set(schema.BASE_TABLES) | set(schema.ADDED_IN)
+   and all(v <= schema.SCHEMA_VERSION for v in schema.ADDED_IN.values()), schema.ADDED_IN)
+
 ok("a workspace created from today's schema.sql needs no migration at all",
    schema.pending(schema.SCHEMA_VERSION) == [])
 ok("and one created before today gets exactly the missing steps",

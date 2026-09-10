@@ -49,7 +49,7 @@ begin;
 create table if not exists public.workspace (
   id             uuid        primary key default gen_random_uuid(),
   name           text        not null default 'Team workspace',
-  schema_version integer     not null default 2,
+  schema_version integer     not null default 3,
   -- TWO COUNTERS, NOT ONE, and the reason is that the two halves of the pack publish on
   -- different terms (2026-09-10). The pack is split: a 33.6 MB core, rebuilt and re-uploaded
   -- on EVERY refresh, and a 171.5 MB index, republished only when its content hash moves. One
@@ -66,12 +66,14 @@ create table if not exists public.workspace (
   pack_version   integer     not null default 0,   -- the core
   index_version  integer     not null default 0,   -- the meaning index
   -- SET BY THE STORAGE BLOCK AT THE BOTTOM OF THIS FILE, and the reason a client can ask "is
-  -- this workspace whole?" in ONE round trip instead of eleven (2026-09-10, at the UI agent's
-  -- request: the Connections tab polls once a second and eleven calls a second is not a poll,
+  -- this workspace whole?" in ONE round trip instead of a dozen (2026-09-10, at the UI agent's
+  -- request: the Connections tab polls once a second and a dozen calls a second is not a poll,
   -- it is a denial of service on your own project).
   --
   -- It works because of rule 1 at the top: the tables are created in ONE transaction, so if
-  -- this row is readable then all ten tables exist and RLS lets this key read them. The bucket
+  -- this row is readable then every table this script creates exists and RLS lets this key read
+  -- them. (A table added LATER by a migration is the one exception, and schema_version beside
+  -- this column is what says whether it has run yet.) The bucket
   -- is the only piece that is allowed to fail on its own -- its block catches
   -- insufficient_privilege so a storage problem cannot cost you nine tables -- so the bucket is
   -- the one thing that has to be recorded rather than inferred. Hence this column.
@@ -93,7 +95,7 @@ create unique index if not exists workspace_single_row on public.workspace ((tru
 -- there through the MIGRATIONS list, because `create table if not exists` will not add a
 -- column to a table that already exists. That is the whole reason the list exists.
 insert into public.workspace (name, schema_version)
-select 'Team workspace', 2
+select 'Team workspace', 3
 where not exists (select 1 from public.workspace);
 
 -- Every other table defaults its workspace_id to this and every policy compares against it.
@@ -221,7 +223,7 @@ end
 $fn$;
 
 -- ---------------------------------------------------------------------------------------
--- 4. THE EIGHT REMAINING DOMAIN TABLES
+-- 4. THE NINE REMAINING DOMAIN TABLES
 -- ---------------------------------------------------------------------------------------
 
 create table if not exists public.members (
@@ -318,10 +320,32 @@ create table if not exists public.pages (
 );
 create index if not exists pages_pack_idx on public.pages (pack_version);
 
+-- THE BRAND FILES A PERSON TYPES IN. One row per file, one row in practice, and the body is a
+-- couple of hundred words of Markdown somebody wrote by hand.
+--
+-- WHY THIS IS A TABLE AND NOT THE PACK (2026-09-10). The brand pack travels in the knowledge pack
+-- and must go on doing so -- features.md alone is 13,219 machine-written words, and the pack is
+-- what a joiner starts from. But pricing.md is the ONE part of that pack a person edits by hand
+-- and then expects to land: it holds the prices a site draws with JavaScript, which no crawler can
+-- reach, and features.md is filled FROM it. Carried by the pack alone, somebody typing their
+-- prices in reached their teammates only when the pack was next rebuilt -- minutes, with nothing
+-- on screen saying so. A row reaches them in about a second, like every other table here.
+--
+-- ONLY THE TYPED-IN FILES BELONG HERE. seo_agent/brand/_common.INPUTS is the list of them, the
+-- mirror refuses any other name, and nothing machine-written may be moved in: this table is small
+-- because what it carries is small, and the pack is where a 13,000-word generated document belongs.
+create table if not exists public.brand_inputs (
+  name         text        primary key,      -- the file name, e.g. pricing.md
+  workspace_id uuid        not null default public.current_workspace_id(),
+  body         text        not null default '',
+  actor        text        not null default '',
+  updated_at   timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------------------------------
 -- 5. THE TRIGGER ON EVERY DOMAIN TABLE
 -- ---------------------------------------------------------------------------------------
--- Nine triggers for nine tables. `changes` itself is not in this list: logging the log would
+-- Ten triggers for ten tables. `changes` itself is not in this list: logging the log would
 -- recurse for ever.
 
 create or replace trigger workspace_changed   after insert or update or delete on public.workspace   for each row execute function public.log_change();
@@ -333,11 +357,12 @@ create or replace trigger cta_links_changed   after insert or update or delete o
 create or replace trigger company_changed     after insert or update or delete on public.company     for each row execute function public.log_change();
 create or replace trigger library_changed     after insert or update or delete on public.library     for each row execute function public.log_change();
 create or replace trigger pages_changed       after insert or update or delete on public.pages       for each row execute function public.log_change();
+create or replace trigger brand_inputs_changed after insert or update or delete on public.brand_inputs for each row execute function public.log_change();
 
 -- ---------------------------------------------------------------------------------------
 -- 6. ROW LEVEL SECURITY
 -- ---------------------------------------------------------------------------------------
--- On for all ten tables. Every domain policy is the same sentence -- "the row belongs to this
+-- On for all eleven tables. Every domain policy is the same sentence -- "the row belongs to this
 -- workspace" -- for both reading (using) and writing (with check), so a client cannot read
 -- another project's rows and cannot write a row stamped with another project's id either.
 --
@@ -357,12 +382,13 @@ alter table public.cta_links   enable row level security;
 alter table public.company     enable row level security;
 alter table public.library     enable row level security;
 alter table public.pages       enable row level security;
+alter table public.brand_inputs enable row level security;
 alter table public.changes     enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on
   public.workspace, public.members, public.ideas, public.prompts, public.competitors,
-  public.cta_links, public.company, public.library, public.pages
+  public.cta_links, public.company, public.library, public.pages, public.brand_inputs
   to anon, authenticated;
 -- SELECT ONLY on the log. The trigger writes it as `security definer`, so it does not need
 -- the caller to hold an insert grant -- and the caller must not hold one.
@@ -415,6 +441,11 @@ create policy library_all on public.library for all to anon, authenticated
 
 drop policy if exists pages_all on public.pages;
 create policy pages_all on public.pages for all to anon, authenticated
+  using (workspace_id = public.current_workspace_id())
+  with check (workspace_id = public.current_workspace_id());
+
+drop policy if exists brand_inputs_all on public.brand_inputs;
+create policy brand_inputs_all on public.brand_inputs for all to anon, authenticated
   using (workspace_id = public.current_workspace_id())
   with check (workspace_id = public.current_workspace_id());
 
@@ -529,12 +560,12 @@ notify pgrst, 'reload schema';
 --
 -- A good run prints one row reading:
 --
---   tables_created | 10
---   triggers_armed | 9
---   policies_armed | 12
+--   tables_created | 11
+--   triggers_armed | 10
+--   policies_armed | 13
 --   bucket_ready   | true
 --   workspace_id   | <a uuid>
---   schema_version | 1
+--   schema_version | 3
 --   verdict        | Workspace ready. Copy the workspace id above into Sutra.
 --
 -- Anything other than "Workspace ready" names the missing piece, and running the script a
@@ -544,14 +575,14 @@ select
   (select count(*) from information_schema.tables
      where table_schema = 'public'
        and table_name in ('workspace','members','ideas','prompts','competitors',
-                          'cta_links','company','library','pages','changes'))     as tables_created,
+                          'cta_links','company','library','pages','brand_inputs','changes'))     as tables_created,
   (select count(*) from information_schema.triggers
      where trigger_schema = 'public' and action_statement like '%log_change%'
        and event_manipulation = 'INSERT')                                          as triggers_armed,
   (select count(*) from pg_policies
      where (schemaname = 'public'
             and tablename in ('workspace','members','ideas','prompts','competitors',
-                              'cta_links','company','library','pages','changes'))
+                              'cta_links','company','library','pages','brand_inputs','changes'))
         or (schemaname = 'storage' and policyname like 'knowledge_%'))             as policies_armed,
   (select exists (select 1 from storage.buckets where id = 'knowledge'))           as bucket_ready,
   (select file_size_limit from storage.buckets where id = 'knowledge')             as max_object_bytes,
@@ -563,7 +594,7 @@ select
     when (select count(*) from information_schema.tables
             where table_schema = 'public'
               and table_name in ('workspace','members','ideas','prompts','competitors',
-                                 'cta_links','company','library','pages','changes')) < 10
+                                 'cta_links','company','library','pages','brand_inputs','changes')) < 11
       then 'NOT READY: some tables are missing. Run this whole script again.'
     when not (select exists (select 1 from storage.buckets where id = 'knowledge'))
       then 'NOT READY: the tables are there but the knowledge bucket is not. Open Storage and create a private bucket named knowledge, then run this script again.'

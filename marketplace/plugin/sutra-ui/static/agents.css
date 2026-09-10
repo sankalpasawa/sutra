@@ -177,14 +177,36 @@
 .ag-editrow .ag-sub{margin-left:auto}
 .ag-editrow .ag-err{color:var(--block);font-size:11.5px}
 
-/* keeping the catalogue current: one line while it works, then what changed */
+/* KEEPING THE CATALOGUE CURRENT: the engine's own lines, in the space to the right of the
+   catalogue heading. It used to be one spinner beside one fixed sentence, which is what made a
+   six-minute run indistinguishable from a hung one. Three things are drawn now and each is a
+   different thing to look at: what it is doing (the line the engine last said), whether it is
+   WAITING on the site rather than working (a held dot, never the spinner), and what it said
+   before that (the trail, in footnote grey). */
 .ag-refresh{margin:10px 0 2px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--inset)}
 .ag-refresh .msg{font-size:12.5px;color:var(--ink);line-height:1.5}
 .ag-refresh .msg.err{color:var(--block)}
-.ag-refresh.busy{display:flex;align-items:center;gap:9px}
+.ag-refresh.busy{display:block}
+.ag-refresh.busy .now{display:flex;align-items:flex-start;gap:9px}
+.ag-refresh.busy .spin,.ag-refresh.busy .hold{margin-top:3px}
+.ag-refresh .hd{font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:7px}
+.ag-refresh .h{color:var(--faint)}
+.ag-refresh .foot{margin:6px 0 0 20px;font-size:11px;color:var(--faint)}
+.ag-refresh.waiting{border-color:var(--warn)}
+.ag-refresh.waiting .foot{color:var(--warn)}
+.ag-refresh .trail{list-style:none;margin:7px 0 0 20px;padding:0;border-top:1px solid var(--line-soft)}
+.ag-refresh .trail li{font-size:11px;color:var(--faint);line-height:1.5;padding-top:4px}
+.ag-refresh .trail b{font-weight:600;color:var(--muted)}
 .ag-refresh.done{border-color:var(--ok)}
+.ag-refresh.stopped{border-color:var(--block)}
 .ag-refresh .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--acc);
   border-top-color:transparent;animation:sutraSpin .7s linear infinite;flex:none}
+/* the mark for a wait the site imposed. It does NOT spin: a spinner says "working", and the
+   whole point of this state is that nothing is being read while it lasts. */
+.ag-refresh .hold{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--warn);
+  background:var(--warn-bg);animation:agpulse 1.9s ease-in-out infinite;flex:none}
+@media (prefers-reduced-motion:reduce){.ag-refresh .hold{animation:none;opacity:.8}}
 
 /* a question, an approval, a checkpoint — the cards where the agent waits */
 .ag-card{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--inset);padding:11px 13px;max-width:60ch}

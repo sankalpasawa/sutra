@@ -18,6 +18,9 @@ are load-bearing in ways that are not obvious from looking at the file:
     company        store.save_knowledge         brand/company.json, merged not replaced
     library        store.library_finish/_delete the row id is never re-minted
     pages          store.save_knowledge         site_index.json AND content-database.jsonl together
+    brand_inputs   brand/_common.save           the entity tidy every brand file goes through, and
+                                                brand/_common.feeds_stale, which marks the file it
+                                                feeds (features.md) as due a rebuild
 
 A second writer that reinvents one of those formats is how the file quietly ends up in two shapes
 and a builder three steps later reads nothing. So each handler below reads through the owning
@@ -61,6 +64,11 @@ TABLES = {
     "company":     ("company", "workspace_id"),
     "library":     ("library", "item_id"),
     "pages":       ("pages", "url"),
+    # The brand files a PERSON types in -- pricing.md today, brand/_common.INPUTS is the list.
+    # NOT the brand pack: features.md next door is 13,219 machine-written words and travels in the
+    # knowledge pack, where a generated document belongs. This table carries only what a person
+    # typed and expects to land.
+    "brand_inputs": ("brand_inputs", "name"),
 }
 
 KINDS = tuple(TABLES)
@@ -200,6 +208,8 @@ def from_wire(kind, key, payload):
         page = {"url": key, "title": p.get("title") or "", "description": p.get("description") or "",
                 "type": p.get("type") or "", "word_count": int(p.get("word_count") or 0)}
         return page, (p.get("body") or "")
+    if kind == "brand_inputs":
+        return p.get("body") if p.get("body") is not None else (p.get("text") or "")
     raise MirrorRefused("no wire shape for kind %r" % kind)
 
 
@@ -240,6 +250,9 @@ def to_wire(kind, key, local, actor="", gone=False):
                 "title": local.get("title") or "", "description": local.get("description") or "",
                 "type": local.get("type") or "", "word_count": int(local.get("word_count") or 0),
                 "body": local.get("body") or local.get("text") or "", "actor": actor}
+    if kind == "brand_inputs":
+        body = local if isinstance(local, str) else (local.get("text") or local.get("body") or "")
+        return {"name": key, "body": body, "actor": actor}
     raise ValueError("no wire shape for kind %r" % kind)
 
 
@@ -519,13 +532,54 @@ def _pages(rows):
     return out
 
 
+# ---- brand_inputs -> knowledge/brand/<name> ------------------------------------------------------
+
+def _brand_inputs(rows):
+    """The brand files a person types in, through the module that owns them.
+
+    NOT a file write of my own. brand/_common.save is where a brand file's format is decided: it
+    runs the HTML-entity tidy every builder's output goes through, so a `&gt;` typed on somebody
+    else's Mac does not land here as text where a `>` was meant.
+
+    AND THE ONE HOP AFTERWARDS. brand/_common.feeds_stale marks what the form feeds -- pricing.md
+    feeds features.md, the product facts the writer reads -- exactly as a local save does, so the
+    Mac that RECEIVES a price rebuilds its own product facts on the next brand-pack run instead of
+    going on quoting the old one. It writes one stamp file and calls no model, so it is safe on the
+    poll thread. One hop and no further, by the owner's ruling: not writing-integrity.md, not
+    writer-brief.md.
+
+    A NAME THIS BUILD DOES NOT KNOW IS REFUSED, the same way an unknown prompt is: a teammate on a
+    newer Sutra may type into a form this build has never heard of, and writing it blind would put
+    a file into knowledge/brand/ that nothing here reads and nothing here would ever tidy up.
+    """
+    from ..brand import _common as bcm
+    out = []
+    for row in rows:
+        name = _key(row)
+        if not bcm.is_input(name):
+            raise MirrorRefused("brand file %r is not one this build syncs" % name)
+        if is_gone(row):
+            # Back to the blank form, which is what the file IS when nobody has typed in it. The
+            # same shape as a prompt going away: reset to what ships, never delete the door.
+            bcm.save(name, bcm.blank_form(name))
+            bcm.feeds_stale(name)
+            out.append("removed")
+            continue
+        text = from_wire("brand_inputs", name, row.get("payload"))
+        bcm.save(name, text if isinstance(text, str) else "")
+        bcm.feeds_stale(name)
+        out.append("applied")
+    return out
+
+
 def _ignore(rows):
     """`workspace` and `members`: logged, but there is nothing local to write."""
     return ["ignored"] * len(rows)
 
 
 HANDLERS = {"ideas": _ideas, "prompts": _prompts, "competitors": _competitors,
-            "cta_links": _cta, "company": _company, "library": _library, "pages": _pages}
+            "cta_links": _cta, "company": _company, "library": _library, "pages": _pages,
+            "brand_inputs": _brand_inputs}
 for _k in IGNORED_KINDS:
     HANDLERS[_k] = _ignore
 

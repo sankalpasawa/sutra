@@ -361,6 +361,28 @@ cm.save("pricing.md", _before + "\n\nStarter $69/mo, 100 candidate credits a yea
 ok("and one line typed into it flips that, without the word count saying anything useful",
    pack.inputs()[0]["filled"] is True, pack.inputs())
 cm.save("pricing.md", _before)
+# A MISSING FORM IS THE BLANK FORM, NOT AN ABSENCE (the owner, 2026-09-10). His pack was built
+# before pricing.md existed, so his brand folder had no copy of it -- and the Knowledge screen
+# still offered a door to it, which answered
+# "not found (/api/agents/seo/knowledge/brand/pricing.md -> 404)". A file nobody has created and a
+# form nobody has typed into are the same thing to everything that reads it, and neither is filled.
+_on_disk = brand("pricing.md")
+os.remove(cm.path("pricing.md"))
+ok("a form that is not on disk reads as the blank form, not as nothing",
+   not cm.exists("pricing.md") and cm.read("pricing.md") == cm.template("pricing"),
+   repr(cm.read("pricing.md")[:60]))
+ok("and the builder is still handed nothing, so it can never be mistaken for typed-in prices",
+   features.pricing() == "" and features.untouched(cm.read("pricing.md")))
+_missing_row = pack.inputs()[0]
+ok("the screen gets the same door with the same ask, rather than a row pointing at a 404",
+   _missing_row["filled"] is False and _missing_row["exists"] is True
+   and _missing_row["words"] > 100, _missing_row)
+cm.save("pricing.md", _on_disk)
+ok("and the rule is about the class, not the file: the list comes from brand/_common.INPUTS",
+   pack.INPUTS == [n for n in pack.FILES if cm.is_input(n)]
+   and set(cm.INPUTS) == {"pricing.md"}
+   and cm.blank_form("features.md") == "" and not cm.is_input("features.md"), cm.INPUTS)
+
 ok("the old seed path is not read while pricing.md is there", not cm.exists("_seed/features-seed.md"))
 ok("nothing is stale straight after a build", not features.pricing_stale())
 ok("the SEED-WINS rule is still exactly what the original says",

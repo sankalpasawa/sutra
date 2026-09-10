@@ -16,6 +16,37 @@ from ..tools import _shared as sh
 
 TEMPLATES = os.path.join(sh.PROMPTS, "brand", "templates")
 
+# ---- the files a PERSON types into -------------------------------------------------------------
+#
+# A brand INPUT is a file no builder writes: a form somebody fills in by hand, which a builder then
+# reads. pricing.md is the one so far -- the prices a site draws with JavaScript, which no crawler
+# can reach -- and it is mapped here to the blank form that stands in for it, verbatim out of
+# prompts/brand/templates/.
+#
+# THE CLASS IS DECIDED HERE, ONCE. brand/pack.INPUTS is derived from this dict, read() below stands
+# the blank form in for a missing one, features.untouched() compares against it, and
+# workspace/mirror.py refuses any name that is not in it. A second list of "the typed-in files"
+# anywhere else is a list that would drift.
+#
+# WHY A MISSING ONE IS NOT AN ABSENCE (the owner, 2026-09-10). The form only reaches disk when the
+# brand-pack builder runs (features.ensure_pricing), so a pack built before the form existed has no
+# copy of it at all -- and the Knowledge screen still offers a door to it, which answered
+# "not found (/api/agents/seo/knowledge/brand/pricing.md -> 404)". A form nobody has typed into and
+# a form nobody has created yet are the same thing to every reader, so both now read as the blank
+# form, and both count as NOT filled in.
+INPUTS = {"pricing.md": "pricing"}
+
+
+def is_input(name):
+    """Is this one of the files a person types in by hand?"""
+    return name in INPUTS
+
+
+def blank_form(name):
+    """The blank form a typed-in file starts life as, verbatim. "" for any other name."""
+    tpl = INPUTS.get(name)
+    return template(tpl) if tpl else ""
+
 
 # ---- files under knowledge/brand/ -----------------------------------------------------------
 
@@ -28,8 +59,15 @@ def exists(name):
 
 
 def read(name, default=None):
-    """knowledge/brand/<name>: JSON when the name ends .json, else text ("" when missing)."""
+    """knowledge/brand/<name>: JSON when the name ends .json, else text ("" when missing).
+
+    A typed-in file that is not on disk comes back as its BLANK FORM rather than as nothing, so no
+    caller has to carry a special case for a pack built before that form existed. Every reader gets
+    the same text the person would be shown, and features.untouched() calls it not filled in.
+    """
     v = store.knowledge("brand/" + name, default)
+    if v is None and is_input(name):
+        return blank_form(name)
     if v is None and not name.endswith(".json"):
         return ""
     return v
@@ -45,6 +83,46 @@ def save(name, data):
     if isinstance(data, str):
         data = unescape_text(data)
     return store.save_knowledge("brand/" + name, data)
+
+
+def feeds_stale(name):
+    """Mark whatever this form FEEDS as due a rebuild. True when one is now owed.
+
+    THE CHAIN IS ONE HOP, by the owner's ruling (2026-09-09; features.rebuild_from_pricing spells
+    it out): pricing.md -> features.md, and NOT on to writing-integrity.md or writer-brief.md.
+    It writes one stamp file and calls no model, so it is safe on a save and on an arriving sync
+    change alike -- both of which have to come back straight away.
+    """
+    if name == "pricing.md":
+        from . import features           # lazy: features imports this module
+        return features.pricing_saved()
+    return False
+
+
+def input_saved(name, text=None, actor="", client=None):
+    """A PERSON saved a typed-in file: mark what it feeds, and send it to the team.
+
+    THIS DOES NOT WRITE THE FILE. Whoever called it has already done that, so there is one writer
+    of knowledge/brand/<name> and this is only what has to happen afterwards -- the same shape as
+    every other push in the workspace package (HANDOFF-W2 section 5d: push AFTER the local write).
+
+    The push is last and its failure is swallowed on purpose. A save that reached disk has
+    succeeded, and no workspace, no network, or a workspace a version behind must never turn it
+    into a failed save. sync.push queues on disk before it sends, so an offline change still goes
+    up when the network comes back.
+
+    Returns {"stale": whether a rebuild is now owed, "pushed": whether it reached the team's queue}.
+    """
+    stale = feeds_stale(name)
+    item = None
+    try:
+        from ..workspace import sync
+        item = sync.push("brand_inputs", name,
+                         read(name) if text is None else text,
+                         actor=actor or None, client=client)
+    except Exception:                     # noqa: BLE001 -- no workspace, no network, no module
+        item = None
+    return {"stale": stale, "pushed": bool(item)}
 
 
 _ENTITIES = (("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'),

@@ -28,9 +28,16 @@ def reporter(ctx, tool=""):
     """
     parent = ctx.get("step_id") or tool or None
 
-    def say(label, note=""):
+    def say(label, note="", **extra):
+        # `extra` CARRIES FACTS THE SENTENCE ALSO CONTAINS, so a reader never has to parse prose.
+        # Added 2026-09-10: the Knowledge screen was telling "waiting on a cooldown" apart from
+        # "working" by regexing the words "waiting 120s" out of a note. That worked and was one
+        # reworded sentence away from silently turning every cooldown back into something that
+        # looks like progress — with no test anywhere able to catch it, because the sentence and
+        # the reader live in different packages. A field cannot be reworded by accident.
         try:
-            ctx["emit"](type="substep_finished", parent=parent, label=label, note=note or "")
+            ctx["emit"](type="substep_finished", parent=parent, label=label, note=note or "",
+                        **extra)
         except Exception:
             # A broken emitter must never take down real work that already succeeded.
             pass

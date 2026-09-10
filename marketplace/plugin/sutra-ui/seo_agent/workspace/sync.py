@@ -156,6 +156,31 @@ APPLY_BATCH = 200
 # error — and the cursor moves past it. Set aside where somebody can see it, never silently dropped.
 POISON_TRIES = 5
 
+# ---- KINDS WHOSE TABLE A MIGRATION ADDED -----------------------------------------------------
+#
+# `brand_inputs` arrived at schema version 3 (schema.py ADDED_IN). A workspace created before it
+# has no such table, and PostgREST answers a write to it with a 404 that will never become
+# anything else until somebody runs the migration.
+#
+# WHY THAT MUST NOT BE QUEUED. The outbox is a QUEUE and a failing item deliberately blocks the
+# ones behind it, retrying for ever with no maximum attempt count (outbox.py, decisions 2 and 3).
+# Both of those are right for a network that is merely down. Against a table that does not exist,
+# they would park one undeliverable row at the head of the queue and hold every idea, article and
+# prompt edit behind it for as long as the workspace stayed un-migrated -- which is the owner's
+# live workspace, today, at version 2.
+#
+# So push ASKS FIRST, and declines rather than queueing. Nothing is lost by declining: the file is
+# already saved locally, and the brand pack still carries it to the team on the next rebuild, which
+# is exactly what happened before this table existed. It is slow, it is the old behaviour, and it
+# is recorded in sync-state.json so `status()` can say so instead of leaving it to be guessed at.
+KIND_NEEDS_VERSION = {"brand_inputs": 3}
+
+# HOW LONG A SCHEMA-VERSION ANSWER IS TRUSTED. One row of one table, asked at most this often, and
+# only ever before a push of a version-gated kind -- which is a person saving a form by hand, not
+# anything on the poll loop. Short enough that a migration run in the Connections tab takes effect
+# a minute later without a restart.
+SCHEMA_CHECK_SECONDS = 60.0
+
 
 class SyncError(Exception):
     """The pull could not run at all: no workspace, or the log could not be read."""
@@ -504,6 +529,60 @@ def _stick(client, row, last, err, applied, refused, pages):
 
 # ---- push --------------------------------------------------------------------------------------------
 
+def _schema_version(client=None, now=None):
+    """What version this workspace's schema is on. 0 when it cannot be told.
+
+    Cached in sync-state.json for SCHEMA_CHECK_SECONDS, and read THROUGH THE INJECTED CLIENT rather
+    than through schema.ready(): `ready()` talks to the real client module, and a push handed a
+    client must not go somewhere else behind its back.
+
+    A failed read returns the last answer we had, or 0. 0 means "not known", and the caller's rule
+    for a version-gated kind is to decline -- the safe direction, because the alternative is
+    wedging the queue behind a row that can never be delivered.
+    """
+    now = _now_epoch() if now is None else now
+    st = read_state()
+    cached = st.get("schema") or {}
+    try:
+        if cached.get("at") and 0 <= now - float(cached["at"]) < SCHEMA_CHECK_SECONDS:
+            return int(cached.get("version") or 0)
+    except (TypeError, ValueError):
+        pass
+    try:
+        row = _client(client).one("workspace", columns="id,schema_version") or {}
+        version = int(row.get("schema_version") or 0)
+    except Exception:                       # noqa: BLE001 — offline, or not created yet
+        return int(cached.get("version") or 0)
+    st = read_state()
+    st["schema"] = {"version": version, "at": now}
+    _save_state(st)
+    return version
+
+
+def _may_push(kind, client=None):
+    """(True, "") when this workspace can take a row of this kind; (False, why) when it is behind.
+
+    Only the kinds in KIND_NEEDS_VERSION are ever asked about, so an ordinary push costs nothing.
+    """
+    need = KIND_NEEDS_VERSION.get(kind)
+    if not need:
+        return True, ""
+    have = _schema_version(client)
+    if have >= need:
+        st = read_state()
+        if st.pop("needs_update", None) is not None:
+            _save_state(st)
+        return True, ""
+    why = ("This team workspace is on version %d and %s needs version %d. It travels with the "
+           "knowledge pack until somebody runs the update from the Connections tab."
+           % (have, kind, need))
+    st = read_state()
+    st["needs_update"] = {"kind": kind, "have": have, "needs": need, "why": why,
+                          "at": store.now()}
+    _save_state(st)
+    return False, why
+
+
 def push(kind, key, payload=None, op="upsert", actor=None, client=None, item_id=None):
     """A local change goes up. Queued first, sent immediately when there is a network.
 
@@ -515,9 +594,20 @@ def push(kind, key, payload=None, op="upsert", actor=None, client=None, item_id=
     is why Sutra is fast — and the row comes back down the log a moment later and lands through
     mirror, which is an upsert of the same values and therefore a no-op. One direction of travel,
     no special case for "my own change".
+
+    Returns the queued item, or None when this workspace is too old to hold this kind
+    (KIND_NEEDS_VERSION). None is not an error and it is not a lost change: the local write stands,
+    the reason is in sync-state.json and in status(), and the knowledge pack still carries the file
+    to the team the way it did before that table existed.
     """
     if kind not in mirror.TABLES:
         raise ValueError("unknown kind %r (known: %s)" % (kind, ", ".join(mirror.KINDS)))
+    allowed, _why = _may_push(kind, client)
+    if not allowed:
+        # NOT queued, and that is the whole point. See KIND_NEEDS_VERSION: a row this workspace has
+        # no table for would sit at the head of the queue for ever and hold everything else behind
+        # it. Returning None says "it did not go", the state file says why, and status() shows it.
+        return None
     table, pk = mirror.TABLES[kind]
     who = actor if actor is not None else _actor(client)
     # The knowledge base's shape is not the database's shape; `mirror.to_wire` is the one
@@ -763,6 +853,9 @@ def status(client=None):
             "last_seen_id": last_seen_id(client),
             "updated_at": st.get("updated_at"),
             "stuck": st.get("stuck"),
+            # Set when a push was declined because this workspace is a version behind. It carries
+            # the sentence to show; it is cleared by the first push that gets through.
+            "needs_update": st.get("needs_update"),
             "clock_skew": {"seconds": _SKEW["seconds"], "source": _SKEW["source"]},
             "polling": bool(p is not None and p.is_alive()),
             "last_poll": (p.last if p is not None else {}),

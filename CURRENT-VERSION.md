@@ -2,7 +2,46 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.256.1 (2026-09-10, HEAD)
+## v2.256.2 (2026-09-10, HEAD)
+
+**"Check for changes" gave no sign of life, and the site's own firewall was the reason it needed
+one.** Two separate faults, found together on the owner's real site.
+
+The delay: testlify.com moved off WordPress, so `/wp-json/wp/v2/types` answers 403 and always will.
+`_is_block` reads any 403 as a firewall, so the probe sat out three 120-second cooldowns — **six
+minutes** — before giving up on an endpoint that cannot ever exist. And the delay was the smaller
+half: six minutes of retrying tripped the site's rate limiter, so the SITEMAP step that follows, the
+only page list a site with no CMS API has, was refused too. **Our own retrying caused the refusal.**
+A discovery probe now takes one attempt: a question about whether something exists is answered the
+first time you are told no. A refusal reads as "this is not a WordPress site, the sitemaps are the
+source instead", and the host is not marked as blocked, so the fetch that follows starts clean.
+Timestamps from his run: WP gave up at 13:25, the sitemaps read 2 MB of URLs at 13:30.
+
+The silence: `api_knowledge_refresh` built its context with `"emit": lambda **kw: None`, so **every
+progress line the engine produced was thrown away**. The spinner he watched was a fixed label. The
+card now draws only what the engine actually said, in four states — working (with a trail), waiting
+(a held dot and "30s of 2m", because a cooldown must not look like work), quiet ("nothing new for
+3m 20s", so silence reads as alive), and stopped (the reason, nothing spinning). A worker thread
+that dies is reported as failed, which is the spinner-after-the-work-stopped bug itself.
+
+**And the wait is a field now, not prose.** It was told apart from work by regexing "waiting 120s"
+out of the engine's sentence — one rewording away from silently turning every cooldown back into
+something that looks like progress, with nothing able to catch it because the sentence and the
+reader live in different packages.
+
+**`pricing.md` no longer 404s, and now reaches the team in seconds.** A brand pack built before that
+form existed has no copy of it on disk, so the screen offered a door to a file nobody had created.
+A typed-in file now reads as its blank form when it is missing. And it moved from the pack (minutes,
+on the next rebuild) to a `brand_inputs` row on the live pipe (about a second) — it is small and a
+person typed it, while `features.md` next door is 13,219 machine-written words and stays in the
+pack. That needed a new table, so a workspace made earlier gets an **Update workspace** button:
+`create ... if not exists` cannot add a table to a database that already has its tables, and
+migrations do not run unasked. A workspace one version behind is still `ok` and everything else goes
+on syncing — a newer Sutra growing a table is not a broken workspace — and `sync.push` **declines
+rather than queues** a row its workspace cannot take, because the outbox retries for ever in order
+and one undeliverable row would hold every idea, article and prompt edit behind it.
+
+## v2.256.1 (2026-09-10)
 
 **A setup that did not finish was forgotten entirely.** The owner created his team workspace and the
 next day Connections offered him a blank Create form, as if nothing had happened. Nothing was wrong

@@ -200,7 +200,7 @@ class Fetcher:
         self.work_dir, self.raw_dir = work_dir, raw_dir
         os.makedirs(work_dir, exist_ok=True)
         os.makedirs(raw_dir, exist_ok=True)
-        self.say = on_event or (lambda label, note="": None)
+        self.say = on_event or (lambda label, note="", **kw: None)
         self.client = httpx.Client(headers=dict(settings.HEADERS), timeout=settings.FETCH_TIMEOUT,
                                    follow_redirects=True, transport=TRANSPORT)
         self.stats = {"network": 0, "cache": 0, "retries": 0, "cooldowns": 0, "fetch_failed": 0,
@@ -373,7 +373,7 @@ class Fetcher:
         raise FetchFailed(last_err or "no response", last_resp.status_code if last_resp is not None else 0,
                           last_resp)
 
-    def get(self, url, force=False, obey_robots=True, attempts=None):
+    def get(self, url, force=False, obey_robots=True, attempts=None, discovery=False):
         """Fetch a URL through the cache. Returns FetchResult.
 
         - cached & not force -> served from disk, ZERO network calls
@@ -381,6 +381,22 @@ class Fetcher:
         - 403/cf-mitigated -> cooldown + slower bucket, few retries, then raises Blocked
         - retries exhausted -> a FetchResult with status 0 (no answer) or the answered 5xx,
           NOT cached, so a later run retries. One bad URL must never end a whole-site run.
+
+        DISCOVERY=TRUE MEANS "I AM ASKING WHETHER THIS EXISTS", and it takes NO cooldowns.
+
+        Found on the owner's own site, 2026-09-10. Testlify moved off WordPress, so
+        /wp-json/wp/v2/types answers 403 and always will. That is not a firewall to wait out, it
+        is the answer: there is no WordPress here. But `_is_block` reads any 403 as a block, so
+        the probe sat out three 120-second cooldowns — SIX MINUTES — before giving up on an
+        endpoint that cannot ever exist.
+
+        And it did real harm beyond the delay. Six minutes of retrying tripped the site's rate
+        limiter, so the SITEMAP step that follows — the one that actually works, and the only
+        source of a page list on a site with no CMS API — then got 429s too. The refresh spent
+        its whole budget being refused, and it was our own retrying that caused the refusal.
+
+        So a probe gets ONE attempt. A resource we know exists and want is worth waiting for; a
+        question about whether something exists is answered the first time we are told no.
         """
         force = force or self.always_refetch
         if force:
@@ -421,6 +437,12 @@ class Fetcher:
                                   % (host_of(url), resp.status_code, _browser.strip_challenge_marker(
                                       resp.content[:6000].decode("utf-8", "ignore")) or "challenge page"))
                 if self._is_block(resp):
+                    if discovery:
+                        # Asked whether something is there and told no. That IS the answer; see
+                        # the docstring. No cooldown, no slower bucket, no mark against the host.
+                        raise Blocked("%s — refused the probe (HTTP %d, %s=%s)"
+                                      % (url, resp.status_code, settings.BLOCK_HEADER,
+                                         resp.headers.get(settings.BLOCK_HEADER, "-")))
                     cooldowns += 1
                     self.stats["cooldowns"] += 1
                     if cooldowns > settings.BLOCK_COOLDOWNS:
@@ -432,9 +454,12 @@ class Fetcher:
                                       % (url, cooldowns - 1, resp.status_code, settings.BLOCK_HEADER,
                                          resp.headers.get(settings.BLOCK_HEADER, "-")))
                     delay = self._bucket(url).slower()
+                    # wait_seconds is the SAME number the sentence quotes, handed over as a
+                    # fact so the screen can show "waiting, not stuck" without reading prose.
                     self.say("The site's firewall pushed back",
                              "waiting %ds before trying %s again, and slowing to one request every %.1fs"
-                             % (settings.FIREWALL_COOLDOWN, url, delay))
+                             % (settings.FIREWALL_COOLDOWN, url, delay),
+                             wait_seconds=settings.FIREWALL_COOLDOWN)
                     self._sem.release()               # do NOT hold a slot while sleeping —
                     try:                              # it starves every other worker
                         time.sleep(settings.FIREWALL_COOLDOWN)

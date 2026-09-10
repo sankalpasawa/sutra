@@ -24,6 +24,14 @@ const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas",
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
+/* How long a refresh may say nothing before the card says how long it has been quiet. A run that
+   has gone silent must never read the same as one that has stopped, and the only honest way to
+   tell him is the gap itself: the engine's last line, and how long ago it arrived. */
+const AG_REFRESH_QUIET_S = 20;
+/* How many polls in a row may fail before the card stops pretending the frame it is holding is
+   current. Three, at a second apiece. */
+const AG_REFRESH_LOST_POLLS = 3;
+
 /* THE LIVE LIBRARY (2026-09-09). The Library used to mean "finished articles". It now holds a row
    from the moment a run starts, because the checkpoints that used to stop and show him each piece
    are gone: the research, the plan and the brand pack are announced and the run carries straight
@@ -139,7 +147,11 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, refresh: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
+       sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
+       counts have already been re-read, so one finished run re-reads them once. */
+    refresh: null, refreshSeen: null, refreshPollErr: null,
     health: null, knowledge: null, cta: null, ctaForm: null, memory: null, library: null, tools: null, conns: null,
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
@@ -1030,38 +1042,105 @@ function agPanelHtml(a){
 
 /* ── settings views ────────────────────────────────────────────────────────── */
 
-/* Keeping the catalogue current. One line that replaces itself while it works, then a link to
-   what changed. Never a chat log: a person watching an update wants one line, not a transcript.
-   The button that STARTS it sits on the catalogue heading row (agCatControlsHtml); this renders
-   only what is happening right now, and nothing at all when nothing is. */
-function agRefreshHtml(a){
-  const r = a.refresh || null;
-  let box = "";
-  if (r && r.busy) {
-    box = `<div class="ag-refresh busy"><span class="spin" aria-hidden="true"></span><span class="msg">${agEsc(r.step || "Working…")}</span></div>`;
-  } else if (r && r.preview) {
-    const n = r.preview;
-    const nothing = !n.new && !n.gone && !n.changed;
-    box = `<div class="ag-refresh">
-      <div class="msg">${nothing ? "Nothing has changed since the last read."
-        : `<b>${agEsc(agNum(n.new))} new</b>, ${agEsc(agNum(n.gone))} gone, ${agEsc(agNum(n.changed))} rewritten.${n.unchecked ? ` ${agEsc(agNum(n.unchecked))} pages give no date, so they cannot be checked without reading them.` : ""}`}</div>
-      <div class="ag-editrow">
-        ${nothing ? "" : `<button class="btn pri" type="button" data-ag="refreshgo">Update the catalogue</button>`}
-        ${nothing || !r.report ? "" : `<button class="btn" type="button" data-ag="refreshreport">See the list</button>`}
-        <button class="btn" type="button" data-ag="refreshcancel">${nothing ? "Close" : "Not now"}</button>
-      </div></div>`;
-  } else if (r && r.done) {
-    box = `<div class="ag-refresh done">
-      <div class="msg"><b>Done.</b> ${agEsc(r.done)}</div>
-      <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshchanges">See what changed</button>
-        <button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
-  } else if (r && r.error) {
-    box = `<div class="ag-refresh"><div class="msg err">${agEsc(r.error)}</div>
-      <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
-  }
-  return box;
+/* Keeping the catalogue current: one tool run, reported live in the card the button sits on.
+
+   THE RULE THIS RENDERER BROKE ONCE (owner, 2026-09-10). It drew ONE FIXED SENTENCE -- "Asking
+   the site for its current list…" -- for the whole run, because the route it called threw the
+   engine's lines away. Six minutes of firewall cooldowns therefore looked exactly like a hang,
+   and exactly like a finish. So: EVERY WORD OF PROGRESS IN HERE WAS SAID BY THE ENGINE. The
+   labels and notes come off the job the server records as refresh_site emits them; nothing on
+   this side rewrites them, and nothing invents a line from the fact that a button was pressed.
+
+   Four states and no fifth: WORKING (the last line the engine said, the ones before it, and how
+   long since it arrived), WAITING (which the engine announces, and which must never be drawn as
+   working), DONE (the counts, exactly where the spinner was), and STOPPED (the reason, and no
+   spinner anywhere near it). The button that STARTS it sits on the catalogue heading row
+   (agCatControlsHtml); this renders only what is happening, and nothing when nothing is. */
+function agRefreshLive(r){ return !!(r && r.phase === "running"); }
+
+/* A gap in seconds, in his words. Seconds up to a minute, because "0m" is not an answer to
+   "is this thing alive". */
+function agSecsWords(secs){
+  secs = Math.max(0, Math.round(Number(secs) || 0));
+  if (secs < 60) return secs + "s";
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return m + "m" + (s ? " " + s + "s" : "");
 }
 
+/* The lines before the one on top, newest first. The engine's own words, trimmed to a few: a
+   person watching an update wants to see it moving, not read a transcript. */
+function agRefreshTrailHtml(steps, n){
+  const list = (steps || []).slice(-(n || 3)).reverse();
+  if (!list.length) return "";
+  return `<ul class="trail">${list.map(s =>
+    `<li><b>${agEsc(s.label || "")}</b>${s.note ? ` <span class="h">${agEsc(s.note)}</span>` : ""}</li>`).join("")}</ul>`;
+}
+
+function agRefreshWorkingHtml(r, now, lost){
+  const steps = r.steps || [];
+  const last = steps.length ? steps[steps.length - 1] : null;
+  const quiet = Math.max(0, now - (Number(r.updated_at) || Number(r.started_at) || now));
+  const w = r.waiting || null;
+  /* WAITING IS NOT WORKING. fetch.py announces a firewall cooldown before it sits through one,
+     with its own number, so the card says it is waiting and for how long instead of showing the
+     spinner it shows for a step that is moving. */
+  /* Cannot reach the app: this card is not being told anything, so it says that rather than
+     spinning on a frame that may be minutes old. It is the only foot line that is not about the
+     refresh itself, and it wins, because it is the reason the others cannot be trusted. */
+  const foot = lost
+    ? `Not hearing from Sutra · this is what it last said, ${agEsc(agSecsWords(now - (Number(lost.since) || now)))} ago`
+    : (w
+      ? `Waiting on the site · ${agEsc(agSecsWords(now - (Number(w.since) || now)))} of ${agEsc(agSecsWords(w.seconds))}`
+      : (quiet >= AG_REFRESH_QUIET_S
+          ? `Still going · nothing new for ${agEsc(agSecsWords(quiet))}`
+          : ""));
+  const line = last
+    ? `<b>${agEsc(last.label)}</b>${last.note ? ` <span class="h">${agEsc(last.note)}</span>` : ""}`
+    : `Started. Nothing back from it yet.`;
+  return `<div class="ag-refresh busy${w ? " waiting" : ""}">
+    <div class="hd">${agEsc(r.label || "Catching up on what changed")}${r.mode === "preview" ? " · nothing is being changed yet" : ""}</div>
+    <div class="now">${w ? `<span class="hold" aria-hidden="true"></span>` : `<span class="spin" aria-hidden="true"></span>`}<span class="msg">${line}</span></div>
+    ${foot ? `<div class="foot">${foot}</div>` : ""}
+    ${agRefreshTrailHtml(steps.slice(0, -1), 3)}
+  </div>`;
+}
+
+function agRefreshHtml(a){
+  const r = a.refresh || null;
+  if (!r) return "";
+  const now = Date.now() / 1000;
+  const lost = a.refreshPollErr && a.refreshPollErr.n >= AG_REFRESH_LOST_POLLS ? a.refreshPollErr : null;
+  if (agRefreshLive(r)) return agRefreshWorkingHtml(r, now, lost);
+  const res = r.result || {};
+  /* STOPPED. The reason, in the sentence whoever refused wrote -- the site, the engine, or the
+     browser that never reached the server. Never a spinner, and never a "Done" over the top of
+     it: a failure that looks like progress is worse than the silence this replaced. */
+  if (r.phase === "failed"){
+    const also = res.summary && String(res.summary) !== String(r.error)
+      ? `<div class="msg">${agEsc(res.summary)}</div>` : "";
+    return `<div class="ag-refresh stopped"><div class="msg err">${agEsc(r.error || "The refresh did not finish.")}</div>
+      ${also}
+      ${agRefreshTrailHtml(r.steps, 3)}
+      <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
+  }
+  /* DONE, having changed nothing: the four piles, and the press that would act on them. */
+  if (r.mode === "preview"){
+    const nothing = !res.new && !res.gone && !res.changed;
+    return `<div class="ag-refresh done">
+      <div class="msg">${nothing ? "Nothing has changed since the last read."
+        : `<b>${agEsc(agNum(res.new))} new</b>, ${agEsc(agNum(res.gone))} gone, ${agEsc(agNum(res.changed))} rewritten.${res.unchecked ? ` ${agEsc(agNum(res.unchecked))} pages give no date, so they cannot be checked without reading them.` : ""}`}</div>
+      <div class="ag-editrow">
+        ${nothing ? "" : `<button class="btn pri" type="button" data-ag="refreshgo">Update the catalogue</button>`}
+        ${nothing || !res.report ? "" : `<button class="btn" type="button" data-ag="refreshreport">See the list</button>`}
+        <button class="btn" type="button" data-ag="refreshcancel">${nothing ? "Close" : "Not now"}</button>
+      </div></div>`;
+  }
+  /* DONE, having written: the engine's own count of what it did. */
+  return `<div class="ag-refresh done">
+    <div class="msg"><b>Done.</b> ${agEsc([res.summary, res.note].filter(Boolean).join(" "))}</div>
+    <div class="ag-editrow"><button class="btn" type="button" data-ag="refreshchanges">See what changed</button>
+      <button class="btn" type="button" data-ag="refreshcancel">Close</button></div></div>`;
+}
 /* The small controls that belong to the catalogue, on its heading row rather than in the body:
    the map, and the one way to bring the catalogue up to date.
 
@@ -1835,9 +1914,40 @@ function agWsRestingHtml(ws, justDone){
       <div class="rm" style="margin-top:8px"><span>${n === 1 ? "1 person" : n + " people"}</span>${now ? `<span>${agEsc(now)}</span>` : ""}</div>
       ${agWsMembersHtml(ws.members, ws.me && ws.me.member_id)}
       ${agWsLinkRowHtml(ws.link)}
+      ${agWsUpdateHtml(ws)}
       <div class="row" style="margin-top:10px"><button class="btn" type="button" data-ag="wsleave">Leave the workspace</button>
         <span class="sp">your own copy stays exactly as it is</span></div>
     </div></div>`;
+}
+
+/* A WORKSPACE MADE BEFORE A TABLE EXISTED. Not broken, and deliberately not drawn as broken.
+
+   The setup script cannot add a table to a database whose tables are already there: every
+   statement in it is `create ... if not exists`. So a workspace made earlier can only get one
+   through the migration steps, and nothing runs those on its own — they need a token or a person
+   pasting, and both are somebody's choice.
+
+   Everything that already synced goes on syncing; only the new thing waits. So this is one line
+   and one button inside the CONNECTED card, never a warning banner: verify() still says ok, and
+   telling somebody their working workspace is broken because a newer Sutra grew a table would be
+   a lie with a scary shape.
+
+   Two sources say the same thing and either is enough: verify().needs_update is "you are a
+   version behind", sync.needs_update is "somebody already saved something that could not be
+   sent". Shown once. */
+function agWsUpdateHtml(ws){
+  const v = (ws.verify && ws.verify.needs_update) ? ws.verify : null;
+  const s = (ws.sync && ws.sync.needs_update) || null;
+  if (!v && !s) return "";
+  const have = s ? s.have : (ws.verify && ws.verify.schema_version);
+  const why = (s && s.why) || "Update it so what you type reaches your team straight away.";
+  return `<div class="ag-note" style="margin-top:10px">
+      <b>An update is available for this workspace${have ? ` (it is on version ${agEsc(String(have))})` : ""}.</b>
+      <div style="margin-top:4px">${agEsc(why)}</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn pri" type="button" data-ag="wsupdate">Update workspace</button>
+        <span class="sp">everything else keeps syncing meanwhile</span></div>
+    </div>`;
 }
 
 /* THE UNFINISHED WORKSPACE, which is a real state and not a theory.
@@ -2125,11 +2235,17 @@ function agStartPoll(){
     if (!(typeof document !== "undefined" && document.hidden)){
       try { await agRefresh(); } catch (e) { a.error = String(e && e.message || e); }
     }
-    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a)) || agWsJobLive(a && a.ws);
+    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a)) || agWsJobLive(a && a.ws)
+      || agRefreshLive(a && a.refresh);
     agPollTimer = setTimeout(tick, live ? AG_POLL_LIVE_MS : AG_POLL_IDLE_MS);
   };
   agPollTimer = setTimeout(tick, 400);
-  if (!agTick) agTick = setInterval(() => { if (agLiveRun() && agRoot()) agDraw(); }, 1000);
+  /* the second-by-second repaint. A refresh counts as live here as well as a run: the card's
+     "nothing new for 2m 10s" is only honest if it is redrawn while the gap grows. */
+  if (!agTick) agTick = setInterval(() => {
+    const a = agS();
+    if (agRoot() && (agLiveRun() || agRefreshLive(a && a.refresh))) agDraw();
+  }, 1000);
 }
 function agStopPoll(){
   if (agPollTimer){ clearTimeout(agPollTimer); agPollTimer = null; }
@@ -2180,6 +2296,13 @@ async function agRefresh(){
          trade, so it asks for nothing. */
       const q = (a.view === "connections" && !agWsJobLive(a.ws)) ? "/workspace?check=1" : "/workspace";
       a.ws = await agApi(q).catch(() => a.ws);
+    }
+    /* The catalogue refresh, on two cadences and for the same reasons: every tick while it is
+       running (a step line that moves once every four seconds is not a step line), and on the
+       Knowledge tab, where its card lives, so a run he started before opening this screen is
+       drawn as it stands rather than as nothing at all. */
+    if (agRefreshLive(a.refresh) || a.view === "knowledge"){
+      await agPollRefresh();
     }
   } finally { agRefreshBusy = false; }
   agDraw();
@@ -2346,6 +2469,79 @@ async function agLoadPages(offset){
     + `&type=${encodeURIComponent(a.pageType || "")}&lang=${encodeURIComponent(lang)}`;
   try { a.pages = await agApi(`/knowledge/pages?${params}`); } catch (e) { a.pages = { total: 0, offset: 0, rows: [] }; }
   agDraw();
+}
+
+
+/* ── the catalogue refresh, started and then watched ────────────────────────────
+   The same shape as the workspace job: a press starts work on the server and returns, and one
+   poll reads what that work is doing. The card is drawn from the server's job and never from
+   the click, because the click knows nothing except that it happened -- which is precisely how
+   the old fixed spinner came to sit there through six minutes of firewall cooldowns. */
+
+/* Start it, and take the server's first word on what it is doing. */
+async function agRefreshStart(body, prefix){
+  const a = agS();
+  let started = null, why = "";
+  try { started = await agPostApi("/knowledge/refresh", body || {}); }
+  catch (e) { why = String(prefix || "") + String((e && e.message) || e); }
+  if (started){
+    a.refresh = started.job || null;
+    agDraw();
+    /* one read straight away, so the first line the engine says appears without waiting on the
+       poll's next tick */
+    await agPollRefresh();
+    return;
+  }
+  /* The press was refused. If it was refused BECAUSE one is already running -- the server's own
+     409 -- then that running job is the honest thing to draw, so it is asked for before the
+     refusal is. Otherwise the POST never landed, there is no job for anything to poll, and the
+     reason has to be said here: nothing else will ever clear the card. */
+  await agPollRefresh();
+  if (!agRefreshLive(a.refresh))
+    a.refresh = { phase: "failed", local: true, steps: [], error: why };
+  agDraw();
+}
+
+/* Put the card away. The server is asked to forget the finished job first -- it refuses while
+   one is still running, which is the point -- so a reopened tab does not show last week's run. */
+async function agRefreshClear(){
+  const a = agS();
+  try { await agPostApi("/knowledge/refresh/dismiss", {}); } catch (e) {}
+  a.refresh = null;
+  agDraw();
+}
+
+/* Read the job. A poll that fails changes nothing on screen: a dropped read is not news, and
+   blanking the card on one would be its own little lie. */
+async function agPollRefresh(){
+  const a = agS();
+  let j;
+  try { j = await agApi("/knowledge/refresh"); }
+  catch (e) {
+    /* One dropped read is not news. Several in a row means this card is no longer being told
+       anything, and a spinner that is not being fed is the bug all over again -- so the count
+       and when contact was lost are kept, and the card says so itself. */
+    const p = a.refreshPollErr;
+    a.refreshPollErr = { n: (p ? p.n : 0) + 1, since: p ? p.since : Date.now() / 1000,
+                         msg: String((e && e.message) || e) };
+    return;
+  }
+  a.refreshPollErr = null;
+  const job = j && j.job;
+  if (!job){
+    /* the server has forgotten it; keep only a failure that never reached the server at all */
+    if (a.refresh && !a.refresh.local) a.refresh = null;
+    return;
+  }
+  a.refresh = job;
+  /* A refresh that WROTE has made the heading counts and the page table stale, so they are
+     re-read once, on the tick that sees it finish. */
+  const done = job.mode + ":" + (job.finished_at || 0);
+  if (job.phase === "done" && job.mode === "apply" && a.refreshSeen !== done){
+    a.refreshSeen = done;
+    a.knowledge = await agApi("/knowledge").catch(() => a.knowledge);
+    if (a.pages) await agLoadPages(0);
+  }
 }
 
 /* ── actions ───────────────────────────────────────────────────────────────── */
@@ -2615,47 +2811,28 @@ async function agAction(act, el){
     }
 
     /* ── keeping the catalogue current ────────────────────────────────────────
-       These five were the silent failure. The button, agRefreshHtml's four states and
-       POST /knowledge/refresh all existed and all worked -- both routes were verified
-       against the owner's own catalogue, 2026-09-09 -- but agAction had no arm for
-       "refreshcheck", so the click fell through to `default: break` and NOTHING happened,
-       with no error anywhere to say so.
+       These five were the silent failure twice over. First agAction had no arm for
+       "refreshcheck", so the click reached `default: break` and nothing happened. Then, with
+       the arm in, the button called the route and sat on ONE FIXED SENTENCE until the whole
+       run came back: the owner watched "Asking the site for its current list…" for several
+       minutes and could not tell working from hung (2026-09-10).
+
+       So a press no longer waits for an answer. It STARTS the tool and returns; the card is
+       drawn from the job the server keeps, which carries every line refresh_site says as it
+       says it, and agRefresh polls it on the live cadence the same way it polls a workspace
+       job. Nothing here writes a progress line: the engine's words are the only words.
 
        Two steps, never one. `preview: true` reads the site's current address list, reports
        the four piles and touches nothing; only refreshgo, which he has to press, writes.
        That split is the tool's own contract (refresh_site.run) and it is what keeps a
        stray click on a settings tab from re-reading a 12,000-page site. */
-    case "refreshcheck": {
-      a.refresh = { busy: true, step: "Asking the site for its current list…" };
-      agDraw();
-      try {
-        const r = await agPostApi("/knowledge/refresh", { preview: true });
-        a.refresh = { preview: { new: r.new, gone: r.gone, changed: r.changed, unchecked: r.unchecked },
-                      report: r.report || "" };
-      } catch (e) { a.refresh = { error: "Could not check the site: " + (e && e.message || e) }; }
-      agDraw(); break;
-    }
-    case "refreshgo": {
-      a.refresh = { busy: true, step: "Reading the pages that are new or have changed…" };
-      agDraw();
-      try {
-        const r = await agPostApi("/knowledge/refresh", {});
-        /* The tool reports a refusal it survived -- every page blocked, catalogue untouched --
-           as an `error` beside a summary, not as a failed request. Saying "Done" over that
-           would be a lie about the one thing he is watching. */
-        a.refresh = r.error ? { error: r.error }
-          : { done: [r.summary, r.note].filter(Boolean).join(" ") };
-        /* the counts on the heading line and the page table are both stale now */
-        a.knowledge = await agApi("/knowledge").catch(() => a.knowledge);
-        if (a.pages) await agLoadPages(0);
-      } catch (e) { a.refresh = { error: "The refresh did not finish: " + (e && e.message || e) }; }
-      agDraw(); break;
-    }
-    /* What changed, in full. The preview holds its report in memory (nothing has been written
-       yet); after a real refresh the engine has saved it as catalogue-changes.md, so that is
-       read back rather than kept on the state. */
+    case "refreshcheck": await agRefreshStart({ preview: true }, "Could not check the site: "); break;
+    case "refreshgo": await agRefreshStart({}, "The refresh did not finish: "); break;
+    /* What changed, in full. The preview holds its report on the finished job (nothing has been
+       written yet); after a real refresh the engine has saved it as catalogue-changes.md, so
+       that is read back rather than kept on the state. */
     case "refreshreport": {
-      const text = (a.refresh && a.refresh.report) || "";
+      const text = (a.refresh && a.refresh.result && a.refresh.result.report) || "";
       if (!text) break;
       a.panel = { run_id: null, name: "catalogue-changes.md", view: "brand_file",
                   data: { text }, loading: false, error: null,
@@ -2672,7 +2849,7 @@ async function agAction(act, el){
       catch (e) { a.panel.loading = false; a.panel.error = "Could not read the change report: " + (e && e.message || e); }
       agDraw(); break;
     }
-    case "refreshcancel": a.refresh = null; agDraw(); break;
+    case "refreshcancel": await agRefreshClear(); break;
     case "saveco": {
       const rec = {};
       document.querySelectorAll("[data-agco]").forEach(i => { rec[i.getAttribute("data-agco")] = i.value; });
@@ -2855,6 +3032,17 @@ async function agAction(act, el){
     }
     /* "I've run it", and the Check again on an unfinished workspace: the same question either
        way -- is it set up NOW -- and the same answer, schema.verify's. */
+    // RUN THE MIGRATION STEPS, and take the token the same way Create does: read once, then
+    // clear the box. If the server comes back with the paste route it is the STEPS this
+    // workspace is missing, never the whole create script, and the existing paste renderer
+    // draws it unchanged.
+    case "wsupdate": {
+      const f = a.wsForm || {};
+      f.busy = true; a.wsForm = f; agDraw();
+      await agWsPost("/workspace/update", { token: agTakeToken() });
+      const g = a.wsForm; if (g) g.busy = false;
+      agDraw(); break;
+    }
     case "wssqldone": {
       const f = a.wsForm || {};
       const ws = a.ws || {};

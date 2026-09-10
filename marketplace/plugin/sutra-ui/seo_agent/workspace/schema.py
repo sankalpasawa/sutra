@@ -49,12 +49,26 @@ CACHE_RETRY_WAITS = (1.5, 3.0)
 
 # Bump this when you add a MIGRATIONS entry, never on its own. The two must move together:
 # the version says what the code expects, the list says how to get there.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-# The ten tables schema.sql creates: the nine from WORKSPACE-PLAN section 3, plus the log.
-# verify() confirms every one of them, by name.
-TABLES = ("workspace", "members", "ideas", "prompts", "competitors",
-          "cta_links", "company", "library", "pages", "changes")
+# The ten tables every workspace has, whatever version it is on: the nine from WORKSPACE-PLAN
+# section 3, plus the log. A workspace missing one of these is broken, at any version.
+BASE_TABLES = ("workspace", "members", "ideas", "prompts", "competitors",
+               "cta_links", "company", "library", "pages", "changes")
+
+# TABLES A MIGRATION ADDED, and the version that added each. A workspace older than that version
+# is NOT broken for lacking one -- it is behind, and migrate() is what fixes it.
+#
+# THIS SPLIT IS LOAD-BEARING AND IT IS NOT TIDINESS. verify() refuses to call a workspace ready
+# when a table is missing, and migrate() refuses to migrate a workspace verify() has not called
+# ready. So counting a not-yet-migrated table as MISSING would report the owner's live workspace
+# as broken and then refuse the one operation that could fix it -- a dead end with his real
+# project inside it. So verify() judges a workspace against the tables ITS OWN version should
+# have, and reports the rest as `behind`.
+ADDED_IN = {"brand_inputs": 3}
+
+# Everything a workspace at SCHEMA_VERSION has. schema.sql creates all of these for a fresh one.
+TABLES = BASE_TABLES + tuple(sorted(ADDED_IN))
 
 MANAGEMENT_API = "https://api.supabase.com/v1/projects/%s/database/query"
 
@@ -85,6 +99,34 @@ MIGRATIONS = [
     (2, "count the meaning index separately from the core, so two generations of it can coexist",
      "alter table public.workspace "
      "add column if not exists index_version integer not null default 0;"),
+    # Added 2026-09-10. pricing.md is the one part of the brand pack a PERSON types by hand, and
+    # until now it travelled only inside the knowledge pack -- so somebody's prices reached their
+    # teammates when the pack was next rebuilt (minutes) rather than through the changes log (about
+    # a second), with nothing on screen saying so. `brand_inputs` is the live pipe for it. The table
+    # cannot arrive any other way on a workspace that already exists: `create table if not exists`
+    # in schema.sql does nothing for a database whose tables are already there.
+    #
+    # The whole step is idempotent, so running it against a workspace created from today's
+    # schema.sql (which already has the table) is a harmless no-op. `notify pgrst` is inside the
+    # transaction on purpose: notifications are delivered at commit, and without it PostgREST would
+    # answer PGRST205 for the new table until its schema cache refreshed on its own schedule --
+    # which is indistinguishable from "the table was never created" (the 2026-09-09 incident).
+    (3, "sync the brand files a person types in, so a price reaches the team in seconds",
+     "create table if not exists public.brand_inputs ("
+     " name text primary key,"
+     " workspace_id uuid not null default public.current_workspace_id(),"
+     " body text not null default '',"
+     " actor text not null default '',"
+     " updated_at timestamptz not null default now());\n"
+     "create or replace trigger brand_inputs_changed after insert or update or delete"
+     " on public.brand_inputs for each row execute function public.log_change();\n"
+     "alter table public.brand_inputs enable row level security;\n"
+     "grant select, insert, update, delete on public.brand_inputs to anon, authenticated;\n"
+     "drop policy if exists brand_inputs_all on public.brand_inputs;\n"
+     "create policy brand_inputs_all on public.brand_inputs for all to anon, authenticated"
+     " using (workspace_id = public.current_workspace_id())"
+     " with check (workspace_id = public.current_workspace_id());\n"
+     "notify pgrst, 'reload schema';"),
 ]
 
 
@@ -226,6 +268,12 @@ def verify(url=None, key=None):
     powerful key would prove the wrong thing -- a table can exist and still be unreadable to
     the publishable key, and that workspace is broken in a way the root endpoint cannot see.
 
+    A TABLE A MIGRATION ADDS IS NOT A MISSING TABLE. It comes back in `behind`, not in
+    `missing`, and it does not make a workspace un-ready -- see the note on ADDED_IN for the
+    dead end that counting it as missing would create. `needs_update` says an update is
+    available on an otherwise healthy workspace, and the reason says what is not syncing
+    until it is run.
+
     THE BUCKET COUNTS. A workspace with ten tables and no knowledge bucket is a workspace
     nobody can ever join, because the pack has nowhere to live and a publishable key cannot
     create a bucket (measured 2026-09-10, 400 "new row violates row-level security policy").
@@ -238,7 +286,8 @@ def verify(url=None, key=None):
         url = url or current["workspace_url"].strip()
         key = key or current["workspace_key"].strip()
     if not url or not key:
-        return {"ok": False, "present": [], "missing": list(TABLES), "unreadable": {},
+        return {"ok": False, "present": [], "missing": list(BASE_TABLES),
+                "behind": list(sorted(ADDED_IN)), "needs_update": False, "unreadable": {},
                 "bucket": False, "workspace_id": "", "schema_version": 0,
                 "reason": "No project URL and key yet, so there is nothing to check."}
 
@@ -271,6 +320,29 @@ def verify(url=None, key=None):
         return found, gone, bad
 
     present, missing, unreadable = _probe(TABLES)
+
+    # THE VERSION IS READ BEFORE THE RETRY, and the order is the point. A table a migration adds
+    # is absent from a workspace that has not run that migration yet, and that is not a fault: it
+    # is what `behind` means. Slept on and re-asked it would cost every verify() on the owner's
+    # live workspace 4.5 seconds to confirm something we already knew, and counted missing it
+    # would report his project broken and then block the migration that fixes it.
+    workspace_id, workspace_name, schema_version = "", "", 0
+    if "workspace" in present:
+        try:
+            row = client.one("workspace",
+                             columns="id,schema_version,name,pack_version,bucket_ready",
+                             url=url, key=key)
+            if row:
+                workspace_id = str(row.get("id") or "")
+                workspace_name = str(row.get("name") or "")
+                schema_version = int(row.get("schema_version") or 0)
+        except WorkspaceError as e:
+            unreadable["workspace(row)"] = str(e)
+
+    behind = [t for t in missing if ADDED_IN.get(t, 0) > schema_version]
+    missing = [t for t in missing if t not in behind]
+    expected = [t for t in TABLES if t not in behind]
+
     for wait in CACHE_RETRY_WAITS:
         if not missing:
             break
@@ -287,26 +359,22 @@ def verify(url=None, key=None):
     except WorkspaceError as e:
         bucket_error = str(e)
 
-    workspace_id, workspace_name, schema_version = "", "", 0
-    if "workspace" in present:
-        try:
-            row = client.one("workspace",
-                             columns="id,schema_version,name,pack_version,bucket_ready",
-                             url=url, key=key)
-            if row:
-                workspace_id = str(row.get("id") or "")
-                workspace_name = str(row.get("name") or "")
-                schema_version = int(row.get("schema_version") or 0)
-        except WorkspaceError as e:
-            unreadable["workspace(row)"] = str(e)
-
     ok = not missing and not unreadable and bucket and bool(workspace_id)
+    needs_update = bool(ok and (behind or schema_version < SCHEMA_VERSION))
 
-    if ok:
-        reason = "Workspace ready: all %d tables, the knowledge bucket, and the workspace row." % len(TABLES)
-    elif missing and len(missing) == len(TABLES):
+    if ok and needs_update:
+        reason = ("Workspace ready, and an update is available: it is on version %d and this "
+                  "Sutra is on version %d. Until it is updated, %s."
+                  % (schema_version, SCHEMA_VERSION,
+                     "the brand files a person types in travel with the knowledge pack rather "
+                     "than reaching the team straight away" if "brand_inputs" in behind
+                     else "some newer things will not sync"))
+    elif ok:
+        reason = ("Workspace ready: all %d tables, the knowledge bucket, and the workspace row."
+                  % len(expected))
+    elif missing and len(missing) == len(expected):
         reason = ("Nothing has been created yet. Run the setup script — none of the %d tables "
-                  "exist." % len(TABLES))
+                  "exist." % len(expected))
     elif missing:
         reason = ("The setup is incomplete. These are missing: %s. Running the setup script "
                   "again is safe and will finish the job." % ", ".join(missing))
@@ -327,6 +395,7 @@ def verify(url=None, key=None):
         reason = "The workspace is not ready."
 
     return {"ok": ok, "checked": "full", "present": present, "missing": missing,
+            "behind": behind, "needs_update": needs_update,
             "unreadable": unreadable, "bucket": bucket, "workspace_id": workspace_id,
             "workspace_name": workspace_name, "schema_version": schema_version,
             "reason": reason}
@@ -338,9 +407,11 @@ def ready(url=None, key=None):
     WHY THIS CAN EXIST AT ALL. verify() is eleven calls, and the Connections tab polls about
     once a second (2026-09-10). Eleven calls a second against your own project is not a poll.
     But the tables do not need probing one by one to answer the resting-state question,
-    because of rule 1 of schema.sql: THE TABLES ARE CREATED IN ONE TRANSACTION. Either all ten
-    exist or none does. So a `workspace` row that this key can read proves the other nine
-    tables exist and that RLS lets this key read them. The bucket is the single piece that is
+    because of rule 1 of schema.sql: THE TABLES ARE CREATED IN ONE TRANSACTION. Either all of
+    them exist or none does. So a `workspace` row that this key can read proves the rest of
+    that workspace's tables exist and that RLS lets this key read them. A table added later by
+    a MIGRATION is the one thing this cannot prove, which is why the row's own
+    `schema_version` comes back with it and `needs_update` says whether a step is outstanding. The bucket is the single piece that is
     allowed to fail on its own -- its block catches insufficient_privilege deliberately, so a
     storage problem cannot cost somebody nine tables -- and that is precisely why schema.sql
     records it in `workspace.bucket_ready` instead of leaving it to be inferred.
@@ -358,7 +429,8 @@ def ready(url=None, key=None):
         url = url or current["workspace_url"].strip()
         key = key or current["workspace_key"].strip()
     blank = {"ok": False, "checked": "shallow", "bucket": False, "workspace_id": "",
-             "workspace_name": "", "schema_version": 0, "pack_version": 0}
+             "workspace_name": "", "schema_version": 0, "pack_version": 0,
+             "needs_update": False}
     if not url or not key:
         return dict(blank, reason="No project URL and key yet, so there is nothing to check.")
     try:
@@ -379,6 +451,9 @@ def ready(url=None, key=None):
            "workspace_name": str(row.get("name") or ""),
            "schema_version": int(row.get("schema_version") or 0),
            "pack_version": int(row.get("pack_version") or 0)}
+    # The version costs nothing here -- it is a column of the row already read -- and it is what
+    # sync.push asks before it queues a change into a table a migration added.
+    out["needs_update"] = out["schema_version"] < SCHEMA_VERSION
     out["reason"] = ("Workspace ready." if bucket else
                      "The tables are there but the knowledge bucket is not, so no teammate "
                      "could download the knowledge pack. Run the setup script again.")

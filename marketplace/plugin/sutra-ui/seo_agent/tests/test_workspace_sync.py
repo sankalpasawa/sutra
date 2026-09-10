@@ -36,7 +36,7 @@ import time
 from seo_agent.tests import _fixture
 _fixture.setup()
 from seo_agent import store                            # noqa: E402
-from seo_agent.workspace import mirror, outbox, sync    # noqa: E402
+from seo_agent.workspace import mirror, outbox, schema, sync    # noqa: E402
 
 FAILS = []
 CHECKS = [0]
@@ -104,6 +104,11 @@ class FakeDB(object):
     """
 
     PK = {t: k for t, k in mirror.TABLES.values()}
+    # WHICH TABLES A PROJECT ACTUALLY HAS, taken from the real schema. A table a migration added
+    # does not exist on a workspace that has not run that migration, and PostgREST answers a write
+    # to it with a 404 that never becomes anything else. A fake that accepted such a row would test
+    # a database we are not building, and would prove nothing about the guard in sync.push.
+    ADDED_IN = schema.ADDED_IN
     WORKSPACE = "w-0000"
 
     def __init__(self):
@@ -115,6 +120,10 @@ class FakeDB(object):
         # them inside `sync.CHANGES_LAG_SECONDS` and hold them all back. A minute means "settled".
         # The race test sets this to 0 to get rows as fresh as a real insert makes them.
         self.settled = 60
+        # What version this project's schema is on. A workspace created from today's schema.sql is
+        # on schema.SCHEMA_VERSION; the owner's live one is older, and `push` asks before it queues
+        # a change into a table a migration added.
+        self.schema_version = 3
         # Log ids that have been ALLOCATED but whose transaction has not committed, so no reader
         # can see them yet. This is the bigserial race, in a dict.
         self.uncommitted = set()
@@ -131,7 +140,12 @@ class FakeDB(object):
                          "at": iso(server_epoch() - self.settled)})
         return self.log[-1]["id"]
 
+    def _must_exist(self, table):
+        if self.ADDED_IN.get(table, 0) > self.schema_version:
+            raise RuntimeError("Could not find the table 'public.%s' in the schema cache" % table)
+
     def upsert(self, table, rows):
+        self._must_exist(table)
         for r in rows:
             row = dict(r)
             # workspace_id defaults in the database, which is what makes a second company row
@@ -145,6 +159,7 @@ class FakeDB(object):
             self._trigger(table, op, key, dict(row), row.get("actor") or row.get("added_by"))
 
     def delete(self, table, where):
+        self._must_exist(table)
         key = str(list(where.values())[0])
         old = self.tables.setdefault(table, {}).pop(key, None)
         self.writes += 1
@@ -218,6 +233,15 @@ class FakeClient(object):
             assert w["at"][0] == "lt"
             rows = [r for r in rows if r["at"] < w["at"][1]]
         return rows[:int(limit or 500)]
+
+    def one(self, table, where=None, columns="*"):
+        """The only row read that is not the log: `workspace`, for its schema_version. push() asks
+        it before queueing a kind whose table a migration added (sync.KIND_NEEDS_VERSION)."""
+        if self.fail_reads:
+            self.fail_reads -= 1
+            raise RuntimeError("the network is down")
+        assert table == "workspace", "only the workspace row is read this way"
+        return {"id": FakeDB.WORKSPACE, "schema_version": self.db.schema_version}
 
     def since(self, last_seen_id=None, limit=500):
         if self.fail_reads:
@@ -579,6 +603,124 @@ ok("last write wins, on both Macs",
    title_a == title_b == "The salary benchmark, redone", (title_a, title_b))
 ok("and the change is attributed to the person who made it",
    mirror.recent(1)[0]["actor"] == "Devansh", mirror.recent(1))
+
+
+# =====================================================================================================
+print("\npricing.md reaches the team in seconds, not minutes")
+#
+# The brand pack travels in the knowledge pack and goes on doing so. pricing.md is the exception:
+# it is the ONE part of that pack a person types by hand, it holds prices no crawler can reach, and
+# features.md -- what the writer reads for product claims -- is filled from it. Carried by the pack
+# alone it reached teammates when the pack was next rebuilt, minutes later, with nothing saying so.
+
+from seo_agent.brand import _common as bcm       # noqa: E402
+from seo_agent.brand import features             # noqa: E402
+
+PRICES = ("# Prices and hidden facts\n\n## Pricing and plans\n\nStarter is $69 a month billed "
+          "annually, 100 credits a year. The trial runs 7 days with no card.\n")
+
+db = FakeDB()
+mac_a, mac_b = tempfile.mkdtemp(prefix="ws-pa-"), tempfile.mkdtemp(prefix="ws-pb-")
+MADE += [mac_a, mac_b]
+a, b = FakeClient(db, "m-ravi", "Ravi"), FakeClient(db, "m-dev", "Devansh")
+
+# Mac A: a person types their prices in. The panel saves the file; `input_saved` is everything that
+# has to happen next, and it is the only call the panel makes.
+store.set_data_dir(mac_a)
+bcm.save("pricing.md", PRICES)
+saved = bcm.input_saved("pricing.md", PRICES, actor="Ravi", client=a)
+ok("saving the form sends it to the team", saved["pushed"] is True, saved)
+ok("as a row in its own table, never as a write to the log — the trigger owns the log",
+   [(op, table) for op, table, _rows in a.sent] == [("upsert", "brand_inputs")], a.sent)
+ok("and the log row the TRIGGER wrote carries the file name as its key",
+   db.log[-1]["kind"] == "brand_inputs" and db.log[-1]["key"] == "pricing.md"
+   and db.log[-1]["actor"] == "Ravi", db.log[-1])
+
+# Mac B: a teammate with a brand pack already built, so there is something for the arriving price
+# to make stale.
+store.set_data_dir(mac_b)
+bcm.save("features.md", "# Product facts\n\nStarter is $59 a month.\n")
+bcm.save("writing-integrity.md", "# Writing integrity\n")
+bcm.save("writer-brief.md", "# Writer brief\n")
+features._stamp()
+untouched_before = {f: os.path.getmtime(bcm.path(f))
+                    for f in ("writing-integrity.md", "writer-brief.md")}
+r = sync.pull_once(client=b)
+ok("the prices land in the teammate's own brand pack, off the changes log",
+   r["applied"] == 1 and bcm.read("pricing.md") == PRICES, (r, bcm.read("pricing.md")[:60]))
+ok("and they read as somebody's writing, not as the blank form",
+   bcm.exists("pricing.md") and not features.untouched(bcm.read("pricing.md")))
+
+# THE ONE HOP. features.md is filled FROM pricing.md, so the Mac that RECEIVES a price has to
+# rebuild its product facts or it goes on quoting the old one. Marked only -- the rebuild is model
+# work and a poll thread does none.
+ok("features.md is marked for a rebuild on the receiving Mac, the same way a local save marks it",
+   features.pricing_stale() is True
+   and (bcm.read(features.STAMP) or {}).get("pricing") == features.HAND_EDITED,
+   bcm.read(features.STAMP))
+ok("THE CHAIN STAYS ONE HOP: writing-integrity.md and writer-brief.md are not touched",
+   all(os.path.getmtime(bcm.path(f)) == m for f, m in untouched_before.items()))
+# It lands through brand/_common.save, which is where a brand file's format is decided -- including
+# the HTML-entity tidy every builder's output goes through.
+store.set_data_dir(mac_a)
+sync.push("brand_inputs", "pricing.md", PRICES.replace("$69", "&gt; $69"), client=a, actor="Ravi")
+store.set_data_dir(mac_b)
+sync.pull_once(client=b)
+ok("it lands through the module that owns the file, so an entity typed elsewhere is a character here",
+   "> $69" in bcm.read("pricing.md") and "&gt;" not in bcm.read("pricing.md"),
+   bcm.read("pricing.md")[:80])
+
+# A NAME THAT IS NOT A TYPED-IN FORM IS REFUSED, never written blind. features.md is 13,219
+# machine-written words that belong in the pack; a log row claiming otherwise must not overwrite it.
+before_features = bcm.read("features.md")
+db.log.append(log_row(len(db.log) + 1, "brand_inputs", "features.md", {"body": "# Nonsense\n"}))
+r = sync.pull_once(client=b)
+ok("a brand file that is not one of the typed-in forms is refused", r["refused"] == 1, r)
+ok("and the file it named is untouched", bcm.read("features.md") == before_features)
+ok("with the reason written down where somebody can see it",
+   any("features.md" in (x.get("key") or "") for x in mirror.recent(5, mirror.REFUSED_LOG)))
+
+
+# =====================================================================================================
+print("\na workspace a version behind is told, not wedged")
+#
+# `brand_inputs` arrived at schema version 3. The owner's live workspace is on 2, where the table
+# does not exist and a write to it can only ever 404. The outbox is a QUEUE with no maximum attempt
+# count, so queueing that row would park it at the head for ever and hold every idea, article and
+# prompt edit behind it. So push asks first and declines, and the pack carries the file as before.
+
+fresh_mac()
+old_db = FakeDB()
+old_db.schema_version = 2
+c = FakeClient(old_db)
+item = sync.push("brand_inputs", "pricing.md", PRICES, client=c)
+ok("a workspace with no such table is never handed a row for it", item is None)
+ok("nothing was queued, so nothing can sit at the head of the queue for ever", outbox.count() == 0)
+ok("and nothing reached the database either",
+   not any(table == "brand_inputs" for _op, table, _rows in c.sent), c.sent)
+ok("it says which change is waiting and why, rather than leaving it to be guessed at",
+   (sync.status(client=c).get("needs_update") or {}).get("kind") == "brand_inputs"
+   and "version 2" in (sync.status(client=c).get("needs_update") or {}).get("why", ""),
+   sync.status(client=c).get("needs_update"))
+sync.push("ideas", "a0001", idea(1), client=c)
+r = sync.pull_once(client=c)
+# THE CHECK THAT MATTERS. Take the guard out and this is the one that goes red: the undeliverable
+# row sits at the head of the queue, backing off for ever, and the idea behind it never leaves the
+# Mac. That is the failure the guard exists to stop, and it would be somebody's real workspace.
+ok("EVERY OTHER CHANGE STILL GOES UP: the queue is not wedged behind it",
+   outbox.count() == 0 and any(table == "ideas" for _op, table, _rows in c.sent)
+   and [x["id"] for x in ideas_on_disk()] == ["a0001"], (outbox.count(), c.sent))
+
+# The workspace is updated from the Connections tab, and the cached answer ages out.
+st = sync.read_state()
+st.pop("schema", None)
+sync._save_state(st)
+old_db.schema_version = 3
+item = sync.push("brand_inputs", "pricing.md", PRICES, client=c)
+ok("and the moment the update has run, the prices go up by themselves",
+   item is not None and any(table == "brand_inputs" for _op, table, _rows in c.sent))
+ok("and the warning clears itself", sync.status(client=c).get("needs_update") is None,
+   sync.status(client=c).get("needs_update"))
 
 
 # =====================================================================================================
