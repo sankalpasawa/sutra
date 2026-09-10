@@ -40,6 +40,10 @@
 .ag-face.me{background:var(--acc-bg);border-color:var(--acc)}
 .ag-face.me.here{border-color:var(--ok)}
 .ag-face.more{background:none;border-style:dashed;cursor:default;font-size:9px}
+/* Yours, before you have picked one. Dashed and accented so it reads as "do something here",
+   which is the only moment the picker is ever offered. */
+.ag-face[data-pickme]{border-style:dashed;border-color:var(--acc);color:var(--acc)}
+.ag-face[data-pickme]:hover{background:var(--acc-bg)}
 
 /* The picker, under the header while it is open. */
 .ag-facepick{margin:0 10px 8px;padding:9px;border:1px solid var(--line);border-radius:9px;

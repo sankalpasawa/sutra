@@ -1275,12 +1275,17 @@ def _ws_announce(mods, member_id, name, emoji=""):
     """
     client = (mods or {}).get("client")
     if client is None or not member_id:
-        return
+        return ""
+    err = ""
     try:
         client.register_member(name, emoji=(emoji or "") or None)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        # STILL NOT FATAL -- a join must not fail over a display name -- but the caller is told
+        # now. It used to swallow this silently, which is how the face picker came to answer
+        # "ok" to a write Supabase had rejected (2026-09-11).
+        err = _ws_scrub(e) or str(e)
     _ws_members["at"] = 0.0
+    return err
 
 
 def _ws_forget_checks():
@@ -1856,7 +1861,27 @@ def api_workspace_face(body: dict = Body(...)):
     if not faces.is_known(asked):
         return _bad("Pick one of the faces on offer.")
     s = _ws_settings(mods) or {}
-    _ws_announce(mods, s.get("member_id") or "", s.get("member_name") or "", asked)
+    mid = s.get("member_id") or ""
+    # A FACE IS PICKED ONCE (owner, 2026-09-11: "once chosen nobody can change it"). Enforced
+    # HERE and not only in the UI, because a hidden button is not a rule -- anything that can
+    # POST could still swap it. Read the row rather than trusting the local settings copy: the
+    # question is what the WORKSPACE has, which is what teammates see.
+    try:
+        mine = next((m for m in (_ws_member_rows(mods) or [])
+                     if str(m.get("member_id") or "") == mid), None)
+    except Exception:  # noqa: BLE001
+        mine = None
+    if mine and str(mine.get("emoji") or "").strip():
+        return _bad("You already have a face, and it stays yours. Faces are picked once.")
+    err = _ws_announce(mods, mid, s.get("member_name") or "", asked)
+    if err:
+        # THE COMMON CASE IS A WORKSPACE THAT HAS NOT MIGRATED. members.emoji arrives in schema
+        # 4; on an older workspace there is no column to write to and Supabase rejects it. Say
+        # that, and say what to do, rather than reporting a save that did not happen.
+        if "emoji" in err.lower() or "column" in err.lower() or "PGRST204" in err:
+            return _bad("Your workspace has not been updated yet, so there is nowhere to keep a "
+                        "face. Open Connections and run the workspace update, then pick again.")
+        return _bad("That face could not be saved: " + err)
     return {"ok": True, "emoji": asked, "name": faces.name_of(asked)}
 
 

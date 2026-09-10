@@ -463,9 +463,12 @@ function agFacesHtml(a){
       const me = m.member_id === meId;
       const here = agFaceAgo(m.last_seen_at) < AG_FACE_HERE_MS;
       const face = m.emoji || "";
-      const who = (m.name || "Someone") + (me ? " (you)" : "");
+      const needsFace = me && !face;
+      const who = (m.name || "Someone") + (me ? " (you)" : "")
+                + (needsFace ? " — pick your face" : "");
       return `<button class="ag-face ${here ? "here" : ""} ${me ? "me" : ""}" type="button" role="listitem"
         data-ag="face" data-arg="${agEsc(m.member_id || "")}"
+        ${needsFace ? 'data-pickme="1"' : ""}
         aria-label="${agEsc(who)}${here ? ", here now" : ""}" title="${agEsc(who)}">
         ${face ? `<span class="e" aria-hidden="true">${agEsc(face)}</span>`
                : `<span class="i" aria-hidden="true">${agEsc(agInitials(m.name))}</span>`}</button>`;
@@ -2662,6 +2665,15 @@ async function agDelApi(path){
   return r.json();
 }
 
+/* The sentence a person should read, without the debug tail. apiPost's _fail appends
+   " (/api/... -> 400)" so a developer can tell a refused token from a broken server; that is
+   the right call for a log and the wrong thing to put in front of somebody who just clicked an
+   emoji. The status is still on err.status for anyone who needs it. */
+function agWhy(e){
+  const m = String((e && e.message) || e || "").trim();
+  return m.replace(/\s*\([^()]*->\s*\d{3}\)\s*$/, "") || "That did not work.";
+}
+
 function agToast(msg){
   if (typeof document === "undefined") return;
   let t = document.getElementById("agToast");
@@ -3491,7 +3503,11 @@ async function agAction(act, el){
       const meId = (ws.me && ws.me.member_id) || "";
       const row = (ws.members || []).find(m => m && m.member_id === arg);
       if (!row){ agToast("That person is no longer on the workspace."); break; }
-      if (arg && arg === meId){
+      /* YOUR OWN FACE OPENS THE PICKER ONLY WHILE YOU HAVE NONE. Once picked it is yours for
+         good (owner, 2026-09-11), so afterwards your face behaves like everybody else's and
+         just says who you are. The server refuses a second pick too; this only keeps the UI
+         from offering something that would be turned down. */
+      if (arg && arg === meId && !String(row.emoji || "").trim()){
         a.facePick = a.facePick ? null : { loading: true, faces: [], names: {}, free: [] };
         agDraw();
         if (a.facePick){
@@ -3508,7 +3524,7 @@ async function agAction(act, el){
     }
     case "facepick": {
       try { await agPostApi("/workspace/face", { emoji: arg }); }
-      catch (e) { agToast(String(e.message || e)); break; }
+      catch (e) { agToast(agWhy(e)); break; }
       a.facePick = null;
       a.ws = await agApi("/workspace").catch(() => a.ws);
       agDraw();
