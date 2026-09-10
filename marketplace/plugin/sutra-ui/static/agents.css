@@ -11,7 +11,8 @@
 /* ── agent column ─────────────────────────────────────────────────────────── */
 .ag-side{width:232px;flex:none;border-right:1px solid var(--line-soft);display:flex;
   flex-direction:column;min-height:0;background:var(--surface)}
-.ag-agent{display:flex;align-items:center;gap:9px;padding:12px 12px 10px;border-bottom:1px solid var(--line-soft)}
+/* flex-wrap so the faces row drops onto its own line under the name, rather than squeezing it. */
+.ag-agent{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 12px 10px;border-bottom:1px solid var(--line-soft)}
 .ag-mark{width:28px;height:28px;border-radius:8px;background:var(--acc-bg);color:var(--acc);
   display:grid;place-items:center;flex:none;font:700 12px/1 var(--serif)}
 .ag-agent b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.2}
@@ -19,6 +20,45 @@
 .ag-agent .dot{width:6px;height:6px}
 .ag-agent .dot.warn{background:var(--warn)}
 .ag-agent .dot.bad{background:var(--block)}
+/* THE ROW OF FACES. Sits under the agent's name in the header, so it reads as "who is on this"
+   rather than a widget parked in a corner. Overlapping by a few px is deliberate: it reads as
+   one group at a glance, which a row of evenly spaced circles does not. */
+/* SPACED, NOT OVERLAPPED. Overlapping avatars are a pattern for twenty faces in a strip; at
+   five they just collide, and the "here now" ring on one lands on top of its neighbour. */
+.ag-faces{display:flex;align-items:center;gap:4px;flex-basis:100%;margin-top:10px;flex-wrap:wrap}
+.ag-face{width:26px;height:26px;flex:none;border-radius:50%;cursor:pointer;padding:0;
+  background:var(--inset);border:1px solid var(--line);color:var(--muted);
+  display:grid;place-items:center;font:600 9.5px/1 var(--sans);
+  transition:transform .1s ease,border-color .1s ease}
+.ag-face .e{font-size:14px;line-height:1}
+.ag-face:hover{transform:translateY(-1px);border-color:var(--acc)}
+.ag-face:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Seen in the last five minutes. ONE thin ring, not a ring plus a halo: three lit faces out of
+   five was reading as an alarm rather than as presence. */
+.ag-face.here{border-color:var(--ok)}
+/* You are marked by a filled ground, not another ring, so "you" and "here" stay tellable apart. */
+.ag-face.me{background:var(--acc-bg);border-color:var(--acc)}
+.ag-face.me.here{border-color:var(--ok)}
+.ag-face.more{background:none;border-style:dashed;cursor:default;font-size:9px}
+
+/* The picker, under the header while it is open. */
+.ag-facepick{margin:0 10px 8px;padding:9px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card)}
+.ag-facepick .hd{display:flex;align-items:center;font:600 10.5px/1 var(--sans);
+  color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.ag-facepick .hd .x{margin-left:auto;background:none;border:0;color:var(--faint);cursor:pointer;
+  font-size:15px;line-height:1;padding:0 2px}
+.ag-facepick .hd .x:hover{color:var(--ink)}
+.ag-facepick .ld{font-size:11.5px;color:var(--faint)}
+.ag-facepick .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.ag-facepick .f{aspect-ratio:1;border:1px solid transparent;border-radius:7px;cursor:pointer;
+  background:none;font-size:15px;line-height:1;display:grid;place-items:center;padding:0}
+.ag-facepick .f:hover{background:var(--acc-bg);border-color:var(--acc)}
+.ag-facepick .f:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Taken is dimmed, not disabled: past 32 people somebody HAS to share one. */
+.ag-facepick .f.taken{opacity:.34}
+.ag-facepick .f.taken:hover{opacity:.8}
+
 .ag-side .newBtn{margin:10px 10px 4px}
 .ag-sec{font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
   padding:10px 16px 5px}

@@ -93,8 +93,25 @@
      224px track and the DETAIL crammed into the plane's 240px track (clipped,
      third track empty) -- the overlap the founder reported. Collapsed, two
      tracks remain (detail + terminal); the 46px pad hosts the railShow strip. */
-  .app.threecol.railcol{grid-template-columns:minmax(0,1fr) var(--termw, 0px);padding-left:46px}
-  .app.threecol.railcol .rail,.app.threecol.railcol .plane{display:none}
+  /* COLLAPSING HIDES THE SUTRA NAV ONLY. THE PLANE STAYS (owner, 2026-09-10: "it is also
+     collapsing the chat one; I don't want the chat to get collapsed, I only want the left part,
+     the Sutra thing, to get collapsed").
+
+     This replaces a blunter rule that hid BOTH lanes. That rule existed for a real reason: with
+     the 4-track grid left intact, hiding only the rail let the plane slide into the rail's track
+     and the detail crammed into the plane's -- the overlap the owner reported. Hiding both was
+     the cheap way out.
+
+     The honest fix is to drop exactly ONE track, so every remaining lane keeps its own:
+         open       rail | plane | detail | term
+         collapsed         plane | detail | term
+     The plane keeps its 240px, the detail keeps minmax(0,1fr), and nothing can slide into a
+     track that no longer exists. test_nav proves the overlap does not come back. */
+  .app.threecol.railcol{grid-template-columns:240px minmax(0,1fr) var(--termw, 0px);padding-left:46px}
+  .app.threecol.railcol .rail{display:none}
+  /* A destination with no plane has one lane fewer to begin with, so collapsed it is just
+     detail + terminal. Without this it would keep a 240px gutter with nothing in it. */
+  .app.threecol.railcol.noplane{grid-template-columns:minmax(0,1fr) var(--termw, 0px)}
   .plane{background:var(--card);border:1px solid var(--line-soft);border-radius:var(--r);
          display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .planehead{display:flex;align-items:center;gap:8px;height:40px;flex:none;
@@ -495,7 +512,7 @@
      when the row wraps (43px -> 76px) -- an offset measured from the pane bottom
      would drift the moment a control wrapped. No absolutely positioned descendant
      lives in here, so nothing else moves. */
-  .pc{border-top:1px solid var(--line-soft);padding:8px 10px;display:flex;
+  .pc{border-top:1px solid var(--line-soft);padding:10px 12px;display:flex;
       align-items:center;gap:8px;flex-wrap:wrap;position:relative}
   /* THE BOX YOU TYPE IN HAS TO LOOK LIKE A BOX YOU TYPE IN (owner, 2026-09-10: "the chat bar is
      always supposed to be highlighted, so the user knows where the chat bar is"). It was
@@ -505,8 +522,8 @@
      focus ring is border + halo rather than an outline, which is the shape the rest of the app
      already uses for a focused field, and it is why the outline rule below is left switched off:
      two rings on one control is worse than none. */
-  .pc input,.pc textarea{flex:1;min-width:0;color:var(--ink);font:400 12px var(--sans);
-    background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:8px 11px;
+  .pc input,.pc textarea{flex:1;min-width:0;color:var(--ink);font:400 13px var(--sans);
+    background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:10px 13px;
     outline:none;transition:border-color .12s ease,box-shadow .12s ease}
   .pc input:hover,.pc textarea:hover{border-color:var(--acc)}
   .pc input:focus,.pc textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
@@ -519,8 +536,16 @@
      outline on top of that gives the most-used control in the app two rings. The comment above
      this rule used to explain why it existed; the reason is now met by a stronger treatment. */
   .pc input::placeholder,.pc textarea::placeholder{color:var(--faint)}
-  .send{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
+  .send{width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);border:0;
         display:grid;place-items:center;cursor:pointer;flex:none}
+  /* THE COMPOSER'S OWN CONTROLS ARE BIGGER THAN THE REST (owner, 2026-09-10: "the three dots,
+     attach a file and all could be bigger accordingly"). Scoped to .pc on purpose: .ib is the
+     icon button used in every pane header too, and those are fine at 3px padding. Only the row
+     you actually reach for grows. One notch, not two -- a taller bar eats the conversation
+     above it, and with two panes open that is the space being read. */
+  .pc .ib{padding:6px;border-radius:6px}
+  .pc .ib svg{width:16px;height:16px}
+  .pc .uchip{padding:7px 9px;font-size:11.5px}
   .send:hover{background:var(--acc);color:var(--on-acc)}
   .send:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   .tabs{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-left:auto}
@@ -836,6 +861,13 @@
      SIBLING of .pb, not inside it. Collapsing a session that had spawned
      subagents therefore left the whole fold rendering inside the 38px strip,
      wrapping one letter per line. Found by driving design/app-preview.html. */
+  /* The fold at the top of a long transcript. Quiet: it is a doorway, not a call to action. */
+  .turnmore{display:block;width:100%;margin:0 0 14px;padding:9px 12px;cursor:pointer;
+    background:var(--inset);border:1px dashed var(--line);border-radius:9px;
+    color:var(--muted);font:500 11.5px/1.4 var(--sans);text-align:center}
+  .turnmore:hover{border-color:var(--acc);color:var(--ink)}
+  .turnmore:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .turnmore span{display:block;margin-top:2px;color:var(--faint);font-weight:400;font-size:10.5px}
   .pane.collapsed .pb,.pane.collapsed .pc,.pane.collapsed .tabs,
   .pane.collapsed .src,.pane.collapsed .agents,
   .pane.collapsed [data-close]{display:none}

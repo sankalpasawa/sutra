@@ -49,7 +49,7 @@ CACHE_RETRY_WAITS = (1.5, 3.0)
 
 # Bump this when you add a MIGRATIONS entry, never on its own. The two must move together:
 # the version says what the code expects, the list says how to get there.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # The ten tables every workspace has, whatever version it is on: the nine from WORKSPACE-PLAN
 # section 3, plus the log. A workspace missing one of these is broken, at any version.
@@ -126,6 +126,16 @@ MIGRATIONS = [
      "create policy brand_inputs_all on public.brand_inputs for all to anon, authenticated"
      " using (workspace_id = public.current_workspace_id())"
      " with check (workspace_id = public.current_workspace_id());\n"
+     "notify pgrst, 'reload schema';"),
+    # Added 2026-09-10. A member row held a name and nothing to look at, so "who is on this
+    # workspace" could only ever be a list of words. One emoji per person turns it into a row of
+    # faces you can read at a glance, and it is the one piece of identity a person actually
+    # chooses. Stored as text, not an index into a list: the pack can be reordered or added to
+    # later without every existing member silently becoming a different creature.
+    # Idempotent, so it is a no-op on a workspace created from today's schema.sql.
+    (4, "give every member a face, so the team is a row of icons and not a list of names",
+     "alter table public.members "
+     "add column if not exists emoji text not null default '';\n"
      "notify pgrst, 'reload schema';"),
 ]
 

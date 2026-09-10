@@ -540,7 +540,9 @@ if (typeof setInterval !== "undefined" && typeof document !== "undefined"
 
    The width lives in localStorage, not on the server: it is this window on this machine,
    and it has to be right on the first painted frame rather than after a round trip. */
-const RAIL_MIN = 176, RAIL_MAX = 420, RAIL_DEF = 224;
+/* 420 read as 'stretchy'; the rail is a lane you nudge, not a panel you pull across the
+   window (owner, 2026-09-10: "there should be a fixed length till which I can drag"). */
+const RAIL_MIN = 176, RAIL_MAX = 300, RAIL_DEF = 224;
 const RAIL_SHUT_AT = 132;      /* dragged narrower than this, it closes instead of getting silly */
 
 function railW(){

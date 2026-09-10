@@ -736,8 +736,10 @@ ok("the table that migration adds is reported as BEHIND, never as missing",
 ok("and it says an update is available, and what is not syncing until it is run",
    seen["needs_update"] is True and "version 2" in seen["reason"]
    and "types in" in seen["reason"], seen["reason"])
-ok("so migrate() is offered the step rather than blocked",
-   [v for v, _w, _sql in schema.pending(seen["schema_version"])] == [3],
+# BOTH steps now: 3 added brand_inputs, 4 added members.emoji (the faces, 2026-09-10). A
+# workspace on 2 is two migrations behind and must be offered them in order, not just the first.
+ok("so migrate() is offered every missing step, in order, rather than blocked",
+   [v for v, _w, _sql in schema.pending(seen["schema_version"])] == [3, 4],
    schema.pending(seen["schema_version"]))
 route(project())
 seen = schema.verify(URL, KEY)

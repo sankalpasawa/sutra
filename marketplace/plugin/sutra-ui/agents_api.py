@@ -1239,7 +1239,28 @@ def _ws_link(mods, s):
         return ""
 
 
-def _ws_announce(mods, member_id, name):
+def _ws_face(asked, name=""):
+    """The face this person ends up with: what they picked if it is real, otherwise one chosen
+    for them. Never raises and never refuses -- an avatar must not be able to block a join.
+
+    A face is validated against the pack rather than taken as free text, so nobody can arrive
+    with a flag, a skin tone, or a glyph that renders as a grey box on a teammate's machine.
+    """
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return ""
+    asked = (asked or "").strip()
+    if faces.is_known(asked):
+        return asked
+    try:
+        taken = [str(r.get("emoji") or "") for r in (_ws_members.get("rows") or [])]
+        return faces.suggest(taken, name)
+    except Exception:  # noqa: BLE001
+        return faces.DEFAULT
+
+
+def _ws_announce(mods, member_id, name, emoji=""):
     """Put this person in the `members` table, so section 3's "who is in it" has something to read.
 
     THIS ROUTES TO THE ENGINE AND WRITES NOTHING ITSELF. It used to build the row here, which made
@@ -1256,7 +1277,7 @@ def _ws_announce(mods, member_id, name):
     if client is None or not member_id:
         return
     try:
-        client.register_member(name)
+        client.register_member(name, emoji=(emoji or "") or None)
     except Exception:  # noqa: BLE001
         pass
     _ws_members["at"] = 0.0
@@ -1279,8 +1300,17 @@ def _ws_member_rows(mods):
     if now - _ws_members["at"] < _WS_MEMBERS_TTL:
         return list(_ws_members["rows"])
     try:
-        rows = client.select("members", order="joined_at", limit=50,
-                             columns="member_id,name,joined_at,last_seen_at") or []
+        # A WORKSPACE THAT HAS NOT MIGRATED YET HAS NO `emoji` COLUMN, and PostgREST answers a
+        # request for a column it does not have with a 400 -- which would take the whole member
+        # list down for everybody still on schema 3, including the owner's own live workspace on
+        # the day this shipped. Ask for the face, and fall back to the older shape if it is not
+        # there yet. The faces simply do not draw until the migration runs.
+        try:
+            rows = client.select("members", order="joined_at", limit=50,
+                                 columns="member_id,name,emoji,joined_at,last_seen_at") or []
+        except Exception:  # noqa: BLE001
+            rows = client.select("members", order="joined_at", limit=50,
+                                 columns="member_id,name,joined_at,last_seen_at") or []
     except Exception:  # noqa: BLE001
         # Offline, or asleep. Keep showing the last answer rather than telling him the team
         # emptied out because the wifi dropped.
@@ -1456,7 +1486,7 @@ def _ws_create_worker(url, key, name, member_id, member_name, token, confirm=Fal
                 client.update("workspace", {"id": ws_id}, {"name": name})
             except Exception:  # noqa: BLE001
                 pass          # the local name still shows; a display name is not worth failing on
-        _ws_announce(mods, member_id, member_name)
+        _ws_announce(mods, member_id, member_name, _ws_face("", member_name))
         _ws_forget_checks()
 
         _ws_say(phase="pack", step="Uploading the knowledge pack", pct=45,
@@ -1611,7 +1641,7 @@ def api_workspace_update(body: dict = Body(default={})):
 
 # ---- join --------------------------------------------------------------------------------
 
-def _ws_join_worker(url, key, ws_id, name, member_id):
+def _ws_join_worker(url, key, ws_id, name, member_id, emoji=""):
     mods = _ws()
     schema, pack, client, sync = mods["schema"], mods["pack"], mods["client"], mods["sync"]
     try:
@@ -1638,7 +1668,7 @@ def _ws_join_worker(url, key, ws_id, name, member_id):
         client.save_settings(workspace_url=url, workspace_key=key,
                              workspace_id=str(v.get("workspace_id") or ws_id),
                              member_id=member_id, member_name=name)
-        _ws_announce(mods, member_id, name)
+        _ws_announce(mods, member_id, name, emoji)
         _ws_forget_checks()
         try:
             row = client.one("workspace", columns="name") or {}
@@ -1696,6 +1726,10 @@ def api_workspace_join(body: dict = Body(...)):
 
     raw = str(body.get("link") or "").strip()
     name = str(body.get("name") or "").strip()[:80]
+    # The face is optional on the wire. A client that does not send one, or sends something not
+    # in the pack, gets a face chosen for them rather than a refusal -- an avatar is not worth
+    # blocking somebody's join over.
+    face = _ws_face(str(body.get("emoji") or ""), name)
     if not raw:
         return _bad("Paste the link your teammate sent you.")
     if not name:
@@ -1715,7 +1749,7 @@ def api_workspace_join(body: dict = Body(...)):
 
     _ws_start_job("join")
     member_id = _ws_member_id(mods)
-    if not _spawn("workspace", lambda: _ws_join_worker(url, str(key), str(ws_id), name, member_id)):
+    if not _spawn("workspace", lambda: _ws_join_worker(url, str(key), str(ws_id), name, member_id, face)):
         return _bad("A workspace job is already running. Wait for it to finish.", 409)
     return {"started": True}
 
@@ -1760,7 +1794,8 @@ def api_workspace(check: int = 0):
         "verify": checked,
         "workspace": {"name": _ws_name() or "The team workspace",
                       "url": s.get("workspace_url") or "", "id": s.get("workspace_id") or ""},
-        "me": {"member_id": s.get("member_id") or "", "name": s.get("member_name") or ""},
+        "me": {"member_id": s.get("member_id") or "", "name": s.get("member_name") or "",
+               "emoji": s.get("member_emoji") or ""},
         "members": _ws_member_rows(mods),
         "link": _ws_link(mods, s),
         "sync": {"pending": int(out.get("queued") or 0),
@@ -1774,6 +1809,55 @@ def api_workspace(check: int = 0):
                  "stuck": st.get("stuck") or None},
         "job": job,
     }
+
+
+@router.get("/workspace/faces")
+def api_workspace_faces():
+    """The faces a person may pick, which are still free, and which one to pre-select.
+
+    Served rather than hardcoded in the UI so the pack has ONE definition. A second copy in
+    JavaScript is a copy that drifts the first time a face is added.
+    """
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return {"faces": [], "names": {}, "free": [], "suggested": ""}
+    mods = _ws()
+    rows, name = [], ""
+    if mods:
+        try:
+            rows = _ws_member_rows(mods)
+            name = (_ws_settings(mods) or {}).get("member_name") or ""
+        except Exception:  # noqa: BLE001
+            rows = []
+    taken = [str(r.get("emoji") or "") for r in rows]
+    return {"faces": list(faces.FACES), "names": dict(faces.NAMES),
+            "free": faces.free(taken), "suggested": faces.suggest(taken, name)}
+
+
+@router.post("/workspace/face")
+def api_workspace_face(body: dict = Body(...)):
+    """Change the face you already have. Separate from join on purpose: picking one at join
+    time is a step in a flow, changing it later is a one-click edit, and folding the second
+    into the first would mean re-running a join to swap an emoji."""
+    mods = _ws()
+    if not _ws_ready(mods, "client"):
+        return _bad("The team workspace is not in this build of Sutra.", 501)
+    try:
+        if not mods["client"].configured():
+            return _bad("You are not in a workspace yet.")
+    except Exception:  # noqa: BLE001
+        return _bad("You are not in a workspace yet.")
+    asked = str(body.get("emoji") or "").strip()
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return _bad("This build has no face pack.")
+    if not faces.is_known(asked):
+        return _bad("Pick one of the faces on offer.")
+    s = _ws_settings(mods) or {}
+    _ws_announce(mods, s.get("member_id") or "", s.get("member_name") or "", asked)
+    return {"ok": True, "emoji": asked, "name": faces.name_of(asked)}
 
 
 @router.post("/workspace/dismiss")

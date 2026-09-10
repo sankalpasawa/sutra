@@ -173,7 +173,8 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, viewBusy: null, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, viewBusy: null, facePick: null,
+    notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
        counts have already been re-read, so one finished run re-reads them once. */
@@ -424,6 +425,77 @@ const AG_VIEW_WORD = { knowledge: "Knowledge", assets: "the asset ideas", memory
 function agViewLoadingHtml(view){
   return `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span>
     <span>Opening ${agEsc(AG_VIEW_WORD[view] || "this")}\u2026</span></div>`;
+}
+
+/* WHO ELSE IS ON THIS WORKSPACE (owner, 2026-09-10: "show icons of all the people who have
+   joined that workspace... I can click on each to know their name, including mine").
+
+   Renders ONLY when a workspace is joined. One face on your own is not a team, it is noise,
+   so a solo install shows nothing at all rather than a lonely circle.
+
+   `last_seen_at` is what makes this worth looking at: every client touches it once a minute,
+   so the ring says who is actually around, not just who once signed up. Somebody who has not
+   been seen for AG_FACE_HERE_MS is drawn flat.
+
+   The data comes off the workspace poll that already runs (20s server-side cache). No second
+   timer: "who is on the team" changes about twice a year. */
+const AG_FACE_HERE_MS = 5 * 60 * 1000;      /* seen within five minutes reads as "here now" */
+const AG_FACE_MAX = 6;                      /* past this, the rest become a "+N" */
+
+function agFaceAgo(iso){
+  const t = iso ? Date.parse(iso) : NaN;
+  return isFinite(t) ? Date.now() - t : Infinity;
+}
+
+function agFacesHtml(a){
+  const ws = a && a.ws;
+  if (!ws || !ws.configured) return "";
+  const rows = (ws.members || []).filter(m => m && (m.member_id || m.name));
+  if (rows.length < 1) return "";
+  const meId = (ws.me && ws.me.member_id) || "";
+  /* You first, then everyone else oldest-joined first. Seeing your own face where you expect
+     it is what tells you the row is about people and not decoration. */
+  rows.sort((x, y) => (x.member_id === meId ? -1 : y.member_id === meId ? 1 : 0));
+  const show = rows.slice(0, AG_FACE_MAX);
+  const rest = rows.length - show.length;
+  return `<div class="ag-faces" role="list" aria-label="Who is on this workspace">
+    ${show.map(m => {
+      const me = m.member_id === meId;
+      const here = agFaceAgo(m.last_seen_at) < AG_FACE_HERE_MS;
+      const face = m.emoji || "";
+      const who = (m.name || "Someone") + (me ? " (you)" : "");
+      return `<button class="ag-face ${here ? "here" : ""} ${me ? "me" : ""}" type="button" role="listitem"
+        data-ag="face" data-arg="${agEsc(m.member_id || "")}"
+        aria-label="${agEsc(who)}${here ? ", here now" : ""}" title="${agEsc(who)}">
+        ${face ? `<span class="e" aria-hidden="true">${agEsc(face)}</span>`
+               : `<span class="i" aria-hidden="true">${agEsc(agInitials(m.name))}</span>`}</button>`;
+    }).join("")}
+    ${rest > 0 ? `<span class="ag-face more" title="${agEsc(rows.slice(AG_FACE_MAX).map(m => m.name || "Someone").join(", "))}">+${rest}</span>` : ""}
+  </div>`;
+}
+
+/* The fallback when somebody has no face yet -- a teammate on an older Sutra, or a workspace
+   whose migration has not run. Never leaves an empty circle. */
+/* The picker. Free faces first and marked as such, so five people end up with five different
+   ones without anybody having to coordinate. Taking one somebody else has is allowed -- past 32
+   people it has to be -- it just is not the default. */
+function agFacePickHtml(a){
+  const p = a && a.facePick;
+  if (!p) return "";
+  if (p.loading) return `<div class="ag-facepick"><span class="ld">Reading the faces…</span></div>`;
+  const free = new Set(p.free || []);
+  return `<div class="ag-facepick">
+    <div class="hd">Pick your face<button class="x" type="button" data-ag="face" data-arg="${agEsc((a.ws && a.ws.me && a.ws.me.member_id) || "")}" aria-label="Close">×</button></div>
+    <div class="grid">${(p.faces || []).map(f => `<button type="button" class="f ${free.has(f) ? "" : "taken"}"
+      data-ag="facepick" data-arg="${agEsc(f)}" title="${agEsc((p.names || {})[f] || "")}${free.has(f) ? "" : " · already taken"}"
+      aria-label="${agEsc((p.names || {})[f] || f)}">${agEsc(f)}</button>`).join("")}</div>
+  </div>`;
+}
+
+function agInitials(name){
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
 function agGlyph(e){
@@ -1111,7 +1183,9 @@ function agSideHtml(a){
     <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
       <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
+      ${agFacesHtml(a)}
     </div>
+    ${agFacePickHtml(a)}
     <button class="newBtn" type="button" data-ag="new">${AG_ICON.plus} New chat</button>
     <div class="ag-sec">Recent</div>
     <div class="ag-chats">${chats.length ? chats.map(c => {
@@ -2812,17 +2886,125 @@ function agGrow(ta){
    A Library row being written counts as live too. It is the same timer and the same two speeds,
    not a second clock: watching a row fill in is exactly the case the fast cadence was built for,
    and the milestones would otherwise never appear without a manual reload. */
+/* ── notifications ────────────────────────────────────────────────────────────────────────
+   Owner asked for these on 2026-09-10: "let's say we checked on the update content and it is
+   done, then a notification would happen saying it is done".
+
+   THE ONE RULE: only tell somebody about a thing they are NOT watching. A notification for
+   something happening on screen in front of you is noise, and noise is how people turn
+   notifications off permanently -- after which the one that mattered never arrives either.
+   So every notification here is gated on the window not having focus.
+
+   WHAT QUALIFIES: a run that finished, failed, or is now waiting on an answer, and a catalogue
+   refresh that finished. Never step-by-step progress: "Reading page 340 of 11,000" is exactly
+   the kind of thing that makes a person switch them off.
+
+   PERMISSION IS ASKED LATE, AND THAT IS DELIBERATE. macOS prompts the first time a page asks.
+   Asking on launch, before the person has any idea what Sutra would tell them, reliably gets a
+   "no" that is then hard to undo. Asking the first time something genuinely took a while means
+   the request arrives with a visible reason attached. */
+const AG_NOTIFY_MIN_MS = 20000;   /* under this it was not a wait, and a toast would have done */
+
+/* Is there work whose ending is worth interrupting somebody for? Also decides whether a hidden
+   window keeps polling, which is why it lives here and not inside the notifier. */
+function agWatching(a){
+  if (!a) return false;
+  return !!(agLiveRun() || agRefreshLive(a.refresh) || agWsJobLive(a.ws)
+            || (a.view === "library" && agLibWriting(a)));
+}
+
+function agNotifyReady(){
+  return typeof Notification === "function" && typeof document !== "undefined";
+}
+
+/* Fire one, if this person can be told and is not already looking at it. */
+function agNotify(key, title, body, onClick){
+  if (!agNotifyReady()) return;
+  const S_ = agS(); if (!S_) return;
+  S_.notified = S_.notified || {};
+  if (S_.notified[key]) return;             /* a poll must not fire the same news twice */
+  S_.notified[key] = true;
+  /* THE GATE. hasFocus() is the honest test in Electron: a window can be fully visible on a
+     second monitor while the person works in another app, and document.hidden is false for
+     exactly that case. */
+  if (document.hasFocus && document.hasFocus()) return;
+  const show = () => {
+    try {
+      const n = new Notification(title, { body: body || "", tag: key, silent: false });
+      n.onclick = () => {
+        try { window.focus(); } catch (e) {}
+        if (typeof onClick === "function") onClick();
+      };
+    } catch (e) { /* a shell with no notification support is not an error worth showing */ }
+  };
+  if (Notification.permission === "granted") return show();
+  if (Notification.permission === "denied") return;      /* asked once, told no; never nag */
+  try { Notification.requestPermission().then(p => { if (p === "granted") show(); }); }
+  catch (e) {}
+}
+
+/* Watch the runs between polls and speak only on a TRANSITION. Comparing against what was true
+   last tick is what stops a run that has been waiting for an hour re-announcing itself every
+   four seconds. */
+function agNotifyPass(a){
+  if (!a || !agNotifyReady()) return;
+  a.runSeen = a.runSeen || {};
+  const runs = (a.chat && a.chat.runs) || [];
+  for (const r of runs){
+    if (!r || !r.run_id) continue;
+    const was = a.runSeen[r.run_id];
+    a.runSeen[r.run_id] = r.status;
+    if (was === undefined || was === r.status) continue;   /* first sight, or nothing moved */
+    /* Only a run that actually took a while. A three-second run ending is not news. */
+    const ms = (r.finished_at ? Date.parse(r.finished_at) : Date.now())
+             - (r.started_at ? Date.parse(r.started_at) : Date.now());
+    const worth = !isFinite(ms) || ms >= AG_NOTIFY_MIN_MS;
+    const open = () => { a.view = "chat"; agLoadChat(a.chatId, true); };
+    const topic = (r.topic || "").trim();
+    if (r.status === "waiting")
+      agNotify("w:" + r.run_id + ":" + (r.waiting_on && r.waiting_on.call_id || ""),
+               "Sutra needs an answer",
+               (r.waiting_on && r.waiting_on.question) || "It cannot carry on until you reply.", open);
+    else if (r.status === "done" && worth)
+      agNotify("d:" + r.run_id, "Your article is ready to read",
+               topic ? topic : "The draft is written and saved to the Library.", open);
+    else if ((r.status === "failed" || r.status === "error") && worth)
+      agNotify("f:" + r.run_id, "Sutra stopped",
+               r.error || (topic ? "The run on " + topic + " could not finish." : "The run could not finish."), open);
+  }
+  /* The catalogue refresh: the owner's own example, and the strongest case for a notification,
+     because it takes minutes and you are meant to go and do something else. */
+  const rf = a.refresh;
+  if (rf && rf.finished_at && !agRefreshLive(rf)){
+    const n = rf.counts || rf || {};
+    const bits = [];
+    if (n.new != null) bits.push(n.new + " new");
+    if (n.gone != null) bits.push(n.gone + " gone");
+    if (n.changed != null) bits.push(n.changed + " changed");
+    agNotify("r:" + rf.finished_at, "Knowledge is up to date",
+             bits.length ? bits.join(", ") : "The catalogue has been refreshed.",
+             () => { a.view = "knowledge"; agDraw(true); });
+  }
+}
+
 function agStartPoll(){
   if (agPollTimer) return;
   const tick = async () => {
     agPollTimer = null;
     if (!agRoot()){ return; }
     const a = agS();
-    if (!(typeof document !== "undefined" && document.hidden)){
+    /* A HIDDEN WINDOW STILL POLLS WHILE SOMETHING IS RUNNING. It used to skip entirely, which
+       was right when nothing depended on it: a minimised window has nothing to repaint. It is
+       wrong now that a finished run has to raise a notification, because the whole point of
+       that notification is that you are NOT looking -- and a poll that only runs while you
+       watch would tell you the draft is ready at the moment you come back to find it. Idle and
+       hidden still skips, so an app left open overnight costs nothing. */
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (!hidden || agWatching(a)){
       try { await agRefresh(); } catch (e) { a.error = String(e && e.message || e); }
     }
-    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a)) || agWsJobLive(a && a.ws)
-      || agRefreshLive(a && a.refresh);
+    try { agNotifyPass(a); } catch (e) { /* never let a notification break the poll */ }
+    const live = agWatching(a);
     agPollTimer = setTimeout(tick, live ? AG_POLL_LIVE_MS : AG_POLL_IDLE_MS);
   };
   agPollTimer = setTimeout(tick, 400);
@@ -3302,6 +3484,37 @@ async function agAction(act, el){
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
     case "step": a.stepOpen[arg] = !a.stepOpen[arg]; agDraw(); break;
     case "chatmenu": a.chatMenu = arg || null; agDraw(); break;
+    /* CLICKING A FACE. Somebody else's says who they are and when they were last here. Your
+       own opens the picker, because the one face a person wants to change is theirs. */
+    case "face": {
+      const ws = a.ws || {};
+      const meId = (ws.me && ws.me.member_id) || "";
+      const row = (ws.members || []).find(m => m && m.member_id === arg);
+      if (!row){ agToast("That person is no longer on the workspace."); break; }
+      if (arg && arg === meId){
+        a.facePick = a.facePick ? null : { loading: true, faces: [], names: {}, free: [] };
+        agDraw();
+        if (a.facePick){
+          try { a.facePick = Object.assign({ loading: false }, await agApi("/workspace/faces")); }
+          catch (e) { a.facePick = null; agToast("The face list could not be read."); }
+          agDraw();
+        }
+        break;
+      }
+      const ago = agFaceAgo(row.last_seen_at);
+      agToast((row.name || "Someone") + (ago < AG_FACE_HERE_MS ? " · here now"
+              : isFinite(ago) ? " · last seen " + agAgo(row.last_seen_at) : ""));
+      break;
+    }
+    case "facepick": {
+      try { await agPostApi("/workspace/face", { emoji: arg }); }
+      catch (e) { agToast(String(e.message || e)); break; }
+      a.facePick = null;
+      a.ws = await agApi("/workspace").catch(() => a.ws);
+      agDraw();
+      agToast("That is you now.");
+      break;
+    }
     case "chatdel": {
       a.chatMenu = null;
       try { await agDelApi(`/chats/${encodeURIComponent(arg)}`); }

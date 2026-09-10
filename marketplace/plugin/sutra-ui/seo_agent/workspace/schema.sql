@@ -49,7 +49,7 @@ begin;
 create table if not exists public.workspace (
   id             uuid        primary key default gen_random_uuid(),
   name           text        not null default 'Team workspace',
-  schema_version integer     not null default 3,
+  schema_version integer     not null default 4,
   -- TWO COUNTERS, NOT ONE, and the reason is that the two halves of the pack publish on
   -- different terms (2026-09-10). The pack is split: a 33.6 MB core, rebuilt and re-uploaded
   -- on EVERY refresh, and a 171.5 MB index, republished only when its content hash moves. One
@@ -95,7 +95,7 @@ create unique index if not exists workspace_single_row on public.workspace ((tru
 -- there through the MIGRATIONS list, because `create table if not exists` will not add a
 -- column to a table that already exists. That is the whole reason the list exists.
 insert into public.workspace (name, schema_version)
-select 'Team workspace', 3
+select 'Team workspace', 4
 where not exists (select 1 from public.workspace);
 
 -- Every other table defaults its workspace_id to this and every policy compares against it.
@@ -230,6 +230,9 @@ create table if not exists public.members (
   member_id    text        primary key,
   workspace_id uuid        not null default public.current_workspace_id(),
   name         text        not null default '',
+  -- The face they picked, stored as the emoji itself rather than an index into a list, so the
+  -- pack can be reordered or extended without turning everybody into a different creature.
+  emoji        text        not null default '',
   joined_at    timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
@@ -565,7 +568,7 @@ notify pgrst, 'reload schema';
 --   policies_armed | 13
 --   bucket_ready   | true
 --   workspace_id   | <a uuid>
---   schema_version | 3
+--   schema_version | 4
 --   verdict        | Workspace ready. Copy the workspace id above into Sutra.
 --
 -- Anything other than "Workspace ready" names the missing piece, and running the script a

@@ -2857,11 +2857,21 @@ async function atest(name, fn){
     a.library = [{ id: "x", status: "ready" }];
     assert.strictEqual(A.agLibWriting(a), false);
     assert.strictEqual(A.agLibWriting({}), false, "and an empty screen is not 'writing'");
-    /* the fast/idle choice is one expression over both, so there is no second clock */
+    /* THE FAST/IDLE CHOICE IS STILL ONE EXPRESSION OVER ALL OF THEM, so there is no second
+       clock. It moved into agWatching() on 2026-09-10 because a second caller appeared: a
+       hidden window has to keep polling while work is live, or a finished run could not raise
+       a notification. Same predicate, one definition, two readers. */
     const src = fs.readFileSync(path.join(__dirname, "static", "js", "17-agents.js"), "utf8");
+    const watch = src.slice(src.indexOf("function agWatching"), src.indexOf("function agNotifyReady"));
+    assert.ok(/agLiveRun\(\)/.test(watch) && /agLibWriting\(a\)/.test(watch)
+              && /agRefreshLive\(a\.refresh\)/.test(watch) && /agWsJobLive\(a\.ws\)/.test(watch),
+              "agWatching must cover every kind of live work: " + watch);
     const poll = src.slice(src.indexOf("function agStartPoll"), src.indexOf("function agStopPoll"));
-    assert.ok(/agLiveRun\(\) \|\| \(a && a\.view === "library" && agLibWriting\(a\)\)/.test(poll),
-              "the Library case rides the existing cadence: " + poll.slice(poll.indexOf("const live")));
+    assert.ok(/const live = agWatching\(a\);/.test(poll),
+              "the poll's cadence reads that one predicate and nothing else");
+    assert.ok(/if \(!hidden \|\| agWatching\(a\)\)/.test(poll),
+              "a hidden window keeps polling while work is live, or the notification arrives "
+              + "only when you come back and no longer need it");
     assert.strictEqual((poll.match(/setInterval/g) || []).length, 1, "still exactly one interval");
   });
 
@@ -3409,3 +3419,104 @@ async function atest(name, fn){
   console.log("agents screen: " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();
+
+/* ── notifications (2026-09-10) ────────────────────────────────────────────────
+   The design is one rule -- only tell somebody about work they are NOT watching -- so these
+   tests are mostly about the times it must stay SILENT. A notifier that fires while you are
+   looking at the thing is how people switch notifications off for good, after which the one
+   that mattered never arrives either. */
+function withNotify(fn, opts){
+  opts = opts || {};
+  const fired = [];
+  const prevD = A.document, prevN = A.Notification;
+  A.document = { hidden: !!opts.hidden, hasFocus: () => !!opts.focused };
+  function FakeNotification(title, o){ fired.push({ title, body: (o || {}).body, tag: (o || {}).tag }); }
+  FakeNotification.permission = opts.permission || "granted";
+  FakeNotification.requestPermission = () => Promise.resolve(opts.permission || "granted");
+  A.Notification = FakeNotification;
+  try { fn(fired); } finally { A.document = prevD; A.Notification = prevN; }
+  return fired;
+}
+
+test("a run that finishes while you are looking at it says NOTHING", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r9: "running" };
+  a.chat = { runs: [{ run_id: "r9", status: "done", topic: "Cost per hire",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:20:00Z" }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: true });
+  assert.strictEqual(fired.length, 0, "focused means you already know");
+});
+
+test("the same run finishing while you are elsewhere DOES notify, once", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r9: "running" };
+  a.chat = { runs: [{ run_id: "r9", status: "done", topic: "Cost per hire",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:20:00Z" }] };
+  const fired = withNotify(() => { A.agNotifyPass(a); A.agNotifyPass(a); A.agNotifyPass(a); },
+                           { focused: false });
+  assert.strictEqual(fired.length, 1, "three polls, one notification");
+  assert.ok(/ready to read/i.test(fired[0].title), fired[0].title);
+  assert.ok(/Cost per hire/.test(fired[0].body), fired[0].body);
+});
+
+test("a three-second run is not news", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r1: "running" };
+  a.chat = { runs: [{ run_id: "r1", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:00:03Z" }] };
+  assert.strictEqual(withNotify(() => A.agNotifyPass(a), { focused: false }).length, 0);
+});
+
+test("a run WAITING on an answer notifies however short it was", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r2: "running" };
+  a.chat = { runs: [{ run_id: "r2", status: "waiting",
+                      started_at: "2026-09-10T10:00:00Z",
+                      waiting_on: { call_id: "k1", question: "What is the topic?" } }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1, "being blocked on you is always worth saying");
+  assert.ok(/needs an answer/i.test(fired[0].title));
+  assert.ok(/What is the topic\?/.test(fired[0].body), fired[0].body);
+});
+
+test("a run seen for the FIRST time never notifies, however it looks", () => {
+  /* Opening the app to a chat whose run finished last week must not announce it. */
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = {};
+  a.chat = { runs: [{ run_id: "old", status: "done", topic: "Last week",
+                      started_at: "2026-09-01T10:00:00Z", finished_at: "2026-09-01T11:00:00Z" }] };
+  assert.strictEqual(withNotify(() => A.agNotifyPass(a), { focused: false }).length, 0);
+  /* and it is remembered, so it cannot fire on the next pass either */
+  assert.strictEqual(a.runSeen.old, "done");
+});
+
+test("a failure names what broke", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r3: "running" };
+  a.chat = { runs: [{ run_id: "r3", status: "failed", error: "the site refused the crawl",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:05:00Z" }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1);
+  assert.ok(/the site refused the crawl/.test(fired[0].body), fired[0].body);
+});
+
+test("permission denied means silence, never a second ask", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r4: "running" };
+  a.chat = { runs: [{ run_id: "r4", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:30:00Z" }] };
+  assert.strictEqual(
+    withNotify(() => A.agNotifyPass(a), { focused: false, permission: "denied" }).length, 0);
+});
+
+test("a shell with no Notification support never throws", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r5: "running" };
+  a.chat = { runs: [{ run_id: "r5", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:30:00Z" }] };
+  const prevN = A.Notification, prevD = A.document;
+  A.Notification = undefined; A.document = { hasFocus: () => false };
+  try { A.agNotifyPass(a); } finally { A.Notification = prevN; A.document = prevD; }
+});
+
+test("a finished catalogue refresh reports the real counts", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = {};
+  a.chat = { runs: [] };
+  a.refresh = { finished_at: "2026-09-10T12:00:00Z", counts: { new: 37, gone: 4, changed: 112 } };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1);
+  assert.ok(/37 new/.test(fired[0].body) && /4 gone/.test(fired[0].body)
+            && /112 changed/.test(fired[0].body), fired[0].body);
+});
