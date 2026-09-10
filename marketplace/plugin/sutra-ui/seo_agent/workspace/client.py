@@ -58,6 +58,14 @@ from ._common import (NotConfigured, TIMEOUT, UPLOAD_TIMEOUT, TableMissing,
 SETTINGS = ("workspace_url", "workspace_key", "workspace_id", "workspace_name",
             "member_id", "member_name", "last_seen_id")
 
+# NO TOKEN IS STORED, and it is not a security compromise we are making — it is that nobody
+# should ever be asked for one twice. See schema.MIGRATIONS: a workspace created by this build is
+# born current, so the only workspaces a migration can apply to are ones made before the change
+# that needs it. That is a population that shrinks to nothing, and it was never worth a stored
+# admin credential. (2026-09-10, the owner: "I don't think the token being saved is a point, the
+# question is do we even let the user update this.")
+
+
 # How often heartbeat() is allowed to actually write. The Connections tab polls about once a
 # second; a write per poll would be 3,600 pointless updates an hour per person. A minute is
 # fine because the only question it answers is "who is around", and "around" is not a

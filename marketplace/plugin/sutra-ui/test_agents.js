@@ -1577,48 +1577,33 @@ test("nothing says the workspace is ready until the server says the job is done"
   assert.ok(/Your workspace is ready/.test(done) && /every table checked/.test(done));
 });
 
-/* A workspace made before a table existed. Added 2026-09-10, when pricing.md moved onto the live
-   pipe and needed a table the owner's real workspace does not have: the setup script cannot add
-   one, because every statement in it is `create ... if not exists` and his tables are already
-   there. Only the migration steps can, and nothing runs those unasked. */
+/* NO UPDATE BUTTON, and this asserts its ABSENCE on purpose (2026-09-10).
+
+   There was one for about an hour. A workspace created by this build is born current, so a
+   migration can only ever apply to one made before the change that needs it — on the day this was
+   written, exactly one workspace in the world. Database maintenance on a person's screen for that
+   was the wrong trade, and the owner said so.
+
+   The signal itself is kept, because the engine still needs to know: a workspace a version behind
+   is still ok, everything else keeps syncing, and sync.push declines rather than queues a row that
+   workspace cannot take. What must not come back is a button asking somebody to act on it. */
 const WS_CONNECTED = { configured: true, link: "sutra-ws-eyJ1IjoiaHR0cHM6Ly94In0",
   workspace: { name: "Testlify", url: "https://abcdefghijklmnop.supabase.co", id: "w1" },
   members: [{ member_id: "m1", name: "Devansh", last_seen_at: new Date().toISOString() }],
   me: { member_id: "m1", name: "Devansh" }, sync: { pending: 0, pack_state: "idle" } };
 
-test("a workspace a version behind offers the update, and is still drawn as connected", () => {
+test("a workspace a version behind is drawn as connected, and is never asked to do maintenance", () => {
   const ws = wsdoc(Object.assign({}, WS_CONNECTED, {
-    verify: { ok: true, needs_update: true, schema_version: 2 } }));
-  const html = A.agWsHtml(ws, null);
-  assert.ok(/data-ag="wsupdate"/.test(html), "the button is there");
-  assert.ok(/version 2/.test(html), "and it says which version it is on");
-  assert.ok(/dot ok"><\/i>connected/.test(html),
-    "STILL CONNECTED: verify says ok, and everything that already synced goes on syncing");
-  assert.ok(!/not finished/.test(html), "a newer Sutra growing a table is not a broken workspace");
-  assert.ok(/data-ag="wscopylink"/.test(html), "and the link is untouched");
-});
-
-test("the same news from the sync side shows the offer once, not twice", () => {
-  const both = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, {
     verify: { ok: true, needs_update: true, schema_version: 2 },
     sync: { pending: 1, pack_state: "idle",
-            needs_update: { kind: "brand_inputs", have: 2, needs: 3,
-                            why: "A price you saved is waiting for this update." } } })), null);
-  assert.strictEqual((both.match(/data-ag="wsupdate"/g) || []).length, 1, "one button, not two");
-  assert.ok(/A price you saved is waiting/.test(both), "and it uses the reason it was given");
-
-  /* sync alone is enough: somebody has already saved something that could not be sent */
-  const syncOnly = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, {
-    verify: { ok: true },
-    sync: { pending: 1, pack_state: "idle",
-            needs_update: { kind: "brand_inputs", have: 2, needs: 3, why: "Waiting." } } })), null);
-  assert.ok(/data-ag="wsupdate"/.test(syncOnly), "either source is enough on its own");
-});
-
-test("a workspace that is up to date is never asked to update", () => {
-  const html = A.agWsHtml(wsdoc(Object.assign({}, WS_CONNECTED, { verify: { ok: true } })), null);
-  assert.ok(!/data-ag="wsupdate"/.test(html), "no offer when there is nothing to offer");
-  assert.ok(!/An update is available/.test(html));
+            needs_update: { kind: "brand_inputs", have: 2, needs: 3, why: "Waiting." } } }));
+  const html = A.agWsHtml(ws, null);
+  assert.ok(!/data-ag="wsupdate"/.test(html), "no update button, from either signal");
+  assert.ok(!/An update is available/.test(html) && !/Update workspace/.test(html));
+  assert.ok(!/version 2/.test(html), "and no schema versions on a person's screen");
+  assert.ok(/dot ok"><\/i>connected/.test(html), "it is connected, because it is");
+  assert.ok(!/not finished/.test(html), "a newer Sutra growing a table is not a broken workspace");
+  assert.ok(/data-ag="wscopylink"/.test(html), "and everything it could already do, it still does");
 });
 
 test("once it is made, the link is on the tab with a copy button, and stays there", () => {

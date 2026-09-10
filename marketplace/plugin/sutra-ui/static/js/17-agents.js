@@ -1914,41 +1914,28 @@ function agWsRestingHtml(ws, justDone){
       <div class="rm" style="margin-top:8px"><span>${n === 1 ? "1 person" : n + " people"}</span>${now ? `<span>${agEsc(now)}</span>` : ""}</div>
       ${agWsMembersHtml(ws.members, ws.me && ws.me.member_id)}
       ${agWsLinkRowHtml(ws.link)}
-      ${agWsUpdateHtml(ws)}
       <div class="row" style="margin-top:10px"><button class="btn" type="button" data-ag="wsleave">Leave the workspace</button>
         <span class="sp">your own copy stays exactly as it is</span></div>
     </div></div>`;
 }
 
-/* A WORKSPACE MADE BEFORE A TABLE EXISTED. Not broken, and deliberately not drawn as broken.
+/* NO "UPDATE WORKSPACE" BUTTON, DELIBERATELY. There was one for about an hour.
 
-   The setup script cannot add a table to a database whose tables are already there: every
-   statement in it is `create ... if not exists`. So a workspace made earlier can only get one
-   through the migration steps, and nothing runs those on its own — they need a token or a person
-   pasting, and both are somebody's choice.
+   A workspace created by this build is born current: schema.sql makes every table the code knows
+   about and stamps the current version. So a migration can only ever apply to a workspace made
+   BEFORE the change that needs it — a population that starts tiny and shrinks to nothing, and on
+   2026-09-10 was exactly one person, the owner, whose workspace predated the table added that
+   afternoon.
 
-   Everything that already synced goes on syncing; only the new thing waits. So this is one line
-   and one button inside the CONNECTED card, never a warning banner: verify() still says ok, and
-   telling somebody their working workspace is broken because a newer Sutra grew a table would be
-   a lie with a scary shape.
+   Putting database maintenance on his screen for that was the wrong trade. His words: "this
+   updating part was for us to do that one-off addition, which is not required for all days... I
+   don't think we should allow him to do it." Right: a person who set a workspace up once should
+   never be asked to run schema steps because we thought of a feature later.
 
-   Two sources say the same thing and either is enough: verify().needs_update is "you are a
-   version behind", sync.needs_update is "somebody already saved something that could not be
-   sent". Shown once. */
-function agWsUpdateHtml(ws){
-  const v = (ws.verify && ws.verify.needs_update) ? ws.verify : null;
-  const s = (ws.sync && ws.sync.needs_update) || null;
-  if (!v && !s) return "";
-  const have = s ? s.have : (ws.verify && ws.verify.schema_version);
-  const why = (s && s.why) || "Update it so what you type reaches your team straight away.";
-  return `<div class="ag-note" style="margin-top:10px">
-      <b>An update is available for this workspace${have ? ` (it is on version ${agEsc(String(have))})` : ""}.</b>
-      <div style="margin-top:4px">${agEsc(why)}</div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn pri" type="button" data-ag="wsupdate">Update workspace</button>
-        <span class="sp">everything else keeps syncing meanwhile</span></div>
-    </div>`;
-}
+   schema.migrate() and POST /workspace/update both still exist and are still tested. They are OUR
+   tools, run deliberately, not a button somebody finds. And nothing is silent about it either:
+   sync.push declines rather than queues a row a workspace cannot take, so a feature that is
+   waiting on a migration waits visibly in status() instead of wedging the outbox. */
 
 /* THE UNFINISHED WORKSPACE, which is a real state and not a theory.
 
@@ -3032,17 +3019,6 @@ async function agAction(act, el){
     }
     /* "I've run it", and the Check again on an unfinished workspace: the same question either
        way -- is it set up NOW -- and the same answer, schema.verify's. */
-    // RUN THE MIGRATION STEPS, and take the token the same way Create does: read once, then
-    // clear the box. If the server comes back with the paste route it is the STEPS this
-    // workspace is missing, never the whole create script, and the existing paste renderer
-    // draws it unchanged.
-    case "wsupdate": {
-      const f = a.wsForm || {};
-      f.busy = true; a.wsForm = f; agDraw();
-      await agWsPost("/workspace/update", { token: agTakeToken() });
-      const g = a.wsForm; if (g) g.busy = false;
-      agDraw(); break;
-    }
     case "wssqldone": {
       const f = a.wsForm || {};
       const ws = a.ws || {};
