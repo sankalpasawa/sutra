@@ -7,6 +7,21 @@ goes next. Different rival, different ideas.
 Every topic has to be sparked by a keyword the competitor actually ranks for. That is the
 whole point of paying for the data. A topic with no source keyword is just a guess with
 extra steps.
+
+IT IS THE FALLBACK NOW, NOT THE FRONT DOOR. This tool was written before the asset engine
+existed, when a competitor's ranking keywords were the only evidence about what to write.
+They are not any more: `build_assets` leaves a ranked sheet where every idea has already
+been judged for whether this company can own it and whether anyone would cite it. Offering
+six fresh competitor-derived guesses instead of the top idea off that sheet is the wrong
+first move, so `run()` now REFUSES when a sheet with open ideas exists and hands back the
+next few off it instead. Naming a competitor overrides that: somebody who asked what a
+named rival ranks for asked for exactly this tool.
+
+Deleting it would have been wrong. A company that has not run the asset engine yet still
+needs a way to get an idea, and that is the job this keeps.
+
+Reads:  knowledge/competitors.json, knowledge/site_index.json, knowledge/assets/ideas.json
+Writes: topics.json (per run), knowledge/competitors.json (the rotation stamp)
 """
 from .. import store
 from .. import llm
@@ -101,8 +116,45 @@ def _rival_lines(keywords):
     return lines
 
 
+def _sheet():
+    """The asset sheet, read defensively. A sheet we cannot read must never stop this tool: the
+    whole point of the guard is to send a person somewhere better, and there is nowhere better
+    to send them if the read failed."""
+    try:
+        from ..assets import _common as acm
+        rows = acm.ideas()
+        return rows, acm.next_open(rows)
+    except Exception:   # noqa: BLE001
+        return [], None
+
+
 def run(ctx, competitor=None):
     say = sh.reporter(ctx, "suggest_topics")
+
+    # THE SHEET WINS. Six guesses derived from one rival's ranking keywords are a worse answer
+    # than the top idea on a sheet that has already scored ownability and linkability. So when a
+    # sheet with open ideas exists and nobody named a rival, refuse and hand back what is on it.
+    # Nothing is spent: this is checked before the first DataForSEO call.
+    if not competitor:
+        rows, nxt = _sheet()
+        if nxt:
+            open_rows = [r for r in rows if r.get("status") == "open"]
+            top = sorted(open_rows, key=lambda r: (r.get("rank") is None, r.get("rank") or 0,
+                                                   r.get("id") or ""))[:6]
+            say("Not guessing: there is a sheet", "%d ideas still to write" % len(open_rows))
+            return {"summary": ("There is already an asset sheet with %d ideas still to write, so "
+                                "I did not invent six more. The next one is %s: %s."
+                                % (len(open_rows), nxt["id"], nxt.get("title", ""))),
+                    "used_sheet": True,
+                    "next": {"id": nxt["id"], "title": nxt.get("title", ""),
+                             "angle": nxt.get("angle", ""), "format": nxt.get("format", "")},
+                    "top_open": [{"id": r.get("id"), "title": r.get("title", ""),
+                                  "angle": r.get("angle", ""), "rank": r.get("rank")}
+                                 for r in top],
+                    "hint": ("Offer these off the sheet by name, best first, and let them pick. "
+                             "Do not call suggest_topics again unless they name a competitor and "
+                             "ask what that competitor ranks for.")}
+
     rows = _load_competitors()
     if not rows and not competitor:
         # derive from the brand pack rather than asking. Found live 2026-09-04: this tool asked

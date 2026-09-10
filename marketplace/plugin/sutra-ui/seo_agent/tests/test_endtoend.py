@@ -115,6 +115,52 @@ ok("the model never sees costs or gates",
    all("gate" not in t and "cost_credits" not in t and "module" not in t
        for t in registry.for_model()))
 
+print("\nno description promises a checkpoint that was removed")
+# The descriptions are ALL the model reads to decide when to run a tool. Three of them still said
+# "run after the user approves…" months after those three checkpoints stopped waiting (owner's
+# call, 2026-09-09, the same one that cut WAITING_VIEWS to two). A tool told to wait for an
+# approval that will never arrive either hangs the run or asks a question it was told not to ask,
+# which is exactly what show_artifact's own description forbids. So this is tied to WAITING_VIEWS
+# rather than to a list of words: whatever stops waiting, the tool after it must stop claiming it.
+BY = {t["name"]: t for t in tools}
+AFTER_VIEW = {"brand_pack": "build_assets", "research_brief": "build_blueprint",
+              "blueprint": "write_article", "topic_list": "run_research"}
+_shown_only = [v for v in AFTER_VIEW if v not in loop.WAITING_VIEWS]
+ok("the run stops at exactly two artifacts, and the rest are shown and passed",
+   set(loop.WAITING_VIEWS) == {"topic_list", "article"}, loop.WAITING_VIEWS)
+ok("and no tool that follows a shown-and-passed artifact says it waits for an approval",
+   not [v for v in _shown_only
+        if "approv" in BY[AFTER_VIEW[v]]["description"].lower()
+        or "confirms the" in BY[AFTER_VIEW[v]]["description"].lower()],
+   [(v, AFTER_VIEW[v]) for v in _shown_only
+    if "approv" in BY[AFTER_VIEW[v]]["description"].lower()
+    or "confirms the" in BY[AFTER_VIEW[v]]["description"].lower()])
+
+# THE SETUP INTERVIEW LOST TWO QUESTIONS AND THE REGISTRY KEPT SELLING THEM. The two byline
+# questions, voices.md and its builder were deleted on 2026-09-09 (tools/onboard.py's own header
+# says so), and the description still listed both and still said "Six short questions". The model
+# reads that line to decide what onboard is for; a person reads the Tools tab row.
+from seo_agent.tools import onboard as _onb  # noqa: E402
+_od = BY["onboard"]["description"].lower()
+ok("onboard's description does not still sell the deleted byline questions",
+   not any(w in _od for w in ("published under", "signs the leadership", "byline questions were asked")),
+   _od[:200])
+ok("and it says the number of questions the tool actually asks",
+   len(_onb.IDS) == 4 and "four short questions" in _od, (len(_onb.IDS), "four short questions" in _od))
+
+# SUGGEST_TOPICS WAS WRITTEN BEFORE THE ASSET SHEET. Its description is the only thing standing
+# between a model with 1,900 ranked ideas on file and six fresh competitor guesses, so it has to
+# name the condition, and the tool has to enforce it in code as well (tests/test_tools.py).
+ok("suggest_topics' description names the asset sheet as the thing that supersedes it",
+   "sheet" in BY["suggest_topics"]["description"].lower(),
+   BY["suggest_topics"]["description"][:160])
+ok("it tells the model not to call it when a sheet exists",
+   "do not call this" in BY["suggest_topics"]["description"].lower(),
+   BY["suggest_topics"]["description"][:160])
+ok("and the Tools row says the same thing to a person",
+   "sheet" in (BY["suggest_topics"]["plain"]["when"] or "").lower(),
+   BY["suggest_topics"]["plain"]["when"])
+
 print("\nconnections live in the data dir, not the code tree")
 store.save_connections({"anthropic_key": "sk-secret-value"})
 code_tree = os.path.dirname(os.path.dirname(os.path.abspath(store.__file__)))

@@ -69,19 +69,30 @@ def _cached_balance(dfs, ttl=300.0):
 def _knowledge_block(site):
     """What is already on file, so the model never redoes setup that is done. Found live
     (2026-09-04): a fresh chat re-ran the whole setup because nothing told the model the site
-    was catalogued, embedded and the brand pack built."""
+    was catalogued, embedded and the brand pack built.
+
+    EVERY LINE IS A FACT. Not one of them tells the model to do anything, and that is the rule,
+    not a style note. This block is rebuilt into the system prompt on every single turn, so an
+    instruction in here is not advice, it is a chore queued against whatever the person happened
+    to type. Found live 2026-09-10: the tail said "Run onboard once, then carry on", the owner
+    typed `hi` on a finished install, and the agent opened a four-question interview and left him
+    waiting on it. The brief decides what to do about each state; this block only says what is so.
+    """
     lines = []
     pages = site.get("pages") if isinstance(site, dict) else None
     if pages:
         lines.append("- Site catalogue: %s, %d pages, read %s." % (site.get("domain") or "the site", len(pages),
                                                                    site.get("indexed_at") or "earlier"))
     else:
-        lines.append("- Site catalogue: NOT built. Ask for the website if you do not have it, then run index_site.")
+        lines.append("- Site catalogue: NOT built. Nothing has been read from the website yet.")
+    indexed = False
     try:
         from .tools import _index
         st = _index.status()
+        indexed = bool(st.get("built"))
         lines.append("- Page index (meaning): built, %d pages, %d passages." % (st["pages"], st["chunks"])
-                     if st.get("built") else "- Page index (meaning): not built. Run build_page_index (needs a Voyage key).")
+                     if indexed else "- Page index (meaning): not built, so finding their own pages "
+                                     "to link to falls back to matching title words. Building it needs a Voyage key.")
     except Exception:  # noqa: BLE001
         pass
     # what is connected, so the model says it up front instead of discovering it mid-run
@@ -94,8 +105,15 @@ def _knowledge_block(site):
             lines.append("- DataForSEO: connected%s." % ("" if bal is None else ", balance $%.2f%s"
                          % (bal, " (too low for paid steps; they will skip and say so)" if bal < 0.5 else "")))
         else:
-            lines.append("- DataForSEO: NOT connected, so keyword volumes, difficulty and ranking "
-                         "data are demo placeholders, not real. Say that in your first message.")
+            # "and everything else still works" used to end this line, and it was false. Asked
+            # "does the research read the real Google results, yes or no", the agent reasoned
+            # correctly from it and answered "Yes" — while serp_advanced was returning
+            # _demo_serp_extract: ten manufactured results, an invented snippet, an invented AI
+            # Overview (found 2026-09-10). A wrong capability claim is worse than a wrong number,
+            # because a demo number arrives labelled and a capability claim does not.
+            lines.append("- DataForSEO: NOT connected, so the volumes, the difficulty, the ranking "
+                         "positions, the per-page traffic AND the search results the research "
+                         "reads are all demo: manufactured, not measured.")
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -108,7 +126,7 @@ def _knowledge_block(site):
 
     brief = store.knowledge("brand/writer-brief.md")
     lines.append("- Brand pack: built (writer brief on file)." if isinstance(brief, str) and brief.strip()
-                 else "- Brand pack: not built. Run learn_brand after the site is read.")
+                 else "- Brand pack: not built, so nothing on file says how they write or what they sell.")
     # Whether the setup questions have been put to them. Without this line the model has no way to
     # know, so it either never asks or asks a user who has already answered, and both are the same
     # bug the block above was written to stop: setup redone because nothing said it was done.
@@ -117,52 +135,127 @@ def _knowledge_block(site):
         from .tools import onboard as _onboard
         interview = _onboard.status()
         if interview["asked"]:
-            lines.append("- Setup questions: already put to them, %d answered and %d passed over. "
-                         "Do NOT ask them again unless they ask you to."
-                         % (interview["answered"], interview["skipped"]))
+            lines.append("- Setup questions: all four have been put to them, %d answered and %d "
+                         "passed over." % (interview["answered"], interview["skipped"]))
         elif interview["started"]:
-            lines.append("- Setup questions: started but not finished (%d of %d). Run onboard to "
-                         "pick up at the next one." % (interview["done"], interview["total"]))
+            lines.append("- Setup questions: started but not finished, %d of %d answered; the rest "
+                         "have not been put to them." % (interview["done"], interview["total"]))
         else:
-            lines.append("- Setup questions: never asked. Run onboard once the site is read and "
-                         "BEFORE learn_brand.")
+            lines.append("- Setup questions: never asked, so the four answers only they can give "
+                         "(their real numbers, why the company was built, what did not work, who "
+                         "they compete with) are not in the brand pack.")
     except Exception:  # noqa: BLE001 — a missing ledger must never break the prompt
         pass
 
     done = pages and isinstance(brief, str) and brief.strip()
-    tail = ("\nSetup is complete. Do NOT run index_site, build_page_index or learn_brand again unless the user "
-            "asks for a rebuild. Go straight to the article." if done else
-            "\nFinish setup first, in the order above, then the article.")
-    # The asset sheet. This is CONTEXT, not an instruction: the chip on the Asset ideas tab carries
-    # the id as data and is the real path. The built line only stops the model claiming there are no
-    # ideas when a sheet is sitting right there.
+    tail = ("\nSetup is complete: the site is read and the brand pack is built." if done else
+            "\nSetup is not finished: whatever is marked not built above is not on file.")
+    # The asset sheet. STATE only. What to DO about each state is written once, in the brief's
+    # "What to write next"; a rule kept in both places drifts and the model then picks whichever
+    # copy it read last. Three states, and every one of them must be a LINE: absence of a line is
+    # not a state a model can act on. Asked "what should I write?" with nothing saying the engine
+    # had never run, it invented a topic (2026-09-09). The owner's words: "it should say 'hey look,
+    # you've not updated the asset engine yet'. That's how precise I want it to be."
     #
-    # The NOT-BUILT line is the other half, and it was missing (2026-09-09). Absence of a line is
-    # not a state a model can act on: asked "what should I write?", with nothing saying the engine
-    # had never run, it would invent a topic rather than say the sheet does not exist yet. The
-    # owner's words: "it should say 'hey look, you've not updated the asset engine yet'. That's how
-    # precise I want it to be."
+    # The next idea's WHOLE title is here, not 70 characters of it. Truncated mid-word, the model
+    # cannot offer the idea without paraphrasing the half it was given, so it re-titles the article
+    # and the offer stops being the idea on the sheet (2026-09-10).
     try:
         from .tools import build_assets as _ba
         a = _ba.status()
-        if a["built"]:
-            lines.append("- Asset ideas: %d on the sheet, %d still to write%s."
+        if a["built"] and a["next"]:
+            lines.append("- Asset ideas: %d on the sheet, %d still to write. Top of the ranking, "
+                         "still open: %s, \"%s\"."
                          % (a["total"], a["counts"].get("open", 0),
-                            ("; next up is %s — %s" % (a["next"]["id"], a["next"]["title"][:70]))
-                            if a["next"] else ""))
+                            a["next"]["id"], a["next"]["title"][:200]))
+        elif a["built"]:
+            lines.append("- Asset ideas: %d on the sheet, none left to write." % a["total"])
         else:
             lines.append("- Asset ideas: NO sheet. The asset engine has never run, so there is "
-                         "nothing to pick from. If they ask what to write, say that and offer "
-                         "build_assets. Do not invent a topic to fill the gap.")
+                         "nothing to pick from and nothing to offer.")
     except Exception:   # noqa: BLE001 — a sheet we cannot read must not stop the run starting
         pass
 
-    # An install from before the interview existed has a finished pack and an unasked user. Say so
-    # rather than letting "setup is complete" read as "there is nothing left to ask".
+    # An install from before the interview existed has a finished pack and an unasked user. State
+    # the loss, so "setup is complete" does not read as "there is nothing left to ask" — and state
+    # ONLY the loss. This line used to end "Run onboard once, then carry on", and on 2026-09-10 the
+    # owner said `hi` and got question 1 of 4. Whether four questions are worth interrupting a
+    # greeting for is a judgement, and judgement lives in the brief.
     if done and interview and not interview["asked"]:
-        tail += (" One thing IS still outstanding: the setup questions have never been put to them. "
-                 "Run onboard once, then carry on.")
-    return "## What is already in Knowledge\n\n" + "\n".join(lines) + tail
+        tail += " The brand pack was built without the setup answers."
+    return ("## What is already in Knowledge\n\nFacts about what is on file. Nothing here is an "
+            "instruction and nothing here is a job to start: the rules below decide what to do "
+            "about each state.\n\n" + "\n".join(lines) + tail)
+
+
+
+# ---- the idea an offer was made FROM ---------------------------------------------------------
+# The chip on the Asset ideas tab starts a run with `idea_id` already on its state, and
+# save_to_library ticks the sheet from that and from nothing else. The brief now has the agent
+# OFFER the top open idea in the chat as well, and accepting that offer has to count the same way,
+# or the idea he just had written is offered to him again on the next turn, for ever.
+#
+# PROVENANCE, NEVER MATCHING. The model was told to name the idea by id, so the id is sitting in
+# its own question as data we can read straight back, and it is checked against the sheet before
+# it counts. A finished article is never matched to an open idea by meaning: that was ruled out on
+# 2026-09-09 and this does not revisit it.
+IDEA_ID = re.compile(r"\ba\d{1,6}\b", re.I)
+
+# The whole reply, when somebody just says yes. Longer than this and they are saying something
+# else as well ("yes but write about pricing instead"), which is not an acceptance of this offer.
+YES_CAP = 24
+YES = ("yes", "yep", "yeah", "yup", "ok", "okay", "sure", "go ahead", "do it", "please do",
+       "sounds good", "write it", "that one", "go for it")
+
+
+def _open_idea_ids():
+    """The ids still to write. A sheet we cannot read is treated as no sheet."""
+    try:
+        from .assets import _common as acm
+        return {(r.get("id") or "").lower() for r in acm.ideas() if r.get("status") == "open"}
+    except Exception:   # noqa: BLE001 — a sheet we cannot read must never break a question
+        return set()
+
+
+def _offered_idea(payload):
+    """The open idea this question puts to the person, when it puts exactly one. Two ids, or an
+    id that is not on the sheet, offer nothing: a guess here would tick the wrong row."""
+    text = " ".join([str(payload.get("question") or ""), str(payload.get("why") or "")] +
+                    [str(o.get("label") or "") + " " + str(o.get("note") or "")
+                     for o in (payload.get("options") or []) if isinstance(o, dict)])
+    found = {m.lower() for m in IDEA_ID.findall(text)} & _open_idea_ids()
+    return found.pop() if len(found) == 1 else ""
+
+
+def _took_the_offer(answer, idea):
+    """Did this answer accept THAT idea? Either it names the id (the option chip carries it) or it
+    is a short, plain yes. Naming another topic is not an acceptance, and neither is silence."""
+    said = " ".join(str((answer or {}).get(k) or "") for k in ("choice", "text", "note")).strip()
+    if not said:
+        return False
+    if idea and idea.lower() in {m.lower() for m in IDEA_ID.findall(said)}:
+        return True
+    plain = said.lower().strip(" .!,")
+    return len(plain) <= YES_CAP and (plain in YES or any(plain.startswith(y + " ") or
+                                                          plain.startswith(y + ",") for y in YES))
+
+
+
+def _trailing_question(text):
+    """The question a plain-prose turn ends on, or "".
+
+    A QUESTION ASKED IN PROSE USED TO END THE RUN. The brief says to ask through `ask_user`, and
+    across 18 first turns and three models, 11 of them asked in prose instead — the same model
+    doing both in one conversation. The loop then filed the turn as `done`, the state a finished
+    answer gets: the question sat on screen with the run over behind it, and whatever the person
+    typed next opened a fresh run that knew nothing about what had been asked (2026-09-10).
+    A rule the model is asked to follow is a suggestion; this is the loop making it true.
+    """
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    last = lines[-1].rstrip("*_`\"')] ").rstrip()
+    return last if last.endswith("?") else ""
 
 
 def _run_tool(chat_id, run_id, name, args, step_id=None):
@@ -471,11 +564,20 @@ def step(chat_id, run_id):
             store.patch_state(chat_id, run_id, status="failed", error=str(e)[:400])
             return store.get_state(chat_id, run_id)
 
-        # plain answer, no tools — the run is over
+        # plain answer, no tools — the run is over, UNLESS it ended on a question
         if not reply["tool_calls"]:
             if reply["text"]:
                 messages.append({"role": "assistant", "content": reply["text"]})
                 store.emit(chat_id, run_id, "message", text=reply["text"])
+            asked = _trailing_question(reply["text"])
+            if asked:
+                store.save_messages(chat_id, messages)
+                payload = {"question": asked, "why": "", "options": [], "prose": True}
+                offered = _offered_idea({"question": reply["text"]})
+                if offered:
+                    payload["offer_idea"] = offered
+                _wait(chat_id, run_id, "question", None, payload)
+                return store.get_state(chat_id, run_id)
             store.save_messages(chat_id, messages)
             store.patch_state(chat_id, run_id, status="done")
             store.emit(chat_id, run_id, "run_finished")
@@ -498,14 +600,30 @@ def step(chat_id, run_id):
             # --- the pausing tools -------------------------------------------------------
             if name == "ask_user":
                 store.save_messages(chat_id, messages)
-                _wait(chat_id, run_id, "question", call_id, {
-                    "question": args.get("question", ""),
-                    "why": args.get("why", ""),
-                    "options": args.get("options", [])})
+                payload = {"question": args.get("question", ""),
+                           "why": args.get("why", ""),
+                           "options": args.get("options", [])}
+                offered = _offered_idea(payload)
+                if offered:
+                    payload["offer_idea"] = offered
+                _wait(chat_id, run_id, "question", call_id, payload)
                 return store.get_state(chat_id, run_id)
 
             if name == "show_artifact":
                 view = args.get("view", "article")
+                # A STOP HAS TO HAVE SOMETHING TO LOOK AT. Asked "what topics should we cover"
+                # with a sheet on file, the model showed topic_list pointing at a topics.json no
+                # tool had written (found live, 2026-09-10): the run then sat waiting on an empty
+                # panel, and only a Stop got it back. The file has to exist before we stop for it.
+                art_name = (args.get("path") or "").strip()
+                if view in WAITING_VIEWS and not (art_name and os.path.isfile(
+                        store.artifact_path(chat_id, run_id, art_name))):
+                    results.append({"type": "tool_result", "tool_use_id": call_id, "content": {
+                        "error": "There is no artifact called %r in this run, so there is nothing "
+                                 "to show." % art_name,
+                        "hint": "Nothing wrote that file. Say what you have in plain words, or run "
+                                "the step that writes it first. Do not show it again."}})
+                    continue
                 if view in WAITING_VIEWS:
                     store.save_messages(chat_id, messages)
                     _wait(chat_id, run_id, "artifact", call_id, {
@@ -663,6 +781,22 @@ def resume(chat_id, run_id, answer):
     if w.get("ask_words"):
         return _resume_words(chat_id, run_id, w, messages, answer)
 
+    # A question the model asked in prose has no tool call behind it, so the answer goes back as
+    # an ordinary user message. Sending a tool_result with a null id here would be a malformed
+    # turn, and on the API providers an outright invalid one.
+    if w.get("prose"):
+        offered = w.get("offer_idea")
+        if offered and not str(state.get("idea_id") or "").strip() and _took_the_offer(answer, offered):
+            store.patch_state(chat_id, run_id, idea_id=offered)
+            store.emit(chat_id, run_id, "idea_started", idea_id=offered)
+        store.emit(chat_id, run_id, "resumed", by="user", answer=_answer_summary(answer))
+        said = next((str(answer.get(k)).strip() for k in ("text", "choice", "changes", "note")
+                     if str(answer.get(k) or "").strip()), _answer_summary(answer))
+        messages.append({"role": "user", "content": said})
+        store.save_messages(chat_id, messages)
+        store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+        return step(chat_id, run_id)
+
     if w.get("kind") == "approval":
         tool = w.get("tool")
         if not answer.get("approved"):
@@ -712,6 +846,13 @@ def resume(chat_id, run_id, answer):
             messages.append({"role": "user", "content": [{
                 "type": "tool_result", "tool_use_id": call_id, "content": result}]})
     else:
+        # They took the idea the question offered, so this run started from it. Recorded here, at
+        # the moment of the decision, exactly as the Asset ideas chip records it before the run
+        # begins. save_to_library reads it later; nothing downstream has to work anything out.
+        offered = w.get("offer_idea")
+        if offered and not str(state.get("idea_id") or "").strip() and _took_the_offer(answer, offered):
+            store.patch_state(chat_id, run_id, idea_id=offered)
+            store.emit(chat_id, run_id, "idea_started", idea_id=offered)
         store.emit(chat_id, run_id, "resumed", by="user", answer=_answer_summary(answer))
         content = dict(answer)
         if w.get("kind") == "artifact":

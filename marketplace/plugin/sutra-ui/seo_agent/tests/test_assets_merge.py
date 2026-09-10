@@ -474,6 +474,19 @@ ok("still merged the same pairs afterwards", out["count"] == 6 and out["multi_me
 ok("told a person, and named the real fix",
    any("_common.new_id" in n for n in out["needs_review"]), out["needs_review"])
 
+# THE SCREEN READS THIS RECORD, AND IT READS IT AS THE OTHER SHAPE. `_work/merge/methods.json` has
+# two writers: merge.py (here) writes `methods` as a LIST of {method, file, state, ideas}, and
+# import_sheet.py writes it as a DICT of {method: state}. `agents_api._assets_payload` called
+# .items() on it, so the first real merge would have 500'd the whole Asset ideas tab. Reading the
+# file back with cm.read cannot see that: both shapes read back fine and only the consumer
+# disagrees. So this feeds the record the merge REALLY wrote to the code that really consumes it.
+print("\nthe Asset ideas screen can read the record this merge just wrote")
+import agents_api                                        # noqa: E402
+payload = agents_api._assets_payload()
+ok("the screen survives the merge's own shape, and names the methods that ran",
+   isinstance(payload.get("methods_run"), list) and payload["methods_run"], payload.get("methods_run"))
+ok("and reports the sheet it just built", payload["built"] and payload["total"] > 0, payload["total"])
+
 print("\nprompts")
 ok("every {{TOKEN}} in every merge prompt was filled before the model saw it", not UNFILLED,
    UNFILLED[:3])

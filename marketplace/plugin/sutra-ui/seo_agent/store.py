@@ -11,6 +11,7 @@ leaves a stray .tmp, never a half-written state file that resume would trust.
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 import uuid
@@ -176,6 +177,27 @@ def save_messages(chat_id, messages):
     meta = read_json(os.path.join(chat_dir(chat_id), "chat.json"), {}) or {}
     meta["updated_at"] = now()
     write_json(os.path.join(chat_dir(chat_id), "chat.json"), meta)
+
+
+def delete_chat(chat_id):
+    """Throw a chat away: its messages, its runs, and every artifact under it.
+
+    The Library is NOT touched. An article that reached the Library is a finished piece of work
+    that happens to have been written in this chat; deleting the conversation must not delete
+    the article. The chat's own run folders go, so the milestone strip on any Library row that
+    pointed at this chat falls back to the row's saved state, which is what it did before
+    `library_start` existed anyway.
+
+    Returns True if a chat was removed, False if there was nothing there.
+    """
+    d = chat_dir(chat_id)
+    # Refuse a chat_id that climbs out of the chats folder. `..` in a path deletes the wrong tree.
+    root = os.path.realpath(chats_dir())
+    here = os.path.realpath(d)
+    if os.path.dirname(here) != root or not os.path.isdir(here):
+        return False
+    shutil.rmtree(here, ignore_errors=True)
+    return not os.path.isdir(here)
 
 
 def set_chat_title(chat_id, title):

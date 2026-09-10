@@ -173,7 +173,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
        counts have already been re-read, so one finished run re-reads them once. */
@@ -385,6 +385,7 @@ const AG_ICON = {
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1.1 5.8L12 16.8l-5.3 2.8 1.1-5.8L3.5 9.7l5.9-.8z"/></svg>',
   arrow: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   left: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
   pencil: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/></svg>',
   up: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -393,6 +394,28 @@ const AG_ICON = {
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.5-1.5"/></svg>',
 };
+
+/* A STEP FOLDS ITSELF WHEN IT IS DONE (owner, 2026-09-10: "let's say all these steps are
+   there, they are all showing live around 50, 60, then they should collapse back... then only
+   the thing I should be able to see is 'writing the article'"). While a step RUNS its sub-lines
+   are the whole point, so it stays open and you watch it work. The moment it finishes, the
+   sixty-one lines underneath it fold away and the headline plus its one-line result is all that
+   is left, with a chevron on the left to open it again. A step that FAILED never folds: the
+   reason it failed is the one thing you actually need to read. */
+function agStepFolds(e){
+  if (e.state === "run") return false;              /* live: watching it IS the point */
+  if (e.state === "bad") return false;              /* a failure explains itself, always open */
+  return !!((e.subs && e.subs.length) || e.lead);   /* nothing to fold, no chevron */
+}
+
+function agStepOpen(e, ctx){
+  if (!agStepFolds(e)) return true;
+  return !!(ctx.stepOpen && ctx.stepOpen[e.id]);
+}
+
+function agAskOpen(e, ctx){
+  return !!(ctx.stepOpen && ctx.stepOpen[e.id || e.t]);
+}
 
 function agGlyph(e){
   if (e.kind === "step") return e.state === "ok" ? AG_ICON.check : e.state === "bad" ? AG_ICON.x : "";
@@ -437,14 +460,22 @@ function agEntryHtml(e, ctx){
     case "step": {
       const cls = e.state;
       const verdict = e.state === "run" ? "" : e.ms != null ? `<span class="ms">${agEsc(agDur(e.ms))}</span>` : "";
-      return `<div class="ag-step ${cls}" data-step="${agEsc(e.id)}">
-        <span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">${agEsc(e.label)}${verdict}${e.state === "bad" && e.recovering ? `<span class="pill p-warn">trying another way</span>` : ""}</div>
-        ${e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
+      const folds = agStepFolds(e);
+      const shown = agStepOpen(e, ctx);
+      const n = (e.subs || []).length;
+      /* The whole headline is the hit area, not a 12px arrow. */
+      const head = folds
+        ? `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id)}" aria-expanded="${shown}">
+             <span class="cv ${shown ? "on" : ""}" aria-hidden="true">${AG_ICON.chev}</span>${agEsc(e.label)}${verdict}${!shown && n ? `<span class="n">${n} step${n === 1 ? "" : "s"}</span>` : ""}</button>`
+        : `<div class="ag-title">${agEsc(e.label)}${verdict}${e.state === "bad" && e.recovering ? `<span class="pill p-warn">trying another way</span>` : ""}</div>`;
+      return `<div class="ag-step ${cls} ${folds ? "foldable" : ""} ${folds && !shown ? "folded" : ""}" data-step="${agEsc(e.id)}">
+        ${folds ? "" : `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>`}
+        ${head}
+        ${shown && e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
         ${e.state === "bad" && e.reason ? `<div class="ag-body" style="color:var(--block)">${agEsc(e.reason)}</div>` : ""}
-        ${e.state === "ok" && e.summary && !e.subs.length ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
-        ${agSubsHtml(e.subs, e.id, open)}
-        ${e.state === "ok" && e.summary && e.subs.length ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
+        ${e.state === "ok" && e.summary && !n ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
+        ${shown ? agSubsHtml(e.subs, e.id, open) : ""}
+        ${e.state === "ok" && e.summary && n ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.id)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;
     }
@@ -452,19 +483,40 @@ function agEntryHtml(e, ctx){
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span><div class="ag-prose md">${agMd(e.text)}</div></div>`;
     case "note":
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span><div class="ag-note">${agEsc(e.text)}</div></div>`;
-    case "ask":
-      return `<div class="ag-step ask"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">Asked you a question</div>
+    case "ask": {
+      /* AN ANSWERED QUESTION IS ONE LINE (owner, 2026-09-10). Live, it is the whole card: the
+         question, the reason, the options. Answered, it is settled history, so it folds to the
+         question and what you said. Click it to see the reason and the options again. */
+      if (!e.live && !agAskOpen(e, ctx)) {
+        return `<div class="ag-step ask foldable folded">
+          <button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="false">
+            <span class="cv" aria-hidden="true">${AG_ICON.chev}</span><span class="qt">${agEsc(e.question)}</span>
+            <span class="said"><i>You said</i>${agEsc(e.answer || "answered")}</span></button></div>`;
+      }
+      return `<div class="ag-step ask ${e.live ? "" : "foldable"}">
+        ${e.live ? `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span><div class="ag-title">Asked you a question</div>`
+                 : `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="true">
+                      <span class="cv on" aria-hidden="true">${AG_ICON.chev}</span>Asked you a question</button>`}
         <div class="ag-card ${e.live ? "live" : ""}">
           <div class="q">${agEsc(e.question)}</div>
           ${e.why ? `<div class="why">${agEsc(e.why)}</div>` : ""}
           ${agChipsHtml(e.options, e.live, e.answer, "choose", e.call_id || "")}
-          ${e.live ? `<div class="ag-hint">Pick one, or type your own answer below.</div>`
+          ${e.live ? `<div class="ag-hint">${(e.options && e.options.length) ? "Pick one, or type your own answer below." : "Type your answer below."}</div>`
                    : `<div class="ag-answer"><span>You said</span><b>${agEsc(e.answer || "")}</b></div>`}
         </div></div>`;
-    case "approval":
-      return `<div class="ag-step ask"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">Asked before going on</div>
+    }
+    case "approval": {
+      const said = e.decision === "approved" ? "Go ahead" : e.decision === "declined" ? "Not now" : (e.answer || "answered");
+      if (!e.live && !agAskOpen(e, ctx)) {
+        return `<div class="ag-step ask foldable folded">
+          <button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="false">
+            <span class="cv" aria-hidden="true">${AG_ICON.chev}</span><span class="qt">${agEsc(e.question)}</span>
+            <span class="said"><i>You said</i>${agEsc(said)}</span></button></div>`;
+      }
+      return `<div class="ag-step ask ${e.live ? "" : "foldable"}">
+        ${e.live ? `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span><div class="ag-title">Asked before going on</div>`
+                 : `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="true">
+                      <span class="cv on" aria-hidden="true">${AG_ICON.chev}</span>Asked before going on</button>`}
         <div class="ag-card ${e.live ? "live" : ""}">
           <div class="q">${agEsc(e.question)}</div>
           ${e.mins ? `<div class="ag-cost">about <b>${agEsc(e.mins)}</b> min</div>` : ""}
@@ -473,8 +525,9 @@ function agEntryHtml(e, ctx){
               <button class="ag-chip pri" type="button" data-ag="approve" data-arg="yes">Go ahead</button>
               <button class="ag-chip" type="button" data-ag="approve" data-arg="no">Not now</button>
             </div>`
-          : `<div class="ag-answer"><span>You said</span><b>${e.decision === "approved" ? "Go ahead" : e.decision === "declined" ? "Not now" : agEsc(e.answer || "")}</b></div>`}
+          : `<div class="ag-answer"><span>You said</span><b>${agEsc(said)}</b></div>`}
         </div></div>`;
+    }
     case "artifact": {
       const title = AG_VIEW_TITLE[e.view] || "Something to review";
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
@@ -611,10 +664,26 @@ function agHeroHtml(health, conns){
   const model = health ? health.model_provider : null;
   const setup = agSetupOf(health);
   const ready = !!health && setup.ready;
+  /* THE TWO WAYS TO START, and the first one depends on whether there is a sheet (owner,
+     2026-09-10: "it only has 2 ways for now: one is to go through the asset tab and pick the
+     topmost one... or else he can write his own topic").
+     The card offered "Suggest six topics we could own" to everybody, which predates the asset
+     engine: with 1,890 ranked ideas already judged for whether he can own them and whether
+     anyone would link to them, six fresh competitor-derived guesses is the wrong first move.
+     `/health.assets` now carries the sheet, so the chip can tell. suggest_topics is NOT dead --
+     it is the right answer for a company with no sheet yet, which is what the else branch is. */
+  const as = (health && health.assets) || null;
+  const nextIdea = as && as.built && as.open > 0 ? as.next : null;
+  const topPlay = nextIdea
+    ? ["Write the next idea on the sheet",
+       agEsc(nextIdea.title || "").slice(0, 120) + (as.open > 1 ? ` — ${as.open - 1} more waiting.` : "")
+         + " Passing on it leaves it on the sheet.",
+       `Write ${nextIdea.id}`]
+    : ["Suggest six topics we could own", "Studies one competitor's best pages and proposes six topics with an angle they have not taken. Used when there is no asset sheet yet.",
+       "Suggest six topics we could own."];
   const plays = ready ? [
-    ["Suggest six topics we could own", "Studies one competitor's best pages and proposes six topics with an angle they have not taken.",
-     "Suggest six topics we could own."],
-    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. You review at each of the four stops.",
+    topPlay,
+    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. It stops twice: the topic and the draft.",
      "Write an article about "],
     /* A third play -- rewrite one of the pages we already have -- was DELETED (owner,
        2026-09-09). It was written before the reuse check existed and nothing was ever wired
@@ -1038,9 +1107,22 @@ function agSideHtml(a){
     <div class="ag-sec">Recent</div>
     <div class="ag-chats">${chats.length ? chats.map(c => {
         const live = c.live || "";
-        return `<button class="ag-chat" type="button" data-ag="chat" data-arg="${agEsc(c.id)}" aria-current="${a.view === "chat" && a.chatId === c.id}" title="${agEsc(c.title)} · ${agEsc(agAgo(c.updated_at))}">
-          <span class="dot ${live === "running" ? "run" : live === "waiting" ? "wait" : "idle"}" aria-hidden="true"></span>
-          <span class="t">${agEsc(c.title || "New chat")}</span></button>`;
+        const asking = a.chatMenu === c.id;
+        /* THE CONFIRM IS THE ROW (owner, 2026-09-10: "3 dots and delete the chat"). A chat holds
+           work, so a single click must not lose it, but a browser confirm() blocks the Electron
+           window and looks nothing like the app. The row turns into the question instead, and
+           anywhere else you click puts it back. */
+        return `<div class="ag-chatrow ${asking ? "asking" : ""}">
+          <button class="ag-chat" type="button" data-ag="chat" data-arg="${agEsc(c.id)}" aria-current="${a.view === "chat" && a.chatId === c.id}" title="${agEsc(c.title)} · ${agEsc(agAgo(c.updated_at))}">
+            <span class="dot ${live === "running" ? "run" : live === "waiting" ? "wait" : "idle"}" aria-hidden="true"></span>
+            <span class="t">${agEsc(c.title || "New chat")}</span></button>
+          ${asking
+            ? `<span class="ag-chatask"><span class="lb">Delete?</span>
+                 <button class="yes" type="button" data-ag="chatdel" data-arg="${agEsc(c.id)}">Yes</button>
+                 <button class="no" type="button" data-ag="chatmenu" data-arg="">No</button></span>`
+            : `<button class="ag-chatdots" type="button" data-ag="chatmenu" data-arg="${agEsc(c.id)}"
+                 title="Delete this chat" aria-label="Delete the chat ${agEsc(c.title || "New chat")}">${AG_ICON.dots}</button>`}
+        </div>`;
       }).join("") : `<div class="ag-empty">No chats yet. Start one above.</div>`}</div>
     <ul class="nav">${rows.map(r => `<li><button type="button" data-ag="view" data-arg="${r[0]}" aria-current="${a.view === r[0]}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${r[2].replace(/<svg[^>]*>|<\/svg>/g, "")}</svg>${r[1]}
@@ -1057,7 +1139,7 @@ function agComposerHtml(a){
   const ph = running ? "Working… you can stop it, or wait."
     : waiting && w.kind === "approval" ? "Say no with a reason, or use the buttons above"
     : waiting && w.kind === "artifact" ? "Ask for changes, or approve in the panel"
-    : waiting ? "Type your answer, or pick an option above"
+    : waiting ? (w.options && w.options.length ? "Type your answer, or pick an option above" : "Type your answer")
     : a.chat ? "Ask for another article, or give feedback"
     : a.health && !setup.ready ? "Give the website, e.g. example.com" : "Name a topic, or ask for ideas";
   const step = live && live.current_step ? live.current_step.replace(/_/g, " ") : (live ? live.stage : "");
@@ -1084,7 +1166,7 @@ function agTranscriptHtml(a){
      returning open goes straight to the hero and its two plays. */
   if (!a.chat || !(a.chat.runs || []).length)
     return (agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns);
-  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
+  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, stepOpen: a.stepOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
 }
 
@@ -2485,6 +2567,17 @@ let agObs = null, agPollTimer = null, agTick = null, agToastTimer = null;
 
 function agApi(path){ return apiGet(AG_API + path); }
 function agPostApi(path, body){ return apiPost(AG_API + path, body || {}); }
+/* The one DELETE in the panel. apiPost cannot do it (it hardcodes POST), and adding a method
+   argument there would touch every caller in the app for the sake of this one route. */
+async function agDelApi(path){
+  const r = await fetch(API + AG_API + path, { method: "DELETE", headers: { "X-Sutra-Panel": panelToken() } });
+  if (!r.ok){
+    let msg = "";
+    try { msg = (await r.json()).error || ""; } catch (e) {}
+    throw new Error(msg || ("That did not work (" + r.status + ")"));
+  }
+  return r.json();
+}
 
 function agToast(msg){
   if (typeof document === "undefined") return;
@@ -3176,6 +3269,23 @@ async function agAction(act, el){
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));
       await agLoadChat(a.chatId, true); break; }
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
+    case "step": a.stepOpen[arg] = !a.stepOpen[arg]; agDraw(); break;
+    case "chatmenu": a.chatMenu = arg || null; agDraw(); break;
+    case "chatdel": {
+      a.chatMenu = null;
+      try { await agDelApi(`/chats/${encodeURIComponent(arg)}`); }
+      catch (e) { agToast(String(e.message || e)); agDraw(); break; }
+      /* If the open chat was the one deleted, land somewhere real rather than on a chat id
+         that no longer resolves: the next chat down, or the empty state. */
+      if (a.chatId === arg){
+        a.chatId = null; a.chat = null; a.events = {}; a.cursors = {}; a.panel = null; a.draft = "";
+      }
+      a.chats = await agApi("/chats").catch(() => a.chats);
+      if (!a.chatId && a.chats && a.chats.length) await agLoadChat(a.chats[0].id, true);
+      else agDraw();
+      agToast("Chat deleted. Anything it wrote is still in the Library.");
+      break;
+    }
     case "work": {
       const p = a.panel; if (!p) break;
       a.workOpen = { label: arg, data: { loading: true } }; agDraw();

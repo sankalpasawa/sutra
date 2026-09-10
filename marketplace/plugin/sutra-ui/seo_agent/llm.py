@@ -105,9 +105,24 @@ CLI_TOOL_INTRO = ("IMPORTANT: none of the tools below exist in this session. Emi
                   "of the tools below, put {\"name\", \"input\"} into the tool_calls array "
                   "of that structured reply and stop; the host runs it and the result comes "
                   "back in the next turn as \"Result of <id>\".")
-CLI_TOOL_RULE = ("Reply with text and zero or more tool_calls. When you call tools, keep "
-                 "text to one short sentence. When you have nothing more to do, return an "
-                 "empty tool_calls list.")
+# THE ONE-SENTENCE CAP, AND THE EXEMPTION IT NEEDED. Capping the text on a tool-calling turn
+# keeps a run readable: nobody wants a paragraph of preamble in front of every step. But it was
+# fighting two rules in the brief at once (found 2026-09-10, by running it).
+#
+# The FIRST turn of a conversation is the exception, and it is not a small one. The brief says
+# context comes before any question -- a person who typed "hi" is owed what this is and what it
+# is about to offer, not a bare question. With the cap applying there, that was roughly a coin
+# flip: on a state with plenty to report the model overrode the cap and gave proper context; on a
+# tidy one it obeyed and opened with "Here's the top idea on the sheet." and a question. Same cap
+# also produced whole turns that were nothing but a third-person status line.
+#
+# So the cap now says what it always meant: keep the RUNNING COMMENTARY short. It was never
+# meant to govern the sentence that introduces the agent to somebody.
+CLI_TOOL_RULE = ("Reply with text and zero or more tool_calls. When you call tools, keep text to "
+                 "one short sentence -- EXCEPT on the first turn of a conversation, where a short "
+                 "paragraph of context before the question is expected and wanted. Never make the "
+                 "whole reply a status line about yourself: write to the person, not about "
+                 "yourself. When you have nothing more to do, return an empty tool_calls list.")
 
 # A nested Claude Code session leaves these in the environment and the CLI would treat
 # our call as a child of it. ANTHROPIC_API_KEY goes too, so the CLI never bills the API.

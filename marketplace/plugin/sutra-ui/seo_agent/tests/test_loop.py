@@ -90,10 +90,16 @@ had_brief = store.knowledge("brand/writer-brief.md")
 if had_brief: store.save_knowledge("brand/writer-brief.md", "")
 kb = loop._knowledge_block(site)
 ok("knowledge block names the catalogue", "Site catalogue: %s" % site.get("domain") in kb and "%d pages" % len(site["pages"]) in kb)
-ok("knowledge block says the brand pack is missing", "Brand pack: not built" in kb and "Finish setup first" in kb)
+ok("knowledge block says the brand pack is missing", "Brand pack: not built" in kb and "Setup is not finished" in kb)
 store.save_knowledge("brand/writer-brief.md", had_brief or "# Writer brief\n\nA test brief.")
 kb = loop._knowledge_block(site)
-ok("with the brief on file it says setup is complete", "Setup is complete. Do NOT run index_site" in kb)
+ok("with the brief on file it says setup is complete", "Setup is complete:" in kb)
+# The block states facts and NOTHING else. An instruction in here is a chore queued against
+# whatever the person typed: on 2026-09-10 the tail said "Run onboard once, then carry on", the
+# owner typed `hi`, and the agent opened a four-question interview on him.
+ok("and it gives no orders: what to do about each state lives in the brief",
+   not any(w in kb for w in ("Run onboard", "Run index_site", "Run learn_brand", "Run build_page_index",
+                             "Do NOT run", "Say that in your first message")), kb)
 ok("the system prompt carries the block", "## What is already in Knowledge" in loop._system_prompt() and "{{KNOWLEDGE}}" not in loop._system_prompt())
 if not had_brief: store.save_knowledge("brand/writer-brief.md", "")
 
@@ -184,8 +190,8 @@ ok("the competitor answer went to competitors.json, addresses only",
    == ["rival-one.com", "rival-two.com"], store.knowledge("competitors.json"))
 ok("the interview is closed", onboard.status()["asked"] is True and onboard.status()["skipped"] == 1,
    onboard.status())
-ok("the system prompt now tells the model not to ask again",
-   "Do NOT ask them again" in loop._knowledge_block(store.knowledge("site_index.json") or {}))
+ok("the block now records that all four were put to them",
+   "all four have been put to them" in loop._knowledge_block(store.knowledge("site_index.json") or {}))
 
 llm.call = one_call("onboard")
 c5 = store.new_chat("asked already"); r5 = store.new_run(c5, "setup again")

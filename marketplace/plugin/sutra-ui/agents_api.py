@@ -154,6 +154,25 @@ def api_chat(chat_id: str):
     return {"chat": meta, "messages": store.get_messages(chat_id), "runs": store.list_runs(chat_id)}
 
 
+@router.delete("/chats/{chat_id}")
+def api_delete_chat(chat_id: str):
+    """Throw a chat away. The Library keeps every article that was written in it.
+
+    A RUNNING chat is refused rather than killed. A run writes into the folder we would be
+    deleting, so pulling it out from under a live thread is how you get half-written state and
+    a stack trace nobody can act on. Stop it first, then delete it; the UI does both in order.
+    """
+    if not _ok_id(chat_id):
+        return _bad("bad id")
+    if not os.path.isdir(store.chat_dir(chat_id)):
+        return _bad("no such chat", 404)
+    if _live_status(chat_id) == "running":
+        return _bad("That chat is still working. Stop it first, then delete it.", 409)
+    if not store.delete_chat(chat_id):
+        return _bad("could not delete that chat")
+    return {"ok": True, "id": chat_id}
+
+
 @router.post("/chats/{chat_id}/send")
 def api_send(chat_id: str, body: dict = Body(...)):
     """A message. If a run is waiting on the user, this IS the answer; if one is running,
@@ -190,9 +209,17 @@ def api_send(chat_id: str, body: dict = Body(...)):
     # The chip on the Asset ideas tab carries the idea's id as DATA, not as words in the message.
     # It is written into the run's state here, before loop.start, so the model never has to read
     # an id out of prose and decide to look it up. That is a step that can quietly not happen, and
-    # nobody would ever know it had been skipped. Research reads it to get the angle; the Library
-    # save reads it to tick the idea. The model touches it at no point.
+    # nobody would ever know it had been skipped. `run_research` reads it to take the angle the
+    # asset engine already worked out, and the Library save reads it to tick the idea it came
+    # from. The model touches it at no point. The third way in is loop._took_the_offer: accepting
+    # the agent's offer in the chat records the same id the same way.
     idea = (body.get("idea") or "").strip()
+    if not (idea and re.match(r"^a\d{1,6}$", idea)):
+        # THE SAME FACT, TYPED. Somebody who writes "write a1001" has started from that idea just
+        # as surely as somebody who pressed its button, so the id counts when the message names
+        # one that is really on the sheet and still open. Still provenance: the id is read from
+        # what the person wrote, never inferred from what the article turned out to be about.
+        idea = _named_open_idea(text)
     if idea and re.match(r"^a\d{1,6}$", idea):
         store.patch_state(chat_id, run_id, idea_id=idea)
     if len(runs) == 0:
@@ -201,6 +228,18 @@ def api_send(chat_id: str, body: dict = Body(...)):
     _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                       lambda: loop.start(chat_id, run_id, text)))
     return {"run_id": run_id, "answered": False, "state": store.get_state(chat_id, run_id)}
+
+
+def _named_open_idea(text):
+    """An idea id the person typed, checked against the sheet. "" when the message names none, or
+    names more than one, or names one that is already written: a guess here ticks the wrong row."""
+    try:
+        from seo_agent.assets import _common as acm
+        open_ids = {(r.get("id") or "").lower() for r in acm.ideas() if r.get("status") == "open"}
+    except Exception:  # noqa: BLE001 — a sheet we cannot read must never stop a message being sent
+        return ""
+    found = {m.lower() for m in re.findall(r"\ba\d{1,6}\b", text or "")} & open_ids
+    return found.pop() if len(found) == 1 else ""
 
 
 # ---- runs ------------------------------------------------------------------------------------
@@ -1953,7 +1992,15 @@ def _assets_payload():
     # working and this site has nothing there, the other means it is blocked. The merge writes all
     # three states, with a ready-made sentence. (Raised by the merge builder, 2026-09-09.)
     m = acm.read("_work/merge/methods.json") or {}
-    states = m.get("methods") or {}
+    # TWO WRITERS, TWO SHAPES. assets/merge.py writes a LIST of {method, file, state, ideas};
+    # assets/import_sheet.py writes a DICT of {method: state}. Normalised here rather than at the
+    # two writers, because the list carries the per-method detail the merge's own line needs and
+    # the dict is what this screen wants. Found 2026-09-10: the list form raised
+    # "AttributeError: 'list' object has no attribute 'items'" and took the whole Asset ideas tab
+    # down with it. It had never fired only because this install's sheet was imported.
+    raw = m.get("methods") or {}
+    states = ({r.get("method"): r.get("state") for r in raw if isinstance(r, dict)}
+              if isinstance(raw, list) else raw)
     ran = sorted([k for k, v in states.items() if v == "ran"]) or \
         sorted({x for r in rows for x in (r.get("method") or [])})
     return {
@@ -2051,6 +2098,15 @@ def api_health():
         page_index = {"built": False}
     idx = store.knowledge("site_index.json") or {}
     brand = _brand_pack()
+    # THE SHEET IS PART OF "AM I SET UP". Without it the opening screen has no way to know that
+    # 1,890 ranked ideas exist, so its first starter chip offered six fresh competitor guesses
+    # instead of the top idea. The model and the tool both refuse that now; the chip is the same
+    # rule on screen, and it needs this fact to draw itself. (2026-09-10.)
+    try:
+        from seo_agent.tools import build_assets as _ba
+        assets = _ba.status()          # {built, total, counts, methods_run, next}
+    except Exception:  # noqa: BLE001 — health must answer even when the sheet cannot be read
+        assets = {"built": False, "next": None}
     return {"ok": True,
             "model_provider": llm.provider(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
@@ -2062,5 +2118,9 @@ def api_health():
             "page_index": page_index,
             "brand_ready": bool(next((f for f in brand.get("files", [])
                                       if f.get("name") == "writer-brief.md" and f.get("exists")), None)),
+            "assets": {"built": bool(assets.get("built")),
+                       "total": assets.get("total", 0),
+                       "open": (assets.get("counts") or {}).get("open", 0),
+                       "next": assets.get("next")},
             "chats": len(store.list_chats()),
             "data_dir": store.data_dir()}
