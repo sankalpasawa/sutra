@@ -2590,3 +2590,209 @@
 @media (max-width:760px){
   .shbrief{ max-width:100%; }
 }
+
+/* ═══ Shadow Home — the approved design ═══════════════════════════════════
+   A VISUAL PASS ONLY. No behaviour, no data, no new state: every hook and
+   every string already existed. Built to the reference on the founder's
+   desk, minus the parts a goal row cannot honestly support (timestamps,
+   tags, per-assignment icons) and minus interactivity the app does not have
+   (the state legend is a count, not a filter).
+
+   SCOPE: every selector below is prefixed `.shbrief2` -- a hook class added
+   ONLY to Shadow Home's container -- or names a class introduced in this
+   pass. Nothing shared is touched. */
+
+.shbrief2{ max-width:980px; gap:0; padding-block:6px 32px; }
+
+/* ---- masthead --------------------------------------------------------- */
+.shbrief2 .shmast{ display:flex; align-items:flex-start;
+  justify-content:space-between; gap:32px; padding:10px 0 26px; }
+.shmastname{ font-family:var(--serif); font-size:38px; line-height:1.05;
+  letter-spacing:-.015em; color:var(--ink); margin:0 0 2px; font-weight:600; }
+.shmastrole{ font-size:14px; color:var(--muted); margin-bottom:12px; }
+.shmaststate{ display:flex; align-items:center; gap:9px; }
+.shbrief2 .shgreet{ font-family:inherit; font-size:13.5px; color:var(--ink);
+  letter-spacing:0; text-wrap:pretty; }
+.shpulse{ width:8px; height:8px; border-radius:50%; flex:none;
+  background:var(--line); transition:background .3s ease, box-shadow .3s ease; }
+.shpulse-calm{ background:#2D5A3E; box-shadow:0 0 0 3px rgba(45,90,62,.14); }
+.shpulse-needs{ background:#8B4A6B; box-shadow:0 0 0 3px rgba(139,74,107,.16); }
+.shpulse-live{ background:#4A6B8B; box-shadow:0 0 0 3px rgba(74,107,139,.16); }
+
+.shquote{ margin:0; text-align:right; font-family:var(--serif);
+  font-size:15px; line-height:1.55; font-style:italic; color:var(--faint);
+  display:flex; flex-direction:column; }
+.shquote cite{ font-style:normal; font-family:inherit; font-size:12px;
+  color:var(--line); margin-top:6px; }
+
+/* ---- the stage -------------------------------------------------------- */
+.shstage{ display:flex; flex-direction:column; gap:18px;
+  border:1px solid var(--line-soft); border-radius:16px;
+  background:var(--card); padding:26px 28px 22px;
+  box-shadow:0 1px 2px rgba(28,25,23,.03);
+  transition:border-color .22s ease, box-shadow .22s ease; }
+.shstage:focus-within{ border-color:var(--line);
+  box-shadow:0 4px 24px rgba(28,25,23,.06); }
+.shstagetop{ display:grid; grid-template-columns:minmax(240px,320px) 1fr;
+  gap:34px; align-items:start; }
+.shstagetop > .shask{ border-left:1px solid var(--line-soft);
+  padding-left:34px; }
+
+.shbrief2 .shscope{ display:flex; flex-direction:column; gap:9px;
+  position:relative; }
+.shbrief2 .shscopelabel{ font-size:10px; letter-spacing:.14em;
+  text-transform:uppercase; font-weight:600; color:var(--faint); }
+.shtarget{ display:flex; align-items:center; gap:11px; width:100%;
+  text-align:left; border:1px solid var(--line-soft); border-radius:11px;
+  background:var(--card); padding:11px 12px; cursor:pointer; font:inherit;
+  color:var(--ink); transition:border-color .16s ease, background .16s ease; }
+.shtarget:hover{ border-color:var(--line); background:var(--inset); }
+.shtargeticon{ width:32px; height:32px; border-radius:9px; flex:none;
+  display:grid; place-items:center; background:var(--inset);
+  color:var(--muted); }
+.shtargeticon svg{ width:16px; height:16px; }
+.shtarget.on .shtargeticon{ background:rgba(184,148,95,.13); color:#8B6B4A; }
+.shtargettext{ display:flex; flex-direction:column; gap:2px; min-width:0;
+  flex:1; }
+.shtargetname{ font-size:14px; color:var(--ink); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.shtargetkind{ font-size:11.5px; color:var(--faint); }
+.shtargetchev{ width:15px; height:15px; flex:none; color:var(--faint); }
+
+.shasklabel{ font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  font-weight:600; color:var(--faint); margin-bottom:9px; }
+.shasktitle{ font-family:var(--serif); font-size:26px; line-height:1.2;
+  letter-spacing:-.01em; color:var(--ink); text-wrap:balance; }
+.shasksub{ font-size:13.5px; color:var(--muted); margin-top:7px;
+  line-height:1.5; }
+
+.shbrief2 .shcompwrap{ position:relative; gap:0; }
+.shbrief2 .shcompose{ width:100%; min-height:92px; resize:vertical;
+  font:inherit; font-size:14px; line-height:1.55; color:var(--ink);
+  background:var(--inset); border:1px solid var(--line-soft);
+  border-radius:12px; padding:15px 64px 15px 16px; box-shadow:none;
+  transition:border-color .2s ease, background .2s ease; }
+.shbrief2 .shcompose::placeholder{ color:var(--faint); }
+.shbrief2 .shcompose:focus{ outline:none; border-color:var(--line);
+  background:var(--card); }
+.shsend{ position:absolute; right:12px; bottom:12px; width:42px; height:38px;
+  display:grid; place-items:center; border:0; border-radius:10px;
+  background:#8B6B4A; color:#fff; cursor:pointer;
+  transition:background .16s ease, transform .16s ease; }
+.shsend svg{ width:17px; height:17px; }
+.shsend:hover{ background:#8B4A6B; transform:translateY(-1px); }
+.shsend:active{ transform:translateY(0); }
+
+.shrecent{ display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-top:16px; border-top:1px solid var(--line-soft); }
+.shrecentlabel{ font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  font-weight:600; color:var(--faint); }
+.shrecentrow{ display:flex; gap:8px; flex-wrap:wrap; }
+.shchip{ font:inherit; font-size:12.5px; color:var(--muted); cursor:pointer;
+  border:1px solid var(--line-soft); border-radius:99px; padding:6px 13px;
+  background:var(--card); max-width:210px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+  transition:border-color .15s ease, color .15s ease, background .15s ease; }
+.shchip:hover{ border-color:var(--line); color:var(--ink); }
+.shchip.on{ border-color:#B8945F; color:var(--ink);
+  background:rgba(184,148,95,.08); }
+.shbrief2 .shscopelist{ width:100%; padding-top:4px; }
+
+/* ---- navigation rail --------------------------------------------------- */
+.shbrief2 .shnav{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px;
+  border-top:0; padding:22px 0 0; }
+.shbrief2 .shnavitem{ display:flex; align-items:center; gap:9px;
+  justify-content:flex-start; border:1px solid var(--line-soft);
+  border-radius:11px; background:var(--card); padding:13px 15px;
+  font-size:13px; color:var(--muted);
+  transition:border-color .15s ease, background .15s ease, color .15s ease; }
+.shbrief2 .shnavitem svg{ width:16px; height:16px; flex:none;
+  color:var(--faint); }
+.shbrief2 .shnavitem:hover{ border-color:var(--line); color:var(--ink);
+  background:var(--inset); }
+.shbrief2 .shnavitem.on{ background:rgba(184,148,95,.09);
+  border-color:rgba(184,148,95,.3); color:var(--ink); }
+.shbrief2 .shnavitem.on svg{ color:#8B6B4A; }
+
+/* ---- Shadow's Work ----------------------------------------------------- */
+.shdeck{ display:flex; flex-direction:column; margin-top:34px;
+  padding-top:26px; border-top:1px solid var(--line-soft); }
+.shdeckhead{ display:flex; align-items:flex-start;
+  justify-content:space-between; gap:20px; flex-wrap:wrap;
+  margin-bottom:26px; }
+.shdecktitle{ font-family:var(--serif); font-size:26px; line-height:1.15;
+  letter-spacing:-.01em; color:var(--ink); margin:0; font-weight:600; }
+.shdecksub{ font-size:13px; color:var(--faint); margin-top:3px; }
+.shlegend{ display:flex; gap:7px; flex-wrap:wrap; }
+.shlegenditem{ font-size:11.5px; color:var(--muted); border-radius:99px;
+  border:1px solid var(--line-soft); padding:5px 12px; white-space:nowrap; }
+.shlegenditem b{ font-weight:600; color:var(--faint); margin-left:3px; }
+.shlegenditem.on{ background:var(--inset); color:var(--ink); }
+.shlegenditem.on b{ color:var(--muted); }
+
+.shgroup{ display:flex; flex-direction:column; gap:10px; margin-bottom:26px; }
+.shgrouptitle{ font-family:var(--serif); font-size:17px; color:var(--ink);
+  margin:0; font-weight:600; }
+.shgroupsub{ font-size:12.5px; color:var(--faint); margin:2px 0 6px; }
+
+.shasg{ display:grid; grid-template-columns:auto 1fr auto auto;
+  align-items:center; gap:16px; border:1px solid var(--line-soft);
+  border-radius:13px; background:var(--card); padding:16px 18px;
+  cursor:pointer; transition:border-color .18s ease, box-shadow .18s ease,
+  transform .18s ease; }
+.shasg:hover{ border-color:var(--line);
+  box-shadow:0 3px 14px rgba(28,25,23,.05); transform:translateY(-1px); }
+.shasgmark{ width:38px; height:38px; border-radius:10px; flex:none;
+  display:grid; place-items:center; background:var(--inset);
+  color:var(--faint); align-self:flex-start; }
+.shasgmark svg{ width:17px; height:17px; }
+.shasgmain{ min-width:0; display:flex; flex-direction:column; gap:3px; }
+.shasgtitle{ font-size:15px; line-height:1.4; color:var(--ink); margin:0;
+  font-weight:500; }
+.shasgsub{ font-size:13px; color:var(--muted); }
+.shasgmeta{ display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px;
+  color:var(--faint); margin-top:4px; }
+.shasgacts{ display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+.shasgside{ display:flex; flex-direction:column; align-items:flex-end;
+  gap:6px; text-align:right; }
+.shasgturn{ font-size:11.5px; color:var(--faint); }
+.shchev{ width:16px; height:16px; color:var(--line); flex:none;
+  transition:color .18s ease, transform .18s ease; }
+.shasg:hover .shchev{ color:var(--muted); transform:translateX(2px); }
+
+.shstatus{ display:inline-flex; align-items:center; gap:6px; font-size:10.5px;
+  letter-spacing:.09em; text-transform:uppercase; font-weight:600;
+  border-radius:99px; padding:5px 11px; white-space:nowrap;
+  background:var(--inset); color:var(--muted); }
+.shstatusdot{ width:6px; height:6px; border-radius:50%;
+  background:currentColor; }
+.shstatus-working{ background:rgba(74,107,139,.11); color:#4A6B8B; }
+.shstatus-verifying{ background:rgba(184,148,95,.13); color:#8B6B4A; }
+.shstatus-blocked{ background:rgba(139,74,107,.13); color:#8B4A6B; }
+.shstatus-done{ background:rgba(45,90,62,.12); color:#2D5A3E; }
+.shasg-blocked{ border-color:rgba(139,74,107,.3); }
+
+.shbrief2 .shgoalmore{ align-self:flex-start; font-size:12px; }
+
+/* calm: no work yet, so the page is identity + handover only */
+.shbrief2.shcalm{ justify-content:center; }
+
+@media (max-width:900px){
+  .shstagetop{ grid-template-columns:1fr; gap:22px; }
+  .shstagetop > .shask{ border-left:0; padding-left:0;
+    border-top:1px solid var(--line-soft); padding-top:20px; }
+  .shbrief2 .shnav{ grid-template-columns:repeat(2,1fr); }
+  .shbrief2 .shmast{ flex-direction:column; gap:16px; }
+  .shquote{ text-align:left; }
+}
+@media (max-width:760px){
+  .shbrief2{ max-width:100%; padding-block:4px 24px; }
+  .shmastname{ font-size:30px; }
+  .shasktitle{ font-size:21px; }
+  .shdecktitle{ font-size:21px; }
+  .shstage{ padding:18px 16px 16px; }
+  .shasg{ grid-template-columns:auto 1fr; gap:12px; }
+  .shasgside{ grid-column:2; align-items:flex-start; text-align:left;
+    flex-direction:row; align-items:center; gap:10px; margin-top:6px; }
+  .shasg .shchev{ display:none; }
+}

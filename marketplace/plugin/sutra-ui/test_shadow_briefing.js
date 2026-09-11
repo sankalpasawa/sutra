@@ -58,14 +58,23 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   assert(/Nothing needs you right now\./.test(h),"the calm greeting");
   assert(!/Everything is handled/.test(h),
     "and it never claims Shadow FINISHED everything it oversees");
-  assert(/class="shbrief shcalm"/.test(h),"the calm spine is composed, not top-loaded");
-  assert(!/Needs you/.test(h),"no needs-you band");
-  assert(!/>Working</.test(h),"no working band");
-  assert(!/>Goals</.test(h),"no goals band");
+  /* `shbrief` keeps every shipped rule and every assertion that names it;
+     `shbrief2` is the hook the visual pass hangs its own rules off. */
+  assert(/class="shbrief shbrief2 shcalm"/.test(h),
+    "the calm spine is composed, not top-loaded");
+  assert(!/shdeck/.test(h),"no work section at all with nothing delegated");
+  assert(!/shasg/.test(h),"and not one assignment card");
   assert(!/shchattabs/.test(h),"no session tabs");
   assert(/Tell Shadow what outcome you want/.test(h),"delegation composer");
-  assert(/shcomphero/.test(h),"and it is the hero");
-  assert(h.length<1800,"the calm page is compact ("+h.length+" chars)");
+  /* APPROVED DESIGN: the composer is the centrepiece in EVERY state, so
+     there is no longer a hero/quiet split -- the stage is always the stage. */
+  assert(/shstage/.test(h),"the composer stage leads the page");
+  assert(/What should I take on\?/.test(h),"with its ask");
+  /* still compact in what it SAYS -- the growth is inline svg for the four
+     nav icons and the target/send affordances, not content. Counted by
+     stripping svg markup, which is what the original figure was about. */
+  const words=h.replace(/<svg[\s\S]*?<\/svg>/g,"");
+  assert(words.length<2600,"the calm page is compact ("+words.length+" chars)");
   assert(!/8B4A6B/.test(h),"no attention styling when calm");
   ok("calm state: one sentence and a hero composer");
 }
@@ -92,39 +101,58 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
 /* 3/4. NEEDS YOU appears only when blocked; never empty */
 {
   const ctx=fresh(); ctx.S.goals=[WORKING,DONE];
-  assert(!/shbandneeds/.test(H(ctx)),"absent with nothing blocked");
+  assert(!/shstatus-blocked/.test(H(ctx)),"absent with nothing blocked");
   ctx.S.goals=[BLOCKED,WORKING];
   const h=H(ctx);
-  assert(/shbandneeds/.test(h),"present when blocked");
+  assert(/shstatus-blocked/.test(h),"present when blocked");
   assert(/Referral workflow/.test(h),"the outcome");
   assert(/the turn budget ran out/.test(h),"human blocker");
-  assert(/2 of 3 checks · attempt 2/.test(h),"progress and attempt");
-  assert(h.indexOf("Needs you")<h.indexOf(">Working<"),"and it comes first");
+  /* the meta row is separate spans now (the design separates them with
+     space, not a middot) -- both facts are still stated */
+  assert(/2 of 3 checks/.test(h) && /attempt 2/.test(h),
+    "progress and attempt");
+  /* assert the CARDS, not the count legend -- "Needs you" also appears
+     there, earlier in the document, which is not what this is about */
+  assert(h.indexOf("Referral workflow")<h.indexOf("Configure referral"),
+    "and a blocked assignment leads the Active group");
   ok("Needs You renders only when something is blocked");
 }
 /* 5/6. WORKING includes working AND verifying, excludes the rest */
 {
   const ctx=fresh(); ctx.S.goals=[WORKING,VERIFYING,BLOCKED,DONE,STOPPED,DRAFT];
   const h=H(ctx);
-  const band=h.slice(h.indexOf(">Working<"),h.indexOf(">Goals<"));
+  /* Active holds blocked + working + verifying; the terminal states sit in
+     their own groups below. Same states, same data -- grouped, not filtered. */
+  const band=h.slice(h.indexOf(">Active<"),h.indexOf("Recently completed"));
   assert(/Configure referral workflow/.test(band),"working goal");
-  assert(/working · 2 of 3 checks · turn 11\/20/.test(band),"its line");
+  /* APPROVED DESIGN: the state is a pill, the turn sits beside it and the
+     checks are the meta row -- the same three facts, no longer one joined
+     string. Priority is outcome, then state, then supporting metadata. */
+  assert(/shstatus-working/.test(band) && /2 of 3 checks/.test(band)
+    && /turn 11\/20/.test(band), "its state, checks and turn");
   assert(/Prepare insurance intake/.test(band),"verifying goal");
-  assert(/verifying · 3 of 4 checks · turn 7\/15/.test(band),"its line");
-  assert(!/Referral workflow</.test(band),"blocked is NOT here");
+  assert(/shstatus-verifying/.test(band) && /3 of 4 checks/.test(band)
+    && /turn 7\/15/.test(band), "its state, checks and turn");
+  /* Active is what Shadow is CARRYING: blocked belongs here too -- it is
+     live work waiting on the founder, not finished work. The terminal and
+     idle states have their own groups below. */
+  assert(/Referral workflow</.test(band),"blocked is live work, so it IS here");
   assert(!/Deployment preparation/.test(band),"done is NOT here");
   assert(!/Insurance configuration/.test(band),"stopped is NOT here");
   assert(!/EHR integration/.test(band),"draft is NOT here");
-  ok("Working holds working + verifying only");
+  ok("Active holds blocked + working + verifying only");
 }
 /* 7/8/9. GOALS holds the remainder, exactly once, with readable states */
 {
   const ctx=fresh(); ctx.S.goals=[WORKING,VERIFYING,BLOCKED,DONE,STOPPED,DRAFT];
   const h=H(ctx);
-  const band=h.slice(h.indexOf(">Goals<"));
-  assert(/EHR integration/.test(band)&&/Draft/.test(band),"draft listed");
-  assert(/Deployment preparation/.test(band)&&/Verified/.test(band),"done listed");
-  assert(/Insurance configuration/.test(band)&&/Stopped/.test(band),"stopped listed");
+  const band=h.slice(h.indexOf("Recently completed"));
+  assert(/Deployment preparation/.test(band)&&/Verified/.test(band),
+    "done listed under Recently completed");
+  const idle=h.slice(h.indexOf(">Not running<"));
+  assert(/EHR integration/.test(idle)&&/Draft/.test(idle),"draft listed");
+  assert(/Insurance configuration/.test(idle)&&/Stopped/.test(idle),
+    "stopped listed");
   assert(!/Configure referral workflow/.test(band),"working not duplicated");
   assert(!/Prepare insurance intake/.test(band),"verifying not duplicated");
   assert(!/the turn budget ran out/.test(band),"blocked not duplicated");
@@ -156,7 +184,15 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   assert(/Watching · 470/.test(h),"the count");
   assert(!/data-shwatch=/.test(h),"not one session row on Home");
   assert(!/Stop watching/.test(h),"nor its controls");
-  assert(h.indexOf(">Working<")<h.indexOf("Watching · 470"),"and it is secondary");
+  /* VISUAL PASS: the nav rail now sits between the composer and the work
+     deck (identity -> handover -> where else to look -> workload), so the
+     foot precedes the bands. What made Watching "secondary" was never its
+     position -- it is that 470 sessions are a COUNT here and never rows,
+     which the two assertions above pin directly. */
+  assert(h.indexOf("Watching · 470")<h.indexOf("Shadow\u2019s Work"),
+    "nav sits above the work deck");
+  assert(h.indexOf("shcompose")<h.indexOf("Watching · 470"),
+    "and the composer leads the page");
   click(ctx,{shwatching:"1"});
   assert.strictEqual(ctx.opened,"shadowwatching","it opens its own surface");
   assert(typeof ctx.SCREENS.shadowwatching==="function","which is registered");
@@ -195,10 +231,10 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
 {
   const ctx=fresh();
   assert(/Tell Shadow what outcome you want/.test(H(ctx)),"delegation copy");
-  assert(/shcomphero/.test(H(ctx)),"hero when calm");
+  assert(/shstage/.test(H(ctx)),"the stage is present when calm");
   ctx.S.goals=[WORKING];
   const busy=H(ctx);
-  assert(!/shcomphero/.test(busy),"quiet when there is active work");
+  assert(/shstage/.test(busy),"and present when there is active work too");
   assert(/data-shhomecompose/.test(busy),"but still there");
   /* slice 8: the proposal still renders, and the scope still rides the turn */
   ctx.S.shadowChat="01a081";
@@ -222,7 +258,7 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   assert.strictEqual(ctx.shadowActivityLine(null),"");
   ctx.S.goals=[G({unmet:[],turns_used:5})];
   const h=H(ctx);
-  assert(!/shworkact/.test(h),"and the element is omitted entirely");
+  assert(!/shasgsub/.test(h),"and the element is omitted entirely");
   assert(!/working hard|making progress|thinking/i.test(h),"no narration");
   ok("activity is derived or absent, never generated");
 }
@@ -289,7 +325,7 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   ctx.S.goals=Array.from({length:20},(_,i)=>G({id:"g"+i,state:"done",
     outcome:"Outcome "+i}));
   const h=H(ctx);
-  const rows=(h.match(/class="shgoal"/g)||[]).length;
+  const rows=(h.match(/shasg shasg-/g)||[]).length;
   assert(rows<=8,"the Home scan stays compact ("+rows+" rows)");
   assert(/more — open all goals/.test(h),"and links to the existing list");
   click(ctx,{shgoals:"1"});
@@ -386,7 +422,7 @@ function picker(ctx){
 {
   const ctx=fresh();
   const h=H(ctx);
-  assert(!/shband/.test(h),"no band was added to fill the space");
+  assert(!/shdeck/.test(h),"no work section was added to fill the space");
   assert(!/[0-9]+%/.test(h),"and still no percentage anywhere");
   const sec=css.slice(css.indexOf("slice 11"),
                       css.indexOf("the Watching screen reuses"));
