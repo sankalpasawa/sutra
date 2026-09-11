@@ -204,6 +204,15 @@ body{background:var(--ground);color:var(--ink);font-family:var(--fb);font-size:1
 .fabacts .a .ic{width:16px;text-align:center;color:var(--accent);font-size:13px} .fabacts .a .meta{margin-left:auto;font-size:10px;color:var(--faint)}
 .fabacts .run{border-top:1px solid var(--line-soft)}
 .fabacts .a .sd{width:7px;height:7px;border-radius:50%;flex:none} .fabacts .a .sd.run{background:var(--done)} .fabacts .a .sd.que{background:var(--faint)}
+/* FAB: notifications + type-a-task + Shadow-tab button */
+.fabtop{display:flex;align-items:center;padding:13px 14px 9px;font-family:var(--fd);font-size:14px;font-weight:600}
+.fabtop .gohome{margin-left:auto;font-family:var(--fb);font-size:11px;font-weight:700;color:var(--decide);cursor:pointer}
+.notifs{display:flex;flex-direction:column;gap:6px;padding:0 12px 6px}
+.npill{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:8px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .15s var(--ease)}
+.npill:hover{background:var(--accent-glow);border-color:var(--accent);transform:translateX(2px)}
+.npill .nd{width:7px;height:7px;border-radius:50%;flex:none} .npill .nd.decide{background:var(--decide)} .npill .nd.alert{background:var(--alert)}
+.npill .go2{margin-left:auto;color:var(--faint)}
+.fabmenu .ask.newtask{border-top:1px solid var(--line-soft);border-left:0;border-right:0;border-bottom:0;border-radius:0;margin:2px 0 0;background:var(--card)}
 </style>
 </head>
 <body>
@@ -345,49 +354,8 @@ body{background:var(--ground);color:var(--ink);font-family:var(--fb);font-size:1
   <div class="fab"><div class="sdot" data-open="shset-live" tabindex="0" role="button" aria-label="Open Shadow settings"><b>S</b><span class="n">2</span></div></div>
 </div></div>
 
-<p class="cap"><b>2b &middot; Shadow started a chat, and is driving it.</b> <span class="tag build">the v7 logic</span> <span class="try">click the S-dot to talk to Shadow about this chat</span>
-Shadow spawned <b>#paisa-emi</b> and works it: gold <b>S</b> turns are Shadow driving; grey turns are the working agent. The strip shows it driving with a done-when. Two inputs, never confused: the chat composer (you take over, Shadow pauses) and the S-dot (talk to the Shadow running this chat).</p>
-<div class="stage"><div class="window">
-  <div class="lights"><i></i><i></i><i></i></div>
-  <nav class="rail"><div class="brand">Sutra</div>
-    <div class="item"><span class="g">&#9673;</span>Now <span class="badge">2</span></div>
-    <div class="item"><span class="g">&#9678;</span>Focus</div>
-    <div class="item on"><span class="g">&#9998;</span>Chats</div>
-    <div class="item"><span class="g">&#9638;</span>Org</div><div class="item"><span class="g">&#9672;</span>Team Sutra</div>
-    <div class="item"><span class="g">&#9881;</span>Settings</div>
-    <div class="identity"><b>Sankalp &mdash; CEO</b><div class="tele">6 sessions &middot; ctx 62% &middot; $9 today</div></div></nav>
-  <section class="pane" style="padding:0;display:flex;flex-direction:column">
-    <div class="chatbar" style="padding:13px 16px"><span class="nm"><b>&#9998;</b>#paisa-emi</span><span>started by Shadow &middot; paisa</span><span class="st" style="color:var(--done)">running</span></div>
-    <div class="oversee"><span class="live"></span>Shadow is <b>driving</b> &middot; turn 3 / 12 &middot; done when tests green + PR open<span class="ctrls"><span>Take over</span><span class="stop">Stop</span></span></div>
-    <div class="smsgs" style="flex:1">
-      <div class="sm shadow"><div class="who"><span class="sdt">S</span>Shadow driving</div>Starting on the EMI rounding. Reading emi_check.py first.</div>
-      <div class="sm workagent"><div class="who"><span class="sdt">&#9702;</span>#paisa-emi</div>Found it &mdash; rounding uses floor(); the tests expect round-half-up in 3 cases.</div>
-      <div class="sm shadow"><div class="who"><span class="sdt">S</span>Shadow driving</div>Patch to round-half-up, add the 3 cases, run the EMI check first (your standing rule), then open a PR.</div>
-      <div class="sm workagent"><div class="who"><span class="sdt">&#9702;</span>#paisa-emi</div>Patch applied. 14 / 14 EMI tests pass. Opening a PR&hellip;</div>
-      <div class="sm shadow"><div class="who"><span class="sdt">S</span>Shadow driving</div>PR #212 open. done_when met on tests; the push is a floor, so I&rsquo;ll ask you in Now &mdash; I won&rsquo;t push on my own.</div>
-    </div>
-    <div class="dualcomp">
-      <div class="row"><span class="lbl">this chat</span><span class="ph">Message #paisa-emi &mdash; you take over, Shadow pauses&hellip;</span><span class="mic">&#9679;</span></div>
-    </div>
-  </section>
-  <div class="fab"><div class="sdot" data-fab="fab-chat" tabindex="0" role="button" aria-label="Talk to Shadow about this chat"><b>S</b><span class="n">2</span></div></div>
-  <div class="fabmenu" id="fab-chat">
-    <div class="ctx">Talk to Shadow about <b>EMI auto-fix</b> &mdash; steers it, no takeover</div>
-    <div class="ask"><span class="sm2">S</span><input type="text" placeholder="Tell Shadow — e.g. also cover the FX rounding case" aria-label="ask shadow about this chat"><button class="go" aria-label="send">&rarr;</button></div>
-    <div class="fabacts">
-      <div class="a"><span class="ic">+</span>New task<span class="meta">Delegate</span></div>
-      <div class="a"><span class="ic">&#9776;</span>Tasks<span class="meta">5 running</span></div>
-      <div class="run">
-        <div class="a"><span class="sd run"></span>watch: sutra-ui build<span class="meta">running</span></div>
-        <div class="a"><span class="sd run"></span>research: pricing<span class="meta">running</span></div>
-        <div class="a"><span class="sd que"></span>de-brand copy sweep<span class="meta">queued</span></div>
-      </div>
-    </div>
-  </div>
-</div></div>
-
-<p class="cap"><b>2c &middot; The floating button, anywhere.</b> <span class="tag build">to build</span>
-On any screen the S-dot is how you reach Shadow. It opens in place and asks where it opened: a "Tell Shadow" line plus New task, Tasks, and the running task-chats to jump into. Here it is open on the Org screen, scoped to <b>anywhere</b>.</p>
+<p class="cap"><b>2b &middot; The floating button.</b> <span class="tag build">to build</span>
+The S-dot rides every screen; its badge is Shadow&rsquo;s unread notifications. Open it and there are three things, nothing else: <b>notification pills</b> you tap to jump straight there, a line to <b>type a new task</b> for Shadow, and a button to the <b>Shadow tab</b>. Shown open on the Org screen.</p>
 <div class="stage"><div class="window" style="height:520px">
   <div class="lights"><i></i><i></i><i></i></div>
   <nav class="rail"><div class="brand">Sutra</div>
@@ -398,20 +366,15 @@ On any screen the S-dot is how you reach Shadow. It opens in place and asks wher
     <div class="identity"><b>Sankalp &mdash; CEO</b><div class="tele">6 sessions &middot; ctx 62% &middot; $9 today</div></div></nav>
   <section class="pane">
     <div class="greet" style="font-size:20px">Org</div>
-    <div class="subl" style="margin-top:-2px">departments &middot; the S-dot reaches Shadow from here too</div>
+    <div class="subl" style="margin-top:-2px">departments &middot; the S-dot reaches Shadow from anywhere</div>
   </section>
   <div class="fabmenu dock" style="position:absolute;right:26px;bottom:78px">
-    <div class="ctx">Tell Shadow &mdash; <b>anywhere</b></div>
-    <div class="ask"><span class="sm2">S</span><input type="text" placeholder="Delegate something, or just ask…" aria-label="ask shadow"><button class="go" aria-label="send">&rarr;</button></div>
-    <div class="fabacts">
-      <div class="a"><span class="ic">+</span>New task<span class="meta">Delegate</span></div>
-      <div class="a"><span class="ic">&#9776;</span>Tasks<span class="meta">5 running</span></div>
-      <div class="run">
-        <div class="a"><span class="sd run"></span>EMI auto-fix<span class="meta">running</span></div>
-        <div class="a"><span class="sd run"></span>watch: sutra-ui build<span class="meta">running</span></div>
-        <div class="a"><span class="sd que"></span>de-brand copy sweep<span class="meta">queued</span></div>
-      </div>
+    <div class="fabtop"><span>Shadow</span><span class="gohome">Open Shadow tab &#8599;</span></div>
+    <div class="notifs">
+      <span class="npill"><span class="nd decide"></span>EMI auto-fix &mdash; approve the push<span class="go2">&#8250;</span></span>
+      <span class="npill"><span class="nd alert"></span>stability pass &mdash; failed, retry?<span class="go2">&#8250;</span></span>
     </div>
+    <div class="ask newtask"><span class="sm2">S</span><input type="text" placeholder="Type a new task for Shadow…" aria-label="type a new task"><button class="go" aria-label="send">&rarr;</button></div>
   </div>
   <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
 </div></div>
