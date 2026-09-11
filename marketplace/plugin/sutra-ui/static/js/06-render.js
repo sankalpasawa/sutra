@@ -417,6 +417,24 @@ function sessionPane(s){
      Take over ENDS Shadow's ownership and then the composer works; Stop ends
      the task. Two different decisions, so two buttons -- both act on the
      mission id the server named, never on a guess. */
+  /* WHICH TASK IS THIS. The strip named a turn count and an outcome and never
+     the task, so every Shadow-driven chat read identically -- and a chat whose
+     OWN mission was still running looked exactly like a chat that a task
+     started elsewhere had just hijacked (founder, 2026-09-11: work "appearing
+     inside" an already-open chat, which the transcripts show never happened).
+     Naming it is what makes the two distinguishable.
+
+     The objective is already on the row the server sends (_shadow_task_row),
+     so this reads a field that was being thrown away -- no fetch, no second
+     source, and absent rather than invented when the server sent none.
+     Trimmed to one line's worth, with the whole objective on hover, because
+     an objective is a sentence and this strip is a status line. */
+  const shObj = shTask
+    ? String(shTask.objective || "").trim().replace(/\s+/g, " ") : "";
+  const shName = shObj
+    ? ` · <span class="shdrivename" title="${escAttr(shObj)}">${
+        esc(shObj.length > 44 ? shObj.slice(0, 43).trim() + "\u2026" : shObj)
+      }</span>` : "";
   const shTurns = shTask && shTask.max_turns
     ? ` · turn ${esc(String(shTask.turns_used || 0))} / ${esc(String(shTask.max_turns))}`
     : "";
@@ -425,7 +443,7 @@ function sessionPane(s){
   const shadowChip = shadowDriving
     ? `<div class="shdrive" role="status">
       <span class="shdrivedot" aria-hidden="true"></span>
-      <span class="shdrivetxt">Shadow is <b>driving</b>${shTurns}${shDone}</span>
+      <span class="shdrivetxt">Shadow is <b>driving</b>${shName}${shTurns}${shDone}</span>
       ${shTask && shTask.mission_id ? `<span class="shdriveacts">
         <button class="btn" type="button"
           data-shtakeoverchat="${escAttr(shTask.mission_id)}"

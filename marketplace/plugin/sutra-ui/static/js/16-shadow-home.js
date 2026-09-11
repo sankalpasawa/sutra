@@ -227,6 +227,24 @@ function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
 }
 
+/* THE STATE IS NOT ALWAYS THE WHOLE FACE. `paused` is one word for two very
+   different situations: the app restarted mid-flight (nothing is being asked
+   of anyone), and Shadow finished and is WAITING ON THE FOUNDER to sign off
+   the founder_confirm checks -- which is the same "it needs you" the engine
+   spells `blocked` everywhere else. Reading PAUSED for the second one is what
+   made a finished task look like a stalled one with nothing to do.
+
+   shadowTaskFace(state) is untouched and still the state->face map; this is
+   the MISSION-aware caller, and it is the only thing that knows the mission
+   carries pause_reason. */
+function shadowMissionNeedsFounder(m){
+  return !!(m && m.state === "paused" && m.pause_reason === "founder_confirm");
+}
+function shadowTaskFaceFor(m){
+  if (shadowMissionNeedsFounder(m)) return SH_TASK.blocked;
+  return shadowTaskFace(m && m.state);
+}
+
 /* THE WORKSPACE IS AN ACTIVE WORK SURFACE, NOT A MISSION DATABASE.
 
    GET /api/shadow/missions returns MissionStore.list() -- every mission file
@@ -300,7 +318,7 @@ function shadowTaskListHtml(){
     return `<div class="shtaskempty">Nothing yet — Delegate a task and
       Shadow will run it in its own chat.</div>`;
   return rows.map(m => {
-    const f = shadowTaskFace(m.state);
+    const f = shadowTaskFaceFor(m);
     return `<button class="shtask${sel && m.id === sel.id ? " on" : ""}"
       type="button" data-shtask="${escAttr(m.id)}">
       <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
@@ -324,11 +342,63 @@ function shadowFloorsLine(){
    missionCardHtml: that is the compact in-thread row and stays exactly as it
    is (the overlay renders it too). This is the focused view the design asks
    for, and it reads every field off the same mission record. */
+/* THE SIGN-OFF, in the card. A founder_confirm check is the one tier nothing
+   else can satisfy -- not the transcript, not a verifier, not Shadow (the
+   engine says so: confirm_check is "the ONLY writer of a founder_confirm met
+   flag"). So a delegate that has done the work parks the mission at
+   paused/founder_confirm and waits, and until now the card offered Resume and
+   Stop and no way to say yes. This is that missing action, and it is the
+   EXISTING one: confirm_check, by index, through shadowMissionAct.
+
+   Per check, not per mission, because that is the shape the engine stores and
+   the founder may agree with two of three. Each line shows the criterion in
+   full BEFORE its button -- what is being agreed to is the whole point, so it
+   is never collapsed into a count or a single "Looks done" button.
+
+   A non-founder_confirm check that is still unmet is shown and NOT offered:
+   the server refuses that index, and a button that always errors is worse
+   than an honest line saying who does check it. */
+function shadowCheckRowsHtml(m){
+  const rows = (m.done_when || []).map((c, i) => {
+    const text = (c && c.check) || "";
+    if (!text) return "";
+    const met = !!(c && c.met);
+    const mine = c && c.tier === "founder_confirm";
+    const by = (c && c.confirmed_by) || "";
+    return `<div class="shcheck${met ? " shcheckmet" : ""}">
+      <span class="shcheckbox" aria-hidden="true">${met ? "\u2713" : ""}</span>
+      <span class="shchecktxt">${esc(text)}</span>
+      ${met
+        ? `<span class="shcheckby">confirmed${by ? " \u00b7 " + esc(by) : ""}</span>`
+        : (mine
+            ? `<button class="btn shcheckdo" type="button"
+                data-shcheckmid="${escAttr(m.id)}" data-shcheckix="${escAttr(i)}"
+                >Confirm</button>`
+            : `<span class="shcheckby">Shadow checks this</span>`)}
+    </div>`;
+  }).join("");
+  if (!rows) return "";
+  const left = (m.done_when || []).filter(c =>
+    c && c.tier === "founder_confirm" && !c.met).length;
+  return `<div class="shconfirm">
+    <div class="shconfirmq">Shadow says it is done and is waiting on you.</div>
+    <div class="shconfirmsub">Only you can sign these off \u2014 read each one
+      and confirm the ones you agree with.${left
+        ? " " + left + " left." : ""}</div>
+    <div class="shchecks">${rows}</div>
+  </div>`;
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
-  const f = shadowTaskFace(m.state);
+  const f = shadowTaskFaceFor(m);
   const startable = m.state === "brief_confirm";
   const checks = (m.done_when || []).map(c => c && c.check).filter(Boolean);
+  /* the ONE extra state this card knows about: waiting on the founder's
+     sign-off. The flat "done when" row is a summary and cannot be acted on,
+     so in this state the checklist REPLACES it rather than sitting beside it
+     -- the same criteria printed twice is not a compact card. */
+  const awaiting = shadowMissionNeedsFounder(m);
   /* target_mode + target_session ARE the answer to "where does this run"; no
      second source and nothing inferred. */
   const acts = m.target_mode === "new"
@@ -346,16 +416,17 @@ function shadowTaskCardHtml(m){
     </div>
     <div class="shcard2row"><span class="shcard2k">acts in</span>
       <span class="shcard2v">${acts}</span></div>
-    <div class="shcard2row"><span class="shcard2k">done when</span>
+    ${awaiting ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
-        : "you say so — no check was set, so Shadow will ask"}</span></div>
+        : "you say so — no check was set, so Shadow will ask"}</span></div>`}
     <div class="shcard2row"><span class="shcard2k">budget</span>
       <span class="shcard2v">turn ${esc(String(m.turns_used || 0))} of ${
         esc(String(m.max_turns || 0))}</span></div>
     ${m.block_reason ? `<div class="shcard2row"><span class="shcard2k">stopped on</span>
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
+    ${awaiting ? shadowCheckRowsHtml(m) : ""}
     <div class="shcard2acts">
       ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id)}">Start the task</button>
@@ -631,49 +702,36 @@ function shadowStageHtml(){
   </section>`;
 }
 
-/* the four existing destinations, as one rail. Same hooks, same order. */
+/* THE FOOTER IS ONE DOOR (design of record: website/preview/shadow-v7.html,
+   the v7 task pane -- its .tnfoot holds a single "Shadow settings" row).
+
+   Five links under a task list made the workspace read as a dashboard index,
+   which is the thing the task workspace exists not to be. Watching,
+   Conversations, Goals and Memory are NOT removed: every screen, hook and
+   handler they had is untouched, and they are reached from the Attention and
+   Memory sections of the settings page this button opens -- which is where
+   the design puts them. data-shscreen is the EXISTING hook, so the route is
+   the one that already worked.
+
+   Kept exported and rendered by the same caller, so nothing else in the
+   workspace had to move. */
 function shadowNavHtml(){
-  const S_ = (typeof S !== "undefined") ? S : {};
-  const watching = (S_.shadowWatching || []).length;
-  const memory = (S_.shadowMemory || []).length;
-  /* Goals that are still live -- the same filter the deck's own bands used.
-     The row exists because the assignment deck no longer renders inside the
-     task workspace, and its "N more — open all goals" button was the ONLY
-     route to the goals screen. Same data-shgoals hook, same handler; this
-     moves reachability, it does not add a feature. */
-  const goals = ((S_.goals || []).filter(g => g &&
-    ["draft", "working", "verifying", "blocked"].includes(g.state))).length;
-  const open = !!S_.shadowMemOpen;
-  const item = (attr, label, path, on) => `<button
-    class="btn shfootitem shnavitem${on ? " on" : ""}" type="button" ${attr}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="1.7" aria-hidden="true">${path}</svg>
-    <span>${label}</span></button>`;
   return `<nav class="shfoot shnav">
-    ${item('data-shwatching="1"', "Watching · " + watching,
-      '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/>'
-      + '<circle cx="12" cy="12" r="2.6"/>')}
-    ${item('data-shchats="1"', "Conversations",
-      '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20.5l1.6-4.6'
-      + 'A8.4 8.4 0 0 1 3.6 11a8.4 8.4 0 0 1 8.4-8.4 8.4 8.4 0 0 1 9 8.9z"/>')}
-    ${item('data-shgoals="1"', "Goals · " + goals,
-      '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6"/>'
-      + '<circle cx="12" cy="12" r="1"/>')}
-    ${item('data-shmemopen="1"', "Memory · " + memory,
-      '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3'
-      + 's8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>', open)}
-    ${item('data-shscreen="shadowsettings"', "Settings",
-      '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8'
-      + 'l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0'
-      + 'v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8'
-      + 'l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7'
-      + 'a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3'
-      + 'H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1'
-      + 'a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7'
-      + 'a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>')}
-  </nav>
-  ${open ? `<div class="shfootopen">${
-    shadowMemoryHtml(S_.shadowMemory || [])}</div>` : ""}`;
+    <button class="btn shfootitem shnavitem shsetdoor" type="button"
+      data-shscreen="shadowsettings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="3"/>
+        <path d="M19.9 14.6a1.7 1.7 0 0 0 .34 1.87l.06.06a2.06 2.06 0 1 1-2.92 2.92
+          l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.55v.18a2.06 2.06 0 0 1-4.12 0
+          v-.1a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2.06 2.06 0 1 1-2.92-2.92
+          l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1.03h-.18a2.06 2.06 0 0 1 0-4.12
+          h.1a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2.06 2.06 0 1 1 2.92-2.92
+          l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 9.9 4.52v-.18a2.06 2.06 0 0 1 4.12 0
+          v.1a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2.06 2.06 0 1 1 2.92 2.92
+          l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.55 1.03h.18a2.06 2.06 0 0 1 0 4.12
+          h-.18a1.7 1.7 0 0 0-1.55 1.03z"/></svg>
+      <span>Shadow Settings</span></button>
+  </nav>`;
 }
 
 /* ---- assignment cards ---------------------------------------------------
@@ -819,7 +877,7 @@ function shadowHomeHtml(){
      picker, the recent chats and the briefing copy exactly as it always has.
      Preserving the behaviour is not the same as rendering it everywhere. */
   const existing = !!S.shadowExistingOpen;
-  const face = sel ? shadowTaskFace(sel.state) : null;
+  const face = sel ? shadowTaskFaceFor(sel) : null;
   return `<div class="shwork">
     <aside class="shwleft">
       <button class="shdelegate${newOpen ? " on" : ""}" type="button"
@@ -892,34 +950,250 @@ async function loadShadowSettings(){
   if (typeof scheduleRender === "function") scheduleRender();
 }
 
+/* ── SHADOW SETTINGS ─────────────────────────────────────────────────────
+   Design of record: website/preview/shadow-v7.html (commit c4ac22df) -- the
+   full-screen settings the v7 mock draws. Its shape is reproduced here:
+   back / seal / "Shadow" header, then a centred 600px column of sections,
+   each a heading over hairline-separated rows, no explainer copy.
+
+   WHAT IS AND IS NOT BUILT. The mock draws thirteen controls. Four have a
+   store behind them today and those are the four here -- floors, memory
+   rules, the delegate kinds, and attention -- every one read from the
+   endpoint that already serves them (/api/shadow/settings). The other nine
+   (autonomy level, "ask before the top tier", concurrency, per-task budget,
+   quiet hours, nudges per hour, corner card, hide-for-this-app, and the
+   add-a-control chat row) have NO backing: no field, no endpoint, no writer.
+   The mock's own status table marks them "v7 to build". They are left out
+   rather than drawn inert, because a toggle that silently does nothing is a
+   worse lie than an absent one, and rather than invented here, because a
+   second settings store is exactly what this page must not become.
+
+   REACHABILITY. Attention carries Watching, Goals and Conversations. The
+   workspace footer is one door now, and these are the rooms behind it --
+   same hooks (data-shwatching / data-shgoals / data-shchats), same screens,
+   same handlers. Nothing was removed; it moved one level in. */
+function shadowSettingsSecHtml(head, body){
+  return `<section class="ssec"><h3 class="ssh">${esc(head)}</h3>${body}</section>`;
+}
+
+/* AUTONOMY, to the design of record (website/preview/shadow-v7.html .ssec
+   "Autonomy"): the four-level selector in one rounded well, the top-tier
+   confirm toggle, then the floor pills.
+
+   HONEST ABOUT WHAT SAVES. The floors are real -- the server holds them and
+   they are the one part of autonomy that is enforced (SHADOW.md section 2:
+   never ledger-overridable). The LEVEL and the TOGGLE have no field, no
+   endpoint and no writer anywhere in this build; the mock's own status table
+   marks them "v7 to build". Founder asked for the section to match the
+   reference, so it is drawn exactly as drawn -- L3 selected, the toggle on --
+   and deliberately carries NO action hook: nothing here posts, and nothing
+   pretends to remember a choice it cannot keep. When the store lands, the
+   controls gain a data- attribute and this comment goes. */
+const SH_LEVELS = [["L0", "Watch"], ["L1", "Suggest"],
+                   ["L2", "Draft"], ["L3", "Act"]];
+/* what the build actually runs at. A constant, not a stored preference --
+   naming it here keeps the one place a future setting would be read. */
+const SH_LEVEL_NOW = "L3";
+
+function shadowSetAutonomyHtml(d){
+  const seg = SH_LEVELS.map(([lv, name]) => {
+    const on = lv === SH_LEVEL_NOW;
+    return `<button type="button" role="tab"${on ? ' class="on"' : ""}
+      aria-selected="${on}" aria-disabled="true" tabindex="-1"
+      title="Not configurable yet"><span class="lv">${esc(lv)}</span>${
+      esc(name)}</button>`;
+  }).join("");
+  const floors = (d.floors || []).filter(Boolean);
+  return `<div class="seg" role="tablist" aria-label="Autonomy level">${seg}</div>
+    <div class="srow"><span class="k">Ask me before the very top tier</span>
+      <span class="tog" role="switch" aria-checked="true" aria-disabled="true"
+        title="Not configurable yet"></span></div>
+    <div class="srow">${floors.length
+      ? `<span class="floorbar">${floors.map(f => `<span><span class="lk"
+          aria-hidden="true">\ud83d\udd12</span>${esc(f)}</span>`).join("")}</span>`
+      : `<span class="ssempty">No floors were reported.</span>`}</div>
+    <p class="ssnote">Floors are confirm-first, always \u2014 Shadow cannot be
+      talked out of them, and they are not editable here.</p>`;
+}
+
+/* Memory: the confirmed instructions, global first, then per chat. The row
+   is the mock's .rule -- scope pill, the text, and the × that revokes. It
+   uses the EXISTING revoke hook, so this is the same action the memory list
+   has always offered, wearing the design's row. The text is NOT editable:
+   there is no amend endpoint, and a field that silently discards what was
+   typed is worse than a read-only one. */
+function shadowSetRuleHtml(scope, glob, r){
+  return `<div class="rule">
+    <span class="rscope${glob ? " glob" : ""}">${esc(scope)}</span>
+    <span class="rtext">${esc((r && r.text) || "")}</span>
+    <button class="rx" type="button" data-shrevoke="${escAttr((r && r.id) || "")}"
+      title="Revoke this" aria-label="Revoke this">\u00d7</button>
+  </div>`;
+}
+
+function shadowSetMemoryHtml(d){
+  const rows = [];
+  for (const r of (d.global || [])) rows.push(shadowSetRuleHtml("global", true, r));
+  for (const key of Object.keys(d.per_chat || {}))
+    for (const r of (d.per_chat[key] || []))
+      rows.push(shadowSetRuleHtml(shadowChatLabel(key), false, r));
+  if (!rows.length)
+    return `<div class="ssempty">Shadow has learned nothing yet. Confirmed
+      instructions appear here.</div>`;
+  return rows.join("");
+}
+
+/* TASKS, to the design of record's .ssec "Tasks": Running at once as a
+   stepper, Budget per task as a value with the AUTO pill, and Delegate
+   offers as removable chips with "+ add".
+
+   THE TWO NUMBERS ARE REAL. running_at_once is mission_engine.MAX_RUNNING --
+   the cap MissionScheduler actually enforces before it queues -- and the
+   budget is TEMPLATES[kind].max_turns, which is what a mission is created
+   with and what fails it when spent. Both now ride the settings endpoint
+   that was already being read, so this page states the limits the engine
+   keeps rather than a number that merely looks right.
+
+   AUTO IS LITERALLY TRUE HERE: the budget is not a preference, it is chosen
+   by the kind of work. The pill says so, and the row names the kind it is
+   quoting rather than implying one number governs every task.
+
+   WHAT DOES NOT WRITE. The stepper's -/+, the chips' x and "+ add" are drawn
+   because the reference draws them, and carry NO action hook: there is no
+   writer for any of the three, and a control that answers a click by doing
+   nothing is worse than one that says it cannot yet. Same rule the Autonomy
+   section follows. */
+function shadowSetTasksHtml(d){
+  const t = (d && d.tasks) || {};
+  const run = t.running_at_once;
+  const budgets = t.turn_budget || {};
+  /* the kind Delegate opens on is the one whose budget this row quotes --
+     read from the draft's own default, never a second copy of it */
+  const kind = (shadowNewDraft().kind) || SH_KINDS[0];
+  const turns = budgets[kind];
+  const dead = ' aria-disabled="true" tabindex="-1" title="Not configurable yet"';
+  const stepper = run === undefined
+    ? `<span class="ssempty">not reported</span>`
+    : `<span class="step"><button type="button"${dead
+        } aria-label="fewer">\u2212</button><span class="val">${
+        esc(String(run))}</span><button type="button"${dead
+        } aria-label="more">+</button></span>`;
+  const budget = turns === undefined
+    ? `<span class="ssempty">not reported</span>`
+    : `<span><span class="ev">${esc(String(turns))}</span> turns
+        <span class="auto" title="set by the kind of work, not by you"
+          >auto</span></span>`;
+  return `<div class="srow"><span class="k">Running at once</span>${stepper}</div>
+    <div class="srow"><span class="k">Budget per task</span>${budget}</div>
+    <div class="srow"><span class="k" style="flex:none">Delegate offers</span>
+      <span class="chips">${SH_KINDS.map(k => `<span class="chip"${
+        budgets[k] === undefined ? "" : ` title="${escAttr(
+          budgets[k] + " turns")}"`}>${esc(k)}<span class="cx"${dead
+        } aria-hidden="true">\u00d7</span></span>`).join("")}
+        <button class="chipadd" type="button"${dead}>+ add</button>
+      </span></div>`;
+}
+
+/* PRESENCE, to the design of record's .ssec "Presence", then the
+   "Add a control" bar below it.
+
+   TWO OF THESE ARE REAL, and they are the two the overlay has always had:
+   the corner card's hide-for-this-session (S.shadowHideSession, the card's
+   own "hide" control) and quiet (S.shadowQuiet, which gates showNudge at
+   15-shadow-overlay.js). Both are wired here to the SAME flags the card
+   toggles -- one state, two places to reach it, no copy. They are
+   memory-only, exactly as they are today; this does not make them durable
+   and does not pretend to.
+
+   NUDGES PER HOUR is read from SH_PILLS_PER_HOUR, the rate pillAllowed
+   actually enforces. Stated, not settable: there is no writer.
+
+   QUIET HOURS has nothing behind it -- no field, no clock, no scheduler --
+   so the row renders with the value it truly has, which is none, and
+   without the AUTO pill. AUTO on this row would claim something chose those
+   hours; nothing did. The reference's "9pm to 8am" is mock copy.
+
+   ADD A CONTROL is drawn and inert for the same reason the steppers are:
+   there is nowhere for a new control to be kept. */
+function shadowSetPresenceHtml(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const dead = ' aria-disabled="true" tabindex="-1" title="Not configurable yet"';
+  const card = !S_.shadowHideSession;      /* shown unless hidden this session */
+  const quiet = !!S_.shadowQuiet;
+  const tog = (on, attr) => `<span class="tog${on ? "" : " off"}" role="switch"
+    aria-checked="${on}" tabindex="0" ${attr}></span>`;
+  const rate = (typeof SH_PILLS_PER_HOUR !== "undefined")
+    ? SH_PILLS_PER_HOUR : null;
+  return `<div class="srow"><span class="k">Corner card on every screen</span>
+      ${tog(card, 'data-shpresence="card"')}</div>
+    <div class="srow"><span class="k">Quiet hours</span>
+      <span><span class="ev">not set</span></span></div>
+    <div class="srow"><span class="k">Nudges per hour</span>${rate === null
+      ? `<span class="ssempty">not reported</span>`
+      : `<span class="step"><button type="button"${dead
+          } aria-label="fewer">\u2212</button><span class="val">${
+          esc(String(rate))}</span><button type="button"${dead
+          } aria-label="more">+</button></span>`}</div>
+    <div class="srow"><span class="k">Hide for this app</span>
+      ${tog(quiet, 'data-shpresence="quiet"')}</div>`;
+}
+
+function shadowSetAddHtml(){
+  return `<div class="addbar">
+    <span class="sp" aria-hidden="true">\u25cf</span>
+    <input type="text" disabled
+      placeholder="Tell Shadow what to add \u2014 e.g. Pause on weekends"
+      aria-label="Add a control" title="Not configurable yet">
+    <button class="go" type="button" aria-disabled="true" tabindex="-1"
+      title="Not configurable yet" aria-label="add">\u2192</button>
+  </div>`;
+}
+
+/* Attention: the counts the endpoint already returns, and the way back into
+   the three screens the workspace footer used to list. */
+function shadowSetAttentionHtml(d){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const a = d.attention || {};
+  const goals = ((S_.goals || []).filter(g => g &&
+    ["draft", "working", "verifying", "blocked"].includes(g.state))).length;
+  const link = (attr, label, n) => `<button class="btn ssgo" type="button" ${attr}
+    >${esc(label)}${n === null ? "" : " \u00b7 " + esc(String(n))}</button>`;
+  return `<div class="srow"><span class="k">Overseen</span>
+      <span class="v">${esc(String((a.watching || []).length))} watched \u00b7 ${
+      esc(String((a.off || []).length))} off \u00b7 ${
+      esc(String(a.alerts || 0))} waiting</span></div>
+    <div class="srow"><span class="k">Where it looks</span><span class="ssgos">
+      ${link('data-shwatching="1"', "Watching", (a.watching || []).length)}
+      ${link('data-shgoals="1"', "Goals", goals)}
+      ${link('data-shchats="1"', "Conversations", null)}
+    </span></div>`;
+}
+
 function shadowSettingsHtml(){
   const d = (typeof S !== "undefined" && S.shadowSettings) || null;
-  if (!d) return `<div class="zero"><h4>Shadow settings</h4>
-    <p>Could not read the rules just now.
-    <button class="btn" type="button" data-shsetreload="1">Retry</button></p></div>`;
-  const rows = [];
-  rows.push(`<div class="setrow"><span class="k">How I engage</span><span>${
-    (d.engage || []).map(esc).join(" \u00b7 ")}</span></div>`);
-  rows.push(`<div class="setrow"><span class="k">Remember \u2014 everywhere</span><span>${
-    (d.global || []).length
-      ? (d.global || []).map(r => `${esc(r.text || "")}
-          <button class="btn" type="button" data-shrevoke="${escAttr(r.id)}">Revoke</button>`).join("<br>")
-      : "<span class='shempty'>nothing yet</span>"}</span></div>`);
-  for (const key of Object.keys(d.per_chat || {})){
-    rows.push(`<div class="setrow"><span class="k">Remember \u2014 ${
-      esc(shadowChatLabel(key))}</span><span>${
-      (d.per_chat[key] || []).map(r => `${esc(r.text || "")}
-        <button class="btn" type="button" data-shrevoke="${escAttr(r.id)}">Revoke</button>`).join("<br>")
-    }</span></div>`);
-  }
-  const a = d.attention || {};
-  rows.push(`<div class="setrow"><span class="k">Attention</span><span>${
-    (a.watching || []).length} overseen \u00b7 ${
-    (a.off || []).length} off \u00b7 ${a.alerts || 0} waiting</span></div>`);
-  rows.push(`<div class="setrow"><span class="k">Floors</span><span
-    style="color:var(--faint)">${(d.floors || []).map(esc).join(" \u00b7 ")
-    } \u2014 confirm-first, always (not editable)</span></div>`);
-  return `<div class="shsettings"><div class="panelbox">${rows.join("")}</div></div>`;
+  const head = `<header class="sshead">
+    <button class="ssback" type="button" data-shscreen="shadow"
+      title="Back to Shadow" aria-label="Back to Shadow">\u2190</button>
+    <span class="ssmark" aria-hidden="true"><b>S</b></span>
+    <h2 class="sstitle">Shadow</h2>
+  </header>`;
+  if (!d) return `<div class="shset">${head}
+    <div class="ssbody"><div class="sswrap">
+      <div class="zero"><h4>Shadow settings</h4>
+      <p>Could not read the rules just now.
+      <button class="btn" type="button" data-shsetreload="1">Retry</button></p>
+      </div></div></div></div>`;
+  return `<div class="shset">${head}
+    <div class="ssbody"><div class="sswrap">
+      ${shadowSettingsSecHtml("Autonomy", shadowSetAutonomyHtml(d))}
+      ${shadowSettingsSecHtml("Memory", shadowSetMemoryHtml(d))}
+      ${shadowSettingsSecHtml("Tasks", shadowSetTasksHtml(d))}
+      ${shadowSettingsSecHtml("Presence", shadowSetPresenceHtml())}
+      <section class="ssec addset"><h3 class="ssh">Add a control</h3>${
+        shadowSetAddHtml()}</section>
+      ${shadowSettingsSecHtml("Attention", shadowSetAttentionHtml(d))}
+    </div></div>
+  </div>`;
 }
 
 if (typeof SCREENS !== "undefined"){
@@ -1095,6 +1369,39 @@ if (typeof document !== "undefined" && document.addEventListener){
       });
       return;
     }
+    /* THE SIGN-OFF. The existing mission action, with the index the engine
+       stores the check under -- no new endpoint, no new state, and the same
+       shadowMissionAct that already nudges "Check confirmed." and re-reads
+       the home. Confirming the LAST check settles the mission server-side
+       (api_shadow_mission_act -> settle_confirmation), so that re-read is
+       also what moves the row out of the list. */
+    /* PRESENCE: the SAME two flags the overlay card toggles, reached from
+       settings. Nothing new is stored -- hide re-mounts or removes the dot
+       exactly as the card's own control does, and mountShadowOverlay is
+       already a no-op when a dot exists. */
+    if (d.shpresence){
+      if (typeof S !== "undefined"){
+        if (d.shpresence === "quiet"){
+          S.shadowQuiet = !S.shadowQuiet;
+        } else if (d.shpresence === "card"){
+          S.shadowHideSession = !S.shadowHideSession;
+          if (S.shadowHideSession){
+            S.shadowCardOpen = false;
+            const dot = typeof document !== "undefined" && document.querySelector
+              && document.querySelector(".shdot");
+            if (dot && dot.remove) dot.remove();
+            if (typeof renderShadowCard === "function") renderShadowCard();
+          } else if (typeof mountShadowOverlay === "function"){
+            mountShadowOverlay();
+          }
+        }
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shcheckmid !== undefined && d.shcheckix !== undefined)
+      return shadowMissionAct(d.shcheckmid, "confirm_check",
+                              { index: Number(d.shcheckix) });
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);

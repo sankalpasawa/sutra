@@ -3891,6 +3891,48 @@ test("33b-1b. the strip carries turn progress and done-when when the server sent
   const text = h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
   assert.ok(/turn 3 \/ 12/.test(text), "turn progress missing: " + text.slice(0, 300));
   assert.ok(/done when tests green · PR open/.test(text), "done-when missing");
+  /* and WHICH task, in the order the line reads: driving, then the task, then
+     its numbers -- the name is the subject, not a trailing detail */
+  assert.ok(/Shadow is driving · ship it · turn 3 \/ 12/.test(text),
+    "the driving task is not named: " + text.slice(0, 300));
+});
+
+/* 33b-1b2. THE FOUNDER'S MISREADING (2026-09-11), as a standing guard.
+   Two chats Shadow drives rendered an identical strip, so a chat still
+   running its OWN task looked like a chat some other task had taken over.
+   Different missions must produce visibly different strips. */
+test("33b-1b2. the strip names the task, so two driven chats differ", () => {
+  const pane = (sid, task) => sandbox.sessionPane({ id: sid, title: "t",
+    real: true, cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: task }).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  const a = pane("sid-a", { mission_id: "m-a", objective: "Create a Python FizzBuzz script",
+    turns_used: 1, max_turns: 20, done_when: [] });
+  const b = pane("sid-b", { mission_id: "m-b", objective: "I want 22/7 to be non-recurring",
+    turns_used: 1, max_turns: 20, done_when: [] });
+  assert.ok(/Create a Python FizzBuzz script/.test(a), "task A unnamed: " + a);
+  assert.ok(/I want 22\/7 to be non-recurring/.test(b), "task B unnamed: " + b);
+  assert.ok(a !== b, "two Shadow-driven chats must not read identically");
+  /* a long objective is trimmed to one line, and nothing is lost -- the whole
+     of it stays reachable on the element itself */
+  const long = "Chat d5740ce7 lands a final language choice between Python "
+    + "and Go for the ingest service, with reasons";
+  const h = sandbox.sessionPane({ id: "sid-long", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-l", objective: long, turns_used: 1,
+                   max_turns: 20, done_when: [] } });
+  const name = h.match(/<span class="shdrivename" title="([^"]*)">([^<]*)<\/span>/);
+  assert.ok(name, "no named span in the strip");
+  assert.ok(name[2].length <= 45, "the name must not run the strip long: " + name[2]);
+  assert.ok(/…$/.test(name[2]), "a trimmed name must say it was trimmed");
+  assert.ok(name[1].indexOf("with reasons") > -1,
+    "the full objective must stay readable on hover");
+  /* the server sent no task: name nothing rather than invent one */
+  const bare = sandbox.sessionPane({ id: "sid-bare", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true });
+  assert.ok(/Shadow is driving/.test(
+      bare.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ")),
+    "the strip still renders without a task row");
+  assert.ok(!/shdrivename/.test(bare), "a missing objective must not be faked");
 });
 
 test("33b-1c. Take over and Stop are offered, bound to the mission the server named", () => {

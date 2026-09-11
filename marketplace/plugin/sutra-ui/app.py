@@ -2250,6 +2250,17 @@ async def api_shadow_settings():
             "external client repositories",
             "irreversible external sends",
         ],
+        # The two task limits this build actually runs at, READ-ONLY. Not new
+        # settings and not a new store: both are existing constants in
+        # mission_engine, and the Tasks section of Shadow settings was the
+        # only reader that could not see them from the browser. Surfacing a
+        # number the engine already enforces is the alternative to the
+        # settings page printing one that is merely plausible.
+        "tasks": {
+            "running_at_once": _mission_engine.MAX_RUNNING,
+            "turn_budget": {k: v["max_turns"]
+                            for k, v in _mission_engine.TEMPLATES.items()},
+        },
     }
 
 

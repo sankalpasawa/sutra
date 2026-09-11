@@ -20,7 +20,13 @@ function fresh(){
     console, Date, setTimeout: (fn)=>({fn}),
     esc: (x) => String(x == null ? "" : x).replace(/</g, "&lt;"),
     SCREENS: {}, TITLES: {}, S: {},
-    document: { addEventListener(){}, createElement(){ return {
+    /* listeners are RECORDED, not discarded: the delegated click handler is
+       the only way to exercise a card action end to end, and it was
+       previously unreachable from here. Keyed by type -- the home module is
+       the only document-level click listener in this context. */
+    listeners: {},
+    document: { addEventListener(t, fn){ ctx.listeners[t] = fn; },
+      createElement(){ return {
       setAttribute(){}, remove(){}, dataset: {} }; },
       body: { appendChild(){} }, querySelector(){ return null; } },
   };
@@ -374,10 +380,16 @@ console.log("ok 6 controls wired");
   assert(/Shadow is working on/i.test(h), "section label missing");
   /* the composer and the foot nav are always here */
   assert(/data-shhomecompose/.test(h), "Shadow composer was lost");
-  assert(/data-shwatching/.test(h) && /data-shmemopen/.test(h)
-      && /data-shscreen="shadowsettings"/.test(h),
-    "the foot nav (Watching/Memory/Settings) was lost");
-  console.log("ok 14 workspace: two columns, + Delegate, nothing lost");
+  /* THE FOOTER IS ONE DOOR NOW (v7 design of record). Watching, Memory,
+     Goals and Conversations are not deleted -- they moved behind it, and
+     the settings test below pins that they are still reachable. */
+  assert(/data-shscreen="shadowsettings"/.test(h),
+    "the way into Shadow Settings was lost");
+  assert(/Shadow Settings</.test(h), "the settings door is not labelled");
+  assert(!/data-shwatching/.test(h) && !/data-shmemopen/.test(h)
+      && !/data-shgoals/.test(h) && !/data-shchats/.test(h),
+    "the workspace footer must be one door, not the old five-link index");
+  console.log("ok 14 workspace: two columns, + Delegate, one settings door");
 }
 
 /* 14b. THE DELEGATED WORKSPACE IS TASK-FOCUSED.
@@ -443,10 +455,16 @@ console.log("ok 6 controls wired");
   assert(!/class="shasg/.test(h), "assignment cards rendered");
   assert(!/class="shdeck/.test(h), "the deck container rendered");
 
-  /* the goals screen keeps its route, and the count is live goals only */
-  assert(/data-shgoals="1"/.test(h), "the goals screen became unreachable");
-  assert(/Goals · 5/.test(h), "the footer must count LIVE goals (3+2), got "
-    + (h.match(/Goals · \d+/) || ["none"])[0]);
+  /* the goals screen keeps its route and its live-goal count -- both moved
+     from the workspace footer into Settings > Attention, which is the only
+     thing that changed about them */
+  assert(!/data-shgoals="1"/.test(h), "goals still listed in the workspace");
+  ctx.S.shadowSettings = { engage: [], global: [], per_chat: {},
+    attention: { watching: ["a"], off: [], alerts: 0 }, floors: [] };
+  const set = ctx.shadowSettingsHtml();
+  assert(/data-shgoals="1"/.test(set), "the goals screen became unreachable");
+  assert(/Goals · 5/.test(set), "Settings must count LIVE goals (3+2), got "
+    + (set.match(/Goals · \d+/) || ["none"])[0]);
   /* and the renderer is still there for the screen that owns it */
   assert(typeof ctx.shadowDeckHtml === "function",
     "shadowDeckHtml must not be deleted -- only not called here");
@@ -765,6 +783,328 @@ console.log("ok 6 controls wired");
   assert(/\.shwleft \.shnavitem\{[^}]*border:0/.test(cssTxt),
     "the footer nav must not render as bordered cards");
   console.log("ok 20 no class collisions, no unstyled classes, no unsized icons");
+}
+
+/* 21. THE SIGN-OFF: a delegated task that finished and is waiting on the
+   founder. The engine parks it at paused/founder_confirm, confirm_check is
+   the only writer of a founder_confirm `met` flag, and until this the card
+   offered Resume and Stop -- neither of which is "yes, that is done". */
+const AWAITING = {
+  id: "m-fib", objective: "a README on Fibonacci", state: "paused",
+  pause_reason: "founder_confirm", template: "fix", target_mode: "new",
+  target_session: "sess-fib", turns_used: 1, max_turns: 20,
+  done_when: [
+    { tier: "founder_confirm", check: "the README explains it clearly",
+      met: true, confirmed_by: "founder" },
+    { tier: "founder_confirm", check: "a working Python example is included" },
+    { tier: "transcript", check: "the example is syntactically correct" },
+  ],
+};
+
+/* 21a. it reads NEEDS YOU, everywhere the state is shown */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  const h = ctx.shadowHomeHtml();
+  assert(!/>PAUSED</.test(h),
+    "waiting on the founder must not read as a stalled task");
+  assert((h.match(/>NEEDS YOU</g) || []).length >= 2,
+    "NEEDS YOU in both the list row and the task header");
+  assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
+  /* a mission paused for any OTHER reason is untouched */
+  ctx.S.shadowMissions = [{ id: "m-r", objective: "x", state: "paused",
+    pause_reason: "app_restart", done_when: [] }];
+  ctx.S.shadowTaskSel = "m-r";
+  assert(/>PAUSED</.test(ctx.shadowHomeHtml()),
+    "a restart pause still reads PAUSED -- nothing is being asked");
+  console.log("ok 21a founder_confirm reads NEEDS YOU");
+}
+
+/* 21b. what am I agreeing to? Every criterion, in full, before its button */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  const h = ctx.shadowHomeHtml();
+  assert(/waiting on you/.test(h), "it must say what it is waiting for");
+  assert(/the README explains it clearly/.test(h)
+    && /a working Python example is included/.test(h)
+    && /the example is syntactically correct/.test(h),
+    "every criterion is shown, not a count");
+  /* the text precedes the control that acts on it */
+  const txt = h.indexOf("a working Python example is included");
+  const btn = h.indexOf('data-shcheckix="1"');
+  assert(txt > -1 && btn > txt,
+    "the criterion must be readable BEFORE its Confirm button");
+  assert(/shcheckmet/.test(h) && /confirmed/.test(h),
+    "an already-confirmed check says so instead of asking again");
+  assert(!/data-shcheckix="0"/.test(h), "a met check is not re-offered");
+  assert(!/data-shcheckix="2"/.test(h),
+    "a non-founder tier is not offered -- the server refuses that index");
+  assert(/Shadow checks this/.test(h), "and it says who does check it");
+  assert(!/done when<\/span>/.test(h),
+    "the flat summary row is replaced, not duplicated, in this state");
+  console.log("ok 21b the pending checks are readable before they are signed");
+}
+
+/* 21c + 21d. the click sends the EXISTING action, for the right mission and
+   index, and the answer refreshes the task state */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  let homeLoads = 0;
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ id: "m-fib", state: "done" }) }); };
+  ctx.loadShadowHome = () => { homeLoads++; };
+  assert(typeof ctx.listeners.click === "function", "the click handler is wired");
+  await ctx.listeners.click({ target: { dataset:
+    { shcheckmid: "m-fib", shcheckix: "1" } } });
+  assert.strictEqual(posts.length, 1, "exactly one action is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions/m-fib/act",
+    "the existing mission-action endpoint, for THIS mission");
+  assert.strictEqual(posts[0].body.action, "confirm_check",
+    "the existing action, not a new one");
+  assert.strictEqual(posts[0].body.index, 1,
+    "the index the engine stores the check under, as a number");
+  assert(homeLoads >= 1,
+    "a confirmation re-reads the mission state (settle may have ended it)");
+  console.log("ok 21c/d confirm_check is sent for the right check and refreshes");
+})().catch(e => { console.error("FAIL 21c/d:", e.message); process.exit(1); });
+
+/* 22. SHADOW SETTINGS (v7). Design of record: website/preview/shadow-v7.html.
+   The page is the workspace's one door, it comes back, and every control on
+   it is fed by the endpoint that already serves it -- nothing here is a
+   second settings store and nothing is drawn that cannot act. */
+const SET = { engage: ["outcome first"],
+  global: [{ id: "i-1", text: "Answer with the outcome in the first line." }],
+  per_chat: { "sess-paisa": [{ id: "i-2", text: "Run the EMI check first." }] },
+  attention: { watching: ["a", "b"], off: ["c"], alerts: 2 },
+  floors: ["the push", "client repos", "external sends"],
+  tasks: { running_at_once: 5,
+           turn_budget: { feature: 30, fix: 20, research: 15, watch: 0 } } };
+
+/* 22a. the header the design draws, and the way back */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
+  const h = ctx.shadowSettingsHtml();
+  assert(/class="sshead"/.test(h), "no settings header");
+  assert(/class="ssback"[\s\S]{0,120}data-shscreen="shadow"/.test(h)
+      || /data-shscreen="shadow"[\s\S]{0,120}class="ssback"/.test(h)
+      || /<button class="ssback" type="button" data-shscreen="shadow"/.test(h),
+    "the back button must return to the Shadow workspace");
+  assert(/class="ssmark"/.test(h) && /class="sstitle"/.test(h),
+    "seal + title missing from the header");
+  assert(/class="sswrap"/.test(h), "the centred column is missing");
+  /* four sections, in the design's order */
+  const order = ["Autonomy", "Memory", "Tasks", "Attention"]
+    .map(x => h.indexOf(">" + x + "<"));
+  assert(order.every(i => i > -1), "a section is missing: " + order.join(","));
+  assert(order.slice(1).every((v, i) => v > order[i]),
+    "sections are out of the design's order");
+  console.log("ok 22a settings page: header, back, centred column, sections");
+}
+
+/* 22b. every control is fed by real data -- and the nine the mock draws with
+   no store behind them are absent, not faked */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
+  const h = ctx.shadowSettingsHtml();
+  /* Autonomy = the floors, locked and said to be locked */
+  assert(/class="floorbar"/.test(h), "no floor bar");
+  assert(/the push/.test(h) && /external sends/.test(h), "floors not listed");
+  assert(/not editable/.test(h), "floors must say they cannot be changed");
+  /* Memory = the confirmed rules, with the EXISTING revoke */
+  assert(/Answer with the outcome/.test(h) && /Run the EMI check/.test(h),
+    "memory rules missing");
+  assert(/class="rscope glob"/.test(h), "a global rule is not scoped global");
+  assert(/paisa emi/.test(h), "a per-chat rule must wear the chat's real name");
+  assert(/data-shrevoke="i-2"/.test(h), "each rule keeps its revoke");
+  /* Tasks = the kinds + Delegate actually offers. Read off the Delegate
+     panel's OWN render rather than a list retyped here, so the two can never
+     drift: whatever Delegate offers is what Settings states. */
+  const kinds = (ctx.shadowDelegatePanelHtml().match(
+    /data-shnewkind="([a-z]+)"/g) || []).map(m => m.split('"')[1]);
+  assert(kinds.length >= 4, "the Delegate panel offered no kinds to compare");
+  kinds.forEach(k => assert(new RegExp('class="chip"[^>]*>' + k + "<").test(h),
+    "Settings does not state the kind Delegate offers: " + k));
+  /* Attention = the counts, and the three screens the footer used to list */
+  assert(/2 watched · 1 off · 2 waiting/.test(h), "attention counts wrong");
+  assert(/data-shwatching="1"/.test(h) && /data-shgoals="1"/.test(h)
+      && /data-shchats="1"/.test(h),
+    "Watching / Goals / Conversations must stay reachable from Settings");
+  /* Autonomy is drawn to the reference (founder, explicit) even though the
+     level and the top-tier switch have no store. What must hold is that they
+     do not PRETEND: no action hook, so nothing posts and nothing claims to
+     remember a choice it cannot keep. Pinned in 22d. */
+  /* every section the design draws is now here, in its order */
+  ["Autonomy", "Memory", "Tasks", "Presence", "Add a control", "Attention"]
+    .reduce((prev, name) => {
+      const at = h.indexOf(">" + name + "<");
+      assert(at > -1, "section missing: " + name);
+      assert(at > prev, "section out of the design's order: " + name);
+      return at;
+    }, -1);
+  /* nothing anywhere claims to keep what it cannot */
+  assert(!/contenteditable/.test(h),
+    "no editable field may render without a writer");
+  console.log("ok 22b settings: real data only, sections in the design's order");
+}
+
+/* 22d. AUTONOMY, to the reference. Four equal levels in one well with L3
+   filled, the top-tier switch on, then the floor pills -- and not one of the
+   two unbacked controls carries a writer. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const seg = (h.match(/<div class="seg"[\s\S]*?<\/div>/) || [""])[0];
+  assert(seg, "no segmented control");
+  [["L0", "Watch"], ["L1", "Suggest"], ["L2", "Draft"], ["L3", "Act"]]
+    .forEach(([lv, nm]) => {
+      assert(seg.indexOf(">" + lv + "<") > -1, "level missing: " + lv);
+      assert(seg.indexOf(nm) > -1, "level name missing: " + nm);
+    });
+  assert((seg.match(/<button/g) || []).length === 4, "four levels, no more");
+  /* L3 is the selected one, and it is the ONLY selected one */
+  assert((seg.match(/class="on"/g) || []).length === 1, "exactly one level is on");
+  const l3 = seg.slice(seg.lastIndexOf("<button"));
+  assert(/class="on"/.test(l3) && /aria-selected="true"/.test(l3),
+    "L3 must be the selected level");
+  /* the switch: on, and green by CSS rather than by a second class */
+  assert(/class="tog" role="switch" aria-checked="true"/.test(h),
+    "the top-tier switch must render on");
+  assert(/Ask me before the very top tier/.test(h), "its label is missing");
+  /* order: levels, then the switch, then the floors */
+  assert(h.indexOf('class="seg"') < h.indexOf('class="tog"')
+    && h.indexOf('class="tog"') < h.indexOf('class="floorbar"'),
+    "Autonomy must read levels -> switch -> floors");
+  /* the pills carry the lock the reference draws */
+  assert((h.match(/class="lk"/g) || []).length === 3, "three locked floor pills");
+  /* NOTHING UNBACKED WRITES. The one invariant that survives drawing them. */
+  const auto = h.slice(h.indexOf('class="seg"'), h.indexOf('class="floorbar"'));
+  assert(!/data-sh[a-z]+=/.test(auto),
+    "an unbacked control carries an action hook: " + auto.slice(0, 200));
+  assert((auto.match(/aria-disabled="true"/g) || []).length >= 5,
+    "unbacked controls must say they are not operable");
+  console.log("ok 22d autonomy matches the reference and writes nothing");
+}
+
+/* 22e. TASKS, to the reference -- and every number on it is one the engine
+   actually enforces, not one that merely looks right. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  /* the three rows, in the reference's order */
+  const rows = ["Running at once", "Budget per task", "Delegate offers"]
+    .map(k => sec.indexOf(k));
+  assert(rows.every(i => i > -1), "a Tasks row is missing: " + rows.join(","));
+  assert(rows.slice(1).every((v, i) => v > rows[i]), "Tasks rows out of order");
+  /* the stepper: minus, the value, plus */
+  const step = (sec.match(/<span class="step">[\s\S]*?<\/span>\s*<\/div>/) || [""])[0];
+  assert(/\u2212/.test(step) && /\+</.test(step), "the stepper needs - and +");
+  assert(/<span class="val">5<\/span>/.test(step),
+    "the stepper must show MAX_RUNNING, got: " + step.slice(0, 160));
+  /* the budget: the real per-kind turn budget, with the AUTO pill */
+  assert(/<span class="ev">20<\/span> turns/.test(sec),
+    "budget must quote TEMPLATES[fix].max_turns");
+  assert(/class="auto"[^>]*>auto</.test(sec), "the AUTO pill is missing");
+  /* the chips: what Delegate offers, each with the x the reference draws */
+  const kinds = (ctx.shadowDelegatePanelHtml().match(
+    /data-shnewkind="([a-z]+)"/g) || []).map(m => m.split('"')[1]);
+  kinds.forEach(k => assert(
+    new RegExp('class="chip"[^>]*>' + k + '<span class="cx"').test(sec),
+    "Delegate offer missing its chip or x: " + k));
+  assert(/class="chipadd"[\s\S]{0,120}\+ add</.test(sec), "no + add pill");
+  /* NOTHING IN HERE WRITES. Same invariant Autonomy keeps. */
+  assert(!/data-sh[a-z]+=/.test(sec),
+    "an unbacked Tasks control carries an action hook");
+  assert((sec.match(/aria-disabled="true"/g) || []).length >= 7,
+    "the -, +, every x and + add must say they are not operable");
+  /* and when the server sends no limits, none are invented */
+  const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
+  ctx.S.shadowSettings = d2;
+  const bare = ctx.shadowSettingsHtml();
+  assert(/not reported/.test(bare), "a missing limit must be said, not guessed");
+  assert(!/class="val">5</.test(bare), "a limit was invented from nowhere");
+  console.log("ok 22e tasks: reference layout, engine-enforced numbers");
+}
+
+/* 22f. PRESENCE + ADD A CONTROL, to the reference -- and the two rows that
+   have real state behind them are wired to the flags the overlay owns. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<"));
+  /* the four rows, in the reference's order */
+  const rows = ["Corner card on every screen", "Quiet hours",
+                "Nudges per hour", "Hide for this app"].map(k => sec.indexOf(k));
+  assert(rows.every(i => i > -1), "a Presence row is missing: " + rows.join(","));
+  assert(rows.slice(1).every((v, i) => v > rows[i]), "Presence rows out of order");
+  /* two switches, and a stepper showing the rate the code enforces */
+  assert((sec.match(/class="tog/g) || []).length === 2, "two toggles");
+  assert(/<span class="val">3<\/span>/.test(sec),
+    "the stepper must show SH_PILLS_PER_HOUR, got: " + sec.slice(0, 200));
+  /* the add bar */
+  assert(/class="addbar"/.test(sec), "no add-a-control bar");
+  assert(/Tell Shadow what to add/.test(sec), "its placeholder is missing");
+  assert(/class="go"/.test(sec) && /class="sp"/.test(sec),
+    "the accent dot and go button are missing");
+  /* THE TWO REAL ONES ACT, through the overlay's own flags */
+  assert(/data-shpresence="card"/.test(sec) && /data-shpresence="quiet"/.test(sec),
+    "the two backed toggles must be operable");
+  ctx.scheduleRender = () => {};
+  ctx.S.shadowQuiet = false;
+  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
+  assert.strictEqual(ctx.S.shadowQuiet, true,
+    "Hide for this app must flip the SAME flag the card's quiet control does");
+  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
+  assert.strictEqual(ctx.S.shadowQuiet, false, "and flip back");
+  ctx.S.shadowHideSession = false;
+  ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
+  assert.strictEqual(ctx.S.shadowHideSession, true,
+    "Corner card must flip the SAME flag the card's hide control does");
+  /* and the switch renders the truth afterwards */
+  assert(/class="tog off" role="switch"\s*\n?\s*aria-checked="false"[\s\S]{0,80}shpresence="card"/
+      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " "))
+    || /aria-checked="false"[^>]*data-shpresence="card"/
+      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " ")),
+    "the corner-card switch must read off once it is off");
+  /* the three unbacked ones state nothing they cannot keep */
+  assert(/not set/.test(sec),
+    "Quiet hours has no store -- it must say so, not print mock hours");
+  assert(sec.indexOf("9pm") === -1 && sec.indexOf("8am") === -1,
+    "mock hours were printed as if configured");
+  const inert = sec.slice(sec.indexOf("Quiet hours"));
+  assert(!/data-sh[a-z]+="(?!quiet)/.test(inert.slice(0, inert.indexOf("Hide for"))),
+    "an unbacked Presence control carries an action hook");
+  console.log("ok 22f presence: reference layout, real flags wired, rest inert");
+}
+
+/* 22c. the read can fail, and the page says so instead of rendering empty */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = null;
+  const h = ctx.shadowSettingsHtml();
+  assert(/Could not read the rules/.test(h), "a failed read must be stated");
+  assert(/data-shsetreload="1"/.test(h), "and offer the existing retry");
+  assert(/data-shscreen="shadow"/.test(h),
+    "the way back must survive a failed read");
+  console.log("ok 22c settings: an unreadable answer is its own state");
 }
 
 console.log("test_shadow_home.js: all green");

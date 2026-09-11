@@ -48,11 +48,18 @@ function snapCorner(x, y, w, h, margin){
 }
 
 /* S67: at most 3 UNSOLICITED pills per hour; nudges are exempt. history is
-   a list of epoch-ms; returns [allowed, prunedHistory]. */
+   a list of epoch-ms; returns [allowed, prunedHistory].
+
+   The 3 is NAMED now, and read from the name here, so the settings page can
+   state the rate this function actually enforces instead of printing a
+   number beside it that nothing checks. Same value, same behaviour -- the
+   literal moved, nothing else. */
+const SH_PILLS_PER_HOUR = 3;
+
 function pillAllowed(history, now){
   const hour = 3600 * 1000;
   const recent = (history || []).filter(t => now - t < hour);
-  return [recent.length < 3, recent];
+  return [recent.length < SH_PILLS_PER_HOUR, recent];
 }
 
 /* S71: chips come from Shadow as text; a chip renders ONLY as verb+object
@@ -266,9 +273,7 @@ function shadowRouteDeepLink(link){
     }
     m = l.match(/^sutra:\/\/session\/(.+)$/);
     if (m){
-      if (typeof S !== "undefined") S.pendingSessionHint = m[1];
-      if (typeof goDest === "function") goDest("chats");
-      if (typeof render === "function") render();
+      shadowOpenSessionPane(m[1]);
       return true;
     }
   } catch (e){ /* fall through to the safe default */ }
@@ -276,6 +281,41 @@ function shadowRouteDeepLink(link){
   if (typeof openScreen === "function") openScreen("shadow");
   if (typeof render === "function") render();
   return false;
+}
+
+/* A SESSION LINK OPENS THAT SESSION. This arm used to store the id on
+   S.pendingSessionHint and change destination -- and NOTHING in the panel ever
+   read that hint, so "Open the chat" landed on Chats showing whichever panes
+   were already in S.openPanes. For a founder who had just tested one
+   delegated task and started another, that is the PREVIOUS task's chat: the
+   link looked wired and pointed at the wrong conversation.
+
+   No new navigation: this is the rail's own [data-open] sequence -- markRead,
+   pushPane (the one helper all three open paths use), ensureTranscript, then
+   the destination -- so a Shadow link opens a chat exactly the way clicking
+   it in the rail does, FIFO eviction and transcript read included.
+
+   A chat published seconds ago has no row in S.sessions yet, so an unknown id
+   costs ONE list refresh before the open, and only then. Still no polling, and
+   a refresh that fails still opens and still lands on Chats. */
+function shadowOpenSessionPane(sid){
+  const open = () => {
+    if (typeof markRead === "function") markRead(sid);
+    if (typeof pushPane === "function") pushPane(sid);
+    if (typeof ensureTranscript === "function")
+      ensureTranscript((((typeof S !== "undefined" && S.sessions) || [])
+        .find(s => s && s.id === sid)) || null);
+    /* goDest renders; render() alone is the fallback when the shell is
+       partial (the same guard every other arm of the router carries) */
+    if (typeof goDest === "function") goDest("chats");
+    else if (typeof render === "function") render();
+  };
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const known = (S_.sessions || []).some(s => s && s.id === sid);
+  if (known || typeof loadSessions !== "function"){ open(); return; }
+  try {
+    Promise.resolve().then(() => loadSessions()).then(open, open);
+  } catch (e){ open(); }
 }
 
 /* event-driven pill (the overlay never polls -- pinned): whoever already
@@ -448,6 +488,35 @@ if (typeof document !== "undefined" && typeof fetch !== "undefined"
   try { bootShadowOverlay(); } catch (e) {}
 }
 
+/* START AND RETRY ANSWER BEFORE THEY HAPPEN. Both endpoints hand back
+   {accepted:true} and provision in the background -- the deliberate
+   second-flight fix, because holding the request open across a minutes-long
+   spawn let client timeouts cancel it. The consequence on this side is that
+   the loadShadowHome() at the end of shadowMissionAct reads a mission that
+   has not moved yet, so the row keeps saying READY while Shadow is already
+   running the task.
+
+   Nothing in Shadow polls, and this does not start it polling: THREE bounded
+   re-reads, on these two actions only, each skipped the moment the mission
+   has left brief_confirm. No timer is ever rescheduled and nothing runs after
+   the last one. The unknown-row case (a retry CLONE has no row in the list
+   yet) reloads on purpose -- that is precisely the state the founder is
+   waiting to see appear. */
+const SH_START_ACTIONS = ["start_now", "retry"];
+const SH_START_BACKOFF = [1000, 3000, 8000];
+
+function shadowWatchStart(mid){
+  if (typeof setTimeout !== "function" || !mid) return;
+  SH_START_BACKOFF.forEach((ms) => {
+    setTimeout(() => {
+      const S_ = (typeof S !== "undefined") ? S : {};
+      const row = (S_.shadowMissions || []).find(m => m && m.id === mid);
+      if (row && row.state !== "brief_confirm") return;   /* it moved */
+      if (typeof loadShadowHome === "function") loadShadowHome();
+    }, ms);
+  });
+}
+
 /* R19/R24: mission actions from any surface (card or home). */
 async function shadowMissionAct(mid, action, extra){
   if (typeof fetch === "undefined") return null;
@@ -471,6 +540,10 @@ async function shadowMissionAct(mid, action, extra){
       showNudge(said[action] || "Done.");
     }
     if (typeof loadShadowHome === "function") loadShadowHome();
+    /* the id the SERVER names, not mid: retry clones the brief into a new
+       mission and starts the clone, so mid is the row that will never move */
+    if (doc && SH_START_ACTIONS.indexOf(action) !== -1)
+      shadowWatchStart(doc.mission_id || mid);
     renderShadowCard();
     return doc;
   } catch (e){ return null; }
