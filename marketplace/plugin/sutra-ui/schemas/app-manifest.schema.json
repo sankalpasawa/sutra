@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra.asawa.co/schemas/app-manifest.schema.json",
+  "title": "Sutra Desktop app manifest (module.json)",
+  "description": "The one record of an app. The folder ~/.sutra-ui/modules/<id>/ IS the app (D-M1); this file is its manifest and, under ADR-039, the unit that a marketplace publishes. schema = file format (1 = v1.0/v1.1 on disk, 2 = adds department + publish); version = app revision (integer, bumped on every mutation); publish.version = semver for distribution. Unknown fields are preserved on read and write (additionalProperties: true throughout).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "id", "name", "kind", "status", "version"],
+  "properties": {
+    "schema": { "type": "integer", "enum": [1, 2] },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,40}$", "description": "equals the folder name; sys- prefix is reserved for system seeds and never stored" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "tagline": { "type": "string", "maxLength": 140 },
+    "kind": { "type": "string", "enum": ["chat", "page", "link"] },
+    "status": { "type": "string", "enum": ["draft", "ready", "archived"], "description": "the LOCAL lifecycle (archive never deletes). Distribution lifecycle lives in publish.state (codex 2026-09-11 P2)." },
+    "version": { "type": "integer", "minimum": 1, "description": "app revision; every mutation bumps it" },
+    "origin": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "created_by": { "type": "string", "enum": ["app", "shadow", "chat", "disk", "system", "marketplace"] },
+        "session_id": { "type": ["string", "null"] },
+        "at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "kind-specific: chat {instructions, cwd?} · page {entry: index.html} · link {screen, sections?}"
+    },
+    "guard": { "type": "object", "additionalProperties": true, "description": "reserved; not enforced in v1.x (a non-empty guard renders a warning)" },
+    "department": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "required": ["ref"],
+      "properties": { "ref": { "type": "string", "pattern": "^dref-[0-9a-f]{16}$", "description": "ONLY the ref is persisted (D-M13, codex P6); path and name are re-resolved at read; an unknown ref reads as Unassigned, never the root" } }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "publish": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "absent or null until the app is exported or installed (ADR-039)",
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$", "description": "semver for distribution; independent of the integer revision" },
+        "author": { "type": "string" },
+        "license": { "type": "string" },
+        "homepage": { "type": "string", "format": "uri" },
+        "checksum": { "type": "object", "additionalProperties": true, "properties": { "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
+        "published_at": { "type": "string", "format": "date-time" },
+        "source": { "type": "object", "additionalProperties": true, "properties": { "registry": { "type": "string" }, "artifact_url": { "type": "string", "format": "uri" } } },
+        "state": { "type": "string", "enum": ["local", "exported", "imported", "published", "update_available", "incompatible", "revoked"], "description": "distribution lifecycle (APPS-LIFECYCLE.md); local is the default when publish is absent. failed_verification is NOT a manifest value: nothing lands on a refused import, so it exists only as app.imported.result in the events log (codex R1b P2)" }
+      }
+    }
+  }
+}

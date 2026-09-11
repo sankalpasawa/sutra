@@ -1,0 +1,39 @@
+<!doctype html><meta charset=utf-8>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>body{margin:0;background:#000;color:#0f0;font:12px/1.45 monospace;padding:8px;white-space:pre}
+span.m{position:absolute;visibility:hidden;white-space:nowrap;font-size:0}</style>
+<div id="o">measuring…</div>
+<script>
+function meas(text,weight,size,family){
+  var s=document.createElement('span'); s.className='m';
+  s.style.fontFamily=family; s.style.fontWeight=weight; s.style.fontSize=size+'px';
+  s.style.whiteSpace='nowrap'; s.textContent=text;
+  document.body.appendChild(s);
+  var x=s.getBoundingClientRect().width; s.remove(); return x;
+}
+var SANS="Sutra gives you the ability to create multiple AI teams and helps you grow";
+var MONO="reading the brief - three streams";
+document.fonts.ready.then(function(){
+ var o=[];
+ o.push('loaded? Inter='+document.fonts.check('400 16px Inter')
+        +'  JetBrains='+document.fonts.check('400 12px "JetBrains Mono"'));
+ o.push('');
+ var iw=meas(SANS,400,16,'Inter');
+ o.push('INTER target = '+iw.toFixed(1));
+ [['-apple-system','-apple-system'],['Helvetica Neue','"Helvetica Neue"'],
+  ['Helvetica','Helvetica'],['Arial','Arial']].forEach(function(p){
+   var x=meas(SANS,400,16,p[1]);
+   o.push('  '+p[0].padEnd(16)+x.toFixed(1)+'  delta '+(((x-iw)/iw)*100).toFixed(1)
+          +'%  size-adjust '+(iw/x*100).toFixed(1)+'%');
+ });
+ var mw=meas(MONO,400,10.5,'"JetBrains Mono"');
+ o.push('');
+ o.push('JETBRAINS MONO target = '+mw.toFixed(1));
+ [['ui-monospace','ui-monospace'],['Menlo','Menlo'],['Courier New','"Courier New"']].forEach(function(p){
+   var x=meas(MONO,400,10.5,p[1]);
+   o.push('  '+p[0].padEnd(16)+x.toFixed(1)+'  delta '+(((x-mw)/mw)*100).toFixed(1)
+          +'%  size-adjust '+(mw/x*100).toFixed(1)+'%');
+ });
+ document.getElementById('o').textContent=o.join('\n');
+});
+</script>

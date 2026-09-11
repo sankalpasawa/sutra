@@ -2246,6 +2246,44 @@ def _live_destination(ref, domains, root):
     return root, "root"
 
 
+def live_destination(ref, domains=None, root=None):
+    """PUBLIC read of `_live_destination` for consumers that hold a STORED
+    domain ref (Sutra Desktop Modules v1.1, D-M13; codex P2 2026-09-11). Two
+    differences from the private walk, both deliberate:
+
+      * an UNKNOWN ref answers (None, "unknown") and never falls through to
+        the root -- a ref that was never minted is not "work that moved", it
+        is a stale or foreign value, and the caller must say so;
+      * `root` defaults to `live_root()`, which never mints, so a reader can
+        resolve without touching `_root_ref` (which mints on a miss).
+
+    Returns (dest_ref_or_None, how); how in home|successor|ancestor|root|unknown.
+    """
+    domains = domains if domains is not None else load_domains()
+    if not ref or ref not in domains:
+        return None, "unknown"
+    if root is None:
+        root = live_root(domains)
+    return _live_destination(ref, domains, root)
+
+
+def live_root(domains=None):
+    """The registry's live root WITHOUT minting: the first (sorted) active
+    parent-less domain, else a retired root's live destination, else None.
+    `_root_ref`'s search order minus its mint -- deterministic on a multi-root
+    registry (codex P4) and safe for readers that must never mint (D-M14)."""
+    domains = domains if domains is not None else load_domains()
+    for ref, d in sorted(domains.items()):
+        if d.get("parent_ref") is None and d.get("status", "active") == "active":
+            return ref
+    for ref, d in sorted(domains.items()):
+        if d.get("parent_ref") is None:
+            dest, _how = _live_destination(ref, domains, None)
+            if dest:
+                return dest
+    return None
+
+
 def repair(tenant_id="T-local", dry_run=False):
     """Orphan-charter re-home — the §0.15 DELETE bug. IDEMPOTENT.
 

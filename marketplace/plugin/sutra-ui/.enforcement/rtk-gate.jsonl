@@ -1,0 +1,3 @@
+{"ts":1787974417,"event":"rtk-gate-block","cmd":"ls -1 test_*.py 2>/dev/null; echo --- any others ---; find . -maxdepth 2 -name test_*.py -not -path ./.venv/* | sort; echo --- git log for test_local ---; git log --oneline -3 -- test_local.py 2>/dev/"}
+{"ts":1787974420,"event":"rtk-gate-block","cmd":"git log --oneline -3 -- test_local.py"}
+{"ts":1788833114,"event":"rtk-gate-block","cmd":"ls test_*.py; echo --- git history for test_local.py:; git log --oneline -3 -- test_local.py; echo --- elsewhere in repo:; find /Users/asawa/Claude/asawa-holding/sutra -name test_local.py -not -path *"}

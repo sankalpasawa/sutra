@@ -38,6 +38,12 @@ function fold(key, title, summary, inner, dflt){
    The D-path chip uses the ENGINE's own `path` field rather than recomputing an
    index, so this view can never disagree with the rest of the panel about what
    D-number a domain has. */
+/* rail-helpers:begin */
+/* Everything between the rail-helpers markers is ALSO run by test_modules.js
+   (sliced out of this file under vm), so Org > Modules is tested against the
+   same rail code the Directory view runs. Keep the region self-contained:
+   these functions may read the globals (DOMAINS, CHARTERS, S, st, esc) only
+   when CALLED, never at load. */
 function dirData(){
   const live = DOMAINS.filter(d => S.showRetired || st(d) !== "retired");
   const byRef = new Map(live.map(d => [d.ref, d]));
@@ -73,6 +79,45 @@ function dirMatches(d, q){
   const hay = ((d.name||"") + " " + (d.description||"") + " " + (d.path||"")).toLowerCase();
   return hay.indexOf(q) !== -1;
 }
+
+/* The rail renderer shared by the Directory view and Org > Modules (Modules
+   v1.1 D-M12; codex P14 2026-09-11): pure over its options. It owns the tree
+   walk, the open/closed state and the markup shape; the CALLER owns what a
+   link is (an #anchor in the Directory, a data-moddept selector in Modules),
+   what the count pill means (sub-departments here, module totals there) and
+   which nodes start open.
+     tops                 root-level entries to render (the caller's choice)
+     kids                 Map ref -> children, already sorted
+     q                    search text; a subtree survives when it or any
+                          descendant matches (hiding a matching child because
+                          its parent did not match would make search look broken)
+     link(d, inner, cls)  -> the anchor markup; cls is "" on a group's name,
+                          "dsub" on a leaf
+     count(d, ch, all)    -> number | null (null = no pill); ch = kids that
+                          survived the filter, all = every kid
+     open(d, depth)       -> boolean; default depth < 2
+     chip(path), match(d) default to dirChip / dirMatches(d, q) */
+function dirRail(opts){
+  const kids = opts.kids, q = (opts.q || "").trim().toLowerCase();
+  const chip = opts.chip || dirChip;
+  const match = opts.match || (d => dirMatches(d, q));
+  const link = opts.link, count = opts.count || (() => null);
+  const open = opts.open || ((d, depth) => depth < 2);
+  const subtreeMatches = d => match(d) || (kids.get(d.ref)||[]).some(subtreeMatches);
+  const entry = (d, depth) => {
+    const all = kids.get(d.ref) || [], ch = all.filter(subtreeMatches);
+    const n = count(d, ch, all);
+    const cnt = n == null ? "" : `<span class="navcount">${n}</span>`;
+    const chipHtml = `<span class="chip">${esc(chip(d.path))}</span>`;
+    if (ch.length) return `<details class="navgrp"${open(d, depth) ? " open" : ""}>
+      <summary>${chipHtml}${link(d, esc(d.name), "")}${cnt}</summary>
+      <div class="navkids">${ch.map(c => entry(c, depth+1)).join("")}</div></details>`;
+    return link(d, chipHtml + esc(d.name) + cnt, "dsub");
+  };
+  return (opts.tops || []).filter(subtreeMatches).map(t => entry(t, 1)).join("")
+    || `<p style="color:var(--faint);font-size:11.5px;padding:4px 6px">no match</p>`;
+}
+/* rail-helpers:end */
 
 /* The Charters section, ported from domains_page.py build_site() charter_table():
    Owner / Charter / Kind / Status, owner-grouped, with the status filter bar.
@@ -222,17 +267,6 @@ function domainsDirectory(){
   const subtreeMatches = d => dirMatches(d, q)
     || (kids.get(d.ref)||[]).some(subtreeMatches);
 
-  const navEntry = (d, depth) => {
-    const ch = (kids.get(d.ref)||[]).filter(subtreeMatches);
-    const anchor = "dir-" + d.ref;
-    if (ch.length) return `<details class="navgrp"${depth<2?" open":""}>
-      <summary><span class="chip">${esc(dirChip(d.path))}</span>
-        <a href="#${anchor}">${esc(d.name)}</a>
-        <span class="navcount">${(kids.get(d.ref)||[]).length}</span></summary>
-      <div class="navkids">${ch.map(c=>navEntry(c, depth+1)).join("")}</div></details>`;
-    return `<a class="dsub" href="#${anchor}"><span class="chip">${esc(dirChip(d.path))}</span>${esc(d.name)}</a>`;
-  };
-
   const nodeBlock = (d, depth) => {
     const all = kids.get(d.ref)||[];
     const ch = all.filter(subtreeMatches);
@@ -248,8 +282,11 @@ function domainsDirectory(){
   };
 
   const tops = (kids.get(root.ref)||[]).filter(subtreeMatches);
-  const rail = tops.map(t=>navEntry(t,1)).join("")
-    || `<p style="color:var(--faint);font-size:11.5px;padding:4px 6px">no match</p>`;
+  /* the rail is the shared dirRail (Modules v1.1 D-M12): the #dir- anchors and
+     the sub-department count are THIS view's parameters, never the helper's */
+  const rail = dirRail({ tops, kids, q,
+    link: (d, inner, cls) => `<a${cls ? ` class="${cls}"` : ""} href="#dir-${d.ref}">${inner}</a>`,
+    count: (d, ch, all) => ch.length ? all.length : null });
 
   const sections = tops.map(t=>{
     const all = kids.get(t.ref)||[];

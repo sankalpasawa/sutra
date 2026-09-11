@@ -192,6 +192,11 @@ const DEST_PLANES = {
              {screen:"departments"},{screen:"charters"},{screen:"placements"},
              /* knowledge + files rows DELETED (r5): the S92 fold's one-release
                 clock expired — openScreen's redirect remains the only trace */
+             /* Modules (2.247.0, design 2026-09-08-modules-design.md D-M7): the
+                finished products the operator builds inside the app. Label is
+                explicit because railSpec() has no modules entry for planeRows()
+                to fall back on; flag is opt-OUT (absent = on) like workspace. */
+             {screen:"modules", label:"Modules", flag:"modules"},
              {screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},

@@ -1224,6 +1224,12 @@ function planeRows(dest){
     /* A row can be feature-flagged (FLAG.md). With the flag off the row must
        not render at all — the byId fallback would otherwise show a bare id. */
     if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
+    /* Any other flagged row is opt-OUT: it renders unless settings.json carries
+       an explicit false. SETTINGS is null until /api/settings answers (and stays
+       null if it never does), so the guard must fail OPEN (codex fold 2026-09-08). */
+    if (entry.flag && entry.flag !== "workspace"
+        && typeof SETTINGS !== "undefined" && SETTINGS && SETTINGS.flags
+        && SETTINGS.flags[entry.flag] === false) continue;
     /* (r5) the S92 foldsInto rows are gone from DEST_PLANES; no filter needed. */
     if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
     else {

@@ -24,6 +24,8 @@ lane-1 backing is screenshot archaeology.
 2. node test_governance.js       # 51  — pure projections vs a real captured fan-out
 3. node test_charter_filter.js   # 31  — untouched neighbors stay green
 3b. node test_agents.js          # 24  — the Agents screen: projections vs a captured run, rendered DOM, block ids vs Python
+3c. node test_modules.js         # 17  — Org > Apps: registration, the shared dirRail slice, department + app views, seeds, never-blank states, the open paths (Apps program, TEST-STRATEGY-APPS.md)
+3d. .venv/bin/python -m pytest -q test_modules_pkg.py   # import/export trust boundary (APPS-THREATS.md X-1..X-10); collected by step 4 too, listed here because it is the security gate
 4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
                                   # (conftest.py excludes seo_agent/, whose scripts sys.exit at import; test_agents_api.py covers the routes)
 4b. bash seo_agent/tests/run_all.sh   # the SEO Writer engine's own checks, in a throwaway data dir

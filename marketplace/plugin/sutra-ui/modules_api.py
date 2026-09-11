@@ -22,12 +22,26 @@ SAFETY
   - flags.modules: opt-out, default ON, read per request (workspace
     precedent). Off answers 404 with the hint sentence.
   - archive never deletes. System rows answer 404 to every mutation.
+
+v1.1 -- ONE DEPARTMENT PER MODULE (D-M13/D-M14/D-M15, founder 2026-09-08;
+codex folds 2026-09-11). `module.json` carries `department: {"ref": …}` and
+ONLY the ref is persisted (P6): path and name are re-resolved on every read
+from the placement registry, the way org_api.org_tree() does, and a retired
+ref follows its successor chain at read time (placement_engine.live_destination,
+public). An unknown ref is Unassigned, never the root (P2). Modules never
+mints a domain (D-M14): an empty registry has no root, so everything is
+Unassigned and the screen says so. Filtering is server-side (D-M15):
+GET ?department=<ref>&subtree=1 answers groups here / below / system /
+unassigned plus per-department subtree counts; the flat `modules` list keeps
+its v1 shape and is never filtered (P10).
 """
 import datetime
 import json
 import os
 import re
+import sys
 import threading
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -35,14 +49,21 @@ from fastapi.responses import HTMLResponse, JSONResponse
 import providers
 from json_store import read_json, write_json
 
+# The department registry. The same explicit path insert org_api.py makes:
+# importing placement_engine must not depend on import order (codex P1).
+_LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
+if _LIB_DIR not in sys.path:
+    sys.path.insert(0, _LIB_DIR)
+import placement_engine as E  # noqa: E402
+
 router = APIRouter(prefix="/api/modules", tags=["modules"])
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 SCREEN_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
 KINDS = ("chat", "page", "link")
 STATUSES = ("draft", "ready", "archived")
-CREATED_BY = ("app", "shadow", "chat", "disk", "system")
-ACTIONS = ("archive", "restore", "rename", "mark_ready", "set_instructions")
+CREATED_BY = ("app", "shadow", "chat", "disk", "system", "marketplace")   # marketplace: ADR-039 install path (no UI yet)
+ACTIONS = ("archive", "restore", "rename", "mark_ready", "set_instructions", "assign")
 SYS_PREFIX = "sys-"
 NAME_MAX, TAGLINE_MAX, INSTR_MAX, HTML_MAX = 80, 140, 4000, 512 * 1024
 LINK_FORBIDDEN = ("terminal", "usage")   # terminal is a pane toggle; usage renders inside settings
@@ -152,9 +173,92 @@ def _mtime_iso(path):
     return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# --------------------------------------------------------- departments -----
+
+UNASSIGNED = "unassigned"          # a pseudo-ref the screen may SELECT, never ASSIGN
+UNASSIGNED_ROW = {"ref": UNASSIGNED, "path": "", "name": "Unassigned", "description": ""}
+
+
+class _Registry(object):
+    """One read of the domain registry per request; list + normalize share it
+    so a 40-module folder does not read the registry 40 times."""
+
+    def __init__(self):
+        self.domains = E.load_domains()
+        self.root = E.live_root(self.domains)
+        self.live = set(E.live_refs(self.domains).keys()) if self.domains else set()
+
+    def row(self, ref, moved=False):
+        """The display row for a LIVE ref. `path` is computed over the FULL
+        set: a retired sibling keeps its ordinal (codex P3)."""
+        d = self.domains.get(ref) or {}
+        return {"ref": ref, "path": E.domain_path(ref, self.domains),
+                "name": d.get("name") or ref, "moved": bool(moved)}
+
+    def echo(self, ref):
+        d = self.domains.get(ref) or {}
+        return {"ref": ref, "path": E.domain_path(ref, self.domains),
+                "name": d.get("name") or ref, "description": d.get("description") or ""}
+
+    def resolve(self, ref):
+        """Stored ref -> display row, or None (Unassigned). A retired ref
+        follows its successor chain; an unknown ref is NOT the root (codex P2)."""
+        if not isinstance(ref, str) or not ref:
+            return None
+        dest, how = E.live_destination(ref, self.domains, self.root)
+        if not dest:
+            return None
+        return self.row(dest, moved=(how != "home"))
+
+    def ancestors(self, ref):
+        """ref, its parent, grandparent … (live members only, full-set walk)."""
+        out, cur, seen = [], ref, set()
+        while cur and cur in self.domains and cur not in seen:
+            seen.add(cur)
+            if cur in self.live:
+                out.append(cur)
+            cur = self.domains[cur].get("parent_ref")
+        return out
+
+    def order(self):
+        """Live refs in tree order: root first, siblings by their D-path ordinal."""
+        kids = {}
+        for ref in self.live:
+            kids.setdefault(self.domains[ref].get("parent_ref"), []).append(ref)
+
+        def ordinal(ref):
+            return [int(p[1:]) if p[1:].isdigit() else 0
+                    for p in E.domain_path(ref, self.domains).split(".")]
+        for v in kids.values():
+            v.sort(key=ordinal)
+        out = []
+
+        def walk(ref):
+            out.append(ref)
+            for c in kids.get(ref, []):
+                walk(c)
+        if self.root:
+            walk(self.root)
+        return out
+
+
+def _require_department(ref, reg):
+    """A write-side department value: a LIVE ref, or 400. Names, the
+    `unassigned` pseudo-ref and retired refs are refused -- assignment is a
+    department, always (codex P5 / P12 / P18)."""
+    if not isinstance(ref, str) or not ref:
+        raise ModuleError(400, "department must be a department ref")
+    if ref not in reg.live:
+        raise ModuleError(400, "department %r is not a live department" % (ref,))
+    return ref
+
+
 # --------------------------------------------------------------- rows -----
 
-def _seed_rows():
+def _seed_rows(reg):
+    """System seeds sit at the registry root (D-M13); on an empty registry
+    they carry no department, like everything else."""
+    root = reg.row(reg.root) if reg.root else None
     rows = []
     for s in SYSTEM_SEEDS:
         rows.append({"schema": 1, "id": s["id"], "name": s["name"], "tagline": s["tagline"],
@@ -162,15 +266,19 @@ def _seed_rows():
                      "origin": {"created_by": "system", "session_id": None, "at": None},
                      "surface": dict(s["surface"]), "guard": {},
                      "created_at": None, "updated_at": None,
-                     "has_page": False, "reserved": False, "warning": None})
+                     "has_page": False, "reserved": False, "warning": None,
+                     "department": dict(root) if root else None})
     return rows
 
 
-def _normalize(raw, mid, path):
+def _normalize(raw, mid, path, reg):
     """One on-disk record -> one row the screen can render. Never raises; a
     strange file becomes a row with a warning, never a missing row (the folder
     is the truth and the screen reports the folder's state)."""
     raw = raw if isinstance(raw, dict) else {}
+    dept = raw.get("department")
+    dept_ref = dept.get("ref") if isinstance(dept, dict) else dept
+    department = reg.resolve(dept_ref)       # None = Unassigned: a state, not a fault
     surface = raw.get("surface") if isinstance(raw.get("surface"), dict) else {}
     origin = raw.get("origin") if isinstance(raw.get("origin"), dict) else {}
     kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
@@ -206,19 +314,24 @@ def _normalize(raw, mid, path):
             "surface": surface, "guard": guard,
             "created_at": raw.get("created_at") or _mtime_iso(json_path),
             "updated_at": raw.get("updated_at") or _mtime_iso(json_path),
-            "has_page": has_page, "reserved": reserved, "warning": warning}
+            "has_page": has_page, "reserved": reserved, "warning": warning,
+            "department": department,
+            # ADR-039: the optional publish block (semver, author, license, state …)
+            # is carried through untouched so Publish never needs a storage migration
+            "publish": raw.get("publish") if isinstance(raw.get("publish"), dict) else None}
 
 
-def _read(mid):
+def _read(mid, reg=None):
     path = _dir(mid)
     raw = read_json(os.path.join(path, "module.json"), {})
     if not raw:
         raise ModuleError(404, "no module named %r" % (mid,))
-    return _normalize(raw, mid, path)
+    return _normalize(raw, mid, path, reg or _Registry())
 
 
-def list_modules(include_archived=False):
+def list_modules(include_archived=False, reg=None):
     """Seeds first (fixed order), then the folder, newest first."""
+    reg = reg or _Registry()
     home = _home()
     try:
         names = sorted(os.listdir(home))
@@ -234,11 +347,63 @@ def list_modules(include_archived=False):
         raw = read_json(os.path.join(path, "module.json"), {})
         if not raw:
             continue
-        rows.append(_normalize(raw, name, path))
+        rows.append(_normalize(raw, name, path, reg))
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
     archived = sum(1 for r in rows if r["status"] == "archived")
     user = [r for r in rows if include_archived or r["status"] != "archived"]
-    return _seed_rows() + user, len(rows), archived
+    return _seed_rows(reg) + user, len(rows), archived
+
+
+def list_grouped(department=None, subtree=True, include_archived=False):
+    """D-M15: one department's view, computed server-side. The flat `modules`
+    list is the v1 answer, unfiltered (codex P10); `groups` is the selection:
+      here        user modules assigned to the selected department
+      below       user modules in its sub-departments, grouped, tree order
+                  (empty when subtree is off)
+      system      the seeds -- at the root only
+      unassigned  user modules with no live department -- at the root only
+    `counts_by_ref` counts USER modules into their department and every live
+    ancestor (codex P7/P8); `unassigned_count` sits beside it, never inside.
+    `department=unassigned` is terminal: no subtree, no system (codex P9)."""
+    reg = _Registry()
+    rows, count_user, archived = list_modules(include_archived, reg)
+    seeds = [r for r in rows if r["origin"]["created_by"] == "system"]
+    users = [r for r in rows if r["origin"]["created_by"] != "system"]
+    unassigned = [r for r in users if not r["department"]]
+    counts = {}
+    for r in users:
+        if r["department"]:
+            for a in reg.ancestors(r["department"]["ref"]):
+                counts[a] = counts.get(a, 0) + 1
+    base = {"modules": rows, "count_user": count_user, "archived": archived, "home": _home(),
+            "counts_by_ref": counts, "unassigned_count": len(unassigned),
+            "root": reg.echo(reg.root) if reg.root else None}
+    if department == UNASSIGNED:
+        base.update({"groups": {"here": [], "below": [], "system": [], "unassigned": unassigned},
+                     "department": dict(UNASSIGNED_ROW)})
+        return base
+    if department:
+        dest, _how = E.live_destination(department, reg.domains, reg.root)
+        if not dest:
+            raise ModuleError(404, "no department %r" % (department,))
+        sel = dest
+    else:
+        sel = reg.root                         # None on an empty registry (D-M14)
+    here = [r for r in users if r["department"] and r["department"]["ref"] == sel] if sel else []
+    below = []
+    if sel and subtree:
+        by = {}
+        for r in users:
+            d = r["department"]
+            if d and d["ref"] != sel and sel in reg.ancestors(d["ref"]):
+                by.setdefault(d["ref"], []).append(r)
+        below = [{"department": reg.row(ref), "modules": by[ref]} for ref in reg.order() if ref in by]
+    at_root = (sel == reg.root)                # also true when both are None
+    base.update({"groups": {"here": here, "below": below,
+                            "system": seeds if at_root else [],
+                            "unassigned": unassigned if at_root else []},
+                 "department": reg.echo(sel) if sel else None})
+    return base
 
 
 # ------------------------------------------------------------- writes -----
@@ -297,22 +462,32 @@ def create_module(spec, created_by, session_id=None):
             raise ModuleError(400, "screen must name a screen this app can open")
         surface = {"screen": screen}
     html = _str(spec, "html", HTML_MAX) if kind == "page" else ""
+    # D-M13 creation defaults: a named department must be a live ref (the
+    # Shadow fence and the seeded chats pass refs, never names -- codex P12);
+    # absent means the registry root; no root (empty registry) means Unassigned.
+    reg = _Registry()
+    if spec.get("department") not in (None, ""):
+        dept_ref = _require_department(spec.get("department"), reg)
+    else:
+        dept_ref = reg.root
     path = _dir(mid)
     if os.path.islink(path):
         raise ModuleError(400, "module folder may not be a symlink")
     if os.path.exists(os.path.join(path, "module.json")):
-        raise ModuleError(409, "a module with id %s already exists" % mid)
+        raise ModuleError(409, "an app with id %s already exists" % mid)
     now = _now()
     row = {"schema": 1, "id": mid, "name": name, "tagline": tagline, "kind": kind,
            # a link has nothing left to finish; chat and page start as drafts
            "status": "ready" if kind == "link" else "draft",
            "version": 1,
            "origin": {"created_by": created_by, "session_id": session_id, "at": now},
-           "surface": surface, "guard": {}, "created_at": now, "updated_at": now}
+           "surface": surface, "guard": {}, "created_at": now, "updated_at": now,
+           # ONLY the ref (codex P6): path/name are read-time caches
+           "department": {"ref": dept_ref} if dept_ref else None}
     write_json(os.path.join(path, "module.json"), row)
     if html:
         _write_text(os.path.join(path, "index.html"), html)
-    return _read(mid)
+    return _read(mid, reg)
 
 
 def apply_action(mid, action, body):
@@ -343,6 +518,9 @@ def apply_action(mid, action, body):
         surface = raw.get("surface") if isinstance(raw.get("surface"), dict) else {}
         surface["instructions"] = _str(body, "instructions", INSTR_MAX)
         raw["surface"] = surface
+    elif action == "assign":
+        # Move (D-M15 / D-M17): one department, a live ref, nothing else
+        raw["department"] = {"ref": _require_department(body.get("department_ref"), _Registry())}
     v = raw.get("version")
     raw["version"] = (v if isinstance(v, int) and v > 0 else 0) + 1
     raw["updated_at"] = _now()
@@ -376,10 +554,16 @@ def _guard(fn, *a, **kw):
 
 @router.get("")
 async def api_modules_list(request: Request):
+    """v1 fields (modules / count_user / archived / home) unchanged; v1.1 adds
+    groups / counts_by_ref / unassigned_count / root / department (codex P19).
+    ?department=<ref|unassigned>  the selection (default: the root)
+    ?subtree=0                    this department only (default: on)
+    ?include=archived             as in v1"""
     _require_flag()
-    include = (request.query_params.get("include") or "") == "archived"
-    rows, count_user, archived = list_modules(include_archived=include)
-    return {"modules": rows, "count_user": count_user, "archived": archived, "home": _home()}
+    qp = request.query_params
+    include = (qp.get("include") or "") == "archived"
+    subtree = (qp.get("subtree") or "1") != "0"
+    return _guard(list_grouped, qp.get("department") or None, subtree, include)
 
 
 @router.post("")
@@ -396,10 +580,11 @@ async def api_modules_create(request: Request):
 @router.get("/{mid}")
 async def api_modules_get(mid: str):
     _require_flag()
-    for s in _seed_rows():
+    reg = _Registry()
+    for s in _seed_rows(reg):
         if s["id"] == mid:
             return s
-    return _guard(_read, mid)
+    return _guard(_read, mid, reg)
 
 
 @router.post("/{mid}")

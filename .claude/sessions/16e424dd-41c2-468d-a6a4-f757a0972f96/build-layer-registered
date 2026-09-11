@@ -1,0 +1,5 @@
+SESSION=16e424dd-41c2-468d-a6a4-f757a0972f96
+BUILD-LAYER=L1
+ACTIVATION-SCOPE=sutra-ui only — landing the verified chat-surface fix set: static/js/{01-state,05-chat,10-activity}.js, static/panel.css, test_panel.js, test_governance.js, qa/, qa-shell/, PUBLISH-CHECK.md. No hooks, no plugin manifest, no marketplace catalog.
+TARGET-PATH=/Users/asawa/Claude/asawa-holding/sutra/marketplace/plugin/sutra-ui/
+REASON=Founder-ordered fix pipeline (three reported defects + design-qa findings), suites fresh-green 138/51/31/351; committing via mark-tests-ran gate.

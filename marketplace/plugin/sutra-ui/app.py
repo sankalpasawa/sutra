@@ -122,6 +122,10 @@ app.include_router(connectors_api.router)
 # would make the flag require a restart, which FLAG.md's rollback forbids.
 import workspace_api
 app.include_router(workspace_api.router)
+# Modules (Org > Modules, 2.247.0): the folder ~/.sutra-ui/modules IS the
+# registry; same per-request opt-out flag posture as workspace (flags.modules).
+import modules_api
+app.include_router(modules_api.router)
 # Optimus (Focus > Optimus): a window over sutra-daemon's stores. Reads are
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api
@@ -1961,6 +1965,15 @@ async def api_shadow_chat(request: Request):
             "scope_id": scope_id or None,
             "source_thread": sess.session_id})
         out["remembered"] = row
+    if "module" in blocks:
+        # D-M10: created immediately as a draft (new precedent, documented in
+        # 2026-09-08-modules-design.md). A refused spec leaves the reply text
+        # standing and says why, so Shadow never claims a module it did not get.
+        try:
+            out["module"] = modules_api.create_module(
+                blocks["module"], created_by="shadow", session_id=sess.session_id)
+        except modules_api.ModuleError as e:
+            out["module_error"] = str(e)
     return out
 
 
@@ -2576,6 +2589,23 @@ def _validated_say(sid, mission_id, msg, dedupe_key=None):
                             % (mission_id, sid))
     if "never_say" in m.get("invariants", ()):
         raise HTTPException(403, "watch missions never speak")
+    # FLOOR (P0, JOURNEY-TESTS.md 3a). The last app-side gate before the
+    # payload is queued, so the floor is enforced HERE and not only in the
+    # mission loop. floor_check had exactly one caller (mission_engine.py:331),
+    # which left this path -- reachable by Shadow itself through the MCP
+    # session_say tool -> POST /api/sessions/{sid}/say -- entirely unfloored.
+    # Raw message, deliberately BEFORE scrub: scrub is a confidentiality
+    # transform, not a safety canonicalizer, and the floor matches intent.
+    # The 403 returns floor NAMES only, never the message.
+    # No bypass parameter yet by design -- the three floors are never
+    # ledger-overridable (SHADOW.md section 2). The one-use approved-floor
+    # exception arrives with the pending_floor object in step 2 of the fix
+    # order, and must consume a nonce/hash-bound approval, not re-send raw.
+    # Ordinary missions never reach here floored: the loop floors the same
+    # text with the same patterns and pauses first.
+    tripped = shadow_egress.floor_check(msg)
+    if tripped:
+        raise HTTPException(403, "floor: %s" % ", ".join(tripped))
     clean, redactions = shadow_egress.scrub(msg)
     # same wire format as before, from the one writer of it -- evidence
     # assembly reads the same constant to exclude Shadow's own turns

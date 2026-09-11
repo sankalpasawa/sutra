@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra.asawa.co/schemas/apps-registry.schema.json",
+  "title": "Sutra Apps registry index",
+  "description": "The index a marketplace serves (ADR-039). Separate from the Claude-plugin marketplace (.claude-plugin/marketplace.json): that one indexes Claude Code extension packages; this one indexes runtime content for Sutra Desktop. Only the index discipline is borrowed. Hosting and repo name: TODO(founder) (program Q-1).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["registry_schema", "name", "updated_at", "apps"],
+  "properties": {
+    "registry_schema": { "type": "integer", "const": 1 },
+    "name": { "type": "string" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "apps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "name", "version", "manifest_schema", "artifact_url", "sha256", "published_at", "sutra_version_range", "kinds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,40}$" },
+          "name": { "type": "string" },
+          "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$", "description": "semver; equals the artifact's manifest publish.version" },
+          "manifest_schema": { "type": "integer", "enum": [2], "description": "the artifact manifest's `schema` value (codex P4 naming bridge)" },
+          "artifact_url": { "type": "string", "format": "uri", "description": "the tarball of the app folder" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "of the tarball; verified before anything lands" },
+          "signature": { "type": "object", "additionalProperties": true, "properties": { "alg": { "type": "string", "enum": ["ed25519"] }, "value": { "type": "string" }, "key_id": { "type": "string" } }, "description": "optional until ADR-040 (signing) lands" },
+          "published_at": { "type": "string", "format": "date-time", "description": "update detection: newer published_at with a compatible range = update_available (codex P3)" },
+          "sutra_version_range": { "type": "object", "additionalProperties": true, "required": ["min"], "properties": { "min": { "type": "string" }, "max": { "type": ["string", "null"] } }, "description": "plugin versions this artifact runs on; outside the range = incompatible" },
+          "permissions": { "type": "object", "additionalProperties": true, "properties": { "network": { "type": "boolean", "const": false, "description": "page apps have no network reach (D-M5); true is not accepted in registry_schema 1" } } },
+          "department_hint": { "type": ["string", "null"], "description": "a department NAME the installer may offer as the default placement; never a ref (refs are per registry)" },
+          "kinds": { "type": "array", "items": { "type": "string", "enum": ["chat", "page", "link"] }, "minItems": 1 }
+        }
+      }
+    }
+  }
+}

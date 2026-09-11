@@ -331,6 +331,8 @@ written pytest-style, so `unittest` collects **0** tests from it — run it with
 | `agents_api.py` | the Agents destination's routes, `/api/agents/seo/*` — read a file or kick the engine's loop |
 | `seo_agent/` | the SEO Writer engine: loop, store, tools, checks, prompts. Standalone; imports nothing from this app. Its own checks: `seo_agent/tests/run_all.sh` |
 | `static/js/17-agents.js` + `static/agents.css` | the Agents screen — agent column, run log, review panel; self-mounts into the shell `SCREENS.agents` returns |
+| `modules_api.py` | Org > Modules routes, `/api/modules/*` — the folder `~/.sutra-ui/modules/<id>/` IS the registry; system seeds; sandboxed `/page` for page modules |
+| `static/js/18-modules.js` | the Modules screen — list column (Yours / System) + detail; renders only what the API returns. Styles live in `panel.css` (asset-hashed) |
 
 ## Agents
 

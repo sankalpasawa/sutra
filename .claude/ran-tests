@@ -1,0 +1,3 @@
+ts=1789120550
+exit=0
+cmd=bash marketplace/plugin/tests/unit/test-writing-style-gate.sh

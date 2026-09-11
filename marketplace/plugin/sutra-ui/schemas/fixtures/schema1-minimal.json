@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "old-one",
+  "name": "Old one",
+  "tagline": "written before departments existed",
+  "kind": "chat",
+  "status": "draft",
+  "version": 1,
+  "origin": {"created_by": "disk", "session_id": null, "at": "2026-09-01T09:00:00Z"},
+  "surface": {"instructions": "You are the old one."},
+  "guard": {},
+  "created_at": "2026-09-01T09:00:00Z",
+  "updated_at": "2026-09-01T09:00:00Z"
+}

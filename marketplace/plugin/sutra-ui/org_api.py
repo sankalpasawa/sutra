@@ -1,6 +1,14 @@
 """org_api.py -- Tier-3 panel backend: read-mostly registry endpoints + one
 write endpoint (POST /api/classify, exactly one write_placement() call).
 
+POST /api/classify/infer is its READ-ONLY twin: same evidence + same classify()
+scoring, batched over many texts, and it writes NOTHING. It exists because the
+panel needs a department for chats that never passed the routing floor (a
+transcript from the terminal, an unopened session) and routing those through
+/api/classify would file hundreds of placements for work nobody placed --
+turning a guess into a registry fact. test_classify_infer.py proves the
+placement ledger is byte-identical across a batch.
+
 SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
   - Calls ONLY: load_domains, live_refs, tenant_refs, domain_path, charters_for,
     all_placements, charter_body_files, mece_report, lint_full, classify,
@@ -14,8 +22,8 @@ SAFETY (see marketplace/plugin/sutra-ui -- ground truth for this module):
     verify_charters. test_forbidden_calls.py greps this file for those names
     and fails the build if any appear -- a provable negative.
   - Writes to disk in exactly three places:
-      (a) write_placement() -> SUTRA_NATIVE_HOME (classify endpoint only, one
-          placement per call)
+      (a) write_placement() -> SUTRA_NATIVE_HOME (POST /api/classify only, one
+          placement per call; POST /api/classify/infer NEVER reaches it)
       (b) the draft file under DRAFTS_DIR (outside SUTRA_NATIVE_HOME, mirrors
           ~/.sutra-ui/drafts/ per the design doc's §8.5.9 "What it writes")
       (c) the Teamsutra task store under ~/.sutra-ui/teamsutra/, via the
@@ -69,6 +77,7 @@ logger.warning("=" * 72)
 print("=" * 72, file=sys.stderr)
 print("[org_api] SUTRA_NATIVE_HOME (registry root) = %s" % _ACTIVE_HOME, file=sys.stderr)
 print("[org_api] WRITES: POST /api/classify appends ONE placement row here.", file=sys.stderr)
+print("[org_api] READ-ONLY: POST /api/classify/infer scores without writing.", file=sys.stderr)
 print("=" * 72, file=sys.stderr)
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
@@ -704,6 +713,77 @@ def api_classify(req: ClassifyRequest, tenant: Optional[str] = None):
 
     result["placement"] = placement
     return result
+
+
+# ---------------------------------------------------- POST /classify/infer -
+
+class InferRequest(BaseModel):
+    texts: List[str]
+
+
+#: One request covers a whole session list. The cap is a denial-of-service
+#: floor, not a tuning knob: load_domains() + score_domains() per text is
+#: cheap, but an unbounded list from a client is still an unbounded loop.
+INFER_MAX_TEXTS = 500
+
+
+@router.post("/classify/infer")
+def api_classify_infer(req: InferRequest, tenant: Optional[str] = None):
+    """READ-ONLY batch classify. Same gather_evidence + classify() the write
+    endpoint uses, so an inferred department is scored identically to a filed
+    one -- but write_placement() is NEVER called and nothing touches disk.
+
+    Why this is a separate endpoint rather than a flag on /api/classify: the
+    write is the entire point of that endpoint (its docstring, its startup
+    banner and SAFETY note (a) all promise exactly one placement per call).
+    A dry_run flag would make every one of those statements conditional, and
+    the one thing a write-surface document must not be is conditional.
+
+    Returns one result per input text, ALIGNED BY INDEX, so the caller can zip
+    it back onto its own list without a key. A text the engine cannot place
+    comes back with domain_ref None and mode "none" -- an honest empty answer
+    in the same shape, not an omitted row that silently shifts the alignment.
+    """
+    texts = req.texts or []
+    if len(texts) > INFER_MAX_TEXTS:
+        raise HTTPException(
+            status_code=400,
+            detail="at most %d texts per request (got %d)" % (
+                INFER_MAX_TEXTS, len(texts)))
+
+    tenant_id = _tenant_of_record(tenant)
+    # Loaded ONCE for the batch. Per-text load_domains() is what made the
+    # single-text endpoint unsuitable for a list of 300 sessions.
+    domains = E.load_domains()
+
+    #: Session titles repeat (every "continue" opens the same prompt), and
+    #: scoring is a pure function of the text, so identical inputs are scored
+    #: once. Same answer, fewer passes -- and it keeps the cap meaningful.
+    seen = {}
+    out = []
+    for text in texts:
+        key = (text or "").strip()
+        if not key:
+            out.append({"domain_ref": None, "mode": "none", "confidence": 0.0})
+            continue
+        if key in seen:
+            out.append(seen[key])
+            continue
+        evidence = E.gather_evidence(utterance=key)
+        domain_ref, confidence, mode = E.classify(evidence, tenant_id, domains)
+        if domain_ref is None:
+            row = {"domain_ref": None, "mode": "none", "confidence": confidence}
+        else:
+            row = {
+                "domain_ref": domain_ref,
+                "domain_path": E.domain_path(domain_ref, domains),
+                "domain_name": (domains.get(domain_ref) or {}).get("name"),
+                "confidence": confidence,
+                "mode": mode,
+            }
+        seen[key] = row
+        out.append(row)
+    return {"results": out}
 
 
 # ----------------------------------------------------------- POST /simulate -

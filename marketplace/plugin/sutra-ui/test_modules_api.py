@@ -10,12 +10,15 @@ import os
 import shutil
 import stat
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 MOD_HOME = tempfile.mkdtemp(prefix="modules-test-")
 os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
-os.environ.setdefault("SUTRA_NATIVE_HOME", tempfile.mkdtemp(prefix="modules-native-"))
+# v1.1 tests MINT departments, so the registry must be a throwaway even when
+# the operator's shell exports SUTRA_NATIVE_HOME (setdefault would keep it).
+os.environ["SUTRA_NATIVE_HOME"] = tempfile.mkdtemp(prefix="modules-native-")
 os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="modules-seo-")
 os.environ["SEO_AGENT_NO_CLI"] = "1"
 os.environ.setdefault("SUTRA_SHADOW_HOME", tempfile.mkdtemp(prefix="modules-shadow-"))
@@ -26,6 +29,10 @@ import app as app_module  # noqa: E402
 import modules_api  # noqa: E402
 import providers  # noqa: E402
 import shadow_protocol  # noqa: E402
+
+import sys  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import placement_engine as E  # noqa: E402
 
 HDR = {"X-Sutra-Panel": app_module.PANEL_TOKEN, "Origin": "http://127.0.0.1:8330"}
 BASE = "/api/modules"
@@ -38,9 +45,17 @@ class TestModulesApi(unittest.TestCase):
         cls.client = TestClient(app_module.app, base_url="http://127.0.0.1")
 
     def setUp(self):
+        # re-assert the home per test: another suite collected in the same
+        # pytest process (test_modules_pkg.py) binds its own temp home at import
+        os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
         # a clean folder per test: the folder IS the registry
         for name in os.listdir(MOD_HOME):
             shutil.rmtree(os.path.join(MOD_HOME, name), ignore_errors=True)
+        # and a clean department registry (v1.1): the v1 tests run on an EMPTY
+        # registry, which is the fleet's first-open state (D-M14)
+        E._ensure_dirs()
+        for name in os.listdir(E.DOMAINS):
+            os.remove(os.path.join(E.DOMAINS, name))
         self._settings = providers.SETTINGS_PATH
 
     def tearDown(self):
@@ -208,6 +223,229 @@ class TestModulesApi(unittest.TestCase):
         self.assertEqual(row["origin"]["created_by"], "shadow")
         self.assertEqual(row["origin"]["session_id"], "s-1")
         self.assertEqual(row["status"], "draft")
+
+    # ---- v1.1: one department per module -----------------------------------
+    # Design: 2026-09-08-modules-design.md §v11 (D-M13 assignment, D-M14 empty
+    # registry, D-M15 query). Codex folds 2026-09-11: only the ref is persisted
+    # (P6); an unknown ref never falls to root (P2); counts are user modules
+    # only (P7); `unassigned` is a terminal pseudo-ref (P9); the flat `modules`
+    # list is unchanged by the filter (P10).
+
+    def _mint(self, parent, name):
+        ref, _ = E.mint_domain(parent, name, [name.lower()], "T-local")
+        # Sibling ordinals (D1, D2 …) are ordered by ts_minted_ms; two mints in
+        # the same millisecond tie-break by hash and flip between runs (seen
+        # 2026-09-11: 1 of 3 runs). A 2 ms gap makes the tree deterministic.
+        time.sleep(0.002)
+        return ref
+
+    def _tree(self):
+        root = self._mint(None, "Asawa")
+        exp = self._mint(root, "Experience")
+        desk = self._mint(exp, "Desktop app")
+        ana = self._mint(root, "Analytics")
+        return root, exp, desk, ana
+
+    def _disk(self, mid, **extra):
+        d = Path(MOD_HOME) / mid
+        d.mkdir()
+        (d / "module.json").write_text(json.dumps(dict({"name": mid, "kind": "chat"}, **extra)), encoding="utf-8")
+
+    def test_v11_seeds_sit_at_the_root_and_the_list_names_it(self):
+        root, exp, desk, ana = self._tree()
+        j = self.client.get(BASE).json()
+        self.assertEqual(j["root"]["ref"], root)
+        self.assertEqual(j["root"]["path"], "D0")
+        self.assertEqual(j["department"]["ref"], root)          # no param = root selected
+        for s in j["modules"][:3]:
+            self.assertEqual(s["department"]["ref"], root)
+        self.assertEqual([m["id"] for m in j["groups"]["system"]], ["sys-balance", "sys-help", "sys-settings"])
+        self.assertEqual(j["counts_by_ref"], {})                 # seeds never count (codex P7)
+
+    def test_v11_create_defaults_to_root_and_persists_only_the_ref(self):
+        root, exp, desk, ana = self._tree()
+        row = self.client.post(BASE, json={"name": "Friday review"}, headers=HDR).json()
+        self.assertEqual(row["department"], {"ref": root, "path": "D0", "name": "Asawa", "moved": False})
+        raw = json.loads((Path(MOD_HOME) / "friday-review" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["department"], {"ref": root})       # path/name are read-time caches (codex P6)
+        row = self.client.post(BASE, json={"name": "Site check", "department": exp}, headers=HDR).json()
+        self.assertEqual(row["department"]["name"], "Experience")
+        self.assertEqual(row["department"]["path"], "D1")
+        r = self.client.post(BASE, json={"name": "Lost", "department": "dref-nope"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(BASE, json={"name": "Lost", "department": "unassigned"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)                     # assignment is a department, always
+
+    def test_v11_disk_modules_without_a_live_department_are_unassigned(self):
+        root, exp, desk, ana = self._tree()
+        self._disk("scratch")                                    # no department at all
+        self._disk("stale", department={"ref": "dref-gone", "path": "D9", "name": "Gone"})
+        rows = {m["id"]: m for m in self.client.get(BASE).json()["modules"]}
+        self.assertIsNone(rows["scratch"]["department"])
+        self.assertIsNone(rows["stale"]["department"])           # unknown ref is NOT root (codex P2)
+        self.assertIsNone(rows["scratch"]["warning"])            # unassigned is a state, not a fault
+        j = self.client.get(BASE).json()
+        self.assertEqual(sorted(m["id"] for m in j["groups"]["unassigned"]), ["scratch", "stale"])
+        self.assertEqual(j["unassigned_count"], 2)
+
+    def test_v11_a_retired_department_resolves_to_its_successor_at_read(self):
+        root, exp, desk, ana = self._tree()
+        mid = self.client.post(BASE, json={"name": "Weekly", "department": desk}, headers=HDR).json()["id"]
+        res = E.restructure("merge", desk, target=ana)
+        self.assertTrue(res.get("ok"), res)
+        row = self.client.get(BASE + "/" + mid).json()
+        self.assertEqual(row["department"]["ref"], ana)
+        self.assertEqual(row["department"]["name"], "Analytics")
+        self.assertTrue(row["department"]["moved"])
+        raw = json.loads((Path(MOD_HOME) / mid / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["department"]["ref"], desk)         # disk keeps the original; read resolves
+        j = self.client.get(BASE + "?department=" + ana).json()
+        self.assertEqual([m["id"] for m in j["groups"]["here"]], [mid])
+
+    def test_v11_query_groups_here_below_system_unassigned_and_counts(self):
+        root, exp, desk, ana = self._tree()
+        m_desk = self.client.post(BASE, json={"name": "Desk one", "department": desk}, headers=HDR).json()["id"]
+        m_exp = self.client.post(BASE, json={"name": "Exp one", "department": exp}, headers=HDR).json()["id"]
+        m_ana = self.client.post(BASE, json={"name": "Ana one", "department": ana}, headers=HDR).json()["id"]
+        self._disk("scratch")
+        j = self.client.get(BASE + "?department=" + exp).json()
+        self.assertEqual([m["id"] for m in j["groups"]["here"]], [m_exp])
+        self.assertEqual([(g["department"]["ref"], [m["id"] for m in g["modules"]]) for g in j["groups"]["below"]],
+                         [(desk, [m_desk])])
+        self.assertEqual(j["groups"]["system"], [])              # root only
+        self.assertEqual(j["groups"]["unassigned"], [])          # root only
+        self.assertEqual(j["department"]["path"], "D1")
+        self.assertEqual(j["counts_by_ref"], {root: 3, exp: 2, desk: 1, ana: 1})
+        self.assertEqual(j["unassigned_count"], 1)
+        ids = [m["id"] for m in j["modules"]]
+        self.assertEqual(ids[:3], ["sys-balance", "sys-help", "sys-settings"])
+        self.assertEqual(sorted(ids[3:]), sorted([m_desk, m_exp, m_ana, "scratch"]))   # flat list unfiltered (P10)
+        j = self.client.get(BASE + "?department=" + exp + "&subtree=0").json()
+        self.assertEqual(j["groups"]["below"], [])
+        j = self.client.get(BASE + "?department=unassigned").json()
+        self.assertEqual([m["id"] for m in j["groups"]["unassigned"]], ["scratch"])
+        self.assertEqual(j["groups"]["here"], [])
+        self.assertEqual(j["groups"]["below"], [])
+        self.assertEqual(j["department"], {"ref": "unassigned", "path": "", "name": "Unassigned", "description": ""})
+        self.assertEqual(self.client.get(BASE + "?department=dref-nope").status_code, 404)
+        j = self.client.get(BASE).json()                         # root: everything below, grouped
+        self.assertEqual(j["groups"]["here"], [])
+        self.assertEqual([g["department"]["ref"] for g in j["groups"]["below"]], [exp, desk, ana])
+        self.assertEqual(len(j["groups"]["system"]), 3)
+        self.assertEqual([m["id"] for m in j["groups"]["unassigned"]], ["scratch"])
+
+    def test_v11_assign_moves_a_module_and_validates_the_target(self):
+        root, exp, desk, ana = self._tree()
+        self.assertIn("assign", modules_api.ACTIONS)
+        mid = self.client.post(BASE, json={"name": "Mover"}, headers=HDR).json()["id"]
+        r = self.client.post(BASE + "/" + mid, json={"action": "assign", "department_ref": ana}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["department"]["ref"], ana)
+        self.assertEqual(r.json()["version"], 2)
+        r = self.client.post(BASE + "/" + mid, json={"action": "assign", "department_ref": "dref-nope"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(BASE + "/" + mid, json={"action": "assign"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(BASE + "/sys-balance", json={"action": "assign", "department_ref": ana}, headers=HDR)
+        self.assertEqual(r.status_code, 404)
+
+    def test_v11_an_empty_registry_is_unassigned_only_and_mints_nothing(self):
+        j = self.client.get(BASE).json()
+        self.assertIsNone(j["root"])
+        self.assertIsNone(j["department"])
+        row = self.client.post(BASE, json={"name": "First"}, headers=HDR).json()
+        self.assertIsNone(row["department"])
+        j = self.client.get(BASE).json()
+        self.assertEqual([m["id"] for m in j["groups"]["unassigned"]], ["first"])
+        self.assertEqual(len(j["groups"]["system"]), 3)
+        self.assertEqual(j["counts_by_ref"], {})
+        self.assertEqual(E.load_domains(), {})                   # D-M14: Modules never mints a domain
+        r = self.client.post(BASE, json={"name": "Second", "department": "dref-nope"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+
+    def test_v11_live_destination_is_public_and_unknown_refs_stay_unknown(self):
+        root, exp, desk, ana = self._tree()
+        domains = E.load_domains()
+        self.assertEqual(E.live_destination("dref-nope", domains, root), (None, "unknown"))
+        self.assertEqual(E.live_destination(desk, domains, root), (desk, "home"))
+        E.restructure("merge", desk, target=ana)
+        self.assertEqual(E.live_destination(desk, E.load_domains(), root), (ana, "successor"))
+
+    def test_v11_shadow_fence_department_is_a_ref_only(self):
+        root, exp, desk, ana = self._tree()
+        row = modules_api.create_module({"name": "Placed", "kind": "chat", "department": desk}, "shadow", "s-2")
+        self.assertEqual(row["department"]["ref"], desk)
+        with self.assertRaises(modules_api.ModuleError):
+            modules_api.create_module({"name": "Named", "kind": "chat", "department": "Desktop app"}, "shadow", "s-2")
+
+    # ---- v1.2: manifest schema, migration, building row, goldens ------------
+    # Program steps 46 (migration) and 48 (golden). schemas/MIGRATIONS.md M-1..M-7.
+    # The three test_v12_* migration cases FAIL until program step 55 lands.
+
+    FIXTURES = Path(__file__).resolve().parent / "schemas" / "fixtures"
+
+    def _fixture(self, name, mid):
+        d = Path(MOD_HOME) / mid
+        d.mkdir()
+        shutil.copy(self.FIXTURES / name, d / "module.json")
+        return d / "module.json"
+
+    def test_v12_schema1_fixtures_read_as_schema2_rows(self):
+        # M-1: read-time normalization only; passes already (documents the floor)
+        self._fixture("schema1-minimal.json", "old-one")
+        self._fixture("schema1-unknown-stale.json", "stale-dept")
+        rows = {m["id"]: m for m in self.client.get(BASE).json()["modules"]}
+        self.assertIsNone(rows["old-one"]["department"])
+        self.assertIsNone(rows["old-one"]["publish"])
+        self.assertIsNone(rows["old-one"]["warning"])
+        self.assertIsNone(rows["stale-dept"]["department"])       # stale ref -> Unassigned, never root
+
+    def test_v12_write_back_bumps_schema_and_preserves_unknown_fields(self):
+        # M-2 + M-4 (fails until step 55): the next mutation patches the RAW file
+        f = self._fixture("schema1-unknown-stale.json", "stale-dept")
+        r = self.client.post(BASE + "/stale-dept", json={"action": "rename", "name": "Renamed"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        raw = json.loads(f.read_text(encoding="utf-8"))
+        self.assertEqual(raw["schema"], 2)
+        self.assertEqual(raw["colour"], "sepia")                  # unknown field survives the write-back
+        self.assertEqual(raw["department"]["ref"], "dref-0000000000000000")   # M-5: never rewritten by a read or a rename
+
+    def test_v12_create_writes_schema2(self):
+        # M-7 (fails until step 55): new apps are schema 2 so export never needs a migration
+        root, exp, desk, ana = self._tree()
+        mid = self.client.post(BASE, json={"name": "Fresh"}, headers=HDR).json()["id"]
+        raw = json.loads((Path(MOD_HOME) / mid / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["schema"], 2)
+
+    def test_v12_unparsable_manifest_is_a_building_row_not_a_missing_app(self):
+        # M-6 / D-M21 (fails until step 54): folder exists, manifest invalid -> row with a warning
+        d = Path(MOD_HOME) / "half-written"
+        d.mkdir()
+        (d / "module.json").write_text('{"schema": 1, "id": "half-written", "name": "Half', encoding="utf-8")
+        rows = {m["id"]: m for m in self.client.get(BASE).json()["modules"]}
+        self.assertIn("half-written", rows)
+        self.assertIn("building", (rows["half-written"]["warning"] or "").lower())
+
+    def test_v12_golden_grouped_response_for_a_department(self):
+        # Step 48: the grouped answer for one department, refs normalised to names.
+        root, exp, desk, ana = self._tree()
+        names = {root: "Asawa", exp: "Experience", desk: "Desktop app", ana: "Analytics"}
+        for name, dep in (("Desk one", desk), ("Exp one", exp), ("Ana one", ana)):
+            self.client.post(BASE, json={"name": name, "department": dep}, headers=HDR)
+        j = self.client.get(BASE + "?department=" + exp).json()
+
+        def norm(o):
+            if isinstance(o, dict):
+                return {k: norm(v) for k, v in o.items() if k not in ("created_at", "updated_at", "home", "at", "session_id")}
+            if isinstance(o, list):
+                return [norm(x) for x in o]
+            if isinstance(o, str) and o in names:
+                return "<" + names[o] + ">"
+            return o
+        got = norm(j)
+        got["counts_by_ref"] = {"<" + names[k] + ">": v for k, v in j["counts_by_ref"].items()}
+        want = json.loads((self.FIXTURES / "golden-grouped-experience.json").read_text(encoding="utf-8"))
+        self.assertEqual(got, want)
 
 
 if __name__ == "__main__":

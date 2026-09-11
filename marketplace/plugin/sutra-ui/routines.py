@@ -563,9 +563,54 @@ def main():
                     j = json.loads(p.stdout or "{}")
                     cost = j.get("total_cost_usd")
                     result_text = str(j.get("result") or "")
-                    if j.get("is_error"): outcome, detail = "failed", str(j.get("subtype") or "")[:200]
-                except ValueError:
-                    pass
+                    # EXIT 0 IS NOT TASK SUCCESS. A routine whose tool call was
+                    # DENIED still finishes its turn and exits 0 with
+                    # is_error=False and subtype="success", because refusing a
+                    # tool is normal model operation, not an error. Recording
+                    # that as "ok" is how 250 routine runs across 8 scripts came
+                    # to report success while doing nothing at all (one ledger:
+                    # 116 "ok" that were every one of them denials).
+                    #
+                    # Do NOT test `not result_text` here: a denied run emits a
+                    # full prose turn explaining the denial, so an emptiness
+                    # test catches none of these. The structured
+                    # permission_denials list is the only reliable signal.
+                    _pd = [d for d in (j.get("permission_denials") or [])
+                           if isinstance(d, dict)]
+                    _denied = sorted({str(d.get("tool_name") or "?") for d in _pd})
+                    # A routine's declared ceiling is the pair (permission_mode,
+                    # allowed_tools). An entry may be a bare name ("Bash") or
+                    # scoped ("Bash(git status)"), so match both spellings.
+                    _allow = [str(t) for t in (o.get("allowed_tools") or [])]
+                    def _was_allowed(_name):
+                        return any(a == _name or a.startswith(_name + "(")
+                                   for a in _allow)
+                    if j.get("is_error"):
+                        outcome, detail = "failed", str(j.get("subtype") or "")[:200]
+                    elif _denied and not _allow:
+                        # Nothing was permitted, so nothing the routine needed
+                        # could have run.
+                        outcome = "failed"
+                        detail = ("permission_denied (no allow-list): "
+                                  + ", ".join(_denied))[:600]
+                    elif any(_was_allowed(t) for t in _denied):
+                        # A tool the routine WAS granted got denied anyway --
+                        # a real permission/config fault.
+                        outcome = "failed"
+                        detail = ("permission_denied (allow-listed tool blocked): "
+                                  + ", ".join(_denied))[:600]
+                    elif _denied:
+                        # Overreach outside the declared allow-list. The
+                        # required work may still have completed via allowed
+                        # means, so this stays non-fatal -- but it is recorded,
+                        # never swallowed.
+                        detail = ("permission_denied (outside allow-list, "
+                                  "non-fatal): " + ", ".join(_denied))[:600]
+                except ValueError as e:
+                    # Unparseable stdout is not success either: there is no
+                    # evidence the work happened.
+                    outcome = "failed"
+                    detail = ("unparseable claude stdout: %s" % e)[:600]
         except subprocess.TimeoutExpired:
             outcome, detail = "timeout", "exceeded %ds" % TIMEOUT
         except OSError as e:

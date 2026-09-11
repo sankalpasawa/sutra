@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "stale-dept",
+  "name": "Stale dept",
+  "tagline": "carries a department that no registry knows and a field no schema knows",
+  "kind": "page",
+  "status": "ready",
+  "version": 3,
+  "origin": {"created_by": "app", "session_id": "s-old", "at": "2026-09-02T09:00:00Z"},
+  "surface": {"entry": "index.html"},
+  "guard": {},
+  "department": {"ref": "dref-0000000000000000", "path": "D9", "name": "Gone"},
+  "colour": "sepia",
+  "created_at": "2026-09-02T09:00:00Z",
+  "updated_at": "2026-09-03T09:00:00Z"
+}

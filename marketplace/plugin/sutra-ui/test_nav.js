@@ -159,8 +159,10 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
   /* S92 cutover (founder 2026-08-25): the flag defaults ON, Knowledge and
      Files fold into the Workspace (openScreen redirects their ids). */
   const rows = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
+  /* 2.247.0: Modules sits after Placements (design D-M7) -- the products the
+     operator builds, before the one row that changes the org itself. */
   assert.strictEqual(JSON.stringify(rows), JSON.stringify(
-    ["workspace","departments","charters","placements","reorg"]));
+    ["workspace","departments","charters","placements","modules","reorg"]));
 });
 test("planes: settings carries three labelled groups", () => {
   /* Was four. "Preferences" held exactly one row -- the AI Provider screen --
