@@ -28,16 +28,27 @@ DEFAULT_DATA_DIR = os.path.join("~", ".sutra-ui", "agents", "seo")
 _DATA_DIR = None             # set by set_data_dir(); None means "ask the environment"
 
 
+def root_dir():
+    """The PERSON's folder: what data_dir() is before any company has been switched to.
+
+    The first company lives here too, exactly where every install has always kept its data, and
+    so do the things that belong to the person rather than to a company: the DataForSEO login,
+    the Voyage key, and the list of companies (see seo_agent/companies.py).
+    """
+    env = os.environ.get("SEO_AGENT_DATA", "").strip()
+    return os.path.abspath(os.path.expanduser(env or DEFAULT_DATA_DIR))
+
+
 def data_dir():
-    """The root everything a user's install creates lives under.
+    """The folder the ACTIVE company's knowledge, chats and library live under.
 
     Resolved on every call, not at import, so a test can point it at a temp folder by
-    setting SEO_AGENT_DATA before the first write, or by calling set_data_dir().
+    setting SEO_AGENT_DATA before the first write, or by calling set_data_dir(). Switching
+    company is exactly a set_data_dir() to that company's folder.
     """
     if _DATA_DIR:
         return _DATA_DIR
-    env = os.environ.get("SEO_AGENT_DATA", "").strip()
-    return os.path.abspath(os.path.expanduser(env or DEFAULT_DATA_DIR))
+    return root_dir()
 
 
 def set_data_dir(path):
@@ -383,15 +394,66 @@ def set_memory_active(mem_id, active):
     os.replace(tmp, memory_file())
 
 
+# THE PERSON'S KEYS, shared by every company they work for (owner, 2026-09-11: one person doing
+# the content for more than one company). A DataForSEO account and a Voyage key belong to the
+# person, so they live in the ROOT connections.json and every company reads them from there.
+# Everything else in connections.json -- the team workspace above all -- is the company's own,
+# because a Supabase workspace is one company's team. With one company both files are the same
+# file, and nothing below behaves any differently from before.
+PERSON_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key",
+               "anthropic_key", "openai_key")
+
+
+def _person_connections_file():
+    return os.path.join(root_dir(), "connections.json")
+
+
+def _one_file():
+    return os.path.abspath(connections_file()) == os.path.abspath(_person_connections_file())
+
+
 def connections():
-    return read_json(connections_file(), {}) or {}
+    own = read_json(connections_file(), {}) or {}
+    if _one_file():
+        return own
+    merged = dict(own)
+    person = read_json(_person_connections_file(), {}) or {}
+    for k in PERSON_KEYS:
+        if k in person:
+            merged[k] = person[k]
+    return merged
 
 
 def save_connections(data):
-    write_json(connections_file(), data)
+    """Save what connections() handed out, each part to the file it belongs in.
+
+    NEVER DELETES A PERSON'S KEY BY OMISSION. A save that simply does not mention the DataForSEO
+    login leaves it alone; only a key sent BLANK is cleared. So a caller that writes one workspace
+    field cannot take somebody's paid login away with it.
+    """
+    data = dict(data or {})
+    if _one_file():
+        for k in PERSON_KEYS:
+            if k in data and not str(data[k] or "").strip():
+                data.pop(k)
+        _write_private(connections_file(), data)
+        return
+    person = read_json(_person_connections_file(), {}) or {}
+    for k in PERSON_KEYS:
+        if k in data:
+            if str(data[k] or "").strip():
+                person[k] = data[k]
+            else:
+                person.pop(k, None)
+    _write_private(_person_connections_file(), person)
+    _write_private(connections_file(), {k: v for k, v in data.items() if k not in PERSON_KEYS})
+
+
+def _write_private(path, data):
+    write_json(path, data)
     # Secrets are owner-only, the way ~/.sutra-ui/composio.json is kept.
     try:
-        os.chmod(connections_file(), 0o600)
+        os.chmod(path, 0o600)
     except OSError:
         pass
 

@@ -157,7 +157,10 @@ ok("it names the floor the run needs", "$%.2f" % run_research.MIN_CREDITS in err
 ok("way out one: top up the account", "top up" in err2.lower())
 ok("way out two: ask for it anyway, on placeholder numbers", "placeholder_numbers" in err2)
 ok("it says the placeholder numbers would be marked as not real", "not real" in err2)
-ok("it refuses to guess, the way learn_brand does", "will not guess" in err2)
+# owner, 2026-09-11: "it could simply have been 'not enough DataForSEO credits'". The refusal used to
+# be a 70-word lecture ending "I will not guess at this", and the agent read it back paragraph and all.
+ok("it leads with the owner's own words", err2.startswith("Not enough DataForSEO credits"), err2)
+ok("and stays short: one line, not a lecture", len(err2.split()) <= 45, len(err2.split()))
 ok("no em dashes on screen", "—" not in err2 and "—" not in sum2)
 
 

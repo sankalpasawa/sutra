@@ -39,9 +39,8 @@ The recent chats stay in the sidebar and one click resumes any of them, but the 
     The SEO writer
 
 ### The line under it
-    It reads your website, learns how you write, works out what is worth writing, and then
-    researches and writes one article at a time. You watch it happen, and you can change
-    anything before it carries on.
+    It reads your website, learns how you write, finds what is worth writing, and writes it one
+    article at a time. You can change anything along the way.
 
 ### How it works
 Four steps, numbered.
@@ -52,12 +51,14 @@ Four steps, numbered.
     4  You pick one. It researches it, plans it, writes it, and edits it in several passes.
 
 ### To start
-    Type this in the box at the bottom:
+    Type what you want in the box below. The agent asks what it needs, one question at a time.
 
-        Set up <the domain, if we know it; otherwise: yourcompany.com>
+    It shows every step, and stops twice: to agree the topic, and to approve the draft.
 
-    That is all it needs. It will say what it is doing at every step, and it stops twice to
-    ask you something: once to agree the shape of the article, once to approve the draft.
+*Revised 2026-09-11: shorter, and the stops corrected. It used to say the agent stops "to agree
+the shape of the article"; the owner's ruling is that the two stops are the topic and the draft,
+and the plan lands in the Library without waiting. The "Set up yourcompany.com" box was dropped
+from the screen on 2026-09-10 and is dropped here too.*
 
 ### What each tab holds
 A two-column list. Left is the tab name exactly as it appears in the sidebar.

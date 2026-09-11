@@ -45,7 +45,8 @@ const A = ctx;
 /* ── registration ──────────────────────────────────────────────────────────── */
 test("registers SCREENS.agents and TITLES.agents", () => {
   assert.strictEqual(typeof A.SCREENS.agents, "function");
-  assert.ok(Array.isArray(A.TITLES.agents) && A.TITLES.agents[0] === "Agents");
+  assert.ok(Array.isArray(A.TITLES.agents) && A.TITLES.agents[0] === "Agent Marketplace",
+            "the pane is titled like the tab (owner, 2026-09-11)");
 });
 test("the screen shell is CONSTANT, so render() never repaints it under the mount", () => {
   const a = A.SCREENS.agents(), b = A.SCREENS.agents();
@@ -1602,7 +1603,7 @@ test("not connected, the workspace offers exactly two ways in and promises nothi
   assert.ok(/Team workspace/.test(html), "it has a section of its own at the top of Connections");
   assert.ok(/data-ag="wscreate"/.test(html) && /data-ag="wsjoin"/.test(html), "create and join");
   assert.ok(!/data-ag="wscopylink"/.test(html), "there is no link to copy yet");
-  assert.ok(/nobody presses sync/.test(html), "and it says the thing the plan promises");
+  assert.ok(/stay in sync on their own/.test(html), "and it says the thing the plan promises: nobody presses sync");
 });
 
 test("Create asks for the two things section 1 names, and a way to go and get them", () => {
@@ -1770,7 +1771,8 @@ test("joining asks for the link and a name, and warns how long the download is",
   const html = A.agWsHtml(wsdoc(), { mode: "join" });
   assert.ok(/data-agws="link"/.test(html) && /data-agws="name"/.test(html));
   assert.ok(/data-ag="wsjoingo"/.test(html) && />Done</.test(html), "the button is Done, as he said");
-  assert.ok(/five minutes/.test(html));
+  /* was "about five minutes"; the real join download measured about 20 seconds (2026-09-11) */
+  assert.ok(/under a minute/.test(html));
 });
 
 /* "a real progress bar for the ~5 minute download (bytes of total, not a fake spinner)" */
@@ -1943,12 +1945,81 @@ test("the tab's shelf has a heading and exactly ONE agent, with nothing invented
   assert.ok(!/they are real rather than before/.test(html), "the old footnote is gone");
 });
 
-test("the company name is DATA: printed when the brand record has one", () => {
+/* ONE PERSON, SEVERAL COMPANIES (owner, 2026-09-11: "in the Agent Marketplace tab when I open I
+   should not see any company name"). This test used to require the name on the shelf. */
+test("the shelf NEVER names a company, even when the brand record has one", () => {
   const a = mktBlank(); a.health = MKT_LIVED;
   a.knowledge = { company: { brand: "Northwind Bakery" }, site_index: { page_count: 12 } };
   const html = A.agMarketHtml(a);
-  assert.ok(/Northwind Bakery/.test(html), "the name the record carries");
-  assert.ok(/ag-mktfor/.test(html));
+  assert.ok(!/Northwind Bakery/.test(html), "the shelf is the person's, not one company's");
+  assert.ok(!/ag-mktfor/.test(html));
+});
+
+test("the card's numbers are shown for ONE company and hidden once there are two", () => {
+  const a = mktBlank();
+  a.library = [{ id: "a" }]; a.knowledge = { company: { brand: "Acme" }, site_index: { page_count: 9 } };
+  a.health = Object.assign({}, MKT_LIVED, { companies: 1 });
+  assert.ok(/class="cf"/.test(A.agMarketHtml(a)), "one company: the numbers are its own");
+  a.health = Object.assign({}, MKT_LIVED, { companies: 2 });
+  const html = A.agMarketHtml(a);
+  assert.ok(!/class="cf"/.test(html), "two: the shelf cannot say whose they are, so it says nothing");
+  assert.ok(!/articles in the Library/.test(html));
+});
+
+test("the chooser lists every company, marks the open one, and offers another", () => {
+  const a = mktBlank();
+  a.companies = { active: "c1", companies: [
+    { id: "c1", name: "Testing Co", domain: "testing.example", chats: 5, active: true },
+    { id: "acme-1a2b", name: "Acme <b>Hiring</b>", domain: "", chats: 1, active: false }] };
+  const html = A.agChooseHtml(a);
+  assert.ok(/Which company\?/.test(html));
+  assert.strictEqual((html.match(/data-ag="cosw"/g) || []).length, 2, "one card each");
+  assert.ok(/data-arg="acme-1a2b"/.test(html));
+  assert.ok(/ag-cocard on/.test(html), "the open one is marked");
+  assert.ok(/not set up yet/.test(html), "a company with no site says so, never a blank");
+  assert.ok(/5 chats/.test(html) && /1 chat\b/.test(html));
+  assert.ok(/data-ag="coadd"/.test(html) && /Add another company/.test(html));
+  assert.ok(html.indexOf("<b>Hiring</b>") === -1 && /&lt;b&gt;Hiring/.test(html), "a name is escaped");
+});
+
+test("adding one is a form in place, and a first run asks only for the name", () => {
+  const a = mktBlank();
+  a.companies = { active: "c1", companies: [{ id: "c1", name: "Testing Co", domain: "", chats: 0, active: true }] };
+  a.coForm = { mode: "add" };
+  let html = A.agChooseHtml(a);
+  assert.ok(/data-agconame/.test(html) && /data-ag="coaddgo"/.test(html) && /data-ag="cocancel"/.test(html));
+  a.companies = { active: "c1", companies: [{ id: "c1", name: "", domain: "", chats: 0, active: true }] };
+  a.coForm = { mode: "name" };
+  html = A.agChooseHtml(a);
+  assert.ok(/What's the company called\?/.test(html));
+  assert.ok(/data-ag="conamego"/.test(html) && !/data-ag="cosw"/.test(html), "a first run is only the name");
+  assert.ok(!/data-ag="cocancel"/.test(html), "and there is nothing to cancel back to");
+  a.companies = null; a.coForm = null;
+  assert.ok(/Reading your companies/.test(A.agChooseHtml(a)), "before it has read anything, it says so");
+  a.companies = { active: "c1", companies: [] };
+  a.coErr = "Something is still running. Let it finish, or stop it, then switch.";
+  assert.ok(/Let it finish/.test(A.agChooseHtml(a)), "a refused switch is shown in its own words");
+});
+
+test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
+  const a = mktBlank(); a.screen = "agent";
+  a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });
+  a.knowledge = { company: { brand: "ACME Corp" } };
+  let html = A.agSideHtml(a);
+  assert.ok(/data-ag="choose"/.test(html) && /Acme Hiring/.test(html));
+  assert.ok(!/ACME Corp/.test(html), "the name the person gave it beats the brand record");
+  a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "" }, companies: 1 });
+  a.knowledge = null;
+  assert.ok(/Name your company/.test(A.agSideHtml(a)), "an unnamed company asks to be named, never a blank");
+});
+
+test("opening the agent asks which company first, only when there is a choice to make", () => {
+  const i = SRC.indexOf('case "open": {');
+  const block = SRC.slice(i, SRC.indexOf('case "market": {', i));
+  assert.ok(/\(hh\.companies \|\| 1\) > 1/.test(block), "more than one company");
+  assert.ok(/!hh\.company\.name/.test(block), "or one never named: a first run");
+  assert.ok(/a\.screen = "choose"/.test(block));
+  assert.ok(/a\.screen = "agent"/.test(block), "and one named company still goes straight in");
 });
 
 test("and absent CLEANLY when there is no company yet, which is everyone's first day", () => {
@@ -1977,13 +2048,13 @@ test("no company name is HARDCODED anywhere in the screen or its stylesheet", ()
   assert.ok(!/testlify/i.test(CSS), "a company name baked into agents.css");
 });
 
-test("a company name carrying markup is escaped, on the shelf and in the sidebar", () => {
+test("a company name carrying markup never reaches the shelf, and is escaped in the sidebar", () => {
   const a = mktBlank(); a.health = MKT_LIVED;
   a.knowledge = { company: { brand: '<img src=x onerror=alert(1)>Acme' } };
-  for (const html of [A.agMarketHtml(a), A.agSideHtml(a)]){
-    assert.ok(!/<img src=x/.test(html));
-    assert.ok(/&lt;img src=x/.test(html));
-  }
+  assert.ok(!/img src=x/.test(A.agMarketHtml(a)), "the shelf names no company at all, raw or escaped");
+  const side = A.agSideHtml(a);
+  assert.ok(!/<img src=x/.test(side));
+  assert.ok(/&lt;img src=x/.test(side));
 });
 
 test("the card claims NOTHING before it has read anything", () => {
@@ -2140,8 +2211,8 @@ test("skipping the introduction is for this sitting only and claims nothing abou
    copy -- the strings as design/AGENT-GUIDE-COPY.md has them, matched against the HTML the
    renderer actually emits, so a reword anywhere in the chain goes red. */
 const GUIDE_VERBATIM = [
-  "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.",
-  "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.",
+  "It reads your website, learns how you write, finds what is worth writing, and writes it one article at a time. You can change anything along the way.",
+  "It shows every step, and stops twice: to agree the topic, and to approve the draft.",
   "It learns your brand from those pages: how you sound, what you sell, who you write for.",
 ];
 /* the five, id and heading, written out here rather than read from the module: a test that
@@ -2176,7 +2247,7 @@ test("the guide draws all six parts of the copy: title, line, four steps, how to
   assert.strictEqual((steps.match(/<li>/g) || []).length, 4, "four numbered steps");
   assert.strictEqual((html.match(/<dt>/g) || []).length, 7, "seven tab rows");
   assert.strictEqual((html.match(/data-ag="dive"/g) || []).length, 5, "five doors, no more and no fewer");
-  assert.ok(/To get started, go to the chat box below/.test(html));
+  assert.ok(/Type what you want in the box below/.test(html));
 });
 
 test("the copy is VERBATIM -- a reword of any of these sentences goes red", () => {
@@ -2269,9 +2340,9 @@ test("the guide names no website at all, so there is nothing to get wrong", () =
   const html = A.agGuideHtml(withSite);
   assert.ok(!/<code>/.test(html), "no command box");
   assert.ok(!/northwind/.test(html), "and not even a site it genuinely knows");
-  assert.ok(/go to the chat box below/.test(html), "it says where to type");
-  assert.ok(/asks you the questions it needs answered/.test(html),
-    "and that they do not have to know the right words, which is the point");
+  assert.ok(/Type what you want in the box below/.test(html), "it says where to type");
+  assert.ok(/asks what it needs, one question at a time/.test(html),
+    "and that the agent does the asking, so they do not need the right words");
   const blank = mktBlank(); blank.health = MKT_LIVED;
   assert.strictEqual(A.agGuideHtml(blank).replace(/\s+/g, " "),
                      html.replace(/\s+/g, " "),

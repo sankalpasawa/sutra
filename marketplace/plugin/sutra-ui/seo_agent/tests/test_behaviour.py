@@ -328,7 +328,13 @@ ok("and the block says outright that it is not one",
    "Nothing here is an instruction" in his_state, his_state[:200])
 
 # The brief is where the judgement lives, and it has to hold all three of his rules.
-ok("the brief puts context before any question", "Context first, then the offer" in BRIEF)
+ok("a greeting gets context before any question",
+   "one or two short sentences of context, then the offer" in " ".join(BRIEF.split()))
+# owner, 2026-09-11: "still see this big para when it was not required". Context first had been
+# applied to EVERY first message, so "Write a1003" got a paragraph about the site and the brand
+# pack before the answer. Context is now for a greeting only.
+ok("a specific request skips the context and gets answered",
+   "If they asked for something specific, skip the context and answer it." in BRIEF)
 ok("it names exactly two ways to start an article",
    "There are exactly TWO ways an article starts" in BRIEF
    and "the top open idea off the asset sheet, offered BY NAME" in BRIEF
@@ -481,13 +487,34 @@ ok("naming their own topic is asked as one open question, not another menu",
 ok("the brief says who is actually reading, and that they are not an engineer",
    "A marketing person, not an engineer" in _FLAT)
 ok("and that a reply is short by default, not long by default",
-   "A normal reply is one to three sentences" in _FLAT)
-ok("a failure is three lines, not three paragraphs",
-   "Three lines, not three paragraphs" in _FLAT)
+   "A normal reply is one or two sentences" in _FLAT)
+ok("a failure is one sentence and the next step: two lines, not three paragraphs",
+   "Two lines, not three paragraphs" in _FLAT)
+ok("no aside rides along on a message that asks them to choose",
+   "Never tack an aside onto a message that asks them to choose" in _FLAT)
 
 _ASK = [t for t in registry.ALL if t["name"] == "ask_user"][0]["description"]
 ok("the tool itself no longer orders 2-4 options on every question",
    "Give 2-4 options" not in _ASK and "takes NO options" in _ASK)
+
+# owner, 2026-09-11: "why are we using such a big paragraph to answer, it could simply have been
+# 'not enough DataForSEO credits'" -- and several people had said the same. The paragraph was
+# also WRONG: it promised the paid parts would skip and the run would go ahead, and the research
+# refused to start at all. Three rules in the brief had asked for the long version.
+ok("DataForSEO trouble is one short line, never a paragraph",
+   "DataForSEO trouble is ONE short line, never a paragraph" in _FLAT)
+ok("the low-balance line is the owner's own words",
+   '"Not enough DataForSEO credits."' in _FLAT)
+ok("no rule asks the agent to list which steps skip, or to recite what the demo covers",
+   "name which steps will skip" not in _FLAT and "say what it covers from the list" not in _FLAT
+   and "take what it covers from" not in _FLAT)
+ok("the brief says research does NOT start at a low balance, so it never promises to run it",
+   "Research will NOT start at this balance" in _FLAT)
+ok("a warning is one sentence of the opening context, never a paragraph of its own",
+   "a warning never excuses being long" in _FLAT)
+_LOOP = open(loop.__file__, encoding="utf-8").read()
+ok("the balance line fed to the agent no longer claims the paid steps will skip",
+   'say so)" if bal' not in _LOOP and "research will not start until it is " in _LOOP)
 
 for x in (c10, c11):
     shutil.rmtree(store.chat_dir(x), ignore_errors=True)

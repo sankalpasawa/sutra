@@ -189,6 +189,9 @@ function agS(){
        running job -- and `wsForm` is the draft in the create/join boxes. The personal access
        token is deliberately NOT in this list and must never be added to it. */
     ws: null, wsForm: null,
+    /* the companies this person works for (GET /companies), the add/name form's mode, the last
+       refusal in words, and whether a switch is in flight (owner, 2026-09-11) */
+    companies: null, coForm: null, coErr: null, coBusy: false,
   };
   return S.ag;
 }
@@ -767,7 +770,7 @@ function agHeroHtml(health, conns){
        "Suggest six topics we could own."];
   const plays = ready ? [
     topPlay,
-    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. It stops twice: the topic and the draft.",
+    ["Write an article about a topic I name", "Researches it, plans it, and writes the draft in your voice. It stops twice: the topic and the draft.",
      "Write an article about "],
     /* A third play -- rewrite one of the pages we already have -- was DELETED (owner,
        2026-09-09). It was written before the reuse check existed and nothing was ever wired
@@ -833,7 +836,11 @@ function agSeoCardHtml(a){
      MEANS -- so the row is three zeroes saying what "not set up yet" already said. Left off there,
      and left off per fact when its route has not answered. Nothing is hidden that is not either
      already stated or not yet known. */
-  const facts = first !== false ? "" : [
+  /* ONE COMPANY'S NUMBERS, ONLY WHILE THERE IS ONE COMPANY (owner, 2026-09-11: "will be there if
+     one company, else if both then go away"). With several, the shelf cannot say whose six
+     articles these are, so it says nothing rather than quietly showing the open one's. */
+  const many = !!(h && (h.companies || 1) > 1);
+  const facts = (first !== false || many) ? "" : [
     agMktFact(a.library ? a.library.length : null, "article in the Library", "articles in the Library"),
     agMktFact(h ? (h.chats || 0) : null, "chat", "chats"),
     agMktFact(pages, "page catalogued", "pages catalogued"),
@@ -848,7 +855,7 @@ function agSeoCardHtml(a){
     <span class="cm" aria-hidden="true">S</span>
     <span class="cb">
       <span class="ct">SEO Writer</span>
-      <span class="cd">Researches a topic with real keyword numbers, reads what already ranks, gathers evidence with sources, plans the article and writes it in your voice.</span>
+      <span class="cd">Researches a topic, plans the article, and writes it in your voice, with sources.</span>
       <span class="cs"><i class="dot ${state[0]}" aria-hidden="true"></i>${agEsc(state[1])}</span>
       ${facts ? `<span class="cf">${facts}</span>` : ""}
       ${next ? `<span class="cn">${next}</span>` : ""}
@@ -857,9 +864,8 @@ function agSeoCardHtml(a){
   </button>`;
 }
 
-/* The shelf itself. The heading, the company the agents are working for when there IS one, the
-   one card, and one line about the rest. The company name is data: absent on a fresh install,
-   and the header reads perfectly well without it. */
+/* The shelf itself. The heading, the one card, and one line about the rest. No company name: the
+   shelf belongs to the person, who may work for several companies (see agMarketHtml). */
 /* THE MARK BEHIND THE SHELF. One agent leaves a great deal of empty room, and the owner asked for
    the space to carry something rather than just be blank: "a big circle with the Sutra logo... as
    an underlay, and maybe a glow. The background should be matched with whatever theme it is."
@@ -909,12 +915,97 @@ const AG_MARK = `
       </svg>
     `;
 
-function agMarketHtml(a){
-  const brand = agBrandName(a);
+/* ── which company ─────────────────────────────────────────────────────────────
+   One person, several companies (owner, 2026-09-11: "one person can do the content for more than
+   one company... when he opens the agent, an option to choose a company he has already worked on
+   ... add another company"). A company is a folder on the server; this is the door in front of it.
+
+   It is drawn in the shelf's own frame rather than the agent's three columns, because choosing
+   happens BEFORE any one company's sidebar, chats or knowledge mean anything. Two moods:
+     choose   more than one company -- a card for each, and Add another company
+     name     the open company has no name yet, which is a first run: the name is asked first,
+              then the agent asks for the website exactly as it always has */
+function agChooseHtml(a){
+  const L = a.companies;
+  const rows = L ? (L.companies || []) : null;
+  const f = a.coForm || {};
+  const naming = f.mode === "name";
+  const busy = !!a.coBusy;
+  const form = (label, go, hint) => `<div class="ag-coform">
+      <label><b>${label}</b><input type="text" data-agconame maxlength="80" placeholder="e.g. Acme Hiring" ${busy ? "disabled" : ""}></label>
+      <div class="row"><button class="btn pri" type="button" data-ag="${go}" ${busy ? "disabled" : ""}>${busy ? "One moment…" : go === "coaddgo" ? "Add and open" : "Continue"}</button>
+        ${naming ? "" : `<button class="btn" type="button" data-ag="cocancel" ${busy ? "disabled" : ""}>Cancel</button>`}</div>
+      <div class="sp">${hint}</div></div>`;
   return `<div class="ag-mkt">
     ${AG_MARK}
     <header class="ag-mkth">
-      ${brand ? `<div class="ag-mktfor">${agEsc(brand)}</div>` : ""}
+      <h1>${naming ? "What's the company called?" : "Which company?"}</h1>
+      <p>${naming ? "The SEO Writer works for one company at a time. You can add more later."
+                  : "Each company keeps its own knowledge, chats and library. Your DataForSEO and Voyage keys work for all of them."}</p>
+    </header>
+    ${a.coErr ? `<div class="note b" role="status">${agEsc(a.coErr)}</div>` : ""}
+    ${!rows ? `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span><span>Reading your companies…</span></div>`
+      : naming ? form("Company name", "conamego", "The agent asks for the website next, the way it does on a first run.")
+      : `<div class="ag-cards">${rows.map(c => agCoCardHtml(c, busy)).join("")}</div>
+         ${f.mode === "add" ? form("New company", "coaddgo", "It gets its own knowledge, chats and library. The agent asks for its website next.")
+           : `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-ag="coadd" ${busy ? "disabled" : ""}>${AG_ICON.plus} Add another company</button></div>`}`}
+    <div class="row" style="margin-top:22px"><button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button></div>
+  </div>`;
+}
+
+function agCoCardHtml(c, busy){
+  const name = c.name || "Unnamed company";
+  return `<button class="ag-mktcard ag-cocard ${c.active ? "on" : ""}" type="button" data-ag="cosw" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}
+      aria-label="Open ${agEsc(name)}">
+    <span class="cm" aria-hidden="true">${agEsc(name.charAt(0).toUpperCase())}</span>
+    <span class="cb">
+      <span class="ct">${agEsc(name)}</span>
+      <span class="cd">${agEsc(c.domain || "not set up yet")}</span>
+      <span class="cs">${agEsc(agNum(c.chats || 0))} ${c.chats === 1 ? "chat" : "chats"}${c.active ? " · open last" : ""}</span>
+    </span>
+    <span class="cg" aria-hidden="true">Open ${AG_ICON.arrow}</span>
+  </button>`;
+}
+
+async function agCompaniesLoad(){
+  const a = agS(); if (!a) return;
+  try { a.companies = await agApi("/companies"); a.coErr = null; }
+  catch (e) { a.coErr = agWhy(e); }
+  const open = a.companies && (a.companies.companies || []).find(c => c.active);
+  if (open && !open.name && !a.coForm) a.coForm = { mode: "name" };
+  agDraw(true);
+  agFocusCo();
+}
+
+function agFocusCo(){
+  if (typeof setTimeout !== "function" || typeof document === "undefined") return;
+  setTimeout(() => { const i = document.querySelector("[data-agconame]"); if (i) i.focus(); }, 0);
+}
+
+/* Everything on this screen that belongs to the company being left. The server has already
+   forgotten its side (agents_api._co_reset); this is the same promise on the screen, so not one of
+   the old company's chats, articles or panels can be drawn over the new one. */
+function agResetCompany(a){
+  Object.assign(a, {
+    chats: null, chatId: null, chat: null, events: {}, cursors: {}, panel: null, autoOpened: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, facePick: null,
+    notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", viewBusy: null,
+    refresh: null, refreshSeen: null, refreshPollErr: null, health: null, knowledge: null,
+    cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
+    pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
+    bpEdit: null, artEdit: null, lastEdit: null, compForm: null, coForm: null, memForm: null,
+    connForm: null, libOpen: null, libEdit: null, detailOpen: {}, fileEdit: null,
+    prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
+  });
+}
+
+/* NO COMPANY NAME ON THE SHELF (owner, 2026-09-11: "in the Agent Marketplace tab when I open I
+   should not see any company name"). The shelf belongs to the person, who may work for several
+   companies; which one is chosen once an agent is opened. */
+function agMarketHtml(a){
+  return `<div class="ag-mkt">
+    ${AG_MARK}
+    <header class="ag-mkth">
       <h1>Agents</h1>
       <p>They do a whole job in front of you, naming every step before they take it.</p>
     </header>
@@ -1047,13 +1138,16 @@ function agGuideTabNames(){ return AG_GUIDE_TABS.map(t => t[0]); }
    template literal it would carry the source file's own newlines and indentation into the DOM,
    and the test that holds these sentences verbatim could then only match a normalised copy of
    them -- which is exactly the loophole a later reword would slip through. */
-const AG_GUIDE_LEAD = "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.";
+const AG_GUIDE_LEAD = "It reads your website, learns how you write, finds what is worth writing, and writes it one article at a time. You can change anything along the way.";
 /* NO COMMAND BOX. It printed `Set up <your domain>` in a mono block, which read as a thing to
    copy and made a two-word instruction look like a command line. The owner: "need not show
    like a chat button below, just say them to type this in the chat section, that is it."
    Dropping it also removes the last place the guide had to name the site at all. (2026-09-10) */
-const AG_GUIDE_TYPE = "To get started, go to the chat box below and type what you want. You do not need to know the right words for it: the agent asks you the questions it needs answered, one at a time.";
-const AG_GUIDE_AFTER = "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.";
+/* SHORTER, AND THE TWO STOPS CORRECTED (2026-09-11). AFTER used to say it stops "to agree the shape
+   of the article", which it has not done since the owner ruled the stops are the TOPIC and the
+   DRAFT; the plan lands in the Library and is not waited on. */
+const AG_GUIDE_TYPE = "Type what you want in the box below. The agent asks what it needs, one question at a time.";
+const AG_GUIDE_AFTER = "It shows every step, and stops twice: to agree the topic, and to approve the draft.";
 
 const AG_GUIDE_STEPS = [
   "It reads your site. Every page, all the text, and what each page already ranks for.",
@@ -1166,9 +1260,10 @@ function agSideHtml(a){
   const setup = agSetupOf(h);
   const dotCls = !h ? "" : !h.model_provider ? "bad" : !setup.ready ? "warn" : "run";
   const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
-  /* one company name on this screen, agBrandName's, so the sidebar and the marketplace can never
-     disagree about what it is or about it being absent */
-  const brand = agBrandName(a);
+  /* THE COMPANY THIS AGENT IS WORKING FOR, and the way to another (owner, 2026-09-11). The name the
+     person gave it wins; the brand record is the fallback for a company named before companies
+     existed. It is a button, so the chooser is one click from anywhere in the agent. */
+  const coName = String((h && h.company && h.company.name) || agBrandName(a) || "").trim();
   const openIdeas = a.assets && a.assets.built ? (a.assets.counts || {}).open : null;
   /* Prompts sits with Memory and not with Tools: both are things the owner tells the agent about
      how to write, and neither is a thing the agent does. The count is how many he has changed. */
@@ -1185,7 +1280,9 @@ function agSideHtml(a){
   return `<button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button>
     <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
-      <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
+      <div style="min-width:0"><b>SEO Writer</b>
+        <button class="ag-cosw" type="button" data-ag="choose" title="Switch company, or add another">${agEsc(coName || "Name your company")}${AG_ICON.chev}</button>
+        <span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
       ${agFacesHtml(a)}
     </div>
     ${agFacePickHtml(a)}
@@ -2034,11 +2131,7 @@ function agAssetsHtml(as, a){
   if (!as.built) return `<div class="ag-view"><h2>Asset ideas</h2>
     <p class="lead">What is worth writing about, worked out from evidence rather than a hunch.</p>
     <div class="ag-row"><div class="ri"><div class="rn">Not built yet</div>
-      <div class="rd">Three ways of finding ideas, kept apart until the end: which competitor pages
-        actually earn links and the shape that earned them, formats proven in other industries, and
-        what your audience argues about in public. Then they are merged, ranked, and checked against
-        pages you already have.<br><br>It takes about half an hour and it stops twice to ask you:
-        once for the competitor list, once for the communities.</div>
+      <div class="rd">Finds what's worth writing: what earns your competitors links, formats that work elsewhere, and what your audience talks about. About 30 minutes. It asks you twice: the competitors, then the communities.</div>
       <div class="ag-editrow" style="margin-top:10px">
         <button class="btn pri" type="button" data-ag="assetsbuild" ${busy ? "disabled" : ""}>${busy ? "Starting…" : "Work out what to write"}</button>
         <span class="ag-sub">It runs in the chat, so you can watch it and answer as it goes.</span>
@@ -2122,7 +2215,7 @@ function agMethodName(m){ return AG_METHOD_NAMES[m] || m; }
 function agMemoryHtml(m, form){
   const rules = (m && m.rules) || [];
   return `<div class="ag-view"><h2>Memory</h2>
-    <p class="lead">Standing rules about your taste. Every step that shapes or writes prose reads them: the plan, the headings, each section, the edits, the intro and the close. The agent saves one when you say something that should hold for every future article. Add your own here.</p>
+    <p class="lead">Rules the agent follows in every article. It saves one when you tell it something that should always apply, and you can add your own.</p>
     <div class="ag-addrow"><input type="text" data-agmem placeholder="e.g. Never open an article with a question" value="${agEsc(form && form.text || "")}" aria-label="New rule"><button class="btn pri" type="button" data-ag="addmem">Add rule</button></div>
     ${rules.length ? rules.map(r => `<div class="ag-row ${r.active === false ? "off" : ""}"><div class="ri"><div class="rn">${agEsc(r.text)}</div>
         <div class="rm"><span>${agEsc(r.kind || "rule")}</span><span>${r.source === "agent" ? "saved by the agent" : "added by you"}</span><span>${agEsc(agAgo(r.t))}</span></div></div>
@@ -2175,7 +2268,7 @@ function agLibraryHtml(items){
   const list = items || [];
   const bin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
   return `<div class="ag-view"><h2>Library</h2>
-    <p class="lead">Every article, from the moment it starts. A row appears as soon as the agent begins and fills in piece by piece, so you can read any part of one while the rest is still being made. Nothing leaves this Mac; publishing is your step.</p>
+    <p class="lead">Every article, from the moment it starts. You can read one while it is still being written. Nothing is published until you publish it.</p>
     ${list.length ? list.map(it => {
       const status = it.status || "draft";
       const writing = status === "writing";
@@ -2239,7 +2332,7 @@ function agPromptsHtml(d, a){
   const open = a && a.panel && a.panel.view === "prompt" ? a.panel.name : "";
   const edited = (d && d.edited) || [];
   return `<div class="ag-view"><h2>Prompts</h2>
-    <p class="lead">The words the agent writes by. Open one, change it, save it, and the next article is written from your version. Your copy lives with your own files, so an update to the app never overwrites it, and Reset puts a prompt back to what shipped.</p>
+    <p class="lead">The instructions the agent writes by. Change one and the next article uses your version. Reset puts it back.</p>
     <h3 class="sec">How an article gets written</h3>
     ${agFlowHtml(d && d.flow)}
     <h3 class="sec">The prompts${edited.length ? ` <small>${agEsc(edited.length)} changed by you</small>` : ""}</h3>
@@ -2463,9 +2556,7 @@ function agWsFailedHtml(job){
 function agWsCreateFormHtml(f){
   return `<div class="ag-row"><div class="ri">
     <div class="rn">Create a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">Make a free project at Supabase, then paste its two public details here. The data
-      stays in your own Supabase account and nobody else's, and the free tier is more room than a
-      team of five will fill.</div>
+    <div class="rd">Make a free Supabase project and paste its two details here. Your data stays in your own account.</div>
     <div class="ag-form" style="margin-top:10px">
       <div class="row"><a class="btn" href="https://supabase.com/dashboard/projects" target="_blank" rel="noopener">Go to Supabase</a>
         <span class="sp">then Project Settings → Data API</span></div>
@@ -2474,10 +2565,8 @@ function agWsCreateFormHtml(f){
       <label><b>What to call it</b><input type="text" data-agws="name" autocomplete="off" placeholder="Our team" value="${agEsc(f.name || "")}"></label>
       <label><b>Access token <span class="ag-opt">optional</span></b>
         <input type="password" data-agws="token" autocomplete="off" spellcheck="false" placeholder="sbp_… — leave this empty to set the tables up yourself">
-        <span class="ag-hint">With one, Sutra makes the tables for you. It is used for that one
-          request and thrown away: never written to disk, never kept, never in the link. Leave it
-          empty and Sutra hands you the script to paste into Supabase instead —
-          <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">where tokens live</a>.</span></label>
+        <span class="ag-hint">Sutra uses it once to set things up. It is never written to disk and never kept. Leave this empty to get a script to paste instead.
+          <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">Get a token</a>.</span></label>
       ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
       <div class="row"><button class="btn pri" type="button" data-ag="wsgo" ${f.busy ? "disabled" : ""}>${f.busy ? "Working…" : "Create"}</button>
         <button class="btn" type="button" data-ag="wscancel">Cancel</button></div>
@@ -2487,15 +2576,14 @@ function agWsCreateFormHtml(f){
 function agWsJoinFormHtml(f){
   return `<div class="ag-row"><div class="ri">
     <div class="rn">Join a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">Paste the link whoever set it up sent you, and say what your team should see
-      beside your work. Then the team's Library, ideas and prompts become yours.</div>
+    <div class="rd">Paste the link your teammate sent you, and add your name. You get the team's Library, ideas and prompts.</div>
     <div class="ag-form" style="margin-top:10px">
-      <label><b>The link</b><input type="text" data-agws="link" autocomplete="off" spellcheck="false" placeholder="sutra-ws-…" value="${agEsc(f.link || "")}"></label>
+      <label><b>The link</b><input type="text" data-agws="link" autocomplete="off" spellcheck="false" placeholder="sutra1_…" value="${agEsc(f.link || "")}"></label>
       <label><b>Your name</b><input type="text" data-agws="name" autocomplete="off" placeholder="Ravi" value="${agEsc(f.name || "")}"></label>
       ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
       <div class="row"><button class="btn pri" type="button" data-ag="wsjoingo">Done</button>
         <button class="btn" type="button" data-ag="wscancel">Cancel</button>
-        <span class="sp">the download takes about five minutes</span></div>
+        <span class="sp">usually takes under a minute</span></div>
     </div></div></div>`;
 }
 
@@ -2597,9 +2685,7 @@ function agWsHtml(ws, f){
   if (f.mode === "join") return head + agWsJoinFormHtml(f);
   return `${head}<div class="ag-row"><div class="ri">
     <div class="rn">Work as a team<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">One person makes the workspace on the company's own Supabase project; everybody else
-      pastes the link once. After that the Library, the ideas and the prompts are the team's, and
-      nobody presses sync ever again.</div>
+    <div class="rd">One person sets it up. Everyone else pastes a link once. After that, the Library, ideas and prompts stay in sync on their own.</div>
     <div class="row" style="margin-top:10px"><button class="btn pri" type="button" data-ag="wscreate">Create workspace</button>
       <button class="btn" type="button" data-ag="wsjoin">Join workspace</button></div>
   </div></div>`;
@@ -2616,7 +2702,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
      it. The lead below counts nothing: a typed number over a list that grows is the mistake the
      Tools tab already made once. */
   return `<div class="ag-view"><h2>Connections</h2>
-    <p class="lead">What the agent needs, and how this Mac joins the rest of the team. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
+    <p class="lead">What the agent needs, and your team. Keys stay on this Mac and are never shown again.</p>
     ${agWsHtml(ws, wsForm)}
     <h3 class="sec">Model</h3>
     <div class="ag-row"><div class="ri"><div class="rn">${prov === "claude-cli" ? "Claude, through the command line" : prov ? agEsc(prov) : "No model available"}
@@ -2624,7 +2710,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       <div class="rd">${prov ? "The same sign-in the chat uses. No API key anywhere." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div></div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
     <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
-      <div class="rd">Keyword volumes, difficulty, who ranks, the questions people ask and Google's own answer come from here. Research needs it. Each research run costs under a dollar of their credit.</div>
+      <div class="rd">Real search numbers: how many people search, how hard it is to rank, and who ranks now. Research needs it. Under $1 an article.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>Login</b><input type="text" data-agdfs="login" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "the email you sign in with"}" value="${agEsc(form.login || "")}"></label>
         <label><b>API password</b><input type="password" data-agdfs="password" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "from app.dataforseo.com → API access"}" value="${agEsc(form.password || "")}"></label>
@@ -2632,7 +2718,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       </div></div></div>
     <h3 class="sec">Voyage · pages indexed by meaning</h3>
     <div class="ag-row"><div class="ri"><div class="rn">Voyage <span class="ag-status"><i class="dot ${voy ? "ok" : "warn"}"></i>${voy ? "connected" : "not connected"}</span></div>
-      <div class="rd">Reads every page and works out what it is about, so the agent can find the right page of yours to link to from each section, and tell whether you already write about a topic. The free tier is enough for a whole site.</div>
+      <div class="rd">Helps the agent find your own pages to link to. The free plan covers a whole site.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>API key</b><input type="password" data-agvoy="key" autocomplete="off" placeholder="${voy ? "•••••• (set)" : "pa-… from dash.voyageai.com"}" value="${agEsc(form.voyage || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savevoy">Save</button>${voy ? `<button class="btn" type="button" data-ag="clearvoy">Disconnect</button>` : ""}<span class="sp">${form.vmsg ? agEsc(form.vmsg) : ""}</span></div>
@@ -2645,7 +2731,10 @@ if (typeof SCREENS !== "undefined"){
   SCREENS.agents = () => `<div class="ag" id="agRoot" data-ag-shell></div>`;
 }
 if (typeof TITLES !== "undefined"){
-  TITLES.agents = ["Agents", "agents that work in front of you"];
+  /* "Agent Marketplace", not "Agents" (owner, 2026-09-11: "name the tab agent marketplace for
+     now"). The pane title and the rail label say the same thing, so a person never sees the tab
+     called one name and the screen it opens called another. */
+  TITLES.agents = ["Agent Marketplace", "agents that work in front of you"];
 }
 
 /* ── mount, draw, poll ─────────────────────────────────────────────────────── */
@@ -2719,7 +2808,7 @@ function agEnsureObserver(){
 const AG_SHELL_AGENT = `<aside class="ag-side" id="agSide" aria-label="SEO Writer"></aside>
       <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="ag-quiet" id="agQuiet" role="status" hidden></div><div class="pc" id="agComposer"></div></section>
       <aside class="ag-panel" id="agPanel" aria-label="Review"></aside>`;
-const AG_SHELL_MARKET = `<div class="ag-mktwrap" id="agMarket" aria-label="Agents"></div>`;
+const AG_SHELL_MARKET = `<div class="ag-mktwrap" id="agMarket" aria-label="Agent Marketplace"></div>`;
 
 /* Paint the shell for the screen we are on, and load what that screen needs. One function, so
    mounting into a fresh pane and moving between the two screens take exactly the same path.
@@ -2738,7 +2827,7 @@ function agEnterScreen(root, enter){
   if (market){
     /* nothing on the shelf moves on its own, so the shelf keeps no clock running */
     agStopPoll();
-    agMarketLoad();
+    if (a.screen === "choose") agCompaniesLoad(); else agMarketLoad();
   } else {
     agStartPoll();
     agBootLoad();
@@ -2795,7 +2884,7 @@ function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
   /* The marketplace is one block and has no columns, no panel and no composer, so it leaves
      before any of that machinery runs. */
-  if (a.screen !== "agent"){ agSetHtml("agMarket", agMarketHtml(a)); return; }
+  if (a.screen !== "agent"){ agSetHtml("agMarket", a.screen === "choose" ? agChooseHtml(a) : agMarketHtml(a)); return; }
   const scroll = document.getElementById("agScroll");
   const panelFlips = root.classList.contains("haspanel") !== !!a.panel;
   const anchor = (panelFlips && a.view !== "chat" && scroll) ? agScrollAnchor(scroll) : null;
@@ -3439,6 +3528,15 @@ async function agAction(act, el){
        arrival animation runs over an agent that is already loading. Nothing here waits on it. */
     case "open": {
       if (arg && arg !== "seo") break;      /* one agent; an unknown id opens nothing */
+      /* WHICH COMPANY FIRST, when there is a choice to make (owner, 2026-09-11): more than one
+         company, or one that has not been named yet -- a first run, where the name is the first
+         thing asked. One named company goes straight in, exactly as before. */
+      const hh = a.health || {};
+      if ((hh.companies || 1) > 1 || (hh.company && hh.company.id && !hh.company.name)){
+        a.screen = "choose"; a.coForm = null; a.coErr = null; a.panel = null;
+        agEnterScreen(agRoot(), true);
+        break;
+      }
       /* THE DOOR OPENS ON THE GUIDE, always -- not on the last conversation and not on a
          half-finished run. agBootLoad no longer restores a chat; see the note there for what
          happens to a run that is in flight. */
@@ -3448,6 +3546,47 @@ async function agAction(act, el){
     }
     case "market": {
       a.screen = "market"; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    /* ── which company ── see agChooseHtml. The server refuses a switch while anything is still
+       running for the company being left, and that refusal is shown here in its own words. */
+    case "choose": {
+      a.screen = "choose"; a.coForm = null; a.coErr = null; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "cosw": {
+      if (a.coBusy) break;
+      if (a.companies && arg === a.companies.active){
+        a.screen = "agent"; a.view = "guide"; a.guideDive = null; a.panel = null;
+        agEnterScreen(agRoot(), true);
+        break;
+      }
+      a.coBusy = true; a.coErr = null; agDraw(true);
+      try { await agPostApi("/companies/switch", { id: arg }); }
+      catch (e) { a.coBusy = false; a.coErr = agWhy(e); agDraw(true); break; }
+      a.coBusy = false;
+      agResetCompany(a);
+      a.screen = "agent"; a.view = "guide";
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "coadd": a.coForm = { mode: "add" }; a.coErr = null; agDraw(true); agFocusCo(); break;
+    case "cocancel": a.coForm = null; a.coErr = null; agDraw(true); break;
+    case "coaddgo": case "conamego": {
+      if (a.coBusy) break;
+      const inp = typeof document !== "undefined" ? document.querySelector("[data-agconame]") : null;
+      const name = inp ? inp.value.trim() : "";
+      if (!name){ a.coErr = "Type the company's name."; agDraw(true); agFocusCo(); break; }
+      a.coBusy = true; a.coErr = null; agDraw(true);
+      try {
+        if (act === "coaddgo") await agPostApi("/companies", { name });
+        else await agPostApi("/companies/rename", { id: (a.companies && a.companies.active) || "c1", name });
+      } catch (e) { a.coBusy = false; a.coErr = agWhy(e); agDraw(true); agFocusCo(); break; }
+      a.coBusy = false;
+      agResetCompany(a);
+      a.screen = "agent"; a.view = "guide";
       agEnterScreen(agRoot(), true);
       break;
     }

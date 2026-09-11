@@ -1161,7 +1161,7 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agents",
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agent Marketplace",
                      org:"Org", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
                      org:"dept", team:"team", settings:"gear" };

@@ -102,8 +102,15 @@ def _knowledge_block(site):
         mode = _sh.dfs_mode(_dfs)
         if mode == "live":
             bal = _cached_balance(_dfs)
+            # "(too low for paid steps; they will skip and say so)" used to close this line, and it
+            # was false for research: run_research refuses outright below the floor. Told "skip",
+            # the agent promised to "run it and tell you exactly what came back empty", and then
+            # the research did not start at all (owner's screenshot, 2026-09-11). So the line says
+            # what actually happens at this balance.
             lines.append("- DataForSEO: connected%s." % ("" if bal is None else ", balance $%.2f%s"
-                         % (bal, " (too low for paid steps; they will skip and say so)" if bal < 0.5 else "")))
+                         % (bal, " -- NOT enough credits: research will not start until it is "
+                                 "topped up, unless they ask to go ahead on placeholder numbers"
+                                 if bal < 0.5 else "")))
         else:
             # "and everything else still works" used to end this line, and it was false. Asked
             # "does the research read the real Google results, yes or no", the agent reasoned
