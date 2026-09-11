@@ -148,3 +148,15 @@
 {"ts":1789120574,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":5,"staged_docs":14}
 {"ts":1789124416,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
 {"ts":1789125001,"event":"pre-commit-test-gate","status":"block","reason":"stale-marker","staged_code":18,"staged_docs":127}
+{"ts":1789126049,"event":"pre-commit-test-gate","status":"block","reason":"stale-marker","staged_code":18,"staged_docs":128}
+{"ts":1789126076,"event":"pre-commit-test-gate","status":"override","reason":"static website design mock (shadow-v7.html preview); no code path exercised by the sutra test suite","staged_code":18,"staged_docs":128}
+{"ts":1789127032,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
+{"ts":1789127035,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":3}
+{"ts":1789127497,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
+{"ts":1789127531,"event":"pre-commit-test-gate","status":"skip","reason":"no-staged-files","staged_code":0,"staged_docs":0}
+{"ts":1789128089,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
+{"ts":1789129942,"event":"pre-commit-test-gate","status":"block","reason":"stale-marker","staged_code":15,"staged_docs":10}
+{"ts":1789129973,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":15,"staged_docs":10}
+{"ts":1789131308,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":2}
+{"ts":1789131672,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":2,"staged_docs":3}
+{"ts":1789133075,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":2}
