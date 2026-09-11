@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-10
+## Unreleased — Modules v1 (18 files, staged locally 2026-09-08, never pushed; restored 2026-09-10 on top of 2.258.1)
+
+
+- **Org > Modules: the finished products you build inside Sutra.** New `modules_api.py` (`/api/modules`) treats `~/.sutra-ui/modules/<id>/module.json` as the registry, so the in-app New module form, a Shadow `module` fence, and any Claude Code session that writes the folder all land in one list. Three kinds: `chat` (opens a session with your instructions as its first turn), `page` (your `index.html`, rendered in a sandboxed iframe with no network and no API reach), `link` (a system screen). Balance, Help and Settings appear as system rows; Settings lists its sections straight from the plane spec.
+- Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
+
+
+## 2.260.2 (2026-09-11)
+
+- **Two scanner false-positive classes closed at the root.** The Bash mutation scanner now walks tokens per segment: a segment's COMMAND WORD (`path/scrub.sh in > out`), an interpreter's script operand (`bash x.sh`), a codex `-m`/`--model` value (`gpt-5.5`) and a quoted sed script (`'s/x/y/'`) are no longer scored as mutation targets. Operands of tee/cp/mv/sed -i/git add are kept, `sh -c`/`python3 -c` stay opaque, verb detection is untouched, and the 30-candidate cap is global again. `test-atom-floor-scanner.sh` (20 cases).
+- **One implementation.** `dispatch-gate.sh` and `atom-floor.sh` export `DISPATCH_GATE_API=1` / `ATOM_FLOOR_API=1` so a host repo can shim onto them and fail closed when the plugin is absent (Asawa's holding copies are now such shims; its orchestrator derives targets through the shared `dispatch_gate_targets`). codex: CHANGES-REQUIRED x2 folded, ADVISORY x1.
 
 ## 2.258.1 (2026-09-10)
 
@@ -254,6 +265,11 @@ a comma-separated list and the only real boundary in the pack was a single item;
 confidence pill's hover text leaked "enumeration accounting" onto the screen; "meaning vectors" was
 still in the Connections copy; and opening a file shifted the reader's position by several hundred
 pixels, because `haspanel` reflows the left column three ways at once.
+
+## 2.247.0 (2026-09-08)
+
+- **Org > Modules: the finished products you build inside Sutra.** New `modules_api.py` (`/api/modules`) treats `~/.sutra-ui/modules/<id>/module.json` as the registry, so the in-app New module form, a Shadow `module` fence, and any Claude Code session that writes the folder all land in one list. Three kinds: `chat` (opens a session with your instructions as its first turn), `page` (your `index.html`, rendered in a sandboxed iframe with no network and no API reach), `link` (a system screen). Balance, Help and Settings appear as system rows; Settings lists its sections straight from the plane spec.
+- Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
 
 ## 2.246.1 (2026-09-08)
 

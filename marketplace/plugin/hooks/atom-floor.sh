@@ -19,6 +19,10 @@
 # codex 2026-08-01 additions: .git, tmp/scratchpad, plugin caches.
 # Kill-switches: touch ~/.atom-floor-disabled  OR  ATOM_FLOOR_DISABLED=1.
 
+# API pin for shims (holding/hooks/atom-floor.sh sources this file and fails
+# CLOSED unless this is >= the version it was written against).
+ATOM_FLOOR_API=1
+
 # Whitelist test shared by both branches. Returns 0 if the path is exempt.
 _atom_floor_whitelisted() {
   case "$1" in
@@ -190,6 +194,11 @@ atom_floor_check() {
                 case "$_af_seg_word" in
                   sed|awk|gawk)
                     case "$_af_q" in *'|'*) continue ;; esac
+                    # A quoted sed SCRIPT (`s/x/y/g`, `3,$y/a/b/`) is an
+                    # expression, never a file operand — even with -i, where
+                    # the FILE operand (unquoted, kept below) is the target
+                    # (2026-09-10, scanner test "sed -i keeps the file operand").
+                    printf '%s' "$_af_q" | grep -qE '^[0-9,$]*[sy]/.*/.*/[A-Za-z0-9]*$' && continue
                     if [ "$_af_inplace" = 0 ] && ! printf '%s' "$_af_seg_noq" | grep -q '>'; then continue; fi ;;
                   grep|egrep|fgrep|rg|jq|cut|tr|comm|diff|column|head|tail|sort|uniq|wc|test|\[)
                     printf '%s' "$_af_seg_noq" | grep -q '>' || continue ;;
@@ -209,14 +218,72 @@ atom_floor_check() {
             # invocation contributes NO targets — its operands are the CLI's own
             # declarations (`sutra-atom open --touches X`), not mutations. The
             # CLI enforces its own discipline; gating its arguments deadlocks it.
-            local _af_scan_targets
+            local _af_scan_targets _af_segline _af_cmdw _af_i _af_n _af_cmd_idx _af_skip_idx _af_prev _af_count=0
             _af_scan_targets=$(printf '%s\n' "$cmd_scan" | tr ';&|\n' '\n\n\n\n' \
               | grep -vE "$_af_exempt_re")
-            for tok in $(printf '%s' "$_af_scan_targets" \
-                  | sed -E 's/([0-9]?>>?)[[:space:]]*/\1/g' \
-                  | tr ' ' '\n' \
-                  | sed -E 's/^[0-9]?>>?//' \
-                  | grep -E '/|^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$' | head -30); do
+            # Per-SEGMENT token walk (GATE-2 #2 + GATE-1, 2026-09-10, codex
+            # CHANGES-REQUIRED folded). Verb detection above already ran on the
+            # full text, so nothing here can hide a mutator; this only decides
+            # which tokens are TARGET candidates:
+            #   FP-A: the COMMAND WORD of a segment (after NAME=value and
+            #         command/exec/env/sudo/nohup/time/nice wrappers) is the
+            #         word that RUNS, never the word that is MUTATED —
+            #         `path/scrub.sh in > out` gates only `out`.
+            #   FP-A': an interpreter's SCRIPT operand (`bash x.sh`,
+            #         `python3 x.py`) is executed, not mutated. A flag after the
+            #         interpreter is never skipped: `sh -c`, `python3 -c`,
+            #         `node -e` are wrappers -> opaque (codex P1). `python3 -m
+            #         mod` skips the module name too.
+            #   FP-B: for `codex` only, the value after -m/--model (and
+            #         --model=X) is an argv model pin, not a path (GATE-1;
+            #         scoped to codex per codex P2).
+            # Operands are always kept: tee/cp/mv/sed -i/git add still yield
+            # their file operands, and redirect operands are never dropped.
+            while IFS= read -r _af_segline; do
+              [ -z "${_af_segline//[[:space:]]/}" ] && continue
+              local -a _af_words=()
+              read -r -a _af_words <<< "$(printf '%s' "$_af_segline" | sed -E 's/([0-9]?>>?)[[:space:]]*/\1/g')"
+              _af_n=${#_af_words[@]}; _af_i=0; _af_cmd_idx=-1; _af_skip_idx=-1; _af_cmdw=""
+              while [ $_af_i -lt $_af_n ]; do
+                case "${_af_words[$_af_i]}" in
+                  [A-Za-z_]*=*|command|exec|env|sudo|nohup|time|nice) _af_i=$((_af_i+1)); continue ;;
+                esac
+                break
+              done
+              if [ $_af_i -lt $_af_n ]; then
+                case "${_af_words[$_af_i]}" in
+                  \>*|[0-9]\>*) ;;   # a bare redirect is an operand, not a command word
+                  *) _af_cmd_idx=$_af_i; _af_cmdw="${_af_words[$_af_i]##*/}" ;;
+                esac
+              fi
+              if [ $_af_cmd_idx -ge 0 ] && [ $((_af_cmd_idx+1)) -lt $_af_n ]; then
+                case "$_af_cmdw" in
+                  bash|sh|zsh|python|python3|node|perl|ruby|php)
+                    case "${_af_words[$((_af_cmd_idx+1))]}" in
+                      -m) [ $((_af_cmd_idx+2)) -lt $_af_n ] && _af_skip_idx=$((_af_cmd_idx+2)) ;;
+                      -*) ;;
+                      *)  _af_skip_idx=$((_af_cmd_idx+1)) ;;
+                    esac ;;
+                esac
+              fi
+              _af_prev=""
+              _af_i=0
+              while [ $_af_i -lt $_af_n ]; do
+                tok="${_af_words[$_af_i]}"
+                local _af_this=$_af_i; _af_i=$((_af_i+1))
+                [ $_af_this -eq $_af_cmd_idx ] && { _af_prev="$tok"; continue; }
+                [ $_af_this -eq $_af_skip_idx ] && { _af_prev="$tok"; continue; }
+                if [ "$_af_cmdw" = "codex" ]; then
+                  case "$_af_prev" in -m|--model) _af_prev="$tok"; continue ;; esac
+                  case "$tok" in --model=*) _af_prev="$tok"; continue ;; esac
+                fi
+                _af_prev="$tok"
+                tok=$(printf '%s' "$tok" | sed -E 's/^[0-9]?>>?//')
+                printf '%s' "$tok" | grep -qE '/|^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$' || continue
+                # Global cap of 30 candidates across ALL segments (was head -30;
+                # codex P1 2026-09-10: a per-segment break let a long compound
+                # command accumulate past the cap). break 2 leaves both loops.
+                _af_count=$((_af_count+1)); [ $_af_count -gt 30 ] && break 2
               # FP-replay #13: `FIX=holding/tests/...` is an ASSIGNMENT, not a
               # target. Strip a leading NAME= prefix and keep the value — that
               # value is often the real path the command writes to later.
@@ -239,7 +306,8 @@ atom_floor_check() {
                 ATOM_FLOOR_BASH_TARGETS="${ATOM_FLOOR_BASH_TARGETS}${ATOM_FLOOR_BASH_TARGETS:+
 }$tok"
               fi
-            done
+              done
+            done <<< "$_af_scan_targets"
             # All tokens whitelisted = known-safe mutation.
             [ "$suspicious" = "0" ] && [ "$had_tokens" = "1" ] && return 0
             # W1: ambiguous lane REMOVED — verb-matched command with no

@@ -18,6 +18,10 @@
 # Kill-switch: ~/.dispatch-gate-disabled (founder revoke only).
 # Verdicts journal to .enforcement/dispatch-gate.jsonl via controlled writer.
 
+# API pin for shims (holding/hooks/dispatch-gate.sh sources this file and
+# fails CLOSED unless this is >= the version it was written against).
+DISPATCH_GATE_API=1
+
 _DG_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 _DG_REPO="$(git rev-parse --show-toplevel 2>/dev/null || echo "$_DG_ROOT")"
 _DG_SID="${CLAUDE_CODE_SESSION_ID:-nosession}"
