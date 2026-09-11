@@ -236,6 +236,18 @@ function bootShadowOverlay(){
 function shadowRouteDeepLink(link){
   const l = String(link || "");
   try {
+    /* slice 7: a goal is directly addressable and lands in its workspace.
+       Checked BEFORE the mission arm so a goal id never falls through to
+       the Focus default. */
+    let g = l.match(/^sutra:\/\/shadow\/goal\/(g-[a-z0-9]+)/);
+    if (g){
+      if (typeof S !== "undefined") S.goalSel = g[1];
+      if (typeof goDest === "function") goDest("focus");
+      if (typeof openGoal === "function") openGoal(g[1]);
+      else if (typeof openScreen === "function") openScreen("goal");
+      if (typeof render === "function") render();
+      return true;
+    }
     let m = l.match(/^sutra:\/\/shadow\/(?:mission\/)?(m-[a-z0-9]+)/);
     if (m){
       if (typeof S !== "undefined"){
@@ -320,9 +332,11 @@ function shadowCardHtml(){
   }
   const last = thread.slice(-6).map(t => t.mission
     ? missionCardHtml(t.mission)
-    : `
+    : (t.goalProposal && typeof goalProposalHtml === "function"
+      ? goalProposalHtml(t.goalProposal)
+      : `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
-      ${esc(t.text || "")}</div>`).join("");
+      ${esc(t.text || "")}</div>`)).join("");
   const chips = validChips((typeof S !== "undefined" && S.shadowChips) || []);
   const chipHtml = chips.length
     ? chips.map(c => `<button class="btn shchip" type="button"
@@ -380,6 +394,10 @@ async function sendToShadow(text){
     if (doc.mission){                                   /* R19: card in-thread */
       S.shadowThread.push({ who: "shadow", mission: doc.mission,
                             ts: Date.now() });
+    }
+    if (doc.goal_proposal){        /* slice 8: a PROPOSAL, nothing created */
+      S.shadowThread.push({ who: "shadow", goalProposal:
+        Object.assign({ asked: text }, doc.goal_proposal), ts: Date.now() });
     }
     if (doc.remembered){                                /* R6: honest inert */
       const sc = doc.remembered.scope === "chat";

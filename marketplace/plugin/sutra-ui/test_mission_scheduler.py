@@ -117,6 +117,36 @@ class TestScheduler(Base):
         pend = sched.pending_confirmations()
         self.assertEqual(len(pend), 2, "two pending -> ask Yes to which")
 
+    def test_08_blocked_frees_its_slot_and_the_queue_advances(self):
+        """V5 trap 1: blocked is non-terminal, so it must still promote.
+
+        Without this, a handful of blocked missions freezes the queue at
+        the cap and queued work waits for an unrelated mission to die.
+        """
+        sched = MissionScheduler(self.store, max_running=2)
+        m1, m2, m3 = (self._mission(i) for i in range(3))
+        self.assertEqual(sched.start(m1["id"])["state"], "running")
+        self.assertEqual(sched.start(m2["id"])["state"], "running")
+        self.assertEqual(sched.start(m3["id"])["state"], "queued")
+        self.store.block(m1["id"], "budget exhausted")
+        # the running-count query must not see a blocked mission
+        running = [m["id"] for m in self.store.list(states=("running",))]
+        self.assertEqual(running, [m2["id"]])
+        promoted = sched.on_terminal(m1["id"])
+        self.assertIsNotNone(promoted, "a freed slot must promote")
+        self.assertEqual(promoted["id"], m3["id"], "FIFO promotion")
+        self.assertEqual(self.store.load(m1["id"])["state"], "blocked",
+                         "promoting must not disturb the blocked mission")
+
+    def test_09_blocked_is_never_itself_promoted(self):
+        sched = MissionScheduler(self.store, max_running=2)
+        m1 = self._mission(1)
+        sched.start(m1["id"])
+        self.store.block(m1["id"], "ping-pong")
+        self.assertIsNone(sched.on_terminal(m1["id"]),
+                          "blocked waits for the founder, not for a slot")
+        self.assertEqual(self.store.load(m1["id"])["state"], "blocked")
+
 
 class TestFeedEmit(Base):
     def test_07_mission_event_becomes_feed_item_once(self):

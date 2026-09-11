@@ -1043,6 +1043,31 @@ def api_sessions(limit: int = 100, offset: int = 0):
     return _with_departments(rows)
 
 
+# ---------------------------------------------------------------- live sync ---
+# Sutra READS Claude's transcripts, and until now it read them once, at boot.
+# Anything typed in Claude afterwards was invisible until the panel was reloaded,
+# which makes the two look like separate programs that happen to share a folder.
+# This is the half that makes them one thing: the server watches the transcript
+# directory and tells the panel what changed, as it changes.
+#
+# STAT POLLING, NOT FILESYSTEM EVENTS. FSEvents/watchdog would be tidier and is a
+# dependency this runtime does not have -- the bundled Python ships exactly
+# fastapi, uvicorn and websockets, and adding one to a 95MB payload for a 1-second
+# timer is a bad trade. sr.index() opens no files, so the poll costs one stat per
+# transcript and is flat in history size.
+#
+# SSE, NOT A WEBSOCKET. The traffic is one-way and the browser reconnects on its
+# own; a socket would be a second lifecycle to get wrong for no gain.
+#
+# RESTORED 2026-09-11: 2.254.0 (3e8e2e04) deleted this block while leaving both
+# names in use inside gen() below, so the stream served its opening `sync` frame
+# and then died on the first sleep with `NameError: SESSION_POLL_S`. The panel
+# therefore listed sessions at boot and never updated again. Values are the
+# originals, not new guesses. test_sessions_stream.py pins both.
+SESSION_POLL_S = 1.5
+SESSION_HEARTBEAT_S = 25        # keeps proxies and idle timeouts from closing it
+
+
 @app.get("/api/sessions/stream")
 async def api_sessions_stream():
     async def gen():
@@ -1691,7 +1716,12 @@ def _delegate_manifest(mission):
         "You are a delegate session working for the founder via Shadow. "
         "Objective: %s. Work step by step; state DONE-CHECK lines when "
         "checks pass." % mission["objective"])
-    return base + _scoped_instructions(mission.get("target_session"))
+    # TAGGED like a say: the manifest is Shadow's own instruction, and it
+    # carries the objective, so an untagged manifest turn let a
+    # transcript-based check satisfy itself from the briefing that asked
+    # for it. The tag is what keeps it out of the evidence.
+    return "%s %s%s" % (shadow_egress.say_tag(mission["id"]), base,
+                        _scoped_instructions(mission.get("target_session")))
 
 
 async def _default_delegate_spawner(mission):
@@ -1874,6 +1904,20 @@ async def api_shadow_chat(request: Request):
            "watching": sess.alive, "scope_id": scope_id}
     if "chips" in blocks:
         out["chips"] = blocks["chips"]
+    if "goal" in blocks:
+        # A PROPOSAL, not a creation (slice 8). Nothing is written here: the
+        # founder reads and edits it in a confirmation card and their
+        # Confirm is what POSTs /api/shadow/goals. The target is the CHAT
+        # THE FOUNDER IS IN -- the tab's scope_id -- so a goal can never be
+        # silently bound to a chat other than the one under discussion, and
+        # no chat is ever created for it.
+        gspec = dict(blocks["goal"])
+        gspec["target_session"] = gspec.get("target_session") or scope_id
+        # honest about the two ways a proposal can be incomplete, so the
+        # card asks instead of inventing
+        gspec["needs_criteria"] = not gspec.get("done_when")
+        gspec["needs_target"] = not gspec.get("target_session")
+        out["goal_proposal"] = gspec
     if "mission" in blocks:
         mspec = blocks["mission"]
         store = _mission_engine.MissionStore()
@@ -1907,6 +1951,8 @@ async def api_shadow_chat(request: Request):
 # deleted: a revoked instruction stays on the record as inert history
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
+import goal_lifecycle as _goal_lifecycle
+import goal_store as _goal_store
 import shadow_precedence
 import shadow_runner
 import shadow_protocol
@@ -2135,6 +2181,223 @@ async def api_shadow_missions():
     return {"missions": store.list()}
 
 
+# ------------------------------------------------------------- goals ----
+# The Goal is the durable outcome; a Mission is one attempt at it. These
+# routes are a thin shell over GoalStore + goal_lifecycle -- no domain
+# logic lives here, and in particular no mission is ever created in this
+# file (goal_lifecycle owns that).
+
+
+def _goal_hook_safe(fn_name, *args):
+    """Goal bookkeeping must never take down a request that worked -- the
+    same house rule shadow_runner._goal_hook follows."""
+    try:
+        return getattr(_goal_lifecycle, fn_name)(*args)
+    except Exception:
+        return None
+
+
+def _sync_goal_after_founder_end(mission):
+    """Reconcile a goal whose attempt the FOUNDER just ended.
+
+    Needed for the two paths that never reach the runner's on_attempt_end
+    funnel: a dropped queued attempt (never launched) and a stop the loop
+    will only notice when it next wakes. on_attempt_end is idempotent, so
+    the later funnel call is harmless.
+    """
+    if not (mission or {}).get("goal_id"):
+        return None
+    return _goal_hook_safe("on_attempt_end", mission)
+
+
+def _goal_or_404(gid):
+    store = _goal_store.GoalStore()
+    g = store.load(gid)
+    if g is None:
+        raise HTTPException(404, "no goal %s" % gid)
+    return store, g
+
+
+def _goal_row(store, g):
+    """The list shape: what a Shadow Home row needs and nothing more."""
+    p = store.progress(g["id"])
+    return {
+        "id": g["id"],
+        "outcome": g.get("outcome"),
+        "state": g.get("state"),
+        "target_session": g.get("target_session"),
+        "checks_met": p["checks_met"],
+        "checks_total": p["checks_total"],
+        "checks_label": p["checks_label"],
+        # ADDITIVE (slice 10): the outstanding checks, so a Shadow Home row
+        # can honestly say what a working goal is waiting on instead of
+        # narrating. Already computed by GoalStore.progress() and already
+        # public on the detail payload -- this exposes existing derived data
+        # to the list, and introduces no new semantics.
+        "unmet": p["unmet"],
+        "turns_used": p["turns_used"],
+        "max_turns": p["max_turns"],
+        "turn_label": p["turn_label"],
+        "block_reason": p["block_reason"],
+        "attempt": p["attempt"],
+        "current_mission_id": g.get("current_mission_id"),
+        "created_at": g.get("created_at"),
+        "updated_at": g.get("updated_at"),
+        "last_evaluated_at": g.get("last_evaluated_at"),
+    }
+
+
+def _goal_detail(store, g):
+    """The detail shape: the row, plus checks, attempts and memory.
+
+    Deliberately composed rather than dumping the record: `seq`,
+    `created_ns`, raw `check_results` and each learned row's `dedupe_key`
+    are storage mechanics, not product facts.
+    """
+    row = _goal_row(store, g)
+    p = store.progress(g["id"])
+    mem = store.memory(g["id"])
+    row.update({
+        "done_when": g.get("done_when") or [],
+        "checks": p["checks"],
+        "unmet": p["unmet"],
+        "attempts": mem["attempts"],
+        "history": mem["history"],
+        "learned": [{k: v for k, v in item.items() if k != "dedupe_key"}
+                    for item in mem["learned"]],
+        "founder_guidance": [
+            {k: v for k, v in item.items() if k != "dedupe_key"}
+            for item in mem["founder_guidance"]],
+        "blockers": [{k: v for k, v in item.items() if k != "dedupe_key"}
+                     for item in mem["blockers"]],
+    })
+    return row
+
+
+def _start_goal_attempt(mission):
+    """Admit + launch one goal attempt through the EXISTING mission start
+    path, so admission, the cap, FIFO and the runner behave identically to
+    every other mission."""
+    async def _spawner(m):
+        return await shadow_runner.spawn_delegate_session(
+            _shadow_args, _shadow_workdir_for_delegates(),
+            _delegate_manifest(m), register_runtime)
+    return shadow_runner.start_mission_async(
+        mission["id"], _validated_say, provisioner=_spawner)
+
+
+@app.get("/api/shadow/goals")
+async def api_shadow_goals(request: Request):
+    """Every goal, oldest-created first. `?state=` and `?target_session=`
+    narrow it, matching the instructions endpoint's query-filter style."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    store = _goal_store.GoalStore()
+    want_state = request.query_params.get("state") if request else None
+    want_session = (request.query_params.get("target_session")
+                    if request else None)
+    states = (want_state,) if want_state else None
+    return {"goals": [_goal_row(store, g)
+                      for g in store.list(states=states,
+                                          target_session=want_session)]}
+
+
+@app.post("/api/shadow/goals")
+async def api_shadow_goal_create(request: Request):
+    """An outcome for one chat, in `draft`. Creation never starts work --
+    Start is a separate, explicit founder action, exactly as it is for a
+    mission's brief_confirm."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    outcome = (body.get("outcome") or "").strip()
+    target_session = (body.get("target_session") or "").strip()
+    if not outcome:
+        raise HTTPException(400, "outcome required")
+    if not target_session:
+        raise HTTPException(400, "target_session required")
+    store = _goal_store.GoalStore()
+    try:
+        g = store.create(outcome, target_session,
+                         done_when=body.get("done_when"))
+    except ValueError as exc:
+        # one active goal per chat is a CONFLICT, not a malformed request
+        raise HTTPException(409, str(exc))
+    return _goal_detail(store, g)
+
+
+@app.get("/api/shadow/goals/{gid}")
+async def api_shadow_goal(gid: str):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    store, g = _goal_or_404(gid)
+    return _goal_detail(store, g)
+
+
+@app.post("/api/shadow/goals/{gid}/act")
+async def api_shadow_goal_act(gid: str, request: Request):
+    """One endpoint, action field decides -- the same shape as
+    /api/shadow/missions/{mid}/act.
+
+    start     first attempt at a draft goal, then admit + launch
+    resume    a NEW attempt at a blocked goal, same chat, +extra_turns
+    stop      the founder abandons the outcome
+    guidance  keep something the founder said about this goal
+    confirm   satisfy a founder_confirm check on the live attempt
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    action = body.get("action")
+    store, _g = _goal_or_404(gid)
+    try:
+        if action == "start":
+            m = _goal_lifecycle.start_first_attempt(
+                gid, template=body.get("template") or "fix")
+            started = _start_goal_attempt(m)
+            return {"goal": _goal_detail(store, store.load(gid)),
+                    "mission_id": m["id"], "started": started}
+        if action == "resume":
+            m = _goal_lifecycle.resume_goal(
+                gid, extra_turns=int(body.get("extra_turns") or 0),
+                template=body.get("template") or "fix")
+            started = _start_goal_attempt(m)
+            return {"goal": _goal_detail(store, store.load(gid)),
+                    "mission_id": m["id"], "started": started}
+        if action == "stop":
+            _goal_lifecycle.abandon(
+                gid, body.get("note") or "founder abandoned the goal")
+            return _goal_detail(store, store.load(gid))
+        if action == "guidance":
+            text = (body.get("text") or "").strip()
+            if not text:
+                raise HTTPException(400, "text required")
+            _goal_lifecycle.record_founder_guidance(
+                gid, text, attempt=body.get("attempt"))
+            return _goal_detail(store, store.load(gid))
+        if action == "confirm":
+            g = store.load(gid)
+            mid = g.get("current_mission_id")
+            if not mid:
+                raise HTTPException(409, "goal %s has no live attempt" % gid)
+            mstore = _mission_engine.MissionStore()
+            # the EXISTING confirmation writer; no new verification here
+            m = mstore.confirm_check(mid, int(body.get("index") or 0))
+            _goal_lifecycle.record_founder_confirmation(m)
+            return _goal_detail(store, store.load(gid))
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    raise HTTPException(400, "unknown action %r" % action)
+
+
 @app.post("/api/shadow/missions/{mid}/act")
 async def api_shadow_mission_act(mid: str, request: Request):
     if not providers.shadow_enabled():
@@ -2145,9 +2408,21 @@ async def api_shadow_mission_act(mid: str, request: Request):
     sched = _mission_engine.MissionScheduler(store)
     try:
         if action == "stop":
-            return store.transition(mid, "stopped", "founder stop (home)")
+            # founder_stop, not a bare transition (slice 3 finding): it is
+            # what stamps `ended_by`, without which a goal reads a founder
+            # decision as machine trouble and blocks instead of stopping
+            m = _mission_engine.MissionEngine(
+                store, None, None, None).founder_stop(
+                    mid, "founder stop (home)")
+            _sync_goal_after_founder_end(m)
+            return m
         if action == "drop":
-            return sched.cancel_queued(mid)
+            # a dropped QUEUED attempt never reaches the runner's funnel,
+            # so the goal is synced here or its current_mission_id goes
+            # stale forever (slice 3 finding)
+            m = sched.cancel_queued(mid)
+            _sync_goal_after_founder_end(m)
+            return m
         if action == "start_now":
             async def _spawner(mission):
                 return await shadow_runner.spawn_delegate_session(
@@ -2167,7 +2442,12 @@ async def api_shadow_mission_act(mid: str, request: Request):
             return shadow_runner.start_mission_async(
                 clone["id"], _validated_say, provisioner=_respawner)
         if action == "confirm_check":
-            return store.confirm_check(mid, int(body.get("index") or 0))
+            m = store.confirm_check(mid, int(body.get("index") or 0))
+            # the goal's progress must not keep showing a check the founder
+            # has already signed off, so reflect it now instead of waiting
+            # for the attempt to resume and re-evaluate
+            _goal_hook_safe("record_founder_confirmation", m)
+            return m
         if action == "resume":
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, None)
@@ -2236,7 +2516,9 @@ def _validated_say(sid, mission_id, msg, dedupe_key=None):
     if "never_say" in m.get("invariants", ()):
         raise HTTPException(403, "watch missions never speak")
     clean, redactions = shadow_egress.scrub(msg)
-    tagged = "[Shadow \u00b7 mission %s] %s" % (mission_id, clean)
+    # same wire format as before, from the one writer of it -- evidence
+    # assembly reads the same constant to exclude Shadow's own turns
+    tagged = "%s %s" % (shadow_egress.say_tag(mission_id), clean)
     ok = rt.turn_queue.put({"message": tagged, "_source": "shadow"},
                            source="shadow", dedupe_key=dedupe_key)
     if not ok:

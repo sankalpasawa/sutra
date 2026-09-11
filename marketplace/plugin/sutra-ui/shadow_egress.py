@@ -8,6 +8,35 @@ so adding a tool without deciding its gate fails CI.
 """
 import re
 
+# ------------------------------------------------------- authorship tag --
+#: Every turn Shadow injects into a target session carries this prefix. It
+#: was already the wire format of a say (app.py) and the front-end's
+#: self-loop guard (15-shadow-overlay.js `isOwnTurn`); it lives here now so
+#: the writer and the readers cannot drift apart.
+#:
+#: It is also a VERIFICATION boundary. `_next_say` names the outstanding
+#: checks verbatim ("Continue toward: X. Outstanding checks: <names>"), so
+#: any transcript-based check would satisfy itself from Shadow's own prompt
+#: on the second turn. The tag is how evidence assembly tells Shadow's words
+#: apart from the chat's (see shadow_runner.evidence_text).
+SAY_TAG_MARK = "[Shadow ·"
+
+
+def say_tag(mission_id):
+    """The prefix stamped on a mission say. ONE writer of this format."""
+    return "%s mission %s]" % (SAY_TAG_MARK, mission_id)
+
+
+def is_shadow_authored(text):
+    """True when this turn's text was injected BY Shadow.
+
+    Prefix-anchored on purpose: a turn Shadow wrote always begins with the
+    tag, while a chat that happens to quote the tag mid-answer is still the
+    chat's own output and stays admissible as evidence.
+    """
+    return str(text or "").lstrip().startswith(SAY_TAG_MARK)
+
+
 #: NAMED so an audit line can say WHICH shape matched without recording the
 #: value that matched. Piece 6 of the provider-switch plan made that a hard
 #: requirement: switch egress is silent by founder decision, so the only way a

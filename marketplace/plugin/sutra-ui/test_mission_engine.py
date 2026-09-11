@@ -208,5 +208,133 @@ class TestLoop(Base):
         return rows[-1].get("note", "")
 
 
+class TestBlockedState(Base):
+    """V5 slice 1: blocked exists, is non-terminal, and carries its reason.
+
+    Nothing in the loop routes into blocked yet -- these pin the state
+    machine and the reason field only.
+    """
+
+    def _running(self, goal_id=None, objective="ship the retry fix"):
+        m = self.store.create(objective, "fix", goal_id=goal_id)
+        self.store.transition(m["id"], "brief_confirm")
+        return self.store.transition(m["id"], "running")
+
+    def test_14_blocked_is_declared_and_not_terminal(self):
+        self.assertIn("blocked", mission_engine.STATES)
+        self.assertNotIn("blocked", mission_engine.TERMINAL,
+                         "blocked must never mean the chat is dead")
+
+    def test_15_blocked_exits_are_resume_and_abandon_only(self):
+        self.assertEqual(mission_engine.TRANSITIONS["blocked"],
+                         ("running", "stopped"))
+        self.assertIn("blocked", mission_engine.TRANSITIONS["running"])
+        # the existing terminals keep their dead ends -- that is G1, and
+        # this slice does not open them
+        for dead in ("done", "failed", "stopped"):
+            self.assertEqual(mission_engine.TRANSITIONS[dead], (),
+                             "%s must stay exit-less" % dead)
+
+    def test_16_block_persists_its_reason_and_ledgers_it(self):
+        m = self._running()
+        out = self.store.block(m["id"], "budget exhausted",
+                               "20 turns used, check 3 unmet")
+        self.assertEqual(out["state"], "blocked")
+        self.assertEqual(out["block_reason"], "budget exhausted")
+        reloaded = self.store.load(m["id"])
+        self.assertEqual(reloaded["state"], "blocked")
+        self.assertEqual(reloaded["block_reason"], "budget exhausted",
+                         "the reason must survive a reload")
+        self.assertIn("check 3 unmet", self._last_note(m["id"]))
+        with self.assertRaises(ValueError):
+            self.store.block(m["id"], "")      # a blocker needs a reason
+
+    def test_17_resuming_clears_the_reason(self):
+        m = self._running()
+        self.store.block(m["id"], "ping-pong")
+        resumed = self.store.transition(m["id"], "running", "founder answered")
+        self.assertEqual(resumed["state"], "running")
+        self.assertNotIn("block_reason", resumed,
+                         "a running mission must not carry a stale blocker")
+        self.assertNotIn("block_reason", self.store.load(m["id"]))
+
+    def test_18_blocked_can_be_abandoned_but_not_failed(self):
+        m = self._running()
+        self.store.block(m["id"], "chat error")
+        with self.assertRaises(ValueError):
+            self.store.transition(m["id"], "failed")
+        self.assertEqual(
+            self.store.transition(m["id"], "stopped", "founder abandoned"
+                                  )["state"], "stopped")
+
+    def test_20_a_goal_attempt_blocks_where_a_solo_mission_fails(self):
+        """The slice-3 boundary, at the engine level: `goal_id` is the only
+        switch between the new blocked path and the historical terminal one.
+        """
+        for goal_id, expected in ((None, "failed"), ("g-abc123", "blocked")):
+            m = self.store.create("do the thing", "fix", goal_id=goal_id,
+                                  done_when=[{"tier": "contains_artifact",
+                                              "check": "NOPE"}])
+            self.store.transition(m["id"], "brief_confirm")
+            self.store.transition(m["id"], "running")
+            mm = self.store.load(m["id"])
+            mm["max_turns"] = 2
+            self.store.save(mm)
+            out = asyncio.run(self.engine(
+                transcripts=["a", "b"]).run_mission(m["id"]))
+            self.assertEqual(out["state"], expected,
+                             "goal_id=%r" % (goal_id,))
+            self.assertIn("max turns", self._last_note(m["id"]),
+                          "the ledger note is identical either way")
+        self.assertEqual(out["block_reason"], "budget_exhausted")
+
+    def test_21_ping_pong_blocks_a_goal_attempt_and_stops_a_solo_one(self):
+        for goal_id, expected in ((None, "stopped"), ("g-abc123", "blocked")):
+            m = self.store.create("do the thing", "fix", goal_id=goal_id)
+            self.store.transition(m["id"], "brief_confirm")
+            self.store.transition(m["id"], "running")
+            out = asyncio.run(self.engine().run_mission(m["id"]))
+            self.assertEqual(out["state"], expected,
+                             "goal_id=%r" % (goal_id,))
+            self.assertIn("ping-pong", self._last_note(m["id"]))
+        self.assertEqual(out["block_reason"], "ping_pong")
+
+    def test_22_an_external_block_stops_the_loop_mid_flight(self):
+        """A mission blocked from outside must stop driving the chat rather
+        than keep saying into it."""
+        m = self._running("g-abc123")
+        store = self.store
+
+        async def sayer(mission, text):
+            return True
+
+        async def waiter(mission):
+            store.block(mission["id"], "stalled", "blocked mid-turn")
+            return True
+
+        eng = mission_engine.MissionEngine(store, sayer, waiter,
+                                           lambda mm: "")
+        out = asyncio.run(eng.run_mission(m["id"]))
+        self.assertEqual(out["state"], "blocked")
+        self.assertEqual(out["block_reason"], "stalled")
+
+    def test_19_launching_the_loop_on_a_blocked_mission_refuses(self):
+        # the runner must never drive a blocked mission; the loop's state
+        # guard is what enforces it
+        m = self._running()
+        self.store.block(m["id"], "budget exhausted")
+        eng = self.engine()
+        with self.assertRaises(ValueError):
+            asyncio.run(eng.run_mission(m["id"]))
+        self.assertEqual(self.store.load(m["id"])["state"], "blocked",
+                         "a refused launch must not change the state")
+
+    def _last_note(self, mid):
+        import shadow_ledger
+        rows = [r for r in shadow_ledger.read("missions", 100)
+                if r.get("mission_id") == mid]
+        return rows[-1].get("note", "")
+
+
 if __name__ == "__main__":
     unittest.main()

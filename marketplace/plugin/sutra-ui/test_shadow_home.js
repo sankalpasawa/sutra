@@ -158,16 +158,30 @@ console.log("ok 6 controls wired");
   const ctx = fresh();
   ctx.S.shadowHomeDark = false;
   ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  /* POLISH PASS: the chip's menu is drawn from the app's own chat list, not
+     from the watching store (which holds raw ids the app cannot name), so a
+     pickable chat has to be a listed chat. */
+  ctx.S.sessions = [{ id: "sess-paisa", title: "Paisa", updated_ms: 200 },
+                    { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
+  /* SLICE 11: the per-chat tab STRIP is gone from Home by design -- Home is
+     a briefing, not a chat list. The scoping it provided now lives in one
+     chip beside the composer, which still emits data-shchat, so the
+     one-mind-many-threads model below is unchanged. */
   const h = ctx.shadowHomeHtml();
-  assert(/data-shchat="global"/.test(h), "the new tab is present");
-  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
-  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
-  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
-  assert(!/data-shtab="global"/.test(h),
-    "tabs use their OWN namespace — data-shtab stays the plane's");
-  console.log("ok 10 per-chat tab strip");
+  assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
+  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
+  ctx.S.shadowScopeOpen = true;
+  const open = ctx.shadowHomeHtml();
+  assert(/data-shchat="global"/.test(open), "no-chat option offered");
+  assert(/data-shchat="sess-paisa"/.test(open), "a chat can be picked");
+  assert(!/data-shtab="global"/.test(open),
+    "picks use their OWN namespace — data-shtab stays the plane's");
+  /* and the plane still renders its own tabs, on its own surface */
+  const plane = ctx.shadowPlaneHtml(["sess-paisa"], [], "watching");
+  assert(/data-shtab="watching"/.test(plane), "the plane is untouched");
+  console.log("ok 10 tab strip removed; scoping is one chip");
 }
 {
   /* threads are isolated per tab, and the accessor survives reassignment */
@@ -205,16 +219,21 @@ console.log("ok 6 controls wired");
   const ctx = fresh();
   ctx.S.shadowHomeDark = false;
   ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  /* POLISH PASS: the chip's menu is drawn from the app's own chat list, not
+     from the watching store (which holds raw ids the app cannot name), so a
+     pickable chat has to be a listed chat. */
+  ctx.S.sessions = [{ id: "sess-paisa", title: "Paisa", updated_ms: 200 },
+                    { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
+  /* SLICE 11: the tab strip is gone from Home; scoping is one chip. */
   const h = ctx.shadowHomeHtml();
-  assert(/data-shchat="global"/.test(h), "the new tab is present");
-  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
-  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
-  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
-  assert(!/data-shtab="global"/.test(h),
-    "tabs use their OWN namespace — data-shtab stays the plane's");
-  console.log("ok 10 per-chat tab strip");
+  assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
+  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
+  ctx.S.shadowScopeOpen = true;
+  const open2 = ctx.shadowHomeHtml();
+  assert(/data-shchat="sess-paisa"/.test(open2), "a chat can be picked");
+  console.log("ok 10 tab strip removed; scoping is one chip");
 }
 {
   /* threads are isolated per tab, and the accessor survives reassignment */
@@ -252,16 +271,21 @@ console.log("ok 6 controls wired");
   const ctx = fresh();
   ctx.S.shadowHomeDark = false;
   ctx.S.shadowWatching = ["sess-paisa", "sess-dayflow"];
+  /* POLISH PASS: the chip's menu is drawn from the app's own chat list, not
+     from the watching store (which holds raw ids the app cannot name), so a
+     pickable chat has to be a listed chat. */
+  ctx.S.sessions = [{ id: "sess-paisa", title: "Paisa", updated_ms: 200 },
+                    { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
+  /* SLICE 11: the tab strip is gone from Home; scoping is one chip. */
   const h = ctx.shadowHomeHtml();
-  assert(/data-shchat="global"/.test(h), "the new tab is present");
-  assert(/data-shchat="sess-paisa"/.test(h), "a chat tab is present");
-  assert(/data-shchat="sess-dayflow"/.test(h), "every overseen chat gets a tab");
-  assert(/shchatdot/.test(h), "a chat with a live mission shows its dot");
-  assert(!/data-shtab="global"/.test(h),
-    "tabs use their OWN namespace — data-shtab stays the plane's");
-  console.log("ok 10 per-chat tab strip");
+  assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
+  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
+  ctx.S.shadowScopeOpen = true;
+  const open2 = ctx.shadowHomeHtml();
+  assert(/data-shchat="sess-paisa"/.test(open2), "a chat can be picked");
+  console.log("ok 10 tab strip removed; scoping is one chip");
 }
 {
   /* threads are isolated per tab, and the accessor survives reassignment */
@@ -311,10 +335,13 @@ console.log("ok 6 controls wired");
   assert(/^session /.test(ctx.shadowChatLabel("sess-unknown")),
     "an unknown chat says session <id>, never a bare id");
   assert.strictEqual(ctx.shadowChatLabel("global"), "new");
+  /* SLICE 11: names are now worn by the scope picker rather than a strip --
+     same shadowChatLabel, same no-raw-id rule. */
+  ctx.S.shadowScopeOpen = true;
   const h = ctx.shadowHomeHtml();
-  assert(/Paisa EMI rounding fix/.test(h), "the tab strip renders the name");
-  assert(!/>sess-pai/.test(h), "no raw id leaks into a tab label");
-  console.log("ok 13 tabs wear real chat names");
+  assert(/Paisa EMI rounding fix/.test(h), "the picker renders the name");
+  assert(!/>sess-pai/.test(h), "no raw id leaks into a label");
+  console.log("ok 13 chats wear real names in the scope picker");
 }
 
 console.log("test_shadow_home.js: all green");

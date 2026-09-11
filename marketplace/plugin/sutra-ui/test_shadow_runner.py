@@ -211,5 +211,93 @@ class TestMountedEngine(unittest.TestCase):
         ws.close()
 
 
+class TestPromotionPath(unittest.TestCase):
+    """V5 slice 1: the promotion path terminal and blocked now share.
+
+    Unit-level: _launch is stubbed, so nothing spawns a real loop and the
+    assertions are deterministic.
+    """
+
+    def setUp(self):
+        import providers
+        import mission_engine
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["SUTRA_SHADOW_HOME"] = self.tmp.name
+        self._orig = providers.SETTINGS_PATH
+        settings = Path(self.tmp.name) / "settings.json"
+        settings.write_text(json.dumps({"shadow.enabled": True}))
+        providers.SETTINGS_PATH = settings
+        self.providers = providers
+        self.me = mission_engine
+        self.store = mission_engine.MissionStore()
+
+    def tearDown(self):
+        self.providers.SETTINGS_PATH = self._orig
+        os.environ.pop("SUTRA_SHADOW_HOME", None)
+        self.tmp.cleanup()
+
+    def _brief(self, i):
+        m = self.store.create("objective %d" % i, "fix")
+        return self.store.transition(m["id"], "brief_confirm")
+
+    def test_promotion_helper_promotes_and_launches(self):
+        import asyncio as aio
+        import shadow_runner
+        sched = self.me.MissionScheduler(self.store, max_running=1)
+        m1, m2 = self._brief(1), self._brief(2)
+        self.assertEqual(sched.start(m1["id"])["state"], "running")
+        self.assertEqual(sched.start(m2["id"])["state"], "queued")
+        self.store.block(m1["id"], "budget exhausted")
+
+        launched = []
+        orig_launch = shadow_runner._launch
+        shadow_runner._launch = lambda mid, say, ver: launched.append(mid)
+        try:
+            promoted = aio.run(shadow_runner._promote_after_slot_freed(
+                self.store, m1["id"], object(), None))
+        finally:
+            shadow_runner._launch = orig_launch
+        self.assertIsNotNone(promoted, "the freed slot must promote")
+        self.assertEqual(promoted["id"], m2["id"])
+        self.assertEqual(promoted["state"], "running")
+        self.assertEqual(launched, [m2["id"]], "the promoted one is launched")
+
+    def test_promotion_does_not_touch_delegates(self):
+        """The blocked branch keeps the chat alive; nothing on the shared
+        promotion path may reap a delegate."""
+        import asyncio as aio
+        import shadow_runner
+
+        class FakeRt:
+            def __init__(self):
+                self.killed = False
+
+            def kill_group(self):
+                self.killed = True
+
+            def clear(self):
+                pass
+
+        sched = self.me.MissionScheduler(self.store, max_running=1)
+        m1 = self._brief(1)
+        m1 = self.store.load(m1["id"])
+        m1["target_session"] = "sess-keep-me"
+        self.store.save(m1)
+        sched.start(m1["id"])
+        rt = FakeRt()
+        shadow_runner.DELEGATES["sess-keep-me"] = rt
+        self.store.block(m1["id"], "ping-pong")
+
+        orig_launch = shadow_runner._launch
+        shadow_runner._launch = lambda mid, say, ver: None
+        try:
+            aio.run(shadow_runner._promote_after_slot_freed(
+                self.store, m1["id"], object(), None))
+        finally:
+            shadow_runner._launch = orig_launch
+            shadow_runner.DELEGATES.pop("sess-keep-me", None)
+        self.assertFalse(rt.killed, "a blocked mission's delegate must live")
+
+
 if __name__ == "__main__":
     unittest.main()

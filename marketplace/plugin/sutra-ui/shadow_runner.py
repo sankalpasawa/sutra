@@ -8,10 +8,12 @@ transcript reader. Plus the watcher: one observer per runtime that turns
 error signals into rescue feed items and the dot-badge count.
 """
 import asyncio
+import json
 import time
 
 import mission_engine
 import session_reader
+import shadow_egress
 import shadow_feed
 import shadow_ledger
 
@@ -76,6 +78,51 @@ def _emit_rescue(session_id, detail):
     })
 
 
+def evidence_messages(doc):
+    """The transcript messages a check may be verified against.
+
+    Drops the USER-role turns Shadow injected, keeps everything else. The
+    asymmetry is the point: Shadow can only ever inject a user turn, so an
+    assistant turn that quotes the tag is still the chat's own output and
+    stays admissible.
+    """
+    kept = []
+    for msg in (doc or {}).get("messages") or []:
+        if msg.get("role") == "user" \
+                and shadow_egress.is_shadow_authored(msg.get("text")):
+            continue
+        kept.append(msg)
+    return kept
+
+
+def evidence_text(session_id):
+    """What `done_when` is evaluated against, with Shadow's own words out.
+
+    Two sources, unchanged from before, in the same order and with the same
+    40k tail:
+
+      _RECENT_TEXT  the streamed `token` frames -- ASSISTANT text only
+                    (session_runtime emits tokens for text deltas and
+                    assistant blocks, never for an injected user turn), so
+                    this source was already clean.
+      read_session  the on-disk transcript, which DOES carry user turns --
+                    and Shadow's says land there as user records. That is
+                    the leak this function closes.
+
+    Why it matters: `_next_say` names the outstanding checks verbatim, and
+    the delegate manifest carries the objective. Left in, either one lets a
+    contains_artifact check be satisfied by Shadow having ASKED for the
+    thing rather than by the chat having done it. Every other field of the
+    doc is passed through exactly as before.
+    """
+    live = _RECENT_TEXT.get(session_id, "")
+    doc = session_reader.read_session(session_id) or {}
+    if doc:
+        doc = dict(doc)
+        doc["messages"] = evidence_messages(doc)
+    return (live + " " + json.dumps(doc))[-40000:]
+
+
 def make_bindings(validated_say):
     """The three injectables, bound to the live app."""
 
@@ -120,14 +167,28 @@ def make_bindings(validated_say):
             return False
 
     def reader(mission):
-        # live stream first (authoritative for what the pane showed), disk
-        # transcript appended when it exists
-        live = _RECENT_TEXT.get(mission["target_session"], "")
-        doc = session_reader.read_session(mission["target_session"]) or {}
-        import json as _json
-        return (live + " " + _json.dumps(doc))[-40000:]
+        return evidence_text(mission["target_session"])
 
     return sayer, waiter, reader
+
+
+def _goal_hook(fn_name, mission, *extra):
+    """Goal bookkeeping must NEVER take down a turn that worked (the house
+    rule at app.py's chat_store append). No-ops for a mission with no
+    goal_id, which today is every mission in production."""
+    if not (mission or {}).get("goal_id"):
+        return None
+    try:
+        import goal_lifecycle
+        return getattr(goal_lifecycle, fn_name)(mission, *extra)
+    except Exception as exc:
+        try:
+            shadow_ledger.append("actions", {
+                "mission_id": mission.get("id"), "kind": "goal_sync",
+                "summary": "%s failed: %s" % (fn_name, str(exc)[:200])})
+        except Exception:
+            pass
+        return None
 
 
 def start_mission(mid, validated_say, verifier=None):
@@ -137,8 +198,44 @@ def start_mission(mid, validated_say, verifier=None):
     m = sched.start(mid)
     if m["state"] != "running":
         return m          # queued: launched later by on_terminal promotion
+    _goal_hook("on_attempt_start", m)
     _launch(mid, validated_say, verifier)
     return m
+
+
+async def _promote_after_slot_freed(store, mid, validated_say, verifier):
+    """Advance the FIFO queue into an execution slot that just freed.
+
+    Lifted verbatim out of the terminal branch so the blocked branch can
+    share it -- two copies of the provision-then-launch dance would drift.
+
+    on_terminal() is the scheduler's only promotion path and it ignores its
+    `mid` argument: it promotes the oldest queued row whenever a slot is
+    free. That is what makes it correct to call from a NON-terminal
+    transition too -- and its running-count query (states=("running",))
+    already excludes blocked, so no accounting change is needed.
+
+    Returns the promoted mission, or None when nothing was promoted.
+    """
+    promoted = mission_engine.MissionScheduler(store).on_terminal(mid)
+    if promoted is None:
+        return None
+    prov = DEFAULT_PROVISIONER["fn"]
+    if prov and promoted.get("target_mode") == "new" \
+            and not promoted.get("target_session"):
+        # a promoted queued mission may still need its delegate
+        # (codex P1 fold: queued rows spawn nothing until here)
+        eng2 = mission_engine.MissionEngine(store, None, None, None)
+        try:
+            await eng2.provision_target(promoted["id"], prov)
+        except Exception as exc2:
+            store.transition(promoted["id"], "failed",
+                             "provision on promote failed: %s"
+                             % str(exc2)[:200])
+            return None
+    _goal_hook("on_attempt_start", promoted)
+    _launch(promoted["id"], validated_say, verifier)
+    return promoted
 
 
 def _launch(mid, validated_say, verifier):
@@ -146,8 +243,12 @@ def _launch(mid, validated_say, verifier):
         return
     store = mission_engine.MissionStore()
     sayer, waiter, reader = make_bindings(validated_say)
-    engine = mission_engine.MissionEngine(store, sayer, waiter, reader,
-                                          verifier)
+    engine = mission_engine.MissionEngine(
+        store, sayer, waiter, reader, verifier,
+        # observe the evaluation the loop already runs, so a goal's
+        # per-check progress is live while it is working
+        on_evaluated=lambda mission, results, done: _goal_hook(
+            "record_evaluation", mission, results, done))
 
     async def run():
         try:
@@ -168,27 +269,28 @@ def _launch(mid, validated_say, verifier):
             mission_engine.emit_mission_feed(
                 m, "info" if m["state"] == "done" else "needs_decision",
                 "mission %s" % m["state"])
-            promoted = mission_engine.MissionScheduler(store).on_terminal(mid)
-            if promoted is not None:
-                prov = DEFAULT_PROVISIONER["fn"]
-                if prov and promoted.get("target_mode") == "new" \
-                        and not promoted.get("target_session"):
-                    # a promoted queued mission may still need its delegate
-                    # (codex P1 fold: queued rows spawn nothing until here)
-                    eng2 = mission_engine.MissionEngine(store, None, None,
-                                                        None)
-                    try:
-                        await eng2.provision_target(promoted["id"], prov)
-                    except Exception as exc2:
-                        store.transition(promoted["id"], "failed",
-                                         "provision on promote failed: %s"
-                                         % str(exc2)[:200])
-                        promoted = None
-                if promoted is not None:
-                    _launch(promoted["id"], validated_say, verifier)
+            await _promote_after_slot_freed(store, mid, validated_say,
+                                            verifier)
+        elif m and m["state"] == "blocked":
+            # blocked is NOT terminal, so the delegate is deliberately NOT
+            # killed: the founder is being asked, and the chat has to be
+            # alive to answer in. But the execution SLOT is free the moment
+            # the loop stops driving, so the queue must advance on exactly
+            # the same path terminal uses -- otherwise a few blocked
+            # missions freeze the whole queue at the cap of 5.
+            #
+            # No feed item here on purpose: the escalation copy and its
+            # dedupe key (which V5 R3 wants keyed on block reason + attempt)
+            # belong to the slice that actually routes work into blocked.
+            await _promote_after_slot_freed(store, mid, validated_say,
+                                            verifier)
         elif m and m.get("pause_reason"):
             mission_engine.emit_mission_feed(
                 m, "needs_decision", m.get("pause_reason"))
+        # ONE funnel for every way an attempt can end -- terminal, blocked
+        # or paused all land here, so the goal can never be left claiming
+        # work that stopped.
+        _goal_hook("on_attempt_end", m)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "stop" if not m else m["state"],
             "summary": "runner finished (%s)"

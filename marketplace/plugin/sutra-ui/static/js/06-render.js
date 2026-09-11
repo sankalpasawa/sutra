@@ -1133,6 +1133,10 @@ function render(){
      and correctly starts at the top. */
   const priorScroll = _browseScrollState();
   const priorSess = _sessScrollState();
+  /* the goal workspace's transcript is one more scroller reborn by this
+     rebuild; guarded so a missing 18-goal-workspace.js cannot break render */
+  const priorGoal = (typeof goalScrollState === "function")
+    ? goalScrollState() : null;
 
   renderRail();
   renderOnboarding();
@@ -1165,8 +1169,17 @@ function render(){
      session pane there, including the one they had just clicked. Clicking a
      chat did nothing visible, and the "Nothing is open" hint below was
      suppressed too, so the whole right-hand side went empty with no statement.
-     Agents is solo only while the Agents screen is actually on screen. */
-  const soloScreen = !bClosed && S.screen === "agents";
+     Agents is solo only while the Agents screen is actually on screen.
+
+     THE GOAL WORKSPACE OPENS ALONE for the same reason (V5 slice 7): the
+     selected goal owns the main content area and carries two columns of its
+     own -- the supervisor panel and the real target chat. Measured at 275px
+     beside one open session pane, which made the 30/70 split render as
+     96/4 and the chat column four words wide. Same contract as Agents:
+     S.openPanes is untouched, leaving the goal brings every pane back, and
+     this is solo only while the goal screen is actually painting. */
+  const soloScreen = !bClosed
+    && (S.screen === "agents" || S.screen === "goal");
   const open = soloScreen ? []
     : S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
   const bCol = !!S.ui.paneCollapsed.browse;
@@ -1292,6 +1305,10 @@ function render(){
       const agw = S.screen === "agents" && !bCol;
       bp.classList.toggle("agwide", agw);
       if (agw && bp.style) bp.style.flex = "1 1 100%";
+      /* the goal workspace takes the row the same way, for the same reason */
+      const gww = S.screen === "goal" && !bCol;
+      bp.classList.toggle("gwwide", gww);
+      if (gww && bp.style) bp.style.flex = "1 1 100%";
     }
   }
   wire();
@@ -1338,6 +1355,8 @@ function render(){
   }
   _restoreBrowseScroll(priorScroll);
   _restoreSessScroll(priorSess);
+  if (typeof goalRestoreScroll === "function") goalRestoreScroll(priorGoal);
+  if (typeof goalBindScroll === "function") goalBindScroll();
   /* Rendered LAST and outside #panes, so it survives a pane rebuild and cannot
      be what a scroll restore is measuring. */
   {

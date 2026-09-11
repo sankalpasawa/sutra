@@ -21,17 +21,24 @@ import shadow_egress
 import shadow_ledger
 
 STATES = ("draft", "brief_confirm", "running", "queued", "paused",
-          "done", "failed", "stopped")
+          "blocked", "done", "failed", "stopped")
 TERMINAL = ("done", "failed", "stopped")
 
 #: The legal-transition table IS the state machine: anything not listed here
 #: raises, so an illegal hop is a bug at the call site, never silent drift.
+#:
+#: `blocked` is deliberately NOT in TERMINAL: it means "Shadow cannot
+#: continue autonomously right now", never "the chat is dead". Its exits are
+#: the two things a founder can decide -- answer/extend (-> running) or
+#: abandon (-> stopped). Nothing in the engine routes INTO it yet; the
+#: budget and ping-pong paths still reach failed/stopped unchanged.
 TRANSITIONS = {
     "draft": ("brief_confirm", "stopped"),
     "brief_confirm": ("running", "queued", "draft", "stopped"),
-    "running": ("paused", "done", "failed", "stopped"),
+    "running": ("paused", "blocked", "done", "failed", "stopped"),
     "queued": ("running", "stopped"),
     "paused": ("running", "stopped", "failed"),
+    "blocked": ("running", "stopped"),
     "done": (), "failed": (), "stopped": (),
 }
 
@@ -61,7 +68,16 @@ class MissionStore:
     """File-per-mission store with ledger-audited transitions."""
 
     def create(self, objective, template, target_mode="existing",
-               target_session=None, done_when=None, manifest=None):
+               target_session=None, done_when=None, manifest=None,
+               goal_id=None):
+        """`goal_id` marks this mission as ONE ATTEMPT at a durable goal.
+
+        It is the whole switch for the new failure boundary: an attempt of a
+        goal BLOCKS when it runs out of road (the founder is asked), while a
+        standalone mission keeps its historical terminal behaviour. Absent
+        or None means standalone, so every existing caller -- including
+        clone_for_retry -- is unchanged by construction.
+        """
         if template not in TEMPLATES:
             raise ValueError("unknown template %r" % (template,))
         if target_mode not in ("existing", "new"):
@@ -73,6 +89,7 @@ class MissionStore:
             "target_mode": target_mode,
             "target_session": target_session,
             "manifest": manifest,
+            "goal_id": goal_id,
             "state": "draft",
             "done_when": done_when or [],
             "turns_used": 0,
@@ -151,10 +168,31 @@ class MissionStore:
         m["state"] = new_state
         if new_state != "paused":
             m.pop("pause_reason", None)
+        if new_state != "blocked":
+            # symmetric with pause_reason: a reason describes the state it
+            # belongs to, so leaving the state clears it rather than leaving
+            # a stale blocker on a mission that is running again
+            m.pop("block_reason", None)
         self.save(m)
         shadow_ledger.append("missions", {
             "mission_id": mid, "state": new_state, "seq": m["seq"],
             "note": note[:500]})
+        return m
+
+    def block(self, mid, reason, note=""):
+        """running -> blocked, stamping WHY on the record.
+
+        The ONE writer of block_reason, so the reason and the state can
+        never disagree on disk. Same two-step shape the loop already uses
+        for pause_reason (transition, stamp, save) -- folded into a method
+        because a blocked mission that forgot its reason is unanswerable,
+        and transition() is the only thing that clears the field.
+        """
+        if not reason:
+            raise ValueError("a blocked mission must carry a reason")
+        m = self.transition(mid, "blocked", note or reason)
+        m["block_reason"] = str(reason)[:200]
+        self.save(m)
         return m
 
     def confirm_check(self, mid, index, by="founder"):
@@ -257,12 +295,18 @@ class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
-                 verifier=None):
+                 verifier=None, on_evaluated=None):
+        """`on_evaluated(mission, results, done)` is an OBSERVER of the one
+        evaluation this loop already performs -- it is how the goal layer
+        keeps per-check progress without a second evaluator. Optional, and
+        never load-bearing: its failure cannot change a mission's outcome.
+        """
         self.store = store
         self.sayer = sayer
         self.waiter = boundary_waiter
         self.reader = transcript_reader
         self.verifier = verifier
+        self.on_evaluated = on_evaluated
 
     async def provision_target(self, mid, spawner):
         """S53: target_mode=new -- provision the delegate session ONCE via
@@ -321,13 +365,14 @@ class MissionEngine:
                 # watch missions observe; they do not speak (S46 invariant)
                 return m
             if m["turns_used"] >= m["max_turns"]:
-                return self.store.transition(
-                    mid, "failed", "max turns (%d) reached" % m["max_turns"])
+                return self._out_of_road(
+                    m, "failed", "budget_exhausted",
+                    "max turns (%d) reached" % m["max_turns"])
             say_text = self._next_say(m)
             if say_text == last_say:
-                return self.store.transition(
-                    mid, "stopped", "ping-pong detected (identical "
-                                    "consecutive says)")
+                return self._out_of_road(
+                    m, "stopped", "ping_pong",
+                    "ping-pong detected (identical consecutive says)")
             floors = shadow_egress.floor_check(say_text)
             if floors:
                 # S52: the say never leaves the engine; the founder decides
@@ -347,7 +392,7 @@ class MissionEngine:
                 return self.store.transition(
                     mid, "failed", "boundary wait timed out")
             m = self.store.load(mid)
-            if m["state"] in TERMINAL or m["state"] == "paused":
+            if m["state"] in TERMINAL or m["state"] in ("paused", "blocked"):
                 return m          # something terminal happened mid-turn
             m["turns_used"] += 1
             self.store.save(m)
@@ -356,10 +401,17 @@ class MissionEngine:
                 "summary": say_text[:200]})
             transcript = self.reader(m)
             done, results = evaluate_done_when(m, transcript, self.verifier)
+            if self.on_evaluated is not None:
+                # progress bookkeeping NEVER decides a mission's fate
+                try:
+                    self.on_evaluated(m, results, done)
+                except Exception:
+                    pass
             # reload before any terminal decision: a takeover that landed
             # while we evaluated must win (codex fold)
             fresh = self.store.load(mid)
-            if fresh["state"] in TERMINAL or fresh["state"] == "paused":
+            if fresh["state"] in TERMINAL \
+                    or fresh["state"] in ("paused", "blocked"):
                 return fresh
             if done:
                 mm = self.store.transition(
@@ -385,6 +437,28 @@ class MissionEngine:
                 self.store.save(m)
                 return m
 
+    def _out_of_road(self, m, terminal_state, block_reason, note):
+        """The one place that decides how an attempt ends when the machine
+        runs out of road (budget spent, or the chat repeating itself).
+
+        An attempt OF A GOAL blocks: V5's core behavioural change is
+        "pause -> name the blocker -> ask -> resume the same chat" instead
+        of "stop -> report failure -> offer a fresh chat", and a goal must
+        never die without the founder having been asked. The target chat is
+        left alive and no new chat is created.
+
+        A STANDALONE mission (no goal_id) keeps the historical terminal
+        state exactly -- failed on budget, stopped on ping-pong, delegate
+        reaped, feed post-mortem. That is what keeps every shipped path,
+        and every existing test, behaving as before.
+
+        The ledger note is identical either way, so the audit trail reads
+        the same for both.
+        """
+        if m.get("goal_id"):
+            return self.store.block(m["id"], block_reason, note)
+        return self.store.transition(m["id"], terminal_state, note)
+
     def _next_say(self, m):
         if m["turns_used"] == 0:
             return m.get("manifest") or m["objective"]
@@ -393,8 +467,14 @@ class MissionEngine:
         return ("Continue toward: %s. Outstanding checks: %s"
                 % (m["objective"], "; ".join(filter(None, unmet)) or "none"))
 
-    def founder_stop(self, mid):
-        return self.store.transition(mid, "stopped", "founder stop")
+    def founder_stop(self, mid, note="founder stop"):
+        """Stamps `ended_by` so the goal layer can tell a FOUNDER decision
+        from machine trouble: a founder stop abandons the goal (stopped),
+        machine trouble asks the founder instead (blocked)."""
+        m = self.store.transition(mid, "stopped", note)
+        m["ended_by"] = "founder"
+        self.store.save(m)
+        return m
 
     def founder_intervened(self, mid):
         m = self.store.transition(mid, "paused", "founder typed in the "
@@ -446,10 +526,16 @@ class MissionScheduler:
         return None
 
     def cancel_queued(self, mid):
+        """Founder Drop. Stamps `ended_by` for the same reason founder_stop
+        does: a queued attempt the founder dropped abandons its goal, it is
+        not machine trouble to ask about."""
         m = self.store.load(mid)
         if m is None or m["state"] != "queued":
             raise ValueError("cancel_queued needs a queued mission")
-        return self.store.transition(mid, "stopped", "cancelled from queue")
+        m = self.store.transition(mid, "stopped", "cancelled from queue")
+        m["ended_by"] = "founder"
+        self.store.save(m)
+        return m
 
     def pending_confirmations(self):
         """S56 disambiguation: every paused mission awaiting a founder
