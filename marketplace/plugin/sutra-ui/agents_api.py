@@ -1060,6 +1060,12 @@ _ws_checked = {"at": 0.0, "res": None}
 # ever say what the pack is actually doing.
 _ws_pack = {"state": "idle", "note": ""}
 _ws_rebuilder_ref = [None]
+# THE PACK HEAL's memory. See _ws_pack_heal for what it closes. In memory on purpose: a restart
+# simply lets it look again, which is the right answer after a restart anyway.
+_WS_HEAL_EVERY = 60.0            # how often the poll may even look
+_WS_HEAL_SEND_EVERY = 900.0      # a send that failed is 33 MB up and back; not once a minute
+_WS_HEAL_FETCH_EVERY = 300.0     # a fetch that failed waits five minutes before trying again
+_ws_heal = {"at": 0.0, "sent_at": 0.0, "fetched_at": 0.0, "busy": False, "last": ""}
 
 
 def _ws():
@@ -1404,6 +1410,115 @@ def _ws_rebuilder(mods):
     return _ws_rebuilder_ref[0]
 
 
+def _ws_job_live():
+    j = _ws_get_job()
+    return bool(j) and j.get("phase") not in ("done", "failed", "paste")
+
+
+def _ws_i_created_it(mods):
+    """Did THIS person make the workspace? The member who joined first is the one who did.
+
+    It matters for one decision only: which Mac sends a pack to a workspace that has never had
+    one. A teammate who happens to hold a half-built catalogue of their own must not become the
+    team's source of truth because their app polled first.
+    """
+    try:
+        me = str((_ws_settings(mods) or {}).get("member_id") or "")
+        rows = [r for r in (_ws_member_rows(mods) or []) if r.get("member_id")]
+    except Exception:  # noqa: BLE001
+        return False
+    if not me or not rows:
+        return False
+    first = sorted(rows, key=lambda r: str(r.get("joined_at") or ""))[0]
+    return str(first.get("member_id")) == me
+
+
+def _ws_pack_heal(mods, now=None):
+    """Close the gap a join with no pack leaves, from both ends. Returns "send", "fetch" or "".
+
+    THE INCIDENT (2026-09-11). The owner's workspace never received a pack: every publish was
+    refused at its last step (see pack._point_workspace). A teammate then joined. The join added
+    him to the team and then stopped, because there was nothing to download -- and nothing ever
+    tried again. His Knowledge tab stayed empty for good, while the owner could see his name.
+    The message he was shown even promised the pack "uploads by itself", which nothing did.
+
+    This makes that sentence true. It runs off the workspace poll the Agents screen already
+    makes, at most once a minute, and does one of two things:
+
+      SEND   this Mac made the workspace, holds the core, and the workspace has no pack -> ask
+             the rebuilder for one. The same path "Check for changes" takes, not a second one.
+      FETCH  the workspace has a pack and this Mac holds no core -> download it, exactly as a
+             join would, then catch up on the log.
+
+    It does nothing while a create or a join is running, or while a rebuild is already in
+    flight, so it can never race the thing it is healing. It never raises into the poll.
+    """
+    now = time.time() if now is None else now
+    if _ws_heal["busy"] or (now - _ws_heal["at"]) < _WS_HEAL_EVERY:
+        return ""
+    if _ws_job_live():
+        return ""
+    rb_now = _ws_rebuilder_ref[0]
+    if rb_now is not None and (getattr(rb_now, "running", False) or getattr(rb_now, "pending", False)):
+        return ""
+    pack, client = (mods or {}).get("pack"), (mods or {}).get("client")
+    if pack is None or client is None:
+        return ""
+    _ws_heal["at"] = now
+    try:
+        row = client.one("workspace", columns="pack_version") or {}
+        have = bool(pack.core_ready())
+    except Exception:  # noqa: BLE001
+        return ""
+    version = int(row.get("pack_version") or 0)
+
+    if version < 1 and have:
+        if (now - _ws_heal["sent_at"]) < _WS_HEAL_SEND_EVERY or not _ws_i_created_it(mods):
+            return ""
+        rb = _ws_rebuilder(mods)
+        if rb is None:
+            return ""
+        _ws_heal["sent_at"] = now
+        try:
+            rb.request("the workspace has never received a knowledge pack")
+        except Exception:  # noqa: BLE001
+            return ""
+        _ws_heal["last"] = "sending the team its first knowledge pack"
+        return "send"
+
+    if version >= 1 and not have:
+        if (now - _ws_heal["fetched_at"]) < _WS_HEAL_FETCH_EVERY:
+            return ""
+        _ws_heal["fetched_at"] = now
+        _ws_heal["busy"] = True
+
+        def fetch():
+            try:
+                got = pack.join(client) or {}
+                try:
+                    from seo_agent.workspace import sync as _ws_sync_heal
+                    _ws_sync_heal.catch_up(client, replay_from=got.get("replay_from"))
+                except Exception:  # noqa: BLE001
+                    pass       # the files are in; the next poll catches the log up anyway
+                _ws_heal["last"] = "the team's knowledge arrived"
+            except Exception as e:  # noqa: BLE001
+                _ws_heal["last"] = "the team's knowledge did not come down yet: " + _ws_scrub(e)
+            finally:
+                _ws_heal["busy"] = False
+
+        # SAID BEFORE THE THREAD STARTS, never after. A download can finish before _spawn has
+        # even returned, and a line written afterwards would overwrite "arrived" with
+        # "fetching" -- a screen stuck saying it is working on something already done. The
+        # heal suite caught exactly that on its first run.
+        _ws_heal["last"] = "fetching the team's knowledge"
+        if not _spawn("workspace-heal", fetch):
+            _ws_heal["busy"] = False
+            _ws_heal["last"] = ""
+            return ""
+        return "fetch"
+    return ""
+
+
 def ws_pack_refresh(reason=""):
     """Ask for the shared pack to be rebuilt, and return immediately.
 
@@ -1691,6 +1806,19 @@ def _ws_join_worker(url, key, ws_id, name, member_id, emoji=""):
 
         try:
             got = pack.join(client, progress=on_progress) or {}
+        except pack.PackIncomplete as e:
+            # ON THE TEAM, KNOWLEDGE NOT YET SHARED. This is not a failed join: the person is a
+            # member, their name is already on everybody's screen, and the heal fetches the pack
+            # the moment one exists. Drawing it as "Joining did not finish" with a Try again
+            # button is how a teammate was left believing they had to do something, and then
+            # that nothing had happened (2026-09-11). Let the heal look straight away.
+            _ws_heal["fetched_at"] = 0.0
+            _ws_heal["at"] = 0.0
+            _ws_say(phase="done", step="", pct=100, finished_at=time.time(),
+                    error={"what": "You are on the team, but its knowledge has not reached this "
+                                   "Mac yet.",
+                           "do": _ws_scrub(e)})
+            return
         except Exception as e:  # noqa: BLE001
             # Joined but not filled. Say exactly that: the credentials are real, and pressing
             # Try again resumes rather than starting over.
@@ -1792,6 +1920,10 @@ def api_workspace(check: int = 0):
     # worth it". Off that tab this route is polled only to keep the quiet line honest, and
     # eleven probes for a footnote would be a poor trade.
     _ws_start_poller(mods)
+    try:
+        _ws_pack_heal(mods)
+    except Exception:  # noqa: BLE001
+        pass           # a courtesy; the poll must never fail over it
     checked = _ws_verify(mods) if check else _ws_checked["res"]
     return {
         "installed": True,
@@ -1805,6 +1937,7 @@ def api_workspace(check: int = 0):
         "link": _ws_link(mods, s),
         "sync": {"pending": int(out.get("queued") or 0),
                  "pack_state": _ws_pack["state"],
+                 "pack_heal": _ws_heal.get("last") or None,
                  "last_seen_at": st.get("updated_at"),
                  # THE SAME NEWS FROM THE OTHER DIRECTION. verify().needs_update is "this
                  # workspace is a version behind"; this one is "somebody has already saved

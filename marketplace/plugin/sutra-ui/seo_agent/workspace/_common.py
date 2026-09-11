@@ -165,6 +165,17 @@ def explain(resp, what, advice_401=KEY_ADVICE):
                 "Sutra tried to %s using an endpoint that only accepts a secret admin key. "
                 "Sutra never asks for one, so this is a bug in Sutra, not a problem with "
                 "your project.%s" % (what, tail), code, body)
+        # A ROW-LEVEL SECURITY REFUSAL IS NOT A WRONG KEY. PostgREST answers one with 401 for the
+        # anon role (403 only for a signed-in user), so it lands in this branch -- and it used to
+        # be reported as "That key is not for this project". That sent a person to re-paste a key
+        # that was working perfectly, while the real fault was Sutra writing a row the workspace's
+        # rules forbid. It is exactly how a publish that could never succeed stayed hidden from
+        # the day the owner's workspace was made (2026-09-11).
+        if "row-level security" in said.lower():
+            raise WorkspaceError(
+                "Supabase accepted the key, but the workspace's own rules refused this, so Sutra "
+                "could not %s. That is a fault in Sutra, not in your key or your project: there "
+                "is nothing to re-paste.%s" % (what, tail), code, body)
         if advice_401 is TOKEN_ADVICE:
             raise WorkspaceError(
                 "Sutra could not %s. %s%s" % (what, advice_401, tail), code, body)

@@ -595,6 +595,17 @@ wire(FakeResponse(403, {"message": "new row violates row-level security policy"}
 raises("a 403 is explained as the workspace's own security rule",
        lambda: client.select("ideas"), "belongs to a different workspace")
 
+# THE SAME REFUSAL ARRIVES AS A 401 FOR THE anon ROLE, and it used to be reported as "That key is
+# not for this project" -- sending a person off to re-paste a key that worked perfectly, while a
+# publish that could never succeed stayed hidden from the day the workspace was made (2026-09-11).
+wire(FakeResponse(401, {"message": 'new row violates row-level security policy for table "workspace"'}))
+try:
+    client.select("workspace")
+    ok("a 401 row-level refusal raises", False)
+except Exception as e:  # noqa: BLE001
+    ok("a 401 row-level refusal is the workspace's own rule, never a wrong key",
+       "own rules refused" in str(e) and "not for this project" not in str(e), str(e))
+
 wire(FakeResponse(429, {"message": "Too many requests"}))
 raises("a 429 says wait a minute", lambda: client.select("ideas"), "slow down")
 ok("a 429 is not retried either", len(WIRE.calls) == 1)

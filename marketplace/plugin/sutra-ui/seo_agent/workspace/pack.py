@@ -711,8 +711,7 @@ def publish(client, kroot=None, last_seen_id=0, workdir=None, progress=None, dee
             "pack_change_id": cursor,
             "pack_built_at": store.now()})
         say("publish", 0, 0, "pointing the workspace at pack %d" % version)
-        client.upsert("workspace", [dict(row, **fields)])
-        row = dict(row, **fields)
+        row = _point_workspace(client, row, fields)
         out.update({"version": version, "sha256": built["sha256"], "bytes": built["bytes"],
                     "raw_bytes": built["raw_bytes"], "files": built["files"],
                     "parts": parts, "content_sha256": built["content_sha256"],
@@ -796,7 +795,7 @@ def _publish_index(client, row, kroot, tmpdir, chunk, say, deep_verify):
 
     fields, missing = _ws_fields(row, {"index_version": version})
     if fields:
-        client.upsert("workspace", [dict(row, **fields)])
+        _point_workspace(client, row, fields)
     removed = _drop_old_packs(client, "index", version) if versioned else []
 
     return {"index_version": version, "index_rebuilt": True, "index": "rebuilt",
@@ -836,6 +835,36 @@ def _log_head(client):
         return int(rows[0]["id"]) if rows else 0
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def _point_workspace(client, row, fields):
+    """Move the workspace row on to a new pack, and PROVE it moved. Returns the row as it now is.
+
+    AN UPDATE, NEVER AN UPSERT. schema.sql gives the workspace row a read rule and an update rule
+    and deliberately no insert rule: the row is born in the setup script and never created from
+    the app. An upsert is an INSERT ... ON CONFLICT DO UPDATE, and row-level security judges it
+    against the insert rule that is not there -- so it is refused before the update half is ever
+    reached. This line used to be an upsert, and on the owner's live workspace it refused EVERY
+    publish from the day the workspace was made: the core uploaded, the row never moved, the
+    workspace sat at pack 0, and the first teammate to join was handed nothing. Measured
+    2026-09-11: the upsert failed with "new row violates row-level security policy for table
+    workspace", and a PATCH of the same row came back with the row.
+
+    NOT REPORTING SUCCESS FROM SILENCE. A PATCH that a rule filters out does not error; it comes
+    back 200 with no rows. So an empty answer is treated as the refusal it is, rather than as a
+    workspace that has moved to a pack nobody can see.
+    """
+    if not fields:
+        return dict(row)
+    wid = row.get("id")
+    if not wid:
+        raise PackError("The workspace row has no id, so Sutra cannot say which row to point "
+                        "at the new pack. Nothing a teammate downloads has changed.")
+    got = client.update("workspace", {"id": wid}, fields) or []
+    if not got:
+        raise PackError("The pack uploaded, but the workspace would not point at it: the update "
+                        "came back with no row. Nothing a teammate downloads has changed.")
+    return dict(row, **fields)
 
 
 def _ws_fields(row, fields):
@@ -1171,6 +1200,18 @@ def _install_order(names):
     return sorted(names, key=lambda n: (n in INDEX_GATE_FILES, n))
 
 
+def core_ready(kroot=None):
+    """Does this Mac hold the CORE -- the catalogue, every page's text, and the brand pack?
+
+    The heal in agents_api reads this to tell which side of a missing pack a machine is on.
+    Holding the core while the workspace has no pack means THIS Mac is the one to send it;
+    lacking the core while the workspace has one means this Mac is the one to fetch it. It tests
+    the same members the pack is built from, so the two can never disagree about what the core is.
+    """
+    kroot = kroot or store.knowledge_dir()
+    return all(os.path.exists(os.path.join(kroot, n)) for n in CORE_MEMBERS)
+
+
 def index_ready(kroot=None):
     """Does this knowledge base have a usable meaning index? The same test its readers use.
 
@@ -1279,8 +1320,8 @@ def join(client, kroot=None, workdir=None, progress=None, index="background"):
     version = int(row.get("pack_version") or 0)
     if version < 1:
         raise PackIncomplete(
-            "This workspace has not shared its knowledge pack yet. Ask whoever created it to "
-            "open Sutra once — the pack uploads by itself — then join again.")
+            "This workspace has not shared its knowledge yet. Nothing to do: as soon as whoever "
+            "created it opens the SEO Writer, it is sent, and it arrives on this Mac by itself.")
 
     tmpdir = workdir or tempfile.mkdtemp(prefix="sutra-join-")
     made = workdir is None

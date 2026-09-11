@@ -148,8 +148,10 @@ class Fake:
                  "pack_change_id": 0, "pack_built_at": "", "index_version": 0}
 
     def __init__(self, buckets=("knowledge",), stat=True, deleting=True, ranged=True,
-                 truncate_at=None, limit=None, sliced=False, pack_columns=True, no_ws=False):
+                 truncate_at=None, limit=None, sliced=False, pack_columns=True, no_ws=False,
+                 hide_ws=False):
         self.objects = {}
+        self.hide_ws = hide_ws                  # a rule that filters the workspace row out of a PATCH
         ws = dict(self.BASE_WS, **(self.PACK_COLS if pack_columns else {}))
         self.tables = {"workspace": [] if no_ws else [ws], "pages": [], "changes": []}
         self.log = []
@@ -230,6 +232,14 @@ class Fake:
         return rows[:int(limit)] if limit else rows
 
     def upsert(self, table, rows):
+        # THE WORKSPACE ROW REFUSES AN UPSERT, EXACTLY AS SUPABASE DOES. schema.sql gives it a
+        # read rule and an update rule and no insert rule, and an upsert is an insert. This fake
+        # used to accept it, which is how every publish on the owner's real workspace failed at
+        # its last step while this suite stayed green (2026-09-11). anon gets a 401 for it.
+        if table == "workspace":
+            self.log.append(("upsert-refused", table, len(rows)))
+            raise WorkspaceError('new row violates row-level security policy for table '
+                                 '"workspace"', 401)
         self.log.append(("upsert", table, len(rows)))
         cur = self.tables.setdefault(table, [])
         for new in rows:
@@ -239,6 +249,19 @@ class Fake:
                     break
             else:
                 cur.append(dict(new))
+
+    def update(self, table, where, patch):
+        """PATCH: change the matching rows and hand them back. `hide_ws` models a rule that
+        filters the workspace row out -- Supabase answers that with 200 and NO rows, not an error,
+        which is exactly the silence pack.py must refuse to call a success."""
+        cur = self.tables.setdefault(table, [])
+        hit = []
+        for i, r in enumerate(cur):
+            if self._match(r, where) and not (table == "workspace" and self.hide_ws):
+                cur[i] = dict(r, **patch)
+                hit.append(dict(cur[i]))
+        self.log.append(("update", table, len(hit)))
+        return hit
 
     def delete(self, table, where=None):
         cur = self.tables.setdefault(table, [])
@@ -488,11 +511,11 @@ core_up = [p for p in up if p.startswith("pack/core/")]
 ok("the core's SIDECAR is written last of the core's objects — until it exists there is no "
    "pack, only bytes, so a half-finished upload cannot be mistaken for one",
    core_up[-1] == "pack/core/1.zip.sha256", core_up[-3:])
-seq = cli.order("upload", "upload_file", "upsert")
+seq = cli.order("upload", "upload_file", "update")
 ok("the core is uploaded BEFORE the workspace points at it — a join mid-rebuild gets the "
    "whole old pack, never a truncated new one",
    seq.index(("upload", "pack/core/1.zip.sha256")) <
-   [i for i, x in enumerate(seq) if x[0] == "upsert"][0])
+   [i for i, x in enumerate(seq) if x[0] == "update"][0])
 
 # ---- THE RULING, on each half -----------------------------------------------------------
 before = dict(cli.tables["workspace"][0])
@@ -716,9 +739,51 @@ ok("the old sidecar is deleted FIRST, so the leftovers are unreachable rubbish r
    [p for p in fresh_cli.names("remove") if p.startswith("pack/core/1")][0]
    == "pack/core/1.zip.sha256")
 ok("the deletes happen after the workspace moved, never before",
-   fresh_cli.order("upsert", "remove")[0][0] == "upsert")
+   fresh_cli.order("update", "remove")[0][0] == "update")
 ok("PACK_KEEP_GENERATIONS is a named constant, not a 2 buried in a loop",
    pack.PACK_KEEP_GENERATIONS == 2)
+
+
+# ==========================================================================================
+print("\nthe workspace row is UPDATED, never upserted (2026-09-11)")
+# The owner's live workspace sat at pack 0 from the day it was made: every publish uploaded the
+# core and was then refused at "pointing the workspace at pack 1", because the row write was an
+# upsert and the row has no insert rule. The fake now refuses that upsert as Supabase does.
+
+K2 = make_knowledge(os.path.join(tmpdir("kb-rls"), "knowledge"))
+rls = Fake()
+pack.publish(rls, kroot=K2, last_seen_id=0)
+ok("a publish moves the workspace to pack 1 through an UPDATE",
+   rls.tables["workspace"][0]["pack_version"] == 1, rls.tables["workspace"][0])
+ok("...and never tries an upsert on the workspace row, which the real rules refuse",
+   not [e for e in rls.log if e[0].startswith("upsert") and e[1] == "workspace"],
+   [e for e in rls.log if e[1] == "workspace"])
+ok("the index moves the same way", rls.tables["workspace"][0].get("index_version") == 1,
+   rls.tables["workspace"][0])
+
+hidden = Fake(hide_ws=True)
+try:
+    pack.publish(hidden, kroot=K2, last_seen_id=0)
+    ok("an update a rule silently filters out is a refusal, not a success", False)
+except pack.PackError as e:
+    ok("an update a rule silently filters out is a refusal, not a success",
+       "would not point at it" in str(e), str(e))
+ok("...and the row it could not move is left exactly where it was",
+   hidden.tables["workspace"][0]["pack_version"] == 0)
+
+ok("core_ready is true for a knowledge base holding the catalogue, the text and the brand",
+   pack.core_ready(K2))
+bare = os.path.join(tmpdir("kb-bare"), "knowledge")
+os.makedirs(bare)
+ok("...and false for a Mac that has joined and received nothing", not pack.core_ready(bare))
+
+try:
+    pack.join(Fake(), kroot=bare)
+    ok("joining a workspace with no pack is refused", False)
+except pack.PackIncomplete as e:
+    ok("joining a workspace with no pack says there is nothing to do, and no longer promises "
+       "an upload that nothing performed", "Nothing to do" in str(e)
+       and "join again" not in str(e), str(e))
 
 
 # ==========================================================================================
@@ -1031,8 +1096,14 @@ try:
     pack.join(empty, kroot=os.path.join(tmpdir("nope"), "knowledge"))
     ok("joining a workspace with no pack yet says so plainly", False)
 except pack.PackIncomplete as e:
+    # The wording changed on 2026-09-11, deliberately. It used to end "Ask whoever created it
+    # to open Sutra once -- the pack uploads by itself -- then join again", and nothing uploaded
+    # by itself: a teammate who read it waited for something that never came. The heal in
+    # agents_api now makes the arrival automatic, so the sentence says that, and says there is
+    # nothing for the person to do.
     ok("joining a workspace with no pack yet says so plainly, and what to do",
-       "not shared its knowledge pack yet" in str(e), str(e))
+       "not shared its knowledge yet" in str(e) and "Nothing to do" in str(e)
+       and "by itself" in str(e), str(e))
 
 
 # ---- clean up -----------------------------------------------------------------------------
