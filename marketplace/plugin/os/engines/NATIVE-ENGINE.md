@@ -20,7 +20,7 @@ Native is Sutra's runtime engine — typed primitives + 26 EngineEvents + 6 surf
 
 | Bucket | Count | What it holds | First file (anchor) |
 |---|---:|---|---|
-| [pillars/](../native/pillars/) | 14 | Doctrine — P1-P14 POVs, falsification tests, doctrine inheritance from §10.4 | [P1-artifact-first.md](../native/pillars/P1-artifact-first.md) |
+| [pillars/](../native/pillars/) | 23 | Doctrine — P0-P22 POVs, falsification tests, doctrine inheritance from §10.4 (P0, P15-P22 are post-cutover gap-fills) | [P1-artifact-first.md](../native/pillars/P1-artifact-first.md) |
 | [primitives/](../native/primitives/) | 10 | Typed primitives — Domain, Charter, Workflow, Step, Trigger, ExecutionResult, EngineEvent, Tenant, DecisionProvenance, Approval | [workflow.md](../native/primitives/workflow.md) |
 | [events/](../native/events/) | 26 | EngineEvent type catalog — schemas, emitters, consumers, ordering invariants, replayability | [workflow_started.md](../native/events/workflow_started.md) |
 | [surfaces/](../native/surfaces/) | 6 | Surfaces — ROUTE, RUN, GATE, EMERGE, AUDIT, TENANT — interfaces + invariants + integration points | [ROUTE.md](../native/surfaces/ROUTE.md) |
@@ -32,7 +32,7 @@ Native is Sutra's runtime engine — typed primitives + 26 EngineEvents + 6 surf
 | [metrics/](../native/metrics/) | 1 | North Star — OHS/wk (operator-hours-saved per week) | [north-star-ohs-per-week.md](../native/metrics/north-star-ohs-per-week.md) |
 | [arch-blocks/](../native/arch-blocks/) | 1+7 | §1.0 architecture blocks — UI authored (DRAFT); Host/Orchestration/SoP/SoR/Authority+Tenancy/Compute/External-World SEED-pending; per ADR-024 | [ui.md](../native/arch-blocks/ui.md) |
 | [components/](../native/components/) | 4 | UI Kit — HLD (INDEX: placement + exposure matrix) + LLD component specs C1-C3 (Approval Inbox, Charter+Domain Browser, What's-Running Board); render-only, per ADR-023 | [INDEX.md](../native/components/INDEX.md) |
-| ADRs | 20 | Decision rationale — `sutra/os/decisions/ADR-004..023` (004-017 v1 canon; 018-023 post-cutover) | [ADR-004-registry-and-effector-split.md](../decisions/ADR-004-registry-and-effector-split.md) |
+| ADRs | 38 | Decision rationale — `sutra/os/decisions/ADR-001..038` (004-017 v1 canon; 018-037 post-cutover; 001-003 pre-Native governance). 38 files for 38 numbers (001..038); the 2026-08 collision on 030 was resolved 2026-09-11 by renumbering work dispatch to `ADR-038-work-dispatch.md` | [ADR-004-registry-and-effector-split.md](../decisions/ADR-004-registry-and-effector-split.md) |
 
 ## 4. §-Anchor Remap (pre-decomp section → post-decomp home)
 
@@ -100,6 +100,13 @@ Use this table when something cites "per NATIVE-ENGINE.md §X.Y" written before 
 | [ADR-024](../decisions/ADR-024-arch-block-canon-fork.md) | §1.0 arch-block canon fork (PROPOSED) | migrating architecture blocks into canon |
 | [ADR-030](../decisions/ADR-030-four-problem-types.md) | Four Problem Types — T1 missing operationalisation · T2 the answer · T3 the workflow · T4 the question (doctrine lens, unwired) | classifying a unit at intake by what is missing; orthogonal to the Cynefin lens + ADR-026 workflow type |
 | [ADR-031](../decisions/ADR-031-eval-engine.md) | Eval Engine — atom checks become standing eval cases, re-run nightly via Inspect AI + shared verify-runner; decay + verify-quality measurable (Accepted 2026-08-07) | re-checking finished work, regression diff on change, judge-lane grading of fuzzy checks |
+| [ADR-032](../decisions/ADR-032-verifier-layer.md) | Verifier Layer — verification disaggregated from the atom | designing or reading a verify-runner path |
+| [ADR-033](../decisions/ADR-033-balance-graduation.md) | Balance graduates from Asawa-local (L2) to plugin (L0) | Balance coach placement, D38 layer moves |
+| [ADR-034](../decisions/ADR-034-connector-token-ownership.md) | Connector Token Ownership — the Connector Service is the only confidential client | connector auth, token custody |
+| [ADR-035](../decisions/ADR-035-mediated-connectors.md) | Mediated connectors — connections Sutra observes but does not own | third-party connections outside Sutra custody |
+| [ADR-036](../decisions/ADR-036-writing-style-single-home.md) | Writing style has one home, MINIMIZE first, enforced at Stop | prose and markdown rules, writing-style gate |
+| [ADR-037](../decisions/ADR-037-blueprint-first-agents-second.md) | Blueprint first, agents second — why the workflow is authored before any run and agents dispatch onto it; phase sort of the six product layers | the ordering principle; doctrine form at [pillars/P22](../native/pillars/P22-blueprint-first-agents-second.md) |
+| [ADR-038](../decisions/ADR-038-work-dispatch.md) | Work Dispatch — placement, routing, touches-scoped authorization (ACCEPTED 2026-08-04; filed as ADR-030 until 2026-09-11) | dispatch gate, atom floor, envelope semantics |
 
 ## 6. Reading Order
 
@@ -125,4 +132,4 @@ For first-pass coverage of Native canon:
 
 ---
 
-**Last updated**: 2026-05-13 — Phase 12.2 cutover landed 2026-05-09; Phase 13 decommission gate RETIRED 2026-05-12 per founder direction (14d window dropped; canon writes resume normally). Pre-cutover snapshot at git tag `pre-engine-rewrite`.
+**Last updated**: 2026-09-11 — ADR-037 + P22 indexed, §3 counts corrected to the file inventory (pillars 23; ADRs 38 files / 38 numbers after work dispatch moved 030 -> 038), §5 rows ADR-032..038 added. Previous: 2026-05-13 — Phase 12.2 cutover landed 2026-05-09; Phase 13 decommission gate RETIRED 2026-05-12 per founder direction (14d window dropped; canon writes resume normally). Pre-cutover snapshot at git tag `pre-engine-rewrite`.

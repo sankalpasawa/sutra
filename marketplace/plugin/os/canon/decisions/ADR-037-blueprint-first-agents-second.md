@@ -1,3 +1,4 @@
+<!-- MIRROR (read-only distribution copy). Canonical: sutra/os/decisions/ADR-037-blueprint-first-agents-second.md. -->
 # ADR-037: Blueprint first, agents second
 
 Purpose: record why Native adopts the ordering "write the workflow, then dispatch agents onto it, then let the run record correct the workflow" as doctrine, where that doctrine and its vocabulary live, and how the six product layers sort under it.
@@ -45,7 +46,7 @@ Purpose: record why Native adopts the ordering "write the workflow, then dispatc
 - Part-files, hooks and reviews can cite ADR-037 or P22 for "no run from a blank prompt".
 - Dispatching an agent with no workflow and no declared done-check is a P22 falsification. Operationally it is already blocked by the atom floor and dispatch gate (plugin 2.260.2).
 - `NATIVE-ENGINE.md` section 3 counts corrected to the file inventory (pillars 14 to 23; ADRs 20 to 38; the two files that shared ADR-030 were separated the same day, work dispatch now ADR-038); section 5 gains rows for ADR-032 through ADR-037.
-- Reviews: codex design-review rounds 1 to 3 each CHANGES-REQUIRED and each folded (round 1: ADR restated the pillar and carried a status table the source page contradicts; round 2: INDEX ADR count; round 3: INDEX footer count), with rounds 2 and 3 stating no blocker in this ADR or P22; DeepSeek design-review ADVISORY (3 P2 folded). Records under `.enforcement/codex-reviews/` and `.enforcement/deepseek-reviews/`.
+- Reviews: codex design-review round 1 CHANGES-REQUIRED (3 P1: 2 accepted, 1 refuted with a wording fold; 4 P2), round 2 pending on the folded files; DeepSeek design-review ADVISORY (3 P2 folded). Records under `.enforcement/codex-reviews/` and `.enforcement/deepseek-reviews/`.
 
 ## Not adopted <a id="not-adopted"></a>
 
@@ -56,4 +57,4 @@ Purpose: record why Native adopts the ordering "write the workflow, then dispatc
 
 ---
 
-provenance: {author: claude, date: 2026-09-11, inputs: [artifact da61ccf3 "Blueprint First, Agents Second" 2026-09-10, workflow-engine.html, the-six-layers.html v2 2026-09-08, the-system-simply.md, founder direction 2026-09-11], review: dual-lane, supersedes: none, confidence: high, gaps: [runtime gap per workflow-engine.html:371-378]}
+provenance: {author: claude, date: 2026-09-11, inputs: [artifact da61ccf3 "Blueprint First, Agents Second" 2026-09-10, workflow-engine.html, the-six-layers.html v2 2026-09-08, the-system-simply.md, founder direction 2026-09-11], review: dual-lane, supersedes: none, confidence: high, gaps: [codex round 2 pending at authoring; runtime gap per workflow-engine.html:371-378]}

@@ -1,4 +1,7 @@
-# ADR-030 — Work Dispatch: placement, routing, and touches-scoped authorization
+<!-- MIRROR (read-only distribution copy). Canonical: sutra/os/decisions/ADR-038-work-dispatch.md. -->
+# ADR-038 — Work Dispatch: placement, routing, and touches-scoped authorization
+
+**Migration note**: filed as ADR-030 from founder sign-off (2026-08-04) until 2026-09-11, when the number collision with ADR-030 Four Problem Types was resolved by moving this decision to 038. Citations dated before 2026-09-11 that say "ADR-030" in a dispatch context mean this file.
 
 **Status**: ACCEPTED — founder sign-off 2026-08-04 (WDP W2-T26), "as-is" including the fable-tier human gate on BOTH initial classification and escalation. G2 dual-reviewed (codex 5P1+5P2, deepseek 1P1+4P2 — all folded pre-sign-off). Founder decisions D-A..D-I (PROGRAM.md §0) are fixed inputs.
 

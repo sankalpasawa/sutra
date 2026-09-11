@@ -3,7 +3,7 @@
 
 Status: ACTIVE (founder-directed 2026-08-04, mid-WDP)
 Engine of record: `sutra/os/engines/DISPATCH-ENGINE.md` (HLD, frozen at G2)
-Decisions: `sutra/os/decisions/ADR-030-work-dispatch.md` (ACCEPTED, founder sign-off as-is)
+Decisions: `sutra/os/decisions/ADR-038-work-dispatch.md` (ACCEPTED, founder sign-off as-is)
 Operating department: `holding/departments/dispatch/`
 
 ## Purpose

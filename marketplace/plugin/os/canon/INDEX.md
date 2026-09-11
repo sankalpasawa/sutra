@@ -50,7 +50,9 @@ Canonical lives in the sutra repo (sutra/os/). Edits here are drift.
 | decisions | ADR-028-mandatory-work-placement.md | ADR-028 — Mandatory Work Placement (system-decided, never-blocking) |
 | decisions | ADR-029-flow-orchestrator-mode.md | ADR-029 — Flow Orchestrator Mode (D62 bootstrap) |
 | decisions | ADR-030-four-problem-types.md | ADR-030 — Four Problem Types (awareness × understanding) |
-| decisions | ADR-030-work-dispatch.md | ADR-030 — Work Dispatch: placement, routing, and touches-scoped author |
+| decisions | ADR-036-writing-style-single-home.md | ADR-036: Writing style has one home, MINIMIZE first, enforced at Stop |
+| decisions | ADR-037-blueprint-first-agents-second.md | ADR-037: Blueprint first, agents second |
+| decisions | ADR-038-work-dispatch.md | ADR-038 — Work Dispatch: placement, routing, and touches-scoped author (formerly ADR-030) |
 | decisions | ADR-031-eval-engine.md | ADR-031 — Eval Engine as audit-type glue engine |
 | decisions | ADR-032-verifier-layer.md | ADR-032 — The Verifier Layer (verification disaggregated from the atom |
 | decisions | ADR-033-balance-graduation.md | ADR-033 — Balance graduates from Asawa-local (L2) to plugin (L0) |

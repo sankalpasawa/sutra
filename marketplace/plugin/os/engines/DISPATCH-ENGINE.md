@@ -4,7 +4,7 @@
 | Field | Value |
 |---|---|
 | Status | DRAFT — G2 dual review pending, founder sign-off T26 pending |
-| Decision inputs | ADR-030; PROGRAM.md §0 D-A..D-I; TOUCHES-CONTRACT v1 (fixtures are law); dual pre-write consult folded (lifecycle + top-tier gate) |
+| Decision inputs | ADR-038 (formerly ADR-030); PROGRAM.md §0 D-A..D-I; TOUCHES-CONTRACT v1 (fixtures are law); dual pre-write consult folded (lifecycle + top-tier gate) |
 | Consumers | W3 LLDs; sutra-dispatch CLI; dispatch-gate.sh; T4 fleet at held promotion |
 
 ## 1. Position in the spine
@@ -37,7 +37,7 @@ INLINE is valid ONLY when the parent session satisfies the step's routed floor (
 
 **Integration unit (G2 fold)**: worktree results merge through their OWN unit — touches = union of the overlap, its own verify contract, its own ledger attribution; merge conflicts halt and surface, never auto-resolve. The merge is a mutation like any other.
 
-Grouping key is declared-touches disjointness + routing — never a semantic "context key" (rejected, ADR-030).
+Grouping key is declared-touches disjointness + routing — never a semantic "context key" (rejected, ADR-038).
 
 ## 4. Model + effort routing (D-F)
 
