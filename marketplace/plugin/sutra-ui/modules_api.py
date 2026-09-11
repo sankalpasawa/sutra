@@ -41,6 +41,7 @@ import os
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -48,6 +49,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import providers
 from json_store import read_json, write_json
+import modules_events
+import modules_pkg
 
 # The department registry. The same explicit path insert org_api.py makes:
 # importing placement_engine must not depend on import order (codex P1).
@@ -137,6 +140,22 @@ def _require_flag():
         raise HTTPException(404, FLAG_OFF_MESSAGE)
 
 
+PUBLISH_FLAG = "apps_publish"
+PUBLISH_OFF_MESSAGE = "apps export/import is off — set flags.apps_publish to true in ~/.sutra-ui/settings.json (ADR-039; off by default)"
+
+
+def _publish_flag_on():
+    """Opt-IN, unlike flags.modules: export/import are the marketplace trust
+    boundary (APPS-THREATS.md X-10) and stay unreachable until switched on."""
+    flags = providers._raw_settings().get("flags")
+    return isinstance(flags, dict) and flags.get(PUBLISH_FLAG) is True
+
+
+def _require_publish_flag():
+    if not _publish_flag_on():
+        raise HTTPException(404, PUBLISH_OFF_MESSAGE)
+
+
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -145,11 +164,11 @@ def _dir(mid):
     """id -> absolute module dir, or ModuleError(404). Validate BEFORE join;
     realpath AFTER join; containment against the realpath'd home."""
     if not isinstance(mid, str) or not ID_RE.match(mid):
-        raise ModuleError(404, "no module named %r" % (mid,))
+        raise ModuleError(404, "no app named %r" % (mid,))
     home = _home()
     path = os.path.realpath(os.path.join(home, mid))
     if not path.startswith(home + os.sep):
-        raise ModuleError(404, "no module named %r" % (mid,))
+        raise ModuleError(404, "no app named %r" % (mid,))
     return path
 
 
@@ -304,7 +323,7 @@ def _normalize(raw, mid, path, reg):
     created_by = origin.get("created_by") if origin.get("created_by") in CREATED_BY else "disk"
     version = raw.get("version")
     version = int(version) if isinstance(version, int) and version > 0 else 1
-    return {"schema": 1, "id": mid,
+    return {"schema": raw.get("schema") if raw.get("schema") in (1, 2) else 1, "id": mid,
             "name": str(raw.get("name") or mid)[:NAME_MAX],
             "tagline": str(raw.get("tagline") or "")[:TAGLINE_MAX],
             "kind": kind, "status": status, "version": version,
@@ -321,11 +340,28 @@ def _normalize(raw, mid, path, reg):
             "publish": raw.get("publish") if isinstance(raw.get("publish"), dict) else None}
 
 
+BUILDING_WARNING = "building… — this app's manifest is not readable yet"
+
+
+def _building_row(mid, path, json_path):
+    """A folder whose module.json exists but does not parse (a chat is still
+    writing it): a row with a warning, never a missing app (D-M21, MIGRATIONS M-6)."""
+    return {"schema": None, "id": mid, "name": mid, "tagline": "", "kind": "chat", "status": "draft",
+            "version": 0, "origin": {"created_by": "disk", "session_id": None, "at": None},
+            "surface": {}, "guard": {}, "created_at": _mtime_iso(json_path), "updated_at": _mtime_iso(json_path),
+            "has_page": os.path.isfile(os.path.join(path, "index.html")),
+            "reserved": mid.startswith(SYS_PREFIX), "warning": BUILDING_WARNING,
+            "department": None, "publish": None, "building": True}
+
+
 def _read(mid, reg=None):
     path = _dir(mid)
-    raw = read_json(os.path.join(path, "module.json"), {})
+    jpath = os.path.join(path, "module.json")
+    raw = read_json(jpath, {})
     if not raw:
-        raise ModuleError(404, "no module named %r" % (mid,))
+        if os.path.isfile(jpath):
+            return _building_row(mid, path, jpath)
+        raise ModuleError(404, "no app named %r" % (mid,))
     return _normalize(raw, mid, path, reg or _Registry())
 
 
@@ -344,8 +380,12 @@ def list_modules(include_archived=False, reg=None):
         path = os.path.join(home, name)
         if not os.path.isdir(path):
             continue
-        raw = read_json(os.path.join(path, "module.json"), {})
+        jpath = os.path.join(path, "module.json")
+        if not os.path.isfile(jpath):
+            continue                                   # a folder without a manifest is not an app
+        raw = read_json(jpath, {})
         if not raw:
+            rows.append(_building_row(name, path, jpath))   # exists but does not parse: "building…"
             continue
         rows.append(_normalize(raw, name, path, reg))
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
@@ -476,30 +516,36 @@ def create_module(spec, created_by, session_id=None):
     if os.path.exists(os.path.join(path, "module.json")):
         raise ModuleError(409, "an app with id %s already exists" % mid)
     now = _now()
-    row = {"schema": 1, "id": mid, "name": name, "tagline": tagline, "kind": kind,
+    # schema 2 from the start (MIGRATIONS M-7): a registry entry requires
+    # manifest_schema 2, so a fresh app must never need a write-back to export
+    row = {"schema": 2, "id": mid, "name": name, "tagline": tagline, "kind": kind,
            # a link has nothing left to finish; chat and page start as drafts
            "status": "ready" if kind == "link" else "draft",
            "version": 1,
            "origin": {"created_by": created_by, "session_id": session_id, "at": now},
            "surface": surface, "guard": {}, "created_at": now, "updated_at": now,
+           "updated_ms": int(time.time() * 1000),
            # ONLY the ref (codex P6): path/name are read-time caches
-           "department": {"ref": dept_ref} if dept_ref else None}
+           "department": {"ref": dept_ref} if dept_ref else None,
+           "publish": None}
     write_json(os.path.join(path, "module.json"), row)
     if html:
         _write_text(os.path.join(path, "index.html"), html)
+    modules_events.append(_home(), "app.created", mid, kind=kind, version=1, department_ref=dept_ref,
+                          actor=(created_by + ":" + session_id) if session_id else created_by)
     return _read(mid, reg)
 
 
 def apply_action(mid, action, body):
     if not isinstance(mid, str) or mid.startswith(SYS_PREFIX):
-        raise ModuleError(404, "no module named %r" % (mid,))   # system rows: read-only
+        raise ModuleError(404, "no app named %r" % (mid,))   # system rows: read-only
     if action not in ACTIONS:
         raise ModuleError(400, "action must be one of " + ", ".join(ACTIONS))
     path = _dir(mid)
     fpath = os.path.join(path, "module.json")
     raw = read_json(fpath, {})
     if not raw:
-        raise ModuleError(404, "no module named %r" % (mid,))
+        raise ModuleError(404, "no app named %r" % (mid,))
     kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
     body = body if isinstance(body, dict) else {}
     if action == "archive":
@@ -520,12 +566,72 @@ def apply_action(mid, action, body):
         raw["surface"] = surface
     elif action == "assign":
         # Move (D-M15 / D-M17): one department, a live ref, nothing else
+        prev_ref = (raw.get("department") or {}).get("ref") if isinstance(raw.get("department"), dict) else None
         raw["department"] = {"ref": _require_department(body.get("department_ref"), _Registry())}
     v = raw.get("version")
     raw["version"] = (v if isinstance(v, int) and v > 0 else 0) + 1
     raw["updated_at"] = _now()
+    raw["updated_ms"] = int(time.time() * 1000)   # the precise stamp touch_app compares file mtimes against
+    raw["schema"] = 2                      # MIGRATIONS M-2: the write-back bumps 1 -> 2, everything else preserved
     write_json(fpath, raw)
+    dept_ref = (raw.get("department") or {}).get("ref") if isinstance(raw.get("department"), dict) else None
+    event = {"archive": "app.archived", "assign": "app.assigned"}.get(action, "app.edited")
+    extra = {"changed": [action]}
+    if action == "assign":
+        extra = {"from_ref": prev_ref, "to_ref": dept_ref}
+    modules_events.append(_home(), event, mid, kind=kind, version=raw["version"], department_ref=dept_ref,
+                          actor="app", **extra)
     return _read(mid)
+
+
+def _iso_to_epoch(s):
+    try:
+        return datetime.datetime.strptime(str(s)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def touch_app(mid, mode="edit", session_id=None):
+    """The seeded chat's completion hook (APPS-EVENTS.md §done; program step 57):
+    re-read the folder; if any file is newer than updated_at, bump version and
+    updated_at (schema 2) and append app.edited (mode edit) or app.created
+    (mode new). An unchanged folder appends nothing. Never emitted by a GET."""
+    if not isinstance(mid, str) or mid.startswith(SYS_PREFIX):
+        raise ModuleError(404, "no app named %r" % (mid,))
+    path = _dir(mid)
+    fpath = os.path.join(path, "module.json")
+    if not os.path.isfile(fpath):
+        raise ModuleError(404, "no app named %r" % (mid,))
+    raw = read_json(fpath, {})
+    if not raw:
+        raise ModuleError(409, BUILDING_WARNING)
+    # Compare every file EXCEPT the manifest itself against the manifest's own
+    # millisecond write stamp (updated_ms, set on every write; falls back to
+    # updated_at for schema-1 files). No tolerance window (codex R3 P2b).
+    newest = 0.0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            if root == path and f == "module.json":
+                continue
+            try:
+                newest = max(newest, os.stat(os.path.join(root, f)).st_mtime)
+            except OSError:
+                pass
+    stamp = raw.get("updated_ms")
+    since = (stamp / 1000.0) if isinstance(stamp, (int, float)) else _iso_to_epoch(raw.get("updated_at"))
+    changed = newest > since
+    if changed:
+        v = raw.get("version")
+        raw["version"] = (v if isinstance(v, int) and v > 0 else 0) + 1
+        raw["updated_at"] = _now()
+        raw["updated_ms"] = int(time.time() * 1000)
+        raw["schema"] = 2
+        write_json(fpath, raw)
+        dept_ref = (raw.get("department") or {}).get("ref") if isinstance(raw.get("department"), dict) else None
+        modules_events.append(_home(), "app.created" if mode == "new" else "app.edited", mid,
+                              kind=raw.get("kind"), version=raw["version"], department_ref=dept_ref,
+                              actor=("chat:" + session_id) if session_id else "chat", changed=["files"])
+    return {"app": _read(mid), "changed": changed}
 
 
 def page_html(mid, theme=None):
@@ -575,6 +681,45 @@ async def api_modules_create(request: Request):
         raise HTTPException(400, "body must be JSON")
     row = _guard(create_module, body, "app", None)
     return JSONResponse(row, status_code=201)
+
+
+@router.post("/import")
+async def api_modules_import(request: Request):
+    """ADR-039 install path (APPS-THREATS.md X-1..X-10). Declared BEFORE the
+    /{mid} action route so "import" is never read as an app id. Body = the
+    tarball bytes; ?id= ?sha256= ?replace=1 (no multipart dependency)."""
+    _require_flag()
+    _require_publish_flag()
+    qp = request.query_params
+    blob = await request.body()
+    try:
+        res = modules_pkg.import_app(_home(), qp.get("id") or "", blob, qp.get("sha256") or "",
+                                     replace=(qp.get("replace") in ("1", "true", "yes")),
+                                     registry=qp.get("registry") or None)
+    except modules_pkg.PkgError as e:
+        raise HTTPException(e.status, str(e))
+    return JSONResponse(res, status_code=201)
+
+
+@router.post("/{mid}/export")
+async def api_modules_export(mid: str):
+    _require_flag()
+    _require_publish_flag()
+    try:
+        return modules_pkg.export_app(_home(), mid)
+    except modules_pkg.PkgError as e:
+        raise HTTPException(e.status, str(e))
+
+
+@router.post("/{mid}/touch")
+async def api_modules_touch(mid: str, request: Request):
+    _require_flag()
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    return _guard(touch_app, mid, body.get("mode") or "edit", body.get("session_id"))
 
 
 @router.get("/{mid}")

@@ -103,15 +103,20 @@ function dirRail(opts){
   const match = opts.match || (d => dirMatches(d, q));
   const link = opts.link, count = opts.count || (() => null);
   const open = opts.open || ((d, depth) => depth < 2);
-  const subtreeMatches = d => match(d) || (kids.get(d.ref)||[]).some(subtreeMatches);
+  /* extra(d) -> markup appended INSIDE the node's .navkids after its children
+     (Apps v1.2 D-M16 uses it for the app rows under a department); a node
+     with no children but extra content renders as a group so the rows nest. */
+  const extra = opts.extra || (() => "");
+  const subtreeMatches = d => match(d) || (kids.get(d.ref)||[]).some(subtreeMatches) || !!extra(d);
   const entry = (d, depth) => {
     const all = kids.get(d.ref) || [], ch = all.filter(subtreeMatches);
     const n = count(d, ch, all);
     const cnt = n == null ? "" : `<span class="navcount">${n}</span>`;
     const chipHtml = `<span class="chip">${esc(chip(d.path))}</span>`;
-    if (ch.length) return `<details class="navgrp"${open(d, depth) ? " open" : ""}>
+    const ex = extra(d);
+    if (ch.length || ex) return `<details class="navgrp"${open(d, depth) ? " open" : ""}>
       <summary>${chipHtml}${link(d, esc(d.name), "")}${cnt}</summary>
-      <div class="navkids">${ch.map(c => entry(c, depth+1)).join("")}</div></details>`;
+      <div class="navkids">${ch.map(c => entry(c, depth+1)).join("")}${ex}</div></details>`;
     return link(d, chipHtml + esc(d.name) + cnt, "dsub");
   };
   return (opts.tops || []).filter(subtreeMatches).map(t => entry(t, 1)).join("")

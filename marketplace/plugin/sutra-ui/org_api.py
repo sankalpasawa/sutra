@@ -611,6 +611,11 @@ def org_search(q: str = "", limit: int = 40, tenant: Optional[str] = None):
 class ClassifyRequest(BaseModel):
     text: str
     session_id: Optional[str] = None
+    # Apps v1.2 (APPS-EVENTS.md §pin): a seeded chat pins its department so the
+    # placement is filed there without re-classification. Only a LIVE ref (or
+    # one that resolves through live_destination) is honoured; anything else
+    # falls through to the classifier, which the response says (mode != pinned).
+    pin: Optional[dict] = None
 
 
 def _pick_charter_for_write(domains, ref):
@@ -655,8 +660,20 @@ def api_classify(req: ClassifyRequest, tenant: Optional[str] = None):
     tenant_id = _tenant_of_record(tenant)
     domains = E.load_domains()
 
-    evidence = E.gather_evidence(utterance=text)
-    domain_ref, confidence, mode = E.classify(evidence, tenant_id, domains)
+    pin_ref = req.pin.get("department_ref") if isinstance(req.pin, dict) else None
+    pinned_to = None
+    if isinstance(pin_ref, str) and pin_ref:
+        dest, _how = E.live_destination(pin_ref, domains, E.live_root(domains))
+        if dest:
+            pinned_to = dest
+    if pinned_to:
+        # the pin bypasses the classifier but NOT the charter pick or the single
+        # write_placement below (codex F-pre P8)
+        evidence = {"terms": []}
+        domain_ref, confidence, mode = pinned_to, 1.0, "pinned"
+    else:
+        evidence = E.gather_evidence(utterance=text)
+        domain_ref, confidence, mode = E.classify(evidence, tenant_id, domains)
 
     if domain_ref is None:
         return {

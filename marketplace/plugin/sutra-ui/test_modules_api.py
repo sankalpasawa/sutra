@@ -426,6 +426,17 @@ class TestModulesApi(unittest.TestCase):
         self.assertIn("half-written", rows)
         self.assertIn("building", (rows["half-written"]["warning"] or "").lower())
 
+    def test_v12_two_hundred_apps_list_under_300ms(self):
+        # Program step 85: the list is one directory read + one registry read per request
+        root, exp, desk, ana = self._tree()
+        for i in range(200):
+            self._disk("app-%03d" % i, department={"ref": desk if i % 2 else exp})
+        t0 = time.perf_counter()
+        j = self.client.get(BASE).json()
+        dt = time.perf_counter() - t0
+        self.assertEqual(j["count_user"], 200)
+        self.assertLess(dt, 0.3, "root listing of 200 apps took %.3fs" % dt)
+
     def test_v12_golden_grouped_response_for_a_department(self):
         # Step 48: the grouped answer for one department, refs normalised to names.
         root, exp, desk, ana = self._tree()
@@ -435,10 +446,16 @@ class TestModulesApi(unittest.TestCase):
         j = self.client.get(BASE + "?department=" + exp).json()
 
         def norm(o):
+            # refs -> names, timestamps stripped, and every list of rows sorted
+            # so mtime / construction order can never flake the golden (codex R2 P3)
             if isinstance(o, dict):
                 return {k: norm(v) for k, v in o.items() if k not in ("created_at", "updated_at", "home", "at", "session_id")}
             if isinstance(o, list):
-                return [norm(x) for x in o]
+                items = [norm(x) for x in o]
+                if items and all(isinstance(x, dict) for x in items):
+                    key = (lambda x: x.get("id") or (x.get("department") or {}).get("name") or "")
+                    items = sorted(items, key=key)
+                return items
             if isinstance(o, str) and o in names:
                 return "<" + names[o] + ">"
             return o

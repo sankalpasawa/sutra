@@ -499,8 +499,9 @@ function applyProviderRequest(s, text){
   return switchChatProvider(s, want.target) === "busy";
 }
 
-async function submitTurn(text, sessionId){
-  const { session, result } = await runTask(text, sessionId);
+async function submitTurn(text, sessionId, opts){
+  /* opts is optional: {pin:{department_ref}} from the Apps seeded chats */
+  const { session, result } = await runTask(text, sessionId, opts);
   /* BEFORE askClaude, because the socket it would otherwise reuse is the one
      bound to the OLD provider. After runTask, because the turn has to exist to
      be rendered against and the classify round-trip is unrelated to this. */

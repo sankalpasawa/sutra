@@ -196,7 +196,9 @@ const DEST_PLANES = {
                 finished products the operator builds inside the app. Label is
                 explicit because railSpec() has no modules entry for planeRows()
                 to fall back on; flag is opt-OUT (absent = on) like workspace. */
-             {screen:"modules", label:"Modules", flag:"modules"},
+             /* User-facing word is App (Apps program D-M22, 2026-09-11); the
+                screen id, flag and API keep the internal name `modules`. */
+             {screen:"modules", label:"Apps", flag:"modules"},
              {screen:"reorg"}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
@@ -598,11 +600,16 @@ const NOT_CHECKED = [
    Real POST /api/classify against the actual engine (org_api.py: gather_evidence + classify()
    [NEVER resolve()] + a pick_charter walk + exactly one write_placement() call). No client-side
    scoring reimplementation — the confidence numbers here ARE the real engine's numbers. */
-async function runTurn(text, ts){
+async function runTurn(text, ts, opts){
   const stamp = ts || Date.now();
   let r;
   try {
-    const res = await apiPost("/api/classify", { text });
+    /* opts.pin = {department_ref}: a seeded Apps chat files under its
+       department without re-classification (APPS-EVENTS.md §pin, D-M19).
+       The server honours only a live ref and says so via mode "pinned". */
+    const body = { text };
+    if (opts && opts.pin && opts.pin.department_ref) body.pin = { department_ref: opts.pin.department_ref };
+    const res = await apiPost("/api/classify", body);
     if (!res.domain_ref) {
       // mode "none": classify() found no candidate at all; nothing was written.
       r = { mode: res.mode || "none", domain: null, confidence: res.confidence || 0,
@@ -634,8 +641,8 @@ async function runTurn(text, ts){
 let SID = 0;
 /* Start a session, or append a turn to an existing one. Appending is what makes the routing
    path visible: turn 2 can resolve somewhere turn 1 did not. */
-async function runTask(text, sessionId){
-  const r = await runTurn(text);
+async function runTask(text, sessionId, opts){
+  const r = await runTurn(text, undefined, opts);   /* opts.pin from the Apps seeded chats */
   let s = sessionId && S.sessions.find(x=>x.id===sessionId);
   if (!s){
     s = { id:"s-"+(++SID), title:text.length>46?text.slice(0,46)+"…":text,
@@ -1639,7 +1646,19 @@ function claudeChannel(s, side){
         if (!S.turnTokens) S.turnTokens = {};
         S.turnTokens[ch.sid] = f.quota;
       }
+      const completedTurn = ch.turn;      /* a duplicate done frame finds this null */
       ch.turn = null;
+      /* Apps v1.2 (APPS-EVENTS.md §done, D-M21): a chat opened by Edit in chat
+         or + New app carries session.app; when its turn completes, the Apps
+         screen asks the server to re-read the folder (POST /touch, the write
+         that appends the event) and then forces its own read. Gated on an
+         ACTUAL completed turn so a replayed or duplicated done frame cannot
+         fire it twice (codex R4 P1). The sessions stream's `changed` is
+         deliberately NOT used for this. */
+      if (completedTurn){
+        const sess = (S.sessions || []).find(s => s.id === ch.sid);
+        if (sess && sess.app && typeof modOnSessionDone === "function") modOnSessionDone(sess);
+      }
       /* A completed turn is the ONLY moment utilization actually moved, which is
          why the chip refreshes here instead of on a clock. The 60s server cache
          absorbs a burst of quick turns, so this cannot become a request per turn. */

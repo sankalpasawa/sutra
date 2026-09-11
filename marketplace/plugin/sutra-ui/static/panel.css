@@ -2174,43 +2174,61 @@
   font-size:10px; letter-spacing:.1em; text-transform:uppercase;
   font-weight:700; padding-top:2px; }
 
-/* ── Org > Modules (2.247.0) ─────────────────────────────────────────────────
-   Two columns INSIDE the browse pane: the list (the "side pane like Settings")
-   and the detail. Lives in panel.css on purpose: _asset_version() hashes this
-   file and every js module, not a new stylesheet (app.py _asset_version). */
-.mod{display:flex;min-height:100%;margin:-13px -14px}
-.mod-side{width:232px;flex:none;border-right:1px solid var(--line-soft);background:var(--surface);
-  overflow-y:auto;padding:10px 0 12px;display:flex;flex-direction:column;gap:2px}
-.mod-side h3.sec{padding:10px 14px 4px;margin:0}
-.mod-side .nav{list-style:none;margin:0;padding:0 6px}
-.mod-side .nav button .lab{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
-.mod-side .newBtn{margin:0 10px 6px}
-.mod-arch{margin:8px 14px 0;background:none;border:0;color:var(--muted);font-size:11px;cursor:pointer;text-align:left;padding:0}
-.mod-arch:hover{color:var(--acc)}
+/* ── Org > Apps v1.2 (apps live within Departments) ──────────────────────────
+   The Departments facets bar on top; below it the Directory's own .dpage grid:
+   the shared rail (department tree with the app rows nested under each owning
+   department) on the left, the selected department's apps or the open app on
+   the right. An app view is a header and then the app itself (D-M17). Lives in
+   panel.css on purpose: _asset_version() hashes this file and every js module,
+   not a new stylesheet. Every rule is .mod-prefixed or scoped under .mod. */
+.mod{display:flex;flex-direction:column;min-height:100%}
+.mod .facets .newBtn{width:auto;margin:0 0 0 auto}
+.mod .dpage nav .dq{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);
+  border-radius:6px;color:var(--ink);padding:5px 8px;font-size:12px;margin-bottom:8px}
+.mod .dpage nav a[aria-current="true"],
+.mod .dpage nav .navgrp summary:has(> a[aria-current="true"]){background:var(--acc-bg)}
+.mod .dpage nav a.modleaf{font-size:11.5px;padding:3px 6px;gap:6px;color:var(--muted)}
+.mod .dpage nav a.modleaf[aria-current="true"]{color:var(--ink)}
+.mod .dpage nav a.modleaf .pill{margin-left:auto;font-size:9px;padding:1px 5px}
+.mod-unas{margin-top:10px;padding-top:8px;border-top:1px solid var(--line-soft)}
+.mod-unas > a,.mod-unas summary a{color:var(--muted)}
+.mod-back{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-decoration:none;margin:0 0 10px}
+.mod-back:hover{color:var(--acc)}
+.mod-hd{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.mod-hd h1{font-family:var(--serif);font-size:20px;font-weight:600;margin:0}
+.mod-hd p{margin:2px 0 0;color:var(--muted);font-size:12px;max-width:60ch}
+.mod-hd .crumb{margin:0 0 2px;font:500 10.5px/1 var(--mono);color:var(--faint);letter-spacing:.02em}
+.mod-hd .count{margin-left:8px;font:600 11px/1 var(--mono);color:var(--muted);background:var(--inset);
+  border:1px solid var(--line-soft);border-radius:6px;padding:5px 8px;flex:none;white-space:nowrap;align-self:center}
+.mod-hd .pill{align-self:center}
+.mod-hd .mod-edit{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:6px;
+  font-size:11.5px;padding:4px 10px;white-space:nowrap;flex:none}
+.mod-grp{margin:14px 0 6px;display:flex;align-items:center;gap:10px}
+.mod-grp h3.sec{margin:0}
+.mod-tog{margin-left:auto;font-size:11px;color:var(--muted);background:none;border:0;cursor:pointer;padding:0}
+.mod-tog:hover,.mod-arch:hover{color:var(--acc)}
+.mod-arch{margin:12px 0 0;background:none;border:0;color:var(--muted);font-size:11px;cursor:pointer;text-align:left;padding:0}
+.mod-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line-soft);border-radius:8px;
+  background:var(--card);margin-bottom:6px;cursor:pointer}
+.mod-row:hover{border-color:var(--line)}
+.mod-row .mod-nm{font-weight:600;color:var(--ink);font-size:12.5px;white-space:nowrap}
+.mod-row .mod-tg{color:var(--muted);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mod-row .mod-dep{font:500 10px/1 var(--mono);color:var(--faint);flex:none}
 .mod-dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
 .mod-dot.ready{background:var(--ok)}
 .mod-dot.archived{background:transparent;border:1px solid var(--faint)}
 .pill.mod-kind{color:var(--muted);background:var(--inset);border:1px solid var(--line-soft)}
-.mod-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;padding:16px 20px;overflow-y:auto}
-.mod.full .mod-side{display:none}
-.mod-head h2{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:-.01em}
-.mod-head p{margin:0;color:var(--muted);font-size:12px}
-.mod-head .mod-origin{color:var(--faint);font-size:11px;margin-top:4px}
-.mod-head .btn{margin-bottom:8px;align-self:flex-start}
-.mod-head .note{margin-top:8px}
-.mod-frame{flex:1;width:100%;min-height:480px;border:1px solid var(--line-soft);border-radius:8px;background:var(--card)}
-.mod-blurb{margin:0;color:var(--muted);font-size:12px}
-.mod-path{margin:0;color:var(--faint);font:11px/1.4 var(--mono);word-break:break-all}
+.mod-body{min-width:0}
+.mod-frame{width:100%;min-height:440px;height:calc(100vh - 230px);border:1px solid var(--line-soft);border-radius:var(--r);background:var(--card)}
+.mod-ro{background:var(--inset);border:1px solid var(--line-soft);border-radius:8px;padding:12px 14px;font:12.5px/1.6 var(--mono);white-space:pre-wrap;color:var(--ink);margin:0}
+.mod-label{display:block;font-size:11px;color:var(--muted);letter-spacing:.04em;margin:4px 0 6px}
+.mod-hint{color:var(--faint);font-size:11.5px;margin:12px 0 0}
+.mod-hint a,.mod-body a.mod-openlink{color:var(--acc)}
+.mod-zero{padding:14px 4px;color:var(--muted);font-size:12.5px}
+.mod-zero p{margin:0}
+.mod-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;padding:6px 0 16px}
 .mod-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .mod-main .newBtn{width:auto;margin:0;align-self:flex-start}
-.mod-label{display:block;font-size:11px;color:var(--muted);letter-spacing:.04em;margin:4px 0 0}
-.mod-instr,.mod-form input,.mod-form textarea{width:100%;box-sizing:border-box;background:var(--inset);color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:8px 10px;font:12.5px/1.5 var(--sans)}
-.mod-instr{font-family:var(--mono);font-size:12px;min-height:160px;resize:vertical}
-.mod-form input:focus,.mod-form textarea:focus,.mod-instr:focus{outline:2px solid var(--acc);outline-offset:1px;border-color:var(--acc)}
-.mod-kinds{display:flex;flex-direction:column;gap:6px}
-.mod-kinds label{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted);cursor:pointer}
-.mod-kinds label b{color:var(--ink)}
+/* the Settings app's section list (D-M9), the one v1 body that survives */
 .mod-sections{list-style:none;margin:0;padding:0;max-width:420px}
 .mod-sections button .lab{flex:1;text-align:left}
-@media (max-width:1180px){.mod-side{width:200px}}

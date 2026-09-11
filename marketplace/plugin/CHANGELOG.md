@@ -1,12 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-11
-## Unreleased — Modules v1 (18 files, staged locally 2026-09-08, never pushed; restored 2026-09-10 on top of 2.258.1)
+## 2.263.0 (2026-09-11)
 
-
-- **Org > Modules: the finished products you build inside Sutra.** New `modules_api.py` (`/api/modules`) treats `~/.sutra-ui/modules/<id>/module.json` as the registry, so the in-app New module form, a Shadow `module` fence, and any Claude Code session that writes the folder all land in one list. Three kinds: `chat` (opens a session with your instructions as its first turn), `page` (your `index.html`, rendered in a sandboxed iframe with no network and no API reach), `link` (a system screen). Balance, Help and Settings appear as system rows; Settings lists its sections straight from the plane spec.
-- Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
-
+- **Org > Apps: the things you build inside Sutra, filed under your departments.** The left rail is the department tree with each app under the department it serves; an app opens as a header and then the app itself (a chat's instructions, a page in a sandboxed iframe, or a link). **Edit in chat** opens a chat in the app's folder that already knows the department and the files; **+ New app** opens a chat that asks what kind of app to build. No forms. Opt out with `flags.modules=false`.
+- The app folder is also the package (ADR-039): `module.json` gains `department` and an optional `publish` block, schema 2, so an app can be exported and installed later without a migration; export/import exist behind `flags.apps_publish` (off by default) with the extraction contract in `APPS-THREATS.md`. Tests: `test_modules_api.py` 30, `test_modules_pkg.py` 12, `test_modules_events.py` 5, `test_modules.js` 17; qa lanes `qa-shell/apps-*.mjs`. Program: `holding/plans/apps-program/PROGRAM.md` (five codex reviews folded).
 
 ## 2.262.0 (2026-09-11)
 
@@ -275,11 +273,6 @@ a comma-separated list and the only real boundary in the pack was a single item;
 confidence pill's hover text leaked "enumeration accounting" onto the screen; "meaning vectors" was
 still in the Connections copy; and opening a file shifted the reader's position by several hundred
 pixels, because `haspanel` reflows the left column three ways at once.
-
-## 2.247.0 (2026-09-08)
-
-- **Org > Modules: the finished products you build inside Sutra.** New `modules_api.py` (`/api/modules`) treats `~/.sutra-ui/modules/<id>/module.json` as the registry, so the in-app New module form, a Shadow `module` fence, and any Claude Code session that writes the folder all land in one list. Three kinds: `chat` (opens a session with your instructions as its first turn), `page` (your `index.html`, rendered in a sandboxed iframe with no network and no API reach), `link` (a system screen). Balance, Help and Settings appear as system rows; Settings lists its sections straight from the plane spec.
-- Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
 
 ## 2.246.1 (2026-09-08)
 

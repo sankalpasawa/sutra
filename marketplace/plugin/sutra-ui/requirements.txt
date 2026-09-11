@@ -15,3 +15,4 @@ numpy==2.0.2
 # cross-arch bundle installs it with --only-binary. Optional at runtime: extract.py falls back to
 # the ladder it had if the import fails.
 trafilatura==2.2.0
+jsonschema>=4.17  # Apps manifest validation on import (APPS-THREATS.md X-2); explicit checks still run without it

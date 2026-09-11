@@ -1,0 +1,249 @@
+{
+ "archived": 0,
+ "count_user": 3,
+ "counts_by_ref": {
+  "<Analytics>": 1,
+  "<Asawa>": 3,
+  "<Desktop app>": 1,
+  "<Experience>": 2
+ },
+ "department": {
+  "description": "",
+  "name": "Experience",
+  "path": "D1",
+  "ref": "<Experience>"
+ },
+ "groups": {
+  "below": [
+   {
+    "department": {
+     "moved": false,
+     "name": "Desktop app",
+     "path": "D1.D1",
+     "ref": "<Desktop app>"
+    },
+    "modules": [
+     {
+      "department": {
+       "moved": false,
+       "name": "Desktop app",
+       "path": "D1.D1",
+       "ref": "<Desktop app>"
+      },
+      "guard": {},
+      "has_page": false,
+      "id": "desk-one",
+      "kind": "chat",
+      "name": "Desk one",
+      "origin": {
+       "created_by": "app"
+      },
+      "publish": null,
+      "reserved": false,
+      "schema": 2,
+      "status": "draft",
+      "surface": {
+       "instructions": ""
+      },
+      "tagline": "",
+      "version": 1,
+      "warning": null
+     }
+    ]
+   }
+  ],
+  "here": [
+   {
+    "department": {
+     "moved": false,
+     "name": "Experience",
+     "path": "D1",
+     "ref": "<Experience>"
+    },
+    "guard": {},
+    "has_page": false,
+    "id": "exp-one",
+    "kind": "chat",
+    "name": "Exp one",
+    "origin": {
+     "created_by": "app"
+    },
+    "publish": null,
+    "reserved": false,
+    "schema": 2,
+    "status": "draft",
+    "surface": {
+     "instructions": ""
+    },
+    "tagline": "",
+    "version": 1,
+    "warning": null
+   }
+  ],
+  "system": [],
+  "unassigned": []
+ },
+ "modules": [
+  {
+   "department": {
+    "moved": false,
+    "name": "Analytics",
+    "path": "D2",
+    "ref": "<Analytics>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "ana-one",
+   "kind": "chat",
+   "name": "Ana one",
+   "origin": {
+    "created_by": "app"
+   },
+   "publish": null,
+   "reserved": false,
+   "schema": 2,
+   "status": "draft",
+   "surface": {
+    "instructions": ""
+   },
+   "tagline": "",
+   "version": 1,
+   "warning": null
+  },
+  {
+   "department": {
+    "moved": false,
+    "name": "Desktop app",
+    "path": "D1.D1",
+    "ref": "<Desktop app>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "desk-one",
+   "kind": "chat",
+   "name": "Desk one",
+   "origin": {
+    "created_by": "app"
+   },
+   "publish": null,
+   "reserved": false,
+   "schema": 2,
+   "status": "draft",
+   "surface": {
+    "instructions": ""
+   },
+   "tagline": "",
+   "version": 1,
+   "warning": null
+  },
+  {
+   "department": {
+    "moved": false,
+    "name": "Experience",
+    "path": "D1",
+    "ref": "<Experience>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "exp-one",
+   "kind": "chat",
+   "name": "Exp one",
+   "origin": {
+    "created_by": "app"
+   },
+   "publish": null,
+   "reserved": false,
+   "schema": 2,
+   "status": "draft",
+   "surface": {
+    "instructions": ""
+   },
+   "tagline": "",
+   "version": 1,
+   "warning": null
+  },
+  {
+   "department": {
+    "moved": false,
+    "name": "Asawa",
+    "path": "D0",
+    "ref": "<Asawa>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "sys-balance",
+   "kind": "link",
+   "name": "Balance",
+   "origin": {
+    "created_by": "system"
+   },
+   "reserved": false,
+   "schema": 1,
+   "status": "ready",
+   "surface": {
+    "screen": "balance"
+   },
+   "tagline": "how the week is spending you",
+   "version": 1,
+   "warning": null
+  },
+  {
+   "department": {
+    "moved": false,
+    "name": "Asawa",
+    "path": "D0",
+    "ref": "<Asawa>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "sys-help",
+   "kind": "link",
+   "name": "Help",
+   "origin": {
+    "created_by": "system"
+   },
+   "reserved": false,
+   "schema": 1,
+   "status": "ready",
+   "surface": {
+    "screen": "teamsutra"
+   },
+   "tagline": "Team Sutra tasks and help",
+   "version": 1,
+   "warning": null
+  },
+  {
+   "department": {
+    "moved": false,
+    "name": "Asawa",
+    "path": "D0",
+    "ref": "<Asawa>"
+   },
+   "guard": {},
+   "has_page": false,
+   "id": "sys-settings",
+   "kind": "link",
+   "name": "Settings",
+   "origin": {
+    "created_by": "system"
+   },
+   "reserved": false,
+   "schema": 1,
+   "status": "ready",
+   "surface": {
+    "screen": "settings",
+    "sections": "client"
+   },
+   "tagline": "provider, tools, automation, system",
+   "version": 1,
+   "warning": null
+  }
+ ],
+ "root": {
+  "description": "",
+  "name": "Asawa",
+  "path": "D0",
+  "ref": "<Asawa>"
+ },
+ "unassigned_count": 0
+}
