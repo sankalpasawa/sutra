@@ -1,12 +1,16 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-10
+**status**: active · **updated**: 2026-09-11
 ## Unreleased — Modules v1 (18 files, staged locally 2026-09-08, never pushed; restored 2026-09-10 on top of 2.258.1)
 
 
 - **Org > Modules: the finished products you build inside Sutra.** New `modules_api.py` (`/api/modules`) treats `~/.sutra-ui/modules/<id>/module.json` as the registry, so the in-app New module form, a Shadow `module` fence, and any Claude Code session that writes the folder all land in one list. Three kinds: `chat` (opens a session with your instructions as its first turn), `page` (your `index.html`, rendered in a sandboxed iframe with no network and no API reach), `link` (a system screen). Balance, Help and Settings appear as system rows; Settings lists its sections straight from the plane spec.
 - Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
 
+
+## 2.261.0 (2026-09-11)
+
+- **Writing-style gate: six verification folds.** The HARD Stop gate `writing-style-gate.sh` (shipped silently in 2.247.0 with `core:writing-style`, D72) widens after an adversarial verification run (0 P1, 6 P2) and a codex + DeepSeek consult: ask-to-run, closer, summary, glaze, apology and pleasantry variants (closers sentence-anchored); fully quoted and `--` prefixed lines now count toward the prose budget; governance field values are judged by unanchored rows only and padded fields (over 160 chars, or past the 45th) count as prose; geometric, braille and symbol glyph ranges block like box-drawing; GFM tables without outer pipes are checked for Impact + Effort. Tests 54 -> 81.
 
 ## 2.260.2 (2026-09-11)
 

@@ -169,6 +169,11 @@ LABELS = (r"INPUT|TYPE|EXISTING HOME|ROUTE|FIT CHECK|ACTION|TASK|DEPTH|EFFORT|CO
 LABEL_RE = re.compile(r"^\s*(%s)\s*:" % LABELS)
 BOX_EDGE = re.compile(r"^\s*\+[-=]{3,}.*$")
 HEADER_RE = re.compile(r"^\s*\[(STAGE-1-FAIL|[A-Z0-9-]+·[A-Z0-9-]+)\b.*\]\s*$")
+# A table separator row is pipes, colons, dashes and spaces only; "-- footnote" is prose.
+SEP_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+FIELD_MAX = 160          # a governance field is one line; a longer value is prose wearing a label
+FIELD_FREE = 45          # a full block stack is ~35 fields; field lines past this count as prose
+FIELD_QUOTE = {"INPUT"}  # paraphrases the user's words; never judged
 
 def strip_fences(t): return FENCE.sub("\n", t)
 
@@ -186,23 +191,32 @@ def box_regions(t):
     return "\n".join(keep), boxes
 
 def preprocess(t):
+    # -> (match_text, counted_lines, boxes). Lines are counted BEFORE inline code and
+    # quoted spans are blanked, so a fully quoted line is still a line. Governance field
+    # values are judged by unanchored rows only (the "= " prefix defeats ^ and sentence
+    # anchors; codex P1 2026-09-11) and are not counted unless over FIELD_MAX chars or
+    # past the FIELD_FREE-th field of the turn.
     t = strip_fences(t)
     t, boxes = box_regions(t)
-    lines = []
+    match = []; counted = []; fields = 0
     for ln in t.split("\n"):
-        if HEADER_RE.match(ln) or LABEL_RE.match(ln): continue
-        if re.match(r"^\s*>", ln): continue
-        if re.match(r"^\s*\|?\s*:?-{2,}", ln): continue   # table separator rows
-        lines.append(ln)
-    t = "\n".join(lines)
-    t = re.sub(r"`[^`\n]+`", " ", t)
-    t = re.sub(r"\"[^\"\n]{1,200}\"", " ", t)
-    t = re.sub(r"“[^”\n]{1,200}”", " ", t)
-    return t.lower(), boxes
+        if HEADER_RE.match(ln) or re.match(r"^\s*>", ln) or SEP_RE.match(ln): continue
+        m = LABEL_RE.match(ln)
+        if m:
+            val = ln[m.end():].strip(); fields += 1
+            if m.group(1) not in FIELD_QUOTE: match.append("= " + val)
+            if len(val) > FIELD_MAX or fields > FIELD_FREE: counted.append(val.lower())
+            continue
+        match.append(ln)
+        if ln.strip(): counted.append(ln.lower())
+    mt = "\n".join(match)
+    mt = re.sub(r"`[^`\n]+`", " ", mt)
+    mt = re.sub(r"\"[^\"\n]{1,200}\"", " ", mt)
+    mt = re.sub(r"“[^”\n]{1,200}”", " ", mt)
+    return mt.lower(), counted, boxes
 
-prose, boxes = preprocess(full)
-final_prose, _ = preprocess(final)
-prose_lines = [l for l in prose.split("\n") if l.strip()]
+prose, prose_lines, boxes = preprocess(full)
+final_prose, _, _ = preprocess(final)
 n_lines = len(prose_lines)
 
 # ---- 3. banned list from the skill (single source) ----------------------------
@@ -251,7 +265,8 @@ for group, sev, rx in rules:
     (hard if sev == "H" else adv).append(row)
 
 # ---- 4. structural checks -----------------------------------------------------
-m = re.search(r"[─-▟]", prose)
+# box-drawing + block + geometric (U+2500-25FF), braille (U+2800-28FF), symbols + arrows (U+2B00-2BFF)
+m = re.search(r"[─-◿⠀-⣿⬀-⯿]", prose)
 if m: hard.append({"id": "WS-2", "group": "GLYPH", "snippet": snip(m, prose)})
 
 if SCOPE != "minimize":
@@ -259,19 +274,19 @@ if SCOPE != "minimize":
     elif n_lines > ADV: adv.append({"id": "WS-A1", "group": "BUDGET", "snippet": "prose %d lines > %d" % (n_lines, ADV)})
     opener = 0
     for l in prose_lines:
-        if re.match(r"^\s*(\||#)", l): break
+        if re.match(r"^\s*(\||#)", l) or "|" in l: break
         opener += 1
     if opener > OPEN and n_lines > OPEN: adv.append({"id": "WS-A2", "group": "OPENER", "snippet": "%d prose lines before first structure" % opener})
     if mutated and n_lines > 25: adv.append({"id": "WS-A9", "group": "RESTATE", "snippet": "file written and %d prose lines" % n_lines})
 
-# WS-4 task tables (fence-stripped original, case-insensitive)
+# WS-4 task tables (fence-stripped original, case-insensitive; GFM rows need no outer pipes)
 src = strip_fences(full).split("\n")
 i = 0
 while i < len(src) - 1:
     h = src[i]; sep = src[i + 1]
-    if re.match(r"^\s*\|.*\|\s*$", h) and re.match(r"^\s*\|?\s*:?-{2,}", sep):
+    if "|" in h and not SEP_RE.match(h) and SEP_RE.match(sep):
         body = 0; j = i + 2
-        while j < len(src) and re.match(r"^\s*\|.*\|\s*$", src[j]): body += 1; j += 1
+        while j < len(src) and "|" in src[j] and not SEP_RE.match(src[j]): body += 1; j += 1
         hl = h.lower()
         if body >= 3 and re.search(r"\b(task|recommend|next step|backlog|roadmap|fix)\b", hl) and ("impact" not in hl or "effort" not in hl):
             hard.append({"id": "WS-4", "group": "TASK-TABLE", "snippet": h.strip()[:120]})

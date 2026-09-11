@@ -14,11 +14,11 @@ description: >
 Decide what to say, then how to say it, for every surface Sutra writes to.
 
 - **title**: Sutra writing style, single home
-- **status**: v1.0 · L0 fleet (D38) · HARD Stop gate `writing-style-gate.sh`
+- **status**: v1.1 · L0 fleet (D38) · HARD Stop gate `writing-style-gate.sh`
 - **scope**: every Asawa, Sutra and plugin-fleet output; customer-facing copy exempt from P2/P3 (Founding Doctrine P0)
 - **owner**: Sutra Core
-- **updated**: 2026-09-08
-- **source inputs**: caveman, anti-glaze-tone, readability-gate, writing-llm-md skills; READABILITY-STANDARD.md; D51, D55, D58, D71; founder 2026-08-17 "too much text"; founder 2026-09-02 "add minimize, one place, followed very strictly"
+- **updated**: 2026-09-11
+- **source inputs**: caveman, anti-glaze-tone, readability-gate, writing-llm-md skills; READABILITY-STANDARD.md; D51, D55, D58, D71, D72; founder 2026-08-17 "too much text"; founder 2026-09-02 "add minimize, one place, followed very strictly"; adversarial verification 2026-09-11 (6 P2, codex + DeepSeek folds)
 
 ## 1. Principles <a id="principles"></a>
 
@@ -72,29 +72,31 @@ After:  Bug in auth middleware: token expiry check uses `<` not `<=`. Fix below.
 
 ## 4. Banned phrases, one machine-read source <a id="banned"></a>
 
-The Stop gate reads this block at runtime. Format: `GROUP H|A regex`, matched case-insensitively on preprocessed prose (fences, inline code, blockquotes, quoted spans, box regions and governance field lines stripped). `^` anchors to line start. H blocks; A logs. NARRATE and ECHO are judged only on the final text block of the turn.
+The Stop gate reads this block at runtime. Format: `GROUP H|A regex`, matched case-insensitively on preprocessed prose (fences, inline code, blockquotes, quoted spans, box regions and the H-Sutra header stripped). Governance field values are judged by unanchored rows only, and the INPUT field never. `^` anchors to line start. H blocks; A logs. NARRATE and ECHO are judged only on the final text block of the turn.
 
 <!-- banned:start -->
 ```text
-GLAZE     H \b(great|excellent|fantastic|fascinating) (question|point|idea|perspective)\b
-GLAZE     H (^|[.!?] )\s*good catch\b
-GLAZE     H \byou('| a)?re absolutely right\b
-APOLOGY   H \b(i apologi[sz]e|apologies,? but|sorry to push back|sorry for the confusion)\b
-PLEASANT  H ^\s*(sure|certainly|of course|absolutely)[!,.]
-PLEASANT  H \b(happy to help|i'd be happy to|glad to help)\b
-CLOSER    H \b(hope (that|this) helps|let me know if|grab a coffee|nice work|standing by for your)\b
-SUMMARY   H ^\s*(in summary|to summarize|to recap|in conclusion)\b
-ECHO      H ^\s*as (you )?requested\b
+GLAZE     H \b(great|excellent|fantastic|fascinating|brilliant|wonderful|awesome|amazing|superb|terrific|perfect|smart|insightful|thoughtful) (question|point|idea|perspective|catch|call|find|observation|suggestion|thinking|insight)\b
+GLAZE     H (^|[.!?] )\s*(good|nice|great|excellent) (catch|call|find|point|spot)\b
+GLAZE     H \byou('| a)?re (absolutely|completely|totally|entirely|so|quite) right\b
+GLAZE     H \b(spot on|well spotted|you (make|raise) a (great|good|fair|valid|strong) point)\b
+GLAZE     H ^\s*(perfect|brilliant|awesome|amazing|wonderful|excellent|fantastic|love it)[!.,]
+APOLOGY   H \b(i apologi[sz]e|apologies,? (but|for)|my apologies|sorry (to push back|for the confusion|about that|for (that|the)))\b
+PLEASANT  H ^\s*(sure|certainly|of course|absolutely|no problem|got it|will do|on it|understood|noted)[!,.]
+PLEASANT  H \b(happy to help|i'd be happy to|glad to help|more than happy to|it would be my pleasure|thanks for (asking|your patience|the (question|context|clarification)))\b
+CLOSER    H (^|[.!?,;:] )\s*(hope (that|this|it) helps|let me know (if|when|how|what|whether)|feel free to|don't hesitate to|do not hesitate to|happy coding|good luck|if you (have|need) any(thing| other| further)?( questions| help| else)?|reach out (if|when|any ?time)|anything else (i|you)|is there anything else|grab a coffee|nice work|standing by for your)\b
+SUMMARY   H ^\s*(in summary|to summarize|to sum up|to recap|in conclusion|in short|in a nutshell|all in all|bottom line|tl;?dr|so,? in short|wrapping up|to wrap up|summing up)\b
+ECHO      H ^\s*(as (you )?requested|as asked|per your (request|ask|instruction))\b
 ECHO      A \byou asked (me to|for)\b
-NARRATE   H ^\s*(let me|i'll now|i will now|i'm going to|now i'll|now let me|first,? let me)\b
+NARRATE   H ^\s*(let me|i'll now|i will now|i'm going to|i am going to|now i'll|now let me|first,? let me|next,? (let me|i'll)|i'll (go ahead and|start by|begin by)|let's (start|begin) by)\b
 FILLER    A \b(just|really|basically|actually|simply)\b
 HEDGE     A \b(i think|it seems (like|that)|might be worth considering)\b
 VAGUE     A \b(several|a few|a number of|numerous|various|significant(ly)?|a while|most of)\b
-ASKRUN    A \b(please|can you|could you|would you|try) run(ning)?\b
+ASKRUN    A (\b(please|kindly|can you|could you|would you|go ahead and|try|you (should|must)|you( will|'ll)? (need|have) to) (run|execute|paste|type|invoke|launch)(ning)?\b|\b(run|execute) (this|it|that|these|the (command|script|tests?|suite)) (yourself|on your (side|end|machine|terminal))\b|\bon your (side|end),? (run|execute|try)\b)
 ```
 <!-- banned:end -->
 
-ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewhere. HEDGE is suppressed when a `Confidence:` token is in the same paragraph. FILLER logs only when the count exceeds 3 in a turn.
+ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewhere. HEDGE is suppressed when a `Confidence:` token is in the same paragraph. FILLER logs only when the count exceeds 3 in a turn. Kept out on purpose after the 2026-09-11 dual-lane consult: `you can run` (ordinary CLI explanation), bare `you're right` (honest agreement), `overall,` and `i love this` (technical prose at HARD cost).
 
 ## 5. Budgets <a id="budgets"></a>
 
@@ -119,7 +121,7 @@ ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewh
 | CHANGELOG entry | 5 lines | model |
 | Release or PR title | 60 chars | model |
 
-Counting rule: prose lines are non-blank lines after stripping code fences, inline code, blockquote lines, box regions and governance field lines; table rows count, separator rows do not. Budgets count chat prose only; file contents written through tools are never counted or judged, so a long architecture doc or executive doc lives in its file and chat carries the path (M7). Numeric thresholds live in `sutra-defaults.json` under `.output_discipline.writing_style`; phrases live only in §4.
+Counting rule: prose lines are non-blank lines after stripping code fences, blockquote lines, table separator rows, box regions and governance field lines; table rows count. Inline code and quoted spans are blanked for phrase matching only, so a fully quoted line still counts. A governance field over 160 characters, or any field past the 45th in a turn, counts as prose. Budgets count chat prose only; file contents written through tools are never counted or judged, so a long architecture doc or executive doc lives in its file and chat carries the path (M7). Numeric thresholds live in `sutra-defaults.json` under `.output_discipline.writing_style`; phrases live only in §4.
 
 ## 6. Shapes <a id="shapes"></a>
 
@@ -137,7 +139,7 @@ Counting rule: prose lines are non-blank lines after stripping code fences, inli
 ```
 
 - **Task tables**: header `| # | Area/Task | Impact (who/what changes) | Effort (time, files) |`, required at 3+ task rows; optional Depth, Cost. Relayed subagent or codex output is reshaped first: Why-it-matters or Rationale becomes Impact; Cost S/M/L plus time becomes Effort; inferred values are labelled **Inference**. Severity ranks; it does not frame.
-- **Progress bar**: `Name ######.... 0.6 STATUS`, 10 chars, each `#` is 0.1. Structural glyphs are ASCII only: box-drawing and block elements (U+2500-U+259F, rounded corners included) are banned in prose (D-UX-1).
+- **Progress bar**: `Name ######.... 0.6 STATUS`, 10 chars, each `#` is 0.1. Structural glyphs are ASCII only: box-drawing, block elements and geometric shapes (U+2500-U+25FF), braille (U+2800-U+28FF) and symbols-and-arrows (U+2B00-U+2BFF) are banned in prose (D-UX-1).
 - **Boards and icons**: no emoji in prose. Board markers: `[x]` done, `[ ]` todo, `[.]` in progress with a percentage, `[!]` blocked. Status words GREEN / YELLOW / RED. Outputs before inputs: what improved, what shipped, what is next.
 - **Typography**: bold sparingly; inline code for paths, commands and keys; no heavy borders for data; tree characters only inside a fence.
 
@@ -187,7 +189,7 @@ A revoke lasts for the rest of the session, as the legacy skills specified; the 
 | Check | Hook | Severity |
 |---|---|---|
 | WS-1 banned phrase, H rows of §4 | writing-style-gate.sh (Stop) | HARD |
-| WS-2 box-drawing or block glyph outside a fence | writing-style-gate.sh | HARD |
+| WS-2 box-drawing, block, geometric, braille or symbol glyph outside a fence | writing-style-gate.sh | HARD |
 | WS-3 prose over 60 lines | writing-style-gate.sh | HARD |
 | WS-4 task table, 3+ rows, missing Impact or Effort | writing-style-gate.sh | HARD |
 | WS-5 ask-to-run in pinned projects | writing-style-gate.sh | HARD |
@@ -217,4 +219,4 @@ Guards: silent until `.claude/sutra-project.json` exists; `stop_hook_active` pas
 
 ---
 
-provenance: {author: claude + founder, date: 2026-09-08, inputs: [caveman SKILL (gstack fork 2026-05-12), anti-glaze-tone SKILL (@aiedge_ 2026-05-12), readability-gate SKILL, READABILITY-STANDARD.md (TERMINAL-READABILITY-RESEARCH 2026-04-06), writing-llm-md v1.1, D51, D55, D58, D71, founder feedback 2026-08-17 and 2026-09-02, workflow wf_5cf3e80e (7 readers, 3 sweeps, 3 designs, 2 judges, synth, critic), codex consult thread 01a0807d 2026-09-08], review: codex, supersedes: [skills/caveman, skills/anti-glaze-tone, skills/readability-gate, skills/writing-llm-md, holding/skills/writing-llm-md.md, sutra/layer2-operating-system/READABILITY-STANDARD.md], confidence: high, gaps: [deepseek lane SKIPPED (unfunded); ASCII-only bars replace the unicode bar, founder-reversible; HTML-by-doc-class (D16) parked; baseline allowlist for tracked .md deferred]}
+provenance: {author: claude + founder, date: 2026-09-11, inputs: [caveman SKILL (gstack fork 2026-05-12), anti-glaze-tone SKILL (@aiedge_ 2026-05-12), readability-gate SKILL, READABILITY-STANDARD.md (TERMINAL-READABILITY-RESEARCH 2026-04-06), writing-llm-md v1.1, D51, D55, D58, D71, D72, founder feedback 2026-08-17 and 2026-09-02, workflow wf_5cf3e80e (7 readers, 3 sweeps, 3 designs, 2 judges, synth, critic), codex consult thread 01a0807d 2026-09-08, adversarial verification workflow 2026-09-11 (0 P1, 6 P2), codex thread 01a08f94 + deepseek-v4-pro consult 2026-09-11], review: dual-lane, supersedes: [skills/caveman, skills/anti-glaze-tone, skills/readability-gate, skills/writing-llm-md, holding/skills/writing-llm-md.md, sutra/layer2-operating-system/READABILITY-STANDARD.md], confidence: high, gaps: [deepseek lane SKIPPED (unfunded); ASCII-only bars replace the unicode bar, founder-reversible; HTML-by-doc-class (D16) parked; baseline allowlist for tracked .md deferred]}

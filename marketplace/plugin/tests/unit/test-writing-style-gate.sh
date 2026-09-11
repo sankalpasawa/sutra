@@ -131,6 +131,58 @@ blocked && ok "ask-to-run in pinned project -> block" || no "expected block in p
 D=$(make_env other "deploy" "Please run npm test on your side."); run "$D"
 blocked && no "ask-to-run blocked outside pinned" || ok "ask-to-run in fleet project -> advisory"; rm -rf "$D"
 
+echo "=== 2026-09-11 folds: phrasing variants ==="
+for t in "You'll need to run the migration yourself." "Run this on your end and paste the output."; do
+  D=$(make_env asawa-holding "deploy" "$t"); run "$D"
+  blocked && ok "ask-to-run variant -> block: $t" || no "expected block: $t"; rm -rf "$D"
+done
+for t in "$CLEAN Feel free to reach out." "$CLEAN If you have any questions, ping me." "$CLEAN Good luck with the rollout." "TL;DR: the fix is small." "In short, done." "Good point. The fix is small." "Spot on. Applied." "Sorry about that, fixed." "Understood. Applied." "Next, I'll explain the fix."; do
+  D=$(make_env other "fix the bug" "$t"); run "$D"
+  blocked && ok "variant -> block: $t" || no "expected block: $t"; rm -rf "$D"
+done
+for t in "The if you have any questions branch is dead code." "The command prints good luck with no newline." "I love this approach because it is O(1)." "Overall, the complexity is O(n log n)."; do
+  D=$(make_env other "fix the bug" "$t"); run "$D"
+  blocked && no "technical prose blocked (false positive): $t" || ok "technical prose -> pass: $t"; rm -rf "$D"
+done
+
+echo "=== 2026-09-11 folds: counting ==="
+Q61=$(python3 -c 'print("\n".join("\"quoted line %d of prose\"" % i for i in range(61)))')
+D=$(make_env other "report" "$Q61"); run "$D"
+blocked && ok "61 fully quoted lines still count -> block" || no "quoted lines uncounted"; rm -rf "$D"
+DASH61=$(python3 -c 'print("\n".join("-- note %d of prose that says something" % i for i in range(61)))')
+D=$(make_env other "report" "$DASH61"); run "$D"
+blocked && ok "61 dash-prefixed prose lines count -> block" || no "dash lines uncounted"; rm -rf "$D"
+LBL61=$(python3 -c 'print("\n".join("OS: " + ("padded field %d " % i) * 12 for i in range(61)))')
+D=$(make_env other "report" "$LBL61"); run "$D"
+blocked && ok "61 over-long label lines count -> block" || no "label padding uncounted"; rm -rf "$D"
+LBL45=$(python3 -c 'print("\n".join("OS: field %d" % i for i in range(45)))')
+D=$(make_env other "report" "$LBL45"); run "$D"
+last_row "$D" | grep -q '"lines":0' && ok "45 one-line fields are not counted" || no "fields counted: $(last_row "$D")"; rm -rf "$D"
+LBL110=$(python3 -c 'print("\n".join("OS: field %d" % i for i in range(110)))')
+D=$(make_env other "report" "$LBL110"); run "$D"
+blocked && ok "110 one-line fields: the 65 past the 45th count -> block" || no "field flood uncounted"; rm -rf "$D"
+D=$(make_env other "fix" "Scale: great question, 2 files"); run "$D"
+blocked && ok "phrase inside a field value -> block" || no "field value not judged"; rm -rf "$D"
+D=$(make_env other "fix" "OS: In short, continue phase 2"); run "$D"
+blocked && no "line-anchored row applied to a field value" || ok "anchored rows skip field values -> pass"; rm -rf "$D"
+D=$(make_env other "fix" "INPUT: you're absolutely right about that"); run "$D"
+blocked && no "INPUT paraphrase judged" || ok "INPUT field never judged -> pass"; rm -rf "$D"
+
+echo "=== 2026-09-11 folds: glyph ranges ==="
+D=$(make_env other "list" "■ first item, ● second"); run "$D"
+blocked && ok "geometric glyph in prose -> block" || no "geometric glyph passed"; rm -rf "$D"
+D=$(make_env other "list" "Progress ⣿⣿⣿⡀ 0.7"); run "$D"
+blocked && ok "braille glyph in prose -> block" || no "braille glyph passed"; rm -rf "$D"
+
+echo "=== 2026-09-11 folds: pipe-less GFM table ==="
+TT4='# | Task | Owner
+--|--|--
+1 | fix a | me
+2 | fix b | me
+3 | fix c | me'
+D=$(make_env other "plan" "$TT4"); run "$D"
+blocked && ok "pipe-less task table without Impact/Effort -> block" || no "pipe-less table passed"; rm -rf "$D"
+
 echo "=== guards ==="
 D=$(make_env other "x" "Great question!"); run "$D" true
 blocked && no "stop_hook_active still blocked" || ok "stop_hook_active -> pass (one redo max)"
