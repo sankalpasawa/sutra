@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow on Sutra Desktop — design v7 (task-agent, chat-light)</title>
+<!-- v7 (2026-09-11): task-agent, chat-light. Focus > Shadow = left task pane
+     (Delegate + task list + Shadow settings). Settings open full-screen: no
+     educational text, every control configurable, add-a-control via chat.
+     Design of record for PRD-MVP v2.0. Mirrors the live artifact
+     aeeefd60-9eee-4d14-8f68-a34e2ecd24fc (v5). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg:#fafaf9;--surface:#ffffff;--card:#ffffff;--line:#e2e0dd;--line-soft:#eeecea;
+  --ink:#1c1917;--muted:#6b6560;--faint:#a8a29e;--accent:#B8945F;--accent-glow:rgba(184,148,95,.12);
+  --alert:#8B4A6B;--decide:#8B6B4A;--done:#2D5A3E;--review:#4A6B8B;
+  --ground:#ECEAE6;--ease:cubic-bezier(.2,.7,.2,1);
+  --fd:'Playfair Display',Georgia,serif;--fb:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--fb);font-size:14px;line-height:1.5;margin:0;padding:40px 20px 90px}
+.masthead{max-width:1320px;margin:0 auto 6px}
+.eyebrow{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.h1{font-family:var(--fd);font-size:34px;font-weight:600;line-height:1.1;margin:6px 0 8px}
+.lede{color:var(--muted);font-size:14.5px;max-width:66ch} .lede b{color:var(--ink);font-weight:600}
+.delta{display:flex;flex-wrap:wrap;gap:10px;max-width:1320px;margin:18px auto 34px}
+.dchip{flex:1;min-width:220px;background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;padding:12px 15px}
+.dchip .n{font-family:var(--fd);font-size:12px;color:var(--accent);font-weight:600}
+.dchip .was{font-size:11.5px;color:var(--faint);text-decoration:line-through;margin:5px 0 1px}
+.dchip .now{font-size:13px;color:var(--ink);font-weight:600}
+.cap{max-width:1320px;margin:0 auto 12px;font-size:12.5px;color:var(--muted)} .cap b{color:var(--ink);font-weight:600}
+.tag{display:inline-block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;border-radius:99px;padding:1px 7px;margin-left:4px;font-weight:700}
+.tag.live{color:var(--done);background:rgba(45,90,62,.10);border:1px solid var(--done)}
+.tag.build{color:var(--alert);background:rgba(139,74,107,.08);border:1px solid var(--alert)}
+.try{display:inline-block;font-size:10px;letter-spacing:.04em;color:var(--decide);background:var(--accent-glow);border:1px solid var(--accent);border-radius:99px;padding:2px 9px;margin-left:4px;font-weight:700}
+.stage{max-width:1320px;margin:0 auto 46px;overflow-x:auto}
+.window{width:1300px;max-width:100%;height:660px;background:var(--bg);border:1px solid #d8d5d0;border-radius:14px;box-shadow:0 1px 2px rgba(28,25,23,.05),0 22px 54px -18px rgba(28,25,23,.22);overflow:hidden;display:flex;position:relative}
+.lights{position:absolute;top:14px;left:14px;display:flex;gap:7px;z-index:20} .lights i{width:11px;height:11px;border-radius:50%;display:block;background:#d9d6d1}
+.rail{width:196px;background:var(--surface);border-right:1px solid var(--line-soft);padding:44px 10px 10px;display:flex;flex-direction:column;flex:none}
+.brand{font-family:var(--fd);font-size:15px;margin:0 0 14px 8px}
+.item{padding:8px 10px;border-radius:9px;font-size:13px;color:var(--muted);margin-bottom:2px;display:flex;gap:9px;align-items:center}
+.item.on{background:var(--bg);color:var(--ink);font-weight:600;border:1px solid var(--line-soft)}
+.item .g{width:14px;text-align:center;color:var(--faint)} .item.on .g{color:var(--accent)}
+.item .badge{margin-left:auto;font-size:10px;background:var(--decide);color:#fff;border-radius:99px;padding:1px 6px;font-weight:700}
+.item.sub2{margin-left:20px;font-size:12px;padding:6px 10px}
+.identity{margin-top:auto;border-top:1px solid var(--line-soft);padding:10px 8px 4px;font-size:11px;color:var(--muted)}
+.identity b{color:var(--ink);font-weight:600;display:block;font-size:12px} .identity .tele{margin-top:3px;color:var(--faint);font-size:10.5px}
+.pane{flex:1;overflow:auto;padding:44px 28px 20px;min-width:0;position:relative}
+.greet{font-family:var(--fd);font-size:27px;font-weight:500}
+.subl{color:var(--muted);font-size:13.5px;margin:4px 0 20px} .subl b{color:var(--decide);font-weight:600}
+.crumb{font-size:11px;color:var(--muted);margin-bottom:12px} .crumb b{color:var(--accent)}
+.stack{display:flex;flex-direction:column;gap:10px;max-width:660px}
+.dcard{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;padding:12px 15px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
+.dcard .top{display:flex;align-items:center;gap:10px;font-size:14px} .dcard .top .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dcard .top b{font-weight:600} .dcard small{display:block;color:var(--faint);font-size:11.5px;margin:3px 0 0 18px}
+.dyn{display:flex;gap:8px;margin:9px 0 0 18px;align-items:center;flex-wrap:wrap}
+.dyn .act{font-size:12px;font-weight:700;color:var(--decide);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:4px 11px;cursor:default}
+.dyn .act.q{font-weight:400;color:var(--muted);border-color:transparent}
+.mtag{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--accent-glow);border-radius:99px;padding:1px 7px;font-weight:700}
+.srcm{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border:1px solid var(--line-soft);border-radius:99px;padding:1px 7px}
+.quiet{margin-top:24px;font-size:12px;color:var(--faint);max-width:640px}
+.shworkspace{display:flex;height:560px;max-width:1010px;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;overflow:hidden;position:relative}
+.tasknav{width:238px;flex:none;border-right:1px solid var(--line-soft);background:linear-gradient(180deg,#fcfbf9,#fff);display:flex;flex-direction:column;padding:13px 11px}
+.newtask{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--fb);font-size:12.5px;font-weight:700;color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 12px;cursor:pointer;box-shadow:0 1px 2px rgba(28,25,23,.14),0 6px 16px -8px rgba(184,148,95,.7);transition:transform .16s var(--ease),box-shadow .16s var(--ease),filter .16s}
+.newtask .p{font-size:16px;line-height:1;margin-top:-2px;transition:transform .28s var(--ease)}
+.newtask:hover{transform:translateY(-1px);filter:saturate(1.06)} .newtask:hover .p{transform:rotate(90deg)}
+.newtask:focus-visible{outline:2px solid var(--decide);outline-offset:2px}
+.tnlabel{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:17px 6px 7px}
+.tnlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:2px;min-height:0}
+.tnrow{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .16s,color .16s,transform .16s var(--ease)}
+.tnrow:hover{background:#f7f4ef;transform:translateX(2px)}
+.tnrow.on{background:var(--bg);color:var(--ink);font-weight:600;border:1px solid var(--line-soft)}
+.tnrow .sd{width:8px;height:8px;border-radius:50%;flex:none}
+.tnrow .sd.run{background:var(--done)} .tnrow .sd.app{background:var(--decide)} .tnrow .sd.que{background:var(--faint)} .tnrow .sd.done{background:var(--faint);opacity:.45}
+.tnrow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tnrow .tnst{font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);flex:none}
+.tnrow.on .tnst{color:var(--decide)} .tnrow .tnst.fail{color:var(--alert)}
+.tnrow.pulse .sd{animation:tabpulse 1.7s ease-out 2}
+@keyframes tabpulse{0%{box-shadow:0 0 0 0 rgba(45,90,62,.5)}70%{box-shadow:0 0 0 6px rgba(45,90,62,0)}100%{box-shadow:0 0 0 0 rgba(45,90,62,0)}}
+.tnfoot{margin-top:8px;border-top:1px solid var(--line-soft);padding-top:7px}
+.tnset{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);padding:8px 10px;border-radius:9px;cursor:pointer;transition:background .16s,color .16s}
+.tnset:hover{background:var(--bg);color:var(--ink)} .tnset .gr{width:15px;text-align:center;color:var(--accent);font-size:13px;transition:transform .5s var(--ease)}
+.tnset:hover .gr{transform:rotate(90deg)}
+.chatcol{flex:1;display:flex;flex-direction:column;min-width:0}
+.chatbar{display:flex;align-items:center;gap:8px;padding:11px 15px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted);background:linear-gradient(#fff,#fdfcfb)}
+.chatbar .nm{font-family:var(--fd);font-size:14px;font-weight:600;color:var(--ink)} .chatbar .nm b{color:var(--accent);margin-right:4px}
+.chatbar .st{margin-left:auto;font-size:9px;letter-spacing:.05em;text-transform:uppercase}
+.smsgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:11px;font-size:12.5px;line-height:1.5}
+.sm{max-width:86%;padding:9px 12px;border-radius:11px}
+.sm.s{align-self:flex-start;background:#faf7f1;border-left:2px solid var(--accent);border-radius:0 11px 11px 11px}
+.sm.u{align-self:flex-end;background:#f1efec;border:1px solid var(--line-soft);border-radius:11px 11px 3px 11px}
+.stc{font-size:9px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:2px 8px;font-weight:700}
+.stc.app{color:var(--decide);background:rgba(139,107,74,.12)}
+.tcard{align-self:stretch;border:1px solid var(--accent);border-radius:12px;background:#fdfbf7;padding:12px 14px;box-shadow:0 1px 2px rgba(28,25,23,.05)}
+.tcard .hd{display:flex;align-items:center;gap:9px} .tcard .hd .mtag{font-size:10px}
+.tcard .hd b{font-weight:600} .tcard .hd .stc{margin-left:auto}
+.tcard .r{display:flex;gap:8px;margin-top:6px;font-size:11.5px} .tcard .r span:first-child{color:var(--faint);width:82px;flex:none} .tcard .r span:last-child{color:var(--ink)} .tcard .r b{color:var(--ink);font-weight:600}
+.ctl{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.ctl .act{font-size:11.5px;font-weight:700;color:var(--decide);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:4px 12px;cursor:pointer;transition:background .15s,transform .15s var(--ease)}
+.ctl .act:hover{background:#f2ede4;transform:translateY(-1px)} .ctl .q{font-weight:400;color:var(--muted);border-color:transparent}
+.floors{font-size:10.5px;color:var(--faint);margin-top:7px} .floors b{color:var(--alert);font-weight:600}
+.scomp{border-top:1px solid var(--line-soft);padding:11px 14px;font-size:12.5px;color:var(--faint);display:flex;gap:9px;align-items:center;background:var(--card)}
+.scomp .ph{flex:1} .mic{width:22px;height:22px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none}
+.shset{position:absolute;inset:0;background:var(--card);z-index:44;display:flex;flex-direction:column;opacity:0;visibility:hidden;transform:scale(.99) translateY(10px);transform-origin:18% 100%;transition:opacity .28s ease,transform .32s var(--ease),visibility 0s .32s}
+.shset.open{opacity:1;visibility:visible;transform:none;transition:opacity .3s ease,transform .36s var(--ease)}
+.shdock{position:relative;inset:auto;opacity:1;visibility:visible;transform:none;height:680px;border:1px solid var(--line-soft);border-radius:12px;max-width:760px;margin:0 auto;transition:none}
+.sshead{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--line-soft);background:#fff;flex:none}
+.ssback{width:30px;height:30px;border-radius:9px;border:1px solid var(--line-soft);background:var(--card);color:var(--muted);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,transform .15s var(--ease)}
+.ssback:hover{background:var(--bg);transform:translateX(-2px)} .ssback:focus-visible{outline:2px solid var(--decide);outline-offset:2px}
+.ssmark{width:32px;height:32px;border-radius:50%;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative;flex:none}
+.ssmark b{font-family:var(--fd);color:var(--accent);font-size:16px;font-weight:600} .ssmark:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.5}
+.sstitle{font-family:var(--fd);font-size:19px;font-weight:600}
+.ssbody{flex:1;overflow:auto;background:#fff;display:flex;justify-content:center;padding:6px 0 30px}
+.sswrap{width:100%;max-width:600px;padding:0 30px}
+.ssec{padding:18px 0;border-top:1px solid var(--line-soft)}
+.ssec:first-of-type{border-top:0;padding-top:20px}
+.shset.open .ssec{opacity:0;transform:translateY(12px);animation:secin .5s var(--ease) forwards}
+.shset.open .ssec:nth-of-type(1){animation-delay:.05s}.shset.open .ssec:nth-of-type(2){animation-delay:.1s}
+.shset.open .ssec:nth-of-type(3){animation-delay:.15s}.shset.open .ssec:nth-of-type(4){animation-delay:.2s}
+.shset.open .ssec:nth-of-type(5){animation-delay:.25s}
+@keyframes secin{to{opacity:1;transform:none}}
+.ssh{font-family:var(--fd);font-size:16px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.srow{display:flex;align-items:center;gap:14px;padding:11px 0;font-size:14px;border-top:1px solid var(--line-soft)}
+.srow:first-of-type{border-top:0} .srow .k{color:var(--muted);flex:1} .srow .v{color:var(--ink);font-weight:600}
+.ev{color:var(--ink);font-weight:600;border-bottom:1px dashed var(--faint);padding:1px 4px;border-radius:4px;cursor:text;outline:none;font-variant-numeric:tabular-nums;transition:background .15s,border-color .15s}
+.ev:hover{background:var(--accent-glow)} .ev:focus{background:#fff;border-bottom:1.5px solid var(--accent)}
+.auto{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-glow);border:1px solid rgba(184,148,95,.4);border-radius:99px;padding:1px 6px;flex:none}
+.seg{display:flex;gap:5px;background:var(--bg);border:1px solid var(--line-soft);border-radius:11px;padding:5px}
+.seg button{flex:1;font-family:var(--fb);font-size:12px;font-weight:600;color:var(--muted);background:transparent;border:0;border-radius:8px;padding:9px 4px;cursor:pointer;transition:color .2s,background .25s var(--ease),box-shadow .25s var(--ease)}
+.seg button .lv{display:block;font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:3px;transition:color .2s}
+.seg button.on{color:#fff;background:var(--accent);box-shadow:0 2px 8px -2px rgba(184,148,95,.8)} .seg button.on .lv{color:rgba(255,255,255,.82)}
+.seg button:focus-visible{outline:2px solid var(--decide);outline-offset:2px}
+.tog{width:38px;height:22px;border-radius:99px;background:var(--done);position:relative;flex:none;cursor:pointer;transition:background .25s var(--ease)}
+.tog:after{content:"";position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.22);transition:right .22s var(--ease),left .22s var(--ease)}
+.tog.off{background:var(--line)} .tog.off:after{right:auto;left:3px} .tog:focus-visible{outline:2px solid var(--decide);outline-offset:2px}
+.step{display:flex;align-items:center;border:1px solid var(--line-soft);border-radius:9px;overflow:hidden}
+.step button{width:30px;height:30px;border:0;background:var(--card);color:var(--muted);font-size:16px;cursor:pointer;transition:background .15s} .step button:hover{background:var(--bg)} .step button:focus-visible{outline:2px solid var(--decide);outline-offset:-2px}
+.step .val{min-width:34px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;border-left:1px solid var(--line-soft);border-right:1px solid var(--line-soft);height:30px;line-height:30px}
+.floorbar{display:flex;flex-wrap:wrap;gap:8px}
+.floorbar span{font-size:11.5px;color:var(--ink);background:var(--bg);border:1px solid var(--line-soft);border-radius:99px;padding:4px 11px;display:flex;align-items:center;gap:6px} .floorbar .lk{color:var(--alert)}
+.rule{display:flex;gap:11px;align-items:center;padding:11px 0;border-top:1px solid var(--line-soft)}
+.rule:first-of-type{border-top:0}
+.rscope{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--review);background:rgba(74,107,139,.09);border:1px solid var(--review);border-radius:99px;padding:2px 8px;flex:none;cursor:pointer}
+.rscope.glob{color:var(--faint);background:var(--bg);border-color:var(--line-soft)}
+.rtext{flex:1;font-size:13.5px;color:var(--ink);border-bottom:1px dashed transparent;padding:2px 3px;border-radius:4px;outline:none;cursor:text;transition:background .15s,border-color .15s}
+.rtext:hover{background:var(--accent-glow);border-bottom-color:var(--faint)} .rtext:focus{background:#fff;border-bottom:1.5px solid var(--accent)}
+.rx{color:var(--faint);font-size:16px;cursor:pointer;flex:none;line-height:1;padding:2px 4px;border-radius:5px;transition:background .15s,color .15s} .rx:hover{background:rgba(139,74,107,.1);color:var(--alert)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);border:1px solid var(--line-soft);background:var(--bg);border-radius:99px;padding:5px 11px}
+.chip .cx{color:var(--faint);cursor:pointer;font-size:13px;line-height:1} .chip .cx:hover{color:var(--alert)}
+.chipadd{font-size:11.5px;font-weight:700;color:var(--decide);border:1px dashed var(--faint);border-radius:99px;padding:5px 11px;cursor:pointer;background:transparent;transition:background .15s,border-color .15s} .chipadd:hover{background:var(--accent-glow);border-color:var(--accent)}
+.addset{margin-top:6px}
+.addbar{display:flex;gap:9px;align-items:center;background:var(--bg);border:1px solid var(--line-soft);border-radius:11px;padding:8px 10px 8px 13px;transition:border-color .18s,background .18s}
+.addbar:focus-within{border-color:var(--accent);background:#fff}
+.addbar .sp{color:var(--accent);flex:none}
+.addbar input{flex:1;border:0;background:transparent;font-family:var(--fb);font-size:13px;color:var(--ink);outline:none}
+.addbar input::placeholder{color:var(--faint)}
+.addbar .go{width:28px;height:28px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;flex:none;transition:transform .15s var(--ease),filter .15s} .addbar .go:hover{transform:translateY(-1px);filter:saturate(1.1)} .addbar .go:focus-visible{outline:2px solid var(--decide);outline-offset:2px}
+.srow.added{animation:rowin .4s var(--ease)} @keyframes rowin{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.srow .newtag{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--done);background:rgba(45,90,62,.1);border-radius:99px;padding:1px 6px;flex:none}
+.scard{position:absolute;right:26px;bottom:78px;width:320px;background:var(--card);border:1px solid var(--line);border-radius:13px;box-shadow:0 18px 44px rgba(28,25,23,.18);display:flex;flex-direction:column;z-index:31;overflow:hidden;height:408px}
+.chathead{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
+.chathead .nm{font-family:var(--fd);font-size:15px;font-weight:600;color:var(--ink)} .chathead .nm b{color:var(--accent);margin-right:5px}
+.chathead .home{margin-left:auto;color:var(--decide);font-weight:600;font-size:11px}
+.sees{font-size:10.5px;color:var(--muted);padding:8px 13px;border-bottom:1px solid var(--line-soft);background:var(--bg)} .sees b{color:var(--ink)}
+.fab{position:absolute;right:26px;bottom:24px;display:flex;align-items:flex-end;gap:10px;z-index:30}
+.sdot{width:42px;height:42px;border-radius:50%;background:var(--card);border:1px solid var(--line);box-shadow:0 4px 14px rgba(28,25,23,.16);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s}
+.sdot:hover{transform:scale(1.06)} .sdot b{font-family:var(--fd);font-size:20px;font-weight:600;color:var(--accent);position:relative;z-index:2}
+.sdot:after{content:"";position:absolute;inset:3px;border-radius:50%;border:1.5px solid var(--accent);opacity:.5}
+.sdot .n{position:absolute;top:-4px;right:-4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;z-index:3}
+.impl{max-width:1320px;margin:0 auto;background:var(--card);border:1px solid var(--line-soft);border-radius:12px;overflow:auto}
+.impl table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:640px}
+.impl th,.impl td{padding:9px 15px;border-top:1px solid var(--line-soft);text-align:left;vertical-align:top} .impl th{background:var(--bg);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);border-top:0}
+.impl td b{font-weight:600}
+.foot{max-width:1320px;margin:26px auto 0;font-size:11.5px;color:var(--faint)}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}.shset .ssec{opacity:1;transform:none}}
+@media (max-width:640px){.h1{font-size:26px}body{padding:28px 16px 70px}}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="eyebrow">Sutra Desktop &middot; Shadow &middot; design v7</div>
+  <div class="h1">Task in, agent out.</div>
+  <p class="lede">Focus &rsaquo; Shadow is chat-light with a left task pane. <b>Shadow settings</b> open full-screen &mdash; no explainer copy, every control configurable, and a chat row to <b>add your own</b>. Design of record for PRD-MVP v2.0.</p>
+</div>
+
+<div class="delta">
+  <div class="dchip"><div class="n">Settings copy</div><div class="was">descriptions everywhere</div><div class="now">Labels + controls only</div></div>
+  <div class="dchip"><div class="n">Controls</div><div class="was">fixed</div><div class="now">All configurable &mdash; edit, add, remove</div></div>
+  <div class="dchip"><div class="n">Add a control</div><div class="was">not possible</div><div class="now">A chat row: tell Shadow, it adds it</div></div>
+  <div class="dchip"><div class="n">Start button</div><div class="was">"New task"</div><div class="now">"Delegate"</div></div>
+</div>
+
+<p class="cap"><b>1 &middot; Now &mdash; only what needs you.</b> <span class="tag live">unchanged from v6</span></p>
+<div class="stage"><div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail"><div class="brand">Sutra</div>
+    <div class="item on"><span class="g">&#9673;</span>Now <span class="badge">2</span></div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div><div class="item"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div><div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp &mdash; CEO</b><div class="tele">6 sessions &middot; ctx 62% &middot; $9 today</div></div></nav>
+  <section class="pane">
+    <div class="greet">Good morning, Sankalp.</div>
+    <div class="subl"><b>Two things need you.</b> Everything else is handled.</div>
+    <div class="stack">
+      <div class="dcard"><div class="top"><span class="dot" style="background:var(--decide)"></span><b>EMI auto-fix hit a floor &mdash; approve the push to paisa?</b><span class="mtag" style="margin-left:auto">Shadow</span></div><small>tests green &middot; PR ready &middot; D52 holds the push for you &middot; 2 min ago</small>
+        <div class="dyn"><span class="act">Review &amp; approve</span><span class="act q">open the task</span></div></div>
+      <div class="dcard"><div class="top"><span class="dot" style="background:var(--review)"></span><b>Charter A1 is waiting on your ratification</b><span class="srcm" style="margin-left:auto">Org</span></div><small>5-min read &middot; blocks the Shadow build</small>
+        <div class="dyn"><span class="act">Read it</span><span class="act q">later</span></div></div>
+    </div>
+    <div class="quiet">Opening a card retires it. Now surfaces only what needs you.</div>
+  </section>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
+</div></div>
+
+<p class="cap"><b>2 &middot; Focus &rsaquo; Shadow &mdash; live.</b> <span class="tag build">the v7 change</span> <span class="try">open "Shadow settings" or the S-mark; edit, remove, and add a control</span></p>
+<div class="stage"><div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail"><div class="brand">Sutra</div>
+    <div class="item"><span class="g">&#9673;</span>Now <span class="badge">2</span></div>
+    <div class="item on"><span class="g">&#9678;</span>Focus</div>
+    <div class="item sub2 on"><span class="g">&#9673;</span>Shadow</div>
+    <div class="item sub2"><span class="g">&#9678;</span>Balance</div><div class="item sub2"><span class="g">&#9650;</span>Optimus</div>
+    <div class="item"><span class="g">&#9998;</span>Chats</div><div class="item"><span class="g">&#9638;</span>Org</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp &mdash; CEO</b><div class="tele">6 sessions &middot; ctx 62% &middot; $9 today</div></div></nav>
+  <section class="pane">
+    <div class="crumb">Focus &rsaquo; <b>Shadow</b></div>
+    <div class="shworkspace">
+      <aside class="tasknav">
+        <button class="newtask"><span class="p">+</span> Delegate</button>
+        <div class="tnlabel">Shadow is working on</div>
+        <div class="tnlist">
+          <div class="tnrow on"><span class="sd app"></span><span class="nm">EMI auto-fix</span><span class="tnst">Ready</span></div>
+          <div class="tnrow pulse"><span class="sd run"></span><span class="nm">watch: sutra-ui build</span><span class="tnst">Running</span></div>
+          <div class="tnrow"><span class="sd run"></span><span class="nm">research: pricing</span><span class="tnst">Running</span></div>
+          <div class="tnrow"><span class="sd que"></span><span class="nm">de-brand copy sweep</span><span class="tnst">Queued</span></div>
+          <div class="tnrow"><span class="sd done"></span><span class="nm">stability pass</span><span class="tnst fail">Failed</span></div>
+        </div>
+        <div class="tnfoot">
+          <div class="tnset" data-open="shset-live" tabindex="0" role="button" aria-label="Open Shadow settings"><span class="gr">&#9881;</span><span>Shadow settings</span></div>
+        </div>
+      </aside>
+      <div class="chatcol">
+        <div class="chatbar"><span class="nm"><b>S</b>EMI auto-fix</span><span class="st stc app">Ready</span></div>
+        <div class="smsgs">
+          <div class="sm u">Fix the rounding differences in the EMI checks in paisa and ship it.</div>
+          <div class="sm s">That&rsquo;s a <b>fix</b>. Here&rsquo;s the task &mdash; tell me anything and it updates before you start.</div>
+          <div class="tcard">
+            <div class="hd"><span class="mtag">EMI auto-fix</span><b>fix the EMI rounding</b><span class="stc app">Ready</span></div>
+            <div class="r"><span>acts in</span><span>a new chat, <b>#paisa-emi</b>, in the paisa session</span></div>
+            <div class="r"><span>done when</span><span>the fix runs before every EMI check &amp; a tested PR is open</span></div>
+            <div class="ctl"><span class="act">Start the task</span><span class="act q">&hellip;or keep telling me</span></div>
+            <div class="floors">floors it can&rsquo;t cross on its own: <b>the push</b> (D52) &middot; anything outside paisa (D33) &middot; external sends</div>
+          </div>
+        </div>
+        <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Say anything &mdash; it starts or continues a task&hellip;</span></div>
+      </div>
+      <div class="shset" id="shset-live" role="dialog" aria-label="Shadow settings" aria-modal="true">
+        <div class="sshead">
+          <button class="ssback" data-close aria-label="Close settings">&#8592;</button>
+          <div class="ssmark"><b>S</b></div>
+          <div class="sstitle">Shadow</div>
+        </div>
+        <div class="ssbody"><div class="sswrap">
+          <div class="ssec">
+            <div class="ssh">Autonomy</div>
+            <div class="seg" role="tablist">
+              <button role="tab"><span class="lv">L0</span>Watch</button>
+              <button role="tab"><span class="lv">L1</span>Suggest</button>
+              <button role="tab"><span class="lv">L2</span>Draft</button>
+              <button class="on" role="tab" aria-selected="true"><span class="lv">L3</span>Act</button>
+            </div>
+            <div class="srow"><span class="k">Ask me before the very top tier</span><span class="tog" data-toggle role="switch" aria-checked="true" tabindex="0"></span></div>
+            <div class="srow"><span class="floorbar"><span><span class="lk">&#128274;</span>the push</span><span><span class="lk">&#128274;</span>client repos</span><span><span class="lk">&#128274;</span>external sends</span></span></div>
+          </div>
+          <div class="ssec">
+            <div class="ssh">Memory</div>
+            <div class="rule"><span class="rscope glob">global</span><span class="rtext" contenteditable="true">Answer with the outcome in the first line.</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+            <div class="rule"><span class="rscope">paisa</span><span class="rtext" contenteditable="true">Run the EMI check before commits.</span><span class="auto">auto</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+            <div class="rule"><span class="rscope">dayflow</span><span class="rtext" contenteditable="true">Never touch the release branch without me.</span><span class="auto">auto</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+          </div>
+          <div class="ssec">
+            <div class="ssh">Tasks</div>
+            <div class="srow"><span class="k">Running at once</span><span class="step" data-step data-min="1" data-max="12"><button data-dec aria-label="fewer">&minus;</button><span class="val">5</span><button data-inc aria-label="more">+</button></span></div>
+            <div class="srow"><span class="k">Budget per task</span><span><span class="ev" contenteditable="true">200k</span> tokens<span class="auto" style="margin-left:8px">auto</span></span></div>
+            <div class="srow"><span class="k" style="flex:none">Delegate offers</span><span class="chips" data-chips>
+              <span class="chip">feature<span class="cx" data-cx>&times;</span></span>
+              <span class="chip">fix<span class="cx" data-cx>&times;</span></span>
+              <span class="chip">research<span class="cx" data-cx>&times;</span></span>
+              <span class="chip">watch<span class="cx" data-cx>&times;</span></span>
+              <button class="chipadd" data-chipadd>+ add</button>
+            </span></div>
+          </div>
+          <div class="ssec">
+            <div class="ssh">Presence</div>
+            <div class="srow"><span class="k">Corner card on every screen</span><span class="tog" data-toggle role="switch" aria-checked="true" tabindex="0"></span></div>
+            <div class="srow"><span class="k">Quiet hours</span><span><span class="ev" contenteditable="true">9pm</span> to <span class="ev" contenteditable="true">8am</span><span class="auto" style="margin-left:8px">auto</span></span></div>
+            <div class="srow"><span class="k">Nudges per hour</span><span class="step" data-step data-min="0" data-max="10"><button data-dec aria-label="fewer">&minus;</button><span class="val">3</span><button data-inc aria-label="more">+</button></span></div>
+            <div class="srow"><span class="k">Hide for this app</span><span class="tog off" data-toggle role="switch" aria-checked="false" tabindex="0"></span></div>
+          </div>
+          <div class="ssec addset" data-addhost>
+            <div class="ssh">Add a control</div>
+            <div class="addbar">
+              <span class="sp">&#9679;</span>
+              <input type="text" id="addctl-live" placeholder="Tell Shadow what to add — e.g. Pause on weekends" aria-label="add a control">
+              <button class="go" data-addsetting aria-label="add">&rarr;</button>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+  <div class="fab"><div class="sdot" data-open="shset-live" tabindex="0" role="button" aria-label="Open Shadow settings"><b>S</b><span class="n">2</span></div></div>
+</div></div>
+
+<p class="cap"><b>3 &middot; The full surface, at rest.</b> <span class="tag build">to build</span></p>
+<div class="stage">
+  <div class="shset shdock">
+    <div class="sshead">
+      <button class="ssback" aria-label="Close settings">&#8592;</button>
+      <div class="ssmark"><b>S</b></div>
+      <div class="sstitle">Shadow</div>
+    </div>
+    <div class="ssbody"><div class="sswrap">
+      <div class="ssec">
+        <div class="ssh">Autonomy</div>
+        <div class="seg" role="tablist">
+          <button role="tab"><span class="lv">L0</span>Watch</button>
+          <button role="tab"><span class="lv">L1</span>Suggest</button>
+          <button role="tab"><span class="lv">L2</span>Draft</button>
+          <button class="on" role="tab" aria-selected="true"><span class="lv">L3</span>Act</button>
+        </div>
+        <div class="srow"><span class="k">Ask me before the very top tier</span><span class="tog" data-toggle role="switch" aria-checked="true" tabindex="0"></span></div>
+        <div class="srow"><span class="floorbar"><span><span class="lk">&#128274;</span>the push</span><span><span class="lk">&#128274;</span>client repos</span><span><span class="lk">&#128274;</span>external sends</span></span></div>
+      </div>
+      <div class="ssec">
+        <div class="ssh">Memory</div>
+        <div class="rule"><span class="rscope glob">global</span><span class="rtext" contenteditable="true">Answer with the outcome in the first line.</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+        <div class="rule"><span class="rscope">paisa</span><span class="rtext" contenteditable="true">Run the EMI check before commits.</span><span class="auto">auto</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+        <div class="rule"><span class="rscope">dayflow</span><span class="rtext" contenteditable="true">Never touch the release branch without me.</span><span class="auto">auto</span><span class="rx" data-rx aria-label="remove">&times;</span></div>
+      </div>
+      <div class="ssec">
+        <div class="ssh">Tasks</div>
+        <div class="srow"><span class="k">Running at once</span><span class="step" data-step data-min="1" data-max="12"><button data-dec aria-label="fewer">&minus;</button><span class="val">5</span><button data-inc aria-label="more">+</button></span></div>
+        <div class="srow"><span class="k">Budget per task</span><span><span class="ev" contenteditable="true">200k</span> tokens<span class="auto" style="margin-left:8px">auto</span></span></div>
+        <div class="srow"><span class="k" style="flex:none">Delegate offers</span><span class="chips" data-chips>
+          <span class="chip">feature<span class="cx" data-cx>&times;</span></span>
+          <span class="chip">fix<span class="cx" data-cx>&times;</span></span>
+          <span class="chip">research<span class="cx" data-cx>&times;</span></span>
+          <span class="chip">watch<span class="cx" data-cx>&times;</span></span>
+          <button class="chipadd" data-chipadd>+ add</button>
+        </span></div>
+      </div>
+      <div class="ssec">
+        <div class="ssh">Presence</div>
+        <div class="srow"><span class="k">Corner card on every screen</span><span class="tog" data-toggle role="switch" aria-checked="true" tabindex="0"></span></div>
+        <div class="srow"><span class="k">Quiet hours</span><span><span class="ev" contenteditable="true">9pm</span> to <span class="ev" contenteditable="true">8am</span><span class="auto" style="margin-left:8px">auto</span></span></div>
+        <div class="srow"><span class="k">Nudges per hour</span><span class="step" data-step data-min="0" data-max="10"><button data-dec aria-label="fewer">&minus;</button><span class="val">3</span><button data-inc aria-label="more">+</button></span></div>
+        <div class="srow"><span class="k">Hide for this app</span><span class="tog off" data-toggle role="switch" aria-checked="false" tabindex="0"></span></div>
+      </div>
+      <div class="ssec addset" data-addhost>
+        <div class="ssh">Add a control</div>
+        <div class="addbar">
+          <span class="sp">&#9679;</span>
+          <input type="text" id="addctl-dock" placeholder="Tell Shadow what to add — e.g. Pause on weekends" aria-label="add a control">
+          <button class="go" data-addsetting aria-label="add">&rarr;</button>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<p class="cap"><b>4 &middot; Anywhere else &mdash; the corner card is the same thread.</b> <span class="tag live">unchanged from v6</span></p>
+<div class="stage"><div class="window" style="height:560px">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <nav class="rail"><div class="brand">Sutra</div>
+    <div class="item"><span class="g">&#9673;</span>Now <span class="badge">2</span></div>
+    <div class="item"><span class="g">&#9678;</span>Focus</div><div class="item on"><span class="g">&#9998;</span>Chats</div>
+    <div class="item"><span class="g">&#9638;</span>Org</div><div class="item"><span class="g">&#9672;</span>Team Sutra</div>
+    <div class="item"><span class="g">&#9881;</span>Settings</div>
+    <div class="identity"><b>Sankalp &mdash; CEO</b><div class="tele">6 sessions &middot; ctx 62% &middot; $9 today</div></div></nav>
+  <section class="pane">
+    <div class="greet" style="font-size:20px">Chats</div>
+    <div class="subl" style="margin-top:-2px">you&rsquo;re working here &mdash; Shadow stays in the corner</div>
+  </section>
+  <div class="scard">
+    <div class="chathead"><span class="nm"><b>S</b>Shadow</span><span class="home">Open home &#8599;</span></div>
+    <div class="sees">I can see: <b>this app</b> &middot; your sessions &middot; your tasks &middot; what you teach me. Not your eyes.</div>
+    <div class="smsgs" style="padding:13px">
+      <div class="sm s">I&rsquo;m Shadow. Hand me a task and I&rsquo;ll take it &mdash; start a chat, drive it, come back when I need you.</div>
+      <div class="sm s">The sutra-ui watch task nudged: build 11 min in.
+        <div class="ctl" style="margin-top:6px"><span class="act">open the task</span><span class="act q">leave it</span></div>
+      </div>
+    </div>
+    <div class="scomp"><span class="mic">&#9679;</span><span class="ph">Hand Shadow a task&hellip;</span></div>
+  </div>
+  <div class="fab"><div class="sdot"><b>S</b><span class="n">2</span></div></div>
+</div></div>
+
+<p class="cap"><b>What is incremental, and what it rests on.</b></p>
+<div class="impl"><table>
+  <tr><th>element</th><th>status</th><th>contract / proof</th></tr>
+  <tr><td>Now, corner card, one-mind-one-agent-per-task</td><td><span class="tag live">v6 live</span></td><td>PRs #136-#143 &middot; ARCHITECTURE.md &sect;8</td></tr>
+  <tr><td><b>Left task pane &mdash; Delegate, task list, no plane</b></td><td><span class="tag build">v7 to build</span></td><td>PRD-MVP v2.0 &sect;6</td></tr>
+  <tr><td><b>Full-screen settings: no explainer copy, every control configurable</b></td><td><span class="tag build">v7 to build</span></td><td>PRD-MVP v2.0 &sect;7</td></tr>
+  <tr><td><b>Add a control via chat inside settings</b></td><td><span class="tag build">v7 to build</span></td><td>PRD-MVP v2.0 &sect;7 &middot; dynamic chrome</td></tr>
+  <tr><td><b>Editable memory rules, editable Delegate shapes, editable values</b></td><td><span class="tag build">v7 to build</span></td><td>PRD-MVP v2.0 &sect;8</td></tr>
+  <tr><td>Task-card supervision; watch as a task type; no standing surveillance</td><td><span class="tag build">v7 to build</span></td><td>PRD-MVP v2.0 &sect;3/&sect;9</td></tr>
+</table></div>
+
+<p class="foot">Shadow design v7 &middot; incremental on final v6 (commit aaf91e0) &middot; settings: no educational text, every control editable/removable/addable, add-a-control via chat &middot; section 2 is interactive.</p>
+
+<script>
+(function(){
+  function openSet(id){ var el=document.getElementById(id); if(!el) return; el.classList.add('open'); var b=el.querySelector('.ssback'); if(b) b.focus(); }
+  function closeSet(el){ if(el) el.classList.remove('open'); }
+  document.querySelectorAll('[data-open]').forEach(function(t){
+    function go(e){ e.preventDefault(); openSet(t.getAttribute('data-open')); }
+    t.addEventListener('click', go);
+    t.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' ') go(e); });
+  });
+  document.querySelectorAll('[data-close]').forEach(function(b){ b.addEventListener('click', function(){ closeSet(b.closest('.shset')); }); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ document.querySelectorAll('.shset.open').forEach(closeSet); } });
+  function wireToggle(t){ function flip(){ var off=t.classList.toggle('off'); t.setAttribute('aria-checked', off?'false':'true'); } t.addEventListener('click', flip); t.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); flip(); } }); }
+  document.querySelectorAll('[data-toggle]').forEach(wireToggle);
+  document.querySelectorAll('.seg').forEach(function(seg){
+    seg.querySelectorAll('button').forEach(function(btn){
+      btn.addEventListener('click', function(){ seg.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); b.removeAttribute('aria-selected'); }); btn.classList.add('on'); btn.setAttribute('aria-selected','true'); });
+    });
+  });
+  document.querySelectorAll('[data-step]').forEach(function(s){
+    var val=s.querySelector('.val'), min=+s.getAttribute('data-min'), max=+s.getAttribute('data-max');
+    function set(n){ n=Math.max(min,Math.min(max,n)); val.textContent=n; }
+    s.querySelector('[data-dec]').addEventListener('click', function(){ set((+val.textContent)-1); });
+    s.querySelector('[data-inc]').addEventListener('click', function(){ set((+val.textContent)+1); });
+  });
+  function wireRx(x){ x.addEventListener('click', function(){ var r=x.closest('.rule'); r.style.transition='opacity .18s, transform .18s'; r.style.opacity='0'; r.style.transform='translateX(8px)'; setTimeout(function(){ r.remove(); }, 180); }); }
+  document.querySelectorAll('[data-rx]').forEach(wireRx);
+  function wireCx(x){ x.addEventListener('click', function(){ x.closest('.chip').remove(); }); }
+  document.querySelectorAll('[data-cx]').forEach(wireCx);
+  document.querySelectorAll('[data-chipadd]').forEach(function(a){
+    a.addEventListener('click', function(){
+      var chip=document.createElement('span'); chip.className='chip';
+      chip.innerHTML='<span contenteditable="true">new</span><span class="cx" data-cx>×</span>';
+      a.parentNode.insertBefore(chip, a);
+      wireCx(chip.querySelector('[data-cx]'));
+      var e=chip.querySelector('[contenteditable]'); e.focus();
+      if(document.getSelection) document.getSelection().selectAllChildren(e);
+    });
+  });
+  document.querySelectorAll('[data-addsetting]').forEach(function(go){
+    var bar=go.closest('.addbar'), input=bar.querySelector('input'), host=go.closest('[data-addhost]');
+    function add(){
+      var txt=(input.value||'').trim(); if(!txt) return;
+      var row=document.createElement('div'); row.className='srow added';
+      row.innerHTML='<span class="k"></span><span class="newtag">new</span><span class="tog" data-toggle role="switch" aria-checked="true" tabindex="0"></span>';
+      row.querySelector('.k').textContent=txt;
+      host.parentNode.insertBefore(row, host);
+      wireToggle(row.querySelector('[data-toggle]'));
+      input.value='';
+    }
+    go.addEventListener('click', add);
+    input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); add(); } });
+  });
+})();
+</script>
+</body>
+</html>
