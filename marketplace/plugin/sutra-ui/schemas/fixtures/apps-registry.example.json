@@ -1,0 +1,21 @@
+{
+  "registry_schema": 1,
+  "name": "Sutra Apps registry (example)",
+  "updated_at": "2026-09-11T13:30:00Z",
+  "notes": "Documentation data, not a live index (codex R-J P5/P6). artifact_url is intentionally non-fetchable. sha256 is the digest of a real local export/import round-trip tarball from 2026-09-11 (program step 96). Hosting repo and base URL are TODO(founder) (program Q-1). signature is omitted until ADR-041 is Accepted.",
+  "apps": [
+    {
+      "id": "loan-book-brief",
+      "name": "Loan book brief",
+      "version": "1.0.0",
+      "manifest_schema": 2,
+      "artifact_url": "https://example.invalid/apps/loan-book-brief-1.0.0.tgz",
+      "sha256": "3dec147953aa77ba305296e3a321f3fe589ab082442dd36ce8b88cf1a082dbee",
+      "published_at": "2026-09-11T13:20:00Z",
+      "sutra_version_range": { "min": "2.263.0", "max": null },
+      "permissions": { "network": false },
+      "department_hint": "Lending",
+      "kinds": ["page"]
+    }
+  ]
+}
