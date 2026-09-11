@@ -13,10 +13,18 @@ from pathlib import Path
 
 MOD_HOME = tempfile.mkdtemp(prefix="events-test-")
 os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
-os.environ["SUTRA_NATIVE_HOME"] = tempfile.mkdtemp(prefix="events-native-")
+NATIVE_HOME = tempfile.mkdtemp(prefix="events-native-")
+os.environ["SUTRA_NATIVE_HOME"] = NATIVE_HOME
 os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="events-seo-")
 os.environ["SEO_AGENT_NO_CLI"] = "1"
 os.environ.setdefault("SUTRA_SHADOW_HOME", tempfile.mkdtemp(prefix="events-shadow-"))
+
+# I-T1 (RCA 2026-09-11): drop every cached module that captured
+# placement_engine with another home, so the imports below bind to NATIVE_HOME
+# even when an earlier module in the same pytest process imported the app.
+for _m in ("placement_engine", "org_api", "project_import", "modules_api",
+           "modules_events", "modules_pkg", "workspace_api", "app"):
+    sys.modules.pop(_m, None)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -41,6 +49,12 @@ class TestModulesEvents(unittest.TestCase):
         for name in os.listdir(MOD_HOME):
             p = os.path.join(MOD_HOME, name)
             shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.remove(p)
+        # I-T1: never clean a registry that is not THIS module's temp home, and
+        # the app must be bound to the same engine object this test cleans.
+        assert os.path.realpath(E.HOME) == os.path.realpath(NATIVE_HOME), (
+            "refusing to empty %s: the engine is not bound to this module's temp "
+            "home %s (RCA 2026-09-11)" % (E.HOME, NATIVE_HOME))
+        assert app_module.org_api.E is E, "app and test hold different placement_engine modules"
         E._ensure_dirs()
         for name in os.listdir(E.DOMAINS):
             os.remove(os.path.join(E.DOMAINS, name))

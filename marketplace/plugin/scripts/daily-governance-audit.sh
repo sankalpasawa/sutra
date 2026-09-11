@@ -87,6 +87,14 @@ if [ ! -f "$ROOT/.claude/CLAUDE.md" ] || ! grep -q 'SUTRA GOVERNANCE' "$ROOT/.cl
   warn govblock-missing "managed governance block absent from .claude/CLAUDE.md — run /core:start"
 fi
 
+# C3 — the department registry shrank (RCA 2026-09-11): the engine never deletes a
+# domain file, so a drop below the grow-only baseline means something outside it did.
+if [ -x "$PLUGIN_ROOT/hooks/registry-shrink-banner.sh" ]; then
+  if ! bash "$PLUGIN_ROOT/hooks/registry-shrink-banner.sh" --check >/dev/null 2>&1; then
+    crit registry-shrink "domain registry has fewer dref-*.json files than its baseline — see registry-shrink-banner.sh output and ~/.sutra-native/backups"
+  fi
+fi
+
 # W4 — stale session marker dirs (>14 days) under .claude/sessions
 if [ -d "$ROOT/.claude/sessions" ]; then
   n=$(find "$ROOT/.claude/sessions" -maxdepth 1 -type d -mtime +14 2>/dev/null | grep -c . || true)

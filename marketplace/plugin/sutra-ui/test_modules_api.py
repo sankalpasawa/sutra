@@ -18,10 +18,23 @@ MOD_HOME = tempfile.mkdtemp(prefix="modules-test-")
 os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
 # v1.1 tests MINT departments, so the registry must be a throwaway even when
 # the operator's shell exports SUTRA_NATIVE_HOME (setdefault would keep it).
-os.environ["SUTRA_NATIVE_HOME"] = tempfile.mkdtemp(prefix="modules-native-")
+NATIVE_HOME = tempfile.mkdtemp(prefix="modules-native-")
+os.environ["SUTRA_NATIVE_HOME"] = NATIVE_HOME
 os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="modules-seo-")
 os.environ["SEO_AGENT_NO_CLI"] = "1"
 os.environ.setdefault("SUTRA_SHADOW_HOME", tempfile.mkdtemp(prefix="modules-shadow-"))
+
+# I-T1 (RCA 2026-09-11): in a whole-directory pytest run an earlier module has
+# already imported the app with the operator's REAL registry bound (org_api
+# exports the real path; placement_engine freezes HOME at import). Setting the
+# env above is then a no-op for the cached modules, and the setUp below would
+# empty the real ~/.sutra-native/user-kit/domains -- which it did. Drop every
+# cached module that captured placement_engine so the imports below re-bind to
+# this module's temp home.
+import sys  # noqa: E402
+for _m in ("placement_engine", "org_api", "project_import", "modules_api",
+           "modules_events", "modules_pkg", "workspace_api", "app"):
+    sys.modules.pop(_m, None)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -53,6 +66,11 @@ class TestModulesApi(unittest.TestCase):
             shutil.rmtree(os.path.join(MOD_HOME, name), ignore_errors=True)
         # and a clean department registry (v1.1): the v1 tests run on an EMPTY
         # registry, which is the fleet's first-open state (D-M14)
+        # I-T1: never clean a registry that is not THIS module's temp home.
+        assert os.path.realpath(E.HOME) == os.path.realpath(NATIVE_HOME), (
+            "refusing to empty %s: the engine is not bound to this module's temp "
+            "home %s (RCA 2026-09-11)" % (E.HOME, NATIVE_HOME))
+        assert app_module.org_api.E is E, "app and test hold different placement_engine modules"
         E._ensure_dirs()
         for name in os.listdir(E.DOMAINS):
             os.remove(os.path.join(E.DOMAINS, name))

@@ -111,7 +111,46 @@ def _now_ms():
     return int(time.time() * 1000)
 
 
+#: Resolved at the SAME moment as HOME on purpose: the question the guard answers is
+#: "is this module bound to the operator's registry", and both sides of that
+#: comparison must come from the import-time environment. Re-reading ~ at check
+#: time would let a fixture that changes $HOME after import hide a real binding.
+_DEFAULT_HOME = os.path.expanduser("~/.sutra-native/user-kit")
+
+
+def _refuse_default_home_under_test():
+    """I-T1 (RCA 2026-09-11): a test process never touches the operator's
+    real registry.
+
+    On 2026-09-11 a whole-directory pytest run emptied ~/.sutra-native/user-kit/
+    domains: an early test module imported the app, org_api exported the real
+    path into SUTRA_NATIVE_HOME and this module froze HOME on it; two later
+    modules set a temp home too late (this module was already cached) and their
+    setUp deleted every file in DOMAINS. 68 departments gone, nothing logged.
+
+    So: while pytest is running a test (PYTEST_CURRENT_TEST is set for setup,
+    call and teardown) and HOME still resolves to the default registry, every
+    directory-creating or locking entry point raises. A deliberate integration
+    test against the real registry says so explicitly with
+    SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1. Tests bind their own home by setting
+    SUTRA_NATIVE_HOME and re-importing this module (see
+    sutra-ui/test_project_import.py::_fresh_engine)."""
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    if os.environ.get("SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS") == "1":
+        return
+    if os.path.realpath(HOME) == os.path.realpath(_DEFAULT_HOME):
+        raise RuntimeError(
+            "placement_engine: refusing to touch the default registry %s from a "
+            "test (%s). Set SUTRA_NATIVE_HOME to a temp dir BEFORE the first import "
+            "of placement_engine/org_api/app, or re-import them after setting it "
+            "(test_project_import._fresh_engine). Override only for a deliberate "
+            "integration test: SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1."
+            % (HOME, os.environ.get("PYTEST_CURRENT_TEST")))
+
+
 def _ensure_dirs():
+    _refuse_default_home_under_test()
     for d in (DOMAINS, CHARTERS, PLACEMENTS):
         os.makedirs(d, exist_ok=True)
 
@@ -126,6 +165,7 @@ def _sha(obj):
 
 def _append_jsonl(path, row):
     """Single-line append. POSIX guarantees atomicity below PIPE_BUF."""
+    _refuse_default_home_under_test()   # I-T1: index/ledger writes are writes too
     os.makedirs(os.path.dirname(path), exist_ok=True)
     line = json.dumps(row, separators=(",", ":"), ensure_ascii=False) + "\n"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
@@ -164,6 +204,7 @@ _HELD = {}
 def _lock(name):
     """flock-based mutex, re-entrant within one process. Kernel releases on
     process death (fold 1); the depth counter handles nesting."""
+    _refuse_default_home_under_test()
     os.makedirs(DOMAINS, exist_ok=True)
     key = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
     if _HELD.get(key):

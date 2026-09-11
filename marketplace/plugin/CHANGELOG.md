@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-11
+## 2.264.0 (2026-09-11)
+
+- **A test run can no longer empty your departments.** On 2026-09-11 a whole-directory `sutra-ui` pytest run deleted 68 domain records from the real `~/.sutra-native/user-kit` (RCA: `holding/research/2026-09-11-registry-reset-rca.md`): an early module imported the app with the real registry bound, and two Apps test modules then emptied `E.DOMAINS`. Fix: `placement_engine` refuses the default home while pytest runs (I-T1, override `SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1`), `test_modules_api.py` / `test_modules_events.py` re-import the engine after binding their temp home and assert it before cleaning, and `test_registry_isolation.py` replays the destructive order under a throwaway HOME with a canary.
+- Two monitors: `pytest-isolation-guard.sh` (PreToolUse Bash) snapshots the registry to `~/.sutra-native/backups/` before any test run that reaches the plugin code, scanning one level into scripts; `registry-shrink-banner.sh` (SessionStart, plus audit check C3) keeps a grow-only baseline of `domains/dref-*.json` and prints a box when the count drops. Tests: `hooks/tests/test-pytest-isolation-guard.sh` (8), `hooks/tests/test-registry-shrink-banner.sh` (6). Deferred: `org_api.py` still exports the resolved path into the environment (needs the `app.py` subprocess contract moved first).
+
+## 2.264.0 (2026-09-11)
+
+- **Creation guard (D74): anything new brings its domain, charter, placement and artifact kind with it.** `hooks/creation-guard.sh` (PreToolUse Edit|Write, new paths only) reports the missing dimension; `hooks/creation-stop-check.sh` (Stop) catches files created by Bash, subagents or scripts so nothing bypasses the check; a path that fits no artifact kind is a highlighted NEW KIND event routed to NEW-THING-PROTOCOL section 2a, never a silent addition. Default WARN; `echo hard > .claude/creation-guard-mode` per repo; kill-switch `~/.creation-guard-disabled` (audited). Tests: `tests/creation-guard-test.sh`, 7 cases. Brief for the Stop-time subagent: `hooks/creation-check-brief.md`. Design: `holding/directory/GUARD-DESIGN.md` (Directory Program phase G).
+
 ## 2.263.1 (2026-09-11)
 
 - **Release repair: the published departments site can no longer shrink by accident.** The desktop build for 2.263.0 failed its importer suite because `domains-site-refresh.sh` had regenerated `website/domains` from a machine holding a partial registry (twice now: bb66966, c991193; the drift commit is reverted). The hook now refuses, with the reason in `.claude/domains-refresh.err`, when the registry has fewer department rows than the site has pages, and the full regen renders into a temp dir first and refuses if any published `dref-*.html` or `C-*.html` page would go missing; publishing is an overlay that never deletes. Test: `hooks/tests/test-domains-site-refresh-guard.sh` (3 cases). Apps (2.263.0) unchanged.
