@@ -1112,6 +1112,7 @@ function invalidatePanesHtml(){
   const p = document.getElementById("panes");
   if (p) p.__lastPanesHtml = null;
 }
+
 function render(){
   /* A drag is a live binding between the dragged node and the drop targets'
      ondragover/ondrop handlers. render() replaces #panes wholesale, so a
@@ -1220,6 +1221,7 @@ function render(){
      live repaints continue. Direct-DOM patches inside #panes must call
      invalidatePanesHtml() (wsRenderSideOnly / save-chip swap / divider). */
   const panesEl = document.getElementById("panes");
+
   const panesHtml =
     (bClosed ? "" :
     `<section class="pane browse ${bCol?"collapsed":""}"${bStyle}>

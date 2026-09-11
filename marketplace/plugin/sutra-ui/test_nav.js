@@ -675,12 +675,69 @@ test("hotfix: the terminal clamp reserves the plane and a 320px detail floor", (
 /* §v3.4 — the lane collapse and the functional Act-as */
 test("v3.4: the collapse rules exist and OUTRANK the threecol grid", () => {
   const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
-  const three = css.indexOf(".app.threecol{grid-template-columns:224px 240px");
-  const col = css.indexOf(".app.threecol.railcol{grid-template-columns:minmax(0,1fr)");
+  /* The rail track is var(--railw,224px) since 2.259.0, when the sidebar became draggable
+     (owner: "click on the centre and slide left to collapse it like I have it in VS Code").
+     224px stays the DEFAULT inside the var, so a browser with nothing stored, or one that
+     refuses localStorage, lays out exactly as it did before. */
+  const three = css.indexOf(".app.threecol{grid-template-columns:var(--railw,224px) 240px");
+  /* The collapsed grid leads with the PLANE's 240px now, not minmax(0,1fr): collapsing hides
+     the nav and keeps the Chats list (2026-09-10). See the assertions further down. */
+  const col = css.indexOf(".app.threecol.railcol{grid-template-columns:240px minmax(0,1fr)");
   assert(three !== -1 && col !== -1, "both grid rules must exist");
   assert(col > three, "the railcol override must come AFTER threecol, or it loses the cascade");
-  assert(css.indexOf(".app.threecol.railcol .rail,.app.threecol.railcol .plane{display:none}") !== -1,
-    "collapsed must hide BOTH lanes — hiding only the rail is the shipped overlap bug");
+  /* THIS ASSERTION WAS REVERSED ON 2026-09-10, DELIBERATELY. It used to demand that collapsing
+     hide BOTH lanes, because hiding only the rail once caused an overlap: the 4-track grid was
+     left intact, so the plane slid into the rail's track and the detail crammed into the
+     plane's. The owner then asked for the opposite -- "I only want the Sutra thing to get
+     collapsed, not the chat one" -- so the blunt rule had to go.
+
+     The overlap is now prevented properly, by dropping a TRACK rather than hiding a lane, and
+     that is what the next three assertions check. Do not restore the old rule: it would take
+     the Chats list with it again. */
+  assert(css.indexOf(".app.threecol.railcol .rail{display:none}") !== -1,
+    "collapsed hides the Sutra nav");
+  assert(css.indexOf(".app.threecol.railcol .plane{display:none}") === -1,
+    "collapsed must NOT hide the plane — that is the Chats list the owner keeps");
+  /* The anti-overlap invariant: one lane hidden, one track fewer. Four tracks with three lanes
+     is exactly the state that caused the original bug. */
+  const railcolGrid = /\.app\.threecol\.railcol\{grid-template-columns:([^;}]+)/.exec(css);
+  assert(railcolGrid, "the collapsed threecol grid must be declared");
+  const railcolTracks = railcolGrid[1].trim().split(/\s+(?![^(]*\))/).length;
+  assert(railcolTracks === 3,
+    "collapsed threecol must declare exactly 3 tracks (plane|detail|term), saw " + railcolTracks +
+    " — a 4-track grid with the rail hidden IS the overlap bug");
+  assert(/\.app\.threecol\.railcol\.noplane\{grid-template-columns:minmax\(0,1fr\) var\(--termw/.test(css),
+    "a plane-less destination collapses to 2 tracks, or it keeps an empty 240px gutter");
+  /* Every rail track carries the same fallback. One that hardcoded 224px would ignore a drag
+     on that layout only, which is the kind of bug you find by resizing on a settings screen. */
+  const tracks = css.match(/grid-template-columns:[^;}]*224px[^;}]*/g) || [];
+  tracks.forEach(t => assert(t.indexOf("var(--railw,224px)") !== -1,
+    "a rail track still hardcodes 224px and would not answer the drag: " + t));
+  assert(tracks.length >= 3, "expected the three rail-bearing grids, saw " + tracks.length);
+});
+
+test("2.259.0: the sidebar drag edge exists, and collapsed it is still reachable", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "static", "panel.html"), "utf8");
+  assert(/id="railDrag"/.test(html), "the drag edge is in the markup");
+  assert(/role="separator"/.test(html) && /tabindex="0"/.test(html),
+    "it is a separator and it is reachable by keyboard, not mouse-only");
+  assert(css.indexOf(".raildrag{position:absolute") !== -1, "it is out of flow, claiming no grid track");
+  assert(css.indexOf(".app{display:grid;position:relative;") !== -1,
+    ".app must be the positioning context, or the edge resolves against the page");
+
+  /* THE ONE THAT MATTERS, and it is STRUCTURAL, not a style. Collapsed, `.app.railcol .rail`
+     is display:none. A child of a display:none parent is not rendered whatever position it
+     carries -- position:fixed does not rescue it -- so an edge written inside <nav class="rail">
+     disappears at exactly the moment you need it to drag the sidebar back. Caught by driving
+     the real gesture in a browser on 2026-09-10; the DOM order is the fix. */
+  const nav = html.indexOf("</nav>");
+  const edge = html.indexOf('id="railDrag"');
+  assert(nav !== -1 && edge !== -1, "both the rail and the edge must be in the markup");
+  assert(edge > nav,
+    "the drag edge must be a SIBLING of .rail, after </nav> — inside it, display:none takes it too");
+  assert(css.indexOf(".app.railcol .raildrag{left:0") !== -1,
+    "collapsed, the edge pins to the window's left edge so there is still something to grab");
 });
 test("v3.4: the stored single-lane flag migrates to the both-lane flag", () => {
   storage._m["sutra.panel.layout"] = JSON.stringify({ railCollapsed: true });

@@ -173,7 +173,8 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, viewBusy: null, facePick: null,
+    notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
        counts have already been re-read, so one finished run re-reads them once. */
@@ -385,6 +386,7 @@ const AG_ICON = {
   star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1.1 5.8L12 16.8l-5.3 2.8 1.1-5.8L3.5 9.7l5.9-.8z"/></svg>',
   arrow: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   left: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
   pencil: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z"/><path d="M13.5 6.5l4 4"/></svg>',
   up: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
@@ -393,6 +395,111 @@ const AG_ICON = {
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.5-1.5"/></svg>',
 };
+
+/* A STEP FOLDS ITSELF WHEN IT IS DONE (owner, 2026-09-10: "let's say all these steps are
+   there, they are all showing live around 50, 60, then they should collapse back... then only
+   the thing I should be able to see is 'writing the article'"). While a step RUNS its sub-lines
+   are the whole point, so it stays open and you watch it work. The moment it finishes, the
+   sixty-one lines underneath it fold away and the headline plus its one-line result is all that
+   is left, with a chevron on the left to open it again. A step that FAILED never folds: the
+   reason it failed is the one thing you actually need to read. */
+function agStepFolds(e){
+  if (e.state === "run") return false;              /* live: watching it IS the point */
+  if (e.state === "bad") return false;              /* a failure explains itself, always open */
+  return !!((e.subs && e.subs.length) || e.lead);   /* nothing to fold, no chevron */
+}
+
+function agStepOpen(e, ctx){
+  if (!agStepFolds(e)) return true;
+  return !!(ctx.stepOpen && ctx.stepOpen[e.id]);
+}
+
+function agAskOpen(e, ctx){
+  return !!(ctx.stepOpen && ctx.stepOpen[e.id || e.t]);
+}
+
+const AG_VIEW_WORD = { knowledge: "Knowledge", assets: "the asset ideas", memory: "what it remembers",
+                       prompts: "the prompts", library: "the Library", tools: "the tools",
+                       connections: "the connections" };
+
+function agViewLoadingHtml(view){
+  return `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span>
+    <span>Opening ${agEsc(AG_VIEW_WORD[view] || "this")}\u2026</span></div>`;
+}
+
+/* WHO ELSE IS ON THIS WORKSPACE (owner, 2026-09-10: "show icons of all the people who have
+   joined that workspace... I can click on each to know their name, including mine").
+
+   Renders ONLY when a workspace is joined. One face on your own is not a team, it is noise,
+   so a solo install shows nothing at all rather than a lonely circle.
+
+   `last_seen_at` is what makes this worth looking at: every client touches it once a minute,
+   so the ring says who is actually around, not just who once signed up. Somebody who has not
+   been seen for AG_FACE_HERE_MS is drawn flat.
+
+   The data comes off the workspace poll that already runs (20s server-side cache). No second
+   timer: "who is on the team" changes about twice a year. */
+const AG_FACE_HERE_MS = 5 * 60 * 1000;      /* seen within five minutes reads as "here now" */
+const AG_FACE_MAX = 6;                      /* past this, the rest become a "+N" */
+
+function agFaceAgo(iso){
+  const t = iso ? Date.parse(iso) : NaN;
+  return isFinite(t) ? Date.now() - t : Infinity;
+}
+
+function agFacesHtml(a){
+  const ws = a && a.ws;
+  if (!ws || !ws.configured) return "";
+  const rows = (ws.members || []).filter(m => m && (m.member_id || m.name));
+  if (rows.length < 1) return "";
+  const meId = (ws.me && ws.me.member_id) || "";
+  /* You first, then everyone else oldest-joined first. Seeing your own face where you expect
+     it is what tells you the row is about people and not decoration. */
+  rows.sort((x, y) => (x.member_id === meId ? -1 : y.member_id === meId ? 1 : 0));
+  const show = rows.slice(0, AG_FACE_MAX);
+  const rest = rows.length - show.length;
+  return `<div class="ag-faces" role="list" aria-label="Who is on this workspace">
+    ${show.map(m => {
+      const me = m.member_id === meId;
+      const here = agFaceAgo(m.last_seen_at) < AG_FACE_HERE_MS;
+      const face = m.emoji || "";
+      const needsFace = me && !face;
+      const who = (m.name || "Someone") + (me ? " (you)" : "")
+                + (needsFace ? " — pick your face" : "");
+      return `<button class="ag-face ${here ? "here" : ""} ${me ? "me" : ""}" type="button" role="listitem"
+        data-ag="face" data-arg="${agEsc(m.member_id || "")}"
+        ${needsFace ? 'data-pickme="1"' : ""}
+        aria-label="${agEsc(who)}${here ? ", here now" : ""}" title="${agEsc(who)}">
+        ${face ? `<span class="e" aria-hidden="true">${agEsc(face)}</span>`
+               : `<span class="i" aria-hidden="true">${agEsc(agInitials(m.name))}</span>`}</button>`;
+    }).join("")}
+    ${rest > 0 ? `<span class="ag-face more" title="${agEsc(rows.slice(AG_FACE_MAX).map(m => m.name || "Someone").join(", "))}">+${rest}</span>` : ""}
+  </div>`;
+}
+
+/* The fallback when somebody has no face yet -- a teammate on an older Sutra, or a workspace
+   whose migration has not run. Never leaves an empty circle. */
+/* The picker. Free faces first and marked as such, so five people end up with five different
+   ones without anybody having to coordinate. Taking one somebody else has is allowed -- past 32
+   people it has to be -- it just is not the default. */
+function agFacePickHtml(a){
+  const p = a && a.facePick;
+  if (!p) return "";
+  if (p.loading) return `<div class="ag-facepick"><span class="ld">Reading the faces…</span></div>`;
+  const free = new Set(p.free || []);
+  return `<div class="ag-facepick">
+    <div class="hd">Pick your face<button class="x" type="button" data-ag="face" data-arg="${agEsc((a.ws && a.ws.me && a.ws.me.member_id) || "")}" aria-label="Close">×</button></div>
+    <div class="grid">${(p.faces || []).map(f => `<button type="button" class="f ${free.has(f) ? "" : "taken"}"
+      data-ag="facepick" data-arg="${agEsc(f)}" title="${agEsc((p.names || {})[f] || "")}${free.has(f) ? "" : " · already taken"}"
+      aria-label="${agEsc((p.names || {})[f] || f)}">${agEsc(f)}</button>`).join("")}</div>
+  </div>`;
+}
+
+function agInitials(name){
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
 
 function agGlyph(e){
   if (e.kind === "step") return e.state === "ok" ? AG_ICON.check : e.state === "bad" ? AG_ICON.x : "";
@@ -437,14 +544,22 @@ function agEntryHtml(e, ctx){
     case "step": {
       const cls = e.state;
       const verdict = e.state === "run" ? "" : e.ms != null ? `<span class="ms">${agEsc(agDur(e.ms))}</span>` : "";
-      return `<div class="ag-step ${cls}" data-step="${agEsc(e.id)}">
-        <span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">${agEsc(e.label)}${verdict}${e.state === "bad" && e.recovering ? `<span class="pill p-warn">trying another way</span>` : ""}</div>
-        ${e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
+      const folds = agStepFolds(e);
+      const shown = agStepOpen(e, ctx);
+      const n = (e.subs || []).length;
+      /* The whole headline is the hit area, not a 12px arrow. */
+      const head = folds
+        ? `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id)}" aria-expanded="${shown}">
+             <span class="cv ${shown ? "on" : ""}" aria-hidden="true">${AG_ICON.chev}</span>${agEsc(e.label)}${verdict}${!shown && n ? `<span class="n">${n} step${n === 1 ? "" : "s"}</span>` : ""}</button>`
+        : `<div class="ag-title">${agEsc(e.label)}${verdict}${e.state === "bad" && e.recovering ? `<span class="pill p-warn">trying another way</span>` : ""}</div>`;
+      return `<div class="ag-step ${cls} ${folds ? "foldable" : ""} ${folds && !shown ? "folded" : ""}" data-step="${agEsc(e.id)}">
+        ${folds ? "" : `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>`}
+        ${head}
+        ${shown && e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
         ${e.state === "bad" && e.reason ? `<div class="ag-body" style="color:var(--block)">${agEsc(e.reason)}</div>` : ""}
-        ${e.state === "ok" && e.summary && !e.subs.length ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
-        ${agSubsHtml(e.subs, e.id, open)}
-        ${e.state === "ok" && e.summary && e.subs.length ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
+        ${e.state === "ok" && e.summary && !n ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
+        ${shown ? agSubsHtml(e.subs, e.id, open) : ""}
+        ${e.state === "ok" && e.summary && n ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.id)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;
     }
@@ -452,19 +567,40 @@ function agEntryHtml(e, ctx){
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span><div class="ag-prose md">${agMd(e.text)}</div></div>`;
     case "note":
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span><div class="ag-note">${agEsc(e.text)}</div></div>`;
-    case "ask":
-      return `<div class="ag-step ask"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">Asked you a question</div>
+    case "ask": {
+      /* AN ANSWERED QUESTION IS ONE LINE (owner, 2026-09-10). Live, it is the whole card: the
+         question, the reason, the options. Answered, it is settled history, so it folds to the
+         question and what you said. Click it to see the reason and the options again. */
+      if (!e.live && !agAskOpen(e, ctx)) {
+        return `<div class="ag-step ask foldable folded">
+          <button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="false">
+            <span class="cv" aria-hidden="true">${AG_ICON.chev}</span><span class="qt">${agEsc(e.question)}</span>
+            <span class="said"><i>You said</i>${agEsc(e.answer || "answered")}</span></button></div>`;
+      }
+      return `<div class="ag-step ask ${e.live ? "" : "foldable"}">
+        ${e.live ? `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span><div class="ag-title">Asked you a question</div>`
+                 : `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="true">
+                      <span class="cv on" aria-hidden="true">${AG_ICON.chev}</span>Asked you a question</button>`}
         <div class="ag-card ${e.live ? "live" : ""}">
           <div class="q">${agEsc(e.question)}</div>
           ${e.why ? `<div class="why">${agEsc(e.why)}</div>` : ""}
           ${agChipsHtml(e.options, e.live, e.answer, "choose", e.call_id || "")}
-          ${e.live ? `<div class="ag-hint">Pick one, or type your own answer below.</div>`
+          ${e.live ? `<div class="ag-hint">${(e.options && e.options.length) ? "Pick one, or type your own answer below." : "Type your answer below."}</div>`
                    : `<div class="ag-answer"><span>You said</span><b>${agEsc(e.answer || "")}</b></div>`}
         </div></div>`;
-    case "approval":
-      return `<div class="ag-step ask"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
-        <div class="ag-title">Asked before going on</div>
+    }
+    case "approval": {
+      const said = e.decision === "approved" ? "Go ahead" : e.decision === "declined" ? "Not now" : (e.answer || "answered");
+      if (!e.live && !agAskOpen(e, ctx)) {
+        return `<div class="ag-step ask foldable folded">
+          <button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="false">
+            <span class="cv" aria-hidden="true">${AG_ICON.chev}</span><span class="qt">${agEsc(e.question)}</span>
+            <span class="said"><i>You said</i>${agEsc(said)}</span></button></div>`;
+      }
+      return `<div class="ag-step ask ${e.live ? "" : "foldable"}">
+        ${e.live ? `<span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span><div class="ag-title">Asked before going on</div>`
+                 : `<button class="ag-title ag-fold-t" type="button" data-ag="step" data-arg="${agEsc(e.id || e.t)}" aria-expanded="true">
+                      <span class="cv on" aria-hidden="true">${AG_ICON.chev}</span>Asked before going on</button>`}
         <div class="ag-card ${e.live ? "live" : ""}">
           <div class="q">${agEsc(e.question)}</div>
           ${e.mins ? `<div class="ag-cost">about <b>${agEsc(e.mins)}</b> min</div>` : ""}
@@ -473,8 +609,9 @@ function agEntryHtml(e, ctx){
               <button class="ag-chip pri" type="button" data-ag="approve" data-arg="yes">Go ahead</button>
               <button class="ag-chip" type="button" data-ag="approve" data-arg="no">Not now</button>
             </div>`
-          : `<div class="ag-answer"><span>You said</span><b>${e.decision === "approved" ? "Go ahead" : e.decision === "declined" ? "Not now" : agEsc(e.answer || "")}</b></div>`}
+          : `<div class="ag-answer"><span>You said</span><b>${agEsc(said)}</b></div>`}
         </div></div>`;
+    }
     case "artifact": {
       const title = AG_VIEW_TITLE[e.view] || "Something to review";
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
@@ -611,10 +748,26 @@ function agHeroHtml(health, conns){
   const model = health ? health.model_provider : null;
   const setup = agSetupOf(health);
   const ready = !!health && setup.ready;
+  /* THE TWO WAYS TO START, and the first one depends on whether there is a sheet (owner,
+     2026-09-10: "it only has 2 ways for now: one is to go through the asset tab and pick the
+     topmost one... or else he can write his own topic").
+     The card offered "Suggest six topics we could own" to everybody, which predates the asset
+     engine: with 1,890 ranked ideas already judged for whether he can own them and whether
+     anyone would link to them, six fresh competitor-derived guesses is the wrong first move.
+     `/health.assets` now carries the sheet, so the chip can tell. suggest_topics is NOT dead --
+     it is the right answer for a company with no sheet yet, which is what the else branch is. */
+  const as = (health && health.assets) || null;
+  const nextIdea = as && as.built && as.open > 0 ? as.next : null;
+  const topPlay = nextIdea
+    ? ["Write the next idea on the sheet",
+       agEsc(nextIdea.title || "").slice(0, 120) + (as.open > 1 ? ` — ${as.open - 1} more waiting.` : "")
+         + " Passing on it leaves it on the sheet.",
+       `Write ${nextIdea.id}`]
+    : ["Suggest six topics we could own", "Studies one competitor's best pages and proposes six topics with an angle they have not taken. Used when there is no asset sheet yet.",
+       "Suggest six topics we could own."];
   const plays = ready ? [
-    ["Suggest six topics we could own", "Studies one competitor's best pages and proposes six topics with an angle they have not taken.",
-     "Suggest six topics we could own."],
-    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. You review at each of the four stops.",
+    topPlay,
+    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. It stops twice: the topic and the draft.",
      "Write an article about "],
     /* A third play -- rewrite one of the pages we already have -- was DELETED (owner,
        2026-09-09). It was written before the reuse check existed and nothing was ever wired
@@ -1033,14 +1186,29 @@ function agSideHtml(a){
     <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
       <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
+      ${agFacesHtml(a)}
     </div>
+    ${agFacePickHtml(a)}
     <button class="newBtn" type="button" data-ag="new">${AG_ICON.plus} New chat</button>
     <div class="ag-sec">Recent</div>
     <div class="ag-chats">${chats.length ? chats.map(c => {
         const live = c.live || "";
-        return `<button class="ag-chat" type="button" data-ag="chat" data-arg="${agEsc(c.id)}" aria-current="${a.view === "chat" && a.chatId === c.id}" title="${agEsc(c.title)} · ${agEsc(agAgo(c.updated_at))}">
-          <span class="dot ${live === "running" ? "run" : live === "waiting" ? "wait" : "idle"}" aria-hidden="true"></span>
-          <span class="t">${agEsc(c.title || "New chat")}</span></button>`;
+        const asking = a.chatMenu === c.id;
+        /* THE CONFIRM IS THE ROW (owner, 2026-09-10: "3 dots and delete the chat"). A chat holds
+           work, so a single click must not lose it, but a browser confirm() blocks the Electron
+           window and looks nothing like the app. The row turns into the question instead, and
+           anywhere else you click puts it back. */
+        return `<div class="ag-chatrow ${asking ? "asking" : ""}">
+          <button class="ag-chat" type="button" data-ag="chat" data-arg="${agEsc(c.id)}" aria-current="${a.view === "chat" && a.chatId === c.id}" title="${agEsc(c.title)} · ${agEsc(agAgo(c.updated_at))}">
+            <span class="dot ${live === "running" ? "run" : live === "waiting" ? "wait" : "idle"}" aria-hidden="true"></span>
+            <span class="t">${agEsc(c.title || "New chat")}</span></button>
+          ${asking
+            ? `<span class="ag-chatask"><span class="lb">Delete?</span>
+                 <button class="yes" type="button" data-ag="chatdel" data-arg="${agEsc(c.id)}">Yes</button>
+                 <button class="no" type="button" data-ag="chatmenu" data-arg="">No</button></span>`
+            : `<button class="ag-chatdots" type="button" data-ag="chatmenu" data-arg="${agEsc(c.id)}"
+                 title="Delete this chat" aria-label="Delete the chat ${agEsc(c.title || "New chat")}">${AG_ICON.dots}</button>`}
+        </div>`;
       }).join("") : `<div class="ag-empty">No chats yet. Start one above.</div>`}</div>
     <ul class="nav">${rows.map(r => `<li><button type="button" data-ag="view" data-arg="${r[0]}" aria-current="${a.view === r[0]}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${r[2].replace(/<svg[^>]*>|<\/svg>/g, "")}</svg>${r[1]}
@@ -1057,7 +1225,7 @@ function agComposerHtml(a){
   const ph = running ? "Working… you can stop it, or wait."
     : waiting && w.kind === "approval" ? "Say no with a reason, or use the buttons above"
     : waiting && w.kind === "artifact" ? "Ask for changes, or approve in the panel"
-    : waiting ? "Type your answer, or pick an option above"
+    : waiting ? (w.options && w.options.length ? "Type your answer, or pick an option above" : "Type your answer")
     : a.chat ? "Ask for another article, or give feedback"
     : a.health && !setup.ready ? "Give the website, e.g. example.com" : "Name a topic, or ask for ideas";
   const step = live && live.current_step ? live.current_step.replace(/_/g, " ") : (live ? live.stage : "");
@@ -1084,7 +1252,7 @@ function agTranscriptHtml(a){
      returning open goes straight to the hero and its two plays. */
   if (!a.chat || !(a.chat.runs || []).length)
     return (agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns);
-  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
+  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, stepOpen: a.stepOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
 }
 
@@ -2485,6 +2653,26 @@ let agObs = null, agPollTimer = null, agTick = null, agToastTimer = null;
 
 function agApi(path){ return apiGet(AG_API + path); }
 function agPostApi(path, body){ return apiPost(AG_API + path, body || {}); }
+/* The one DELETE in the panel. apiPost cannot do it (it hardcodes POST), and adding a method
+   argument there would touch every caller in the app for the sake of this one route. */
+async function agDelApi(path){
+  const r = await fetch(API + AG_API + path, { method: "DELETE", headers: { "X-Sutra-Panel": panelToken() } });
+  if (!r.ok){
+    let msg = "";
+    try { msg = (await r.json()).error || ""; } catch (e) {}
+    throw new Error(msg || ("That did not work (" + r.status + ")"));
+  }
+  return r.json();
+}
+
+/* The sentence a person should read, without the debug tail. apiPost's _fail appends
+   " (/api/... -> 400)" so a developer can tell a refused token from a broken server; that is
+   the right call for a log and the wrong thing to put in front of somebody who just clicked an
+   emoji. The status is still on err.status for anyone who needs it. */
+function agWhy(e){
+  const m = String((e && e.message) || e || "").trim();
+  return m.replace(/\s*\([^()]*->\s*\d{3}\)\s*$/, "") || "That did not work.";
+}
 
 function agToast(msg){
   if (typeof document === "undefined") return;
@@ -2639,7 +2827,16 @@ function agDraw(force){
     agSetHtml("agStages", "");
     /* a settings view is a new document: start it at the top, not where the chat was */
     if (scroll && a.lastView !== a.view) scroll.scrollTop = 0;
-    const html = a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
+    /* A TAB YOU HAVE NEVER OPENED SAYS SO WHILE IT LOADS. Now that the tab paints before its
+       fetch, a first visit would otherwise render the view's own empty state -- "No articles
+       yet", "Nothing saved" -- for as long as the request takes, which is a lie that then
+       flickers into the truth. Only a tab holding NOTHING shows this; a second visit keeps last
+       time's rows on screen and refreshes them in place, with no flicker at all. */
+    const held = { knowledge: a.knowledge, assets: a.assets, memory: a.memory, prompts: a.prompts,
+                   library: a.library, tools: a.tools, connections: a.conns };
+    const cold = a.viewBusy === a.view && (held[a.view] === null || held[a.view] === undefined);
+    const html = cold ? agViewLoadingHtml(a.view)
+      : a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
       : a.view === "assets" ? agAssetsHtml(a.assets, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
       : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
@@ -2701,17 +2898,125 @@ function agGrow(ta){
    A Library row being written counts as live too. It is the same timer and the same two speeds,
    not a second clock: watching a row fill in is exactly the case the fast cadence was built for,
    and the milestones would otherwise never appear without a manual reload. */
+/* ── notifications ────────────────────────────────────────────────────────────────────────
+   Owner asked for these on 2026-09-10: "let's say we checked on the update content and it is
+   done, then a notification would happen saying it is done".
+
+   THE ONE RULE: only tell somebody about a thing they are NOT watching. A notification for
+   something happening on screen in front of you is noise, and noise is how people turn
+   notifications off permanently -- after which the one that mattered never arrives either.
+   So every notification here is gated on the window not having focus.
+
+   WHAT QUALIFIES: a run that finished, failed, or is now waiting on an answer, and a catalogue
+   refresh that finished. Never step-by-step progress: "Reading page 340 of 11,000" is exactly
+   the kind of thing that makes a person switch them off.
+
+   PERMISSION IS ASKED LATE, AND THAT IS DELIBERATE. macOS prompts the first time a page asks.
+   Asking on launch, before the person has any idea what Sutra would tell them, reliably gets a
+   "no" that is then hard to undo. Asking the first time something genuinely took a while means
+   the request arrives with a visible reason attached. */
+const AG_NOTIFY_MIN_MS = 20000;   /* under this it was not a wait, and a toast would have done */
+
+/* Is there work whose ending is worth interrupting somebody for? Also decides whether a hidden
+   window keeps polling, which is why it lives here and not inside the notifier. */
+function agWatching(a){
+  if (!a) return false;
+  return !!(agLiveRun() || agRefreshLive(a.refresh) || agWsJobLive(a.ws)
+            || (a.view === "library" && agLibWriting(a)));
+}
+
+function agNotifyReady(){
+  return typeof Notification === "function" && typeof document !== "undefined";
+}
+
+/* Fire one, if this person can be told and is not already looking at it. */
+function agNotify(key, title, body, onClick){
+  if (!agNotifyReady()) return;
+  const S_ = agS(); if (!S_) return;
+  S_.notified = S_.notified || {};
+  if (S_.notified[key]) return;             /* a poll must not fire the same news twice */
+  S_.notified[key] = true;
+  /* THE GATE. hasFocus() is the honest test in Electron: a window can be fully visible on a
+     second monitor while the person works in another app, and document.hidden is false for
+     exactly that case. */
+  if (document.hasFocus && document.hasFocus()) return;
+  const show = () => {
+    try {
+      const n = new Notification(title, { body: body || "", tag: key, silent: false });
+      n.onclick = () => {
+        try { window.focus(); } catch (e) {}
+        if (typeof onClick === "function") onClick();
+      };
+    } catch (e) { /* a shell with no notification support is not an error worth showing */ }
+  };
+  if (Notification.permission === "granted") return show();
+  if (Notification.permission === "denied") return;      /* asked once, told no; never nag */
+  try { Notification.requestPermission().then(p => { if (p === "granted") show(); }); }
+  catch (e) {}
+}
+
+/* Watch the runs between polls and speak only on a TRANSITION. Comparing against what was true
+   last tick is what stops a run that has been waiting for an hour re-announcing itself every
+   four seconds. */
+function agNotifyPass(a){
+  if (!a || !agNotifyReady()) return;
+  a.runSeen = a.runSeen || {};
+  const runs = (a.chat && a.chat.runs) || [];
+  for (const r of runs){
+    if (!r || !r.run_id) continue;
+    const was = a.runSeen[r.run_id];
+    a.runSeen[r.run_id] = r.status;
+    if (was === undefined || was === r.status) continue;   /* first sight, or nothing moved */
+    /* Only a run that actually took a while. A three-second run ending is not news. */
+    const ms = (r.finished_at ? Date.parse(r.finished_at) : Date.now())
+             - (r.started_at ? Date.parse(r.started_at) : Date.now());
+    const worth = !isFinite(ms) || ms >= AG_NOTIFY_MIN_MS;
+    const open = () => { a.view = "chat"; agLoadChat(a.chatId, true); };
+    const topic = (r.topic || "").trim();
+    if (r.status === "waiting")
+      agNotify("w:" + r.run_id + ":" + (r.waiting_on && r.waiting_on.call_id || ""),
+               "Sutra needs an answer",
+               (r.waiting_on && r.waiting_on.question) || "It cannot carry on until you reply.", open);
+    else if (r.status === "done" && worth)
+      agNotify("d:" + r.run_id, "Your article is ready to read",
+               topic ? topic : "The draft is written and saved to the Library.", open);
+    else if ((r.status === "failed" || r.status === "error") && worth)
+      agNotify("f:" + r.run_id, "Sutra stopped",
+               r.error || (topic ? "The run on " + topic + " could not finish." : "The run could not finish."), open);
+  }
+  /* The catalogue refresh: the owner's own example, and the strongest case for a notification,
+     because it takes minutes and you are meant to go and do something else. */
+  const rf = a.refresh;
+  if (rf && rf.finished_at && !agRefreshLive(rf)){
+    const n = rf.counts || rf || {};
+    const bits = [];
+    if (n.new != null) bits.push(n.new + " new");
+    if (n.gone != null) bits.push(n.gone + " gone");
+    if (n.changed != null) bits.push(n.changed + " changed");
+    agNotify("r:" + rf.finished_at, "Knowledge is up to date",
+             bits.length ? bits.join(", ") : "The catalogue has been refreshed.",
+             () => { a.view = "knowledge"; agDraw(true); });
+  }
+}
+
 function agStartPoll(){
   if (agPollTimer) return;
   const tick = async () => {
     agPollTimer = null;
     if (!agRoot()){ return; }
     const a = agS();
-    if (!(typeof document !== "undefined" && document.hidden)){
+    /* A HIDDEN WINDOW STILL POLLS WHILE SOMETHING IS RUNNING. It used to skip entirely, which
+       was right when nothing depended on it: a minimised window has nothing to repaint. It is
+       wrong now that a finished run has to raise a notification, because the whole point of
+       that notification is that you are NOT looking -- and a poll that only runs while you
+       watch would tell you the draft is ready at the moment you come back to find it. Idle and
+       hidden still skips, so an app left open overnight costs nothing. */
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (!hidden || agWatching(a)){
       try { await agRefresh(); } catch (e) { a.error = String(e && e.message || e); }
     }
-    const live = agLiveRun() || (a && a.view === "library" && agLibWriting(a)) || agWsJobLive(a && a.ws)
-      || agRefreshLive(a && a.refresh);
+    try { agNotifyPass(a); } catch (e) { /* never let a notification break the poll */ }
+    const live = agWatching(a);
     agPollTimer = setTimeout(tick, live ? AG_POLL_LIVE_MS : AG_POLL_IDLE_MS);
   };
   agPollTimer = setTimeout(tick, 400);
@@ -3160,14 +3465,27 @@ async function agAction(act, el){
     case "new": a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.view = "chat"; a.guideDive = null; a.draft = ""; a.focusComposer = true; agDraw(true); break;
     case "chat": a.view = "chat"; a.guideDive = null; await agLoadChat(arg, false); break;
     case "view": {
+      /* THE TAB PAINTS FIRST, THE NETWORK COMES SECOND (owner, 2026-09-10: "there is some
+         latency when going from one tab to the next one"). This used to await every fetch
+         BEFORE its first agDraw, so a click sat on the old tab for as long as the server took
+         and the app felt stuck. Now the new tab is on screen before a single request goes out;
+         whatever it holds from last time shows immediately and the answer redraws over it.
+         `viewBusy` is what lets a never-opened tab say "loading" instead of "nothing here". */
       a.view = arg; a.panel = null; a.guideDive = null;
-      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); agDraw(true); await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
+      a.viewBusy = arg;
+      agDraw(true);
+      if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); if (a.view === arg){ a.viewBusy = null; agDraw(true); } await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
       if (arg === "prompts"){ a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null; }
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
+      /* A LATE ANSWER FOR A TAB YOU HAVE LEFT REDRAWS NOTHING. Click Library then Tools quickly
+         and Library's response lands second; without this guard it would paint Library back
+         over the tab you are actually looking at. */
+      if (a.view !== arg) break;
+      a.viewBusy = null;
       agDraw(true); break;
     }
     case "play": a.view = "chat"; a.guideDive = null; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
@@ -3176,6 +3494,58 @@ async function agAction(act, el){
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));
       await agLoadChat(a.chatId, true); break; }
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
+    case "step": a.stepOpen[arg] = !a.stepOpen[arg]; agDraw(); break;
+    case "chatmenu": a.chatMenu = arg || null; agDraw(); break;
+    /* CLICKING A FACE. Somebody else's says who they are and when they were last here. Your
+       own opens the picker, because the one face a person wants to change is theirs. */
+    case "face": {
+      const ws = a.ws || {};
+      const meId = (ws.me && ws.me.member_id) || "";
+      const row = (ws.members || []).find(m => m && m.member_id === arg);
+      if (!row){ agToast("That person is no longer on the workspace."); break; }
+      /* YOUR OWN FACE OPENS THE PICKER ONLY WHILE YOU HAVE NONE. Once picked it is yours for
+         good (owner, 2026-09-11), so afterwards your face behaves like everybody else's and
+         just says who you are. The server refuses a second pick too; this only keeps the UI
+         from offering something that would be turned down. */
+      if (arg && arg === meId && !String(row.emoji || "").trim()){
+        a.facePick = a.facePick ? null : { loading: true, faces: [], names: {}, free: [] };
+        agDraw();
+        if (a.facePick){
+          try { a.facePick = Object.assign({ loading: false }, await agApi("/workspace/faces")); }
+          catch (e) { a.facePick = null; agToast("The face list could not be read."); }
+          agDraw();
+        }
+        break;
+      }
+      const ago = agFaceAgo(row.last_seen_at);
+      agToast((row.name || "Someone") + (ago < AG_FACE_HERE_MS ? " · here now"
+              : isFinite(ago) ? " · last seen " + agAgo(row.last_seen_at) : ""));
+      break;
+    }
+    case "facepick": {
+      try { await agPostApi("/workspace/face", { emoji: arg }); }
+      catch (e) { agToast(agWhy(e)); break; }
+      a.facePick = null;
+      a.ws = await agApi("/workspace").catch(() => a.ws);
+      agDraw();
+      agToast("That is you now.");
+      break;
+    }
+    case "chatdel": {
+      a.chatMenu = null;
+      try { await agDelApi(`/chats/${encodeURIComponent(arg)}`); }
+      catch (e) { agToast(String(e.message || e)); agDraw(); break; }
+      /* If the open chat was the one deleted, land somewhere real rather than on a chat id
+         that no longer resolves: the next chat down, or the empty state. */
+      if (a.chatId === arg){
+        a.chatId = null; a.chat = null; a.events = {}; a.cursors = {}; a.panel = null; a.draft = "";
+      }
+      a.chats = await agApi("/chats").catch(() => a.chats);
+      if (!a.chatId && a.chats && a.chats.length) await agLoadChat(a.chats[0].id, true);
+      else agDraw();
+      agToast("Chat deleted. Anything it wrote is still in the Library.");
+      break;
+    }
     case "work": {
       const p = a.panel; if (!p) break;
       a.workOpen = { label: arg, data: { loading: true } }; agDraw();

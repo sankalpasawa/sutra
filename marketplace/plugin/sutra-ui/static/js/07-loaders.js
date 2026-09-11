@@ -1975,6 +1975,15 @@ document.getElementById("app").addEventListener("click", e=>{
        `S.sessions.find(id === sid)` guard and returns when it misses, and the
        + on a department heading has no session to name -- it is what creates
        one. Routing it through sessAction made the button silently inert. */
+    /* "Show N earlier turns" -- handled here for the same reason dept-new is: it is a view
+       toggle on a pane, not an action on a session, and sessAction would find nothing to do. */
+    if (act.dataset.act === "fullturns"){
+      S.ui.fullTurns = S.ui.fullTurns || {};
+      S.ui.fullTurns[act.dataset.id] = true;
+      if (typeof invalidatePanesHtml === "function") invalidatePanesHtml();
+      render();
+      return;
+    }
     if (act.dataset.act === "dept-new"){
       /* startNewChat, not newSession: the + is a New chat gesture like the
          other two, and reuses the focused chat when it is still untouched AND

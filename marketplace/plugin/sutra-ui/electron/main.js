@@ -602,7 +602,11 @@ async function ensureInstalled() {
     detail: (onImage
       ? "A disk image is read-only, so Sutra cannot update itself from here. "
       : "Sutra updates itself by replacing its own copy, which only works from Applications. ") +
-      "Move it now and Sutra will reopen from Applications. You will not be asked again.",
+      /* This used to end "You will not be asked again", which was only true if they ticked the
+         box. Click "Not now" without ticking and it asks again next launch, so the sentence
+         promised something the code does not do. A dialog that is wrong about itself costs
+         trust in every other message the app shows. (owner review, 2026-09-10) */
+      "Move it now and Sutra will reopen from Applications.",
     checkboxLabel: "Do not ask again",
     checkboxChecked: false,
     noLink: true,

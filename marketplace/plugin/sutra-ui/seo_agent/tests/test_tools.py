@@ -64,6 +64,49 @@ try:
 except Exception as e:
     ok("runs", False, e)
 
+# THE ASSET SHEET SUPERSEDES THIS TOOL, and the tool has to know it. suggest_topics was written
+# before build_assets existed, when one rival's ranking keywords were the only evidence about what
+# to write. With ~1,900 ideas already ranked and already judged for ownability and linkability,
+# offering six fresh guesses is the wrong first move. So with a sheet on file it refuses, spends
+# no DataForSEO call, and hands back what is on the sheet instead. Naming a competitor still gets
+# the old behaviour, because that is a person asking for exactly this tool.
+print("\nsuggest_topics defers to the asset sheet")
+from seo_agent.assets import _common as _acm
+_saved_sheet = _acm.read("ideas.json")
+try:
+    _acm.save("ideas.json", [
+        {"id": "a0001", "title": "Cost of a bad hire, benchmarked", "angle": "Real numbers",
+         "rank": 1, "status": "open", "method": ["competitor-study"]},
+        {"id": "a0002", "title": "Time to hire by role", "angle": "By role, not average",
+         "rank": 2, "status": "open", "method": ["study-trends"]},
+        {"id": "a0003", "title": "Already written", "rank": 3, "status": "done"},
+    ])
+    n0 = len(events)
+    out = suggest_topics.run(ctx)
+    ok("it refuses rather than inventing six more", out.get("used_sheet") is True, out.get("summary"))
+    ok("it names the next idea off the sheet", (out.get("next") or {}).get("id") == "a0001", out.get("next"))
+    ok("and offers only the ones still open", [r["id"] for r in out.get("top_open") or []] == ["a0001", "a0002"],
+       [r["id"] for r in out.get("top_open") or []])
+    ok("it wrote no topics.json for this call", not out.get("artifact"), out.get("artifact"))
+    ok("it said so in the log", len(events) > n0)
+    # A named competitor is a person asking for this tool by name. The sheet does not veto that.
+    out = suggest_topics.run(ctx, competitor="rival.example")
+    ok("naming a competitor still studies that competitor", not out.get("used_sheet"), out.get("summary"))
+    # Every idea written or dropped is the same as no sheet: there is nothing to offer.
+    _acm.save("ideas.json", [{"id": "a0001", "title": "Done", "rank": 1, "status": "done"}])
+    out = suggest_topics.run(ctx)
+    ok("a fully written sheet does not block it either", not out.get("used_sheet"), out.get("summary"))
+except Exception as e:
+    ok("runs", False, e)
+finally:
+    if _saved_sheet is None:
+        import os as _os
+        _p = _acm.path("ideas.json")
+        if _os.path.exists(_p):
+            _os.remove(_p)
+    else:
+        _acm.save("ideas.json", _saved_sheet)
+
 print("\nrun_research")
 from seo_agent.tools import run_research
 try:

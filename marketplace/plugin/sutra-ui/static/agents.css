@@ -11,7 +11,8 @@
 /* ── agent column ─────────────────────────────────────────────────────────── */
 .ag-side{width:232px;flex:none;border-right:1px solid var(--line-soft);display:flex;
   flex-direction:column;min-height:0;background:var(--surface)}
-.ag-agent{display:flex;align-items:center;gap:9px;padding:12px 12px 10px;border-bottom:1px solid var(--line-soft)}
+/* flex-wrap so the faces row drops onto its own line under the name, rather than squeezing it. */
+.ag-agent{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 12px 10px;border-bottom:1px solid var(--line-soft)}
 .ag-mark{width:28px;height:28px;border-radius:8px;background:var(--acc-bg);color:var(--acc);
   display:grid;place-items:center;flex:none;font:700 12px/1 var(--serif)}
 .ag-agent b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.2}
@@ -19,6 +20,49 @@
 .ag-agent .dot{width:6px;height:6px}
 .ag-agent .dot.warn{background:var(--warn)}
 .ag-agent .dot.bad{background:var(--block)}
+/* THE ROW OF FACES. Sits under the agent's name in the header, so it reads as "who is on this"
+   rather than a widget parked in a corner. Overlapping by a few px is deliberate: it reads as
+   one group at a glance, which a row of evenly spaced circles does not. */
+/* SPACED, NOT OVERLAPPED. Overlapping avatars are a pattern for twenty faces in a strip; at
+   five they just collide, and the "here now" ring on one lands on top of its neighbour. */
+.ag-faces{display:flex;align-items:center;gap:4px;flex-basis:100%;margin-top:10px;flex-wrap:wrap}
+.ag-face{width:26px;height:26px;flex:none;border-radius:50%;cursor:pointer;padding:0;
+  background:var(--inset);border:1px solid var(--line);color:var(--muted);
+  display:grid;place-items:center;font:600 9.5px/1 var(--sans);
+  transition:transform .1s ease,border-color .1s ease}
+.ag-face .e{font-size:14px;line-height:1}
+.ag-face:hover{transform:translateY(-1px);border-color:var(--acc)}
+.ag-face:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Seen in the last five minutes. ONE thin ring, not a ring plus a halo: three lit faces out of
+   five was reading as an alarm rather than as presence. */
+.ag-face.here{border-color:var(--ok)}
+/* You are marked by a filled ground, not another ring, so "you" and "here" stay tellable apart. */
+.ag-face.me{background:var(--acc-bg);border-color:var(--acc)}
+.ag-face.me.here{border-color:var(--ok)}
+.ag-face.more{background:none;border-style:dashed;cursor:default;font-size:9px}
+/* Yours, before you have picked one. Dashed and accented so it reads as "do something here",
+   which is the only moment the picker is ever offered. */
+.ag-face[data-pickme]{border-style:dashed;border-color:var(--acc);color:var(--acc)}
+.ag-face[data-pickme]:hover{background:var(--acc-bg)}
+
+/* The picker, under the header while it is open. */
+.ag-facepick{margin:0 10px 8px;padding:9px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card)}
+.ag-facepick .hd{display:flex;align-items:center;font:600 10.5px/1 var(--sans);
+  color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.ag-facepick .hd .x{margin-left:auto;background:none;border:0;color:var(--faint);cursor:pointer;
+  font-size:15px;line-height:1;padding:0 2px}
+.ag-facepick .hd .x:hover{color:var(--ink)}
+.ag-facepick .ld{font-size:11.5px;color:var(--faint)}
+.ag-facepick .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.ag-facepick .f{aspect-ratio:1;border:1px solid transparent;border-radius:7px;cursor:pointer;
+  background:none;font-size:15px;line-height:1;display:grid;place-items:center;padding:0}
+.ag-facepick .f:hover{background:var(--acc-bg);border-color:var(--acc)}
+.ag-facepick .f:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Taken is dimmed, not disabled: past 32 people somebody HAS to share one. */
+.ag-facepick .f.taken{opacity:.34}
+.ag-facepick .f.taken:hover{opacity:.8}
+
 .ag-side .newBtn{margin:10px 10px 4px}
 .ag-sec{font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
   padding:10px 16px 5px}
@@ -33,7 +77,33 @@
 .ag-chat .dot.run{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
 .ag-chat .dot.wait{background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg)}
 .ag-chat .dot.idle{background:var(--line)}
+
+/* THE CHAT ROW HOLDS ITS OWN DELETE. The 3-dot only appears on hover or keyboard focus, so a
+   sidebar of ten chats is not ten buttons shouting at you; it is always in the tab order. */
+.ag-chatrow{position:relative;display:flex;align-items:center}
+.ag-chatrow .ag-chat{flex:1;min-width:0}
+.ag-chatdots{flex:none;opacity:0;background:none;border:0;cursor:pointer;color:var(--faint);
+  padding:4px;margin-right:4px;border-radius:5px;line-height:0;transition:opacity .1s ease,color .1s ease}
+.ag-chatdots svg{width:13px;height:13px}
+.ag-chatrow:hover .ag-chatdots,.ag-chatdots:focus-visible{opacity:1}
+.ag-chatdots:hover{color:var(--ink);background:var(--inset)}
+.ag-chatdots:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-chatask{flex:none;display:flex;align-items:center;gap:5px;padding-right:5px;
+  font:500 10.5px/1 var(--sans)}
+.ag-chatask .lb{color:var(--faint)}
+.ag-chatask button{background:none;border:1px solid var(--line);border-radius:5px;cursor:pointer;
+  padding:3px 6px;font:500 10.5px/1 var(--sans);color:var(--muted)}
+.ag-chatask .yes{color:var(--block);border-color:var(--block)}
+.ag-chatask .yes:hover{background:var(--block);color:#fff}
+.ag-chatask .no:hover{border-color:var(--acc);color:var(--ink)}
+.ag-chatask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-chatrow.asking .ag-chat .t{opacity:.5}
 .ag-empty{padding:8px 16px;font-size:11.5px;color:var(--faint)}
+/* The first-visit hold. Deliberately quiet: it is on screen for a few hundred milliseconds
+   and a loud skeleton would flash harder than the thing it replaces. */
+.ag-vload{display:flex;align-items:center;gap:9px;padding:30px 0;color:var(--faint);font-size:12px}
+.ag-vload .sp{width:11px;height:11px;flex:none;border-radius:50%;border:1.5px solid var(--line);
+  border-top-color:var(--acc);animation:sutraSpin .7s linear infinite}
 .ag-side .nav{padding:6px 6px 8px;border-top:1px solid var(--line-soft)}
 
 /* ── conversation column ──────────────────────────────────────────────────── */
@@ -121,6 +191,32 @@
 .ag-title{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.4;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .ag-title .ms{font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
 .ag-title .pill{margin-left:2px}
+
+/* A FINISHED STEP FOLDS TO ITS HEADLINE (owner, 2026-09-10: "then they should collapse back...
+   only the thing I should be able to see is 'writing the article'"). The headline is the whole
+   hit area, not the chevron, because a 10px arrow is a bad target and the title reads as the
+   thing you press. The chevron points right when shut and down when open, the same direction
+   language the run header already uses, so the two folds do not contradict each other. */
+.ag-fold-t{background:none;border:0;padding:0;margin:0;width:100%;text-align:left;cursor:pointer;
+  font:600 12.5px/1.4 var(--sans);color:var(--ink);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+/* THE CHEVRON TAKES THE STATE GLYPH'S SLOT, it does not sit beside it. Side by side you get
+   "✓›" jammed together on the rail (seen 2026-09-10). A step that can fold has always finished
+   and always succeeded -- a failure never folds -- so one mark carries both meanings: it is
+   green because the step worked, and it points because there is more underneath. */
+.ag-fold-t .cv{position:absolute;left:-26px;top:1px;width:15px;height:15px;border-radius:50%;
+  background:var(--card);display:inline-flex;align-items:center;justify-content:center;color:var(--ok)}
+.ag-step.ask .ag-fold-t .cv{color:var(--acc)}
+.ag-fold-t .cv svg{width:11px;height:11px;transform:rotate(-90deg);transition:transform .12s ease}
+.ag-fold-t .cv.on svg{transform:none}
+.ag-fold-t:hover{color:var(--acc)}
+.ag-fold-t:hover .cv{color:var(--acc)}
+.ag-fold-t:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:4px}
+.ag-fold-t .n{font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
+/* A folded question: the question itself, then the answer, on one line. */
+.ag-fold-t .qt{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%}
+.ag-fold-t .said{font:500 11px/1.4 var(--sans);color:var(--acc);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-fold-t .said i{font-style:normal;color:var(--faint);font-weight:400;margin-right:4px}
 .ag-body{color:var(--muted);font-size:12px;line-height:1.55;margin-top:2px}
 .ag-body.md{color:var(--muted)}
 .ag-body .md-p{margin:0 0 6px}
@@ -950,32 +1046,30 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .ag-guide{padding:24px 0 16px;max-width:min(100%,124ch)}
 .ag-guide h2{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.025em;
   margin:0 0 10px;color:var(--ink);line-height:1.12}
-.ag-guide .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65;max-width:72ch}
+/* THE PARAGRAPHS END WHERE THE RULES END. They had a tighter cap of their own, so a heading's rule
+   ran the full column and the sentence under it stopped two thirds along — and a rule that
+   disagrees with its own text reads as broken rather than as a measure being kept (owner,
+   2026-09-10: "the formatting is still not fixed to the right"). One width for the whole guide. */
+.ag-guide .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65}
 .ag .ag-guide h3.sec,.ag .ag-dive h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;
   text-transform:none;color:var(--ink);margin:28px 0 12px;padding-bottom:7px;
   border-bottom:1px solid var(--line)}
-.ag-guide .gp{color:var(--muted);margin:0 0 10px;font-size:12.5px;line-height:1.65;max-width:72ch}
+.ag-guide .gp{color:var(--muted);margin:0 0 10px;font-size:12.5px;line-height:1.65}
 .ag-guide .gp:last-child{margin-bottom:0}
 
 /* the four steps. The numeral is the landmark, so it is set in the mono face the rest of
    the screen counts in, and it sits in its own column rather than in the text. */
 .ag-gsteps{list-style:none;margin:0;padding:0;counter-reset:agstep}
 .ag-gsteps li{counter-increment:agstep;display:grid;grid-template-columns:22px 1fr;gap:11px;
-  padding:7px 0;font-size:12.5px;line-height:1.6;color:var(--ink);max-width:62ch}
+  padding:7px 0;font-size:12.5px;line-height:1.6;color:var(--ink)}
 .ag-gsteps li::before{content:counter(agstep);font:600 11px/1.55 var(--mono);color:var(--acc);
   font-variant-numeric:tabular-nums}
-
-/* the command to type. It is a line of input, so it is drawn as input: mono, boxed, and
-   quiet -- it must not read as a button, because it is not one. */
-.ag-gcmd{margin:0 0 12px}
-.ag-gcmd code{display:inline-block;font:500 12.5px/1.5 var(--mono);color:var(--ink);
-  background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
 
 /* the tab table. Two columns on a wide pane, and the name stacks above its line when the
    column gets narrow rather than squeezing the sentence into four words a line. */
 .ag-gtabs{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:0 18px;align-items:baseline}
 .ag-gtabs dt{font:600 12.5px/1.6 var(--sans);color:var(--ink);padding:6px 0;white-space:nowrap}
-.ag-gtabs dd{margin:0;padding:6px 0;font-size:12.5px;line-height:1.6;color:var(--muted);max-width:56ch}
+.ag-gtabs dd{margin:0;padding:6px 0;font-size:12.5px;line-height:1.6;color:var(--muted)}
 @media (max-width:620px){
   .ag-gtabs{grid-template-columns:1fr;gap:0}
   .ag-gtabs dt{padding-bottom:0}

@@ -34,9 +34,14 @@ UI_TOOLS = [
         "name": "ask_user",
         "description": (
             "Ask the user ONE question and WAIT. Use only when the answer changes what happens "
-            "next and you cannot work it out yourself or from Knowledge. Give 2-4 options, mark "
-            "one recommended, say WHY you are asking in one line. Never ask about things that "
-            "are free, reversible, or already answered in Knowledge. Never ask two things at once."
+            "next and you cannot work it out yourself or from Knowledge. Say WHY you are asking "
+            "in one line. OPTIONS ARE FOR A CHOICE BETWEEN NAMED ALTERNATIVES ONLY: 2-4 of them, "
+            "one marked recommended, each one a complete answer on its own. A question whose "
+            "answer they have to type -- a topic, a title, a URL, a number -- takes NO options "
+            "at all; leave the list off and let them type. Never write an option that only "
+            "restates the question ('give me the topic in a sentence'), and never re-offer "
+            "something they just turned down. Never ask about things that are free, reversible, "
+            "or already answered in Knowledge. Never ask two things at once."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": True,
         "input_schema": {"type": "object", "properties": {
@@ -180,9 +185,10 @@ WORK_TOOLS = [
         "name": "onboard",
         "description": (
             "Put the setup questions to the user, one at a time, in the chat: the numbers their "
-            "site does not publish, why the company was built, something that did not work, who "
-            "articles are published under, who signs the leadership pieces, and who they compete "
-            "with. Six short questions, every one skippable. Run ONCE at setup, after index_site "
+            "site does not publish, why the company was built, something that did not work, and "
+            "who they compete with. FOUR short questions, every one skippable. (The two byline "
+            "questions were deleted on 2026-09-09 with voices.md; do not ask them.) Run ONCE at "
+            "setup, after index_site "
             "and BEFORE learn_brand, because three of the answers belong in files learn_brand "
             "instantiates and it never overwrites a file that already has them. It knows who has "
             "been asked already and says so, so calling it twice is safe. Pass redo=true ONLY "
@@ -207,8 +213,9 @@ WORK_TOOLS = [
             "who they write for, their real numbers and customer stories, the words they never "
             "use, the pages a call to action may link to, and the one-page writer brief every "
             "article is written from. Run ONCE at setup, after index_site (and build_page_index "
-            "if there is a key). Then show_artifact the brand pack so the user confirms the "
-            "flagged rows."
+            "if there is a key). Then show_artifact the brand pack (view brand_pack, path brand). "
+            "That one does NOT stop: say in one sentence that it is there to read, name what is "
+            "flagged for their attention, and carry on. Never wait for a reply."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": False,
         "est_minutes": 20, "module": "tools.learn_brand",
@@ -230,10 +237,14 @@ WORK_TOOLS = [
             "competitor pages actually earn links and the FORMAT that earned them; formats proven "
             "in other industries, transplanted; and what the audience argues about in public. Then "
             "merge, dedupe by meaning, rank, and check each idea against pages the company already "
-            "has. Run AFTER learn_brand, and only when the user asks for ideas or a content plan. "
-            "It is optional and it takes a while. It STOPS TWICE for the user: the competitor "
-            "shortlist and the subreddit list. Never call it to write a single article the user "
-            "has already named."
+            "has. Needs BOTH the site catalogue and the brand pack, and refuses without either: it "
+            "judges every idea against what this company can credibly own, and that comes from the "
+            "pack. So run it after index_site and learn_brand, when the user asks for ideas or a "
+            "content plan, or when they ask what to write and the Knowledge block says there is no "
+            "sheet. It takes a while and it STOPS TWICE for the user: the competitor shortlist and "
+            "the subreddit list. What it leaves behind is the ranked sheet, and from then on THAT "
+            "is where topics come from. The Knowledge block names the next open idea every turn. "
+            "Never call it to write a single article the user has already named."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": True,
         "est_minutes": 25, "module": "tools.build_assets",
@@ -244,26 +255,36 @@ WORK_TOOLS = [
         "plain": {
             "does": "Builds a ranked sheet of asset ideas from what earns links, what works in other industries, and what your audience argues about.",
             "when": "After the brand pack, when you want a plan rather than one article.",
-            "needs": "The brand pack. The competitor study also needs DataForSEO credit.",
+            "needs": "The site catalogue and the brand pack; it refuses without either. The competitor study also needs DataForSEO credit.",
             "takes": "Twenty to thirty minutes, and it asks you two questions along the way.",
         },
     },
     {
         "name": "suggest_topics",
         "description": (
-            "Propose six topics this company could own, each with an angle competitors have not "
-            "taken, from one competitor's best pages and what this site already covers. Use when "
-            "the user has not named a topic. Then show_artifact the list so they pick one."
+            "Propose six topics from ONE competitor's best pages, each with an angle they have not "
+            "taken. This is the FALLBACK for a company that has no asset sheet. If the Knowledge "
+            "block says there are ideas on the sheet, do NOT call this: the next idea off the sheet "
+            "is already ranked, already judged for whether this company can own it and whether "
+            "anyone would cite it, and six fresh competitor guesses are a worse answer than the one "
+            "sitting at the top of the sheet. Call it only when there is NO sheet and they asked "
+            "for topic ideas and turned build_assets down, or when they name a competitor and ask "
+            "what THAT competitor ranks for. Then show_artifact the "
+            "list so they pick one. It refuses if there is no DataForSEO login: every topic has to "
+            "be sparked by a keyword the competitor really ranks for."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": False,
         "est_minutes": 4, "module": "tools.suggest_topics",
         "input_schema": {"type": "object", "properties": {
-            "competitor": {"type": "string", "description": "Optional. Leave empty to rotate."},
+            "competitor": {"type": "string", "description": "The competitor to study. Naming one is "
+                                                            "also what says 'yes, study a rival' when "
+                                                            "an asset sheet already exists. Leave "
+                                                            "empty to rotate through the list."},
         }},
         "plain": {
-            "does": "Suggests six article topics with an angle no competitor has taken.",
-            "when": "When you have not decided what to write about.",
-            "needs": "The site catalogue and a competitor list.",
+            "does": "Suggests six article topics from one competitor's ranking pages, each with an angle they have not taken.",
+            "when": "Only when there is no asset sheet yet. Once the sheet exists the next idea comes off that instead.",
+            "needs": "The site catalogue, a competitor list, and DataForSEO for their ranking keywords.",
             "takes": "A few minutes.",
         },
     },
@@ -297,10 +318,12 @@ WORK_TOOLS = [
     {
         "name": "build_blueprint",
         "description": (
-            "Turn the approved research into the article's structure: keep only the evidence that "
+            "Turn the research into the article's structure: keep only the evidence that "
             "serves the spine, group it into sections and sub-sections with headings, attach the "
-            "internal and external links, the FAQ and the keyword set. Run after the user approves "
-            "the research brief. Then show_artifact the blueprint."
+            "internal and external links, the FAQ and the keyword set. Run once the research brief "
+            "has been made and shown. Showing it does NOT stop the run any more, so do not wait to "
+            "be told to go ahead: show it, then come straight here. Then show_artifact the "
+            "blueprint, which does not stop either."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": False,
         "est_minutes": 8, "module": "tools.build_blueprint",
@@ -315,12 +338,13 @@ WORK_TOOLS = [
     {
         "name": "write_article",
         "description": (
-            "Write the article from the approved blueprint the way the write phase does: plan and "
+            "Write the article from the blueprint the way the write phase does: plan and "
             "verify sources, shape it for its format, place brand facts, buy section keywords, "
             "write each section from its own facts in the writer brief's voice, then edit for "
             "length, coherence, readability and AI tells, lay in internal links by meaning, and "
-            "assemble with sources. Takes a long time. Run only after the blueprint is approved. "
-            "Then show_artifact the draft."
+            "assemble with sources. Takes a long time. Run once the blueprint has been made and "
+            "shown; showing the blueprint does not stop the run, so do not wait to be told to go "
+            "ahead. Then show_artifact the draft. That one DOES stop and wait."
         ),
         "gate": "auto", "cost_credits": 0, "pauses": False,
         "est_minutes": 45, "module": "tools.write_article",

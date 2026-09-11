@@ -34,6 +34,7 @@
       <div class="rscroll">
         <ul class="nav" id="railnav"></ul>
       </div>
+
       <!-- v3.3 identity footer (PLAN-25 S11-S12). Bottom-left answers "who am
            I acting as": the ROLE, then session telemetry. Clicking it opens a
            menu with exactly two jobs — Act as, and Switch theme. The avatar is
@@ -75,6 +76,15 @@
         </button>
       </div>
     </nav>
+    <!-- THE DRAG EDGE (owner, 2026-09-10: "make the left one collapsable, click on the centre
+         and slide left to collapse it, like I have it in VS Code"). It is a SIBLING of .rail,
+         never a child: collapsed, `.app.railcol .rail{display:none}` takes the rail away, and a
+         child of a display:none parent is not rendered no matter what position it carries, so
+         an edge inside the rail vanishes exactly when you need it to drag the rail back.
+         Being position:absolute it is out of flow, so it claims no grid track either. -->
+    <div class="raildrag" id="railDrag" role="separator" aria-orientation="vertical"
+         tabindex="0" aria-label="Drag to resize the sidebar, click to hide it"
+         title="Drag to resize · click to hide"><span class="grip" aria-hidden="true"></span></div>
 
     <button class="railshow" id="railShow" type="button"
             aria-label="Show the sidebar" title="Show the sidebar">

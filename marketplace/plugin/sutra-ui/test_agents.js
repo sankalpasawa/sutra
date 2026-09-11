@@ -171,9 +171,15 @@ test("a live approval card renders Go ahead / Not now; an answered one renders t
   assert.ok(/data-ag="approve" data-arg="yes"/.test(live) && /Not now/.test(live));
   assert.ok(/<b>12<\/b> min/.test(live), "the time is stated");
   assert.ok(!/credit/i.test(live), "credits are gone from the screen");
-  const done = A.agEntryHtml({ kind: "approval", live: false, decision: "declined", question: "q", options: [] }, {});
-  assert.ok(/You said/.test(done) && /Not now/.test(done));
+  /* AN ANSWERED APPROVAL FOLDS (owner, 2026-09-10). Shut it is one line: the question and the
+     decision. Opened it is the whole card again, minus the buttons -- the decision is made. */
+  const done = A.agEntryHtml({ kind: "approval", id: "ap1", live: false, decision: "declined", question: "q", options: [] }, {});
+  assert.ok(/You said/.test(done) && /Not now/.test(done), "the decision shows while folded");
+  assert.ok(/data-ag="step" data-arg="ap1"/.test(done), "and it can be opened again");
   assert.ok(!/data-ag="approve"/.test(done), "no buttons after the fact");
+  const reopened = A.agEntryHtml({ kind: "approval", id: "ap1", live: false, decision: "declined", question: "q", options: [] }, { stepOpen: { ap1: true } });
+  assert.ok(/You said/.test(reopened) && /Not now/.test(reopened));
+  assert.ok(!/data-ag="approve"/.test(reopened), "still no buttons once opened");
 });
 test("topic cards: the picked one is the checked radio, volumes are labelled demo when the data says so", () => {
   const data = { competitor: "rival.com", demo: true, topics: [
@@ -259,9 +265,78 @@ test("a stage the user opened stays open, and its rows come back", () => {
   ];
   const shut = A.agRunHtml({ run_id: "r1", status: "running" }, evs, {});
   assert(shut.indexOf("Opened the site") === -1 || /ag-stagebody" hidden/.test(shut), "shut by default");
+  /* TWO FOLDS, OUTER THEN INNER. Opening the stage shows the step HEADLINES; the finished step
+     keeps its own sub-lines folded until you open that too. That is the point of the change:
+     a stage of sixty sub-lines opens as a short list you can read, not a wall. */
   const open = A.agRunHtml({ run_id: "r1", status: "running" }, evs, { stageOpen: { "r1:setup": true } });
-  assert(open.indexOf("Opened the site") !== -1, "opening the stage shows its substeps");
+  assert(open.indexOf("Reading the website") !== -1, "opening the stage shows the step");
+  assert(open.indexOf("Opened the site") === -1, "the finished step keeps its own lines folded");
   assert((open.match(/class="ag-stagebody" hidden/g) || []).length === 0, "nothing hidden once both are open");
+  const both = A.agRunHtml({ run_id: "r1", status: "running" }, evs, { stageOpen: { "r1:setup": true }, stepOpen: { s1: true } });
+  assert(both.indexOf("Opened the site") !== -1, "opening the step shows its substeps");
+});
+
+test("a step folds when it finishes, and never while it is still working", () => {
+  const running = A.agEntryHtml({ kind: "step", id: "s9", state: "run", label: "Researching the topic",
+    lead: "Reading pages now.", subs: [{ label: "Read 10 pages", note: "three tries each" }] }, {});
+  assert(running.indexOf("Read 10 pages") !== -1, "a live step shows its lines: that IS the point");
+  assert(!/data-ag="step"/.test(running), "and it offers no fold, because there is nothing to hide yet");
+
+  const subs = [];
+  for (let i = 0; i < 61; i++) subs.push({ label: "line " + i, note: "n" });
+  const done = A.agEntryHtml({ kind: "step", id: "s9", state: "ok", label: "Researching the topic",
+    ms: 613000, summary: "327 cards", lead: "Reading pages now.", subs: subs }, {});
+  assert(done.indexOf("line 60") === -1, "the sixty-one lines are gone once it is done");
+  assert(done.indexOf("Researching the topic") !== -1, "the headline stays");
+  assert(done.indexOf("327 cards") !== -1, "and so does the one-line result");
+  assert(/61 steps/.test(done), "it says how many lines are hiding");
+  assert(/data-ag="step" data-arg="s9"/.test(done), "the headline is the button that opens it");
+
+  const opened = A.agEntryHtml({ kind: "step", id: "s9", state: "ok", label: "Researching the topic",
+    ms: 613000, summary: "327 cards", subs: subs }, { stepOpen: { s9: true } });
+  assert(opened.indexOf("line 60") !== -1, "opening it brings them back");
+
+  /* A FAILURE NEVER FOLDS. The reason it broke is the one thing you have to read. */
+  const bad = A.agEntryHtml({ kind: "step", id: "s8", state: "bad", label: "Reading the website",
+    reason: "the site refused the crawl", subs: [{ label: "tried twice", note: "403" }] }, {});
+  assert(bad.indexOf("the site refused the crawl") !== -1);
+  assert(bad.indexOf("tried twice") !== -1, "a failed step stays open");
+  assert(!/data-ag="step"/.test(bad), "and offers no fold at all");
+});
+
+test("an answered question folds to the question and the answer; a live one is the whole card", () => {
+  const live = A.agEntryHtml({ kind: "ask", id: "q1", live: true, question: "What's the topic?",
+    why: "Research starts from it.", options: [], call_id: "c1" }, {});
+  assert(live.indexOf("Asked you a question") !== -1);
+  assert(live.indexOf("Research starts from it.") !== -1, "a live question keeps its reason");
+  assert(/Type your answer below/.test(live), "no options means no talk of picking one");
+
+  const done = A.agEntryHtml({ kind: "ask", id: "q1", live: false, question: "What is the topic?",
+    why: "Research starts from it.", answer: "cost per hire", options: [] }, {});
+  assert(done.indexOf("cost per hire") !== -1, "the answer shows");
+  assert(done.indexOf("What is the topic?") !== -1, "so does the question");
+  assert(done.indexOf("Research starts from it.") === -1, "the reason folds away: it is settled");
+  assert(/data-ag="step" data-arg="q1"/.test(done), "and it can be opened again");
+
+  const reopened = A.agEntryHtml({ kind: "ask", id: "q1", live: false, question: "What is the topic?",
+    why: "Research starts from it.", answer: "cost per hire", options: [] }, { stepOpen: { q1: true } });
+  assert(/&#3\d;|&apos;|&quot;/.test(A.agEntryHtml({ kind: "ask", id: "q4", live: false,
+    question: "What's the topic?", answer: "a", options: [] }, {})) , "and an apostrophe is escaped, never raw");
+  assert(reopened.indexOf("Research starts from it.") !== -1, "opening it brings the reason back");
+});
+
+test("a question with no options never tells the user to pick one", () => {
+  /* Owner, 2026-09-10: he answered "I'll name my own topic" and got two options back, one of
+     which only restated the question. A free-text ask now carries no chips at all, so the hint
+     under it must not talk about options that are not there. */
+  const none = A.agEntryHtml({ kind: "ask", id: "q2", live: true, question: "What's the topic?", why: "w", options: [] }, {});
+  assert(!/ag-chip/.test(none), "no chips are drawn for an empty option list");
+  assert(/Type your answer below/.test(none));
+  assert(!/pick an option/.test(none));
+  const some = A.agEntryHtml({ kind: "ask", id: "q3", live: true, question: "Write a1003?", why: "w",
+    options: [{ label: "Write a1003", recommended: true }, { label: "I'll name my own topic" }] }, {});
+  assert(/ag-chip/.test(some), "a real choice still gets its chips");
+  assert(/Pick one, or type your own answer below/.test(some));
 });
 
 test("the research brief lists who researched it and every step's own file", () => {
@@ -2144,6 +2219,46 @@ test("the tab table's left column is the sidebar's own names, exactly", () => {
 
 /* ── the two slots that are real state ────────────────────────────────────── */
 
+test("the first starter offers the sheet's next idea, and falls back only when there is none", () => {
+  /* He hit this: "Suggest six topics we could own" offered to a machine with 1,890 ranked ideas
+     on it. suggest_topics predates the asset engine. It is not dead — it is the right answer for
+     a company with no sheet — so what is asserted here is the CONDITION. (2026-09-10) */
+  const withSheet = { model_provider: "claude-cli", site_indexed: true, page_index: { built: true },
+    brand_ready: true, chats: 2,
+    assets: { built: true, total: 1890, open: 1884, next: { id: "a1001", title: "The real cost of recruitment" } } };
+  const html = A.agHeroHtml(withSheet, {});
+  assert.ok(/Write the next idea on the sheet/.test(html), "it leads with the sheet");
+  assert.ok(/The real cost of recruitment/.test(html), "named, so he knows what he is agreeing to");
+  assert.ok(/1883 more waiting/.test(html), "and how many are behind it");
+  assert.ok(/Passing on it leaves it on the sheet/.test(html),
+    "passing costs nothing, which is true and must be said");
+  assert.ok(!/Suggest six topics/.test(html), "and the pre-asset-engine play is not offered");
+
+  const noSheet = Object.assign({}, withSheet, { assets: { built: false, total: 0, open: 0, next: null } });
+  assert.ok(/Suggest six topics/.test(A.agHeroHtml(noSheet, {})),
+    "with no sheet it IS the right first move, so it comes back");
+
+  const allWritten = Object.assign({}, withSheet, {
+    assets: { built: true, total: 12, open: 0, next: null } });
+  assert.ok(/Suggest six topics/.test(A.agHeroHtml(allWritten, {})),
+    "a sheet with nothing left open is the same case as no sheet");
+});
+
+test("the guide has ONE width: no rule outruns the text under it", () => {
+  /* A heading's rule spanned the column while the sentence beneath it stopped two thirds along,
+     because the paragraphs, the steps and the tab descriptions each carried a tighter cap of
+     their own. A rule that disagrees with its own text reads as broken, not as a measure being
+     kept. (2026-09-10) */
+  const css = require("fs").readFileSync(
+    require("path").join(__dirname, "static/agents.css"), "utf8");
+  const guide = css.slice(css.indexOf(".ag-guide{"), css.indexOf(".ag-dive{"));
+  const caps = (guide.match(/max-width:\s*\d+ch/g) || []);
+  assert.deepStrictEqual(caps, [],
+    "the guide's parts must not carry their own widths; the container owns it: " + caps.join(", "));
+  assert.ok(/\.ag-guide\{[^}]*max-width:min\(100%,124ch\)/.test(guide),
+    "and the container's width is the same ceiling the conversation uses");
+});
+
 test("the guide names no website at all, so there is nothing to get wrong", () => {
   /* It used to print `Set up <domain>` in a mono block, read from the company record. The record
      was right and it was never hardcoded — but a command box made a two-word instruction look
@@ -2742,11 +2857,21 @@ async function atest(name, fn){
     a.library = [{ id: "x", status: "ready" }];
     assert.strictEqual(A.agLibWriting(a), false);
     assert.strictEqual(A.agLibWriting({}), false, "and an empty screen is not 'writing'");
-    /* the fast/idle choice is one expression over both, so there is no second clock */
+    /* THE FAST/IDLE CHOICE IS STILL ONE EXPRESSION OVER ALL OF THEM, so there is no second
+       clock. It moved into agWatching() on 2026-09-10 because a second caller appeared: a
+       hidden window has to keep polling while work is live, or a finished run could not raise
+       a notification. Same predicate, one definition, two readers. */
     const src = fs.readFileSync(path.join(__dirname, "static", "js", "17-agents.js"), "utf8");
+    const watch = src.slice(src.indexOf("function agWatching"), src.indexOf("function agNotifyReady"));
+    assert.ok(/agLiveRun\(\)/.test(watch) && /agLibWriting\(a\)/.test(watch)
+              && /agRefreshLive\(a\.refresh\)/.test(watch) && /agWsJobLive\(a\.ws\)/.test(watch),
+              "agWatching must cover every kind of live work: " + watch);
     const poll = src.slice(src.indexOf("function agStartPoll"), src.indexOf("function agStopPoll"));
-    assert.ok(/agLiveRun\(\) \|\| \(a && a\.view === "library" && agLibWriting\(a\)\)/.test(poll),
-              "the Library case rides the existing cadence: " + poll.slice(poll.indexOf("const live")));
+    assert.ok(/const live = agWatching\(a\);/.test(poll),
+              "the poll's cadence reads that one predicate and nothing else");
+    assert.ok(/if \(!hidden \|\| agWatching\(a\)\)/.test(poll),
+              "a hidden window keeps polling while work is live, or the notification arrives "
+              + "only when you come back and no longer need it");
     assert.strictEqual((poll.match(/setInterval/g) || []).length, 1, "still exactly one interval");
   });
 
@@ -3294,3 +3419,104 @@ async function atest(name, fn){
   console.log("agents screen: " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 })();
+
+/* ── notifications (2026-09-10) ────────────────────────────────────────────────
+   The design is one rule -- only tell somebody about work they are NOT watching -- so these
+   tests are mostly about the times it must stay SILENT. A notifier that fires while you are
+   looking at the thing is how people switch notifications off for good, after which the one
+   that mattered never arrives either. */
+function withNotify(fn, opts){
+  opts = opts || {};
+  const fired = [];
+  const prevD = A.document, prevN = A.Notification;
+  A.document = { hidden: !!opts.hidden, hasFocus: () => !!opts.focused };
+  function FakeNotification(title, o){ fired.push({ title, body: (o || {}).body, tag: (o || {}).tag }); }
+  FakeNotification.permission = opts.permission || "granted";
+  FakeNotification.requestPermission = () => Promise.resolve(opts.permission || "granted");
+  A.Notification = FakeNotification;
+  try { fn(fired); } finally { A.document = prevD; A.Notification = prevN; }
+  return fired;
+}
+
+test("a run that finishes while you are looking at it says NOTHING", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r9: "running" };
+  a.chat = { runs: [{ run_id: "r9", status: "done", topic: "Cost per hire",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:20:00Z" }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: true });
+  assert.strictEqual(fired.length, 0, "focused means you already know");
+});
+
+test("the same run finishing while you are elsewhere DOES notify, once", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r9: "running" };
+  a.chat = { runs: [{ run_id: "r9", status: "done", topic: "Cost per hire",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:20:00Z" }] };
+  const fired = withNotify(() => { A.agNotifyPass(a); A.agNotifyPass(a); A.agNotifyPass(a); },
+                           { focused: false });
+  assert.strictEqual(fired.length, 1, "three polls, one notification");
+  assert.ok(/ready to read/i.test(fired[0].title), fired[0].title);
+  assert.ok(/Cost per hire/.test(fired[0].body), fired[0].body);
+});
+
+test("a three-second run is not news", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r1: "running" };
+  a.chat = { runs: [{ run_id: "r1", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:00:03Z" }] };
+  assert.strictEqual(withNotify(() => A.agNotifyPass(a), { focused: false }).length, 0);
+});
+
+test("a run WAITING on an answer notifies however short it was", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r2: "running" };
+  a.chat = { runs: [{ run_id: "r2", status: "waiting",
+                      started_at: "2026-09-10T10:00:00Z",
+                      waiting_on: { call_id: "k1", question: "What is the topic?" } }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1, "being blocked on you is always worth saying");
+  assert.ok(/needs an answer/i.test(fired[0].title));
+  assert.ok(/What is the topic\?/.test(fired[0].body), fired[0].body);
+});
+
+test("a run seen for the FIRST time never notifies, however it looks", () => {
+  /* Opening the app to a chat whose run finished last week must not announce it. */
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = {};
+  a.chat = { runs: [{ run_id: "old", status: "done", topic: "Last week",
+                      started_at: "2026-09-01T10:00:00Z", finished_at: "2026-09-01T11:00:00Z" }] };
+  assert.strictEqual(withNotify(() => A.agNotifyPass(a), { focused: false }).length, 0);
+  /* and it is remembered, so it cannot fire on the next pass either */
+  assert.strictEqual(a.runSeen.old, "done");
+});
+
+test("a failure names what broke", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r3: "running" };
+  a.chat = { runs: [{ run_id: "r3", status: "failed", error: "the site refused the crawl",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:05:00Z" }] };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1);
+  assert.ok(/the site refused the crawl/.test(fired[0].body), fired[0].body);
+});
+
+test("permission denied means silence, never a second ask", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r4: "running" };
+  a.chat = { runs: [{ run_id: "r4", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:30:00Z" }] };
+  assert.strictEqual(
+    withNotify(() => A.agNotifyPass(a), { focused: false, permission: "denied" }).length, 0);
+});
+
+test("a shell with no Notification support never throws", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = { r5: "running" };
+  a.chat = { runs: [{ run_id: "r5", status: "done",
+                      started_at: "2026-09-10T10:00:00Z", finished_at: "2026-09-10T10:30:00Z" }] };
+  const prevN = A.Notification, prevD = A.document;
+  A.Notification = undefined; A.document = { hasFocus: () => false };
+  try { A.agNotifyPass(a); } finally { A.Notification = prevN; A.document = prevD; }
+});
+
+test("a finished catalogue refresh reports the real counts", () => {
+  const a = agReset(); a.chatId = "c1"; a.notified = {}; a.runSeen = {};
+  a.chat = { runs: [] };
+  a.refresh = { finished_at: "2026-09-10T12:00:00Z", counts: { new: 37, gone: 4, changed: 112 } };
+  const fired = withNotify(() => A.agNotifyPass(a), { focused: false });
+  assert.strictEqual(fired.length, 1);
+  assert.ok(/37 new/.test(fired[0].body) && /4 gone/.test(fired[0].body)
+            && /112 changed/.test(fired[0].body), fired[0].body);
+});

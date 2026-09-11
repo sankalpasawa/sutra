@@ -252,6 +252,23 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
         return {"summary": "No topic given.", "error": "run_research needs a topic."}
     chat_id, run_id = ctx["chat_id"], ctx["run_id"]
     say = sh.reporter(ctx, "run_research")
+
+    # THE SHEET'S OWN ANGLE, when this run started from an idea. `idea_id` is on the run's state
+    # before the model reads anything: the chip on the Asset ideas tab puts it there, and so does
+    # accepting the agent's offer in the chat. It is pure provenance, never a match by meaning.
+    # The asset engine already judged this idea's angle against what the company can own and what
+    # anyone would cite. Re-deriving one from scratch pays for that work twice and throws the
+    # first answer away. An angle the caller gave still wins: the person outranks the sheet.
+    idea_id = str((store.get_state(chat_id, run_id) or {}).get("idea_id") or "").strip()
+    if idea_id and not angle:
+        try:
+            from ..assets import _common as acm
+            row = acm.by_id(idea_id) or {}
+        except Exception:   # noqa: BLE001 — a sheet we cannot read must never stop the research
+            row = {}
+        if str(row.get("angle") or "").strip():
+            angle = str(row["angle"]).strip()
+            say("Using the angle the sheet already worked out", "%s: %s" % (idea_id, angle[:160]))
     company = sh.company()
     notes = []
 

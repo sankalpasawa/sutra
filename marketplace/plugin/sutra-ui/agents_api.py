@@ -154,6 +154,25 @@ def api_chat(chat_id: str):
     return {"chat": meta, "messages": store.get_messages(chat_id), "runs": store.list_runs(chat_id)}
 
 
+@router.delete("/chats/{chat_id}")
+def api_delete_chat(chat_id: str):
+    """Throw a chat away. The Library keeps every article that was written in it.
+
+    A RUNNING chat is refused rather than killed. A run writes into the folder we would be
+    deleting, so pulling it out from under a live thread is how you get half-written state and
+    a stack trace nobody can act on. Stop it first, then delete it; the UI does both in order.
+    """
+    if not _ok_id(chat_id):
+        return _bad("bad id")
+    if not os.path.isdir(store.chat_dir(chat_id)):
+        return _bad("no such chat", 404)
+    if _live_status(chat_id) == "running":
+        return _bad("That chat is still working. Stop it first, then delete it.", 409)
+    if not store.delete_chat(chat_id):
+        return _bad("could not delete that chat")
+    return {"ok": True, "id": chat_id}
+
+
 @router.post("/chats/{chat_id}/send")
 def api_send(chat_id: str, body: dict = Body(...)):
     """A message. If a run is waiting on the user, this IS the answer; if one is running,
@@ -190,9 +209,17 @@ def api_send(chat_id: str, body: dict = Body(...)):
     # The chip on the Asset ideas tab carries the idea's id as DATA, not as words in the message.
     # It is written into the run's state here, before loop.start, so the model never has to read
     # an id out of prose and decide to look it up. That is a step that can quietly not happen, and
-    # nobody would ever know it had been skipped. Research reads it to get the angle; the Library
-    # save reads it to tick the idea. The model touches it at no point.
+    # nobody would ever know it had been skipped. `run_research` reads it to take the angle the
+    # asset engine already worked out, and the Library save reads it to tick the idea it came
+    # from. The model touches it at no point. The third way in is loop._took_the_offer: accepting
+    # the agent's offer in the chat records the same id the same way.
     idea = (body.get("idea") or "").strip()
+    if not (idea and re.match(r"^a\d{1,6}$", idea)):
+        # THE SAME FACT, TYPED. Somebody who writes "write a1001" has started from that idea just
+        # as surely as somebody who pressed its button, so the id counts when the message names
+        # one that is really on the sheet and still open. Still provenance: the id is read from
+        # what the person wrote, never inferred from what the article turned out to be about.
+        idea = _named_open_idea(text)
     if idea and re.match(r"^a\d{1,6}$", idea):
         store.patch_state(chat_id, run_id, idea_id=idea)
     if len(runs) == 0:
@@ -201,6 +228,18 @@ def api_send(chat_id: str, body: dict = Body(...)):
     _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                       lambda: loop.start(chat_id, run_id, text)))
     return {"run_id": run_id, "answered": False, "state": store.get_state(chat_id, run_id)}
+
+
+def _named_open_idea(text):
+    """An idea id the person typed, checked against the sheet. "" when the message names none, or
+    names more than one, or names one that is already written: a guess here ticks the wrong row."""
+    try:
+        from seo_agent.assets import _common as acm
+        open_ids = {(r.get("id") or "").lower() for r in acm.ideas() if r.get("status") == "open"}
+    except Exception:  # noqa: BLE001 — a sheet we cannot read must never stop a message being sent
+        return ""
+    found = {m.lower() for m in re.findall(r"\ba\d{1,6}\b", text or "")} & open_ids
+    return found.pop() if len(found) == 1 else ""
 
 
 # ---- runs ------------------------------------------------------------------------------------
@@ -1200,7 +1239,28 @@ def _ws_link(mods, s):
         return ""
 
 
-def _ws_announce(mods, member_id, name):
+def _ws_face(asked, name=""):
+    """The face this person ends up with: what they picked if it is real, otherwise one chosen
+    for them. Never raises and never refuses -- an avatar must not be able to block a join.
+
+    A face is validated against the pack rather than taken as free text, so nobody can arrive
+    with a flag, a skin tone, or a glyph that renders as a grey box on a teammate's machine.
+    """
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return ""
+    asked = (asked or "").strip()
+    if faces.is_known(asked):
+        return asked
+    try:
+        taken = [str(r.get("emoji") or "") for r in (_ws_members.get("rows") or [])]
+        return faces.suggest(taken, name)
+    except Exception:  # noqa: BLE001
+        return faces.DEFAULT
+
+
+def _ws_announce(mods, member_id, name, emoji=""):
     """Put this person in the `members` table, so section 3's "who is in it" has something to read.
 
     THIS ROUTES TO THE ENGINE AND WRITES NOTHING ITSELF. It used to build the row here, which made
@@ -1215,12 +1275,17 @@ def _ws_announce(mods, member_id, name):
     """
     client = (mods or {}).get("client")
     if client is None or not member_id:
-        return
+        return ""
+    err = ""
     try:
-        client.register_member(name)
-    except Exception:  # noqa: BLE001
-        pass
+        client.register_member(name, emoji=(emoji or "") or None)
+    except Exception as e:  # noqa: BLE001
+        # STILL NOT FATAL -- a join must not fail over a display name -- but the caller is told
+        # now. It used to swallow this silently, which is how the face picker came to answer
+        # "ok" to a write Supabase had rejected (2026-09-11).
+        err = _ws_scrub(e) or str(e)
     _ws_members["at"] = 0.0
+    return err
 
 
 def _ws_forget_checks():
@@ -1240,8 +1305,17 @@ def _ws_member_rows(mods):
     if now - _ws_members["at"] < _WS_MEMBERS_TTL:
         return list(_ws_members["rows"])
     try:
-        rows = client.select("members", order="joined_at", limit=50,
-                             columns="member_id,name,joined_at,last_seen_at") or []
+        # A WORKSPACE THAT HAS NOT MIGRATED YET HAS NO `emoji` COLUMN, and PostgREST answers a
+        # request for a column it does not have with a 400 -- which would take the whole member
+        # list down for everybody still on schema 3, including the owner's own live workspace on
+        # the day this shipped. Ask for the face, and fall back to the older shape if it is not
+        # there yet. The faces simply do not draw until the migration runs.
+        try:
+            rows = client.select("members", order="joined_at", limit=50,
+                                 columns="member_id,name,emoji,joined_at,last_seen_at") or []
+        except Exception:  # noqa: BLE001
+            rows = client.select("members", order="joined_at", limit=50,
+                                 columns="member_id,name,joined_at,last_seen_at") or []
     except Exception:  # noqa: BLE001
         # Offline, or asleep. Keep showing the last answer rather than telling him the team
         # emptied out because the wifi dropped.
@@ -1417,7 +1491,7 @@ def _ws_create_worker(url, key, name, member_id, member_name, token, confirm=Fal
                 client.update("workspace", {"id": ws_id}, {"name": name})
             except Exception:  # noqa: BLE001
                 pass          # the local name still shows; a display name is not worth failing on
-        _ws_announce(mods, member_id, member_name)
+        _ws_announce(mods, member_id, member_name, _ws_face("", member_name))
         _ws_forget_checks()
 
         _ws_say(phase="pack", step="Uploading the knowledge pack", pct=45,
@@ -1572,7 +1646,7 @@ def api_workspace_update(body: dict = Body(default={})):
 
 # ---- join --------------------------------------------------------------------------------
 
-def _ws_join_worker(url, key, ws_id, name, member_id):
+def _ws_join_worker(url, key, ws_id, name, member_id, emoji=""):
     mods = _ws()
     schema, pack, client, sync = mods["schema"], mods["pack"], mods["client"], mods["sync"]
     try:
@@ -1599,7 +1673,7 @@ def _ws_join_worker(url, key, ws_id, name, member_id):
         client.save_settings(workspace_url=url, workspace_key=key,
                              workspace_id=str(v.get("workspace_id") or ws_id),
                              member_id=member_id, member_name=name)
-        _ws_announce(mods, member_id, name)
+        _ws_announce(mods, member_id, name, emoji)
         _ws_forget_checks()
         try:
             row = client.one("workspace", columns="name") or {}
@@ -1657,6 +1731,10 @@ def api_workspace_join(body: dict = Body(...)):
 
     raw = str(body.get("link") or "").strip()
     name = str(body.get("name") or "").strip()[:80]
+    # The face is optional on the wire. A client that does not send one, or sends something not
+    # in the pack, gets a face chosen for them rather than a refusal -- an avatar is not worth
+    # blocking somebody's join over.
+    face = _ws_face(str(body.get("emoji") or ""), name)
     if not raw:
         return _bad("Paste the link your teammate sent you.")
     if not name:
@@ -1676,7 +1754,7 @@ def api_workspace_join(body: dict = Body(...)):
 
     _ws_start_job("join")
     member_id = _ws_member_id(mods)
-    if not _spawn("workspace", lambda: _ws_join_worker(url, str(key), str(ws_id), name, member_id)):
+    if not _spawn("workspace", lambda: _ws_join_worker(url, str(key), str(ws_id), name, member_id, face)):
         return _bad("A workspace job is already running. Wait for it to finish.", 409)
     return {"started": True}
 
@@ -1721,7 +1799,8 @@ def api_workspace(check: int = 0):
         "verify": checked,
         "workspace": {"name": _ws_name() or "The team workspace",
                       "url": s.get("workspace_url") or "", "id": s.get("workspace_id") or ""},
-        "me": {"member_id": s.get("member_id") or "", "name": s.get("member_name") or ""},
+        "me": {"member_id": s.get("member_id") or "", "name": s.get("member_name") or "",
+               "emoji": s.get("member_emoji") or ""},
         "members": _ws_member_rows(mods),
         "link": _ws_link(mods, s),
         "sync": {"pending": int(out.get("queued") or 0),
@@ -1735,6 +1814,75 @@ def api_workspace(check: int = 0):
                  "stuck": st.get("stuck") or None},
         "job": job,
     }
+
+
+@router.get("/workspace/faces")
+def api_workspace_faces():
+    """The faces a person may pick, which are still free, and which one to pre-select.
+
+    Served rather than hardcoded in the UI so the pack has ONE definition. A second copy in
+    JavaScript is a copy that drifts the first time a face is added.
+    """
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return {"faces": [], "names": {}, "free": [], "suggested": ""}
+    mods = _ws()
+    rows, name = [], ""
+    if mods:
+        try:
+            rows = _ws_member_rows(mods)
+            name = (_ws_settings(mods) or {}).get("member_name") or ""
+        except Exception:  # noqa: BLE001
+            rows = []
+    taken = [str(r.get("emoji") or "") for r in rows]
+    return {"faces": list(faces.FACES), "names": dict(faces.NAMES),
+            "free": faces.free(taken), "suggested": faces.suggest(taken, name)}
+
+
+@router.post("/workspace/face")
+def api_workspace_face(body: dict = Body(...)):
+    """Change the face you already have. Separate from join on purpose: picking one at join
+    time is a step in a flow, changing it later is a one-click edit, and folding the second
+    into the first would mean re-running a join to swap an emoji."""
+    mods = _ws()
+    if not _ws_ready(mods, "client"):
+        return _bad("The team workspace is not in this build of Sutra.", 501)
+    try:
+        if not mods["client"].configured():
+            return _bad("You are not in a workspace yet.")
+    except Exception:  # noqa: BLE001
+        return _bad("You are not in a workspace yet.")
+    asked = str(body.get("emoji") or "").strip()
+    try:
+        from seo_agent.workspace import faces
+    except Exception:  # noqa: BLE001
+        return _bad("This build has no face pack.")
+    if not faces.is_known(asked):
+        return _bad("Pick one of the faces on offer.")
+    s = _ws_settings(mods) or {}
+    mid = s.get("member_id") or ""
+    # A FACE IS PICKED ONCE (owner, 2026-09-11: "once chosen nobody can change it"). Enforced
+    # HERE and not only in the UI, because a hidden button is not a rule -- anything that can
+    # POST could still swap it. Read the row rather than trusting the local settings copy: the
+    # question is what the WORKSPACE has, which is what teammates see.
+    try:
+        mine = next((m for m in (_ws_member_rows(mods) or [])
+                     if str(m.get("member_id") or "") == mid), None)
+    except Exception:  # noqa: BLE001
+        mine = None
+    if mine and str(mine.get("emoji") or "").strip():
+        return _bad("You already have a face, and it stays yours. Faces are picked once.")
+    err = _ws_announce(mods, mid, s.get("member_name") or "", asked)
+    if err:
+        # THE COMMON CASE IS A WORKSPACE THAT HAS NOT MIGRATED. members.emoji arrives in schema
+        # 4; on an older workspace there is no column to write to and Supabase rejects it. Say
+        # that, and say what to do, rather than reporting a save that did not happen.
+        if "emoji" in err.lower() or "column" in err.lower() or "PGRST204" in err:
+            return _bad("Your workspace has not been updated yet, so there is nowhere to keep a "
+                        "face. Open Connections and run the workspace update, then pick again.")
+        return _bad("That face could not be saved: " + err)
+    return {"ok": True, "emoji": asked, "name": faces.name_of(asked)}
 
 
 @router.post("/workspace/dismiss")
@@ -1953,7 +2101,15 @@ def _assets_payload():
     # working and this site has nothing there, the other means it is blocked. The merge writes all
     # three states, with a ready-made sentence. (Raised by the merge builder, 2026-09-09.)
     m = acm.read("_work/merge/methods.json") or {}
-    states = m.get("methods") or {}
+    # TWO WRITERS, TWO SHAPES. assets/merge.py writes a LIST of {method, file, state, ideas};
+    # assets/import_sheet.py writes a DICT of {method: state}. Normalised here rather than at the
+    # two writers, because the list carries the per-method detail the merge's own line needs and
+    # the dict is what this screen wants. Found 2026-09-10: the list form raised
+    # "AttributeError: 'list' object has no attribute 'items'" and took the whole Asset ideas tab
+    # down with it. It had never fired only because this install's sheet was imported.
+    raw = m.get("methods") or {}
+    states = ({r.get("method"): r.get("state") for r in raw if isinstance(r, dict)}
+              if isinstance(raw, list) else raw)
     ran = sorted([k for k, v in states.items() if v == "ran"]) or \
         sorted({x for r in rows for x in (r.get("method") or [])})
     return {
@@ -2051,6 +2207,15 @@ def api_health():
         page_index = {"built": False}
     idx = store.knowledge("site_index.json") or {}
     brand = _brand_pack()
+    # THE SHEET IS PART OF "AM I SET UP". Without it the opening screen has no way to know that
+    # 1,890 ranked ideas exist, so its first starter chip offered six fresh competitor guesses
+    # instead of the top idea. The model and the tool both refuse that now; the chip is the same
+    # rule on screen, and it needs this fact to draw itself. (2026-09-10.)
+    try:
+        from seo_agent.tools import build_assets as _ba
+        assets = _ba.status()          # {built, total, counts, methods_run, next}
+    except Exception:  # noqa: BLE001 — health must answer even when the sheet cannot be read
+        assets = {"built": False, "next": None}
     return {"ok": True,
             "model_provider": llm.provider(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
@@ -2062,5 +2227,9 @@ def api_health():
             "page_index": page_index,
             "brand_ready": bool(next((f for f in brand.get("files", [])
                                       if f.get("name") == "writer-brief.md" and f.get("exists")), None)),
+            "assets": {"built": bool(assets.get("built")),
+                       "total": assets.get("total", 0),
+                       "open": (assets.get("counts") or {}).get("open", 0),
+                       "next": assets.get("next")},
             "chats": len(store.list_chats()),
             "data_dir": store.data_dir()}

@@ -2188,8 +2188,32 @@ function turnBlock(t, i){
 /* Chat body. A real session that has no readable transcript gets an HONEST
    empty state naming which of the four things happened — unread, reading,
    unreadable, or genuinely empty. None of them fabricates a turn. */
+/* A LONG TRANSCRIPT DRAWS ITS TAIL, NOT ALL OF IT.
+   MEASURED on the owner's own window, 2026-09-10: one chat with 600 turns renders 61,400 DOM
+   elements and 6.6MB of HTML. Every time it became visible the browser had to lay all of that
+   out, which froze the window for about half a second on each hop between destinations
+   (agents->org 1017ms; the same hop with that pane closed, 30ms).
+
+   Nothing is thrown away. Every turn is still in memory, still searchable, and one click puts
+   the older ones back. This is the same shape `agSubsHtml` already uses on the agent timeline
+   ("N earlier ..."), and it is what VS Code does for a big file: draw what you can see.
+   Its terminal is the one place VS Code truly discards, at 1000 lines -- a transcript is not
+   terminal spew, so we keep the lot. */
+const TURN_WINDOW = 60;      /* how many recent turns draw before the fold */
+
 function sessionBody(s){
-  if (s.turns.length) return s.turns.map(turnBlock).join("");
+  if (s.turns.length){
+    const all = s.turns;
+    const opened = !!(S.ui.fullTurns && S.ui.fullTurns[s.id]);
+    if (opened || all.length <= TURN_WINDOW) return all.map(turnBlock).join("");
+    const hidden = all.length - TURN_WINDOW;
+    /* The button says the real number, and says the reading will be slow, because on a chat
+       this long it genuinely is and a surprise freeze is worse than a warned one. */
+    return `<button class="turnmore" type="button" data-act="fullturns" data-id="${esc(s.id)}">
+        Show ${hidden} earlier turn${hidden === 1 ? "" : "s"}
+        <span>this chat is long, so it may take a moment to draw</span>
+      </button>` + all.slice(-TURN_WINDOW).map(turnBlock).join("");
+  }
   if (s.real){
     if (s.loadState === "loading")
       return `<p style="color:var(--muted)">Reading the transcript…</p>`;

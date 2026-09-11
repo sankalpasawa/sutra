@@ -48,6 +48,7 @@ from ._common import (NotConfigured, TIMEOUT, UPLOAD_TIMEOUT, TableMissing,
 #   workspace_name  what to call it on screen while nothing is being fetched
 #   member_id       this person's id, stamped on their writes
 #   member_name     this person's name, what the Library shows next to their articles
+#   member_emoji    the face they picked, so their own avatar draws before any network call
 #   last_seen_id    the highest `changes.id` already applied locally; the whole sync protocol
 #
 # workspace_name is here because the Connections tab shows the workspace by name in its
@@ -56,7 +57,7 @@ from ._common import (NotConfigured, TIMEOUT, UPLOAD_TIMEOUT, TableMissing,
 # `workspace.name`, and the database is the truth: register_member() refreshes it from the
 # row it reads, so a rename by a teammate lands on the next join or heartbeat.
 SETTINGS = ("workspace_url", "workspace_key", "workspace_id", "workspace_name",
-            "member_id", "member_name", "last_seen_id")
+            "member_id", "member_name", "member_emoji", "last_seen_id")
 
 # NO TOKEN IS STORED, and it is not a security compromise we are making — it is that nobody
 # should ever be asked for one twice. See schema.MIGRATIONS: a workspace created by this build is
@@ -323,7 +324,7 @@ def member_id():
     return minted
 
 
-def register_member(name=None, url=None, key=None, workspace_id=None):
+def register_member(name=None, url=None, key=None, workspace_id=None, emoji=None):
     """Put this person in the members table, and remember who they are locally.
 
     Called on CREATE (for the creator) and on JOIN (for the joiner). Both go through here, so
@@ -339,6 +340,9 @@ def register_member(name=None, url=None, key=None, workspace_id=None):
     mid = member_id()
     who = (name or "").strip() or settings()["member_name"].strip() or actor()
     now = _stamp()
+    # The face is only written when one was actually chosen. A rejoin that passes nothing must
+    # not blank the face this person already picked, which is why it is not in the base dicts.
+    face = (emoji or "").strip()
 
     existing = None
     try:
@@ -351,10 +355,14 @@ def register_member(name=None, url=None, key=None, workspace_id=None):
         existing = None
 
     if existing:
-        rows = update("members", {"member_id": mid},
-                      {"name": who, "last_seen_at": now}, url=url, key=key)
+        patch = {"name": who, "last_seen_at": now}
+        if face:
+            patch["emoji"] = face
+        rows = update("members", {"member_id": mid}, patch, url=url, key=key)
     else:
         row = {"member_id": mid, "name": who, "joined_at": now, "last_seen_at": now}
+        if face:
+            row["emoji"] = face
         if workspace_id:
             # Normally the column default fills this in. Passed explicitly only when the
             # caller already knows it, so a join does not depend on the default resolving.
@@ -364,10 +372,16 @@ def register_member(name=None, url=None, key=None, workspace_id=None):
         except WorkspaceError as e:
             if e.status != 409:
                 raise
-            rows = update("members", {"member_id": mid},
-                          {"name": who, "last_seen_at": now}, url=url, key=key)
+            patch = {"name": who, "last_seen_at": now}
+            if face:
+                patch["emoji"] = face
+            rows = update("members", {"member_id": mid}, patch, url=url, key=key)
 
     save_settings(member_name=who)
+    if face:
+        # Kept locally too, so the picker shows their own face back to them before any network
+        # call, and a workspace that is offline still draws the right person.
+        save_settings(member_emoji=face)
     _HEARTBEAT["at"] = time.time()      # the write above already counts as one
     return (rows or [{}])[0]
 

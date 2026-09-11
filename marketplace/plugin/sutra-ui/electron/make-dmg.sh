@@ -446,8 +446,69 @@ move it to the bin. Click Done, then:
 
 Once per machine. (Right-click > Open stopped working in macOS 15.)
 TXT
-hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE_DIR" \
-  -ov -format UDZO "$DMG" >/dev/null || die "hdiutil failed"
+# ---------------------------------------------------------- the DMG window ---
+# WHAT PEOPLE SEE BEFORE THEY SEE THE APP. Until now this was a bare Finder window with two
+# icons dropped wherever Finder felt like putting them, and a READ ME FIRST.txt doing the job a
+# picture should do. Every other Mac app shows an icon, an arrow and the Applications folder,
+# and people know what to do without reading anything.
+#
+# The only way to set icon positions and a window size on a DMG is AppleScript against Finder,
+# on a WRITABLE image -- so this builds a UDRW, dresses it, then converts to the compressed
+# UDZO we actually ship. Every step is best-effort: a build machine with no Finder (CI runs
+# headless) must still produce a working DMG, just an undressed one.
+step "dmg window"
+# No background image on purpose: a bitmap has to be redrawn for every theme and every Retina
+# scale, and it is the icon POSITIONS that tell somebody what to do, not the picture behind
+# them. Window bounds are {left, top, right, bottom} in screen coordinates, so the size is the
+# difference -- 560x380 here, which fits three icons without a scrollbar on the smallest Mac.
+DMG_L=200; DMG_T=160; DMG_R=760; DMG_B=540
+
+TMP_DMG="$STAGE_DIR.rw.dmg"
+rm -f "$TMP_DMG"
+if hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE_DIR" \
+     -ov -format UDRW "$TMP_DMG" >/dev/null 2>&1; then
+  MOUNT_OUT="$(hdiutil attach -readwrite -noverify -noautoopen "$TMP_DMG" 2>/dev/null || true)"
+  VOL="$(printf '%s\n' "$MOUNT_OUT" | grep -o '/Volumes/.*' | head -1)"
+  if [ -n "$VOL" ] && [ -d "$VOL" ]; then
+    # Finder is asked, not told: if it is unavailable (headless CI, no session) osascript fails
+    # and the plain DMG below is what ships. That is a cosmetic loss, never a failed build.
+    osascript >/dev/null 2>&1 <<APPLESCRIPT || note "could not dress the DMG window (no Finder?)"
+tell application "Finder"
+  tell disk "$APP_NAME $VERSION"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {${DMG_L}, ${DMG_T}, ${DMG_R}, ${DMG_B}}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 96
+    set position of item "$APP_NAME.app" of container window to {150, 170}
+    set position of item "Applications" of container window to {410, 170}
+    set position of item "READ ME FIRST.txt" of container window to {280, 310}
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+    sync 2>/dev/null || true
+    hdiutil detach "$VOL" -quiet 2>/dev/null || hdiutil detach "$VOL" -force -quiet 2>/dev/null || true
+  fi
+  # UDRW -> UDZO. If anything above went wrong the image is still valid, just undressed.
+  if ! hdiutil convert "$TMP_DMG" -format UDZO -ov -o "$DMG" >/dev/null 2>&1; then
+    # Never fail a release over the installer's looks. Fall back to the plain path.
+    note "could not compress the dressed image; shipping an undressed DMG"
+    rm -f "$DMG"
+    hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE_DIR" \
+      -ov -format UDZO "$DMG" >/dev/null || die "hdiutil failed"
+  fi
+  rm -f "$TMP_DMG"
+else
+  note "could not build a writable image; shipping an undressed DMG"
+  hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE_DIR" \
+    -ov -format UDZO "$DMG" >/dev/null || die "hdiutil failed"
+fi
 [ -n "$IDENTITY" ] && { codesign --force --timestamp --sign "$IDENTITY" "$DMG" >/dev/null 2>&1 \
   || note "could not sign the DMG itself"; }
 echo "  $DMG  ($(du -sh "$DMG" | awk '{print $1}'))"
