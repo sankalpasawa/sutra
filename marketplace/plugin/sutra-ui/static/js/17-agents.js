@@ -189,6 +189,9 @@ function agS(){
        running job -- and `wsForm` is the draft in the create/join boxes. The personal access
        token is deliberately NOT in this list and must never be added to it. */
     ws: null, wsForm: null,
+    /* the companies this person works for (GET /companies), the add/name form's mode, the last
+       refusal in words, and whether a switch is in flight (owner, 2026-09-11) */
+    companies: null, coForm: null, coErr: null, coBusy: false,
   };
   return S.ag;
 }
@@ -833,7 +836,11 @@ function agSeoCardHtml(a){
      MEANS -- so the row is three zeroes saying what "not set up yet" already said. Left off there,
      and left off per fact when its route has not answered. Nothing is hidden that is not either
      already stated or not yet known. */
-  const facts = first !== false ? "" : [
+  /* ONE COMPANY'S NUMBERS, ONLY WHILE THERE IS ONE COMPANY (owner, 2026-09-11: "will be there if
+     one company, else if both then go away"). With several, the shelf cannot say whose six
+     articles these are, so it says nothing rather than quietly showing the open one's. */
+  const many = !!(h && (h.companies || 1) > 1);
+  const facts = (first !== false || many) ? "" : [
     agMktFact(a.library ? a.library.length : null, "article in the Library", "articles in the Library"),
     agMktFact(h ? (h.chats || 0) : null, "chat", "chats"),
     agMktFact(pages, "page catalogued", "pages catalogued"),
@@ -857,9 +864,8 @@ function agSeoCardHtml(a){
   </button>`;
 }
 
-/* The shelf itself. The heading, the company the agents are working for when there IS one, the
-   one card, and one line about the rest. The company name is data: absent on a fresh install,
-   and the header reads perfectly well without it. */
+/* The shelf itself. The heading, the one card, and one line about the rest. No company name: the
+   shelf belongs to the person, who may work for several companies (see agMarketHtml). */
 /* THE MARK BEHIND THE SHELF. One agent leaves a great deal of empty room, and the owner asked for
    the space to carry something rather than just be blank: "a big circle with the Sutra logo... as
    an underlay, and maybe a glow. The background should be matched with whatever theme it is."
@@ -909,12 +915,97 @@ const AG_MARK = `
       </svg>
     `;
 
-function agMarketHtml(a){
-  const brand = agBrandName(a);
+/* ── which company ─────────────────────────────────────────────────────────────
+   One person, several companies (owner, 2026-09-11: "one person can do the content for more than
+   one company... when he opens the agent, an option to choose a company he has already worked on
+   ... add another company"). A company is a folder on the server; this is the door in front of it.
+
+   It is drawn in the shelf's own frame rather than the agent's three columns, because choosing
+   happens BEFORE any one company's sidebar, chats or knowledge mean anything. Two moods:
+     choose   more than one company -- a card for each, and Add another company
+     name     the open company has no name yet, which is a first run: the name is asked first,
+              then the agent asks for the website exactly as it always has */
+function agChooseHtml(a){
+  const L = a.companies;
+  const rows = L ? (L.companies || []) : null;
+  const f = a.coForm || {};
+  const naming = f.mode === "name";
+  const busy = !!a.coBusy;
+  const form = (label, go, hint) => `<div class="ag-coform">
+      <label><b>${label}</b><input type="text" data-agconame maxlength="80" placeholder="e.g. Acme Hiring" ${busy ? "disabled" : ""}></label>
+      <div class="row"><button class="btn pri" type="button" data-ag="${go}" ${busy ? "disabled" : ""}>${busy ? "One moment…" : go === "coaddgo" ? "Add and open" : "Continue"}</button>
+        ${naming ? "" : `<button class="btn" type="button" data-ag="cocancel" ${busy ? "disabled" : ""}>Cancel</button>`}</div>
+      <div class="sp">${hint}</div></div>`;
   return `<div class="ag-mkt">
     ${AG_MARK}
     <header class="ag-mkth">
-      ${brand ? `<div class="ag-mktfor">${agEsc(brand)}</div>` : ""}
+      <h1>${naming ? "What's the company called?" : "Which company?"}</h1>
+      <p>${naming ? "The SEO Writer works for one company at a time. You can add more later."
+                  : "Each company keeps its own knowledge, chats and library. Your DataForSEO and Voyage keys work for all of them."}</p>
+    </header>
+    ${a.coErr ? `<div class="note b" role="status">${agEsc(a.coErr)}</div>` : ""}
+    ${!rows ? `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span><span>Reading your companies…</span></div>`
+      : naming ? form("Company name", "conamego", "The agent asks for the website next, the way it does on a first run.")
+      : `<div class="ag-cards">${rows.map(c => agCoCardHtml(c, busy)).join("")}</div>
+         ${f.mode === "add" ? form("New company", "coaddgo", "It gets its own knowledge, chats and library. The agent asks for its website next.")
+           : `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-ag="coadd" ${busy ? "disabled" : ""}>${AG_ICON.plus} Add another company</button></div>`}`}
+    <div class="row" style="margin-top:22px"><button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button></div>
+  </div>`;
+}
+
+function agCoCardHtml(c, busy){
+  const name = c.name || "Unnamed company";
+  return `<button class="ag-mktcard ag-cocard ${c.active ? "on" : ""}" type="button" data-ag="cosw" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}
+      aria-label="Open ${agEsc(name)}">
+    <span class="cm" aria-hidden="true">${agEsc(name.charAt(0).toUpperCase())}</span>
+    <span class="cb">
+      <span class="ct">${agEsc(name)}</span>
+      <span class="cd">${agEsc(c.domain || "not set up yet")}</span>
+      <span class="cs">${agEsc(agNum(c.chats || 0))} ${c.chats === 1 ? "chat" : "chats"}${c.active ? " · open last" : ""}</span>
+    </span>
+    <span class="cg" aria-hidden="true">Open ${AG_ICON.arrow}</span>
+  </button>`;
+}
+
+async function agCompaniesLoad(){
+  const a = agS(); if (!a) return;
+  try { a.companies = await agApi("/companies"); a.coErr = null; }
+  catch (e) { a.coErr = agWhy(e); }
+  const open = a.companies && (a.companies.companies || []).find(c => c.active);
+  if (open && !open.name && !a.coForm) a.coForm = { mode: "name" };
+  agDraw(true);
+  agFocusCo();
+}
+
+function agFocusCo(){
+  if (typeof setTimeout !== "function" || typeof document === "undefined") return;
+  setTimeout(() => { const i = document.querySelector("[data-agconame]"); if (i) i.focus(); }, 0);
+}
+
+/* Everything on this screen that belongs to the company being left. The server has already
+   forgotten its side (agents_api._co_reset); this is the same promise on the screen, so not one of
+   the old company's chats, articles or panels can be drawn over the new one. */
+function agResetCompany(a){
+  Object.assign(a, {
+    chats: null, chatId: null, chat: null, events: {}, cursors: {}, panel: null, autoOpened: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, facePick: null,
+    notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", viewBusy: null,
+    refresh: null, refreshSeen: null, refreshPollErr: null, health: null, knowledge: null,
+    cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
+    pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
+    bpEdit: null, artEdit: null, lastEdit: null, compForm: null, coForm: null, memForm: null,
+    connForm: null, libOpen: null, libEdit: null, detailOpen: {}, fileEdit: null,
+    prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
+  });
+}
+
+/* NO COMPANY NAME ON THE SHELF (owner, 2026-09-11: "in the Agent Marketplace tab when I open I
+   should not see any company name"). The shelf belongs to the person, who may work for several
+   companies; which one is chosen once an agent is opened. */
+function agMarketHtml(a){
+  return `<div class="ag-mkt">
+    ${AG_MARK}
+    <header class="ag-mkth">
       <h1>Agents</h1>
       <p>They do a whole job in front of you, naming every step before they take it.</p>
     </header>
@@ -1166,9 +1257,10 @@ function agSideHtml(a){
   const setup = agSetupOf(h);
   const dotCls = !h ? "" : !h.model_provider ? "bad" : !setup.ready ? "warn" : "run";
   const status = !h ? "checking…" : !h.model_provider ? "no model available" : !setup.ready ? "needs setup" : "ready";
-  /* one company name on this screen, agBrandName's, so the sidebar and the marketplace can never
-     disagree about what it is or about it being absent */
-  const brand = agBrandName(a);
+  /* THE COMPANY THIS AGENT IS WORKING FOR, and the way to another (owner, 2026-09-11). The name the
+     person gave it wins; the brand record is the fallback for a company named before companies
+     existed. It is a button, so the chooser is one click from anywhere in the agent. */
+  const coName = String((h && h.company && h.company.name) || agBrandName(a) || "").trim();
   const openIdeas = a.assets && a.assets.built ? (a.assets.counts || {}).open : null;
   /* Prompts sits with Memory and not with Tools: both are things the owner tells the agent about
      how to write, and neither is a thing the agent does. The count is how many he has changed. */
@@ -1185,7 +1277,9 @@ function agSideHtml(a){
   return `<button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button>
     <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
-      <div style="min-width:0"><b>SEO Writer${brand ? ` · ${agEsc(brand)}` : ""}</b><span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
+      <div style="min-width:0"><b>SEO Writer</b>
+        <button class="ag-cosw" type="button" data-ag="choose" title="Switch company, or add another">${agEsc(coName || "Name your company")}${AG_ICON.chev}</button>
+        <span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
       ${agFacesHtml(a)}
     </div>
     ${agFacePickHtml(a)}
@@ -2741,7 +2835,7 @@ function agEnterScreen(root, enter){
   if (market){
     /* nothing on the shelf moves on its own, so the shelf keeps no clock running */
     agStopPoll();
-    agMarketLoad();
+    if (a.screen === "choose") agCompaniesLoad(); else agMarketLoad();
   } else {
     agStartPoll();
     agBootLoad();
@@ -2798,7 +2892,7 @@ function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
   /* The marketplace is one block and has no columns, no panel and no composer, so it leaves
      before any of that machinery runs. */
-  if (a.screen !== "agent"){ agSetHtml("agMarket", agMarketHtml(a)); return; }
+  if (a.screen !== "agent"){ agSetHtml("agMarket", a.screen === "choose" ? agChooseHtml(a) : agMarketHtml(a)); return; }
   const scroll = document.getElementById("agScroll");
   const panelFlips = root.classList.contains("haspanel") !== !!a.panel;
   const anchor = (panelFlips && a.view !== "chat" && scroll) ? agScrollAnchor(scroll) : null;
@@ -3442,6 +3536,15 @@ async function agAction(act, el){
        arrival animation runs over an agent that is already loading. Nothing here waits on it. */
     case "open": {
       if (arg && arg !== "seo") break;      /* one agent; an unknown id opens nothing */
+      /* WHICH COMPANY FIRST, when there is a choice to make (owner, 2026-09-11): more than one
+         company, or one that has not been named yet -- a first run, where the name is the first
+         thing asked. One named company goes straight in, exactly as before. */
+      const hh = a.health || {};
+      if ((hh.companies || 1) > 1 || (hh.company && hh.company.id && !hh.company.name)){
+        a.screen = "choose"; a.coForm = null; a.coErr = null; a.panel = null;
+        agEnterScreen(agRoot(), true);
+        break;
+      }
       /* THE DOOR OPENS ON THE GUIDE, always -- not on the last conversation and not on a
          half-finished run. agBootLoad no longer restores a chat; see the note there for what
          happens to a run that is in flight. */
@@ -3451,6 +3554,47 @@ async function agAction(act, el){
     }
     case "market": {
       a.screen = "market"; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    /* ── which company ── see agChooseHtml. The server refuses a switch while anything is still
+       running for the company being left, and that refusal is shown here in its own words. */
+    case "choose": {
+      a.screen = "choose"; a.coForm = null; a.coErr = null; a.panel = null;
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "cosw": {
+      if (a.coBusy) break;
+      if (a.companies && arg === a.companies.active){
+        a.screen = "agent"; a.view = "guide"; a.guideDive = null; a.panel = null;
+        agEnterScreen(agRoot(), true);
+        break;
+      }
+      a.coBusy = true; a.coErr = null; agDraw(true);
+      try { await agPostApi("/companies/switch", { id: arg }); }
+      catch (e) { a.coBusy = false; a.coErr = agWhy(e); agDraw(true); break; }
+      a.coBusy = false;
+      agResetCompany(a);
+      a.screen = "agent"; a.view = "guide";
+      agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "coadd": a.coForm = { mode: "add" }; a.coErr = null; agDraw(true); agFocusCo(); break;
+    case "cocancel": a.coForm = null; a.coErr = null; agDraw(true); break;
+    case "coaddgo": case "conamego": {
+      if (a.coBusy) break;
+      const inp = typeof document !== "undefined" ? document.querySelector("[data-agconame]") : null;
+      const name = inp ? inp.value.trim() : "";
+      if (!name){ a.coErr = "Type the company's name."; agDraw(true); agFocusCo(); break; }
+      a.coBusy = true; a.coErr = null; agDraw(true);
+      try {
+        if (act === "coaddgo") await agPostApi("/companies", { name });
+        else await agPostApi("/companies/rename", { id: (a.companies && a.companies.active) || "c1", name });
+      } catch (e) { a.coBusy = false; a.coErr = agWhy(e); agDraw(true); agFocusCo(); break; }
+      a.coBusy = false;
+      agResetCompany(a);
+      a.screen = "agent"; a.view = "guide";
       agEnterScreen(agRoot(), true);
       break;
     }

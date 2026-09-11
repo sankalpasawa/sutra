@@ -999,17 +999,17 @@ def api_connections():
 @router.post("/connections")
 def api_save_connections(body: dict = Body(...)):
     c = store.connections()
+    # A cleared key is sent BLANK rather than dropped. The keys are the person's and shared by
+    # every company, and store.save_connections clears a person's key only when it is sent blank
+    # -- never merely because a save did not mention it (2026-09-11).
     for k in _CONN_KEYS:
         if k in body:
             v = (body.get(k) or "").strip()
-            if v:
-                c[k] = v[:400]
-            else:
-                c.pop(k, None)
+            c[k] = v[:400] if v else ""
     # An API key pasted here would route the model through the API and bill per token,
-    # which this panel refuses everywhere else too. Drop any that were ever saved.
+    # which this panel refuses everywhere else too. Clear any that were ever saved.
     for k in ("anthropic_key", "openai_key"):
-        c.pop(k, None)
+        c[k] = ""
     store.save_connections(c)
     return {"ok": True}
 
@@ -2329,6 +2329,131 @@ def _dfs_credit():
         return {"mode": "unknown", "balance": None, "floor": None, "enough": True}
 
 
+# ---- companies -------------------------------------------------------------------------------
+# One person, several companies (owner, 2026-09-11). seo_agent/companies.py owns the layout: a
+# company is a folder, and switching is re-pointing store at it. This is the door, and the one
+# thing it adds is REFUSING to switch while anything is still running for the company being
+# left: a run writes through store, so pulling the folder out from under it would put one
+# company's article into another company's chat.
+
+def _co():
+    from seo_agent import companies
+    return companies
+
+
+def _co_busy():
+    with _lock:
+        live = [k for k, t in _workers.items() if t is not None and t.is_alive()]
+    if live:
+        return ("Something is still running for this company. Let it finish, or stop it, "
+                "then switch.")
+    if _kn_job is not None and _kn_job.get("phase") == "running":
+        return "The catalogue refresh is still running. Let it finish, then switch."
+    if _ws_job_live():
+        return "The team workspace is still busy. Let it finish, then switch."
+    return ""
+
+
+def _co_reset():
+    """Forget everything held in memory about the company being left, so nothing of it can leak
+    into the next: the team sync thread, the cached member list and checks, the pack rebuilder,
+    the heal's memory, the cached page bodies and the heartbeat clock."""
+    global _ws_job, _kn_job
+    try:
+        from seo_agent.workspace import sync as _co_sync
+        _co_sync.stop()
+    except Exception:  # noqa: BLE001
+        pass
+    _ws_members.update({"at": 0.0, "rows": []})
+    _ws_checked.update({"at": 0.0, "res": None})
+    _ws_pack.update({"state": "idle", "note": ""})
+    _ws_rebuilder_ref[0] = None
+    _ws_heal.update({"at": 0.0, "sent_at": 0.0, "fetched_at": 0.0, "busy": False, "last": ""})
+    with _ws_job_lock:
+        _ws_job = None
+    with _kn_job_lock:
+        _kn_job = None
+    try:
+        from seo_agent.tools import _shared as _co_sh
+        _co_sh._BODIES.update({"mtime": None, "rows": None})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from seo_agent.workspace import client as _co_client
+        _co_client._HEARTBEAT["at"] = 0.0
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _co_summary():
+    try:
+        reg = _co().load()
+        act = next((r for r in reg["companies"] if r["id"] == reg["active"]), {})
+        return {"id": act.get("id") or "", "name": act.get("name") or ""}, len(reg["companies"])
+    except Exception:  # noqa: BLE001
+        return {"id": "", "name": ""}, 1
+
+
+@router.get("/companies")
+def api_companies():
+    try:
+        return _co().listing()
+    except Exception as e:  # noqa: BLE001
+        return _bad("The list of companies could not be read: %s" % e)
+
+
+@router.post("/companies")
+def api_company_add(body: dict = Body(...)):
+    """Add a company and open it. The name is asked for; the website is asked by the agent, the
+    way it always has been on a first run."""
+    why = _co_busy()
+    if why:
+        return _bad(why, 409)
+    try:
+        row = _co().add(body.get("name"))
+    except ValueError as e:
+        return _bad(str(e))
+    _co_reset()
+    _co().switch(row["id"])
+    return dict(_co().listing(), added=row)
+
+
+@router.post("/companies/switch")
+def api_company_switch(body: dict = Body(...)):
+    cid = str(body.get("id") or "")
+    try:
+        if not any(r["id"] == cid for r in _co().load()["companies"]):
+            return _bad("There is no such company.", 404)
+    except Exception as e:  # noqa: BLE001
+        return _bad("The list of companies could not be read: %s" % e)
+    why = _co_busy()
+    if why:
+        return _bad(why, 409)
+    _co_reset()
+    try:
+        _co().switch(cid)
+    except ValueError as e:
+        return _bad(str(e))
+    return _co().listing()
+
+
+@router.post("/companies/rename")
+def api_company_rename(body: dict = Body(...)):
+    try:
+        row = _co().rename(str(body.get("id") or ""), body.get("name"))
+    except ValueError as e:
+        return _bad(str(e))
+    return dict(_co().listing(), renamed=row)
+
+
+# The company that was open last time is the one that opens now. No registry (one company) means
+# there is nothing to do, and a registry that cannot be read must never stop the panel loading.
+try:
+    _co().activate_saved()
+except Exception:  # noqa: BLE001
+    pass
+
+
 @router.get("/health")
 def api_health():
     _sync_claude_bin()
@@ -2349,7 +2474,12 @@ def api_health():
         assets = _ba.status()          # {built, total, counts, methods_run, next}
     except Exception:  # noqa: BLE001 — health must answer even when the sheet cannot be read
         assets = {"built": False, "next": None}
+    co, n_companies = _co_summary()
     return {"ok": True,
+            # Which company is open, and how many there are. The marketplace hides the per-company
+            # facts once there is more than one, and the agent asks which to open.
+            "company": co,
+            "companies": n_companies,
             "model_provider": llm.provider(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()

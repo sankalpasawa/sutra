@@ -25,7 +25,7 @@ export SEO_AGENT_DATA
 export SEO_AGENT_NO_CLI=1            # the model is stubbed; never shell out to claude here
 echo "data dir: $SEO_AGENT_DATA"
 fail=0
-for t in test_loop test_tools test_endtoend test_behaviour test_checks_editing test_llm_cli test_wordcount test_foundation test_browser test_brand test_reddit test_research test_write test_assets_wiring test_assets_formats test_assets_trends test_assets_competitors test_assets_merge test_assets_import test_store_live test_picture test_credit_guard test_prompts_parity test_stations test_find_prompt test_workspace_core test_workspace_sync test_workspace_pack test_chat_delete test_faces test_face_route test_workspace_heal; do
+for t in test_loop test_tools test_endtoend test_behaviour test_checks_editing test_llm_cli test_wordcount test_foundation test_browser test_brand test_reddit test_research test_write test_assets_wiring test_assets_formats test_assets_trends test_assets_competitors test_assets_merge test_assets_import test_store_live test_picture test_credit_guard test_prompts_parity test_stations test_find_prompt test_workspace_core test_workspace_sync test_workspace_pack test_chat_delete test_faces test_face_route test_workspace_heal test_companies; do
   [ -f "seo_agent/tests/$t.py" ] || { echo "══ $t (not written yet, skipped)"; continue; }
   echo "══ $t"
   # "$PY" IS QUOTED. Unquoted, an interpreter path containing a space splits on
