@@ -41,5 +41,5 @@ CREATION CHECK: <n> created, <m> complete, <k> missing, <j> new kind
 ## Provenance <a id="provenance"></a>
 
 ```yaml
-provenance: {author: claude-fable-5-1 (session 6b3f51dd), date: 2026-09-11, inputs: [D74, NEW-THING-PROTOCOL 2a, GUARD-DESIGN.md], review: pending R3/R4, supersedes: none, confidence: moderate, gaps: [subagent invocation is by convention until a SubagentStop wiring lands]}
+provenance: {author: claude-fable-5-1 (session 6b3f51dd), date: 2026-09-11, inputs: [D74, NEW-THING-PROTOCOL 2a, GUARD-DESIGN.md], review: codex R3+R4 folded, supersedes: none, confidence: moderate, gaps: [subagent invocation is by convention until a SubagentStop wiring lands]}
 ```
