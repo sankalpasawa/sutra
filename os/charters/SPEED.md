@@ -240,5 +240,5 @@ CEO of Sutra (charter DRI). Analytics dept (data pipeline, 9th flagship metric `
 - Estimation Engine: `sutra/layer2-operating-system/d-engines/ESTIMATION-ENGINE.md`
 - Existing time data: `holding/ESTIMATION-LOG.jsonl` (task-level duration_min; feeds W0 seed analysis)
 - Telemetry contract (for eventual plugin push): `holding/departments/analytics/TELEMETRY-CONTRACT.md`
-- Readability gate (applies to SPEED pulse output): `holding/READABILITY-STANDARD.md`
+- Writing style (applies to SPEED pulse output): `core:writing-style` sections 5 and 6 (`sutra/marketplace/plugin/skills/writing-style/SKILL.md`)
 - Founder memory: `feedback_speed_is_core.md`, `feedback_wait_for_data_before_optimize.md`

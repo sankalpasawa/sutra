@@ -8,6 +8,12 @@
 - Opt-out via `flags.modules=false`; archive never deletes; reserved `sys-` ids are refused. Tests: `test_modules_api.py` (15) + `test_modules.js` (11); the three unversioned panel script tags now carry `?v=`. Design: `2026-09-08-modules-design.md` (codex ADVISORY folded; deepseek lane skipped, unfunded).
 
 
+## 2.262.0 (2026-09-11)
+
+- **Writing-style gate v1.2: the sinks are closed.** Three verification lenses (65 false negatives, 11 guard bypasses, 18 stale references) and a codex + DeepSeek consult: an unterminated fence or box, a blockquote, a header-shaped line or a governance label no longer hides prose from WS-1..WS-4; one giant line counts once per 200 chars; quoted spans blank at 80 chars; the audience downgrade needs authoring intent; pinned status also comes from the directory name; 19 widened phrase rows with false-positive guards; bullets, arrows, dingbats and emoji block like box-drawing; task tables need Impact and Effort in distinct cells. Gate tests 81 -> 126.
+- **blueprint-check v3.1.** The LAST BLUEPRINT of a turn is the contract (a corrected re-emit supersedes), and a `Verify:` on the line after its step is inline. 5 new tests.
+- **Stale pointers repointed** to `core:writing-style` in the start table, catalog, charters (SPEED, HUMAN-SUTRA-LAYER), defaults architecture, session-retrieve, capability audit, marketplace description, llms.txt and the terminal FAQ; skill v1.2 folds 15 rules the completeness sweep found missing (llms.txt hub of hubs, split wide tables, decision-box trade-off and verdict lines, estimation and handoff shapes).
+
 ## 2.261.0 (2026-09-11)
 
 - **Writing-style gate: six verification folds.** The HARD Stop gate `writing-style-gate.sh` (shipped silently in 2.247.0 with `core:writing-style`, D72) widens after an adversarial verification run (0 P1, 6 P2) and a codex + DeepSeek consult: ask-to-run, closer, summary, glaze, apology and pleasantry variants (closers sentence-anchored); fully quoted and `--` prefixed lines now count toward the prose budget; governance field values are judged by unanchored rows only and padded fields (over 160 chars, or past the 45th) count as prose; geometric, braille and symbol glyph ranges block like box-drawing; GFM tables without outer pipes are checked for Impact + Effort. Tests 54 -> 81.

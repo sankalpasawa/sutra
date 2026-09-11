@@ -14,11 +14,11 @@ description: >
 Decide what to say, then how to say it, for every surface Sutra writes to.
 
 - **title**: Sutra writing style, single home
-- **status**: v1.1 · L0 fleet (D38) · HARD Stop gate `writing-style-gate.sh`
+- **status**: v1.2 · L0 fleet (D38) · HARD Stop gate `writing-style-gate.sh`
 - **scope**: every Asawa, Sutra and plugin-fleet output; customer-facing copy exempt from P2/P3 (Founding Doctrine P0)
 - **owner**: Sutra Core
 - **updated**: 2026-09-11
-- **source inputs**: caveman, anti-glaze-tone, readability-gate, writing-llm-md skills; READABILITY-STANDARD.md; D51, D55, D58, D71, D72; founder 2026-08-17 "too much text"; founder 2026-09-02 "add minimize, one place, followed very strictly"; adversarial verification 2026-09-11 (6 P2, codex + DeepSeek folds)
+- **source inputs**: caveman, anti-glaze-tone, readability-gate, writing-llm-md skills; READABILITY-STANDARD.md; D51, D55, D58, D71, D72; founder 2026-08-17 "too much text"; founder 2026-09-02 "add minimize, one place, followed very strictly"; adversarial verification 2026-09-11 (6 P2, codex + DeepSeek folds); guards + false-negative + completeness lenses 2026-09-11
 
 ## 1. Principles <a id="principles"></a>
 
@@ -26,8 +26,8 @@ Decide what to say, then how to say it, for every surface Sutra writes to.
 |---|---|---|
 | P0 | MINIMIZE | Say only what changes what the reader does next. Budgets in §5, rules in §3. |
 | P1 | STRUCTURE | Pick the shape before writing: table for 3+ comparable items, numbers not adjectives, one ASCII decision box, Impact + Effort on task tables. |
-| P2 | COMPRESS | Of what survives P0: drop articles, filler, pleasantries, hedges; short synonyms; fragments fine in internal register; technical terms and canonical names exact. |
-| P3 | CANDOR | Verify, never fabricate, say unknown. Founder wrong: say so now. Counter first, after the outcome line. No capitulation without new evidence. Never apologize. Own numbers first, then the delta. |
+| P2 | COMPRESS | Of what survives P0: drop articles, filler, pleasantries, hedges; short synonyms; fragments fine in internal register; technical terms and canonical names exact. Sentence template: [thing] [action] [reason]. [next step]. |
+| P3 | CANDOR | Verify, never fabricate, say unknown. Founder wrong: say so now. Counter first, after the outcome line. No capitulation without new evidence. Never apologize. Own numbers first, then the delta. Precise, not strident, not pedantic. |
 | P4 | GROUND | Every actionable claim carries a file:line ref, a typed label (Decision / Assumption / Inference / Open question), or `Confidence: high|moderate|low|unknown`. Model-side; no hook checks presence. |
 | P5 | FILE-SHAPE | Every .md follows R1-R12 and C1-C4 (§7). |
 
@@ -41,10 +41,10 @@ Precedence: (1) customer-facing surfaces obey Founding Doctrine P0 first; (2) go
 | .md file | P0-P5 | none |
 | Customer-facing copy: PRDs, client artifacts, plugin distribution copy, regulated text | P0, P1, P4 | P2, P3; disclaimers stay |
 | Commit message, PR description | P1 | P2 |
-| Code fence, quoted error, tool or log output, user quotes | none, verbatim | P0-P5 |
+| Code fence, quoted error, tool or log output, user quotes, all inside a fence | none, verbatim | P0-P5 |
 | Governance blocks: H-Sutra header, Input Routing, FLOW, Depth, TRIAGE/ESTIMATE/ACTUAL, BLUEPRINT, DISPATCH, PLACEMENT, Build-Layer, OS trace | schema fixed, fields one line | P2 |
 
-Chat uses plain language; governance ids (D-nn, PROTO-nnn, ADR-nnn) appear only in specs, audits and governance blocks. File paths in inline code are refs and always allowed. HTML only when asked. Mid-turn progress lines are allowed but status-shaped (`tests: running, ~90 s`), never first-person intent.
+A `>` blockquote line is judged and counted like prose; verbatim material goes in a fence. Chat uses plain language; governance ids (D-nn, PROTO-nnn, ADR-nnn) appear only in specs, audits and governance blocks. File paths in inline code are refs and always allowed. HTML only when asked. Mid-turn progress lines are allowed but status-shaped (`tests: running, ~90 s`), never first-person intent.
 
 Customer copy authored in chat goes into a file or a fence; file contents are never judged. Otherwise the gate downgrades P2/P3 checks to advisory for the turn when the last user message names customer copy (PRD, client, customer, email, support, regulated) or when `AUDIENCE=customer` is written to `.claude/sessions/<sid>/writing-style-audience` before authoring. Both paths are logged.
 
@@ -72,31 +72,33 @@ After:  Bug in auth middleware: token expiry check uses `<` not `<=`. Fix below.
 
 ## 4. Banned phrases, one machine-read source <a id="banned"></a>
 
-The Stop gate reads this block at runtime. Format: `GROUP H|A regex`, matched case-insensitively on preprocessed prose (fences, inline code, blockquotes, quoted spans, box regions and the H-Sutra header stripped). Governance field values are judged by unanchored rows only, and the INPUT field never. `^` anchors to line start. H blocks; A logs. NARRATE and ECHO are judged only on the final text block of the turn.
+The Stop gate reads this block at runtime. Format: `GROUP H|A regex`, matched case-insensitively on preprocessed prose (closed fences, inline code without sentence punctuation, quoted spans up to 80 characters, box regions up to 24 lines and the one H-Sutra header stripped; blockquote markers and governance labels removed, their text kept). The INPUT field is never judged. `^` anchors to line start. H blocks; A logs. NARRATE and ECHO are judged only on the final text block of the turn.
 
 <!-- banned:start -->
 ```text
-GLAZE     H \b(great|excellent|fantastic|fascinating|brilliant|wonderful|awesome|amazing|superb|terrific|perfect|smart|insightful|thoughtful) (question|point|idea|perspective|catch|call|find|observation|suggestion|thinking|insight)\b
-GLAZE     H (^|[.!?] )\s*(good|nice|great|excellent) (catch|call|find|point|spot)\b
-GLAZE     H \byou('| a)?re (absolutely|completely|totally|entirely|so|quite) right\b
-GLAZE     H \b(spot on|well spotted|you (make|raise) a (great|good|fair|valid|strong) point)\b
+GLAZE     H \b(great|excellent|fantastic|fascinating|brilliant|wonderful|awesome|amazing|superb|terrific|perfect|smart|insightful|thoughtful|impressive|sharp|clever) (question|point|idea|perspective|catch|call|find|observation|suggestion|thinking|insight|instinct)\b
+GLAZE     H (^|[.!?] )\s*(that's a |that is a )?(good|nice|great|excellent) ((catch|call|find|point|spot|question|thinking|instinct|observation)\b|(work|job)(?=[.!,]| on\b| there\b))
+GLAZE     H \byou('| a)?re (absolutely|completely|totally|entirely|so|quite|exactly|precisely|dead|100%|spot) right\b
+GLAZE     H \b(spot on|well spotted|well done|nicely done|good stuff|you (make|raise) a (great|good|fair|valid|strong) point)\b
 GLAZE     H ^\s*(perfect|brilliant|awesome|amazing|wonderful|excellent|fantastic|love it)[!.,]
-APOLOGY   H \b(i apologi[sz]e|apologies,? (but|for)|my apologies|sorry (to push back|for the confusion|about that|for (that|the)))\b
-PLEASANT  H ^\s*(sure|certainly|of course|absolutely|no problem|got it|will do|on it|understood|noted)[!,.]
-PLEASANT  H \b(happy to help|i'd be happy to|glad to help|more than happy to|it would be my pleasure|thanks for (asking|your patience|the (question|context|clarification)))\b
-CLOSER    H (^|[.!?,;:] )\s*(hope (that|this|it) helps|let me know (if|when|how|what|whether)|feel free to|don't hesitate to|do not hesitate to|happy coding|good luck|if you (have|need) any(thing| other| further)?( questions| help| else)?|reach out (if|when|any ?time)|anything else (i|you)|is there anything else|grab a coffee|nice work|standing by for your)\b
-SUMMARY   H ^\s*(in summary|to summarize|to sum up|to recap|in conclusion|in short|in a nutshell|all in all|bottom line|tl;?dr|so,? in short|wrapping up|to wrap up|summing up)\b
-ECHO      H ^\s*(as (you )?requested|as asked|per your (request|ask|instruction))\b
+APOLOGY   H \b(i apologi[sz]e|apologies(?=[.,!]| for\b| but\b| about\b)|my apologies|my bad|mea culpa|sorry (to push back|for the confusion|about that|for (that|the)))\b
+APOLOGY   H ^\s*sorry[!.,]
+PLEASANT  H ^\s*(sure|certainly|of course|absolutely|no problem|got it|will do|on it|understood|noted)\s*([!,.:;]|-)
+PLEASANT  H \b(happy to (help|dig|assist|walk|clarify|elaborate|explain)|i'd be happy to|glad to help|glad you (asked|brought|raised)|more than happy to|it would be my pleasure|thanks for (asking|flagging|catching|pointing|sharing|your patience|the (question|context|clarification|catch|heads.?up)))\b
+CLOSER    H (^|[.!?,;:] )\s*(hope (that|this|it) (helps|is useful|clarifies|works|makes sense)|let me know\b|feel free to|don't hesitate to|do not hesitate to|happy coding|good luck|if you (have|need) any(thing| other| further)?( questions| help| else)?|reach out (if|when|any ?time)|(ping|dm|message) me\b|shout (if|when|at me)\b|anything else (i|you)|is there anything else|grab a coffee|nice work|standing by for your)\b
+CLOSER    H ^\s*(cheers|enjoy|happy shipping)[!.]
+SUMMARY   H ^\s*(in summary|to summarize|to sum up|to recap|in conclusion|in short|in a nutshell|all in all|bottom line|tl;?dr|so,? in short|wrapping up|to wrap up|summing up|to conclude|to close|closing thought|big picture|zooming out|stepping back|in essence|net net|the upshot|upshot|summary|recap|takeaways?|key takeaways?)\s*[,:]
+ECHO      H ^\s*(as (you )?requested|as asked|per your (request|ask|instruction)|following your (instruction|ask|request))\b|^\s*(as discussed|as you (noted|said|mentioned)),
 ECHO      A \byou asked (me to|for)\b
-NARRATE   H ^\s*(let me|i'll now|i will now|i'm going to|i am going to|now i'll|now let me|first,? let me|next,? (let me|i'll)|i'll (go ahead and|start by|begin by)|let's (start|begin) by)\b
+NARRATE   H ^\s*(let me|i'll now|i will now|i'm going to|i am going to|now i'll|now let me|first,? let me|next,? (let me|i'll)|i'll (go ahead and|start by|begin by)|let's (start|begin) by|starting (with|by)|beginning with|first up|next up|here('s| is) (the|my) plan|here('s| is) what i('ll| will|'m going to))\b
 FILLER    A \b(just|really|basically|actually|simply)\b
 HEDGE     A \b(i think|it seems (like|that)|might be worth considering)\b
 VAGUE     A \b(several|a few|a number of|numerous|various|significant(ly)?|a while|most of)\b
-ASKRUN    A (\b(please|kindly|can you|could you|would you|go ahead and|try|you (should|must)|you( will|'ll)? (need|have) to) (run|execute|paste|type|invoke|launch)(ning)?\b|\b(run|execute) (this|it|that|these|the (command|script|tests?|suite)) (yourself|on your (side|end|machine|terminal))\b|\bon your (side|end),? (run|execute|try)\b)
+ASKRUN    A (\b(please|kindly|can you|could you|would you|go ahead and|try|you (should|must)|you( will|'ll)? (need|have) to) (run|execute|paste|type|invoke|launch)(ning)?\b|\b(run|execute) (this|it|that|these|the (command|script|tests?|suite)) (yourself|on your (side|end|machine|terminal))\b|\bon your (side|end),? (run|execute|try)\b|^\s*(run|execute|launch)(\s+(the|this|it|that|these|your|a)\b|\s{2,}\S)|\bpaste (the|its|your) (output|result|logs?)\b|\b(run|running|execute|executing)\b[^.\n]{0,60}\bon your (machine|box|end|side)\b)
 ```
 <!-- banned:end -->
 
-ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewhere. HEDGE is suppressed when a `Confidence:` token is in the same paragraph. FILLER logs only when the count exceeds 3 in a turn. Kept out on purpose after the 2026-09-11 dual-lane consult: `you can run` (ordinary CLI explanation), bare `you're right` (honest agreement), `overall,` and `i love this` (technical prose at HARD cost).
+ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewhere. HEDGE is suppressed when a `Confidence:` token is in the same paragraph. FILLER logs only when the count exceeds 3 in a turn. Kept out on purpose after the 2026-09-11 dual-lane consults: `you can run` (ordinary CLI explanation), bare `you're right` (honest agreement), `overall,` and `i love this` (technical prose at HARD cost); bare `summary`, `apologies` and `good work` need a comma, colon or sentence end so "Summary lines are counted" and "Good work items are small" pass. An unterminated fence or box is prose, not a sink.
 
 ## 5. Budgets <a id="budgets"></a>
 
@@ -110,7 +112,10 @@ ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewh
 | Status update | 15 lines, 3 signals | model |
 | Progress report | 20 lines | model |
 | Daily Pulse | 25 lines | model |
-| OKR summary per charter | 15 lines | model |
+| OKR summary per charter | 15 lines: bar line, KR table immediately below | model |
+| Decision board | 15 lines | model |
+| Estimation output | table, one row per dimension, numbers only | model |
+| Architecture doc | no length limit; D34 terminology | model |
 | Roadmap meeting | 50 lines per section | model |
 | Decision box | width 40, 4 options, 1-sentence reason | model |
 | Governance block | 1 line per field; FLOW 9, BLUEPRINT 16, DISPATCH 9 lines | WS-A5 / WS-A10 |
@@ -121,12 +126,12 @@ ASKRUN is HARD in pinned projects (`asawa-holding`, `sutra`) and advisory elsewh
 | CHANGELOG entry | 5 lines | model |
 | Release or PR title | 60 chars | model |
 
-Counting rule: prose lines are non-blank lines after stripping code fences, blockquote lines, table separator rows, box regions and governance field lines; table rows count. Inline code and quoted spans are blanked for phrase matching only, so a fully quoted line still counts. A governance field over 160 characters, or any field past the 45th in a turn, counts as prose. Budgets count chat prose only; file contents written through tools are never counted or judged, so a long architecture doc or executive doc lives in its file and chat carries the path (M7). Numeric thresholds live in `sutra-defaults.json` under `.output_discipline.writing_style`; phrases live only in §4.
+Counting rule: prose lines are non-blank lines after stripping closed code fences, table separator rows, box regions (an over-long box counts past its 24th line), the one H-Sutra header and governance field lines; table rows and blockquote lines count. A line counts once per 200 characters. Inline code and quoted spans are blanked for phrase matching only. A governance field over 160 characters, or any field past the 30th in a turn, counts as prose. Budgets count chat prose only; file contents written through tools are never counted or judged, so a long architecture doc or executive doc lives in its file and chat carries the path (M7). Numeric thresholds live in `sutra-defaults.json` under `.output_discipline.writing_style`; phrases live only in §4.
 
 ## 6. Shapes <a id="shapes"></a>
 
 - **Shape selection**: 3+ comparable items, any comparison or enumeration: table. Decision: ASCII box in chat; table or `>` blockquote in a file. Only decisions get boxed.
-- **Decision box** (chat and terminal only; in a file only inside a fence as a template spec):
+- **Decision box** (chat and terminal only; in a file only inside a fence as a template spec). Optional `Trade-off:` line and, in a review, `Verdict: APPROVE|REVISE|DEFER`. A decision the founder must take in an interactive session goes through AskUserQuestion; the box is the chat and terminal shape. One blank line between consecutive boxes; status boards are never boxed:
 
 ```text
 +--------------------------------------+
@@ -139,9 +144,10 @@ Counting rule: prose lines are non-blank lines after stripping code fences, bloc
 ```
 
 - **Task tables**: header `| # | Area/Task | Impact (who/what changes) | Effort (time, files) |`, required at 3+ task rows; optional Depth, Cost. Relayed subagent or codex output is reshaped first: Why-it-matters or Rationale becomes Impact; Cost S/M/L plus time becomes Effort; inferred values are labelled **Inference**. Severity ranks; it does not frame.
-- **Progress bar**: `Name ######.... 0.6 STATUS`, 10 chars, each `#` is 0.1. Structural glyphs are ASCII only: box-drawing, block elements and geometric shapes (U+2500-U+25FF), braille (U+2800-U+28FF) and symbols-and-arrows (U+2B00-U+2BFF) are banned in prose (D-UX-1).
+- **Progress bar**: `Name ######.... 0.6 STATUS`, 10 chars, each `#` is 0.1. Structural glyphs are ASCII only: bullets, arrows, enclosed numbers, box-drawing, block elements, geometric shapes, dingbats, braille, symbols-and-arrows and emoji (U+2022, U+2190-21FF, U+2460-24FF, U+2500-27BF, U+2800-28FF, U+2B00-2BFF, U+1F000-1FAFF) are banned in prose (D-UX-1).
 - **Boards and icons**: no emoji in prose. Board markers: `[x]` done, `[ ]` todo, `[.]` in progress with a percentage, `[!]` blocked. Status words GREEN / YELLOW / RED. Outputs before inputs: what improved, what shipped, what is next.
 - **Typography**: bold sparingly; inline code for paths, commands and keys; no heavy borders for data; tree characters only inside a fence.
+- **Other shapes**: estimation output is a table, one row per dimension, numbers only; a session handoff is a YAML checkpoint (HUMAN-AI-INTERACTION.md Part 6); `---` separates major sections of a long file.
 
 ## 7. Files: R1-R12, chunking, provenance <a id="files"></a>
 
@@ -150,10 +156,10 @@ Markdown is read by models first and rendered for humans. Baseline: CommonMark +
 | Id | Rule | Gate |
 |---|---|---|
 | R1 | Purpose line after the title, then a metadata block: title, status, scope, owner, updated, source inputs | MD-1 HARD new |
-| R2 | Narrow tables (5 columns, 25 words per cell) and typed lists; one concept per row | model |
+| R2 | Narrow tables (5 columns, 25 words per cell; split a wide table by dimension) and typed lists; one concept per row | model |
 | R3 | Graphs: mermaid fence (conservative syntax, no HTML in participants) plus an adjacent edge list as source of truth; facts as connected tree nodes | MD-A3 advisory |
 | R4 | No ASCII or unicode box art in files; a fenced box is allowed only as the spec of a chat template | MD-3 HARD new |
-| R5 | Exactly one H1, progressive headings, max H3; typed lists instead of H4+ | MD-4 HARD new |
+| R5 | Exactly one H1, progressive headings, max H3 (H4+ only in generated reference docs); typed lists instead of H4+ | MD-4 HARD new |
 | R6 | Explicit `<a id="slug"></a>` anchors on linked sections; update inbound links on rename | model |
 | R7 | Repo claims carry file:line; unsourceable claims carry a typed label (P4) | model |
 | R8 | Evolving docs mark state: **Current rule** / **Historical context** / **Deprecated** / **Migration note** | model |
@@ -162,7 +168,7 @@ Markdown is read by models first and rendered for humans. Baseline: CommonMark +
 | R11 | Never jump heading levels | MD-4 |
 | R12 | Every fence carries a language tag; text, console, json, yaml, mermaid are valid | MD-A2 advisory; HARD for new files from 2026-10-08 |
 
-Chunking: C1 one decision or domain per file, self-contained; C2 chunk by boundary, not length, never over-chunk; C3 hub files map children without duplicating substance, every row says "read this when"; C4 every child links to its parent hub.
+Chunking: C1 one decision or domain per file, self-contained; C2 chunk by boundary, not length, never over-chunk; C3 hub files map children without duplicating substance, every row says "read this when"; C4 every child links to its parent hub; C5 `llms.txt` at the repo root is the hub of hubs: every hub is reachable from it and it never carries substance.
 
 ```yaml
 provenance: {author: <agent|person>, date: YYYY-MM-DD, inputs: [<sources>], review: <none|codex|dual-lane|founder>, supersedes: <path|none>, confidence: <high|moderate|low|unknown>, gaps: [<known gaps>]}
@@ -189,11 +195,11 @@ A revoke lasts for the rest of the session, as the legacy skills specified; the 
 | Check | Hook | Severity |
 |---|---|---|
 | WS-1 banned phrase, H rows of §4 | writing-style-gate.sh (Stop) | HARD |
-| WS-2 box-drawing, block, geometric, braille or symbol glyph outside a fence | writing-style-gate.sh | HARD |
+| WS-2 bullet, arrow, box, block, geometric, dingbat, braille, symbol or emoji glyph outside a fence | writing-style-gate.sh | HARD |
 | WS-3 prose over 60 lines | writing-style-gate.sh | HARD |
 | WS-4 task table, 3+ rows, missing Impact or Effort | writing-style-gate.sh | HARD |
 | WS-5 ask-to-run in pinned projects | writing-style-gate.sh | HARD |
-| WS-A1..A12: 41-60 lines, opener, filler, vague, padding, exhaustive list, ask-to-run, html, restate, field wrap, hedge, unboxed decision | writing-style-gate.sh | advisory |
+| WS-A1..A14: 41-60 lines, opener, filler, vague, padding, exhaustive list, ask-to-run, html, restate, field wrap, hedge, unboxed decision, fenced prose share, list-shaped task list | writing-style-gate.sh | advisory |
 | MD-1..MD-5, MD-A1..A4 | md-standard-gate.sh (PostToolUse) | per §7 |
 | Revoke marker writer, nudge line | per-turn-discipline-prompt.sh (UserPromptSubmit) | none |
 
@@ -216,7 +222,10 @@ Guards: silent until `.claude/sutra-project.json` exists; `stop_hook_active` pas
 - llms-full.txt and llms-only tags; markdownlint MD013 line-length cap.
 - Emoji status sets; unicode bars, sparklines, frames or dividers.
 - A long-form escape phrase for the hard budget: use a file (M7) or the audited ack marker.
+- Status-board box template and colour rules from READABILITY-STANDARD: only decisions get boxed; colour is delegated to Native `terminal-events.ts`.
+- Anti-glaze source clause "not politically correct" (rejected 2026-05-12 with the aggressive register).
+- Executive docs as HTML by document class (D16): parked, see provenance gaps.
 
 ---
 
-provenance: {author: claude + founder, date: 2026-09-11, inputs: [caveman SKILL (gstack fork 2026-05-12), anti-glaze-tone SKILL (@aiedge_ 2026-05-12), readability-gate SKILL, READABILITY-STANDARD.md (TERMINAL-READABILITY-RESEARCH 2026-04-06), writing-llm-md v1.1, D51, D55, D58, D71, D72, founder feedback 2026-08-17 and 2026-09-02, workflow wf_5cf3e80e (7 readers, 3 sweeps, 3 designs, 2 judges, synth, critic), codex consult thread 01a0807d 2026-09-08, adversarial verification workflow 2026-09-11 (0 P1, 6 P2), codex thread 01a08f94 + deepseek-v4-pro consult 2026-09-11], review: dual-lane, supersedes: [skills/caveman, skills/anti-glaze-tone, skills/readability-gate, skills/writing-llm-md, holding/skills/writing-llm-md.md, sutra/layer2-operating-system/READABILITY-STANDARD.md], confidence: high, gaps: [deepseek lane SKIPPED (unfunded); ASCII-only bars replace the unicode bar, founder-reversible; HTML-by-doc-class (D16) parked; baseline allowlist for tracked .md deferred]}
+provenance: {author: claude + founder, date: 2026-09-11, inputs: [caveman SKILL (gstack fork 2026-05-12), anti-glaze-tone SKILL (@aiedge_ 2026-05-12), readability-gate SKILL, READABILITY-STANDARD.md (TERMINAL-READABILITY-RESEARCH 2026-04-06), writing-llm-md v1.1, D51, D55, D58, D71, D72, founder feedback 2026-08-17 and 2026-09-02, workflow wf_5cf3e80e (7 readers, 3 sweeps, 3 designs, 2 judges, synth, critic), codex consult thread 01a0807d 2026-09-08, adversarial verification workflow 2026-09-11 (0 P1, 6 P2), codex thread 01a08f94 + deepseek-v4-pro consult 2026-09-11, guards lens (11 P1, 4 P2) + false-negative lens (65 cases) + completeness sweep (18 gaps) 2026-09-11, codex thread 01a08fc8 + deepseek-v4-pro round 3], review: dual-lane, supersedes: [skills/caveman, skills/anti-glaze-tone, skills/readability-gate, skills/writing-llm-md, holding/skills/writing-llm-md.md, sutra/layer2-operating-system/READABILITY-STANDARD.md], confidence: high, gaps: [deepseek lane SKIPPED (unfunded); ASCII-only bars replace the unicode bar, founder-reversible; HTML-by-doc-class (D16) parked; baseline allowlist for tracked .md deferred]}

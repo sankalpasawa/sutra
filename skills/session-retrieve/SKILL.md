@@ -104,7 +104,7 @@ Example: slug `-Users-me-Code-my-project` → launch dir `/Users/me/Code/my-proj
 
 `claude -r <id>` prints `No conversation found with session ID` when run from the wrong launch dir. **This is the #1 failure mode of this skill.** Always decode the slug and give that as the `cd` target.
 
-## Output format (mandatory — readability gate)
+## Output format (mandatory — core:writing-style section 6)
 
 Single table. Each row = one session. Each `Resume` cell = ONE copy-paste line (`cd <root> && claude -r <id>`). No multi-line resume blocks — founder copies the whole line in one click.
 

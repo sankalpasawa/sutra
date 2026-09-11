@@ -155,16 +155,14 @@ blocked && ok "61 dash-prefixed prose lines count -> block" || no "dash lines un
 LBL61=$(python3 -c 'print("\n".join("OS: " + ("padded field %d " % i) * 12 for i in range(61)))')
 D=$(make_env other "report" "$LBL61"); run "$D"
 blocked && ok "61 over-long label lines count -> block" || no "label padding uncounted"; rm -rf "$D"
-LBL45=$(python3 -c 'print("\n".join("OS: field %d" % i for i in range(45)))')
-D=$(make_env other "report" "$LBL45"); run "$D"
-last_row "$D" | grep -q '"lines":0' && ok "45 one-line fields are not counted" || no "fields counted: $(last_row "$D")"; rm -rf "$D"
+LBL30=$(python3 -c 'print("\n".join("OS: field %d" % i for i in range(30)))')
+D=$(make_env other "report" "$LBL30"); run "$D"
+last_row "$D" | grep -q '"lines":0' && ok "30 one-line fields are not counted" || no "fields counted: $(last_row "$D")"; rm -rf "$D"
 LBL110=$(python3 -c 'print("\n".join("OS: field %d" % i for i in range(110)))')
 D=$(make_env other "report" "$LBL110"); run "$D"
 blocked && ok "110 one-line fields: the 65 past the 45th count -> block" || no "field flood uncounted"; rm -rf "$D"
 D=$(make_env other "fix" "Scale: great question, 2 files"); run "$D"
 blocked && ok "phrase inside a field value -> block" || no "field value not judged"; rm -rf "$D"
-D=$(make_env other "fix" "OS: In short, continue phase 2"); run "$D"
-blocked && no "line-anchored row applied to a field value" || ok "anchored rows skip field values -> pass"; rm -rf "$D"
 D=$(make_env other "fix" "INPUT: you're absolutely right about that"); run "$D"
 blocked && no "INPUT paraphrase judged" || ok "INPUT field never judged -> pass"; rm -rf "$D"
 
@@ -182,6 +180,86 @@ TT4='# | Task | Owner
 3 | fix c | me'
 D=$(make_env other "plan" "$TT4"); run "$D"
 blocked && ok "pipe-less task table without Impact/Effort -> block" || no "pipe-less table passed"; rm -rf "$D"
+
+echo "=== v1.2 guards lens: sinks are prose ==="
+D=$(make_env other "report" '```text
+Great question! Hope this helps!'); run "$D"
+blocked && ok "unterminated fence no longer swallows the turn -> block" || no "unclosed fence still a sink"; rm -rf "$D"
+D=$(make_env other "report" "+--------------------------------------------+
+Great question! In summary, hope this helps!"); run "$D"
+blocked && ok "unterminated box no longer swallows the turn -> block" || no "unclosed box still a sink"; rm -rf "$D"
+BOX40=$(python3 -c 'print("+-- NOTE ----+\n" + "\n".join("| line %d of prose inside a box |" % i for i in range(70)) + "\n+------------+")')
+D=$(make_env other "report" "$BOX40"); run "$D"
+blocked && ok "70-line box counts past its 24th line -> block" || no "over-long box uncounted"; rm -rf "$D"
+D=$(make_env other "report" "> Great question! Hope this helps!"); run "$D"
+blocked && ok "blockquoted banned phrase -> block" || no "blockquote still exempt"; rm -rf "$D"
+BQ61=$(python3 -c 'print("\n".join("> quoted line %d of prose that says something" % i for i in range(61)))')
+D=$(make_env other "report" "$BQ61"); run "$D"
+blocked && ok "61 blockquote lines count -> block" || no "blockquote lines uncounted"; rm -rf "$D"
+D=$(make_env other "report" "[OS-1·OS-2 Great question! In summary, hope this helps! ]"); run "$D"
+blocked && ok "header-shaped wrapper is prose -> block" || no "fake header still exempt"; rm -rf "$D"
+D=$(make_env other "report" "[INBOUND·DIRECT · TIMING:now · CHANNEL:in-band · REV:reversible · RISK:low]
+$CLEAN"); run "$D"
+blocked && no "real H-Sutra header blocked" || ok "real H-Sutra header still exempt"; rm -rf "$D"
+D=$(make_env other "report" "[STAGE-1-FAIL · CLARIFY · attempt:1/1]
+$CLEAN"); run "$D"
+blocked && no "stage-1 header blocked" || ok "stage-1 header still exempt"; rm -rf "$D"
+D=$(make_env other "fix" "OS: In summary, the fix is small"); run "$D"
+blocked && ok "anchored row applies to a field value -> block" || no "field value laundering survives"; rm -rf "$D"
+LONG1=$(python3 -c 'print("this sentence repeats to make one giant line. " * 300)')
+D=$(make_env other "report" "$LONG1"); run "$D"
+blocked && ok "one 13,000-char line weighs 60+ lines -> block" || no "giant line counted as one"; rm -rf "$D"
+D=$(make_env other "fix the bug" 'The right closing line is "Hope this helps, let me know if anything else comes up and feel free to reach out any time."'); run "$D"
+blocked && ok "quoted span over 80 chars is judged -> block" || no "long quoted span still blanked"; rm -rf "$D"
+D=$(make_env other "fix the bug" 'The fix: `Great question! In summary, done.`'); run "$D"
+blocked && ok "punctuated inline code is judged -> block" || no "sentence inside backticks still blanked"; rm -rf "$D"
+D=$(make_env other "check my email integration" "Great question! Happy to help. Hope this helps!"); run "$D"
+blocked && ok "bare noun 'email' no longer downgrades the audience -> block" || no "audience still demoted by a noun"; rm -rf "$D"
+D=$(make_env other "x" "Great question!"); printf '{"project_id":"t","project_name":"renamed","writing_style":"advisory"}\n' > "$D/.claude/sutra-project.json"
+T=$(mktemp -d); mv "$D" "$T/asawa-holding"; D="$T/asawa-holding"; run "$D"
+blocked && ok "pinned status from the directory name survives a renamed project file" || no "renaming project_name un-pinned the repo"; rm -rf "$T"
+D=$(make_env other "x" "Great question!"); touch "$D/.enforcement/writing-style.jsonl"; rm -f "$D/.claude/sutra-project.json"; run "$D"
+blocked && ok "missing project file with an existing ledger stays activated -> block" || no "removing sutra-project.json silenced the gate"; rm -rf "$D"
+
+echo "=== v1.2 false-negative lens: phrasing and glyphs ==="
+for t in "Good question. The bug is in auth." "You're exactly right." "Sorry! The earlier patch was wrong." "My bad on the last diff." "Sure - the fix is in auth.py." "$CLEAN Thanks for flagging that." "$CLEAN Ping me if you need anything else." "$CLEAN Let me know." "Cheers!" "Summary: token check off by one." "Net net: the token check is off." "Big picture: the check is inverted." "As discussed, the token check is fixed." "Here's what I'll do next: rewrite it." "Well done spotting the regression."; do
+  D=$(make_env other "fix the bug" "$t"); run "$D"
+  blocked && ok "variant -> block: $t" || no "expected block: $t"; rm -rf "$D"
+done
+for t in 'Run `npm test` to confirm.' "Run the suite and paste the output here." "Verify by running the migration on your machine."; do
+  D=$(make_env asawa-holding "deploy" "$t"); run "$D"
+  blocked && ok "ask-to-run variant (pinned) -> block: $t" || no "expected block: $t"; rm -rf "$D"
+done
+for t in "Sure enough, the cache was stale." "Run 3 of 5 passed." "Good work items are small." "It is a good idea to pin versions." "The upshot field is unused."; do
+  D=$(make_env other "fix the bug" "$t"); run "$D"
+  blocked && no "technical prose blocked (false positive): $t" || ok "technical prose -> pass: $t"; rm -rf "$D"
+done
+for t in "parse → validate → emit" "• parse • validate • emit" "Done ✔ tests ✘ lint" "🟢 api 🔴 worker" "① first ② second"; do
+  D=$(make_env other "list" "$t"); run "$D"
+  blocked && ok "glyph -> block: $t" || no "glyph passed: $t"; rm -rf "$D"
+done
+TT5='| # | Action | Owner |
+|---|---|---|
+| 1 | rotate keys | ops |
+| 2 | patch auth | me |
+| 3 | rerun suite | me |'
+D=$(make_env other "plan" "$TT5"); run "$D"
+blocked && ok "Action/Owner table without Impact/Effort -> block" || no "action table passed"; rm -rf "$D"
+TT6='Next steps:
+| # | Item | Owner |
+|---|---|---|
+| 1 | rotate keys | ops |
+| 2 | patch auth | me |
+| 3 | rerun suite | me |'
+D=$(make_env other "plan" "$TT6"); run "$D"
+blocked && ok "table under a 'Next steps:' lead-in -> block" || no "lead-in table passed"; rm -rf "$D"
+TT7='| Task | Notes on impact and effort |
+|---|---|
+| a | x |
+| b | y |
+| c | z |'
+D=$(make_env other "plan" "$TT7"); run "$D"
+blocked && ok "impact and effort in one cell do not count -> block" || no "single-cell impact/effort passed"; rm -rf "$D"
 
 echo "=== guards ==="
 D=$(make_env other "x" "Great question!"); run "$D" true

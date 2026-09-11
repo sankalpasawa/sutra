@@ -48,7 +48,7 @@ Idempotent — re-running is safe (preserves existing telemetry setting).
 | `core:depth-estimation` | Emit `DEPTH X/5` block before any task; auto-estimation on completion |
 | `core:blueprint` | Emit BLUEPRINT before tool calls (Doing / Steps / Scale / Stops if / Switch) |
 | `core:output-trace` | One-line route trace at end of response |
-| `core:readability-gate` | Format output (tables, ASCII boxes, numbers > adjectives) |
+| `core:writing-style` | Write: minimize first, tables, ASCII boxes, numbers > adjectives, no glaze |
 | `core:codex-sutra` | Codex CLI wrapper — review / challenge / consult modes (D40 default policy: consult before Edit/Write at Depth ≥ 3) |
 | `core:skill-explain` | 4-line skill card (SKILL / WHAT / WHY / EXPECT / ASKS) before any skill invocation |
 | `core:workflow` | Pedagogical wrapper — runs the full canonical Sutra sequence on one task |

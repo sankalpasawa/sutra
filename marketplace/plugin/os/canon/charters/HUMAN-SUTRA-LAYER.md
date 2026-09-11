@@ -237,7 +237,7 @@ These run on every turn that has tool calls:
 
 - **Stated Depth** — the DEPTH + ESTIMATION block (existing skill `core:depth-estimation`).
 - **Pre-Action BLUEPRINT** — the BLUEPRINT block (existing skill `core:blueprint`, engine `sutra/os/engines/BLUEPRINT-ENGINE.md`).
-- **Readability Gate** — applies at output time (existing skill `core:readability-gate`).
+- **Writing style** — applies at authoring time (skill `core:writing-style`, P1 STRUCTURE; the former readability gate).
 - **Output Trace** — one-line OS trace (existing skill `core:output-trace`).
 - **Header tag** — the new visible string emitted on every response (see § Header tag format).
 

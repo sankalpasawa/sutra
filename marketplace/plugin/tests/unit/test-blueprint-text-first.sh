@@ -121,6 +121,34 @@ D=$(make_env 3 "$BP_D3_BAD_STEPS"); run "$D" "sutra/os/charters/x.md"
 D=$(make_env 2 "$BP_D3_BAD_STEPS"); run "$D" "sutra/os/charters/x.md"
 [ "$RC" = 0 ] && ok "same block at D2 -> pass (per-step Verify is D3+ only)" || no "expected 0 got $RC: $ERR"; rm -rf "$D"
 
+echo "=== v3.1: last block wins; a step owns its continuation lines ==="
+D=$(make_env 5 "$BP_TRIVIAL_VERIFY
+
+corrected:
+$GOOD_BP"); run "$D" "sutra/os/charters/x.md"
+[ "$RC" = 0 ] && ok "invalid block then valid block -> pass (last BLUEPRINT of the turn wins)" || no "expected 0 got $RC: $ERR"; rm -rf "$D"
+D=$(make_env 5 "$GOOD_BP
+
+retracted:
+$BP_TRIVIAL_VERIFY"); run "$D" "sutra/os/charters/x.md"
+[ "$RC" = 2 ] && ok "valid block then invalid block -> blocked (last wins)" || no "expected 2 got $RC"; rm -rf "$D"
+BP_NEXTLINE='+-- BLUEPRINT ------------------------------------------------+
+| Doing: rewrite the enforcement path of the blueprint gate    |
+| Steps:                                                        |
+|   1) port the text validator                                  |
+|      Verify: bash tests/unit/test-blueprint-text-first.sh     |
+|   2) wire the Stop floor                                      |
+|      Verify: grep -c floor hooks/per-turn-hard-gate.sh        |
+| Output looks like: the hook reads the turn text, tests green |
+| Verified by: bash tests/unit/test-blueprint-text-first.sh    |
++--------------------------------------------------------------+'
+D=$(make_env 5 "$BP_NEXTLINE"); run "$D" "sutra/os/charters/x.md"
+[ "$RC" = 0 ] && ok "Verify: on the line after each step -> pass at D5" || no "expected 0 got $RC: $ERR"; rm -rf "$D"
+BP_NEXTLINE_BAD=$(printf '%s' "$BP_NEXTLINE" | grep -v 'grep -c floor')
+D=$(make_env 5 "$BP_NEXTLINE_BAD"); run "$D" "sutra/os/charters/x.md"
+[ "$RC" = 2 ] && ok "step 2 without any Verify -> blocked" || no "expected 2 got $RC"
+printf '%s' "$ERR" | grep -q '2) wire' && ok "error names step 2" || no "error does not name step 2: $ERR"; rm -rf "$D"
+
 echo "=== ordinary files: PreToolUse no longer gates them (Stop floor owns) ==="
 D=$(make_env 5 "no plan here"); run "$D" "src/thing.py"
 [ "$RC" = 0 ] && ok "ordinary file + no BLUEPRINT + D5 -> pass here" || no "expected 0 got $RC: $ERR"; rm -rf "$D"

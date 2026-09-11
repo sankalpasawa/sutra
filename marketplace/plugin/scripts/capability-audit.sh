@@ -47,7 +47,7 @@ DISCIPLINES_SHIPPED=(
   "input_routing|Input Routing block|.per_turn_blocks.input_routing|skills/input-routing||cap-001"
   "depth_estimation|Depth + Estimation|.per_turn_blocks.depth_estimation|skills/depth-estimation||cap-002"
   "blueprint|BLUEPRINT block|.per_turn_blocks.blueprint|skills/blueprint|blueprint|cap-003"
-  "readability_gate|Readability Gate (skill)|.output_discipline|skills/readability-gate||cap-004"
+  "readability_gate|Writing Style (skill, formerly readability gate)|.output_discipline|skills/writing-style||cap-004"
   "output_trace|Output Trace|.per_turn_blocks.output_trace|skills/output-trace||cap-005"
 )
 
@@ -56,7 +56,7 @@ DISCIPLINES_BACKLOG=(
   "right_effort|Karpathy Right-Effort discipline|.right_effort|||cap-108"
   "skill_explanation|Skill-explain card hook nudge|.skill_explanation|skills/skill-explain||cap-109"
   "subagent_dispatch|Subagent dispatch contract briefing|.subagent_dispatch|hooks/subagent-dispatch-brief.sh|subagent-dispatch-brief|cap-110"
-  "readability_gate_nudge|Readability Gate hook nudge|.output_discipline||readability|cap-111"
+  "readability_gate_nudge|Writing style hook nudge (formerly readability gate)|.output_discipline||readability|cap-111"
   "customer_focus_first|Customer Focus First (Doctrine P0)|.customer_focus_first|||cap-112"
   "highlight_decisions|Highlight decisions (ASCII box)|.output_discipline.highlight_decisions|||cap-113"
   "no_fabrication|No fabrication (truthfulness/attribution)|.no_fabrication|||cap-114"

@@ -26,7 +26,7 @@ Three tiers, drawn from formal verification (invariants), distributed systems (c
 | Data sovereignty per company | Isolation guarantee | Hard gate — enforce-boundaries.sh |
 | Feedback flows up, never sideways | Prevents cascade corruption | Hard gate — cross-company edit block |
 | Direction encoding required (D28) | System integrity | Hard gate — direction without encoding = incomplete |
-| Readability standard (D6, D13, D14, P11) | Founder confidence — primary human-AI interface | Soft gate — output validation sensor + session-end regression test. See READABILITY-STANDARD.md |
+| Writing style (D6, D13, D14, P11, D72) | Founder confidence — primary human-AI interface | HARD Stop gate `writing-style-gate.sh` + PostToolUse `md-standard-gate.sh`. See `core:writing-style` |
 
 **Override**: IMPOSSIBLE. No company, no agent, no session can disable these. Only the founder (CEO of Asawa) can modify an invariant, and it requires a **constitutional amendment** — explicit versioned change to this document with cascade impact assessment.
 

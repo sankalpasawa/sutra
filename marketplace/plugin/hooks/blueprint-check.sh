@@ -53,6 +53,11 @@
 #        sutra-defaults.json         .per_turn_blocks.blueprint
 #                                      .foundational_paths[]           (plugin)
 #        hardcoded list                                                (fallback)
+#   5. v3.1 (2026-09-11, two field incidents the same day): the LAST BLUEPRINT
+#      block of the turn is the contract, so a corrected re-emit supersedes the
+#      block it fixes; and a numbered Step owns its continuation lines, so a
+#      `Verify:` on the line after the step is inline. Both had forced the
+#      audited BLUEPRINT_ACK Bash path, the bypass-teaching shape #80 named.
 #
 # Enforcement:
 #   - FOUNDATIONAL paths: HARD. Requires a valid BLUEPRINT in the turn text with
@@ -330,20 +335,22 @@ def _heading_is_blueprint(raw):
 
 # Detection is deliberately tolerant of three shapes — ASCII box, markdown
 # heading, or bare field-set — because v2 false-blocked valid variants.
+# v3.1: the LAST block wins. A corrected re-emit later in the turn supersedes the
+# block it fixes; a retraction after a valid block blocks. No early break.
 start = None
 for i, raw in enumerate(src):
     if "BLUEPRINT" in raw and "+--" in raw:
-        start = i; break
+        start = i
 if start is None:
     for i, raw in enumerate(src):
         if "BLUEPRINT" in raw.upper() and _heading_is_blueprint(raw):
-            start = i; break
+            start = i
 if start is None:
     doing_idx = None
     has_out = False
     for i, raw in enumerate(src):
         d = declutter(raw)
-        if doing_idx is None and re.match(r"^Doing\b[^:]*:", d, re.IGNORECASE):
+        if re.match(r"^Doing\b[^:]*:", d, re.IGNORECASE):
             doing_idx = i
         if re.match(r"^(Output looks like|Verified by)\b[^:]*:", d, re.IGNORECASE):
             has_out = True
@@ -400,8 +407,21 @@ if depth >= 3:
                 part = part.strip()
                 if re.match(r"^\d+\)", part): segs.append(part)
             break
+    # v3.1: a step owns its continuation lines (wrapped text, or a Verify: on the
+    # next line) until the next numbered step, a field label, or a box edge. A
+    # single trailing Verify: attaches to the LAST step only; earlier steps still fail.
+    FIELD_RE = re.compile(r"^(Doing|Steps|Output looks like|Verified by|Scale|Stops if|Switch)\b[^:]*:", re.IGNORECASE)
+    cur = None
     for l in block:
-        if re.match(r"^\d+\)", l): segs.append(l)
+        if re.match(r"^\d+\)", l):
+            cur = [l]; segs.append(cur)
+        elif not l.strip():
+            continue
+        elif cur is not None and not FIELD_RE.match(l) and not l.startswith("+-"):
+            cur.append(l)
+        else:
+            cur = None
+    segs = [s if isinstance(s, str) else " ".join(s) for s in segs]
     if segs:
         bad = [s for s in segs if not re.search(r"\bVerify:\s*\S", s, re.IGNORECASE)]
         if bad:

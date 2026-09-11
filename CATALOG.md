@@ -104,7 +104,7 @@ Each toggles at the CLAUDE.md level or via a specific hook/config.
 | **Input Routing (Level 2)** | active | all | Classifies every founder input (TYPE / ROUTE / FIT CHECK) before action | Whitelisted actions skip; disabling = edit CLAUDE.md §Input Routing | `holding/CLAUDE.md` §Input Routing + `sutra/layer2-operating-system/INPUT-ROUTING.md` (pattern) |
 | **Depth Block (mandatory)** | active | all | Per-turn Depth + Estimation block before any Write/Edit | Marker-based enforcement in `holding/hooks/dispatcher-pretool.sh` Check 10 | same |
 | **Sutra-Deploy Depth 5 Gate** | active | all | Sutra/company OS edits require Depth 5 marker | `holding/hooks/dispatcher-pretool.sh` Check 11 + `.claude/sutra-deploy-depth5` | D27 in `state/system.yaml` |
-| **Readability Gate** | active | all | Output format discipline (status boards, tables, numbers over prose) | LLM behavior gate; standard at `sutra/layer2-operating-system/READABILITY-STANDARD.md` | memory `feedback_readability_is_output_gate` |
+| **Writing style** | active | all | One home for every writing rule: MINIMIZE, STRUCTURE, COMPRESS, CANDOR, GROUND, FILE-SHAPE | HARD Stop gate `writing-style-gate.sh`; skill at `marketplace/plugin/skills/writing-style/SKILL.md` | D72; ADR-036 |
 | **Execution Trace (3 levels)** | active | all | Shows what the OS did (L1 minimal, L2 standard, L3 verbose) | Founder says "show trace" / "show os" / "trace off" | `holding/CLAUDE.md` §Execution Trace + `holding/research/2026-04-09-execution-trace-spec.md` |
 | **God Mode** | active | 1 (Asawa only) | Cross-company edits from Asawa holding; 2-hour auto-expire; password-gated | `bash holding/hooks/god-mode.sh activate\|deactivate` | `holding/CLAUDE.md` §God Mode + `holding/hooks/god-mode.sh` |
 | **Sutra Freeze Marker** | active | 2 | Companies can place `.sutra-freeze` to block propagation | create/remove the file | `state/system.yaml` §conventions.sutra_freeze_marker |
@@ -130,7 +130,7 @@ Source of truth: `sutra/marketplace/plugin/skills/<name>/SKILL.md`.
 |---|---|---|---|---|
 | **input-routing** | active | Every user message, before any Edit/Write/Bash | 5-line classification block (TYPE / ROUTE / FIT CHECK) | `marketplace/plugin/skills/input-routing/` |
 | **depth-estimation** | active | Start of any multi-step task | 5-line TASK/DEPTH/EFFORT/COST/IMPACT block; writes `.claude/depth-registered` | `marketplace/plugin/skills/depth-estimation/` |
-| **readability-gate** | active | Before presenting any output | Output formatting — tables, numbers, boxed decisions, progress bars | `marketplace/plugin/skills/readability-gate/` |
+| **writing-style** | active | Every turn and any .md authored | Writing rules P0-P5: minimize, structure, compress, candor, ground, file shape (readability-gate is a redirect stub) | `marketplace/plugin/skills/writing-style/` |
 | **output-trace** | active | End of every response | One-line OS trace: route → domain → nodes → terminal → output | `marketplace/plugin/skills/output-trace/` |
 
 ### 7b.2 Company Catalog Skills (invoked on demand)
