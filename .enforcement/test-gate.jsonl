@@ -162,3 +162,13 @@
 {"ts":1789133075,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":2}
 {"ts":1789133549,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":4}
 {"ts":1789134727,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
+{"ts":1789148858,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":12,"staged_docs":3}
+{"ts":1789148860,"event":"pre-commit-test-gate","status":"skip","reason":"no-staged-files","staged_code":0,"staged_docs":0}
+{"ts":1789148912,"event":"pre-commit-test-gate","status":"skip","reason":"no-staged-files","staged_code":0,"staged_docs":0}
+{"ts":1789148606,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":12,"staged_docs":9}
+{"ts":1789148755,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":1,"staged_docs":1}
+{"ts":1789148757,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}
+{"ts":1789150070,"event":"pre-commit-test-gate","status":"block","reason":"stale-marker","staged_code":2,"staged_docs":3}
+{"ts":1789150121,"event":"pre-commit-test-gate","status":"block","reason":"stale-marker","staged_code":2,"staged_docs":3}
+{"ts":1789150313,"event":"pre-commit-test-gate","status":"pass","reason":"fresh-marker-exit-0","staged_code":2,"staged_docs":3}
+{"ts":1789150638,"event":"pre-commit-test-gate","status":"skip","reason":"docs-only","staged_code":0,"staged_docs":1}

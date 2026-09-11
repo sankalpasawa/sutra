@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-11
+**status**: active · **updated**: 2026-09-12
+## 2.264.2 (2026-09-12)
+
+- **The first module to load no longer decides the registry for everything loaded after it.** `org_api` used to write the resolved registry path back into `os.environ["SUTRA_NATIVE_HOME"]` at import, the poisoning step behind the 2026-09-11 wipe (RCA fix row 4). It now exposes `registry_root()` (the engine's own binding, with the default as fallback) and leaves the environment alone; `app.py` hands the Sutra MCP children that root explicitly through `_mcp_env_for_children()` in both config shapes. `test_org_api_env.py` proves it in a child interpreter with the variable and `PYTEST_CURRENT_TEST` removed. `optimus_api` docstring updated; its own root resolution is unchanged.
+
 ## 2.264.1 (2026-09-11)
 
 - **Every sutra-ui test now runs against a throwaway registry, not only the tests that remembered to.** `sutra-ui/conftest.py` sets `SUTRA_NATIVE_HOME` to a fresh temp dir before pytest imports any test module, unless the operator already pointed it outside `~/.sutra-native` or set `SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1`; this closes the gap the 2.264.0 engine guard left, where 16 tests that import `app` could only error. `tests/temp-root-guard-test.sh` (4 checks) requires the assignment itself, not a mention.

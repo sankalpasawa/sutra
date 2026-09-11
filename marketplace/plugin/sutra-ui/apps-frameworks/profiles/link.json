@@ -1,0 +1,17 @@
+{
+  "kind": "link",
+  "one_line": "a row that opens a screen the desktop already has; it has no page and no message",
+  "questions_v1": ["B5", "DS6", "P2", "P1", "P3", "P5", "B1", "S3"],
+  "prefilled_v1": ["S2", "P6", "E2", "E1"],
+  "asked_at_end_v1": ["P7"],
+  "optional_edit_only": [],
+  "checks": ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9",
+             "C17", "C18", "C19", "C20", "C21", "C22", "C23", "C24", "C28", "C32"],
+  "files": ["module.json", "APP.md"],
+  "starters": [
+    {"template": "templates/link/APP.md", "target": "APP.md"}
+  ],
+  "chat_may_edit": ["APP.md", "module.json:name", "module.json:tagline", "module.json:surface.screen"],
+  "allowed_files": ["module.json", "APP.md"],
+  "created_status": "ready"
+}

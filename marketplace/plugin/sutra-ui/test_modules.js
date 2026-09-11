@@ -344,6 +344,21 @@ test("dirRail: Directory options give #dir- anchors, kid counts on groups, .dsub
   assert(/dirRail\(/.test(body) && !/const navEntry/.test(body));
 });
 
+test("screen parity: apps-frameworks/screens.json equals every SCREENS.<id> registration minus terminal and usage", () => {
+  const dir = path.join(__dirname, "static", "js");
+  const seen = new Map();
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".js"))){
+    const text = fs.readFileSync(path.join(dir, f), "utf8");
+    for (const m of text.matchAll(/SCREENS\.([a-z_]+)\s*=/g)) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+  }
+  const registered = [...seen.keys()].filter(id => id !== "terminal" && id !== "usage").sort();
+  const shipped = JSON.parse(fs.readFileSync(path.join(__dirname, "apps-frameworks", "screens.json"), "utf8"));
+  assert.deepStrictEqual([...shipped.screens].sort(), registered, "screens.json drifted from the registrations: run build_kit.py after updating SCREEN_IDS");
+  assert.deepStrictEqual([...shipped.forbidden].sort(), ["terminal", "usage"]);
+  const dupes = [...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+  if (dupes.length) console.log("     note: screens registered more than once: " + dupes.join(", "));
+});
+
 Promise.all(pending).then(() => {
   console.log(`\n${ran - failed}/${ran} passed`);
   process.exit(failed ? 1 : 0);

@@ -1,0 +1,32 @@
+{
+  "angle": "product",
+  "purpose": "Before any file exists, say who opens this, what it is called, what it must show tomorrow for it to have worked, what goes wrong and who keeps it.",
+  "questions": [
+    {"id": "P1", "question": "Who opens this, and what are they trying to get done?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "yes"},
+    {"id": "P2", "question": "Say it in one line someone else would understand. What should it be called?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "yes"},
+    {"id": "P3", "question": "You open it tomorrow. What do you see that tells you it worked?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "yes"},
+    {"id": "P4", "question": "Walk me through using it once, start to finish.", "required_for": ["page", "chat"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "P5", "question": "What is the worst wrong thing it could show, what should it show instead, and what do you do then?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "yes"},
+    {"id": "P6", "question": "Who fixes it when it breaks, and what date should it be looked at again?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "P7", "question": "Is anyone besides you going to use this?", "required_for": [], "optional": true, "v1_asked": "end"}
+  ],
+  "artifact": "the Product rows of APP.md, plus name and tagline in module.json; no second file",
+  "rules": [
+    {"id": "PR-1", "rule": "One line names the app in words the reader already has; it becomes name (80) and tagline (140).", "kinds": ["page", "chat", "link"], "sutra_source": "schemas/app-manifest.schema.json name/tagline; modules_api.py NAME_MAX/TAGLINE_MAX", "enforced_by": "server truncation; C3"},
+    {"id": "PR-2", "rule": "Success is something you can see on open, and it is the app's done check. 'It works', 'done', 'no errors' are refused.", "kinds": ["page", "chat", "link"], "sutra_source": "sutra-defaults.json trivial-verify blocklist; 2026-09-11-apps-prd.md", "enforced_by": "C2"},
+    {"id": "PR-3", "rule": "The failure answer names what is seen and what to do. A denial is not an answer.", "kinds": ["page", "chat", "link"], "sutra_source": "ADR-020 PRD shape", "enforced_by": "C2"},
+    {"id": "PR-4", "rule": "The kind follows the job: a thing to look at is a page, a conversation is a chat, a shortcut to a screen is a link. The kind is chosen in the New control before the session opens.", "kinds": ["page", "chat", "link"], "sutra_source": "2026-09-08-modules-design.md D-M2; app-manifest.schema.json kind enum", "enforced_by": "create_module validation; the New picker"},
+    {"id": "PR-5", "rule": "Every app names an owner and a review date. Archiving is the end state and never deletes.", "kinds": ["page", "chat", "link"], "sutra_source": "APPS-LIFECYCLE.md", "enforced_by": "C7"},
+    {"id": "PR-6", "rule": "A page and a chat stay draft until the success line is true. A link is created ready because its whole surface is one server-validated screen id.", "kinds": ["page", "chat"], "sutra_source": "modules_api.py create_module status; mark_ready", "enforced_by": "mark_ready 409 on must-fix failures"},
+    {"id": "PR-7", "rule": "'Just me' to P7 suppresses positioning, pricing, growth and competitor questions entirely. They are never asked by default.", "kinds": ["page", "chat", "link"], "sutra_source": "FOUNDER-DIRECTIONS.md D75 ruling 4; writing-style P0 MINIMIZE", "enforced_by": "question set; C24 and C31 promote only when P7 names someone else"},
+    {"id": "PR-8", "rule": "The builder reads plain words. The thing is an app. No block names, decision ids or status lines anywhere a person reads.", "kinds": ["page", "chat", "link"], "sutra_source": "FOUNDER-DIRECTIONS.md D75 ruling 4; APPS-DESIGN.md", "enforced_by": "C4 (single home of the rule)"},
+    {"id": "PR-9", "rule": "One app, one job. The Founding Doctrine Simple test applied to an app; the other four tests are platform properties.", "kinds": ["page", "chat", "link"], "sutra_source": "root-os/FOUNDING-DOCTRINE.md five tests; D75 ruling 1", "enforced_by": "C5 (advisory)"}
+  ],
+  "checks": [
+    {"id": "C1", "level": "required", "kinds": ["page", "chat", "link"], "what": "APP.md exists at the folder root and every row id required for this kind carries a non-empty answer.", "evaluator": "parse the APP.md tables into {row_id: answer}; assert the profile's required ids are present and non-empty; 'not recorded' (imported) is WARN not FAIL", "v1_must_fix": true},
+    {"id": "C2", "level": "required", "kinds": ["page", "chat", "link"], "what": "The P3 and P5 answers are real answers, not slogans or denials.", "evaluator": "shared NT(cell): not in the trivial-verify blocklist, at least 5 words, P5 not matching ^(none|nothing|n/a|it can't|won't happen)", "v1_must_fix": false},
+    {"id": "C3", "level": "required", "kinds": ["page", "chat", "link"], "what": "name and tagline are present, within caps, different from each other, and the tagline is the P2 answer.", "evaluator": "len(name) <= 80, len(tagline) <= 140, both non-empty, name != tagline case-insensitively, normalized tagline equals or is contained in the P2 cell", "v1_must_fix": true},
+    {"id": "C4", "level": "required", "kinds": ["page", "chat", "link"], "what": "No founder-only text anywhere a person reads, and the app is never called a module.", "evaluator": "pattern scan over APP.md, name, tagline, surface.instructions and index.html text: block prefixes (INPUT:, TYPE:, ROUTE:, DEPTH:, TASK:, TRIAGE:, OS:), +-- FLOW/BLUEPRINT/DISPATCH, ATOM:, BUILD-LAYER, ROUTING PIN, dref-, ADR-nnn, D-Mnn/Dnn, and 'module' outside module.json, /api/modules, ~/.sutra-ui/modules", "v1_must_fix": true},
+    {"id": "C5", "level": "advisory", "kinds": ["page", "chat", "link"], "what": "One app, one job.", "evaluator": "WARN when P1 contains ' and also ', ' as well as ', ';' or more than two sentences", "v1_must_fix": false}
+  ]
+}

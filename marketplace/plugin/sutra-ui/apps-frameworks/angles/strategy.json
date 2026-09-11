@@ -1,0 +1,25 @@
+{
+  "angle": "strategy",
+  "purpose": "Say where this sits, what it replaces, and confirm the department it was already filed under.",
+  "questions": [
+    {"id": "S1", "question": "What do you do today without it?", "required_for": ["page", "chat"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "S2", "question": "Does it replace or extend something you already have? Name it, or say nothing.", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "S3", "question": "It files under <department> - <charter title>: <charter purpose>. Keep it there, or move it?", "required_for": ["page", "chat", "link"], "optional": false, "v1_asked": "yes"},
+    {"id": "S4", "question": "Anything you would want to track about it over time?", "required_for": [], "optional": true, "v1_asked": "no"}
+  ],
+  "artifact": "the Strategy rows of APP.md; no code and no second file",
+  "rules": [
+    {"id": "ST-1", "rule": "The department is stated, never interviewed. The chat prints the pinned department with its charter title and purpose and offers only keep or move; a move goes through the assign action. The pin travels as the pin option on the session call, never as seed text.", "kinds": ["page", "chat", "link"], "sutra_source": "ADR-028 placement; static/js/18-modules.js pin option", "enforced_by": "classify pin; C6"},
+    {"id": "ST-2", "rule": "Only the department ref is persisted. An unknown ref reads as Unassigned, never as the root.", "kinds": ["page", "chat", "link"], "sutra_source": "schemas/app-manifest.schema.json department", "enforced_by": "server normalize on read; C6"},
+    {"id": "ST-3", "rule": "The charter title and purpose are quoted from the registry, never written by the chat. No charter means the row says 'no charter yet'.", "kinds": ["page", "chat", "link"], "sutra_source": "org_api.py charters", "enforced_by": "C6, which skips with a note when the registry cannot be read"},
+    {"id": "ST-4", "rule": "'Replaces or extends' names an existing app, or a non-app thing in plain words, or says nothing. Naming an existing app offers to archive it; archive is a status change.", "kinds": ["page", "chat", "link"], "sutra_source": "app-manifest.schema.json status; 2026-09-08-modules-design.md", "enforced_by": "C9 (advisory); archive is a structured change in the edit chat"},
+    {"id": "ST-5", "rule": "Review is a date and only a date. No owner is invented, no reminder is scheduled, no meeting is created.", "kinds": ["page", "chat", "link"], "sutra_source": "sutra-defaults.json (no operational capacity for human rituals)", "enforced_by": "C7 parses the date; nothing schedules anything"},
+    {"id": "ST-6", "rule": "Publishability is a yes/no/not sure answer. The chat never asks for semver, author, license or homepage and never writes a publish block.", "kinds": ["page", "chat", "link"], "sutra_source": "ADR-039 Decision; app-manifest.schema.json publish; APPS-THREATS.md X-9", "enforced_by": "C8"}
+  ],
+  "checks": [
+    {"id": "C6", "level": "required", "kinds": ["page", "chat", "link"], "what": "The Department row names a ref that equals module.json department.ref, and its charter text equals the registry's title and purpose.", "evaluator": "ref matches ^dref-[0-9a-f]{16}$ and equals the manifest value; direct placement_engine import reads the charter registry from disk (the same file read modules_api.py uses); registry unreadable or no charter returns SKIP 'charter not read', never FAIL; no department passes when the row reads Unassigned", "v1_must_fix": false},
+    {"id": "C7", "level": "required", "kinds": ["page", "chat", "link"], "what": "The P6 answer carries a date that parses as YYYY-MM-DD and is not earlier than created_at.", "evaluator": "pattern plus date compare against module.json created_at", "v1_must_fix": false},
+    {"id": "C8", "level": "required", "kinds": ["page", "chat", "link"], "what": "The chat authored no publish block.", "evaluator": "publish absent or null passes; a server-owned publish.state of exported or imported passes; any other authored publish keys FAIL naming them", "v1_must_fix": false},
+    {"id": "C9", "level": "advisory", "kinds": ["page", "chat", "link"], "what": "When S2 names an app id, that folder exists; WARN when the replaced app is still status ready.", "evaluator": "when the cell matches ^[a-z0-9][a-z0-9-]{1,40}$ stat <home>/<id>/module.json and read status; plain words pass", "v1_must_fix": false}
+  ]
+}

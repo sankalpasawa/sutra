@@ -1,0 +1,19 @@
+{
+  "kind": "page",
+  "one_line": "a page you look at: one index.html shown inside the desktop, sealed off from the network",
+  "questions_v1": ["P1", "P2", "DS1", "B1", "E3", "P5", "P3"],
+  "prefilled_v1": ["P4", "DS2", "F1", "F2", "DS3", "E2", "E1", "P6", "S1", "S2", "S3", "F3"],
+  "asked_at_end_v1": ["P7", "B2"],
+  "optional_edit_only": ["DS5", "F4", "F5", "E4"],
+  "checks": ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12", "C14", "C15", "C16",
+             "C17", "C18", "C19", "C20", "C21", "C22", "C23", "C24", "C25", "C26", "C27", "C28", "C31",
+             "C33", "C34", "C35", "C36", "C37"],
+  "files": ["index.html", "APP.md", "module.json"],
+  "starters": [
+    {"template": "templates/page/index.html", "target": "index.html"},
+    {"template": "templates/page/APP.md", "target": "APP.md"}
+  ],
+  "chat_may_edit": ["index.html", "APP.md", "module.json:name", "module.json:tagline"],
+  "allowed_files": ["module.json", "index.html", "assets/**", "APP.md"],
+  "created_status": "draft"
+}

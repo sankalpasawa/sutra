@@ -444,6 +444,33 @@ class TestModulesApi(unittest.TestCase):
         self.assertIn("half-written", rows)
         self.assertIn("building", (rows["half-written"]["warning"] or "").lower())
 
+    def test_v13_touch_ignores_the_record_dotfiles_and_holding_inert(self):
+        # Apps frameworks (design v1 R1-P2): APP.md, dot-prefixed names and a
+        # top-level holding/ are never an edit of the app -- no version bump,
+        # no app.edited row. A real file change still counts.
+        r = self.client.post(BASE, json={"name": "Inert probe", "kind": "chat", "instructions": "hi"}, headers=HDR)
+        self.assertEqual(r.status_code, 201, r.text)
+        mid = r.json()["id"]
+        folder = Path(MOD_HOME) / mid
+        events = Path(MOD_HOME) / ".events.jsonl"
+        before = events.read_text().count('"%s"' % mid) if events.exists() else 0
+        time.sleep(0.02)
+        (folder / "APP.md").write_text("frameworkKit: {}\n# record\n", encoding="utf-8")
+        (folder / ".scratch").write_text("x", encoding="utf-8")
+        (folder / "holding").mkdir()
+        (folder / "holding" / "notes.txt").write_text("y", encoding="utf-8")
+        r = self.client.post(BASE + "/" + mid + "/touch", json={"mode": "edit", "session_id": "s-1"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(r.json()["changed"])
+        self.assertEqual(r.json()["app"]["version"], 1)
+        after = events.read_text().count('"%s"' % mid) if events.exists() else 0
+        self.assertEqual(after, before, "an inert file appended an event")
+        time.sleep(0.02)
+        (folder / "data-policy.json").write_text('{"panel_apis": []}', encoding="utf-8")
+        r = self.client.post(BASE + "/" + mid + "/touch", json={"mode": "edit"}, headers=HDR)
+        self.assertTrue(r.json()["changed"])
+        self.assertEqual(r.json()["app"]["version"], 2)
+
     def test_v12_two_hundred_apps_list_under_300ms(self):
         # Program step 85: the list is one directory read + one registry read per request
         root, exp, desk, ana = self._tree()

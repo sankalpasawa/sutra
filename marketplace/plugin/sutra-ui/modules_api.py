@@ -70,6 +70,15 @@ ACTIONS = ("archive", "restore", "rename", "mark_ready", "set_instructions", "as
 SYS_PREFIX = "sys-"
 NAME_MAX, TAGLINE_MAX, INSTR_MAX, HTML_MAX = 80, 140, 4000, 512 * 1024
 LINK_FORBIDDEN = ("terminal", "usage")   # terminal is a pane toggle; usage renders inside settings
+# The screens a link may open: every SCREENS.<id> registration in static/js
+# minus LINK_FORBIDDEN. One tuple, parity-tested against the registrations
+# (test_modules.js) and copied into apps-frameworks/screens.json by
+# build_kit.py so check.py can read it offline (Apps frameworks, step 4).
+SCREEN_IDS = ("agents", "automation", "balance", "charters", "connectors", "departments", "editor",
+              "evals", "git", "goal", "goals", "health", "history", "modules", "now", "optimus",
+              "placements", "reorg", "routines", "settings", "shadow", "shadowsettings",
+              "shadowwatching", "skills", "teamsutra", "workspace")
+RECORD_FILE = "APP.md"                    # the per-app record (Apps frameworks); never an edit of the app
 FLAG = "modules"
 FLAG_OFF_MESSAGE = "modules flag is off — set flags.modules in ~/.sutra-ui/settings.json"
 
@@ -609,9 +618,15 @@ def touch_app(mid, mode="edit", session_id=None):
     # millisecond write stamp (updated_ms, set on every write; falls back to
     # updated_at for schema-1 files). No tolerance window (codex R3 P2b).
     newest = 0.0
-    for root, _dirs, files in os.walk(path):
+    for root, dirs, files in os.walk(path):
+        if root == path:
+            # Apps frameworks (design v1 R1-P2): the record, dot-prefixed
+            # names and a top-level holding/ are never an edit of the app.
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "holding"]
         for f in files:
-            if root == path and f == "module.json":
+            if root == path and f in ("module.json", RECORD_FILE):
+                continue
+            if f.startswith("."):
                 continue
             try:
                 newest = max(newest, os.stat(os.path.join(root, f)).st_mtime)

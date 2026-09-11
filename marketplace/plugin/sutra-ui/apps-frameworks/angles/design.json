@@ -1,0 +1,34 @@
+{
+  "angle": "design",
+  "purpose": "Make the app look and read like the rest of the desktop in both themes and in a narrow pane.",
+  "questions": [
+    {"id": "DS1", "question": "When it opens, what is the first thing on the screen?", "required_for": ["page"], "optional": false, "v1_asked": "yes"},
+    {"id": "DS2", "question": "Is it a table of rows, a few numbers, a short reading view, or one answer?", "required_for": ["page"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "DS3", "question": "Is anything on this page good, warning or blocked, and what makes it so?", "required_for": ["page"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "DS4", "question": "Who is this chat talking to, and what must it never say?", "required_for": ["chat"], "optional": false, "v1_asked": "yes"},
+    {"id": "DS5", "question": "Does anything need to stay side by side when the window is narrow?", "required_for": [], "optional": true, "v1_asked": "no"},
+    {"id": "DS6", "question": "What should the row say, and what does it look like next to the others?", "required_for": ["link"], "optional": false, "v1_asked": "yes"}
+  ],
+  "artifact": "the Design row of APP.md; the design itself lands in the inline <style> of index.html, in surface.instructions, or in the row copy of a link",
+  "rules": [
+    {"id": "DSE-1", "rule": "Colour, type and radius come only from the injected tokens. No hex, rgb() or hsl(). The seed's token list is generated from TOKEN_CSS at payload time, never hand-typed.", "kinds": ["page"], "sutra_source": "modules_api.py TOKEN_CSS; static/panel.css :root", "enforced_by": "server prepends the token sheet; C10; constants-parity test"},
+    {"id": "DSE-2", "rule": "Five panel tokens are not injected and resolve to nothing: --shadow, --bubble, --th-bg, --knob, --vld-tx.", "kinds": ["page"], "sutra_source": "static/panel.css; modules_api.py TOKEN_CSS omits them", "enforced_by": "C10 names them in its failure text"},
+    {"id": "DSE-3", "rule": "The page never redefines the injected sheet: no :root, no html[data-theme], no #sutra-tokens selector. It must read in both themes.", "kinds": ["page"], "sutra_source": "modules_api.py page_html theme handling; static/js/18-modules.js theme query", "enforced_by": "C11; C36 renders both themes"},
+    {"id": "DSE-4", "rule": "One h1 at most, then h2, h3 in order, never skipping a level. The h1 names the content view, not the app.", "kinds": ["page"], "sutra_source": "skills/writing-style/SKILL.md one H1; APPS-DESIGN.md", "enforced_by": "C12"},
+    {"id": "DSE-5", "rule": "Contrast comes from the pairings that already pass 4.5:1: --ink on --bg/--surface/--card, --muted for secondary prose, --on-acc on --acc. --faint is for crumbs, column heads and pills, never body text.", "kinds": ["page"], "sutra_source": "APPS-DESIGN.md contrast", "enforced_by": "guidance; C10 covers the hard half"},
+    {"id": "DSE-6", "rule": "The page draws no chrome of its own: no repeated app name, no tagline, no crumb, no kind or status pill. The header above it already carries all of that.", "kinds": ["page"], "sutra_source": "APPS-DESIGN.md header-only app view (D-M17); static/js/18-modules.js modAppViewHtml", "enforced_by": "C14 (advisory)"},
+    {"id": "DSE-7", "rule": "No animation is added. A transition that genuinely helps is under 150ms and disabled under prefers-reduced-motion.", "kinds": ["page"], "sutra_source": "APPS-DESIGN.md motion", "enforced_by": "C15 (advisory)"},
+    {"id": "DSE-8", "rule": "The page survives a narrow pane: one column by default, no fixed width or min-width above 320px, no sideways scroll.", "kinds": ["page"], "sutra_source": "APPS-DESIGN.md narrow pane; static/panel.css .dpage container query", "enforced_by": "C16 (advisory)"},
+    {"id": "DSE-9", "rule": "Chat instructions are a visible first message: a role line, at most eight short standing rules, one closing ask, 4000 characters maximum.", "kinds": ["chat"], "sutra_source": "modules_api.py INSTR_MAX; static/js/18-modules.js modOpenChat", "enforced_by": "server caps the length; C13"},
+    {"id": "DSE-10", "rule": "A link has exactly one design decision, the row copy, and it borrows the screen it opens. The Design row of a link's record always reads that decision.", "kinds": ["link"], "sutra_source": "static/js/18-modules.js link row and Open control", "enforced_by": "C3 covers the row copy; C1 asserts the Design cell; C32 covers the target"}
+  ],
+  "checks": [
+    {"id": "C10", "level": "kind-required", "kinds": ["page"], "what": "Every colour, font and radius value is var(--token), and every token named is one the server injects.", "evaluator": "scan <style> blocks and style= attributes for colour/font/radius declarations with #rgb/#rrggbb/rgb(/hsl(/named colours outside a var() fallback; collect var(--name) and diff against the token set parsed from TOKEN_CSS; the five not-injected names are called out", "v1_must_fix": true},
+    {"id": "C11", "level": "kind-required", "kinds": ["page"], "what": "The page does not redefine the injected sheet.", "evaluator": "FAIL on :root{, :root ,, html[data-theme, or #sutra-tokens used as a selector", "v1_must_fix": true},
+    {"id": "C12", "level": "kind-required", "kinds": ["page"], "what": "At most one h1, headings in order, no skipped level.", "evaluator": "census of h1..h6 in document order; FAIL when h1 count > 1 or a heading exceeds the previous level by more than one", "v1_must_fix": false},
+    {"id": "C13", "level": "kind-required", "kinds": ["chat"], "what": "The instructions read as a visible first message and fit the cap.", "evaluator": "non-empty and len <= INSTR_MAX; first non-empty line ends in a full stop; at most eight lines beginning with a dash; last non-empty line contains ? or starts with Start by/Ask", "v1_must_fix": false},
+    {"id": "C14", "level": "advisory", "kinds": ["page"], "what": "The page does not repeat the header drawn above it.", "evaluator": "WARN when name or tagline appears as heading or first paragraph text in the first 400 characters", "v1_must_fix": false},
+    {"id": "C15", "level": "advisory", "kinds": ["page"], "what": "No motion added, or motion disabled under reduced motion.", "evaluator": "WARN when @keyframes, animation: or transition: appears and no prefers-reduced-motion block exists", "v1_must_fix": false},
+    {"id": "C16", "level": "advisory", "kinds": ["page"], "what": "Reads in a narrow pane with no sideways scrolling.", "evaluator": "WARN on min-width above 320px, a container width/max-width in px above 360, white-space: nowrap over a table, or overflow-x: scroll; a 320px render probe when C36's runtime ran", "v1_must_fix": false}
+  ]
+}

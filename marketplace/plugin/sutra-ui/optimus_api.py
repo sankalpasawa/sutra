@@ -7,11 +7,12 @@ rejects. No endpoint here writes a store file directly -- every mutation is a
 subprocess of `bin/sutra-daemon`, so the CLI gate (and its audit rows) sees
 exactly what a terminal operator's action would look like.
 
-Root resolution: org_api rewrites SUTRA_NATIVE_HOME to the registry root
-(~/.sutra-native/user-kit) at import, which is one level BELOW the daemon's
-root. Optimus therefore resolves its own root -- SUTRA_UI_DAEMON_ROOT env,
-else ~/.sutra-native -- and passes it to subprocesses explicitly. Never read
-SUTRA_NATIVE_HOME from the environment in this module.
+Root resolution: the registry root the panel uses (~/.sutra-native/user-kit,
+see org_api.registry_root()) is one level BELOW the daemon's root, and since
+2026-09-11 org_api no longer writes it into the environment at all. Optimus
+resolves its own root -- SUTRA_UI_DAEMON_ROOT env, else ~/.sutra-native -- and
+passes it to subprocesses explicitly. Never read SUTRA_NATIVE_HOME from the
+environment in this module.
 
 Reads are fixed-path and bounded (the /api/balance discipline): no path
 parameters, no traversal surface, absent files answer honestly.

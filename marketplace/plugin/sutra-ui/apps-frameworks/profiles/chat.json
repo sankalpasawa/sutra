@@ -1,0 +1,17 @@
+{
+  "kind": "chat",
+  "one_line": "a conversation that opens with an opening message you wrote; the message is the whole app",
+  "questions_v1": ["P1", "P4", "E3", "B1", "B3", "B4", "P5", "DS4", "P3"],
+  "prefilled_v1": ["E2", "P2", "P6", "S1", "S2", "S3"],
+  "asked_at_end_v1": ["B2", "P7"],
+  "optional_edit_only": ["E4"],
+  "checks": ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C13",
+             "C17", "C18", "C19", "C20", "C21", "C22", "C23", "C24", "C28", "C29", "C30", "C31", "C38"],
+  "files": ["module.json", "APP.md", "data-policy.json (only when the chat calls a desktop service)"],
+  "starters": [
+    {"template": "templates/chat/APP.md", "target": "APP.md"}
+  ],
+  "chat_may_edit": ["APP.md", "data-policy.json", "module.json:name", "module.json:tagline", "module.json:surface.instructions", "module.json:surface.cwd"],
+  "allowed_files": ["module.json", "data-policy.json", "APP.md"],
+  "created_status": "draft"
+}

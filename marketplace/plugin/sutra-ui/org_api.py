@@ -67,9 +67,15 @@ logger = logging.getLogger("sutra-ui.org")
 #
 # Tests still seed an isolated tempfile.mkdtemp() and set SUTRA_NATIVE_HOME
 # explicitly -- that is test isolation, not a mock shown to an operator.
+#
+# NOT EXPORTED INTO os.environ (RCA 2026-09-11, fix row 4). This module used to
+# write the resolved path back into the process environment so children would
+# inherit it. That side effect made the first importer of org_api decide the
+# registry for every module imported later in the same process -- the poisoning
+# step behind the 2026-09-11 wipe. Children that need the root get it
+# explicitly from registry_root() (app.py builds their env from it).
 _ACTIVE_HOME = os.environ.get("SUTRA_NATIVE_HOME") or os.path.expanduser(
     "~/.sutra-native/user-kit")
-os.environ["SUTRA_NATIVE_HOME"] = _ACTIVE_HOME
 
 logger.warning("=" * 72)
 logger.warning("SUTRA_NATIVE_HOME (registry root) = %s", _ACTIVE_HOME)
@@ -86,6 +92,15 @@ if _LIB_DIR not in sys.path:
 
 import placement_engine as E  # noqa: E402  (path insert must precede this import)
 import reorg_sim as R  # noqa: E402
+
+
+def registry_root():
+    """The registry root THIS process reads and writes: the engine's own frozen
+    binding, not the banner text and not the environment. Children (the MCP
+    server, spawned tools) receive it explicitly through app.py; nothing here
+    mutates os.environ (RCA 2026-09-11, fix row 4). Falls back to the engine's
+    default so a child never receives an empty root (DeepSeek P2)."""
+    return E.HOME or os.path.expanduser("~/.sutra-native/user-kit")
 import teamsutra  # noqa: E402
 
 import claude_local

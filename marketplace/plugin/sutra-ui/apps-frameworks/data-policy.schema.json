@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sutra.asawa.co/schemas/apps-frameworks/data-policy.schema.json",
+  "title": "Apps frameworks: a chat app's desktop-service allowlist",
+  "description": "Present only when a chat app calls a service of the desktop (/api/...). One entry per call: the call, why it is needed, what could go wrong, and the kit check that covers it (C38 validates this file).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["panel_apis"],
+  "properties": {
+    "panel_apis": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["call", "why", "threat", "check_id"],
+        "properties": {
+          "call": {"type": "string", "pattern": "^(GET|POST|PUT|DELETE) /api/[A-Za-z0-9_./{}<>-]+$"},
+          "why": {"type": "string", "minLength": 8},
+          "threat": {"type": "string", "minLength": 8},
+          "check_id": {"type": "string", "pattern": "^C[0-9]{1,2}$"}
+        }
+      }
+    }
+  }
+}

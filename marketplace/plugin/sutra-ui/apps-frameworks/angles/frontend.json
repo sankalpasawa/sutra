@@ -1,0 +1,28 @@
+{
+  "angle": "frontend",
+  "purpose": "Fix what a person sees and can do the moment it opens, and prove a page actually renders inside its sandbox.",
+  "questions": [
+    {"id": "F1", "question": "What can they do on it? List every button, field and list, one per line starting with a dash.", "required_for": ["page"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "F2", "question": "If they change something, does it need to still be there next time? The page cannot save anything by itself.", "required_for": ["page"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "F3", "question": "Any pictures, icons or fonts? They get embedded into the file, so keep them small.", "required_for": ["page"], "optional": false, "v1_asked": "prefilled"},
+    {"id": "F4", "question": "Anything that should move or refresh on its own?", "required_for": [], "optional": true, "v1_asked": "no"},
+    {"id": "F5", "question": "Any colour outside the app's own set, such as a chart palette?", "required_for": [], "optional": true, "v1_asked": "no"}
+  ],
+  "artifact": "the Frontend row of APP.md; check.py writes the Checks cell and appends render: dark+light or render: not run to Owner notes",
+  "rules": [
+    {"id": "FR-1", "rule": "index.html is a body fragment, not a document. The server prepends charset, colour-scheme, the token sheet and the theme script, then the file verbatim.", "kinds": ["page"], "sutra_source": "modules_api.py page_html", "enforced_by": "C33"},
+    {"id": "FR-2", "rule": "Every control is a real button, a[href], input, select or textarea in reading order, with an accessible name, reachable by Tab, with a visible focus ring. No click handler on a div.", "kinds": ["page"], "sutra_source": "APPS-DESIGN.md controls; qa-shell/apps-a11y-check.mjs", "enforced_by": "C34"},
+    {"id": "FR-3", "rule": "The page cannot remember anything. On the opaque origin localStorage, sessionStorage, indexedDB and document.cookie throw; responses are no-store; the frame reloads on theme switch. Durable state lives in the file.", "kinds": ["page"], "sutra_source": "static/js/18-modules.js sandbox and frame nonce; modules_api.py Cache-Control no-store; 2026-09-08-modules-design.md", "enforced_by": "C35; C37 forces the answer to be one of the two honest options"},
+    {"id": "FR-4", "rule": "Fit the pane, not a monitor: roughly 260px of usable width at the worst.", "kinds": ["page"], "sutra_source": "static/panel.css pane widths; modules_api.py body padding", "enforced_by": "C16"},
+    {"id": "FR-5", "rule": "A page ships only when it has been rendered in both themes with no console errors. When no headless runtime is available the record says render: not run and the run is incomplete, never a pass.", "kinds": ["page"], "sutra_source": "qa-shell/apps-check.mjs (raw CDP lane); modules_api.py page_html", "enforced_by": "C36 plus exit code 3"},
+    {"id": "FR-6", "rule": "A link's whole surface is its row: name, tagline, and the Open control that appears only when the screen resolves. The Frontend row of a link's record reads n-a (link).", "kinds": ["link"], "sutra_source": "modules_api.py link surface; static/js/18-modules.js modLinkOpenable", "enforced_by": "C3 and C32; no separate link branch of C36"},
+    {"id": "FR-7", "rule": "A chat has nothing to render. Its surface is one string, and every chat verdict in this kit is a static read of that string.", "kinds": ["chat"], "sutra_source": "static/js/18-modules.js modAppBodyHtml chat branch", "enforced_by": "C36 reports n/a for chat and the runner prints that line"}
+  ],
+  "checks": [
+    {"id": "C33", "level": "kind-required", "kinds": ["page"], "what": "index.html is a body fragment with one root element carrying lang, inline style and script only.", "evaluator": "HTMLParser census FAILs on a doctype, <html, <head, <body, <frameset, any <script src=, any <link tag; FAILs when no element carries lang=; WARNs on more than one top-level element", "v1_must_fix": true},
+    {"id": "C34", "level": "kind-required", "kinds": ["page"], "what": "Every control is a real control with an accessible name.", "evaluator": "FAIL on onclick/onkeydown on a div or span, role=button without tabindex, img without alt, tabindex above 0, outline:none with no :focus-visible rule; accessible name resolved from text, aria-label, title, aria-labelledby; unresolvable statically is WARN; render clause advisory", "v1_must_fix": false},
+    {"id": "C35", "level": "kind-required", "kinds": ["page"], "what": "The page does not try to store anything.", "evaluator": "FAIL on localStorage, sessionStorage, indexedDB, document.cookie, caches., navigator.storage, Notification, requestPermission; dynamic property access is not caught and the check text says so", "v1_must_fix": true},
+    {"id": "C36", "level": "required", "kinds": ["page"], "what": "The page renders in both themes with a non-empty body and no console errors.", "evaluator": "headless Chrome over raw CDP (the qa-shell/apps-check.mjs lane): navigate to /api/modules/<id>/page?theme=dark then light, assert zero exceptions, zero console errors, zero failed loads, body text non-empty; no runtime reachable reports skip, writes render: not run and exits 3 unless --allow-skip-render; chat and link read n/a", "v1_must_fix": false},
+    {"id": "C37", "level": "kind-required", "kinds": ["page"], "what": "The F2 answer is one of the two honest options.", "evaluator": "the cell's first phrase, normalized, is 'resets each time' or 'baked into the file'; anything else FAILs with both options quoted", "v1_must_fix": true}
+  ]
+}

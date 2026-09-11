@@ -275,13 +275,20 @@ def _sutra_mcp_config():
             "type": "stdio",
             "command": sys.executable,
             "args": [str(script)],
-            # Inherited by the server process; it uses these to find the same
-            # registry and stores the panel is reading.
-            "env": {"SUTRA_NATIVE_HOME": os.environ.get("SUTRA_NATIVE_HOME", "")},
+            # Passed to the server process explicitly; it uses this to find the
+            # same registry the panel is reading.
+            "env": _mcp_env_for_children(),
         }
     if not servers:
         return ""
     return json.dumps({"mcpServers": servers})
+
+
+def _mcp_env_for_children():
+    """Environment a Sutra MCP child receives. The registry root comes from
+    org_api.registry_root() -- the engine's real binding -- not from
+    os.environ, which org_api no longer writes (RCA 2026-09-11, fix row 4)."""
+    return {"SUTRA_NATIVE_HOME": org_api.registry_root()}
 
 
 def _sutra_acp_mcp_servers():
@@ -308,8 +315,7 @@ def _sutra_acp_mcp_servers():
         "name": "sutra",
         "command": sys.executable,
         "args": [str(script)],
-        "env": [{"name": "SUTRA_NATIVE_HOME",
-                 "value": os.environ.get("SUTRA_NATIVE_HOME", "")}],
+        "env": [{"name": k, "value": v} for k, v in _mcp_env_for_children().items()],
     }]
 
 
