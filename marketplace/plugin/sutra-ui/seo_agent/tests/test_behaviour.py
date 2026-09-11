@@ -489,6 +489,25 @@ _ASK = [t for t in registry.ALL if t["name"] == "ask_user"][0]["description"]
 ok("the tool itself no longer orders 2-4 options on every question",
    "Give 2-4 options" not in _ASK and "takes NO options" in _ASK)
 
+# owner, 2026-09-11: "why are we using such a big paragraph to answer, it could simply have been
+# 'not enough DataForSEO credits'" -- and several people had said the same. The paragraph was
+# also WRONG: it promised the paid parts would skip and the run would go ahead, and the research
+# refused to start at all. Three rules in the brief had asked for the long version.
+ok("DataForSEO trouble is one short line, never a paragraph",
+   "DataForSEO trouble is ONE short line, never a paragraph" in _FLAT)
+ok("the low-balance line is the owner's own words",
+   '"Not enough DataForSEO credits."' in _FLAT)
+ok("no rule asks the agent to list which steps skip, or to recite what the demo covers",
+   "name which steps will skip" not in _FLAT and "say what it covers from the list" not in _FLAT
+   and "take what it covers from" not in _FLAT)
+ok("the brief says research does NOT start at a low balance, so it never promises to run it",
+   "Research will NOT start at this balance" in _FLAT)
+ok("a warning is one sentence of the opening context, never a paragraph of its own",
+   "a warning never excuses being long" in _FLAT)
+_LOOP = open(loop.__file__, encoding="utf-8").read()
+ok("the balance line fed to the agent no longer claims the paid steps will skip",
+   'say so)" if bal' not in _LOOP and "research will not start until it is " in _LOOP)
+
 for x in (c10, c11):
     shutil.rmtree(store.chat_dir(x), ignore_errors=True)
 

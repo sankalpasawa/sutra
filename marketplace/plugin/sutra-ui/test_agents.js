@@ -45,7 +45,8 @@ const A = ctx;
 /* ── registration ──────────────────────────────────────────────────────────── */
 test("registers SCREENS.agents and TITLES.agents", () => {
   assert.strictEqual(typeof A.SCREENS.agents, "function");
-  assert.ok(Array.isArray(A.TITLES.agents) && A.TITLES.agents[0] === "Agents");
+  assert.ok(Array.isArray(A.TITLES.agents) && A.TITLES.agents[0] === "Agent Marketplace",
+            "the pane is titled like the tab (owner, 2026-09-11)");
 });
 test("the screen shell is CONSTANT, so render() never repaints it under the mount", () => {
   const a = A.SCREENS.agents(), b = A.SCREENS.agents();

@@ -2645,7 +2645,10 @@ if (typeof SCREENS !== "undefined"){
   SCREENS.agents = () => `<div class="ag" id="agRoot" data-ag-shell></div>`;
 }
 if (typeof TITLES !== "undefined"){
-  TITLES.agents = ["Agents", "agents that work in front of you"];
+  /* "Agent Marketplace", not "Agents" (owner, 2026-09-11: "name the tab agent marketplace for
+     now"). The pane title and the rail label say the same thing, so a person never sees the tab
+     called one name and the screen it opens called another. */
+  TITLES.agents = ["Agent Marketplace", "agents that work in front of you"];
 }
 
 /* ── mount, draw, poll ─────────────────────────────────────────────────────── */
@@ -2719,7 +2722,7 @@ function agEnsureObserver(){
 const AG_SHELL_AGENT = `<aside class="ag-side" id="agSide" aria-label="SEO Writer"></aside>
       <section class="ag-main" id="agMain" aria-label="Conversation"><div id="agStages"></div><div class="ag-scroll" id="agScroll"></div><div class="ag-quiet" id="agQuiet" role="status" hidden></div><div class="pc" id="agComposer"></div></section>
       <aside class="ag-panel" id="agPanel" aria-label="Review"></aside>`;
-const AG_SHELL_MARKET = `<div class="ag-mktwrap" id="agMarket" aria-label="Agents"></div>`;
+const AG_SHELL_MARKET = `<div class="ag-mktwrap" id="agMarket" aria-label="Agent Marketplace"></div>`;
 
 /* Paint the shell for the screen we are on, and load what that screen needs. One function, so
    mounting into a fresh pane and moving between the two screens take exactly the same path.
