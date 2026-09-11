@@ -719,6 +719,14 @@ function adoptRealSessions(rows){
          unreadable); `null` is a real answer meaning "no department owns this
          cwd". Only the first should leave a previous answer standing. */
       if (r.department !== undefined) k.department = r.department;
+      /* Shadow ownership CHANGES while the pane is open -- it ends the moment
+         the mission finishes -- so it is refreshed on the on-screen branch
+         too, not only minted with a new row. Without this the composer would
+         stay disabled until the next reload. */
+      if (r.shadow_driving !== undefined) k.shadow_driving = r.shadow_driving;
+      /* turn progress moves on every Shadow turn, so the strip has to be
+         refreshed on the on-screen branch too, not only minted with the row */
+      if (r.shadow_task !== undefined) k.shadow_task = r.shadow_task;
       return k;
     }
     return {
@@ -732,6 +740,14 @@ function adoptRealSessions(rows){
          and not a missing one -- the Dept view says which of the reasons it is
          rather than filing the chat under a guess. */
       department: r.department || null,
+      /* Is Shadow holding the pen on this chat right now? Server-resolved
+         (app.py api_sessions), the SAME read that enforces the send guard, so
+         the pane cannot disagree with the socket. A plain fact on an ordinary
+         row -- there is no Shadow chat type and nothing else branches on it. */
+      shadow_driving: !!r.shadow_driving,
+      /* what it is driving -- objective, turn budget, done-when -- for the
+         pane's status strip. null unless Shadow actually owns this session. */
+      shadow_task: r.shadow_task || null,
       /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
          the file's last write — genuinely "updated", not a fabricated "created". */
       created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,

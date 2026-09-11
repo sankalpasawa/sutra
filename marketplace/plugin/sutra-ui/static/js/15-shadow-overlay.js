@@ -464,7 +464,10 @@ async function shadowMissionAct(mid, action, extra){
       const said = { start_now: "Mission starting \u2014 follow it in "
           + "Focus \u203a Shadow", stop: "Stopped.", resume: "Resumed.",
         drop: "Dropped.", retry: "Retry queued \u2014 a fresh mission "
-          + "takes the same brief", confirm_check: "Check confirmed." };
+          + "takes the same brief", confirm_check: "Check confirmed.",
+        /* the chat strip's Take over: ownership ended, so say what that BUYS
+           rather than that a state changed */
+        take_over: "You have the chat \u2014 Shadow stepped back." };
       showNudge(said[action] || "Done.");
     }
     if (typeof loadShadowHome === "function") loadShadowHome();

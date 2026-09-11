@@ -339,15 +339,24 @@ class TestBothEntryPoints(Base):
         self.assertNotIn("_launch", body, "it must not restart the loop")
 
     def test_19_teardown_reaps_a_delegate_and_never_an_attachment(self):
+        """The pop moved into release_delegate() when the two copies of this
+        teardown were folded into one reaper (chat-publication slice). The
+        invariant is unchanged, so this asserts the reaper is called here and
+        that the reaper itself is DELEGATES-only."""
         src = Path(__file__).with_name("shadow_runner.py").read_text()
         body = src[src.index("def settle_confirmation"):
                    src.index("def reap_attached")]
-        self.assertIn("DELEGATES.pop(", body)
+        self.assertIn("release_delegate(", body)
         # the docstring NAMES the attached registry while explaining why it
         # is not touched, so assert against the code, not the prose
         code = body[body.index('"""', body.index('"""') + 3) + 3:]
         self.assertNotIn("ATTACHED", code,
                          "a founder's chat outlives the mission that drove it")
+        reaper = src[src.index("def release_delegate("):
+                     src.index("\ndef ", src.index("def release_delegate("))]
+        self.assertIn("DELEGATES.pop(", reaper)
+        self.assertNotIn("ATTACHED", reaper,
+                         "the delegate reaper never touches an attachment")
 
 
 if __name__ == "__main__":

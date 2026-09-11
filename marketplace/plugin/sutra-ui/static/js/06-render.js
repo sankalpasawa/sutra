@@ -398,6 +398,44 @@ function sessionPane(s){
   const ch = s.channel;
   const chanChip = ch ? `<span class="pill ${ch.writes_files?"p-block":"p-mut"}">${esc(ch.id)} ·
       ${esc(ch.permission_mode||"")}${ch.writes_files?" · writes files":""}</span>` : "";
+  /* SHADOW IS DRIVING. An ordinary chat in an ordinary pane -- this says who
+     is holding the pen right now, in the status row the domain and channel
+     chips already live in. NOT a chat type and NOT a new alert surface: the
+     fact comes from the server on the session row (app.py api_sessions ->
+     shadow_runner.driving), the same read the server enforces the send with,
+     so the pane can never claim one thing while the socket does another.
+     Says what you CAN do as well as what you cannot -- reading along is the
+     point of opening it. */
+  const shadowDriving = !!s.shadow_driving;
+  const shTask = s.shadow_task || null;
+  /* The strip states the three things the founder needs while Shadow holds
+     the pen: that it IS driving, how far through its budget it is, and what
+     will count as done. Turn and done-when come from the mission (server
+     resolves them onto the session row), so they are absent rather than
+     invented when unknown.
+
+     Take over ENDS Shadow's ownership and then the composer works; Stop ends
+     the task. Two different decisions, so two buttons -- both act on the
+     mission id the server named, never on a guess. */
+  const shTurns = shTask && shTask.max_turns
+    ? ` · turn ${esc(String(shTask.turns_used || 0))} / ${esc(String(shTask.max_turns))}`
+    : "";
+  const shDone = shTask && (shTask.done_when || []).length
+    ? ` · done when ${esc(shTask.done_when.join(" · "))}` : "";
+  const shadowChip = shadowDriving
+    ? `<div class="shdrive" role="status">
+      <span class="shdrivedot" aria-hidden="true"></span>
+      <span class="shdrivetxt">Shadow is <b>driving</b>${shTurns}${shDone}</span>
+      ${shTask && shTask.mission_id ? `<span class="shdriveacts">
+        <button class="btn" type="button"
+          data-shtakeoverchat="${escAttr(shTask.mission_id)}"
+          title="End Shadow's turn — you can type here straight after"
+          >Take over</button>
+        <button class="btn" type="button"
+          data-shstopchat="${escAttr(shTask.mission_id)}"
+          title="Stop the task">Stop</button>
+      </span>` : ""}
+    </div>` : "";
   const body = tab==="route" ? routingChart(s) : sessionBody(s);
   /* Chrome decisions (founder, 2026-08-18): the header exists only for the
      COLLAPSED strip -- while expanded it is display:none (panel.css), because
@@ -449,7 +487,7 @@ function sessionPane(s){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="pb">${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    <div class="pb">${shadowChip}${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
     ${agentsFold(s)}
     ${S.sideOpen[s.id] ? `<div class="sidewrap">
       <div class="sidehead">
@@ -531,8 +569,14 @@ function sessionPane(s){
            Placeholder is ONE WORD (founder, 2026-08-18): the / palette and
            Shift+Enter are learned by use. -->
       <!-- no placeholder at all (founder 2026-08-23): the bar is self-evident -->
-      <textarea data-sask="${s.id}" rows="1"
-             aria-label="Continue this session">${esc(S.composerText[s.id]||"")}</textarea>
+      <!-- SECONDARY cue only: the pane's status row above is what SAYS Shadow
+           is driving, and the server refuses the send regardless (app.py
+           ws_chat single-writer guard). Disabling here stops a founder typing
+           a message that would only come back as an error. -->
+      <textarea data-sask="${s.id}" rows="1"${shadowDriving ? " disabled" : ""}
+             aria-label="${shadowDriving
+               ? "Shadow is driving this chat — sending is unavailable"
+               : "Continue this session"}">${esc(S.composerText[s.id]||"")}</textarea>
       ${paneMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
       ${streamingFor(s.id)
@@ -540,7 +584,9 @@ function sessionPane(s){
                    title="Stop — kills the running process">
              <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
            </button>`
-        : `<button class="send" data-ssend="${s.id}" type="button" aria-label="Send">
+        : `<button class="send" data-ssend="${s.id}" type="button"${
+             shadowDriving ? " disabled" : ""} aria-label="${shadowDriving
+               ? "Shadow is driving this chat — sending is unavailable" : "Send"}">
              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
            </button>`}
     </div></section>`;

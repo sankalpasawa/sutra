@@ -2214,3 +2214,261 @@
 .mod-sections{list-style:none;margin:0;padding:0;max-width:420px}
 .mod-sections button .lab{flex:1;text-align:left}
 @media (max-width:1180px){.mod-side{width:200px}}
+
+/* ═══════════════ Shadow workspace (Focus › Shadow) ═══════════════════════
+   Two columns: what Shadow is working on, and the one task in focus. Built
+   entirely on the existing tokens -- --acc is already the warm gold this
+   design asks for, so no colour is introduced here. */
+/* min-height, not height: #scBody (.pb) is already the scroller for every
+   screen, and a column that scrolled independently would put a second
+   scrollbar inside the first. Stretching to at least the pane's height is
+   what lets the left column pin its footer to the bottom. */
+.shwork{display:flex;gap:0;min-height:100%;align-items:stretch}
+
+/* ── left: delegate + the task list ─────────────────────────────────────── */
+.shwleft{flex:0 0 272px;min-width:0;display:flex;flex-direction:column;
+  gap:9px;padding:0 16px 0 0;border-right:1px solid var(--line-soft)}
+.shdelegate{width:100%;display:flex;align-items:center;justify-content:center;
+  gap:8px;background:var(--acc);color:var(--on-acc);border:1px solid var(--acc);
+  border-radius:9px;padding:9px 14px;font:600 12.5px/1 var(--sans);
+  cursor:pointer;letter-spacing:.01em}
+.shdelegate:hover{filter:brightness(1.06)}
+.shdelegate.on{background:var(--acc-bg);color:var(--acc)}
+.shwlabel{font:600 9.5px/1 var(--sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);margin:4px 2px 0}
+.shtasks{display:flex;flex-direction:column;gap:1px;min-height:0}
+/* A ROW, not a card: the list is an inventory and has to stay dense. */
+.shtask{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:none;border:0;border-radius:8px;padding:8px 9px;cursor:pointer;
+  font:13px/1.35 var(--sans);color:var(--ink)}
+.shtask:hover{background:var(--sepia)}
+.shtask.on{background:var(--acc-bg)}
+.shtask.on .shtaskname{font-weight:600}
+.shtaskdot{width:7px;height:7px;border-radius:50%;background:var(--faint);
+  flex:none}
+.shtaskname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.shtaskempty{color:var(--faint);font-size:12px;padding:8px 9px}
+.shwfoot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
+  display:flex;flex-direction:column;gap:2px}
+
+/* status pills -- compact, bordered, never filled */
+.shtpill{font:600 8.5px/1 var(--mono);letter-spacing:.06em;padding:3px 6px;
+  border-radius:5px;border:1px solid var(--line);color:var(--faint);
+  white-space:nowrap;flex:none}
+.shtpill-running{border-color:var(--ok-line);color:var(--ok)}
+.shtpill-ready{border-color:var(--acc);color:var(--acc)}
+.shtpill-blocked{border-color:var(--warn-line);color:var(--warn)}
+.shtpill-failed{border-color:var(--block-line);color:var(--block)}
+.shtpill-done{border-color:var(--ok-line);color:var(--ok);opacity:.75}
+.shtaskdot.d-running{background:var(--ok)}
+.shtaskdot.d-ready{background:var(--acc)}
+.shtaskdot.d-blocked{background:var(--warn)}
+.shtaskdot.d-failed{background:var(--block)}
+
+/* ── right: the task in focus ───────────────────────────────────────────── */
+.shwright{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;
+  padding:0 0 0 18px}
+.shwhead{display:flex;align-items:center;gap:9px;
+  padding-bottom:10px;border-bottom:1px solid var(--line-soft)}
+.shwseal{font-family:var(--serif);font-size:15px;color:var(--acc);flex:none}
+.shwtitle{font-family:var(--serif);font-size:17px;font-weight:600;margin:0;
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── the new-task panel (+ Delegate) ────────────────────────────────────── */
+.shnew{border:1px solid var(--acc);border-radius:var(--r);
+  background:var(--sepia);padding:14px}
+.shnewq{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 2px}
+.shnewsub{color:var(--muted);font-size:12px;margin:0 0 10px}
+.shnewlabel{display:block;font-size:11px;color:var(--muted);
+  letter-spacing:.03em;margin:8px 0 4px}
+.shnew textarea,.shnew input{width:100%;box-sizing:border-box;
+  background:var(--card);color:var(--ink);border:1px solid var(--line);
+  border-radius:7px;padding:8px 10px;font:12.5px/1.5 var(--sans);
+  resize:vertical}
+.shnew textarea:focus,.shnew input:focus{outline:none;border-color:var(--acc);
+  box-shadow:0 0 0 3px var(--acc-bg)}
+.shnewkinds{display:flex;gap:6px;flex-wrap:wrap}
+.shkind{font:11px/1 var(--sans);padding:6px 10px;border-radius:99px;
+  border:1px solid var(--line);background:none;color:var(--muted);
+  cursor:pointer}
+.shkind.on{border-color:var(--acc);color:var(--acc);background:var(--acc-bg)}
+.shnewacts{display:flex;gap:8px;align-items:center;margin-top:12px}
+.shnewerr{color:var(--block);font-size:12px;margin-top:8px}
+
+/* ── the task card (mission brief) ──────────────────────────────────────── */
+.shcard2{border:1px solid var(--acc);border-radius:var(--r);
+  background:var(--sepia);padding:13px 14px}
+.shcard2head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.shcard2tag{font:600 9px/1 var(--mono);letter-spacing:.07em;
+  text-transform:uppercase;color:var(--acc);background:var(--acc-bg);
+  border-radius:5px;padding:4px 7px;flex:none}
+.shcard2obj{flex:1;min-width:0;font-size:13.5px;font-weight:600}
+.shcard2row{display:flex;gap:12px;font-size:12.5px;padding:3px 0}
+.shcard2k{flex:0 0 78px;color:var(--muted)}
+.shcard2v{flex:1;min-width:0}
+.shcard2acts{display:flex;gap:10px;align-items:center;margin-top:11px}
+.shcard2hint{color:var(--muted);font-size:12px}
+.shfloors{margin-top:10px;padding-top:9px;border-top:1px solid var(--line-soft);
+  color:var(--faint);font-size:11px}
+
+/* ── "Shadow is driving" strip, inside a normal chat pane ───────────────── */
+.shdrive{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:var(--sepia);border:1px solid var(--line-soft);
+  border-radius:8px;padding:7px 10px;margin-bottom:10px;font-size:12px}
+.shdrivedot{width:7px;height:7px;border-radius:50%;background:var(--ok);
+  flex:none}
+.shdrivetxt{flex:1;min-width:0;color:var(--muted)}
+.shdrivetxt b{color:var(--ink);font-weight:600}
+.shdriveacts{display:flex;gap:6px;flex:none}
+
+@media (max-width:900px){
+  .shwork{flex-direction:column}
+  .shwleft{flex:none;width:auto;border-right:0;
+    border-bottom:1px solid var(--line-soft);padding:0 0 10px}
+  .shwright{padding:10px 0 0}
+}
+
+/* ── workspace polish pass ──────────────────────────────────────────────────
+   THE GIANT CARDS. shadowNavHtml's icons carry a viewBox and NO width/height
+   attribute, and nothing styled .shnavitem -- so each <svg> took the CSS
+   default intrinsic size, 300x150px, and four navigation rows rendered as
+   four dashboard tiles. Every other icon in this panel carries explicit
+   width/height; these are sized here instead, because the markup is shared
+   with the settings screen and must not change shape for one caller.
+
+   The footer is SUBORDINATE by construction: no border, no fill, muted until
+   hovered, and it never grows -- the task list takes the free space. */
+.shwfoot .shfoot,.shwfoot .shnav{display:flex;flex-direction:column;gap:0;
+  margin:0;padding:0;border:0;background:none}
+.shwleft .shnavitem{display:flex;align-items:center;gap:8px;width:100%;
+  background:none;border:0;border-radius:7px;padding:6px 9px;margin:0;
+  font:12px/1.3 var(--sans);color:var(--muted);cursor:pointer;text-align:left;
+  min-height:0;height:auto}
+.shwleft .shnavitem svg{width:13px;height:13px;flex:none;opacity:.75}
+.shwleft .shnavitem:hover{background:var(--sepia);color:var(--ink)}
+.shwleft .shnavitem.on{color:var(--acc)}
+.shwleft .shnavitem.on svg{opacity:1}
+/* the memory list, when the footer reveals it inline */
+.shwleft .shfootopen{padding:4px 2px 0}
+.shwleft .shfootopen .shmem{font-size:11px;padding:4px 6px}
+
+/* ── task list: a work queue, not cards ─────────────────────────────────── */
+.shwleft .shtasks{gap:0}
+.shtask{padding:7px 9px;gap:8px;font-size:12.5px;line-height:1.3}
+.shtaskdot{width:6px;height:6px}
+.shtpill{font-size:8px;padding:2px 5px;border-radius:4px;letter-spacing:.05em}
+/* the selected row is a tint, never a box */
+.shtask.on{background:var(--acc-bg);box-shadow:none}
+
+/* ── header: one row, baseline-aligned, pill beside the title ───────────── */
+.shwhead{gap:8px;padding-bottom:8px;margin-bottom:2px}
+.shwseal{font-size:14px;line-height:1}
+.shwtitle{font-size:15.5px;line-height:1.25}
+
+/* ── task card: a brief, not a modal ────────────────────────────────────── */
+.shcard2{padding:11px 12px;border-color:var(--line);background:var(--sepia)}
+.shcard2head{gap:8px;margin-bottom:7px}
+.shcard2tag{font-size:8px;padding:3px 6px}
+.shcard2obj{font-size:13px}
+.shcard2row{font-size:12px;padding:2px 0;gap:10px}
+.shcard2k{flex-basis:66px;font-size:11.5px}
+.shcard2acts{margin-top:9px;gap:8px}
+.shcard2acts .btn{padding:5px 10px;font-size:11.5px}
+.shcard2hint{font-size:11.5px}
+.shfloors{margin-top:8px;padding-top:7px;font-size:10.5px;line-height:1.45}
+
+/* ── the existing-chat stage, inside the workspace ───────────────────────
+   KEPT IN FULL -- the scope picker, the composer and the recent-chat chips
+   are the existing-chat flow and every hook is untouched. It is simply no
+   longer the loudest thing on the page: the teaching copy that made sense on
+   a standalone briefing is muted here, because + Delegate now carries the
+   "hand something over" job and this row carries "act in a chat I already
+   have". */
+.shwright .shstage{display:flex;flex-direction:column;gap:8px}
+.shwright .shstagetop{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.shwright .shscope{display:flex;align-items:center;gap:8px}
+.shwright .shscopelabel{font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.shwright .shtarget{display:inline-flex;align-items:center;gap:7px;
+  background:none;border:1px solid var(--line);border-radius:99px;
+  padding:4px 10px;font:12px/1 var(--sans);color:var(--ink);cursor:pointer}
+.shwright .shtarget.on{border-color:var(--acc);color:var(--acc)}
+.shwright .shtargeticon svg{width:12px;height:12px;display:block}
+.shwright .shtargetchev{width:11px;height:11px;opacity:.6}
+.shwright .shask{flex:1;min-width:0}
+.shwright .shasktitle{font-size:11.5px;color:var(--faint)}
+.shwright .shcompwrap{display:flex;align-items:flex-end;gap:8px}
+.shwright .shcompose{min-height:38px;font-size:12.5px;padding:8px 10px;
+  border-radius:8px;background:var(--card);border:1px solid var(--line);
+  color:var(--ink)}
+.shwright .shcompose:focus{outline:none;border-color:var(--acc);
+  box-shadow:0 0 0 3px var(--acc-bg)}
+.shwright .shsend{flex:none;width:32px;height:32px;border-radius:8px;
+  border:1px solid var(--acc);background:var(--acc);color:var(--on-acc);
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+.shwright .shsend svg{width:13px;height:13px}
+.shwright .shrecent{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.shwright .shrecentlabel{font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint)}
+.shwright .shrecentrow{display:flex;gap:6px;flex-wrap:wrap}
+.shwright .shchip{font-size:11px;padding:3px 9px;border-radius:99px;
+  border:1px solid var(--line);background:none;color:var(--muted);cursor:pointer}
+.shwright .shchip.on{border-color:var(--acc);color:var(--acc)}
+.shwright .shscopelist{display:flex;flex-direction:column;gap:3px;
+  border:1px solid var(--line);border-radius:8px;padding:5px;
+  background:var(--card);max-height:200px;overflow-y:auto}
+.shwright .shscopeopt{font-size:11.5px;text-align:left;padding:4px 7px}
+
+/* ── the thread + the goal deck: present, quiet ─────────────────────────── */
+.shwright .shthread{gap:5px;max-height:280px;overflow-y:auto}
+.shwright .shdeck{border-top:1px solid var(--line-soft);padding-top:10px}
+.shwright .shdeckhead{display:flex;align-items:baseline;justify-content:space-between;
+  gap:10px;margin-bottom:6px}
+.shwright .shdecktitle{font-size:12px;font-weight:600;margin:0}
+.shwright .shdecksub,.shwright .shgroupsub{font-size:10.5px;color:var(--faint)}
+.shwright .shlegend{display:flex;gap:8px;font-size:10.5px;color:var(--faint)}
+.shwright .shgrouptitle{font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint);margin:8px 0 4px}
+.shwright .shasg{display:flex;align-items:center;gap:9px;
+  border:1px solid var(--line-soft);border-radius:8px;padding:7px 9px;
+  margin:3px 0;font-size:12px;cursor:pointer;background:none}
+.shwright .shasg:hover{background:var(--sepia)}
+.shwright .shasgmark{display:none}
+.shwright .shasgmain{flex:1;min-width:0}
+.shwright .shasgtitle{font-size:12.5px;font-weight:600;margin:0}
+.shwright .shasgsub,.shwright .shasgmeta{font-size:10.5px;color:var(--faint)}
+.shwright .shasgmeta{display:flex;gap:8px}
+.shwright .shstatus{font:600 8px/1 var(--mono);letter-spacing:.05em;
+  text-transform:uppercase;color:var(--faint);white-space:nowrap}
+.shwright .shasgturn{font-size:10px;color:var(--faint)}
+/* the few remaining spans the workspace emits -- small, so the goal deck and
+   the target chip read as rows rather than as unstyled fragments */
+.shwright .shtargettext{display:flex;align-items:baseline;gap:6px;min-width:0}
+.shwright .shtargetname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:22ch}
+.shwright .shasgside{display:flex;align-items:center;gap:8px;flex:none}
+.shwright .shstatusdot{width:5px;height:5px;border-radius:50%;
+  background:currentColor;display:inline-block;margin-right:4px}
+.shwright .shgroup{margin:0}
+.shwright .shgrouphead{display:flex;align-items:baseline;gap:8px}
+.shwright .shlegenditem{white-space:nowrap}
+.shwleft .shfootitem{min-height:0}
+/* SH_ICON_CHEV carries a viewBox and no width/height, like the footer icons
+   did -- the goal card's chevron would otherwise be a 300x150 block. */
+.shchev{width:12px;height:12px;flex:none;opacity:.5}
+/* the delegated workspace's own composer: one line, pinned under the task */
+.shwcomp{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
+  display:flex;flex-direction:column;gap:6px}
+.shwcomp .shcompwrap{display:flex;align-items:flex-end;gap:8px}
+/* the door to the existing-chat flow -- a link, never a second composer */
+/* secondary by construction: the smallest type on the surface, no border,
+   no fill, and it sits under the composer rather than beside the task */
+.shexisting{align-self:flex-start;background:none;border:0;padding:0;
+  font:10.5px/1.3 var(--sans);color:var(--faint);cursor:pointer;opacity:.8}
+.shexisting:hover{color:var(--acc);opacity:1}
+.shexwrap{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
+  display:flex;flex-direction:column;gap:8px}
+.shexback{align-self:flex-start;background:none;border:0;padding:0;
+  font:11.5px/1.3 var(--sans);color:var(--faint);cursor:pointer}
+.shexback:hover{color:var(--acc)}

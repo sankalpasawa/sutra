@@ -37,6 +37,19 @@ DELEGATES = {}
 #:     conversation out of the Watching list.
 #: Its one reaper is reap_attached(), called when the founder takes the wheel.
 ATTACHED = {}
+#: Session ids Shadow OWNED when a previous process died -- rebuilt at boot by
+#: recover_on_boot() from missions on disk, never written anywhere else.
+#:
+#: NOT a second registry and not a new entity: it holds no runtime, no chat and
+#: no state of its own, only ids whose Claude process THIS process cannot see
+#: and cannot reap. `spawn()` uses start_new_session=True, so a delegate
+#: survives the app that started it; after a restart DELEGATES is empty while
+#: that process may still be appending to the transcript. Without this set the
+#: send guard would pass, ws_chat would `--resume` the same session, and the
+#: two-writer case this slice exists to prevent would be reachable by restart.
+#:
+#: Fences, does not fix: the orphan is not killed here (see shutdown()).
+_ORPHANED = set()
 #: session_id -> rolling window of STREAMED text (what the app actually saw;
 #: transcript files lag or, for fakes, never exist -- the stream is the truth)
 _RECENT_TEXT = {}
@@ -310,10 +323,13 @@ def _launch(mid, validated_say, verifier):
             # runtime belongs to a chat the founder owns and must outlive
             # every mission that ever drove it. Reaping an attached session
             # here would kill the founder's own conversation.
-            drt = DELEGATES.pop(m.get("target_session"), None)
-            if drt is not None:
-                drt.kill_group()   # a terminal mission's delegate dies with it
-                drt.clear()
+            #
+            # THE PROCESS DIES, THE CHAT DOES NOT. Once a delegate is
+            # published as a normal Sutra chat its record, its index row and
+            # its transcript are durable and are never touched here -- what
+            # ends is Shadow's OWNERSHIP, which is what lets the founder type
+            # in it from the next turn on.
+            release_delegate(m.get("target_session"))
             mission_engine.emit_mission_feed(
                 m, "info" if m["state"] == "done" else "needs_decision",
                 "mission %s" % m["state"])
@@ -408,7 +424,30 @@ def active_mission_count():
 
 def recover_on_boot():
     """App restart must not orphan `running` missions (codex fold): anything
-    running with no live task pauses honestly; the founder resumes."""
+    running with no live task pauses honestly; the founder resumes.
+
+    AND it must not orphan their SESSIONS. `SessionRuntime.spawn` passes
+    start_new_session=True, so a delegate's Claude process outlives the app
+    that started it -- and Electron SIGKILLs the uvicorn child on quit, so
+    shutdown() often does not run at all. After a restart DELEGATES is empty
+    while that process may still be appending to the transcript. If the send
+    guard consulted only DELEGATES, the founder could open the published chat,
+    type, and ws_chat would spawn `claude --resume <sid>` against a live
+    writer -- two processes on one transcript, which is the case this slice
+    exists to prevent.
+
+    So ownership is REBUILT FROM MISSION STATE ALREADY ON DISK. No new
+    persistent store and no new entity: a Shadow-created session is exactly a
+    non-terminal mission with target_mode == "new" and a target_session, which
+    is information the mission file has carried since S53. This is also why
+    target_mode is load-bearing for now -- it is the durable discriminator
+    between a chat Shadow STARTED and one it merely attached to, and an
+    attached chat must stay typeable.
+
+    FENCES, DOES NOT FIX. The orphan process is not killed here: this process
+    has no handle on it, and matching it by argv would be a guess. The founder
+    Stops or Resumes the mission, and either path releases the fence.
+    """
     store = mission_engine.MissionStore()
     for m in store.list(states=("running",)):
         if m["id"] not in RUNNING:
@@ -416,14 +455,37 @@ def recover_on_boot():
                                   "app restarted -- resume to continue")
             mm["pause_reason"] = "app_restart"
             store.save(mm)
+    # after the pauses above, so a just-paused mission is fenced too
+    for m in store.list():
+        sid = m.get("target_session")
+        if (sid and m.get("target_mode") == "new"
+                and m.get("state") not in mission_engine.TERMINAL
+                and sid not in DELEGATES):
+            _ORPHANED.add(sid)
 
 
 def shutdown():
     """Cancel loop tasks; missions stay `running` on disk and recover_on_boot
-    pauses them at next start (no state is lost, nothing is orphaned)."""
+    pauses them at next start (no state is lost, nothing is orphaned).
+
+    AND release the sessions Shadow owns. Cancelling a task does not stop the
+    Claude process behind it: spawn() uses start_new_session=True, so an
+    un-reaped delegate survives this app and keeps appending to a transcript
+    nothing is reading. Killing them here is what makes a CLEAN stop leave no
+    second writer behind for the next boot to trip over.
+
+    It does not cover a SIGKILL -- Electron kills the uvicorn child on quit,
+    so this hook frequently does not run at all. recover_on_boot() fences what
+    survives; this only shrinks how often that is needed.
+    """
     for task in list(RUNNING.values()):
         task.cancel()
     RUNNING.clear()
+    for sid in list(DELEGATES):
+        try:
+            release_delegate(sid)
+        except Exception:
+            pass
     t = _STALL_TASK.get("task")
     if t is not None:
         t.cancel()
@@ -675,10 +737,7 @@ def settle_confirmation(mid):
             "record_evaluation", mission, results, done))
     m = engine.settle(mid)
     if m and m["state"] in mission_engine.TERMINAL:
-        drt = DELEGATES.pop(m.get("target_session"), None)
-        if drt is not None:
-            drt.kill_group()
-            drt.clear()
+        release_delegate(m.get("target_session"))
         mission_engine.emit_mission_feed(
             m, "info" if m["state"] == "done" else "needs_decision",
             "mission %s" % m["state"])
@@ -721,6 +780,93 @@ def reap_attached(session_id):
     return rt
 
 
+def driving(session_id):
+    """Does Shadow own this Claude session right now?
+
+    THE ONE OWNERSHIP READ. ws_chat asks this before it takes a turn, and the
+    answer decides whether a second `claude --resume <sid>` is allowed to
+    exist. The invariant it serves:
+
+        FOR ANY CLAUDE SESSION ID, at most one Sutra runtime writes to it.
+
+    Two sources, one concept -- "Shadow owns this session":
+
+      DELEGATES   a runtime THIS process spawned and can still reap
+      _ORPHANED   a session a PREVIOUS process owned; the runtime is gone
+                  from our view but its Claude process may still be alive
+
+    Deliberately NOT a third map and not a new entity. ATTACHED is excluded on
+    purpose: an attached chat is the founder's own, and typing in it is a
+    takeover (founder_takeover), not a collision -- that path stays exactly as
+    it was.
+
+    Returns the session id (truthy) or None, never a runtime: callers decide
+    policy, they do not get a handle to write through.
+    """
+    if not session_id:
+        return None
+    if session_id in DELEGATES:
+        return session_id
+    if session_id in _ORPHANED:
+        # A FENCE THAT CAN EXPIRE. The mission behind an orphan can reach a
+        # terminal state on a path this process never launched -- the founder
+        # stops it from Shadow Home, or abandons its goal -- and neither goes
+        # through release_delegate(). Re-checking the store HERE, instead of
+        # adding a release call to every such path, is what keeps the fence
+        # from outliving the work and leaving a chat permanently un-typeable.
+        #
+        # Costs a store read only while a fence is actually set, which is
+        # empty in the normal case and non-empty only after a restart that
+        # left missions in flight. Self-healing: the check runs once, then the
+        # id is discarded for good.
+        try:
+            store = mission_engine.MissionStore()
+            live = any(m.get("target_session") == session_id
+                       and m.get("state") not in mission_engine.TERMINAL
+                       for m in store.list())
+        except Exception:
+            live = True          # unreadable store: stay closed, never open
+        if not live:
+            _ORPHANED.discard(session_id)
+            return None
+        return session_id
+    return None
+
+
+def release_delegate(session_id):
+    """Shadow lets go of a session it owned. THE ONE DELEGATE REAPER.
+
+    Was two copies of the same four lines -- the runner's terminal branch and
+    settle_confirmation's -- which is one edit away from the two drifting.
+    Same body, same order, same effects as both had:
+
+        pop DELEGATES -> kill the group -> drop OUR registry row -> clear
+
+    unregister_runtime is identity-guarded, so when a pane has already taken
+    the registry key this clears Shadow's process without evicting the
+    founder's entry -- the same rule reap_attached follows, for the same
+    reason.
+
+    Also clears any _ORPHANED fence for the id: whichever way ownership ends,
+    it ends in one place. Idempotent, and a no-op for a session Shadow never
+    owned, which is what makes it safe to call on every terminal transition.
+    """
+    _ORPHANED.discard(session_id)
+    rt = DELEGATES.pop(session_id, None)
+    if rt is None:
+        return None
+    try:
+        rt.kill_group()
+    except Exception:
+        pass
+    session_runtime.unregister_runtime(session_id, rt)
+    try:
+        rt.clear()
+    except Exception:
+        pass
+    return rt
+
+
 def start_pump(rt, sid):
     """THE PUMP (found by the first real flight): panes have a websocket loop
     consuming their TurnQueue; a headless runtime has nobody -- says sat
@@ -755,15 +901,30 @@ def start_pump(rt, sid):
     return asyncio.get_event_loop().create_task(_pump())
 
 
-async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
+async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
+                                 publish=None):
     """S53 in production: a NEW claude session Shadow delegates into.
 
     Headless twin of a pane: its own SessionRuntime, spawned in PLAN mode
     (v1 safety: real turns, visible work, no unsupervised writes -- acting
     delegates need an explicit founder grant), registered in the same
     registry the say chain uses, observer attached, first turn = the
-    enriched manifest. The transcript lands in ~/.claude/projects, so the
-    session appears in Chats and a pane can resume it.
+    enriched manifest. The transcript lands in ~/.claude/projects.
+
+    `publish` is an INJECTED (sid) -> sutra_id|None hook, supplied the same
+    way `build_args` and `register` are and for the same reason: this module
+    must not import app, and chat_store lives on app's side of that line.
+    It is what turns the delegate into a NORMAL Sutra chat.
+
+    IT IS CALLED ONLY AFTER THE SESSION IS PROVEN. The `got_result and sid`
+    check below is the boundary, and nothing is published on the failure
+    path -- a chat that never started must not appear in the rail, and the
+    existing RuntimeError keeps the mission's failure semantics untouched.
+
+    A publish failure is DELIBERATELY NOT FATAL. The session is live and
+    Shadow can drive it; losing the chat record costs discoverability, not
+    correctness, and raising here would strand a running Claude process to
+    save a rail row. It is ledgered instead, so the gap is visible.
     """
     import session_runtime as srt
     rt = srt.SessionRuntime()
@@ -789,6 +950,14 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None):
     shadow_ledger.append("actions", {
         "mission_id": None, "kind": "spawn",
         "summary": "delegate session %s spawned (plan mode)" % sid})
+    if publish is not None:
+        try:
+            publish(sid)
+        except Exception as exc:      # noqa: BLE001 -- reported, never fatal
+            shadow_ledger.append("actions", {
+                "mission_id": None, "kind": "spawn",
+                "summary": "delegate %s NOT published as a chat: %s"
+                           % (sid, str(exc)[:180])})
     return sid
 
 

@@ -3,6 +3,14 @@ function applySessionChange(rows){
   rows.forEach(row=>{
     const s = S.sessions.find(x=>x.id === row.id);
     if (!s){ needList = true; return; }        /* unseen conversation */
+    /* SHADOW OWNERSHIP ENDS WITHOUT A FILE CHANGE TO ANNOUNCE IT. This stream
+       is the transcript INDEX -- mtime and size -- and carries no
+       shadow_driving; only /api/sessions resolves that. A chat Shadow is
+       driving is being written constantly, so asking for a list refresh while
+       the flag is set is what makes the pane become usable within a poll of
+       the mission finishing, instead of staying disabled until a reload.
+       Bounded to Shadow-driven chats, which is normally none. */
+    if (s.shadow_driving) needList = true;
     s.mtime = row.mtime; s.size = row.size; s.live = row.live;
     /* Without this the rail can never render "3 agents" from data: the field
        arrives on every changed row and is dropped by a three-field copy. */

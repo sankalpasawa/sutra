@@ -2267,8 +2267,17 @@ class TestChatProviderParam(unittest.TestCase):
         # Recovery reads an id that already exists; minting invents one keyed
         # to a session that must therefore exist first. Only the second has an
         # ordering constraint.
-        self.assertLess(src.index("register_runtime(session_id, rt)"),
-                        src.index("chat_store.create("),
+        # Scoped to ws_chat's OWN body. app.py gained a second chat_store.create
+        # caller when Shadow delegates began publishing themselves as normal
+        # chats, and that one is also keyed to a session that already exists
+        # (spawn_delegate_session only publishes after the boot check) -- but it
+        # is defined earlier in the file, so a whole-file .index() would compare
+        # the wrong pair. The constraint asserted here is unchanged: inside this
+        # handler, the mint cannot precede the transport.
+        i = src.index("async def ws_chat(")
+        ws_body = src[i:src.index('@app.websocket("/ws/term")', i)]
+        self.assertLess(ws_body.index("register_runtime(session_id, rt)"),
+                        ws_body.index("chat_store.create("),
                         "the chat id is keyed to the native session, so it "
                         "cannot be minted before the transport returns one")
 

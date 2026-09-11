@@ -195,6 +195,256 @@ function shadowChatKeys(){
    All of it is built from the existing goal list plus the existing
    renderers; nothing new is fetched. */
 
+/* ── the Shadow workspace (Focus › Shadow) ────────────────────────────────
+   Two columns: what Shadow is working on, and the one task in focus.
+
+   NOTHING HERE REPLACES AN EXISTING SURFACE. shadowPlaneHtml (the Watching
+   screen's plane, with its own mission rows and action buttons) is untouched
+   and still reachable; the left column below is a SELECTOR -- dot, name,
+   pill -- because that is what the design asks a list to be, and because the
+   actions belong to the task in focus, not to every row at once.
+
+   The one genuinely new thing is + Delegate: an explicit "start a NEW task in
+   a NEW chat" that sets target_mode server-side without the founder ever
+   meeting the term, and without depending on Shadow's model output to infer
+   the intent. */
+
+/* mission state -> what the founder reads, and the dot/pill family. The
+   engine's vocabulary is mission_engine.STATES; all nine are mapped, because
+   a state with no label renders as a raw enum the first time it happens. */
+const SH_TASK = {
+  brief_confirm: { label: "READY",    cls: "ready"   },
+  running:       { label: "RUNNING",  cls: "running" },
+  queued:        { label: "QUEUED",   cls: ""        },
+  paused:        { label: "PAUSED",   cls: ""        },
+  blocked:       { label: "NEEDS YOU", cls: "blocked" },
+  done:          { label: "DONE",     cls: "done"    },
+  failed:        { label: "FAILED",   cls: "failed"  },
+  stopped:       { label: "STOPPED",  cls: ""        },
+  draft:         { label: "DRAFT",    cls: ""        },
+};
+function shadowTaskFace(state){
+  return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
+}
+
+/* THE WORKSPACE IS AN ACTIVE WORK SURFACE, NOT A MISSION DATABASE.
+
+   GET /api/shadow/missions returns MissionStore.list() -- every mission file
+   on disk, by design, because other readers need the whole history. This
+   filter is PRESENTATION ONLY: nothing is deleted, no API or store semantics
+   change, and the records stay exactly where the goals' attempts[] point.
+   Historical attempts remain readable through Goals.
+
+   The rule is "does this still represent outstanding work", decided from
+   real state rather than an age cutoff -- a clock would hide a task that
+   still needs you simply for being old, and keep a settled one for being
+   recent:
+
+     1. A mission whose GOAL has concluded is settled, whatever the mission
+        itself says. Abandoning a goal stops its live attempt, but an attempt
+        that was already blocked keeps that state forever -- so a blocked row
+        under a stopped goal is vestigial, not a request. Its home is Goals.
+     2. Otherwise, anything NOT terminal is unfinished work: draft,
+        brief_confirm, queued, running, paused, blocked. This is what keeps
+        the delegated tasks visible while they wait on a founder_confirm.
+     3. A FAILED mission is the one terminal state with an action still
+        pending -- Retry -- so it stays until it has actually been retried
+        (retried_to) or its goal settles it.
+     4. done and stopped are conclusions. They leave.
+
+   Goals may not be loaded yet (they arrive in the same parallel read); an
+   unknown goal is treated as unconcluded, so the list errs toward showing
+   work rather than hiding it. */
+const SH_TERMINAL = ["done", "failed", "stopped"];
+const SH_GOAL_OVER = ["done", "stopped"];
+
+function shadowTaskIsActive(m, goals){
+  if (!m) return false;
+  if (m.goal_id){
+    const g = (goals || []).find(x => x && x.id === m.goal_id);
+    if (g && SH_GOAL_OVER.includes(g.state)) return false;   // (1)
+  }
+  if (!SH_TERMINAL.includes(m.state)) return true;           // (2)
+  if (m.state === "failed" && !m.retried_to) return true;    // (3)
+  return false;                                              // (4)
+}
+
+/* Every mission that still wants something from the founder, oldest first. */
+function shadowTasks(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const goals = S_.goals || [];
+  return (S_.shadowMissions || []).filter(m => shadowTaskIsActive(m, goals));
+}
+
+/* The task in focus: the founder's pick if it still exists, else the first
+   thing that wants attention, else the newest. Never null-when-there-is-work,
+   so the right pane is never blank for no reason. */
+function shadowSelectedTask(){
+  const rows = shadowTasks();
+  if (!rows.length) return null;
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const picked = rows.find(m => m.id === S_.shadowTaskSel);
+  if (picked) return picked;
+  const order = ["blocked", "brief_confirm", "running", "paused", "queued"];
+  for (const st of order){
+    const hit = rows.find(m => m.state === st);
+    if (hit) return hit;
+  }
+  return rows[rows.length - 1];
+}
+
+function shadowTaskListHtml(){
+  const rows = shadowTasks();
+  const sel = shadowSelectedTask();
+  if (!rows.length)
+    return `<div class="shtaskempty">Nothing yet — Delegate a task and
+      Shadow will run it in its own chat.</div>`;
+  return rows.map(m => {
+    const f = shadowTaskFace(m.state);
+    return `<button class="shtask${sel && m.id === sel.id ? " on" : ""}"
+      type="button" data-shtask="${escAttr(m.id)}">
+      <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
+      <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
+      <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
+    </button>`;
+  }).join("");
+}
+
+/* the floors, from the settings the app already serves. Silent when unknown --
+   naming a safety rail we have not actually read would be a claim, not copy. */
+function shadowFloorsLine(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const floors = ((S_.shadowSettings || {}).floors) || [];
+  if (!floors.length) return "";
+  return `<div class="shfloors">floors it can't cross on its own: ${
+    floors.map(f => esc(f)).join(" · ")}</div>`;
+}
+
+/* THE TASK CARD -- the brief, in the right pane. Deliberately NOT
+   missionCardHtml: that is the compact in-thread row and stays exactly as it
+   is (the overlay renders it too). This is the focused view the design asks
+   for, and it reads every field off the same mission record. */
+function shadowTaskCardHtml(m){
+  if (!m) return "";
+  const f = shadowTaskFace(m.state);
+  const startable = m.state === "brief_confirm";
+  const checks = (m.done_when || []).map(c => c && c.check).filter(Boolean);
+  /* target_mode + target_session ARE the answer to "where does this run"; no
+     second source and nothing inferred. */
+  const acts = m.target_mode === "new"
+    ? (m.target_session
+        ? `its own chat · ${esc(shadowChatLabel(m.target_session))}`
+        : "a new chat Shadow starts when you begin")
+    : (m.target_session
+        ? esc(shadowChatLabel(m.target_session))
+        : "an existing chat");
+  return `<div class="shcard2" data-shtaskcard="${escAttr(m.id)}">
+    <div class="shcard2head">
+      <span class="shcard2tag">${esc(m.template || "task")}</span>
+      <span class="shcard2obj">${esc(m.objective || "")}</span>
+      <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
+    </div>
+    <div class="shcard2row"><span class="shcard2k">acts in</span>
+      <span class="shcard2v">${acts}</span></div>
+    <div class="shcard2row"><span class="shcard2k">done when</span>
+      <span class="shcard2v">${checks.length
+        ? esc(checks.join(" · "))
+        : "you say so — no check was set, so Shadow will ask"}</span></div>
+    <div class="shcard2row"><span class="shcard2k">budget</span>
+      <span class="shcard2v">turn ${esc(String(m.turns_used || 0))} of ${
+        esc(String(m.max_turns || 0))}</span></div>
+    ${m.block_reason ? `<div class="shcard2row"><span class="shcard2k">stopped on</span>
+      <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
+        ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
+    <div class="shcard2acts">
+      ${startable ? `<button class="btn pri" type="button"
+        data-shstart="${escAttr(m.id)}">Start the task</button>
+        <span class="shcard2hint">…or keep telling me</span>` : ""}
+      ${["running", "paused"].includes(m.state) ? `<button class="btn"
+        type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
+      ${m.state === "paused" ? `<button class="btn" type="button"
+        data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
+      ${m.state === "queued" ? `<button class="btn" type="button"
+        data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
+      ${["failed", "stopped"].includes(m.state) ? `<button class="btn"
+        type="button" data-shact="retry" data-shmid="${escAttr(m.id)}">Retry</button>` : ""}
+      ${m.target_session ? `<button class="btn" type="button"
+        data-shtakeover="${escAttr(m.target_session)}">Open the chat</button>` : ""}
+    </div>
+    ${shadowFloorsLine()}
+  </div>`;
+}
+
+/* ── + Delegate: the new-task panel ──────────────────────────────────────
+   In the right pane, never a modal. The founder describes an outcome; the
+   app posts it to the EXISTING mission endpoint with target_mode "new". The
+   term never reaches the UI -- the button IS the intent. */
+const SH_KINDS = ["fix", "feature", "research", "watch"];
+
+function shadowNewDraft(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (!S_.shadowNew) S_.shadowNew = { objective: "", done: "", kind: "fix" };
+  return S_.shadowNew;
+}
+
+function shadowDelegatePanelHtml(){
+  const d = shadowNewDraft();
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const busy = !!S_.shadowNewBusy;
+  return `<div class="shnew" data-shnewpanel="1">
+    <h3 class="shnewq">What should Shadow get done?</h3>
+    <p class="shnewsub">Shadow starts a <b>new chat</b> for this and drives it
+      itself. It shows up in Chats as “Shadow Task — …”.</p>
+    <label class="shnewlabel" for="shnewobj">The outcome you want</label>
+    <textarea id="shnewobj" rows="3" data-shnewobj="1"
+      placeholder="Fix the rounding differences in the EMI checks and ship it"
+      >${esc(d.objective)}</textarea>
+    <label class="shnewlabel" for="shnewdone">Done when (optional, one per line)</label>
+    <textarea id="shnewdone" rows="2" data-shnewdone="1"
+      placeholder="the EMI check passes&#10;a tested PR is open">${esc(d.done)}</textarea>
+    <label class="shnewlabel">Kind of work</label>
+    <div class="shnewkinds">${SH_KINDS.map(k => `<button
+      class="shkind${d.kind === k ? " on" : ""}" type="button"
+      data-shnewkind="${escAttr(k)}">${esc(k)}</button>`).join("")}</div>
+    <div class="shnewacts">
+      <button class="btn pri" type="button" data-shnewcreate="1"${
+        busy ? " disabled" : ""}>${busy ? "Creating…" : "Create the task"}</button>
+      <button class="btn" type="button" data-shnewcancel="1">Cancel</button>
+    </div>
+    ${S_.shadowNewErr ? `<div class="shnewerr">${esc(S_.shadowNewErr)}</div>` : ""}
+  </div>`;
+}
+
+/* THE WORKSPACE COMPOSER: one line, nothing else.
+
+   shadowStageHtml() renders the EXISTING-CHAT flow -- the "Working with"
+   target picker, the recent-conversation chips, the briefing copy -- around
+   the same composer. All of that is still built, still wired, and still
+   reachable (shadowHomeHtml renders the real thing the moment the founder
+   opens that flow). It is simply not what a DELEGATED TASK workspace is
+   about, so it is not rendered here by default.
+
+   Same hook, same scope attribute, same submit path as the stage's composer:
+   the delegated workspace and the existing-chat flow share one composer
+   implementation, so a turn typed in either goes the same way. */
+function shadowWorkComposerHtml(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return `<div class="shwcomp">
+    <div class="shcompwrap">
+      <textarea class="shcompose" data-shhomecompose="1"
+        data-shscope="${escAttr(S_.shadowChat || "global")}"
+        placeholder="Say anything — it starts or continues a task…"></textarea>
+      <button class="shsend" type="button" data-shsend="1"
+        title="Send (or press Enter)" aria-label="Send">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" aria-hidden="true"
+          ><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </div>
+    <button class="shexisting" type="button" data-shexisting="1">Work in an
+      existing chat instead</button>
+  </div>`;
+}
+
 function shadowGoalsBy(state){
   const S_ = (typeof S !== "undefined") ? S : {};
   return (S_.goals || []).filter(g => g && g.state === state);
@@ -386,6 +636,13 @@ function shadowNavHtml(){
   const S_ = (typeof S !== "undefined") ? S : {};
   const watching = (S_.shadowWatching || []).length;
   const memory = (S_.shadowMemory || []).length;
+  /* Goals that are still live -- the same filter the deck's own bands used.
+     The row exists because the assignment deck no longer renders inside the
+     task workspace, and its "N more — open all goals" button was the ONLY
+     route to the goals screen. Same data-shgoals hook, same handler; this
+     moves reachability, it does not add a feature. */
+  const goals = ((S_.goals || []).filter(g => g &&
+    ["draft", "working", "verifying", "blocked"].includes(g.state))).length;
   const open = !!S_.shadowMemOpen;
   const item = (attr, label, path, on) => `<button
     class="btn shfootitem shnavitem${on ? " on" : ""}" type="button" ${attr}>
@@ -399,6 +656,9 @@ function shadowNavHtml(){
     ${item('data-shchats="1"', "Conversations",
       '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20.5l1.6-4.6'
       + 'A8.4 8.4 0 0 1 3.6 11a8.4 8.4 0 0 1 8.4-8.4 8.4 8.4 0 0 1 9 8.9z"/>')}
+    ${item('data-shgoals="1"', "Goals · " + goals,
+      '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6"/>'
+      + '<circle cx="12" cy="12" r="1"/>')}
     ${item('data-shmemopen="1"', "Memory · " + memory,
       '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3'
       + 's8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>', open)}
@@ -534,20 +794,57 @@ function shadowHomeHtml(){
   const err = S.shadowHomeErr ? `<div class="sherr">Could not reach Shadow
     just now \u2014 showing what I last knew.
     <button class="btn" type="button" data-shreload="1">Retry</button></div>` : "";
-  const deck = shadowDeckHtml();
-  const calm = !deck;
-  /* a calm briefing is deliberately short; without this it clings to the top
-     edge of a tall pane. Modest vertical centring -- no filler is added. */
-  /* HIERARCHY: who Shadow is -> what you can hand it -> where else to look
-     -> what it is already carrying. The composer leads because handing over
-     responsibility is why this page exists; the work follows because that is
-     what the handover produced. Same elements, same hooks, same handlers. */
-  return `<div class="shbrief shbrief2${calm ? " shcalm" : ""}">${err}
-    ${shadowMastHtml()}
-    ${shadowStageHtml()}
-    ${shadowNavHtml()}
-    ${thread ? `<div class="shthread">${thread}</div>` : ""}
-    ${deck}
+  /* THE ASSIGNMENT DECK IS NOT RENDERED HERE.
+     shadowDeckHtml() -- "Shadow's Work", the assignment count, "Recently
+     completed" and the goal cards -- is a GLOBAL history of every goal, and
+     this workspace is one delegated task. It is untouched, still built, still
+     tested, and still the goals screen's content; the left list is where
+     Shadow's tasks live and Chats is where conversation history lives.
+
+     Its one live hook, data-shgoals, moved to the footer nav below so the
+     goals screen keeps exactly the reachability it had -- the deck's "N more"
+     button was the only route to it. */
+  /* TWO COLUMNS (Focus › Shadow). Every element the briefing had is still
+     rendered by the same function it always was -- the mast, the scope
+     picker and composer (shadowStageHtml, which carries the existing-chat
+     "Working with" flow), the foot nav, the thread, the goal deck. They have
+     moved column, not changed behaviour, and no hook was renamed.
+
+     LEFT is the inventory and the one new action. RIGHT is the single task in
+     focus, the conversation, and everything that was already there. */
+  const sel = shadowSelectedTask();
+  const newOpen = !!S.shadowNewOpen;
+  /* THE EXISTING-CHAT FLOW IS OPT-IN HERE, not deleted. Off, this workspace
+     is about one delegated task; on, shadowStageHtml renders the target
+     picker, the recent chats and the briefing copy exactly as it always has.
+     Preserving the behaviour is not the same as rendering it everywhere. */
+  const existing = !!S.shadowExistingOpen;
+  const face = sel ? shadowTaskFace(sel.state) : null;
+  return `<div class="shwork">
+    <aside class="shwleft">
+      <button class="shdelegate${newOpen ? " on" : ""}" type="button"
+        data-shdelegate="1">+ Delegate</button>
+      <div class="shwlabel">Shadow is working on</div>
+      <div class="shtasks">${shadowTaskListHtml()}</div>
+      <div class="shwfoot">${shadowNavHtml()}</div>
+    </aside>
+    <section class="shwright">${err}
+      <header class="shwhead">
+        <span class="shwseal" aria-hidden="true">S</span>
+        <h2 class="shwtitle">${newOpen ? "New task"
+          : esc((sel && sel.objective) || "Shadow")}</h2>
+        ${!newOpen && face ? `<span class="shtpill shtpill-${esc(face.cls)}"
+          >${esc(face.label)}</span>` : ""}
+      </header>
+      ${newOpen ? shadowDelegatePanelHtml()
+                : (sel ? shadowTaskCardHtml(sel) : "")}
+      ${thread ? `<div class="shthread">${thread}</div>` : ""}
+      ${existing ? `<div class="shexwrap">
+        <button class="shexback" type="button" data-shexisting="0"
+          >← Back to tasks</button>
+        ${shadowStageHtml()}
+      </div>` : shadowWorkComposerHtml()}
+    </section>
   </div>`;
 }
 
@@ -563,12 +860,19 @@ async function loadShadowHome(){
     /* goals ride the SAME parallel read the home already does -- the
        overview needs them, and a fourth request here is cheaper than a
        second load path (slice 10) */
-    const [w, m, i, g] = await Promise.all([
+    /* settings joins the SAME parallel read (workspace slice): the task card
+       names the floors, and reading them is cheaper than a second load path.
+       It is NOT part of shadowHomeErr -- a missing settings answer costs one
+       advisory line, never the page. */
+    const [w, m, i, g, s] = await Promise.all([
       fetch("/api/shadow/watches").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/missions").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/instructions").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/goals").then(r => r.ok ? r.json() : null),
+      fetch("/api/shadow/settings").then(r => r.ok ? r.json() : null)
+        .catch(() => null),
     ]);
+    if (s) S.shadowSettings = s;
     S.shadowHomeErr = !(w && m && i && g);
     if (g) S.goals = g.goals || [];
     if (w) S.shadowWatching = w.watches || [];
@@ -739,6 +1043,58 @@ if (typeof document !== "undefined" && document.addEventListener){
       else if (typeof goDest === "function") goDest("chats");
       return;
     }
+    /* ── + Delegate ─────────────────────────────────────────────────────── */
+    if (d.shdelegate){
+      if (typeof S !== "undefined"){
+        S.shadowNewOpen = !S.shadowNewOpen;
+        S.shadowNewErr = null;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shnewcancel){
+      if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null; }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shnewkind){
+      shadowNewDraft().kind = d.shnewkind;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shnewcreate){ shadowCreateTask(); return; }
+    /* the existing-chat flow: entered and left explicitly. Nothing about it
+       changes -- only whether the delegated-task workspace is showing it. */
+    if (d.shexisting !== undefined){
+      if (typeof S !== "undefined"){
+        S.shadowExistingOpen = d.shexisting === "1";
+        if (S.shadowExistingOpen) S.shadowNewOpen = false;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    /* picking a task in the left column only changes what the right pane
+       shows -- it starts nothing and writes nothing */
+    if (d.shtask){
+      if (typeof S !== "undefined"){
+        S.shadowTaskSel = d.shtask;
+        S.shadowNewOpen = false;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    /* the driven chat's own strip. Both go through the SAME mission action
+       path every other Shadow control uses -- no second write surface. After
+       either, the chat's row is re-read, so the composer unlocks (take over)
+       or the strip disappears (stop) without a reload. */
+    if (d.shtakeoverchat || d.shstopchat){
+      const mid = d.shtakeoverchat || d.shstopchat;
+      const act = d.shtakeoverchat ? "take_over" : "stop";
+      shadowMissionAct(mid, act).then(() => {
+        if (typeof loadSessions === "function") loadSessions();
+      });
+      return;
+    }
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
@@ -767,6 +1123,81 @@ if (typeof document !== "undefined" && document.addEventListener){
       shadowSubmitCompose(ev.target);
     }
   });
+  /* The new-task fields keep what is typed across the background re-renders
+     the session stream causes. Stored, NEVER re-rendered on keystroke: a
+     render per character would fight the caret, which is the bug the
+     composer's own text store exists to avoid. */
+  document.addEventListener("input", (ev) => {
+    const t = ev.target, d = (t && t.dataset) || {};
+    if (!d.shnewobj && !d.shnewdone) return;
+    const draft = shadowNewDraft();
+    if (d.shnewobj) draft.objective = t.value;
+    else draft.done = t.value;
+  });
+}
+
+/* THE DELEGATION WRITE. One POST, to the endpoint that already exists.
+
+   target_mode "new" is set HERE, by the button the founder pressed -- not
+   parsed out of a model reply and not typed by anyone. That is the whole
+   point of + Delegate: the intent is established by the action, so a
+   delegated task can never depend on Shadow having guessed correctly.
+
+   Nothing is started. The mission lands in brief_confirm exactly like a
+   proposal, and Start is still a separate, explicit press -- the same rule
+   every other mission and goal follows. */
+async function shadowCreateTask(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  const d = shadowNewDraft();
+  const objective = String(d.objective || "").trim();
+  if (!objective){
+    S.shadowNewErr = "Say what you want done — Shadow will not guess an outcome.";
+    if (typeof scheduleRender === "function") scheduleRender();
+    return null;
+  }
+  const done_when = String(d.done || "").split("\n")
+    .map(s => s.trim()).filter(Boolean)
+    /* founder_confirm is the honest default: a line the founder typed is a
+       criterion in their words, and only they can say it is met. The literal
+       substring tier is never invented for them here. */
+    .map(check => ({ tier: "founder_confirm", check }));
+  S.shadowNewBusy = true;
+  S.shadowNewErr = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  try {
+    r = await shadowPost("/api/shadow/missions", {
+      objective: objective,
+      template: SH_KINDS.includes(d.kind) ? d.kind : "fix",
+      target_mode: "new",
+      done_when: done_when,
+      /* the delegate boots on this: the objective plus what will count. */
+      manifest: "You are a delegate session working for the founder via "
+        + "Shadow. Objective: " + objective
+        + (done_when.length ? " It is done when: "
+            + done_when.map(c => c.check).join("; ") + "." : "")
+        + " Work step by step; say what you did and what is left.",
+    });
+  } catch (e){ r = null; }
+  S.shadowNewBusy = false;
+  if (!r || !r.ok){
+    S.shadowNewErr = r
+      ? ("Could not create the task (" + r.status + ")")
+      : "Could not reach Shadow to create the task.";
+    if (typeof scheduleRender === "function") scheduleRender();
+    return null;
+  }
+  const m = await r.json();
+  /* reconcile with the server, then put the new task in focus so the brief
+     -- and its Start button -- is the next thing on screen */
+  S.shadowNew = { objective: "", done: "", kind: "fix" };
+  S.shadowNewOpen = false;
+  S.shadowTaskSel = m.id;
+  if (typeof showNudge === "function")
+    showNudge("Task created — read the brief, then Start it.");
+  if (typeof loadShadowHome === "function") await loadShadowHome();
+  if (typeof scheduleRender === "function") scheduleRender();
+  return m;
 }
 
 async function shadowWatchSet(sid, watch){
