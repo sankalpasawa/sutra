@@ -68,6 +68,30 @@ GEN="${CLAUDE_PLUGIN_ROOT:-}/lib/domains_page.py"
 [ -f "$GEN" ] || exit 0
 ERR="$STATE/domains-refresh.err"
 
+# -- never-shrink guard (2.263.1; codex fold 2026-09-11) ---------------------
+# Twice (bb66966, c991193) a machine whose registry held a FEW domains
+# regenerated the public site over the 55-domain published export and broke
+# the byte-pinned importer suite on the next desktop release. An unattended
+# publisher must never shrink the public set: the cheap precheck here
+# (registry rows vs published department pages) gates BOTH lanes; the full
+# regen below additionally dry-runs into a temp dir and refuses if any
+# published dref-*.html / C-*.html page would go missing.
+SITE="$REPO_ROOT/$SITE_DIR"
+N_KIT=$(grep -c . "$KIT/domains/INDEX.jsonl" 2>/dev/null)
+case "$N_KIT" in ''|*[!0-9]*) N_KIT=0 ;; esac
+N_SITE=$(ls "$SITE"/dref-*.html 2>/dev/null | grep -c .)
+case "$N_SITE" in ''|*[!0-9]*) N_SITE=0 ;; esac
+if [ "$N_KIT" -lt "$N_SITE" ]; then
+  printf 'domains-site-refresh: refused - registry has %s domain rows but the published site has %s department pages; a partial registry never shrinks the public site (kit=%s)\n' \
+    "$N_KIT" "$N_SITE" "$KIT" > "$ERR" 2>/dev/null
+  exit 0
+fi
+
+# Published page basenames a regen must keep (dref = department, C = charter).
+_published_pages() {
+  ( cd "$SITE" 2>/dev/null && ls dref-*.html C-*.html 2>/dev/null ) | sort
+}
+
 # -- FAST LANE (founder 2026-08-01: data on the fly): push ONLY registry.json
 # on drift, lightly coalesced (3 min, codex fold) — pages hydrate it on load.
 # Full page regen keeps the 60-min debounce below. Freshness honesty: numbers
@@ -112,14 +136,27 @@ LOCK="$STATE/domains-refresh.lock"
 mkdir "$LOCK" 2>/dev/null || exit 0
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
-# -- regen (120s cap); stamp ONLY on success ---------------------------------
-python3 - "$GEN" "$REPO_ROOT/$SITE_DIR" "$LABEL" "$TENANT" >/dev/null 2>"$ERR" <<'PYEOF'
+# -- regen (120s cap) into a TEMP dir first; stamp ONLY on success ------------
+# Rendering beside the published site lets the guard compare page sets before
+# a single public byte changes.
+TMPSITE=$(mktemp -d -t domains-regen.XXXXXX 2>/dev/null) || exit 0
+trap 'rmdir "$LOCK" 2>/dev/null; rm -rf "$TMPSITE" 2>/dev/null' EXIT
+python3 - "$GEN" "$TMPSITE" "$LABEL" "$TENANT" >/dev/null 2>"$ERR" <<'PYEOF'
 import subprocess, sys
 gen, out, label, tenant = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 subprocess.run([sys.executable, gen, out, "--site", "--label", label,
                 "--tenant", tenant], check=True, timeout=120)
 PYEOF
 [ $? -ne 0 ] && exit 0
+MISSING=$(comm -23 <(_published_pages) <( ( cd "$TMPSITE" && ls dref-*.html C-*.html 2>/dev/null ) | sort ))
+if [ -n "$MISSING" ]; then
+  printf 'domains-site-refresh: refused - regenerating from %s would drop %s published page(s): %s\n' \
+    "$KIT" "$(printf '%s\n' "$MISSING" | grep -c .)" "$(printf '%s' "$MISSING" | tr '\n' ' ')" > "$ERR" 2>/dev/null
+  exit 0
+fi
+# Overlay, never replace: files the generator no longer emits stay published
+# (the pre-2.263.1 behaviour - the generator wrote in place and deleted nothing).
+cp -R "$TMPSITE/." "$SITE/" 2>>"$ERR" || exit 0
 printf '%s\n' "$FP" > "$STAMP" 2>/dev/null
 printf '%s\n' "$NOW" > "$STATE/domains-refresh-last" 2>/dev/null
 : > "$ERR" 2>/dev/null

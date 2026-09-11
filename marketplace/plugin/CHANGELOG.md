@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-11
+## 2.263.1 (2026-09-11)
+
+- **Release repair: the published departments site can no longer shrink by accident.** The desktop build for 2.263.0 failed its importer suite because `domains-site-refresh.sh` had regenerated `website/domains` from a machine holding a partial registry (twice now: bb66966, c991193; the drift commit is reverted). The hook now refuses, with the reason in `.claude/domains-refresh.err`, when the registry has fewer department rows than the site has pages, and the full regen renders into a temp dir first and refuses if any published `dref-*.html` or `C-*.html` page would go missing; publishing is an overlay that never deletes. Test: `hooks/tests/test-domains-site-refresh-guard.sh` (3 cases). Apps (2.263.0) unchanged.
+
 ## 2.263.0 (2026-09-11)
 
 - **Org > Apps: the things you build inside Sutra, filed under your departments.** The left rail is the department tree with each app under the department it serves; an app opens as a header and then the app itself (a chat's instructions, a page in a sandboxed iframe, or a link). **Edit in chat** opens a chat in the app's folder that already knows the department and the files; **+ New app** opens a chat that asks what kind of app to build. No forms. Opt out with `flags.modules=false`.
