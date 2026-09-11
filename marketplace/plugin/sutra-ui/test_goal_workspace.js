@@ -308,7 +308,15 @@ function ok(msg){ console.log("ok " + (++n) + " " + msg); }
   assert.strictEqual(acts("verifying"), "stop", "nothing to confirm");
   assert.strictEqual(acts("verifying", { checks: [
     { index: 1, tier: "founder_confirm", met: false }] }), "confirm,stop");
-  assert.strictEqual(acts("blocked"), "resume,extend,stop");
+  /* blocked depends on WHY: more turns is only an answer when turns were
+     what ran out (2026-09-11 fold -- a no_live_runtime block dies at turn
+     0/20, so a budget button would point at the wrong problem) */
+  assert.strictEqual(acts("blocked", { block_reason: "budget_exhausted" }),
+                     "resume,extend,stop");
+  assert.strictEqual(acts("blocked", { block_reason: "no_live_runtime" }),
+                     "resume,stop");
+  assert.strictEqual(acts("blocked"), "resume,stop",
+                     "and an unstated reason never assumes the budget");
   assert.strictEqual(acts("done"), "");
   assert.strictEqual(acts("stopped"), "");
   ok("actions match the state");
@@ -510,18 +518,31 @@ function ok(msg){ console.log("ok " + (++n) + " " + msg); }
   ok("stop point marked in the transcript");
 }
 
-/* 26. live pane state is preferred over the fetched transcript */
+/* 26. an OPEN pane's turns are preferred; a CLOSED pane's are not.
+   CORRECTED 2026-09-11. This used to assert that the pane array always
+   won, with no pane open -- and that premise is what made a running
+   Assignment's RHS look static: `turns` is live only while the pane's
+   socket is writing into it, and an Assignment's target has no pane open
+   because Shadow drives it headlessly. Both directions are pinned now. */
 {
   const ctx = fresh();
-  ctx.S.sessions = [{ id: "01a081", turns: [
-    { text: "[Shadow · mission m-9] go", response: "went" }] }];
-  ctx.S.goalTranscript = { "01a081": [{ role: "assistant",
-                                        text: "STALE DISK COPY" }] };
-  const msgs = ctx.goalMessages("01a081");
-  assert(/go/.test(JSON.stringify(msgs)), "live turns used");
-  assert(!/STALE DISK COPY/.test(JSON.stringify(msgs)),
-         "the live stream wins, so updates arrive with the ordinary render");
-  ok("live session state preferred");
+  const paneTurns = [{ text: "[Shadow · mission m-9] go", response: "went" }];
+  const disk = [{ role: "assistant", text: "NEWER DISK COPY" }];
+
+  ctx.S.openPanes = ["01a081"];                 /* the founder has it open */
+  ctx.S.sessions = [{ id: "01a081", turns: paneTurns }];
+  ctx.S.goalTranscript = { "01a081": disk };
+  let msgs = ctx.goalMessages("01a081");
+  assert(/go/.test(JSON.stringify(msgs)), "the open pane's live turns win");
+  assert(!/NEWER DISK COPY/.test(JSON.stringify(msgs)),
+         "the file lags a streaming turn, so it must not replace it");
+
+  ctx.S.openPanes = [];                         /* Shadow drives it headless */
+  msgs = ctx.goalMessages("01a081");
+  assert(/NEWER DISK COPY/.test(JSON.stringify(msgs)),
+         "with no pane, the refetched transcript is the live one");
+  assert(!/go/.test(JSON.stringify(msgs)), "one source, never merged");
+  ok("the live source is chosen by whether the pane is actually open");
 }
 
 /* 27. transcript states are honest: reading vs empty */
@@ -770,7 +791,7 @@ function flushRafs(ctx){
   ok("pin slop matches the session panes");
 }
 
-/* 44. no scroller, no crash -- and no polling anywhere */
+/* 44. no scroller, no crash -- and the polling CONTRACT (revised) */
 {
   const ctx = fresh();
   ctx.scroller = null;
@@ -779,10 +800,21 @@ function flushRafs(ctx){
   ctx.goalRestoreScroll({ pinned: true, top: 0, sid: "x" });
   ctx.goalBindScroll();
   ok("absent transcript is handled");
-  const srcText = src;
-  assert(!/setInterval/.test(srcText), "no polling loop");
-  assert(!/setTimeout\([^)]*\d{3,}/.test(srcText), "no timer ladder");
-  ok("no polling introduced");
+  /* SLICE 7 PINNED "no polling at all" here. The founder reversed that on
+     2026-09-11 after a live run: the mission ran two turns and blocked in
+     107s while this screen kept showing its opening snapshot. What is
+     pinned now is the SHAPE of the refresh, not its absence -- chained
+     setTimeout, screen-scoped, state-gated, reusing loadGoal. The full
+     behaviour lives in test_goal_live.js. Comments are stripped first: the
+     poll's own doc-comment names setInterval while explaining why it does
+     not use one. */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "")
+                  .replace(/^\s*\/\/.*$/gm, "");
+  assert(!/setInterval/.test(code), "still no setInterval -- chained only");
+  assert(!/setTimeout\([^)]*\d{3,}/.test(code), "no literal timer ladder");
+  assert(/GOAL_LIVE_STATES\s*=\s*\["working", "verifying"\]/.test(code),
+         "and it only runs while the mission loop can move something");
+  ok("the refresh is chained, screen-scoped and state-gated");
 }
 
 /* 45. render() drives the capture/restore pair at the existing hook points */

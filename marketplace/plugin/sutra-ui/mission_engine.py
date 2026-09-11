@@ -46,6 +46,62 @@ TRANSITIONS = {
 #: never_say refuses in the loop before any sayer call; read_only is carried
 #: on the mission for the say endpoint to enforce once tool-level scoping
 #: exists (P5+); both are asserted by tests.
+# ------------------------------------------------ the driving contract ---
+# SHADOW DRIVES, THE EVALUATOR VERIFIES, AND THE TWO NEVER SWAP JOBS.
+#
+# _next_say used to be the whole of Shadow's "decision": turn 0 sent the
+# objective and every later turn sent "Continue toward: X. Outstanding
+# checks: A; B". That string varies ONLY with the unmet set, and the unmet
+# set shrinks monotonically -- so two consecutive turns produced identical
+# text and the ping-pong guard stopped the attempt. Measured live (goal
+# g-d804849d1400, 2026-09-11): blocked on ping_pong at turn 2/20 while the
+# target chat had answered correctly. The loop iterated; the INSTRUCTION
+# could not.
+#
+# A decider is now injected, exactly like sayer/waiter/reader/verifier, and
+# consulted for turn >= 1. Two actions and no more:
+#
+#   continue     carry on, with THIS instruction (composed from what the
+#                target actually said)
+#   ask_founder  I cannot make progress; the founder is needed
+#
+# THERE IS DELIBERATELY NO `stop`. A stop could only mean "ask the founder"
+# -- which is ask_founder -- or "declare the outcome met", which Shadow must
+# never do. Leaving it out is what makes "Shadow cannot bypass verification"
+# true by construction rather than by a guard that could be edited away:
+# _complete stays the only writer of a `done` mission and is reachable only
+# from evaluate_done_when.
+DECISION_ACTIONS = ("continue", "ask_founder")
+
+#: how much of the target's latest output the decider is shown. Bounded on
+#: purpose: the whole transcript is neither necessary nor affordable, and
+#: evidence assembly already excludes Shadow's own turns upstream.
+DECISION_TAIL = 2000
+DECISION_INSTRUCTION_MAX = 2000
+
+
+def validate_decision(raw):
+    """A Shadow decision, or None if it is not one.
+
+    Strict by design (R10): a malformed decision must not degrade into the
+    generic nudge this whole change exists to remove, so it returns None and
+    the caller blocks honestly instead of guessing.
+    """
+    if not isinstance(raw, dict):
+        return None
+    action = str(raw.get("action") or "").strip()
+    if action not in DECISION_ACTIONS:
+        return None
+    reason = str(raw.get("reason") or "").strip()[:300]
+    if action == "continue":
+        instruction = str(raw.get("instruction") or "").strip()
+        if not instruction:
+            return None               # "continue" with nothing to say is not
+        return {"action": action, "reason": reason,
+                "instruction": instruction[:DECISION_INSTRUCTION_MAX]}
+    return {"action": action, "reason": reason, "instruction": ""}
+
+
 TEMPLATES = {
     "feature": {"max_turns": 30, "invariants": ()},
     "fix": {"max_turns": 20, "invariants": ()},
@@ -295,7 +351,7 @@ class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
-                 verifier=None, on_evaluated=None):
+                 verifier=None, on_evaluated=None, decider=None):
         """`on_evaluated(mission, results, done)` is an OBSERVER of the one
         evaluation this loop already performs -- it is how the goal layer
         keeps per-check progress without a second evaluator. Optional, and
@@ -307,6 +363,10 @@ class MissionEngine:
         self.reader = transcript_reader
         self.verifier = verifier
         self.on_evaluated = on_evaluated
+        # async (context) -> decision dict. None keeps the historical
+        # template, which is what leaves every standalone mission and every
+        # pre-existing test behaving exactly as before.
+        self.decider = decider
 
     async def provision_target(self, mid, spawner):
         """S53: target_mode=new -- provision the delegate session ONCE via
@@ -349,6 +409,9 @@ class MissionEngine:
         contract; the engine treats False as a failed turn.
         """
         last_say = None
+        # what the target said on the PREVIOUS iteration, which is the whole
+        # point: the next instruction is composed from it
+        last_response = None
         while True:
             if not providers.shadow_enabled():
                 return self.store.transition(mid, "stopped",
@@ -368,7 +431,28 @@ class MissionEngine:
                 return self._out_of_road(
                     m, "failed", "budget_exhausted",
                     "max turns (%d) reached" % m["max_turns"])
-            say_text = self._next_say(m)
+            say_text, decision = await self._instruction(m, last_response)
+            if decision is not None:
+                # one row per decision, so a mission reads as a conversation
+                # in the ledger: decided -> said -> answered -> evaluated
+                shadow_ledger.append("actions", {
+                    "mission_id": mid, "kind": "decision",
+                    "summary": "%s: %s%s" % (
+                        decision["action"],
+                        (decision.get("instruction") or "")[:120],
+                        (" | why: " + decision["reason"][:80])
+                        if decision.get("reason") else "")})
+            if decision is not None and decision["action"] == "ask_founder":
+                # the EXISTING founder-facing exit: a goal attempt blocks and
+                # the founder is asked, a standalone mission stays terminal
+                return self._out_of_road(
+                    m, "stopped", "needs_founder",
+                    decision["reason"] or "Shadow asked for the founder")
+            if decision is not None and decision["action"] == "undecided":
+                # R10: never fall back to a generic instruction, never
+                # complete. Say honestly that the driver could not decide.
+                return self._out_of_road(
+                    m, "failed", "shadow_undecided", decision["reason"])
             if say_text == last_say:
                 return self._out_of_road(
                     m, "stopped", "ping_pong",
@@ -384,9 +468,26 @@ class MissionEngine:
                 self.store.save(m)
                 return m
             ok = await self.sayer(m, say_text)
+            # A STRING is a named, retryable precondition -- the say was never
+            # delivered, so nothing about the attempt is spent. It goes down
+            # _out_of_road, which blocks a goal attempt (the founder is asked,
+            # the chat is kept, Resume works) and leaves a standalone mission
+            # terminal exactly as before. False stays what it always was: the
+            # say itself was turned down.
+            # non-empty: an EMPTY string is falsy and means nothing, so it
+            # stays a plain refusal rather than becoming a nameless blocker
+            # (store.block rightly refuses a reasonless block)
+            if isinstance(ok, str) and ok:
+                return self._out_of_road(
+                    m, "failed", ok,
+                    "say not delivered (%s) -- nothing was sent" % ok)
             if not ok:
                 return self.store.transition(mid, "failed", "say refused")
             last_say = say_text
+            # remembered on the record, so a resumed attempt and the ledger
+            # both know what Shadow last asked for
+            m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
+            self.store.save(m)
             arrived = await self.waiter(m)
             if arrived is False:
                 return self.store.transition(
@@ -400,6 +501,7 @@ class MissionEngine:
                 "mission_id": mid, "kind": "say",
                 "summary": say_text[:200]})
             transcript = self.reader(m)
+            last_response = transcript
             done, results = evaluate_done_when(m, transcript, self.verifier)
             if self.on_evaluated is not None:
                 # progress bookkeeping NEVER decides a mission's fate
@@ -414,17 +516,7 @@ class MissionEngine:
                     or fresh["state"] in ("paused", "blocked"):
                 return fresh
             if done:
-                mm = self.store.transition(
-                    mid, "done", "done_when met: %s"
-                    % json.dumps(results)[:400])
-                t = transcript or ""
-                mm["result_excerpt"] = (t if len(t) <= 400
-                                        else t[:150] + " ... " + t[-250:])
-                self.store.save(mm)
-                shadow_ledger.append("actions", {
-                    "mission_id": mid, "kind": "result",
-                    "summary": mm["result_excerpt"][:200]})
-                return mm
+                return self._complete(mid, results, transcript)
             pending_confirm = [r for r in results
                                if r["tier"] == "founder_confirm"
                                and not r["met"]]
@@ -436,6 +528,72 @@ class MissionEngine:
                 m["pause_reason"] = "founder_confirm"
                 self.store.save(m)
                 return m
+
+    def _complete(self, mid, results, transcript):
+        """The ONE writer of a `done` mission.
+
+        Lifted verbatim out of the loop so the confirmation path below can
+        reach the same completion instead of growing a second one. Same
+        transition, same excerpt, same ledger row, in the same order.
+        """
+        mm = self.store.transition(
+            mid, "done", "done_when met: %s" % json.dumps(results)[:400])
+        t = transcript or ""
+        mm["result_excerpt"] = (t if len(t) <= 400
+                                else t[:150] + " ... " + t[-250:])
+        self.store.save(mm)
+        shadow_ledger.append("actions", {
+            "mission_id": mid, "kind": "result",
+            "summary": mm["result_excerpt"][:200]})
+        return mm
+
+    def settle(self, mid):
+        """Decide a founder_confirm pause, WITHOUT spending a turn.
+
+        THE DEAD END THIS CLOSES (live, goal g-e59b36c8ae53, 2026-09-11).
+        The loop pauses on an outstanding founder_confirm and RETURNS --
+        its task ends, RUNNING drops the id, and nothing is driving the
+        mission any more. confirm_check then wrote `met`, the goal read
+        2 of 2, and there it stayed: `evaluate_done_when` is what turns
+        "all checks met" into a done mission, and it only ever ran inside
+        the loop that had already exited. The attempt was stuck, not slow.
+
+        NO SECOND EVALUATOR AND NO SECOND COMPLETION. This is the loop's
+        own evaluate-and-decide step, reachable from outside the loop:
+        same evaluate_done_when, same evidence reader, same _complete.
+
+        NO EXTRA TURN. The loop says BEFORE it evaluates, so resuming the
+        loop would have put another Shadow turn in the founder's chat to
+        learn something already true. Nothing is said here.
+
+        The mission is only moved off `paused` once the answer is known to
+        be terminal: a mission left `running` with no loop behind it would
+        be a worse stall than the one being fixed. Still-outstanding checks
+        leave it exactly where it was.
+        """
+        m = self.store.load(mid)
+        if m is None:
+            raise ValueError("no mission %s" % mid)
+        if m["state"] != "paused" \
+                or m.get("pause_reason") != "founder_confirm":
+            return m            # not a confirmation pause -- untouched
+        transcript = self.reader(m) if self.reader is not None else ""
+        done, results = evaluate_done_when(m, transcript, self.verifier)
+        if self.on_evaluated is not None:
+            # progress bookkeeping NEVER decides a mission's fate
+            try:
+                self.on_evaluated(m, results, done)
+            except Exception:
+                pass
+        if not done:
+            return m            # something is still outstanding: stay paused
+        # paused -> done is not a legal edge, and widening the machine for
+        # one caller would be the larger change. The mission really did
+        # resume to finish, so it says so, in two legal steps and two
+        # honest ledger rows.
+        self.store.transition(mid, "running",
+                              "founder confirmation settles the attempt")
+        return self._complete(mid, results, transcript)
 
     def _out_of_road(self, m, terminal_state, block_reason, note):
         """The one place that decides how an attempt ends when the machine
@@ -458,6 +616,52 @@ class MissionEngine:
         if m.get("goal_id"):
             return self.store.block(m["id"], block_reason, note)
         return self.store.transition(m["id"], terminal_state, note)
+
+    def _decision_context(self, m, last_response):
+        """Everything the decider is shown, and nothing else.
+
+        Deliberately bounded and deliberately structured: the outcome, the
+        checks with their CURRENT met/unmet state, the budget, the last
+        instruction Shadow gave, and the tail of what the target said back.
+        No raw transcript dump -- evidence assembly (which already excludes
+        Shadow's own turns) stays the verifier's input, not the driver's.
+        """
+        return {
+            "outcome": m.get("objective") or "",
+            "checks": [{"tier": c.get("tier"), "check": c.get("check"),
+                        "met": bool(c.get("met"))}
+                       for c in (m.get("done_when") or [])],
+            "turns_used": m.get("turns_used") or 0,
+            "max_turns": m.get("max_turns") or 0,
+            "last_instruction": m.get("last_instruction") or "",
+            "last_response": (last_response or "")[-DECISION_TAIL:],
+        }
+
+    async def _instruction(self, m, last_response):
+        """(say_text, decision) for this iteration.
+
+        Turn 0 is the brief and is never a decision: the manifest (or the
+        objective) is what opens the conversation. From turn 1 the decider
+        reads what the target actually said and composes the next move.
+
+        Returns say_text None when the attempt must not continue -- the
+        caller turns that into the existing founder-facing block rather
+        than sending anything.
+        """
+        if m["turns_used"] == 0 or self.decider is None:
+            return self._next_say(m), None
+        try:
+            raw = await self.decider(self._decision_context(m, last_response))
+        except Exception as exc:      # noqa: BLE001 -- reported, not hidden
+            return None, {"action": "undecided",
+                          "reason": "decider failed: %s" % str(exc)[:160]}
+        decision = validate_decision(raw)
+        if decision is None:
+            return None, {"action": "undecided",
+                          "reason": "decider returned no usable decision"}
+        if decision["action"] == "ask_founder":
+            return None, decision
+        return decision["instruction"], decision
 
     def _next_say(self, m):
         if m["turns_used"] == 0:

@@ -291,4 +291,96 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,closes
   assert(!/<img/.test(out)&&/&lt;img/.test(out),"escaped");
   ok("output is escaped");
 }
+/* ---- no_live_runtime: a retryable outage, not a failed attempt ---------
+   First flight 2026-09-11 (goal g-35fadb0ea2ac): the founder saw the raw
+   string "attempt m-c690ba7ad7fa failed" and a budget button on an attempt
+   that died at turn 0/20. Both are pinned honest here. */
+const NORUNTIME=base({state:"blocked", attempt:1, current_mission_id:null,
+  block_reason:"no_live_runtime", checks_label:"0 of 2 checks",
+  turn_label:"turn 0/20", turns_used:0,
+  unmet:["referral webhook returns 200","end-to-end referral test passes"],
+  checks:[{index:0,tier:"contains_artifact",check:"referral webhook returns 200",met:false},
+          {index:1,tier:"verify",check:"end-to-end referral test passes",met:false}],
+  attempts:[{attempt:1,mission_id:"m-1",ended_state:"blocked",note:"no_live_runtime"}]});
+/* A. the blocker wears human copy, never the raw id */
+{
+  const ctx=fresh();
+  assert.strictEqual(ctx.goalBlockerCopy("no_live_runtime"),
+    "that chat isn't available to Shadow right now");
+  const out=panel(ctx,NORUNTIME);
+  assert(/that chat isn&#x27;t available to Shadow right now|that chat isn't available to Shadow right now/
+    .test(out), "the copy is rendered");
+  assert(!/no_live_runtime/.test(out),
+    "and the raw blocker id never reaches the founder");
+  assert(!/attempt m-|mission failed/.test(out),
+    "nor the old uninterpretable failure string");
+  ok("no_live_runtime renders as human copy");
+}
+/* B. Resume stays possible, and reads as a retry */
+{
+  const ctx=fresh();
+  const acts=ctx.goalActions("blocked",NORUNTIME);
+  assert(acts.some(a=>a.act==="resume"),"resume is still offered");
+  assert.strictEqual(acts[0].act,"resume","and it is the primary action");
+  assert.strictEqual(acts[0].label,"Try again",
+    "nothing needs answering -- it needs retrying");
+  assert(acts.some(a=>a.act==="stop"),"stop is still offered");
+  ok("Resume remains possible on a no_live_runtime block");
+}
+/* C. the budget button is gone -- the budget was never the problem */
+{
+  const ctx=fresh();
+  assert(!ctx.goalActions("blocked",NORUNTIME).some(a=>a.act==="extend"),
+    "0/20 turns used: offering more turns points at the wrong problem");
+  const out=panel(ctx,NORUNTIME);
+  assert(!/Extend budget/.test(out),"and it is not rendered either");
+  ok("Extend budget is not offered when the budget did not run out");
+}
+/* D. the budget block is completely unchanged */
+{
+  const ctx=fresh();
+  const acts=ctx.goalActions("blocked",BLOCKED);
+  assert.strictEqual(acts.map(a=>a.act).join(","),"resume,extend,stop",
+    "budget_exhausted keeps all three, in order");
+  assert.strictEqual(acts[0].label,"Answer & resume","and its original copy");
+  assert(/Extend budget/.test(panel(ctx,BLOCKED)));
+  assert(/the turn budget ran out/.test(panel(ctx,BLOCKED)));
+  ok("the budget_exhausted block is untouched");
+}
+/* E. the narration does not claim a live chat it could not reach */
+{
+  const ctx=fresh();
+  const line=ctx.goalActivityLine(NORUNTIME);
+  assert(/Nothing was sent/.test(line)&&/no turn was used/.test(line),
+    "it says what actually happened: "+line);
+  assert(!/still alive/.test(line),
+    "Shadow could not reach the chat -- it must not assert it was alive");
+  assert(/still alive/.test(ctx.goalActivityLine(BLOCKED)),
+    "while a budget block still says the chat is alive");
+  ok("the blocked narration is honest for each reason");
+}
+/* F. an unknown blocker still degrades to readable text */
+{
+  const ctx=fresh();
+  assert.strictEqual(ctx.goalBlockerCopy("some_new_reason"),"some new reason");
+  assert.strictEqual(ctx.goalBlockerCopy(""),"");
+  const acts=ctx.goalActions("blocked",base({state:"blocked",
+    block_reason:"some_new_reason"}));
+  assert.strictEqual(acts.map(a=>a.act).join(","),"resume,stop",
+    "an unknown reason gets the safe pair, never a budget guess");
+  ok("an unknown blocker degrades safely");
+}
+/* G. Shadow Home's Needs You band inherits all of it */
+{
+  const ctx=fresh();
+  ctx.S.goals=[{id:"g-1",outcome:"the referral workflow is configured",
+    state:"blocked",block_reason:"no_live_runtime",checks_label:"0 of 2 checks",
+    turn_label:"turn 0/20",attempt:1,unmet:["referral webhook returns 200"]}];
+  const h=ctx.shadowHomeHtml();
+  assert(/available to Shadow right now/.test(h),"the same copy on Home");
+  assert(!/no_live_runtime/.test(h),"no raw id on Home either");
+  assert(/Try again/.test(h)&&!/Extend budget/.test(h),
+    "and the same honest controls");
+  ok("Shadow Home shows the same honest blocker");
+}
 setTimeout(()=>console.log("test_goal_control.js: all green"),40);

@@ -40,7 +40,16 @@ function goalStateClass(state){
 const GOAL_BLOCKER_COPY = {
   budget_exhausted: "the turn budget ran out",
   ping_pong: "the chat kept repeating itself",
+  /* Shadow had no runtime to speak through -- the chat exists and is
+     untouched, so this is a retryable outage, never a failed attempt. */
+  no_live_runtime: "that chat isn't available to Shadow right now",
 };
+/* blockers where nothing was spent and the same attempt can simply be tried
+   again -- they change which controls are honest to offer */
+const GOAL_RETRYABLE_BLOCKERS = ["no_live_runtime"];
+function goalBlockerRetryable(d){
+  return GOAL_RETRYABLE_BLOCKERS.includes(String((d || {}).block_reason || ""));
+}
 
 function goalBlockerCopy(reason){
   const r = String(reason || "");
@@ -75,10 +84,17 @@ function goalActions(state, d){
       acts.push({ act: "stop", label: "Stop" });
       return acts;
     }
-    case "blocked":   return [{ act: "resume", label: "Answer & resume",
-                               pri: true },
-                              { act: "extend", label: "Extend budget" },
-                              { act: "stop", label: "Stop" }];
+    case "blocked": {
+      /* Extend budget is only honest when the budget is what ran out. On a
+         no_live_runtime block the attempt died at turn 0/20, and offering
+         more turns would point the founder at the wrong problem. */
+      const acts = [{ act: "resume", label: goalBlockerRetryable(d)
+                        ? "Try again" : "Answer & resume", pri: true }];
+      if (String((d || {}).block_reason || "") === "budget_exhausted")
+        acts.push({ act: "extend", label: "Extend budget" });
+      acts.push({ act: "stop", label: "Stop" });
+      return acts;
+    }
     default:          return [];        /* done / stopped are terminal */
   }
 }
@@ -100,7 +116,9 @@ function goalActivityLine(d){
       return unmet ? ("The chat says it is done. Waiting on: " + unmet)
                    : "The chat says it is done — checking.";
     case "blocked":
-      return "Stopped and waiting for you. The chat is still alive.";
+      return goalBlockerRetryable(d)
+        ? "Nothing was sent and no turn was used. The chat is untouched."
+        : "Stopped and waiting for you. The chat is still alive.";
     case "done":
       return "Verified. Shadow has stopped speaking into this chat.";
     case "stopped":
@@ -247,8 +265,11 @@ function goalBlockedHtml(d){
     <div class="gwblockedprog">${esc(d.checks_label || "")}${
       d.turn_label ? " · " + esc(d.turn_label) : ""}${
       d.attempt ? " · attempt " + esc(String(d.attempt)) : ""}</div>
-    <div class="gwblockednote">The chat is still alive. Answer below, extend
-      the budget, or take over on the right.</div>
+    <div class="gwblockednote">${goalBlockerRetryable(d)
+      ? `Nothing was sent into the chat and no turn was used \u2014 try
+         again, or take over on the right.`
+      : `The chat is still alive. Answer below, extend the budget, or take
+         over on the right.`}</div>
   </div>`;
 }
 
@@ -353,14 +374,67 @@ function goalStripTag(text){
   return String(text || "").replace(/^\s*\[Shadow · mission [^\]]*\]\s*/, "");
 }
 
-/* the real transcript for this chat, live where possible */
+/* the real transcript for this chat -- ONE source, chosen, never merged.
+
+   WHY THE CHOICE MATTERS (live, 2026-09-11): this preferred the pane's
+   `turns` array whenever it was non-empty. That array is live ONLY while
+   its pane is open and its websocket is writing into it; a CLOSED pane
+   holds a frozen snapshot from whenever the founder last read that chat.
+   Shadow drives an Assignment's target chat headlessly, with no pane open,
+   so the closed case is the normal one here -- and the snapshot won
+   unconditionally, which meant the transcript refetched every few seconds
+   into S.goalTranscript was fetched and then thrown away. The RHS looked
+   static while Shadow and the chat were talking.
+
+   Merging the two would be the obvious alternative and the wrong one: they
+   overlap, so it would double every turn that appears in both. */
 function goalMessages(sid){
   const S_ = (typeof S !== "undefined") ? S : {};
   const sess = (S_.sessions || []).find(x => x && x.id === sid);
-  if (sess && sess.turns && sess.turns.length)
-    return goalTurnsToMessages(sess.turns);
+  const pane = (sess && sess.turns && sess.turns.length)
+    ? goalTurnsToMessages(sess.turns) : null;
+  /* an OPEN pane owns its turns: its socket holds the streaming turn and
+     the file on disk is behind it (see 09-tail.js's same reasoning) */
+  const paneOpen = !!(pane && S_.openPanes
+                      && S_.openPanes.indexOf(sid) !== -1);
+  if (paneOpen) return pane;
   const held = (S_.goalTranscript || {})[sid];
-  return held === undefined ? undefined : held;
+  if (held !== undefined) return held;
+  /* nothing fetched yet: a stale snapshot still beats "Reading the chat…" */
+  return pane === null ? undefined : pane;
+}
+
+/* ---- live RHS ------------------------------------------------------------
+   The session stream already exists and already fires on every transcript
+   write (/api/sessions/stream -> applySessionChange). It re-reads the file
+   for OPEN PANES only, and an Assignment's target chat is deliberately not
+   one -- Shadow drives it headlessly. This is the one line of reach that
+   the workspace needs: the same event, the same 1s throttle, and the
+   EXISTING loadGoalTranscript fetch. No socket is added, no second
+   transcript store exists, and no pane state is touched. */
+let goalTranscriptAt = 0;
+
+/* the chat an open Assignment workspace is watching, or null */
+function goalWatchedSession(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (S_.screen !== "goal" || !S_.goalSel) return null;
+  const d = (S_.goalDetail || {})[S_.goalSel];
+  return (d && d.target_session) || null;
+}
+
+function goalTranscriptChanged(sid){
+  if (!sid || goalWatchedSession() !== sid) return false;
+  const S_ = (typeof S !== "undefined") ? S : {};
+  /* an open pane is already re-read by 09-tail.js on this same event --
+     doing it twice would be two GETs for one write */
+  if (S_.openPanes && S_.openPanes.indexOf(sid) !== -1) return false;
+  const now = Date.now();
+  /* the pane path's own throttle: a running turn rewrites the file many
+     times a second, and a GET + full render on each one IS the flicker */
+  if (goalTranscriptAt && now - goalTranscriptAt < 1000) return false;
+  goalTranscriptAt = now;
+  loadGoalTranscript(sid);
+  return true;
 }
 
 function goalTranscriptHtml(messages, d){
@@ -535,16 +609,82 @@ function goalDraftFor(p){
   return S_.goalDrafts[k];
 }
 
-function goalCriteriaToChecks(text){
+/* THE TIER CONTRACT, mirrored from shadow_protocol.tier_for (python).
+   Two copies is the smaller evil: the alternative is a round-trip to the
+   server to classify text the founder is still typing.
+
+   This function used to stamp `contains_artifact` on EVERY line -- Shadow's
+   proposed tiers and the founder's own typing alike -- which is what made
+   the protocol-side fix insufficient on its own. contains_artifact is a
+   literal substring test (mission_engine:284); a line that is a criterion
+   DESCRIPTION can never match it, and the attempt then repeats itself until
+   the ping-pong guard stops it (live: goal g-d804849d1400, 2026-09-11).
+
+   A literal artifact is a MARKER, not a sentence. Conservative on purpose:
+   a false negative costs one sign-off, a false positive costs the goal. */
+const GOAL_ARTIFACT_MAX_CHARS = 60;
+const GOAL_ARTIFACT_MAX_WORDS = 8;
+const GOAL_CRITERION_MARKER =
+  /(—|–|\b(?:not|rather|instead|each|either|such as|e\.g\.|etc|distinct|concrete|explicit(?:ly)?|genuine|generic|appropriate|relevant|valid|reasonable|must|should|listed|stated|named|tied|hedge|at least|no more than)\b)/i;
+
+function goalIsLiteralArtifact(check){
+  const s = String(check == null ? "" : check).trim();
+  if (!s || s.length > GOAL_ARTIFACT_MAX_CHARS) return false;
+  if (s.split(/\s+/).length > GOAL_ARTIFACT_MAX_WORDS) return false;
+  return !GOAL_CRITERION_MARKER.test(s);
+}
+
+function goalTierFor(check, proposed){
+  const want = String(proposed == null ? "" : proposed).trim();
+  if (want === "contains_artifact" && goalIsLiteralArtifact(check))
+    return "contains_artifact";
+  if (want === "founder_confirm") return "founder_confirm";
+  return "founder_confirm";
+}
+
+/* What each tier COSTS the founder, said plainly on the card. */
+const GOAL_TIER_WORD = {
+  contains_artifact: "Shadow checks this",
+  founder_confirm: "you confirm this",
+};
+
+function goalCriteriaToChecks(text, proposedByText){
+  const by = proposedByText || {};
   return String(text || "").split("\n")
     .map(s => s.trim()).filter(Boolean)
-    .map(check => ({ tier: "contains_artifact", check: check }));
+    .map(check => {
+      const proposed = by[check];
+      /* TWO DIFFERENT QUESTIONS, deliberately answered differently.
+         A line SHADOW proposed is judged by goalTierFor, mirroring the
+         python boundary exactly -- including "a missing tier means Shadow
+         did not think about it, so the founder decides".
+         A line the FOUNDER TYPED has no proposal behind it at all: the
+         widget is a plain textarea and has no tier to omit. Shape is the
+         only signal there is, and a literal-shaped marker genuinely IS
+         substring-matchable -- refusing to machine-check it would make
+         contains_artifact unreachable from the UI without buying any
+         safety, which is a different bug, not a fix for this one. */
+      const tier = (proposed === undefined)
+        ? (goalIsLiteralArtifact(check) ? "contains_artifact"
+                                        : "founder_confirm")
+        : goalTierFor(check, proposed);
+      return { tier: tier, check: check };
+    });
+}
+
+/* the proposal's own tiers, keyed by check text, so an unedited line keeps
+   whatever the protocol boundary already resolved for it */
+function goalProposedTiers(p){
+  const out = {};
+  for (const c of ((p && p.done_when) || []))
+    if (c && c.check) out[String(c.check).trim()] = c.tier;
+  return out;
 }
 
 function goalProposalHtml(p){
   const d = goalDraftFor(p);
   const key = goalProposalKey(p);
-  const checks = goalCriteriaToChecks(d.criteria);
+  const checks = goalCriteriaToChecks(d.criteria, goalProposedTiers(p));
   const created = p.createdId || null;
   const target = d.target_session;
   const ready = !!(String(d.outcome || "").trim()) && checks.length > 0
@@ -586,6 +726,11 @@ function goalProposalHtml(p){
         placeholder="One check per line">${esc(d.criteria)}</textarea>
       <div class="gwpropcount">${esc(String(checks.length))} check${
         checks.length === 1 ? "" : "s"}</div>
+      ${checks.length ? `<div class="gwproptiers">${checks.map(c => `
+        <div class="gwproptier">
+          <span class="gwtier">${esc(GOAL_TIER_WORD[c.tier] || c.tier)}</span>
+          <span class="gwproptiertext">${esc(c.check)}</span>
+        </div>`).join("")}</div>` : ""}
     </div>
     <div class="gwpropfield">
       <span class="gwproplabel">Target chat</span>
@@ -620,7 +765,9 @@ async function goalCreateFromProposal(key){
   const p = goalProposalIn(key);
   if (!p || p.createdId) return null;
   const d = goalDraftFor(p);
-  const checks = goalCriteriaToChecks(d.criteria);
+  /* the SAME tiers the card showed -- what the founder read is what is
+     written, never a different classification at POST time */
+  const checks = goalCriteriaToChecks(d.criteria, goalProposedTiers(p));
   if (!String(d.outcome || "").trim() || !checks.length
       || !d.target_session){
     p.error = "An outcome, at least one check and a target chat are all "
@@ -747,6 +894,87 @@ function goalOwnDest(){
   S.ui.dest = "focus";
 }
 
+/* ---- the live workspace ---------------------------------------------------
+   SLICE 7 MADE THIS SCREEN FETCH-ONCE ("Nothing here opens a socket, polls,
+   or renders a synthetic conversation"), and SCREENS.goal only calls
+   loadGoal when NO detail is cached. goalAct() refetches after a founder
+   action, which is why manual testing never caught it -- you only ever
+   looked right after clicking something.
+
+   Measured live (goal g-d804849d1400, 2026-09-11): the mission ran two
+   turns, evaluated its checks and blocked in 107s while the open workspace
+   kept showing the snapshot taken at Start -- "WORKING, turn 0/20, 0 of 2"
+   for several minutes. Every change driven by the MISSION LOOP rather than
+   by the founder had no path to the screen.
+
+   The smallest honest fix: re-read the EXISTING endpoint, on the EXISTING
+   loadGoal path, only while the goal can actually change, and only while
+   its workspace is on screen. No socket, no new endpoint, no synthetic
+   progress -- the screen shows server state or it shows nothing new.
+
+   Chained setTimeout, not setInterval, for 07-loaders.js's stated reason:
+   a slow response must not stack a queue of overlapping requests. */
+
+/* states where the mission loop can still move something */
+const GOAL_LIVE_STATES = ["working", "verifying"];
+const GOAL_POLL_MS = 4000;
+let goalPollTimer = null, goalPollGid = null, goalPollBusy = false;
+
+function goalIsLive(d){
+  return GOAL_LIVE_STATES.includes(String((d || {}).state || ""));
+}
+
+/* is this goal's workspace the thing actually on screen? */
+function goalScreenOpen(gid){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return S_.screen === "goal" && S_.goalSel === gid;
+}
+
+function goalStopPoll(){
+  if (goalPollTimer !== null && typeof clearTimeout === "function")
+    clearTimeout(goalPollTimer);
+  goalPollTimer = null;
+  goalPollGid = null;
+}
+
+function goalStartPoll(gid){
+  if (typeof setTimeout !== "function" || !gid) return;
+  if (goalPollGid === gid && goalPollTimer !== null) return;   /* already on */
+  goalStopPoll();
+  goalPollGid = gid;
+  const tick = async () => {
+    goalPollTimer = null;
+    if (!goalScreenOpen(gid)){ goalStopPoll(); return; }
+    const S_ = (typeof S !== "undefined") ? S : {};
+    const d = (S_.goalDetail || {})[gid];
+    /* terminal or holding: the loop cannot move it, so stop asking */
+    if (d && !goalIsLive(d)){ goalStopPoll(); return; }
+    if (!goalPollBusy){
+      goalPollBusy = true;
+      try { await loadGoal(gid); }
+      catch (e) {}
+      finally { goalPollBusy = false; }
+    }
+    /* re-armed only AFTER the response, so one slow read delays the next
+       tick instead of overlapping it */
+    if (goalScreenOpen(gid) && goalPollGid === gid){
+      const now = (((typeof S !== "undefined" && S.goalDetail) || {})[gid]);
+      if (!now || goalIsLive(now)) goalPollTimer = setTimeout(tick, GOAL_POLL_MS);
+      else goalStopPoll();
+    }
+  };
+  goalPollTimer = setTimeout(tick, GOAL_POLL_MS);
+}
+
+/* called from SCREENS.goal on every paint: arms the poll for a live goal,
+   disarms it the moment the goal stops being live. Idempotent. */
+function goalSyncPoll(gid){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const d = (S_.goalDetail || {})[gid];
+  if (gid && goalScreenOpen(gid) && (!d || goalIsLive(d))) goalStartPoll(gid);
+  else goalStopPoll();
+}
+
 function openGoal(gid){
   if (typeof S === "undefined" || !gid) return;
   S.goalSel = gid;
@@ -755,11 +983,13 @@ function openGoal(gid){
   else S.screen = "goal";
   goalOwnDest();                     /* openScreen may re-derive it */
   loadGoal(gid);
+  goalStartPoll(gid);
   if (typeof render === "function") render();
 }
 
 function closeGoal(){
   if (typeof S === "undefined") return;
+  goalStopPoll();                    /* leaving the workspace ends the poll */
   S.goalSel = null;
   goalOwnDest();
   if (typeof openScreen === "function") openScreen("goals");
@@ -852,8 +1082,12 @@ if (typeof SCREENS !== "undefined"){
     const S_ = (typeof S !== "undefined") ? S : {};
     if (S_.goalSel && !(S_.goalDetail || {})[S_.goalSel]){
       loadGoal(S_.goalSel);
+      goalSyncPoll(S_.goalSel);
       return `<div class="zero"><h4>Goal</h4><p>Looking…</p></div>`;
     }
+    /* every paint re-decides: a goal that just went blocked stops the poll
+       on the same render that shows the founder it is blocked */
+    goalSyncPoll(S_.goalSel);
     return goalWorkspaceHtml();
   };
 }

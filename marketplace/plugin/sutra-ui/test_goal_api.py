@@ -23,6 +23,7 @@ import app as app_module  # noqa: E402
 import goal_lifecycle  # noqa: E402
 import goal_store  # noqa: E402
 import providers  # noqa: E402
+import session_runtime  # noqa: E402
 from goal_store import GoalStore  # noqa: E402
 from mission_engine import MissionStore  # noqa: E402
 
@@ -30,6 +31,11 @@ HDR = {"X-Sutra-Panel": app_module.PANEL_TOKEN,
        "Origin": "http://127.0.0.1:8330"}
 BASE = "/api/shadow/goals"
 C_ART = "contains_artifact"
+
+
+class _LiveRt:
+    """The fixture chat's runtime: alive, and never touched by these tests."""
+    alive = True
 
 
 class Base(unittest.TestCase):
@@ -47,9 +53,16 @@ class Base(unittest.TestCase):
         providers.SETTINGS_PATH = self.settings
         self.goals = GoalStore()
         self.missions = MissionStore()
+        # Start/Resume now require a chat Shadow can actually speak into
+        # (2026-09-11): a live runtime for the fixture session is what a real
+        # target has. `ensure_runtime` returns it untouched -- the founder
+        # always wins -- so nothing is spawned and no transcript is read.
+        self._rt = _LiveRt()
+        session_runtime.register_runtime("01a081", self._rt)
 
     def tearDown(self):
         providers.SETTINGS_PATH = self._orig
+        session_runtime.unregister_runtime("01a081", self._rt)
         self.tmp.cleanup()
 
     def flag_off(self):

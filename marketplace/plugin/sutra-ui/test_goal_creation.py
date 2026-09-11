@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import app as app_module  # noqa: E402
 import providers  # noqa: E402
+import session_runtime  # noqa: E402
 import shadow_protocol  # noqa: E402
 from goal_store import GoalStore  # noqa: E402
 from mission_engine import MissionStore  # noqa: E402
@@ -48,8 +49,15 @@ class TestGoalBlock(unittest.TestCase):
         self.assertEqual([c["check"] for c in g["done_when"]],
                          ["referral webhook returns 200",
                           "end-to-end referral test"])
+        # 2026-09-11: the proposal boundary no longer passes a tier
+        # through unchecked. "referral webhook returns 200" is literal, so
+        # it stays machine-checkable; `verify` is not offered to proposals
+        # (no production caller injects a verifier, so such a check could
+        # never be met by anyone) and becomes the founder's to confirm.
         self.assertEqual([c["tier"] for c in g["done_when"]],
-                         ["contains_artifact", "verify"])
+                         ["contains_artifact", "founder_confirm"])
+        self.assertEqual(g["done_when"][1]["proposed_tier"], "verify",
+                         "and the re-tier is visible, not silent")
         self.assertNotIn("```goal", display, "the block is stripped")
         self.assertIn("Here is what I will pursue", display)
 
@@ -104,9 +112,15 @@ class TestProposalThroughTheChatRoute(unittest.TestCase):
         providers.SETTINGS_PATH = self.settings
         self.goals = GoalStore()
         self.missions = MissionStore()
+        # Start now attaches first, so the target chat must be reachable
+        # (2026-09-11). A live runtime is returned untouched by
+        # ensure_runtime -- nothing spawns, nothing is read from disk.
+        self._rt = type("LiveRt", (), {"alive": True})()
+        session_runtime.register_runtime("01a081", self._rt)
 
     def tearDown(self):
         providers.SETTINGS_PATH = self._orig
+        session_runtime.unregister_runtime("01a081", self._rt)
         self.tmp.cleanup()
 
     def _reply(self, raw, scope_id="01a081"):

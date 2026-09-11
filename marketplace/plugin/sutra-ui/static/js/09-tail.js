@@ -58,6 +58,15 @@ function applySessionChange(rows){
             scheduleRender(); });
       }
     }
+    /* THE ASSIGNMENT WORKSPACE watches a chat it does not have open as a
+       pane: Shadow drives the target headlessly, so the openPanes gate
+       above skips it and its RHS transcript would never move. Same event,
+       its own 1s throttle, its own fetch -- no pane state is read or
+       written here. typeof-guarded so this file keeps working with
+       18-goal-workspace.js absent. */
+    if (typeof goalTranscriptChanged === "function"){
+      try { goalTranscriptChanged(s.id); } catch (e) {}
+    }
   });
   if (needList) scheduleSessionRefresh(); else scheduleRender();
 }

@@ -40,7 +40,7 @@ import switch_egress
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
                              register_runtime, unregister_runtime,
-                             lookup_runtime)
+                             lookup_runtime, NoLiveRuntime)
 from acp_runtime import AcpRuntime
 from codex_runtime import CodexRuntime
 
@@ -1637,7 +1637,15 @@ _SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
 SHADOW_PROVIDERS = frozenset({"claude"})
 
 
-def _shadow_args():
+def _shadow_args(session_id=None):
+    """Claude's argv for Shadow and its runtimes.
+
+    `session_id` is the ONE addition (2026-09-11): passed through to
+    build_agent_args, which already turns it into `--resume <id>`. Omitted
+    -- the default, and every pre-existing caller -- the argv is byte for
+    byte what it has always been, which is what keeps new-delegate spawning
+    unchanged.
+    """
     detail = providers.active_provider_detail()
     prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
     if not prov or not prov.get("bin_path"):
@@ -1664,7 +1672,8 @@ def _shadow_args():
             "active provider is %r (%s). Switch to Claude to use Shadow -- "
             "chat panes still run %s." % (prov["id"], prov["name"],
                                           prov["name"]))
-    return build_agent_args(prov["bin_path"], "", "plan", stream_input=True)
+    return build_agent_args(prov["bin_path"], "", "plan",
+                            session_id=session_id, stream_input=True)
 
 
 def _shadow_workdir_for_delegates():
@@ -1800,6 +1809,15 @@ async def _shadow_recover():
             pass
         try:
             shadow_runner.set_default_provisioner(_default_delegate_spawner)
+        except Exception:
+            pass
+        try:
+            # SHADOW DRIVES from turn 1. Same argv builder and same empty
+            # workdir Shadow's own session uses (SHADOW.md-only context,
+            # fast turns) -- and deliberately WITHOUT SUTRA_MCP_SHADOW, so
+            # the reasoning call has no shadow tools and can only answer.
+            shadow_runner.set_default_decider(
+                shadow_runner.make_decider(_shadow_args, _shadow_workdir()))
         except Exception:
             pass
 
@@ -2274,6 +2292,26 @@ def _goal_detail(store, g):
     return row
 
 
+async def _ensure_target_runtime(session_id):
+    """Give Shadow something to speak through in an EXISTING chat.
+
+    Deliberately called from the Start/Resume HANDLER rather than from
+    _validated_say: the say path is the one place every check is enforced,
+    and making it a process manager as well would mean a spawn could happen
+    inside any check-and-say. It is also not folded into
+    start_mission_async: that runs in the background precisely because
+    PROVISIONING takes minutes, whereas attaching is one
+    create_subprocess_exec and no turn -- so doing it in the request means a
+    chat Shadow cannot reach is refused BEFORE an attempt exists, instead of
+    creating a doomed one.
+
+    Raises NoLiveRuntime, which the handler turns into a 409.
+    """
+    return await shadow_runner.ensure_runtime(
+        session_id, lambda sid: _shadow_args(session_id=sid),
+        register_runtime)
+
+
 def _start_goal_attempt(mission):
     """Admit + launch one goal attempt through the EXISTING mission start
     path, so admission, the cap, FIFO and the runner behave identically to
@@ -2358,12 +2396,17 @@ async def api_shadow_goal_act(gid: str, request: Request):
     store, _g = _goal_or_404(gid)
     try:
         if action == "start":
+            # BEFORE the attempt exists: a chat Shadow cannot reach is
+            # refused with the goal untouched in `draft`, rather than
+            # spending an attempt on a mission that can never say anything.
+            await _ensure_target_runtime(_g.get("target_session"))
             m = _goal_lifecycle.start_first_attempt(
                 gid, template=body.get("template") or "fix")
             started = _start_goal_attempt(m)
             return {"goal": _goal_detail(store, store.load(gid)),
                     "mission_id": m["id"], "started": started}
         if action == "resume":
+            await _ensure_target_runtime(_g.get("target_session"))
             m = _goal_lifecycle.resume_goal(
                 gid, extra_turns=int(body.get("extra_turns") or 0),
                 template=body.get("template") or "fix")
@@ -2390,9 +2433,21 @@ async def api_shadow_goal_act(gid: str, request: Request):
             # the EXISTING confirmation writer; no new verification here
             m = mstore.confirm_check(mid, int(body.get("index") or 0))
             _goal_lifecycle.record_founder_confirmation(m)
+            # ...and DECIDE. Recording the confirmation was never enough:
+            # evaluate_done_when only ever ran inside the loop, and that
+            # loop returned when it paused. settle_confirmation is the
+            # loop's own evaluate-and-decide step, with no turn spent.
+            shadow_runner.settle_confirmation(mid)
             return _goal_detail(store, store.load(gid))
     except HTTPException:
         raise
+    except NoLiveRuntime as exc:
+        # the goal is untouched -- still draft or still blocked, nothing
+        # spent -- so the founder can simply act again. `block_reason` is
+        # the same deterministic id the panel already maps to copy.
+        raise HTTPException(409, {"detail": str(exc),
+                                  "block_reason": exc.reason,
+                                  "goal_id": gid})
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     raise HTTPException(400, "unknown action %r" % action)
@@ -2447,7 +2502,10 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # has already signed off, so reflect it now instead of waiting
             # for the attempt to resume and re-evaluate
             _goal_hook_safe("record_founder_confirmation", m)
-            return m
+            # the SAME settle the goal arm runs -- both entry points end a
+            # confirmation the same way or one of them is a dead end again
+            settled = shadow_runner.settle_confirmation(mid)
+            return settled or store.load(mid)
         if action == "resume":
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, None)
@@ -2500,7 +2558,10 @@ def _validated_say(sid, mission_id, msg, dedupe_key=None):
         raise HTTPException(403, "the shadow flag is off")
     rt = lookup_runtime(sid)
     if rt is None:
-        raise HTTPException(404, "no live runtime for session %s" % sid)
+        # A PRECONDITION, not a rejection -- typed so the runner can retry it
+        # instead of burying the attempt. The HTTP arm below still answers
+        # 404, so the wire contract is unchanged.
+        raise NoLiveRuntime(sid)
     import mission_engine as _me
     m = _me.MissionStore().load(mission_id)
     if m is None:
@@ -2540,7 +2601,12 @@ async def api_session_say(sid: str, request: Request):
     mission = (body.get("mission_id") or "").strip()
     if not msg or not mission:
         raise HTTPException(400, "message and mission_id are required")
-    return _validated_say(sid, mission, msg, body.get("dedupe_key"))
+    try:
+        return _validated_say(sid, mission, msg, body.get("dedupe_key"))
+    except NoLiveRuntime as exc:
+        # the endpoint keeps the 404 it has always answered; only the runner
+        # cares that this one is retryable
+        raise HTTPException(404, str(exc))
 
 
 def _seed_is_another_providers(seed, active_id, sutra_id):

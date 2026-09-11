@@ -620,6 +620,35 @@ def lookup_runtime(session_id):
     return RUNTIMES.get(session_id)
 
 
+class NoLiveRuntime(Exception):
+    """No runtime is registered for this session.
+
+    A PRECONDITION, NOT A REJECTION, and the distinction is the whole
+    point of this class. Nothing was said, no turn was consumed, no floor
+    was tripped and the chat was not refused -- Shadow simply had nothing
+    to speak through at that instant. The same attempt becomes possible
+    the moment a runtime exists, so a caller that can retry must be able
+    to tell this apart from a say the system actually turned down.
+
+    First flight (goal g-35fadb0ea2ac, 2026-09-11): every refusal looked
+    alike to the runner, so the founder navigating from Chats to Shadow
+    between the last turn and Start killed the attempt as `failed` and
+    blocked the goal with the uninterpretable reason "attempt m-... failed".
+
+    It lives here, next to RUNTIMES, because that is the fact it reports
+    and because both the say path (app) and the mission runner can import
+    this module without either importing the other.
+    """
+
+    #: the deterministic blocker id the mission/goal layers store and the
+    #: panel maps to human copy. Never a free-text message.
+    reason = "no_live_runtime"
+
+    def __init__(self, session_id):
+        self.session_id = session_id
+        super().__init__("no live runtime for session %s" % session_id)
+
+
 # -------------------------------------------------------------- turn queue --
 class TurnQueue:
     """S24/S25: priority queue for injected turns.

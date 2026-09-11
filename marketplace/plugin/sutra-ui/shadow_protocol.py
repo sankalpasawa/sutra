@@ -32,6 +32,89 @@ import re
 _BLOCK = re.compile(r"```(mission|goal|chips|remember)\s*\n(.*?)```", re.S)
 
 
+# ---------------------------------------------------- the tier contract ---
+# WHY THIS EXISTS (live flight, goal g-d804849d1400, 2026-09-11). Shadow
+# proposed two checks under `contains_artifact`:
+#
+#   "An explicit winner named as the final choice -- the word 'Python' or
+#    'Go' stated as the pick, not a 'depends' or 'both work' hedge"
+#   "Three distinct concrete reasons listed for that pick, each tied to a
+#    specific tradeoff ... rather than generic praise"
+#
+# `contains_artifact` is a LITERAL SUBSTRING TEST (mission_engine:284) and
+# always will be -- it is the one tier with no judgement in it. A criterion
+# DESCRIPTION can never appear verbatim in a transcript, so both checks were
+# structurally unsatisfiable. The chat answered perfectly ("## Winner:
+# **Python**", three reasons); both checks still read False, the unmet list
+# never changed, the follow-up say repeated itself and the ping-pong guard
+# correctly stopped the attempt. Nothing was broken except the contract.
+#
+# SHADOW.md already says contains_artifact is "a string that must appear in
+# the chat". The model had the right instruction and produced the wrong
+# thing, so the boundary enforces it rather than asking again.
+#
+# THE RULE: a proposal's tier is ADVISORY. What decides is the SHAPE of the
+# check, and a check that is not literal-shaped becomes founder_confirm --
+# kept, never dropped, and answerable by the one party who can judge it.
+
+#: what a Shadow PROPOSAL may end up carrying. `verify` is deliberately
+#: absent: evaluate_done_when scores it with an injected verifier, and NO
+#: production caller passes one (_start_goal_attempt omits it), so a
+#: `verify` check is unsatisfiable by anyone. Proposing it would be the same
+#: bug wearing a different label. Restore it here when a verifier is wired.
+PROPOSAL_TIERS = ("contains_artifact", "founder_confirm")
+
+#: when machine-checking is not available, the founder is
+FALLBACK_TIER = "founder_confirm"
+
+#: a literal artifact is a MARKER, not a sentence: short, few words, and
+#: free of the punctuation and vocabulary that only appear when someone is
+#: DESCRIBING a requirement rather than quoting one.
+_ARTIFACT_MAX_CHARS = 60
+_ARTIFACT_MAX_WORDS = 8
+_CRITERION_MARKER = re.compile(
+    "(\u2014|\u2013"              # em/en dash: introduces an aside
+    "|\\b(?:not|rather|instead|each|either|such as|e\\.g\\.|etc"
+    "|distinct|concrete|explicit(?:ly)?|genuine|generic|appropriate"
+    "|relevant|valid|reasonable|must|should|listed|stated|named"
+    "|tied|hedge|at least|no more than)\\b)", re.I)
+
+
+def is_literal_artifact(check):
+    """Could this string plausibly appear VERBATIM in a transcript?
+
+    Deterministic and deliberately conservative: every false negative costs
+    one founder sign-off, while a false positive is the unsatisfiable check
+    this whole function exists to prevent. Erring toward the founder is the
+    cheap direction.
+    """
+    s = str(check or "").strip()
+    if not s or len(s) > _ARTIFACT_MAX_CHARS:
+        return False
+    if len(s.split()) > _ARTIFACT_MAX_WORDS:
+        return False
+    return _CRITERION_MARKER.search(s) is None
+
+
+def tier_for(check, proposed=None):
+    """The tier a proposed check ACTUALLY gets.
+
+    `proposed` is what Shadow asked for and is never trusted on its own: an
+    unknown tier, `verify`, or a missing tier all resolve deterministically
+    rather than being passed through. Only `contains_artifact` on a
+    literal-shaped string survives as machine-checkable; everything else
+    keeps its wording and becomes the founder's to confirm.
+    """
+    want = str(proposed or "").strip()
+    if want == "contains_artifact" and is_literal_artifact(check):
+        return "contains_artifact"
+    if want == FALLBACK_TIER:
+        return FALLBACK_TIER
+    # missing, `verify`, unknown, or a semantic string under
+    # contains_artifact -- all one answer, and it is never "drop the check"
+    return FALLBACK_TIER
+
+
 def parse_reply(text):
     """Returns (display_text, {mission?, goal?, chips?, remember?}).
     Malformed json in a block drops THAT block (kept in display so nothing
@@ -61,9 +144,14 @@ def parse_reply(text):
             checks = []
             for c in (val.get("done_when") or []):
                 if isinstance(c, dict) and str(c.get("check") or "").strip():
-                    checks.append({
-                        "tier": c.get("tier") or "contains_artifact",
-                        "check": str(c["check"]).strip()[:300]})
+                    text = str(c["check"]).strip()[:300]
+                    tier = tier_for(text, c.get("tier"))
+                    row = {"tier": tier, "check": text}
+                    if tier != c.get("tier"):
+                        # what the card tells the founder, so a re-tier is
+                        # visible rather than a silent correction
+                        row["proposed_tier"] = c.get("tier") or None
+                    checks.append(row)
             out["goal"] = {"outcome": str(val["outcome"]).strip()[:500],
                            "done_when": checks,
                            "target_session": val.get("target_session") or None}
