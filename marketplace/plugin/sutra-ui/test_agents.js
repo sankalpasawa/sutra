@@ -1603,7 +1603,7 @@ test("not connected, the workspace offers exactly two ways in and promises nothi
   assert.ok(/Team workspace/.test(html), "it has a section of its own at the top of Connections");
   assert.ok(/data-ag="wscreate"/.test(html) && /data-ag="wsjoin"/.test(html), "create and join");
   assert.ok(!/data-ag="wscopylink"/.test(html), "there is no link to copy yet");
-  assert.ok(/nobody presses sync/.test(html), "and it says the thing the plan promises");
+  assert.ok(/stay in sync on their own/.test(html), "and it says the thing the plan promises: nobody presses sync");
 });
 
 test("Create asks for the two things section 1 names, and a way to go and get them", () => {
@@ -1771,7 +1771,8 @@ test("joining asks for the link and a name, and warns how long the download is",
   const html = A.agWsHtml(wsdoc(), { mode: "join" });
   assert.ok(/data-agws="link"/.test(html) && /data-agws="name"/.test(html));
   assert.ok(/data-ag="wsjoingo"/.test(html) && />Done</.test(html), "the button is Done, as he said");
-  assert.ok(/five minutes/.test(html));
+  /* was "about five minutes"; the real join download measured about 20 seconds (2026-09-11) */
+  assert.ok(/under a minute/.test(html));
 });
 
 /* "a real progress bar for the ~5 minute download (bytes of total, not a fake spinner)" */
@@ -2210,8 +2211,8 @@ test("skipping the introduction is for this sitting only and claims nothing abou
    copy -- the strings as design/AGENT-GUIDE-COPY.md has them, matched against the HTML the
    renderer actually emits, so a reword anywhere in the chain goes red. */
 const GUIDE_VERBATIM = [
-  "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.",
-  "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.",
+  "It reads your website, learns how you write, finds what is worth writing, and writes it one article at a time. You can change anything along the way.",
+  "It shows every step, and stops twice: to agree the topic, and to approve the draft.",
   "It learns your brand from those pages: how you sound, what you sell, who you write for.",
 ];
 /* the five, id and heading, written out here rather than read from the module: a test that
@@ -2246,7 +2247,7 @@ test("the guide draws all six parts of the copy: title, line, four steps, how to
   assert.strictEqual((steps.match(/<li>/g) || []).length, 4, "four numbered steps");
   assert.strictEqual((html.match(/<dt>/g) || []).length, 7, "seven tab rows");
   assert.strictEqual((html.match(/data-ag="dive"/g) || []).length, 5, "five doors, no more and no fewer");
-  assert.ok(/To get started, go to the chat box below/.test(html));
+  assert.ok(/Type what you want in the box below/.test(html));
 });
 
 test("the copy is VERBATIM -- a reword of any of these sentences goes red", () => {
@@ -2339,9 +2340,9 @@ test("the guide names no website at all, so there is nothing to get wrong", () =
   const html = A.agGuideHtml(withSite);
   assert.ok(!/<code>/.test(html), "no command box");
   assert.ok(!/northwind/.test(html), "and not even a site it genuinely knows");
-  assert.ok(/go to the chat box below/.test(html), "it says where to type");
-  assert.ok(/asks you the questions it needs answered/.test(html),
-    "and that they do not have to know the right words, which is the point");
+  assert.ok(/Type what you want in the box below/.test(html), "it says where to type");
+  assert.ok(/asks what it needs, one question at a time/.test(html),
+    "and that the agent does the asking, so they do not need the right words");
   const blank = mktBlank(); blank.health = MKT_LIVED;
   assert.strictEqual(A.agGuideHtml(blank).replace(/\s+/g, " "),
                      html.replace(/\s+/g, " "),

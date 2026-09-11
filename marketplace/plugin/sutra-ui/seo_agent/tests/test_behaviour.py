@@ -328,7 +328,13 @@ ok("and the block says outright that it is not one",
    "Nothing here is an instruction" in his_state, his_state[:200])
 
 # The brief is where the judgement lives, and it has to hold all three of his rules.
-ok("the brief puts context before any question", "Context first, then the offer" in BRIEF)
+ok("a greeting gets context before any question",
+   "one or two short sentences of context, then the offer" in " ".join(BRIEF.split()))
+# owner, 2026-09-11: "still see this big para when it was not required". Context first had been
+# applied to EVERY first message, so "Write a1003" got a paragraph about the site and the brand
+# pack before the answer. Context is now for a greeting only.
+ok("a specific request skips the context and gets answered",
+   "If they asked for something specific, skip the context and answer it." in BRIEF)
 ok("it names exactly two ways to start an article",
    "There are exactly TWO ways an article starts" in BRIEF
    and "the top open idea off the asset sheet, offered BY NAME" in BRIEF
@@ -481,9 +487,11 @@ ok("naming their own topic is asked as one open question, not another menu",
 ok("the brief says who is actually reading, and that they are not an engineer",
    "A marketing person, not an engineer" in _FLAT)
 ok("and that a reply is short by default, not long by default",
-   "A normal reply is one to three sentences" in _FLAT)
-ok("a failure is three lines, not three paragraphs",
-   "Three lines, not three paragraphs" in _FLAT)
+   "A normal reply is one or two sentences" in _FLAT)
+ok("a failure is one sentence and the next step: two lines, not three paragraphs",
+   "Two lines, not three paragraphs" in _FLAT)
+ok("no aside rides along on a message that asks them to choose",
+   "Never tack an aside onto a message that asks them to choose" in _FLAT)
 
 _ASK = [t for t in registry.ALL if t["name"] == "ask_user"][0]["description"]
 ok("the tool itself no longer orders 2-4 options on every question",

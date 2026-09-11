@@ -213,17 +213,15 @@ def _preflight(ctx, redo, placeholder_numbers, say):
                             "number here is real" % bal)
     say("Not enough DataForSEO balance to start", "The balance is $%.2f and a run needs $%.2f"
         % (bal, MIN_CREDITS))
-    return ({"summary": "The research did not start: there is not enough DataForSEO balance to "
-                        "buy the numbers ($%.2f on the account)." % bal,
-             "error": ("Every number in a research brief is bought from DataForSEO: the search "
-                       "volumes, the difficulty, the live search results and the pages that win. "
-                       "The balance is $%.2f and a run needs at least $%.2f, so not one figure in "
-                       "this brief would be measured, and twenty minutes of writing on estimates "
-                       "is worse than no writing at all. Top up the DataForSEO account and ask me "
-                       "again, or tell me you want it anyway and I will run it on placeholder "
-                       "numbers with every one of them marked as not real (call run_research again "
-                       "with placeholder_numbers set to true). I will not guess at this."
-                       % (bal, MIN_CREDITS))}, False, "")
+    # ONE LINE, NOT A LECTURE (owner, 2026-09-11: "it could simply have been 'not enough
+    # DataForSEO credits'"). This used to hand the agent a 70-word explanation of what DataForSEO
+    # buys and why estimates are worse than nothing, and the agent read it back to the person,
+    # paragraph and all. It now carries only what the agent needs: the fact, and the two ways on.
+    return ({"summary": "Research did not start: not enough DataForSEO credits ($%.2f)." % bal,
+             "error": ("Not enough DataForSEO credits: the balance is $%.2f and research needs "
+                       "$%.2f. Say that in one line, then ask: top up, or go ahead on placeholder "
+                       "numbers marked as not real (call run_research again with "
+                       "placeholder_numbers set to true)." % (bal, MIN_CREDITS))}, False, "")
 
 
 def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_target=None, **_ignored):

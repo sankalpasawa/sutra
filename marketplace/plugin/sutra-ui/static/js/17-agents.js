@@ -770,7 +770,7 @@ function agHeroHtml(health, conns){
        "Suggest six topics we could own."];
   const plays = ready ? [
     topPlay,
-    ["Write an article about a topic I name", "Real keyword numbers, the pages that win, evidence with sources, a plan, then the draft in your voice. It stops twice: the topic and the draft.",
+    ["Write an article about a topic I name", "Researches it, plans it, and writes the draft in your voice. It stops twice: the topic and the draft.",
      "Write an article about "],
     /* A third play -- rewrite one of the pages we already have -- was DELETED (owner,
        2026-09-09). It was written before the reuse check existed and nothing was ever wired
@@ -855,7 +855,7 @@ function agSeoCardHtml(a){
     <span class="cm" aria-hidden="true">S</span>
     <span class="cb">
       <span class="ct">SEO Writer</span>
-      <span class="cd">Researches a topic with real keyword numbers, reads what already ranks, gathers evidence with sources, plans the article and writes it in your voice.</span>
+      <span class="cd">Researches a topic, plans the article, and writes it in your voice, with sources.</span>
       <span class="cs"><i class="dot ${state[0]}" aria-hidden="true"></i>${agEsc(state[1])}</span>
       ${facts ? `<span class="cf">${facts}</span>` : ""}
       ${next ? `<span class="cn">${next}</span>` : ""}
@@ -1138,13 +1138,16 @@ function agGuideTabNames(){ return AG_GUIDE_TABS.map(t => t[0]); }
    template literal it would carry the source file's own newlines and indentation into the DOM,
    and the test that holds these sentences verbatim could then only match a normalised copy of
    them -- which is exactly the loophole a later reword would slip through. */
-const AG_GUIDE_LEAD = "It reads your website, learns how you write, works out what is worth writing, and then researches and writes one article at a time. You watch it happen, and you can change anything before it carries on.";
+const AG_GUIDE_LEAD = "It reads your website, learns how you write, finds what is worth writing, and writes it one article at a time. You can change anything along the way.";
 /* NO COMMAND BOX. It printed `Set up <your domain>` in a mono block, which read as a thing to
    copy and made a two-word instruction look like a command line. The owner: "need not show
    like a chat button below, just say them to type this in the chat section, that is it."
    Dropping it also removes the last place the guide had to name the site at all. (2026-09-10) */
-const AG_GUIDE_TYPE = "To get started, go to the chat box below and type what you want. You do not need to know the right words for it: the agent asks you the questions it needs answered, one at a time.";
-const AG_GUIDE_AFTER = "That is all it needs. It will say what it is doing at every step, and it stops twice to ask you something: once to agree the shape of the article, once to approve the draft.";
+/* SHORTER, AND THE TWO STOPS CORRECTED (2026-09-11). AFTER used to say it stops "to agree the shape
+   of the article", which it has not done since the owner ruled the stops are the TOPIC and the
+   DRAFT; the plan lands in the Library and is not waited on. */
+const AG_GUIDE_TYPE = "Type what you want in the box below. The agent asks what it needs, one question at a time.";
+const AG_GUIDE_AFTER = "It shows every step, and stops twice: to agree the topic, and to approve the draft.";
 
 const AG_GUIDE_STEPS = [
   "It reads your site. Every page, all the text, and what each page already ranks for.",
@@ -2128,11 +2131,7 @@ function agAssetsHtml(as, a){
   if (!as.built) return `<div class="ag-view"><h2>Asset ideas</h2>
     <p class="lead">What is worth writing about, worked out from evidence rather than a hunch.</p>
     <div class="ag-row"><div class="ri"><div class="rn">Not built yet</div>
-      <div class="rd">Three ways of finding ideas, kept apart until the end: which competitor pages
-        actually earn links and the shape that earned them, formats proven in other industries, and
-        what your audience argues about in public. Then they are merged, ranked, and checked against
-        pages you already have.<br><br>It takes about half an hour and it stops twice to ask you:
-        once for the competitor list, once for the communities.</div>
+      <div class="rd">Finds what's worth writing: what earns your competitors links, formats that work elsewhere, and what your audience talks about. About 30 minutes. It asks you twice: the competitors, then the communities.</div>
       <div class="ag-editrow" style="margin-top:10px">
         <button class="btn pri" type="button" data-ag="assetsbuild" ${busy ? "disabled" : ""}>${busy ? "Starting…" : "Work out what to write"}</button>
         <span class="ag-sub">It runs in the chat, so you can watch it and answer as it goes.</span>
@@ -2216,7 +2215,7 @@ function agMethodName(m){ return AG_METHOD_NAMES[m] || m; }
 function agMemoryHtml(m, form){
   const rules = (m && m.rules) || [];
   return `<div class="ag-view"><h2>Memory</h2>
-    <p class="lead">Standing rules about your taste. Every step that shapes or writes prose reads them: the plan, the headings, each section, the edits, the intro and the close. The agent saves one when you say something that should hold for every future article. Add your own here.</p>
+    <p class="lead">Rules the agent follows in every article. It saves one when you tell it something that should always apply, and you can add your own.</p>
     <div class="ag-addrow"><input type="text" data-agmem placeholder="e.g. Never open an article with a question" value="${agEsc(form && form.text || "")}" aria-label="New rule"><button class="btn pri" type="button" data-ag="addmem">Add rule</button></div>
     ${rules.length ? rules.map(r => `<div class="ag-row ${r.active === false ? "off" : ""}"><div class="ri"><div class="rn">${agEsc(r.text)}</div>
         <div class="rm"><span>${agEsc(r.kind || "rule")}</span><span>${r.source === "agent" ? "saved by the agent" : "added by you"}</span><span>${agEsc(agAgo(r.t))}</span></div></div>
@@ -2269,7 +2268,7 @@ function agLibraryHtml(items){
   const list = items || [];
   const bin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
   return `<div class="ag-view"><h2>Library</h2>
-    <p class="lead">Every article, from the moment it starts. A row appears as soon as the agent begins and fills in piece by piece, so you can read any part of one while the rest is still being made. Nothing leaves this Mac; publishing is your step.</p>
+    <p class="lead">Every article, from the moment it starts. You can read one while it is still being written. Nothing is published until you publish it.</p>
     ${list.length ? list.map(it => {
       const status = it.status || "draft";
       const writing = status === "writing";
@@ -2333,7 +2332,7 @@ function agPromptsHtml(d, a){
   const open = a && a.panel && a.panel.view === "prompt" ? a.panel.name : "";
   const edited = (d && d.edited) || [];
   return `<div class="ag-view"><h2>Prompts</h2>
-    <p class="lead">The words the agent writes by. Open one, change it, save it, and the next article is written from your version. Your copy lives with your own files, so an update to the app never overwrites it, and Reset puts a prompt back to what shipped.</p>
+    <p class="lead">The instructions the agent writes by. Change one and the next article uses your version. Reset puts it back.</p>
     <h3 class="sec">How an article gets written</h3>
     ${agFlowHtml(d && d.flow)}
     <h3 class="sec">The prompts${edited.length ? ` <small>${agEsc(edited.length)} changed by you</small>` : ""}</h3>
@@ -2557,9 +2556,7 @@ function agWsFailedHtml(job){
 function agWsCreateFormHtml(f){
   return `<div class="ag-row"><div class="ri">
     <div class="rn">Create a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">Make a free project at Supabase, then paste its two public details here. The data
-      stays in your own Supabase account and nobody else's, and the free tier is more room than a
-      team of five will fill.</div>
+    <div class="rd">Make a free Supabase project and paste its two details here. Your data stays in your own account.</div>
     <div class="ag-form" style="margin-top:10px">
       <div class="row"><a class="btn" href="https://supabase.com/dashboard/projects" target="_blank" rel="noopener">Go to Supabase</a>
         <span class="sp">then Project Settings → Data API</span></div>
@@ -2568,10 +2565,8 @@ function agWsCreateFormHtml(f){
       <label><b>What to call it</b><input type="text" data-agws="name" autocomplete="off" placeholder="Our team" value="${agEsc(f.name || "")}"></label>
       <label><b>Access token <span class="ag-opt">optional</span></b>
         <input type="password" data-agws="token" autocomplete="off" spellcheck="false" placeholder="sbp_… — leave this empty to set the tables up yourself">
-        <span class="ag-hint">With one, Sutra makes the tables for you. It is used for that one
-          request and thrown away: never written to disk, never kept, never in the link. Leave it
-          empty and Sutra hands you the script to paste into Supabase instead —
-          <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">where tokens live</a>.</span></label>
+        <span class="ag-hint">Sutra uses it once to set things up. It is never written to disk and never kept. Leave this empty to get a script to paste instead.
+          <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">Get a token</a>.</span></label>
       ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
       <div class="row"><button class="btn pri" type="button" data-ag="wsgo" ${f.busy ? "disabled" : ""}>${f.busy ? "Working…" : "Create"}</button>
         <button class="btn" type="button" data-ag="wscancel">Cancel</button></div>
@@ -2581,15 +2576,14 @@ function agWsCreateFormHtml(f){
 function agWsJoinFormHtml(f){
   return `<div class="ag-row"><div class="ri">
     <div class="rn">Join a workspace<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">Paste the link whoever set it up sent you, and say what your team should see
-      beside your work. Then the team's Library, ideas and prompts become yours.</div>
+    <div class="rd">Paste the link your teammate sent you, and add your name. You get the team's Library, ideas and prompts.</div>
     <div class="ag-form" style="margin-top:10px">
-      <label><b>The link</b><input type="text" data-agws="link" autocomplete="off" spellcheck="false" placeholder="sutra-ws-…" value="${agEsc(f.link || "")}"></label>
+      <label><b>The link</b><input type="text" data-agws="link" autocomplete="off" spellcheck="false" placeholder="sutra1_…" value="${agEsc(f.link || "")}"></label>
       <label><b>Your name</b><input type="text" data-agws="name" autocomplete="off" placeholder="Ravi" value="${agEsc(f.name || "")}"></label>
       ${f.msg ? `<div class="ag-err" style="margin:0">${agEsc(f.msg)}</div>` : ""}
       <div class="row"><button class="btn pri" type="button" data-ag="wsjoingo">Done</button>
         <button class="btn" type="button" data-ag="wscancel">Cancel</button>
-        <span class="sp">the download takes about five minutes</span></div>
+        <span class="sp">usually takes under a minute</span></div>
     </div></div></div>`;
 }
 
@@ -2691,9 +2685,7 @@ function agWsHtml(ws, f){
   if (f.mode === "join") return head + agWsJoinFormHtml(f);
   return `${head}<div class="ag-row"><div class="ri">
     <div class="rn">Work as a team<span class="ag-status"><i class="dot warn"></i>not connected</span></div>
-    <div class="rd">One person makes the workspace on the company's own Supabase project; everybody else
-      pastes the link once. After that the Library, the ideas and the prompts are the team's, and
-      nobody presses sync ever again.</div>
+    <div class="rd">One person sets it up. Everyone else pastes a link once. After that, the Library, ideas and prompts stay in sync on their own.</div>
     <div class="row" style="margin-top:10px"><button class="btn pri" type="button" data-ag="wscreate">Create workspace</button>
       <button class="btn" type="button" data-ag="wsjoin">Join workspace</button></div>
   </div></div>`;
@@ -2710,7 +2702,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
      it. The lead below counts nothing: a typed number over a list that grows is the mistake the
      Tools tab already made once. */
   return `<div class="ag-view"><h2>Connections</h2>
-    <p class="lead">What the agent needs, and how this Mac joins the rest of the team. Secrets are stored on this Mac, owner-only, and never sent back to this screen.</p>
+    <p class="lead">What the agent needs, and your team. Keys stay on this Mac and are never shown again.</p>
     ${agWsHtml(ws, wsForm)}
     <h3 class="sec">Model</h3>
     <div class="ag-row"><div class="ri"><div class="rn">${prov === "claude-cli" ? "Claude, through the command line" : prov ? agEsc(prov) : "No model available"}
@@ -2718,7 +2710,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       <div class="rd">${prov ? "The same sign-in the chat uses. No API key anywhere." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div></div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
     <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
-      <div class="rd">Keyword volumes, difficulty, who ranks, the questions people ask and Google's own answer come from here. Research needs it. Each research run costs under a dollar of their credit.</div>
+      <div class="rd">Real search numbers: how many people search, how hard it is to rank, and who ranks now. Research needs it. Under $1 an article.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>Login</b><input type="text" data-agdfs="login" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "the email you sign in with"}" value="${agEsc(form.login || "")}"></label>
         <label><b>API password</b><input type="password" data-agdfs="password" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "from app.dataforseo.com → API access"}" value="${agEsc(form.password || "")}"></label>
@@ -2726,7 +2718,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       </div></div></div>
     <h3 class="sec">Voyage · pages indexed by meaning</h3>
     <div class="ag-row"><div class="ri"><div class="rn">Voyage <span class="ag-status"><i class="dot ${voy ? "ok" : "warn"}"></i>${voy ? "connected" : "not connected"}</span></div>
-      <div class="rd">Reads every page and works out what it is about, so the agent can find the right page of yours to link to from each section, and tell whether you already write about a topic. The free tier is enough for a whole site.</div>
+      <div class="rd">Helps the agent find your own pages to link to. The free plan covers a whole site.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>API key</b><input type="password" data-agvoy="key" autocomplete="off" placeholder="${voy ? "•••••• (set)" : "pa-… from dash.voyageai.com"}" value="${agEsc(form.voyage || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savevoy">Save</button>${voy ? `<button class="btn" type="button" data-ag="clearvoy">Disconnect</button>` : ""}<span class="sp">${form.vmsg ? agEsc(form.vmsg) : ""}</span></div>
