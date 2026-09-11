@@ -24,5 +24,41 @@ and forty-eight more. Pytest refuses those as duplicate basenames:
 Which means step 4 of PUBLISH-CHECK.md -- the whole backend gate -- could not run at
 all on the machine doing the release, while running fine everywhere else. Named
 explicitly rather than ignoring electron/ wholesale, so a real Python test added under
-electron/ later is still collected."""
+electron/ later is still collected.
+
+THE REGISTRY HOME IS REDIRECTED TO A TEMP DIR BEFORE COLLECTION (2026-09-11). On
+2026-09-11 a whole-directory pytest run emptied the operator's live registry twice
+(holding/research/2026-09-11-registry-reset-rca.md): the first collected test imported
+app -> org_api -> placement_engine, which froze the REAL ~/.sutra-native home at import,
+so the temp home two later test modules set in setUp() was a no-op and their setUp()
+os.remove() ran against the real domain files. The engine now refuses the default home
+under pytest (2.264.0), which turns that into an error instead of a deletion -- but only
+tests that set their own temp home can still run. This rule gives every test a temp
+home at the earliest point pytest offers, before any test module is imported, unless the
+operator already pointed SUTRA_NATIVE_HOME somewhere outside ~/.sutra-native or
+deliberately set SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1. Tests that bind their own temp
+home in setUp() keep doing so on top of this; sutra/marketplace/plugin/tests/
+temp-root-guard-test.sh checks that this assignment is present."""
+import atexit
+import os
+import shutil
+import tempfile
+
 collect_ignore = ["seo_agent", "electron/payload", "electron/dist"]
+
+
+def _redirect_registry_home_to_temp() -> None:
+    if os.environ.get("SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS") == "1":
+        return
+    real_root = os.path.realpath(os.path.expanduser("~/.sutra-native"))
+    current = os.environ.get("SUTRA_NATIVE_HOME", "").strip()
+    if current:
+        resolved = os.path.realpath(os.path.expanduser(current))
+        if resolved != real_root and not resolved.startswith(real_root + os.sep):
+            return  # operator-provided temp home: leave it alone
+    home = tempfile.mkdtemp(prefix="sutra-ui-pytest-home-")
+    os.environ["SUTRA_NATIVE_HOME"] = home
+    atexit.register(shutil.rmtree, home, True)
+
+
+_redirect_registry_home_to_temp()
