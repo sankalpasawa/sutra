@@ -493,6 +493,28 @@ ok("a failure is one sentence and the next step: two lines, not three paragraphs
 ok("no aside rides along on a message that asks them to choose",
    "Never tack an aside onto a message that asks them to choose" in _FLAT)
 
+# owner, 2026-09-12: "it didn't intimate me, it didn't tell me anything before asking the
+# questions... there should be a very proper structure while the agent is answering". Setup is
+# the one place the agent may say how it works, and it must, because the person cannot see what
+# is ahead and every step is long.
+ok("setup is carved out of the rule that forbids explaining how you work",
+   "Setup is the one exception" in _FLAT)
+ok("the brief carries the say-what-is-coming rule",
+   "Say what is coming, before it comes" in BRIEF)
+ok("one line before each stage, and it names what they get",
+   "ONE short line before each of the three stages" in _FLAT
+   and "what you are about to do, and what they get at the end of it" in _FLAT)
+ok("the website question now carries one line saying what setup is",
+   "ONE sentence saying what setup is" in _FLAT)
+ok("the four questions are announced before they start, not sprung",
+   "say, once, that they are coming" in _FLAT)
+ok("...and the agent still does not ask them itself, or list them as a menu",
+   "do not ask them yourself" in _FLAT and "Do not list the four as a menu" in _FLAT)
+ok("the brand pack is said to land in the Knowledge tab",
+   "it is there to read in the Knowledge tab" in _FLAT)
+ok("no invented durations sneak in with the new copy",
+   "A duration only if the tool card gave you one." in _FLAT)
+
 _ASK = [t for t in registry.ALL if t["name"] == "ask_user"][0]["description"]
 ok("the tool itself no longer orders 2-4 options on every question",
    "Give 2-4 options" not in _ASK and "takes NO options" in _ASK)

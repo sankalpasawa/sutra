@@ -173,7 +173,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, viewBusy: null, facePick: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, viewBusy: null, facePick: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
@@ -946,25 +946,38 @@ function agChooseHtml(a){
     ${a.coErr ? `<div class="note b" role="status">${agEsc(a.coErr)}</div>` : ""}
     ${!rows ? `<div class="ag-vload" role="status"><span class="sp" aria-hidden="true"></span><span>Reading your companies…</span></div>`
       : naming ? form("Company name", "conamego", "The agent asks for the website next, the way it does on a first run.")
-      : `<div class="ag-cards">${rows.map(c => agCoCardHtml(c, busy)).join("")}</div>
+      : `<div class="ag-cards">${rows.map(c => agCoCardHtml(c, busy, a.coMenu === c.id)).join("")}</div>
          ${f.mode === "add" ? form("New company", "coaddgo", "It gets its own knowledge, chats and library. The agent asks for its website next.")
            : `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-ag="coadd" ${busy ? "disabled" : ""}>${AG_ICON.plus} Add another company</button></div>`}`}
     <div class="row" style="margin-top:22px"><button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button></div>
   </div>`;
 }
 
-function agCoCardHtml(c, busy){
+/* THE CARD IS A ROW, NOT ONE BUTTON. The card opens the company; the dots beside it delete it
+   (owner, 2026-09-12: "there should be a 3 dot option... delete everything about that particular
+   brand completely"). The confirm replaces the row the way the chat list's does, because a
+   company holds every chat, the knowledge and the library, and one stray click must not take
+   them. A button cannot live inside a button, which is why the card is wrapped. */
+function agCoCardHtml(c, busy, asking){
   const name = c.name || "Unnamed company";
-  return `<button class="ag-mktcard ag-cocard ${c.active ? "on" : ""}" type="button" data-ag="cosw" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}
-      aria-label="Open ${agEsc(name)}">
-    <span class="cm" aria-hidden="true">${agEsc(name.charAt(0).toUpperCase())}</span>
-    <span class="cb">
-      <span class="ct">${agEsc(name)}</span>
-      <span class="cd">${agEsc(c.domain || "not set up yet")}</span>
-      <span class="cs">${agEsc(agNum(c.chats || 0))} ${c.chats === 1 ? "chat" : "chats"}${c.active ? " · open last" : ""}</span>
-    </span>
-    <span class="cg" aria-hidden="true">Open ${AG_ICON.arrow}</span>
-  </button>`;
+  return `<div class="ag-corow ${asking ? "asking" : ""}">
+    <button class="ag-mktcard ag-cocard ${c.active ? "on" : ""}" type="button" data-ag="cosw" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}
+        aria-label="Open ${agEsc(name)}">
+      <span class="cm" aria-hidden="true">${agEsc(name.charAt(0).toUpperCase())}</span>
+      <span class="cb">
+        <span class="ct">${agEsc(name)}</span>
+        <span class="cd">${agEsc(c.domain || "not set up yet")}</span>
+        <span class="cs">${agEsc(agNum(c.chats || 0))} ${c.chats === 1 ? "chat" : "chats"}${c.active ? " · open last" : ""}</span>
+      </span>
+      <span class="cg" aria-hidden="true">Open ${AG_ICON.arrow}</span>
+    </button>
+    ${asking
+      ? `<span class="ag-coask"><span class="lb">Delete ${agEsc(name)} and everything in it?</span>
+           <button class="yes" type="button" data-ag="codel" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}>Delete</button>
+           <button class="no" type="button" data-ag="comenu" data-arg="" ${busy ? "disabled" : ""}>Keep it</button></span>`
+      : `<button class="ag-codots" type="button" data-ag="comenu" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}
+           title="Delete this company" aria-label="Delete ${agEsc(name)}">${AG_ICON.dots}</button>`}
+  </div>`;
 }
 
 async function agCompaniesLoad(){
@@ -988,7 +1001,7 @@ function agFocusCo(){
 function agResetCompany(a){
   Object.assign(a, {
     chats: null, chatId: null, chat: null, events: {}, cursors: {}, panel: null, autoOpened: null,
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, facePick: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, facePick: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", viewBusy: null,
     refresh: null, refreshSeen: null, refreshPollErr: null, health: null, knowledge: null,
     cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
@@ -1343,14 +1356,26 @@ function agComposerHtml(a){
     </div>`;
 }
 
+/* What they typed, kept on screen because the server never took it. It is drawn like a turn so it
+   sits where the answer would have been, and it carries the way out: press Try again. */
+function agSendFailHtml(f){
+  return `<div class="ag-turn ag-sendfail">
+    <div class="u">${agEsc(f.text)}</div>
+    <div class="ag-err">${agEsc(f.why)}
+      <button class="ag-retry" type="button" data-ag="resend">Try again</button></div>
+  </div>`;
+}
+
 function agTranscriptHtml(a){
   /* An empty conversation is either somebody's first sight of this agent or their hundredth. The
      introduction is drawn only for the first, decided by agFirstRun from real state, so a
      returning open goes straight to the hero and its two plays. */
+  const fail = (a.sendFail && (a.sendFail.chatId || null) === (a.chatId || null))
+    ? agSendFailHtml(a.sendFail) : "";
   if (!a.chat || !(a.chat.runs || []).length)
-    return (agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns);
+    return ((agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns)) + fail;
   const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, stepOpen: a.stepOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
-  return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("");
+  return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("") + fail;
 }
 
 /* ── the artifact views ────────────────────────────────────────────────────── */
@@ -3454,9 +3479,19 @@ async function agPollRefresh(){
 }
 
 /* ── actions ───────────────────────────────────────────────────────────────── */
+/* A FAILED SEND MUST NOT SWALLOW WHAT THEY TYPED (owner, 2026-09-12: "I did type the question but
+   I just didn't get the answer. It was not showing in the chat session").
+
+   This used to clear a.draft on its FIRST line, before the request went anywhere, and report a
+   failure only through a toast that fades after 2.6 seconds. So a backend that had gone away, or
+   a chat holding a run still marked "running" by a process that died, ate the message whole: the
+   box emptied, nothing joined the transcript, and nothing said why. The text now lives in a local
+   until the server has taken it, the reason is the server's own sentence, and a failure is left
+   ON the transcript with a Try again button rather than flashing past. */
 async function agSend(text){
   const a = agS(); text = String(text || "").trim(); if (!text) return;
-  a.busy = true; a.draft = ""; a.stick = true;
+  const sent = text, idea = a.chipIdea || "";
+  a.busy = true; a.stick = true; a.sendFail = null;
   try {
     if (!a.chatId){ const c = await agPostApi("/chats", { title: text.slice(0, 60) }); a.chatId = c.id; a.chat = { chat: c, runs: [], messages: [] }; }
     const live = agLiveRun();
@@ -3465,16 +3500,28 @@ async function agSend(text){
       const answer = w.kind === "approval" ? { approved: false, note: text } : w.kind === "artifact" ? { approved: false, changes: text } : { text };
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/answer`, { answer });
     } else {
-      // The idea's id travels BESIDE the message, never inside it. Cleared immediately: an id
-      // left on the state would silently attach itself to whatever the user typed next, and the
-      // wrong article would tick the wrong idea off the sheet.
-      const idea = a.chipIdea || "";
-      a.chipIdea = null;
+      // The idea's id travels BESIDE the message, never inside it, and is only let go once the
+      // server has the message: an id dropped on a failed send would silently attach itself to
+      // whatever they typed next, and the wrong article would tick the wrong idea off the sheet.
       await agPostApi(`/chats/${encodeURIComponent(a.chatId)}/send`, idea ? { text, idea } : { text });
     }
+    a.draft = ""; a.chipIdea = null;
     await agLoadChat(a.chatId, true);
     a.chats = await agApi("/chats");
-  } catch (e) { agToast("Could not send: " + (e && e.message || e)); }
+  } catch (e) {
+    const st = e && e.status;
+    const msg = String((e && e.message) || e || "");
+    const why = (!st && /fetch|network|load failed|connect/i.test(msg))
+      ? "Sutra's own backend did not answer, so this was never sent. Your words are still in the box; try again in a moment."
+      : agWhy(e);
+    a.draft = sent; a.chipIdea = idea; a.focusComposer = true;
+    a.sendFail = { chatId: a.chatId || null, text: sent, why: why, at: Date.now() };
+    agToast(why);
+    /* 409 means the server thinks this chat is still working and 404 that it is gone. Either way
+       what is on screen is out of date, so re-read it: the composer then shows the truth instead
+       of a box that looks ready and refuses everything. */
+    if (st === 409 || st === 404){ try { await agLoadChat(a.chatId, true); } catch (_e) { /* already reported */ } }
+  }
   a.busy = false; agDraw(true);
 }
 
@@ -3579,6 +3626,21 @@ async function agAction(act, el){
       agResetCompany(a);
       a.screen = "agent"; a.view = "guide";
       agEnterScreen(agRoot(), true);
+      break;
+    }
+    case "comenu": a.coMenu = arg || null; a.coErr = null; agDraw(true); break;
+    /* Deleting a company takes its knowledge, chats, library and team workspace. The server
+       stops whatever is running first, so this never leaves the person with a card they cannot
+       act on; a refusal comes back in the server's own words. */
+    case "codel": {
+      if (a.coBusy) break;
+      a.coBusy = true; a.coErr = null; a.coMenu = null; agDraw(true);
+      try { await agDelApi(`/companies/${encodeURIComponent(arg)}`); }
+      catch (e) { a.coBusy = false; a.coErr = agWhy(e); agDraw(true); break; }
+      a.coBusy = false;
+      agResetCompany(a);
+      a.screen = "choose"; a.coForm = null;
+      await agCompaniesLoad();
       break;
     }
     case "coadd": a.coForm = { mode: "add" }; a.coErr = null; agDraw(true); agFocusCo(); break;
@@ -3736,6 +3798,15 @@ async function agAction(act, el){
         catch (e) { agToast("Could not save the reorder: " + (e.message || e)); break; }
       }
       await agAnswer({ approved: true }); break;
+    }
+    /* Try again, on the message the server would not take. The text is already back in the box,
+       so this sends exactly what is there and clears the failed row on success. */
+    case "resend": {
+      const f = a.sendFail;
+      if (!f || a.busy) break;
+      a.sendFail = null; agDraw(true);
+      await agSend(f.text);
+      break;
     }
     case "changes": a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
 

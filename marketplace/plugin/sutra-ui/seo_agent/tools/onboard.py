@@ -354,7 +354,15 @@ def run(ctx, redo=False):
     q = question(qid, co.get("brand"))
     n = len(led.get("answers") or {}) + 1
     if n == 1:
-        say("Asking the setup questions", "%d short questions, every one skippable" % len(QUESTIONS))
+        # WHAT IS COMING, BEFORE IT COMES (owner, 2026-09-12: "it didn't intimate me, it didn't
+        # tell me anything before asking the questions"). He skipped all four for his second
+        # company because nothing said what they were for or that a number and a story were
+        # wanted, and the brand pack was then built with neither.
+        say("Asking the setup questions",
+            "%d short questions the website cannot answer: a number you can claim, why the "
+            "company was built, something that did not work, and who you compete with. Have a "
+            "figure and a story handy. Every one is skippable, and the answers go to Knowledge "
+            "as your own words." % len(QUESTIONS))
     return {"summary": "Asked question %d of %d." % (n, len(QUESTIONS)),
             "ask": {"id": qid, "question": q["question"], "why": q.get("why", ""),
                     "step": n, "of": len(QUESTIONS)}}

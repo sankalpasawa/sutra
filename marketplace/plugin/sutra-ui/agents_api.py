@@ -117,6 +117,28 @@ def _guarded(chat_id, run_id, fn):
     return wrapped
 
 
+def _await_workers(chat_id, timeout=10.0):
+    """Wait for every worker of this chat to finish. True when none is left running.
+
+    Deleting a chat folder while a thread still writes into it leaves torn state, so a delete
+    asks the runs to stop and then waits HERE for the threads to notice. Keys are chat_id+run_id
+    (see _spawn), so one prefix match finds every worker of one chat.
+    """
+    deadline = time.time() + timeout
+    with _lock:
+        mine = [t for k, t in _workers.items() if k.startswith(chat_id)]
+    for t in mine:
+        left = deadline - time.time()
+        if left > 0:
+            t.join(left)
+    alive = [t for t in mine if t.is_alive()]
+    if not alive:
+        with _lock:
+            for k in [k for k in list(_workers) if k.startswith(chat_id)]:
+                _workers.pop(k, None)
+    return not alive
+
+
 def _live_status(chat_id):
     runs = store.list_runs(chat_id)
     for r in reversed(runs):
@@ -158,16 +180,27 @@ def api_chat(chat_id: str):
 def api_delete_chat(chat_id: str):
     """Throw a chat away. The Library keeps every article that was written in it.
 
-    A RUNNING chat is refused rather than killed. A run writes into the folder we would be
-    deleting, so pulling it out from under a live thread is how you get half-written state and
-    a stack trace nobody can act on. Stop it first, then delete it; the UI does both in order.
+    A RUNNING CHAT IS STOPPED, THEN DELETED -- it is no longer refused (owner, 2026-09-12:
+    "someone should be able to delete even if there is something running"). Refusing assumed the
+    person could stop it first, and a run whose worker died leaves the state file saying
+    "running" for ever, so the chat became undeletable: exactly what happened to three chats a
+    test left behind in his live data. The reason for the old refusal still stands -- deleting a
+    folder a live thread is writing to leaves half-written state -- so this asks the run to stop,
+    waits for the worker to actually finish, and only then removes the folder. A worker that will
+    not end inside the wait keeps its chat: better a chat that survives than a torn one.
     """
     if not _ok_id(chat_id):
         return _bad("bad id")
     if not os.path.isdir(store.chat_dir(chat_id)):
         return _bad("no such chat", 404)
-    if _live_status(chat_id) == "running":
-        return _bad("That chat is still working. Stop it first, then delete it.", 409)
+    for r in store.list_runs(chat_id):
+        if r.get("status") in ("running", "waiting"):
+            try:
+                loop.stop(chat_id, r["run_id"])
+            except Exception:  # noqa: BLE001 -- a run we cannot stop must not block the delete
+                pass
+    if not _await_workers(chat_id, 10.0):
+        return _bad("That chat is still working and would not stop. Try again in a moment.", 409)
     if not store.delete_chat(chat_id):
         return _bad("could not delete that chat")
     return {"ok": True, "id": chat_id}
@@ -2416,6 +2449,46 @@ def api_company_add(body: dict = Body(...)):
     _co_reset()
     _co().switch(row["id"])
     return dict(_co().listing(), added=row)
+
+
+@router.delete("/companies/{cid}")
+def api_company_delete(cid: str):
+    """Delete a company and everything it owns (owner, 2026-09-12: "delete everything about that
+    particular brand completely, so it goes away").
+
+    Anything RUNNING is stopped first rather than standing in the way, the same rule the chat
+    delete now follows. The one thing still refused is a catalogue refresh: it writes thousands
+    of files from its own thread and cannot be asked to stop, so a delete underneath it would
+    recreate the folder it is halfway through writing.
+    """
+    try:
+        reg = _co().load()
+    except Exception as e:  # noqa: BLE001
+        return _bad("The list of companies could not be read: %s" % e)
+    if not any(r["id"] == cid for r in reg["companies"]):
+        return _bad("There is no such company.", 404)
+    if _kn_job is not None and _kn_job.get("phase") == "running":
+        return _bad("The catalogue refresh is still running. Let it finish, then delete.", 409)
+
+    if reg["active"] == cid:          # only the open company has workers in this process
+        for ch in store.list_chats():
+            for r in store.list_runs(ch["id"]):
+                if r.get("status") in ("running", "waiting"):
+                    try:
+                        loop.stop(ch["id"], r["run_id"])
+                    except Exception:  # noqa: BLE001
+                        pass
+    if not _await_workers("", 10.0):   # "" is every worker: the whole company is going
+        return _bad("Something is still running and would not stop. Try again in a moment.", 409)
+
+    _co_reset()
+    try:
+        out = _co().remove(cid)
+    except ValueError as e:
+        return _bad(str(e))
+    except Exception as e:  # noqa: BLE001
+        return _bad("That company could not be deleted: %s" % e)
+    return dict(_co().listing(), deleted=out["deleted"])
 
 
 @router.post("/companies/switch")

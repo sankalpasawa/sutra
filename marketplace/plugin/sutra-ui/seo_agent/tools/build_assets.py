@@ -95,6 +95,14 @@ def run(ctx, redo=False, only=None):
     redo = bool(redo)
     built, skipped, failed, notes, files = [], [], [], [], []
 
+    # WHAT THIS IS, BEFORE IT RUNS (owner, 2026-09-12: "there should be a very proper structure
+    # while the agent is answering... it didn't intimate me"). This is the last piece of setup and
+    # the longest, so the person is told what it produces and that it will stop to ask them.
+    if not wanted:
+        say("Finding what is worth writing",
+            "three ways of looking for ideas, then one ranked sheet you can write from. It stops "
+            "twice to ask you something, and the sheet lands in the Asset ideas tab.")
+
     for key, modname, outputs in BUILDERS:
         if wanted and key not in wanted:
             continue

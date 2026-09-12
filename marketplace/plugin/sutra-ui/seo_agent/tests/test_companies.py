@@ -183,6 +183,89 @@ ok("a switch to nonsense is refused, not obeyed", getattr(res, "status_code", 20
 companies.switch(companies.FIRST)
 store.set_data_dir(None)
 
+# ==========================================================================================
+# THE PIN MUST NEVER OUTRANK A LATER SEO_AGENT_DATA. agents_api calls activate_saved() at
+# import and pins the data dir to whichever company the person had open. Every test module
+# sets SEO_AGENT_DATA at ITS import, and pytest imports modules in alphabetical order, so a
+# module importing agents_api first (test_activity.py) pinned the dir to the owner's LIVE
+# company and every later module wrote there: on 2026-09-12 a whole-suite run put four chats
+# and two never-finished runs into his real Dharmik data. Nothing in the app changes the
+# variable mid-process, so this costs production nothing.
+# ==========================================================================================
+# DELETING A COMPANY. Owner, 2026-09-12: "delete everything about that particular brand
+# completely, so it goes away." The first company is the root, which also holds the person's
+# keys, the registry and every other company's folder, so it is the dangerous one.
+print("\nDELETING A COMPANY takes its data and nothing of the person's")
+store.set_data_dir(None)
+companies.switch(companies.FIRST)
+gone = companies.add("Doomed Co")
+companies.switch(gone["id"])
+store.new_chat("will not survive")
+gone_dir = companies.path_of(gone["id"])
+ok("it has a folder of its own", os.path.isdir(gone_dir))
+
+res = api.api_company_delete(gone["id"])
+ok("the API deletes it", (res or {}).get("deleted") == gone["id"], res)
+ok("the folder is gone", not os.path.isdir(gone_dir))
+ok("it is out of the list", all(c["id"] != gone["id"] for c in companies.listing()["companies"]))
+ok("and the open company moved to a real one", os.path.isdir(store.data_dir()))
+res = api.api_company_delete("no-such-co")
+ok("deleting a company that does not exist is a 404, not a crash",
+   getattr(res, "status_code", 200) == 404)
+
+# the first company: its data goes, the person's keys and the registry stay
+companies.switch(companies.FIRST)
+store.save_connections({"dataforseo_login": "keep-me", "supabase_url": "company-only"})
+store.new_chat("first company chat")
+os.makedirs(store.knowledge_dir(), exist_ok=True)
+with open(os.path.join(store.knowledge_dir(), "site_index.json"), "w") as f:
+    f.write("{}")
+other = companies.add("Survivor Co")
+# index_site leaves knowledge-backup-<n> beside the knowledge folder, and it is as much "this
+# brand's data" as the folder it was copied from: 146 MB of one sat in the owner's root while
+# the first pass of this delete removed only the names it knew. (verification run, 2026-09-12)
+os.makedirs(os.path.join(ROOT, "knowledge-backup-400"), exist_ok=True)
+with open(os.path.join(ROOT, "knowledge-backup-400", "site_index.json"), "w") as f:
+    f.write("{}")
+res = api.api_company_delete(companies.FIRST)
+ok("the first company can be deleted too", (res or {}).get("deleted") == companies.FIRST, res)
+ok("its knowledge is gone", not os.path.isdir(os.path.join(ROOT, "knowledge")))
+ok("and the knowledge backup beside it went too",
+   not os.path.isdir(os.path.join(ROOT, "knowledge-backup-400")))
+ok("its chats are gone", not os.path.isdir(os.path.join(ROOT, "chats")))
+ok("the root itself survives, because everything else lives in it", os.path.isdir(ROOT))
+ok("the person's DataForSEO login survives",
+   (store.read_json(os.path.join(ROOT, "connections.json"), {}) or {}).get("dataforseo_login")
+   == "keep-me")
+ok("the company's own key went with it",
+   "supabase_url" not in (store.read_json(os.path.join(ROOT, "connections.json"), {}) or {}))
+ok("the other company's folder is untouched", os.path.isdir(companies.path_of(other["id"])))
+ok("the deleted first company does not come back on the next read",
+   all(c["id"] != companies.FIRST for c in companies.listing()["companies"]),
+   companies.listing())
+# down to one, whatever the sections above left behind: deleting the last one would leave the
+# person with no company to switch to, so it is refused rather than emptying everything.
+for row in list(companies.listing()["companies"])[1:]:
+    companies.remove(row["id"])
+last = companies.listing()["companies"]
+ok("...and the deletes above leave exactly one company standing", len(last) == 1, last)
+refused("the last company standing cannot be deleted",
+        lambda: companies.remove(last[0]["id"]), "only company")
+
+print("\nA LATER SEO_AGENT_DATA BEATS AN EARLIER PIN (tests never write to live data)")
+_env_before = os.environ.get("SEO_AGENT_DATA", "")
+_pinned = companies.path_of(companies.FIRST)
+store.set_data_dir(_pinned)
+ok("the pin holds while the environment is unchanged", store.data_dir() == _pinned)
+_later = os.path.join(ROOT, "a-later-temp-home")
+os.environ["SEO_AGENT_DATA"] = _later
+ok("a test repointing SEO_AGENT_DATA wins over the pin",
+   store.data_dir() == os.path.abspath(_later), store.data_dir())
+ok("...and the root follows it too", store.root_dir() == os.path.abspath(_later))
+os.environ["SEO_AGENT_DATA"] = _env_before
+store.set_data_dir(None)
+ok("putting the environment back restores the old root", store.data_dir() == ROOT)
+
 print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))

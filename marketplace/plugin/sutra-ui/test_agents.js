@@ -2030,6 +2030,67 @@ test("answering a question stays in the chat: the chip's action is not the compa
             "which is the action the chips actually send");
 });
 
+/* A MESSAGE THE SERVER NEVER TOOK (owner, 2026-09-12: "I did type the question but I just didn't
+   get the answer. It was not showing in the chat session"). agSend used to clear the draft on its
+   first line and report failure through a toast that fades in 2.6 seconds, so a dead backend, or
+   a chat holding a run left marked "running", swallowed the message whole. */
+test("a send that failed keeps the words on screen, with the reason and a way to retry", () => {
+  const html = A.agSendFailHtml({ text: "why do you need DataForSEO?", why: "The agent is still working. Stop it first, or wait." });
+  assert.ok(/why do you need DataForSEO\?/.test(html), "their words are still there");
+  assert.ok(/The agent is still working\. Stop it first, or wait\./.test(html),
+            "and the reason, in the server's own words");
+  assert.ok(/data-ag="resend"/.test(html) && /Try again/.test(html), "and the way out");
+  const nasty = A.agSendFailHtml({ text: "<img src=x onerror=alert(1)>", why: "<b>no</b>" });
+  assert.ok(!/<img|<b>/.test(nasty), "a hostile message never reaches the DOM unescaped");
+});
+
+test("the failed message shows on the transcript, including a chat that has no runs yet", () => {
+  const a = agReset();
+  a.chatId = null; a.chat = null; a.health = MKT_LIVED; a.introSkip = true;
+  a.sendFail = { chatId: null, text: "first thing I ever typed", why: "It was not sent.", at: 1 };
+  assert.ok(/first thing I ever typed/.test(A.agTranscriptHtml(a)),
+            "a first message that failed must not vanish behind the hero");
+  a.chatId = "c-1"; a.chat = { runs: [{ run_id: "r1", request: "write a1003", status: "done" }] };
+  a.events = { r1: [] };
+  a.sendFail = { chatId: "c-1", text: "second thing", why: "It was not sent.", at: 2 };
+  assert.ok(/second thing/.test(A.agTranscriptHtml(a)), "and it sits after the runs");
+  a.sendFail = { chatId: "c-other", text: "belongs elsewhere", why: "x", at: 3 };
+  assert.ok(!/belongs elsewhere/.test(A.agTranscriptHtml(a)),
+            "a failure from another chat never leaks into this one");
+});
+
+test("agSend does not throw the typed text away before the server has taken it", () => {
+  const i = SRC.indexOf("async function agSend(text){");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  const clear = body.indexOf('a.draft = ""');
+  const post = body.indexOf("await agPostApi");
+  assert.ok(clear !== -1 && post !== -1);
+  assert.ok(clear > post, "the draft is only cleared after the POST, never before it");
+  assert.ok(/const sent = text/.test(body), "the text is held in a local the catch can put back");
+  assert.ok(/a\.draft = sent/.test(body) && /a\.chipIdea = idea/.test(body),
+            "a failure restores both the words and the idea they were about to write");
+  assert.ok(/a\.sendFail = \{/.test(body), "and leaves something on the transcript, not just a toast");
+  assert.ok(/st === 409 \|\| st === 404/.test(body),
+            "a stale chat is re-read, so the composer stops looking ready when it is not");
+});
+
+/* Deleting a whole company (owner, 2026-09-12: "there should be a 3 dot option... delete
+   everything about that particular brand completely"). */
+test("a company card carries a 3-dot delete, and it asks before it wipes a brand", () => {
+  const c = { id: "acme-1234", name: "Acme Hiring", domain: "acme.com", chats: 3, active: false };
+  const quiet = A.agCoCardHtml(c, false, false);
+  assert.ok(/data-ag="comenu" data-arg="acme-1234"/.test(quiet), "the dots open the question");
+  assert.ok(!/data-ag="codel"/.test(quiet), "and nothing deletes on one click");
+  assert.ok(/data-ag="cosw"/.test(quiet), "the card still opens the company");
+  const asking = A.agCoCardHtml(c, false, true);
+  assert.ok(/Delete Acme Hiring and everything in it\?/.test(asking), "it names what goes");
+  assert.ok(/data-ag="codel" data-arg="acme-1234"/.test(asking) && /Keep it/.test(asking),
+            "with both answers on offer");
+  const i = SRC.indexOf('case "codel": {');
+  const block = SRC.slice(i, SRC.indexOf("case \"coadd\":", i));
+  assert.ok(/agDelApi\(`\/companies\//.test(block), "and Delete really calls the company route");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });

@@ -70,19 +70,29 @@ def load():
     reg = _read(registry_file())
     rows = [r for r in (reg.get("companies") or []) if isinstance(r, dict)
             and (r.get("id") == FIRST or _ID.match(str(r.get("id") or "")))]
-    if not any(r.get("id") == FIRST for r in rows):
+    # FIRST is implicit: it is the root, which exists on every install, so it is put back unless
+    # the person deleted it (remove() records that). Without the flag a deleted first company
+    # would return on the next read, pointing at a root whose data has gone.
+    if not any(r.get("id") == FIRST for r in rows) and not reg.get("first_deleted"):
         rows.insert(0, {"id": FIRST, "name": "", "created_at": ""})
     for r in rows:
         if r["id"] == FIRST and not str(r.get("name") or "").strip():
             r["name"] = _brand_of(FIRST)[0]
     active = reg.get("active")
     if not any(r["id"] == active for r in rows):
-        active = FIRST
-    return {"active": active, "companies": rows}
+        active = rows[0]["id"] if rows else FIRST
+    return {"active": active, "companies": rows,
+            "first_deleted": bool(reg.get("first_deleted"))}
 
 
 def _save(reg):
-    store.write_json(registry_file(), {"active": reg["active"], "companies": reg["companies"]})
+    # first_deleted travels with every write. It used to be set by remove() alone, and the next
+    # ordinary save -- a switch, a rename, deleting some other company -- wrote a registry without
+    # it, so the deleted first company came back pointing at a root whose data had gone.
+    out = {"active": reg["active"], "companies": reg["companies"]}
+    if reg.get("first_deleted"):
+        out["first_deleted"] = True
+    store.write_json(registry_file(), out)
 
 
 def _chats(cid):
@@ -151,6 +161,67 @@ def rename(cid, name):
             _save(reg)
             return {"id": cid, "name": n}
     raise ValueError("There is no such company.")
+
+
+                                        # everything one company owns, and nothing the person does
+OWNED = ("chats", "knowledge", "library", "workspace", "prompts", "memory.jsonl")
+
+
+def remove(cid):
+    """Delete a company: its knowledge, chats, library, memory and team workspace.
+
+    Owner, 2026-09-12: "there should be a 3 dot option... delete everything about that particular
+    brand completely, so it goes away."
+
+    THE FIRST COMPANY IS NOT A FOLDER OF ITS OWN. It lives at the root, where the person's own
+    things also live: the DataForSEO login, the Voyage key, the list of companies, and the
+    folders of every other company. So deleting it removes what it OWNS, one name at a time,
+    and never the root itself. Any other company is one folder and goes whole.
+
+    The caller stops whatever is running first; this does not kill threads.
+    """
+    reg = load()
+    if not any(r["id"] == cid for r in reg["companies"]):
+        raise ValueError("There is no such company.")
+    if len(reg["companies"]) < 2:
+        raise ValueError("This is your only company, so there is nothing to switch to. "
+                         "Add another one first, then delete this.")
+
+    import shutil
+    root = path_of(cid)
+    if cid == FIRST:
+        # knowledge-backup-<n> is a copy of this company's knowledge that index_site leaves
+        # behind, and it is as much "everything about that brand" as the folder it came from.
+        # 146 MB of one survived the first pass on the owner's own install.
+        owned = list(OWNED) + sorted(n for n in os.listdir(root)
+                                     if n.startswith("knowledge-backup"))
+        for name in owned:
+            p = os.path.join(root, name)
+            if os.path.isdir(p):
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.isfile(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        conn = store.read_json(os.path.join(root, "connections.json"), {}) or {}
+        kept = {k: v for k, v in conn.items() if k in store.PERSON_KEYS}
+        if kept != conn:
+            store.write_json(os.path.join(root, "connections.json"), kept)
+    else:
+        shutil.rmtree(root, ignore_errors=True)
+
+    rows = [r for r in reg["companies"] if r["id"] != cid]
+    # FIRST is implicit -- load() puts it back unless the registry says it was deleted, and
+    # without this the row would reappear on the next read pointing at an empty root. The flag is
+    # carried by _save, so deleting a SECOND company later cannot quietly drop it.
+    reg2 = {"active": reg["active"], "companies": rows,
+            "first_deleted": bool(reg.get("first_deleted")) or cid == FIRST}
+    if reg["active"] == cid:
+        reg2["active"] = rows[0]["id"]
+        store.set_data_dir(path_of(rows[0]["id"]))
+    _save(reg2)
+    return {"deleted": cid, "active": reg2["active"]}
 
 
 def activate_saved():

@@ -26,6 +26,7 @@ STATES = ("running", "waiting", "done", "stopped", "failed")
 
 DEFAULT_DATA_DIR = os.path.join("~", ".sutra-ui", "agents", "seo")
 _DATA_DIR = None             # set by set_data_dir(); None means "ask the environment"
+_DATA_ENV = None             # what SEO_AGENT_DATA said when _DATA_DIR was pinned
 
 
 def root_dir():
@@ -45,16 +46,31 @@ def data_dir():
     Resolved on every call, not at import, so a test can point it at a temp folder by
     setting SEO_AGENT_DATA before the first write, or by calling set_data_dir(). Switching
     company is exactly a set_data_dir() to that company's folder.
+
+    A LATER SEO_AGENT_DATA WINS OVER AN EARLIER PIN, and that is the whole of the guard below.
+    agents_api calls companies.activate_saved() at import, which pins this to whichever company
+    the person had open. A test that sets SEO_AGENT_DATA afterwards -- which is what every test
+    module does at ITS import, and pytest imports modules in alphabetical order -- was then
+    ignored, because the pin was consulted first. On 2026-09-12 a whole-suite pytest run wrote
+    four chats and two never-finished runs into the owner's live Dharmik company that way
+    (the chats could not even be deleted: the delete route refuses a "running" chat). Nothing in
+    the app ever changes the variable mid-process, so production behaviour is unchanged; a test
+    repointing it is always deliberate and must win.
     """
-    if _DATA_DIR:
+    if _DATA_DIR and os.environ.get("SEO_AGENT_DATA", "").strip() == (_DATA_ENV or ""):
         return _DATA_DIR
     return root_dir()
 
 
 def set_data_dir(path):
-    """Override the root for this process. None goes back to the environment."""
-    global _DATA_DIR
+    """Override the root for this process. None goes back to the environment.
+
+    The environment is recorded alongside the pin so data_dir() can tell a deliberate later
+    change apart from the value that was in force when the pin was taken. See data_dir().
+    """
+    global _DATA_DIR, _DATA_ENV
     _DATA_DIR = os.path.abspath(os.path.expanduser(path)) if path else None
+    _DATA_ENV = os.environ.get("SEO_AGENT_DATA", "").strip() if _DATA_DIR else None
     return data_dir()
 
 
@@ -188,6 +204,34 @@ def save_messages(chat_id, messages):
     meta = read_json(os.path.join(chat_dir(chat_id), "chat.json"), {}) or {}
     meta["updated_at"] = now()
     write_json(os.path.join(chat_dir(chat_id), "chat.json"), meta)
+
+
+def reconcile_stale_runs():
+    """Mark every run still saying "running" as stopped. Returns how many were mended.
+
+    Called once at start-up, where the fact is unarguable: this process has just begun, so no
+    thread of ours is running anything, and a run that still claims to be is one whose process
+    died -- a crash, a quit, a machine that went to sleep, or a test that ended mid-run.
+
+    Left alone, that lie is permanent and it silences the chat: the send route refuses a message
+    to a chat whose last run is "running" (409) and the delete route used to refuse the chat
+    outright, so the conversation could neither be continued nor thrown away. WAITING runs are
+    left exactly as they are: waiting means waiting for a person, it survives a restart on
+    purpose, and answering one is what resumes it.
+    """
+    mended = 0
+    for c in list_chats():
+        for r in list_runs(c["id"]):
+            if r.get("status") != "running":
+                continue
+            try:
+                emit(c["id"], r["run_id"], "stopped", by="restart",
+                     note="Sutra closed while this was running, so it was stopped.")
+                patch_state(c["id"], r["run_id"], status="stopped", waiting_on=None)
+                mended += 1
+            except Exception:  # noqa: BLE001 -- one unreadable run must not stop the sweep
+                pass
+    return mended
 
 
 def delete_chat(chat_id):

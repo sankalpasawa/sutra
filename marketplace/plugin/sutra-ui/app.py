@@ -1807,6 +1807,28 @@ async def _deepseek_pairing_code():
 
 
 @app.on_event("startup")
+async def _mend_runs_left_running():
+    """A run still marked "running" belongs to a process that is no longer here.
+
+    HERE AND NOT AT IMPORT, like the hooks above: the test suites import app.py in-process and
+    must not rewrite anybody's run states as a side effect.
+
+    Why it matters (owner, 2026-09-12: "I did type the question but I just didn't get the
+    answer"): the send route refuses a message to a chat whose last run says "running", so one
+    run left lying by a crash or a quit silences that conversation for good. Waiting runs are
+    untouched -- they are waiting for a person and are meant to survive a restart.
+    """
+    try:
+        from seo_agent import store as _seo_store
+        n = _seo_store.reconcile_stale_runs()
+        if n:
+            print("[agents] %d run(s) left running by an earlier session marked stopped" % n,
+                  file=sys.stderr)
+    except Exception:  # noqa: BLE001 -- never let this stop the server coming up
+        pass
+
+
+@app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
         try:

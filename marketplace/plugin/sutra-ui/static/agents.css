@@ -94,7 +94,7 @@
 .ag-chatask button{background:none;border:1px solid var(--line);border-radius:5px;cursor:pointer;
   padding:3px 6px;font:500 10.5px/1 var(--sans);color:var(--muted)}
 .ag-chatask .yes{color:var(--block);border-color:var(--block)}
-.ag-chatask .yes:hover{background:var(--block);color:#fff}
+.ag-chatask .yes:hover{background:var(--block);color:var(--on-block)}
 .ag-chatask .no:hover{border-color:var(--acc);color:var(--ink)}
 .ag-chatask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .ag-chatrow.asking .ag-chat .t{opacity:.5}
@@ -413,10 +413,11 @@
 .ag-main .pc textarea::placeholder{color:var(--faint)}
 .ag-main .pc textarea:disabled{color:var(--muted);cursor:default}
 .ag-main .pc .send{align-self:flex-end;margin-bottom:1px}
-/* white, not --on-acc: --block is a mid-dark red in BOTH themes while --on-acc flips to
-   near-black on the dark one, which would put dark text on that red. Unchanged from
-   before this pass; there is no --on-block token to reach for. */
-.ag-main .pc .send.stop{background:var(--block);color:#fff}
+/* --on-block, not --on-acc: --block is a mid-dark red in BOTH themes while --on-acc flips to
+   near-black on the dark one, which would put dark text on that red. This was a bare #fff until
+   2026-09-12, when a third red button needed the same colour and the token was finally added to
+   the palette in panel.css, where every other colour already lives. */
+.ag-main .pc .send.stop{background:var(--block);color:var(--on-block)}
 .ag-main .pc .send[disabled]{opacity:.35;cursor:default}
 @media (prefers-reduced-motion:reduce){.ag-field{transition:none}}
 .ag-cstate{width:100%;display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--faint);padding:0 2px 2px}
@@ -896,6 +897,33 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
    or name one. */
 .ag-cocard.on{border-color:var(--acc)}
 .ag-cocard .cm{text-transform:uppercase}
+/* the row holds the card and the dots that delete the company; same shape as a chat row */
+.ag-corow{position:relative;display:flex;align-items:center;gap:6px}
+.ag-corow .ag-cocard{flex:1;min-width:0}
+.ag-codots{flex:none;opacity:0;background:none;border:0;cursor:pointer;color:var(--faint);
+  padding:6px;border-radius:6px;line-height:0;transition:opacity .1s ease,color .1s ease}
+.ag-codots svg{width:15px;height:15px}
+.ag-corow:hover .ag-codots,.ag-codots:focus-visible{opacity:1}
+.ag-codots:hover{color:var(--ink);background:var(--inset)}
+.ag-codots:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-coask{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--sans)}
+.ag-coask .lb{color:var(--faint)}
+.ag-coask button{background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;
+  padding:5px 8px;font:500 11px/1 var(--sans);color:var(--muted)}
+.ag-coask .yes{color:var(--block);border-color:var(--block)}
+.ag-coask .yes:hover{background:var(--block);color:var(--on-block)}
+.ag-coask .no:hover{border-color:var(--acc);color:var(--ink)}
+.ag-coask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-corow.asking .ag-cocard{opacity:.5}
+
+/* A message the server never took, left on the transcript instead of a toast that fades. It
+   looks like the turn it would have been, so the words are where the person expects them. */
+.ag-sendfail .u{opacity:.75}
+.ag-sendfail .ag-err{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.ag-retry{background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;
+  padding:4px 9px;font:500 11px/1 var(--sans);color:var(--ink)}
+.ag-retry:hover{border-color:var(--acc);background:var(--inset)}
+.ag-retry:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .ag-coform{margin-top:14px;max-width:460px;display:flex;flex-direction:column;gap:9px}
 .ag-coform label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
 .ag-coform label b{color:var(--ink);font-weight:600}

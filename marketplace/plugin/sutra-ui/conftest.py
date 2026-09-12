@@ -61,4 +61,30 @@ def _redirect_registry_home_to_temp() -> None:
     atexit.register(shutil.rmtree, home, True)
 
 
+def _redirect_agent_data_to_temp() -> None:
+    """The SEO agent's data dir, for the same reason and by the same rule.
+
+    On 2026-09-12 a whole-directory pytest run wrote four chats and two never-finished runs into
+    the owner's LIVE company. agents_api calls companies.activate_saved() at import, which pins
+    store's data dir to whichever company he had open, and a test setting SEO_AGENT_DATA after
+    that import was ignored. store.data_dir() now lets a later value win, which closes that route
+    but not this one: a test that UNSETS the variable at teardown (monkeypatch.setenv does exactly
+    that) leaves anything still calling data_dir() resolving to ~/.sutra-ui again. Setting it here,
+    before collection, means the live folder is never the answer for the whole session.
+
+    An operator already pointing it outside ~/.sutra-ui is left alone, exactly as the rule above
+    leaves an operator-provided SUTRA_NATIVE_HOME alone.
+    """
+    live = os.path.realpath(os.path.expanduser("~/.sutra-ui/agents/seo"))
+    current = os.environ.get("SEO_AGENT_DATA", "").strip()
+    if current:
+        resolved = os.path.realpath(os.path.expanduser(current))
+        if resolved != live and not resolved.startswith(live + os.sep):
+            return  # caller-provided temp home: theirs, not ours
+    home = tempfile.mkdtemp(prefix="sutra-ui-pytest-agent-")
+    os.environ["SEO_AGENT_DATA"] = home
+    atexit.register(shutil.rmtree, home, True)
+
+
 _redirect_registry_home_to_temp()
+_redirect_agent_data_to_temp()
