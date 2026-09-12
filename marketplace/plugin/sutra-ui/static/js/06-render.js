@@ -1222,13 +1222,20 @@ function render(){
      invalidatePanesHtml() (wsRenderSideOnly / save-chip swap / divider). */
   const panesEl = document.getElementById("panes");
 
+  /* While an agent or its company chooser is open, the pane's chevron means "back to all agents"
+     (17-agents.js intercepts it). A control that says one thing and does another costs trust in
+     every other label, so the label follows the behaviour. Guarded like wsPaneHeadHtml below: a
+     missing 17-agents.js must not break the pane header. */
+  const agentsBack = typeof agCanGoBack === "function" && agCanGoBack();
+
   const panesHtml =
     (bClosed ? "" :
     `<section class="pane browse ${bCol?"collapsed":""}"${bStyle}>
        <div class="ph">
          <button class="pfold" type="button" data-pane-fold="browse"
                  aria-expanded="${!bCol}"
-                 aria-label="${bCol?"Expand":"Collapse"} the browse pane">
+                 title="${agentsBack ? "Back to all agents" : ""}"
+                 aria-label="${agentsBack ? "Back to all agents" : (bCol?"Expand":"Collapse") + " the browse pane"}">
            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
          </button>
