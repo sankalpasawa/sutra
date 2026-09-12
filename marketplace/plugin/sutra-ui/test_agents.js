@@ -643,10 +643,11 @@ test("the tools lead makes no claim about which rows are the per-article ones", 
                      1, "and exactly one number in the sentence, the derived one: " + lead);
 });
 
-/* registry.LABELS is the ONE place a tool's plain name is decided, and as of 2026-09-09 it covers
-   all twelve. The screen carried a stand-in map for the three it was missing; that is deleted, so
-   this asserts against the REAL registry rather than against fabricated rows -- if a tool is added
-   upstream without a label, this is where it shows up as code on a screen. */
+/* registry.LABELS is the ONE place a tool's plain name is decided, and it covers every work tool:
+   twelve until 2026-09-12, eleven since import_traffic went (traffic comes from DataForSEO and
+   nowhere else). The screen carried a stand-in map for the three it was missing; that is deleted,
+   so this asserts against the REAL registry rather than against fabricated rows -- if a tool is
+   added upstream without a label, this is where it shows up as code on a screen. */
 test("no tool is listed under its function name", () => {
   const cp = require("child_process"), os = require("os");
   const venv = path.join(__dirname, ".venv", "bin", "python");
@@ -661,7 +662,7 @@ test("no tool is listed under its function name", () => {
   let tools = null;
   try { tools = JSON.parse(line); } catch (e) { tools = null; }
   if (!tools) return;                 /* no engine in this checkout: nothing to assert against */
-  assert.ok(tools.length >= 12, "every work tool, got " + tools.length);
+  assert.ok(tools.length >= 11, "every work tool, got " + tools.length);
   const html = A.agToolsHtml(tools);
   const raw = tools.filter(t => {
     const d = String(t.name).replace(/_/g, " ");
@@ -669,9 +670,8 @@ test("no tool is listed under its function name", () => {
   }).map(t => t.name);
   assert.strictEqual(raw.join(", "), "", "these are listed under their function name: " + raw.join(", "));
   assert.ok(/Catching up on what changed/.test(html), "refresh_site reads as a sentence");
-  assert.ok(/Loading a traffic file you already have/.test(html), "and so does import_traffic");
   assert.ok(/Working out what is worth writing/.test(html), "and build_assets");
-  assert.ok(!/>Refresh site<|>Import traffic<|>Build assets<|>Find prompt</.test(html), "no raw name on screen");
+  assert.ok(!/>Refresh site<|>Build assets<|>Find prompt</.test(html), "no raw name on screen");
 });
 
 /* The label is the ENGINE'S to decide -- one place, not two. The fallback exists only so a tool

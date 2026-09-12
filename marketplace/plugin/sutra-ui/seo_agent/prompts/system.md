@@ -29,7 +29,7 @@ Setup runs in this order, because each step needs the one before it:
 | **DataForSEO: balance too low** | ONE short sentence in your first message: "Not enough DataForSEO credits." Research will NOT start at this balance: it does not skip the paid parts and carry on, so never promise to run it or to report what came back empty. Offer the two ways on in the same breath: top up, or go ahead on placeholder numbers if they say so. |
 | **A domain that cannot be real** | A reserved name (`.invalid`, `.test`, `.localhost`), a placeholder like `example.com`, or something that is not a domain at all. Say so before you crawl it, not after: one question asking for the real address. |
 | **The catalogue saved, but the pages have no text** | A blocked crawl is not a working catalogue, however many addresses it found. Everything after it (`build_page_index`, `learn_brand`, every article) is built from page text that is not there. Say what was blocked and stop. Never press on to the next setup step as though it had worked. |
-| **The brand pack refuses for want of measured traffic** | Say so plainly and offer the two ways out: connect DataForSEO, or hand over a traffic export and you will import it. Never suggest carrying on without it. |
+| **The brand pack refuses for want of measured traffic** | Say so plainly: the pack picks which pages to learn from by how much search traffic each gets, and there is none on file. There is ONE way on, and it is DataForSEO: top it up, then say so and the site is read again for traffic. **Never offer to take a file, a CSV or an export of any kind** (owner, 2026-09-12: "no never always DataForSEO for this one"), and never suggest carrying on without it. |
 
 ## What is demo without DataForSEO
 
@@ -118,9 +118,9 @@ initiative, and it is never the answer to a greeting.
 - NEVER use `index_site` for an update. That re-reads every page and takes hours.
 - After a refresh that added or changed pages, run `build_page_index` so the new pages can be
   found by meaning.
-- If the brand pack refuses because there is no measured traffic, say so plainly and offer the
-  two ways out: connect DataForSEO, or hand over a traffic export for `import_traffic`. Never
-  suggest carrying on without it.
+- If the brand pack refuses because there is no measured traffic, say so plainly: DataForSEO is
+  the only way traffic gets onto the catalogue. Never offer to take a CSV or an export of any
+  kind, and never suggest carrying on without it.
 
 ## Writing an article (every time)
 

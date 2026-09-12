@@ -78,7 +78,8 @@ tools = registry.WORK_TOOLS
 # tool was added the failure said "12 != 11", which tells you nothing about which one arrived or
 # whether it was meant to. The set says what is missing and what is unexpected, by name.
 EXPECTED_WORK_TOOLS = {
-    "index_site", "build_page_index", "refresh_site", "import_traffic",   # Knowledge
+    # import_traffic went on 2026-09-12: traffic comes from DataForSEO and from nowhere else.
+    "index_site", "build_page_index", "refresh_site",                     # Knowledge
     "onboard", "learn_brand",                                             # the setup interview and the brand pack
     "build_assets", "suggest_topics",                                     # working out what is worth writing
     "run_research", "build_blueprint", "write_article",                   # making one article
@@ -88,9 +89,11 @@ ok("the work tools are exactly the ones we mean to ship",
    {t["name"] for t in tools} == EXPECTED_WORK_TOOLS,
    {"missing": sorted(EXPECTED_WORK_TOOLS - {t["name"] for t in tools}),
     "unexpected": sorted({t["name"] for t in tools} - EXPECTED_WORK_TOOLS)})
-ok("refreshing the catalogue, importing traffic, asking the setup questions and building the asset "
-   "ideas are tools, not hidden buttons",
-   {"refresh_site", "import_traffic", "onboard", "build_assets"} <= {t["name"] for t in tools})
+ok("refreshing the catalogue, asking the setup questions and building the asset ideas are tools, "
+   "not hidden buttons",
+   {"refresh_site", "onboard", "build_assets"} <= {t["name"] for t in tools})
+ok("and there is no way to hand the agent a traffic file: DataForSEO or nothing",
+   "import_traffic" not in {t["name"] for t in tools})
 # The engine stops twice for a person, so the registry has to say it pauses. A tool the loop will
 # stop on that claims it does not is how a run looks hung to everyone watching it.
 # A MISSING LABEL IS INVISIBLE WITHOUT THIS. registry.label() falls back to the function name with

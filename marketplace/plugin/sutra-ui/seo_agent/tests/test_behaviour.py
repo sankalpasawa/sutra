@@ -515,6 +515,15 @@ ok("the brand pack is said to land in the Knowledge tab",
 ok("no invented durations sneak in with the new copy",
    "A duration only if the tool card gave you one." in _FLAT)
 
+# owner, 2026-09-12, on being offered "I have a traffic export (CSV)" as one of two ways out:
+# "why does it even allow for adding my own csv of sorts, no never always DataForSEO for this
+# one". The tool went with it, because a tool the model can see is a tool it will offer.
+ok("traffic comes from DataForSEO and nowhere else",
+   "Never offer to take a file, a CSV or an export of any kind" in _FLAT)
+ok("...and the refresh section says the same thing",
+   "DataForSEO is the only way traffic gets onto the catalogue" in _FLAT)
+ok("no rule anywhere still points at the old import tool", "import_traffic" not in BRIEF)
+
 _ASK = [t for t in registry.ALL if t["name"] == "ask_user"][0]["description"]
 ok("the tool itself no longer orders 2-4 options on every question",
    "Give 2-4 options" not in _ASK and "takes NO options" in _ASK)

@@ -161,26 +161,12 @@ WORK_TOOLS = [
             "takes": "Seconds to find the changes, then about a second per page it has to read.",
         },
     },
-    {
-        "name": "import_traffic",
-        "description": (
-            "Load a traffic export the user already has (a CSV with a page address and a traffic "
-            "figure) and use it as the catalogue's measured traffic. Use ONLY when the user offers "
-            "a file or says they have one, usually because DataForSEO has no balance. Never invent "
-            "traffic and never suggest making some up."
-        ),
-        "gate": "auto", "cost_credits": 0, "pauses": False,
-        "est_minutes": 1, "module": "tools.import_traffic",
-        "input_schema": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "Where the CSV is on this Mac."},
-        }, "required": ["path"]},
-        "plain": {
-            "does": "Reads a traffic file you already have and uses it instead of a paid pull.",
-            "when": "When DataForSEO has no balance but you have an export from it or another tool.",
-            "needs": "A CSV with a page address column and a traffic column.",
-            "takes": "A few seconds.",
-        },
-    },
+    # import_traffic lived here until 2026-09-12. It let somebody hand over a CSV instead of
+    # topping up DataForSEO, and the agent duly offered that as one of two ways out whenever the
+    # brand pack refused for want of traffic. The owner saw the offer and ruled it out: "why does
+    # it even allow for adding my own csv of sorts, no never always DataForSEO for this one." A
+    # tool the model can see is a tool it will offer, so the entry is gone rather than discouraged
+    # in wording. The prompt rows that offered it were rewritten in the same pass.
     {
         "name": "onboard",
         "description": (
@@ -425,7 +411,6 @@ LABELS = {
     "index_site": "Reading the website",
     "build_page_index": "Indexing the pages by meaning",
     "refresh_site": "Catching up on what changed",
-    "import_traffic": "Loading a traffic file you already have",
     "onboard": "Asking the setup questions",
     "learn_brand": "Learning the brand",
     "build_assets": "Working out what is worth writing",

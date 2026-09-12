@@ -69,7 +69,7 @@ A two-column list. Left is the tab name exactly as it appears in the sidebar.
     Prompts        The instructions it actually writes by. Change the wording and the next
                    article uses your version.
     Memory         Rules you have told it to remember for every article.
-    Tools          The twelve things it can do, in plain words.
+    Tools          The eleven things it can do, in plain words.
     Connections    Your keys, and the workspace your team joins.
 
 ### Understand it better
@@ -187,7 +187,8 @@ A "Back" control returns to the main screen.
 ## What must be REAL and not written down
 
 - the domain in "Set up ...", when there is one
-- the twelve in "the twelve things it can do", from the registry
+- the count in "the N things it can do", from the registry (twelve until 2026-09-12, eleven since
+  import_traffic was removed: traffic comes from DataForSEO and nowhere else)
 - anything else that is a count or a state
 
 If a value is not known yet, leave the phrase out rather than printing a placeholder.
