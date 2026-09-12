@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.1 (2026-09-12)
+
+- **The department importer no longer names a root after your Mac account (D76).** `project_import.apply_forest` reuses the live root whatever it is called (preferring one named `Sutra`), mints `Sutra` only on an empty registry, and files every top-level imported folder under a `Desktop` node instead of at the top. On the founder's machine the old rule had created a second root carrying the account's full name with nine duplicate departments under it. Tests: `test_project_import.py` (51, two new).
+
 ## 2.265.0 (2026-09-12)
 
 - **Apps frameworks: every app built through "+ New app" or "Edit in chat" is now shaped the way Sutra is built (D75).** Pick page, chat or link and the folder appears with a starter, a record (`APP.md`, stamped with the kit version) and the manifest; the chat opens inside it, asks six plain questions per kind, builds the surface, fills the record and runs `check.py` before saying done. Six angle frameworks (product, strategy, design, engineering, backend, frontend) drive the questions; 18 must-fix checks block "done" in this version, 20 more advise; a checks chip sits in the app header; the department pin travels as a session option, never as chat text. Apps created before the kit list, open and edit exactly as before.

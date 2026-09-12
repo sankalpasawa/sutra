@@ -423,6 +423,25 @@ def wipe_registry(home_dir=None):
 
 # ----------------------------------------------------------------- apply ---
 
+SYSTEM_ROOT_NAME = "Sutra"      # D76: the one root is named for the system, never for a person or a company
+DESKTOP_NAME = "Desktop"        # D76: the app instance on this machine; every top-level import lives under it
+
+
+def _existing_root_ref(preferred_name):
+    """The live root to hang imports off: an active parent-less domain named
+    `preferred_name` if there is one, else the first active parent-less domain
+    by ref (the engine's own `_root_ref` order), else None on an empty registry.
+    Never mints. Preferring the name matters while a registry still carries two
+    roots: lexical order would otherwise pick whichever ref sorts first."""
+    domains = E.load_domains()
+    roots = sorted((ref, d) for ref, d in domains.items()
+                   if d.get("parent_ref") is None and d.get("status", "active") == "active")
+    for ref, d in roots:
+        if (d.get("name") or "").strip().lower() == preferred_name.strip().lower():
+            return ref
+    return roots[0][0] if roots else None
+
+
 def apply_forest(forest, tenant_id="T-local", root_name=None):
     """Mint a department per project, parents first.
 
@@ -433,15 +452,27 @@ def apply_forest(forest, tenant_id="T-local", root_name=None):
 
     Returns (root_ref, rows) where each row says whether it was created or
     linked to an existing department."""
-    root_name = root_name or os.environ.get("PLACEMENT_ROOT_NAME") or default_org_name()
-    # A tenant root is structural: every mint hangs off it and `_root_ref`
-    # auto-creates one named "Root" if absent. Naming it explicitly means the
-    # rebuilt tree does not silently acquire a placeholder for a company name.
-    # The name is DERIVED (default_org_name), never a literal: this root is the
-    # company, and the panel's role label reads off it, so a hardcoded value
-    # here would tell every operator they run a company they have never heard of.
-    root_ref, _ = E.mint_domain(None, root_name, ["root"], tenant_id,
-                                origin="project-import")
+    # D76 (founder, 2026-09-12): THE ROOT IS THE SYSTEM'S, NOT THE ACCOUNT'S, AND
+    # IMPORTS NEVER REACH THE TOP. This used to mint a root named after the
+    # operator's company (default_org_name: SUTRA_ORG_NAME, else the macOS
+    # account's full name). On the founder's own machine that minted a second
+    # root carrying the account name next to the real organisation, and nine
+    # imported folders under it duplicated departments that already existed.
+    # Now: reuse the live root whatever it is called (prefer one named
+    # SYSTEM_ROOT_NAME, else the first active parent-less domain), mint
+    # SYSTEM_ROOT_NAME only on a registry with no root at all, and hang every
+    # top-level import under a DESKTOP_NAME node: the app instance on this
+    # machine. default_org_name still names the operator's organisation
+    # elsewhere; it no longer names the root.
+    root_name = root_name or os.environ.get("PLACEMENT_ROOT_NAME") or SYSTEM_ROOT_NAME
+    root_ref = _existing_root_ref(root_name)
+    if root_ref is None:
+        root_ref, _ = E.mint_domain(None, root_name, ["root"], tenant_id,
+                                    origin="project-import")
+    root_tenant = (E.load_domains().get(root_ref) or {}).get("tenant_id") or tenant_id
+    desktop_ref, _ = E.mint_domain(root_ref, DESKTOP_NAME,
+                                   ["desktop instance on this machine"],
+                                   root_tenant, origin="project-import")
 
     # A DEPARTMENT'S IDENTITY IS ITS cwd, NOT ITS NAME. mint_domain dedupes by
     # (parent, name), which is right for a hand-made org and wrong here: the
@@ -459,7 +490,7 @@ def apply_forest(forest, tenant_id="T-local", root_name=None):
 
     ref_by_cwd, rows = {}, []
     for row in forest:
-        parent_ref = ref_by_cwd.get(row["parent_cwd"], root_ref)
+        parent_ref = ref_by_cwd.get(row["parent_cwd"], desktop_ref)
         prior = existing_by_cwd.get(os.path.normpath(row["cwd"]))
         if prior:
             ref, created = prior[0], False

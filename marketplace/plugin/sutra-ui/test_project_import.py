@@ -308,18 +308,52 @@ def test_org_name_can_be_overridden_by_env(monkeypatch):
     assert P.default_org_name() == "Acme Ltd"
 
 
-def test_the_root_is_minted_with_the_derived_name(monkeypatch):
-    """End to end: no root_name passed, so the tree's root must carry the
-    derived company rather than any literal."""
+def test_the_root_is_the_system_root_and_imports_land_under_desktop(monkeypatch):
+    """D76 (founder, 2026-09-12). End to end on an empty registry: the root is
+    named for the system, never for the operator's company or account (the
+    derived name is set here and must NOT reach the root); a Desktop node sits
+    under it; every top-level import hangs under Desktop, not under the root;
+    a second run creates nothing."""
     with tempfile.TemporaryDirectory() as tmp:
         P, E = _fresh_engine(Path(tmp))
         monkeypatch.setenv("SUTRA_ORG_NAME", "Derived Co")
         monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        forest = P.build_forest([{"cwd": "/d/sutra", "sessions": 1}])
+        root_ref, rows = P.apply_forest(forest)
+        domains = E.load_domains()
+        root = domains[root_ref]
+        assert root["name"] == P.SYSTEM_ROOT_NAME
+        assert root["parent_ref"] is None
+        assert root["name"] != "Derived Co"
+        desktops = [d for d in domains.values()
+                    if d.get("parent_ref") == root_ref and d["name"] == P.DESKTOP_NAME]
+        assert len(desktops) == 1
+        for row in rows:
+            if row.get("parent_cwd") is None:
+                assert row["parent_ref"] == desktops[0]["ref"], row
+        roots_before = [r for r, d in domains.items() if d.get("parent_ref") is None]
+        n_before = len(domains)
+        P.apply_forest(forest)
+        after = E.load_domains()
+        assert len(after) == n_before, "a second run must not mint anything"
+        assert [r for r, d in after.items() if d.get("parent_ref") is None] == roots_before
+
+
+def test_an_existing_root_is_reused_whatever_its_name(monkeypatch):
+    """A registry that already has a root (an organisation minted by hand)
+    keeps it: the importer never adds a second root, and its Desktop node goes
+    under the existing one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        org_ref, _ = E.mint_domain(None, "Derived Co", ["root"], "T-local", origin="operator")
         root_ref, _rows = P.apply_forest(
             P.build_forest([{"cwd": "/d/sutra", "sessions": 1}]))
-        root = E.load_domains()[root_ref]
-        assert root["name"] == "Derived Co"
-        assert root["parent_ref"] is None
+        domains = E.load_domains()
+        assert root_ref == org_ref
+        assert [r for r, d in domains.items() if d.get("parent_ref") is None] == [org_ref]
+        assert any(d.get("parent_ref") == org_ref and d["name"] == P.DESKTOP_NAME
+                   for d in domains.values())
 
 
 # ------------------------------------------------------------- repo names ---
