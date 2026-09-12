@@ -36,6 +36,9 @@ MISSING=""
 PM="$ROOT/.claude/sessions/$SID/placement-registered"; DREF=""; CID=""
 if [ -n "$SID" ] && [ -r "$PM" ]; then DREF=$(sed -n 's/^DOMAIN_REF=//p' "$PM" | head -1); CID=$(sed -n 's/^CHARTER_ID=//p' "$PM" | head -1); fi
 case "$DREF" in ""|unresolved) MISSING="$MISSING placement";; esac
+# Images are not artifacts in the census (census.py EXCL: png, jpg, jpeg, gif, svg, ico); a design mock or a screenshot is
+# a binary asset of the document or app it belongs to, so the guard mirrors the census and does not classify it (2.265.9).
+case "$REL" in *.png|*.jpg|*.jpeg|*.gif|*.svg|*.webp|*.ico|*.icns) exit 0;; esac
 d=$(dirname "$REL"); DOM_HIT=""; CH_HIT=""
 while :; do
   [ -f "$ROOT/$d/CHARTER.md" ] && { CH_HIT="$d/CHARTER.md"; DOM_HIT="${DOM_HIT:-$d}"; }

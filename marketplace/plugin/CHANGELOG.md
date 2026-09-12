@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.9 (2026-09-12)
+
+- **Creation guard: image files are not artifacts.** `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.ico`, `.icns` pass the guard without a kind, mirroring the census's exclusion list (a design mock is a binary asset of the document or app it belongs to); the Stop check no longer reports them as NEW KIND.
+
 ## 2.265.8 (2026-09-12)
 
 - **An app built before the frameworks can adopt them from its header.** Org › Apps shows **Add the frameworks** on any of your apps that carries no kit stamp. One press: the desktop writes the stamp (with the adoption date) and the record `APP.md`, every answer it cannot know reading `not recorded`; the checks chip appears; nothing else changes and the app keeps its status. A later **Mark ready** is gated by the checks like any stamped app (a page whose colours are not the desktop's tokens is refused until fixed). Audited as `app.kit_adopted`. Edit in chat points at the button for unstamped apps and, after adoption, hands the `not recorded` rows to the chat. Tests: kit upgrade 4 (+3), apps panel 23 (+1).
