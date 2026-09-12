@@ -850,7 +850,7 @@ function agSeoCardHtml(a){
   const missing = setup.steps.find(s => !s.ok && !s.soft);
   const next = !h ? "" : first ? "Give it your website once and it does the rest of the setup itself."
     : !missing ? "" : `Next: ${agEsc(missing.label.toLowerCase())}.`;
-  return `<button class="ag-mktcard" type="button" data-ag="open" data-arg="seo"
+  return `<button class="ag-mktcard" type="button" data-ag="openagent" data-arg="seo"
       aria-label="Open the SEO Writer">
     <span class="cm" aria-hidden="true">S</span>
     <span class="cb">
@@ -1281,7 +1281,7 @@ function agSideHtml(a){
     <div class="ag-agent">
       <div class="ag-mark" aria-hidden="true">S</div>
       <div style="min-width:0"><b>SEO Writer</b>
-        <button class="ag-cosw" type="button" data-ag="choose" title="Switch company, or add another">${agEsc(coName || "Name your company")}${AG_ICON.chev}</button>
+        <button class="ag-cosw" type="button" data-ag="cochoose" title="Switch company, or add another">${agEsc(coName || "Name your company")}${AG_ICON.chev}</button>
         <span><i class="dot ${dotCls}" aria-hidden="true"></i>${agEsc(status)}</span></div>
       ${agFacesHtml(a)}
     </div>
@@ -3526,7 +3526,11 @@ async function agAction(act, el){
     /* ── the tab's own route: the shelf, and the door into an agent ─────────── */
     /* Opening an agent. The shell is swapped and agBootLoad started in the same breath, so the
        arrival animation runs over an agent that is already loading. Nothing here waits on it. */
-    case "open": {
+    /* "openagent", NOT "open". Both the marketplace card and every artifact card used to send
+       "open", and a switch takes the FIRST matching case: this one ran for artifacts too, saw an
+       arg that was not "seo", and broke out doing nothing. Artifact cards had been dead since
+       2.257.0 (2026-09-10). One action, one name. (2026-09-12) */
+    case "openagent": {
       if (arg && arg !== "seo") break;      /* one agent; an unknown id opens nothing */
       /* WHICH COMPANY FIRST, when there is a choice to make (owner, 2026-09-11): more than one
          company, or one that has not been named yet -- a first run, where the name is the first
@@ -3551,7 +3555,12 @@ async function agAction(act, el){
     }
     /* ── which company ── see agChooseHtml. The server refuses a switch while anything is still
        running for the company being left, and that refusal is shown here in its own words. */
-    case "choose": {
+    /* "cochoose", NOT "choose". The answer chips under a question have sent "choose" since the
+       first build; this case was added above them on 2026-09-11 and swallowed every one of them,
+       so answering a question -- "Skip this one" included -- threw the person out to the company
+       screen. (owner, 2026-09-12: "whenever I am clicking on this question to skip, it takes me
+       back to the which company") */
+    case "cochoose": {
       a.screen = "choose"; a.coForm = null; a.coErr = null; a.panel = null;
       agEnterScreen(agRoot(), true);
       break;

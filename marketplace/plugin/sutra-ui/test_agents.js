@@ -2001,12 +2001,41 @@ test("adding one is a form in place, and a first run asks only for the name", ()
   assert.ok(/Let it finish/.test(A.agChooseHtml(a)), "a refused switch is shown in its own words");
 });
 
+/* TWO HANDLERS, ONE NAME, AND THE SECOND ONE IS DEAD. agAction is one switch, so a repeated case
+   label is not a merge: the first one runs and the later one can never be reached. It happened
+   twice and both shipped. "open" (2.257.0) killed every artifact card, because the marketplace
+   door's case saw an arg that was not "seo" and broke. "choose" (2.263.3) sent anyone answering a
+   question to the company screen, because the chooser's case sat above the answer chips.
+   Neither broke a single existing test, which is why this one counts labels instead. */
+test("no two agAction cases share a name, because the second would never run", () => {
+  const i = SRC.indexOf("async function agAction(act, el){");
+  assert.ok(i !== -1, "agAction is still where the test thinks it is");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  const seen = new Set(), dupes = [];
+  for (const m of body.matchAll(/case "([a-z0-9_]+)":/gi)){
+    if (seen.has(m[1])) dupes.push(m[1]);
+    seen.add(m[1]);
+  }
+  assert.ok(seen.size > 50, "it found the real switch, not a fragment (" + seen.size + " labels)");
+  assert.deepStrictEqual(dupes, [], "these labels are handled twice; the later one is dead code");
+});
+
+test("answering a question stays in the chat: the chip's action is not the company chooser's", () => {
+  const i = SRC.indexOf("async function agAction(act, el){");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(/case "choose": await agAnswer\(/.test(body), "the chips' own action answers the question");
+  assert.ok(/case "cochoose": \{/.test(body), "and the chooser has a name of its own");
+  const chips = A.agChipsHtml([{ label: "Skip this one" }], true, "", "choose", "call_1");
+  assert.ok(/data-ag="choose"/.test(chips) && /Skip this one/.test(chips),
+            "which is the action the chips actually send");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });
   a.knowledge = { company: { brand: "ACME Corp" } };
   let html = A.agSideHtml(a);
-  assert.ok(/data-ag="choose"/.test(html) && /Acme Hiring/.test(html));
+  assert.ok(/data-ag="cochoose"/.test(html) && /Acme Hiring/.test(html));
   assert.ok(!/ACME Corp/.test(html), "the name the person gave it beats the brand record");
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "" }, companies: 1 });
   a.knowledge = null;
@@ -2014,7 +2043,7 @@ test("inside the agent the company is named in the sidebar, and it is the way to
 });
 
 test("opening the agent asks which company first, only when there is a choice to make", () => {
-  const i = SRC.indexOf('case "open": {');
+  const i = SRC.indexOf('case "openagent": {');
   const block = SRC.slice(i, SRC.indexOf('case "market": {', i));
   assert.ok(/\(hh\.companies \|\| 1\) > 1/.test(block), "more than one company");
   assert.ok(/!hh\.company\.name/.test(block), "or one never named: a first run");
@@ -2119,7 +2148,7 @@ test("a route that failed says so, and does not pretend the agent is unopenable"
   const a = mktBlank(); a.marketErr = "Connection refused";
   const html = A.agMarketHtml(a);
   assert.ok(/Could not read the agent's state/.test(html) && /Connection refused/.test(html));
-  assert.ok(/data-ag="open"/.test(html), "the door is still there");
+  assert.ok(/data-ag="openagent"/.test(html), "the door is still there");
 });
 
 /* ── first run, decided from real state ───────────────────────────────────── */
@@ -3325,7 +3354,7 @@ async function atest(name, fn){
       A.agMountIfNeeded();
       await mktFlush(); await mktFlush();
       asked.length = 0;
-      await A.agAction("open", arg("seo"));
+      await A.agAction("openagent", arg("seo"));
       const a = A.agS();
       assert.strictEqual(a.screen, "agent");
       /* THE ROOM IS UNCHANGED: the same sidebar, the same conversation column, the same composer */
@@ -3347,7 +3376,7 @@ async function atest(name, fn){
     A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
     try {
       A.agMountIfNeeded(); await mktFlush();
-      await A.agAction("open", arg("does-not-exist"));
+      await A.agAction("openagent", arg("does-not-exist"));
       assert.strictEqual(A.agS().screen, "market");
     } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
   });
@@ -3359,7 +3388,7 @@ async function atest(name, fn){
     A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
     try {
       A.agMountIfNeeded(); await mktFlush(); await mktFlush();
-      await A.agAction("open", arg("seo"));
+      await A.agAction("openagent", arg("seo"));
       await mktFlush(); await mktFlush();
       await A.agAction("market", arg(""));
       const a = A.agS();
@@ -3386,7 +3415,7 @@ async function atest(name, fn){
       A.document = doc; A.apiGet = mktServer(asked, health);
       try {
         A.agMountIfNeeded(); await mktFlush(); await mktFlush();
-        await A.agAction("open", arg("seo"));
+        await A.agAction("openagent", arg("seo"));
         await mktFlush(); await mktFlush();
         const drawn = doc.els.agScroll.innerHTML;
         assert.strictEqual(A.agS().view, "guide", "chats=" + health.chats);
@@ -3420,7 +3449,7 @@ async function atest(name, fn){
     };
     try {
       A.agMountIfNeeded(); await mktFlush(); await mktFlush();
-      await A.agAction("open", arg("seo"));
+      await A.agAction("openagent", arg("seo"));
       await mktFlush(); await mktFlush(); await mktFlush();
       const a = A.agS();
       assert.strictEqual(a.chatId, null, "a chat was opened for him: " + a.chatId);
@@ -3455,7 +3484,7 @@ async function atest(name, fn){
     };
     try {
       A.agMountIfNeeded(); await mktFlush(); await mktFlush();
-      await A.agAction("open", arg("seo"));
+      await A.agAction("openagent", arg("seo"));
       await mktFlush(); await mktFlush(); await mktFlush();
       assert.ok(asked.some(p => /\/tools$/.test(p)), "the boot never asked: " + asked.join(", "));
       assert.ok(/The twelve things it can do, in plain words\./.test(doc.els.agScroll.innerHTML),
@@ -3471,7 +3500,7 @@ async function atest(name, fn){
     A.document = doc; A.apiGet = mktServer(asked, MKT_LIVED);
     try {
       A.agMountIfNeeded(); await mktFlush(); await mktFlush();
-      await A.agAction("open", arg("seo"));
+      await A.agAction("openagent", arg("seo"));
       await mktFlush(); await mktFlush();
       const composerBefore = doc.els.agComposer.innerHTML;
       await A.agAction("dive", arg("write"));
