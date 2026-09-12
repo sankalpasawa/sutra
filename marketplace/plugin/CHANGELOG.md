@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.14 (2026-09-12)
+
+- **Shadow delegates a task (branch `shadow/joy`, 2 commits, merged).** Shadow Home is the v7 workspace: the delegate composer and task list on the left, the task in focus on the right; the session a delegated task starts is a normal Sutra chat, its link opens the chat, the task can be signed off, and Shadow Settings has its own page. `panel.css` merge resolved by hand (Shadow Settings block before Org > Apps; Shadow workspace block at the end). Tests: panel 384, shadow home + overlay green, pytest 337 across 5 lanes; `test_shadow_briefing.js` (the superseded V5 briefing layout) is red on the branch as pushed and stays red here.
+
 ## 2.265.13 (2026-09-12)
 
 - **Editing any app runs through its framework; nothing to press.** The "Add the frameworks" control from 2.265.8 is gone (founder, D75 amendment: "whenever a task is given, a framework should be there, and it should run via that framework; if not, then a framework should be created"). **Edit in chat** on an app built before the kit now brings the app in first, then opens the chat on the stamped record with the kit lines and the `not recorded` rows to fill; one adoption per app even on a double press; no chat opens if the adoption fails or no provider is connected. An edit that reaches the desktop by another path adopts on its completion touch, attributed to that chat. Event `app.kit_adopted` names the actor. Tests: kit upgrade 5, apps panel 23.

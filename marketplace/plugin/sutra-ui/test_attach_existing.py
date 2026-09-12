@@ -217,16 +217,28 @@ class TestTheFounderAlwaysWins(Base):
 class TestTeardown(Base):
 
     def test_D3_terminal_teardown_kills_a_delegate_not_an_attachment(self):
-        """INVARIANT 2. The founder's chat outlives every mission."""
+        """INVARIANT 2. The founder's chat outlives every mission.
+
+        The pop moved into release_delegate() when the two copies of this
+        teardown were folded into one reaper (chat-publication slice); the
+        invariant is unchanged, so this asserts the reaper is called and that
+        release_delegate itself touches DELEGATES and never ATTACHED.
+        """
         src = Path(__file__).with_name("shadow_runner.py").read_text()
         i = src.index('if m and m["state"] in mission_engine.TERMINAL:')
-        branch = src[i:i + 700]
-        self.assertIn("DELEGATES.pop(", branch)
+        branch = src[i:i + 1100]
+        self.assertIn("release_delegate(", branch)
         self.assertNotIn("ATTACHED.pop(", branch,
                          "an attached founder chat is never reaped by a "
                          "finishing mission")
         self.assertNotIn("ATTACHED[", branch)
         self.assertNotIn("reap_attached", branch)
+        j = src.index("def release_delegate(")
+        reaper = src[j:src.index("\ndef ", j + 10)]
+        self.assertIn("DELEGATES.pop(", reaper)
+        self.assertIn("kill_group", reaper)
+        self.assertNotIn("ATTACHED", reaper,
+                         "the delegate reaper never touches an attachment")
 
     def test_D4_the_blocked_branch_reaps_nothing(self):
         src = Path(__file__).with_name("shadow_runner.py").read_text()
@@ -279,7 +291,14 @@ class TestNothingElseMoved(Base):
                       "and the attach path calls the same one")
 
     def test_D6_ws_chat_was_not_touched(self):
-        """INVARIANT 4. The whole point of attaching in Shadow's own module."""
+        """INVARIANT 4. The whole point of attaching in Shadow's own module.
+
+        The chat-publication slice added exactly ONE thing here -- the
+        single-writer guard -- and this pins both halves: the guard is
+        present, and the attach path's internals still are not. Asserting the
+        guard explicitly rather than letting it slip past the deny-list below
+        on a naming technicality.
+        """
         src = Path(__file__).with_name("app.py").read_text()
         i = src.index("async def ws_chat(")
         body = src[i:src.index('@app.websocket("/ws/term")', i)]
@@ -287,6 +306,14 @@ class TestNothingElseMoved(Base):
             self.assertNotIn(gone, body, "ws_chat must stay untouched")
         self.assertIn("register_runtime(session_id, rt)", body)
         self.assertIn("shadow_runner.attach_observer(session_id, rt)", body)
+        # the guard: ONE ownership read, and it consults the resume seed too
+        self.assertIn("shadow_runner.driving(", body)
+        self.assertIn('payload.get("resume")', body)
+        # and it runs BEFORE the takeover block, or typing into a chat Shadow
+        # STARTED would pause the mission instead of being refused
+        self.assertLess(body.index("shadow_runner.driving("),
+                        body.index("shadow_runner.founder_takeover("),
+                        "the guard must precede takeover")
 
     def test_D6b_shadow_args_is_unchanged_when_no_session_is_given(self):
         src = Path(__file__).with_name("app.py").read_text()

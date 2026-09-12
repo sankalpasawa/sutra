@@ -270,9 +270,58 @@ function part3(){
     "short legacy form routes too");
   assert.strictEqual(ctx.S.shadowFocusMission, "m-short99");
   calls.length = 0;
+  ctx.pushPane = () => {};
   ctx.shadowRouteDeepLink("sutra://session/sess-77");
   assert(calls.includes("dest:chats"), "session link lands on Chats");
   console.log("ok 14 deep-link router");
+}
+
+/* the founder's wrong-chat bug: a session link stored a hint nobody read, so
+   Chats kept whichever pane was already open -- the PREVIOUS delegated task's
+   chat. The link must open the session it names. */
+{
+  const ctx = fresh();
+  const opened = [], read = [], loaded = [];
+  ctx.goDest = () => {}; ctx.render = () => {};
+  ctx.pushPane = (id) => opened.push(id);
+  ctx.markRead = (id) => read.push(id);
+  ctx.ensureTranscript = (row) => loaded.push(row && row.id);
+  ctx.S.sessions = [{ id: "8811d058", title: "Shadow Task \u2014 Fibonacci" },
+                    { id: "2d66f533", title: "Shadow Task \u2014 22/7" }];
+  ctx.S.openPanes = ["2d66f533"];
+  assert.strictEqual(ctx.shadowRouteDeepLink("sutra://session/8811d058"), true);
+  assert.deepStrictEqual(opened, ["8811d058"],
+    "the link opens the session it names, not the pane already on screen");
+  assert.deepStrictEqual(read, ["8811d058"], "opening marks it read");
+  assert.deepStrictEqual(loaded, ["8811d058"],
+    "the transcript is read, like the rail's own open");
+  assert.strictEqual(ctx.S.pendingSessionHint, undefined,
+    "the dead hint is gone");
+  console.log("ok 14b session link opens that session");
+}
+
+/* a chat published seconds ago has no row yet: load the list, THEN open */
+{
+  const ctx = fresh();
+  const opened = [];
+  let loads = 0;
+  ctx.goDest = () => {}; ctx.render = () => {};
+  ctx.pushPane = (id) => opened.push(id);
+  ctx.S.sessions = [{ id: "2d66f533" }];
+  ctx.loadSessions = () => { loads++;
+    ctx.S.sessions.push({ id: "fresh-sid" });
+    return Promise.resolve(); };
+  ctx.shadowRouteDeepLink("sutra://session/fresh-sid");
+  assert.strictEqual(opened.length, 0, "an unknown session is not opened blind");
+  /* NOT `return`: the module wrapper would swallow every test below it.
+     setTimeout(0) drains the whole microtask chain (loadSessions is awaited
+     through two adoptions), where a fixed number of .then hops does not. */
+  setTimeout(() => {
+    assert.strictEqual(loads, 1, "exactly one list refresh");
+    assert.deepStrictEqual(opened, ["fresh-sid"],
+      "the just-published chat opens once its row exists");
+    console.log("ok 14c unknown session loads then opens");
+  }, 0);
 }
 
 /* v10: the active tab rides the turn as scope_id */
@@ -297,5 +346,68 @@ function part3(){
     "the new tab sends no scope");
   console.log("ok 15 scope rides the turn");
 }
+/* start_now/retry answer BEFORE the mission moves, so one immediate reload
+   reads READY and the row lies until something else loads. Three bounded
+   re-reads, on those two actions only, each skipped once it has moved. */
+{
+  const ctx = fresh();
+  const timers = [];
+  ctx.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  ctx.fetch = () => Promise.resolve({ ok: true, json: async () => ({}) });
+  let homeLoads = 0;
+  ctx.loadShadowHome = () => { homeLoads++; };
+  ctx.shadowPost = () => Promise.resolve({ ok: true,
+    json: async () => ({ accepted: true, mission_id: "m-fib" }) });
+  ctx.S.shadowMissions = [{ id: "m-fib", state: "brief_confirm" }];
+
+  ctx.shadowMissionAct("m-fib", "start_now").then(() => {
+    assert.strictEqual(homeLoads, 1, "the immediate reload still happens");
+    assert.deepStrictEqual(timers.map(t => t.ms), [1000, 3000, 8000],
+      "three bounded re-reads, 1s/3s/8s");
+    timers[0].fn();
+    assert.strictEqual(homeLoads, 2, "still brief_confirm -> re-read");
+    /* the mission moved: the remaining timers must cost nothing */
+    ctx.S.shadowMissions = [{ id: "m-fib", state: "running" }];
+    timers[1].fn(); timers[2].fn();
+    assert.strictEqual(homeLoads, 2, "no re-read once the mission has moved");
+
+    /* every OTHER action is untouched */
+    timers.length = 0;
+    return ctx.shadowMissionAct("m-fib", "stop");
+  }).then(() => {
+    assert.strictEqual(timers.length, 0,
+      "stop/resume/drop schedule nothing");
+    console.log("ok 16 start/retry re-read until the mission moves");
+  });
+}
+
+/* retry starts a CLONE: the watched id is the one the server named */
+{
+  const ctx = fresh();
+  const timers = [];
+  ctx.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  ctx.fetch = () => Promise.resolve({ ok: true, json: async () => ({}) });
+  let homeLoads = 0;
+  ctx.loadShadowHome = () => { homeLoads++; };
+  ctx.shadowPost = () => Promise.resolve({ ok: true,
+    json: async () => ({ accepted: true, mission_id: "m-clone" }) });
+  /* the ORIGINAL is terminal and will never move; the clone has no row yet */
+  ctx.S.shadowMissions = [{ id: "m-old", state: "failed" }];
+  ctx.shadowMissionAct("m-old", "retry").then(() => {
+    assert.strictEqual(timers.length, 3, "retry re-reads too");
+    homeLoads = 0;
+    timers[0].fn();
+    assert.strictEqual(homeLoads, 1,
+      "a clone with no row yet is exactly what we are waiting for");
+    ctx.S.shadowMissions.push({ id: "m-clone", state: "running" });
+    timers[1].fn();
+    assert.strictEqual(homeLoads, 1, "the CLONE's state ends it, not m-old's");
+    console.log("ok 17 retry watches the clone the server named");
+  });
+}
+
+/* the no-poller pin, restated for the new timers */
+assert(!/setInterval/.test(src), "the bounded re-read must not become a poller");
+
 console.log("test_shadow_overlay.js: all green");
 }

@@ -3863,6 +3863,145 @@ test("42d. the department chip is the LATEST FILED turn's leaf, labelled as such
   assert.ok(!/phdept/.test(none), "no fabricated dash when nothing was ever filed");
 });
 
+/* ── 33b. Shadow is driving this chat ───────────────────────────────────
+   A Shadow-started chat is an ORDINARY chat in an ordinary pane. What the
+   pane must say is who is holding the pen right now, and what the operator
+   can still do (read along) as well as what they cannot (send).
+
+   The server is the enforcement (app.py ws_chat's single-writer guard); these
+   pin that the pane cannot show a state the server disagrees with, and that
+   nothing here invents a chat TYPE or a second rail. */
+
+test("33b-1. the pane's status strip says Shadow is driving", () => {
+  const h = sandbox.sessionPane({ id: "sid-shdrv", title: "Shadow Task — ship it",
+    real: true, cwd: "/x", channel: null, turns: [], shadow_driving: true });
+  const strip = h.match(/<div class="shdrive" role="status">([\s\S]*?)<\/div>\s*$/m)
+             || h.match(/<div class="shdrive" role="status">([\s\S]*?)<\/div>/);
+  assert.ok(strip, "no Shadow-driving strip in the pane status area");
+  const text = strip[1].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  assert.ok(/Shadow is driving/.test(text), text);
+});
+
+test("33b-1b. the strip carries turn progress and done-when when the server sent them", () => {
+  const h = sandbox.sessionPane({ id: "sid-shdrv1b", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-9", objective: "ship it", state: "running",
+                   turns_used: 3, max_turns: 12,
+                   done_when: ["tests green", "PR open"] } });
+  const text = h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  assert.ok(/turn 3 \/ 12/.test(text), "turn progress missing: " + text.slice(0, 300));
+  assert.ok(/done when tests green · PR open/.test(text), "done-when missing");
+  /* and WHICH task, in the order the line reads: driving, then the task, then
+     its numbers -- the name is the subject, not a trailing detail */
+  assert.ok(/Shadow is driving · ship it · turn 3 \/ 12/.test(text),
+    "the driving task is not named: " + text.slice(0, 300));
+});
+
+/* 33b-1b2. THE FOUNDER'S MISREADING (2026-09-11), as a standing guard.
+   Two chats Shadow drives rendered an identical strip, so a chat still
+   running its OWN task looked like a chat some other task had taken over.
+   Different missions must produce visibly different strips. */
+test("33b-1b2. the strip names the task, so two driven chats differ", () => {
+  const pane = (sid, task) => sandbox.sessionPane({ id: sid, title: "t",
+    real: true, cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: task }).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  const a = pane("sid-a", { mission_id: "m-a", objective: "Create a Python FizzBuzz script",
+    turns_used: 1, max_turns: 20, done_when: [] });
+  const b = pane("sid-b", { mission_id: "m-b", objective: "I want 22/7 to be non-recurring",
+    turns_used: 1, max_turns: 20, done_when: [] });
+  assert.ok(/Create a Python FizzBuzz script/.test(a), "task A unnamed: " + a);
+  assert.ok(/I want 22\/7 to be non-recurring/.test(b), "task B unnamed: " + b);
+  assert.ok(a !== b, "two Shadow-driven chats must not read identically");
+  /* a long objective is trimmed to one line, and nothing is lost -- the whole
+     of it stays reachable on the element itself */
+  const long = "Chat d5740ce7 lands a final language choice between Python "
+    + "and Go for the ingest service, with reasons";
+  const h = sandbox.sessionPane({ id: "sid-long", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-l", objective: long, turns_used: 1,
+                   max_turns: 20, done_when: [] } });
+  const name = h.match(/<span class="shdrivename" title="([^"]*)">([^<]*)<\/span>/);
+  assert.ok(name, "no named span in the strip");
+  assert.ok(name[2].length <= 45, "the name must not run the strip long: " + name[2]);
+  assert.ok(/…$/.test(name[2]), "a trimmed name must say it was trimmed");
+  assert.ok(name[1].indexOf("with reasons") > -1,
+    "the full objective must stay readable on hover");
+  /* the server sent no task: name nothing rather than invent one */
+  const bare = sandbox.sessionPane({ id: "sid-bare", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true });
+  assert.ok(/Shadow is driving/.test(
+      bare.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ")),
+    "the strip still renders without a task row");
+  assert.ok(!/shdrivename/.test(bare), "a missing objective must not be faked");
+});
+
+test("33b-1c. Take over and Stop are offered, bound to the mission the server named", () => {
+  const h = sandbox.sessionPane({ id: "sid-shdrv1c", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-77", turns_used: 1, max_turns: 20, done_when: [] } });
+  assert.ok(/data-shtakeoverchat="m-77"/.test(h), "no Take over");
+  assert.ok(/data-shstopchat="m-77"/.test(h), "no Stop");
+  /* no mission id => no buttons, rather than buttons that would act on a guess */
+  const bare = sandbox.sessionPane({ id: "sid-shdrv1d", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true });
+  assert.ok(!/data-shtakeoverchat/.test(bare), "buttons rendered with no mission id");
+});
+
+test("33b-2. an ordinary chat shows nothing — no new surface when Shadow is absent", () => {
+  const h = sandbox.sessionPane({ id: "sid-plain", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [] });
+  assert.ok(!/Shadow is driving/.test(h), "leaked into a normal chat");
+  assert.ok(!/class="shdrive"/.test(h));
+  assert.ok(!/data-shtakeoverchat/.test(h));
+});
+
+test("33b-3. the composer is disabled while Shadow drives, and normal otherwise", () => {
+  const on = sandbox.sessionPane({ id: "sid-shdrv2", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true });
+  const ta = on.match(/<textarea data-sask="sid-shdrv2"[^>]*>/);
+  assert.ok(ta && / disabled/.test(ta[0]), "composer not disabled: " + (ta && ta[0]));
+  const send = on.match(/<button class="send" data-ssend="sid-shdrv2"[^>]*>/);
+  assert.ok(send && / disabled/.test(send[0]), "send button not disabled");
+  /* the accessible name must SAY why, not just go inert */
+  assert.ok(/aria-label="Shadow is driving this chat — sending is unavailable"/.test(on));
+
+  const off = sandbox.sessionPane({ id: "sid-plain2", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [] });
+  const ta2 = off.match(/<textarea data-sask="sid-plain2"[^>]*>/);
+  assert.ok(ta2 && !/ disabled/.test(ta2[0]), "a normal composer must stay usable");
+  assert.ok(/aria-label="Continue this session"/.test(off));
+});
+
+test("33b-4. adoptRealSessions carries shadow_driving onto the session", () => {
+  T.adoptRealSessions([
+    { id: "adopt-shdrv", title: "Shadow Task — x", mtime: 5, size: 1,
+      shadow_driving: true },
+    { id: "adopt-plain", title: "y", mtime: 5, size: 1 },
+  ]);
+  const owned = T.S.sessions.find(s => s.id === "adopt-shdrv");
+  const plain = T.S.sessions.find(s => s.id === "adopt-plain");
+  assert.strictEqual(owned.shadow_driving, true, "dropped by the field copy");
+  assert.strictEqual(plain.shadow_driving, false, "absent must mean false, not undefined");
+});
+
+test("33b-5. ownership ENDING reaches an on-screen pane", () => {
+  /* The release happens without any change to the transcript that would
+     announce it, so a list refresh must be able to clear the flag on a pane
+     that is already open -- the on-screen branch of adoptRealSessions keeps
+     its object and copies only a whitelist. */
+  T.adoptRealSessions([{ id: "adopt-rel", title: "t", mtime: 5, size: 1,
+                         shadow_driving: true }]);
+  T.S.openPanes.push("adopt-rel");
+  const s = T.S.sessions.find(x => x.id === "adopt-rel");
+  s.loadState = "ready";
+  T.adoptRealSessions([{ id: "adopt-rel", title: "t", mtime: 6, size: 2,
+                         shadow_driving: false }]);
+  const after = T.S.sessions.find(x => x.id === "adopt-rel");
+  assert.strictEqual(after.shadow_driving, false,
+    "a released chat stays disabled until reload");
+  T.S.openPanes = T.S.openPanes.filter(x => x !== "adopt-rel");
+});
+
 /* ── 34. Usage account card: sign-in states + simplification ───────────── */
 
 test("34a. desktop offers Sign in when signed out, Switch when signed in", () => {

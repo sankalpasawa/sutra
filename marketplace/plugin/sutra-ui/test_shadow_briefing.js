@@ -189,10 +189,11 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
      foot precedes the bands. What made Watching "secondary" was never its
      position -- it is that 470 sessions are a COUNT here and never rows,
      which the two assertions above pin directly. */
-  assert(h.indexOf("Watching · 470")<h.indexOf("Shadow\u2019s Work"),
-    "nav sits above the work deck");
-  assert(h.indexOf("shcompose")<h.indexOf("Watching · 470"),
-    "and the composer leads the page");
+  /* v7: the foot is ONE door and the Watching count moved into Settings >
+     Attention. What these pinned -- that Home never lists session rows, and
+     that Watching opens the existing surface -- is asserted above and below;
+     the two ordering checks named a five-link foot that no longer exists. */
+  assert(/data-shscreen="shadowsettings"/.test(h),"the settings door is present");
   click(ctx,{shwatching:"1"});
   assert.strictEqual(ctx.opened,"shadowwatching","it opens its own surface");
   assert(typeof ctx.SCREENS.shadowwatching==="function","which is registered");
@@ -207,12 +208,12 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   const ctx=fresh(); ctx.S.goals=[WORKING];
   ctx.S.shadowMemory=[{id:"i-1",text:"outcome first",precedence:"d_ledger",confirmed:true}];
   const h=H(ctx);
-  assert(/Memory · 1/.test(h),"the count");
-  assert(!/outcome first/.test(h),"collapsed by default");
-  click(ctx,{shmemopen:"1"});
-  const open=H(ctx);
-  assert(/outcome first/.test(open)&&/shmemory/.test(open),
-    "opens the EXISTING memory list");
+  /* v7: memory reads in Settings > Memory, not as a foot count. The
+     renderer and its hook are untouched -- pinned directly. */
+  assert(!/outcome first/.test(h),"Home never lists the rules itself");
+  assert(/outcome first/.test(ctx.shadowMemoryHtml(ctx.S.shadowMemory))
+    &&/shmemory/.test(ctx.shadowMemoryHtml(ctx.S.shadowMemory)),
+    "the EXISTING memory list still renders");
   ok("Memory is a compact disclosure");
 }
 /* 14/15. session tabs gone; conversations + settings still reachable */
@@ -221,8 +222,12 @@ const click=(ctx,ds)=>ctx.handlers.click.forEach(f=>f({target:{dataset:ds,
   const h=H(ctx);
   assert(!/shchattabs/.test(h),"no tab strip");
   assert(!/shchattab\b/.test(h.replace(/shchattabs/g,"")),"no tab pills");
-  assert(/data-shchats/.test(h),"Conversations is in the foot");
+  /* v7: Conversations moved behind the settings door, and still routes */
   assert(/data-shscreen="shadowsettings"/.test(h),"Settings stays reachable");
+  ctx.S.shadowSettings={engage:[],global:[],per_chat:{},
+    attention:{watching:[],off:[],alerts:0},floors:[]};
+  assert(/data-shchats/.test(ctx.shadowSettingsHtml()),
+    "Conversations stays reachable from Settings");
   click(ctx,{shchats:"1"});
   assert.strictEqual(ctx.dest,"chats","using the EXISTING chats destination");
   ok("session tabs removed; conversations and settings reachable");

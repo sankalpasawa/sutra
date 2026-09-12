@@ -989,6 +989,36 @@ def _with_departments(rows):
     return rows
 
 
+def _shadow_task_row(session_id):
+    """What the driven chat's status strip renders, or None.
+
+    ONE mission at most drives a session -- MissionScheduler.start refuses a
+    second on the same target -- so the first non-terminal match is the
+    answer. Deliberately small: the objective the founder is owed, the turn
+    budget, and the outcome being pursued. No transcript, no evidence, no
+    state the pane could act on by itself.
+
+    `mission_id` rides along because Take over and Stop act on the MISSION,
+    not on the session -- the pane must not have to guess which one.
+    """
+    store = _mission_engine.MissionStore()
+    for m in store.list():
+        if m.get("target_session") != session_id:
+            continue
+        if m.get("state") in _mission_engine.TERMINAL:
+            continue
+        return {
+            "mission_id": m["id"],
+            "objective": m.get("objective") or "",
+            "state": m.get("state"),
+            "turns_used": m.get("turns_used") or 0,
+            "max_turns": m.get("max_turns") or 0,
+            "done_when": [c.get("check") for c in (m.get("done_when") or [])
+                          if c.get("check")],
+        }
+    return None
+
+
 @app.get("/api/sessions")
 def api_sessions(limit: int = 100, offset: int = 0):
     """One page of SUTRA'S OWN chats, newest first. `offset` walks back into history
@@ -1047,6 +1077,28 @@ def api_sessions(limit: int = 100, offset: int = 0):
             row["sutra_id"] = chat_store.resolve(row.get("source"), row.get("id"))
         except Exception:   # noqa: BLE001 -- a bad index must not empty the rail
             row["sutra_id"] = None
+        # IS SHADOW DRIVING THIS CHAT RIGHT NOW? The same ownership read the
+        # send guard uses, so the pane can never say one thing while the
+        # server enforces another. A plain fact on an ordinary row -- this is
+        # NOT a chat type, and nothing else branches on it.
+        try:
+            row["shadow_driving"] = bool(
+                shadow_runner.driving(row.get("id"))) \
+                if row.get("source") == "claude" else False
+        except Exception:   # noqa: BLE001 -- same rule as above
+            row["shadow_driving"] = False
+        # ...and WHAT it is driving, for the chat's own status strip: turn
+        # progress and the outcome being pursued. A SIBLING field, deliberately
+        # -- shadow_driving stays a bool so the guard's contract and its tests
+        # are untouched, and this carries only what the strip renders.
+        # Absent unless Shadow is actually driving, so an ordinary chat costs
+        # one dict lookup and nothing else.
+        row["shadow_task"] = None
+        if row.get("shadow_driving"):
+            try:
+                row["shadow_task"] = _shadow_task_row(row.get("id"))
+            except Exception:   # noqa: BLE001 -- a strip is never worth a 500
+                row["shadow_task"] = None
     # AND the department that owns each row's working directory, so the Chats
     # rail can group by department. Runs last and fails soft, so an unreadable
     # registry costs the grouping and never the list. See _with_departments.
@@ -1743,12 +1795,119 @@ def _delegate_manifest(mission):
                         _scoped_instructions(mission.get("target_session")))
 
 
+#: How a Shadow-started chat names itself in the ordinary Chats rail. ONE
+#: writer of this format, so the rail, the tests and any later reader cannot
+#: drift. It is a NAME, not a type: nothing branches on it.
+SHADOW_CHAT_TITLE_PREFIX = "Shadow Task — "
+
+
+def _shadow_chat_title(mission):
+    """"Shadow Task -- <task>", from the mission's own objective.
+
+    The objective is the only task-specific text that exists at spawn time,
+    and it is what the founder actually asked for. Trimmed to fit
+    _claude_session_meta's 90-char title budget so the rail shows a name
+    rather than a truncated sentence.
+    """
+    task = " ".join(str(mission.get("objective") or "").split())
+    if not task:
+        task = "untitled"
+    if len(task) > 60:
+        task = task[:59].rstrip() + "…"
+    return SHADOW_CHAT_TITLE_PREFIX + task
+
+
+def _publish_delegate_chat(mission):
+    """(sid) -> sutra_id: turn a proven delegate session into a NORMAL chat.
+
+    Injected into spawn_delegate_session so shadow_runner never imports
+    chat_store -- the same rule that keeps build_args and register injected.
+
+    THERE IS NO SECOND CHAT REGISTRY. chat_store's reverse index IS the
+    definition of a Sutra chat (see _owned_transcripts), so binding a segment
+    is the whole of "publish"; nothing else is needed and nothing else would
+    be honoured.
+
+    ORDER IS THE SAFETY PROPERTY, and it is not the obvious one:
+
+      1. target_session onto the MISSION, first. provision_target writes this
+         only AFTER the spawner returns, so between publication and that
+         write there would be a visible chat that no durable record names --
+         and recover_on_boot() rebuilds ownership from exactly that record.
+         A crash in that window would leave the founder able to open the chat
+         and type, and ws_chat would --resume a session whose orphaned
+         process is still alive. Writing it here closes the window. It also
+         guarantees the terminal reaper can find the session to release, even
+         if provision_target's own save later fails its seq guard.
+      2. the title, best-effort: the rail reads a transcript's custom-title
+         record, never chat_store.title, so this is the only thing that makes
+         the row say "Shadow Task --". A miss costs a name, not a chat.
+      3. the chat record -- on disk, still INVISIBLE: a record with an empty
+         provider_history writes no index row.
+      4. begin_segment -- THE PUBLISH MOMENT. The index row is the last write
+         and the only visible one, so no partial failure can ever show a chat
+         whose record is missing.
+      5. target_chat onto the mission: the durable link, written last because
+         it is the only step whose loss costs nothing operational.
+
+    Idempotent: a session already bound to a chat returns that chat untouched,
+    so a retry or a re-spawn can never mint a twin.
+    """
+    def publish(sid):
+        import shadow_ledger      # local, like every other ledger caller here
+        store = _mission_engine.MissionStore()
+
+        def _stamp(**fields):
+            """One field write, never fatal. Mission bookkeeping must not take
+            down a session that started -- the same house rule the chat_store
+            append in ws_chat follows."""
+            try:
+                m = store.load(mission["id"])
+                if m is None:
+                    return
+                m.update(fields)
+                store.save(m)
+            except Exception:       # noqa: BLE001
+                pass
+
+        # 1. the session is recoverable from disk from here on
+        _stamp(target_session=sid)
+
+        existing = chat_store.resolve("claude", sid)
+        if existing:
+            _stamp(target_chat=existing)
+            return existing
+
+        title = _shadow_chat_title(mission)
+        # 2. best-effort: the transcript may not have been flushed yet, and a
+        #    nameless chat beats no chat
+        try:
+            sr.append_title(sid, title)
+        except Exception:           # noqa: BLE001
+            pass
+        # 3. on disk, invisible
+        rec = chat_store.create(cwd=_shadow_workdir_for_delegates(),
+                                branch="", title=title)
+        # 4. visible
+        chat_store.begin_segment(rec, "claude", sid)
+        # 5. the durable link
+        _stamp(target_chat=rec["sutra_id"])
+        shadow_ledger.append("actions", {
+            "mission_id": mission["id"], "kind": "spawn",
+            "summary": "published session %s as chat %s (%s)"
+                       % (sid, rec["sutra_id"], title)})
+        return rec["sutra_id"]
+
+    return publish
+
+
 async def _default_delegate_spawner(mission):
     """Registered with the runner so PROMOTED queued missions (whose
     originating request is long gone) can still get a delegate."""
     return await shadow_runner.spawn_delegate_session(
         _shadow_args, _shadow_workdir_for_delegates(),
-        _delegate_manifest(mission), register_runtime)
+        _delegate_manifest(mission), register_runtime,
+        publish=_publish_delegate_chat(mission))
 
 
 @app.on_event("startup")
@@ -2119,6 +2278,17 @@ async def api_shadow_settings():
             "external client repositories",
             "irreversible external sends",
         ],
+        # The two task limits this build actually runs at, READ-ONLY. Not new
+        # settings and not a new store: both are existing constants in
+        # mission_engine, and the Tasks section of Shadow settings was the
+        # only reader that could not see them from the browser. Surfacing a
+        # number the engine already enforces is the alternative to the
+        # settings page printing one that is merely plausible.
+        "tasks": {
+            "running_at_once": _mission_engine.MAX_RUNNING,
+            "turn_budget": {k: v["max_turns"]
+                            for k, v in _mission_engine.TEMPLATES.items()},
+        },
     }
 
 
@@ -2360,7 +2530,8 @@ def _start_goal_attempt(mission):
     async def _spawner(m):
         return await shadow_runner.spawn_delegate_session(
             _shadow_args, _shadow_workdir_for_delegates(),
-            _delegate_manifest(m), register_runtime)
+            _delegate_manifest(m), register_runtime,
+            publish=_publish_delegate_chat(m))
     return shadow_runner.start_mission_async(
         mission["id"], _validated_say, provisioner=_spawner)
 
@@ -2503,6 +2674,38 @@ async def api_shadow_mission_act(mid: str, request: Request):
     store = _mission_engine.MissionStore()
     sched = _mission_engine.MissionScheduler(store)
     try:
+        if action == "take_over":
+            # THE FOUNDER TAKES THE WHEEL of a chat Shadow started, without
+            # abandoning the outcome. Stop ends the mission; this only ends
+            # SHADOW'S TURN AT IT, which is the difference the two buttons
+            # carry in the design.
+            #
+            # Both halves already exist and neither is re-implemented here:
+            # founder_intervened is the same pause an operator turn in a
+            # founder-owned chat produces, and release_delegate is the one
+            # reaper. Ownership ends, so the single-writer guard stops
+            # refusing the send and the founder simply types -- there is
+            # never a moment with two writers, because the process is reaped
+            # before the pane can spawn its own.
+            m = store.load(mid)
+            if m is None:
+                raise HTTPException(404, "no mission %s" % mid)
+            if m["state"] == "running":
+                m = _mission_engine.MissionEngine(
+                    store, None, None, None).founder_intervened(mid)
+            elif m["state"] == "paused":
+                # ALREADY paused, for some other reason -- recover_on_boot
+                # pauses anything the app was driving when it stopped. The
+                # founder taking the wheel is the CURRENT truth, and leaving
+                # "app_restart" there would tell them to Resume a task they
+                # just took over. paused -> paused is not a legal transition
+                # (and should not become one for this), so the reason is
+                # re-stamped through the store's own writer instead.
+                m["pause_reason"] = "founder_intervened"
+                store.save(m)
+            shadow_runner.release_delegate(m.get("target_session"))
+            _goal_hook_safe("on_attempt_end", m)
+            return m
         if action == "stop":
             # founder_stop, not a bare transition (slice 3 finding): it is
             # what stamps `ended_by`, without which a goal reads a founder
@@ -2523,7 +2726,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
             async def _spawner(mission):
                 return await shadow_runner.spawn_delegate_session(
                     _shadow_args, _shadow_workdir_for_delegates(),
-                    _delegate_manifest(mission), register_runtime)
+                    _delegate_manifest(mission), register_runtime,
+                    publish=_publish_delegate_chat(mission))
             # second-flight fix: never hold the request open across a
             # minutes-long provision -- background task, instant answer
             return shadow_runner.start_mission_async(
@@ -2534,7 +2738,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
             async def _respawner(mission):
                 return await shadow_runner.spawn_delegate_session(
                     _shadow_args, _shadow_workdir_for_delegates(),
-                    _delegate_manifest(mission), register_runtime)
+                    _delegate_manifest(mission), register_runtime,
+                    publish=_publish_delegate_chat(mission))
             return shadow_runner.start_mission_async(
                 clone["id"], _validated_say, provisioner=_respawner)
         if action == "confirm_check":
@@ -3081,6 +3286,35 @@ async def ws_chat(ws: WebSocket):
                     nudge.cancel()
                     break
             rt.stopped = False
+            # ---- single-writer guard ---------------------------------------
+            # AT MOST ONE SUTRA RUNTIME MAY WRITE TO ONE CLAUDE SESSION.
+            # Shadow can own a session (a delegate it started and is driving);
+            # this handler would otherwise spawn `claude --resume <sid>` for it
+            # a few hundred lines below and put a SECOND process on the same
+            # transcript -- the very file done_when is evaluated against.
+            #
+            # BEFORE the takeover block on purpose: typing into a chat Shadow
+            # STARTED is not a takeover, it is a collision, and pausing the
+            # mission would be the wrong answer to it. Founder-owned chats
+            # Shadow merely attached to are untouched by this and still take
+            # the takeover path exactly as before.
+            #
+            # `payload.get("resume")` as well as session_id: a pane opened
+            # from the rail arrives with `resume` set and the socket's
+            # session_id still None on its first message (see the chat-id
+            # recovery below), which is precisely when the old code spawned.
+            if payload.get("_source") != "shadow" and providers.shadow_enabled():
+                try:
+                    _owned = shadow_runner.driving(
+                        session_id or payload.get("resume"))
+                except Exception:   # noqa: BLE001 -- never fail a turn on this
+                    _owned = None
+                if _owned:
+                    await ws.send_json({"type": "error", "detail":
+                        "Shadow is working in this chat. You can read along; "
+                        "you can send once it finishes or you stop it in "
+                        "Focus › Shadow."})
+                    continue
             if (payload.get("_source") != "shadow" and session_id
                     and providers.shadow_enabled()):
                 # R22 takeover (dual-lane fold): an operator turn on a session

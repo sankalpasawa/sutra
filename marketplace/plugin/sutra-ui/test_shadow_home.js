@@ -20,7 +20,13 @@ function fresh(){
     console, Date, setTimeout: (fn)=>({fn}),
     esc: (x) => String(x == null ? "" : x).replace(/</g, "&lt;"),
     SCREENS: {}, TITLES: {}, S: {},
-    document: { addEventListener(){}, createElement(){ return {
+    /* listeners are RECORDED, not discarded: the delegated click handler is
+       the only way to exercise a card action end to end, and it was
+       previously unreachable from here. Keyed by type -- the home module is
+       the only document-level click listener in this context. */
+    listeners: {},
+    document: { addEventListener(t, fn){ ctx.listeners[t] = fn; },
+      createElement(){ return {
       setAttribute(){}, remove(){}, dataset: {} }; },
       body: { appendChild(){} }, querySelector(){ return null; } },
   };
@@ -169,6 +175,10 @@ console.log("ok 6 controls wired");
      a briefing, not a chat list. The scoping it provided now lives in one
      chip beside the composer, which still emits data-shchat, so the
      one-mind-many-threads model below is unchanged. */
+  /* WORKSPACE SLICE: the existing-chat flow is opt-in in the delegated-task
+     workspace, so this opens it first. What it asserts is unchanged -- the
+     scoping is ONE CHIP, not a tab strip -- only where it now lives. */
+  ctx.S.shadowExistingOpen = true;
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
   assert(/data-shscopepick/.test(h), "the target chat is a single chip");
@@ -226,7 +236,10 @@ console.log("ok 6 controls wired");
                     { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
-  /* SLICE 11: the tab strip is gone from Home; scoping is one chip. */
+  /* SLICE 11: the tab strip is gone from Home; scoping is one chip.
+     WORKSPACE SLICE: that chip lives in the existing-chat flow, which the
+     delegated-task workspace renders only when it is opened. */
+  ctx.S.shadowExistingOpen = true;
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
   assert(/data-shscopepick/.test(h), "the target chat is a single chip");
@@ -278,7 +291,10 @@ console.log("ok 6 controls wired");
                     { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
-  /* SLICE 11: the tab strip is gone from Home; scoping is one chip. */
+  /* SLICE 11: the tab strip is gone from Home; scoping is one chip.
+     WORKSPACE SLICE: that chip lives in the existing-chat flow, which the
+     delegated-task workspace renders only when it is opened. */
+  ctx.S.shadowExistingOpen = true;
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
   assert(/data-shscopepick/.test(h), "the target chat is a single chip");
@@ -338,10 +354,757 @@ console.log("ok 6 controls wired");
   /* SLICE 11: names are now worn by the scope picker rather than a strip --
      same shadowChatLabel, same no-raw-id rule. */
   ctx.S.shadowScopeOpen = true;
+  ctx.S.shadowExistingOpen = true;   /* the picker lives in that flow now */
   const h = ctx.shadowHomeHtml();
   assert(/Paisa EMI rounding fix/.test(h), "the picker renders the name");
   assert(!/>sess-pai/.test(h), "no raw id leaks into a label");
   console.log("ok 13 chats wear real names in the scope picker");
+}
+
+/* ── 14-19: the Shadow workspace + "+ Delegate" ─────────────────────────
+   The one NEW capability: an explicit "start a NEW task in a NEW chat" that
+   does not depend on Shadow's model output to establish the intent. */
+
+/* 14. the two columns exist, and everything that was on the briefing still is */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = MISSIONS;
+  const h = ctx.shadowHomeHtml();
+  assert(/class="shwork"/.test(h), "workspace container missing");
+  assert(/class="shwleft"/.test(h) && /class="shwright"/.test(h),
+    "two columns missing");
+  /* + Delegate is visible, prominent and in the left column */
+  assert(/data-shdelegate="1"/.test(h), "+ Delegate is not rendered");
+  assert(/\+ Delegate</.test(h), "+ Delegate is not labelled");
+  assert(/Shadow is working on/i.test(h), "section label missing");
+  /* the composer and the foot nav are always here */
+  assert(/data-shhomecompose/.test(h), "Shadow composer was lost");
+  /* THE FOOTER IS ONE DOOR NOW (v7 design of record). Watching, Memory,
+     Goals and Conversations are not deleted -- they moved behind it, and
+     the settings test below pins that they are still reachable. */
+  assert(/data-shscreen="shadowsettings"/.test(h),
+    "the way into Shadow Settings was lost");
+  assert(/Shadow Settings</.test(h), "the settings door is not labelled");
+  assert(!/data-shwatching/.test(h) && !/data-shmemopen/.test(h)
+      && !/data-shgoals/.test(h) && !/data-shchats/.test(h),
+    "the workspace footer must be one door, not the old five-link index");
+  console.log("ok 14 workspace: two columns, + Delegate, one settings door");
+}
+
+/* 14b. THE DELEGATED WORKSPACE IS TASK-FOCUSED.
+   The existing-chat flow is PRESERVED, not rendered: preserving a behaviour
+   and always showing its UI are different things, and this workspace is
+   about one delegated task. Opening the flow brings the whole thing back
+   exactly as it was. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = MISSIONS;
+  ctx.S.sessions = [{ id: "s-1", title: "paisa emi" }];
+  ctx.S.shadowWatching = ["s-1"];
+  const closed = ctx.shadowHomeHtml();
+  /* none of the existing-chat surface by default */
+  assert(!/data-shscopepick/.test(closed), "'Working with' picker rendered");
+  assert(!/Choose a conversation/.test(closed), "'Choose a conversation' rendered");
+  assert(!/Recent conversations/.test(closed), "recent-chat chips rendered");
+  assert(!/Tell Shadow the outcome you want/.test(closed),
+    "the old briefing copy rendered");
+  assert(!/data-shchat=/.test(closed), "chat chips (+N more) rendered");
+  /* but the composer is still there, with the SAME hook and scope attribute */
+  assert(/data-shhomecompose/.test(closed), "the workspace has no composer");
+  assert(/data-shscope=/.test(closed), "the composer lost its scope attribute");
+  /* and the door into the flow is offered */
+  assert(/data-shexisting="1"/.test(closed), "no way into the existing-chat flow");
+
+  /* opened: the real stage, unchanged */
+  ctx.S.shadowExistingOpen = true;
+  const open = ctx.shadowHomeHtml();
+  assert(/data-shscopepick/.test(open), "the picker did not come back");
+  assert(/Choose a conversation/.test(open), "the picker lost its copy");
+  assert(/Recent conversations/.test(open), "the recent chips did not come back");
+  assert(/Tell Shadow the outcome you want/.test(open),
+    "the briefing copy did not come back");
+  assert(/data-shexisting="0"/.test(open), "no way back to the tasks");
+  console.log("ok 14b existing-chat flow: preserved, opt-in, not default");
+}
+
+/* 14c. NO GLOBAL HISTORY UNDER A DELEGATED TASK.
+   shadowDeckHtml renders every goal Shadow has ever carried -- "Shadow's
+   Work", the count, "Recently completed", the cards. That is a history of
+   goals, not the state of one task, so it does not belong under the task in
+   focus. The deck itself is untouched and still the goals screen's content;
+   only this workspace stops rendering it.
+
+   Reachability is the thing that must NOT regress: the deck's "N more — open
+   all goals" button was the only route to SCREENS.goals, so the footer nav
+   carries the same data-shgoals hook now. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = MISSIONS;
+  ctx.S.goals = Array.from({ length: 12 }, (_, i) => ({
+    id: "g-" + i, outcome: "goal " + i,
+    state: i < 3 ? "working" : (i < 5 ? "blocked" : "done"),
+    checks_met: 1, checks_total: 2, checks_label: "1 of 2",
+    unmet: ["x"], turn_label: "turn 1/20", attempt: 1 }));
+  const h = ctx.shadowHomeHtml();
+  assert(!/Shadow.s Work/.test(h), "'Shadow's Work' rendered under the task");
+  assert(!/\d+ assignments?/.test(h), "the assignment count rendered");
+  assert(!/Recently completed/.test(h), "completed history rendered");
+  assert(!/class="shasg/.test(h), "assignment cards rendered");
+  assert(!/class="shdeck/.test(h), "the deck container rendered");
+
+  /* the goals screen keeps its route and its live-goal count -- both moved
+     from the workspace footer into Settings > Attention, which is the only
+     thing that changed about them */
+  assert(!/data-shgoals="1"/.test(h), "goals still listed in the workspace");
+  ctx.S.shadowSettings = { engage: [], global: [], per_chat: {},
+    attention: { watching: ["a"], off: [], alerts: 0 }, floors: [] };
+  const set = ctx.shadowSettingsHtml();
+  assert(/data-shgoals="1"/.test(set), "the goals screen became unreachable");
+  assert(/Goals · 5/.test(set), "Settings must count LIVE goals (3+2), got "
+    + (set.match(/Goals · \d+/) || ["none"])[0]);
+  /* and the renderer is still there for the screen that owns it */
+  assert(typeof ctx.shadowDeckHtml === "function",
+    "shadowDeckHtml must not be deleted -- only not called here");
+  assert(/Shadow.s Work/.test(ctx.shadowDeckHtml()),
+    "the deck itself must still render its own content");
+  console.log("ok 14c no assignment history under a delegated task");
+}
+
+/* 15. the task list is REACHABLE and states every mission state */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [
+    { id: "m-a", objective: "ready one",   state: "brief_confirm" },
+    { id: "m-b", objective: "running one", state: "running" },
+    { id: "m-c", objective: "queued one",  state: "queued" },
+    { id: "m-d", objective: "blocked one", state: "blocked" },
+    { id: "m-e", objective: "failed one",  state: "failed" },
+  ];
+  const h = ctx.shadowHomeHtml();
+  ["READY", "RUNNING", "QUEUED", "NEEDS YOU", "FAILED"].forEach(p =>
+    assert(new RegExp(">" + p + "<").test(h), "status pill missing: " + p));
+  assert(/data-shtask="m-a"/.test(h), "task rows are not selectable");
+  /* the empty state says what to do, rather than nothing */
+  const ctx2 = fresh();
+  ctx2.S.shadowHomeDark = false; ctx2.S.shadowMissions = [];
+  assert(/Delegate a task/.test(ctx2.shadowHomeHtml()), "no empty-state copy");
+  console.log("ok 15 task list reachable, all states named");
+}
+
+/* 15b. THE LIST IS ACTIVE WORK, NOT THE MISSION DATABASE.
+   /api/shadow/missions returns MissionStore.list() -- every record on disk,
+   deliberately, because other readers need the whole history. The workspace
+   filters at the PRESENTATION layer only: nothing is deleted, no store or API
+   semantics move, and every record stays where the goals' attempts[] point. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.goals = [
+    { id: "g-live", state: "working" },     /* still being pursued */
+    { id: "g-over", state: "stopped" },     /* the founder abandoned it */
+    { id: "g-won",  state: "done" },
+  ];
+  ctx.S.shadowMissions = [
+    /* --- must appear: unfinished work -------------------------------- */
+    { id: "m-ready",   objective: "ready",   state: "brief_confirm" },
+    { id: "m-run",     objective: "running", state: "running" },
+    { id: "m-queue",   objective: "queued",  state: "queued" },
+    { id: "m-pause",   objective: "paused",  state: "paused",
+      pause_reason: "founder_confirm", target_mode: "new" },
+    { id: "m-blocked", objective: "blocked", state: "blocked",
+      block_reason: "ping_pong", goal_id: "g-live" },
+    { id: "m-fail",    objective: "failed",  state: "failed" },
+    /* --- must NOT appear: concluded ----------------------------------- */
+    { id: "m-done",    objective: "old done",    state: "done" },
+    { id: "m-stop",    objective: "old stopped", state: "stopped",
+      ended_by: "founder" },
+    { id: "m-retried", objective: "superseded",  state: "failed",
+      retried_to: "m-fresh" },
+    /* a goal that has concluded settles its attempts, whatever state they
+       were left in -- abandoning a goal stops the LIVE attempt, so one that
+       was already blocked keeps that state forever and would otherwise
+       shout NEEDS YOU about work the founder ended */
+    { id: "m-vestigial", objective: "blocked under a stopped goal",
+      state: "blocked", block_reason: "ping_pong", goal_id: "g-over" },
+    { id: "m-wonattempt", objective: "attempt of a finished goal",
+      state: "done", goal_id: "g-won" },
+  ];
+  const ids = ctx.shadowTasks().map(m => m.id);
+  const h = ctx.shadowHomeHtml();
+
+  /* 1. active missions appear */
+  ["m-ready", "m-run", "m-queue"].forEach(id =>
+    assert(ids.includes(id), "active mission hidden: " + id));
+  /* 2. paused / founder_confirm appears -- it is waiting on the founder */
+  assert(ids.includes("m-pause"), "a paused founder_confirm task was hidden");
+  /* 3. an actionable blocked mission appears (its goal is still live) */
+  assert(ids.includes("m-blocked"), "an actionable blocked mission was hidden");
+  /* a failed mission keeps its pending Retry */
+  assert(ids.includes("m-fail"), "a retryable failure was hidden");
+  /* 4. historical terminal records do not */
+  ["m-done", "m-stop", "m-retried", "m-vestigial", "m-wonattempt"]
+    .forEach(id => assert(!ids.includes(id), "history leaked into the list: " + id));
+  assert(!/old done|old stopped|superseded/.test(h),
+    "concluded work rendered in the workspace");
+
+  /* 5. the RECORDS are untouched -- this is a filter, not a delete */
+  assert.strictEqual(ctx.S.shadowMissions.length, 11,
+    "the mission list itself must not be mutated");
+  assert(ctx.S.shadowMissions.some(m => m.id === "m-done"),
+    "a hidden mission must still be in state");
+  /* 6. goals untouched */
+  assert.strictEqual(ctx.S.goals.length, 3, "goals must not be touched");
+  assert(ctx.S.goals.every(g => g.state),
+    "no goal record was altered by rendering");
+
+  /* 7. the actions still work on what IS shown */
+  ctx.S.shadowTaskSel = "m-ready";
+  assert(/data-shstart="m-ready"/.test(ctx.shadowHomeHtml()),
+    "Start was lost from a shown task");
+  ctx.S.shadowTaskSel = "m-fail";
+  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-fail"/
+    .test(ctx.shadowHomeHtml()), "Retry was lost from a shown failure");
+
+  /* goals not loaded yet: err toward SHOWING work, never toward hiding it */
+  const ctx2 = fresh();
+  ctx2.S.shadowHomeDark = false;
+  ctx2.S.shadowMissions = [{ id: "m-x", objective: "x", state: "blocked",
+                             goal_id: "g-unknown" }];
+  assert(ctx2.shadowTasks().map(m => m.id).includes("m-x"),
+    "an unknown goal must not hide live work");
+  console.log("ok 15b active work only; history stays on disk and in Goals");
+}
+
+/* 16. + Delegate opens the new-task panel IN THE RIGHT PANE, and says NEW CHAT */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = MISSIONS;
+  assert(!/data-shnewpanel/.test(ctx.shadowHomeHtml()), "panel open by default");
+  ctx.S.shadowNewOpen = true;
+  const h = ctx.shadowHomeHtml();
+  assert(/data-shnewpanel="1"/.test(h), "panel did not open");
+  assert(/What should Shadow get done\?/.test(h), "the ask is missing");
+  assert(/new chat/.test(h), "must say Shadow starts a NEW chat");
+  assert(/data-shnewobj/.test(h), "no outcome field");
+  assert(/data-shnewdone/.test(h), "no optional done-when field");
+  assert(/data-shnewkind="fix"/.test(h), "no template choice");
+  assert(/class="shkind on"[^>]*data-shnewkind="fix"/.test(h)
+      || /data-shnewkind="fix"/.test(h) && /shkind on/.test(h),
+    "fix is not the default");
+  /* the panel lives in the right column, not a modal overlay */
+  assert(h.indexOf('class="shwright"') < h.indexOf("data-shnewpanel"),
+    "the new-task panel is not in the right pane");
+  /* target_mode is BACKEND vocabulary and must never reach the operator */
+  assert(!/target_mode/.test(h), "target_mode leaked into the UI");
+  console.log("ok 16 + Delegate opens the new-task panel, in the right pane");
+}
+
+/* 17. THE WRITE: the exact body the existing endpoint receives.
+   An async test in a sync file: an IIFE, never a top-level `return` -- that
+   would END THE MODULE and silently skip every test after it. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.S.shadowHomeDark = false;
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ id: "m-new", state: "brief_confirm" }) });
+  ctx.shadowPost = (url, body) => {
+    posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ id: "m-new", state: "brief_confirm" }) });
+  };
+  ctx.loadShadowHome = () => Promise.resolve();
+  ctx.scheduleRender = () => {};
+  ctx.S.shadowNew = { objective: "  Fix the EMI rounding  ",
+                      done: "tests pass\n\nPR open", kind: "research" };
+  await ctx.shadowCreateTask();
+  assert.strictEqual(posts.length, 1, "expected exactly one POST");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions",
+    "must reuse the EXISTING mission endpoint");
+  const b = posts[0].body;
+  assert.strictEqual(b.target_mode, "new",
+    "the button, not the model, establishes the NEW-chat intent");
+  assert.strictEqual(b.objective, "Fix the EMI rounding", "objective trimmed");
+  assert.strictEqual(b.template, "research", "the chosen kind is sent");
+  /* JSON round-trip: values built inside the vm context carry that realm's
+     Array prototype, so a bare deepStrictEqual fails on identical data --
+     the same reason test 8 above compares bodies this way. */
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(b.done_when.map(c => c.check))),
+    ["tests pass", "PR open"], "blank lines dropped, order kept");
+  assert(b.done_when.every(c => c.tier === "founder_confirm"),
+    "a founder's own words are theirs to confirm");
+  assert(/Fix the EMI rounding/.test(b.manifest), "manifest carries the objective");
+  /* nothing is started: Start stays a separate, explicit press */
+  assert(!posts.some(p => /\/act$/.test(p.url)), "creation must not start work");
+  assert.strictEqual(ctx.S.shadowNewOpen, false, "panel closes on success");
+  assert.strictEqual(ctx.S.shadowTaskSel, "m-new", "the new task takes focus");
+  console.log("ok 17 + Delegate posts target_mode:new to the existing endpoint");
+})().catch(e => { console.error("FAIL 17:", e.message); process.exit(1); });
+
+/* 18. an empty outcome is refused client-side, with no POST */
+{
+  const ctx = fresh();
+  const posts = [];
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({}) }); };
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.scheduleRender = () => {};
+  ctx.S.shadowNew = { objective: "   ", done: "", kind: "fix" };
+  ctx.shadowCreateTask();
+  assert.strictEqual(posts.length, 0, "an empty outcome must not be posted");
+  assert(/will not guess/.test(ctx.S.shadowNewErr || ""), "no honest error");
+  console.log("ok 18 an empty outcome is refused, nothing is sent");
+}
+
+/* 19. the task card: the brief, with Start, and the existing actions */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowSettings = { floors: ["destructive git operations",
+                                    "external client repositories"] };
+  ctx.S.shadowMissions = [{ id: "m-k", objective: "fix the EMI rounding",
+    state: "brief_confirm", template: "fix", target_mode: "new",
+    target_session: null, turns_used: 0, max_turns: 20,
+    done_when: [{ tier: "founder_confirm", check: "a tested PR is open" }] }];
+  ctx.S.shadowTaskSel = "m-k";
+  const h = ctx.shadowHomeHtml();
+  assert(/fix the EMI rounding/.test(h), "objective missing");
+  assert(/acts in/.test(h) && /a new chat/.test(h),
+    "must say it runs in a new chat Shadow starts");
+  assert(/done when/.test(h) && /a tested PR is open/.test(h), "done-when missing");
+  assert(/data-shstart="m-k"/.test(h), "Start the task missing");
+  assert(/Start the task</.test(h), "Start is not labelled as the design asks");
+  assert(/or keep telling me/.test(h), "the keep-talking affordance is missing");
+  assert(/destructive git operations/.test(h), "floors not surfaced");
+  /* a failed task offers the EXISTING retry, not a new mechanism */
+  ctx.S.shadowMissions = [{ id: "m-f", objective: "nope", state: "failed",
+    template: "fix", target_mode: "new", turns_used: 20, max_turns: 20 }];
+  ctx.S.shadowTaskSel = "m-f";
+  const f = ctx.shadowHomeHtml();
+  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-f"/.test(f),
+    "a failed task must offer the existing retry");
+  assert(/>FAILED</.test(f), "failure is not stated in the task UI");
+  console.log("ok 19 task card: brief, Start, floors, retry on failure");
+}
+
+/* 20. THE TWO DEFECTS THE POLISH PASS FOUND, as a standing guard.
+
+   Neither was visible to any test above -- both rendered valid markup and
+   valid CSS, and both looked catastrophic on screen:
+
+     a) a CLASS COLLISION. The workspace's status pill was called .shpill,
+        which panel.css already used for the overlay's floating notification
+        (position:fixed; z-index:60). Every status pill inherited that, left
+        the flow, and stacked on top of the page.
+     b) AN UNSIZED <svg>. shadowNavHtml's icons carry a viewBox and no
+        width/height, and nothing styled them -- so each took the CSS default
+        intrinsic size, 300x150px, and four footer rows rendered as four
+        dashboard tiles.
+
+   So this asserts the two invariants, not the two symptoms: every sh* class
+   the workspace emits resolves to a rule, and every <svg> it emits has a size
+   from somewhere. */
+{
+  const cssTxt = fs.readFileSync(
+    path.join(__dirname, "static", "panel.css"), "utf8");
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowSettings = { floors: ["destructive git operations"] };
+  ctx.S.shadowMissions = MISSIONS;
+  ctx.S.goals = [{ id: "g-1", outcome: "ship it", state: "working",
+    checks_met: 1, checks_total: 3, checks_label: "1 of 3", unmet: ["x"],
+    turn_label: "turn 2/20", attempt: 1 }];
+  ctx.S.sessions = [{ id: "s-1", title: "paisa emi" }];
+  ctx.S.shadowWatching = ["s-1"]; ctx.S.shadowMemory = [];
+  ctx.S.shadowScopeOpen = true;
+  ctx.S.shadowThread = [{ who: "shadow", text: "hi" }];
+  const h = ctx.SCREENS.shadow();
+
+  /* (a) the pill must not wear a class the overlay already owns */
+  assert(!/class="[^"]*\bshpill\b/.test(h),
+    ".shpill is the overlay's fixed-position pill -- the workspace must not "
+    + "reuse it");
+
+  /* every sh* class resolves to a rule. Optional STATE modifiers are the one
+     allowance: .shasg-<state> and .shstatus-<state> decorate a base class
+     that is styled, and adding colours for goal states would be redesigning
+     Goals, which this pass must not do. */
+  const seen = new Set();
+  for (const m of h.matchAll(/class="([^"]+)"/g))
+    m[1].split(/\s+/).filter(Boolean).forEach(c => seen.add(c));
+  const optional = /^(shasg|shstatus)-/;
+  const unstyled = [...seen].filter(c => /^sh/.test(c) && !optional.test(c)
+    && !new RegExp("\\." + c.replace(/-/g, "\\-") + "\\b").test(cssTxt));
+  assert.deepStrictEqual(unstyled, [],
+    "sh* classes with no CSS rule (this is how the 300x150 icons happened): "
+    + unstyled.join(", "));
+
+  /* (b) every icon has an intrinsic size, from the attribute or from CSS */
+  const svgs = [...h.matchAll(/<svg\b[^>]*>/g)].map(s => s[0]);
+  assert(svgs.length > 0, "expected icons in the workspace");
+  /* An icon is sized either by its own class or by an ancestor-scoped
+     `<wrapper> svg{width:…}` rule, so the check looks at the classes in
+     scope at that point in the markup rather than at the tag alone. */
+  const bare = [];
+  const rx = /<svg\b[^>]*>/g;
+  let mm;
+  while ((mm = rx.exec(h)) !== null){
+    const tag = mm[0];
+    if (/\swidth="/.test(tag)) continue;
+    const own = (tag.match(/class="([^"]*)"/) || [])[1] || "";
+    /* every class opened before this point -- the svg's ancestors are among
+       them, which is enough to prove a descendant rule can reach it */
+    const inScope = new Set(own.split(/\s+/).filter(Boolean));
+    for (const c of h.slice(0, mm.index).matchAll(/class="([^"]+)"/g))
+      c[1].split(/\s+/).filter(Boolean).forEach(x => inScope.add(x));
+    const sized = [...inScope].some(c =>
+      new RegExp("\\." + c.replace(/-/g, "\\-")
+        + "(?:\\b[^{]*)?\\{[^}]*width:").test(cssTxt)
+      || new RegExp("\\." + c.replace(/-/g, "\\-")
+        + "\\b[^{]*svg\\{[^}]*width:").test(cssTxt));
+    if (!sized) bare.push(tag.slice(0, 70));
+  }
+  assert.deepStrictEqual(bare, [],
+    "an <svg> with no width attribute and nothing sizing it in CSS defaults "
+    + "to 300x150px: " + bare.join(" | "));
+  /* the footer icons are the ones that bit, and they are sized by descendant
+     rule rather than by their own class -- pin that rule explicitly */
+  assert(/\.shwleft \.shnavitem svg\{[^}]*width:/.test(cssTxt),
+    "the footer nav icons must be sized in CSS -- their markup carries none");
+
+  /* and the footer stays subordinate: no border, no fill, small type */
+  assert(/\.shwleft \.shnavitem\{[^}]*border:0/.test(cssTxt),
+    "the footer nav must not render as bordered cards");
+  console.log("ok 20 no class collisions, no unstyled classes, no unsized icons");
+}
+
+/* 21. THE SIGN-OFF: a delegated task that finished and is waiting on the
+   founder. The engine parks it at paused/founder_confirm, confirm_check is
+   the only writer of a founder_confirm `met` flag, and until this the card
+   offered Resume and Stop -- neither of which is "yes, that is done". */
+const AWAITING = {
+  id: "m-fib", objective: "a README on Fibonacci", state: "paused",
+  pause_reason: "founder_confirm", template: "fix", target_mode: "new",
+  target_session: "sess-fib", turns_used: 1, max_turns: 20,
+  done_when: [
+    { tier: "founder_confirm", check: "the README explains it clearly",
+      met: true, confirmed_by: "founder" },
+    { tier: "founder_confirm", check: "a working Python example is included" },
+    { tier: "transcript", check: "the example is syntactically correct" },
+  ],
+};
+
+/* 21a. it reads NEEDS YOU, everywhere the state is shown */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  const h = ctx.shadowHomeHtml();
+  assert(!/>PAUSED</.test(h),
+    "waiting on the founder must not read as a stalled task");
+  assert((h.match(/>NEEDS YOU</g) || []).length >= 2,
+    "NEEDS YOU in both the list row and the task header");
+  assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
+  /* a mission paused for any OTHER reason is untouched */
+  ctx.S.shadowMissions = [{ id: "m-r", objective: "x", state: "paused",
+    pause_reason: "app_restart", done_when: [] }];
+  ctx.S.shadowTaskSel = "m-r";
+  assert(/>PAUSED</.test(ctx.shadowHomeHtml()),
+    "a restart pause still reads PAUSED -- nothing is being asked");
+  console.log("ok 21a founder_confirm reads NEEDS YOU");
+}
+
+/* 21b. what am I agreeing to? Every criterion, in full, before its button */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  const h = ctx.shadowHomeHtml();
+  assert(/waiting on you/.test(h), "it must say what it is waiting for");
+  assert(/the README explains it clearly/.test(h)
+    && /a working Python example is included/.test(h)
+    && /the example is syntactically correct/.test(h),
+    "every criterion is shown, not a count");
+  /* the text precedes the control that acts on it */
+  const txt = h.indexOf("a working Python example is included");
+  const btn = h.indexOf('data-shcheckix="1"');
+  assert(txt > -1 && btn > txt,
+    "the criterion must be readable BEFORE its Confirm button");
+  assert(/shcheckmet/.test(h) && /confirmed/.test(h),
+    "an already-confirmed check says so instead of asking again");
+  assert(!/data-shcheckix="0"/.test(h), "a met check is not re-offered");
+  assert(!/data-shcheckix="2"/.test(h),
+    "a non-founder tier is not offered -- the server refuses that index");
+  assert(/Shadow checks this/.test(h), "and it says who does check it");
+  assert(!/done when<\/span>/.test(h),
+    "the flat summary row is replaced, not duplicated, in this state");
+  console.log("ok 21b the pending checks are readable before they are signed");
+}
+
+/* 21c + 21d. the click sends the EXISTING action, for the right mission and
+   index, and the answer refreshes the task state */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  let homeLoads = 0;
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
+  ctx.S.shadowTaskSel = "m-fib";
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ id: "m-fib", state: "done" }) }); };
+  ctx.loadShadowHome = () => { homeLoads++; };
+  assert(typeof ctx.listeners.click === "function", "the click handler is wired");
+  await ctx.listeners.click({ target: { dataset:
+    { shcheckmid: "m-fib", shcheckix: "1" } } });
+  assert.strictEqual(posts.length, 1, "exactly one action is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions/m-fib/act",
+    "the existing mission-action endpoint, for THIS mission");
+  assert.strictEqual(posts[0].body.action, "confirm_check",
+    "the existing action, not a new one");
+  assert.strictEqual(posts[0].body.index, 1,
+    "the index the engine stores the check under, as a number");
+  assert(homeLoads >= 1,
+    "a confirmation re-reads the mission state (settle may have ended it)");
+  console.log("ok 21c/d confirm_check is sent for the right check and refreshes");
+})().catch(e => { console.error("FAIL 21c/d:", e.message); process.exit(1); });
+
+/* 22. SHADOW SETTINGS (v7). Design of record: website/preview/shadow-v7.html.
+   The page is the workspace's one door, it comes back, and every control on
+   it is fed by the endpoint that already serves it -- nothing here is a
+   second settings store and nothing is drawn that cannot act. */
+const SET = { engage: ["outcome first"],
+  global: [{ id: "i-1", text: "Answer with the outcome in the first line." }],
+  per_chat: { "sess-paisa": [{ id: "i-2", text: "Run the EMI check first." }] },
+  attention: { watching: ["a", "b"], off: ["c"], alerts: 2 },
+  floors: ["the push", "client repos", "external sends"],
+  tasks: { running_at_once: 5,
+           turn_budget: { feature: 30, fix: 20, research: 15, watch: 0 } } };
+
+/* 22a. the header the design draws, and the way back */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
+  const h = ctx.shadowSettingsHtml();
+  assert(/class="sshead"/.test(h), "no settings header");
+  assert(/class="ssback"[\s\S]{0,120}data-shscreen="shadow"/.test(h)
+      || /data-shscreen="shadow"[\s\S]{0,120}class="ssback"/.test(h)
+      || /<button class="ssback" type="button" data-shscreen="shadow"/.test(h),
+    "the back button must return to the Shadow workspace");
+  assert(/class="ssmark"/.test(h) && /class="sstitle"/.test(h),
+    "seal + title missing from the header");
+  assert(/class="sswrap"/.test(h), "the centred column is missing");
+  /* four sections, in the design's order */
+  const order = ["Autonomy", "Memory", "Tasks", "Attention"]
+    .map(x => h.indexOf(">" + x + "<"));
+  assert(order.every(i => i > -1), "a section is missing: " + order.join(","));
+  assert(order.slice(1).every((v, i) => v > order[i]),
+    "sections are out of the design's order");
+  console.log("ok 22a settings page: header, back, centred column, sections");
+}
+
+/* 22b. every control is fed by real data -- and the nine the mock draws with
+   no store behind them are absent, not faked */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
+  const h = ctx.shadowSettingsHtml();
+  /* Autonomy = the floors, locked and said to be locked */
+  assert(/class="floorbar"/.test(h), "no floor bar");
+  assert(/the push/.test(h) && /external sends/.test(h), "floors not listed");
+  assert(/not editable/.test(h), "floors must say they cannot be changed");
+  /* Memory = the confirmed rules, with the EXISTING revoke */
+  assert(/Answer with the outcome/.test(h) && /Run the EMI check/.test(h),
+    "memory rules missing");
+  assert(/class="rscope glob"/.test(h), "a global rule is not scoped global");
+  assert(/paisa emi/.test(h), "a per-chat rule must wear the chat's real name");
+  assert(/data-shrevoke="i-2"/.test(h), "each rule keeps its revoke");
+  /* Tasks = the kinds + Delegate actually offers. Read off the Delegate
+     panel's OWN render rather than a list retyped here, so the two can never
+     drift: whatever Delegate offers is what Settings states. */
+  const kinds = (ctx.shadowDelegatePanelHtml().match(
+    /data-shnewkind="([a-z]+)"/g) || []).map(m => m.split('"')[1]);
+  assert(kinds.length >= 4, "the Delegate panel offered no kinds to compare");
+  kinds.forEach(k => assert(new RegExp('class="chip"[^>]*>' + k + "<").test(h),
+    "Settings does not state the kind Delegate offers: " + k));
+  /* Attention = the counts, and the three screens the footer used to list */
+  assert(/2 watched · 1 off · 2 waiting/.test(h), "attention counts wrong");
+  assert(/data-shwatching="1"/.test(h) && /data-shgoals="1"/.test(h)
+      && /data-shchats="1"/.test(h),
+    "Watching / Goals / Conversations must stay reachable from Settings");
+  /* Autonomy is drawn to the reference (founder, explicit) even though the
+     level and the top-tier switch have no store. What must hold is that they
+     do not PRETEND: no action hook, so nothing posts and nothing claims to
+     remember a choice it cannot keep. Pinned in 22d. */
+  /* every section the design draws is now here, in its order */
+  ["Autonomy", "Memory", "Tasks", "Presence", "Add a control", "Attention"]
+    .reduce((prev, name) => {
+      const at = h.indexOf(">" + name + "<");
+      assert(at > -1, "section missing: " + name);
+      assert(at > prev, "section out of the design's order: " + name);
+      return at;
+    }, -1);
+  /* nothing anywhere claims to keep what it cannot */
+  assert(!/contenteditable/.test(h),
+    "no editable field may render without a writer");
+  console.log("ok 22b settings: real data only, sections in the design's order");
+}
+
+/* 22d. AUTONOMY, to the reference. Four equal levels in one well with L3
+   filled, the top-tier switch on, then the floor pills -- and not one of the
+   two unbacked controls carries a writer. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const seg = (h.match(/<div class="seg"[\s\S]*?<\/div>/) || [""])[0];
+  assert(seg, "no segmented control");
+  [["L0", "Watch"], ["L1", "Suggest"], ["L2", "Draft"], ["L3", "Act"]]
+    .forEach(([lv, nm]) => {
+      assert(seg.indexOf(">" + lv + "<") > -1, "level missing: " + lv);
+      assert(seg.indexOf(nm) > -1, "level name missing: " + nm);
+    });
+  assert((seg.match(/<button/g) || []).length === 4, "four levels, no more");
+  /* L3 is the selected one, and it is the ONLY selected one */
+  assert((seg.match(/class="on"/g) || []).length === 1, "exactly one level is on");
+  const l3 = seg.slice(seg.lastIndexOf("<button"));
+  assert(/class="on"/.test(l3) && /aria-selected="true"/.test(l3),
+    "L3 must be the selected level");
+  /* the switch: on, and green by CSS rather than by a second class */
+  assert(/class="tog" role="switch" aria-checked="true"/.test(h),
+    "the top-tier switch must render on");
+  assert(/Ask me before the very top tier/.test(h), "its label is missing");
+  /* order: levels, then the switch, then the floors */
+  assert(h.indexOf('class="seg"') < h.indexOf('class="tog"')
+    && h.indexOf('class="tog"') < h.indexOf('class="floorbar"'),
+    "Autonomy must read levels -> switch -> floors");
+  /* the pills carry the lock the reference draws */
+  assert((h.match(/class="lk"/g) || []).length === 3, "three locked floor pills");
+  /* NOTHING UNBACKED WRITES. The one invariant that survives drawing them. */
+  const auto = h.slice(h.indexOf('class="seg"'), h.indexOf('class="floorbar"'));
+  assert(!/data-sh[a-z]+=/.test(auto),
+    "an unbacked control carries an action hook: " + auto.slice(0, 200));
+  assert((auto.match(/aria-disabled="true"/g) || []).length >= 5,
+    "unbacked controls must say they are not operable");
+  console.log("ok 22d autonomy matches the reference and writes nothing");
+}
+
+/* 22e. TASKS, to the reference -- and every number on it is one the engine
+   actually enforces, not one that merely looks right. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  /* the three rows, in the reference's order */
+  const rows = ["Running at once", "Budget per task", "Delegate offers"]
+    .map(k => sec.indexOf(k));
+  assert(rows.every(i => i > -1), "a Tasks row is missing: " + rows.join(","));
+  assert(rows.slice(1).every((v, i) => v > rows[i]), "Tasks rows out of order");
+  /* the stepper: minus, the value, plus */
+  const step = (sec.match(/<span class="step">[\s\S]*?<\/span>\s*<\/div>/) || [""])[0];
+  assert(/\u2212/.test(step) && /\+</.test(step), "the stepper needs - and +");
+  assert(/<span class="val">5<\/span>/.test(step),
+    "the stepper must show MAX_RUNNING, got: " + step.slice(0, 160));
+  /* the budget: the real per-kind turn budget, with the AUTO pill */
+  assert(/<span class="ev">20<\/span> turns/.test(sec),
+    "budget must quote TEMPLATES[fix].max_turns");
+  assert(/class="auto"[^>]*>auto</.test(sec), "the AUTO pill is missing");
+  /* the chips: what Delegate offers, each with the x the reference draws */
+  const kinds = (ctx.shadowDelegatePanelHtml().match(
+    /data-shnewkind="([a-z]+)"/g) || []).map(m => m.split('"')[1]);
+  kinds.forEach(k => assert(
+    new RegExp('class="chip"[^>]*>' + k + '<span class="cx"').test(sec),
+    "Delegate offer missing its chip or x: " + k));
+  assert(/class="chipadd"[\s\S]{0,120}\+ add</.test(sec), "no + add pill");
+  /* NOTHING IN HERE WRITES. Same invariant Autonomy keeps. */
+  assert(!/data-sh[a-z]+=/.test(sec),
+    "an unbacked Tasks control carries an action hook");
+  assert((sec.match(/aria-disabled="true"/g) || []).length >= 7,
+    "the -, +, every x and + add must say they are not operable");
+  /* and when the server sends no limits, none are invented */
+  const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
+  ctx.S.shadowSettings = d2;
+  const bare = ctx.shadowSettingsHtml();
+  assert(/not reported/.test(bare), "a missing limit must be said, not guessed");
+  assert(!/class="val">5</.test(bare), "a limit was invented from nowhere");
+  console.log("ok 22e tasks: reference layout, engine-enforced numbers");
+}
+
+/* 22f. PRESENCE + ADD A CONTROL, to the reference -- and the two rows that
+   have real state behind them are wired to the flags the overlay owns. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<"));
+  /* the four rows, in the reference's order */
+  const rows = ["Corner card on every screen", "Quiet hours",
+                "Nudges per hour", "Hide for this app"].map(k => sec.indexOf(k));
+  assert(rows.every(i => i > -1), "a Presence row is missing: " + rows.join(","));
+  assert(rows.slice(1).every((v, i) => v > rows[i]), "Presence rows out of order");
+  /* two switches, and a stepper showing the rate the code enforces */
+  assert((sec.match(/class="tog/g) || []).length === 2, "two toggles");
+  assert(/<span class="val">3<\/span>/.test(sec),
+    "the stepper must show SH_PILLS_PER_HOUR, got: " + sec.slice(0, 200));
+  /* the add bar */
+  assert(/class="addbar"/.test(sec), "no add-a-control bar");
+  assert(/Tell Shadow what to add/.test(sec), "its placeholder is missing");
+  assert(/class="go"/.test(sec) && /class="sp"/.test(sec),
+    "the accent dot and go button are missing");
+  /* THE TWO REAL ONES ACT, through the overlay's own flags */
+  assert(/data-shpresence="card"/.test(sec) && /data-shpresence="quiet"/.test(sec),
+    "the two backed toggles must be operable");
+  ctx.scheduleRender = () => {};
+  ctx.S.shadowQuiet = false;
+  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
+  assert.strictEqual(ctx.S.shadowQuiet, true,
+    "Hide for this app must flip the SAME flag the card's quiet control does");
+  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
+  assert.strictEqual(ctx.S.shadowQuiet, false, "and flip back");
+  ctx.S.shadowHideSession = false;
+  ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
+  assert.strictEqual(ctx.S.shadowHideSession, true,
+    "Corner card must flip the SAME flag the card's hide control does");
+  /* and the switch renders the truth afterwards */
+  assert(/class="tog off" role="switch"\s*\n?\s*aria-checked="false"[\s\S]{0,80}shpresence="card"/
+      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " "))
+    || /aria-checked="false"[^>]*data-shpresence="card"/
+      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " ")),
+    "the corner-card switch must read off once it is off");
+  /* the three unbacked ones state nothing they cannot keep */
+  assert(/not set/.test(sec),
+    "Quiet hours has no store -- it must say so, not print mock hours");
+  assert(sec.indexOf("9pm") === -1 && sec.indexOf("8am") === -1,
+    "mock hours were printed as if configured");
+  const inert = sec.slice(sec.indexOf("Quiet hours"));
+  assert(!/data-sh[a-z]+="(?!quiet)/.test(inert.slice(0, inert.indexOf("Hide for"))),
+    "an unbacked Presence control carries an action hook");
+  console.log("ok 22f presence: reference layout, real flags wired, rest inert");
+}
+
+/* 22c. the read can fail, and the page says so instead of rendering empty */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = null;
+  const h = ctx.shadowSettingsHtml();
+  assert(/Could not read the rules/.test(h), "a failed read must be stated");
+  assert(/data-shsetreload="1"/.test(h), "and offer the existing retry");
+  assert(/data-shscreen="shadow"/.test(h),
+    "the way back must survive a failed read");
+  console.log("ok 22c settings: an unreadable answer is its own state");
 }
 
 console.log("test_shadow_home.js: all green");
