@@ -1,0 +1,55 @@
+<section lang="en" class="app">
+  <style>
+    .app{font-family:var(--sans);color:var(--ink);max-width:720px;margin:0 auto}
+    .app h1{font-family:var(--serif);font-size:1.4rem;font-weight:600;margin:0 0 .35rem}
+    .app .lede{color:var(--muted);margin:0 0 1rem}
+    .app table{width:100%;border-collapse:collapse}
+    .app th,.app td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line-soft)}
+    .app th{color:var(--faint);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+    .app .ok{color:var(--ok)} .app .warn{color:var(--warn)} .app .block{color:var(--block)}
+    .app .empty{color:var(--muted);padding:1rem;border:1px dashed var(--line);border-radius:var(--r)}
+    .app button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:.4rem .7rem;cursor:pointer}
+    .app button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  </style>
+  <h1>Loan book by bucket</h1>
+  <p class="lede">A starter. Replace the heading, the columns and the rows with what this app shows when it opens.</p>
+  <table>
+    <thead><tr><th scope="col">Loan</th><th scope="col">Days late</th><th scope="col">Status</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="empty" id="empty" hidden>Nothing to show yet. Put the rows into this file and open the app again.</p>
+  <p><button type="button" id="sort">Sort by days late</button></p>
+  <script>
+    (function(){
+      /* The data lives here, baked into the file. The page has no network and
+         cannot save anything: what changes on screen resets each time it opens. */
+      var rows = [
+        {loan: "LN-1877", days: 63, status: "block"},
+        {loan: "LN-2031", days: 12, status: "warn"},
+        {loan: "LN-2044", days: 0,  status: "ok"}
+      ];
+      var body = document.getElementById("rows");
+      var empty = document.getElementById("empty");
+      function draw(list){
+        body.textContent = "";
+        if (!list.length){ empty.hidden = false; return; }
+        empty.hidden = true;
+        list.forEach(function(r){
+          var tr = document.createElement("tr");
+          [r.loan, String(r.days), r.status].forEach(function(v, i){
+            var td = document.createElement("td");
+            td.textContent = v;
+            if (i === 2) td.className = r.status;
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+      }
+      document.getElementById("sort").addEventListener("click", function(){
+        rows.sort(function(a, b){ return b.days - a.days; });
+        draw(rows);
+      });
+      draw(rows);
+    })();
+  </script>
+</section>

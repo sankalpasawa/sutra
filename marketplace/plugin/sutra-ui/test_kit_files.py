@@ -155,7 +155,7 @@ class KitFiles(unittest.TestCase):
             self.skipTest("check.py lands in Phase C")
         for p in facing:
             with open(p, encoding="utf-8", errors="replace") as fh:
-                hits = kit_check.leak_hits(fh.read())
+                hits = kit_check.leak_hits(fh.read(), strict=True)     # product copy: the internal word counts too
             self.assertEqual(hits, [], "%s leaks founder-only text: %s" % (os.path.relpath(p, KIT), hits[:3]))
 
 

@@ -30,6 +30,7 @@
        "path": "D1.D1",
        "ref": "<Desktop app>"
       },
+      "frameworkKit": "<stamp>",
       "guard": {},
       "has_page": false,
       "id": "desk-one",
@@ -60,6 +61,7 @@
      "path": "D1",
      "ref": "<Experience>"
     },
+    "frameworkKit": "<stamp>",
     "guard": {},
     "has_page": false,
     "id": "exp-one",
@@ -91,6 +93,7 @@
     "path": "D2",
     "ref": "<Analytics>"
    },
+   "frameworkKit": "<stamp>",
    "guard": {},
    "has_page": false,
    "id": "ana-one",
@@ -117,6 +120,7 @@
     "path": "D1.D1",
     "ref": "<Desktop app>"
    },
+   "frameworkKit": "<stamp>",
    "guard": {},
    "has_page": false,
    "id": "desk-one",
@@ -143,6 +147,7 @@
     "path": "D1",
     "ref": "<Experience>"
    },
+   "frameworkKit": "<stamp>",
    "guard": {},
    "has_page": false,
    "id": "exp-one",

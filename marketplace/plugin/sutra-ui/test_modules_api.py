@@ -168,15 +168,24 @@ class TestModulesApi(unittest.TestCase):
         r = self.client.post(BASE, json={"name": "Board", "kind": "page"}, headers=HDR)
         row = r.json()
         self.assertEqual(row["status"], "draft")
+        # Apps frameworks: the server materializes the page starter, so a fresh
+        # page has a page; the missing-html state is a DISK state (someone
+        # deleted it) and still reads as a draft with the warning.
+        self.assertTrue(row["has_page"])
+        os.remove(os.path.join(MOD_HOME, "board", "index.html"))
+        row = self.client.get(BASE + "/board", headers=HDR).json()
         self.assertFalse(row["has_page"])
         self.assertIn("index.html is missing", row["warning"])
         self.assertEqual(self.client.get(BASE + "/board/page").status_code, 404)
         self.assertEqual(self.client.post(BASE + "/board", json={"action": "mark_ready"}, headers=HDR).status_code, 409)
 
     def test_11_page_is_served_with_the_sandbox_headers_and_tokens(self):
-        html = "<h1 style='color:var(--acc)'>Deals</h1><script>document.title='x'</script>"
-        r = self.client.post(BASE, json={"name": "Pipeline", "kind": "page", "html": html}, headers=HDR)
+        # one root element with lang, inline only (the frameworks' page shape)
+        html = "<section lang='en'><h1 style='color:var(--acc)'>Deals</h1><script>document.title='x'</script></section>"
+        r = self.client.post(BASE, json={"name": "Pipeline", "kind": "page", "html": html,
+                                         "tagline": "the late loans, oldest first, with the owner beside each"}, headers=HDR)
         self.assertTrue(r.json()["has_page"])
+        self._answer_record(Path(MOD_HOME) / "pipeline")     # mark_ready is gated on the record (Apps frameworks)
         p = self.client.get(BASE + "/pipeline/page?theme=light")
         self.assertEqual(p.status_code, 200)
         csp = p.headers.get("content-security-policy", "")
@@ -471,6 +480,111 @@ class TestModulesApi(unittest.TestCase):
         self.assertTrue(r.json()["changed"])
         self.assertEqual(r.json()["app"]["version"], 2)
 
+    # ---- Apps frameworks (design v1, program Phase D) -------------------------
+
+    def _kit(self):
+        return json.loads((Path(modules_api._KIT_DIR) / "kit.json").read_text())
+
+    def _answer_record(self, folder):
+        """Fill every empty answer cell of the folder's own APP.md (stamp line untouched)."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "tests" / "fixtures" / "kit"))
+        import make_fixtures
+        rp = Path(folder) / "APP.md"
+        out = []
+        for line in rp.read_text().splitlines():
+            if line.startswith("|") and not line.startswith("|---"):
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                if len(cells) == 3 and cells[0] in make_fixtures.ANSWERS and not cells[2]:
+                    line = "| %s | %s | %s |" % (cells[0], cells[1], make_fixtures.ANSWERS[cells[0]])
+            out.append(line)
+        rp.write_text("\n".join(out) + "\n")
+
+    def test_v13_frameworks_endpoint_serves_the_installed_kit(self):
+        r = self.client.get(BASE + "/frameworks", headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        fw = r.json()
+        kit = self._kit()
+        self.assertEqual(fw["version"], kit["version"])
+        self.assertEqual(fw["digest"], kit["digest_short"])
+        self.assertEqual(sorted(fw["kinds"]), ["chat", "link", "page"])
+        self.assertTrue(fw["check"].endswith("apps-frameworks/check.py"))
+        self.assertEqual(fw["screens"], list(modules_api.SCREEN_IDS))
+        self.assertIn("ink", fw["tokens"])
+        self.assertIn("acc", fw["tokens"])
+        self.assertEqual(sorted(fw["must_fix"], key=lambda s: int(s[1:]))[:3], ["C1", "C3", "C4"])
+
+    def test_v13_create_materializes_starters_and_the_stamp_last(self):
+        kit = self._kit()
+        for kind, extra in (("page", {}), ("chat", {"instructions": "hi."}), ("link", {"screen": "balance"})):
+            r = self.client.post(BASE, json=dict({"name": "Starter %s" % kind, "tagline": "one line", "kind": kind}, **extra), headers=HDR)
+            self.assertEqual(r.status_code, 201, r.text)
+            row = r.json()
+            folder = Path(MOD_HOME) / row["id"]
+            raw = json.loads((folder / "module.json").read_text())
+            stamp = raw["frameworkKit"]
+            self.assertEqual(stamp["version"], kit["version"])
+            self.assertEqual(stamp["digest"], kit["digest_short"])
+            self.assertEqual(stamp["kind"], kind)
+            self.assertEqual(row["frameworkKit"], stamp, "the normalized row mirrors the stamp")
+            rec = (folder / "APP.md").read_text()
+            first = rec.splitlines()[0]
+            self.assertTrue(first.startswith("frameworkKit: "), first)
+            self.assertEqual(json.loads(first[len("frameworkKit: "):]), stamp, "APP.md line 1 equals the manifest mirror")
+            self.assertIn("# Starter %s" % kind, rec)
+            self.assertIn("| S3 |", rec)
+            if kind == "page":
+                starter = (Path(modules_api._KIT_DIR) / "templates" / "page" / "index.html").read_text()
+                self.assertEqual((folder / "index.html").read_text(), starter, "the page starter is the template byte for byte")
+            else:
+                self.assertFalse((folder / "index.html").exists())
+            if kind == "link":
+                self.assertIn("| B5 | Which screen should this open? | balance |", rec)
+        # a legacy folder (no stamp) still reads, with frameworkKit null
+        (Path(MOD_HOME) / "legacy").mkdir()
+        (Path(MOD_HOME) / "legacy" / "module.json").write_text(json.dumps({"id": "legacy", "name": "Legacy", "kind": "chat", "status": "draft", "version": 1}))
+        self.assertIsNone(self.client.get(BASE + "/legacy", headers=HDR).json()["frameworkKit"])
+
+    def test_v13_mark_ready_refuses_with_the_failing_check_ids_then_passes(self):
+        r = self.client.post(BASE, json={"name": "Loan book by bucket", "tagline": "placeholder", "kind": "page"}, headers=HDR)
+        mid = r.json()["id"]
+        folder = Path(MOD_HOME) / mid
+        r = self.client.post(BASE + "/" + mid, json={"action": "mark_ready"}, headers=HDR)
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn("C1", r.json()["detail"], "the unanswered record is named")
+        # answer the record and set the one-line tagline the record carries
+        self._answer_record(folder)
+        raw = json.loads((folder / "module.json").read_text())
+        raw["tagline"] = "the late loans, oldest first, with the owner beside each"
+        (folder / "module.json").write_text(json.dumps(raw))
+        r = self.client.post(BASE + "/" + mid, json={"action": "mark_ready"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["status"], "ready")
+        # a legacy app (no stamp) is never gated
+        (Path(MOD_HOME) / "old-one").mkdir()
+        (Path(MOD_HOME) / "old-one" / "module.json").write_text(json.dumps({"id": "old-one", "name": "Old", "kind": "chat", "status": "draft", "version": 1, "surface": {"instructions": "x"}}))
+        r = self.client.post(BASE + "/old-one", json={"action": "mark_ready"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_v13_checks_readonly_endpoint_returns_live_and_recorded(self):
+        r = self.client.post(BASE, json={"name": "Checks probe", "tagline": "one line", "kind": "chat", "instructions": "Say hi."}, headers=HDR)
+        mid = r.json()["id"]
+        folder = Path(MOD_HOME) / mid
+        events = Path(MOD_HOME) / ".events.jsonl"
+        before_ev = events.read_text() if events.exists() else ""
+        before_rec = (folder / "APP.md").read_text()
+        mtime = (folder / "APP.md").stat().st_mtime_ns
+        r = self.client.get(BASE + "/" + mid + "/checks", headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        j = r.json()
+        self.assertEqual(j["kind"], "chat")
+        self.assertIn("C1", j["live"]["fails"], "an unanswered record fails C1 live")
+        self.assertTrue(j["live"]["blocked"])
+        self.assertEqual(j["recorded"], {"ran": False}, "no check has written the block yet")
+        self.assertEqual((folder / "APP.md").read_text(), before_rec, "GET writes nothing")
+        self.assertEqual((folder / "APP.md").stat().st_mtime_ns, mtime)
+        self.assertEqual(events.read_text() if events.exists() else "", before_ev, "GET appends no event")
+        self.assertEqual(self.client.get(BASE + "/sys-balance/checks", headers=HDR).status_code, 404)
+
     def test_v12_two_hundred_apps_list_under_300ms(self):
         # Program step 85: the list is one directory read + one registry read per request
         root, exp, desk, ana = self._tree()
@@ -494,7 +608,10 @@ class TestModulesApi(unittest.TestCase):
             # refs -> names, timestamps stripped, and every list of rows sorted
             # so mtime / construction order can never flake the golden (codex R2 P3)
             if isinstance(o, dict):
-                return {k: norm(v) for k, v in o.items() if k not in ("created_at", "updated_at", "home", "at", "session_id")}
+                # the frameworks stamp carries the kit digest, which moves with
+                # every kit edit: its PRESENCE is golden, its value is not
+                return {k: ("<stamp>" if k == "frameworkKit" and isinstance(v, dict) else norm(v))
+                        for k, v in o.items() if k not in ("created_at", "updated_at", "home", "at", "session_id")}
             if isinstance(o, list):
                 items = [norm(x) for x in o]
                 if items and all(isinstance(x, dict) for x in items):

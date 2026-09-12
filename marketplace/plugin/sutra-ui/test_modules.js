@@ -224,11 +224,108 @@ test("Edit in chat: newSession(folder, dept), first line is the ROUTING PIN, ses
   assert.strictEqual(JSON.stringify(sess.app), JSON.stringify({ id: "m<1", mode: "edit", department_ref: "r2" }));
   const [seed, sid, opts] = T.calls.submitTurn[0];
   assert.strictEqual(sid, "s-9");
-  assert(seed.split("\n")[0].startsWith("ROUTING PIN — file this session under D2.1 Desktop app (r2). Do not re-classify."), "pin is line 1");
-  assert(/You are editing the app "Pipeline board" \(page\) in department D2\.1 Desktop app\./.test(seed));
+  /* Apps frameworks: the pin travels ONLY as the option -- never as seed text */
+  assert(!/ROUTING PIN|dref-|Do not re-classify/.test(seed), "no routing text in the seed");
+  assert(seed.split("\n")[0].startsWith('You are editing the app "Pipeline board" (page) in department D2.1 Desktop app.'));
   assert(/Department charter: Sutra Desktop — the Mac app/.test(seed));
   assert(/move this app to another department or archive it/.test(seed));
+  assert(!/APP\.md/.test(seed), "an app without a stamp gets no kit lines");
   assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
+});
+
+/* Apps frameworks: the kit payload as GET /api/modules/frameworks returns it */
+const FW = { dir: "/kit", version: "1.0.0", digest: "abc123def456", check: "/kit/check.py",
+             kinds: { page: "/kit/profiles/page.md", chat: "/kit/profiles/chat.md", link: "/kit/profiles/link.md" },
+             screens: ["balance", "shadow", "settings"], tokens: ["acc", "bg", "ink", "muted"], must_fix: ["C1", "C3"] };
+const STAMPED_PAGE = Object.assign({}, USER_PAGE, { frameworkKit: { kit: "apps-frameworks", version: "0.9.0", digest: "abc123def456", created_at: "2026-09-12T09:00:00Z", kind: "page" } });
+
+test("Edit in chat with the kit: APP.md first, the framework path, the stamp rule, a migration offer when the kit moved, the check line, no routing text", () => {
+  const view = api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, STAMPED_PAGE] }, modules: SYS.concat([USER_CHAT, STAMPED_PAGE]), counts_by_ref: { r2: 2 } });
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1", frameworks: FW }) });
+  T.modEdit(T.modSelected(T.S));
+  const [seed, , opts] = T.calls.submitTurn[0];
+  assert(/Also: APP\.md — the record/.test(seed), "the record is named first");
+  assert(/Framework: \/kit\/profiles\/page\.md/.test(seed));
+  assert(/--acc --bg --ink --muted/.test(seed), "the token list comes from the payload");
+  assert(/Never edit that line/.test(seed), "the stamp rule");
+  assert(/built on kit 0\.9\.0; installed is 1\.0\.0/.test(seed) && /ask whether to update the record/.test(seed), "a migration is offered, never applied");
+  assert(/python3 \/kit\/check\.py \/tmp\/mods\/m<1\/ --kind page/.test(seed), "the check command names the kit runner and the folder");
+  assert(/First: read APP\.md, then module\.json, then index\.html/.test(seed));
+  assert(!/ROUTING PIN|dref-|schema|status lines? of|D-M/.test(seed.replace(/no status lines/, "")), "no routing text, no manifest jargon");
+  assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
+});
+
+test("+ New app with the kit: the kind picker shows; picking a kind creates the folder on the server FIRST, then opens the chat inside it with the per-kind seed", () => {
+  const T = fresh({ S: loaded(DESK_VIEW, { modDept: "r2", modKey: "?subtree=1&department=r2", frameworks: FW }) });
+  assert.strictEqual(T.modNew(), null, "no chat yet: the picker decides the kind");
+  assert.strictEqual(T.S.modPick, "kind");
+  const html = T.SCREENS.modules();
+  assert(/data-modkind="page"/.test(html) && /data-modkind="chat"/.test(html) && /data-modkind="link"/.test(html), "three kind buttons");
+  assert(/data-modpickcancel/.test(html));
+  assert.strictEqual(T.calls.newSession.length, 0);
+  /* the create resolves with the materialized row; the forced read resolves too */
+  const created = { id: "page-20260912-101500", name: "New page app", kind: "page", status: "draft", frameworkKit: FW };
+  T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve(created); };
+  T.apiGet = (p) => { T.calls.apiGet.push(p); return Promise.resolve(DESK_VIEW.modules); };
+  return T.modNewKind("page").then(sess => {
+    assert(sess, "a session opened after the create");
+    const [path, body] = T.calls.apiPost[0];
+    assert.strictEqual(path, "/api/modules");
+    assert.strictEqual(body.kind, "page");
+    assert.strictEqual(body.department, "r2", "the department goes to the server as a ref, not into the seed");
+    assert(/^page-\d{8}-\d{6}-[a-z0-9]{3}$/.test(body.id), "a time-stamped provisional id with a random tail");
+    assert.strictEqual(T.S.modPick, null);
+    assert.deepStrictEqual(T.calls.newSession, [["/tmp/mods/page-20260912-101500", "r2"]], "the chat opens INSIDE the new folder");
+    const [seed, , opts] = T.calls.submitTurn[0];
+    assert(/^This is a new page app in D2\.1 Desktop app\./.test(seed));
+    assert(/Its folder is ready: index\.html \(a starter to replace\), APP\.md/.test(seed));
+    assert(/Read \/kit\/profiles\/page\.md now and follow it\./.test(seed));
+    assert(/Ask me six questions, one at a time/.test(seed));
+    assert(/--acc --bg --ink --muted/.test(seed));
+    assert(/python3 \/kit\/check\.py \/tmp\/mods\/page-20260912-101500\/ --kind page/.test(seed));
+    assert(!/ROUTING PIN|dref-|module\.json \{|schema:2|status:"draft"/.test(seed), "no routing text and no manifest literal in the seed");
+    assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
+    assert.strictEqual(JSON.stringify(sess.app), JSON.stringify({ id: "page-20260912-101500", mode: "new", department_ref: "r2" }));
+  });
+});
+
+test("+ New app with the kit: a link asks for the screen first; the pick posts screen + a provisional name; the seed lists the screens", () => {
+  const T = fresh({ S: loaded(DESK_VIEW, { modDept: "r2", modKey: "?subtree=1&department=r2", frameworks: FW }) });
+  T.modNew();
+  T.modNewKind("link");
+  assert.strictEqual(T.S.modPick, "screen");
+  const html = T.SCREENS.modules();
+  assert(/data-modkind="link" data-modscreen="balance"/.test(html) && !/data-modscreen="terminal"/.test(html));
+  const created = { id: "link-20260912-101500", name: "Link to Balance", kind: "link", status: "ready", surface: { screen: "balance" }, frameworkKit: FW };
+  T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve(created); };
+  T.apiGet = (p) => { T.calls.apiGet.push(p); return Promise.resolve(DESK_VIEW.modules); };
+  return T.modNewKind("link", "balance").then(() => {
+    const [, body] = T.calls.apiPost[0];
+    assert.strictEqual(body.screen, "balance");
+    assert(/^Link to /.test(body.name), "a provisional name the chat will replace");
+    const seed = T.calls.submitTurn[0][0];
+    assert(/^This is a new link app in D2\.1 Desktop app:/.test(seed) && /Screens it can open: balance, shadow, settings\. Never terminal or usage\./.test(seed));
+    assert(/--kind link/.test(seed));
+  });
+});
+
+test("checks chip: a stamped app's header reads the live checks; an unstamped or system app shows no chip", () => {
+  const view = api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, STAMPED_PAGE] }, modules: SYS.concat([USER_CHAT, STAMPED_PAGE]), counts_by_ref: { r2: 2 } });
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1", frameworks: FW }) });
+  let html = T.SCREENS.modules();
+  assert(/class="mod-checks"[^>]*>checks…</.test(html), "in flight: a quiet chip");
+  assert.strictEqual(T.calls.apiGet.filter(p => /\/checks$/.test(p)).length, 1, "one read per app");
+  const key = "m<1@" + (STAMPED_PAGE.updated_at || "");
+  T.S.modChecks[key] = { live: { blocked: false, fails: [], waived: ["C27"], summary: { must_fix_pass: 14 } }, recorded: { ran: true, summary: "14 must-fix pass, 0 fail, 1 waived, 2 suggestions, 0 skipped, render: not run" } };
+  html = T.SCREENS.modules();
+  assert(/mod-checks ok[^>]*>14 checks pass · 1 waived</.test(html), html.match(/mod-checks[^<]*</) && html.match(/mod-checks[^<]*</)[0]);
+  T.S.modChecks[key] = { live: { blocked: true, fails: ["C10", "C33"], waived: [], summary: { must_fix_pass: 12 } }, recorded: { ran: false } };
+  html = T.SCREENS.modules();
+  assert(/mod-checks fix[^>]*>2 to fix · not yet recorded</.test(html));
+  T.S.modSel = "friday";
+  assert(!/mod-checks/.test(T.SCREENS.modules()), "no stamp, no chip");
+  T.S.modSel = "sys-balance";
+  assert(!/mod-checks/.test(T.SCREENS.modules()), "system rows carry no chip");
 });
 
 /* 10. + New app: seeded chat that asks what kind; provider gate */
@@ -238,9 +335,11 @@ test("+ New app: chat at the apps root seeded with the pin + the three questions
   assert(sess);
   assert.deepStrictEqual(T.calls.newSession, [["/tmp/mods", "r2"]]);
   assert.strictEqual(sess.title, "New app · Desktop app");
-  const seed = T.calls.submitTurn[0][0];
-  assert(seed.startsWith("ROUTING PIN"));
-  assert(/Create a new app in department D2\.1 Desktop app\./.test(seed) && /\(1\) what kind/.test(seed) && /department:\{ref:"r2"\}/.test(seed));
+  const [seed, , opts] = T.calls.submitTurn[0];
+  /* no kit on this server (frameworks undefined): the pre-kit seed, minus any routing text */
+  assert(!/ROUTING PIN|dref-|department:\{ref/.test(seed), "the pin is the option, never text");
+  assert(/^Create a new app in D2\.1 Desktop app\./.test(seed) && /\(1\) what kind/.test(seed));
+  assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
   assert.strictEqual(JSON.stringify(sess.app), JSON.stringify({ id: null, mode: "new", department_ref: "r2" }));
   const T2 = fresh({ SETTINGS: { provider: "" }, S: loaded(ROOT_VIEW) });
   assert.strictEqual(T2.modNew(), null);
@@ -293,7 +392,7 @@ test("open paths: chat app opens a pinned session with its instructions; link op
   assert.strictEqual(T.modOpen(USER_CHAT), true);
   assert.deepStrictEqual(T.calls.newSession, [["", "r2"]]);
   const [seed, , opts] = T.calls.submitTurn[0];
-  assert(seed.startsWith("ROUTING PIN") && /\ngo$/.test(seed));
+  assert.strictEqual(seed, "go", "the instructions ARE the first turn; the pin is the option");
   assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
   const shadow = { id: "shadow", name: "Shadow", kind: "link", status: "ready", surface: { screen: "shadow" }, reserved: false, department: dep(DESK) };
   assert.strictEqual(T.modOpen(shadow), true);

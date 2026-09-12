@@ -114,6 +114,46 @@ function modAll(s){ return (s.modules && s.modules.modules) || []; }
 function modById(s, id){ return modAll(s).find(m => m.id === id) || null; }
 function modSelected(s){ return s.modSel ? modById(s, s.modSel) : null; }
 
+/* ── Apps frameworks kit (design 2026-09-11-apps-frameworks-design.md) ─────
+   GET /api/modules/frameworks once per screen life: version, digest, the
+   per-kind profile paths, the check runner, the screens a link may open and
+   the token names a page may use. null = no kit on this server (an older
+   bundle): every seed degrades to the pre-kit text. */
+function modFrameworks(s){ return s && s.frameworks ? s.frameworks : null; }
+function modEnsureFrameworks(s){
+  if (!s || s.frameworks !== undefined || s.modFwWant || typeof apiGet !== "function") return;
+  s.modFwWant = true;
+  Promise.resolve(apiGet(MOD_API + "/frameworks")).then(fw => { s.frameworks = fw || null; modRender(); },
+                                                        () => { s.frameworks = null; });
+}
+/* The checks chip in an app header: one read per app + updated_at, read-only on the server. */
+function modChecksFor(s, m){
+  if (!s.modChecks) s.modChecks = {};
+  const key = m.id + "@" + (m.updated_at || "");
+  const have = s.modChecks[key];
+  if (have !== undefined) return have;
+  s.modChecks[key] = null;                                   /* in flight */
+  if (typeof apiGet === "function")
+    Promise.resolve(apiGet(MOD_API + "/" + encodeURIComponent(m.id) + "/checks")).then(r => { s.modChecks[key] = r || false; modRender(); },
+                                                                                          () => { s.modChecks[key] = false; });
+  return null;
+}
+function modChecksChip(s, m){
+  if (!m.frameworkKit || m.building || m.reserved || modIsSys(m)) return "";
+  const r = modChecksFor(s, m);
+  if (r === null) return `<span class="mod-checks" title="reading the checks">checks…</span>`;
+  if (!r || !r.live) return "";
+  const live = r.live, sum = live.summary || {};
+  let cls = "ok", text = `${sum.must_fix_pass || 0} checks pass`;
+  if (live.blocked){ cls = "fix"; text = `${live.fails.length} to fix`; }
+  else if ((live.waived || []).length){ text += ` · ${live.waived.length} waived`; }
+  const stale = r.recorded && r.recorded.ran && r.recorded.summary && !live.blocked && !/^\s*\d+ must-fix pass, 0 fail/.test(r.recorded.summary);
+  if (r.recorded && r.recorded.ran === false){ cls = live.blocked ? "fix" : "stale"; text += " · not yet recorded"; }
+  else if (stale){ cls = "stale"; text += " · record out of date"; }
+  const title = (live.fails || []).length ? "must-fix: " + live.fails.join(", ") : "run the check from Edit in chat to record it";
+  return `<span class="mod-checks ${cls}" title="${modEsc(title)}">${modEsc(text)}</span>`;
+}
+
 /* The department tree for the rail: DOMAINS, live only, sorted like dirData. */
 function modTree(){
   const all = (typeof DOMAINS !== "undefined" && Array.isArray(DOMAINS)) ? DOMAINS : [];
@@ -173,32 +213,82 @@ function modCharterLine(ref){
   if (!c) return "";
   return (c.title || "") + (c.purpose ? " — " + c.purpose : "");
 }
+/* The department pin travels ONLY as the `pin` option on submitTurn (routing
+   pin honoured by /api/classify): no seed text ever carries a ref (Apps
+   frameworks design v1 R1-P3; the leak test fails on ROUTING PIN / dref-). */
+function modDeptWords(dept){ return dept ? `${modChip(dept.path)} ${dept.name}` : "Unassigned"; }
+function modCheckLine(s, kind, folder){
+  const fw = modFrameworks(s);
+  return fw ? `Before you say done, run  python3 ${fw.check} ${folder} --kind ${kind}  (or the sutra_app_check tool). Fix every must-fix result and run it again; read me the suggestions as they are, they do not block.` : "";
+}
 function modEditSeed(s, m){
   const dept = m.department ? modDeptOf(s, m.department.ref) || m.department : null;
-  const head = dept ? modPinLine(dept) + "\n\n" : "";
-  const where = dept ? `in department ${modChip(dept.path)} ${dept.name}` : "with no department yet (Unassigned)";
-  const files = m.kind === "page"
-    ? `module.json (schema ${m.schema || 2} · kind page · status ${m.status}${dept ? " · department.ref " + dept.ref : ""}) · index.html`
-    : `module.json (schema ${m.schema || 2} · kind ${m.kind} · status ${m.status}${dept ? " · department.ref " + dept.ref : ""})`;
+  const fw = modFrameworks(s);
+  const where = dept ? `in department ${modDeptWords(dept)}` : "with no department yet (Unassigned)";
+  const folder = `${modHome(s)}/${m.id}/`;
+  const files = m.kind === "page" ? `module.json (kind page · status ${m.status}) · index.html` : `module.json (kind ${m.kind} · status ${m.status})`;
   const charter = dept ? modCharterLine(dept.ref) : "";
-  return head
-    + `You are editing the app "${m.name}" (${m.kind}) ${where}.\n`
-    + `Folder: ${modHome(s)}/${m.id}/  (the folder IS the app)\n`
+  const kit = fw && m.frameworkKit ? [
+    `Also: APP.md — the record of what this app is for, how it is checked and who keeps it. Read it first.`,
+    `Framework: ${fw.kinds[m.kind] || fw.dir}${m.kind === "page" ? ". Everything stays inline: no network, no storage, only the app's own colour names (" + (fw.tokens || []).map(t => "--" + t).join(" ") + "), a body fragment." : m.kind === "chat" ? ". The only thing that changes is the opening message in module.json surface.instructions, still the visible first message, under 4000 characters." : ". The only things that change are the screen it opens, the name and the line under it."}`,
+    `APP.md carries a stamp on its first line. Never edit that line, and never hand-write updated_ms or bump version — the app does both when this session ends.`,
+    (m.frameworkKit.version && fw.version && m.frameworkKit.version !== fw.version)
+      ? `This app was built on kit ${m.frameworkKit.version}; installed is ${fw.version}. Say in one line what changed and what it means for this app, and ask whether to update the record. Write it only if I say yes and add a Changes line saying so. If I say no, the older rules still apply.`
+      : `This app was built on kit ${m.frameworkKit.version || fw.version}, the one installed; no migration to offer.`,
+    `When you change anything, update the matching APP.md rows in the same turn and add one dated line at the top of ## Changes.`,
+  ] : [];
+  return `You are editing the app "${m.name}" (${m.kind}) ${where}.\n`
+    + `Folder: ${folder}  (the folder IS the app)\n`
     + `Files: ${files}\n`
     + (charter ? `Department charter: ${charter}\n` : "")
-    + `Rules: edit files in place; keep module.json valid (never change id); bump version and updated_at; tell me what changed when done.\n`
+    + (kit.length ? kit.join("\n") + "\n" : "")
+    + `Rules: edit files in place; keep module.json valid (never change id); tell me what changed when done.\n`
     + `You can also move this app to another department or archive it — tell me and I apply it as a structured change.\n`
-    + (m.kind === "page" ? `First: read both files, then ask me what should change.` : `First: read the file, then ask me what should change.`);
+    + (kit.length ? `First: read APP.md, then module.json${m.kind === "page" ? ", then index.html" : ""}, then ask me what should change.\n${modCheckLine(s, m.kind, folder)}\nReply in plain words, no headers and no status lines. Say "app", never the internal word.`
+                  : (m.kind === "page" ? `First: read both files, then ask me what should change.` : `First: read the file, then ask me what should change.`));
 }
-function modNewSeed(s, dept){
-  const head = dept ? modPinLine(dept) + "\n\n" : "";
-  const where = dept ? `in department ${modChip(dept.path)} ${dept.name}` : "(no department yet; it will show under Unassigned)";
-  const depField = dept ? `, department:{ref:"${dept.ref}"}` : "";
-  return head
-    + `Create a new app ${where}.\n`
-    + `Folder root: ${modHome(s)}/  (one folder per app; the folder IS the app)\n`
-    + `Ask me one question at a time: (1) what kind — chat (a conversation that opens with standing instructions), page (an index.html shown inside the app) or link (a shortcut to a screen); (2) what it should do; (3) a name.\n`
-    + `Then write <slug>/module.json {schema:2, id, name, tagline, kind, status:"draft", version:1, surface${depField}} and index.html if it is a page. Report the folder when done.`;
+/* New app, kit present: the server has ALREADY materialized the folder (a
+   starter, APP.md with the stamp, module.json); this seed opens inside it. */
+function modNewSeed(s, dept, kind, row){
+  const fw = modFrameworks(s);
+  const where = dept ? `in ${modDeptWords(dept)}` : "with no department yet (Unassigned)";
+  if (!fw || !kind || !row){
+    return `Create a new app ${where}.\n`
+      + `Folder root: ${modHome(s)}/  (one folder per app; the folder IS the app)\n`
+      + `Ask me one question at a time: (1) what kind — chat (a conversation that opens with standing instructions), page (an index.html shown inside the app) or link (a shortcut to a screen); (2) what it should do; (3) a name.\n`
+      + `Then write <slug>/module.json {id, name, tagline, kind, status:"draft", version:1, surface} and index.html if it is a page. Report the folder when done.`;
+  }
+  const folder = `${modHome(s)}/${row.id}/`;
+  const profile = fw.kinds[kind] || fw.dir;
+  const tail = `\n${modCheckLine(s, kind, folder)}\nReport ${kind === "page" ? "what the page shows when it opens" : kind === "chat" ? "the first words someone will see" : "the row and the screen it opens"}, and the check result. Plain words, no headers, no status lines. Say "app", never the internal word.`;
+  if (kind === "page"){
+    return `This is a new page app ${where}. Its folder is ready: index.html (a starter to replace), APP.md (the record of what it is for), module.json.\n`
+      + `Folder: ${folder}\nRead ${profile} now and follow it.\n\n`
+      + `Ask me six questions, one at a time, and wait for each answer:\n`
+      + `1. Who opens this, and what are they trying to get done?\n2. Say it in one line someone else would understand. What should it be called?\n3. When it opens, what is the first thing on the screen?\n4. What information does it work with, and where does that live? Paste one real row, the smallest example it has to handle.\n5. What should it show when a number is missing or there is nothing to show, and what should I do then?\n6. You open it tomorrow. What do you see that tells you it worked?\n\n`
+      + `Then send me ONE message with the rest already filled in, for me to correct in a line or two: how I would use it once, the shape you will use, the controls (one per line, starting with a dash), whether anything resets when I close it, which rows count as good, warning or blocked, which part of answer 6 must still be true after a future edit, who keeps it and the date to look at it again, what it replaces, and the department above. Ask whether it names a real borrower or account, and whether anyone besides me will use it, only at the very end.\n\n`
+      + `Then write index.html (a body fragment: one root element with lang, inline style and script, the data baked in, images as data: URLs, colour, type and radius only from: ${(fw.tokens || []).map(t => "--" + t).join(" ")}), fill every row of APP.md, and set name and tagline in module.json. Change nothing else in module.json and never touch the first line of APP.md. This page has no network and no storage.`
+      + tail;
+  }
+  if (kind === "chat"){
+    return `This is a new chat app ${where}. Its folder is ready: module.json (the opening message lives in it) and APP.md (the record).\n`
+      + `Folder: ${folder}\nRead ${profile} now and follow it.\n\n`
+      + `Ask me one question at a time, in this order:\n`
+      + `1. Who opens this chat and what are they trying to get done? What do they do today without it?\n2. Walk me through one use, start to finish. What is the smallest real thing someone will bring to it?\n3. What information does it work with and where does that live? Which folder may this chat read and write?\n4. Anything it must never do on its own: run commands, install things, send messages? When the information is missing or wrong, what should it say instead of guessing?\n5. Who is it talking to, and what must it never say?\n6. You open it tomorrow: what in the opening message tells you it worked?\n`
+      + `Then send me ONE message with the rest filled in, for me to correct: the name and one line, who keeps it and the review date, what it replaces, the department above, and the opening message itself in full. Ask whether it names a real borrower or account, and whether anyone besides me will use it, at the end.\n\n`
+      + `The opening message IS what the person reads first; there is no hidden prompt. Write it to that person: one line saying what it does, a short list of what it never does, then one question. Under 4000 characters. No keys, no account numbers. Every command it may run goes in the APP.md Backend row, word for word.\n`
+      + `Write the opening message into module.json surface.instructions, set name and tagline, fill every row of APP.md. Create data-policy.json only if this chat calls one of the app's own services: one entry per call with the call, why, what could go wrong, and the check that covers it. Change nothing else in module.json and never touch the first line of APP.md.`
+      + tail;
+  }
+  return `This is a new link app ${where}: a row that opens a screen this app already has. It has no page and no instructions. Its folder is ready: module.json and APP.md.\n`
+    + `Folder: ${folder}\nRead ${profile} now and follow it.\n\n`
+    + `Screens it can open: ${(fw.screens || []).join(", ")}. Never terminal or usage.\n\n`
+    + `Ask me one question at a time, in this order:\n`
+    + `1. Which screen should it open? (offer the list above)\n2. What should the row say, and one line under it?\n3. Who opens it and what are they after?\n4. What tells you it is the right shortcut, and what should you see if that screen is empty or gone?\n5. What does that screen show and where does that live?\n6. It files under ${modDeptWords(dept)}. Keep it there, or move it?\n`
+    + `Then send me ONE message with the rest filled in: who keeps it and the review date, what it replaces by hand today. Ask whether anyone besides me will use it at the end.\n\n`
+    + `Two answers are fixed by the kind; state them and ask for a nod: files are module.json only, plus the record; what must still work is "the row opens the screen; click Open and land on it".\n`
+    + `Set surface.screen, name and tagline in module.json and fill every row of APP.md. Change nothing else in module.json and never touch the first line of APP.md.`
+    + tail;
 }
 function modOpenSeededChat(s, title, cwd, seed, app){
   if (!modProviderReady()){ s.modErr = "Connect a chat provider in Settings to create or edit apps."; modRender(); return null; }
@@ -218,12 +308,63 @@ function modEdit(m){
   return modOpenSeededChat(s, "Edit · " + m.name, modHome(s) + "/" + m.id, modEditSeed(s, m),
                            { id: m.id, mode: "edit", department_ref: dept });
 }
+function modNewDept(s){
+  const ref = (s.modDept && s.modDept !== MOD_UNASSIGNED) ? s.modDept : (s.modules && s.modules.root ? s.modules.root.ref : null);
+  return ref ? modDeptOf(s, ref) : null;
+}
+/* + New app. With the kit: show the kind picker (three buttons, one line
+   each); the pick creates the folder on the server FIRST, then opens the chat
+   inside it (D-F3). Without the kit (older server): the pre-kit seeded chat. */
 function modNew(){
   const s = modS(); if (!s) return null;
-  const ref = (s.modDept && s.modDept !== MOD_UNASSIGNED) ? s.modDept : (s.modules && s.modules.root ? s.modules.root.ref : null);
-  const dept = ref ? modDeptOf(s, ref) : null;
+  if (!modProviderReady()){ s.modErr = "Connect a chat provider in Settings to create or edit apps."; modRender(); return null; }
+  if (modFrameworks(s)){ s.modPick = "kind"; s.modErr = null; modRender(); return null; }
+  const dept = modNewDept(s);
   return modOpenSeededChat(s, "New app · " + (dept ? dept.name : "Unassigned"), modHome(s), modNewSeed(s, dept),
                            { id: null, mode: "new", department_ref: dept ? dept.ref : null });
+}
+function modProvisional(kind, screen){
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  /* seconds plus a short random tail: two creates in one second never collide (codex R2 P4) */
+  const tail = Math.floor(Math.random() * 46656).toString(36).padStart(3, "0").slice(-3);
+  const id = `${kind}-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${tail}`;
+  const name = kind === "link" ? `Link to ${modScreenLabel(screen || "")}`.trim() : `New ${kind} app`;
+  return { id, name };
+}
+async function modNewKind(kind, screen){
+  const s = modS(); if (!s || !MOD_KIND_HELP[kind]) return null;
+  const fw = modFrameworks(s);
+  if (kind === "link" && !screen){ s.modPick = "screen"; modRender(); return null; }
+  const dept = modNewDept(s);
+  const prov = modProvisional(kind, screen);
+  const body = { id: prov.id, name: prov.name, kind };
+  if (dept) body.department = dept.ref;
+  if (kind === "link") body.screen = screen;
+  s.modPick = null; s.modErr = null;
+  let row;
+  try { row = await apiPost(MOD_API, body); }
+  catch (e) { s.modErr = "Could not create the app: " + ((e && e.message) || e); modRender(); return null; }
+  if (!row || !row.id){ s.modErr = "Could not create the app."; modRender(); return null; }
+  await loadModules(true);
+  s.modSel = row.id;
+  const sess = modOpenSeededChat(s, "New app · " + (dept ? dept.name : "Unassigned"), modHome(s) + "/" + row.id,
+                                 modNewSeed(s, dept, kind, row), { id: row.id, mode: "new", department_ref: dept ? dept.ref : null });
+  return sess;
+}
+function modPickHtml(s){
+  if (!s.modPick) return "";
+  const fw = modFrameworks(s) || {};
+  if (s.modPick === "screen"){
+    const screens = (fw.screens || []).filter(x => x !== "terminal" && x !== "usage");
+    return `<div class="mod-pick" role="group" aria-label="Which screen should the link open?"><span class="mod-pick-lab">Which screen should it open?</span>
+      ${screens.map(x => `<button type="button" data-modkind="link" data-modscreen="${modEsc(x)}"><b>${modEsc(modScreenLabel(x))}</b><span>${modEsc(x)}</span></button>`).join("")}
+      <button type="button" class="mod-pick-cancel" data-modpickcancel>Cancel</button></div>`;
+  }
+  return `<div class="mod-pick" role="group" aria-label="What kind of app?"><span class="mod-pick-lab">What kind of app?</span>
+    <button type="button" data-modkind="page"><b>Page</b><span>${modEsc(MOD_KIND_HELP.page)}</span></button>
+    <button type="button" data-modkind="chat"><b>Chat</b><span>${modEsc(MOD_KIND_HELP.chat)}</span></button>
+    <button type="button" data-modkind="link"><b>Link</b><span>${modEsc(MOD_KIND_HELP.link)}</span></button>
+    <button type="button" class="mod-pick-cancel" data-modpickcancel>Cancel</button></div>`;
 }
 /* The done handler's callback (APPS-EVENTS.md §done): the touch endpoint is
    the write that appends the event; the forced read follows. */
@@ -365,7 +506,7 @@ function modAppViewHtml(s, m){
   const edit = (sys || m.reserved) ? "" : `<button class="btn mod-edit" type="button" data-modedit title="Opens a chat in ${modEsc(modHome(s))}/${modEsc(m.id)}/${d ? ", placed under " + modEsc(modChip(d.path)) + " " + modEsc(d.name) : ""}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Edit in chat</button>`;
   return `<div class="mod-hd"><span class="chip big">${d ? modEsc(modChip(d.path)) : "—"}</span>
       <div><p class="crumb">${crumb}</p><h1>${modEsc(m.name)}</h1>${m.tagline ? `<p>${modEsc(m.tagline)}</p>` : ""}</div>
-      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}<span class="count">${modEsc(m.status)}</span></div>
+      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
     <div class="mod-body">${modAppBodyHtml(s, m)}</div>`;
 }
 function modCrumbHtml(s, m){
@@ -381,7 +522,7 @@ function modScreenHtml(s){
       <div class="mod-actions"><button class="btn" type="button" data-modreload>Try again</button><button class="newBtn" type="button" data-modnew>+ New app</button></div>
     </section></div>`;
   }
-  const err = s.modErr ? `<div class="note w"><b>${modEsc(s.modErr)}</b></div>` : "";
+  const err = (s.modErr ? `<div class="note w"><b>${modEsc(s.modErr)}</b></div>` : "") + modPickHtml(s);
   const sel = modSelected(s);
   const narrow = modIsNarrow(s);
   if (sel && narrow){
@@ -431,7 +572,7 @@ function modOpenChat(m){
   if (!sess) return false;
   sess.title = m.name || sess.title;
   const instr = m.surface && m.surface.instructions;
-  const seed = (dept && s ? modPinLine(modDeptOf(s, dept) || m.department) + "\n\n" : "") + (instr || "");
+  const seed = instr || "";                            /* the pin travels as the option, never as text */
   if (seed.trim() && typeof submitTurn === "function") submitTurn(seed, sess.id, dept ? { pin: { department_ref: dept } } : undefined);
   if (typeof render === "function") render();
   return true;
@@ -460,6 +601,7 @@ if (typeof SCREENS !== "undefined"){
       loadModules(false);
       return `<div class="zero"><h4>Apps</h4><p>Reading your apps…</p></div>`;
     }
+    modEnsureFrameworks(s);                          /* one read; null on an older server */
     return modScreenHtml(s);
   };
 }
@@ -468,7 +610,7 @@ if (typeof TITLES !== "undefined"){
 }
 
 if (typeof document !== "undefined" && document.addEventListener){
-  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch]";
+  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
   document.addEventListener("click", (ev) => {
     const s = modS(); if (!s) return;
     const t = ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
@@ -478,6 +620,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.modapp !== undefined){ ev.preventDefault(); modOpenApp(d.modapp); return; }
     if (d.modfacet !== undefined){ modFacet(d.modfacet); return; }
     if (d.modnew !== undefined){ modNew(); return; }
+    if (d.modkind !== undefined){ modNewKind(d.modkind, d.modscreen || null); return; }
+    if (d.modpickcancel !== undefined){ s.modPick = null; modRender(); return; }
     if (d.modback !== undefined){ ev.preventDefault(); s.modSel = null; modRender(); return; }
     if (d.modsub !== undefined){ s.modSubtree = s.modSubtree === false; loadModules(true); modRender(); return; }
     if (d.modreload !== undefined){ s.modFrameNonce = (s.modFrameNonce || 0) + 1; loadModules(true); return; }

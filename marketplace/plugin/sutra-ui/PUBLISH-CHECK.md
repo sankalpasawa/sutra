@@ -26,6 +26,9 @@ lane-1 backing is screenshot archaeology.
 3b. node test_agents.js          # 24  — the Agents screen: projections vs a captured run, rendered DOM, block ids vs Python
 3c. node test_modules.js         # 17  — Org > Apps: registration, the shared dirRail slice, department + app views, seeds, never-blank states, the open paths (Apps program, TEST-STRATEGY-APPS.md)
 3d. .venv/bin/python -m pytest -q test_modules_pkg.py   # import/export trust boundary (APPS-THREATS.md X-1..X-10); collected by step 4 too, listed here because it is the security gate
+3e. .venv/bin/python apps-frameworks/build_kit.py --check && .venv/bin/python -m pytest -q test_kit_files.py test_kit_threats.py test_kit_runner.py test_kit_upgrade.py test_kit_packaging.py test_sutra_mcp.py
+                                  # Apps frameworks kit (D75): kit.json current, ids in one angle each, threat map, the runner + fixture matrix, upgrade never rewrites, ADR-039 round trip, the sutra_app_check tool.
+                                  # In the BUNDLE: payload/plugin/sutra-ui/apps-frameworks/kit.json exists and GET /api/modules/frameworks answers with its version (the kit ships beside the server, no env var)
 4. .venv/bin/python -m pytest -q # backend — collect ALL test_*.py; never a hand-typed file list (two of the old names were removed and pytest silently reported 0)
                                   # (conftest.py excludes seo_agent/, whose scripts sys.exit at import; test_agents_api.py covers the routes)
 4b. bash seo_agent/tests/run_all.sh   # the SEO Writer engine's own checks, in a throwaway data dir

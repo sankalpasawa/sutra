@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.0 (2026-09-12)
+
+- **Apps frameworks: every app built through "+ New app" or "Edit in chat" is now shaped the way Sutra is built (D75).** Pick page, chat or link and the folder appears with a starter, a record (`APP.md`, stamped with the kit version) and the manifest; the chat opens inside it, asks six plain questions per kind, builds the surface, fills the record and runs `check.py` before saying done. Six angle frameworks (product, strategy, design, engineering, backend, frontend) drive the questions; 18 must-fix checks block "done" in this version, 20 more advise; a checks chip sits in the app header; the department pin travels as a session option, never as chat text. Apps created before the kit list, open and edit exactly as before.
+- Kit at `sutra-ui/apps-frameworks/` (single authored source `angles/*.json`, generated twins, `kit.json` digest); new `GET /api/modules/frameworks` and read-only `GET /api/modules/<id>/checks`; `migrate_kit` action (a plugin upgrade never rewrites an app; the builder says yes); import reconstructs the record; `sutra_app_check` MCP tool for permission-denied chats. Tests: kit 30, modules +4, mcp 4, node 22; PUBLISH-CHECK lane 3e. Program `holding/plans/apps-frameworks/PROGRAM.md` (codex Phase A consult + R2 folded).
+
 ## 2.264.2 (2026-09-12)
 
 - **The first module to load no longer decides the registry for everything loaded after it.** `org_api` used to write the resolved registry path back into `os.environ["SUTRA_NATIVE_HOME"]` at import, the poisoning step behind the 2026-09-11 wipe (RCA fix row 4). It now exposes `registry_root()` (the engine's own binding, with the default as fallback) and leaves the environment alone; `app.py` hands the Sutra MCP children that root explicitly through `_mcp_env_for_children()` in both config shapes. `test_org_api_env.py` proves it in a child interpreter with the variable and `PYTEST_CURRENT_TEST` removed. `optimus_api` docstring updated; its own root resolution is unchanged.

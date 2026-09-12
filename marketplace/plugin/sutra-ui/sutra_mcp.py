@@ -194,6 +194,33 @@ def t_routine_run(args):
 
 
 
+def t_app_check(args):
+    """Apps frameworks (design v1 R1-P9): the read-only lane for a chat that is
+    building or editing an app when its permission mode refuses a bare Bash
+    run. Same runner, same kit, same verdict as `python3 check.py`; this tool
+    WRITES the ## Checks block like the CLI does (an explicit run, not a page
+    load). Confined to the modules home by realpath."""
+    import os as _os
+    home = _os.path.realpath(_os.path.expanduser(_os.environ.get("SUTRA_MODULES_HOME", "~/.sutra-ui/modules")))
+    mid, path = str(args.get("id") or ""), str(args.get("path") or "")
+    folder = _os.path.realpath(_os.path.join(home, mid)) if mid else _os.path.realpath(_os.path.expanduser(path))
+    if not folder.startswith(home + _os.sep):
+        return _err("that folder is not an app under %s" % home)
+    kit_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "apps-frameworks")
+    if kit_dir not in sys.path:
+        sys.path.insert(0, kit_dir)
+    try:
+        import check as kit_check
+    except Exception as exc:                            # noqa: BLE001
+        return _err("the checks runner is not installed: %s" % exc)
+    kind = args.get("kind") or None
+    results, summary, code = kit_check.run(folder, kind, home=home, kitdir=kit_dir, allow_skip_render=True)
+    if code == 2:
+        return _err(summary.get("error") or "could not read the app")
+    kit_check.write_checks_block(folder, results, summary, {})
+    return _text(kit_check.render_table(results, summary) + "\n\nexit %d%s" % (code, "" if code == 0 else " (must-fix results remain)" if code == 1 else " (render not run)"))
+
+
 def t_task_file(args):
     """File a Teamsutra task. DIRECT write, not a proposal — and that is safe
     for exactly one reason: the record lands at status='draft', which nothing
@@ -284,6 +311,16 @@ TOOLS = [
                     "operator's plan, so it requires approval.",
      "schema": {"type": "object", "required": ["id"], "properties": {
          "id": {"type": "string"}}}},
+
+    {"name": "sutra_app_check", "fn": t_app_check,
+     "description": "Run the app checks on one app folder under the apps home "
+                    "(the same runner as python3 check.py). Read the folder, "
+                    "report must-fix results and suggestions, and write the "
+                    "## Checks block of its APP.md. Pass id (folder name) or path.",
+     "schema": {"type": "object", "properties": {
+         "id": {"type": "string", "description": "the app folder name under the apps home"},
+         "path": {"type": "string", "description": "absolute path of the app folder (alternative to id)"},
+         "kind": {"type": "string", "enum": ["page", "chat", "link"]}}}},
 
     {"name": "sutra_task_file", "fn": t_task_file,
      "description": "File a Teamsutra task (bug/task/question) as a DRAFT. "

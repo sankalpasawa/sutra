@@ -66,7 +66,7 @@ SCREEN_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
 KINDS = ("chat", "page", "link")
 STATUSES = ("draft", "ready", "archived")
 CREATED_BY = ("app", "shadow", "chat", "disk", "system", "marketplace")   # marketplace: ADR-039 install path (no UI yet)
-ACTIONS = ("archive", "restore", "rename", "mark_ready", "set_instructions", "assign")
+ACTIONS = ("archive", "restore", "rename", "mark_ready", "set_instructions", "assign", "migrate_kit")
 SYS_PREFIX = "sys-"
 NAME_MAX, TAGLINE_MAX, INSTR_MAX, HTML_MAX = 80, 140, 4000, 512 * 1024
 LINK_FORBIDDEN = ("terminal", "usage")   # terminal is a pane toggle; usage renders inside settings
@@ -117,6 +117,154 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1
 
 PAGE_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
             "img-src data: blob:; font-src data:; frame-ancestors 'self'")
+
+# Apps frameworks kit (design v1, D75): resolved beside this file, the way
+# _LIB_DIR is, so the dev checkout and the bundled payload agree and check.py
+# next to it reads the same kit.json. No environment variable, no search path.
+_KIT_DIR = Path(__file__).resolve().parent / "apps-frameworks"
+RECORD_TEMPLATE_KEYS = ("STAMP", "NAME", "TAGLINE", "KIT_VERSION", "DEPARTMENT", "SCREEN", "DATE")
+
+
+def _kit_json():
+    try:
+        return json.loads((_KIT_DIR / "kit.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def frameworks_payload():
+    """What the panel and the seeded chats read about the installed kit. None
+    when the kit is absent (an older bundle): every caller degrades to the
+    pre-kit behaviour, nothing errors."""
+    kit = _kit_json()
+    if not kit:
+        return None
+    try:
+        screens = json.loads((_KIT_DIR / "screens.json").read_text(encoding="utf-8")).get("screens") or list(SCREEN_IDS)
+    except (OSError, ValueError):
+        screens = list(SCREEN_IDS)
+    return {"dir": str(_KIT_DIR), "version": kit.get("version"), "digest": kit.get("digest_short"),
+            "kinds": {k: str(_KIT_DIR / "profiles" / (k + ".md")) for k in KINDS},
+            "check": str(_KIT_DIR / "check.py"),
+            "screens": [s for s in screens if s not in LINK_FORBIDDEN],
+            "tokens": sorted(set(re.findall(r"--([a-z][a-z0-9-]*)\s*:", TOKEN_CSS))),
+            "must_fix": kit.get("v1_must_fix") or []}
+
+
+def _kit_stamp(kind, now):
+    kit = _kit_json()
+    if not kit:
+        return None
+    return {"kit": "apps-frameworks", "version": kit.get("version"), "digest": kit.get("digest_short"),
+            "created_at": now, "kind": kind}
+
+
+def _render_record(kind, stamp, name, tagline, department_name, screen, now):
+    """templates/<kind>/APP.md with the placeholders filled; None when the kit
+    has no template for the kind (nothing is written, nothing fails)."""
+    try:
+        text = (_KIT_DIR / "templates" / kind / "APP.md").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    values = {"STAMP": json.dumps(stamp, separators=(",", ":")), "NAME": name, "TAGLINE": tagline or "",
+              "KIT_VERSION": str(stamp.get("version") or ""), "DEPARTMENT": department_name or "Unassigned",
+              "SCREEN": screen or "", "DATE": now[:10]}
+    for k in RECORD_TEMPLATE_KEYS:
+        text = text.replace("{{%s}}" % k, values[k])
+    return text
+
+
+def _kit_check_module():
+    """check.py from the kit dir, imported once. None when absent."""
+    p = _KIT_DIR / "check.py"
+    if not p.is_file():
+        return None
+    if str(_KIT_DIR) not in sys.path:
+        sys.path.insert(0, str(_KIT_DIR))
+    try:
+        import check as kit_check  # noqa: E402
+        return kit_check
+    except Exception:
+        return None
+
+
+def run_checks(mid, raw):
+    """Live checks for one app, in-process, no render and NO writes (the GET
+    lane and the mark_ready gate). None when the kit is absent or the app
+    predates it (no stamp): legacy apps are never gated."""
+    kit_check = _kit_check_module()
+    if kit_check is None or not isinstance(raw.get("frameworkKit"), dict):
+        return None
+    kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
+    prev = os.environ.get("KIT_NO_RENDER")
+    os.environ["KIT_NO_RENDER"] = "1"
+    try:
+        results, summary, code = kit_check.run(_dir(mid), kind, home=_home(), kitdir=str(_KIT_DIR), allow_skip_render=True)
+    finally:
+        if prev is None:
+            os.environ.pop("KIT_NO_RENDER", None)
+        else:
+            os.environ["KIT_NO_RENDER"] = prev
+    if code == 2:
+        return {"error": summary.get("error"), "blocked": False, "fails": [], "warns": [], "waived": [], "summary": summary}
+    return {"blocked": bool(summary.get("blocked")),
+            "fails": [r["id"] for r in results if r["status"] == "fail" and r["level"] == "must-fix"],
+            "warns": [r["id"] for r in results if r["status"] in ("warn", "fail") and r["level"] == "suggest"],
+            "waived": [r["id"] for r in results if r["status"] == "waived"],
+            "summary": summary, "checks": results}
+
+
+def reconstruct_record(mid):
+    """After an import (ADR-039 install path): APP.md does not travel with a
+    package, so the installer rebuilds the skeleton from module.json plus the
+    mirrored stamp; every answer it cannot recover reads `not recorded`, which
+    the checks report as WARN, never FAIL. Sets origin.imported = true. No
+    version bump, no updated_ms, no event. Returns True when it wrote."""
+    path = _dir(mid)
+    fpath = os.path.join(path, "module.json")
+    raw = read_json(fpath, {})
+    stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
+    if not raw or not stamp or os.path.isfile(os.path.join(path, RECORD_FILE)):
+        return False
+    kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
+    reg = _Registry()
+    dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
+    dept_row = reg.row(dept.get("ref")) if dept.get("ref") else None
+    surface = raw.get("surface") if isinstance(raw.get("surface"), dict) else {}
+    text = _render_record(kind, stamp, str(raw.get("name") or mid), str(raw.get("tagline") or ""),
+                          (dept_row or {}).get("name"), surface.get("screen"), _now())
+    if text is None:
+        return False
+    out = []
+    for line in text.splitlines():
+        if line.startswith("|") and not line.startswith("|---"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) == 3 and re.match(r"^(P|S|DS|E|B|F)[0-9]{1,2}$", cells[0]) and not cells[2]:
+                line = "| %s | %s | not recorded |" % (cells[0], cells[1])
+        out.append(line)
+    _write_text(os.path.join(path, RECORD_FILE), "\n".join(out) + "\n")
+    origin = raw.get("origin") if isinstance(raw.get("origin"), dict) else {}
+    origin["imported"] = True
+    raw["origin"] = origin
+    write_json(fpath, raw)
+    return True
+
+
+def recorded_checks(mid):
+    """The ## Checks block of APP.md as last written by a check run (or None)."""
+    rp = os.path.join(_dir(mid), RECORD_FILE)
+    if not os.path.isfile(rp):
+        return None
+    text = open(rp, encoding="utf-8", errors="replace").read()
+    m = re.search(r"(?ms)^## Checks\n(.*?)(?=^## |\Z)", text)
+    if not m:
+        return None
+    lines = [l for l in m.group(1).splitlines() if l.strip()]
+    if not lines or lines[0].startswith("(written by"):
+        return {"ran": False}
+    return {"ran": True, "header": lines[0], "summary": lines[1] if len(lines) > 1 else "",
+            "waived": [l[len("waived: "):] for l in lines if l.startswith("waived: ")],
+            "must_fix": [l[len("must-fix: "):] for l in lines if l.startswith("must-fix: ")]}
 
 
 class ModuleError(ValueError):
@@ -346,7 +494,9 @@ def _normalize(raw, mid, path, reg):
             "department": department,
             # ADR-039: the optional publish block (semver, author, license, state …)
             # is carried through untouched so Publish never needs a storage migration
-            "publish": raw.get("publish") if isinstance(raw.get("publish"), dict) else None}
+            "publish": raw.get("publish") if isinstance(raw.get("publish"), dict) else None,
+            # Apps frameworks: the stamp mirror (None for apps that predate the kit)
+            "frameworkKit": raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None}
 
 
 BUILDING_WARNING = "building… — this app's manifest is not readable yet"
@@ -360,7 +510,7 @@ def _building_row(mid, path, json_path):
             "surface": {}, "guard": {}, "created_at": _mtime_iso(json_path), "updated_at": _mtime_iso(json_path),
             "has_page": os.path.isfile(os.path.join(path, "index.html")),
             "reserved": mid.startswith(SYS_PREFIX), "warning": BUILDING_WARNING,
-            "department": None, "publish": None, "building": True}
+            "department": None, "publish": None, "frameworkKit": None, "building": True}
 
 
 def _read(mid, reg=None):
@@ -537,9 +687,25 @@ def create_module(spec, created_by, session_id=None):
            # ONLY the ref (codex P6): path/name are read-time caches
            "department": {"ref": dept_ref} if dept_ref else None,
            "publish": None}
-    write_json(os.path.join(path, "module.json"), row)
+    # Apps frameworks (design v1 R1-P1): the SERVER materializes the folder --
+    # the kind's starter files, then APP.md with the stamp, then module.json
+    # LAST so a half-written folder is never a listed app. The chat that opens
+    # afterwards fills answers and the surface; it never writes the stamp.
+    stamp = _kit_stamp(kind, now)
+    if stamp:
+        row["frameworkKit"] = stamp
+        if kind == "page" and not html:
+            try:
+                html = (_KIT_DIR / "templates" / "page" / "index.html").read_text(encoding="utf-8")
+            except OSError:
+                html = ""
+        dept_row = reg.row(dept_ref) if dept_ref else None
+        record = _render_record(kind, stamp, name, tagline, (dept_row or {}).get("name"), surface.get("screen"), now)
+        if record is not None:
+            _write_text(os.path.join(path, RECORD_FILE), record)
     if html:
         _write_text(os.path.join(path, "index.html"), html)
+    write_json(os.path.join(path, "module.json"), row)
     modules_events.append(_home(), "app.created", mid, kind=kind, version=1, department_ref=dept_ref,
                           actor=(created_by + ":" + session_id) if session_id else created_by)
     return _read(mid, reg)
@@ -557,6 +723,27 @@ def apply_action(mid, action, body):
         raise ModuleError(404, "no app named %r" % (mid,))
     kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
     body = body if isinstance(body, dict) else {}
+    if action == "migrate_kit":
+        # Apps frameworks (design v1 §The APP.md record): the builder said yes
+        # in Edit in chat. Rewrite the two stamp copies (version, digest,
+        # migrated) and NOTHING else: no version bump, no updated_ms, no event.
+        stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
+        kit = _kit_json()
+        if not stamp or not kit:
+            raise ModuleError(409, "this app carries no framework stamp to move; nothing to migrate")
+        stamp.update({"version": kit.get("version"), "digest": kit.get("digest_short"), "migrated": _now()[:10]})
+        raw["frameworkKit"] = stamp
+        write_json(fpath, raw)
+        rp = os.path.join(path, RECORD_FILE)
+        if os.path.isfile(rp):
+            lines = open(rp, encoding="utf-8", errors="replace").read().split("\n")
+            for i, l in enumerate(lines):
+                if l.strip():
+                    if l.strip().startswith("frameworkKit:"):
+                        lines[i] = "frameworkKit: " + json.dumps(stamp, separators=(",", ":"))
+                    break
+            _write_text(rp, "\n".join(lines))
+        return _read(mid)
     if action == "archive":
         raw["status"] = "archived"
     elif action == "restore":
@@ -566,6 +753,12 @@ def apply_action(mid, action, body):
     elif action == "mark_ready":
         if kind == "page" and not os.path.isfile(os.path.join(path, "index.html")):
             raise ModuleError(409, "index.html is missing — write it at %s" % os.path.join(path, "index.html"))
+        # Apps frameworks (design v1): only must-fix failures refuse; waivers,
+        # suggestions and imported "not recorded" rows never do. Apps without a
+        # stamp predate the kit and are never gated.
+        chk = run_checks(mid, raw)
+        if chk and chk.get("blocked"):
+            raise ModuleError(409, "checks must pass before ready: %s — run the check and fix or waive them" % ", ".join(chk["fails"]))
         raw["status"] = "ready"
     elif action == "set_instructions":
         if kind != "chat":
@@ -646,7 +839,11 @@ def touch_app(mid, mode="edit", session_id=None):
         modules_events.append(_home(), "app.created" if mode == "new" else "app.edited", mid,
                               kind=raw.get("kind"), version=raw["version"], department_ref=dept_ref,
                               actor=("chat:" + session_id) if session_id else "chat", changed=["files"])
-    return {"app": _read(mid), "changed": changed}
+    out = {"app": _read(mid), "changed": changed}
+    chk = run_checks(mid, raw)                 # live, no render, no writes (design v1 §Injection points)
+    if chk:
+        out["check"] = {"blocked": chk["blocked"], "fails": chk["fails"], "warns": chk["warns"], "waived": chk["waived"]}
+    return out
 
 
 def page_html(mid, theme=None):
@@ -698,6 +895,16 @@ async def api_modules_create(request: Request):
     return JSONResponse(row, status_code=201)
 
 
+@router.get("/frameworks")
+async def api_modules_frameworks():
+    """The installed Apps frameworks kit (design v1): version, digest, per-kind
+    profile paths, the check runner, the screens a link may open and the token
+    names a page may use. Declared BEFORE /{mid} so "frameworks" is never read
+    as an app id. null when the kit is absent (older bundle)."""
+    _require_flag()
+    return JSONResponse(frameworks_payload())
+
+
 @router.post("/import")
 async def api_modules_import(request: Request):
     """ADR-039 install path (APPS-THREATS.md X-1..X-10). Declared BEFORE the
@@ -713,6 +920,10 @@ async def api_modules_import(request: Request):
                                      registry=qp.get("registry") or None)
     except modules_pkg.PkgError as e:
         raise HTTPException(e.status, str(e))
+    try:
+        res["record_reconstructed"] = reconstruct_record(res.get("id") or "")
+    except (ModuleError, OSError, ValueError):
+        res["record_reconstructed"] = False    # the install stands; the first edit can still write the record
     return JSONResponse(res, status_code=201)
 
 
@@ -735,6 +946,25 @@ async def api_modules_touch(mid: str, request: Request):
         body = {}
     body = body if isinstance(body, dict) else {}
     return _guard(touch_app, mid, body.get("mode") or "edit", body.get("session_id"))
+
+
+@router.get("/{mid}/checks")
+async def api_modules_checks(mid: str):
+    """Read-only: the live check results (no render, no writes) beside what
+    the record last recorded, so the header chip can say "record out of date"
+    instead of the chip and the file silently disagreeing (design v1)."""
+    _require_flag()
+    if not isinstance(mid, str) or mid.startswith(SYS_PREFIX):
+        raise HTTPException(404, "no app named %r" % (mid,))
+    path = _guard(_dir, mid)
+    raw = read_json(os.path.join(path, "module.json"), {})
+    if not raw:
+        raise HTTPException(404, "no app named %r" % (mid,))
+    live = run_checks(mid, raw)
+    kit = _kit_json() or {}
+    return {"id": mid, "kit": kit.get("version"), "kind": raw.get("kind"),
+            "stamped": (raw.get("frameworkKit") or {}).get("version") if isinstance(raw.get("frameworkKit"), dict) else None,
+            "live": live, "recorded": recorded_checks(mid)}
 
 
 @router.get("/{mid}")

@@ -84,11 +84,16 @@ User-facing strings. The word for the thing is **App**; "module" never appears w
 | App header crumb | <department> › <kind> |
 | Edit chat title | Edit · <app> |
 | New chat title | New app · <department> |
-| Edit seed, line 1 | ROUTING PIN — file this session under <D-path> <department> (<ref>). Do not re-classify. |
-| Edit seed, line 2 | You are editing the app "<name>" (<kind>) in department <D-path> <department>. |
-| Edit seed, closing | You can also move this app to another department or archive it — tell me and I apply it as a structured change. First: read both files, then ask me what should change. |
-| New seed, line 2 | Create a new app in department <D-path> <department>. |
-| New first reply (expected) | What kind of app do you want to create — a chat, a page, or a link? |
+| Department pin | travels as the session's `pin` option (routing honoured by /api/classify), never as seed text — no ref a person reads (apps frameworks design v1, R1-P3) |
+| Edit seed, line 1 | You are editing the app "<name>" (<kind>) in department <D-path> <department>. |
+| Edit seed, kit lines (stamped apps) | Also: APP.md — the record of what this app is for, how it is checked and who keeps it. Read it first. · Framework: <kit>/profiles/<kind>.md … · APP.md carries a stamp on its first line. Never edit that line … · This app was built on kit <stamped>; installed is <installed>. Say in one line what changed … ask whether to update the record. |
+| Edit seed, closing | You can also move this app to another department or archive it — tell me and I apply it as a structured change. First: read APP.md, then module.json[, then index.html], then ask me what should change. Before you say done, run python3 <kit>/check.py <folder> --kind <kind> (or the sutra_app_check tool) … Reply in plain words, no headers and no status lines. Say "app", never the internal word. |
+| Kind picker (after + New app) | What kind of app? · Page — a page you wrote as index.html, shown inside the app · Chat — a conversation that opens with these instructions as its first turn · Link — a shortcut to a screen this app already has · Cancel |
+| Screen picker (link) | Which screen should it open? · one button per screen a link may open (never terminal or usage) |
+| New seed, line 1 | This is a new <kind> app in <D-path> <department>. Its folder is ready: <files>. |
+| New seed, shape | Read <kit>/profiles/<kind>.md now and follow it. · Ask me six questions, one at a time … · Then send me ONE message with the rest already filled in … · Then write <surface>, fill every row of APP.md, and set name and tagline in module.json. Change nothing else in module.json and never touch the first line of APP.md. · Before you say done, run the check … · Report … Plain words, no headers, no status lines. |
+| Checks chip (app header) | <n> checks pass · <n> waived / <n> to fix · not yet recorded / … · record out of date |
+| Provisional app name | New page app · New chat app · Link to <Screen> (the chat sets the real name and the line under it) |
 | No provider | Connect a chat provider in Settings to create or edit apps. |
 | Empty department | Nothing here yet. New app puts it in <department>. |
 | Building | building… — this app's manifest is not readable yet |

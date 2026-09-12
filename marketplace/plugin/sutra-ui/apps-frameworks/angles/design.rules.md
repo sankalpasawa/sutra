@@ -11,12 +11,12 @@
 
 | id | question | required for | optional | v1 |
 |---|---|---|---|---|
-| D1 | When it opens, what is the first thing on the screen? | page | no | yes |
-| D2 | Is it a table of rows, a few numbers, a short reading view, or one answer? | page | no | prefilled |
-| D3 | Is anything on this page good, warning or blocked, and what makes it so? | page | no | prefilled |
-| D4 | Who is this chat talking to, and what must it never say? | chat | no | yes |
-| D5 | Does anything need to stay side by side when the window is narrow? | - | yes | no |
-| D6 | What should the row say, and what does it look like next to the others? | link | no | yes |
+| DS1 | When it opens, what is the first thing on the screen? | page | no | yes |
+| DS2 | Is it a table of rows, a few numbers, a short reading view, or one answer? | page | no | prefilled |
+| DS3 | Is anything on this page good, warning or blocked, and what makes it so? | page | no | prefilled |
+| DS4 | Who is this chat talking to, and what must it never say? | chat | no | yes |
+| DS5 | Does anything need to stay side by side when the window is narrow? | - | yes | no |
+| DS6 | What should the row say, and what does it look like next to the others? | link | no | yes |
 
 ## Rules
 
