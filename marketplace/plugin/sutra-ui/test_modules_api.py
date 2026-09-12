@@ -511,7 +511,7 @@ class TestModulesApi(unittest.TestCase):
         self.assertEqual(fw["screens"], list(modules_api.SCREEN_IDS))
         self.assertIn("ink", fw["tokens"])
         self.assertIn("acc", fw["tokens"])
-        self.assertEqual(sorted(fw["must_fix"], key=lambda s: int(s[1:]))[:3], ["C1", "C3", "C4"])
+        self.assertEqual(sorted(fw["must_fix"], key=lambda s: int(s[1:]))[:3], ["C1", "C2", "C3"])
 
     def test_v13_create_materializes_starters_and_the_stamp_last(self):
         kit = self._kit()

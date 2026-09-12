@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.16 (2026-09-12)
+
+- **Five more checks block "done" (kit 1.1.0).** C2 (success and failure answers are real sentences), C6 (the Department row matches where the app is filed), C7 (a review date), C22 (a regression check someone can act on) and C36 (the page renders in both themes with no console errors) are must-fix, by founder direction ahead of field data: 23 of 38 block, 15 advise. Folds: C6 fails when the row names a department the app is not filed under; C22 accepts "verify", "confirm", "visible", "appears", "loads" and "look". The render lane no longer counts Chrome's own about:blank abort as a failed load, waits for the load event instead of sleeping 700 ms, and retries a navigation the start-up commit aborted. Apps already ready keep their status; imported and adopted apps keep their `not recorded` warnings. Tests: kit files 8, runner 15 (+2 render), upgrade 5, apps api 35.
+
 ## 2.265.15 (2026-09-12)
 
 - **Shadow workspace renders its two columns.** The 2.265.14 merge kept both branches' Shadow CSS. Three pre-merge rules with no emitter left (`.shwork` twice, the base `.shchev`) leaked `flex-direction:column`, card chrome and a hairline colour into Joy's workspace container and chevrons; the global `.shcompwrap` and `.shtarget` leaked column direction and full width into the right pane. Dead rules removed; Joy's scoped rules now state `flex-direction:row` and `width:auto`. Found by the codex + DeepSeek review of the merge (both FAIL on `.shwork`).

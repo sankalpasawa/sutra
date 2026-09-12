@@ -28,9 +28,11 @@ Decisions the kit is built on. Each one is a ruling, not a preference: a later c
 
 A link's whole surface is one screen id the server validates at create, so a draft state protects nothing. PR-6 (stay draft until the success line is true) applies to page and chat only.
 
-## v1 is the basic cut
+## v1 is the basic cut; kit 1.1.0 promotes five
 
-v1 asks the six required questions per kind plus one prefilled confirm message. Eighteen checks block "done" (`build_kit.V1_MUST_FIX`); every other check ships as `suggest` and may be promoted from field data. The designed `level` stays in the JSON as the target for later promotion.
+v1 asks the six required questions per kind plus one prefilled confirm message. Kit 1.0.0 had eighteen checks block "done"; kit 1.1.0 (2026-09-12) promotes C2, C6, C7, C22 and C36, so twenty-three block (`build_kit.V1_MUST_FIX`). Every other check ships as `suggest` and may be promoted from field data. The designed `level` stays in the JSON as the target for later promotion.
+
+The five were promoted by founder direction ahead of field data (the kit was a day old). They were named first in the program retro because each is a deterministic read: C2 and C7 of the record, C22 of the regression sentence, C6 of the department ref against the registry, C36 of the render lane. Two folds landed with the promotion (codex): C6 fails when the row names a department the app is not filed under (before, a warning), and C22 accepts verify, confirm, visible, appears, loads and look. Where C36 bites: `check.py` and `sutra_app_check`, the lanes the chat runs before saying done, refuse a page that throws on load. The desktop's own `run_checks` (the chip, `mark_ready`) never renders inside a request, so there C36 reads skip and blocks nothing, and a page on a machine with no headless runtime is still marked ready. That is FR-5 read both ways: not run is never a pass, and it is not a failure either.
 
 ## Nothing founder-only reaches builders
 

@@ -22,8 +22,8 @@
  "publish": null,
  "frameworkKit": {
   "kit": "apps-frameworks",
-  "version": "1.0.0",
-  "digest": "2a31acac6fcd",
+  "version": "1.1.0",
+  "digest": "451fbb5683e8",
   "created_at": "2026-09-12T09:00:00Z",
   "kind": "chat"
  }

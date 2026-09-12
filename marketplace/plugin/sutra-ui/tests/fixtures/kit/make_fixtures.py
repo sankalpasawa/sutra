@@ -124,14 +124,19 @@ def _edit_json(path, fn):
 # One mutation per must-fix id that makes exactly that check fail on a pass folder.
 MUTATIONS = {
     "C1": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace("| P1 | Who opens this, and what are they trying to get done? | " + ANSWERS["P1"], "| P1 | Who opens this, and what are they trying to get done? | "))),
+    "C2": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace(ANSWERS["P3"], "It works."))),
     "C3": ("page", lambda d: _edit_json(d + "/module.json", lambda m: m.update(tagline=m["name"]))),
     "C4": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace(ANSWERS["P1"], ANSWERS["P1"] + " Filed under dref-0123456789abcdef by ADR-039."))),
+    # kit 1.1.0 promotions: C6 fails on a malformed ref before the registry is read (no registry state needed)
+    "C6": ("page", lambda d: _edit_json(d + "/module.json", lambda m: m.update(department={"ref": "not-a-ref"}))),
+    "C7": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace(ANSWERS["P6"], "Priya (collections lead) keeps it; look at it again next quarter."))),
     "C10": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("color:var(--ink);max-width", "color:#1f2937;max-width"))),
     "C11": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("<style>", "<style>:root{--ink:red}"))),
     "C17": ("page", lambda d: _edit_json(d + "/module.json", lambda m: m.update(id="somebody-else"))),
     "C18": ("page", lambda d: open(d + "/run.sh", "w").write("#!/bin/sh\necho no\n")),
     "C19": ("page", lambda d: open(d + "/index.html", "a").write("<!-- " + ("x" * (513 * 1024)) + " -->")),
     "C20": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace('"digest":"', '"digest":"deadbeefcaf'))),
+    "C22": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace(ANSWERS["E2"], "Should still work fine afterwards."))),
     "C25": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("draw(rows);\n    })();", "draw(rows); fetch('/api/modules');\n    })();"))),
     "C26": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("<h1>", '<img src="assets/logo.png" alt="logo"><h1>'))),
     "C28": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("var rows = [", "var apiKey = \"sk-ABCDEFGHIJKLMNOPQRSTUVWX\"; var rows = ["))),
@@ -139,6 +144,8 @@ MUTATIONS = {
     "C32": ("link", lambda d: _edit_json(d + "/module.json", lambda m: m["surface"].update(screen="terminal"))),
     "C33": ("page", lambda d: _edit(d + "/index.html", lambda t: "<!doctype html><html><body>" + t + "</body></html>")),
     "C35": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("draw(rows);\n    })();", "draw(rows); localStorage.setItem('x', '1');\n    })();"))),
+    # C36: a page that throws on load; Runtime.exceptionThrown in render_check.mjs (needs node + Chrome to run)
+    "C36": ("page", lambda d: _edit(d + "/index.html", lambda t: t.replace("draw(rows);\n    })();", "draw(rows); throw new Error(\"render check: boom\");\n    })();"))),
     "C37": ("page", lambda d: _edit(d + "/APP.md", lambda t: t.replace(ANSWERS["F2"], "It should remember the sort order."))),
     "C38": ("chat", lambda d: open(d + "/data-policy.json", "w").write('{"panel_apis": []}')),
 }

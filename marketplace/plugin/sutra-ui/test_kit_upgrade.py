@@ -1,8 +1,10 @@
 """test_kit_upgrade.py -- a newer kit never rewrites an existing app (D75 ruling 2).
 
 Copy on create: an app is held to the kit installed when its folder was made.
-Installing kit 1.1.0 beside apps stamped 1.0.0 changes no byte and no mtime
-under the modules home; the live check reports C20 as WARN (newer installed);
+Installing a newer kit (one minor above the installed one, derived at run time
+so the test keeps meaning after any kit bump) beside apps stamped with the
+installed kit changes no byte and no mtime under the modules home; the live
+check reports C20 as WARN (newer installed);
 only the explicit `migrate_kit` action, the builder's yes, rewrites the two
 stamp copies -- and nothing else (no version bump, no updated_ms, no event).
 
@@ -74,13 +76,15 @@ class KitUpgrade(unittest.TestCase):
             ids.append(r.json()["id"])
         before = _snapshot(MOD_HOME, ids)
         old_version = json.loads((self._kit_dir / "kit.json").read_text())["version"]
+        major, minor = (int(p) for p in old_version.split(".")[:2])
+        newer = "%d.%d.0" % (major, minor + 1)          # one minor above whatever is installed
         events = Path(MOD_HOME) / ".events.jsonl"
 
-        # install kit 1.1.0 beside the server
-        modules_api._KIT_DIR = self._newer_kit("1.1.0", "ffffffffffff")
-        self.assertEqual(self.client.get(BASE + "/frameworks", headers=HDR).json()["version"], "1.1.0")
+        # install the newer kit beside the server
+        modules_api._KIT_DIR = self._newer_kit(newer, "ffffffffffff")
+        self.assertEqual(self.client.get(BASE + "/frameworks", headers=HDR).json()["version"], newer)
         r = self.client.post(BASE, json={"name": "Fresh page", "tagline": "one line", "kind": "page"}, headers=HDR)
-        self.assertEqual(r.json()["frameworkKit"]["version"], "1.1.0", "a NEW app gets the new kit")
+        self.assertEqual(r.json()["frameworkKit"]["version"], newer, "a NEW app gets the new kit")
         self.assertEqual(_snapshot(MOD_HOME, ids), before, "no byte and no mtime of an existing app changed")
         ev_before = events.read_text() if events.exists() else ""     # after the create: its app.created row is expected
 
@@ -88,7 +92,7 @@ class KitUpgrade(unittest.TestCase):
         j = self.client.get(BASE + "/" + ids[0] + "/checks", headers=HDR).json()
         c20 = next(c for c in j["live"]["checks"] if c["id"] == "C20")
         self.assertEqual(c20["status"], "warn", c20)
-        self.assertIn("installed is 1.1.0", c20["detail"])
+        self.assertIn("installed is " + newer, c20["detail"])
         self.assertEqual(j["stamped"], old_version)
 
         # the builder says yes: two stamp copies move, nothing else
@@ -97,7 +101,7 @@ class KitUpgrade(unittest.TestCase):
         r = self.client.post(BASE + "/" + ids[0], json={"action": "migrate_kit"}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
         raw_after = json.loads((Path(MOD_HOME) / ids[0] / "module.json").read_text())
-        self.assertEqual(raw_after["frameworkKit"]["version"], "1.1.0")
+        self.assertEqual(raw_after["frameworkKit"]["version"], newer)
         self.assertEqual(raw_after["frameworkKit"]["digest"], "ffffffffffff")
         self.assertTrue(raw_after["frameworkKit"]["migrated"])
         self.assertEqual(raw_after["frameworkKit"]["created_at"], raw_before["frameworkKit"]["created_at"])

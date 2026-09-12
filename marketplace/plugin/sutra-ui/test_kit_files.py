@@ -85,7 +85,8 @@ class KitFiles(unittest.TestCase):
     def test_ids_v1_must_fix_is_exactly_the_ruling(self):
         flagged = {c["id"] for a in self.angles for c in a["checks"] if c["v1_must_fix"]}
         self.assertEqual(flagged, set(build_kit.V1_MUST_FIX))
-        self.assertEqual(len(flagged), 18)
+        self.assertEqual(len(flagged), 23, "kit 1.0.0 blocked on 18; kit 1.1.0 promoted C2 C6 C7 C22 C36 (RULINGS.md)")
+        self.assertTrue({"C2", "C6", "C7", "C22", "C36"} <= flagged)
 
     def test_ids_rule_enforcement_names_existing_checks(self):
         cs = {c["id"] for a in self.angles for c in a["checks"]}

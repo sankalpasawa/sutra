@@ -24,8 +24,10 @@ KINDS = ("page", "chat", "link")
 LEVELS = ("required", "kind-required", "advisory")
 V1_ASKED = ("yes", "prefilled", "end", "no")
 
-# Design v1 scope, codex R1 P4: the eighteen checks that block "done" in v1.
-V1_MUST_FIX = frozenset("C1 C3 C4 C10 C11 C17 C18 C19 C20 C25 C26 C28 C29 C32 C33 C35 C37 C38".split())
+# Design v1 scope, codex R1 P4: eighteen checks blocked "done" in kit 1.0.0. Kit 1.1.0
+# (founder direction 2026-09-12, ahead of field data; RULINGS.md) promotes C2 C6 C7 C22
+# C36, so twenty-three block "done".
+V1_MUST_FIX = frozenset("C1 C2 C3 C4 C6 C7 C10 C11 C17 C18 C19 C20 C22 C25 C26 C28 C29 C32 C33 C35 C36 C37 C38".split())
 
 
 def load_angles():
@@ -75,7 +77,7 @@ def render_screens_json():
                       indent=1) + "\n"
 
 
-KIT_VERSION = "1.0.0"          # bump on any change a builder would notice (questions, checks, starters)
+KIT_VERSION = "1.1.0"          # bump on any change a builder would notice (questions, checks, starters)
 KIT_JSON = os.path.join(HERE, "kit.json")
 SKIP_IN_DIGEST = ("kit.json", "__pycache__")
 

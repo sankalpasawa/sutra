@@ -79,9 +79,10 @@ class Runner(unittest.TestCase):
         self.assertEqual(set(make_fixtures.MUTATIONS), set(build_kit.V1_MUST_FIX))
 
     def test_matrix_each_mutation_fails_its_own_check(self):
+        # C36 needs a render runtime and KIT_NO_RENDER is pinned for this module; it has its own test below
         root = tempfile.mkdtemp(prefix="kit-matrix-")
         try:
-            for cid in sorted(build_kit.V1_MUST_FIX, key=lambda s: int(s[1:])):
+            for cid in sorted(build_kit.V1_MUST_FIX - {"C36"}, key=lambda s: int(s[1:])):
                 kind, folder = make_fixtures.mutate(cid, root)
                 results, summary, code = check.run(folder, kind, allow_skip_render=True)
                 by = {r["id"]: r for r in results}
@@ -92,6 +93,47 @@ class Runner(unittest.TestCase):
                 self.assertEqual(code, 1, cid)
         finally:
             shutil.rmtree(root, ignore_errors=True)
+
+    # ---- C36 (must-fix since kit 1.1.0): the render lane -------------------------
+    # The desktop's own run_checks pins KIT_NO_RENDER=1 and allows the skip, so C36
+    # bites in the CLI and MCP lanes the chat runs before "done". These two tests run
+    # the CLI with the pin removed: with node + Chrome they prove the lane; without
+    # them they prove the honest degrade (skip, exit 3, never a pass) and skip.
+
+    def _render_cli(self, folder, kind):
+        env = dict(os.environ)
+        env.pop("KIT_NO_RENDER", None)
+        p = subprocess.run([sys.executable, os.path.join(KIT, "check.py"), folder, "--kind", kind, "--no-write", "--json"],
+                           capture_output=True, text=True, env=env, cwd=UI, timeout=240)
+        doc = json.loads(p.stdout)
+        return p.returncode, doc, next(r for r in doc["results"] if r["id"] == "C36")
+
+    def test_render_c36_blocks_a_page_that_throws_where_a_runtime_exists(self):
+        root = tempfile.mkdtemp(prefix="kit-c36-")
+        try:
+            kind, folder = make_fixtures.mutate("C36", root)
+            code, doc, c36 = self._render_cli(folder, kind)
+            self.assertEqual(c36["level"], "must-fix")
+            if check._which("node") and check._find_chrome():
+                self.assertEqual(c36["status"], "fail", c36)
+                self.assertIn("render check: boom", c36["detail"])
+                self.assertTrue(doc["summary"]["blocked"])
+                self.assertEqual(code, 1)
+            else:
+                self.assertEqual(c36["status"], "skip", c36)
+                self.assertFalse(doc["summary"]["blocked"])
+                self.assertEqual(code, 3, "no runtime: the run is incomplete, never a pass")
+                self.skipTest("no headless runtime on this machine; the degrade path was asserted")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_render_c36_passes_the_page_starter_where_a_runtime_exists(self):
+        if not (check._which("node") and check._find_chrome()):
+            self.skipTest("no headless runtime on this machine")
+        code, doc, c36 = self._render_cli(self.pass_dirs["page"], "page")
+        self.assertEqual(c36["status"], "pass", c36)
+        self.assertEqual(doc["summary"]["render"], "render: dark+light")
+        self.assertEqual(code, 0)
 
     # ---- degrade + waiver -------------------------------------------------------
 

@@ -272,7 +272,11 @@ def c6(x):
     dept = x.raw.get("department") if isinstance(x.raw.get("department"), dict) else None
     ref = dept.get("ref") if dept else None
     if not ref:
-        return ("pass", "no department; the row reads Unassigned") if "unassigned" in (x.answers.get("S3") or "").lower() or not x.answers.get("S3") else ("warn", "no department in the manifest but the row names one")
+        s3 = (x.answers.get("S3") or "").strip().lower()
+        if not s3 or "unassigned" in s3:
+            return "pass", "no department; the row reads Unassigned"
+        # must-fix since kit 1.1.0 (codex fold): the row names a department the app is not filed under
+        return "fail", "the row names a department but the app is not filed under one; assign it, or write Unassigned"
     if not re.match(r"^dref-[0-9a-f]{16}$", str(ref)):
         return "fail", "department.ref is not a ref"
     try:
@@ -503,8 +507,11 @@ def c22(x):
     e2 = (x.answers.get("E2") or "").lower()
     if len(e2) < 12:
         return "fail", "the regression check needs a sentence someone can act on"
-    if not re.search(r"\b(open|click|paste|reopen|read|run|opens)\b", e2) or not re.search(r"\b(see|sees|reads|shows|lands|top row|asks|land)\b", e2):
-        return "fail", "name an action (open, click, paste) and what you then see (reads, shows, lands)"
+    # act + observe verb sets widened when C22 became must-fix (kit 1.1.0, codex fold): "reopen the page and
+    # verify the total still matches" and "open it and confirm the new row is visible" are regression checks
+    if (not re.search(r"\b(open|opens|click|paste|reopen|read|run|look)\b", e2)
+            or not re.search(r"\b(see|sees|reads|shows|lands|land|top row|asks|verify|verifies|confirm|confirms|visible|appears|loads)\b", e2)):
+        return "fail", "name an action (open, click, paste, look) and what you then see (reads, shows, appears, confirm)"
     return "pass", "regression check is actionable"
 
 

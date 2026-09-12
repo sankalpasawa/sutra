@@ -31,8 +31,8 @@
 
 | id | level | kinds | v1 | what | evaluator |
 |---|---|---|---|---|---|
-| C6 | required | page, chat, link | suggest | The Department row names a ref that equals module.json department.ref, and its charter text equals the registry's title and purpose. | ref matches ^dref-[0-9a-f]{16}$ and equals the manifest value; direct placement_engine import reads the charter registry from disk (the same file read modules_api.py uses); registry unreadable or no charter returns SKIP 'charter not read', never FAIL; no department passes when the row reads Unassigned |
-| C7 | required | page, chat, link | suggest | The P6 answer carries a date that parses as YYYY-MM-DD and is not earlier than created_at. | pattern plus date compare against module.json created_at |
+| C6 | required | page, chat, link | must-fix | The Department row names a ref that equals module.json department.ref, and its charter text equals the registry's title and purpose. | ref matches ^dref-[0-9a-f]{16}$ and equals the manifest value; direct placement_engine import reads the charter registry from disk (the same file read modules_api.py uses); registry unreadable or no charter returns SKIP 'charter not read', never FAIL; no department passes when the row reads Unassigned; a row that names a department while the manifest has none FAILs (assign it, or write Unassigned) |
+| C7 | required | page, chat, link | must-fix | The P6 answer carries a date that parses as YYYY-MM-DD and is not earlier than created_at. | pattern plus date compare against module.json created_at |
 | C8 | required | page, chat, link | suggest | The chat authored no publish block. | publish absent or null passes; a server-owned publish.state of exported or imported passes; any other authored publish keys FAIL naming them |
 | C9 | advisory | page, chat, link | suggest | When S2 names an app id, that folder exists; WARN when the replaced app is still status ready. | when the cell matches ^[a-z0-9][a-z0-9-]{1,40}$ stat <home>/<id>/module.json and read status; plain words pass |
 

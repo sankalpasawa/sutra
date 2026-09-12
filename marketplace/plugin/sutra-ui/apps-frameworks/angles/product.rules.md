@@ -38,7 +38,7 @@
 | id | level | kinds | v1 | what | evaluator |
 |---|---|---|---|---|---|
 | C1 | required | page, chat, link | must-fix | APP.md exists at the folder root and every row id required for this kind carries a non-empty answer. | parse the APP.md tables into {row_id: answer}; assert the profile's required ids are present and non-empty; 'not recorded' (imported) is WARN not FAIL |
-| C2 | required | page, chat, link | suggest | The P3 and P5 answers are real answers, not slogans or denials. | shared NT(cell): not in the trivial-verify blocklist, at least 5 words, P5 not matching ^(none|nothing|n/a|it can't|won't happen) |
+| C2 | required | page, chat, link | must-fix | The P3 and P5 answers are real answers, not slogans or denials. | shared NT(cell): not in the trivial-verify blocklist, at least 5 words, P5 not matching ^(none|nothing|n/a|it can't|won't happen) |
 | C3 | required | page, chat, link | must-fix | name and tagline are present, within caps, different from each other, and the tagline is the P2 answer. | len(name) <= 80, len(tagline) <= 140, both non-empty, name != tagline case-insensitively, normalized tagline equals or is contained in the P2 cell |
 | C4 | required | page, chat, link | must-fix | No founder-only text anywhere a person reads, and the app is never called a module. | pattern scan over APP.md, name, tagline, surface.instructions and index.html text: block prefixes (INPUT:, TYPE:, ROUTE:, DEPTH:, TASK:, TRIAGE:, OS:), +-- FLOW/BLUEPRINT/DISPATCH, ATOM:, BUILD-LAYER, ROUTING PIN, dref-, ADR-nnn, D-Mnn/Dnn, and 'module' outside module.json, /api/modules, ~/.sutra-ui/modules |
 | C5 | advisory | page, chat, link | suggest | One app, one job. | WARN when P1 contains ' and also ', ' as well as ', ';' or more than two sentences |
