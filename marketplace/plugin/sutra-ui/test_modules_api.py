@@ -623,8 +623,226 @@ class TestModulesApi(unittest.TestCase):
             return o
         got = norm(j)
         got["counts_by_ref"] = {"<" + names[k] + ">": v for k, v in j["counts_by_ref"].items()}
+        # Publish program: the payload says whether publishing is on (a settings read) and which registry
+        # is the default (a shipped file); its PRESENCE is golden, its values are the machine's
+        self.assertEqual(set(j["publish"]), {"on", "registry"})
+        got["publish"] = "<publish>"
         want = json.loads((self.FIXTURES / "golden-grouped-experience.json").read_text(encoding="utf-8"))
         self.assertEqual(got, want)
+
+
+
+# ---- Publish program P3 + P4 (2026-09-12): publish as an approved proposal; registry verdicts, refresh, update ----
+
+import base64  # noqa: E402
+import hashlib  # noqa: E402
+import io  # noqa: E402
+import tarfile  # noqa: E402
+
+import proposals  # noqa: E402
+import modules_registry  # noqa: E402
+import modules_sign  # noqa: E402
+import providers  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures", "kit"))
+import make_fixtures  # noqa: E402
+
+
+@unittest.skipUnless(modules_sign.available(), "cryptography is not importable here (the DMG carries it)")
+class TestPublishProgram(unittest.TestCase):
+    """P3: Publish... in the header only while the flag is on; the approval of an
+    app.publish proposal exports, versions, signs and stages; refusals leave the
+    manifest untouched. P4: GET registry is a read, POST refresh is the write,
+    the Update path installs the newer version verified."""
+
+    REG = "https://registry.invalid/apps/registry.json"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app_module.app, base_url="http://127.0.0.1")
+        cls.kid, cls.priv, cls.pub = modules_sign.generate()
+        cls.publisher = {"publisher_id": "acme", "key_id": cls.kid, "pubkey": modules_sign.pub_b64(cls.pub), "added_at": "2026-09-12T15:00:00Z"}
+
+    def setUp(self):
+        os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
+        for name in os.listdir(MOD_HOME):
+            shutil.rmtree(os.path.join(MOD_HOME, name), ignore_errors=True)
+        for var, prefix in (("SUTRA_UI_PROPOSALS", "pub-props-"), ("SUTRA_UI_KEYS", "pub-keys-"), ("SUTRA_UI_PUBLISH", "pub-stage-"),
+                            ("SUTRA_UI_REGISTRY_CACHE", "pub-cache-")):
+            os.environ[var] = tempfile.mkdtemp(prefix=prefix)
+        os.environ["SUTRA_UI_PINNED"] = os.path.join(tempfile.mkdtemp(prefix="pub-pins-"), "pinned.json")
+        self._settings = providers.SETTINGS_PATH
+        self._flag(True)
+        self._fetch = modules_registry.fetch_bytes
+        self.served = {}
+        modules_registry.fetch_bytes = lambda url, cap, timeout=10.0: self._serve(url)
+
+    def tearDown(self):
+        providers.SETTINGS_PATH = self._settings
+        modules_registry.fetch_bytes = self._fetch
+
+    def _flag(self, on):
+        tmp = Path(tempfile.mkdtemp(prefix="pub-settings-")) / "settings.json"
+        tmp.write_text(json.dumps({"flags": {"apps_publish": bool(on)}}), encoding="utf-8")
+        providers.SETTINGS_PATH = tmp
+
+    def _serve(self, url):
+        if url not in self.served:
+            raise OSError("no such url %s" % url)
+        return self.served[url]
+
+    def _ready_app(self, mid="loan-book"):
+        folder = make_fixtures.make_pass("page", os.path.join(MOD_HOME, mid))
+        raw = json.loads(Path(folder, "module.json").read_text(encoding="utf-8"))
+        raw["status"] = "ready"
+        Path(folder, "module.json").write_text(json.dumps(raw, indent=1), encoding="utf-8")
+        return folder
+
+    def _events(self, event):
+        p = Path(MOD_HOME) / ".events.jsonl"
+        return [json.loads(l) for l in (p.read_text(encoding="utf-8") if p.exists() else "").splitlines() if l.strip() and '"%s"' % event in l]
+
+    # ---- P3 ---------------------------------------------------------------------
+
+    def test_p3_list_payload_says_whether_publishing_is_on(self):
+        j = self.client.get(BASE, headers=HDR).json()
+        self.assertTrue(j["publish"]["on"])
+        self.assertEqual(j["publish"]["registry"], modules_registry.default_registry()["url"])
+        self._flag(False)
+        self.assertFalse(self.client.get(BASE, headers=HDR).json()["publish"]["on"])
+
+    def test_p3_approving_the_proposal_exports_versions_signs_and_stages(self):
+        folder = self._ready_app()
+        p = proposals.create("app.publish", {"id": "loan-book", "bump": "patch"}, "publish app loan-book", session_id="s-pub")
+        r = self.client.post("/api/proposals/%s/decide" % p["id"], json={"approve": True}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        rec = r.json()
+        self.assertEqual(rec["status"], "approved", rec)
+        res = rec["result"]
+        self.assertEqual(res["version"], "1.0.0")
+        self.assertTrue(os.path.isfile(res["entry_path"]) and os.path.isfile(res["artifact_path"]))
+        entry = json.load(open(res["entry_path"], encoding="utf-8"))
+        ident = modules_sign.publisher()
+        pins = {ident["key_id"]: {"pubkey": modules_sign.pub_from_b64(ident["pubkey"]), "publisher_id": ident["publisher_id"]}}
+        ok, why = modules_sign.verify_entry(entry, pins)
+        self.assertTrue(ok, why)
+        self.assertEqual(entry["sha256"], hashlib.sha256(Path(res["artifact_path"]).read_bytes()).hexdigest())
+        self.assertEqual(entry["kinds"], ["page"])
+        self.assertIn("modules_registry.py add", res["registry_step"])
+        raw = json.loads(Path(folder, "module.json").read_text(encoding="utf-8"))
+        self.assertEqual((raw["publish"]["state"], raw["publish"]["version"]), ("published", "1.0.0"))
+        self.assertEqual(raw["publish"]["registry"], modules_registry.default_registry()["url"])
+        with tarfile.open(fileobj=io.BytesIO(Path(res["artifact_path"]).read_bytes())) as t:
+            inner = json.load(t.extractfile("loan-book/module.json"))
+        self.assertEqual(inner["publish"]["version"], "1.0.0", "the tarball carries the signed version (R-5)")
+        ev = self._events("app.published")[-1]
+        self.assertEqual((ev["app_id"], ev["publish_version"], ev["actor"]), ("loan-book", "1.0.0", "proposal:" + p["id"]))
+        # C8 reads the published block as the desktop's, not the chat's (kit 1.1.1)
+        chk = self.client.get(BASE + "/loan-book/checks", headers=HDR).json()["live"]
+        self.assertNotIn("C8", chk["fails"], chk)
+        # a second approval bumps
+        p2 = proposals.create("app.publish", {"id": "loan-book", "bump": "minor"}, "publish again")
+        rec = self.client.post("/api/proposals/%s/decide" % p2["id"], json={"approve": True}, headers=HDR).json()
+        self.assertEqual(rec["result"]["version"], "1.1.0", rec)
+
+    def test_p3_refusals_leave_the_manifest_untouched(self):
+        folder = self._ready_app()
+        raw = json.loads(Path(folder, "module.json").read_text(encoding="utf-8"))
+        raw["status"] = "draft"
+        Path(folder, "module.json").write_text(json.dumps(raw, indent=1), encoding="utf-8")
+        with self.assertRaises(modules_api.ModuleError) as cm:
+            modules_api.publish_app("loan-book", "patch")
+        self.assertEqual(cm.exception.status, 409)
+        raw["status"] = "ready"
+        rec = Path(folder, "APP.md").read_text(encoding="utf-8").replace(make_fixtures.ANSWERS["P1"], "")
+        Path(folder, "APP.md").write_text(rec, encoding="utf-8")                # C1 fails: an unanswered required row
+        Path(folder, "module.json").write_text(json.dumps(raw, indent=1), encoding="utf-8")
+        with self.assertRaises(modules_api.ModuleError) as cm:
+            modules_api.publish_app("loan-book", "patch")
+        self.assertIn("C1", str(cm.exception))
+        after = json.loads(Path(folder, "module.json").read_text(encoding="utf-8"))
+        self.assertIsNone(after.get("publish"), "a refused publish writes no version")
+        self._flag(False)
+        with self.assertRaises(modules_api.ModuleError) as cm:
+            modules_api.publish_app("loan-book", "patch")
+        self.assertEqual(cm.exception.status, 404)
+        p = proposals.create("app.publish", {"id": "loan-book", "bump": "patch"}, "publish while off")
+        rec = self.client.post("/api/proposals/%s/decide" % p["id"], json={"approve": True}, headers=HDR).json()
+        self.assertEqual(rec["status"], "failed", "an approval that cannot apply is recorded, never retried")
+
+    # ---- P4 ---------------------------------------------------------------------
+
+    def _tar(self, version, mid="imported-one"):
+        m = {"schema": 2, "id": mid, "name": "Imported one", "kind": "page", "status": "ready", "version": 1,
+             "surface": {"entry": "index.html"}, "guard": {}, "publish": {"version": version}}
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as t:
+            for arc, data in ((mid + "/module.json", json.dumps(m).encode()), (mid + "/index.html", ("<h1>v%s</h1>" % version).encode())):
+                ti = tarfile.TarInfo(arc)
+                ti.size = len(data)
+                t.addfile(ti, io.BytesIO(data))
+        return buf.getvalue()
+
+    def _entry(self, blob, version, mid="imported-one", published_at="2026-09-12T15:00:00Z", rng=None):
+        e = {"id": mid, "name": "Imported one", "version": version, "manifest_schema": 2,
+             "artifact_url": "https://registry.invalid/apps/artifacts/%s-%s.tgz" % (mid, version),
+             "sha256": hashlib.sha256(blob).hexdigest(), "published_at": published_at,
+             "sutra_version_range": rng or {"min": "2.263.0", "max": None}, "kinds": ["page"], "publisher_id": "acme"}
+        self.served[e["artifact_url"]] = blob
+        return modules_sign.sign_entry(e, self.priv)
+
+    def _publish(self, entries):
+        idx = {"registry_schema": 1, "name": "Acme", "updated_at": "2026-09-12T15:00:00Z", "apps": entries, "publishers": [self.publisher]}
+        self.served[self.REG] = json.dumps(idx).encode()
+
+    def test_p4_registry_read_never_writes_and_refresh_writes_once(self):
+        self._publish([self._entry(self._tar("1.0.0"), "1.0.0")])
+        r = self.client.post(BASE + "/install", json={"registry": self.REG, "id": "imported-one"}, headers=HDR)
+        self.assertEqual(r.status_code, 201, r.text)
+        view = self.client.get(BASE + "/registry", headers=HDR).json()
+        mine = [a for a in view["apps"] if a["id"] == "imported-one"]
+        self.assertEqual((mine[0]["verdict"], mine[0]["installed_version"]), ("current", "1.0.0"), view)
+        acme = next(row for row in view["registries"] if row["url"] == self.REG)
+        self.assertEqual((acme["ok"], acme["pin_source"], acme["publishers"]), (True, "pinned", 1))
+        # a newer entry appears; the read says so but writes nothing
+        self._publish([self._entry(self._tar("1.1.0"), "1.1.0", published_at="2026-09-13T09:00:00Z")])
+        view = self.client.get(BASE + "/registry?refresh=1", headers=HDR).json()
+        self.assertEqual([a["verdict"] for a in view["apps"] if a["id"] == "imported-one"], ["update_available"])
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["state"], "imported", "a read enters no state")
+        self.assertEqual(self._events("app.registry_refreshed"), [], "a read emits nothing")
+        # the write
+        r = self.client.post(BASE + "/registry/refresh", headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["refreshed"]["updates"], 1)
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["state"], "update_available")
+        self.assertEqual(raw["version"], 1, "write-back only: no version bump")
+        evs = self._events("app.registry_refreshed")
+        self.assertEqual(len(evs), 1)
+        self.assertEqual((evs[0]["app_id"], evs[0]["updates"], evs[0]["checked"]), ("*", 1, 1))
+        row = next(m for m in self.client.get(BASE, headers=HDR).json()["modules"] if m["id"] == "imported-one")
+        self.assertEqual(row["publish"]["state"], "update_available", "the panel row carries the state")
+        # the Update path: a verified install of the newer version, then the refresh reads current again
+        r = self.client.post(BASE + "/install", json={"registry": self.REG, "id": "imported-one", "replace": True}, headers=HDR)
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(r.json()["version"], "1.1.0")
+        r = self.client.post(BASE + "/registry/refresh", headers=HDR)
+        self.assertEqual(r.json()["refreshed"]["updates"], 0)
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual((raw["publish"]["state"], raw["publish"]["version"]), ("imported", "1.1.0"))
+        # an incompatible entry
+        self._publish([self._entry(self._tar("2.0.0"), "2.0.0", rng={"min": "9.0.0", "max": None})])
+        r = self.client.post(BASE + "/registry/refresh", headers=HDR)
+        self.assertEqual(r.json()["refreshed"]["incompatible"], 1)
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["state"], "incompatible")
+
+    def test_p4_registry_routes_are_unreachable_while_off(self):
+        self._flag(False)
+        for r in (self.client.get(BASE + "/registry", headers=HDR), self.client.post(BASE + "/registry/refresh", headers=HDR)):
+            self.assertEqual(r.status_code, 404)
+            self.assertIn("apps_publish", r.json()["detail"])
 
 
 if __name__ == "__main__":

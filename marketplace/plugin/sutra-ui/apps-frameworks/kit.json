@@ -1,8 +1,8 @@
 {
  "kit": "apps-frameworks",
- "version": "1.1.0",
- "digest": "451fbb5683e8868f36db27c6de7695c2de1d79f300cee9671519acbed592eb33",
- "digest_short": "451fbb5683e8",
+ "version": "1.1.1",
+ "digest": "c354f0ad0008d251a5bef4fce503e6c6de2ba50726e42acdbcee504592c5da65",
+ "digest_short": "c354f0ad0008",
  "files": [
   "RULINGS.md",
   "THREAT-MAP.md",

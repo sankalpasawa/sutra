@@ -77,7 +77,7 @@ def render_screens_json():
                       indent=1) + "\n"
 
 
-KIT_VERSION = "1.1.0"          # bump on any change a builder would notice (questions, checks, starters)
+KIT_VERSION = "1.1.1"          # bump on any change a builder would notice (questions, checks, starters); 1.1.1: C8 accepts the published states
 KIT_JSON = os.path.join(HERE, "kit.json")
 SKIP_IN_DIGEST = ("kit.json", "__pycache__")
 

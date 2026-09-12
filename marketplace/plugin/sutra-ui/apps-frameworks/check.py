@@ -315,8 +315,9 @@ def c8(x):
     if pub in (None, {}):
         return "pass", "no publish block"
     if isinstance(pub, dict):
-        extra = set(pub) - {"state", "checksum", "version"}
-        if pub.get("state") in ("exported", "imported") and not extra:
+        # the desktop owns every key here: export, import, publish (kit 1.1.1) and a registry refresh write them
+        extra = set(pub) - {"state", "checksum", "version", "published_at", "registry", "source"}
+        if pub.get("state") in ("exported", "imported", "published", "update_available", "incompatible") and not extra:
             return "pass", "server-owned publish state %s" % pub["state"]
         return "fail", "publish was authored by hand (keys: %s); the desktop owns it" % ", ".join(sorted(pub))
     return "fail", "publish must be an object or absent"

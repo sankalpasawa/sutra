@@ -545,8 +545,11 @@ class TestAgentsApi(unittest.TestCase):
         with agents_api._ws_job_lock:
             agents_api._ws_job = None
 
-    def _ws_settle(self, tries=400):
-        """Poll GET /workspace until the job stops moving, the way the screen does."""
+    def _ws_settle(self, tries=2000):
+        """Poll GET /workspace until the job stops moving, the way the screen does.
+        The cap is 40 s (2026-09-12: 8 s failed twice in full-suite runs under
+        load while the lane alone passed; a settled job returns at once, so a
+        wide cap costs nothing on a quiet machine)."""
         j = {}
         for _ in range(tries):
             j = self.client.get(BASE + "/workspace").json()

@@ -495,6 +495,82 @@ test("screen parity: apps-frameworks/screens.json equals every SCREENS.<id> regi
   if (dupes.length) console.log("     note: screens registered more than once: " + dupes.join(", "));
 });
 
+/* Publish program P3: Publish... beside Edit in chat while publishing is on; a seeded chat that proposes; adopt first */
+const PUB_ON = { on: true, registry: "https://sankalpasawa.github.io/sutra/apps/registry.json" };
+function withPublish(view, pub){ const v = JSON.parse(JSON.stringify(view)); v.modules.publish = pub; return v; }
+
+test("Publish...: beside Edit in chat while publishing is on, with Check for updates in the facets bar; absent while off and on system rows", () => {
+  const T = fresh({ S: loaded(withPublish(DESK_VIEW, PUB_ON), { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1" }) });
+  const out = T.SCREENS.modules();
+  assert(/data-modedit[^]*?data-modpublish[^>]*>Publish…<\/button>/.test(out), "Publish... follows Edit in chat");
+  assert(/data-modrefresh[^>]*>Check for updates<\/button>/.test(out), "Check for updates in the facets bar");
+  assert(!/data-modupdate/.test(out), "no Update button without a newer version");
+  T.S.modSel = "sys-balance";
+  assert(!/data-modpublish/.test(T.SCREENS.modules()), "never on a system row");
+  const off = fresh({ S: loaded(withPublish(DESK_VIEW, { on: false, registry: null }), { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1" }) });
+  assert(!/data-modpublish|data-modrefresh/.test(off.SCREENS.modules()), "nothing to press while off (X-10)");
+  assert.strictEqual(off.modPublish(off.modSelected(off.S)), null, "nothing opens while off");
+});
+
+test("Publish on a stamped app: a seeded chat (mode publish, the pin) that names the registry, the check command, the bump question and the proposing tool; no routing text, no internal word", () => {
+  const view = withPublish(api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, STAMPED_PAGE] }, modules: SYS.concat([USER_CHAT, STAMPED_PAGE]), counts_by_ref: { r2: 2 } }), PUB_ON);
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1", frameworks: FW }) });
+  const sess = T.modPublish(T.modSelected(T.S));
+  assert(sess, "a chat opened");
+  assert.strictEqual(sess.title, "Publish · Pipeline board");
+  assert.strictEqual(JSON.stringify(sess.app), JSON.stringify({ id: "m<1", mode: "publish", department_ref: "r2" }));
+  const [seed, , opts] = T.calls.submitTurn[0];
+  assert(seed.startsWith('You are publishing the app "Pipeline board" (page) from /tmp/mods/m<1/'), seed.split("\n")[0]);
+  assert(/https:\/\/sankalpasawa\.github\.io\/sutra\/apps\/registry\.json/.test(seed), "the registry is named");
+  assert(/python3 \/kit\/check\.py \/tmp\/mods\/m<1\/ --kind page/.test(seed), "the check command");
+  assert(/sutra_app_publish/.test(seed) && /only PROPOSES/.test(seed) && /sutra_proposal_status/.test(seed), "propose, then read the status");
+  assert(/patch, minor or major/.test(seed), "the bump is asked");
+  assert(!/ROUTING PIN|dref-|ADR-\d|D-M\d|Do not re-classify/.test(seed), "no founder-only text");
+  assert(!/\bmodules?\b/i.test(seed.replace(/module\.json/g, "")), "never the internal word");
+  assert.strictEqual(JSON.stringify(opts), JSON.stringify({ pin: { department_ref: "r2" } }));
+});
+
+test("Publish on an app built before the kit: the task brings its framework first (one POST migrate_kit), then the publish chat opens on the stamped row", () => {
+  const view = withPublish(api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, STAMPED_PAGE] }, modules: SYS.concat([USER_CHAT, STAMPED_PAGE]), counts_by_ref: { r2: 2 } }), PUB_ON);
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "friday", frameworks: FW }) });
+  const adopted = Object.assign({}, USER_CHAT, { frameworkKit: { kit: "apps-frameworks", version: "1.0.0", digest: "abc123def456", created_at: "2026-09-12T09:00:00Z", kind: "chat", adopted: "2026-09-12" } });
+  const afterView = withPublish(api({ department: DESK_VIEW.modules.department, groups: { here: [adopted, STAMPED_PAGE] }, modules: SYS.concat([adopted, STAMPED_PAGE]), counts_by_ref: { r2: 2 } }), PUB_ON);
+  T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve(adopted); };
+  T.apiGet = (p) => { T.calls.apiGet.push(p); return Promise.resolve(afterView.modules); };
+  const p1 = T.modPublish(T.modSelected(T.S));
+  const p2 = T.modPublish(T.modSelected(T.S));
+  assert.strictEqual(p1, p2, "one adoption in flight per app");
+  return p1.then(sess => {
+    assert(sess && sess.title === "Publish · Friday review", "the publish chat opened after the adoption");
+    assert.strictEqual(T.calls.apiPost.filter(c => c[1] && c[1].action === "migrate_kit").length, 1, "exactly one adoption");
+    assert.strictEqual(sess.app.mode, "publish");
+    assert.strictEqual(T.calls.newSession.length, 1, "exactly one chat");
+  });
+});
+
+/* Publish program P4: the header reads the registry state; Update posts a verified install; Check for updates posts the refresh */
+test("Update: an installed app with a newer version reads 'update available' and offers Update, which posts install (replace); Check for updates posts the refresh", () => {
+  const upd = Object.assign({}, USER_PAGE, { publish: { state: "update_available", version: "1.0.0", source: { registry: "https://acme.invalid/r.json", publisher_id: "acme", key_id: "0123456789abcdef" } } });
+  const view = withPublish(api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, upd] }, modules: SYS.concat([USER_CHAT, upd]), counts_by_ref: { r2: 2 } }), PUB_ON);
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "m<1" }) });
+  const out = T.SCREENS.modules();
+  assert(/<span class="count">update available<\/span>/.test(out), "the pill reads the registry state");
+  assert(/data-modupdate[^>]*>Update<\/button>/.test(out), "an Update button");
+  T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve({ id: "m<1", version: "1.1.0", verified: true }); };
+  T.apiGet = (p) => { T.calls.apiGet.push(p); return Promise.resolve(view.modules); };
+  return T.modUpdate(T.modSelected(T.S)).then(res => {
+    assert(res && res.verified, "the install result came back");
+    assert.strictEqual(JSON.stringify(T.calls.apiPost[0]), JSON.stringify(["/api/modules/install", { registry: "https://acme.invalid/r.json", id: "m<1", replace: true }]));
+    assert(/updated to 1\.1\.0/.test(T.S.modNote || ""), "the outcome is on screen");
+    T.calls.apiPost.length = 0;
+    T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve({ refreshed: { checked: 1, updates: 0, incompatible: 0 } }); };
+    return T.modRefresh().then(() => {
+      assert.strictEqual(JSON.stringify(T.calls.apiPost[0]), JSON.stringify(["/api/modules/registry/refresh", {}]));
+      assert(/Everything installed is current/.test(T.S.modNote || ""));
+    });
+  });
+});
+
 Promise.all(pending).then(() => {
   console.log(`\n${ran - failed}/${ran} passed`);
   process.exit(failed ? 1 : 0);

@@ -122,13 +122,18 @@ User-facing strings. The word for the thing is **App**; "module" never appears w
 
 Parity rule: a build step is accepted only when the qa-shell STATE lane (`PUBLISH-CHECK.md` lane 1) reproduces the frame's DOM claims; the frame is the target, not the proof.
 
-## <a id="s7"></a>§7 Publish placeholder (step 39)
+## <a id="s7"></a>§7 Publish (step 39 placeholder; built by the Publish program, 2026-09-12)
 
 | Rule | Detail |
 |---|---|
-| Visibility | no Publish control renders while `flags.apps_publish` is off (default) |
-| When on (later program) | a secondary `.btn` "Publish…" joins the app header next to `Edit in chat`; it opens a chat seeded with the export contract (APPS-THREATS.md X-1..X-10) rather than a form |
-| Never | no Publish control on the department view; no store browsing in v1.2 |
+| Visibility | no Publish, Update or Check for updates control renders while `flags.apps_publish` is off (default); the list payload's `publish.on` says so |
+| Publish… | a secondary `.btn` in the app header next to `Edit in chat`, user apps only. It opens a chat seeded with the publish contract, never a form: read the record, run the checks, the app must be ready, ask the bump, call `sutra_app_publish` (which PROPOSES), then hand the owner the registry step. An app built before the kit is brought in first, the same path as Edit (D75 amendment) |
+| The approval | Approve in the proposals list runs export, version, signature and staging under `~/.sutra-ui/publish/<id>-<version>/`; the manifest reads `publish.state = published`. The copy into the registry checkout and the push stay the owner's |
+| Update | when a refresh found a newer version of an installed app, the status pill reads `update available` and a secondary `.btn` "Update" posts a verified install of it (replace; never a downgrade); `incompatible` reads as the pill with no button |
+| Check for updates | a secondary `.btn` in the facets bar beside `+ New app`; it POSTs the refresh (a read never writes) and the outcome shows as one line under the bar |
+| Never | no Publish control on the department view; no store browsing; nothing publishes without an approval |
+
+Copy: `Publish…` · `Update` · `Check for updates` · `Checking…` · `Updating…` · `<n> updates available` · `Everything installed is current` · `<n> apps need a newer desktop` · `<name> updated to <version>` · chat title `Publish · <app>` · seed line 1 `You are publishing the app "<name>" (<kind>) from <folder>, filed under <department>.`
 
 ---
 provenance: authored 2026-09-11 (session c0a2923c, atom a-c0a2923c-12) from spec §v12, the captured frames, `static/panel.css` `:root` and Directory rules, and the codex reviews r2 (`.ws-crumb` precedent) and r4 (label sweep); program steps 33-40.

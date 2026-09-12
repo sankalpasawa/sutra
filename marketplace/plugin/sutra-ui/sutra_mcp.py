@@ -221,6 +221,52 @@ def t_app_check(args):
     return _text(kit_check.render_table(results, summary) + "\n\nexit %d%s" % (code, "" if code == 0 else " (must-fix results remain)" if code == 1 else " (render not run)"))
 
 
+def t_app_publish(args):
+    """Publish program P3 (ruling P-6): PROPOSE publishing one app. Validated
+    here so a proposal that cannot apply is never offered: the app exists under
+    the apps home, is ready, and its must-fix checks pass. Approval in the panel
+    runs modules_api.publish_app (export, version, signature, staged files)."""
+    import os as _os
+    home = _os.path.realpath(_os.path.expanduser(_os.environ.get("SUTRA_MODULES_HOME", "~/.sutra-ui/modules")))
+    mid = str(args.get("id") or "")
+    bump = str(args.get("bump") or "patch")
+    if bump not in ("patch", "minor", "major"):
+        return _err("bump must be patch, minor or major")
+    folder = _os.path.realpath(_os.path.join(home, mid)) if mid else ""
+    if not mid or not folder.startswith(home + _os.sep) or not _os.path.isfile(_os.path.join(folder, "module.json")):
+        return _err("no app named %r under %s" % (mid, home))
+    try:
+        raw = json.load(open(_os.path.join(folder, "module.json"), encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return _err("the app's manifest does not read: %s" % exc)
+    if raw.get("status") != "ready":
+        return _err("publish needs a ready app; %r is %s. Ask the operator to mark it ready in the app header once the checks pass." % (mid, raw.get("status") or "unknown"))
+    if raw.get("schema") != 2:
+        return _err("this app is still manifest schema %r; one edit bumps it to 2 (the write-back), then propose again" % (raw.get("schema"),))
+    # what the approval would refuse anyway is refused here, so no proposal is offered that cannot apply (codex item 3)
+    import providers as _providers
+    flags = _providers._raw_settings().get("flags")
+    if not (isinstance(flags, dict) and flags.get("apps_publish") is True):
+        return _err("publishing is off: the operator sets flags.apps_publish to true in ~/.sutra-ui/settings.json first")
+    import modules_sign as _sign
+    if not _sign.available():
+        return _err("this desktop cannot sign (the cryptography library is missing); publishing needs it")
+    kit_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "apps-frameworks")
+    if kit_dir not in sys.path:
+        sys.path.insert(0, kit_dir)
+    try:
+        import check as kit_check
+        results, summary, code = kit_check.run(folder, raw.get("kind"), home=home, kitdir=kit_dir, allow_skip_render=True)
+        fails = [r["id"] for r in results if r["status"] == "fail" and r["level"] == "must-fix"]
+        if fails:
+            return _err("the checks block publishing: %s. Fix or waive them, then propose again." % ", ".join(fails))
+    except Exception as exc:                            # noqa: BLE001 -- the approval re-checks; here it only advises
+        return _err("the checks could not run: %s" % exc)
+    cur = ((raw.get("publish") or {}).get("version") if isinstance(raw.get("publish"), dict) else None) or "none yet"
+    return _propose("app.publish", {"id": mid, "bump": bump},
+                    "publish app %r (%s bump; current version %s)" % (mid, bump, cur))
+
+
 def t_task_file(args):
     """File a Teamsutra task. DIRECT write, not a proposal — and that is safe
     for exactly one reason: the record lands at status='draft', which nothing
@@ -321,6 +367,17 @@ TOOLS = [
          "id": {"type": "string", "description": "the app folder name under the apps home"},
          "path": {"type": "string", "description": "absolute path of the app folder (alternative to id)"},
          "kind": {"type": "string", "enum": ["page", "chat", "link"]}}}},
+
+    {"name": "sutra_app_publish", "fn": t_app_publish,
+     "description": "PROPOSE publishing one app to the Sutra Apps registry. This "
+                    "does NOT publish: the operator approves it in the panel, and "
+                    "the approval exports the app, assigns its version, signs the "
+                    "registry entry and stages the files under ~/.sutra-ui/publish/. "
+                    "The app must be ready with every must-fix check passing.",
+     "schema": {"type": "object", "required": ["id"], "properties": {
+         "id": {"type": "string", "description": "the app folder name under the apps home"},
+         "bump": {"type": "string", "enum": ["patch", "minor", "major"],
+                  "description": "how the published version moves (first publish is 1.0.0)"}}}},
 
     {"name": "sutra_task_file", "fn": t_task_file,
      "description": "File a Teamsutra task (bug/task/question) as a DRAFT. "

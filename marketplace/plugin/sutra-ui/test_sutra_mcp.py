@@ -20,7 +20,10 @@ os.environ["SUTRA_SHADOW_HOME"] = tempfile.mkdtemp(prefix="mcp-shadow-")
 os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="mcp-seo-")
 os.environ["SEO_AGENT_NO_CLI"] = "1"
 os.environ["KIT_NO_RENDER"] = "1"
-for _m in ("placement_engine", "org_api", "modules_api", "modules_events", "modules_pkg", "app", "check", "sutra_mcp"):
+SETTINGS = os.path.join(tempfile.mkdtemp(prefix="mcp-settings-"), "settings.json")
+os.environ["SUTRA_UI_SETTINGS"] = SETTINGS            # providers reads the path at import: set before anything imports it
+os.environ["SUTRA_UI_PROPOSALS"] = tempfile.mkdtemp(prefix="mcp-proposals-")
+for _m in ("placement_engine", "org_api", "modules_api", "modules_events", "modules_pkg", "app", "check", "sutra_mcp", "providers", "proposals"):
     sys.modules.pop(_m, None)
 
 UI = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +79,63 @@ class AppCheckTool(unittest.TestCase):
         out = self.fn({"id": "nope"})
         self.assertTrue(out.get("isError"))
         self.assertIn("module.json", out["content"][0]["text"])
+
+
+
+class AppPublishTool(unittest.TestCase):
+    """Publish program P3 (ruling P-6): `sutra_app_publish` PROPOSES. What the
+    approval would refuse is refused here first, so no proposal that cannot
+    apply is ever offered."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.folder = make_fixtures.make_pass("page", os.path.join(MOD_HOME, "loan-book"))
+
+    def setUp(self):
+        os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
+        with open(SETTINGS, "w", encoding="utf-8") as fh:
+            json.dump({"flags": {"apps_publish": True}}, fh)
+        raw = json.load(open(os.path.join(self.folder, "module.json"), encoding="utf-8"))
+        raw["status"] = "ready"
+        json.dump(raw, open(os.path.join(self.folder, "module.json"), "w", encoding="utf-8"), indent=1)
+
+    def fn(self, args):
+        return sutra_mcp.BY_NAME["sutra_app_publish"]["fn"](args)
+
+    def _status(self, status):
+        raw = json.load(open(os.path.join(self.folder, "module.json"), encoding="utf-8"))
+        raw["status"] = status
+        json.dump(raw, open(os.path.join(self.folder, "module.json"), "w", encoding="utf-8"), indent=1)
+
+    def test_publish_is_listed_and_proposes_for_a_ready_checked_app(self):
+        t = sutra_mcp.BY_NAME["sutra_app_publish"]
+        self.assertIn("PROPOSE", t["description"])
+        self.assertEqual(t["schema"]["required"], ["id"])
+        out = self.fn({"id": "loan-book", "bump": "minor"})
+        self.assertFalse(out.get("isError"), out)
+        text = out["content"][0]["text"]
+        self.assertIn("PROPOSAL p-", text)
+        self.assertIn("Nothing has changed yet", text)
+        import proposals
+        pend = [p for p in proposals.pending() if p["kind"] == "app.publish"]
+        self.assertTrue(pend, "a pending app.publish proposal exists")
+        self.assertEqual(pend[-1]["args"], {"id": "loan-book", "bump": "minor"})
+        raw = json.load(open(os.path.join(self.folder, "module.json"), encoding="utf-8"))
+        self.assertIsNone(raw.get("publish"), "proposing changes nothing")
+
+    def test_publish_refuses_a_draft_app_the_flag_off_and_an_unknown_app(self):
+        self._status("draft")
+        out = self.fn({"id": "loan-book"})
+        self.assertTrue(out.get("isError"))
+        self.assertIn("ready", out["content"][0]["text"])
+        self._status("ready")
+        with open(SETTINGS, "w", encoding="utf-8") as fh:
+            json.dump({"flags": {"apps_publish": False}}, fh)
+        out = self.fn({"id": "loan-book"})
+        self.assertTrue(out.get("isError"))
+        self.assertIn("apps_publish", out["content"][0]["text"])
+        self.assertTrue(self.fn({"id": "nope"}).get("isError"))
+        self.assertTrue(self.fn({"id": "loan-book", "bump": "huge"}).get("isError"))
 
 
 if __name__ == "__main__":

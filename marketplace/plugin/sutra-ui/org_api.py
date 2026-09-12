@@ -2317,6 +2317,9 @@ def _apply_proposal(kind, args):
     if kind == "pr.create":
         import repo
         return repo.create_pull_request(args)
+    if kind == "app.publish":
+        import modules_api                       # Publish program P3: export, bump, sign, stage (ruling P-6)
+        return modules_api.apply_publish(args)
     raise ValueError("no way to apply %r" % kind)
 
 
@@ -2333,8 +2336,9 @@ def api_proposal_decide(pid: str, body: Dict[str, Any]):
     if "approve" not in body:
         raise HTTPException(status_code=400, detail='send {"approve": true|false}')
     try:
+        # the applier learns which proposal (and which chat) it acts for, so an event can name the trail
         return proposals.decide(pid, bool(body["approve"]),
-                                apply_fn=_apply_proposal)
+                                apply_fn=lambda kind, args: _apply_proposal(kind, dict(args or {}, _proposal=pid)))
     except KeyError:
         raise HTTPException(status_code=404, detail="no proposal %r" % pid)
     except ValueError as exc:

@@ -51,6 +51,9 @@ import providers
 from json_store import read_json, write_json
 import modules_events
 import modules_pkg
+import modules_registry
+import modules_sign
+import shutil
 
 # The department registry. The same explicit path insert org_api.py makes:
 # importing placement_engine must not depend on import order (codex P1).
@@ -588,7 +591,9 @@ def list_grouped(department=None, subtree=True, include_archived=False):
                 counts[a] = counts.get(a, 0) + 1
     base = {"modules": rows, "count_user": count_user, "archived": archived, "home": _home(),
             "counts_by_ref": counts, "unassigned_count": len(unassigned),
-            "root": reg.echo(reg.root) if reg.root else None}
+            "root": reg.echo(reg.root) if reg.root else None,
+            # Publish program P3: the panel shows Publish... only while the flag is on (APPS-DESIGN section 7)
+            "publish": {"on": _publish_flag_on(), "registry": (modules_registry.default_registry() or {}).get("url")}}
     if department == UNASSIGNED:
         base.update({"groups": {"here": [], "below": [], "system": [], "unassigned": unassigned},
                      "department": dict(UNASSIGNED_ROW)})
@@ -858,7 +863,7 @@ def touch_app(mid, mode="edit", session_id=None):
     # An edit that reached the server without the panel's own adoption (another
     # client, an older panel) adopts here, before anything is measured; create
     # already stamps, so mode "new" needs nothing.
-    if mode == "edit" and _kit_json() and not isinstance(raw.get("frameworkKit"), dict):
+    if mode in ("edit", "publish") and _kit_json() and not isinstance(raw.get("frameworkKit"), dict):
         _adopt_kit(mid, path, fpath, raw, raw.get("kind") if raw.get("kind") in KINDS else "chat",
                    actor=("chat:" + session_id) if session_id else "chat")
         raw = read_json(fpath, {}) or raw
@@ -899,6 +904,254 @@ def touch_app(mid, mode="edit", session_id=None):
     if chk:
         out["check"] = {"blocked": chk["blocked"], "fails": chk["fails"], "warns": chk["warns"], "waived": chk["waived"]}
     return out
+
+
+# ---- Publish program P3: approval of an app.publish proposal ------------------
+# The chat opened by "Publish..." PROPOSES (sutra_mcp.t_app_publish); the click
+# on Approve in the panel runs THIS (org_api._apply_proposal -> apply_publish),
+# ruling P-6. It exports, assigns the semver, signs the registry entry with this
+# machine's publisher key and stages entry + tarball under ~/.sutra-ui/publish/;
+# the git step into the registry checkout stays the operator's (ruling P-5).
+
+PUBLISH_DIR_ENV = "SUTRA_UI_PUBLISH"
+ARTIFACT_CAP = 2 * 1024 * 1024        # Q-1: what the repo-hosted registry takes per artifact
+BUMPS = ("patch", "minor", "major")
+
+
+def _publish_dir():
+    return os.path.realpath(os.path.expanduser(os.environ.get(PUBLISH_DIR_ENV) or "~/.sutra-ui/publish"))
+
+
+def _bump(version, how):
+    major, minor, patch = (int(p) for p in str(version).split("-")[0].split("."))
+    if how == "major":
+        return "%d.0.0" % (major + 1)
+    if how == "minor":
+        return "%d.%d.0" % (major, minor + 1)
+    return "%d.%d.%d" % (major, minor, patch + 1)
+
+
+def _publisher_id():
+    """This machine's identity: the existing key's publisher, else settings
+    publish.publisher_id, else the default registry's publisher name."""
+    cur = modules_sign.publisher()
+    if cur and cur.get("publisher_id"):
+        return str(cur["publisher_id"])
+    cfg = providers._raw_settings().get("publish")
+    if isinstance(cfg, dict) and isinstance(cfg.get("publisher_id"), str) and cfg["publisher_id"].strip():
+        return cfg["publisher_id"].strip()
+    return "sutra"
+
+
+def publish_app(mid, bump="patch", actor="panel"):
+    """-> {id, version, key_id, publisher_id, staged_dir, entry_path, artifact_path, sha256, registry, registry_step}.
+    Refuses (ModuleError): flag off 404; draft or archived 409; blocked checks 409; schema 1 409;
+    no signing library 503; artifact over the cap 413."""
+    if not _publish_flag_on():
+        raise ModuleError(404, PUBLISH_OFF_MESSAGE)
+    if bump not in BUMPS:
+        raise ModuleError(400, "bump must be patch, minor or major")
+    if not modules_sign.available():
+        raise ModuleError(503, "signing needs the cryptography library; this desktop cannot publish")
+    if not isinstance(mid, str) or mid.startswith(SYS_PREFIX):
+        raise ModuleError(404, "no app named %r" % (mid,))
+    path = _dir(mid)
+    fpath = os.path.join(path, "module.json")
+    raw = read_json(fpath, {}) if os.path.isfile(fpath) else {}
+    if not raw:
+        raise ModuleError(404, "no app named %r" % (mid,))
+    kind = raw.get("kind")
+    if kind not in KINDS:
+        raise ModuleError(400, "manifest kind must be chat, page or link")
+    if raw.get("status") != "ready":
+        raise ModuleError(409, "publish needs a ready app; this one is %s" % (raw.get("status") or "unknown"))
+    # D75 amendment: the task brings its framework; a pre-kit app is adopted first, then judged (codex P3 review, item 1)
+    if _kit_json() and not isinstance(raw.get("frameworkKit"), dict):
+        _adopt_kit(mid, path, fpath, raw, kind, actor=actor)
+        raw = read_json(fpath, {}) or raw
+    if raw.get("schema") != 2:
+        raise ModuleError(409, "this app is still manifest schema %r; edit it once so the write-back bumps it to 2, then publish" % (raw.get("schema"),))
+    chk = run_checks(mid, raw)
+    if chk and chk.get("blocked"):
+        raise ModuleError(409, "checks must pass before publishing: %s — run the check and fix or waive them" % ", ".join(chk["fails"]))
+    before = json.loads(json.dumps(raw))       # the manifest to restore if anything after the version write fails
+    pub = raw.get("publish") if isinstance(raw.get("publish"), dict) else {}
+    cur = pub.get("version") if isinstance(pub.get("version"), str) and modules_registry.SEMVER_RE.match(pub["version"]) else None
+    version = _bump(cur, bump) if cur else "1.0.0"
+    pub["version"] = version                  # the tarball carries the version the entry will be signed for (R-5)
+    raw["publish"] = pub
+    write_json(fpath, raw)
+    try:
+        exp = modules_pkg.export_app(_home(), mid, actor=actor)
+        if exp["bytes"] > ARTIFACT_CAP:
+            raise ModuleError(413, "the artifact is %d KB; the registry in the repo takes up to %d MB per app (release assets are the way for bigger apps; not built yet)"
+                              % (exp["bytes"] // 1024, ARTIFACT_CAP // (1024 * 1024)))
+        ident = modules_sign.ensure_publisher(_publisher_id())
+        priv = modules_sign.load_private(ident["key_id"])
+        reg = modules_registry.default_registry() or {}
+        registry_url = reg.get("url")
+        base = (registry_url.rsplit("/", 1)[0] + "/artifacts/") if registry_url else "https://registry.invalid/artifacts/"
+        raw = read_json(fpath, {}) or raw          # export wrote publish.state=exported + checksum
+        ref = (raw.get("department") or {}).get("ref") if isinstance(raw.get("department"), dict) else None
+        dept_name = None
+        if ref:
+            try:
+                dept_name = (_Registry().echo(ref) or {}).get("name")
+            except Exception:                                   # noqa: BLE001 -- a hint, never a blocker
+                dept_name = None
+        entry = {"id": mid, "name": str(raw.get("name") or mid), "version": version, "manifest_schema": 2,
+                 "artifact_url": base + "%s-%s.tgz" % (mid, version), "sha256": exp["sha256"], "published_at": _now(),
+                 "sutra_version_range": {"min": modules_registry.plugin_version(), "max": None},
+                 "permissions": {"network": False}, "department_hint": dept_name, "kinds": [kind],
+                 "publisher_id": ident["publisher_id"]}
+        entry = modules_sign.sign_entry(entry, priv)
+        stage = os.path.join(_publish_dir(), "%s-%s" % (mid, version))
+        os.makedirs(stage, exist_ok=True)
+        artifact = os.path.join(stage, "%s-%s.tgz" % (mid, version))
+        shutil.copyfile(exp["artifact_path"], artifact)
+        entry_path = os.path.join(stage, "entry.json")
+        with open(entry_path, "w", encoding="utf-8") as fh:
+            json.dump(entry, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+    except Exception:
+        write_json(fpath, before)                  # a failed publish burns no version and leaves no half-state (codex a)
+        raise
+    pub = raw.get("publish") if isinstance(raw.get("publish"), dict) else {}
+    pub.update({"state": "published", "version": version, "published_at": entry["published_at"], "registry": registry_url})
+    raw["publish"] = pub
+    write_json(fpath, raw)
+    modules_events.append(_home(), "app.published", mid, kind=kind, version=raw.get("version"), department_ref=ref,
+                          actor=actor, publish_version=version, key_id=ident["key_id"], registry=registry_url)
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules_registry.py")
+    step = ("copy %s into <sutra checkout>/website/apps/artifacts/ and run: python3 %s add <sutra checkout>/website/apps/registry.json %s -- then commit and push; "
+            "the entry is accepted once your publisher key (%s) is listed under publishers in that index" % (artifact, tool, entry_path, ident["key_id"]))
+    return {"id": mid, "version": version, "key_id": ident["key_id"], "publisher_id": ident["publisher_id"], "staged_dir": stage,
+            "entry_path": entry_path, "artifact_path": artifact, "sha256": exp["sha256"], "registry": registry_url, "registry_step": step}
+
+
+# ---- Publish program P4: registry verdicts (a read) and a refresh (the write) -----
+# GET /api/modules/registry computes and returns; POST /api/modules/registry/refresh
+# writes publish.state for installed apps from a matching registry and appends ONE
+# app.registry_refreshed (ruling P-7: no state is entered by a read, no event by a read).
+
+REGISTRY_CACHE_ENV = "SUTRA_UI_REGISTRY_CACHE"
+
+
+def _registry_cache_dir():
+    return os.path.realpath(os.path.expanduser(os.environ.get(REGISTRY_CACHE_ENV) or "~/.sutra-ui/registry-cache"))
+
+
+def _registries():
+    """The shipped default first, then every registry pinned on this machine."""
+    urls = [r["url"] for r in modules_registry.shipped_registries()]
+    for url in modules_registry.read_pins():
+        if isinstance(url, str) and url.startswith("https://") and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def _fetch_index(url, refresh=False):
+    """-> (index or None, fetched_at, error). The last good index is kept on
+    disk so a read never waits on the network unless asked (?refresh=1)."""
+    import hashlib
+    cache = os.path.join(_registry_cache_dir(), hashlib.sha256(url.encode("utf-8")).hexdigest()[:16] + ".json")
+    if not refresh and os.path.isfile(cache):
+        try:
+            doc = json.load(open(cache, encoding="utf-8"))
+            return modules_registry.validate_index(doc["index"]), doc.get("fetched_at"), None
+        except Exception:                                    # noqa: BLE001 -- a bad cache is refetched below
+            pass
+    try:
+        index = modules_registry.load_index(modules_registry.fetch_bytes(url, modules_registry.MAX_INDEX_BYTES))
+    except (modules_registry.RegistryError, OSError, ValueError) as e:
+        return None, None, "%s: %s" % (e.__class__.__name__, e)
+    fetched_at = _now()
+    try:
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        write_json(cache, {"url": url, "fetched_at": fetched_at, "index": index})
+    except OSError:
+        pass
+    return index, fetched_at, None
+
+
+def _installed_manifests():
+    out = {}
+    home = _home()
+    try:
+        names = os.listdir(home)
+    except OSError:
+        return out
+    for name in names:
+        if name.startswith(".") or name.startswith(SYS_PREFIX):
+            continue
+        raw = read_json(os.path.join(home, name, "module.json"), {}) if os.path.isfile(os.path.join(home, name, "module.json")) else {}
+        if isinstance(raw, dict) and raw:
+            out[name] = raw
+    return out
+
+
+def registry_view(refresh=False):
+    """-> {plugin_version, registries: [...], apps: [installed from a registry, with a verdict], available: [not installed]}."""
+    pv = modules_registry.plugin_version()
+    out = {"plugin_version": pv, "registries": [], "apps": [], "available": []}
+    installed = _installed_manifests()
+    for url in _registries():
+        index, fetched_at, err = _fetch_index(url, refresh)
+        row = {"url": url, "ok": index is not None, "error": err, "fetched_at": fetched_at, "apps": 0, "publishers": 0, "pin_source": None}
+        if index is not None:
+            pins, meta = modules_registry.trusted_publishers(url, index, pin_on_first_use=False)
+            row.update(apps=len(index.get("apps") or []), publishers=len(pins), pin_source=meta["source"])
+            seen = set()
+            for e in index.get("apps") or []:
+                if e["id"] in seen:
+                    continue
+                seen.add(e["id"])
+                best = modules_registry.entry_for(index, e["id"])
+                inst = installed.get(e["id"])
+                pub = inst.get("publish") if inst and isinstance(inst.get("publish"), dict) else None
+                src = pub.get("source") if pub and isinstance(pub.get("source"), dict) else None
+                if inst and src and src.get("registry") == url:
+                    out["apps"].append({"id": e["id"], "registry": url, "installed_version": pub.get("version"),
+                                        "entry_version": best["version"], "verdict": modules_registry.verdict(inst, best, pv),
+                                        "signed": bool(best.get("signature"))})
+                elif not inst:
+                    out["available"].append({"id": e["id"], "name": best.get("name"), "version": best["version"], "registry": url,
+                                             "kinds": best.get("kinds"), "signed": bool(best.get("signature")),
+                                             "compatible": modules_registry.in_range(pv, best.get("sutra_version_range"))})
+        out["registries"].append(row)
+    return out
+
+
+def registry_refresh(actor="panel"):
+    """The write: fetch every registry, set publish.state on installed apps from a
+    matching registry (write-back only: no version bump, no updated_ms; MIGRATIONS
+    M-2) and append ONE app.registry_refreshed with the counts (app_id "*")."""
+    view = registry_view(refresh=True)
+    updates = incompatible = 0
+    for a in view["apps"]:
+        state = {"update_available": "update_available", "incompatible": "incompatible"}.get(a["verdict"], "imported")
+        fpath = os.path.join(_dir(a["id"]), "module.json")
+        raw = read_json(fpath, {})
+        pub = raw.get("publish") if isinstance(raw.get("publish"), dict) else {}
+        if pub.get("state") != state:
+            pub["state"] = state
+            raw["publish"] = pub
+            write_json(fpath, raw)
+        updates += 1 if state == "update_available" else 0
+        incompatible += 1 if state == "incompatible" else 0
+    counts = {"checked": len(view["apps"]), "updates": updates, "incompatible": incompatible, "registries": len(view["registries"])}
+    modules_events.append(_home(), "app.registry_refreshed", "*", actor=actor, **counts)
+    view["refreshed"] = counts
+    return view
+
+
+def apply_publish(args):
+    """org_api._apply_proposal("app.publish"): the approval's effect. ModuleError
+    becomes the proposal's failure. The decide route adds _proposal (its id) and
+    _session (the chat that proposed) so the event names the approval trail (codex b)."""
+    args = args if isinstance(args, dict) else {}
+    actor = "proposal:%s" % args["_proposal"] if args.get("_proposal") else "panel"
+    return publish_app(str(args.get("id") or ""), str(args.get("bump") or "patch"), actor=actor)
 
 
 def page_html(mid, theme=None):
@@ -958,6 +1211,24 @@ async def api_modules_frameworks():
     as an app id. null when the kit is absent (older bundle)."""
     _require_flag()
     return JSONResponse(frameworks_payload())
+
+
+@router.get("/registry")
+async def api_modules_registry(request: Request):
+    """Publish program P4: what the registries hold and where the installed
+    apps stand (verdicts). A read: nothing is written. ?refresh=1 refetches."""
+    _require_flag()
+    _require_publish_flag()
+    return JSONResponse(registry_view(refresh=request.query_params.get("refresh") in ("1", "true", "yes")))
+
+
+@router.post("/registry/refresh")
+async def api_modules_registry_refresh():
+    """Publish program P4: the write -- publish.state on installed apps from a
+    matching registry plus one app.registry_refreshed row."""
+    _require_flag()
+    _require_publish_flag()
+    return JSONResponse(registry_refresh())
 
 
 @router.post("/import")

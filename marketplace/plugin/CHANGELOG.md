@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.18 (2026-09-12)
+
+- **Apps publish from the header; installed apps learn about updates (Publish program P3+P4).** With `flags.apps_publish` on, **Publish…** joins Edit in chat on any of your apps: it opens a chat that reads the record, runs the checks, asks for the version bump and PROPOSES through `sutra_app_publish`; your approval in the panel exports the app, assigns the version, signs the registry entry with this machine's key and stages entry and tarball under `~/.sutra-ui/publish/`; the copy into the registry and the push stay yours. An app built before the frameworks is brought in first, like Edit. **Check for updates** in the Apps bar asks the registries and writes what it found (one event); an installed app with a newer version reads "update available" and offers **Update**, a verified install. Kit 1.1.1: the C8 check reads a published app's publish block as the desktop's. The Sutra Apps registry now holds its first app, the kit's own lending example. Tests: apps panel 27 (+4), apps api 40 (+5), mcp 6 (+2).
+
 ## 2.265.17 (2026-09-12)
 
 - **Apps registry: hosted, signed, verified (Publish program P1+P2, ADR-041 Accepted).** The Sutra Apps registry lives at https://sankalpasawa.github.io/sutra/apps/registry.json (website/apps/ in the sutra repo; zero apps yet, one publisher); the desktop ships its publisher key pinned (`registries.json`) and pins any other registry on first install. `POST /api/modules/install {registry, id}` fetches the index and the artifact over https only, verifies the entry's ed25519 signature against the pinned key before the archive is opened, refuses unsigned entries, swapped artifacts, edited entries and swapped keys, and refuses a downgrade unless `replace` and `downgrade` are both given. Everything stays behind `flags.apps_publish` (off). New: `modules_sign.py` (cryptography 46.0.0, universal2 wheel checked for both arches), `modules_registry.py` (check | add). Tests: sign 7 (RFC 8032 vectors), registry 7, package 17.

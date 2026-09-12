@@ -54,6 +54,11 @@ KINDS = (
     # reason 2 in the module docstring (the prompt is not always the operator)
     # is the whole argument against a one-click Create PR button.
     "pr.create",
+    # Publish program P3 (2026-09-12, ruling P-6): a chat opened by Publish...
+    # PROPOSES; the approval runs export, version bump, signing and staging
+    # (modules_api.publish_app). The press authorized a seeded chat, not a
+    # bypass of this gate -- the staged copy is what leaves the machine next.
+    "app.publish",
 )
 
 

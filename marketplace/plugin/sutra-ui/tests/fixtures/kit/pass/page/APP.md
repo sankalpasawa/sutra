@@ -1,4 +1,4 @@
-frameworkKit: {"kit":"apps-frameworks","version":"1.1.0","digest":"451fbb5683e8","created_at":"2026-09-12T09:00:00Z","kind":"page"}
+frameworkKit: {"kit":"apps-frameworks","version":"1.1.1","digest":"c354f0ad0008","created_at":"2026-09-12T09:00:00Z","kind":"page"}
 
 ---
 
@@ -8,12 +8,12 @@ the late loans, oldest first, with the owner beside each
 
 | Angle | Decision | Why | Applies? | Source | Checks | Owner notes |
 |---|---|---|---|---|---|---|
-| Product | | | yes | product v1.1.0 | | |
-| Strategy | | | yes | strategy v1.1.0 | | |
-| Design | | | yes | design v1.1.0 | | |
-| Engineering | | | yes | engineering v1.1.0 | | |
-| Backend | | | yes | backend v1.1.0 | | |
-| Frontend | | | yes | frontend v1.1.0 | | |
+| Product | | | yes | product v1.1.1 | | |
+| Strategy | | | yes | strategy v1.1.1 | | |
+| Design | | | yes | design v1.1.1 | | |
+| Engineering | | | yes | engineering v1.1.1 | | |
+| Backend | | | yes | backend v1.1.1 | | |
+| Frontend | | | yes | frontend v1.1.1 | | |
 
 ## Product
 
@@ -75,4 +75,4 @@ the late loans, oldest first, with the owner beside each
 - 2026-09-12 - created from the page starter
 
 ---
-provenance: the record of this app, created by Sutra Desktop from the apps frameworks kit v1.1.0; the first line is the stamp and is never edited by hand.
+provenance: the record of this app, created by Sutra Desktop from the apps frameworks kit v1.1.1; the first line is the stamp and is never edited by hand.

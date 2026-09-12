@@ -101,11 +101,13 @@ async function loadModules(force){
              counts_by_ref: data.counts_by_ref || {}, unassigned_count: data.unassigned_count || 0,
              root: data.root || null, department: data.department || null,
              count_user: data.count_user || 0, archived: data.archived || 0,
-             home: data.home || "", error: null };
+             home: data.home || "", error: null,
+             /* Publish program: {on, registry}; an older server sends nothing, which reads as off */
+             publish: (data.publish && typeof data.publish === "object") ? data.publish : { on: false, registry: null } };
   } catch (e) {
     if (s.modWant !== key) return;
     next = { modules: [], groups: null, counts_by_ref: {}, unassigned_count: 0, root: null, department: null,
-             count_user: 0, archived: 0, home: "", error: (e && e.message) || String(e) };
+             count_user: 0, archived: 0, home: "", error: (e && e.message) || String(e), publish: { on: false, registry: null } };
   }
   s.modules = next; s.modKey = key; s.modLoading = false;
   modRender();
@@ -325,14 +327,15 @@ function modEditOpen(s, m){
   return modOpenSeededChat(s, "Edit · " + m.name, modHome(s) + "/" + m.id, modEditSeed(s, m),
                            { id: m.id, mode: "edit", department_ref: dept });
 }
-function modEdit(m){
+/* D75 amendment: the task brings its framework. Every task on an app (Edit,
+   Publish) runs through this: an app without a stamp is adopted FIRST, then
+   the task's chat opens on the stamped row. The provider gate runs before the
+   write, so a click without a provider mutates nothing; one adoption in flight
+   per app, so a double click opens one chat; a failed adoption opens no chat
+   -- a task never runs without its framework. */
+function modWithFramework(m, open){
   const s = modS(); if (!s || !m || m.reserved || modIsSys(m)) return null;
-  if (!modFrameworks(s) || m.frameworkKit) return modEditOpen(s, m);
-  /* D75 amendment: the task brings its framework. An app without a stamp is
-     adopted FIRST, then the chat opens on the stamped row. The provider gate
-     runs before the write, so a click without a provider mutates nothing; one
-     adoption in flight per app, so a double click opens one chat; a failed
-     adoption opens no chat -- a task never runs without its framework. */
+  if (!modFrameworks(s) || m.frameworkKit) return open(s, m);
   if (!modProviderReady()){ s.modErr = "Connect a chat provider in Settings to create or edit apps."; modRender(); return null; }
   s.modAdopting = s.modAdopting || {};
   if (s.modAdopting[m.id]) return s.modAdopting[m.id];
@@ -341,10 +344,43 @@ function modEdit(m){
     if (!row) return null;
     const fresh = modById(s, m.id) || (typeof row === "object" ? Object.assign({}, m, row) : null);
     if (!fresh || !fresh.frameworkKit){ s.modErr = "This app did not take the frameworks; nothing was opened."; modRender(); return null; }
-    return modEditOpen(s, fresh);
+    return open(s, fresh);
   });
   s.modAdopting[m.id] = p;
   return p;
+}
+function modEdit(m){ return modWithFramework(m, modEditOpen); }
+/* Publish (Publish program P3; APPS-DESIGN section 7): a chat seeded with the
+   publish contract, never a form. The chat PROPOSES through sutra_app_publish;
+   the approval in the panel exports, versions, signs and stages the copy; the
+   git step into the registry stays the owner's. */
+function modPublishRegistry(s){ return (s.modules && s.modules.publish && s.modules.publish.registry) || ""; }
+function modPublishSeed(s, m){
+  const dept = m.department ? modDeptOf(s, m.department.ref) : null;
+  const fw = modFrameworks(s);
+  const folder = modHome(s) + "/" + m.id + "/";
+  const reg = modPublishRegistry(s) || "the Sutra Apps registry";
+  const check = fw ? `python3 ${fw.check} ${folder} --kind ${m.kind} (or the sutra_app_check tool)` : "the app checks";
+  return `You are publishing the app "${m.name}" (${m.kind}) from ${folder}${dept ? ", filed under " + modDeptWords(dept) : ""}.\n`
+    + `Publishing means: the checks pass, the app is marked ready, and a signed copy is staged for ${reg}.\n\n`
+    + `Do this in order:\n`
+    + `1. Read APP.md and module.json.\n`
+    + `2. Run ${check}. Every must-fix check passes or is waived on purpose; if anything blocks, say what in plain words and stop.\n`
+    + `3. The app must be ready. If the header shows draft, ask me to mark it ready; you cannot.\n`
+    + `4. Ask me one question: patch, minor or major bump (the first publish is 1.0.0; patch when unsure).\n`
+    + `5. Call sutra_app_publish with id ${m.id} and that bump. It only PROPOSES; I approve it in the panel. Do not say it is published.\n`
+    + `6. After I approve, call sutra_proposal_status with the proposal id and tell me the staged folder it names, then give me the registry step from its result word for word: the copy of the tarball into the sutra checkout and the modules_registry.py add command, then commit and push. That step is mine.\n\n`
+    + `Reply in plain words, no headers and no status lines. Say "app", never the internal word.`;
+}
+function modPublishOpen(s, m){
+  const dept = m.department ? m.department.ref : null;
+  return modOpenSeededChat(s, "Publish · " + m.name, modHome(s) + "/" + m.id, modPublishSeed(s, m),
+                           { id: m.id, mode: "publish", department_ref: dept });
+}
+function modPublish(m){
+  const s = modS();
+  if (!s || !(s.modules && s.modules.publish && s.modules.publish.on)) return null;   /* X-10: nothing to press while off */
+  return modWithFramework(m, modPublishOpen);
 }
 function modNewDept(s){
   const ref = (s.modDept && s.modDept !== MOD_UNASSIGNED) ? s.modDept : (s.modules && s.modules.root ? s.modules.root.ref : null);
@@ -417,9 +453,44 @@ async function modOnSessionDone(sess){
 
 /* ── html: facets + rail ──────────────────────────────────────────────────── */
 function modFacetsHtml(){
+  const s = modS();
   const b = (v, label) => `<button type="button" data-modfacet="${v}" aria-pressed="${v === "modules"}">${label}</button>`;
+  /* Publish program P4: one secondary control while the flag is on; it POSTs a refresh (never a read that writes) */
+  const pubOn = !!(s && s.modules && s.modules.publish && s.modules.publish.on);
+  const refresh = pubOn ? `<button class="btn mod-refresh" type="button" data-modrefresh title="Ask the registries whether an installed app has a newer version"${s.modRefreshing ? " disabled" : ""}>${s.modRefreshing ? "Checking…" : "Check for updates"}</button>` : "";
   return `<div class="facets"><span class="fl">View</span><span class="seg">${b("live", "Live")}${b("draft", "Draft")}${b("dir", "Directory")}${b("modules", "Apps")}</span>
-    <button class="newBtn mod-new" type="button" data-modnew>+ New app</button></div>`;
+    ${refresh}<button class="newBtn mod-new" type="button" data-modnew>+ New app</button></div>`;
+}
+async function modRefresh(){
+  const s = modS(); if (!s || s.modRefreshing) return null;
+  if (!(s.modules && s.modules.publish && s.modules.publish.on)) return null;
+  s.modRefreshing = true; s.modErr = null; modRender();
+  let res = null;
+  try { res = await apiPost(MOD_API + "/registry/refresh", {}); }
+  catch (e) { s.modErr = "Could not check the registries: " + ((e && e.message) || e); }
+  s.modRefreshing = false;
+  if (res && res.refreshed){
+    const r = res.refreshed;
+    s.modNote = r.updates ? `${r.updates} update${r.updates === 1 ? "" : "s"} available` : r.incompatible ? `${r.incompatible} app${r.incompatible === 1 ? "" : "s"} need a newer desktop` : "Everything installed is current";
+  }
+  await loadModules(true);
+  return res;
+}
+/* Update: a verified install of the registry's newer version over the installed one (replace; never a downgrade) */
+async function modUpdate(m){
+  const s = modS(); if (!s || !m) return null;
+  const src = m.publish && m.publish.source && m.publish.source.registry;
+  if (!src || (m.publish || {}).state !== "update_available") return null;
+  s.modUpdating = s.modUpdating || {};
+  if (s.modUpdating[m.id]) return null;
+  s.modUpdating[m.id] = true; s.modErr = null; modRender();
+  let res = null;
+  try { res = await apiPost(MOD_API + "/install", { registry: src, id: m.id, replace: true }); }
+  catch (e) { s.modErr = "Could not update this app: " + ((e && e.message) || e); }
+  delete s.modUpdating[m.id];
+  if (res) s.modNote = `${m.name} updated to ${res.version || "the newest version"}`;
+  await loadModules(true);
+  return res;
 }
 function modLeafHtml(s, m){
   return `<a class="dsub modleaf" href="#" data-modapp="${modEsc(m.id)}" aria-current="${s.modSel === m.id}"><span class="mod-dot ${m.status === "ready" ? "ready" : m.status === "archived" ? "archived" : "draft"}"></span>${modEsc(m.name)}<span class="pill mod-kind">${modEsc(m.kind)}</span></a>`;
@@ -542,9 +613,17 @@ function modAppViewHtml(s, m){
   const sys = modIsSys(m);
   const crumb = `${d ? modEsc(d.name) : "Unassigned"} › ${modEsc(m.kind)}`;
   const edit = (sys || m.reserved) ? "" : `<button class="btn mod-edit" type="button" data-modedit title="Opens a chat in ${modEsc(modHome(s))}/${modEsc(m.id)}/${d ? ", placed under " + modEsc(modChip(d.path)) + " " + modEsc(d.name) : ""}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Edit in chat</button>`;
+  /* APPS-DESIGN section 7: a secondary Publish... beside Edit in chat, user apps only, only while the flag is on */
+  const pubOn = !!(s.modules && s.modules.publish && s.modules.publish.on);
+  const publish = (sys || m.reserved || !pubOn) ? "" : `<button class="btn mod-publish" type="button" data-modpublish title="Opens a chat that stages a signed copy for ${modEsc(modPublishRegistry(s) || "the Sutra Apps registry")}">Publish…</button>`;
+  const pubState = m.publish && m.publish.state ? String(m.publish.state) : "";
+  const status = pubState === "update_available" ? "update available" : pubState === "incompatible" ? "incompatible" : m.status;
+  const updating = !!(s.modUpdating && s.modUpdating[m.id]);
+  const update = (pubOn && pubState === "update_available" && m.publish.source && m.publish.source.registry)
+    ? `<button class="btn mod-update" type="button" data-modupdate${updating ? " disabled" : ""} title="Install the newer version from ${modEsc(m.publish.source.registry)} (verified before anything lands)">${updating ? "Updating…" : "Update"}</button>` : "";
   return `<div class="mod-hd"><span class="chip big">${d ? modEsc(modChip(d.path)) : "—"}</span>
       <div><p class="crumb">${crumb}</p><h1>${modEsc(m.name)}</h1>${m.tagline ? `<p>${modEsc(m.tagline)}</p>` : ""}</div>
-      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
+      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${publish}${update}${modChecksChip(s, m)}<span class="count">${modEsc(status)}</span></div>
     <div class="mod-body">${modAppBodyHtml(s, m)}</div>`;
 }
 function modCrumbHtml(s, m){
@@ -560,7 +639,8 @@ function modScreenHtml(s){
       <div class="mod-actions"><button class="btn" type="button" data-modreload>Try again</button><button class="newBtn" type="button" data-modnew>+ New app</button></div>
     </section></div>`;
   }
-  const err = (s.modErr ? `<div class="note w"><b>${modEsc(s.modErr)}</b></div>` : "") + modPickHtml(s);
+  const err = (s.modErr ? `<div class="note w"><b>${modEsc(s.modErr)}</b></div>` : "")
+    + (s.modNote ? `<div class="note" style="border-left-color:var(--ok)"><b>${modEsc(s.modNote)}</b></div>` : "") + modPickHtml(s);
   const sel = modSelected(s);
   const narrow = modIsNarrow(s);
   if (sel && narrow){
@@ -648,7 +728,7 @@ if (typeof TITLES !== "undefined"){
 }
 
 if (typeof document !== "undefined" && document.addEventListener){
-  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
+  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modpublish],[data-modupdate],[data-modrefresh],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
   document.addEventListener("click", (ev) => {
     const s = modS(); if (!s) return;
     const t = ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
@@ -666,6 +746,9 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.modarch !== undefined){ s.modShowArchived = !s.modShowArchived; loadModules(true); return; }
     const m = modSelected(s);
     if (d.modedit !== undefined && m){ modEdit(m); return; }
+    if (d.modpublish !== undefined && m){ modPublish(m); return; }
+    if (d.modupdate !== undefined && m){ modUpdate(m); return; }
+    if (d.modrefresh !== undefined){ modRefresh(); return; }
     if (d.modopen !== undefined && m){ ev.preventDefault(); modOpen(m); return; }
   });
   document.addEventListener("input", (ev) => {
