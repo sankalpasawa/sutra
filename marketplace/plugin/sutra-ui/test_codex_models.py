@@ -326,6 +326,87 @@ class DiscoveryFailureFallsBackSafely(_Base):
         self.assertEqual(self.ids(), ["", "gpt-5.6-terra", "gpt-5.6-luna"])
 
 
+class WindowsComeFromTheRoster(_Base):
+    """budget.window_for("codex", model) reads the window the roster declares
+    for THAT model -- per account, never a static table. Measured 2026-09-12:
+    gpt-5.5 at 272000 x 95% and gpt-5.3-codex-spark at 128000 x 95% on one
+    account, which is what retired the one-default assumption."""
+
+    _CACHE_FILE = {"models": [
+        {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list",
+         "context_window": 272000, "effective_context_window_percent": 95},
+        {"slug": "gpt-5.3-codex-spark", "display_name": "Spark",
+         "visibility": "list", "context_window": 128000,
+         "effective_context_window_percent": 95},
+        {"slug": "codex-auto-review", "visibility": "hide",
+         "context_window": 272000, "effective_context_window_percent": 95},
+    ]}
+
+    def _write_cache(self):
+        (Path(os.environ["CODEX_HOME"]) / "models_cache.json").write_text(
+            json.dumps(self._CACHE_FILE))
+
+    def test_the_cache_file_declares_a_window_per_model(self):
+        self._write_cache()
+        self.assertEqual(codex_models.window_for("gpt-5.5"), 258400)
+        self.assertEqual(codex_models.window_for("gpt-5.3-codex-spark"), 121600)
+
+    def test_hidden_unknown_and_empty_ids_have_no_window(self):
+        self._write_cache()
+        self.assertIsNone(codex_models.window_for("codex-auto-review"))
+        self.assertIsNone(codex_models.window_for("gpt-6-astra"))
+        self.assertIsNone(codex_models.window_for(""))
+        self.assertIsNone(codex_models.window_for(None))
+
+    def test_no_cache_and_no_discovery_is_none_not_a_guess(self):
+        self.assertIsNone(codex_models.window_for("gpt-5.5"))
+
+    def test_the_rpc_roster_wins_and_its_window_rides_on_the_entry(self):
+        """The RPC spellings are the cache file's in camelCase (unmeasured, and
+        _effective_window says so); an answer without them carries no window."""
+        self._write_cache()
+        self.serve([dict(_VISIBLE[0], contextWindow=272000,
+                         effectiveContextWindowPercent=95),
+                    dict(_VISIBLE[1])])
+        codex_models.refresh_if_stale("chatgpt")
+        self.assertEqual(codex_models.window_for("gpt-5.6-terra"), 258400)
+        self.assertIsNone(codex_models.window_for("gpt-5.6-luna"))
+        self.assertIsNone(codex_models.window_for("gpt-5.3-codex-spark"),
+                          "a discovered roster is authoritative over the file")
+
+    def test_the_window_never_reaches_the_client(self):
+        self.serve([dict(_VISIBLE[0], contextWindow=272000,
+                         effectiveContextWindowPercent=95)])
+        codex_models.refresh_if_stale("chatgpt")
+        for m in providers.all_models_by_provider()["codex"]:
+            self.assertNotIn("_window", m)
+            self.assertNotIn("_default", m)
+
+    def test_budget_sizes_a_switch_against_the_models_own_window(self):
+        import budget
+        self._write_cache()
+        spark = budget.window_for("codex", "gpt-5.3-codex-spark")
+        self.assertEqual((spark["tokens"], spark["source"]), (121600, "declared"))
+        five = budget.window_for("codex", "gpt-5.5")
+        self.assertEqual((five["tokens"], five["source"]), (258400, "declared"))
+        # "" keeps the provider default: the file marks no default
+        empty = budget.window_for("codex", "")
+        self.assertEqual((empty["tokens"], empty["source"]),
+                         (258400, "provider-default"))
+        # an id the roster does not list keeps it too, as before
+        self.assertEqual(budget.window_for("codex", "haiku")["source"],
+                         "provider-default")
+
+    def test_a_discovered_default_resolves_the_empty_selection(self):
+        import budget
+        self.serve([dict(_VISIBLE[0], contextWindow=128000,
+                         effectiveContextWindowPercent=95)])   # terra isDefault
+        codex_models.refresh_if_stale("chatgpt")
+        empty = budget.window_for("codex", "")
+        self.assertEqual((empty["tokens"], empty["source"]),
+                         (121600, "provider-default"))
+
+
 class DiscoveryIsNotOnTheRenderPath(_Base):
     """providers.models_for() is reached by load_settings(), and every fs/tree,
     fs/read and settings GET goes through that."""

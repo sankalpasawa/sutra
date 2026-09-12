@@ -641,6 +641,107 @@ class CodexIRTest(unittest.TestCase):
                          ["first", "codex turn", "third"])
 
 
+class CodexFunctionCallIRTest(unittest.TestCase):
+    """The classic function shapes, measured 2026-09-12 across the 626 rollouts
+    on this machine: 4,321 function_call/function_call_output pairs, 94
+    web_search_call (no call_id), one tool_search_call/tool_search_output
+    pair. The canary found from_codex_file dropping every one of them -- the
+    largest rollout parsed to tool_chars 0 -- so each shape gets a fixture."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="sutra-ir-codex-fc-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _file(self, records):
+        p = self.tmp / "rollout-2026-09-12T00-00-00-thread.jsonl"
+        _w(p, records)
+        return p
+
+    @staticmethod
+    def _item(payload, ts="2026-09-12T00:00:02.000Z"):
+        return {"timestamp": ts, "type": "response_item", "payload": payload}
+
+    def _fc(self, call_id, name="exec_command", args=None):
+        return self._item({"type": "function_call", "name": name,
+                           "arguments": json.dumps(args or {"cmd": "git status"}),
+                           "call_id": call_id})
+
+    def _fco(self, call_id, output="Process exited with code 0\nOutput:\nclean"):
+        return self._item({"type": "function_call_output", "call_id": call_id,
+                           "output": output})
+
+    def _ws(self, query="hooks docs"):
+        return self._item({"type": "web_search_call", "status": "completed",
+                           "action": {"type": "search", "query": query,
+                                      "queries": [query]}})
+
+    def _tsc(self, call_id, query="spawn subagent"):
+        return self._item({"type": "tool_search_call", "call_id": call_id,
+                           "arguments": json.dumps({"query": query, "limit": 5}),
+                           "execution": "client", "status": "completed"})
+
+    def _tso(self, call_id):
+        return self._item({"type": "tool_search_output", "call_id": call_id,
+                           "tools": [{"type": "namespace", "name": "multi_agent_v1",
+                                      "tools": [{"type": "function",
+                                                 "name": "spawn_agent"}]}],
+                           "execution": "client", "status": "completed"})
+
+    def test_a_function_call_pairs_with_its_output_by_call_id(self):
+        p = self._file([CodexIRTest._msg("user", "status?"),
+                        self._fc("call_1"), self._fco("call_1"),
+                        CodexIRTest._msg("assistant", "clean")])
+        ir = transcript_ir.from_codex_file(p)
+        blocks = ir["turns"][1]["blocks"]
+        self.assertEqual([b["type"] for b in blocks],
+                         ["tool_use", "tool_result", "text"])
+        self.assertEqual(blocks[0]["name"], "exec_command")
+        self.assertEqual(blocks[0]["input"], {"cmd": "git status"},
+                         "arguments is a JSON string and must arrive as keys")
+        self.assertEqual(blocks[1]["tool_use_id"], "call_1")
+        self.assertIn("clean", blocks[1]["text"])
+        self.assertGreater(transcript_ir.stats(ir)["tool_chars"], 0)
+
+    def test_a_web_search_is_a_tool_use_with_nothing_spliced_after_it(self):
+        """web_search_call has no call_id and no output record. The hazard is
+        the splice: a None key in `results` would attach some other output
+        after EVERY search, so an id-less call must never receive one."""
+        p = self._file([CodexIRTest._msg("user", "look it up"),
+                        self._ws(), self._fc("call_2"),
+                        self._fco("call_2", "found it")])
+        blocks = transcript_ir.from_codex_file(p)["turns"][1]["blocks"]
+        self.assertEqual([b["type"] for b in blocks],
+                         ["tool_use", "tool_use", "tool_result"])
+        self.assertEqual(blocks[0]["name"], "web_search")
+        self.assertIsNone(blocks[0]["id"])
+        self.assertEqual(blocks[0]["input"]["query"], "hooks docs")
+        self.assertEqual(blocks[2]["tool_use_id"], "call_2")
+
+    def test_a_tool_search_pairs_by_call_id_and_keeps_what_it_found(self):
+        p = self._file([CodexIRTest._msg("user", "what tools?"),
+                        self._tsc("call_3"), self._tso("call_3")])
+        blocks = transcript_ir.from_codex_file(p)["turns"][1]["blocks"]
+        self.assertEqual([b["type"] for b in blocks], ["tool_use", "tool_result"])
+        self.assertEqual(blocks[0]["name"], "tool_search")
+        self.assertEqual(blocks[0]["input"], {"query": "spawn subagent", "limit": 5})
+        self.assertIn("spawn_agent", blocks[1]["text"])
+
+    def test_an_output_without_a_call_id_is_dropped_not_stored(self):
+        """The guard the web-search shape makes necessary, tested directly."""
+        p = self._file([CodexIRTest._msg("user", "q"), self._ws(),
+                        self._item({"type": "function_call_output",
+                                    "output": "orphan"})])
+        blocks = transcript_ir.from_codex_file(p)["turns"][1]["blocks"]
+        self.assertEqual([b["type"] for b in blocks], ["tool_use"])
+
+    def test_the_measured_shapes_are_all_translated(self):
+        for t in ("function_call", "function_call_output", "web_search_call",
+                  "tool_search_call", "tool_search_output"):
+            self.assertIn(t, transcript_ir._CODEX_ITEM_TYPES, t)
+
+
 class StatsTest(unittest.TestCase):
 
     def test_stats_splits_tool_conversation_and_reasoning(self):

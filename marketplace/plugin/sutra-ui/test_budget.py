@@ -133,13 +133,14 @@ class WindowTest(unittest.TestCase):
         # target -- so the floor stopped being caution and became a 22%
         # under-count on a live path.
         #
-        # What actually made it knowable is narrower than a roster, and worth
-        # stating because it is the thing that could change: EVERY MODEL CODEX
-        # OFFERS DECLARES THE SAME EFFECTIVE WINDOW (272,000 x 95% = 258,400).
-        # So "" resolves to 258,400 whichever model the server picks, and the
-        # unresolvable-default worry never has to be answered.
-        # test_codex_models_all_declare_one_effective_window is what fails if
-        # that stops being true.
+        # What made it knowable was narrower than a roster: every model codex
+        # offered declared the same effective window (272,000 x 95% =
+        # 258,400), so "" resolved to 258,400 whichever model the server
+        # picked. That stopped being true on 2026-09-12 (spark at 121,600),
+        # and the answer is per model now: budget.window_for asks the
+        # discovered roster for a selected model, and "" keeps this default
+        # until the roster marks a default -- see
+        # test_every_visible_codex_model_resolves_to_its_own_declared_window.
         UNKNOWABLE_DEFAULT = {"claude"}
         for spec in providers._CATALOG:
             pid = spec["id"]
@@ -186,35 +187,47 @@ class WindowTest(unittest.TestCase):
         self.assertNotIn("codex", budget.WINDOWS)
         self.assertIn("codex", budget.DEFAULT_WINDOWS)
 
-    def test_codex_models_all_declare_one_effective_window(self):
-        """THE CANARY FOR THE ONE ASSUMPTION 258,400 RESTS ON.
+    def test_every_visible_codex_model_resolves_to_its_own_declared_window(self):
+        """THE CANARY, second form.
 
-        A single default is honest only while every model codex offers agrees.
-        Reads codex's OWN cache when it is present and skips otherwise, so this
-        never depends on an account or a network call."""
+        Until 2026-09-12 this asserted that every visible codex model agreed
+        on ONE effective window, which is what made a single default honest.
+        gpt-5.3-codex-spark then appeared at 121,600 beside 258,400 and it
+        fired, as designed. The contract now: whatever codex's OWN cache
+        declares per model is what window_for returns for that model, source
+        `declared` -- so a new model with a new window can never be sized by
+        the default. Reads codex's cache when it is present and skips
+        otherwise; never an account or a network call."""
         import json
         import os
+        import codex_models
         home = os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex")
         path = os.path.join(home, "models_cache.json")
         if not os.path.exists(path):
             self.skipTest("no codex models cache on this machine")
         with open(path, encoding="utf-8", errors="replace") as fh:
             blob = json.load(fh)
-        effective = set()
+        declared = {}
         for m in blob.get("models") or []:
             if m.get("visibility") != "list":
                 continue
             cw, pct = m.get("context_window"), m.get(
                 "effective_context_window_percent")
             if isinstance(cw, int) and isinstance(pct, int):
-                effective.add(int(cw * pct / 100))
-        if not effective:
+                declared[m.get("slug")] = int(cw * pct / 100)
+        if not declared:
             self.skipTest("cache declares no visible model windows")
-        self.assertEqual(
-            effective, {budget.DEFAULT_WINDOWS["codex"]},
-            "codex's models no longer agree on one effective window (%r), so a "
-            "single DEFAULT_WINDOWS entry is no longer honest -- this is the "
-            "point at which a per-model table becomes justified" % (effective,))
+        codex_models._reset_for_tests()      # the file path, not a stale roster
+        self.addCleanup(codex_models._reset_for_tests)
+        for slug, tokens in declared.items():
+            w = budget.window_for("codex", slug)
+            self.assertEqual((w["tokens"], w["source"]), (tokens, "declared"),
+                             "%s: codex declares %d, budget resolved %r"
+                             % (slug, tokens, w))
+        # the cache file marks no default, so "" still resolves to the
+        # provider default rather than to any one model's window
+        self.assertEqual(budget.window_for("codex", "")["tokens"],
+                         budget.DEFAULT_WINDOWS["codex"])
 
     def test_the_other_providers_windows_are_untouched_by_4a(self):
         """Frozen: 4A adds one DEFAULT_WINDOWS key and nothing else."""

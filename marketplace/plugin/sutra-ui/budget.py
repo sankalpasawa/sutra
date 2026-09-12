@@ -112,6 +112,14 @@ WINDOWS = {
 #: and would go stale silently the day OpenAI ships a fourth model. One default
 #: is the honest shape while every model agrees; the moment one does not,
 #: test_codex_models_all_declare_one_effective_window fails and says so.
+#:
+#: IT DID, 2026-09-12: gpt-5.3-codex-spark appeared at 128,000 x 95% = 121,600
+#: beside gpt-5.5's 258,400. Still no static table -- window_for asks
+#: codex_models.window_for(model) for the figure the roster itself declares
+#: (model/list first, codex's own cache file last), and this default is what
+#: "" and an unlisted id fall back to. The canary is now
+#: test_every_visible_codex_model_resolves_to_its_own_declared_window: every
+#: window codex's cache declares is the window window_for returns for it.
 DEFAULT_WINDOWS = {
     "deepseek": 1000000,
     "codex": 258400,
@@ -164,6 +172,23 @@ def window_for(target, model=None):
         except Exception:
             model = ""
     model = (model or "").strip()
+
+    if target == "codex":
+        # PER MODEL, FROM THE DISCOVERED ROSTER -- never a static table (see
+        # the DEFAULT_WINDOWS note). A selected model the roster lists with a
+        # window is `declared`; "" resolves to the discovered default's window
+        # when the roster marks one; anything else keeps the provider default
+        # below. The import is deferred the way providers defers it: cheap
+        # after the first call, and no cycle at import time.
+        import codex_models
+        win = codex_models.window_for(model) if model else None
+        if win:
+            return {"tokens": win, "source": "declared", "model": model}
+        if not model:
+            win = codex_models.window_for(codex_models.default_id())
+            if win:
+                return {"tokens": win, "source": "provider-default",
+                        "model": model}
 
     win = WINDOWS.get(target, {}).get(model)
     if win:

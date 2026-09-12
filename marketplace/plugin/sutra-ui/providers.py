@@ -752,8 +752,9 @@ def _codex_discovered():
     fs/tree, fs/read and settings GET goes through that; the same rule that
     keeps codex_auth() out of _describe() applies with more force here.
 
-    `_default` is stripped. It is bookkeeping between codex_models and the
-    picker's first option, and a key that reaches a client frame because
+    Underscore keys are stripped: `_default` is bookkeeping between
+    codex_models and the picker's first option, `_window` is what
+    budget.window_for reads, and a key that reaches a client frame because
     nothing removed it is how a private field becomes an accidental contract.
 
     THE IMPORT IS DEFERRED because codex_models imports THIS module -- a
@@ -773,7 +774,7 @@ def _codex_discovered():
     #
     # Codex-only keys. Claude's and DeepSeek's entries are untouched, and no
     # existing reader looks past {id, name, note, selectable}.
-    return tuple(dict({k: v for k, v in m.items() if k != "_default"},
+    return tuple(dict({k: v for k, v in m.items() if not k.startswith("_")},
                       default=bool(m.get("_default")))
                  for m in found)
 

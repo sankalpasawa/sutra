@@ -360,7 +360,9 @@ def from_deepseek_file(path, project_cwd=None):
 # THE FILE CARRIES THE CONVERSATION TWICE, AND ONLY ONE COPY IS READ HERE:
 #
 #   response_item   the API-level history -- message / reasoning /
-#                   custom_tool_call / custom_tool_call_output
+#                   custom_tool_call / custom_tool_call_output, and the
+#                   function_call / web_search_call / tool_search_call
+#                   shapes (the full set is _CODEX_ITEM_TYPES)
 #   event_msg       a UI-level mirror -- item_completed carrying UserMessage /
 #                   AgentMessage / Reasoning / CommandExecution / Extension
 #
@@ -405,7 +407,16 @@ def from_deepseek_file(path, project_cwd=None):
 #: no Codex analogue of DeepSeek's `thoughts`, so a Codex IR carries no
 #: thinking blocks at all.
 _CODEX_ITEM_TYPES = ("message", "reasoning",
-                     "custom_tool_call", "custom_tool_call_output")
+                     "custom_tool_call", "custom_tool_call_output",
+                     # ADDED 2026-09-12, when the canary fired against the 626
+                     # rollouts then on disk: the classic function shapes
+                     # (4,321 call/output pairs -- the largest rollout on this
+                     # machine is all of them and parsed to tool_chars 0), a
+                     # web search (94, no call_id) and a tool search (one
+                     # pair). Each shape is stated at its branch below.
+                     "function_call", "function_call_output",
+                     "web_search_call",
+                     "tool_search_call", "tool_search_output")
 
 #: Content-item types that carry text, across all three roles. `input_text` on
 #: user/developer messages and on tool output, `output_text` on assistant
@@ -563,11 +574,34 @@ def from_codex_file(path):
                     # the next vendor's model as something the operator said.
                     continue
 
-                if item == "custom_tool_call":
+                if item in ("custom_tool_call", "function_call",
+                            "tool_search_call"):
+                    # Three call shapes, one block. custom_tool_call carries
+                    # its program in `input`; function_call carries `name` and
+                    # `arguments` (a JSON string, 4,321/4,321 measured);
+                    # tool_search_call carries `arguments` and no name, so it
+                    # is named by its type. All three pair with an output
+                    # record by call_id.
+                    if item == "custom_tool_call":
+                        name, raw = payload.get("name"), payload.get("input")
+                    elif item == "function_call":
+                        name, raw = payload.get("name"), payload.get("arguments")
+                    else:
+                        name, raw = "tool_search", payload.get("arguments")
                     _reply(ts)["blocks"].append(chat_store.block_tool_use(
-                        payload.get("name") or "",
-                        _codex_tool_input(payload.get("input")),
+                        name or "", _codex_tool_input(raw),
                         payload.get("call_id")))
+                    continue
+
+                if item == "web_search_call":
+                    # {status, action: {type: "search", query, queries}} and
+                    # NO call_id (94/94 measured): there is no output record
+                    # to pair, so this is a tool_use with id None and nothing
+                    # is ever spliced after it -- see the id guard below.
+                    action = payload.get("action")
+                    _reply(ts)["blocks"].append(chat_store.block_tool_use(
+                        "web_search",
+                        action if isinstance(action, dict) else {}, None))
                     continue
 
                 # custom_tool_call_output. Collected rather than appended: the
@@ -588,10 +622,24 @@ def from_codex_file(path):
                 # OVERWROTE the real tool result for that call -- measured, a
                 # `web_search` record replaced a command's output with an empty
                 # string. Silent, and in the 98.2%-of-content path.
-                if item == "custom_tool_call_output":
+                if item in ("custom_tool_call_output", "function_call_output",
+                            "tool_search_output"):
                     cid = payload.get("call_id")
+                    if not cid:
+                        # An output with no call cannot be spliced anywhere.
+                        # NEVER results[None]: the splice below looks results
+                        # up by the call's id, and a web_search_call's id IS
+                        # None, so a None key would attach this output after
+                        # every search in the file.
+                        continue
+                    if item == "tool_search_output":
+                        # {tools: [...]} -- a list of namespaces, not text.
+                        text = json.dumps(payload.get("tools"), ensure_ascii=False)
+                    else:
+                        # a content list (custom) or a plain string (function)
+                        text = _codex_text(payload.get("output"))
                     results[cid] = chat_store.block_tool_result(
-                        _codex_text(payload.get("output")), cid,
+                        text, cid,
                         # ALWAYS False, and this is a measurement rather than
                         # an oversight: custom_tool_call_output carries NO
                         # status field at all (15/15 -- its keys are exactly
@@ -611,13 +659,14 @@ def from_codex_file(path):
         return ir
 
     # Results follow their calls, so splice them in only once the file is read
-    # -- identical policy to from_claude_file, for the identical reason.
+    # -- identical policy to from_claude_file, for the identical reason. The
+    # id guard is codex-only: a web_search_call is a tool_use with id None.
     for turn in ir["turns"]:
         spliced = []
         for b in turn["blocks"]:
             spliced.append(b)
-            if b["type"] == "tool_use":
-                r = results.get(b.get("id"))
+            if b["type"] == "tool_use" and b.get("id"):
+                r = results.get(b["id"])
                 if r:
                     spliced.append(r)
         turn["blocks"] = spliced

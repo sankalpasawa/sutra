@@ -171,7 +171,12 @@ def _entry(raw, note_from_default=False):
             # not have it, because `-c model_reasoning_effort` accepts an
             # unknown value without complaint (measured: "__bogus__" sailed
             # through, which is why this feature waited for model/list).
-            "efforts": _efforts(raw)}
+            "efforts": _efforts(raw),
+            # Private (underscore keys are stripped before the client sees the
+            # entry -- providers._codex_discovered). budget.window_for reads
+            # it: the effective window is PER MODEL on one account as of
+            # 2026-09-12 (gpt-5.5 258,400; gpt-5.3-codex-spark 121,600).
+            "_window": _effective_window(raw)}
 
 
 def _efforts(raw):
@@ -188,6 +193,30 @@ def _efforts(raw):
         if isinstance(v, str) and v.strip() and v.strip() not in out:
             out.append(v.strip())
     return tuple(out)
+
+
+def _effective_window(raw):
+    """The effective context window codex declares for one model, or None.
+
+    context_window x effective_context_window_percent / 100 -- the two fields
+    codex's own models_cache.json carries (measured 2026-09-09: 272000 x 95
+    -> 258,400 for every visible model; 2026-09-12: gpt-5.3-codex-spark
+    appeared at 128000 x 95 -> 121,600, and one default stopped being honest).
+    The camelCase spellings are the RPC's convention for the same fields per
+    the cache-file note below ("same field names as the RPC in snake_case")
+    and are NOT independently measured: a model/list answer without them
+    simply carries no window, and budget.window_for keeps the provider
+    default it always had.
+    """
+    cw = raw.get("contextWindow", raw.get("context_window"))
+    pct = raw.get("effectiveContextWindowPercent",
+                  raw.get("effective_context_window_percent"))
+    if isinstance(cw, bool) or isinstance(pct, bool):
+        return None
+    if isinstance(cw, int) and isinstance(pct, int) \
+            and cw > 0 and 0 < pct <= 100:
+        return int(cw * pct / 100)
+    return None
 
 
 def default_id(models=None):
@@ -387,6 +416,10 @@ def _from_cache_file():
         out.append({"id": raw.get("slug"), "model": raw.get("slug"),
                     "displayName": raw.get("display_name"),
                     "description": raw.get("description"),
+                    # the window pair, under the file's own names (_window)
+                    "context_window": raw.get("context_window"),
+                    "effective_context_window_percent":
+                        raw.get("effective_context_window_percent"),
                     "hidden": False,
                     "isDefault": False})
     return _map(out)
@@ -402,6 +435,24 @@ def cached():
     """
     with _LOCK:
         return _CACHE["models"]
+
+
+def window_for(model_id):
+    """The effective context window codex declares for `model_id`, or None.
+
+    PURE, NEVER SPAWNS: the discovered roster first, then codex's own cache
+    file as the last resort -- refresh_if_stale's order minus the RPC, and a
+    capped 1 MB read when discovery has not run in this process. None for "",
+    for an id the roster does not list, and for a roster that published no
+    window; budget.window_for turns None into the provider default, which
+    over-sizes a smaller model only on a machine where neither source exists.
+    """
+    if not model_id:
+        return None
+    for m in (cached() or _from_cache_file()):
+        if m.get("id") == model_id:
+            return m.get("_window") or None
+    return None
 
 
 def refresh_if_stale(auth_state=None, force=False):

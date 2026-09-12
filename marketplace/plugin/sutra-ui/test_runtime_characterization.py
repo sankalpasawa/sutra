@@ -91,8 +91,15 @@ class ChatCharacterization(unittest.TestCase):
         cls._env_saved = {k: os.environ.get(k)
                           for k in ("SUTRA_UI_SETTINGS", "SUTRA_UI_CLAUDE_BIN",
                                     "SUTRA_UI_WORKDIR_ROOT", "SUTRA_UI_PROVIDER",
-                                    "SUTRA_UI_PERMISSION_MODE")}
+                                    "SUTRA_UI_PERMISSION_MODE", "SUTRA_UI_CHATS")}
         os.environ["SUTRA_UI_SETTINGS"] = os.path.join(cls.tmpdir, "settings.json")
+        # The chats store MUST be this run's own. Unbound, ws_chat resolves
+        # resume seeds against the operator's real ~/.sutra-ui/chats -- and an
+        # earlier unisolated run of test_06 had written its "dead-0000" seed
+        # there, so the "dead" seed resolved, the server (correctly) sent the
+        # identity `chat` frame first, and the characterization went red for a
+        # reason that had nothing to do with the runtime (2026-09-12).
+        os.environ["SUTRA_UI_CHATS"] = os.path.join(cls.tmpdir, "chats")
         os.environ["SUTRA_UI_CLAUDE_BIN"] = cls.fake
         os.environ["SUTRA_UI_WORKDIR_ROOT"] = cls.tmpdir
         os.environ.pop("SUTRA_UI_PROVIDER", None)

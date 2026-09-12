@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.3 (2026-09-12)
+
+- **Shadow's goal proposals work again, and the goal workspace is back on screen.** The 2026-09-11 v7-mock commit replaced `shadow_protocol.py`, `panel.css` and `panel.html` with a stale working copy, dropping the `goal` fence and tier contract (051b130), 680 lines of goal-workspace CSS and the `18-goal-workspace.js` script tag while the server kept handling goal blocks. All three are restored on top of the `module` fence; a parity test now fails if SHADOW.md documents a fence the parser lacks, if app.py routes a block the parser never emits, or if a panel script goes unreferenced. Tests: proposal tiers 21, goal creation 16 (+3 parity).
+- **Codex replays keep their tool activity.** `transcript_ir.from_codex_file` translates `function_call` / `function_call_output` (4,321 pairs on this machine), `web_search_call` and `tool_search_call` / `tool_search_output`; an output without a `call_id` is dropped, never attached to an id-less search. Tests: transcript IR 66 (+5).
+- **A switch to Codex is sized per model.** `gpt-5.3-codex-spark` declares 121,600 where `gpt-5.5` declares 258,400; `budget.window_for("codex", model)` now reads the window the discovered roster declares (model/list first, codex's own cache file last), source `declared`; `""` and unlisted ids keep the 258,400 default. Tests: budget 29, codex models 36 (+7).
+- `test_runtime_characterization` binds its own chats store; an earlier unisolated run had written a `dead-0000` seed into the operator's real `~/.sutra-ui/chats`, so the dead-seed test was reading a live one.
+
 ## 2.265.2 (2026-09-12)
 
 - **The department importer no longer names a root after your Mac account (D76).** `project_import.apply_forest` reuses the live root whatever it is called (preferring one named `Sutra`), mints `Sutra` only on an empty registry, and files every top-level imported folder under a `Desktop` node instead of at the top. On the founder's machine the old rule had created a second root carrying the account's full name with nine duplicate departments under it. Tests: `test_project_import.py` (51, two new).

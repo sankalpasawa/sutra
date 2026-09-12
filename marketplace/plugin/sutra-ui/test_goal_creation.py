@@ -8,6 +8,7 @@ existing /api/shadow/goals.
 """
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -94,6 +95,45 @@ class TestGoalBlock(unittest.TestCase):
         self.assertIn("mission", blocks)
         self.assertIn("chips", blocks)
         self.assertNotIn("goal", blocks)
+
+
+class TestProtocolAndPanelParity(unittest.TestCase):
+    """Guards for the 2026-09-11 clobber. A stale working copy of three files
+    was committed over the collaborator's work: shadow_protocol.py lost the
+    `goal` fence and the tier contract while app.py kept routing goal blocks,
+    panel.css lost the goal-workspace styles, and panel.html lost the
+    18-goal-workspace.js script tag, so the workspace JS never loaded. The
+    suites that caught it failed three layers down ("'goal' not found in {}").
+    Each check here names the missing piece directly."""
+
+    UI = Path(__file__).resolve().parent
+
+    @staticmethod
+    def _parsed_fences():
+        pat = shadow_protocol._BLOCK.pattern
+        return set(pat.split("(", 1)[1].split(")", 1)[0].split("|"))
+
+    def test_every_fence_shadow_md_documents_is_one_the_parser_accepts(self):
+        doc = (self.UI / "SHADOW.md").read_text(encoding="utf-8")
+        documented = set(re.findall(r"^```([a-z]+)\s*$", doc, re.M))
+        self.assertTrue(documented, "SHADOW.md documents no fences at all")
+        self.assertEqual(documented - self._parsed_fences(), set(),
+                         "SHADOW.md tells the model to emit a fence that "
+                         "parse_reply drops on the floor")
+
+    def test_every_block_app_py_routes_is_one_the_parser_can_emit(self):
+        src = (self.UI / "app.py").read_text(encoding="utf-8")
+        routed = set(re.findall(r'if "([a-z]+)" in blocks', src))
+        self.assertIn("goal", routed, "app.py stopped routing goal proposals")
+        self.assertEqual(routed - self._parsed_fences(), set(),
+                         "app.py routes a block kind parse_reply never emits "
+                         "-- the exact shape of the 2026-09-11 regression")
+
+    def test_every_panel_script_is_loaded_by_panel_html(self):
+        html = (self.UI / "static" / "panel.html").read_text(encoding="utf-8")
+        for js in sorted((self.UI / "static" / "js").glob("*.js")):
+            self.assertIn("/static/js/%s" % js.name, html,
+                          "%s exists but panel.html never loads it" % js.name)
 
 
 class TestProposalThroughTheChatRoute(unittest.TestCase):
