@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # creation-guard-test.sh — 7 cases for creation-guard.sh + creation-stop-check.sh (Directory Program phase G).
-# Usage: bash creation-guard-test.sh [new-dir|new-file|new-charter|missing-domain|new-kind|bypass|kill-switch|staged-bypass|stale-untracked|no-jq-rules|spaces-path|stop-kill-switch|invalid-mode]
+# Usage: bash creation-guard-test.sh [new-dir|new-file|new-charter|missing-domain|new-kind|bypass|kill-switch|staged-bypass|stale-untracked|rule-charter|no-jq-rules|spaces-path|stop-kill-switch|invalid-mode]
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"; HOOKS="$(cd "$HERE/../hooks" && pwd)"
 ONLY="${1:-}"; FAIL=0; RUN=0
@@ -26,6 +26,13 @@ if want bypass; then RUN=$((RUN+1)); mk; mkdir -p "$ROOT/rogue"; echo x > "$ROOT
   echo hard > "$ROOT/.claude/creation-guard-mode"; ( cd "$ROOT" && bash "$HOOKS/creation-stop-check.sh" 2>"$ROOT/.claude/err" ); rc=$?; [ "$rc" = 2 ] && ok bypass || die bypass "hard should exit 2 (rc=$rc)"
   echo 'rogue/created-by-bash.md' >> "$ROOT/.claude/sessions/$SID/creation-guard-seen"; ( cd "$ROOT" && bash "$HOOKS/creation-stop-check.sh" 2>"$ROOT/.claude/err" ); rc=$?; [ "$rc" = 0 ] || die bypass "seen file should not block (rc=$rc)"; fi
 if want kill-switch; then RUN=$((RUN+1)); mk; touch "$HOME/.creation-guard-disabled"; echo hard > "$ROOT/.claude/creation-guard-mode"; rc=$(guard "$ROOT/anything/new.md"); [ "$rc" = 0 ] && grep -q 'skipped-kill-switch' "$ROOT/.sutra/creation-guard.jsonl" && ok kill-switch || die kill-switch "rc=$rc; audit row missing"; fi
+
+# 14 rule-charter: a rules row may carry the charter too; a routine's output folder then passes with a placement
+#    that names no charter and no CHARTER.md up the tree, and a path outside the prefix is still blocked (hard)
+if want rule-charter; then RUN=$((RUN+1)); mk; echo hard > "$ROOT/.claude/creation-guard-mode"; printf 'DOMAIN_REF=dref-test\nSESSION=%s\n' "$SID" > "$ROOT/.claude/sessions/$SID/placement-registered"
+  printf '{"rules":[{"prefix":"holding/obs/audit/","domain":"dref-obs","charter":"C-obs"}]}\n' > "$ROOT/.claude/creation-guard-rules.json"; mkdir -p "$ROOT/holding/obs/audit" "$ROOT/holding/other"
+  rc=$(guard "$ROOT/holding/obs/audit/2026-09-12-1.log"); if [ "$rc" = 0 ] && ! grep -q 'missing' "$ROOT/.claude/err"; then ok rule-charter; else die rule-charter "rule charter should satisfy the charter dimension (rc=$rc): $(cat "$ROOT/.claude/err")"; fi
+  rc=$(guard "$ROOT/holding/other/x.log"); if [ "$rc" = 2 ] && grep -q 'charter' "$ROOT/.claude/err"; then ok rule-charter-scope; else die rule-charter "a path outside the prefix must still miss its charter (rc=$rc)"; fi; fi
 
 # 8 staged-bypass: a Bash-created file that was git-added before Stop is still caught
 if want staged-bypass; then RUN=$((RUN+1)); mk; mkdir -p "$ROOT/rogue"; echo x > "$ROOT/rogue/staged.md"; ( cd "$ROOT" && git add rogue/staged.md ); echo hard > "$ROOT/.claude/creation-guard-mode"; ( cd "$ROOT" && bash "$HOOKS/creation-stop-check.sh" 2>"$ROOT/.claude/err" ); rc=$?; [ "$rc" = 2 ] && grep -q 'rogue/staged.md' "$ROOT/.claude/err" && ok staged-bypass || die staged-bypass "staged file should be caught (rc=$rc): $(head -2 "$ROOT/.claude/err")"; fi

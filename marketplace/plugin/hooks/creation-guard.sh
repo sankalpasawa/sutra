@@ -44,18 +44,30 @@ while :; do
 done
 if [ -z "$DOM_HIT" ] && [ -r "$ROOT/.claude/creation-guard-rules.json" ]; then
   if command -v jq >/dev/null 2>&1; then
-    DOM_HIT=$(jq -r --arg p "$REL" '.rules[]? | select(($p|startswith(.prefix))) | .domain' "$ROOT/.claude/creation-guard-rules.json" 2>/dev/null | head -1)
+    DOM_HIT=$(jq -r --arg p "$REL" '.rules[]? | .prefix as $pre | select($p | startswith($pre)) | .domain' "$ROOT/.claude/creation-guard-rules.json" 2>/dev/null | head -1)
   else
     while IFS='|' read -r pre dom; do case "$REL" in "$pre"*) DOM_HIT="$dom"; break;; esac; done < <(tr -d '\n' < "$ROOT/.claude/creation-guard-rules.json" | grep -o '"prefix"[[:space:]]*:[[:space:]]*"[^"]*"[^}]*"domain"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/"prefix"[[:space:]]*:[[:space:]]*"([^"]*)".*"domain"[[:space:]]*:[[:space:]]*"([^"]*)"/\1|\2/')
   fi
 fi
 case "$DREF" in ""|unresolved) ;; *) DOM_HIT="${DOM_HIT:-placement:$DREF}";; esac
 [ -z "$DOM_HIT" ] && MISSING="$MISSING domain"
+# A rules row may carry the charter too (2.265.6): a routine's output folder (a scheduled audit, an eval run) has no
+# session placement and no CHARTER.md up its tree, so the rule declares which charter its files answer to.
+if [ -z "$CH_HIT" ] && [ -r "$ROOT/.claude/creation-guard-rules.json" ]; then
+  CH_RULE=""
+  if command -v jq >/dev/null 2>&1; then
+    CH_RULE=$(jq -r --arg p "$REL" '.rules[]? | .prefix as $pre | select($p | startswith($pre)) | .charter // empty' "$ROOT/.claude/creation-guard-rules.json" 2>/dev/null | head -1)
+  else
+    while IFS='|' read -r pre ch; do case "$REL" in "$pre"*) CH_RULE="$ch"; break;; esac; done < <(tr -d '\n' < "$ROOT/.claude/creation-guard-rules.json" | grep -o '"prefix" *: *"[^"]*"[^}]*"charter" *: *"[^"]*"' | sed -E 's/.*"prefix" *: *"([^"]*)".*"charter" *: *"([^"]*)".*/\1|\2/')
+  fi
+  [ -n "$CH_RULE" ] && CH_HIT="rule:$CH_RULE"
+fi
 case "$(basename "$REL")" in CHARTER.md) CH_HIT="${CH_HIT:-self}";; esac
 [ -z "$CH_HIT" ] && [ -n "$CID" ] && CH_HIT="placement:$CID"
 [ -z "$CH_HIT" ] && MISSING="$MISSING charter"
 b=$(basename "$REL"); KIND=""
 case "$REL" in
+  */runs/*.json|*/runs/*.jsonl|*/triage-runs/*.log) KIND=ledger;;
   */hooks/*.sh) KIND=hook;; */bin/*|*/scripts/*) KIND=cli;; */tests/*|*test_*|*-test.sh|*.test.*) KIND=test;; */decisions/ADR-*|ADR-*|*/ADR-*) KIND=adr;;
   */os/engines/*.md|*/engines/*.md) KIND=engine;; */plans/*.md) KIND=plan;; */PROTOCOLS.md|*PROTO-[0-9]*) KIND=protocol;; */FOUNDER-DIRECTIONS.md|FOUNDER-DIRECTIONS.md) KIND=direction;;
   */os/charters/*.md) KIND=charter;; */sutra-ui/static/*|*/sutra-ui/*.html|*/electron/*) KIND=app;;

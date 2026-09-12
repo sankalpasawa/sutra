@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.6 (2026-09-12)
+
+- **Creation guard: a rules row may declare the charter.** `.claude/creation-guard-rules.json` rows accept `charter` next to `prefix` and `domain`, so a routine's output folder (the daily governance audit, the eval program's runs) passes without a session placement or a CHARTER.md up its tree; `runs/*.json` and `triage-runs/*.log` classify as ledger. Test `rule-charter`. Also fixes the jq form of the existing domain-rule lookup (`.prefix` was evaluated against the path string, so rules only ever resolved through the no-jq fallback).
+
 ## 2.265.5 (2026-09-12)
 
 - **Creation guard: `.eval` files are ledgers.** The eval program's run logs (`*.eval`) now classify as kind `ledger`, like `.jsonl`/`.log`/`.csv`, instead of tripping a NEW KIND event at Stop; the census already read them that way.
