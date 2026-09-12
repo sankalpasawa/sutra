@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.5 (2026-09-12)
+
+- **Creation guard: `.eval` files are ledgers.** The eval program's run logs (`*.eval`) now classify as kind `ledger`, like `.jsonl`/`.log`/`.csv`, instead of tripping a NEW KIND event at Stop; the census already read them that way.
+
 ## 2.265.4 (2026-09-12)
 
 - **One active root per registry, enforced where roots are made (I-D6, founder direction D76).** `placement_engine.mint_domain` with no parent now returns the existing root (with a `root_reused` event) instead of creating a second one, whatever the requested name or tenant label; `set_domain_fields` cannot lift a node to a second root and `unretire` cannot resurrect one. This closes the path by which the desktop's startup import re-created an account-named root beside the organisation on 2026-09-12. Tests: `lib/tests/test_root_invariant.py` (4), `test_project_import.py` (+1); three engine tests now seed a second root as an on-disk damage fixture.

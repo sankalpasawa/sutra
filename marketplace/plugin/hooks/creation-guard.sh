@@ -62,7 +62,7 @@ case "$REL" in
 esac
 if [ -z "$KIND" ]; then case "$b" in
   SKILL.md) KIND=skill;; CHARTER.md) KIND=charter;; *.md|*.txt|*.rst|*.pdf) KIND=doc;; *.py|*.ts|*.js|*.mjs|*.tsx|*.swift|*.css|*.sh|*.gs) KIND=code;;
-  *.sql) KIND=sql;; *.json|*.yaml|*.yml|*.toml|*.plist) KIND=policy;; *.jsonl|*.log|*.csv) KIND=ledger;; *.html) KIND=page;; *) KIND="";; esac; fi
+  *.sql) KIND=sql;; *.json|*.yaml|*.yml|*.toml|*.plist) KIND=policy;; *.jsonl|*.log|*.csv|*.eval) KIND=ledger;; *.html) KIND=page;; *) KIND="";; esac; fi
 if [ -z "$KIND" ]; then
   MSG="NEW KIND DETECTED: '$REL' fits none of the artifact kinds (app, page, cli, code, sql, engine, hook, skill, policy, ledger, test, doc, plan, adr, charter, protocol, direction).
   This is an event for the founder, not a silent addition (D74). Route: holding/NEW-THING-PROTOCOL.md section 2a FIT CHECK.
