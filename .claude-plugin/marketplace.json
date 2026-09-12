@@ -4,7 +4,7 @@
   "description": "Sutra \u2014 Operating system for building with AI. Input routing, depth estimation, writing style, output trace. Opinionated governance for Claude Code sessions.",
   "owner": {
     "name": "Sutra",
-    "url": "https://sutra.os"
+    "url": "https://sankalpasawa.github.io/sutra/"
   },
   "plugins": [
     {
@@ -13,7 +13,7 @@
       "version": "2.265.3",
       "author": {
         "name": "Sutra",
-        "url": "https://sutra.os"
+        "url": "https://sankalpasawa.github.io/sutra/"
       },
       "source": "./marketplace/plugin",
       "category": "development",
@@ -34,7 +34,7 @@
       "version": "1.5.1",
       "author": {
         "name": "Sutra",
-        "url": "https://sutra.os"
+        "url": "https://sankalpasawa.github.io/sutra/"
       },
       "source": "./marketplace/native",
       "category": "development",
