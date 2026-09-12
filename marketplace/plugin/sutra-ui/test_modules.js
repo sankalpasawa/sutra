@@ -328,6 +328,45 @@ test("checks chip: a stamped app's header reads the live checks; an unstamped or
   assert(!/mod-checks/.test(T.SCREENS.modules()), "system rows carry no chip");
 });
 
+test("Add the frameworks: an unstamped user app shows the button, the click posts migrate_kit then re-reads; stamped, system and no-kit rows show none; the seeds say so", () => {
+  const view = api({ department: DESK_VIEW.modules.department, groups: { here: [USER_CHAT, STAMPED_PAGE] }, modules: SYS.concat([USER_CHAT, STAMPED_PAGE]), counts_by_ref: { r2: 2 } });
+  const T = fresh({ S: loaded(view, { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "friday", frameworks: FW }) });
+  assert(/data-modadopt[^>]*>Add the frameworks</.test(T.SCREENS.modules()), "an app without a stamp offers the button");
+  T.S.modSel = "m<1";
+  assert(!/data-modadopt/.test(T.SCREENS.modules()), "a stamped app has no button");
+  T.S.modSel = "sys-balance";
+  assert(!/data-modadopt/.test(T.SCREENS.modules()), "system rows have no button");
+  T.S.modSel = "friday";
+  const fw = T.S.frameworks; T.S.frameworks = null;
+  assert(!/data-modadopt/.test(T.SCREENS.modules()), "no kit installed, no button");
+  T.S.frameworks = fw;
+  /* the click: one POST with the action, then the forced read; no chat opens */
+  T.apiPost = (p, b) => { T.calls.apiPost.push([p, b]); return Promise.resolve(Object.assign({}, USER_CHAT, { frameworkKit: { version: "1.0.0", adopted: "2026-09-12" } })); };
+  T.apiGet = (p) => { T.calls.apiGet.push(p); return Promise.resolve(view.modules); };
+  const reads = T.calls.apiGet.length;
+  return T.modAdopt(T.modSelected(T.S)).then(ok => {
+    assert.strictEqual(ok, true);
+    /* objects born inside the vm have another Object prototype: compare by value */
+    assert.strictEqual(JSON.stringify(T.calls.apiPost[0]), JSON.stringify(["/api/modules/friday", { action: "migrate_kit" }]));
+    assert(T.calls.apiGet.length > reads, "the list is re-read after the adoption");
+    assert.strictEqual(T.calls.newSession.length, 0, "adoption opens no chat");
+    /* the Edit seed before adoption points at the button and adds no kit lines */
+    T.modEdit(T.modSelected(T.S));
+    let seed = T.calls.submitTurn[0][0];
+    assert(/built before the frameworks and carries no record/.test(seed) && /"Add the frameworks" in the app header/.test(seed), "unstamped: the seed points at the button");
+    assert(!/Also: APP\.md/.test(seed), "and adds no kit lines");
+    /* after adoption the seed hands the not-recorded rows to the chat, with the kit lines */
+    const adopted = Object.assign({}, USER_CHAT, { frameworkKit: { kit: "apps-frameworks", version: "1.0.0", digest: "abc123def456", created_at: "2026-09-12T09:00:00Z", kind: "chat", adopted: "2026-09-12" } });
+    const T2 = fresh({ S: loaded(api({ department: DESK_VIEW.modules.department, groups: { here: [adopted] }, modules: SYS.concat([adopted]), counts_by_ref: { r2: 1 } }),
+                                 { modDept: "r2", modKey: "?subtree=1&department=r2", modSel: "friday", frameworks: FW }) });
+    T2.modEdit(T2.modSelected(T2.S));
+    seed = T2.calls.submitTurn[0][0];
+    assert(/adopted the frameworks on 2026-09-12/.test(seed) && /"not recorded" is yours to fill/.test(seed), "adopted: the seed hands the rows over");
+    assert(/Also: APP\.md — the record/.test(seed), "with the kit lines");
+    assert(!/data-modadopt/.test(T2.SCREENS.modules()), "an adopted app has no button");
+  });
+});
+
 /* 10. + New app: seeded chat that asks what kind; provider gate */
 test("+ New app: chat at the apps root seeded with the pin + the three questions; no provider -> recovery note, no session", () => {
   const T = fresh({ S: loaded(DESK_VIEW, { modDept: "r2", modKey: "?subtree=1&department=r2" }) });

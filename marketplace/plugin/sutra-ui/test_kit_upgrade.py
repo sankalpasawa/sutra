@@ -110,11 +110,73 @@ class KitUpgrade(unittest.TestCase):
         j = self.client.get(BASE + "/" + ids[0] + "/checks", headers=HDR).json()
         self.assertEqual(next(c for c in j["live"]["checks"] if c["id"] == "C20")["status"], "pass")
 
-    def test_migrate_kit_refuses_an_app_without_a_stamp(self):
+    def test_migrate_kit_on_an_app_without_a_stamp_adopts_the_kit(self):
+        """Adoption (2026-09-12, founder: "does this also work in the existing
+        apps?"): an app built before the kit takes the stamp and gets the record
+        it never had, every unanswered row reading `not recorded`; nothing else
+        moves; audited as its own event. A second call is the ordinary migration."""
+        kit = json.loads((self._kit_dir / "kit.json").read_text())
         (Path(MOD_HOME) / "legacy").mkdir()
-        (Path(MOD_HOME) / "legacy" / "module.json").write_text(json.dumps({"id": "legacy", "name": "Legacy", "kind": "chat", "status": "draft", "version": 1}))
+        legacy = {"id": "legacy", "name": "Legacy", "tagline": "an old chat", "kind": "chat", "status": "ready", "version": 3,
+                  "updated_ms": 1700000000000, "updated_at": "2026-01-01T00:00:00Z", "surface": {"instructions": "Say hi."}}
+        (Path(MOD_HOME) / "legacy" / "module.json").write_text(json.dumps(legacy))
+        events = Path(MOD_HOME) / ".events.jsonl"
         r = self.client.post(BASE + "/legacy", json={"action": "migrate_kit"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        raw = json.loads((Path(MOD_HOME) / "legacy" / "module.json").read_text())
+        stamp = raw["frameworkKit"]
+        self.assertEqual((stamp["version"], stamp["digest"], stamp["kind"]), (kit["version"], kit["digest_short"], "chat"))
+        self.assertTrue(stamp["adopted"])
+        self.assertEqual(r.json()["frameworkKit"], stamp, "the normalized row mirrors the stamp")
+        for k in ("version", "updated_ms", "updated_at", "status", "name"):
+            self.assertEqual(raw[k], legacy[k], k)
+        rec = (Path(MOD_HOME) / "legacy" / "APP.md").read_text()
+        self.assertEqual(json.loads(rec.splitlines()[0][len("frameworkKit: "):]), stamp, "APP.md line 1 equals the manifest mirror")
+        self.assertIn("# Legacy", rec)
+        self.assertRegex(rec, r"(?m)^\| P1 \| .+ \| not recorded \|$")
+        self.assertNotRegex(rec, r"(?m)^\| (P|S|DS|E|B|F)[0-9]+ \| .+ \|\s*\|$", "no answer cell is left empty")
+        # the events file is shared by every test in this home: count this app's rows only
+        adopted = lambda: [l for l in (events.read_text() if events.exists() else "").splitlines()
+                           if "app.kit_adopted" in l and '"app_id":"legacy"' in l]
+        self.assertEqual(len(adopted()), 1, adopted())
+        j = self.client.get(BASE + "/legacy/checks", headers=HDR).json()
+        self.assertEqual(j["stamped"], kit["version"], "the checks now run for this app")
+        # second call: the ordinary migration -- stamp refreshed, record untouched, no event
+        r = self.client.post(BASE + "/legacy", json={"action": "migrate_kit"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        raw2 = json.loads((Path(MOD_HOME) / "legacy" / "module.json").read_text())
+        self.assertTrue(raw2["frameworkKit"]["migrated"])
+        self.assertEqual(raw2["frameworkKit"]["adopted"], stamp["adopted"])
+        rec2 = (Path(MOD_HOME) / "legacy" / "APP.md").read_text()
+        self.assertEqual(rec2.splitlines()[1:], rec.splitlines()[1:], "nothing else in the record moved")
+        self.assertEqual(len(adopted()), 1, "the second call is a migration and appends nothing")
+
+    def test_adopting_a_legacy_page_keeps_it_ready_and_gates_only_a_later_mark_ready(self):
+        """Codex pin (2026-09-12): adoption never changes status, but a page
+        whose index.html predates the token rules is refused by a LATER
+        mark_ready, with the failing ids named."""
+        (Path(MOD_HOME) / "oldpage").mkdir()
+        (Path(MOD_HOME) / "oldpage" / "module.json").write_text(json.dumps(
+            {"id": "oldpage", "name": "Old page", "tagline": "a page from before", "kind": "page", "status": "ready", "version": 2}))
+        (Path(MOD_HOME) / "oldpage" / "index.html").write_text('<div lang="en"><style>h1{color:#ff0000}</style><h1>Old</h1></div>')
+        r = self.client.post(BASE + "/oldpage", json={"action": "migrate_kit"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["status"], "ready", "adoption never changes status")
+        self.assertIn("not recorded", (Path(MOD_HOME) / "oldpage" / "APP.md").read_text())
+        chk = self.client.get(BASE + "/oldpage/checks", headers=HDR).json()["live"]
+        self.assertTrue(chk["blocked"], chk)
+        self.assertIn("C10", chk["fails"], chk["fails"])
+        r = self.client.post(BASE + "/oldpage", json={"action": "mark_ready"}, headers=HDR)
         self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn("C10", r.text)
+
+    def test_migrate_kit_refuses_only_when_the_kit_is_absent(self):
+        (Path(MOD_HOME) / "nokit").mkdir()
+        (Path(MOD_HOME) / "nokit" / "module.json").write_text(json.dumps({"id": "nokit", "name": "No kit", "kind": "chat", "status": "draft", "version": 1}))
+        modules_api._KIT_DIR = Path(tempfile.mkdtemp(prefix="no-kit-"))
+        r = self.client.post(BASE + "/nokit", json={"action": "migrate_kit"}, headers=HDR)
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertFalse((Path(MOD_HOME) / "nokit" / "APP.md").exists())
 
 
 if __name__ == "__main__":

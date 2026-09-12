@@ -214,6 +214,31 @@ def run_checks(mid, raw):
             "summary": summary, "checks": results}
 
 
+def _record_skeleton(mid, raw, stamp):
+    """templates/<kind>/APP.md for an app whose answers were never recorded:
+    every unanswered id row reads `not recorded`, which the checks report as
+    WARN, never FAIL. Shared by import (reconstruct_record) and adoption
+    (migrate_kit on an app without a stamp). None when the kit has no
+    template for the kind."""
+    kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
+    reg = _Registry()
+    dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
+    dept_row = reg.row(dept.get("ref")) if dept.get("ref") else None
+    surface = raw.get("surface") if isinstance(raw.get("surface"), dict) else {}
+    text = _render_record(kind, stamp, str(raw.get("name") or mid), str(raw.get("tagline") or ""),
+                          (dept_row or {}).get("name"), surface.get("screen"), _now())
+    if text is None:
+        return None
+    out = []
+    for line in text.splitlines():
+        if line.startswith("|") and not line.startswith("|---"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) == 3 and re.match(r"^(P|S|DS|E|B|F)[0-9]{1,2}$", cells[0]) and not cells[2]:
+                line = "| %s | %s | not recorded |" % (cells[0], cells[1])
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def reconstruct_record(mid):
     """After an import (ADR-039 install path): APP.md does not travel with a
     package, so the installer rebuilds the skeleton from module.json plus the
@@ -226,23 +251,10 @@ def reconstruct_record(mid):
     stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
     if not raw or not stamp or os.path.isfile(os.path.join(path, RECORD_FILE)):
         return False
-    kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
-    reg = _Registry()
-    dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
-    dept_row = reg.row(dept.get("ref")) if dept.get("ref") else None
-    surface = raw.get("surface") if isinstance(raw.get("surface"), dict) else {}
-    text = _render_record(kind, stamp, str(raw.get("name") or mid), str(raw.get("tagline") or ""),
-                          (dept_row or {}).get("name"), surface.get("screen"), _now())
+    text = _record_skeleton(mid, raw, stamp)
     if text is None:
         return False
-    out = []
-    for line in text.splitlines():
-        if line.startswith("|") and not line.startswith("|---"):
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cells) == 3 and re.match(r"^(P|S|DS|E|B|F)[0-9]{1,2}$", cells[0]) and not cells[2]:
-                line = "| %s | %s | not recorded |" % (cells[0], cells[1])
-        out.append(line)
-    _write_text(os.path.join(path, RECORD_FILE), "\n".join(out) + "\n")
+    _write_text(os.path.join(path, RECORD_FILE), text)
     origin = raw.get("origin") if isinstance(raw.get("origin"), dict) else {}
     origin["imported"] = True
     raw["origin"] = origin
@@ -724,13 +736,37 @@ def apply_action(mid, action, body):
     kind = raw.get("kind") if raw.get("kind") in KINDS else "chat"
     body = body if isinstance(body, dict) else {}
     if action == "migrate_kit":
-        # Apps frameworks (design v1 §The APP.md record): the builder said yes
-        # in Edit in chat. Rewrite the two stamp copies (version, digest,
-        # migrated) and NOTHING else: no version bump, no updated_ms, no event.
-        stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
         kit = _kit_json()
-        if not stamp or not kit:
-            raise ModuleError(409, "this app carries no framework stamp to move; nothing to migrate")
+        if not kit:
+            raise ModuleError(409, "the frameworks kit is not installed; nothing to migrate")
+        stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
+        rp = os.path.join(path, RECORD_FILE)
+        if not stamp:
+            # ADOPTION (2026-09-12; founder: "does this also work in the
+            # existing apps?"). An app built before the kit takes the stamp
+            # now and gets the record it never had: every unanswered row
+            # reads `not recorded` (WARN, never FAIL). Status is untouched, so
+            # a ready app stays ready; the checks gate only a LATER
+            # mark_ready, and a legacy page whose index.html predates the
+            # token rules is refused there until it is brought in line.
+            # Audited as its own event because it writes more than a
+            # migration (codex, 2026-09-12). No version bump, no updated_ms.
+            now = _now()
+            stamp = _kit_stamp(kind, now)
+            stamp["adopted"] = now[:10]
+            raw["frameworkKit"] = stamp
+            write_json(fpath, raw)
+            if not os.path.isfile(rp):
+                text = _record_skeleton(mid, raw, stamp)
+                if text is not None:
+                    _write_text(rp, text)
+            dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
+            modules_events.append(_home(), "app.kit_adopted", mid, kind=kind, version=raw.get("version"),
+                                  department_ref=dept.get("ref"), actor="panel")
+            return _read(mid)
+        # MIGRATION (design v1 §The APP.md record): the builder said yes in
+        # Edit in chat. Rewrite the two stamp copies (version, digest,
+        # migrated) and NOTHING else: no version bump, no updated_ms, no event.
         stamp.update({"version": kit.get("version"), "digest": kit.get("digest_short"), "migrated": _now()[:10]})
         raw["frameworkKit"] = stamp
         write_json(fpath, raw)

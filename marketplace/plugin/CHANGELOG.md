@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.8 (2026-09-12)
+
+- **An app built before the frameworks can adopt them from its header.** Org › Apps shows **Add the frameworks** on any of your apps that carries no kit stamp. One press: the desktop writes the stamp (with the adoption date) and the record `APP.md`, every answer it cannot know reading `not recorded`; the checks chip appears; nothing else changes and the app keeps its status. A later **Mark ready** is gated by the checks like any stamped app (a page whose colours are not the desktop's tokens is refused until fixed). Audited as `app.kit_adopted`. Edit in chat points at the button for unstamped apps and, after adoption, hands the `not recorded` rows to the chat. Tests: kit upgrade 4 (+3), apps panel 23 (+1).
+- Native plugin manifest 1.5.2: its site link is https://sankalpasawa.github.io/sutra/ (the core manifests already were, since 2.265.3).
+
 ## 2.265.6 (2026-09-12)
 
 - **Creation guard: a rules row may declare the charter.** `.claude/creation-guard-rules.json` rows accept `charter` next to `prefix` and `domain`, so a routine's output folder (the daily governance audit, the eval program's runs) passes without a session placement or a CHARTER.md up its tree; `runs/*.json` and `triage-runs/*.log` classify as ledger. Test `rule-charter`. Also fixes the jq form of the existing domain-rule lookup (`.prefix` was evaluated against the path string, so rules only ever resolved through the no-jq fallback).

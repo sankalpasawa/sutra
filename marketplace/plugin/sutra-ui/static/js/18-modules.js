@@ -138,6 +138,22 @@ function modChecksFor(s, m){
                                                                                           () => { s.modChecks[key] = false; });
   return null;
 }
+/* Apps frameworks adoption (2026-09-12): an app built before the kit shows one
+   button in its header; the server writes the stamp and the record (every
+   unanswered row "not recorded"), the checks chip follows on the reload. The
+   panel never writes a stamp itself and never touches the chat. */
+function modAdoptBtn(s, m){
+  if (!modFrameworks(s) || m.frameworkKit || m.building || m.reserved || modIsSys(m)) return "";
+  return `<button class="btn mod-adopt" type="button" data-modadopt title="Writes the record (APP.md) and the stamp for this app; nothing else changes">Add the frameworks</button>`;
+}
+async function modAdopt(m){
+  const s = modS(); if (!s || !m) return null;
+  s.modErr = null;
+  try { await apiPost(MOD_API + "/" + encodeURIComponent(m.id), { action: "migrate_kit" }); }
+  catch (e) { s.modErr = "Could not add the frameworks: " + ((e && e.message) || e); modRender(); return null; }
+  await loadModules(true);
+  return true;
+}
 function modChecksChip(s, m){
   if (!m.frameworkKit || m.building || m.reserved || modIsSys(m)) return "";
   const r = modChecksFor(s, m);
@@ -234,14 +250,21 @@ function modEditSeed(s, m){
     `APP.md carries a stamp on its first line. Never edit that line, and never hand-write updated_ms or bump version — the app does both when this session ends.`,
     (m.frameworkKit.version && fw.version && m.frameworkKit.version !== fw.version)
       ? `This app was built on kit ${m.frameworkKit.version}; installed is ${fw.version}. Say in one line what changed and what it means for this app, and ask whether to update the record. Write it only if I say yes and add a Changes line saying so. If I say no, the older rules still apply.`
-      : `This app was built on kit ${m.frameworkKit.version || fw.version}, the one installed; no migration to offer.`,
+      : m.frameworkKit.adopted
+        ? `This app adopted the frameworks on ${m.frameworkKit.adopted}; its record was filled from what the app already knew, and every row that reads "not recorded" is yours to fill from module.json${m.kind === "page" ? " and index.html" : ""} and from me.`
+        : `This app was built on kit ${m.frameworkKit.version || fw.version}, the one installed; no migration to offer.`,
     `When you change anything, update the matching APP.md rows in the same turn and add one dated line at the top of ## Changes.`,
+  ] : [];
+  /* Apps frameworks adoption (2026-09-12): an app built before the kit gets
+     one line pointing at the header button; the chat never writes a stamp. */
+  const pre = fw && !m.frameworkKit ? [
+    `This app was built before the frameworks and carries no record. To bring it in, press "Add the frameworks" in the app header, then Edit again; do not write a stamp or a record yourself.`,
   ] : [];
   return `You are editing the app "${m.name}" (${m.kind}) ${where}.\n`
     + `Folder: ${folder}  (the folder IS the app)\n`
     + `Files: ${files}\n`
     + (charter ? `Department charter: ${charter}\n` : "")
-    + (kit.length ? kit.join("\n") + "\n" : "")
+    + (kit.length ? kit.join("\n") + "\n" : pre.length ? pre.join("\n") + "\n" : "")
     + `Rules: edit files in place; keep module.json valid (never change id); tell me what changed when done.\n`
     + `You can also move this app to another department or archive it — tell me and I apply it as a structured change.\n`
     + (kit.length ? `First: read APP.md, then module.json${m.kind === "page" ? ", then index.html" : ""}, then ask me what should change.\n${modCheckLine(s, m.kind, folder)}\nReply in plain words, no headers and no status lines. Say "app", never the internal word.`
@@ -506,7 +529,7 @@ function modAppViewHtml(s, m){
   const edit = (sys || m.reserved) ? "" : `<button class="btn mod-edit" type="button" data-modedit title="Opens a chat in ${modEsc(modHome(s))}/${modEsc(m.id)}/${d ? ", placed under " + modEsc(modChip(d.path)) + " " + modEsc(d.name) : ""}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Edit in chat</button>`;
   return `<div class="mod-hd"><span class="chip big">${d ? modEsc(modChip(d.path)) : "—"}</span>
       <div><p class="crumb">${crumb}</p><h1>${modEsc(m.name)}</h1>${m.tagline ? `<p>${modEsc(m.tagline)}</p>` : ""}</div>
-      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
+      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modAdoptBtn(s, m)}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
     <div class="mod-body">${modAppBodyHtml(s, m)}</div>`;
 }
 function modCrumbHtml(s, m){
@@ -610,7 +633,7 @@ if (typeof TITLES !== "undefined"){
 }
 
 if (typeof document !== "undefined" && document.addEventListener){
-  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
+  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modadopt],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
   document.addEventListener("click", (ev) => {
     const s = modS(); if (!s) return;
     const t = ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
@@ -628,6 +651,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.modarch !== undefined){ s.modShowArchived = !s.modShowArchived; loadModules(true); return; }
     const m = modSelected(s);
     if (d.modedit !== undefined && m){ modEdit(m); return; }
+    if (d.modadopt !== undefined && m){ modAdopt(m); return; }
     if (d.modopen !== undefined && m){ ev.preventDefault(); modOpen(m); return; }
   });
   document.addEventListener("input", (ev) => {

@@ -12,7 +12,11 @@ import hashlib
 import json
 import os
 
-EVENTS = ("app.created", "app.edited", "app.assigned", "app.archived", "app.exported", "app.imported")
+EVENTS = ("app.created", "app.edited", "app.assigned", "app.archived", "app.exported", "app.imported",
+          # 2026-09-12: an app built before the frameworks kit took the stamp and
+          # got its record (migrate_kit on an unstamped app). Its own fact because
+          # it writes more than a migration, which stays silent by design.
+          "app.kit_adopted")
 FILE = ".events.jsonl"
 
 
