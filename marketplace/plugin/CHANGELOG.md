@@ -1,7 +1,7 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
-## 2.265.11 (2026-09-12)
+## 2.265.12 (2026-09-12)
 
 - **Editing any app runs through its framework; nothing to press.** The "Add the frameworks" control from 2.265.8 is gone (founder, D75 amendment: "whenever a task is given, a framework should be there, and it should run via that framework; if not, then a framework should be created"). **Edit in chat** on an app built before the kit now brings the app in first, then opens the chat on the stamped record with the kit lines and the `not recorded` rows to fill; one adoption per app even on a double press; no chat opens if the adoption fails or no provider is connected. An edit that reaches the desktop by another path adopts on its completion touch, attributed to that chat. Event `app.kit_adopted` names the actor. Tests: kit upgrade 5, apps panel 23.
 
