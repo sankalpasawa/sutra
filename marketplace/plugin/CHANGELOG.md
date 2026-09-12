@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.4 (2026-09-12)
+
+- **One active root per registry, enforced where roots are made (I-D6, founder direction D76).** `placement_engine.mint_domain` with no parent now returns the existing root (with a `root_reused` event) instead of creating a second one, whatever the requested name or tenant label; `set_domain_fields` cannot lift a node to a second root and `unretire` cannot resurrect one. This closes the path by which the desktop's startup import re-created an account-named root beside the organisation on 2026-09-12. Tests: `lib/tests/test_root_invariant.py` (4), `test_project_import.py` (+1); three engine tests now seed a second root as an on-disk damage fixture.
+
 ## 2.265.3 (2026-09-12)
 
 - **Shadow's goal proposals work again, and the goal workspace is back on screen.** The 2026-09-11 v7-mock commit replaced `shadow_protocol.py`, `panel.css` and `panel.html` with a stale working copy, dropping the `goal` fence and tier contract (051b130), 680 lines of goal-workspace CSS and the `18-goal-workspace.js` script tag while the server kept handling goal blocks. All three are restored on top of the `module` fence; a parity test now fails if SHADOW.md documents a fence the parser lacks, if app.py routes a block the parser never emits, or if a panel script goes unreferenced. Tests: proposal tiers 21, goal creation 16 (+3 parity).

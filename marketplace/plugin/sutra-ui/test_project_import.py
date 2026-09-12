@@ -356,6 +356,22 @@ def test_an_existing_root_is_reused_whatever_its_name(monkeypatch):
                    for d in domains.values())
 
 
+def test_placement_root_name_cannot_mint_a_second_root(monkeypatch):
+    """The 2026-09-12 incident, pinned: an importer configured (or defaulting) to another root name on a registry
+    that already has a root must reuse that root. The engine refuses a second parent-less domain (I-D6) even if
+    the importer's own reuse logic were bypassed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        root, _ = E.mint_domain(None, "Sutra", ["root"], "T-local", origin="operator")
+        monkeypatch.setenv("PLACEMENT_ROOT_NAME", "Ramesh Asawa")
+        root_ref, _rows = P.apply_forest(P.build_forest([{"cwd": "/d/sutra", "sessions": 1}]))
+        domains = E.load_domains()
+        assert root_ref == root
+        assert [r for r, d in domains.items() if d.get("parent_ref") is None] == [root]
+        again, created = E.mint_domain(None, "Ramesh Asawa", ["root"], "T-local", origin="project-import")
+        assert again == root and created is False
+
+
 # ------------------------------------------------------------- repo names ---
 
 class _Run:

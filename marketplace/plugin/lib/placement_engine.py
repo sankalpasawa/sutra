@@ -428,6 +428,18 @@ def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
                     and d.get("status", "active") == "active"
                     and d.get("name", "").strip().lower() == norm):
                 return ref, False
+        # I-D6 (founder direction D76, 2026-09-12): ONE ACTIVE ROOT PER REGISTRY. A parent-less mint on a
+        # registry that already has an active parent-less domain returns that root, whatever the requested
+        # name or tenant label. Root cause on 2026-09-12: the desktop's startup import named its root after
+        # the macOS account and created a second tree next to the organisation. Tenant is ignored on purpose:
+        # `_root_ref` and org_api already treat the registry as one organisation (test_phase0 test_14:
+        # "a second parent-less root is damage"). The event row keeps the refusal auditable.
+        if parent_ref is None:
+            for r_ref, r_doc in sorted(domains.items()):
+                if r_doc.get("parent_ref") is None and r_doc.get("status", "active") == "active":
+                    _append_jsonl(DOMAIN_INDEX, {"event": "root_reused", "ref": r_ref, "requested_name": name,
+                                                 "origin": origin, "tenant_id": tenant_id, "ts_ms": _now_ms()})
+                    return r_ref, False
         # Refs are never reused; NAMES are. I-D5 keeps retired files in place,
         # which would otherwise turn this dedupe into tombstone adoption — the
         # new mint would return a retired ref that refuses placements.
@@ -1310,6 +1322,12 @@ def set_domain_fields(ref, **fields):
         d = _load_domain(ref)
         if d is None:
             raise ValueError("unknown domain ref %r" % ref)
+        if "parent_ref" in fields and fields["parent_ref"] is None and d.get("parent_ref") is not None:
+            # I-D6: a field write cannot lift a node to a second root
+            others = [r for r, x in load_domains().items()
+                      if r != ref and x.get("parent_ref") is None and x.get("status", "active") == "active"]
+            if others:
+                raise ValueError("I-D6 reject: one active root per registry; %s is already the root" % others[0])
         d.update(fields)
         _save_domain(d, emit=True)
     return d
@@ -1731,6 +1749,13 @@ def unretire(ref, manifest_path, tenant_id="T-local"):
         d = domains[ref]
         if d.get("status", "active") != "retired":
             return {"ok": False, "exit": 2, "error": "domain is not retired"}
+        if d.get("parent_ref") is None:
+            # I-D6: a retired parent-less record cannot come back beside the live root
+            others = [r2 for r2, d2 in domains.items()
+                      if r2 != ref and d2.get("parent_ref") is None and d2.get("status", "active") == "active"]
+            if others:
+                return {"ok": False, "exit": 2,
+                        "error": "I-D6: one active root per registry; %s is already the root" % others[0]}
         parent = d.get("parent_ref")
         if parent is not None and domains.get(parent, {}).get("status", "active") != "active":
             return {"ok": False, "exit": 2,

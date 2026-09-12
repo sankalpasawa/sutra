@@ -112,6 +112,19 @@ class Phase0Case(unittest.TestCase):
         sub, _ = E.mint_domain(alpha, "Alpha Sub", ["subalpha"], tenant)
         return root, alpha, beta, sub
 
+    def seed_damage_root(self, name, tenant=TENANT):
+        """A SECOND parent-less root written straight to disk, bypassing mint_domain (which refuses one under
+        I-D6 since 2026-09-12). These tests exercise how the engine treats such damage; they do not describe
+        a supported way to create it."""
+        E = self.E
+        ref = "dref-" + hashlib.sha256(("damage:" + name + tenant).encode()).hexdigest()[:16]
+        doc = {"ref": ref, "name": name, "parent_ref": None, "principles": [], "accountable": "tenant_owner",
+               "authority": {}, "status": "active", "origin": "operator", "tenant_id": tenant,
+               "mint_evidence": [name.lower()], "ts_minted_ms": E._now_ms(), "successor_refs": []}
+        with open(os.path.join(E.DOMAINS, ref + ".json"), "w") as fh:
+            json.dump(doc, fh)
+        return ref
+
     def seed_charter(self, ref, title, tenant=TENANT, **kw):
         return self.E.mint_charter_stub(
             ref, title, "Standing promise for %s." % title, [], [], tenant, **kw)
@@ -1036,8 +1049,7 @@ class TestLiveRefs(Phase0Case):
         E = self.E
         import domains_page as P
         self.seed_org()
-        E.mint_domain(None, "Acme Holdings", ["holdings"], TENANT,
-                      origin="operator")
+        self.seed_damage_root("Acme Holdings")
         with self.assertRaises(SystemExit):
             P.build_site(os.path.join(self.home, "site2"), tenant_id=TENANT)
 
@@ -1059,8 +1071,7 @@ class TestTenantFiltering(Phase0Case):
     def _seed_two_tenants(self):
         E = self.E
         a_root, a_alpha, a_beta, _a_sub = self.seed_org(TENANT, "Acme Local")
-        b_root, _ = E.mint_domain(None, "Zebra Holdings", ["zebra"],
-                                  OTHER_TENANT, origin="operator")
+        b_root = self.seed_damage_root("Zebra Holdings", OTHER_TENANT)
         b_kid, _ = E.mint_domain(b_root, "Bravo Logistics", ["bravo"],
                                  OTHER_TENANT)
         self.seed_charter(a_alpha, "Alpha Charter", TENANT)
@@ -1250,8 +1261,7 @@ class TestTenantFiltering(Phase0Case):
         # subtree — i.e. a second root. `merge root -> own child` is already
         # refused as a cycle, which is the check this one sits behind.
         r1, _ = E.mint_domain(None, "Acme", ["acme"], TENANT, origin="operator")
-        r2, _ = E.mint_domain(None, "Acme Holdings", ["holdings"], TENANT,
-                              origin="operator")
+        r2 = self.seed_damage_root("Acme Holdings")
         root = E._root_ref(TENANT)
         other = r2 if root == r1 else r1
         self.assertTrue(E.restructure("merge", root, target=other,
