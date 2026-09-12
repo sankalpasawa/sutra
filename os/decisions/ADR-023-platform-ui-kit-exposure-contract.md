@@ -44,6 +44,8 @@ Real taxonomy, not naming — enforced by tests:
 
 → Approval Inbox = component; Charter Console = Module (composes charter viewer + domain-tree browser + approval inbox). Components version as part of the UI Kit (Layer-A release track); no independent component deployment; a component MAY be promoted to Module if it later passes the §1.4.3 four-test.
 
+**Amendment 2026-09-12 (D74 ruling, founder):** the user-facing word for a Module is **App** (Org > Apps, "+ New app"); the canon taxonomy word stays Module and the four-test above is unchanged. Recorded in `holding/FOUNDER-DIRECTIONS.md` D74 Rulings 2026-09-12.
+
 ## Decision 3 — Per-block exposure + field-level policy (absorbed from codex M4 + deepseek F4)
 
 Block-level projection names are necessary but NOT sufficient — governance UI exposes sensitive cross-domain metadata. Each exposure-contract entry declares a typed row: **projection name · source block · truth-class · tenant scope · required capability/role · redaction rules · freshness/SLA · auditable(y/n)**.

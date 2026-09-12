@@ -6,6 +6,8 @@
 
 Proposed — 2026-09-11. Supersedes nothing; extends D-M1 (the folder is the module) in `holding/departments/experience/desktop-app/2026-09-08-modules-design.md`.
 
+Note 2026-09-12: only the terminology in this ADR ("App" as the user-facing word, "module" internal) is accepted, under D74 Rulings 2026-09-12; the package and marketplace mechanics stay Proposed.
+
 ## Context
 
 Sutra Desktop Apps (user-facing word App; internal name module) live as one folder each under `~/.sutra-ui/modules/<id>/` with `module.json` as the only record (D-M1). The founder wants an app to be publishable to a marketplace later, with a Publish button that is NOT built now. The architecture must therefore make an app installable and verifiable today without adding a second store or a second identity.
