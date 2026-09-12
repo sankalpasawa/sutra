@@ -173,7 +173,7 @@ function agS(){
     events: {}, cursors: {},      /* per run_id */
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, viewBusy: null, facePick: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, dfs: { on: false, open: null, vals: {}, out: {}, busy: "", bal: "", market: {} }, viewBusy: null, facePick: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
@@ -1000,7 +1000,7 @@ function agFocusCo(){
 function agResetCompany(a){
   Object.assign(a, {
     chats: null, chatId: null, chat: null, events: {}, cursors: {}, panel: null, autoOpened: null,
-    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, facePick: null,
+    picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, dfs: { on: false, open: null, vals: {}, out: {}, busy: "", bal: "", market: {} }, facePick: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", viewBusy: null,
     refresh: null, refreshSeen: null, refreshPollErr: null, health: null, knowledge: null,
     cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
@@ -2739,6 +2739,10 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
         <label><b>Login</b><input type="text" data-agdfs="login" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "the email you sign in with"}" value="${agEsc(form.login || "")}"></label>
         <label><b>API password</b><input type="password" data-agdfs="password" autocomplete="off" placeholder="${dfs ? "•••••• (set)" : "from app.dataforseo.com → API access"}" value="${agEsc(form.password || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savedfs">Save</button>${dfs ? `<button class="btn" type="button" data-ag="cleardfs">Disconnect</button>` : ""}<span class="sp">${form.msg ? agEsc(form.msg) : ""}</span></div>
+        ${dfs ? `<div class="row" style="margin-top:8px">
+          <button class="btn" type="button" data-ag="dfsbal">Check balance</button>
+          <button class="btn" type="button" data-ag="dfsopen">Try DataForSEO</button>
+          <span class="sp">${form.bal ? agEsc(form.bal) : "run any endpoint yourself, with this account"}</span></div>` : ""}
       </div></div></div>
     <h3 class="sec">Voyage · pages indexed by meaning</h3>
     <div class="ag-row"><div class="ri"><div class="rn">Voyage <span class="ag-status"><i class="dot ${voy ? "ok" : "warn"}"></i>${voy ? "connected" : "not connected"}</span></div>
@@ -2904,8 +2908,26 @@ function agScrollRestore(scroll, anc){
   scroll.scrollTop += (el.getBoundingClientRect().top - scroll.getBoundingClientRect().top) - anc.delta;
 }
 
+/* The console sits in its own node under #agRoot, painted before anything else, because agDraw
+   returns early on the shelf and the overlay belongs to the tab rather than to one screen. It is
+   position:fixed, so where it hangs in the DOM costs nothing; what matters is that it survives a
+   redraw of the screen underneath and disappears the moment it is closed. */
+function agDrawDfs(a, root){
+  if (typeof document === "undefined" || !root) return;
+  const want = agDfsHtml(a);
+  let el = document.getElementById("agDfs");
+  if (!want){ if (el && el.remove) el.remove(); return; }
+  if (!el){
+    el = document.createElement("div");
+    el.id = "agDfs";
+    root.appendChild(el);
+  }
+  if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
+}
+
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
+  agDrawDfs(a, root);
   /* The marketplace is one block and has no columns, no panel and no composer, so it leaves
      before any of that machinery runs. */
   if (a.screen !== "agent"){ agSetHtml("agMarket", a.screen === "choose" ? agChooseHtml(a) : agMarketHtml(a)); return; }
@@ -3627,6 +3649,68 @@ async function agAction(act, el){
       agEnterScreen(agRoot(), true);
       break;
     }
+    /* ── the DataForSEO console ───────────────────────────────────────────── */
+    case "dfsopen": {
+      a.dfs = a.dfs || { vals: {}, out: {}, market: {} };
+      a.dfs.on = true;
+      if (!a.dfs.open) a.dfs.open = AG_DFS_CARDS[0].id;
+      agDraw(true); break;
+    }
+    case "dfsclose": a.dfs.on = false; agDraw(true); break;
+    case "dfspick": a.dfs.open = a.dfs.open === arg ? null : arg; agDraw(true); break;
+    case "dfsraw": {
+      const o = (a.dfs.out || {})[arg];
+      if (o){ o.showRaw = !o.showRaw; agDraw(true); }
+      break;
+    }
+    /* One card, one call. The body is built HERE and refused here when a field is empty, so a
+       mistake costs nothing: the backend only ever sees a request that was worth making. */
+    case "dfsrun": {
+      const st = a.dfs, card = AG_DFS_CARDS.find(c => c.id === arg);
+      if (!st || !card || st.busy) break;
+      const vals = Object.assign({}, (st.vals || {})[card.id] || {});
+      card.fields.forEach(f => { if (vals[f.k] == null || vals[f.k] === "") vals[f.k] = f.def || ""; });
+      const market = { location_name: (st.market || {}).location_name || "United States",
+                       language_code: (st.market || {}).language_code || "en" };
+      let payload;
+      try { payload = card.body(vals, market); }
+      catch (e){ st.out[card.id] = { err: String((e && e.message) || e) }; agDraw(true); break; }
+      st.busy = card.id; st.out[card.id] = null; agDraw(true);
+      try {
+        const r = await agPostApi("/connections/dataforseo/call", { endpoint: card.endpoint, payload });
+        const j = (r && r.data) || {};
+        let out;
+        if (card.render){
+          const res = card.render(j);
+          out = { html: res.html, count: res.count, unit: res.unit };
+        } else {
+          const rows = card.rows(j, vals);
+          out = { html: agDfsTable(card.cols, rows), count: rows.length, unit: "rows" };
+        }
+        out.cost = r && r.cost;
+        out.raw = JSON.stringify(j, null, 2).slice(0, 20000);
+        out.showRaw = false;
+        st.out[card.id] = out;
+      } catch (e){ st.out[card.id] = { err: agWhy(e) }; }
+      st.busy = ""; agDraw(true); break;
+    }
+    /* "Check balance" reads NOW: /health carries a figure cached for five minutes, which is right
+       for a screen that polls and wrong for a button that says it checked. */
+    case "dfsbal": {
+      const f = a.connForm || {};
+      f.bal = "Checking…"; a.connForm = f; agDraw(true);
+      try {
+        const r = await agApi("/connections/dataforseo/balance");
+        const b = r && r.balance;
+        f.bal = b == null
+          ? "DataForSEO did not report a balance."
+          : "$" + Number(b).toFixed(2) + " left"
+            + (r.enough ? "" : " · under the $" + Number(r.floor || 0).toFixed(2) + " a research run needs");
+      } catch (e){ f.bal = agWhy(e); }
+      a.connForm = f;
+      if (a.dfs) a.dfs.bal = f.bal;
+      agDraw(true); break;
+    }
     case "comenu": a.coMenu = arg || null; a.coErr = null; agDraw(true); break;
     /* Deleting a company takes its knowledge, chats, library and team workspace. The server
        stops whatever is running first, so this never leaves the person with a card they cannot
@@ -4214,6 +4298,260 @@ async function agAction(act, el){
   }
 }
 
+/* ── the DataForSEO console ────────────────────────────────────────────────────
+   Owner, 2026-09-12: "beside DataForSEO we could add two buttons: one is check balance... another
+   where you use DataForSEO separately... it should open then and there, overlaid above everything".
+
+   Ported from his own page (github.com/Devanshindian/dataforseo-check), with two changes that
+   were not optional. It called api.dataforseo.com straight from the browser with Basic auth out
+   of localStorage: inside Sutra that request is blocked by the origin, and it would put his API
+   password into a page. Every call here goes to the backend, which holds the credentials and
+   allows exactly these eight endpoints. And the essays came out: each card keeps its name, one
+   line of what it does, its inputs and its answer ("reduce completely the text").
+
+   __items / __result: their JSON nests the useful part three levels down, and every card reaches
+   for the same two shapes, so they are pulled out once here rather than in eight row-mappers. */
+function agDfsItems(j){
+  const r = ((((j || {}).tasks || [])[0] || {}).result || [])[0] || {};
+  return r.items || [];
+}
+function agDfsResult(j){
+  return ((((j || {}).tasks || [])[0] || {}).result || [])[0] || {};
+}
+function agDfsDomain(s){
+  return String(s || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+}
+function agDfsNum(v){
+  return (v == null || v === "") ? "—" : Number(v).toLocaleString();
+}
+
+const AG_DFS_CARDS = [
+  { id: "suggest", name: "Phrases people search around one topic",
+    blurb: "One phrase in, the real searches that contain it out, with monthly volume.",
+    endpoint: "/v3/dataforseo_labs/google/keyword_suggestions/live",
+    fields: [{ k: "keyword", label: "Starting phrase", type: "text", full: true, ph: "skills assessment" },
+             { k: "limit", label: "How many", type: "select", def: "50",
+               opts: [["25", "25"], ["50", "50"], ["100", "100"], ["200", "200"]] }],
+    body: (v, m) => { if (!v.keyword.trim()) throw new Error("Type a phrase first.");
+      return [Object.assign({}, m, { keyword: v.keyword.trim(), limit: Number(v.limit),
+                                     order_by: ["keyword_info.search_volume,desc"] })]; },
+    cols: [["kw", "Keyword"], ["vol", "Searches / month", "n"], ["kd", "Difficulty", "n"],
+           ["cpc", "Ad cost ($)", "n"], ["comp", "Competition"]],
+    rows: j => agDfsItems(j).map(it => { const ki = it.keyword_info || {}, kp = it.keyword_properties || {};
+      return { kw: it.keyword, vol: ki.search_volume, kd: kp.keyword_difficulty,
+               cpc: ki.cpc == null ? null : Number(ki.cpc).toFixed(2), comp: ki.competition_level }; }) },
+
+  { id: "overview", name: "Numbers for keywords you already have",
+    blurb: "Paste keywords, one per line. Volume, difficulty and why people search.",
+    endpoint: "/v3/dataforseo_labs/google/keyword_overview/live",
+    fields: [{ k: "keywords", label: "Keywords, one per line", type: "textarea", full: true,
+               ph: "skills assessment test\npre employment assessment" }],
+    body: (v, m) => { const kw = v.keywords.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 700);
+      if (!kw.length) throw new Error("Add at least one keyword.");
+      return [Object.assign({}, m, { keywords: kw })]; },
+    cols: [["kw", "Keyword"], ["vol", "Searches / month", "n"], ["kd", "Difficulty", "n"],
+           ["intent", "Why they search"], ["cpc", "Ad cost ($)", "n"]],
+    rows: j => agDfsItems(j).map(it => { const ki = it.keyword_info || {}, kp = it.keyword_properties || {},
+        si = it.search_intent_info || {};
+      return { kw: it.keyword, vol: ki.search_volume, kd: kp.keyword_difficulty, intent: si.main_intent,
+               cpc: ki.cpc == null ? null : Number(ki.cpc).toFixed(2) }; }) },
+
+  { id: "ranked", name: "Keywords a competitor already ranks for",
+    blurb: "Their domain in. The keywords they show up for, their position, and the page doing it.",
+    endpoint: "/v3/dataforseo_labs/google/ranked_keywords/live",
+    fields: [{ k: "target", label: "Competitor website", type: "text", full: true, ph: "competitor.com" },
+             { k: "seg", label: "Only pages containing (optional)", type: "text", ph: "skills-assessment" },
+             { k: "limit", label: "How many", type: "select", def: "50",
+               opts: [["25", "25"], ["50", "50"], ["120", "120"], ["300", "300"]] }],
+    body: (v, m) => { const t = agDfsDomain(v.target);
+      if (!t) throw new Error("Add a website, for example competitor.com");
+      const task = Object.assign({}, m, { target: t, limit: Number(v.limit),
+        order_by: ["keyword_data.keyword_info.search_volume,desc"] });
+      if ((v.seg || "").trim())
+        task.filters = [["ranked_serp_element.serp_item.relative_url", "like", "%" + v.seg.trim() + "%"]];
+      return [task]; },
+    cols: [["kw", "Keyword"], ["pos", "Position", "n"], ["vol", "Searches / month", "n"],
+           ["kd", "Difficulty", "n"], ["url", "Their page", "u"]],
+    rows: j => agDfsItems(j).map(it => { const kd = it.keyword_data || {}, ki = kd.keyword_info || {},
+        kp = kd.keyword_properties || {}, se = ((it.ranked_serp_element || {}).serp_item) || {};
+      return { kw: kd.keyword, pos: se.rank_group, vol: ki.search_volume,
+               kd: kp.keyword_difficulty, url: se.url || se.relative_url }; }) },
+
+  { id: "competitors", name: "Who you actually compete with on Google",
+    blurb: "Your domain in. The sites showing up for the same searches, most overlap first.",
+    endpoint: "/v3/dataforseo_labs/google/competitors_domain/live",
+    fields: [{ k: "target", label: "Your website", type: "text", full: true, ph: "example.com" },
+             { k: "limit", label: "How many", type: "select", def: "25",
+               opts: [["10", "10"], ["25", "25"], ["50", "50"]] }],
+    body: (v, m) => { const t = agDfsDomain(v.target);
+      if (!t) throw new Error("Add a website, like example.com");
+      return [Object.assign({}, m, { target: t, limit: Number(v.limit),
+                                     exclude_top_domains: true, item_types: ["organic"] })]; },
+    cols: [["domain", "Competitor"], ["kws", "Shared keywords", "n"],
+           ["etv", "Traffic value ($/mo)", "n"], ["pos", "Their average position", "n"]],
+    rows: (j, v) => { const self = agDfsDomain(v.target);
+      return agDfsItems(j).filter(it => agDfsDomain(it.domain) !== self).map(it => {
+        const m = (it.metrics || {}).organic || {};
+        return { domain: it.domain, kws: m.count, etv: m.etv == null ? null : Math.round(m.etv),
+                 pos: it.avg_position == null ? null : Math.round(it.avg_position) }; }); } },
+
+  { id: "pages", name: "A competitor's most linked-to pages",
+    blurb: "Their domain in. The pages other websites link to most, best first.",
+    endpoint: "/v3/backlinks/domain_pages/live",
+    fields: [{ k: "target", label: "Competitor website", type: "text", full: true, ph: "competitor.com" },
+             { k: "limit", label: "How many", type: "select", def: "25",
+               opts: [["10", "10"], ["25", "25"], ["50", "50"], ["100", "100"]] }],
+    body: v => { const t = agDfsDomain(v.target);
+      if (!t) throw new Error("Add a website, for example competitor.com");
+      return [{ target: t, limit: Number(v.limit), order_by: ["page_summary.referring_domains,desc"] }]; },
+    cols: [["url", "Their page", "u"], ["rd", "Referring domains", "n"], ["bl", "Total links", "n"],
+           ["title", "Page title"]],
+    rows: j => agDfsItems(j).map(it => { const ps = it.page_summary || {}, meta = it.meta || {};
+      return { url: it.page, rd: ps.referring_domains, bl: ps.backlinks, title: meta.title }; }) },
+
+  { id: "serp", name: "Google's first page, right now",
+    blurb: "A keyword in. Top results, People Also Ask, the answer box and the AI Overview.",
+    endpoint: "/v3/serp/google/organic/live/advanced",
+    fields: [{ k: "keyword", label: "Keyword", type: "text", full: true, ph: "skills based hiring" },
+             { k: "depth", label: "How deep", type: "select", def: "20",
+               opts: [["10", "Top 10"], ["20", "Top 20"], ["50", "Top 50"]] }],
+    body: (v, m) => { if (!v.keyword.trim()) throw new Error("Type a keyword first.");
+      return [Object.assign({}, m, { keyword: v.keyword.trim(), depth: Number(v.depth),
+        people_also_ask_click_depth: 3, load_async_ai_overview: true })]; },
+    render: j => { const items = agDfsItems(j);
+      const pick = t => items.filter(i => i.type === t);
+      const ai = pick("ai_overview")[0], snip = pick("featured_snippet")[0], paa = pick("people_also_ask")[0];
+      const organic = pick("organic");
+      let h = "";
+      if (ai){
+        const txt = (ai.items || []).map(e => e.text || "").join(" ").trim();
+        const cites = (ai.references || []).map(r => r.domain).filter(Boolean);
+        h += `<div class="ag-dfsblk"><h4>AI Overview</h4><p>${agEsc(txt || "(no text came back)")}</p>`
+          + (cites.length ? `<div class="ag-dfstags">${cites.map(c => `<span>${agEsc(c)}</span>`).join("")}</div>` : "")
+          + `</div>`;
+      }
+      if (snip)
+        h += `<div class="ag-dfsblk"><h4>Answer box · ${agEsc(snip.domain || "")}</h4>
+              <p>${agEsc(snip.description || snip.title || "")}</p></div>`;
+      h += `<div class="ag-dfsblk"><h4>Top results (${organic.length})</h4>${agDfsTable(
+        [["pos", "#", "n"], ["title", "Title"], ["domain", "Site"], ["url", "Link", "u"]],
+        organic.map(i => ({ pos: i.rank_group, title: i.title, domain: i.domain, url: i.url })))}</div>`;
+      if (paa){
+        const qs = (paa.items || []).map(e => e.title).filter(Boolean);
+        h += `<div class="ag-dfsblk"><h4>People Also Ask (${qs.length})</h4><ul>${
+          qs.map(q => `<li>${agEsc(q)}</li>`).join("")}</ul></div>`;
+      }
+      const rs = [];
+      pick("related_searches").forEach(b => (b.items || []).forEach(x => {
+        const v = typeof x === "string" ? x : (x && x.title);
+        if (v && rs.indexOf(v) === -1) rs.push(v);
+      }));
+      if (rs.length)
+        h += `<div class="ag-dfsblk"><h4>Related searches (${rs.length})</h4><div class="ag-dfstags">${
+          rs.map(r => `<span>${agEsc(r)}</span>`).join("")}</div></div>`;
+      return { html: h, count: organic.length, unit: "results" }; } },
+
+  { id: "parse", name: "The readable text out of any page",
+    blurb: "A page address in. The article text, without the menu, footer and cookie banner.",
+    endpoint: "/v3/on_page/content_parsing/live",
+    fields: [{ k: "url", label: "Page address", type: "text", full: true,
+               ph: "https://example.com/blog/a-post" }],
+    body: v => { if (!/^https?:\/\//.test((v.url || "").trim()))
+        throw new Error("Paste the whole address, starting with https://");
+      return [{ url: v.url.trim(), enable_javascript: true }]; },
+    render: j => { const it = agDfsItems(j)[0] || {}, pc = it.page_content || {}, parts = [];
+      (function walk(o){
+        if (Array.isArray(o)) return o.forEach(walk);
+        if (o && typeof o === "object"){
+          if (typeof o.text === "string" && o.text.trim()) parts.push(o.text.trim());
+          Object.keys(o).forEach(k => walk(o[k]));
+        }
+      })({ a: pc.main_topic, b: pc.secondary_topic });
+      const text = parts.join(" ").replace(/\s+/g, " ").trim();
+      const words = text ? text.split(" ").length : 0;
+      return { html: `<div class="ag-dfsblk"><h4>${agEsc((it.meta || {}).title || "(no title found)")}</h4>`
+        + (text ? `<div class="ag-dfstext">${agEsc(text)}</div>`
+                : `<p>Nothing came back. The page is empty, or it blocked DataForSEO too.</p>`)
+        + `</div>`, count: words, unit: "words" }; } },
+
+  { id: "account", name: "What is left on the account", free: true,
+    blurb: "Credit left, and what has been topped up in total. Costs nothing to run.",
+    endpoint: "/v3/appendix/user_data",
+    fields: [],
+    body: () => null,
+    render: j => { const r = agDfsResult(j), money = r.money || {};
+      return { html: agDfsTable([["k", "What"], ["v", "Value"]], [
+        { k: "Credit left", v: "$" + Number(money.balance || 0).toFixed(2) },
+        { k: "Topped up in total", v: "$" + Number(money.total || 0).toFixed(2) },
+        { k: "Account", v: r.login || "—" }]), count: 3, unit: "lines" }; } },
+];
+
+/* The card list, reachable from outside. Under vm (the tests load this file the way the browser
+   does) a top-level const is not a property of the context, so a test reaching for AG_DFS_CARDS
+   would get undefined and quietly assert nothing at all. */
+function agDfsCards(){ return AG_DFS_CARDS; }
+
+function agDfsTable(cols, rows){
+  if (!rows.length) return `<p class="ag-dfsblk">Nothing came back for that.</p>`;
+  return `<div class="ag-dfswrap"><table><thead><tr>${
+    cols.map(c => `<th>${agEsc(c[1])}</th>`).join("")}</tr></thead><tbody>${
+    rows.map(r => `<tr>${cols.map(c => {
+      const v = r[c[0]], t = c[2];
+      if (t === "u" && v) return `<td><a href="${agEsc(v)}" target="_blank" rel="noopener">${agEsc(String(v).slice(0, 70))}</a></td>`;
+      return `<td class="${t === "n" ? "n" : ""}">${t === "n" ? agEsc(agDfsNum(v)) : agEsc(v == null || v === "" ? "—" : v)}</td>`;
+    }).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+
+function agDfsCardHtml(c, st){
+  const f = (st.vals || {})[c.id] || {};
+  const out = (st.out || {})[c.id];
+  const busy = st.busy === c.id;
+  return `<details class="ag-dfscard" ${st.open === c.id ? "open" : ""}>
+    <summary data-ag="dfspick" data-arg="${agEsc(c.id)}">${agEsc(c.name)}
+      <span class="bl">${agEsc(c.blurb)}</span></summary>
+    <div class="ag-dfsbody">
+      <div class="ag-dfsform">${c.fields.map(x => {
+        const id = "dfs-" + c.id + "-" + x.k, val = f[x.k] == null ? (x.def || "") : f[x.k];
+        const lab = `<label for="${id}">${agEsc(x.label)}</label>`;
+        if (x.type === "textarea")
+          return `<div class="full">${lab}<textarea id="${id}" data-agdfsf="${agEsc(c.id)}:${agEsc(x.k)}" placeholder="${agEsc(x.ph || "")}">${agEsc(val)}</textarea></div>`;
+        if (x.type === "select")
+          return `<div>${lab}<select id="${id}" data-agdfsf="${agEsc(c.id)}:${agEsc(x.k)}">${
+            x.opts.map(o => `<option value="${agEsc(o[0])}" ${String(val) === o[0] ? "selected" : ""}>${agEsc(o[1])}</option>`).join("")}</select></div>`;
+        return `<div class="${x.full ? "full" : ""}">${lab}<input id="${id}" type="text" data-agdfsf="${agEsc(c.id)}:${agEsc(x.k)}" placeholder="${agEsc(x.ph || "")}" value="${agEsc(val)}"></div>`;
+      }).join("")}</div>
+      <div class="ag-dfsrow">
+        <button class="btn pri" type="button" data-ag="dfsrun" data-arg="${agEsc(c.id)}" ${busy ? "disabled" : ""}>${busy ? "Asking…" : "Run"}</button>
+        ${out && out.raw ? `<button class="btn" type="button" data-ag="dfsraw" data-arg="${agEsc(c.id)}">${out.showRaw ? "Hide" : "Raw"} JSON</button>` : ""}
+        <span class="sp">${c.free ? "free" : "costs a little"}${out && out.cost != null ? ` · this run cost $${agEsc(Number(out.cost).toFixed(4))}` : ""}</span>
+      </div>
+      ${out ? `<div class="ag-dfsout">${out.err
+        ? `<div class="ag-err">${agEsc(out.err)}</div>`
+        : `${out.html || ""}${out.count != null ? `<p class="ag-dfsblk">${agEsc(agDfsNum(out.count))} ${agEsc(out.unit || "rows")}</p>` : ""}`}
+        ${out.showRaw && out.raw ? `<div class="ag-dfsraw">${agEsc(out.raw)}</div>` : ""}</div>` : ""}
+    </div>
+  </details>`;
+}
+
+function agDfsHtml(a){
+  const st = a.dfs || {};
+  if (!st.on) return "";
+  const m = st.market || {};
+  return `<div class="ag-dfsback" data-ag="dfsclose"></div>
+    <section class="ag-dfs" role="dialog" aria-label="DataForSEO console">
+      <header class="ag-dfsh">
+        <h2>DataForSEO</h2>
+        <span class="sp">${st.bal || "the same account the agent uses"}</span>
+        <span class="mk">
+          <input data-agdfsm="location_name" value="${agEsc(m.location_name || "United States")}" aria-label="Country">
+          <input data-agdfsm="language_code" value="${agEsc(m.language_code || "en")}" aria-label="Language">
+        </span>
+        <button class="x" type="button" data-ag="dfsclose" aria-label="Close">${AG_ICON.x || "✕"}</button>
+      </header>
+      <div class="ag-dfsb">${AG_DFS_CARDS.map(c => agDfsCardHtml(c, st)).join("")}</div>
+    </section>`;
+}
+
 /* THE PANE'S CHEVRON IS THE WAY BACK, while an agent or the company chooser is open.
    The shell draws one control at the top left of every screen pane, `[data-pane-fold="browse"]`,
    and it COLLAPSES the pane to a 38px rail. On the Agents tab that read as a back arrow and did
@@ -4257,6 +4595,12 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     agAction(act, el).catch(e => agToast(String(e && e.message || e)));
   });
   document.addEventListener("keydown", (ev) => {
+    /* Escape closes the console, before anything else looks at the key: it is the topmost thing
+       on the screen while it is open, so it is the first thing Escape should mean. */
+    if (ev.key === "Escape"){
+      const a0 = agS();
+      if (a0 && a0.dfs && a0.dfs.on){ ev.preventDefault(); a0.dfs.on = false; agDraw(true); return; }
+    }
     const ta = ev.target;
     if (!ta || !ta.matches) return;
     if (ta.matches("[data-agask]") && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); agSend(ta.value); }
@@ -4290,6 +4634,18 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
       const k = t.getAttribute("data-agws");
       if (k === "token") return;
       const f = a.wsForm || {}; f[k] = t.value; f.msg = ""; a.wsForm = f;
+    }
+    /* The console's fields, kept on the state so a redraw prints them back: "<card>:<field>". */
+    else if (t.matches("[data-agdfsf]")){
+      const [card, key] = String(t.getAttribute("data-agdfsf")).split(":");
+      a.dfs = a.dfs || { vals: {}, out: {}, market: {} };
+      a.dfs.vals = a.dfs.vals || {};
+      a.dfs.vals[card] = Object.assign({}, a.dfs.vals[card] || {}, { [key]: t.value });
+    }
+    else if (t.matches("[data-agdfsm]")){
+      a.dfs = a.dfs || { vals: {}, out: {}, market: {} };
+      a.dfs.market = Object.assign({}, a.dfs.market || {},
+                                   { [t.getAttribute("data-agdfsm")]: t.value });
     }
   });
   document.addEventListener("change", (ev) => {

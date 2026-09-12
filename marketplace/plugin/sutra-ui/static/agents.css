@@ -916,6 +916,65 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .ag-coask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .ag-corow.asking .ag-cocard{opacity:.5}
 
+/* ── the DataForSEO console ────────────────────────────────────────────────
+   Owner, 2026-09-12: "it should cover the entire screen in the right, leaving the left pane, but
+   it should leave slightly things in the corners and that should be transparent". So: a dimmed
+   sheet over everything, and a panel inset from every edge, starting clear of the rail. Tokens
+   only, like the Shadow overlay, so it follows the theme instead of carrying its own palette. */
+.ag-dfsback{position:fixed;inset:0;z-index:80;background:var(--scrim);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.ag-dfs{position:fixed;z-index:81;top:18px;right:18px;bottom:18px;left:248px;
+  display:flex;flex-direction:column;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  box-shadow:var(--shadow)}
+@media (max-width:980px){.ag-dfs{left:16px}}
+.ag-dfsh{display:flex;align-items:center;gap:12px;padding:14px 18px;
+  border-bottom:1px solid var(--line-soft);flex:none}
+.ag-dfsh h2{margin:0;font:600 15px/1.2 var(--sans);color:var(--ink)}
+.ag-dfsh .sp{font-size:11.5px;color:var(--faint)}
+.ag-dfsh .mk{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ag-dfsh .mk input{width:132px;font:400 12px var(--sans);color:var(--ink);background:var(--inset);
+  border:1px solid var(--line);border-radius:7px;padding:5px 8px;outline:none}
+.ag-dfsh .mk input:focus{border-color:var(--acc)}
+.ag-dfsh .x{flex:none;background:none;border:0;cursor:pointer;color:var(--faint);padding:6px;
+  border-radius:7px;line-height:0}
+.ag-dfsh .x:hover{color:var(--ink);background:var(--inset)}
+.ag-dfsb{flex:1;min-height:0;overflow-y:auto;padding:14px 18px 22px}
+.ag-dfscard{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--surface)}
+.ag-dfscard>summary{cursor:pointer;list-style:none;padding:12px 14px;display:flex;
+  align-items:baseline;gap:9px;font:600 13px/1.3 var(--sans)}
+.ag-dfscard>summary::-webkit-details-marker{display:none}
+.ag-dfscard>summary .bl{font:400 12px/1.4 var(--sans);color:var(--faint)}
+.ag-dfscard[open]>summary{border-bottom:1px solid var(--line-soft)}
+.ag-dfsbody{padding:12px 14px}
+.ag-dfsform{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.ag-dfsform .full{grid-column:1/-1}
+.ag-dfsform label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.ag-dfsform input,.ag-dfsform select,.ag-dfsform textarea{width:100%;font:400 12.5px var(--sans);
+  color:var(--ink);background:var(--inset);border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;outline:none}
+.ag-dfsform textarea{min-height:72px;resize:vertical}
+.ag-dfsform input:focus,.ag-dfsform select:focus,.ag-dfsform textarea:focus{border-color:var(--acc)}
+.ag-dfsrow{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.ag-dfsrow .sp{font-size:11.5px;color:var(--faint)}
+.ag-dfsout{margin-top:12px}
+.ag-dfsout table{width:100%;border-collapse:collapse;font-size:12px}
+.ag-dfsout th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);
+  padding:6px 8px;position:sticky;top:0;background:var(--surface)}
+.ag-dfsout td{border-bottom:1px solid var(--line-soft);padding:6px 8px;vertical-align:top}
+.ag-dfsout td.n{text-align:right;font-variant-numeric:tabular-nums}
+.ag-dfswrap{max-height:46vh;overflow:auto;border:1px solid var(--line-soft);border-radius:9px}
+.ag-dfsblk{margin-bottom:12px}
+.ag-dfsblk h4{margin:0 0 5px;font:600 12px var(--sans);color:var(--ink)}
+.ag-dfsblk p,.ag-dfsblk li{font-size:12.5px;line-height:1.5;color:var(--muted);margin:0 0 4px}
+.ag-dfstags{display:flex;flex-wrap:wrap;gap:5px}
+.ag-dfstags span{font-size:11px;color:var(--muted);background:var(--inset);
+  border:1px solid var(--line);border-radius:20px;padding:2px 8px}
+.ag-dfstext{max-height:34vh;overflow:auto;font-size:12.5px;line-height:1.6;color:var(--muted);
+  background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap}
+.ag-dfsraw{max-height:34vh;overflow:auto;font:400 11px/1.5 var(--mono);color:var(--muted);
+  background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap;margin-top:8px}
+
 /* A message the server never took, left on the transcript instead of a toast that fades. It
    looks like the turn it would have been, so the words are where the person expects them. */
 .ag-sendfail .u{opacity:.75}
