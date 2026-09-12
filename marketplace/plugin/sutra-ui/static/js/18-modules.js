@@ -138,21 +138,21 @@ function modChecksFor(s, m){
                                                                                           () => { s.modChecks[key] = false; });
   return null;
 }
-/* Apps frameworks adoption (2026-09-12): an app built before the kit shows one
-   button in its header; the server writes the stamp and the record (every
-   unanswered row "not recorded"), the checks chip follows on the reload. The
-   panel never writes a stamp itself and never touches the chat. */
-function modAdoptBtn(s, m){
-  if (!modFrameworks(s) || m.frameworkKit || m.building || m.reserved || modIsSys(m)) return "";
-  return `<button class="btn mod-adopt" type="button" data-modadopt title="Writes the record (APP.md) and the stamp for this app; nothing else changes">Add the frameworks</button>`;
-}
+/* Apps frameworks (D75, amended 2026-09-12: "whenever a task is given, a
+   framework should be there ... if not, then a framework should be created").
+   An app built before the kit gets its framework as the FIRST step of the task,
+   never through a control: the server writes the stamp and the record (every
+   unanswered row "not recorded"), the list is re-read, and the task goes on
+   from the stamped row. The panel never writes a stamp itself. Internal: the
+   only caller is modEdit. */
 async function modAdopt(m){
   const s = modS(); if (!s || !m) return null;
   s.modErr = null;
-  try { await apiPost(MOD_API + "/" + encodeURIComponent(m.id), { action: "migrate_kit" }); }
-  catch (e) { s.modErr = "Could not add the frameworks: " + ((e && e.message) || e); modRender(); return null; }
+  let row = null;
+  try { row = await apiPost(MOD_API + "/" + encodeURIComponent(m.id), { action: "migrate_kit" }); }
+  catch (e) { s.modErr = "Could not bring this app into the frameworks: " + ((e && e.message) || e); modRender(); return null; }
   await loadModules(true);
-  return true;
+  return row || true;
 }
 function modChecksChip(s, m){
   if (!m.frameworkKit || m.building || m.reserved || modIsSys(m)) return "";
@@ -255,16 +255,11 @@ function modEditSeed(s, m){
         : `This app was built on kit ${m.frameworkKit.version || fw.version}, the one installed; no migration to offer.`,
     `When you change anything, update the matching APP.md rows in the same turn and add one dated line at the top of ## Changes.`,
   ] : [];
-  /* Apps frameworks adoption (2026-09-12): an app built before the kit gets
-     one line pointing at the header button; the chat never writes a stamp. */
-  const pre = fw && !m.frameworkKit ? [
-    `This app was built before the frameworks and carries no record. To bring it in, press "Add the frameworks" in the app header, then Edit again; do not write a stamp or a record yourself.`,
-  ] : [];
   return `You are editing the app "${m.name}" (${m.kind}) ${where}.\n`
     + `Folder: ${folder}  (the folder IS the app)\n`
     + `Files: ${files}\n`
     + (charter ? `Department charter: ${charter}\n` : "")
-    + (kit.length ? kit.join("\n") + "\n" : pre.length ? pre.join("\n") + "\n" : "")
+    + (kit.length ? kit.join("\n") + "\n" : "")
     + `Rules: edit files in place; keep module.json valid (never change id); tell me what changed when done.\n`
     + `You can also move this app to another department or archive it — tell me and I apply it as a structured change.\n`
     + (kit.length ? `First: read APP.md, then module.json${m.kind === "page" ? ", then index.html" : ""}, then ask me what should change.\n${modCheckLine(s, m.kind, folder)}\nReply in plain words, no headers and no status lines. Say "app", never the internal word.`
@@ -325,11 +320,31 @@ function modOpenSeededChat(s, title, cwd, seed, app){
   if (typeof render === "function") render();
   return sess;
 }
-function modEdit(m){
-  const s = modS(); if (!s || !m || m.reserved || modIsSys(m)) return null;
+function modEditOpen(s, m){
   const dept = m.department ? m.department.ref : null;
   return modOpenSeededChat(s, "Edit · " + m.name, modHome(s) + "/" + m.id, modEditSeed(s, m),
                            { id: m.id, mode: "edit", department_ref: dept });
+}
+function modEdit(m){
+  const s = modS(); if (!s || !m || m.reserved || modIsSys(m)) return null;
+  if (!modFrameworks(s) || m.frameworkKit) return modEditOpen(s, m);
+  /* D75 amendment: the task brings its framework. An app without a stamp is
+     adopted FIRST, then the chat opens on the stamped row. The provider gate
+     runs before the write, so a click without a provider mutates nothing; one
+     adoption in flight per app, so a double click opens one chat; a failed
+     adoption opens no chat -- a task never runs without its framework. */
+  if (!modProviderReady()){ s.modErr = "Connect a chat provider in Settings to create or edit apps."; modRender(); return null; }
+  s.modAdopting = s.modAdopting || {};
+  if (s.modAdopting[m.id]) return s.modAdopting[m.id];
+  const p = modAdopt(m).then(row => {
+    delete s.modAdopting[m.id];
+    if (!row) return null;
+    const fresh = modById(s, m.id) || (typeof row === "object" ? Object.assign({}, m, row) : null);
+    if (!fresh || !fresh.frameworkKit){ s.modErr = "This app did not take the frameworks; nothing was opened."; modRender(); return null; }
+    return modEditOpen(s, fresh);
+  });
+  s.modAdopting[m.id] = p;
+  return p;
 }
 function modNewDept(s){
   const ref = (s.modDept && s.modDept !== MOD_UNASSIGNED) ? s.modDept : (s.modules && s.modules.root ? s.modules.root.ref : null);
@@ -529,7 +544,7 @@ function modAppViewHtml(s, m){
   const edit = (sys || m.reserved) ? "" : `<button class="btn mod-edit" type="button" data-modedit title="Opens a chat in ${modEsc(modHome(s))}/${modEsc(m.id)}/${d ? ", placed under " + modEsc(modChip(d.path)) + " " + modEsc(d.name) : ""}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Edit in chat</button>`;
   return `<div class="mod-hd"><span class="chip big">${d ? modEsc(modChip(d.path)) : "—"}</span>
       <div><p class="crumb">${crumb}</p><h1>${modEsc(m.name)}</h1>${m.tagline ? `<p>${modEsc(m.tagline)}</p>` : ""}</div>
-      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modAdoptBtn(s, m)}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
+      ${sys ? "" : `<span class="pill mod-kind">${modEsc(m.kind)}</span>`}${edit}${modChecksChip(s, m)}<span class="count">${modEsc(m.status)}</span></div>
     <div class="mod-body">${modAppBodyHtml(s, m)}</div>`;
 }
 function modCrumbHtml(s, m){
@@ -633,7 +648,7 @@ if (typeof TITLES !== "undefined"){
 }
 
 if (typeof document !== "undefined" && document.addEventListener){
-  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modadopt],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
+  const SEL = "[data-modapp],[data-moddept],[data-modfacet],[data-modnew],[data-modedit],[data-modopen],[data-modsub],[data-modback],[data-modreload],[data-modarch],[data-modkind],[data-modpickcancel]";
   document.addEventListener("click", (ev) => {
     const s = modS(); if (!s) return;
     const t = ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
@@ -651,7 +666,6 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.modarch !== undefined){ s.modShowArchived = !s.modShowArchived; loadModules(true); return; }
     const m = modSelected(s);
     if (d.modedit !== undefined && m){ modEdit(m); return; }
-    if (d.modadopt !== undefined && m){ modAdopt(m); return; }
     if (d.modopen !== undefined && m){ ev.preventDefault(); modOpen(m); return; }
   });
   document.addEventListener("input", (ev) => {

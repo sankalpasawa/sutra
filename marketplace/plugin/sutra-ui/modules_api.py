@@ -723,6 +723,37 @@ def create_module(spec, created_by, session_id=None):
     return _read(mid, reg)
 
 
+def _adopt_kit(mid, path, fpath, raw, kind, actor):
+    """ADOPTION (D75, amended 2026-09-12: "whenever a task is given, a framework
+    should be there ... if not, then a framework should be created"). An app
+    built before the kit takes the stamp now and gets the record it never had:
+    every unanswered row reads `not recorded` (WARN, never FAIL). Status is
+    untouched, so a ready app stays ready; the checks gate only a LATER
+    mark_ready, and a legacy page whose index.html predates the token rules is
+    refused there until it is brought in line. Audited as its own event because
+    it writes more than a migration (codex, 2026-09-12), with the actor that
+    brought the task (panel, chat:<session>, marketplace). No version bump, no
+    updated_ms. Callers: apply_action("migrate_kit") and touch_app(mode="edit");
+    create_module stamps at birth and needs neither. Returns the stamp, or None
+    when the kit is absent."""
+    now = _now()
+    stamp = _kit_stamp(kind, now)
+    if not stamp:
+        return None
+    stamp["adopted"] = now[:10]
+    raw["frameworkKit"] = stamp
+    write_json(fpath, raw)
+    rp = os.path.join(path, RECORD_FILE)
+    if not os.path.isfile(rp):
+        text = _record_skeleton(mid, raw, stamp)
+        if text is not None:
+            _write_text(rp, text)
+    dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
+    modules_events.append(_home(), "app.kit_adopted", mid, kind=kind, version=raw.get("version"),
+                          department_ref=dept.get("ref"), actor=actor)
+    return stamp
+
+
 def apply_action(mid, action, body):
     if not isinstance(mid, str) or mid.startswith(SYS_PREFIX):
         raise ModuleError(404, "no app named %r" % (mid,))   # system rows: read-only
@@ -742,27 +773,7 @@ def apply_action(mid, action, body):
         stamp = raw.get("frameworkKit") if isinstance(raw.get("frameworkKit"), dict) else None
         rp = os.path.join(path, RECORD_FILE)
         if not stamp:
-            # ADOPTION (2026-09-12; founder: "does this also work in the
-            # existing apps?"). An app built before the kit takes the stamp
-            # now and gets the record it never had: every unanswered row
-            # reads `not recorded` (WARN, never FAIL). Status is untouched, so
-            # a ready app stays ready; the checks gate only a LATER
-            # mark_ready, and a legacy page whose index.html predates the
-            # token rules is refused there until it is brought in line.
-            # Audited as its own event because it writes more than a
-            # migration (codex, 2026-09-12). No version bump, no updated_ms.
-            now = _now()
-            stamp = _kit_stamp(kind, now)
-            stamp["adopted"] = now[:10]
-            raw["frameworkKit"] = stamp
-            write_json(fpath, raw)
-            if not os.path.isfile(rp):
-                text = _record_skeleton(mid, raw, stamp)
-                if text is not None:
-                    _write_text(rp, text)
-            dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
-            modules_events.append(_home(), "app.kit_adopted", mid, kind=kind, version=raw.get("version"),
-                                  department_ref=dept.get("ref"), actor="panel")
+            _adopt_kit(mid, path, fpath, raw, kind, actor="panel")
             return _read(mid)
         # MIGRATION (design v1 §The APP.md record): the builder said yes in
         # Edit in chat. Rewrite the two stamp copies (version, digest,
@@ -843,6 +854,14 @@ def touch_app(mid, mode="edit", session_id=None):
     raw = read_json(fpath, {})
     if not raw:
         raise ModuleError(409, BUILDING_WARNING)
+    # D75 amendment (2026-09-12): a task on an app runs through its framework.
+    # An edit that reached the server without the panel's own adoption (another
+    # client, an older panel) adopts here, before anything is measured; create
+    # already stamps, so mode "new" needs nothing.
+    if mode == "edit" and _kit_json() and not isinstance(raw.get("frameworkKit"), dict):
+        _adopt_kit(mid, path, fpath, raw, raw.get("kind") if raw.get("kind") in KINDS else "chat",
+                   actor=("chat:" + session_id) if session_id else "chat")
+        raw = read_json(fpath, {}) or raw
     # Compare every file EXCEPT the manifest itself against the manifest's own
     # millisecond write stamp (updated_ms, set on every write; falls back to
     # updated_at for schema-1 files). No tolerance window (codex R3 P2b).

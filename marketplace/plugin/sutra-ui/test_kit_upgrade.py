@@ -170,6 +170,38 @@ class KitUpgrade(unittest.TestCase):
         self.assertEqual(r.status_code, 409, r.text)
         self.assertIn("C10", r.text)
 
+    def test_an_edit_touch_on_an_unstamped_app_adopts_the_kit(self):
+        """D75 amendment (2026-09-12): a task on an app brings its framework. An
+        edit that reaches the server without the panel's own adoption (another
+        client, an older panel) adopts on the completion touch, attributed to
+        the chat that did the work; a second touch adopts nothing more."""
+        (Path(MOD_HOME) / "oldchat").mkdir()
+        (Path(MOD_HOME) / "oldchat" / "module.json").write_text(json.dumps(
+            {"id": "oldchat", "name": "Old chat", "tagline": "a chat from before", "kind": "chat", "status": "ready", "version": 1,
+             "updated_ms": 1700000000000, "updated_at": "2026-01-01T00:00:00Z", "surface": {"instructions": "Say hi."}}))
+        events = Path(MOD_HOME) / ".events.jsonl"
+        mine = lambda: [l for l in (events.read_text() if events.exists() else "").splitlines()
+                        if "app.kit_adopted" in l and '"app_id":"oldchat"' in l]
+        r = self.client.post(BASE + "/oldchat/touch", json={"mode": "edit", "session_id": "s-edit-1"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        raw = json.loads((Path(MOD_HOME) / "oldchat" / "module.json").read_text())
+        self.assertTrue(raw["frameworkKit"]["adopted"])
+        self.assertTrue((Path(MOD_HOME) / "oldchat" / "APP.md").exists())
+        self.assertEqual(r.json()["app"]["frameworkKit"], raw["frameworkKit"])
+        self.assertIn("check", r.json(), "the checks run on the touch now that the app is stamped")
+        self.assertEqual(len(mine()), 1, mine())
+        self.assertIn('"actor":"chat:s-edit-1"', mine()[0])
+        r = self.client.post(BASE + "/oldchat/touch", json={"mode": "edit"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(mine()), 1, "a second touch adopts nothing")
+        # mode "new" on an unstamped folder is left alone: create stamps at birth
+        (Path(MOD_HOME) / "oldlink").mkdir()
+        (Path(MOD_HOME) / "oldlink" / "module.json").write_text(json.dumps(
+            {"id": "oldlink", "name": "Old link", "kind": "link", "status": "ready", "version": 1, "surface": {"screen": "balance"}}))
+        r = self.client.post(BASE + "/oldlink/touch", json={"mode": "new"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(r.json()["app"]["frameworkKit"])
+
     def test_migrate_kit_refuses_only_when_the_kit_is_absent(self):
         (Path(MOD_HOME) / "nokit").mkdir()
         (Path(MOD_HOME) / "nokit" / "module.json").write_text(json.dumps({"id": "nokit", "name": "No kit", "kind": "chat", "status": "draft", "version": 1}))

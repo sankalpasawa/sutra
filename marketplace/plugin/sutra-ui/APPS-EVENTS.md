@@ -19,7 +19,7 @@ Three contracts that make Apps behave like the rest of Native: every change is a
 | app.archived | `apply_action("archive")` | `version` |
 | app.exported | export endpoint | `sha256`, `bytes`, `publish.version` |
 | app.imported | import endpoint (success) · `failed_verification` on refusal | `sha256`, `registry`, `result` (ok · failed_verification), `reason` |
-| app.kit_adopted | `apply_action("migrate_kit")` on an app that carried no framework stamp (2026-09-12): the stamp is written with an `adopted` date and `APP.md` materializes with `not recorded` answers; a migration of an already-stamped app still appends nothing | `kind`, `version` (unchanged by the adoption), `department_ref` |
+| app.kit_adopted | `apply_action("migrate_kit")` or `touch_app(mode="edit")` on an app that carried no framework stamp (D75 amended 2026-09-12: a task brings its framework; the panel adopts before Edit opens the chat, the touch is the fallback for edits that arrive by another client): the stamp is written with an `adopted` date and `APP.md` materializes with `not recorded` answers; a migration of an already-stamped app still appends nothing | `kind`, `version` (unchanged by the adoption), `department_ref`; `actor` is `panel` or `chat:<session_id>` |
 
 Envelope on every event: `{"event", "app_id", "kind", "version", "department_ref", "actor" (app · shadow · chat:<session_id> · marketplace), "ts" (ISO, fixed at creation), "op_id", "key"}`.
 
