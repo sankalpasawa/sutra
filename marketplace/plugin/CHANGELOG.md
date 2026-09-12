@@ -1,9 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
-## 2.265.1 (2026-09-12)
+## 2.265.2 (2026-09-12)
 
 - **The department importer no longer names a root after your Mac account (D76).** `project_import.apply_forest` reuses the live root whatever it is called (preferring one named `Sutra`), mints `Sutra` only on an empty registry, and files every top-level imported folder under a `Desktop` node instead of at the top. On the founder's machine the old rule had created a second root carrying the account's full name with nine duplicate departments under it. Tests: `test_project_import.py` (51, two new).
+
+## 2.265.1 (2026-09-12)
+
+- Answering a question in chat no longer throws you out to the company screen; two Agents handlers shared one name, so the later one never ran (fixes landed by the parallel session, commits 1b7d338 and a08507f).
 
 ## 2.265.0 (2026-09-12)
 
