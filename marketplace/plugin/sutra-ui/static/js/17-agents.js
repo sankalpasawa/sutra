@@ -949,7 +949,6 @@ function agChooseHtml(a){
       : `<div class="ag-cards">${rows.map(c => agCoCardHtml(c, busy, a.coMenu === c.id)).join("")}</div>
          ${f.mode === "add" ? form("New company", "coaddgo", "It gets its own knowledge, chats and library. The agent asks for its website next.")
            : `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-ag="coadd" ${busy ? "disabled" : ""}>${AG_ICON.plus} Add another company</button></div>`}`}
-    <div class="row" style="margin-top:22px"><button class="ag-back" type="button" data-ag="market">${AG_ICON.left} All agents</button></div>
   </div>`;
 }
 
@@ -4215,10 +4214,39 @@ async function agAction(act, el){
   }
 }
 
+/* THE PANE'S CHEVRON IS THE WAY BACK, while an agent or the company chooser is open.
+   The shell draws one control at the top left of every screen pane, `[data-pane-fold="browse"]`,
+   and it COLLAPSES the pane to a 38px rail. On the Agents tab that read as a back arrow and did
+   something else entirely (owner, 2026-09-12: "what the agent marketplace left arrow does today,
+   it's not at all required. It goes to the center. It is all bullshit."). It now means what it
+   looks like: back to the shelf of agents. On the shelf there is nowhere further back, so the
+   shell keeps its own control. */
+function agCanGoBack(){
+  /* S.screen, not agRoot(): the question is whether the AGENTS screen owns this pane right now.
+     A DOM lookup would also answer it while the pane happens to be mounted, but it would go on
+     answering "yes" from stale agents state after another screen took the pane over, and it
+     cannot be asked at all outside a browser -- which is where this is tested. */
+  if (typeof S === "undefined" || !S || S.screen !== "agents") return false;
+  const a = S.ag;
+  return !!(a && a.screen && a.screen !== "market");
+}
+
 /* ── wiring: one delegated listener each, bound once ───────────────────────── */
 if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__agWired
     && typeof document.addEventListener === "function"){
   window.__agWired = true;
+  /* CAPTURE, deliberately. The shell binds the fold with a direct `b.onclick` (07-loaders), and
+     an onclick runs at the target phase -- a listener bound here in the capture phase is the only
+     one that can get in front of it and stop it. Nothing else is intercepted: on the shelf, and
+     on every other screen, the click reaches the shell untouched. */
+  document.addEventListener("click", (ev) => {
+    const fold = ev.target && ev.target.closest ? ev.target.closest('[data-pane-fold="browse"]') : null;
+    if (!fold || !agCanGoBack()) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const a = agS(); if (!a) return;
+    a.screen = "market"; a.panel = null; a.coForm = null; a.coErr = null; a.coMenu = null;
+    agEnterScreen(agRoot(), true);
+  }, true);
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("[data-ag]") : null;
     if (!el || !el.closest("#agRoot")) return;

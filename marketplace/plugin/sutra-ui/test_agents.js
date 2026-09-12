@@ -2091,6 +2091,45 @@ test("a company card carries a 3-dot delete, and it asks before it wipes a brand
   assert.ok(/agDelApi\(`\/companies\//.test(block), "and Delete really calls the company route");
 });
 
+/* ONE WAY BACK, AND IT IS THE ARROW THAT LOOKS LIKE ONE (owner, 2026-09-12). The chooser carried
+   its own "All agents" button at the bottom while the pane's top-left chevron collapsed the pane
+   instead of going back: two controls, neither doing what it looked like. */
+test("the company chooser has no back button of its own any more", () => {
+  const a = mktBlank();
+  a.companies = { active: "c1", companies: [
+    { id: "c1", name: "Testlify", domain: "testlify.com", chats: 3, active: true }] };
+  const html = A.agChooseHtml(a);
+  assert.ok(!/All agents/.test(html), "the bottom button is gone");
+  assert.ok(!/data-ag="market"/.test(html), "and with it the only other way out of this screen");
+  assert.ok(/Which company\?/.test(html), "the screen itself is untouched");
+});
+
+test("the pane's chevron is the way back while an agent or the chooser is open", () => {
+  const a = agReset();
+  const prevScreen = A.S.screen;
+  A.S.screen = "agents";
+  try {
+    a.screen = "market";
+    assert.strictEqual(A.agCanGoBack(), false, "on the shelf there is nowhere further back");
+    for (const s of ["agent", "choose"]){
+      a.screen = s;
+      assert.strictEqual(A.agCanGoBack(), true, "from " + s + " the chevron goes back");
+    }
+    A.S.screen = "chats";
+    assert.strictEqual(A.agCanGoBack(), false,
+                       "and another screen's pane keeps its own control, whatever the agent state says");
+  } finally { A.S.screen = prevScreen; }
+  /* the interception has to beat the shell's own onclick, which only a capture listener does */
+  const i = SRC.indexOf('closest(\'[data-pane-fold="browse"]\')');
+  assert.ok(i !== -1, "the fold control is intercepted");
+  const tail = SRC.slice(i, i + 700);
+  assert.ok(/ev\.stopPropagation\(\)/.test(tail), "and the shell's collapse is stopped");
+  assert.ok(/a\.screen = "market"/.test(tail), "and it lands on the shelf");
+  assert.ok(/\}, true\);/.test(tail), "bound in the capture phase, or the shell's onclick wins");
+  assert.ok(/if \(!fold \|\| !agCanGoBack\(\)\) return;/.test(tail),
+            "and every other pane on every other screen is left alone");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });
