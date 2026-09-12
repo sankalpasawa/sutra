@@ -1,7 +1,7 @@
 {
   "registry_schema": 1,
   "name": "Sutra Apps registry",
-  "updated_at": "2026-09-12T15:05:44Z",
+  "updated_at": "2026-09-12T15:39:46Z",
   "notes": "The default Apps registry for Sutra Desktop (ADR-039; Publish program Q-1). Served by GitHub Pages from the sutra repo's website/apps/. Entries are signed by a publisher listed under publishers (ADR-041, ed25519 over {publisher_id, app_id, version, manifest_schema, artifact_sha256, sutra_version_range}); artifacts sit under artifacts/<id>-<version>.tgz beside this file. Maintained with sutra-ui/modules_registry.py (check | add).",
   "publishers": [
     {
@@ -11,5 +11,32 @@
       "added_at": "2026-09-12T15:05:44Z"
     }
   ],
-  "apps": []
+  "apps": [
+    {
+      "id": "loan-book-by-bucket",
+      "name": "Loan book by bucket",
+      "version": "1.0.0",
+      "manifest_schema": 2,
+      "artifact_url": "https://sankalpasawa.github.io/sutra/apps/artifacts/loan-book-by-bucket-1.0.0.tgz",
+      "sha256": "5ffd555c1fa4011b0b24d8bd3b30c70ddcce90c50d5247623888582435b05423",
+      "published_at": "2026-09-12T15:39:46Z",
+      "sutra_version_range": {
+        "min": "2.265.17",
+        "max": null
+      },
+      "permissions": {
+        "network": false
+      },
+      "department_hint": null,
+      "kinds": [
+        "page"
+      ],
+      "publisher_id": "sutra",
+      "signature": {
+        "alg": "ed25519",
+        "value": "NSLHJdID47xkX1TAxQ9GH5UAASOQS3eelJ+DCTd3JxofHvzE0Vqhl7+br0d/WywLzYgbg/e20MLSyJQqsZOGAg==",
+        "key_id": "81c4f3a8211b64f3"
+      }
+    }
+  ]
 }
