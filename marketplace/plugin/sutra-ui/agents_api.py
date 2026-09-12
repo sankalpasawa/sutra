@@ -1021,6 +1021,73 @@ def api_toggle_memory(mem_id: str, body: dict = Body(default={})):
 _CONN_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key")
 
 
+# ---- the DataForSEO console ---------------------------------------------------------------
+# Owner, 2026-09-12: "beside DataForSEO we could add two buttons: one is check balance... another
+# where you use DataForSEO separately", from a page of his own that calls their API straight from
+# the browser with Basic auth out of localStorage.
+#
+# THAT SHAPE CANNOT COME INSIDE SUTRA, for two reasons and neither is style: the browser would be
+# blocked calling api.dataforseo.com from this origin, and it would mean putting his API password
+# into a page. The credentials already live on this Mac, owner-only, and seo_agent/tools/dfs.py is
+# the one place that reads them. So the console asks THIS, and this asks DataForSEO.
+#
+# AN ALLOWLIST, NOT A PROXY. A route that forwards any path the page names is an open relay to a
+# paid account: anything that can reach this port could spend his balance on endpoints nobody
+# chose. These eight are the ones the console offers, and the eighth is free.
+DFS_CONSOLE_PATHS = {
+    "/v3/dataforseo_labs/google/keyword_suggestions/live": "post",
+    "/v3/dataforseo_labs/google/keyword_overview/live": "post",
+    "/v3/dataforseo_labs/google/ranked_keywords/live": "post",
+    "/v3/serp/google/organic/live/advanced": "post",
+    "/v3/on_page/content_parsing/live": "post",
+    "/v3/dataforseo_labs/google/competitors_domain/live": "post",
+    "/v3/backlinks/domain_pages/live": "post",
+    "/v3/appendix/user_data": "get",
+}
+
+
+@router.post("/connections/dataforseo/call")
+def api_dfs_call(body: dict = Body(...)):
+    """One allowlisted DataForSEO call, made with the stored credentials.
+
+    Returns their JSON as it came, because the console shows the raw reply as well as a table and
+    a doctored copy would make that lie. The credentials are never in the request or the response.
+    """
+    endpoint = str((body or {}).get("endpoint") or "").strip()
+    how = DFS_CONSOLE_PATHS.get(endpoint)
+    if not how:
+        return _bad("That is not an endpoint this console can call.", 400)
+    from seo_agent.tools import dfs as _dfs
+    payload = (body or {}).get("payload")
+    if how == "post" and not isinstance(payload, list):
+        payload = [payload or {}]          # their API always takes a list of tasks
+    path = endpoint[3:]                    # dfs.BASE already ends in /v3
+    try:
+        data = _dfs.get(path) if how == "get" else _dfs.post(path, payload)
+    except Exception as e:  # noqa: BLE001 -- their refusals are the answer, not a crash
+        name = type(e).__name__
+        if name == "NoCredentials":
+            return _bad("DataForSEO is not connected. Add the login and password above.", 400)
+        return _bad(str(e)[:300] or "DataForSEO did not answer.", 502)
+    return {"ok": True, "endpoint": endpoint, "cost": (data or {}).get("cost"), "data": data}
+
+
+@router.get("/connections/dataforseo/balance")
+def api_dfs_balance():
+    """The balance, read NOW. /health carries one too, cached for 300 seconds, which is right for
+    a screen that polls and wrong for a button labelled "check balance": a button that says it
+    checked must have checked. The fresh value is written back into that cache, so the rest of the
+    app stops disagreeing with what he just read."""
+    from seo_agent.tools import dfs as _dfs, run_research as _rr
+    if not _dfs.available():
+        return _bad("DataForSEO is not connected. Add the login and password above.", 400)
+    bal = _dfs.balance()
+    if bal is not None:
+        loop._BAL.update({"at": time.time(), "v": float(bal)})
+    return {"balance": bal, "floor": _rr.MIN_CREDITS,
+            "enough": bal is None or bal >= _rr.MIN_CREDITS}
+
+
 @router.get("/connections")
 def api_connections():
     """Never the secrets themselves. Only whether each one is set. DataForSEO and Voyage;

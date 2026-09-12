@@ -2130,6 +2130,100 @@ test("the pane's chevron is the way back while an agent or the chooser is open",
             "and every other pane on every other screen is left alone");
 });
 
+/* ── the DataForSEO console ───────────────────────────────────────────────────
+   Owner, 2026-09-12: "beside DataForSEO we could add two buttons: one is check balance... another
+   where you use DataForSEO separately... it should open then and there, overlaid above
+   everything". Ported from his own page, which called api.dataforseo.com straight from the
+   browser with Basic auth out of localStorage; here the backend holds the credentials and allows
+   eight endpoints, so the page never sees a password and never calls that host. */
+test("Connections offers the console only once DataForSEO is connected", () => {
+  const on = A.agConnectionsHtml({ dataforseo_login: "a@b.c", dataforseo_password: "pw" },
+                                 { model_provider: "claude-cli" }, {}, null, null);
+  assert.ok(/data-ag="dfsbal"/.test(on) && /Check balance/.test(on), "the balance button");
+  assert.ok(/data-ag="dfsopen"/.test(on) && /Try DataForSEO/.test(on), "and the console");
+  const off = A.agConnectionsHtml({}, { model_provider: "claude-cli" }, {}, null, null);
+  assert.ok(!/data-ag="dfsbal"/.test(off) && !/data-ag="dfsopen"/.test(off),
+            "neither is offered before there is an account to use");
+});
+
+test("the console is not in the DOM at all until it is opened", () => {
+  const a = agReset();
+  assert.strictEqual(A.agDfsHtml(a), "", "closed means nothing, not hidden markup");
+  a.dfs = { on: true, open: "suggest", vals: {}, out: {}, market: {} };
+  const html = A.agDfsHtml(a);
+  assert.ok(/ag-dfsback/.test(html), "the sheet behind it");
+  assert.ok(/role="dialog"/.test(html) && /aria-label="DataForSEO console"/.test(html));
+  assert.ok((html.match(/data-ag="dfsclose"/g) || []).length >= 2,
+            "two ways out: the backdrop and the X");
+  assert.strictEqual((html.match(/class="ag-dfscard"/g) || []).length, A.agDfsCards().length,
+                     "every card is drawn");
+});
+
+test("every endpoint the console offers is one the backend will actually allow", () => {
+  const cards = A.agDfsCards();
+  assert.strictEqual(cards.length, 8, cards.map(c => c.id).join(", "));
+  const api = fs.readFileSync(path.join(__dirname, "agents_api.py"), "utf8");
+  const from = api.indexOf("DFS_CONSOLE_PATHS = {");
+  const allow = api.slice(from, api.indexOf("}", from));
+  assert.ok(from !== -1 && allow.length > 100, "found the allowlist");
+  for (const c of cards)
+    assert.ok(allow.indexOf('"' + c.endpoint + '"') !== -1,
+              c.id + " asks for " + c.endpoint + ", which the backend would refuse");
+});
+
+test("a card builds the body their API expects, and refuses a field left empty", () => {
+  const m = { location_name: "United States", language_code: "en" };
+  const card = id => A.agDfsCards().find(c => c.id === id);
+
+  /* through JSON, not deepStrictEqual: the module runs in its own vm realm, so an object it
+     built has a different Object.prototype and reference-equality of prototypes fails on values
+     that are identical in every key. The comparison we care about is the payload as it goes over
+     the wire, which is exactly what JSON gives us. */
+  const wire = v => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(wire(card("suggest").body({ keyword: "  skills assessment  ", limit: "50" }, m)),
+    [{ location_name: "United States", language_code: "en", keyword: "skills assessment",
+       limit: 50, order_by: ["keyword_info.search_volume,desc"] }]);
+  assert.throws(() => card("suggest").body({ keyword: "   ", limit: "50" }, m), /phrase/i,
+                "an empty field is caught here, so nothing is spent finding out");
+
+  const r1 = card("ranked").body({ target: "https://www.Competitor.com/pricing", seg: "", limit: "25" }, m)[0];
+  assert.strictEqual(r1.target, "competitor.com", "the domain is cleaned before it is sent");
+  assert.ok(!r1.filters, "and no page filter unless one was typed");
+  const r2 = card("ranked").body({ target: "competitor.com", seg: "blog", limit: "25" }, m)[0];
+  assert.ok(/%blog%/.test(JSON.stringify(r2.filters || [])), "a typed segment becomes their filter");
+
+  const kw = wire(card("overview").body({ keywords: " one \n\n two \n" }, m))[0];
+  assert.deepStrictEqual(kw.keywords, ["one", "two"], "blank lines are dropped, not sent");
+
+  assert.ok(!("location_name" in card("pages").body({ target: "competitor.com", limit: "25" }, m)[0]),
+            "the backlinks endpoint takes no market, and sending one is an error it returns");
+  assert.strictEqual(card("account").body(), null, "the free one sends no body at all");
+});
+
+test("a result is read out of their JSON, and a hostile value never reaches the DOM raw", () => {
+  const j = { tasks: [{ result: [{ items: [{
+    keyword: "<img src=x onerror=alert(1)>",
+    keyword_info: { search_volume: 1200, cpc: 1.5, competition_level: "LOW" },
+    keyword_properties: { keyword_difficulty: 12 } }] }] }] };
+  const sug = A.agDfsCards().find(c => c.id === "suggest");
+  const rows = sug.rows(j, {});
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].vol, 1200);
+  const html = A.agDfsTable(sug.cols, rows);
+  assert.ok(!/<img src=x/.test(html), "never raw");
+  assert.ok(/&lt;img src=x/.test(html), "escaped instead");
+  assert.ok(/1,200/.test(html), "and numbers read as numbers");
+  assert.ok(/Nothing came back/.test(A.agDfsTable(sug.cols, [])), "an empty answer says so");
+});
+
+test("the account card reads the balance out of their reply, and costs nothing", () => {
+  const acct = A.agDfsCards().find(c => c.id === "account");
+  const out = acct.render({ tasks: [{ result: [{ money: { balance: 7.5, total: 100 }, login: "a@b.c" }] }] });
+  assert.ok(/\$7\.50/.test(out.html), "the credit left");
+  assert.ok(/a@b\.c/.test(out.html), "and whose account it is");
+  assert.strictEqual(acct.free, true, "the card knows it is free, so it can say so");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });
