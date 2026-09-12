@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.15 (2026-09-12)
+
+- **Shadow workspace renders its two columns.** The 2.265.14 merge kept both branches' Shadow CSS. Three pre-merge rules with no emitter left (`.shwork` twice, the base `.shchev`) leaked `flex-direction:column`, card chrome and a hairline colour into Joy's workspace container and chevrons; the global `.shcompwrap` and `.shtarget` leaked column direction and full width into the right pane. Dead rules removed; Joy's scoped rules now state `flex-direction:row` and `width:auto`. Found by the codex + DeepSeek review of the merge (both FAIL on `.shwork`).
+
 ## 2.265.14 (2026-09-12)
 
 - **Shadow delegates a task (branch `shadow/joy`, 2 commits, merged).** Shadow Home is the v7 workspace: the delegate composer and task list on the left, the task in focus on the right; the session a delegated task starts is a normal Sutra chat, its link opens the chat, the task can be signed off, and Shadow Settings has its own page. `panel.css` merge resolved by hand (Shadow Settings block before Org > Apps; Shadow workspace block at the end). Tests: panel 384, shadow home + overlay green, pytest 337 across 5 lanes; `test_shadow_briefing.js` (the superseded V5 briefing layout) is red on the branch as pushed and stays red here.

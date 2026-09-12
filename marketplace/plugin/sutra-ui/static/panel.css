@@ -2680,9 +2680,6 @@
 .shnyacts{ display:flex; gap:5px; flex-wrap:wrap; margin-top:3px; }
 
 /* WORKING -- active, accent-railed, one compact row per goal */
-.shwork{ border:1px solid var(--line); border-left:3px solid #B8945F;
-  border-radius:12px; padding:8px 10px; background:var(--card);
-  cursor:pointer; display:flex; flex-direction:column; gap:3px; }
 .shworktop{ display:flex; align-items:baseline; gap:8px; }
 .shworkoutcome{ font-family:var(--serif); font-size:13.5px; color:var(--ink);
   flex:1; min-width:0; }
@@ -2794,9 +2791,6 @@
 .shneedacts{ display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
 
 /* WORKING -- active, accent rail, one compact block each */
-.shwork{ border:1px solid var(--line); border-left:3px solid #B8945F;
-  border-radius:12px; padding:9px 11px; background:var(--card);
-  cursor:pointer; display:flex; flex-direction:column; gap:2px; }
 .shworktitle{ font-family:var(--serif); font-size:15px; color:var(--ink); }
 .shworkline{ font-size:11.5px; color:var(--muted); }
 .shworkact{ font-size:11.5px; color:var(--faint); }
@@ -3014,8 +3008,6 @@
 .shasgside{ display:flex; flex-direction:column; align-items:flex-end;
   gap:6px; text-align:right; }
 .shasgturn{ font-size:11.5px; color:var(--faint); }
-.shchev{ width:16px; height:16px; color:var(--line); flex:none;
-  transition:color .18s ease, transform .18s ease; }
 .shasg:hover .shchev{ color:var(--muted); transform:translateX(2px); }
 
 .shstatus{ display:inline-flex; align-items:center; gap:6px; font-size:10.5px;
@@ -3264,7 +3256,7 @@
 .shwright .shscope{display:flex;align-items:center;gap:8px}
 .shwright .shscopelabel{font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--faint)}
-.shwright .shtarget{display:inline-flex;align-items:center;gap:7px;
+.shwright .shtarget{display:inline-flex;width:auto;align-items:center;gap:7px;
   background:none;border:1px solid var(--line);border-radius:99px;
   padding:4px 10px;font:12px/1 var(--sans);color:var(--ink);cursor:pointer}
 .shwright .shtarget.on{border-color:var(--acc);color:var(--acc)}
@@ -3272,7 +3264,7 @@
 .shwright .shtargetchev{width:11px;height:11px;opacity:.6}
 .shwright .shask{flex:1;min-width:0}
 .shwright .shasktitle{font-size:11.5px;color:var(--faint)}
-.shwright .shcompwrap{display:flex;align-items:flex-end;gap:8px}
+.shwright .shcompwrap{display:flex;flex-direction:row;align-items:flex-end;gap:8px}
 .shwright .shcompose{min-height:38px;font-size:12.5px;padding:8px 10px;
   border-radius:8px;background:var(--card);border:1px solid var(--line);
   color:var(--ink)}
@@ -3334,7 +3326,7 @@
 /* the delegated workspace's own composer: one line, pinned under the task */
 .shwcomp{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
   display:flex;flex-direction:column;gap:6px}
-.shwcomp .shcompwrap{display:flex;align-items:flex-end;gap:8px}
+.shwcomp .shcompwrap{display:flex;flex-direction:row;align-items:flex-end;gap:8px}
 /* the door to the existing-chat flow -- a link, never a second composer */
 /* secondary by construction: the smallest type on the surface, no border,
    no fill, and it sits under the composer rather than beside the task */
