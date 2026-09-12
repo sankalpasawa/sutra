@@ -16,6 +16,14 @@ X-10). Stdlib only. The import is the marketplace trust boundary, so:
   X-7  extraction into a quarantine dir; ONE os.rename into place at the end
   X-8  every outcome appends app.imported {result, reason}
   X-9  origin.created_by and publish.state are set by the installer
+
+Publish program P2 (2026-09-12, ADR-041 Accepted): a REGISTRY install is
+verified before the archive is opened -- the entry's id, sha256 and
+manifest_schema must match the artifact, and its ed25519 signature must verify
+against a pinned publisher key (an unsigned entry is refused, ruling P-3); a
+version lower than the installed one is refused unless replace=1 AND
+downgrade=1 (ruling P-4, `app.downgrade_blocked`). install_app() is the fetch
+wrapper: index (validated, publishers pinned or TOFU), entry, artifact, import.
 """
 import hashlib
 import io
@@ -27,6 +35,8 @@ import tarfile
 import uuid
 
 import modules_events
+import modules_registry
+import modules_sign
 from json_store import read_json, write_json
 
 MAX_MEMBERS = 200
@@ -184,15 +194,41 @@ class _IdLock(object):
         return False
 
 
-def import_app(home, mid, blob, sha256, replace=False, actor="marketplace", registry=None, op_id=None):
+def _verify_entry(entry, publishers, mid, sha256):
+    """ADR-041: every field the publisher signed, checked against the entry and
+    the bytes BEFORE the archive is opened. -> {publisher_id, key_id, version,
+    published_at}. PkgError 409 on a mismatch, 403 on a signature refusal."""
+    if not isinstance(entry, dict):
+        raise PkgError(403, "a registry install needs the registry entry to verify against")
+    if entry.get("id") != mid:
+        raise PkgError(409, "the registry entry describes %r, not %r" % (entry.get("id"), mid))
+    if str(entry.get("sha256") or "").lower() != str(sha256 or "").lower():
+        raise PkgError(409, "the registry entry's sha256 is not the artifact's")
+    if entry.get("manifest_schema") != 2:
+        raise PkgError(409, "the registry entry's manifest_schema must be 2")
+    ok, why = modules_sign.verify_entry(entry, publishers or {})
+    if not ok:
+        raise PkgError(403, "signature refused: %s" % why)
+    return {"publisher_id": entry.get("publisher_id"), "key_id": entry["signature"]["key_id"],
+            "version": entry.get("version"), "published_at": entry.get("published_at")}
+
+
+def import_app(home, mid, blob, sha256, replace=False, actor="marketplace", registry=None, op_id=None,
+               entry=None, publishers=None, downgrade=False):
     """Install a tarball as <home>/<mid>/ under the extraction contract. On any
     refusal -- contract or otherwise -- nothing lands and app.imported records
-    result=failed_verification (codex R3 P2a: OSErrors too)."""
+    result=failed_verification (codex R3 P2a: OSErrors too).
+
+    With `entry` (or `registry`) the install is VERIFIED (ADR-041): the signed
+    fields are checked against the entry and the bytes before extraction, an
+    unsigned entry is refused, and the manifest's publish.version must agree.
+    A lower version than the installed one needs replace AND downgrade."""
     op_id = op_id or uuid.uuid4().hex[:12]
     home_real = os.path.realpath(home)
     quarantine = os.path.join(home_real, QUARANTINE, op_id)
     try:
-        return _import_locked(home_real, mid, blob, sha256, replace, actor, registry, op_id, quarantine)
+        return _import_locked(home_real, mid, blob, sha256, replace, actor, registry, op_id, quarantine,
+                              entry, publishers, downgrade)
     except PkgError as e:
         modules_events.append(home_real, "app.imported", mid, actor=actor, op_id=op_id,
                               result="failed_verification", reason=str(e), status=e.status)
@@ -205,7 +241,8 @@ def import_app(home, mid, blob, sha256, replace=False, actor="marketplace", regi
         shutil.rmtree(quarantine, ignore_errors=True)
 
 
-def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, quarantine):
+def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, quarantine,
+                   entry=None, publishers=None, downgrade=False):
     import re
     if not isinstance(mid, str) or not re.match(r"^[a-z0-9][a-z0-9-]{1,40}$", mid) or mid.startswith("sys-"):
         raise PkgError(400, "id %r is not a valid app id" % (mid,))
@@ -214,6 +251,8 @@ def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, qua
         raise PkgError(409, "sha256 mismatch: the artifact is not the one the registry describes")
     if len(blob) > MAX_TOTAL:
         raise PkgError(413, "artifact exceeds the 20 MB total cap")
+    # ADR-041: a registry install verifies the signed entry before the archive is opened
+    signer = _verify_entry(entry, publishers, mid, sha256) if (entry is not None or registry) else None
     # pass 1 (X-2..X-5): scan the member list, nothing written
     members = []
     manifest = None
@@ -258,6 +297,10 @@ def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, qua
     validate_manifest(manifest, mid)
     if not members:
         raise PkgError(400, "archive has no members")
+    pubm = manifest.get("publish") if isinstance(manifest.get("publish"), dict) else {}
+    if signer and pubm.get("version") and str(pubm["version"]) != str(signer["version"]):
+        raise PkgError(409, "the artifact's manifest says version %s, the registry entry %s" % (pubm["version"], signer["version"]))
+    new_version = signer["version"] if signer else pubm.get("version")
     # pass 2 (X-7): extract manually into quarantine, enforcing actual bytes (codex P6)
     stage = os.path.join(quarantine, mid)
     os.makedirs(stage, exist_ok=True)
@@ -290,6 +333,11 @@ def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, qua
     pub.update({"state": "imported", "checksum": {"sha256": sha256.lower()}})
     if registry:
         pub["source"] = {"registry": registry}
+    if signer:                                      # the installer records who signed what it installed
+        pub["source"] = dict(pub.get("source") or {}, registry=registry, publisher_id=signer["publisher_id"], key_id=signer["key_id"])
+        pub["version"] = signer["version"]
+        if signer.get("published_at"):
+            pub["published_at"] = signer["published_at"]
     manifest["publish"] = pub
     write_json(os.path.join(stage, "module.json"), manifest)
     # X-6 + X-7 under the per-id lock: check, back up, place, restore on failure
@@ -299,6 +347,19 @@ def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, qua
         if os.path.lexists(final):
             if not replace:
                 raise PkgError(409, "an app with id %s already exists; pass replace=1 to replace it" % mid)
+            # ADR-041 P2 / ruling P-4: going back a version is refused unless asked for twice
+            installed = read_json(os.path.join(final, "module.json"), {}) or {}
+            ipub = installed.get("publish") if isinstance(installed.get("publish"), dict) else {}
+            if new_version and ipub.get("version"):
+                try:
+                    lower = modules_registry.compare(str(new_version), str(ipub["version"])) < 0
+                except (ValueError, AttributeError):
+                    lower = False
+                if lower and not downgrade:
+                    modules_events.append(home, "app.downgrade_blocked", mid, kind=manifest.get("kind"), version=manifest.get("version"),
+                                          actor=actor, op_id=op_id, installed_version=str(ipub["version"]), offered_version=str(new_version))
+                    raise PkgError(409, "version %s is lower than the installed %s; pass replace=1 and downgrade=1 to go back on purpose"
+                                   % (new_version, ipub["version"]))
             backup = os.path.join(quarantine, "prev")
             os.rename(final, backup)
         try:
@@ -309,5 +370,42 @@ def _import_locked(home, mid, blob, sha256, replace, actor, registry, op_id, qua
             raise PkgError(500, "could not place the app folder: %s" % (e,))
     modules_events.append(home, "app.imported", mid, kind=manifest.get("kind"), version=manifest.get("version"),
                           department_ref=(manifest.get("department") or {}).get("ref") if isinstance(manifest.get("department"), dict) else None,
-                          actor=actor, op_id=op_id, result="ok", sha256=sha256.lower(), replaced=bool(backup))
-    return {"id": mid, "sha256": sha256.lower(), "replaced": bool(backup), "members": [m[1] for m in members]}
+                          actor=actor, op_id=op_id, result="ok", sha256=sha256.lower(), replaced=bool(backup),
+                          registry=registry, publisher_id=signer["publisher_id"] if signer else None, key_id=signer["key_id"] if signer else None)
+    return {"id": mid, "sha256": sha256.lower(), "replaced": bool(backup), "members": [m[1] for m in members],
+            "verified": bool(signer), "publisher_id": signer["publisher_id"] if signer else None,
+            "key_id": signer["key_id"] if signer else None, "version": new_version}
+
+
+# ---------------------------------------------------------------- install --
+
+def install_app(home, registry_url, mid, version=None, replace=False, downgrade=False, actor="marketplace", fetch=None):
+    """Fetch an app from a registry and import it VERIFIED: the index (validated,
+    publishers pinned or pinned now on first contact), the entry (newest, or the
+    version asked for), the artifact (https only, capped), then import_app with
+    the entry. -> the import result plus registry, version, pin_source and the
+    publisher fingerprints the install trusted."""
+    fetch = fetch or modules_registry.fetch_bytes
+    if not isinstance(registry_url, str) or not registry_url.startswith("https://"):
+        raise PkgError(400, "registry must be an https URL")
+    try:
+        index = modules_registry.load_index(fetch(registry_url, modules_registry.MAX_INDEX_BYTES))
+    except modules_registry.RegistryError as e:
+        raise PkgError(e.status, "registry index: %s" % e)
+    except (OSError, ValueError) as e:
+        raise PkgError(502, "could not fetch the registry index: %s" % (e.__class__.__name__,))
+    entry = modules_registry.entry_for(index, mid, version)
+    if not entry:
+        raise PkgError(404, "the registry has no app %r%s" % (mid, (" at version " + str(version)) if version else ""))
+    pins, meta = modules_registry.trusted_publishers(registry_url, index)
+    url = entry.get("artifact_url")
+    if not isinstance(url, str) or not url.startswith("https://"):
+        raise PkgError(400, "artifact_url must be an https URL")
+    try:
+        blob = fetch(url, MAX_TOTAL)
+    except (OSError, ValueError) as e:
+        raise PkgError(502, "could not fetch the artifact: %s" % (e.__class__.__name__,))
+    res = import_app(home, mid, blob, str(entry.get("sha256") or ""), replace=replace, actor=actor, registry=registry_url,
+                     entry=entry, publishers=pins, downgrade=downgrade)
+    res.update({"registry": registry_url, "version": entry["version"], "pin_source": meta["source"], "fingerprints": meta["fingerprints"]})
+    return res

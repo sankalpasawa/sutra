@@ -972,13 +972,40 @@ async def api_modules_import(request: Request):
     try:
         res = modules_pkg.import_app(_home(), qp.get("id") or "", blob, qp.get("sha256") or "",
                                      replace=(qp.get("replace") in ("1", "true", "yes")),
-                                     registry=qp.get("registry") or None)
+                                     downgrade=(qp.get("downgrade") in ("1", "true", "yes")))
     except modules_pkg.PkgError as e:
         raise HTTPException(e.status, str(e))
     try:
         res["record_reconstructed"] = reconstruct_record(res.get("id") or "")
     except (ModuleError, OSError, ValueError):
         res["record_reconstructed"] = False    # the install stands; the first edit can still write the record
+    return JSONResponse(res, status_code=201)
+
+
+@router.post("/install")
+async def api_modules_install(request: Request):
+    """Publish program P2 (ADR-041): fetch one app from a registry and import it
+    VERIFIED -- index validated, publishers pinned (shipped pins for the default
+    registry, first-contact pins for another), entry signature checked against
+    the bytes before the archive opens, downgrades refused. Body: {registry, id,
+    version?, replace?, downgrade?}. Declared BEFORE /{mid}."""
+    _require_flag()
+    _require_publish_flag()
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "body must be JSON")
+    body = body if isinstance(body, dict) else {}
+    try:
+        res = modules_pkg.install_app(_home(), str(body.get("registry") or ""), str(body.get("id") or ""),
+                                      version=(str(body["version"]) if body.get("version") else None),
+                                      replace=bool(body.get("replace")), downgrade=bool(body.get("downgrade")))
+    except modules_pkg.PkgError as e:
+        raise HTTPException(e.status, str(e))
+    try:
+        res["record_reconstructed"] = reconstruct_record(res.get("id") or "")
+    except (ModuleError, OSError, ValueError):
+        res["record_reconstructed"] = False
     return JSONResponse(res, status_code=201)
 
 

@@ -1,0 +1,15 @@
+{
+  "registry_schema": 1,
+  "name": "Sutra Apps registry",
+  "updated_at": "2026-09-12T15:05:44Z",
+  "notes": "The default Apps registry for Sutra Desktop (ADR-039; Publish program Q-1). Served by GitHub Pages from the sutra repo's website/apps/. Entries are signed by a publisher listed under publishers (ADR-041, ed25519 over {publisher_id, app_id, version, manifest_schema, artifact_sha256, sutra_version_range}); artifacts sit under artifacts/<id>-<version>.tgz beside this file. Maintained with sutra-ui/modules_registry.py (check | add).",
+  "publishers": [
+    {
+      "publisher_id": "sutra",
+      "key_id": "81c4f3a8211b64f3",
+      "pubkey": "6XGUbQD48lkX6L4Mql8b9VpidhrN8JNhAaSP9S23/iU=",
+      "added_at": "2026-09-12T15:05:44Z"
+    }
+  ],
+  "apps": []
+}

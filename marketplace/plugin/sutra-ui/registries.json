@@ -1,0 +1,18 @@
+{
+  "note": "Registries this panel trusts (Publish program Q-1, ADR-041). The default registry's publisher keys are pinned HERE and the index's own list never widens them; any other registry pins its publishers on first install (TOFU) into ~/.sutra-ui/registries-pinned.json. A key rotation is accepted only when signed by a key already pinned.",
+  "registries": [
+    {
+      "name": "Sutra",
+      "url": "https://sankalpasawa.github.io/sutra/apps/registry.json",
+      "default": true,
+      "publishers": [
+        {
+          "publisher_id": "sutra",
+          "key_id": "81c4f3a8211b64f3",
+          "pubkey": "6XGUbQD48lkX6L4Mql8b9VpidhrN8JNhAaSP9S23/iU=",
+          "added_at": "2026-09-12T15:05:44Z"
+        }
+      ]
+    }
+  ]
+}

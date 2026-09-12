@@ -191,5 +191,162 @@ class TestModulesPkg(unittest.TestCase):
         self.assertFalse((Path(MOD_HOME) / ".quarantine").exists() and any((Path(MOD_HOME) / ".quarantine").iterdir()))
 
 
+# ---- Publish program P2 (ADR-041): a registry install is verified before anything lands --------------------
+
+import modules_pkg  # noqa: E402
+import modules_registry  # noqa: E402
+import modules_sign  # noqa: E402
+
+REG = "https://registry.invalid/apps/registry.json"
+
+
+def _versioned_tar(version, mid="imported-one"):
+    m = dict(MANIFEST, id=mid, publish={"version": version, "author": "test", "license": "MIT"})
+    return _tar([(mid + "/module.json", json.dumps(m).encode()), (mid + "/index.html", ("<h1>v%s</h1>" % version).encode())])
+
+
+@unittest.skipUnless(modules_sign.available(), "cryptography is not importable here (the DMG carries it)")
+class TestSignedInstall(unittest.TestCase):
+    """The reader side of ADR-041 through the real route: fetch is replaced by a dict, nothing else is faked."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app_module.app, base_url="http://127.0.0.1")
+        cls.kid, cls.priv, cls.pub = modules_sign.generate()
+        cls.publisher = {"publisher_id": "acme", "key_id": cls.kid, "pubkey": modules_sign.pub_b64(cls.pub), "added_at": "2026-09-12T15:00:00Z"}
+
+    def setUp(self):
+        os.environ["SUTRA_MODULES_HOME"] = MOD_HOME
+        os.environ["SUTRA_UI_PINNED"] = os.path.join(tempfile.mkdtemp(prefix="pkg-pins-"), "pinned.json")
+        for name in os.listdir(MOD_HOME):
+            shutil.rmtree(os.path.join(MOD_HOME, name), ignore_errors=True)
+        self._settings = providers.SETTINGS_PATH
+        tmp = Path(tempfile.mkdtemp(prefix="pkg-settings-")) / "settings.json"
+        tmp.write_text(json.dumps({"flags": {"apps_publish": True}}), encoding="utf-8")
+        providers.SETTINGS_PATH = tmp
+        self._fetch = modules_registry.fetch_bytes
+        self.served = {}
+        modules_registry.fetch_bytes = lambda url, cap, timeout=10.0: self._serve(url, cap)
+
+    def tearDown(self):
+        providers.SETTINGS_PATH = self._settings
+        modules_registry.fetch_bytes = self._fetch
+
+    def _serve(self, url, cap):
+        if url not in self.served:
+            raise OSError("no such url %s" % url)
+        return self.served[url]
+
+    def _entry(self, blob, version, mid="imported-one", sign=True, **over):
+        e = {"id": mid, "name": "Imported one", "version": version, "manifest_schema": 2,
+             "artifact_url": "https://registry.invalid/apps/artifacts/%s-%s.tgz" % (mid, version),
+             "sha256": hashlib.sha256(blob).hexdigest(), "published_at": "2026-09-12T15:00:00Z",
+             "sutra_version_range": {"min": "2.263.0", "max": None}, "kinds": ["page"], "publisher_id": "acme"}
+        e.update(over)
+        if sign:
+            e = modules_sign.sign_entry(e, self.priv)
+        self.served[e["artifact_url"]] = blob
+        return e
+
+    def _publish(self, entries, publishers=None):
+        idx = {"registry_schema": 1, "name": "Acme", "updated_at": "2026-09-12T15:00:00Z", "apps": entries,
+               "publishers": [self.publisher] if publishers is None else publishers}
+        self.served[REG] = json.dumps(idx).encode()
+
+    def _install(self, mid="imported-one", **body):
+        return self.client.post(BASE + "/install", json=dict({"registry": REG, "id": mid}, **body), headers=HDR)
+
+    def _events(self, event):
+        p = Path(MOD_HOME) / ".events.jsonl"
+        return [json.loads(l) for l in (p.read_text(encoding="utf-8") if p.exists() else "").splitlines() if l.strip() and '"%s"' % event in l]
+
+    def test_12_a_signed_entry_installs_verified_and_the_manifest_records_the_publisher(self):
+        blob = _versioned_tar("1.0.0")
+        self._publish([self._entry(blob, "1.0.0")])
+        r = self._install()
+        self.assertEqual(r.status_code, 201, r.text)
+        j = r.json()
+        self.assertTrue(j["verified"])
+        self.assertEqual((j["publisher_id"], j["key_id"], j["version"], j["pin_source"]), ("acme", self.kid, "1.0.0", "tofu"))
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["state"], "imported")
+        self.assertEqual(raw["publish"]["version"], "1.0.0")
+        self.assertEqual(raw["publish"]["source"], {"registry": REG, "publisher_id": "acme", "key_id": self.kid})
+        ok = [e for e in self._events("app.imported") if e["app_id"] == "imported-one" and e["result"] == "ok"]
+        self.assertEqual((ok[-1]["registry"], ok[-1]["key_id"]), (REG, self.kid))
+
+    def test_13_tampered_unsigned_and_unpinned_entries_land_nothing(self):
+        blob = _versioned_tar("1.0.0")
+        swapped = self._entry(blob, "1.0.0")                       # signed for blob, but the URL serves other bytes
+        cases = {
+            "signed then version changed": dict(self._entry(blob, "1.0.0"), version="1.0.1"),
+            "unsigned": self._entry(blob, "1.0.0", sign=False),
+            "artifact swapped under a valid signature": swapped,
+        }
+        for name, entry in cases.items():
+            self._publish([entry])
+            if entry is swapped:
+                self.served[entry["artifact_url"]] = _tar([("imported-one/module.json", json.dumps(dict(MANIFEST, name="Swapped")).encode()),
+                                                           ("imported-one/index.html", b"<h1>swapped</h1>")])
+            r = self._install()
+            self.assertIn(r.status_code, (403, 409), "%s: %s" % (name, r.text))
+            self.assertFalse((Path(MOD_HOME) / "imported-one").exists(), name)
+        entry = self._entry(blob, "1.0.0")
+        os.environ["SUTRA_UI_PINNED"] = os.path.join(tempfile.mkdtemp(prefix="pkg-pins-fresh-"), "pinned.json")   # first contact again
+        self._publish([entry], publishers=[])                     # the signer is not a listed publisher
+        r = self._install()
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertIn("pinned", r.text)
+        self.assertFalse((Path(MOD_HOME) / "imported-one").exists())
+        refused = [e for e in self._events("app.imported") if e["app_id"] == "imported-one" and e["result"] == "failed_verification"]
+        self.assertGreaterEqual(len(refused), 4)
+
+    def test_14_a_later_index_cannot_swap_the_pinned_key(self):
+        blob = _versioned_tar("1.0.0")
+        self._publish([self._entry(blob, "1.0.0")])
+        self.assertEqual(self._install().status_code, 201)
+        kid2, priv2, pub2 = modules_sign.generate()
+        blob2 = _versioned_tar("1.1.0")
+        e2 = modules_sign.sign_entry(self._entry(blob2, "1.1.0", sign=False), priv2)
+        self._publish([e2], publishers=[{"publisher_id": "acme", "key_id": kid2, "pubkey": modules_sign.pub_b64(pub2), "added_at": "2026-09-13T00:00:00Z"}])
+        r = self._install(replace=True)
+        self.assertEqual(r.status_code, 403, r.text)
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["version"], "1.0.0", "the installed app is untouched")
+
+    def test_15_downgrade_is_refused_unless_asked_for_twice(self):
+        self._publish([self._entry(_versioned_tar("1.1.0"), "1.1.0")])
+        self.assertEqual(self._install().status_code, 201)
+        self._publish([self._entry(_versioned_tar("1.0.0"), "1.0.0")])
+        r = self._install(replace=True)
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn("downgrade=1", r.text)
+        self.assertEqual(self._events("app.downgrade_blocked")[-1]["offered_version"], "1.0.0")
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["version"], "1.1.0")
+        r = self._install(replace=True, downgrade=True)
+        self.assertEqual(r.status_code, 201, r.text)
+        raw = json.loads((Path(MOD_HOME) / "imported-one" / "module.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw["publish"]["version"], "1.0.0")
+
+    def test_16_index_and_transport_refusals(self):
+        blob = _versioned_tar("1.0.0")
+        self._publish([self._entry(blob, "1.0.0", artifact_url="http://registry.invalid/a.tgz")])
+        r = self._install()
+        self.assertEqual(r.status_code, 400, r.text)                  # the index fails validation (https only)
+        self._publish([self._entry(blob, "1.0.0")])
+        self.assertEqual(self._install(mid="nope").status_code, 404)
+        r = self.client.post(BASE + "/install", json={"registry": "http://registry.invalid/r.json", "id": "imported-one"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        del self.served[REG]
+        self.assertEqual(self._install().status_code, 502)
+        tmp = Path(tempfile.mkdtemp(prefix="pkg-settings-off-")) / "settings.json"
+        tmp.write_text(json.dumps({"flags": {"apps_publish": False}}), encoding="utf-8")
+        providers.SETTINGS_PATH = tmp
+        r = self._install()
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("apps_publish", r.json()["detail"])              # X-10: unreachable while off
+
+
 if __name__ == "__main__":
     unittest.main()

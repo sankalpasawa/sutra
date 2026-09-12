@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-12
+## 2.265.17 (2026-09-12)
+
+- **Apps registry: hosted, signed, verified (Publish program P1+P2, ADR-041 Accepted).** The Sutra Apps registry lives at https://sankalpasawa.github.io/sutra/apps/registry.json (website/apps/ in the sutra repo; zero apps yet, one publisher); the desktop ships its publisher key pinned (`registries.json`) and pins any other registry on first install. `POST /api/modules/install {registry, id}` fetches the index and the artifact over https only, verifies the entry's ed25519 signature against the pinned key before the archive is opened, refuses unsigned entries, swapped artifacts, edited entries and swapped keys, and refuses a downgrade unless `replace` and `downgrade` are both given. Everything stays behind `flags.apps_publish` (off). New: `modules_sign.py` (cryptography 46.0.0, universal2 wheel checked for both arches), `modules_registry.py` (check | add). Tests: sign 7 (RFC 8032 vectors), registry 7, package 17.
+
 ## 2.265.16 (2026-09-12)
 
 - **Five more checks block "done" (kit 1.1.0).** C2 (success and failure answers are real sentences), C6 (the Department row matches where the app is filed), C7 (a review date), C22 (a regression check someone can act on) and C36 (the page renders in both themes with no console errors) are must-fix, by founder direction ahead of field data: 23 of 38 block, 15 advise. Folds: C6 fails when the row names a department the app is not filed under; C22 accepts "verify", "confirm", "visible", "appears", "loads" and "look". The render lane no longer counts Chrome's own about:blank abort as a failed load, waits for the load event instead of sleeping 700 ms, and retries a navigation the start-up commit aborted. Apps already ready keep their status; imported and adopted apps keep their `not recorded` warnings. Tests: kit files 8, runner 15 (+2 render), upgrade 5, apps api 35.

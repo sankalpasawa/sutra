@@ -16,7 +16,12 @@ EVENTS = ("app.created", "app.edited", "app.assigned", "app.archived", "app.expo
           # 2026-09-12: an app built before the frameworks kit took the stamp and
           # got its record (migrate_kit on an unstamped app). Its own fact because
           # it writes more than a migration, which stays silent by design.
-          "app.kit_adopted")
+          "app.kit_adopted",
+          # Publish program (2026-09-12, ADR-041): a registry install refused for going back a version
+          # (import_app, before anything lands); an app whose entry was signed and staged for a registry
+          # (P3); one row per registry refresh with what it found (P4). Every outcome of an install itself
+          # stays an app.imported row (X-8), with registry / publisher_id / key_id when it was verified.
+          "app.downgrade_blocked", "app.published", "app.registry_refreshed")
 FILE = ".events.jsonl"
 
 

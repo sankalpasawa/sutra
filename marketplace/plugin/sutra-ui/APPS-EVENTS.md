@@ -19,6 +19,9 @@ Three contracts that make Apps behave like the rest of Native: every change is a
 | app.archived | `apply_action("archive")` | `version` |
 | app.exported | export endpoint | `sha256`, `bytes`, `publish.version` |
 | app.imported | import endpoint (success) · `failed_verification` on refusal | `sha256`, `registry`, `result` (ok · failed_verification), `reason` |
+| app.downgrade_blocked | `modules_pkg.import_app` under the per-id lock, before anything moves: the offered `publish.version` is lower than the installed one and `downgrade=1` was not given with `replace=1` (ADR-041 P2, Publish program ruling P-4); the app.imported refusal row follows | `installed_version`, `offered_version`, `op_id` |
+| app.published | (Publish program P3) approval of an `app.publish` proposal ran export, version bump, signing and staged the entry and tarball under `~/.sutra-ui/publish/` | `publish_version`, `key_id`, `registry` |
+| app.registry_refreshed | (Publish program P4) one row per `POST /api/modules/registry/refresh`, never per read | `checked`, `updates`, `incompatible` |
 | app.kit_adopted | `apply_action("migrate_kit")` or `touch_app(mode="edit")` on an app that carried no framework stamp (D75 amended 2026-09-12: a task brings its framework; the panel adopts before Edit opens the chat, the touch is the fallback for edits that arrive by another client): the stamp is written with an `adopted` date and `APP.md` materializes with `not recorded` answers; a migration of an already-stamped app still appends nothing | `kind`, `version` (unchanged by the adoption), `department_ref`; `actor` is `panel` or `chat:<session_id>` |
 
 Envelope on every event: `{"event", "app_id", "kind", "version", "department_ref", "actor" (app · shadow · chat:<session_id> · marketplace), "ts" (ISO, fixed at creation), "op_id", "key"}`.

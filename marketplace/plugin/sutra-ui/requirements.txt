@@ -16,3 +16,7 @@ numpy==2.0.2
 # the ladder it had if the import fails.
 trafilatura==2.2.0
 jsonschema>=4.17  # Apps manifest validation on import (APPS-THREATS.md X-2); explicit checks still run without it
+# Apps registry signatures (ADR-041, Publish program P2): ed25519 sign + verify in modules_sign.py. Not a pure-Python
+# wheel, but 46.0.0 ships one cp311-abi3 macosx_10_9_universal2 wheel and its cffi pulls per-arch cp312 wheels, so the
+# cross-arch --only-binary install resolves for both arches (checked 2026-09-12 with pip download --platform, both).
+cryptography==46.0.0

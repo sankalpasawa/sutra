@@ -15,7 +15,7 @@ Where an app stands between "lives only in this folder" and "installed from a ma
 |---|---|---|---|
 | local | the app exists only in this folder; `publish` absent or null | creation (chat, Shadow, disk, form-less New) | exported |
 | exported | a tarball + checksum were produced from this folder | export (flag `apps_publish` on) | published · local (re-edit clears `exported`) |
-| imported | this folder was unpacked from a verified tarball; `origin.created_by = marketplace` | import after sha256 + manifest validation | update_available · incompatible · revoked |
+| imported | this folder was unpacked from a verified tarball; `origin.created_by = marketplace`; from a registry, `publish.source` names the registry, the publisher and the key that signed the entry | import after sha256 + manifest validation; a registry install (ADR-041, 2026-09-12) also verifies the entry's signature against a pinned publisher key before the archive is opened, refuses unsigned entries, and refuses a downgrade unless asked for twice | update_available · incompatible · revoked |
 | published | this folder is the source of an entry in a registry | publish (later program; Publish button) | update_available (a newer entry exists) · revoked |
 | update_available | the registry has a newer `published_at` with a compatible `sutra_version_range` | registry refresh | imported (after update) · incompatible |
 | incompatible | the registry entry's `sutra_version_range` excludes this plugin version | registry refresh or plugin update | imported (after plugin update) · update_available |

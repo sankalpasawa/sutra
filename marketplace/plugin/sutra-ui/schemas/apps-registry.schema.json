@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sutra.asawa.co/schemas/apps-registry.schema.json",
   "title": "Sutra Apps registry index",
-  "description": "The index a marketplace serves (ADR-039). Separate from the Claude-plugin marketplace (.claude-plugin/marketplace.json): that one indexes Claude Code extension packages; this one indexes runtime content for Sutra Desktop. Only the index discipline is borrowed. Hosting and repo name: TODO(founder) (program Q-1).",
+  "description": "The index a marketplace serves (ADR-039). Separate from the Claude-plugin marketplace (.claude-plugin/marketplace.json): that one indexes Claude Code extension packages; this one indexes runtime content for Sutra Desktop. Only the index discipline is borrowed. Hosting (Publish program Q-1, 2026-09-12): the default index is website/apps/registry.json in the sutra repo, served at https://sankalpasawa.github.io/sutra/apps/registry.json; artifacts under website/apps/artifacts/.",
   "type": "object",
   "additionalProperties": true,
   "required": ["registry_schema", "name", "updated_at", "apps"],
@@ -10,6 +10,38 @@
     "registry_schema": { "type": "integer", "const": 1 },
     "name": { "type": "string" },
     "updated_at": { "type": "string", "format": "date-time" },
+    "publishers": {
+      "type": "array",
+      "description": "who may sign entries (ADR-041). The plugin pins the default registry's keys in sutra-ui/registries.json; other registries are pinned on first install.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["publisher_id", "key_id", "pubkey", "added_at"],
+        "properties": {
+          "publisher_id": { "type": "string", "minLength": 1 },
+          "key_id": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "first 16 hex of sha256(raw public key)" },
+          "pubkey": { "type": "string", "description": "base64 of the raw 32-byte ed25519 public key" },
+          "added_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "rotations": {
+      "type": "array",
+      "description": "key rotations, each signed by the old key (ADR-041 P4)",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["publisher_id", "old_key_id", "new_key_id", "new_pubkey", "created_at", "signature"],
+        "properties": {
+          "publisher_id": { "type": "string" },
+          "old_key_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "new_key_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "new_pubkey": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "signature": { "type": "string", "description": "base64 ed25519 over the canonical rotation payload, by the old key" }
+        }
+      }
+    },
     "apps": {
       "type": "array",
       "items": {
@@ -23,7 +55,8 @@
           "manifest_schema": { "type": "integer", "enum": [2], "description": "the artifact manifest's `schema` value (codex P4 naming bridge)" },
           "artifact_url": { "type": "string", "format": "uri", "description": "the tarball of the app folder" },
           "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "of the tarball; verified before anything lands" },
-          "signature": { "type": "object", "additionalProperties": true, "properties": { "alg": { "type": "string", "enum": ["ed25519"] }, "value": { "type": "string" }, "key_id": { "type": "string" } }, "description": "optional until ADR-040 (signing) lands" },
+          "publisher_id": { "type": "string", "minLength": 1, "description": "required when the entry is signed; must name a listed publisher" },
+          "signature": { "type": "object", "additionalProperties": true, "required": ["alg", "value", "key_id"], "properties": { "alg": { "type": "string", "enum": ["ed25519"] }, "value": { "type": "string", "description": "base64 of the 64-byte signature" }, "key_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" } }, "description": "ADR-041 (Accepted 2026-09-12): ed25519 over the canonical payload {publisher_id, app_id, version, manifest_schema, artifact_sha256, sutra_version_range}. An entry without one is never installed from a registry (ruling P-3)." },
           "published_at": { "type": "string", "format": "date-time", "description": "update detection: newer published_at with a compatible range = update_available (codex P3)" },
           "sutra_version_range": { "type": "object", "additionalProperties": true, "required": ["min"], "properties": { "min": { "type": "string" }, "max": { "type": ["string", "null"] } }, "description": "plugin versions this artifact runs on; outside the range = incompatible" },
           "permissions": { "type": "object", "additionalProperties": true, "properties": { "network": { "type": "boolean", "const": false, "description": "page apps have no network reach (D-M5); true is not accepted in registry_schema 1" } } },
