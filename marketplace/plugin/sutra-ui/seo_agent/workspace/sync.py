@@ -673,6 +673,140 @@ def catch_up(client=None, replay_from=None):
         return {"applied": 0, "blocked": True, "why": str(e)[:300]}
 
 
+# ---- the idea sheet ------------------------------------------------------------------------------
+#
+# THE BUG THIS SECTION CLOSES (owner, 2026-09-13: "why is the asset ideas tab not getting updated
+# when users write the code in the connections"). The sheet was designed to travel as rows in the
+# team's `ideas` table -- mirror.py has had the receiving half since the workspace shipped, and the
+# plan lists "ideas, ~1,900, the asset sheet and which are ticked" -- but nothing ever SENT a row.
+# The knowledge pack does not carry assets/ either (pack.CORE_MEMBERS). So a teammate who joined got
+# the catalogue and the brand pack and an empty Asset ideas tab, and kept it empty for good: on the
+# owner's workspace the table held 0 rows while his Mac held 1,892.
+#
+# TWO SHAPES OF CHANGE, TWO ROUTES. A tick is one row, and one row belongs in the queue like every
+# other push: on disk first, so it survives the wifi dropping. A merge or an import rewrites the whole
+# sheet, and the queue sends one request per item -- 1,892 requests, one after another, for one click.
+# So past a small number the changed rows go to the table in bulk, and only if that fails do they
+# fall back to the queue, where at least they are safe.
+IDEAS_QUEUE_MAX = 25          # this many changed rows or fewer: one queued push each
+IDEAS_BULK_CHUNK = 500        # more than that: straight to the table, this many per request
+IDEAS_BACKFILL_EVERY = 600.0  # seconds between backfill attempts that did not finish
+
+
+def _idea_changes(before, after):
+    """The rows of `after` that are new, or differ from the row with the same id in `before`.
+
+    Removals are not sent. A sheet row is retired by its status ("dropped", "done"), which travels as
+    an ordinary field of the row, and a merge that renumbers the sheet would otherwise send a delete
+    and an insert for every idea whose id moved.
+    """
+    old = {str(r.get("id")): r for r in (before or []) if isinstance(r, dict) and r.get("id")}
+    return [r for r in (after or [])
+            if isinstance(r, dict) and r.get("id") and old.get(str(r.get("id"))) != r]
+
+
+def _bulk_ideas(rows, client=None):
+    """Upsert rows to the ideas table in chunks. On a failed chunk, queue it and everything after it.
+
+    Every chunk is an upsert keyed on idea_id, so a retry of a chunk that half-landed is harmless.
+    Returns {"sent", "queued", "why"}.
+    """
+    c = _client(client)
+    who = _actor(client)
+    sent = 0
+    for i in range(0, len(rows), IDEAS_BULK_CHUNK):
+        chunk = rows[i:i + IDEAS_BULK_CHUNK]
+        wire = [mirror.to_wire("ideas", str(r["id"]), r, actor=who) for r in chunk]
+        try:
+            c.upsert("ideas", wire, on_conflict="idea_id")
+            sent += len(chunk)
+        except Exception as e:              # noqa: BLE001 — offline is the normal case, not a crash
+            queued = 0
+            for r in rows[i:]:
+                try:
+                    if push("ideas", str(r["id"]), r, client=client):
+                        queued += 1
+                except Exception:           # noqa: BLE001
+                    pass
+            return {"sent": sent, "queued": queued, "why": str(e)[:300]}
+    return {"sent": sent, "queued": 0, "why": ""}
+
+
+def push_ideas(before, after, client=None):
+    """Send the rows of the sheet that changed. Never raises; the local save has already happened.
+
+    Called by assets/_common.save_ideas after every write of the sheet, with the sheet as it was and
+    as it is now. Returns {"sent", "queued", "why"}.
+    """
+    try:
+        if not configured(client):
+            return {"sent": 0, "queued": 0, "why": "no workspace"}
+        allowed, why = _may_push("ideas", client)
+        if not allowed:
+            return {"sent": 0, "queued": 0, "why": why or "this workspace cannot hold ideas yet"}
+        changed = _idea_changes(before, after)
+        if not changed:
+            return {"sent": 0, "queued": 0, "why": ""}
+        if len(changed) <= IDEAS_QUEUE_MAX:
+            queued = 0
+            for r in changed:
+                if push("ideas", str(r["id"]), r, client=client):
+                    queued += 1
+            return {"sent": 0, "queued": queued, "why": ""}
+        return _bulk_ideas(changed, client)
+    except Exception as e:                  # noqa: BLE001
+        return {"sent": 0, "queued": 0, "why": str(e)[:300]}
+
+
+def backfill_ideas(client=None, now=None, rows=None):
+    """Send the whole sheet ONCE, to a team whose ideas table is still empty.
+
+    The push above only sees changes made after it existed. Every sheet built before this fix --
+    the owner's 1,892 ideas among them -- would otherwise never reach anyone, because nothing about
+    them will change until somebody ticks one. So the Mac that holds a sheet checks, at most every
+    IDEAS_BACKFILL_EVERY seconds until it has done it, whether the team has any ideas at all; if it
+    has none, it sends them all. A team that already has ideas is left alone for good: from then on
+    ordinary pushes and the log keep everyone level.
+
+    The caller decides WHICH Mac may do this (agents_api only lets the one that created the
+    workspace), because a joiner's own sheet may belong to a different company entirely.
+    Returns "sent", "queued" or "". Never raises.
+    """
+    now = time.time() if now is None else now
+    try:
+        if not configured(client):
+            return ""
+        st = read_state()
+        bf = st.get("ideas_backfill") or {}
+        if bf.get("done"):
+            return ""
+        if now - float(bf.get("at") or 0) < IDEAS_BACKFILL_EVERY:
+            return ""
+        if rows is None:
+            from ..assets import _common as acm
+            rows = acm.ideas()
+        rows = [r for r in (rows or []) if isinstance(r, dict) and r.get("id")]
+        if not rows:
+            return ""
+        allowed, _why = _may_push("ideas", client)
+        if not allowed:
+            return ""
+        have = _client(client).select("ideas", columns="idea_id", limit=1) or []
+        if have:
+            st["ideas_backfill"] = {"at": now, "done": True, "sent": 0,
+                                    "why": "the team already has ideas"}
+            _save_state(st)
+            return ""
+        res = _bulk_ideas(rows, client)
+        st["ideas_backfill"] = {"at": now, "done": not res.get("why"),
+                                "sent": res.get("sent", 0), "queued": res.get("queued", 0),
+                                "why": res.get("why", "")}
+        _save_state(st)
+        return "sent" if res.get("sent") else ("queued" if res.get("queued") else "")
+    except Exception:                       # noqa: BLE001 — a background nicety must never break a poll
+        return ""
+
+
 def push_delete(kind, key, actor=None, client=None, item_id=None):
     """The thing is gone. The trigger logs it, and it reaches everyone as an ordinary change.
 

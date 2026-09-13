@@ -2224,6 +2224,19 @@ test("the account card reads the balance out of their reply, and costs nothing",
   assert.strictEqual(acct.free, true, "the card knows it is free, so it can say so");
 });
 
+/* THE IDEA SHEET REFRESHES WHILE IT IS OPEN (owner, 2026-09-13: "why is the asset ideas tab not
+   getting updated when users write the code in the connections"). A joiner's first ideas and every
+   teammate's tick arrive through the workspace poll; the tab read /assets once, on arrival. */
+test("the Asset ideas tab re-reads the sheet on the refresh tick, and only while it is open", () => {
+  const i = SRC.indexOf("async function agRefresh(){");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(i !== -1, "found the refresh tick");
+  assert.ok(/a\.view === "assets"/.test(body), "it knows when the sheet is the screen in front of him");
+  assert.ok(/a\.assets = await agApi\("\/assets"\)/.test(body), "and re-reads it then");
+  assert.ok(/agApi\("\/assets"\)\.catch\(\(\) => a\.assets\)/.test(body),
+            "a failed read keeps the sheet he is looking at instead of blanking it");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });

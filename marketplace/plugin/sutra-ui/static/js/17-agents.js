@@ -3201,6 +3201,13 @@ async function agRefresh(){
     if (a.view === "library" && (live || agLibWriting(a))){
       a.library = await agApi("/library").catch(() => a.library);
     }
+    /* THE IDEA SHEET, while it is the screen in front of him. A teammate's ticks and a joiner's
+       first ideas land in the sheet through the workspace poll, and this tab used to read /assets
+       once, on arrival, and never again (owner, 2026-09-13: "why is the asset ideas tab not getting
+       updated"). Every fourth tick and only on this tab: it is a read of a local file. */
+    if (a.view === "assets" && agRefreshN % 4 === 2){
+      a.assets = await agApi("/assets").catch(() => a.assets);
+    }
     if (agRefreshN % 8 === 1 || (live && agRefreshN % 20 === 0)){ a.health = await agApi("/health"); }
     /* The workspace, on three cadences and for three reasons: every tick while a job is running
        (a bar that updates every four seconds is not a bar), every tick on the Connections tab
