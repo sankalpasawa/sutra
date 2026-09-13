@@ -86,15 +86,61 @@ if [ "$(uname -s)" != "Darwin" ]; then
   This installer builds a .app bundle (sips / iconutil / codesign / osascript);
   there is no Linux or Windows path yet.
 
-  You can still run the panel directly from this directory:
-    python3 -m venv .venv
+  You can still run the panel directly from this directory, with Python 3.11 or 3.12:
+    python3.12 -m venv .venv
     .venv/bin/pip install -r requirements.txt
     .venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8330
   then open http://127.0.0.1:8330"
 fi
 
-command -v python3 >/dev/null 2>&1 \
-  || die "python3 not found. Install Python 3.9 or newer, then re-run this script."
+# --------------------------------------------------------------------------
+# Python: find one in the SUPPORTED RANGE instead of trusting `python3`.
+#
+# `python3` on a stock Mac is Xcode's 3.9, and the pins no longer install on it:
+#   floor 3.11 -- cryptography==46.0.0 ships only a cp311-abi3 wheel
+#                 (trafilatura==2.2.0 alone would need 3.10)
+#   ceiling 3.12 -- numpy==2.0.2 has no cp313 wheel, and the DMG bundles 3.12
+# Until 2026-09-13 this checked only that SOME python3 existed, so the install
+# got as far as `pip install` and died there with "No matching distribution
+# found for trafilatura==2.2.0" -- on the default interpreter of every Mac.
+#
+# Order: $SUTRA_PYTHON (the operator saying which), then 3.12 (what the release
+# bundles), then 3.11, then a bare python3 only if it is itself in range.
+# Homebrew's prefixes are probed explicitly because a GUI-launched shell often
+# has neither on PATH. KEEP IN STEP with electron/bundle-runtime.sh PY_VERSION --
+# test_python_versions.py fails if the two disagree.
+# --------------------------------------------------------------------------
+SUTRA_PY_MIN="3.11"
+SUTRA_PY_MAX="3.12"
+py_in_range() {  # $1 = interpreter path; true if MIN <= version <= MAX
+  "$1" -c "import sys; lo=tuple(map(int,'$SUTRA_PY_MIN'.split('.'))); hi=tuple(map(int,'$SUTRA_PY_MAX'.split('.'))); sys.exit(0 if lo <= sys.version_info[:2] <= hi else 1)" 2>/dev/null
+}
+find_python() {
+  local c
+  for c in ${SUTRA_PYTHON:+"$SUTRA_PYTHON"} \
+           python3.12 /opt/homebrew/bin/python3.12 /usr/local/bin/python3.12 \
+           python3.11 /opt/homebrew/bin/python3.11 /usr/local/bin/python3.11 \
+           python3; do
+    c="$(command -v "$c" 2>/dev/null || true)"
+    [ -n "$c" ] && py_in_range "$c" && { printf '%s\n' "$c"; return 0; }
+  done
+  return 1
+}
+if [ "${1:-}" != "--uninstall" ]; then
+  BASE_PY="$(find_python)" || die "no Python $SUTRA_PY_MIN-$SUTRA_PY_MAX found.
+
+  Sutra's dependencies need Python $SUTRA_PY_MIN or $SUTRA_PY_MAX: cryptography ships only a
+  3.11+ wheel, and numpy 2.0.2 has none for 3.13. The python3 on PATH is:
+    $(python3 -V 2>&1 || echo 'none')
+
+  Install a supported one and re-run:
+    brew install python@3.12
+  or point this script at an existing interpreter:
+    SUTRA_PYTHON=/path/to/python3.12 ./install.sh"
+  if [ -n "${SUTRA_PYTHON:-}" ] && [ "$BASE_PY" != "$(command -v "$SUTRA_PYTHON" 2>/dev/null)" ]; then
+    die "SUTRA_PYTHON=$SUTRA_PYTHON is not Python $SUTRA_PY_MIN-$SUTRA_PY_MAX ($("$SUTRA_PYTHON" -V 2>&1))"
+  fi
+fi
 
 
 # --------------------------------------------------------------------------
@@ -265,9 +311,16 @@ stage_runtime          # MUST run before anything reads $SRC
 # 1. venv + deps (requirements.txt ONLY -- no new packages)
 # --------------------------------------------------------------------------
 step "venv"
+# A venv built by an older install on an out-of-range interpreter (the 3.9 one
+# every previous run of this script used) cannot take the current pins, and
+# pip fails deep inside it. Rebuild rather than reuse.
+if [ -x "$PY" ] && ! py_in_range "$PY"; then
+  say "discarding $VENV: built on $("$PY" -V 2>&1), needs $SUTRA_PY_MIN-$SUTRA_PY_MAX"
+  rm -rf "$VENV"
+fi
 if [ ! -x "$PY" ]; then
-  say "creating $VENV"
-  python3 -m venv "$VENV" || die "python3 -m venv failed"
+  say "creating $VENV with $BASE_PY ($("$BASE_PY" -V 2>&1))"
+  "$BASE_PY" -m venv "$VENV" || die "$BASE_PY -m venv failed"
   wrote "$VENV"
 else
   say "reusing $VENV ($("$PY" -V 2>&1))"

@@ -2,7 +2,25 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.266.0 (2026-09-13, HEAD)
+## v2.266.1 (2026-09-13, HEAD)
+
+**One supported Python, 3.11-3.12, in every build -- and the release bundles 3.12.14.** The pins
+had quietly outgrown the interpreter half the builds used: `cryptography==46.0.0` ships only a
+cp311-abi3 wheel and `trafilatura==2.2.0` needs 3.10, while `install.sh` and `run.sh` ran a bare
+`python3`, which on a stock Mac is Xcode's 3.9. The dev install died inside `pip install` on every
+default machine. Both now find a 3.12, then a 3.11 (probing Homebrew's prefixes too), honour
+`SUTRA_PYTHON`, refuse anything outside the range with the reason and the fix, and rebuild a venv
+that an earlier run built on 3.9 instead of reusing it. The ceiling is numpy 2.0.2, which has no
+cp313 wheel. The release DMG's bundled interpreter moves from 3.12.13 to **3.12.14**
+(python-build-standalone 20260901; the archive is still verified against the release's own
+SHA256SUMS, for both arches). `test_python_versions.py` holds the three places to one range and
+runs install.sh's real selection code against fake interpreters.
+
+Running the suite on a correct interpreter also showed that 18 of the failures previously counted
+as pre-existing were the 3.9 environment failing to import the pins: 61 failed / 2,009 passed on
+3.9 against 43 failed / 2,055 passed on 3.11.
+
+## v2.266.0 (2026-09-13)
 
 **Every session from every provider can be listed, and routine runs have their own section.** The
 Chats rail was scoped on 2026-09-09 to chats Sutra itself started, which on the founder's machine
