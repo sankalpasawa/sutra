@@ -1,63 +1,19 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-13
+**status**: active · **updated**: 2026-09-10
 
-## v2.271.0 (2026-09-13, HEAD)
+## v2.267.1 (2026-09-13, HEAD)
 
-**The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and
-`v2.270.0-desktop` were all cut while `plugin.json` and `.claude-plugin/marketplace.json` still read
-2.267.1/2.267.3, so `release-dmg`'s version guard — the first job in the workflow — rejected each one
-before a runner started. No DMG was built and no GitHub Release was created for any of the three; the
-tags are dangling, not published. The manifests now read 2.271.0, above every dangling tag, so a fresh
-`v2.271.0-desktop` passes the guard without rewriting a pushed tag.
-
-`tests/unit/test-validate-manifest-json.sh` gains the check that would have stopped this at tag #1:
-the manifest version must exceed every existing `v*-desktop` tag, and the top entries of
-`CURRENT-VERSION.md` and `CHANGELOG.md` must match it. The guard in CI is unchanged — it now has a
-local twin that fails on the workstation instead of after the push.
-
-## v2.267.3 (2026-09-13)
-
-**A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real
-server, and a real server runs the project import at startup. The verification workflow behind 2.267.2
-traced the stray root of 2026-09-13 01:33 ("Ramesh Asawa") to exactly that: a workflow agent in another
-session ran this test from a staged 2.264.1 plugin copy, whose pre-D76 importer named the root after the
-macOS account, against `~/.sutra-native/user-kit`. The test now starts the server with
-`SUTRA_SKIP_PROJECT_IMPORT=1` (the opt-out `app.py` already honours) and a throwaway `SUTRA_NATIVE_HOME`.
-No other shell test boots the app.
-
-## v2.267.2 (2026-09-13)
-
-**A retired project folder is not re-imported (DIR-14).** The startup import matched folders against
-active departments only, so the seven folders merged into the organisation on 2026-09-12 (Asawa
-Holding, Sutra, Sutra UI, Sutra UI Workspace, Dayflow, Workdir, Claude) came back as a nested chain
-of twins under Desktop on every launch. A retired folder now resolves through its tombstone's
-explicit successor and links there; the successor gains the cwd join key and the session count and
-keeps its own name, source and description on every later run; nothing is minted. A retired folder
-with no live successor is skipped.
-
-**A stray root cannot hijack the tree.** A pre-D76 importer wrote a second parent-less record
-("Ramesh Asawa") whose ref sorted before the real root, and every reader took the first sorted ref:
-the Apps view anchored on the stray and listed nothing under Sutra. `active_roots` orders parent-less
-records by subtree size, then age; `live_root`, `_root_ref`, `_tenant_root` and the I-D6 reuse share
-it. Tests: `test_project_import` +5, `test_root_invariant` +2. DeepSeek review ADVISORY, codex review PASS
-and a three-lens verification workflow folded (successor identity keyed on the folder's mint evidence,
-not on origin; a second folder onto one successor leaves cwd and count alone; frozen departments keep
-their live subtree in the root pick).
-
-## v2.267.1 (2026-09-13)
-
-**Shadow goal creation and delegation fixes.** Merges the shadow/joy work: delegating a task now
-opens the chat it starts as a normal Sutra chat, the task can be signed off, and Shadow settings get
-their own page. `DELEGATES[sid] = rt` moves earlier in `spawn_delegate_session` so the send guard
-sees a delegate before the manifest turn, with register/attach/pump still landing after the spawn
-turn. New coverage: `test_shadow_delegate.py` (8) and `test_shadow_home.js` (536 lines).
-
-**Known red at publish:** `test_attach_existing.py::test_D5_the_delegate_spawn_path_is_unchanged`
-(INVARIANT 3) still pins the previous call order and fails against the deliberate reordering above;
-the invariant question is open. `test_transcript_ir.py`'s Codex canary is also red on machines whose
-rollouts contain `agent_message`, a type `from_codex_file` drops — pre-existing, unchanged since
-v2.267.0. Published at founder direction with both known.
+**A real beta channel, and a codified promote flow for everyone (CONTRIBUTING.md).** Testing a
+change no longer means a local dev build (which is forbidden). A `-beta.N-desktop` tag builds a
+COEXISTING "Sutra Beta" app -- its own bundle id (`os.sutra.ui.beta`), port (8331) and data
+namespace (`~/.sutra-native-beta`, `~/.sutra-ui-beta`) -- published as a prerelease, so
+`releases/latest` (the production auto-updater and the website) never sees it. Install the beta to
+verify beside production without touching its data; promote to stable; every app applies it on the
+next restart. `scripts/sutra-release.sh beta|promote` drives it and bumps the manifests together so
+the guard footgun cannot recur. main.js derives the channel from a baked marker (not app.getName(),
+which electron-packager leaves as "Sutra"); a coverage test fails if any backend data path escapes
+the beta namespace.
 
 ## v2.267.0 (2026-09-13)
 
