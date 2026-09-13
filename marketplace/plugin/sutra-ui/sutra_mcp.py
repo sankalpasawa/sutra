@@ -476,14 +476,21 @@ if _SHADOW_ON:
         import time as _time
         rows = _session_reader.list_sessions(limit=100)
         now = _time.time()
-        live = sum(1 for r in rows
-                   if _session_reader.liveness(r.get("mtime") or 0, now) == "live")
+        # ONE liveness rule for every reader: session_reader.liveness()
+        # answers active | idle | stale, and "active" is what sessions_list
+        # above, the rail and the SSE stream all call live. This counted a
+        # value ("live") the helper never returns and reported 0 forever
+        # while sessions_list showed 3 active (Shadow finding, 2026-09-10).
+        states = [_session_reader.liveness(r.get("mtime") or 0, now)
+                  for r in rows]
+        live = sum(1 for s in states if s == "active")
         detail = _providers.active_provider_detail()
         # Bounded + redacted by construction: counts and enum-ish fields only.
         # No tokens, no keys, no file contents, no env -- pinned by test.
         return _text(json.dumps({
             "sessions_total": len(rows),
             "sessions_live": live,
+            "sessions_idle": sum(1 for s in states if s == "idle"),
             "provider": detail.get("id"),
             "permission_mode": _providers.effective_permission_mode(
                 _providers.load_settings()["permission_mode"]),

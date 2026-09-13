@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-12
+**status**: active · **updated**: 2026-09-13
+## 2.265.19 (2026-09-13)
+
+- **Shadow state tells the truth after a restart (mission m-320173edefa9).** `shadow_app_state.sessions_live` counted a liveness value that never occurs and read 0 forever; it now counts `active`, the rule every other reader uses (`sessions_idle` added). Tests can no longer write the live `~/.sutra-ui/shadow`: conftest redirects the home before collection and re-asserts it before every test, and `shadow_ledger.shadow_home()` refuses the default home under pytest (34 fixture missions and 57 fixture ledger rows had leaked that way). A restart no longer pauses watch missions, and a mission the app itself paused resumes on its own when its chat re-attaches, under Start's cap and one-per-chat rule; delegates stay fenced. `shadow_archive_fixtures.py` moves the leaked debris aside (dry-run by default). Opt-in `test_shadow_smoke_cycle.py` runs one real watch -> say -> verify cycle. Tests: app state 2, home guard 4, restart 10, archive 3.
+
 ## 2.265.18 (2026-09-12)
 
 - **Apps publish from the header; installed apps learn about updates (Publish program P3+P4).** With `flags.apps_publish` on, **Publish…** joins Edit in chat on any of your apps: it opens a chat that reads the record, runs the checks, asks for the version bump and PROPOSES through `sutra_app_publish`; your approval in the panel exports the app, assigns the version, signs the registry entry with this machine's key and stages entry and tarball under `~/.sutra-ui/publish/`; the copy into the registry and the push stay yours. An app built before the frameworks is brought in first, like Edit. **Check for updates** in the Apps bar asks the registries and writes what it found (one event); an installed app with a newer version reads "update available" and offers **Update**, a verified install. Kit 1.1.1: the C8 check reads a published app's publish block as the desktop's. The Sutra Apps registry now holds its first app, the kit's own lending example. Tests: apps panel 27 (+4), apps api 40 (+5), mcp 6 (+2).

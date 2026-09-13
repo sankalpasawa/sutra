@@ -20,9 +20,42 @@ KINDS = ("instructions", "missions", "actions")
 MAX_ROW_BYTES = 8192
 
 
+DEFAULT_HOME = "~/.sutra-ui/shadow"
+
+
+def shadow_home():
+    """The shadow home, resolved at CALL time: SUTRA_SHADOW_HOME or the
+    default. The one resolver for every Shadow store (ledgers here, the
+    mission files, the watch lists) so they can never disagree.
+
+    REFUSES THE DEFAULT HOME UNDER PYTEST. On 2026-09-08..12 whole-directory
+    test runs wrote 34 "floor choke fixture" missions and 57 "unwatch fake-*"
+    ledger rows into the operator's live home: nineteen test modules pop
+    SUTRA_SHADOW_HOME at teardown, so every module that only set it at import
+    time (test_shadow_floor_choke, test_shadow_chat_publication) ran against
+    the real files once one of those ran first. Same failure class as the
+    registry reset (lib/placement_engine.py, 2.264.0) and the same answer:
+    while pytest is running a test and the home still resolves to the
+    default, raise instead of writing. A deliberate integration test says so
+    with SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1 (the smoke cycle does).
+    """
+    home = os.path.expanduser(os.environ.get("SUTRA_SHADOW_HOME") or DEFAULT_HOME)
+    if os.environ.get("PYTEST_CURRENT_TEST") \
+            and os.environ.get("SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS") != "1" \
+            and os.path.realpath(home) == os.path.realpath(
+                os.path.expanduser(DEFAULT_HOME)):
+        raise RuntimeError(
+            "shadow_ledger: refusing to touch the live shadow home %s from a "
+            "test (%s). Set SUTRA_SHADOW_HOME to a temp dir (conftest.py does; "
+            "a teardown that pops it is re-asserted before the next test), or "
+            "declare a deliberate integration test with "
+            "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1."
+            % (home, os.environ.get("PYTEST_CURRENT_TEST")))
+    return home
+
+
 def _home():
-    return os.path.expanduser(
-        os.environ.get("SUTRA_SHADOW_HOME", "~/.sutra-ui/shadow"))
+    return shadow_home()
 
 
 def _path(kind):

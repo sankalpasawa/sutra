@@ -450,11 +450,21 @@ def recover_on_boot():
     """
     store = mission_engine.MissionStore()
     for m in store.list(states=("running",)):
-        if m["id"] not in RUNNING:
-            mm = store.transition(m["id"], "paused",
-                                  "app restarted -- resume to continue")
-            mm["pause_reason"] = "app_restart"
-            store.save(mm)
+        if m["id"] in RUNNING:
+            continue
+        if "never_say" in m.get("invariants", ()):
+            # a watch mission has no loop to orphan: run_mission returns
+            # before saying anything and the observers are rebuilt from the
+            # watch list, so pausing it only hid it (the one real mission
+            # stuck paused since 2026-09-07 was exactly this)
+            shadow_ledger.append("missions", {
+                "mission_id": m["id"], "state": "running",
+                "note": "survived app restart (watch: no loop to lose)"})
+            continue
+        mm = store.transition(m["id"], "paused",
+                              "app restarted -- resume to continue")
+        mm["pause_reason"] = "app_restart"
+        store.save(mm)
     # after the pauses above, so a just-paused mission is fenced too
     for m in store.list():
         sid = m.get("target_session")
@@ -462,6 +472,91 @@ def recover_on_boot():
                 and m.get("state") not in mission_engine.TERMINAL
                 and sid not in DELEGATES):
             _ORPHANED.add(sid)
+
+
+def _left_paused(mid, why):
+    shadow_ledger.append("missions", {
+        "mission_id": mid, "state": "paused",
+        "note": "left paused after restart: %s" % why[:400]})
+
+
+async def resume_after_restart(ensure_runtime_async, validated_say):
+    """Undo the pause the APP itself applied, where that is safe.
+
+    recover_on_boot() pauses honestly; this is the other half, so a restart
+    stops being a founder chore for missions nothing was wrong with. Only
+    `pause_reason == "app_restart"` is touched: a founder pause, a floor
+    pause and a confirmation pause are decisions, not machine trouble.
+
+    THE SAME ADMISSION RULES AS START (codex P1, 2026-09-13): the cap and
+    one running mission per target session are what MissionScheduler.start
+    enforces, and an automatic resume must not be the one path around them.
+    paused -> queued is not a legal edge, so a mission that does not fit
+    stays paused with a ledger note instead of being queued.
+
+    Per mission, oldest first:
+      watch (never_say)      -> running; no loop to launch
+      existing-target say    -> re-attach through ensure_runtime_async (the
+                                Resume handler's own step), then the Resume
+                                handler's own two lines: running + _launch
+      delegate (target new)  -> stays paused: the fence in recover_on_boot
+                                exists because the delegate process may
+                                still be writing that transcript
+    A target whose transcript is gone stays paused with a note and no
+    re-attach attempt (34 leaked fixture rows must not spawn 34 claudes).
+    No feed items here: emit_mission_feed dedupes on mission+state+version,
+    so an app_restart item could collide with an earlier pause (codex P2);
+    the ledger note is the record.
+    """
+    store = mission_engine.MissionStore()
+    running = store.list(states=("running",))
+    running_sids = {m.get("target_session") for m in running
+                    if m.get("target_session")}
+    running_n = len(running)
+    resumed, left = [], []
+    paused = sorted(store.list(states=("paused",)),
+                    key=lambda m: m.get("created_ns", 0))
+    for m in paused:
+        if m.get("pause_reason") != "app_restart":
+            continue
+        mid = m["id"]
+        sid = m.get("target_session")
+        if "never_say" in m.get("invariants", ()):
+            store.transition(mid, "running",
+                             "resumed after restart (watch: no loop to lose)")
+            resumed.append(mid)
+            continue
+        if m.get("target_mode") != "existing" or not sid:
+            _left_paused(mid, "delegate session stays fenced until the "
+                              "founder resumes or stops it")
+            left.append(mid)
+            continue
+        if sid in running_sids:
+            _left_paused(mid, "session %s already has a running mission"
+                              % sid)
+            left.append(mid)
+            continue
+        if running_n >= mission_engine.MAX_RUNNING:
+            _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+            left.append(mid)
+            continue
+        if not session_reader.read_session(sid):
+            _left_paused(mid, "target transcript %s not found" % sid)
+            left.append(mid)
+            continue
+        try:
+            await ensure_runtime_async(sid)
+        except Exception as exc:      # noqa: BLE001 -- recorded, not hidden
+            _left_paused(mid, "could not re-attach to %s: %s"
+                              % (sid, str(exc)[:160]))
+            left.append(mid)
+            continue
+        store.transition(mid, "running", "resumed after restart")
+        _launch(mid, validated_say, None)
+        running_sids.add(sid)
+        running_n += 1
+        resumed.append(mid)
+    return {"resumed": resumed, "left": left}
 
 
 def shutdown():

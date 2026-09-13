@@ -2011,6 +2011,13 @@ async def _shadow_recover():
                 shadow_runner.make_decider(_shadow_args, _shadow_workdir()))
         except Exception:
             pass
+        try:
+            # AFTER the decider is bound: a resumed loop is launched with
+            # whatever DEFAULT_DECIDER holds at launch time
+            await shadow_runner.resume_after_restart(
+                _ensure_target_runtime, _validated_say)
+        except Exception:
+            pass
 
 
 @app.on_event("shutdown")

@@ -44,6 +44,8 @@ import os
 import shutil
 import tempfile
 
+import pytest
+
 collect_ignore = ["seo_agent", "electron/payload", "electron/dist"]
 
 
@@ -86,5 +88,43 @@ def _redirect_agent_data_to_temp() -> None:
     atexit.register(shutil.rmtree, home, True)
 
 
+_SHADOW_TEST_HOME = ""
+
+
+def _redirect_shadow_home_to_temp() -> None:
+    """Shadow's home (missions, ledgers, watch lists), by the same rule.
+
+    On 2026-09-08..12 whole-directory runs wrote 34 "floor choke fixture" missions and 57
+    "unwatch fake-*" ledger rows into ~/.sutra-ui/shadow. Nineteen test modules pop
+    SUTRA_SHADOW_HOME at teardown (test_attach_existing, test_mission_engine, test_shadow_runner
+    ...), so a module that only set it at import time ran against the live home once any of
+    them had run first. Two layers close it: this redirect before collection, and the
+    per-test re-assert below for the pops. shadow_ledger.shadow_home() refuses the default
+    home under pytest as the backstop.
+    """
+    global _SHADOW_TEST_HOME
+    live = os.path.realpath(os.path.expanduser("~/.sutra-ui/shadow"))
+    current = os.environ.get("SUTRA_SHADOW_HOME", "").strip()
+    if current:
+        resolved = os.path.realpath(os.path.expanduser(current))
+        if resolved != live and not resolved.startswith(live + os.sep):
+            _SHADOW_TEST_HOME = current
+            return  # caller-provided temp home: theirs, not ours
+    home = tempfile.mkdtemp(prefix="sutra-ui-pytest-shadow-")
+    os.environ["SUTRA_SHADOW_HOME"] = home
+    _SHADOW_TEST_HOME = home
+    atexit.register(shutil.rmtree, home, True)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    """A teardown that popped SUTRA_SHADOW_HOME must not send the NEXT test to the live home.
+    Runs before the test's own setup (tryfirst), so a module that binds its own temp home in
+    setUp() still wins."""
+    if _SHADOW_TEST_HOME and not os.environ.get("SUTRA_SHADOW_HOME", "").strip():
+        os.environ["SUTRA_SHADOW_HOME"] = _SHADOW_TEST_HOME
+
+
 _redirect_registry_home_to_temp()
 _redirect_agent_data_to_temp()
+_redirect_shadow_home_to_temp()

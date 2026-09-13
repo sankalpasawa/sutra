@@ -113,9 +113,9 @@ MAX_RUNNING = 5
 
 
 def _home():
-    d = os.path.join(os.path.realpath(os.path.expanduser(
-        os.environ.get("SUTRA_SHADOW_HOME", "~/.sutra-ui/shadow"))),
-        "missions")
+    # one resolver for every Shadow store, with the pytest refusal that keeps
+    # a test from writing mission files into the live home (shadow_ledger)
+    d = os.path.join(os.path.realpath(shadow_ledger.shadow_home()), "missions")
     os.makedirs(d, exist_ok=True)
     return d
 
