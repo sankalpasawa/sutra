@@ -85,10 +85,17 @@ jobs:
           set -euo pipefail
           case "$TAG" in
             v*-desktop) ;;
-            *) echo "::error::tag '$TAG' is not vX.Y.Z-desktop -- this pipeline only releases desktop tags"
+            *) echo "::error::tag '$TAG' is not vX.Y.Z[-beta.N]-desktop -- this pipeline only releases desktop tags"
                exit 1 ;;
           esac
           want="${TAG#v}"; want="${want%-desktop}"
+          # A beta tag is vX.Y.Z-beta.N-desktop: strip the -beta.N so it is
+          # validated against the SAME base version in the manifests. This lets a
+          # branch cut beta.1, beta.2 ... of one target version without bumping
+          # the manifests each time; only the promote-to-stable tag needs them at
+          # exactly X.Y.Z. (Channel is recomputed from the tag in the jobs that
+          # need it -- a $GITHUB_ENV here would not cross into the dmg job.)
+          want="${want%-beta.*}"
           plugin="$(jq -r .version marketplace/plugin/.claude-plugin/plugin.json)"
           market="$(jq -r '.plugins[] | select(.name=="core") | .version' .claude-plugin/marketplace.json)"
           echo "tag=$want  plugin.json=$plugin  marketplace.json(core)=$market"
@@ -195,12 +202,18 @@ jobs:
           # does not make the build unsigned -- it makes the build FAIL, which
           # is the intended direction for that mistake.
           SUTRA_RELEASE_CI: "1"
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           if [ -n "${APPLE_NOTARY_KEY:-}" ]; then
             printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
             export SUTRA_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
           fi
+          # A -beta.N tag builds the coexisting "Sutra Beta" app (own id, port,
+          # data); anything else builds stable. Computed here from the tag, not
+          # inherited from guard (env does not cross jobs).
+          case "$TAG" in *-beta.*-desktop) export SUTRA_CHANNEL=beta ;; *) export SUTRA_CHANNEL=stable ;; esac
+          echo "building channel: $SUTRA_CHANNEL"
           ./make-dmg.sh --arch ${{ matrix.arch }}
           rm -f "$RUNNER_TEMP/notary.p8"
 
@@ -271,6 +284,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          # A -beta.N tag is a PRERELEASE: GitHub never returns it from
+          # /releases/latest, so the production auto-updater (updates.py reads
+          # releases/latest) and the website download link ignore it entirely.
+          # That single flag is what keeps a beta invisible to everyone who did
+          # not deliberately install it.
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-beta.') }}
           files: |
             marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg
             marketplace/plugin/sutra-ui/electron/dist/Sutra-${{ matrix.arch }}.dmg.sha256

@@ -57,8 +57,18 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UI="$(cd "$HERE/.." && pwd)"
-APP_NAME="Sutra"
-BUNDLE_ID="os.sutra.ui"
+
+# CHANNEL: stable (Sutra) or beta (Sutra Beta), from SUTRA_CHANNEL. Beta is a
+# fully separate app -- its own name, bundle id, and (via main.js reading the
+# `channel` marker written below) its own port and data namespace -- so a beta
+# installed to test a flow coexists with production instead of clobbering it
+# (founder, 2026-09-13). CI sets SUTRA_CHANNEL=beta for a -beta.N tag.
+SUTRA_CHANNEL="${SUTRA_CHANNEL:-stable}"
+case "$SUTRA_CHANNEL" in
+  beta)   APP_NAME="Sutra Beta"; BUNDLE_ID="os.sutra.ui.beta" ;;
+  stable) APP_NAME="Sutra";      BUNDLE_ID="os.sutra.ui" ;;
+  *) echo "make-dmg.sh: SUTRA_CHANNEL must be stable or beta, not '$SUTRA_CHANNEL'" >&2; exit 2 ;;
+esac
 PAYLOAD="$HERE/payload"
 DIST="$HERE/dist"
 ENTITLEMENTS="$HERE/entitlements.plist"
@@ -178,6 +188,14 @@ APP="$DIST/$APP_NAME-darwin-$PKG_ARCH/$APP_NAME.app"
 # uses to move bundles around.
 /usr/bin/ditto "$PAYLOAD" "$APP/Contents/Resources/payload" \
   || die "copying the payload into the bundle failed"
+
+# The channel marker main.js reads (readChannel) to pick its port and data
+# namespace. Written for BOTH channels so the signal is explicit, never
+# inferred; it sits inside the bundle BEFORE signing so it is covered by the
+# signature. Absent (an older or hand-built bundle) still means stable.
+printf '%s\n' "$SUTRA_CHANNEL" > "$APP/Contents/Resources/channel" \
+  || die "writing the channel marker failed"
+echo "  channel: $SUTRA_CHANNEL ($APP_NAME, $BUNDLE_ID, port $([ "$SUTRA_CHANNEL" = beta ] && echo 8331 || echo 8330))"
 
 # THE GUARD THAT WOULD HAVE CAUGHT IT ON THE BUILD MACHINE. The existing
 # python3 check below could not: `-x` FOLLOWS the link, and on the builder the
