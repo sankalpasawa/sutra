@@ -110,6 +110,35 @@ sys.stdin.readline()
 """
 
 
+# Announces its session id and then HOLDS THE TURN OPEN until argv[2] exists.
+# That gap is the whole subject of test_12: it is the ~44s a real delegate
+# spends on its first agentic turn, made deterministic.
+FAKE_SLOW = r"""#!/usr/bin/env python3
+import json, os, sys, time
+log, gate = sys.argv[1], sys.argv[2]
+sid = "delegate-slow-%d" % os.getpid()
+def emit(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+line = sys.stdin.readline()
+try:
+    msg = json.loads(line)["message"]["content"][0]["text"]
+except Exception:
+    msg = ""
+with open(log, "a") as handle:
+    handle.write(json.dumps({"msg": msg}) + "\n")
+emit({"type": "system", "subtype": "init", "session_id": sid,
+      "model": "fake", "tools": [], "mcp_servers": [],
+      "slash_commands": [], "permissionMode": "plan", "cwd": os.getcwd()})
+while not os.path.exists(gate):
+    time.sleep(0.01)
+emit({"type": "stream_event", "session_id": sid,
+      "event": {"delta": {"type": "text_delta", "text": "done at last"}}})
+emit({"type": "result", "subtype": "success", "is_error": False,
+      "session_id": sid, "duration_ms": 1, "num_turns": 1,
+      "total_cost_usd": 0.0})
+"""
+
+
 def _write_fake(directory, body, name):
     path = os.path.join(directory, name)
     with open(path, "w") as handle:
@@ -376,6 +405,108 @@ class TestSpawnDelegateSession(unittest.TestCase):
         self.assertEqual(self.registered, [])
         self.assertEqual(
             [k for k in shadow_runner.DELEGATES if k and "dead" in str(k)], [])
+
+    def test_12_the_chat_is_published_before_the_first_turn_ends(self):
+        """THE 44-SECOND WAIT (founder, 2026-09-13).
+
+        Publication used to sit after demux_turn returned -- i.e. after the
+        whole first agentic turn -- so a founder who started a task had
+        nothing to open for the entire spawn. It now runs at the CLI's own
+        session-id announcement.
+
+        The proof is not "publish was called": it is that publish was called
+        while spawn_delegate_session HAS NOT RETURNED and the child has not
+        emitted its result. The fake holds the turn open on a gate file, so
+        that window is real rather than a race the test happens to win.
+        """
+        self.slow = _write_fake(self.tmp, FAKE_SLOW, "slow-claude")
+        gate = os.path.join(self.tmp, "open-the-gate")
+        published = []
+
+        def build_args():
+            return [sys.executable, self.slow, self.log, gate]
+
+        async def go():
+            task = asyncio.ensure_future(shadow_runner.spawn_delegate_session(
+                build_args, self.tmp, "manifest", self._register,
+                publish=lambda sid: published.append(sid) or "chat-1"))
+            # wait for publication, NOT for the spawn
+            for _ in range(1000):
+                if published:
+                    break
+                await asyncio.sleep(0.01)
+            mid_turn = {
+                "published": list(published),
+                # the turn is demonstrably still open...
+                "spawn_returned": task.done(),
+                # ...yet the chat is already ours, so the send guard refuses
+                # a pane that opens it and types
+                "driving": bool(published
+                                and shadow_runner.driving(published[0])),
+                # and NOT yet wired into the say path -- register, the
+                # observer and the pump all stay after the turn
+                "registered": list(self.registered),
+            }
+            open(gate, "w").close()
+            sid = await asyncio.wait_for(task, 20)
+            rt = self.registered[0][1]
+            proc = rt.proc
+            rt.kill_group()
+            await _reap(proc)
+            return sid, mid_turn
+
+        sid, mid = asyncio.run(go())
+
+        # 1. the chat existed while the first turn was still running
+        self.assertEqual(mid["published"], [sid],
+                         "the chat is published at the session id, once")
+        self.assertFalse(mid["spawn_returned"],
+                         "and BEFORE the first turn completed")
+        # 2. it was safe to expose: Shadow already owns it, so a pane cannot
+        #    become a second writer on the same transcript
+        self.assertTrue(mid["driving"],
+                        "an exposed chat must already be Shadow-owned")
+        # 3. the pieces that must NOT move stayed put -- attach_observer and
+        #    the pump run a second demux on the same stdout
+        self.assertEqual(mid["registered"], [],
+                         "register/observer/pump stay after the turn")
+        # 4. the spawn still ends exactly as it did
+        self.assertEqual([s for s, _ in self.registered], [sid])
+        self.assertIs(shadow_runner.DELEGATES[sid], self.registered[0][1])
+        self.assertTrue(shadow_runner._BOUNDARIES[sid].empty(),
+                        "boot boundary still must not queue")
+        # 5. and exactly one spawn row, as before -- earlier, not doubled
+        rows = [r for r in shadow_ledger.read("actions", 50)
+                if r.get("kind") == "spawn" and sid in (r.get("summary") or "")]
+        self.assertEqual(len(rows), 1, rows)
+        self.assertIn("plan mode", rows[0]["summary"])
+
+    def test_13_a_child_that_never_announces_an_id_publishes_nothing(self):
+        """The property the old `got_result and sid` gate was really buying:
+        a provider that dies at its argv parser (the deepseek case) must not
+        leave a chat in the rail. It never emits a session id, so the early
+        publish never fires -- the gate moved, it did not disappear."""
+        build_args = self._build_args(self.dead)
+        published = []
+        _RecordingRuntime.procs = []
+        original = session_runtime.SessionRuntime
+        session_runtime.SessionRuntime = _RecordingRuntime
+
+        async def go():
+            with self.assertRaises(RuntimeError):
+                await shadow_runner.spawn_delegate_session(
+                    build_args, self.tmp, "manifest", self._register,
+                    publish=lambda sid: published.append(sid))
+            for proc in _RecordingRuntime.procs:
+                await _reap(proc)
+
+        try:
+            asyncio.run(go())
+        finally:
+            session_runtime.SessionRuntime = original
+        self.assertEqual(published, [],
+                         "a session that never started is never published")
+        self.assertEqual(self.registered, [])
 
 
 if __name__ == "__main__":

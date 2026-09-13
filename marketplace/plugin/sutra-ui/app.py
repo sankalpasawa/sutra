@@ -2174,10 +2174,21 @@ async def api_shadow_chat(request: Request):
     if "mission" in blocks:
         mspec = blocks["mission"]
         store = _mission_engine.MissionStore()
+        mode = mspec.get("target_mode") or "existing"
+        # THE CHAT IN SCOPE IS THE TARGET -- the same rule the goal branch
+        # above already follows, and SHADOW.md lets the model omit the id
+        # ("<sid or omit>"). Without this an existing-target mission proposed
+        # inside a chat landed with target_session None: the card said "an
+        # existing chat" with no name and Start had nothing to attach to.
+        # Only for target_mode "existing" -- a delegated mission provisions
+        # its OWN session and must never be pointed at the founder's chat.
+        target = mspec.get("target_session")
+        if mode == "existing" and not target:
+            target = scope_id
         try:
             m = store.create(mspec["objective"], mspec["template"],
-                             target_mode=mspec.get("target_mode") or "existing",
-                             target_session=mspec.get("target_session"),
+                             target_mode=mode,
+                             target_session=target,
                              done_when=mspec.get("done_when"),
                              manifest=mspec.get("manifest"))
             store.transition(m["id"], "brief_confirm", "proposed in chat")

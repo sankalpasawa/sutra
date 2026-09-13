@@ -496,14 +496,23 @@ if (typeof document !== "undefined" && typeof fetch !== "undefined"
    has not moved yet, so the row keeps saying READY while Shadow is already
    running the task.
 
-   Nothing in Shadow polls, and this does not start it polling: THREE bounded
+   Nothing in Shadow polls, and this does not start it polling: FOUR bounded
    re-reads, on these two actions only, each skipped the moment the mission
    has left brief_confirm. No timer is ever rescheduled and nothing runs after
    the last one. The unknown-row case (a retry CLONE has no row in the list
    yet) reloads on purpose -- that is precisely the state the founder is
-   waiting to see appear. */
+   waiting to see appear.
+
+   THE FIRST STEP IS 250ms, NOT 1000ms (founder, 2026-09-13). Measured on the
+   live server: the delegate's session id lands at 367ms and the chat is
+   published -- mission stamped, chat_store segment begun -- at 394ms. The
+   first re-read was simply scheduled later than the thing it was waiting for
+   now happens, so the founder sat 713ms in front of a row that said READY
+   about a chat that already existed (task card openable at 1107ms; 450ms
+   with this ladder). The LAST step moved 8000 -> 5000: the window closes
+   sooner than it used to, which is the opposite of polling. */
 const SH_START_ACTIONS = ["start_now", "retry"];
-const SH_START_BACKOFF = [1000, 3000, 8000];
+const SH_START_BACKOFF = [250, 750, 2000, 5000];
 
 function shadowWatchStart(mid){
   if (typeof setTimeout !== "function" || !mid) return;
@@ -512,7 +521,7 @@ function shadowWatchStart(mid){
       const S_ = (typeof S !== "undefined") ? S : {};
       const row = (S_.shadowMissions || []).find(m => m && m.id === mid);
       if (row && row.state !== "brief_confirm") return;   /* it moved */
-      if (typeof loadShadowHome === "function") loadShadowHome();
+      if (typeof loadShadowHome === "function") loadShadowHome(true);
     }, ms);
   });
 }
@@ -539,7 +548,7 @@ async function shadowMissionAct(mid, action, extra){
         take_over: "You have the chat \u2014 Shadow stepped back." };
       showNudge(said[action] || "Done.");
     }
-    if (typeof loadShadowHome === "function") loadShadowHome();
+    if (typeof loadShadowHome === "function") loadShadowHome(true);
     /* the id the SERVER names, not mid: retry clones the brief into a new
        mission and starts the clone, so mid is the row that will never move */
     if (doc && SH_START_ACTIONS.indexOf(action) !== -1)
