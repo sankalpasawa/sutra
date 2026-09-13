@@ -2,7 +2,24 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.266.1 (2026-09-13, HEAD)
+## v2.267.0 (2026-09-13, HEAD)
+
+**Drag-and-drop in the Departments studio now commits.** Dragging one department onto another has
+always composed a validated MOVE plan with blocking rings; the only way to commit it was copying a
+CLI string. There is now an **Apply** button (Org -> Reorg plans), gated on a plan that has moves,
+a rationale, and zero blocking findings.
+
+**It edits linkages and nothing else.** A new `org_apply.py` refuses any op that is not a move, and
+a move sets one department's `parent_ref` plus an audit line under the registry -- it re-mints zero
+placements and touches no project directory, transcript, git repo, or any file outside
+`~/.sutra-native/user-kit`. Proven live: after a real move, `~/.claude/projects`, `~/.sutra-ui/chats`
+and the project folders were byte-for-byte unchanged. Apply lives in its own module because
+`org_api.py` is build-forbidden from calling `restructure`; the endpoint (`POST /api/org/apply`)
+re-validates server-side against a fresh registry read and refuses a cycle (ORG-006) or a drifted
+plan (ORG-010), so nothing invalid or stale is written. Reversible: dragging back and applying
+restores the tree exactly.
+
+## v2.266.1 (2026-09-13)
 
 **One supported Python, 3.11-3.12, in every build -- and the release bundles 3.12.14.** The pins
 had quietly outgrown the interpreter half the builds used: `cryptography==46.0.0` ships only a

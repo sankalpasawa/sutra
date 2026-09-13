@@ -1941,6 +1941,33 @@ function wire(){
   if(dc) dc.onclick=()=>{ S.draft={ops:[],base:{...PLANS[0].base},rationale:"",
     plan_origin:"studio-drag",validated_at_ms:null}; S.drift=false;
     invalidateSim(); saveDraft(); render(); };
+  const ap=scBody.querySelector("#applyPlan");
+  if(ap) ap.onclick=async ()=>{
+    /* Commit the drag-composed MOVEs. The server re-validates and refuses a
+       stale or blocked plan (409), so this button is a request, not the
+       authority. On success the draft is cleared and the tree re-read, so the
+       studio shows the registry as it now is rather than the plan it just was. */
+    if (S.applyBusy) return;
+    S.applyBusy=true; S.applyError=null; render();
+    try {
+      const r = await apiPost("/api/org/apply",
+        { ops:S.draft.ops, base:S.draft.base, now_ms:Date.now() });
+      /* fresh registry, empty plan, back to the live tree */
+      S.draft={ops:[],base:{...PLANS[0].base},rationale:"",plan_origin:"studio-drag",validated_at_ms:null};
+      S.drift=false; invalidateSim(); saveDraft();
+      await loadOrg();
+      S.view="live";
+      const nmv = (r&&r.count)||0;
+      S.toast = nmv+" move"+(nmv===1?"":"s")+" applied — departments re-parented, nothing else changed";
+      setTimeout(()=>{ if(S.toast){ S.toast=null; render(); } }, 5000);
+    } catch(e) {
+      /* _fail flattens the server detail into e.message (a 409's message names
+         the blocking codes; a 400 is the malformed-plan reason). The draft is
+         untouched on failure, so the findings panel re-simulates and the same
+         blocks reappear as rings on the tree. */
+      S.applyError = (e && e.message) || "apply failed";
+    } finally { S.applyBusy=false; render(); }
+  };
   const cc=scBody.querySelector("#copyCmd");
   if(cc) cc.onclick=()=>{ const s="placement_engine.py org plan --import ~/.sutra-ui/drafts/"+PLANS[0].plan_id+".json";
     try{ navigator.clipboard.writeText(s); cc.textContent="copied"; setTimeout(()=>cc.textContent="copy",1200);}catch(e){} };
