@@ -282,9 +282,10 @@ class SessionRuntime:
 
         `claude` spawns helpers; signalling only the parent leaves them holding
         the stdout pipe, so the read loop never ends and the turn never actually
-        stops. spawn() uses start_new_session=True, which makes the child a
-        group leader so this reaches its descendants too. Idempotent: a dead or
-        absent process returns False and signals nothing.
+        stops. spawn() uses process_group=0, which makes the child a group
+        leader so this reaches its descendants too (a new group, not a new
+        session -- see spawn() for why the session detach was dropped).
+        Idempotent: a dead or absent process returns False and signals nothing.
         """
         p = self.proc
         if p is None or p.returncode is not None:
@@ -329,8 +330,13 @@ class SessionRuntime:
             # this limit.
             limit=8 * 1024 * 1024,
             env=dict(os.environ, **(env or {})),  # no ANTHROPIC_API_KEY -> subscription auth
-            # own process group, so an interrupt can signal the whole tree
-            start_new_session=True,
+            # A new process GROUP, not a new SESSION -- kill_group needs a group
+            # leader, nothing needs a session leader. A session leader becomes
+            # its own TCC-responsible process on macOS and loses Sutra's
+            # Files-and-Folders grants, so a CLI spawned under ~/Desktop died at
+            # startup with `EPERM: uv_cwd`. See AcpRuntime.spawn for the full
+            # note; Claude has the same latent bug and the same fix.
+            process_group=0,
         )
         self.proc = p
         self.key = key

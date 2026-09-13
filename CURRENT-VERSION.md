@@ -2,7 +2,23 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.271.4 (2026-09-13, HEAD)
+## v2.271.5 (2026-09-13, HEAD)
+
+**Providers work inside ~/Desktop again — the TCC session-detach bug (found by 2.271.4's stderr fix).**
+2.271.4 made the ACP child's stderr visible, and the very next DeepSeek failure named its real cause:
+`EPERM: uv_cwd` — the CLI could not read its own working directory. The workdir was under `~/Desktop`
+(a macOS TCC-protected folder). Providers were spawned with `start_new_session=True`; a session leader
+becomes its OWN TCC-responsible process on macOS and stops inheriting the Sutra app's Files-and-Folders
+grants, so the child could not read a Desktop/Documents/Downloads path it was launched into — even
+though the Sutra app itself is granted Desktop access (confirmed in the TCC db: `os.sutra.ui`
+Desktop=allowed, but the detached child was unattributed, so even Full Disk Access would not have
+reached it). Fix: spawn the three provider CLIs (DeepSeek/Claude/Codex) with `process_group=0` instead —
+a new process GROUP, not a new SESSION. `kill_group` only ever needed a group leader (killpg reaches
+descendants); dropping the session detach keeps the child attributed to `os.sutra.ui` so the app's grant
+covers it. Tests: `test_provider_spawn_group.py` (pins process_group=0, forbids start_new_session),
+`test_acp_stderr.py`.
+
+## v2.271.4 (2026-09-13)
 
 **DeepSeek "ACP process closed stdout" — the first-run race, and the swallowed reason.** A
 DeepSeek turn could die with only "could not start '.../deepseek' in <cwd>: ACP process closed

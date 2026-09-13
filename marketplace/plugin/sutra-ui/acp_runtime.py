@@ -573,7 +573,20 @@ class AcpRuntime:
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
             env=dict(os.environ, **(env or {})),
-            start_new_session=True,
+            # A new process GROUP, not a new SESSION. kill_group only needs the
+            # child to be a group leader (killpg reaches its descendants), and
+            # that is all process_group=0 gives. start_new_session=True ALSO
+            # made it a session leader -- and on macOS a session leader becomes
+            # its own TCC-responsible process, so it STOPS inheriting Sutra's
+            # Files-and-Folders grants (Desktop/Documents/Downloads). A provider
+            # spawned into a workdir under ~/Desktop then died at startup with
+            # `EPERM: uv_cwd` -- process.cwd() denied -- even though the Sutra
+            # app itself is granted Desktop access (measured 2026-09-13: the
+            # DeepSeek child, TCC-unattributed, could not read
+            # ~/Desktop/development/asawa-holding). Staying in Sutra's session
+            # keeps the child attributed to os.sutra.ui, so the app's grant
+            # covers it. Same group-kill, no session detach.
+            process_group=0,
         )
         self.proc = p
         self.key = key
