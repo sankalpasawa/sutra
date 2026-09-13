@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.267.0 (2026-09-13, HEAD)
+## v2.267.1 (2026-09-13, HEAD)
+
+**A real beta channel, and a codified promote flow for everyone (CONTRIBUTING.md).** Testing a
+change no longer means a local dev build (which is forbidden). A `-beta.N-desktop` tag builds a
+COEXISTING "Sutra Beta" app -- its own bundle id (`os.sutra.ui.beta`), port (8331) and data
+namespace (`~/.sutra-native-beta`, `~/.sutra-ui-beta`) -- published as a prerelease, so
+`releases/latest` (the production auto-updater and the website) never sees it. Install the beta to
+verify beside production without touching its data; promote to stable; every app applies it on the
+next restart. `scripts/sutra-release.sh beta|promote` drives it and bumps the manifests together so
+the guard footgun cannot recur. main.js derives the channel from a baked marker (not app.getName(),
+which electron-packager leaves as "Sutra"); a coverage test fails if any backend data path escapes
+the beta namespace.
+
+## v2.267.0 (2026-09-13)
 
 **Drag-and-drop in the Departments studio now commits.** Dragging one department onto another has
 always composed a validated MOVE plan with blocking rings; the only way to commit it was copying a

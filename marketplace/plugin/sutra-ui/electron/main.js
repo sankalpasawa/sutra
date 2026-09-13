@@ -49,8 +49,56 @@ const net = require("net");
 const provision = require("./provision.js");
 
 const HOST = "127.0.0.1";
-const PORT = 8330; // canonical, pinned -- see header
+
+/* CHANNEL: "stable" (Sutra) or "beta" (Sutra Beta), baked into the bundle by
+   make-dmg.sh as Contents/Resources/channel. It is read from a FILE, not from
+   app.getName(): electron-packager sets the .app name but leaves package.json's
+   productName as "Sutra", so getName() returns "Sutra" for the beta build too.
+   Absent/unreadable -> stable, so a normal build and any dev checkout behave
+   exactly as before. The two channels are designed to COEXIST (founder,
+   2026-09-13): a separate app, a separate port, and a separate data namespace,
+   so a beta you install to test a flow never collides with -- or writes into --
+   your production Sutra. */
+function readChannel() {
+  try {
+    const c = fs.readFileSync(path.join(process.resourcesPath || "", "channel"), "utf8").trim();
+    return c === "beta" ? "beta" : "stable";
+  } catch (e) { return "stable"; }
+}
+const CHANNEL = readChannel();
+const IS_BETA = CHANNEL === "beta";
+// Stable is pinned to 8330 (the fixed-port product). Beta takes 8331 so both
+// run at once; if you change one, change betaEnv()'s note and the docs.
+const PORT = IS_BETA ? 8331 : 8330;
 const ORIGIN = `http://${HOST}:${PORT}`;
+
+/* The data-path env the backend reads. STABLE passes nothing (the backend's
+   own ~/.sutra-native + ~/.sutra-ui defaults stand). BETA redirects EVERY one
+   to a parallel namespace so the two installs share no registry, chats,
+   routines, drafts, settings or telemetry.
+
+   THIS LIST MUST COVER EVERY DATA-PATH VAR THE BACKEND READS. A var added to
+   the backend but missed here would make the beta write into production for
+   that one thing -- the exact collision coexistence exists to prevent.
+   test_channel_isolation.py greps the backend and fails if any escapes. */
+function betaEnv() {
+  if (!IS_BETA) return {};
+  const nat = path.join(os.homedir(), ".sutra-native-beta");
+  const ui = path.join(os.homedir(), ".sutra-ui-beta");
+  return {
+    SUTRA_NATIVE_HOME:    path.join(nat, "user-kit"),
+    SUTRA_UI_CHATS:       path.join(ui, "chats"),
+    SUTRA_UI_DRAFTS:      path.join(ui, "drafts"),
+    SUTRA_UI_PROPOSALS:   path.join(ui, "proposals"),
+    SUTRA_UI_ROUTINES:    path.join(ui, "routines"),
+    SUTRA_UI_RUNS:        path.join(ui, "runs"),
+    SUTRA_UI_TEAMSUTRA:   path.join(ui, "teamsutra"),
+    SUTRA_UI_SETTINGS:    path.join(ui, "settings.json"),
+    SUTRA_MODULES_HOME:   path.join(ui, "modules"),
+    SUTRA_SHADOW_HOME:    path.join(ui, "shadow"),
+    SUTRA_UI_WS_TELEMETRY: path.join(ui, "workspace-telemetry.jsonl"),
+  };
+}
 
 // Resolved at boot, not at module load: app.getPath() is only valid once the
 // app is ready, and the answer decides which of the two installs we are.
@@ -392,6 +440,9 @@ function startBackend() {
         // The agent's crawler can read a site behind a bot challenge through this
         // app's own hidden window. Address + token, both minted per launch.
         ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),
+        // Beta redirects every data path to ~/.sutra-*-beta; stable adds nothing.
+        // Last so the namespace cannot be overridden by an inherited value.
+        ...betaEnv(),
       } }
   );
   let stderr = "";
@@ -709,10 +760,10 @@ async function boot() {
     return;
   }
   if (await portBusy()) {
-    return fail("Port 8330 is in use",
-      "Something is already listening on 127.0.0.1:8330 and it is not Sutra " +
+    return fail(`Port ${PORT} is in use`,
+      `Something is already listening on 127.0.0.1:${PORT} and it is not Sutra ` +
       "(it did not answer /api/org/health).\n\nQuit that process and open Sutra again.\n\n" +
-      "Find it with:  lsof -ti tcp:8330");
+      `Find it with:  lsof -ti tcp:${PORT}`);
   }
 
   startBrowserFetchService();
@@ -980,6 +1031,15 @@ async function checkUpstreams() {
 }
 
 function startUpdateSchedule() {
+  if (IS_BETA) {
+    // A beta must NOT auto-update. The stable channel (releases/latest) would
+    // replace the beta with production and defeat coexistence -- and a beta is
+    // a throwaway test build you install deliberately, verify, then discard
+    // once its code ships stable. Getting off beta is a manual reinstall of
+    // the stable release, never an update.
+    console.log("[sutra] beta channel: auto-update disabled (install stable to leave beta)");
+    return;
+  }
   if (!updateCapable()) {
     console.log("[sutra] no update capability in this shell (dev checkout); auto-update off");
     return;
