@@ -2,7 +2,26 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.267.1 (2026-09-13, HEAD)
+## v2.267.2 (2026-09-13, HEAD)
+
+**A retired project folder is not re-imported (DIR-14).** The startup import matched folders against
+active departments only, so the seven folders merged into the organisation on 2026-09-12 (Asawa
+Holding, Sutra, Sutra UI, Sutra UI Workspace, Dayflow, Workdir, Claude) came back as a nested chain
+of twins under Desktop on every launch. A retired folder now resolves through its tombstone's
+explicit successor and links there; the successor gains the cwd join key and the session count and
+keeps its own name, source and description on every later run; nothing is minted. A retired folder
+with no live successor is skipped.
+
+**A stray root cannot hijack the tree.** A pre-D76 importer wrote a second parent-less record
+("Ramesh Asawa") whose ref sorted before the real root, and every reader took the first sorted ref:
+the Apps view anchored on the stray and listed nothing under Sutra. `active_roots` orders parent-less
+records by subtree size, then age; `live_root`, `_root_ref`, `_tenant_root` and the I-D6 reuse share
+it. Tests: `test_project_import` +5, `test_root_invariant` +2. DeepSeek review ADVISORY, codex review PASS
+and a three-lens verification workflow folded (successor identity keyed on the folder's mint evidence,
+not on origin; a second folder onto one successor leaves cwd and count alone; frozen departments keep
+their live subtree in the root pick).
+
+## v2.267.1 (2026-09-13)
 
 **Shadow goal creation and delegation fixes.** Merges the shadow/joy work: delegating a task now
 opens the chat it starts as a normal Sutra chat, the task can be signed off, and Shadow settings get

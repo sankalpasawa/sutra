@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-12
+**status**: active · **updated**: 2026-09-13
+## 2.267.2 (2026-09-13)
+
+- **A retired project folder is not re-imported, and a stray root cannot hijack the tree (DIR-14).** The startup import matched folders against active departments only, so the seven folders the operator had merged into the organisation (Asawa Holding, Sutra, Sutra UI, ...) came back as twins under Desktop on every launch; a retired folder now resolves to its successor and links there, minting nothing. The engine's root readers (`live_root`, `_root_ref`, `_tenant_root`, the I-D6 reuse) and the importer's root pick now take the rooted tree first, so a second parent-less record written by older code no longer becomes the Apps view's root and empties it. Tests: importer 5, root invariant 2.
+
 ## 2.265.18 (2026-09-12)
 
 - **Apps publish from the header; installed apps learn about updates (Publish program P3+P4).** With `flags.apps_publish` on, **Publish…** joins Edit in chat on any of your apps: it opens a chat that reads the record, runs the checks, asks for the version bump and PROPOSES through `sutra_app_publish`; your approval in the panel exports the app, assigns the version, signs the registry entry with this machine's key and stages entry and tarball under `~/.sutra-ui/publish/`; the copy into the registry and the push stay yours. An app built before the frameworks is brought in first, like Edit. **Check for updates** in the Apps bar asks the registries and writes what it found (one event); an installed app with a newer version reads "update available" and offers **Update**, a verified install. Kit 1.1.1: the C8 check reads a published app's publish block as the desktop's. The Sutra Apps registry now holds its first app, the kit's own lending example. Tests: apps panel 27 (+4), apps api 40 (+5), mcp 6 (+2).

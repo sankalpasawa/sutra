@@ -429,17 +429,18 @@ DESKTOP_NAME = "Desktop"        # D76: the app instance on this machine; every t
 
 def _existing_root_ref(preferred_name):
     """The live root to hang imports off: an active parent-less domain named
-    `preferred_name` if there is one, else the first active parent-less domain
-    by ref (the engine's own `_root_ref` order), else None on an empty registry.
-    Never mints. Preferring the name matters while a registry still carries two
-    roots: lexical order would otherwise pick whichever ref sorts first."""
+    `preferred_name` if there is one, else the ROOTED active parent-less domain
+    (the engine's own `active_roots` order: largest subtree, then oldest), else
+    None on an empty registry. Never mints. Preferring the name matters while a
+    registry still carries two roots; the engine's order matters for the same
+    reason -- a childless stray whose ref sorts first must not become the
+    parent of every import (2026-09-13)."""
     domains = E.load_domains()
-    roots = sorted((ref, d) for ref, d in domains.items()
-                   if d.get("parent_ref") is None and d.get("status", "active") == "active")
-    for ref, d in roots:
-        if (d.get("name") or "").strip().lower() == preferred_name.strip().lower():
+    roots = E.active_roots(domains)
+    for ref in roots:
+        if (domains[ref].get("name") or "").strip().lower() == preferred_name.strip().lower():
             return ref
-    return roots[0][0] if roots else None
+    return roots[0] if roots else None
 
 
 def apply_forest(forest, tenant_id="T-local", root_name=None):
@@ -483,18 +484,52 @@ def apply_forest(forest, tenant_id="T-local", root_name=None):
     # the old one orphaned and two domains claiming the same cwd, which makes
     # department_for_cwd resolve arbitrarily between them.
     # So: match on cwd first and rename in place; mint only what is genuinely new.
-    existing_by_cwd = {}
-    for _ref, _d in E.load_domains().items():
-        if _d.get("status", "active") == "active" and _d.get("cwd"):
-            existing_by_cwd[os.path.normpath(_d["cwd"])] = (_ref, _d.get("name") or "")
+    #
+    # A RETIRED cwd IS NOT A NEW cwd (DIR-14, 2026-09-12/13). The operator merged
+    # the imported "Asawa Holding" into Asawa Inc., "Sutra" into Sutra OS and five
+    # more; each tombstone names its successor. This loop matched ACTIVE records
+    # only, so on the next start every one of those folders looked new and was
+    # minted again under Desktop -- a nested chain of twins beside the real
+    # departments, on every launch, forever. Now a retired cwd resolves through
+    # the tombstone's successor chain (E.live_destination) and LINKS there; with
+    # no live successor it is skipped. Nothing is ever minted for a cwd the
+    # registry already knows.
+    all_domains = E.load_domains()
+    existing_by_cwd, retired_by_cwd = {}, {}
+    for _ref, _d in sorted(all_domains.items()):      # sorted: a tie on stamps resolves the same way every run
+        if not _d.get("cwd"):
+            continue
+        _key = os.path.normpath(_d["cwd"])
+        if _d.get("status", "active") == "active":
+            # "Minted by the importer FOR THIS FOLDER" is the join, not the
+            # origin: the root and the Desktop node are importer-minted too
+            # (origin project-import) and can be a folder's successor, and a
+            # successor must never be renamed after the folder's label. The
+            # importer records the cwd as mint evidence, so that is the key.
+            _ev = [os.path.normpath(e) for e in (_d.get("mint_evidence") or []) if isinstance(e, str)]
+            existing_by_cwd[_key] = (_ref, _d.get("name") or "",
+                                     _d.get("origin") == "project-import" and _key in _ev)
+        else:
+            # the newest tombstone carries the current successor
+            _prev = retired_by_cwd.get(_key)
+            if _prev is None or ((_d.get("retired_at_ms") or _d.get("ts_minted_ms") or 0)
+                                 >= (all_domains[_prev].get("retired_at_ms")
+                                     or all_domains[_prev].get("ts_minted_ms") or 0)):
+                retired_by_cwd[_key] = _ref
 
     ref_by_cwd, rows = {}, []
     for row in forest:
         parent_ref = ref_by_cwd.get(row["parent_cwd"], desktop_ref)
-        prior = existing_by_cwd.get(os.path.normpath(row["cwd"]))
+        key = os.path.normpath(row["cwd"])
+        prior = existing_by_cwd.get(key)
+        # A department the importer did not mint (an organisation node that
+        # absorbed a folder, see below) owns its name, source and description;
+        # the importer only keeps its cwd join key and session count current.
+        imported = True
         if prior:
             ref, created = prior[0], False
-            if prior[1] != row["name"]:
+            imported = prior[2]
+            if imported and prior[1] != row["name"]:
                 # A rename, not a new department. set_domain_fields keeps the
                 # ref, so every placement and collapse key that names it stays
                 # valid -- the whole reason to rename rather than re-mint.
@@ -503,21 +538,58 @@ def apply_forest(forest, tenant_id="T-local", root_name=None):
                     row["renamed_from"] = prior[1]
                 except Exception as exc:                   # noqa: BLE001
                     row["rename_error"] = str(exc)
+        elif key in retired_by_cwd:
+            tomb = retired_by_cwd[key]
+            dest, how = E.live_destination(tomb, all_domains, root_ref)
+            dest_doc = all_domains.get(dest) if dest else None
+            # Only an EXPLICIT successor chain counts. live_destination falls
+            # back to the nearest live ancestor and then to the root, which is
+            # right for re-homing filed work and wrong here: a folder retired
+            # outright (dormant, out of scope) would come back as Desktop's cwd.
+            if how != "successor" or dest_doc is None or dest_doc.get("status", "active") != "active":
+                why = "frozen" if all_domains[tomb].get("status") == "frozen" else "retired-no-successor"
+                rows.append(dict(row, ref=None, parent_ref=parent_ref, created=False,
+                                 skipped=why, retired_ref=tomb))
+                continue
+            # The successor is somebody else's department (an organisation node
+            # or the Desktop instance): it takes the cwd join key and the session
+            # count only if it has no cwd of its own, and never the importer's
+            # name, source or description. Children of this folder resolve their
+            # parent to the successor, the same way a merge re-parents them.
+            ref_by_cwd[row["cwd"]] = dest
+            kept = bool(dest_doc.get("cwd"))
+            if not kept:
+                try:
+                    E.set_domain_fields(dest, cwd=row["cwd"], sessions=row.get("sessions", 0))
+                    # Keep the in-loop snapshot current: two retired folders can
+                    # share one successor (Sutra UI and Sutra UI Workspace both
+                    # merged into Sutra Desktop), and the second must see the
+                    # cwd the first just wrote, not overwrite it (codex P2).
+                    dest_doc["cwd"] = row["cwd"]
+                except Exception as exc:                   # noqa: BLE001
+                    row["field_error"] = str(exc)
+            # A second folder onto the same successor leaves BOTH the cwd and the
+            # session count alone: the count belongs to the folder the successor
+            # answers for, not to whichever absorbed row ran last.
+            rows.append(dict(row, ref=dest, parent_ref=parent_ref, created=False,
+                             via="successor", retired_ref=tomb, cwd_kept=kept))
+            continue
         else:
             ref, created = E.mint_domain(parent_ref, row["name"], [row["cwd"]],
                                          tenant_id, origin="project-import")
         ref_by_cwd[row["cwd"]] = ref
         try:
-            E.set_domain_fields(
-                ref, cwd=row["cwd"], source="claude-project",
-                # THE TRUE TOTAL, across all three stores -- not the number of
-                # chats the panel happens to have paged in. The heading used to
-                # count the loaded page and read "Asawa Holding 90" for a
-                # project with 941 sessions; a count wrong by 10x is worse than
-                # no count. Written at mint and refreshed on every boot by
-                # sync(), so it is at most one session stale.
-                sessions=row.get("sessions", 0),
-                description="Work in %s" % row["cwd"])
+            # THE TRUE TOTAL, across all three stores -- not the number of
+            # chats the panel happens to have paged in. The heading used to
+            # count the loaded page and read "Asawa Holding 90" for a
+            # project with 941 sessions; a count wrong by 10x is worse than
+            # no count. Written at mint and refreshed on every boot by
+            # sync(), so it is at most one session stale.
+            fields = {"cwd": row["cwd"], "sessions": row.get("sessions", 0)}
+            if imported:
+                fields.update(source="claude-project",
+                              description="Work in %s" % row["cwd"])
+            E.set_domain_fields(ref, **fields)
         except Exception as exc:                       # noqa: BLE001
             # A field write failing must not abort the import: the domain
             # exists and is usable; only the cwd join key is missing, and a
@@ -546,15 +618,18 @@ def sync(tenant_id="T-local", root_name=None):
     is already there (placement_engine.py:386), so re-running is free and a
     department the operator renamed or restructured by hand is left alone.
 
-    Returns {"created": [...], "linked": n, "skipped": n} -- created is the
-    list of names, so a caller can log what appeared rather than a bare count.
+    Returns {"created": [...], "linked": n, "absorbed": [...], "skipped": n} --
+    created and absorbed are lists of names (absorbed = folders whose department
+    was retired into a successor and now resolve there, DIR-14), so a caller can
+    log what appeared rather than a bare count.
     """
     kept, skipped = discover()
     forest = build_forest(kept)
     _root, rows = apply_forest(forest, tenant_id=tenant_id, root_name=root_name)
     return {"created": [r["name"] for r in rows if r["created"]],
-            "linked": sum(1 for r in rows if not r["created"]),
-            "skipped": len(skipped)}
+            "linked": sum(1 for r in rows if not r["created"] and r.get("ref") and r.get("via") != "successor"),
+            "absorbed": [r["name"] for r in rows if r.get("via") == "successor"],
+            "skipped": len(skipped) + sum(1 for r in rows if r.get("skipped"))}
 
 
 # --------------------------------------------------------------- resolve ---

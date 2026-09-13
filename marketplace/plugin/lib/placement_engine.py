@@ -435,11 +435,11 @@ def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
         # `_root_ref` and org_api already treat the registry as one organisation (test_phase0 test_14:
         # "a second parent-less root is damage"). The event row keeps the refusal auditable.
         if parent_ref is None:
-            for r_ref, r_doc in sorted(domains.items()):
-                if r_doc.get("parent_ref") is None and r_doc.get("status", "active") == "active":
-                    _append_jsonl(DOMAIN_INDEX, {"event": "root_reused", "ref": r_ref, "requested_name": name,
-                                                 "origin": origin, "tenant_id": tenant_id, "ts_ms": _now_ms()})
-                    return r_ref, False
+            # The ROOTED tree is reused, never a childless stray that happens to sort first (2026-09-13).
+            for r_ref in active_roots(domains):
+                _append_jsonl(DOMAIN_INDEX, {"event": "root_reused", "ref": r_ref, "requested_name": name,
+                                             "origin": origin, "tenant_id": tenant_id, "ts_ms": _now_ms()})
+                return r_ref, False
         # Refs are never reused; NAMES are. I-D5 keeps retired files in place,
         # which would otherwise turn this dedupe into tombstone adoption — the
         # new mint would return a retired ref that refuses placements.
@@ -1052,9 +1052,8 @@ def _root_ref(tenant_id):
     # manufactures a SECOND parent-less node, which every publish surface then
     # refuses to disambiguate. Matching the root by structure alone makes that
     # branch unreachable while any live root exists.
-    for ref, d in sorted(domains.items()):
-        if d.get("parent_ref") is None and d.get("status", "active") == "active":
-            return ref
+    for ref in active_roots(domains):      # the rooted tree first, never a childless stray (2026-09-13)
+        return ref
     for ref, d in sorted(domains.items()):
         if d.get("parent_ref") is None:
             dest, _how = _live_destination(ref, domains, None)
@@ -2179,14 +2178,14 @@ def _tenant_root(tenant_id, domains):
     """The live root to hang unrecoverable things under. Prefers the tenant's
     own root; falls back to any root rather than manufacturing a SECOND
     parent-less node, which the site generator reads as the tree's root."""
-    for ref, d in sorted(domains.items()):
-        if (d.get("parent_ref") is None and d.get("tenant_id") == tenant_id
-                and d.get("status", "active") != "retired"):
+    # Candidates stay non-retired as before (frozen included); only the ORDER changed, to the
+    # rooted-tree-first order active_roots uses (2026-09-13).
+    candidates = _rooted_first(domains, [ref for ref, d in domains.items()
+                                         if d.get("parent_ref") is None and d.get("status", "active") != "retired"])
+    for ref in candidates:
+        if domains[ref].get("tenant_id") == tenant_id:
             return ref
-    for ref, d in sorted(domains.items()):
-        if d.get("parent_ref") is None and d.get("status", "active") != "retired":
-            return ref
-    return None
+    return candidates[0] if candidates else None
 
 
 def reconcile(tenant_id="T-local", dry_run=False):
@@ -2333,15 +2332,61 @@ def live_destination(ref, domains=None, root=None):
     return _live_destination(ref, domains, root)
 
 
-def live_root(domains=None):
-    """The registry's live root WITHOUT minting: the first (sorted) active
-    parent-less domain, else a retired root's live destination, else None.
-    `_root_ref`'s search order minus its mint -- deterministic on a multi-root
-    registry (codex P4) and safe for readers that must never mint (D-M14)."""
+def _rooted_first(domains, candidates):
+    """Order parent-less candidates so the ROOTED tree wins over a stray record.
+
+    I-D6 keeps a registry at one active root, but a registry can still carry a
+    second parent-less record written by older code (2026-09-13: "Ramesh Asawa",
+    minted by a pre-D76 importer beside the live tree, no children). Every
+    reader took the first SORTED ref, and that ref sorted before the real root,
+    so the Apps view, the placement engine's own mints and the importer all
+    anchored on the stray and the real tree's departments landed nowhere.
+
+    Order: the largest live subtree first (non-retired descendants, the same
+    liveness `live_refs` uses, so a frozen department still carries its active
+    children), then the oldest mint, then the ref. A stray has no subtree; a
+    restored root predates anything minted after it. Deterministic on any
+    registry and identical to the old order when the registry has one root.
+    Iterative on purpose: a deep chain must not raise RecursionError in a
+    reader every mint goes through."""
+    kids = {}
+    for ref, d in domains.items():
+        p = d.get("parent_ref")
+        if p and d.get("status", "active") != "retired":
+            kids.setdefault(p, []).append(ref)
+
+    def size(root):
+        seen, stack, n = {root}, list(kids.get(root, ())), 0
+        while stack:
+            k = stack.pop()
+            if k in seen:
+                continue
+            seen.add(k)
+            n += 1
+            stack.extend(kids.get(k, ()))
+        return n
+    return sorted(candidates, key=lambda ref: (-size(ref),
+                                               domains.get(ref, {}).get("ts_minted_ms") or 0, ref))
+
+
+def active_roots(domains=None):
+    """Every active parent-less domain, the rooted tree first (`_rooted_first`).
+    One entry on a healthy registry; more than one is damage the health report
+    names, and readers take the first entry."""
     domains = domains if domains is not None else load_domains()
-    for ref, d in sorted(domains.items()):
-        if d.get("parent_ref") is None and d.get("status", "active") == "active":
-            return ref
+    return _rooted_first(domains, [ref for ref, d in domains.items()
+                                   if d.get("parent_ref") is None and d.get("status", "active") == "active"])
+
+
+def live_root(domains=None):
+    """The registry's live root WITHOUT minting: the rooted active parent-less
+    domain (`active_roots` order), else a retired root's live destination, else
+    None. `_root_ref`'s search order minus its mint -- deterministic on a
+    multi-root registry (codex P4) and safe for readers that must never mint
+    (D-M14)."""
+    domains = domains if domains is not None else load_domains()
+    for ref in active_roots(domains):
+        return ref
     for ref, d in sorted(domains.items()):
         if d.get("parent_ref") is None:
             dest, _how = _live_destination(ref, domains, None)
