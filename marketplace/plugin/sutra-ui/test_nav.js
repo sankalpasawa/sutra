@@ -1093,6 +1093,24 @@ test("only dept: collapse keys are adopted, stale project: ones are dropped", ()
     "sessCollapsed must have a default so a first run has no undefined map");
 });
 
+test("reorg: Apply commits moves, gated and registry-only, via /api/org/apply", () => {
+  /* Source guard for the drag-drop Apply (founder, 2026-09-13). The reorg
+     screen needs too much state to render in this harness, so pin the wiring
+     that must not regress: an Apply control exists, it is gated, it POSTs the
+     draft to the apply endpoint, and it clears the draft on success. Behaviour
+     is verified end-to-end in the running app. */
+  const org = JS("03-org.js"), loaders = JS("07-loaders.js");
+  assert(/id="applyPlan"/.test(org), "the Draft view must offer an Apply button");
+  assert(/disabled/.test(org.slice(org.indexOf('id="applyPlan"')-400, org.indexOf('id="applyPlan"')+80)),
+    "Apply must be gated, not always enabled");
+  assert(/blocking\.length/.test(org) && /rationale/.test(org),
+    "the gate must consider blocking findings and a rationale");
+  assert(/"\/api\/org\/apply"/.test(loaders), "Apply must POST to /api/org/apply");
+  const h = loaders.slice(loaders.indexOf('#applyPlan"'), loaders.indexOf('#applyPlan"')+900);
+  assert(/S\.draft\s*=\s*\{ops:\[\]/.test(h), "a successful apply must clear the draft");
+  assert(/loadOrg\(\)/.test(h), "and re-read the tree so the studio shows the registry as it now is");
+});
+
 test("sessions: the rail tops up to a bounded page in either scope", () => {
   /* A bound, not "all": the cost scales with the disk, and the operator this
      scope protects has 20,255 transcripts. */
