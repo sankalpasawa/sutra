@@ -2,7 +2,21 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.267.3 (2026-09-13, HEAD)
+## v2.271.0 (2026-09-13, HEAD)
+
+**The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and
+`v2.270.0-desktop` were all cut while `plugin.json` and `.claude-plugin/marketplace.json` still read
+2.267.1/2.267.3, so `release-dmg`'s version guard — the first job in the workflow — rejected each one
+before a runner started. No DMG was built and no GitHub Release was created for any of the three; the
+tags are dangling, not published. The manifests now read 2.271.0, above every dangling tag, so a fresh
+`v2.271.0-desktop` passes the guard without rewriting a pushed tag.
+
+`tests/unit/test-validate-manifest-json.sh` gains the check that would have stopped this at tag #1:
+the manifest version must exceed every existing `v*-desktop` tag, and the top entries of
+`CURRENT-VERSION.md` and `CHANGELOG.md` must match it. The guard in CI is unchanged — it now has a
+local twin that fails on the workstation instead of after the push.
+
+## v2.267.3 (2026-09-13)
 
 **A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real
 server, and a real server runs the project import at startup. The verification workflow behind 2.267.2

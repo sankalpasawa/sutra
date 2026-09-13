@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-13
+## 2.271.0 (2026-09-13)
+
+- **The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and `v2.270.0-desktop` were cut while the manifests still read 2.267.1/2.267.3, so `release-dmg`'s version guard rejected all three before any runner started — no DMG, no Release, three dangling tags. Manifests now read 2.271.0, above every dangling tag, so a fresh `v2.271.0-desktop` passes without rewriting a pushed tag. `test-validate-manifest-json.sh` gains the local twin of that guard: the manifest version must exceed every existing `v*-desktop` tag, and the top `CURRENT-VERSION.md` / `CHANGELOG.md` entries must match it. Tests: 2 new checks.
+
 ## 2.267.3 (2026-09-13)
 
 - **A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real server, and a real server runs the project import at startup; it now starts with `SUTRA_SKIP_PROJECT_IMPORT=1` and a throwaway `SUTRA_NATIVE_HOME`. This is how the second parent-less root of 2026-09-13 01:33 was written: a workflow agent ran the test from an older plugin copy against the operator's own registry.
