@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.271.3 (2026-09-13, HEAD)
+## v2.271.4 (2026-09-13, HEAD)
+
+**DeepSeek "ACP process closed stdout" — the first-run race, and the swallowed reason.** A
+DeepSeek turn could die with only "could not start '.../deepseek' in <cwd>: ACP process closed
+stdout". Two causes, two fixes. (1) The gemini-cli fork's FIRST run writes shared `~/.gemini`
+state (installation_id, projects.json) with a non-atomic write-tmp-then-rename; two
+`deepseek --acp` spawns within one second race on it and the loser crashes mid-write and closes
+stdout (four orphaned `projects.json.*.tmp` in one second was the fingerprint). `_ACP_CONNECT_LOCK`
+now serializes the connect, but ONLY while first run is pending (installation_id absent) — zero
+steady-state contention. (2) The child's stderr, where the real reason lives, was captured to a
+pipe nothing read. `AcpRuntime` now drains it and `stderr_tail()` appends it to the failure, so a
+death names itself. Tests: `test_acp_stderr.py`.
+
+## v2.271.3 (2026-09-13)
 
 **The team's idea sheet reaches everyone who joins.** A teammate who joined with the link got the
 catalogue and the brand pack and an empty Asset ideas tab, for good. The sheet was designed to travel
