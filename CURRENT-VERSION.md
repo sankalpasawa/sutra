@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.271.2 (2026-09-13, HEAD)
+## v2.271.3 (2026-09-13, HEAD)
+
+**The team's idea sheet reaches everyone who joins.** A teammate who joined with the link got the
+catalogue and the brand pack and an empty Asset ideas tab, for good. The sheet was designed to travel
+as rows in the team's `ideas` table and `mirror.py` could receive them, but nothing ever sent one, and
+the knowledge pack does not carry `assets/`: the owner's workspace held 0 ideas while his Mac held
+1,892. Every save of the sheet now sends what changed (the queue for a few rows, bulk upserts for a
+rewrite), rows that came from the team are never sent back, a sheet built before this reaches an empty
+team once, and the Asset ideas tab refreshes while it is open. Which Mac may send is decided by the
+sheet's own links -- a fifth of its linked rows must point at this Mac's catalogue domain (97% on the
+owner's) -- because the first rule, "the team's earliest member", picked an older registration of the
+owner's own and never let his Mac send anything. Tests: `test_workspace_ideas`, 37 checks.
+
+## v2.271.2 (2026-09-13)
 
 **A real beta channel + a codified promote flow for everyone (CONTRIBUTING.md).** A
 `-beta.N-desktop` tag builds a COEXISTING "Sutra Beta" app -- own bundle id, port 8331, data

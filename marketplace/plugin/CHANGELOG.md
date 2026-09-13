@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-13
+## 2.271.3 (2026-09-13)
+
+- **The team's idea sheet reaches everyone who joins.** Nothing ever sent the sheet to the team's `ideas` table and the knowledge pack skips `assets/`, so a joiner's Asset ideas tab stayed empty (0 on the team, 1,892 on the owner's Mac). Every save now sends what changed: up to 25 rows through the queue, more as bulk upserts of 500 that fall back to the queue on failure. Rows from the team are written with `push=False` so they never bounce back. `sync.backfill_ideas` sends an existing sheet once to an empty team, at most every 10 minutes until it finishes. A sheet is only sent when a fifth of its linked rows point at this Mac's catalogue domain, which replaced a "first team member" gate that wrongly refused the owner's own Mac. The Asset ideas tab re-reads the sheet every fourth refresh tick while open. Tests: `test_workspace_ideas`, 37 checks.
+
 ## 2.271.0 (2026-09-13)
 
 - **The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and `v2.270.0-desktop` were cut while the manifests still read 2.267.1/2.267.3, so `release-dmg`'s version guard rejected all three before any runner started — no DMG, no Release, three dangling tags. Manifests now read 2.271.0, above every dangling tag, so a fresh `v2.271.0-desktop` passes without rewriting a pushed tag. `test-validate-manifest-json.sh` gains the local twin of that guard: the manifest version must exceed every existing `v*-desktop` tag, and the top `CURRENT-VERSION.md` / `CHANGELOG.md` entries must match it. Tests: 2 new checks.
