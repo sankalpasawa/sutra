@@ -2,7 +2,17 @@
 
 **status**: active · **updated**: 2026-09-13
 
-## v2.267.2 (2026-09-13, HEAD)
+## v2.267.3 (2026-09-13, HEAD)
+
+**A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real
+server, and a real server runs the project import at startup. The verification workflow behind 2.267.2
+traced the stray root of 2026-09-13 01:33 ("Ramesh Asawa") to exactly that: a workflow agent in another
+session ran this test from a staged 2.264.1 plugin copy, whose pre-D76 importer named the root after the
+macOS account, against `~/.sutra-native/user-kit`. The test now starts the server with
+`SUTRA_SKIP_PROJECT_IMPORT=1` (the opt-out `app.py` already honours) and a throwaway `SUTRA_NATIVE_HOME`.
+No other shell test boots the app.
+
+## v2.267.2 (2026-09-13)
 
 **A retired project folder is not re-imported (DIR-14).** The startup import matched folders against
 active departments only, so the seven folders merged into the organisation on 2026-09-12 (Asawa

@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-13
+## 2.267.3 (2026-09-13)
+
+- **A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real server, and a real server runs the project import at startup; it now starts with `SUTRA_SKIP_PROJECT_IMPORT=1` and a throwaway `SUTRA_NATIVE_HOME`. This is how the second parent-less root of 2026-09-13 01:33 was written: a workflow agent ran the test from an older plugin copy against the operator's own registry.
+
 ## 2.267.2 (2026-09-13)
 
 - **A retired project folder is not re-imported, and a stray root cannot hijack the tree (DIR-14).** The startup import matched folders against active departments only, so the seven folders the operator had merged into the organisation (Asawa Holding, Sutra, Sutra UI, ...) came back as twins under Desktop on every launch; a retired folder now resolves to its successor and links there, minting nothing. The engine's root readers (`live_root`, `_root_ref`, `_tenant_root`, the I-D6 reuse) and the importer's root pick now take the rooted tree first, so a second parent-less record written by older code no longer becomes the Apps view's root and empties it. Tests: importer 5, root invariant 2.
