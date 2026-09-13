@@ -1275,6 +1275,23 @@ function wire(){
     render();
   });
 
+  /* Which chats the rail lists. Re-fetches the session list immediately after,
+     so the change shows up where it was made rather than on the next refresh --
+     the list it changes is the whole point of the setting. */
+  scBody.querySelectorAll("[data-chatscope]").forEach(b=>b.onclick=()=>{
+    const want = b.dataset.chatscope;
+    S.setBusy = "scope:" + want; S.setError = null; S.setOk = null; render();
+    apiPost("/api/settings", { chat_scope: want })
+      .then(r=>{ SETTINGS = r.settings || SETTINGS;
+                 S.setOk = want === "all"
+                   ? "the Chats list now shows every session on this Mac."
+                   : "the Chats list now shows only chats started in Sutra."; })
+      .then(()=>apiGet("/api/sessions?limit=100")
+                  .then(adoptRealSessions).catch(()=>{}))
+      .catch(err=>{ S.setError = err.message; })
+      .then(()=>{ S.setBusy = null; render(); });
+  });
+
   scBody.querySelectorAll("[data-pmode-set]").forEach(b=>b.onclick=()=>{
     const m = b.dataset.pmodeSet;
     const spec = PERM_MODES.find(x=>x.id===m) || {};

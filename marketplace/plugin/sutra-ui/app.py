@@ -31,6 +31,7 @@ import session_reader as sr
 import connectors_api
 import org_api
 import project_import as pi
+import routine_links
 import providers
 import chat_store
 import secrets as _secrets
@@ -882,6 +883,29 @@ def sessions_page() -> str:
 SESSION_LIST_UNSCOPED = os.environ.get("SUTRA_UI_ALL_CHATS", "") == "1"
 
 
+def _list_every_chat():
+    """True when the rail should list EVERY transcript, not just Sutra's own.
+
+    Two inputs, env first so a diagnosis never depends on stored state:
+      SUTRA_UI_ALL_CHATS=1   -- the escape hatch that already existed
+      settings chat_scope    -- the operator's own choice, "sutra" | "all"
+
+    IT IS A SETTING, NOT A NEW DEFAULT (founder, 2026-09-13). The scoped list
+    is the owner's decision of 2026-09-09 and stays the default; an operator
+    who uses Sutra as the one place to see all their work turns this on and it
+    persists in ~/.sutra-ui/settings.json, outside the app bundle, so it
+    survives a reinstall and an auto-update.
+
+    Fails soft to the default: an unreadable settings file must not change what
+    the rail shows."""
+    if SESSION_LIST_UNSCOPED:
+        return True
+    try:
+        return providers.load_settings().get("chat_scope") == "all"
+    except Exception:                                     # noqa: BLE001
+        return False
+
+
 def _owned_transcripts():
     """(mtime, source, id, path) for every transcript a SUTRA chat claims, newest first.
 
@@ -908,6 +932,19 @@ def _owned_transcripts():
         return []
     cands = []
     claude_ids = {k.split(":", 1)[1] for k in owned if k.startswith("claude:")}
+    # ROUTINE RUNS ARE SUTRA'S OWN CHATS (founder, 2026-09-13). Sutra's runner
+    # launches them (launchd -> run-routine.py -> `claude -p`), so they are
+    # conversations Sutra started -- they just never passed through chat_store,
+    # which only indexes chats begun in the panel. Without them the default
+    # scope showed an EMPTY Routines view on every fresh install: 0 of 1,207
+    # routine runs on the founder's machine were in chat_store's index. Adding
+    # them honours the 2026-09-09 decision (other tools' transcripts stay out)
+    # rather than reversing it. Every routine run is a `claude -p` session, so
+    # they join the claude id set. Fails soft: no runs tree, no additions.
+    try:
+        claude_ids |= set(routine_links.by_session())
+    except Exception:   # noqa: BLE001 -- a broken runs tree must not empty the rail
+        pass
     if claude_ids:
         disk = sr.index()          # stat-only, one glob of ~/.claude/projects
         for sid in claude_ids:
@@ -1057,7 +1094,7 @@ def api_sessions(limit: int = 100, offset: int = 0):
     """
     limit = max(0, int(limit or 0))
     offset = max(0, int(offset or 0))
-    if SESSION_LIST_UNSCOPED:
+    if _list_every_chat():
         rows = sr.list_sessions(limit, offset)
     else:
         window = _owned_transcripts()[offset:offset + limit]
@@ -1102,7 +1139,14 @@ def api_sessions(limit: int = 100, offset: int = 0):
     # AND the department that owns each row's working directory, so the Chats
     # rail can group by department. Runs last and fails soft, so an unreadable
     # registry costs the grouping and never the list. See _with_departments.
-    return _with_departments(rows)
+    #
+    # AND the routine run that produced it, where one did. A routine run IS a
+    # chat -- `claude -p` writes a real transcript and reports its session id --
+    # so these were already in the list, indistinguishable from hand-started
+    # work. On the founder's machine 1,009 of 1,208 rows are routine runs, which
+    # is the whole reason the rail needs to separate them. Cached on the runs
+    # tree's mtimes; fails soft to routine:None.
+    return routine_links.attach(_with_departments(rows))
 
 
 # ---------------------------------------------------------------- live sync ---
