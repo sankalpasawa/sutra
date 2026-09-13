@@ -67,6 +67,20 @@ function readChannel() {
 }
 const CHANNEL = readChannel();
 const IS_BETA = CHANNEL === "beta";
+
+// GIVE BETA ITS OWN ELECTRON IDENTITY, or coexistence silently fails. electron-
+// packager sets the .app/CFBundleName to "Sutra Beta" but leaves package.json's
+// productName as "Sutra", so app.getName() returns "Sutra" for the beta build.
+// Electron derives userData AND the single-instance lock from that name, so the
+// beta would share both with production -- and requestSingleInstanceLock() (far
+// below) returns false whenever production is already open, making the beta
+// app.exit(0) within a second. Rename it and repath userData here, at module
+// load, before either is read. (Caught by installing beta.1 beside production.)
+if (IS_BETA) {
+  app.setName("Sutra Beta");
+  try { app.setPath("userData", path.join(app.getPath("appData"), "Sutra Beta")); }
+  catch (e) { /* getPath valid pre-ready; a failure just keeps the default */ }
+}
 // Stable is pinned to 8330 (the fixed-port product). Beta takes 8331 so both
 // run at once; if you change one, change betaEnv()'s note and the docs.
 const PORT = IS_BETA ? 8331 : 8330;

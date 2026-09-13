@@ -82,6 +82,16 @@ def test_channel_is_read_from_a_marker_not_app_name():
                                           MAIN_JS.index("const CHANNEL")]
 
 
+def test_beta_gets_its_own_electron_identity():
+    """The bug beta.1 exposed: app.getName() returns "Sutra" for the beta build
+    (packager leaves productName), so without an explicit rename the beta shares
+    userData AND the single-instance lock with production and exits on launch
+    whenever production is open. main.js must set its own name + userData."""
+    block = MAIN_JS[MAIN_JS.index("const IS_BETA ="):MAIN_JS.index("function betaEnv")]
+    assert 'app.setName("Sutra Beta")' in block, "beta must rename itself"
+    assert 'app.setPath("userData"' in block, "beta must repath userData (single-instance lock)"
+
+
 def test_beta_disables_auto_update():
     sched = MAIN_JS[MAIN_JS.index("function startUpdateSchedule()"):]
     sched = sched[:sched.index("\n}")]
