@@ -2,7 +2,33 @@
 
 **status**: active · **updated**: 2026-09-10
 
-## v2.256.2 (2026-09-10, HEAD)
+## v2.266.0 (2026-09-13, HEAD)
+
+**Every session from every provider can be listed, and routine runs have their own section.** The
+Chats rail was scoped on 2026-09-09 to chats Sutra itself started, which on the founder's machine
+showed 15 rows out of 1,208 transcripts. That scope is kept as the default -- other tools'
+conversations stay out of Sutra's list -- and a new **Settings -> Chats shown** lets an operator
+list every session on the Mac instead (Claude and Codex both). It persists in
+`~/.sutra-ui/settings.json`, outside the app bundle. Measured here: 42 ms for the first page of
+everything against 16 ms scoped.
+
+**Routines is a third grouping beside Recent and Dept.** A routine run is a real chat -- `claude -p`
+writes a transcript and reports its session id, which every run has stored since routines existed
+-- so these rows were always in the list, indistinguishable from hand-started work. On the
+founder's machine they were **1,010 of 1,209 rows**. `routine_links.py` joins run records
+(`~/.sutra-ui/runs/<routine>/index.jsonl` and each run's output) to sessions, cached on the index
+mtimes (53 ms cold, 0.2 ms warm). Each routine heads its own collapsible group with its failure
+count, and a routine that has never succeeded says so: `daily-leetcode-cp` had 38 runs and 0
+successes, and nothing in the app showed it.
+
+**Routine runs count as Sutra's own chats.** They are launched by Sutra's runner, so they join the
+default scope. Without that, every fresh install opened an empty Routines view -- 0 of 1,207 routine
+runs were in the panel's chat index.
+
+All of this -- which department a chat is in, which routine produced it, which chats are listed --
+is decided by plain code at boot. No model is involved.
+
+## v2.256.2 (2026-09-10)
 
 **"Check for changes" gave no sign of life, and the site's own firewall was the reason it needed
 one.** Two separate faults, found together on the owner's real site.

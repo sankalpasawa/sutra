@@ -121,8 +121,52 @@ function startSessionStream(){
   };
 }
 
+/* How many sessions the rail tops up to when it is showing EVERY session on
+   the machine rather than only Sutra's own (founder, 2026-09-13).
+
+   A BOUND, NOT "ALL". With the scope set to `all`, the first 100 are a poor
+   sample: on the founder's disk 95 of the newest 100 were one department, so
+   the Dept view rendered 19 of 23 departments as empty headings even though
+   the sessions existed. Topping up fixes that. It is capped because the cost
+   scales with the disk, not with this machine: measured here, 100 rows cost
+   44ms and 1000 cost 417ms -- but the operator this scope exists to protect
+   has 20,255 transcripts, and "load everything" there is a different promise
+   entirely. 2000 is the same bounded cost on both -- it covers this machine's
+   1,208 sessions completely, and on a 20k disk it is the newest 2,000 with the
+   rest honestly labelled "older than the loaded list". There is no offset
+   pagination in this client, so a department beyond the bound is NOT reachable
+   by scrolling and the empty-state must not pretend otherwise. */
+const SESSION_PAGE = 100, SESSION_PAGE_ALL = 2000;
+
 async function loadSessions(){
-  adoptRealSessions(await apiGet("/api/sessions?limit=100"));
+  /* First paint stays the small page: it is what the rail shows within a few
+     hundred ms of boot, and it is the same cost in either scope. */
+  adoptRealSessions(await apiGet("/api/sessions?limit=" + SESSION_PAGE));
+  /* Then, only when showing everything, top up in the background. Deliberately
+     NOT awaited by the caller's critical path and deliberately failing soft:
+     a slow or failed top-up leaves the rail exactly as the first page drew it,
+     never empty. SETTINGS may not have resolved yet at first boot, in which
+     case the next loadSessions() picks it up. */
+  /* BOTH SCOPES, since 2026-09-13. It was gated on `all`; but routine runs now
+     count as Sutra's own chats, and on the founder's machine the newest 100 of
+     those are almost all one daily routine -- so the Routines view hid every
+     weekly routine behind a single busy one. The scoped list is bounded by the
+     chats Sutra and its routines actually started, not by the whole disk, so
+     the top-up is cheap there too. */
+  if (SESSION_PAGE_ALL > SESSION_PAGE){
+    try {
+      const rows = await apiGet("/api/sessions?limit=" + SESSION_PAGE_ALL);
+      /* A SHORT PAGE MEANS THE END. Knowing whether the list is complete is
+         what lets an empty department state the true reason: sessions the
+         machine recorded but has no transcript for, versus sessions simply
+         beyond the bound. Without it the panel has to guess, and it guessed
+         wrong -- five projects whose transcripts do not exist on this Mac at
+         all were labelled "older than the loaded list". */
+      S.sessionsComplete = (rows || []).length < SESSION_PAGE_ALL;
+      adoptRealSessions(rows);
+      if (typeof render === "function") render();
+    } catch (e) { /* first page stands */ }
+  }
 }
 
 function refetchOrg(){

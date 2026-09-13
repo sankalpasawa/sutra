@@ -200,12 +200,17 @@ test("rail: renderRail paints seven data-dest buttons", () => {
 });
 
 /* §chats ─ S8: the Code tab's controls survive, verbatim, exactly once */
-test("chats: newSession and #sessions intact; two groupings, no sort", () => {
+test("chats: newSession and #sessions intact; three groupings, no sort", () => {
   for (const needle of ['id="newSession"', 'id="sessions"'])
     assert.strictEqual(html.split(needle).length - 1, 1, needle + " must occur exactly once");
-  /* Recent + Dept only. Project grouping and the sort control it fed were
-     deleted on 2026-09-02 (founder). */
-  assert.strictEqual((html.match(/data-sgroup="/g) || []).length, 2);
+  /* Recent + Dept + Routines. Project grouping and the sort control it fed were
+     deleted on 2026-09-02 (founder); Routines was added on 2026-09-13, because
+     routine runs are real transcripts and were 1,009 of 1,208 rows in the rail
+     -- indistinguishable from hand-started chats until they had their own
+     section. The COUNT is pinned so a fourth cannot appear unnoticed. */
+  assert.strictEqual((html.match(/data-sgroup="/g) || []).length, 3);
+  for (const g of ["recent", "dept", "routines"])
+    assert(html.indexOf('data-sgroup="' + g + '"') !== -1, g + " grouping must exist");
   assert(html.indexOf('data-sgroup="project"') === -1, "Project grouping must be gone");
   assert(html.indexOf('id="sessSort"') === -1, "the sort control must be gone");
   const helpers = fs.readFileSync(
@@ -474,6 +479,106 @@ test("dept: an unloaded org tree degrades to the loaded-page grouping", () => {
   T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
   setDomains(prevDomains); T.S.ui = T.loadLayout();
 });
+test("dept: the empty-state reason depends on which chats are shown", () => {
+  /* Saying the wrong reason is worse than saying none. Scoped, an empty
+     department means the work happened outside Sutra; showing everything, that
+     sentence is false and the only honest reason is that those sessions are
+     older than the loaded page. */
+  T.S.ui = T.loadLayout();
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
+  const prevSettings = T.SETTINGS;
+  T.S.sgroup = "dept";
+  setDomains([{ ref:"r", parent_ref:null, name:"Co" },
+              { ref:"d1", parent_ref:"r", name:"Older", cwd:"/d/a", sessions:7 }]);
+  T.S.sessions = [];
+
+  T.SETTINGS = { chat_scope: "sutra" };
+  T.renderRail();
+  let out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("none started in Sutra yet") !== -1,
+    "scoped: must say the work happened elsewhere");
+
+  T.SETTINGS = { chat_scope: "all" };
+  T.renderRail();
+  out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("none started in Sutra yet") === -1,
+    "showing everything: that reason is false and must not appear");
+  assert(out.indexOf("older than the loaded list") !== -1,
+    "incomplete list: the honest reason is the bound");
+  assert(!/scroll to load/i.test(out),
+    "must not promise scrolling loads more -- this client has no offset paging");
+
+  /* The list IS complete, so the sessions are recorded with no transcript to
+     show -- five real projects on the founder's Mac are exactly this, and
+     calling them "older than the loaded list" was a lie about pagination. */
+  T.S.sessionsComplete = true;
+  T.renderRail();
+  out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("no transcript on this Mac") !== -1,
+    "complete list: an empty department has no transcript, not a paging problem");
+  assert(out.indexOf("older than the loaded list") === -1,
+    "complete list: the bound is not the reason and must not be given as one");
+  T.S.sessionsComplete = false;
+
+  T.SETTINGS = prevSettings;
+  T.S.sessions = prevSessions; T.S.sgroup = prevGroup;
+  setDomains(prevDomains); T.S.ui = T.loadLayout();
+});
+
+test("routines: chats group by the routine that produced them", () => {
+  T.S.ui = T.loadLayout();
+  const prev = T.S.sessions, pg = T.S.sgroup;
+  T.S.sgroup = "routines";
+  T.S.sessions = [
+    { id:"r1", title:"run a", real:true, loadState:"ok", turns:[], updated_ms:3,
+      routine:{ routine:"si-feedback-sync", outcome:"ok" } },
+    { id:"r2", title:"run b", real:true, loadState:"ok", turns:[], updated_ms:2,
+      routine:{ routine:"si-feedback-sync", outcome:"failed" } },
+    { id:"h1", title:"my own chat", real:true, loadState:"ok", turns:[], updated_ms:1 },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(out.indexOf("si-feedback-sync") !== -1, "the routine must head its own group");
+  for (const id of ["r1","r2"])
+    assert(out.indexOf('data-sid="'+id+'"') !== -1, id + " must render under its routine");
+  /* A filter, not a partition (founder, 2026-09-13): a chat no routine produced
+     does not appear in this view at all -- it lives in Recent and Dept. */
+  assert(out.indexOf("Not from a routine") === -1, "there is no catch-all group here");
+  assert(out.indexOf('data-sid="h1"') === -1, "a hand-started chat must not render here");
+  T.S.sessions = prev; T.S.sgroup = pg; T.S.ui = T.loadLayout();
+});
+test("routines: a routine that never succeeded says so", () => {
+  /* daily-leetcode-cp has 38 runs and 0 successes on the founder's machine and
+     nothing in the app said so. A routine that has never worked must not look
+     like one that merely fails sometimes. */
+  T.S.ui = T.loadLayout();
+  const prev = T.S.sessions, pg = T.S.sgroup;
+  T.S.sgroup = "routines";
+  T.S.sessions = [
+    { id:"a", title:"x", real:true, loadState:"ok", turns:[], updated_ms:2,
+      routine:{ routine:"always-broken", outcome:"failed" } },
+    { id:"b", title:"y", real:true, loadState:"ok", turns:[], updated_ms:1,
+      routine:{ routine:"mostly-fine", outcome:"ok" } },
+  ];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(/never succeeded/.test(out), "a routine with zero successes must say so");
+  assert(/rgfail all/.test(out), "and must be marked distinctly, not just counted");
+  const fine = out.slice(out.indexOf("mostly-fine"));
+  assert(!/never succeeded/.test(fine), "a working routine must not be labelled broken");
+  T.S.sessions = prev; T.S.sgroup = pg; T.S.ui = T.loadLayout();
+});
+test("routines: with no runs recorded, it says that rather than rendering blank", () => {
+  T.S.ui = T.loadLayout();
+  const prev = T.S.sessions, pg = T.S.sgroup;
+  T.S.sgroup = "routines";
+  T.S.sessions = [];
+  T.renderRail();
+  const out = T.document.getElementById("sessions").innerHTML;
+  assert(/No routine has recorded a run yet/.test(out), "an empty state must explain itself");
+  T.S.sessions = prev; T.S.sgroup = pg; T.S.ui = T.loadLayout();
+});
+
 test("dept: collapse keys for departments that no longer exist are pruned", () => {
   T.S.ui = T.loadLayout();
   const prevSessions = T.S.sessions, prevGroup = T.S.sgroup, prevDomains = getDomains();
@@ -986,6 +1091,20 @@ test("only dept: collapse keys are adopted, stale project: ones are dropped", ()
     "sessCollapsed must adopt only dept:-prefixed keys");
   assert(/sessCollapsed:\{\}/.test(state),
     "sessCollapsed must have a default so a first run has no undefined map");
+});
+
+test("sessions: the rail tops up to a bounded page in either scope", () => {
+  /* A bound, not "all": the cost scales with the disk, and the operator this
+     scope protects has 20,255 transcripts. */
+  const src = JS("09-tail.js");
+  assert(/SESSION_PAGE\s*=\s*100/.test(src), "first paint stays the small page");
+  assert(/SESSION_PAGE_ALL\s*=\s*2000/.test(src), "the top-up is capped, not unbounded");
+  const body = src.slice(src.indexOf("async function loadSessions()"),
+                         src.indexOf("function refetchOrg"));
+  /* Not gated on scope: routine runs count as Sutra's own chats, and a
+     100-row first page hid every weekly routine behind one busy daily one. */
+  assert(!/chat_scope === "all"/.test(body), "the top-up must run in both scopes");
+  assert(/catch\s*\(/.test(body), "a failed top-up must leave the first page standing");
 });
 
 

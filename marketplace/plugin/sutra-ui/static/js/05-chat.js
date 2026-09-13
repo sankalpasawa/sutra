@@ -1074,6 +1074,34 @@ SCREENS.settings = () => {
         you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
       <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
 
+    ${(() => {
+      /* WHICH CHATS THE LIST SHOWS (founder, 2026-09-13).
+         The rail lists only chats Sutra itself started -- the owner's decision
+         of 2026-09-09, taken on a disk holding 20,255 transcripts of which one
+         was a Sutra chat. An operator who uses Sutra as the one place to see
+         all their work wants the opposite, and neither is wrong, so it is a
+         setting rather than a default somebody loses. */
+      const scope = (st.chat_scope === "all") ? "all" : "sutra";
+      const opt = (id, title, body) => `
+        <button class="opt" type="button" role="radio" aria-checked="${scope===id}"
+            data-chatscope="${id}" ${S.setBusy==="scope:"+id?'aria-busy="true"':""}>
+          <span class="rd" aria-hidden="true"></span>
+          <span class="oi"><b>${title}</b><span class="osub">${body}</span></span>
+        </button>`;
+      return fold("set.chatscope", "Chats shown",
+        scope === "all" ? "Every session" : "Started in Sutra", `
+        <p style="margin-bottom:9px">Which conversations the Chats list shows. This changes the
+          list only — nothing is deleted, moved or hidden on disk either way.</p>
+        <div role="radiogroup" aria-label="Chats shown">
+          ${opt("sutra", "Only chats started in Sutra",
+                "The conversations this app began. Work you did in a terminal or another editor "
+              + "stays out of Sutra's list.")}
+          ${opt("all", "Every session on this Mac",
+                "Every transcript any AI provider wrote here — Claude, Codex, DeepSeek — whichever "
+              + "tool started it. Departments then count and group all of it.")}
+        </div>`);
+    })()}
+
     ${fold("set.workdir", "Project folder", esc((st.workdir||"").split("/").pop()||"—"), `
       <p style="margin-bottom:9px">The folder your AI works in. It can read and change files here,
         and this is where anything it creates will go. If the folder does not exist yet, it is

@@ -1760,6 +1760,9 @@ class SettingsRequest(BaseModel):
     # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
     # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
     unsafe_ack: Optional[Union[str, bool]] = None
+    # "sutra" (only chats this app started) | "all" (every transcript on the
+    # machine, whichever provider wrote it). See providers.CHAT_SCOPES.
+    chat_scope: Optional[str] = None
 
 
 @router.post("/settings/provider-bin")
@@ -1800,11 +1803,11 @@ def api_settings_post(req: SettingsRequest):
     """
     if (req.provider is None and req.permission_mode is None
             and req.workdir is None and req.onboarded is None and req.model is None
-            and req.unsafe_ack is None):
+            and req.unsafe_ack is None and req.chat_scope is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
-                   "permission_mode, workdir, onboarded, model")
+                   "permission_mode, workdir, onboarded, model, chat_scope")
     try:
         settings = providers.save_settings(
             provider=req.provider,
@@ -1813,6 +1816,7 @@ def api_settings_post(req: SettingsRequest):
             onboarded=req.onboarded,
             model=req.model,
             unsafe_ack=req.unsafe_ack,
+            chat_scope=req.chat_scope,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

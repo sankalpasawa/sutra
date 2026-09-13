@@ -1987,6 +1987,31 @@ def _clean_permission_mode(value):
     return value if value in PERMISSION_MODES else None
 
 
+#: Which chats the rail lists.
+#:
+#:   "sutra" -- only chats this app started (bound to a sutra_id in
+#:              chat_store's index). The default the owner chose on 2026-09-09:
+#:              on a disk with 20,255 transcripts, one of them a Sutra chat,
+#:              listing everything filled Sutra's own Chats folder with
+#:              conversations from VS Code, terminals and every other tool
+#:              writing to the same directory.
+#:   "all"   -- every transcript on the machine, whichever provider wrote it.
+#:              What an operator who uses Sutra as the one place to see their
+#:              work wants, and the founder's own direction on 2026-09-13.
+#:
+#: It is a SETTING and not a hardcoded default because those two operators both
+#: exist and neither is wrong. Measured cost of "all" on a 1,181-transcript
+#: disk: 42 ms for the first page against 16 ms scoped -- the 3.5-5s figure in
+#: api_sessions is a 20,255-transcript disk paying a title parse per row it
+#: walked past, which is not what either path does now.
+CHAT_SCOPES = ("sutra", "all")
+DEFAULT_CHAT_SCOPE = "sutra"
+
+
+def _clean_chat_scope(value):
+    return value if value in CHAT_SCOPES else None
+
+
 # -------------------------------------------------------------- active -----
 
 def active_provider_detail():
@@ -2053,6 +2078,12 @@ def load_settings():
         mode = _clean_permission_mode(
             os.environ.get("SUTRA_UI_PERMISSION_MODE")) or DEFAULT_PERMISSION_MODE
 
+    scope = _clean_chat_scope(raw.get("chat_scope"))
+    if raw.get("chat_scope") is not None and scope is None:
+        invalid["chat_scope"] = raw.get("chat_scope")
+    if scope is None:
+        scope = DEFAULT_CHAT_SCOPE
+
     workdir = raw.get("workdir")
     workdir_source = "stored"
     if not isinstance(workdir, str) or not workdir.strip():
@@ -2106,6 +2137,8 @@ def load_settings():
         "permission_mode": mode,
         "workdir": workdir,
         "onboarded": onboarded,
+        # Which chats the rail lists -- see CHAT_SCOPES.
+        "chat_scope": scope,
         # "" is a real, meaningful value here ("use the CLI's default"), so it is
         # reported as "" rather than folded into null.
         #
@@ -2177,7 +2210,8 @@ UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
 
 
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
-                  model=None, unsafe_ack=None, model_provider=None):
+                  model=None, unsafe_ack=None, model_provider=None,
+                  chat_scope=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
@@ -2239,6 +2273,12 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
         if not isinstance(onboarded, bool):
             raise ValueError("onboarded must be a boolean")
         raw["onboarded"] = onboarded
+
+    if chat_scope is not None:
+        if _clean_chat_scope(chat_scope) is None:
+            raise ValueError("chat_scope must be one of %s, not %r"
+                             % (", ".join(CHAT_SCOPES), chat_scope))
+        raw["chat_scope"] = chat_scope
 
     # `model` without a provider still means CLAUDE -- that is what the key
     # meant for its whole life, and callers that predate per-provider models
