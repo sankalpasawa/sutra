@@ -383,6 +383,15 @@ class MissionEngine:
         sid = await spawner(m)
         m = self.store.load(mid)
         m["target_session"] = sid
+        # THE BRIEF HAS NOW BEEN DELIVERED, and this is the only place that
+        # can know it: the spawner's contract (shadow_runner.
+        # spawn_delegate_session) is "send the manifest, wait out the turn,
+        # hand back a session id". run_mission reads this flag so turn 0 does
+        # not say the same thing into the same session a second time.
+        # Stamped on the mission rather than inferred from target_mode,
+        # because an existing-target mission also has a session and was
+        # never briefed -- see _next_say.
+        m["manifest_delivered"] = True
         self.store.save(m)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "spawn",
@@ -431,7 +440,33 @@ class MissionEngine:
                 return self._out_of_road(
                     m, "failed", "budget_exhausted",
                     "max turns (%d) reached" % m["max_turns"])
-            say_text, decision = await self._instruction(m, last_response)
+            # THE BRIEF IS NEVER DELIVERED TWICE (founder, 2026-09-13).
+            #
+            # A target_mode="new" delegate is spawned by
+            # shadow_runner.spawn_delegate_session, which sends the manifest
+            # and waits out the ENTIRE first agentic turn before it hands back
+            # a session id. Turn 0 here then sent the SAME manifest into the
+            # SAME session: measured at 30s of duplicate model work on top of
+            # the 44s spawn (mission m-e14f6acc41aa, 2026-09-12 -- the ledger
+            # `say` row and the transcript's second user frame are both there).
+            #
+            # So the spawn turn IS turn 0. It was said, it was answered, and
+            # the only thing that did not happen is the loop saying it. This
+            # skips the SAY AND THE WAIT and nothing else: the accounting
+            # below -- turns_used, the ledger row, the transcript read, the
+            # done_when evaluation -- is the existing code on the existing
+            # path, so a task the delegate finished in its first turn now
+            # completes at the end of that turn instead of one turn later.
+            #
+            # provision_target stamps `manifest_delivered` when, and only
+            # when, a spawner actually delivered it. An existing-target
+            # mission never carries the flag and is byte-identical to before.
+            briefed = (m["turns_used"] == 0
+                       and bool(m.get("manifest_delivered")))
+            if briefed:
+                say_text, decision = self._next_say(m), None
+            else:
+                say_text, decision = await self._instruction(m, last_response)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated
@@ -453,45 +488,54 @@ class MissionEngine:
                 # complete. Say honestly that the driver could not decide.
                 return self._out_of_road(
                     m, "failed", "shadow_undecided", decision["reason"])
-            if say_text == last_say:
-                return self._out_of_road(
-                    m, "stopped", "ping_pong",
-                    "ping-pong detected (identical consecutive says)")
-            floors = shadow_egress.floor_check(say_text)
-            if floors:
-                # S52: the say never leaves the engine; the founder decides
-                m = self.store.transition(
-                    mid, "paused", "floor requires confirmation: %s"
-                    % ", ".join(floors))
-                m["pause_reason"] = "floor_confirm"
-                m["pending_floor_say"] = say_text[:1000]
+            if briefed:
+                # Nothing is sent and nothing is waited on -- the turn this
+                # would have produced already happened, inside the spawn.
+                # last_say is still set, so a decider that answers turn 1 with
+                # the manifest verbatim trips the SAME ping-pong guard.
+                last_say = say_text
+                m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
                 self.store.save(m)
-                return m
-            ok = await self.sayer(m, say_text)
-            # A STRING is a named, retryable precondition -- the say was never
-            # delivered, so nothing about the attempt is spent. It goes down
-            # _out_of_road, which blocks a goal attempt (the founder is asked,
-            # the chat is kept, Resume works) and leaves a standalone mission
-            # terminal exactly as before. False stays what it always was: the
-            # say itself was turned down.
-            # non-empty: an EMPTY string is falsy and means nothing, so it
-            # stays a plain refusal rather than becoming a nameless blocker
-            # (store.block rightly refuses a reasonless block)
-            if isinstance(ok, str) and ok:
-                return self._out_of_road(
-                    m, "failed", ok,
-                    "say not delivered (%s) -- nothing was sent" % ok)
-            if not ok:
-                return self.store.transition(mid, "failed", "say refused")
-            last_say = say_text
-            # remembered on the record, so a resumed attempt and the ledger
-            # both know what Shadow last asked for
-            m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
-            self.store.save(m)
-            arrived = await self.waiter(m)
-            if arrived is False:
-                return self.store.transition(
-                    mid, "failed", "boundary wait timed out")
+            else:
+                if say_text == last_say:
+                    return self._out_of_road(
+                        m, "stopped", "ping_pong",
+                        "ping-pong detected (identical consecutive says)")
+                floors = shadow_egress.floor_check(say_text)
+                if floors:
+                    # S52: the say never leaves the engine; the founder decides
+                    m = self.store.transition(
+                        mid, "paused", "floor requires confirmation: %s"
+                        % ", ".join(floors))
+                    m["pause_reason"] = "floor_confirm"
+                    m["pending_floor_say"] = say_text[:1000]
+                    self.store.save(m)
+                    return m
+                ok = await self.sayer(m, say_text)
+                # A STRING is a named, retryable precondition -- the say was
+                # never delivered, so nothing about the attempt is spent. It
+                # goes down _out_of_road, which blocks a goal attempt (the
+                # founder is asked, the chat is kept, Resume works) and leaves
+                # a standalone mission terminal exactly as before. False stays
+                # what it always was: the say itself was turned down.
+                # non-empty: an EMPTY string is falsy and means nothing, so it
+                # stays a plain refusal rather than becoming a nameless blocker
+                # (store.block rightly refuses a reasonless block)
+                if isinstance(ok, str) and ok:
+                    return self._out_of_road(
+                        m, "failed", ok,
+                        "say not delivered (%s) -- nothing was sent" % ok)
+                if not ok:
+                    return self.store.transition(mid, "failed", "say refused")
+                last_say = say_text
+                # remembered on the record, so a resumed attempt and the ledger
+                # both know what Shadow last asked for
+                m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
+                self.store.save(m)
+                arrived = await self.waiter(m)
+                if arrived is False:
+                    return self.store.transition(
+                        mid, "failed", "boundary wait timed out")
             m = self.store.load(mid)
             if m["state"] in TERMINAL or m["state"] in ("paused", "blocked"):
                 return m          # something terminal happened mid-turn
@@ -499,7 +543,10 @@ class MissionEngine:
             self.store.save(m)
             shadow_ledger.append("actions", {
                 "mission_id": mid, "kind": "say",
-                "summary": say_text[:200]})
+                # the ledger must not claim a say that never left the engine:
+                # a briefed turn 0 is the SPAWN's say, counted here
+                "summary": (("(brief already delivered at spawn) "
+                             if briefed else "") + say_text)[:200]})
             transcript = self.reader(m)
             last_response = transcript
             done, results = evaluate_done_when(m, transcript, self.verifier)
@@ -643,6 +690,10 @@ class MissionEngine:
         Turn 0 is the brief and is never a decision: the manifest (or the
         objective) is what opens the conversation. From turn 1 the decider
         reads what the target actually said and composes the next move.
+
+        NOT REACHED on turn 0 of a mission whose delegate was spawned with
+        the manifest -- run_mission takes `_next_say` directly there and
+        sends nothing, because that turn already happened inside the spawn.
 
         Returns say_text None when the attempt must not continue -- the
         caller turns that into the existing founder-facing block rather

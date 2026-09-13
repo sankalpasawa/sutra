@@ -8,6 +8,7 @@ existing /api/shadow/goals.
 """
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -225,6 +226,229 @@ class TestProposalThroughTheChatRoute(unittest.TestCase):
         self.assertEqual(m["goal_id"], gid)
         self.assertEqual(calls, [mid], "the existing start path was used")
         self.assertEqual(len(self.goals.list()), 1, "still one goal")
+
+
+class _ChatRouteHarness:
+    """Drives api_shadow_chat itself with a canned Shadow turn.
+
+    The shaping under test lives in the ROUTE, so a re-implementation of it
+    (as _reply above does, deliberately, for the pure-proposal shape) would
+    prove nothing about the branch that actually runs.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["SUTRA_SHADOW_HOME"] = self.tmp.name
+        self._orig = providers.SETTINGS_PATH
+        settings = Path(self.tmp.name) / "settings.json"
+        settings.write_text(json.dumps({"shadow.enabled": True}))
+        providers.SETTINGS_PATH = settings
+        self.missions = MissionStore()
+        self.goals = GoalStore()
+        self._saved = app_module._SHADOW.get("session")
+        self.client = TestClient(app_module.app, base_url="http://127.0.0.1")
+
+    def tearDown(self):
+        app_module._SHADOW["session"] = self._saved
+        providers.SETTINGS_PATH = self._orig
+        self.tmp.cleanup()
+
+    def _shadow_says(self, raw):
+        """Park a fake Shadow session that answers with exactly `raw`."""
+        class Rt:
+            async def send_user_frame(self, _text):
+                return None
+
+            async def demux_turn(self, collect, sid):
+                await collect({"type": "token", "text": raw})
+                return (sid or "shadow-sess", 0.0, True, None, None)
+
+        class Sess:
+            alive = True
+            session_id = "shadow-sess"
+            rt = Rt()
+
+        app_module._SHADOW["session"] = Sess()
+
+    def _chat(self, message, scope_id):
+        return self.client.post("/api/shadow/chat",
+                                json={"message": message,
+                                      "scope_id": scope_id},
+                                headers=HDR).json()
+
+
+class TestMissionBlockIsBoundToTheChatInScope(_ChatRouteHarness,
+                                              unittest.TestCase):
+    """The MISSION half of the same rule, through the real route.
+
+    Founder, 2026-09-13: "Work in existing chat -> Enter -> nothing happens."
+    The chat route already bound a GOAL proposal to the tab's chat
+    (test_06 above), but the mission branch passed the model's
+    `target_session` straight through -- and SHADOW.md tells the model it may
+    omit it ("<sid or omit>"). An existing-target mission proposed inside a
+    chat therefore landed with target_session None: the task card read "an
+    existing chat" with no name and Start had nothing to attach to, so the
+    chat was never taken over.
+
+    Driven through api_shadow_chat itself -- see _ChatRouteHarness.
+    """
+
+    def test_20_an_omitted_target_means_the_chat_in_scope(self):
+        self._shadow_says("On it.\n```mission\n" + json.dumps({
+            "objective": "take this chat to done",
+            "template": "fix",
+            "done_when": [{"tier": "founder_confirm",
+                           "check": "the founder signs it off"}]}) + "\n```")
+        doc = self._chat("take this chat over", "01a081")
+        self.assertIn("mission", doc, "the block must still create a brief")
+        self.assertEqual(doc["mission"]["target_mode"], "existing")
+        self.assertEqual(doc["mission"]["target_session"], "01a081",
+                         "the mission must act in the chat the founder is in")
+        self.assertEqual(doc["mission"]["state"], "brief_confirm",
+                         "and it is still a brief -- Start stays explicit")
+
+    def test_21_a_named_chat_is_never_overridden(self):
+        self._shadow_says("```mission\n" + json.dumps({
+            "objective": "fix the other one",
+            "template": "fix",
+            "target_session": "other-chat"}) + "\n```")
+        doc = self._chat("fix the other chat", "01a081")
+        self.assertEqual(doc["mission"]["target_session"], "other-chat",
+                         "a chat the founder named beats the tab")
+
+    def test_22_a_delegated_mission_never_targets_the_founders_chat(self):
+        self._shadow_says("```mission\n" + json.dumps({
+            "objective": "start something new",
+            "template": "feature",
+            "target_mode": "new"}) + "\n```")
+        doc = self._chat("start a new one", "01a081")
+        self.assertEqual(doc["mission"]["target_mode"], "new")
+        self.assertIsNone(doc["mission"]["target_session"],
+                          "+ Delegate provisions its OWN chat -- seeding the "
+                          "founder's here would hand it to a delegate")
+
+    def test_23_no_chat_in_scope_stays_untargeted(self):
+        self._shadow_says("```mission\n" + json.dumps({
+            "objective": "do the thing", "template": "fix"}) + "\n```")
+        doc = self._chat("do the thing", None)
+        self.assertIsNone(doc["mission"]["target_session"],
+                          "nothing to bind to is not a licence to guess")
+
+
+class TestEveryDocumentedFenceParses(unittest.TestCase):
+    """THE GUARD FOR THE DELETION ITSELF (d6d6fc53, 2026-09-11).
+
+    `goal` was dropped from shadow_protocol._BLOCK by a UI-mock commit that
+    rewrote the module against a stale base and added `module` to the same
+    line. Nothing failed loudly: a goal fence simply stopped matching, so it
+    was never stripped, never parsed, and app.py's `if "goal" in blocks`
+    branch became unreachable. The tests that DID cover it went red and read
+    as "pre-existing" for two days.
+
+    Per-kind tests could not stop a repeat, because the per-kind tests were
+    exactly what got ignored. This pins the INVARIANT instead: the module
+    docstring is the protocol's published surface, and every fence it
+    advertises must reach the parser. Drop a kind from either side and this
+    fails on the mismatch, not on a downstream feature.
+    """
+
+    #: one minimal VALID body per documented fence -- the shapes _eat
+    #: accepts, nothing more. A new fence kind adds one row here.
+    MINIMAL = {
+        "mission": {"objective": "fix it", "template": "fix"},
+        "goal": {"outcome": "get it working"},
+        "chips": ["Do the thing"],
+        "remember": {"text": "be terse", "precedence": "taste"},
+        "module": {"name": "Friday review", "kind": "chat"},
+    }
+
+    def _documented(self):
+        found = re.findall(r"^    ```(\w+)$", shadow_protocol.__doc__, re.M)
+        self.assertTrue(found, "the docstring stopped advertising any fence")
+        return set(found)
+
+    def _compiled(self):
+        alts = re.search(r"```\(([^)]+)\)", shadow_protocol._BLOCK.pattern)
+        self.assertIsNotNone(alts, "_BLOCK stopped being an alternation")
+        return set(alts.group(1).split("|"))
+
+    def test_30_goal_is_a_fence_the_parser_knows(self):
+        self.assertIn("goal", self._compiled(),
+                      "THE BUG: a goal fence never matched, so the goal "
+                      "branch of api_shadow_chat could not run")
+        self.assertIn("goal", self._documented())
+
+    def test_31_the_docstring_and_the_regex_do_not_drift(self):
+        self.assertEqual(self._documented(), self._compiled(),
+                         "a fence is advertised but unparsed, or parsed but "
+                         "undocumented")
+
+    def test_32_every_documented_fence_round_trips(self):
+        for kind in sorted(self._documented()):
+            self.assertIn(kind, self.MINIMAL, "no minimal body for %r" % kind)
+            raw = ("here you go\n```" + kind + "\n"
+                   + json.dumps(self.MINIMAL[kind]) + "\n```")
+            display, blocks = shadow_protocol.parse_reply(raw)
+            self.assertIn(kind, blocks, "%r did not parse" % kind)
+            self.assertNotIn("```" + kind, display,
+                             "%r was parsed but left in the reply" % kind)
+            self.assertEqual(display, "here you go")
+
+
+class TestGoalBlockIsBoundToTheChatInScope(_ChatRouteHarness,
+                                           unittest.TestCase):
+    """The goal branch, now that it is reachable again.
+
+    test_06 above pins the same rule against a re-implementation of the
+    route's shaping; these run the route. Both are kept: the first is where
+    the shape is specified, this is proof the specified shape is what the
+    founder actually gets.
+    """
+
+    def test_33_a_goal_proposed_in_a_chat_targets_that_chat(self):
+        self._shadow_says("On it.\n```goal\n" + json.dumps({
+            "outcome": "get the referral workflow configured and working",
+            "done_when": [{"tier": "founder_confirm",
+                           "check": "the founder signs it off"}]}) + "\n```")
+        doc = self._chat("keep at this until it works", "01a081")
+        self.assertIn("goal_proposal", doc,
+                      "THE BUG: the fence never parsed, so no card appeared")
+        g = doc["goal_proposal"]
+        self.assertEqual(g["target_session"], "01a081",
+                         "the chat the founder is in, never another")
+        self.assertFalse(g["needs_target"])
+        self.assertFalse(g["needs_criteria"])
+        self.assertNotIn("```goal", doc["reply"], "the block is stripped")
+        self.assertEqual(doc["reply"], "On it.")
+
+    def test_34_a_named_chat_still_beats_the_tab(self):
+        self._shadow_says("```goal\n" + json.dumps({
+            "outcome": "ship the other one",
+            "target_session": "other-chat",
+            "done_when": [{"tier": "founder_confirm", "check": "signed"}]})
+            + "\n```")
+        doc = self._chat("do the other chat", "01a081")
+        self.assertEqual(doc["goal_proposal"]["target_session"], "other-chat")
+
+    def test_35_no_chat_in_scope_is_asked_for_never_guessed(self):
+        self._shadow_says("```goal\n" + json.dumps({
+            "outcome": "ship it",
+            "done_when": [{"tier": "founder_confirm", "check": "signed"}]})
+            + "\n```")
+        doc = self._chat("ship it", None)
+        self.assertIsNone(doc["goal_proposal"]["target_session"])
+        self.assertTrue(doc["goal_proposal"]["needs_target"],
+                        "the card must ask, not invent")
+
+    def test_36_a_proposal_still_writes_nothing(self):
+        self._shadow_says("```goal\n" + json.dumps({
+            "outcome": "ship it",
+            "done_when": [{"tier": "founder_confirm", "check": "signed"}]})
+            + "\n```")
+        self._chat("ship it", "01a081")
+        self.assertEqual(self.goals.list(), [],
+                         "a goal block is a PROPOSAL -- Confirm writes it")
+        self.assertEqual(self.missions.list(), [], "and no mission either")
 
 
 if __name__ == "__main__":

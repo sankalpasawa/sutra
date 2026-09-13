@@ -336,5 +336,127 @@ class TestBlockedState(Base):
         return rows[-1].get("note", "")
 
 
+class TestBriefIsNeverDeliveredTwice(Base):
+    """The duplicate-manifest fix (founder, 2026-09-13).
+
+    spawn_delegate_session sends the manifest and waits out the whole first
+    agentic turn before it hands back a session id. Turn 0 here then sent the
+    SAME manifest into the SAME session -- 30s of duplicate model work per
+    delegated task, measured on mission m-e14f6acc41aa (2026-09-12).
+
+    `manifest_delivered` is the switch, and it is stamped by provision_target
+    and nowhere else, so these tests pin BOTH sides: a spawned delegate is
+    never re-briefed, and an existing-target mission is untouched.
+    """
+
+    MANIFEST = "You are a delegate session. Objective: pin this path."
+
+    def _engine(self, transcript):
+        """Explicit about all three injectables -- what was said, whether a
+        boundary was waited on, and what the target 'replied'."""
+        self.says = []
+        self.waits = []
+
+        async def sayer(m, text):
+            self.says.append(text)
+            return True
+
+        async def waiter(m):
+            self.waits.append(m["turns_used"])
+            return True
+
+        def reader(m):
+            return transcript
+
+        return MissionEngine(self.store, sayer, waiter, reader)
+
+    def _mission(self, briefed, done_when=None):
+        m = self.store.create("ship the thing", "fix", target_mode="new",
+                              target_session="sess-1",
+                              done_when=done_when, manifest=self.MANIFEST)
+        if briefed:
+            mm = self.store.load(m["id"])
+            mm["manifest_delivered"] = True
+            self.store.save(mm)
+        self.store.transition(m["id"], "brief_confirm")
+        self.store.transition(m["id"], "running")
+        return m
+
+    def test_20_a_spawned_delegate_is_never_re_briefed(self):
+        m = self._mission(True, [{"tier": "contains_artifact",
+                                  "check": "ALL GREEN"}])
+        eng = self._engine("the spawn turn already said ALL GREEN")
+        out = asyncio.run(eng.run_mission(m["id"]))
+        # THE WHOLE POINT: nothing was sent at all
+        self.assertEqual(self.says, [],
+                         "the brief was already delivered at spawn")
+        self.assertNotIn(self.MANIFEST, self.says)
+        # ...and nothing was waited on: that boundary already happened
+        self.assertEqual(self.waits, [])
+        # the spawn turn still COUNTS, and is still evaluated
+        self.assertEqual(out["state"], "done")
+        self.assertEqual(self.store.load(m["id"])["turns_used"], 1)
+
+    def test_21_an_existing_target_mission_is_unchanged(self):
+        """The control: no flag -> turn 0 is the manifest, as before."""
+        m = self._mission(False, [{"tier": "contains_artifact",
+                                   "check": "ALL GREEN"}])
+        eng = self._engine("ALL GREEN")
+        out = asyncio.run(eng.run_mission(m["id"]))
+        self.assertEqual(self.says, [self.MANIFEST],
+                         "an unbriefed target must still get the brief")
+        self.assertEqual(self.waits, [0],
+                         "and its boundary is still waited on")
+        self.assertEqual(out["state"], "done")
+        self.assertEqual(self.store.load(m["id"])["turns_used"], 1)
+
+    def test_22_turn_one_still_drives_and_is_not_the_manifest(self):
+        """Skipping turn 0's say must not skip the mission: when the spawn
+        turn did NOT finish the job, turn 1 is composed and sent normally."""
+        m = self._mission(True, [{"tier": "contains_artifact",
+                                  "check": "NEVER-THERE"}])
+        mm = self.store.load(m["id"])
+        mm["max_turns"] = 2
+        self.store.save(mm)
+        eng = self._engine("still working")
+        out = asyncio.run(eng.run_mission(m["id"]))
+        self.assertEqual(len(self.says), 1,
+                         "exactly one real say: turn 1, not turn 0")
+        self.assertNotIn(self.MANIFEST, self.says,
+                         "and it is NEVER the manifest again")
+        self.assertIn("Continue toward", self.says[0])
+        self.assertEqual(self.waits, [1], "turn 1 waits on its own boundary")
+        self.assertEqual(out["state"], "failed")   # budget, as before
+
+    def test_23_provision_target_is_what_stamps_it(self):
+        m = self.store.create("ship the thing", "fix", target_mode="new",
+                              manifest=self.MANIFEST)
+        self.assertFalse(self.store.load(m["id"]).get("manifest_delivered"),
+                         "nothing is briefed until a spawner briefs it")
+
+        async def spawner(mission):
+            return "sess-spawned"
+
+        eng = MissionEngine(self.store, None, None, None)
+        sid = asyncio.run(eng.provision_target(m["id"], spawner))
+        self.assertEqual(sid, "sess-spawned")
+        out = self.store.load(m["id"])
+        self.assertEqual(out["target_session"], "sess-spawned")
+        self.assertTrue(out["manifest_delivered"],
+                        "the spawner's contract is send-manifest-and-wait")
+
+    def test_24_a_retry_clone_is_briefed_again(self):
+        """A clone is a NEW session that has heard nothing, so the flag must
+        not ride along with the brief it copies."""
+        m = self._mission(True)
+        self.store.transition(m["id"], "failed", "for the test")
+        clone = mission_engine.clone_for_retry(self.store, m["id"])
+        self.assertEqual(clone["manifest"], self.MANIFEST,
+                         "the brief itself IS copied")
+        self.assertFalse(clone.get("manifest_delivered"),
+                         "but a fresh delegate has not been told it")
+        self.assertIsNone(clone["target_session"])
+
+
 if __name__ == "__main__":
     unittest.main()
