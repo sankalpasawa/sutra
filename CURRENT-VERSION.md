@@ -1,8 +1,22 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-10
+**status**: active · **updated**: 2026-09-13
 
-## v2.267.0 (2026-09-13, HEAD)
+## v2.267.1 (2026-09-13, HEAD)
+
+**Shadow goal creation and delegation fixes.** Merges the shadow/joy work: delegating a task now
+opens the chat it starts as a normal Sutra chat, the task can be signed off, and Shadow settings get
+their own page. `DELEGATES[sid] = rt` moves earlier in `spawn_delegate_session` so the send guard
+sees a delegate before the manifest turn, with register/attach/pump still landing after the spawn
+turn. New coverage: `test_shadow_delegate.py` (8) and `test_shadow_home.js` (536 lines).
+
+**Known red at publish:** `test_attach_existing.py::test_D5_the_delegate_spawn_path_is_unchanged`
+(INVARIANT 3) still pins the previous call order and fails against the deliberate reordering above;
+the invariant question is open. `test_transcript_ir.py`'s Codex canary is also red on machines whose
+rollouts contain `agent_message`, a type `from_codex_file` drops — pre-existing, unchanged since
+v2.267.0. Published at founder direction with both known.
+
+## v2.267.0 (2026-09-13)
 
 **Drag-and-drop in the Departments studio now commits.** Dragging one department onto another has
 always composed a validated MOVE plan with blocking rings; the only way to commit it was copying a
