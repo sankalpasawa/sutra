@@ -705,6 +705,83 @@ def _idea_changes(before, after):
             if isinstance(r, dict) and r.get("id") and old.get(str(r.get("id"))) != r]
 
 
+# WHOSE SHEET IS THIS. The rule that stops a Mac seeding the team with somebody else's ideas.
+#
+# The first version asked "did this Mac create the workspace?" by picking the team's earliest member.
+# On the owner's own workspace that picked an older registration of his under a different member id,
+# so his Mac -- the one that built all 1,892 ideas -- was told it was not the creator and the upload
+# never ran (found on his live data, 2026-09-13). Nothing on a Mac records creating a workspace, and a
+# join leaves no marker, so membership cannot answer the question reliably.
+#
+# The sheet can. It is built from one company's own pages, so its rows link to that company's site:
+# on the owner's sheet 1,891 of 1,892 rows carry links and testlify.com appears 3,604 times, the next
+# host 207. A sheet from another company links to that company instead. So a sheet is sent only when
+# enough of its linked rows point at the site this Mac's own catalogue is for.
+IDEAS_HOME_SHARE = 0.2        # at least this share of the rows that carry links must link home
+
+
+def _bare_host(value):
+    s = str(value or "").strip().lower()
+    if "://" in s:
+        s = s.split("://", 1)[1]
+    s = s.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    return s[4:] if s.startswith("www.") else s
+
+
+def _catalogue_domain():
+    """This company's own site as this Mac's knowledge records it, or "" when nothing does."""
+    try:
+        idx = store.knowledge("site_index.json") or {}
+        home = _bare_host(idx.get("domain")) if isinstance(idx, dict) else ""
+        if not home:
+            home = _bare_host((store.knowledge("brand/company.json") or {}).get("domain"))
+        return home
+    except Exception:                       # noqa: BLE001
+        return ""
+
+
+def _row_hosts(row):
+    hosts = set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif isinstance(o, str) and o.startswith(("http://", "https://")):
+            h = _bare_host(o)
+            if h:
+                hosts.add(h)
+    walk(row)
+    return hosts
+
+
+def _not_this_company(rows):
+    """"" when the sheet provably belongs to the company this Mac's knowledge is for, else why not.
+
+    Refuses rather than guesses: no catalogue, or a sheet with no links at all, is not proof.
+    """
+    home = _catalogue_domain()
+    if not home:
+        return "this Mac has no catalogue yet, so it cannot tell whose ideas these are"
+    linked = hits = 0
+    for r in rows or []:
+        hosts = _row_hosts(r)
+        if not hosts:
+            continue
+        linked += 1
+        if any(h == home or h.endswith("." + home) for h in hosts):
+            hits += 1
+    if not linked:
+        return "the sheet links to no pages, so it cannot be shown to be %s's" % home
+    if hits < IDEAS_HOME_SHARE * linked:
+        return ("only %d of the %d linked rows point at %s, so this sheet looks like another "
+                "company's" % (hits, linked, home))
+    return ""
+
+
 def _bulk_ideas(rows, client=None):
     """Upsert rows to the ideas table in chunks. On a failed chunk, queue it and everything after it.
 
@@ -747,6 +824,11 @@ def push_ideas(before, after, client=None):
         changed = _idea_changes(before, after)
         if not changed:
             return {"sent": 0, "queued": 0, "why": ""}
+        # Judged on the WHOLE sheet, not the changed rows: three edited rows about one competitor
+        # would otherwise look like that competitor's sheet.
+        why = _not_this_company(after)
+        if why:
+            return {"sent": 0, "queued": 0, "why": why}
         if len(changed) <= IDEAS_QUEUE_MAX:
             queued = 0
             for r in changed:
@@ -787,6 +869,12 @@ def backfill_ideas(client=None, now=None, rows=None):
             rows = acm.ideas()
         rows = [r for r in (rows or []) if isinstance(r, dict) and r.get("id")]
         if not rows:
+            return ""
+        why = _not_this_company(rows)
+        if why:
+            # Not done: a catalogue can arrive later and settle it. The attempt time still rate-limits.
+            st["ideas_backfill"] = {"at": now, "done": False, "sent": 0, "why": why}
+            _save_state(st)
             return ""
         allowed, _why = _may_push("ideas", client)
         if not allowed:

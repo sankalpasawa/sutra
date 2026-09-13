@@ -2026,13 +2026,15 @@ def api_workspace(check: int = 0):
         pass           # a courtesy; the poll must never fail over it
     # THE IDEA SHEET'S FIRST TRIP TO THE TEAM (2026-09-13). Sheets built before ideas were pushed
     # never reached anyone, and nothing about them changes until somebody ticks one, so this sends
-    # the whole sheet once to a team whose ideas table is empty. ONLY the Mac that created the
-    # workspace may: a joiner's local sheet can belong to a different company altogether, and must
-    # not become the team's. In its own thread, because 1,892 rows is not something to do inside a
-    # poll, and backfill_ideas rate-limits and remembers itself, so asking every poll costs nothing.
+    # the whole sheet once to a team whose ideas table is empty. Any Mac may ask: backfill_ideas
+    # decides, from the sheet's own links, whether the sheet is this company's (see
+    # sync._not_this_company). It used to be gated on "did this Mac create the workspace", judged by
+    # the team's earliest member, and on the owner's real workspace that was an older registration of
+    # his own under another id -- so his Mac, the one holding all 1,892 ideas, was never allowed to.
+    # In its own thread, because 1,892 rows is not something to do inside a poll, and backfill_ideas
+    # rate-limits and remembers itself, so asking on every poll costs nothing.
     try:
-        if _ws_i_created_it(mods):
-            _spawn("workspace-ideas-backfill", lambda: mods["sync"].backfill_ideas())
+        _spawn("workspace-ideas-backfill", lambda: mods["sync"].backfill_ideas())
     except Exception:  # noqa: BLE001
         pass
     checked = _ws_verify(mods) if check else _ws_checked["res"]

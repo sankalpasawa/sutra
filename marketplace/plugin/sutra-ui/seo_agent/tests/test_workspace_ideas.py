@@ -22,6 +22,7 @@ import time
 
 from seo_agent.tests import _fixture   # noqa: F401  (throwaway SEO_AGENT_DATA)
 
+from seo_agent import store
 from seo_agent.assets import _common as acm
 from seo_agent.workspace import mirror, outbox, sync
 
@@ -81,9 +82,15 @@ TEAM = Team()
 sync._client = lambda client=None: client if client is not None else TEAM
 
 
-def sheet(n, start=0, status="open"):
+HOME = "example.com"          # the company this Mac's catalogue is for, in every test below
+
+
+def sheet(n, start=0, status="open", site=HOME):
+    """Rows shaped like the real ones: each reuses a page of the company's own site, the way the
+    owner's 1,892 rows link to testlify.com."""
     return [{"id": "a%04d" % i, "title": "Idea %d" % i, "format": "Calculator",
-             "status": status, "rank": i + 1, "method": ["competitors"]}
+             "status": status, "rank": i + 1, "method": ["competitors"],
+             "reuse": {"links": ["https://%s/page-%d" % (site, i)]}}
             for i in range(start, start + n)]
 
 
@@ -100,6 +107,7 @@ def reset():
     st = sync.read_state()
     st.pop("ideas_backfill", None)
     sync._save_state(st)
+    store.save_knowledge("site_index.json", {"domain": HOME, "pages": []})
     acm.save_ideas([], push=False)
 
 
@@ -213,6 +221,52 @@ reset()
 TEAM.on = False
 acm.save_ideas(sheet(5), push=False)
 ok("with no workspace there is nothing to backfill", sync.backfill_ideas(now=1000.0) == "", TEAM.calls)
+
+# ---- whose sheet is it ---------------------------------------------------------------------------
+# The rule that replaced "did this Mac create the workspace?". That was judged by the team's earliest
+# member, and on the owner's real workspace the earliest member was an older registration of his own
+# under another id, so his Mac -- holding all 1,892 ideas -- was never allowed to send them.
+print("\nonly a sheet that is provably this company's is ever sent")
+
+reset()
+foreign = sheet(40, site="othercompany.com")
+res = sync.push_ideas([], foreign)
+ok("a sheet built around another company's site is not sent", TEAM.calls == [] and outbox.count() == 0,
+   (TEAM.calls, outbox.count()))
+ok("and it says whose it looks like", "othercompany.com" not in (res.get("why") or "") and
+   HOME in (res.get("why") or ""), res)
+
+reset()
+acm.save_ideas(sheet(40, site="othercompany.com"), push=False)
+ok("nor is it backfilled into an empty team", sync.backfill_ideas(now=1000.0) == "" and TEAM.calls == [],
+   TEAM.calls)
+bf = sync.read_state().get("ideas_backfill") or {}
+ok("and the refusal is not marked done, so a later catalogue can settle it",
+   bf.get("done") is False and HOME in (bf.get("why") or ""), bf)
+
+reset()
+bare = [{k: v for k, v in r.items() if k != "reuse"} for r in sheet(30)]
+res = sync.push_ideas([], bare)
+ok("a sheet with no links at all proves nothing, and is not sent", TEAM.calls == [] and "links" in
+   (res.get("why") or ""), (TEAM.calls, res))
+
+reset()
+store.save_knowledge("site_index.json", {"domain": "https://www.example.com/", "pages": []})
+acm.save_ideas(sheet(30))
+ok("a catalogue written as https://www.example.com/ still matches rows linking example.com",
+   len(TEAM.ideas) == 30, len(TEAM.ideas))
+
+reset()
+store.save_knowledge("site_index.json", {})
+acm.save_ideas(sheet(30))
+ok("with no catalogue on this Mac, nothing is sent", TEAM.calls == [] and outbox.count() == 0,
+   (TEAM.calls, outbox.count()))
+
+reset()
+mixed = sheet(10) + sheet(30, start=10, site="competitor-a.com")
+res = sync.push_ideas([], mixed)
+ok("a sheet where a quarter of the linked rows point home still counts as this company's",
+   len(TEAM.ideas) == 40, (len(TEAM.ideas), res))
 
 print()
 if FAILS:
