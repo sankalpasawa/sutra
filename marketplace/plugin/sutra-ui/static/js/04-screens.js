@@ -1495,9 +1495,15 @@ SCREENS.teamsutra = () => {
      the bottom as the ledger grew. ISO timestamps sort lexically. */
   const rows = (S.ts.tasks || []).slice()
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-  if (!rows.length) return `<div class="info">Nothing here yet. Select any text in the
-    panel and click <strong>Help</strong> — if you describe a problem, the chat
-    can file it as a task. Filed tasks wait here until you queue them; Sutra then
-    picks them up on its hourly pass and brings back a change for your review.</div>`;
+  /* THE EMPTY STATE IS A STATE, NOT AN ESSAY (owner, 2026-09-14: "why do I see
+     such a big text"). One line for what this is, one for how something gets
+     here, and the rest behind the disclosure for whoever wants the mechanics. */
+  if (!rows.length) return `<div class="zero zsm">
+    <h4>Nothing flagged yet</h4>
+    <p>Select any text in the panel and click <strong>Help</strong> to file it.</p>
+    <details class="why"><summary>What happens to a filed task</summary>
+      <p>It waits here until you queue it. Sutra picks it up on its hourly pass and
+        brings back a change for your review.</p></details>
+  </div>`;
   return `<p class="tsc-hint">What you flagged, and what Sutra did about it.</p>${rows.map(tsCard).join("")}`;
 };

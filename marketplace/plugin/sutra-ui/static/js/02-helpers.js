@@ -1133,7 +1133,7 @@ function railSpec(){
       /* Carries the usage figure now that Usage is a section of this screen.
          Provider-aware: a percentage while DeepSeek is selected would describe
          a plan the panel is not using. See providerUsage. */
-      {id:"settings",n:"Settings", i:"gear",
+      {id:"settings",n:"Setup", i:"gear",
        c:((providerUsage() || {}).short) ?? undefined}
     ]
   };

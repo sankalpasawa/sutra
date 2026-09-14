@@ -3539,3 +3539,83 @@
 .uaextra{margin-top:12px;border:1px solid var(--line-soft);border-radius:9px;padding:10px 12px}
 .uaxhead{font:600 11px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint);margin-bottom:7px}
+
+/* ══════════════ Setup: panels, rows, fields, marks ═════════════════════════
+   Owner, 2026-09-14: "the way it looks could be improved by a good deal ...
+   make it a bit text-light". So: fewer words on screen and more structure. A
+   panel is one object with hairline rows inside it, a row is a label and a
+   value, a field is a label above its control, and every section card carries its
+   own mark. Type is lighter throughout: labels carry the weight, values do not. */
+.sxcico{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:var(--acc-bg);color:var(--acc);margin-top:1px}
+.sxcico svg{width:16px;height:16px}
+.sxcard:hover .sxcico{background:var(--acc);color:var(--on-acc)}
+
+.sxpanel{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+  overflow:hidden;max-width:760px}
+.sxpanel>*+*{border-top:1px solid var(--line-soft)}
+
+/* label / value, the workhorse row */
+.sxkv{display:flex;align-items:baseline;gap:14px;padding:11px 14px;font-size:12.5px}
+.sxk{flex:none;min-width:116px;color:var(--muted)}
+.sxv{flex:1;min-width:0;color:var(--ink);word-break:break-word}
+.sxv code{background:transparent;border:0;padding:0;font-size:12px;color:var(--ink)}
+.sxv.ok{color:var(--ok)}
+.sxv.bad{color:var(--block)}
+
+/* a control with its own label, aligned with every other control on the screen */
+.sxfield{padding:13px 14px;display:block}
+.sxflab{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:650;margin-bottom:7px}
+.sxfrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sxfrow input[type="text"],.sxfrow input[type="password"]{flex:1;min-width:220px}
+.sxhint{margin:8px 0 0;font-size:11.5px;color:var(--muted);line-height:1.5;max-width:62ch}
+
+/* the radio rows inside a panel (Chats shown) */
+.sxopt{display:flex;gap:11px;width:100%;text-align:left;cursor:pointer;color:inherit;
+  font:inherit;background:transparent;border:0;padding:12px 14px;align-items:flex-start}
+.sxopt:hover{background:var(--inset)}
+.sxopt:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.sxopt .rd{flex:none;width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);
+  margin-top:2px}
+.sxopt[aria-checked="true"] .rd{border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--acc)}
+.sxoi{min-width:0;display:block}
+.sxoi b{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.sxoi .sxhint{margin-top:3px}
+
+/* every control on these screens is the same height, so a column of them lines up */
+.sxpanel select,.sxpanel input[type="text"],.sxpanel input[type="password"],
+.sxfrow select,.sxfrow input{height:30px;font:inherit;font-size:12.5px;color:var(--ink);
+  background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:0 9px}
+.sxpanel select:focus-visible,.sxpanel input:focus-visible,
+.sxfrow select:focus-visible,.sxfrow input:focus-visible{outline:2px solid var(--acc);
+  outline-offset:1px}
+
+/* a smaller empty state, for screens whose emptiness is ordinary */
+.zero.zsm{padding:22px 18px;max-width:560px}
+.zero.zsm h4{font-size:15px;margin:0 0 5px}
+.zero.zsm p{font-size:12.5px;color:var(--muted);margin:0}
+.zero.zsm details{margin-top:10px}
+.zero.zsm summary{cursor:pointer;font-size:12px;color:var(--faint)}
+.zero.zsm summary:hover{color:var(--acc)}
+.zero.zsm details p{margin-top:6px}
+
+/* Alignment, everywhere on these screens (owner: "the drop down is not aligned
+   properly for every each one of them"). One height, one radius, one ground for
+   every control the Setup screens draw, whether or not it sits in a panel. */
+.sxsec select,.sxsec input[type="text"],.sxsec input[type="password"],
+.sxsec input[type="number"],.sxstate select{height:30px;font:inherit;font-size:12.5px;
+  color:var(--ink);background:var(--inset);border:1px solid var(--line);border-radius:8px;
+  padding:0 9px;max-width:100%}
+.sxsec select:hover,.sxsec input:hover{border-color:var(--acc)}
+.sxsec label{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
+  color:var(--muted)}
+
+/* The provider page's rows, in the same shape as a panel's, so a page that mixes
+   both does not read as two designs. */
+.sxsec .kv{display:flex;align-items:baseline;gap:14px;padding:11px 14px;font-size:12.5px;
+  background:var(--card);border:1px solid var(--line-soft);border-radius:10px;margin:0 0 6px;
+  max-width:760px}
+.sxsec .kv b{flex:none;min-width:116px;font-weight:400;color:var(--muted)}
+.sxsec .kv span{flex:1;min-width:0;color:var(--ink);word-break:break-word}
+.sxsec .kv code{background:transparent;border:0;padding:0;font-size:12px}

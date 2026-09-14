@@ -1182,8 +1182,28 @@ function settingsValueOf(id, st){
 /* ── the overview ──────────────────────────────────────────────────────────
    Six rows, each with what it is and what it is set to right now. Nothing is
    open; nothing is scrolled. */
+/* ONE MARK PER SECTION (owner, 2026-09-14: "maybe add a logo of sorts for every
+   setting"). Line icons, drawn on the same 24-grid and the same stroke weight as
+   the rail's, so the overview reads as a set rather than six labels. */
+const SET_ICONS = {
+  providers: '<path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z"/><path d="M9 12l2 2 4-4"/>',
+  access:    '<rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 018 0v3.5"/>',
+  usage:     '<path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-4"/><path d="M12.5 16V8"/><path d="M17 16v-6"/>',
+  updates:   '<path d="M20 12a8 8 0 10-2.6 5.9"/><path d="M20 6v5h-5"/>',
+  workspace: '<path d="M4 7.5A1.5 1.5 0 015.5 6H10l2 2.5h6.5A1.5 1.5 0 0120 10v7.5a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 17.5z"/>',
+  advanced:  '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M7.5 16.5L6 18"/>',
+};
+function setIconHtml(id){
+  const d = SET_ICONS[id];
+  if (!d) return "";
+  return `<span class="sxcico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+      stroke-linejoin="round">${d}</svg></span>`;
+}
+
 function settingsOverviewHtml(st){
   const card = s => `<button class="sxcard" type="button" data-setsec="${esc(s.id)}">
+      ${setIconHtml(s.id)}
       <span class="sxci">
         <span class="sxct">${esc(s.title)}</span>
         <span class="sxcd">${esc(s.desc)}</span>
@@ -1353,7 +1373,7 @@ function accessSectionHtml(st){
   const running_covered = covered.has(running);
   return `
     ${settingsHeadHtml("Access and permissions",
-      "What the AI may change on this Mac without asking you first.", "Settings")}
+      "What the AI may change on this Mac without asking you first.", "Setup")}
     ${settingsBanner()}
     ${st.permission_mode_clamped?`<div class="note w"><b>The setting on file is not the one running.</b>
       Sutra is starting sessions as <b>${esc(accessLabelFor(active, running))}</b>.
@@ -1398,7 +1418,7 @@ function usageSectionHtml(fallback){
   const all = usageAllHtml();
   return `
     ${settingsHeadHtml("Usage limits",
-      "How much of each provider's allowance you have used.", "Settings")}
+      "How much of each provider's allowance you have used.", "Setup")}
     ${settingsBanner()}
     ${all !== null ? all
       : `${S.usageAllError?`<div class="note w"><b>The all-provider view is not available
@@ -1453,7 +1473,7 @@ function toolsListHtml(){
 }
 function updatesSectionHtml(){
   return `
-    ${settingsHeadHtml("Updates", "Sutra itself, and the AI tools it runs.", "Settings")}
+    ${settingsHeadHtml("Updates", "Sutra itself, and the AI tools it runs.", "Setup")}
     ${settingsBanner()}
     ${updatesHtml()}
     <section class="chsec"><h3 class="sec">AI tools</h3>
@@ -1465,30 +1485,39 @@ function updatesSectionHtml(){
 
 /* ── Workspace and folder ────────────────────────────────────────────────── */
 function workspaceSectionHtml(st){
+  /* REBUILT 2026-09-14 (owner: "the workspace and folder when I open it doesn't
+     look nice at all"). It was three paragraphs of prose above an unaligned row
+     of controls. Now: the field first, because that is what the screen is for;
+     one line of consequence under it; and the two facts that were buried in the
+     prose -- where it is working now, and where a folder is allowed to be -- as
+     rows of their own. */
+  const draft = S.workdirDraft !== null ? S.workdirDraft : (st.workdir || "");
+  const busy = S.setBusy === "workdir";
   return `
-    ${settingsHeadHtml("Workspace and folder", "The folder your AI works in.", "Settings")}
+    ${settingsHeadHtml("Workspace and folder", "The folder your AI reads and writes in.", "Setup")}
     ${settingsBanner()}
-    <p style="margin-bottom:9px">Your AI can read and change files here, and this is
-      where anything it creates will go. If the folder does not exist yet, it is made
-      for you.</p>
-    <p style="margin-bottom:9px">A change applies to your <b>next</b> chat. A chat that is
-      already running stays where it is — moving it mid-answer would break the work it is in
-      the middle of.</p>
-    <div class="wdrow">
-      <input type="text" class="wdin" data-workdir-input
-             value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
-             spellcheck="false" autocapitalize="off" autocorrect="off"
-             aria-label="Project folder" placeholder="~/sutra-ui-workspace">
-      ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
-        title="Choose a folder in Finder">Browse…</button>`:""}
-      <button class="btn" type="button" data-workdir-save
-        ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
-          S.setBusy==="workdir"?"Saving…":"Use this folder"}</button>
+    <div class="sxpanel">
+      <div class="sxfield">
+        <label class="sxflab" for="sx-workdir">Project folder</label>
+        <div class="sxfrow">
+          <input type="text" class="wdin" id="sx-workdir" data-workdir-input
+                 value="${esc(draft)}" spellcheck="false" autocapitalize="off"
+                 autocorrect="off" placeholder="~/sutra-ui-workspace">
+          ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
+            title="Choose a folder in Finder">Browse…</button>`:""}
+          <button class="btn pri" type="button" data-workdir-save
+            ${busy?'aria-busy="true" disabled':""}>${busy?"Saving…":"Use this folder"}</button>
+        </div>
+        <p class="sxhint">Applies to your next chat. A chat that is already running stays
+          where it is.</p>
+      </div>
+      <div class="sxkv"><span class="sxk">Working in</span>
+        <span class="sxv"><code>${esc(st.workdir||"—")}</code></span></div>
+      <div class="sxkv"><span class="sxk">Allowed inside</span>
+        <span class="sxv"><code>${esc(st.workdir_root||"~")}</code></span></div>
     </div>
-    <p class="why" style="margin:7px 0 9px">Has to be somewhere inside
-      <code>${esc(st.workdir_root||"~")}</code>. Your AI can read every file in the folder you
-      pick, so picking the top of your drive would hand it everything on this Mac.</p>
-    <div class="kv"><b>Working in</b><span><code>${esc(st.workdir||"—")}</code></span></div>`;
+    <p class="sxhint" style="margin-top:10px">Your AI can read every file in the folder you
+      pick, so the top of your drive would hand it everything on this Mac.</p>`;
 }
 
 /* ── Advanced ──────────────────────────────────────────────────────────────
@@ -1497,45 +1526,58 @@ function workspaceSectionHtml(st){
    in. Folds here are kept (they are three unrelated blocks on one page), and
    their keys are the existing ones so an operator's collapsed state survives. */
 function advancedSectionHtml(st){
+  /* REBUILT 2026-09-14 (owner: "when I click on advanced it doesn't look nice").
+     It was three collapsed folds wrapping prose. Advanced is where somebody goes
+     to check a value, so it is now three panels of values: what the Chats list
+     shows, anything Sutra refused, and the raw settings behind the screens. */
   const scope = (st.chat_scope === "all") ? "all" : "sutra";
   const opt = (id, title, body) => `
-    <button class="opt" type="button" role="radio" aria-checked="${scope===id}"
+    <button class="sxopt" type="button" role="radio" aria-checked="${scope===id}"
         data-chatscope="${id}" ${S.setBusy==="scope:"+id?'aria-busy="true"':""}>
       <span class="rd" aria-hidden="true"></span>
-      <span class="oi"><b>${title}</b><span class="osub">${body}</span></span>
+      <span class="sxoi"><b>${title}</b><span class="sxhint">${body}</span></span>
     </button>`;
-  const invalid = Object.keys(st.invalid_stored_values||{}).length
-    ? `<div class="note w"><b>Some saved settings could not be used.</b>
-        ${Object.entries(st.invalid_stored_values).map(([k,v])=>
-          `<div>${esc(k.replace(/_/g," "))} — <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
-        Nothing was changed behind your back; the normal default is being used instead.</div>`
-    : `<p class="why" style="margin:0">Every saved setting loaded cleanly.</p>`;
+  const bad = Object.entries(st.invalid_stored_values || {});
   return `
-    ${settingsHeadHtml("Advanced",
-      "Which chats are listed, saved values Sutra could not use, and the technical detail.",
-      "Settings")}
+    ${settingsHeadHtml("Advanced", "Values behind the screens, and anything Sutra refused.",
+      "Setup")}
     ${settingsBanner()}
-    ${fold("set.chatscope", "Chats shown",
-      scope === "all" ? "Every session" : "Started in Sutra", `
-      <p style="margin-bottom:9px">Which conversations the Chats list shows. This changes the
-        list only — nothing is deleted, moved or hidden on disk either way.</p>
-      <div role="radiogroup" aria-label="Chats shown">
+
+    <section class="sxsec"><h3 class="sxsech">Chats shown</h3>
+      <div class="sxpanel" role="radiogroup" aria-label="Chats shown">
         ${opt("sutra", "Only chats started in Sutra",
-              "The conversations this app began. Work you did in a terminal or another editor "
-            + "stays out of Sutra's list.")}
+              "Work you did in a terminal or another editor stays out of the list.")}
         ${opt("all", "Every session on this Mac",
-              "Every transcript any AI provider wrote here — Claude, Codex, DeepSeek — whichever "
-            + "tool started it. Departments then count and group all of it.")}
-      </div>`)}
-    ${fold("set.invalid", "Saved values", Object.keys(st.invalid_stored_values||{}).length
-      ? Object.keys(st.invalid_stored_values).length + " refused" : "all fine", invalid, false)}
-    ${fold("set.diag", "Where this is stored", "settings.json", `
-      <div class="kv"><b>Settings file</b><span><code>~/.sutra-ui/settings.json</code></span></div>
-      <div class="kv"><b>Running as</b><span><code>${esc(st.permission_mode_effective || st.permission_mode || "—")}</code></span></div>
-      <div class="kv"><b>On file</b><span><code>${esc(st.permission_mode || "—")}</code></span></div>
-      <div class="kv"><b>Default provider</b><span><code>${esc(st.provider || "—")}</code></span></div>
-      <p class="why" style="margin:9px 0 0">These are the raw values. The screens above
-        are the same settings in plain words.</p>`, false)}`;
+              "Every transcript any AI wrote here, whichever tool started it.")}
+      </div>
+      <p class="sxhint" style="margin-top:8px">This changes the list only. Nothing is
+        deleted, moved or hidden on disk either way.</p>
+    </section>
+
+    <section class="sxsec"><h3 class="sxsech">Saved values</h3>
+      <div class="sxpanel">
+        ${bad.length ? bad.map(([k, v]) => `<div class="sxkv"><span class="sxk">${
+              esc(k.replace(/_/g, " "))}</span><span class="sxv bad"><code>${
+              esc(JSON.stringify(v))}</code> refused</span></div>`).join("")
+          : `<div class="sxkv"><span class="sxk">All settings</span>
+               <span class="sxv ok">loaded cleanly</span></div>`}
+      </div>
+      ${bad.length ? `<p class="sxhint" style="margin-top:8px">Nothing was changed behind
+        your back; the normal default is in use instead.</p>` : ""}
+    </section>
+
+    <section class="sxsec"><h3 class="sxsech">Raw values</h3>
+      <div class="sxpanel">
+        <div class="sxkv"><span class="sxk">Settings file</span>
+          <span class="sxv"><code>~/.sutra-ui/settings.json</code></span></div>
+        <div class="sxkv"><span class="sxk">Running as</span>
+          <span class="sxv"><code>${esc(st.permission_mode_effective || st.permission_mode || "—")}</code></span></div>
+        <div class="sxkv"><span class="sxk">On file</span>
+          <span class="sxv"><code>${esc(st.permission_mode || "—")}</code></span></div>
+        <div class="sxkv"><span class="sxk">Default provider</span>
+          <span class="sxv"><code>${esc(st.provider || "—")}</code></span></div>
+      </div>
+    </section>`;
 }
 
 SCREENS.settings = () => {
@@ -1551,7 +1593,7 @@ SCREENS.settings = () => {
   if (sec.indexOf("provider:") === 0) return providerPageHtml(sec.slice(9), st);
   switch (sec){
     case "providers": return `${settingsHeadHtml("AI providers",
-        "Which AI answers your messages, and how each one is set up.", "Settings")}
+        "Which AI answers your messages, and how each one is set up.", "Setup")}
       ${settingsBanner()}${providerListHtml(st)}`;
     case "access":    return accessSectionHtml(st);
     /* The fallback is passed from HERE, not looked up inside, so this screen's
@@ -1590,7 +1632,7 @@ const TITLES = {
   /* RENAMED 2026-09-14, with the rail row in 02-helpers.js: this screen used to be
      the provider list and was labelled "AI Provider". It now opens as an overview of
      six sections, so the old name described only the first of them. */
-  settings:["Settings","providers, access, usage, updates and your folder · ~/.sutra-ui/settings.json"],
+  settings:["Setup","what answers you, what it may do, and what it has used"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
