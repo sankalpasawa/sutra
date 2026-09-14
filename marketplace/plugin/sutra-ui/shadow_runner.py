@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import time
 import weakref
 
@@ -67,6 +68,87 @@ ATTACHED = {}
 #:
 #: Fences, does not fix: the orphan is not killed here (see shutdown()).
 _ORPHANED = set()
+
+#: session_id -> os pid of the delegate process THIS app spawned for it.
+#: In-memory and deliberately so: it is a cache for the stamp below, not the
+#: record. The durable copy is `delegate_pid` on the mission file, because
+#: that is the only thing that survives the restart it exists to answer.
+DELEGATE_PIDS = {}
+
+
+def delegate_alive(pid, session_id=None):
+    """Is THAT delegate process still running?
+
+    THE QUESTION recover_on_boot could not ask (founder, 2026-09-15). A
+    delegate is spawned with process_group=0, so its Claude process outlives
+    the app; Electron SIGKILLs the uvicorn child on quit, so shutdown() often
+    never reaps it. After a restart the runtime handle is gone -- the pipes
+    died with the parent and cannot be re-acquired by anyone -- so the only
+    way back into that conversation is `claude --resume <sid>`, which starts
+    a SECOND process on the same transcript. That is safe if and only if the
+    first one is dead, and nothing on disk could say whether it was. The
+    fence existed because the answer was unknown, not because it was "yes".
+
+    TWO CHECKS, AND THE SECOND IS WHAT MAKES A PID SAFE TO TRUST. `kill(pid,
+    0)` alone is not enough: pids are recycled, so a dead delegate's number
+    can belong to something else entirely and read as "alive", which fences
+    a mission forever. When the pid IS live we also require its command line
+    to mention the session id -- our delegates always carry it in argv. A
+    live pid that is not our delegate is a recycled number, and the delegate
+    it once named is gone.
+
+    FAILS CLOSED, ALWAYS. Anything unexpected -- no pid recorded, a probe
+    that raises, a ps we cannot read -- returns True ("assume alive"), which
+    keeps the existing fence. A wrong "alive" costs the founder one Resume
+    click; a wrong "dead" puts two writers on one transcript, which is the
+    invariant this whole module exists to hold.
+    """
+    if not pid:
+        return True                     # nothing recorded -> assume the worst
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False                    # provably gone
+    except (PermissionError, OSError):
+        return True                     # exists but not ours to signal
+    except (TypeError, ValueError):
+        return True
+    if not session_id:
+        return True
+    # live pid: is it OURS, or a recycled number?
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", str(int(pid))],
+                             capture_output=True, text=True, timeout=5)
+        cmd = (out.stdout or "")
+    except Exception:                   # noqa: BLE001 -- probe failed, fence
+        return True
+    if not cmd.strip():
+        return False                    # ps knows nothing: it died under us
+    return str(session_id) in cmd
+
+
+def remember_delegate_pid(store, mid):
+    """Persist the delegate's pid onto the mission that owns it.
+
+    The mission file is already the durable record of delegate identity
+    (target_mode + target_session since S53); the pid joins them for the same
+    reason and in the same place. No new store and no new entity -- the boot
+    path must be able to read this after the process that knew it is gone.
+
+    Best-effort and idempotent: a mission that already carries one is left
+    alone, and a failure here must never fail a start.
+    """
+    try:
+        m = store.load(mid)
+        if not m or m.get("delegate_pid"):
+            return
+        pid = DELEGATE_PIDS.get(m.get("target_session"))
+        if not pid:
+            return
+        m["delegate_pid"] = int(pid)
+        store.save(m)
+    except Exception:                   # noqa: BLE001 -- never fail a start
+        pass
 #: session_id -> rolling window of STREAMED text (what the app actually saw;
 #: transcript files lag or, for fakes, never exist -- the stream is the truth)
 _RECENT_TEXT = {}
@@ -499,6 +581,7 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
         eng2 = mission_engine.MissionEngine(store, None, None, None)
         try:
             await eng2.provision_target(promoted["id"], prov)
+            remember_delegate_pid(store, promoted["id"])
         except Exception as exc2:
             store.transition(promoted["id"], "failed",
                              "provision on promote failed: %s"
@@ -710,7 +793,8 @@ def _left_paused(mid, why):
         "note": "left paused after restart: %s" % why[:400]})
 
 
-async def resume_after_restart(ensure_runtime_async, validated_say):
+async def resume_after_restart(ensure_runtime_async, validated_say,
+                               ensure_delegate_async=None):
     """Undo the pause the APP itself applied, where that is safe.
 
     recover_on_boot() pauses honestly; this is the other half, so a restart
@@ -757,9 +841,68 @@ async def resume_after_restart(ensure_runtime_async, validated_say):
             resumed.append(mid)
             continue
         if m.get("target_mode") != "existing" or not sid:
-            _left_paused(mid, "delegate session stays fenced until the "
-                              "founder resumes or stops it")
-            left.append(mid)
+            # A DELEGATE IS ADOPTED ONLY WHEN ITS WORKER IS PROVABLY DEAD
+            # (founder, 2026-09-15).
+            #
+            # THE BUG: a healthy mission driving itself -- four consecutive
+            # `continue` decisions on m-55c220d58b1a -- stopped dead because
+            # the app restarted under it, and every delegate was fenced here
+            # regardless of whether anything was still writing its
+            # transcript. A restart became a founder chore for work that had
+            # nothing wrong with it. Empirically the worker usually is gone:
+            # the delegate behind that mission left no process at all.
+            #
+            # THE FENCE ITSELF IS RIGHT and is NOT weakened. Re-entry to a
+            # session is only ever `claude --resume <sid>` -- the runtime's
+            # pipes died with the app and cannot be re-acquired by anyone --
+            # so it starts a SECOND process on one transcript. That is the
+            # single-writer invariant's whole concern, and it is exactly why
+            # this stayed fenced while the answer was UNKNOWN. What changed
+            # is that the answer is now knowable: the spawn records its pid
+            # on the mission, and delegate_alive() asks about that pid (and
+            # checks argv, so a recycled number cannot read as alive).
+            #
+            # Dead -> the same path an existing-target mission already takes,
+            # with the same admission rules below it. Alive, or no pid
+            # recorded (a mission from before this shipped), or any probe
+            # that failed -> the historical fence, unchanged. delegate_alive
+            # fails CLOSED, so every uncertainty keeps the old behaviour.
+            if ensure_delegate_async is None:
+                _left_paused(mid, "delegate session stays fenced until the "
+                                  "founder resumes or stops it")
+                left.append(mid)
+                continue
+            if delegate_alive(m.get("delegate_pid"), sid):
+                _left_paused(mid, "delegate worker still alive -- fenced "
+                                  "until the founder resumes or stops it")
+                left.append(mid)
+                continue
+            if sid in running_sids:
+                _left_paused(mid, "session %s already has a running mission"
+                                  % sid)
+                left.append(mid)
+                continue
+            if running_n >= mission_engine.MAX_RUNNING:
+                _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+                left.append(mid)
+                continue
+            if not session_reader.read_session(sid):
+                _left_paused(mid, "target transcript %s not found" % sid)
+                left.append(mid)
+                continue
+            try:
+                await ensure_delegate_async(sid)
+            except Exception as exc:  # noqa: BLE001 -- recorded, not hidden
+                _left_paused(mid, "could not re-adopt %s: %s"
+                                  % (sid, str(exc)[:160]))
+                left.append(mid)
+                continue
+            store.transition(mid, "running",
+                             "re-adopted after restart (worker was gone)")
+            _launch(mid, validated_say, None)
+            running_sids.add(sid)
+            running_n += 1
+            resumed.append(mid)
             continue
         if sid in running_sids:
             _left_paused(mid, "session %s already has a running mission"
@@ -1350,6 +1493,16 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
         # the single-writer invariant exists to prevent. A plain dict write,
         # with none of the side effects that keep register/attach/pump below.
         DELEGATES[sid] = rt
+        # ...and REMEMBER WHICH PROCESS IT IS. delegate_alive() needs a pid to
+        # ask about after the app that spawned it is gone; this is where the
+        # process and the session id are both known. In-memory here;
+        # remember_delegate_pid puts it on the mission, which is the copy that
+        # survives the restart.
+        try:
+            if getattr(rt, "proc", None) is not None:
+                DELEGATE_PIDS[sid] = rt.proc.pid
+        except Exception:               # noqa: BLE001 -- never fail a spawn
+            pass
         # STILL EXACTLY ONE spawn row per delegate -- it simply lands when the
         # session becomes real rather than when its first turn ends.
         shadow_ledger.append("actions", {
@@ -1459,6 +1612,7 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                     eng = mission_engine.MissionEngine(store, None, None,
                                                        None)
                     await eng.provision_target(mid, prov)
+                    remember_delegate_pid(store, mid)
                 start_mission(mid, validated_say, verifier)
             finally:
                 _STARTING.discard(mid)

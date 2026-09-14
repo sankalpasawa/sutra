@@ -1981,7 +1981,8 @@ async def _shadow_recover():
             # AFTER the decider is bound: a resumed loop is launched with
             # whatever DEFAULT_DECIDER holds at launch time
             await shadow_runner.resume_after_restart(
-                _ensure_target_runtime, _validated_say)
+                _ensure_target_runtime, _validated_say,
+                ensure_delegate_async=_ensure_delegate_runtime)
         except Exception:
             pass
 
@@ -2635,6 +2636,29 @@ async def _ensure_target_runtime(session_id):
     """
     return await shadow_runner.ensure_runtime(
         session_id, lambda sid: _shadow_args(session_id=sid),
+        register_runtime)
+
+
+async def _ensure_delegate_runtime(session_id):
+    """Re-enter a DELEGATE's session after a restart, when its worker is gone.
+
+    Same primitive as _ensure_target_runtime and the same measured
+    `--resume <sid>` contract: the id is checked against disk first, the
+    session id comes back byte-identical, and the transcript is appended to
+    rather than forked. The ONLY difference is the argv builder -- a delegate
+    runs on _worker_args (its own MCP config, permission mode and tool
+    scope), not on the args Shadow uses to speak inside a founder's chat.
+    Re-attaching on the wrong builder would give the adopted worker a
+    different toolset than the one it was spawned with.
+
+    Called from exactly one place: resume_after_restart, and only after
+    delegate_alive() has said the previous process is gone. It is never a
+    second spawn path -- an id with a live worker never reaches here.
+
+    Raises NoLiveRuntime, which the caller records as a left-paused reason.
+    """
+    return await shadow_runner.ensure_runtime(
+        session_id, lambda sid: _worker_args(session_id=sid),
         register_runtime)
 
 
