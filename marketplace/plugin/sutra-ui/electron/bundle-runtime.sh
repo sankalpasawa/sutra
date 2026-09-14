@@ -39,8 +39,15 @@ PLUGIN="$(cd "$UI/.." && pwd)"            # marketplace/plugin
 PAYLOAD="$HERE/payload"
 CACHE="${SUTRA_BUNDLE_CACHE:-$HOME/.cache/sutra-bundle}"
 
-PY_VERSION="${SUTRA_PY_VERSION:-3.12.13}"
-PBS_TAG="${SUTRA_PBS_TAG:-20260804}"
+#: The interpreter every release DMG ships. 3.12 because the pins need 3.11-3.12
+#: (cryptography's only wheel is cp311-abi3; numpy 2.0.2 has no cp313 wheel) --
+#: the same range install.sh accepts for a dev install. Patch-bumped 3.12.13 ->
+#: 3.12.14 on 2026-09-13 (python-build-standalone 20260901, checksums verified for
+#: both arches at the time). A bump needs no checksum edit here: the archive is
+#: checked against the SHA256SUMS the release publishes, below.
+#: test_python_versions.py keeps this minor inside install.sh's range.
+PY_VERSION="${SUTRA_PY_VERSION:-3.12.14}"
+PBS_TAG="${SUTRA_PBS_TAG:-20260901}"
 #: Node ships for ONE reason -- the DeepSeek CLI is an npm package Sutra
 #: installs and spawns -- so this tracks the Active LTS line rather than
 #: current. Bumping it means replacing BOTH checksums below, from

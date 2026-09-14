@@ -350,6 +350,74 @@ TIMEOUT = 30 * 60
 
 def iso(): return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
+STALE_AFTER = 2 * TIMEOUT   # no run the watchdog allows can hold a lock this long
+
+def lock_stale_reason(lock):
+    """Why an existing lock is dead, or None while it may still be live.
+
+    Two signals, both needed. A dead holder pid is stale at any age. A missing
+    or bad pid is stale only once the lock is older than STALE_AFTER: the pid
+    file is written a moment after mkdir, so a fresh lock without one is a live
+    run still in setup. A live pid on a lock older than STALE_AFTER is pid
+    reuse after a reboot, not a two-hour routine. A pid this user may not
+    signal is treated as live. Before this check existed, one lock left behind
+    by a crash skipped every fire of its routine for five weeks (279 rows).
+    """
+    try:
+        age = time.time() - os.stat(lock).st_mtime
+    except OSError:
+        return None
+    try:
+        pid = int(open(os.path.join(lock, "pid")).read().strip())
+    except (OSError, ValueError):
+        pid = None
+    if pid is None or pid <= 0:
+        if age > STALE_AFTER:
+            return "no holder pid and lock older than %ds" % STALE_AFTER
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "holder pid %d is gone" % pid
+    except PermissionError:
+        pass
+    except OSError:
+        return None
+    if age > STALE_AFTER:
+        return "lock older than %ds (pid %d reused)" % (STALE_AFTER, pid)
+    return None
+
+def acquire_lock(lock):
+    """-> (acquired, stale_reason). A stale lock is removed and mkdir is tried
+    once more, so a run only ever proceeds under a lock it created itself --
+    never one it found. If another fire wins the retry, this one skips."""
+    stale = None
+    for _ in range(2):
+        try:
+            os.mkdir(lock)
+        except OSError:
+            why = lock_stale_reason(lock)
+            if not why:
+                return False, stale
+            release_lock(lock)
+            stale = why
+            continue
+        try:
+            with open(os.path.join(lock, "pid"), "w") as fh:
+                fh.write(str(os.getpid()))
+        except OSError:
+            pass
+        return True, stale
+    return False, stale
+
+def release_lock(lock):
+    """Release order matters: the pid file first, or rmdir fails and the lock
+    outlives the run it belonged to."""
+    try: os.unlink(os.path.join(lock, "pid"))
+    except OSError: pass
+    try: os.rmdir(lock)
+    except OSError: pass
+
 def selfdestruct(rid, why):
     """The store is gone -> this job must remove itself. Nothing else will."""
     label = "os.sutra.ui.routine." + rid
@@ -493,15 +561,21 @@ def main():
 
     # OVERLAP LOCK. mkdir is atomic. A slow routine must not stack copies of
     # itself; the second fire records that it was skipped rather than vanishing.
+    # The lock carries its holder's pid so a lock left behind by a crash is
+    # cleared (and recorded) instead of skipping every fire forever.
     lock = os.path.join(rundir, ".lock")
     started = iso(); t0 = time.time()
-    try:
-        os.mkdir(lock)
-    except OSError:
+    acquired, stale = acquire_lock(lock)
+    if not acquired:
         row = {"schema":1,"id":rid,"trigger":trigger,"started_at":started,
-               "outcome":"skipped","reason":"a previous run is still going",
-               "duration_s":0}
+               "outcome":"skipped","duration_s":0,
+               "reason":("stale lock could not be cleared: " + stale) if stale
+                        else "a previous run is still going"}
         append(rundir, row); return
+    if stale:
+        append(rundir, {"schema":1,"id":rid,"trigger":trigger,"started_at":started,
+                        "outcome":"skipped","reason":"stale lock cleared: " + stale,
+                        "stale_lock":True,"duration_s":0})
 
     # OUTER GUARD (codex P1): everything after the lock is acquired runs under
     # one try/finally. Before this, argv construction sat OUTSIDE the try that
@@ -514,6 +588,13 @@ def main():
         # NEVER inherited into a routine: it would route billing through the
         # per-token API instead of the plan, silently, on a schedule.
         env.pop("ANTHROPIC_API_KEY", None)
+        # Headless. The plugin's per-turn nudges are written for a person at a
+        # keyboard; in a routine they only send the model after Skill calls it
+        # has no permission for, and Stop gates then force redo turns (409 s of
+        # wall time for 23 s of API, measured 2026-09-14). Hooks that honour
+        # these two stay quiet.
+        env["SUTRA_ROUTINE"] = "1"
+        env["SUTRA_DEFAULTS_DISABLED"] = "1"
 
         prompt = r["prompt"]
         if (r.get("opts") or {}).get("teamsutra"):
@@ -667,8 +748,7 @@ def main():
                         "detail":("runner error: %s" % e)[:600],
                         "task_id":(ts_rec or {}).get("id")})
     finally:
-        try: os.rmdir(lock)
-        except OSError: pass
+        release_lock(lock)
 
 def append(rundir, row):
     p = os.path.join(rundir, "index.jsonl")

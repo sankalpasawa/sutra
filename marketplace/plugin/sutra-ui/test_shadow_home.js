@@ -1107,4 +1107,540 @@ const SET = { engage: ["outcome first"],
   console.log("ok 22c settings: an unreadable answer is its own state");
 }
 
+/* 23. THE WHOLE TASK ROW IS THE CONTROL (founder, 2026-09-13).
+
+   shadowTaskListHtml renders a <button data-shtask> wrapping three spans --
+   the dot, the name, the pill -- and they fill it. The handler read
+   ev.target.dataset, so the event target for every realistic click was a
+   span with no dataset and the branch never fired: clicking the task NAME
+   did nothing. These fakes are shaped like the DOM, not like a dataset bag,
+   which is the whole point -- the previous tests handed the handler a
+   synthesised {target:{dataset}} and could not see this class of bug. */
+{
+  /* one row, one child span, wired the way the browser wires them */
+  const rowFor = (mid) => {
+    const row = { dataset: { shtask: mid } };
+    row.closest = (sel) => sel === "[data-shtask]" ? row : null;
+    const child = (extra) => ({ dataset: extra || {},
+      closest: (sel) => sel === "[data-shtask]" ? row : null });
+    return { row, dot: child(), name: child(), pill: child() };
+  };
+  const parts = rowFor("m-2");
+  ["dot", "name", "pill", "row"].forEach(which => {
+    const ctx = fresh();
+    ctx.S.shadowMissions = MISSIONS;
+    ctx.S.shadowTaskSel = "m-1";
+    ctx.S.shadowNewOpen = true;
+    assert(typeof ctx.listeners.click === "function", "the click handler is wired");
+    ctx.listeners.click({ target: parts[which] });
+    assert.strictEqual(ctx.S.shadowTaskSel, "m-2",
+      "clicking the " + which + " must select THAT task");
+    assert.strictEqual(ctx.S.shadowNewOpen, false,
+      "picking a task closes the Delegate panel, from the " + which + " too");
+  });
+  /* and it stays scoped: a click outside any row selects nothing */
+  const ctx = fresh();
+  ctx.S.shadowMissions = MISSIONS;
+  ctx.S.shadowTaskSel = "m-1";
+  ctx.listeners.click({ target: { dataset: {}, closest: () => null } });
+  assert.strictEqual(ctx.S.shadowTaskSel, "m-1",
+    "a click on nothing must not move the selection");
+  /* the right pane's card must NOT be swallowed by the row selector --
+     attribute selectors are exact, so data-shtaskcard is a different hook */
+  assert(/data-shtaskcard="/.test(ctx.shadowTaskCardHtml(MISSIONS[0])),
+    "the card keeps its own distinct hook");
+  console.log("ok 23 the whole task row is clickable (dot, name, pill)");
+}
+
+/* 24. ONE READ PER GESTURE (perf fold 2026-09-13).
+
+   SCREENS.shadow and SCREENS.shadowsettings ask for their data from inside
+   render(), and render() runs on every SSE frame and every scheduleRender
+   tick. Nothing stopped a second read starting while the first was still in
+   the air, so opening Shadow Settings against a backend that is not instant
+   cost DOZENS of requests: measured 22 for one click, 6 of every 7 of them
+   the same GET issued again a frame later, plus Shadow HOME bursts that were
+   still landing after the operator had navigated away.
+
+   These pin the three rules that fixed it. They are deliberately driven the
+   way render() drives them -- call the screen function repeatedly while the
+   promise is unresolved -- because that IS the bug; asserting on one call
+   could never see it.
+
+   Same async-IIFE discipline test 17 documents. */
+(async () => {
+  /* a fetch that answers only when the test says so, and counts */
+  function deferredFetch(){
+    const calls = [], gates = [];
+    const f = (url) => {
+      calls.push(String(url));
+      return new Promise(res => gates.push({ url: String(url), res }));
+    };
+    f.calls = calls;
+    f.n = (re) => calls.filter(u => re.test(u)).length;
+    f.answer = (re, body) => {
+      gates.filter(g => re.test(g.url)).forEach(g => g.res({
+        ok: true, status: 200, json: () => Promise.resolve(body) }));
+    };
+    return f;
+  }
+  const tick = () => new Promise(r => setImmediate(r));
+
+  /* -- 24a: the settings screen reads ONCE, however often it is painted -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.screen = "shadowsettings";
+    for (let i = 0; i < 12; i++) ctx.SCREENS.shadowsettings();
+    assert.strictEqual(f.n(/\/api\/shadow\/settings/), 1,
+      "12 paints must issue ONE /api/shadow/settings, not 12");
+    f.answer(/settings/, { floors: ["x"] });
+    await tick(); await tick();
+    assert(ctx.S.shadowSettings && ctx.S.shadowSettings.floors,
+      "the answer still lands in state");
+    for (let i = 0; i < 5; i++) ctx.SCREENS.shadowsettings();
+    assert.strictEqual(f.n(/\/api\/shadow\/settings/), 1,
+      "once it is read, painting it again reads nothing");
+  }
+
+  /* -- 24b: Shadow Home reads ONCE, however often it is painted -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.screen = "shadow";
+    for (let i = 0; i < 12; i++) ctx.SCREENS.shadow();
+    assert.strictEqual(f.n(/\/api\/shadow\/status/), 1,
+      "12 paints must issue ONE /api/shadow/status, not 12");
+    assert.strictEqual(f.n(/\/api\/shadow\/(watches|missions)/), 0,
+      "the parallel reads wait on /status, as they always did");
+    f.answer(/status/, {});
+    await tick(); await tick();
+    assert.strictEqual(f.n(/\/api\/shadow\/watches/), 1, "one watches read");
+    assert.strictEqual(f.n(/\/api\/shadow\/settings/), 1,
+      "home still carries settings on its own parallel read");
+  }
+
+  /* -- 24c: a LAZY home read is abandoned when the operator leaves -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.screen = "shadow";
+    ctx.SCREENS.shadow();                    /* render starts the read */
+    ctx.S.screen = "shadowsettings";         /* ...the founder leaves */
+    f.answer(/status/, {});
+    await tick(); await tick();
+    assert.strictEqual(f.n(/\/api\/shadow\/watches/), 0,
+      "the five home reads must NOT be issued for a screen nobody is on");
+    assert.strictEqual(ctx.S.shadowHomeDark, undefined,
+      "abandoning must not leave a half-written home: the next visit reloads");
+  }
+
+  /* -- 24d: a FORCED read is never abandoned and never coalesced -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.screen = "shadowsettings";         /* not a home screen at all */
+    ctx.loadShadowHome(true);
+    f.answer(/status/, {});
+    await tick(); await tick();
+    assert.strictEqual(f.n(/\/api\/shadow\/watches/), 1,
+      "an action that just wrote must still get its re-read, from any screen");
+  }
+
+  /* -- 24e: the door navigates, it does not fetch -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.shadowSettings = { floors: [] };   /* home already read them */
+    ctx.listeners.click({ target: { dataset: { shscreen: "shadowsettings" },
+      closest: () => null } });
+    assert.strictEqual(ctx.S.screen, "shadowsettings", "it still navigates");
+    assert.strictEqual(f.calls.length, 0,
+      "the door must not re-read what Shadow Home already has");
+    /* and the settings screen agrees: nothing left to fetch */
+    ctx.SCREENS.shadowsettings();
+    assert.strictEqual(f.calls.length, 0, "nor does painting the screen");
+  }
+
+  /* -- 24f: re-entering after a FAILED read still retries -- */
+  {
+    const ctx = fresh();
+    const f = deferredFetch();
+    ctx.fetch = f;
+    ctx.S.shadowSettings = null;             /* the last read failed */
+    ctx.listeners.click({ target: { dataset: { shscreen: "shadow" },
+      closest: () => null } });
+    assert.strictEqual(ctx.S.shadowSettings, undefined,
+      "leaving clears a failed read, which is what made coming back retry");
+    ctx.S.screen = "shadowsettings";
+    ctx.SCREENS.shadowsettings();
+    assert.strictEqual(f.n(/\/api\/shadow\/settings/), 1, "and it does retry");
+  }
+
+  console.log("ok 24 one read per gesture: no duplicate settings fetch, "
+    + "no home burst after navigating away");
+})().catch(e => { console.error("FAIL 24:", e.message); process.exit(1); });
+
+/* 25. THE WHOLE DOOR IS THE CONTROL (founder, 2026-09-13:
+   "if I shadow settings -- it doesn't open (at least immediately anyway)").
+
+   shadowNavHtml draws ONE button wrapping a <svg> gear and a
+   <span>Shadow Settings</span>, and those two children fill it. The handler
+   read ev.target.dataset, so a click on the label or the icon -- which is
+   every click a person actually makes -- landed on a child with no dataset
+   and the branch never fired. Only the thin strip of padding between the
+   children carried the hook, so the door opened on some presses and ignored
+   others: a dead click that reads as a slow one.
+
+   Same defect and same cure as [data-shtask] in test 23, and these fakes are
+   shaped like the DOM for the same reason: a synthesised {target:{dataset}}
+   cannot see this class of bug at all. */
+{
+  /* the door, wired the way the browser wires it */
+  const doorFor = (screen) => {
+    const door = { dataset: { shscreen: screen } };
+    door.closest = (sel) => sel === "[data-shscreen]" ? door : null;
+    const child = () => ({ dataset: {},
+      closest: (sel) => sel === "[data-shscreen]" ? door : null });
+    return { door, icon: child(), label: child() };
+  };
+
+  /* the markup this is about really does nest two elements in the button */
+  {
+    const ctx = fresh();
+    const nav = ctx.shadowNavHtml();
+    assert(/data-shscreen="shadowsettings"/.test(nav), "the door carries the hook");
+    assert(/<svg/.test(nav) && /<span>Shadow Settings<\/span>/.test(nav),
+      "and it wraps children that will be the click target");
+  }
+
+  const parts = doorFor("shadowsettings");
+  ["label", "icon", "door"].forEach(which => {
+    const ctx = fresh();
+    ctx.S.screen = "shadow";
+    ctx.S.shadowSettings = { floors: [] };
+    ctx.fetch = () => { throw new Error("the door must not fetch"); };
+    ctx.listeners.click({ target: parts[which] });
+    assert.strictEqual(ctx.S.screen, "shadowsettings",
+      "clicking the " + which + " must open Shadow Settings");
+  });
+
+  /* and back out again, from the child of the back button too */
+  const back = doorFor("shadow");
+  ["label", "door"].forEach(which => {
+    const ctx = fresh();
+    ctx.S.screen = "shadowsettings";
+    ctx.S.shadowSettings = { floors: [] };
+    ctx.listeners.click({ target: back[which] });
+    assert.strictEqual(ctx.S.screen, "shadow",
+      "<- Back to Shadow must work from the " + which + " too");
+  });
+
+  /* it stays scoped: a click on nothing routes nowhere */
+  {
+    const ctx = fresh();
+    ctx.S.screen = "shadow";
+    ctx.listeners.click({ target: { dataset: {}, closest: () => null } });
+    assert.strictEqual(ctx.S.screen, "shadow",
+      "a click on nothing must not navigate");
+  }
+  console.log("ok 25 the whole Shadow Settings door opens it, not just its padding");
+}
+
+
+/* ── 26: THE EXISTING-CHAT FLOW ACTS ON THE EXISTING CHAT ─────────────────
+   Founder, 2026-09-13: "Work in existing chat — I type, press Enter, nothing
+   happens." Traced live (real Chrome, real key events, repo backend): the
+   handler fired, the value was read and exactly one POST went out --
+   `{"message":"take this chat over"}`, with NO scope_id. Entering the flow
+   left S.shadowChat at "global", sendToShadow drops scope_id for "global",
+   so Shadow had no transcript to drive and answered that "global" is not a
+   chat. No mission, no takeover, no driving strip: a dead Enter.
+
+   These pin the target, not the keystroke -- the keystroke was never the
+   bug, which is why they assert on the REQUEST BODY. */
+(async () => {
+  const compose = (v) => ({ value: v, dataset: { shhomecompose: "1" } });
+  const armed = () => {
+    const ctx = fresh();
+    ctx.S.shadowHomeDark = false;
+    ctx.scheduleRender = () => {};
+    ctx.fetch = () => Promise.resolve({ ok: true,
+      json: () => Promise.resolve({}) });
+    ctx.posts = [];
+    ctx.shadowPost = (url, body) => { ctx.posts.push({ url, body });
+      return Promise.resolve({ ok: true, status: 200,
+        json: () => Promise.resolve({ reply: "on it" }) }); };
+    return ctx;
+  };
+  const enter = (ctx, el) => ctx.listeners.keydown({ key: "Enter",
+    shiftKey: false, target: el, preventDefault(){ ctx.prevented = true; } });
+  const openFlow = (ctx) => ctx.listeners.click({
+    target: { dataset: { shexisting: "1" }, closest: () => null } });
+
+  /* 26a. the chat the founder has open IS the target */
+  {
+    const ctx = armed();
+    ctx.S.sessions = [{ id: "sess-open", title: "Paisa EMI" }];
+    ctx.S.openPanes = ["sess-open"];
+    openFlow(ctx);
+    assert.strictEqual(ctx.S.shadowChat, "sess-open",
+      "opening the flow must bind it to the chat already open");
+    const h = ctx.shadowHomeHtml();
+    assert(/Paisa EMI/.test(h), "and the picker must name it");
+    assert(/data-shscope="sess-open"/.test(h),
+      "the composer must carry that scope");
+  }
+
+  /* 26b. Enter sends ONE request, for the EXISTING chat -- the regression */
+  {
+    const ctx = armed();
+    ctx.S.sessions = [{ id: "sess-open", title: "Paisa EMI" }];
+    ctx.S.openPanes = ["sess-open"];
+    openFlow(ctx);
+    const el = compose("take this chat over");
+    enter(ctx, el);
+    assert(ctx.prevented, "Enter must not fall through to a newline");
+    assert.strictEqual(ctx.posts.length, 1, "exactly one request");
+    assert.strictEqual(ctx.posts[0].url, "/api/shadow/chat",
+      "the existing Shadow endpoint, not a new one");
+    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-open",
+      "THE BUG: the turn went out with no chat to act in");
+    assert.strictEqual(ctx.posts[0].body.message, "take this chat over");
+    assert.strictEqual(el.value, "", "a sent brief clears the box");
+    await Promise.resolve();
+    assert(!ctx.posts.some(p => /\/missions$/.test(p.url)),
+      "and it must NOT delegate a new chat -- that is + Delegate's path");
+  }
+
+  /* 26c. a chat picked by hand still wins -- INSIDE the flow, which is the
+     only place the picker exists (shadowTargetHtml renders inside
+     shadowStageHtml). Re-ordered 2026-09-13: entering the flow now re-seeds
+     the target every time, because the old "seed only when unset" rule made
+     the FIRST chat the flow was ever opened from the permanent target --
+     open A, use it, open B, come back, and the turn still went to A
+     (measured live). Picking still wins for as long as the founder is in the
+     flow; leaving and coming back re-targets, which is the point. */
+  {
+    const ctx = armed();
+    ctx.S.sessions = [{ id: "sess-open" }, { id: "sess-picked" }];
+    ctx.S.openPanes = ["sess-open"];
+    openFlow(ctx);
+    assert.strictEqual(ctx.S.shadowChat, "sess-open", "bound to the open chat");
+    ctx.listeners.click({ target: { dataset: { shchat: "sess-picked" },
+      closest: () => null } });
+    assert.strictEqual(ctx.S.shadowChat, "sess-picked",
+      "a pick made in the flow stands");
+    enter(ctx, compose("go"));
+    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-picked");
+  }
+
+  /* 26d. empty input starts nothing AND eats nothing */
+  {
+    const ctx = armed();
+    ctx.S.openPanes = ["sess-open"];
+    openFlow(ctx);
+    const el = compose("   ");
+    enter(ctx, el);
+    assert.strictEqual(ctx.posts.length, 0, "whitespace must not be sent");
+    assert.strictEqual(el.value, "   ", "and must not be silently cleared");
+  }
+
+  /* 26e. no chat to act in: said out loud, never sent unscoped */
+  {
+    const ctx = armed();
+    ctx.S.openPanes = [];                      /* nothing open to seed from */
+    openFlow(ctx);
+    assert.strictEqual(ctx.S.shadowChat, "global", "nothing to seed");
+    const el = compose("take it over");
+    enter(ctx, el);
+    assert.strictEqual(ctx.posts.length, 0,
+      "an unscoped turn cannot take a chat over -- it must not be sent");
+    assert.strictEqual(el.value, "take it over", "the brief survives");
+    assert(/Pick the chat/.test(ctx.S.shadowScopeErr || ""),
+      "the founder must be told what is missing");
+    assert(/Pick the chat/.test(ctx.shadowHomeHtml()), "and must see it");
+    /* picking one answers it */
+    ctx.listeners.click({ target: { dataset: { shchat: "sess-open" },
+      closest: () => null } });
+    assert.strictEqual(ctx.S.shadowScopeErr, null, "picking clears the gripe");
+  }
+
+  /* 26f. the DELEGATED composer is untouched: it is global on purpose */
+  {
+    const ctx = armed();
+    ctx.S.shadowExistingOpen = false;          /* the task workspace */
+    enter(ctx, compose("what is running?"));
+    assert.strictEqual(ctx.posts.length, 1,
+      "the workspace composer must still send without a chat");
+    assert.strictEqual(ctx.posts[0].body.scope_id, undefined);
+  }
+
+  /* 26g. the send BUTTON takes the same path, once */
+  {
+    const ctx = armed();
+    ctx.S.openPanes = ["sess-open"];
+    openFlow(ctx);
+    const el = compose("via the button");
+    ctx.document.querySelector = (sel) =>
+      sel === "[data-shhomecompose]" ? el : null;
+    ctx.listeners.click({ target: { dataset: { shsend: "1" },
+      closest: () => null } });
+    assert.strictEqual(ctx.posts.length, 1, "one request, from the button too");
+    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-open");
+  }
+
+  console.log("ok 26 existing-chat flow: Enter sends ONE scoped turn for the "
+    + "chat already open; empty and target-less are refused out loud");
+})().catch(e => { console.error("FAIL 27:", e.message); process.exit(1); });
+
+/* 27. THE EXISTING-CHAT FLOW: the arrow sends, and the target follows the
+   chat the founder is actually in (founder, 2026-09-13 -- "STILL NOT
+   WORKING in the real app").
+
+   Two defects, both measured live in Chrome before these existed:
+
+     the arrow was DEAD -- <button data-shsend="1"> holds nothing but the
+     arrow <svg>, the handler read ev.target.dataset, so every real click
+     landed on the svg and made ZERO requests while Enter worked fine.
+
+     the target STUCK -- entering the flow seeded S.shadowChat only when it
+     was unset, so the first chat the flow was ever opened from stayed the
+     target forever: open A, use it, open B, come back, and the turn still
+     went out scoped to A.
+
+   DOM-shaped fakes again: a synthesised {target:{dataset}} cannot see the
+   first bug at all, which is exactly how it survived. */
+{
+  /* the arrow, wired the way the browser wires it: the svg fills the button */
+  const arrowParts = () => {
+    const btn = { dataset: { shsend: "1" } };
+    btn.closest = (sel) => sel === "[data-shsend]" ? btn : null;
+    const svg = { dataset: {},
+      closest: (sel) => sel === "[data-shsend]" ? btn : null };
+    return { btn, svg };
+  };
+  /* the composer document.querySelector must hand back */
+  const withComposer = (ctx, value) => {
+    const box = { value, dataset: { shhomecompose: "1" } };
+    ctx.document.querySelector = (sel) =>
+      sel === "[data-shhomecompose]" ? box : null;
+    return box;
+  };
+
+  /* -- 27a: the arrow sends, from the icon as well as the button -- */
+  ["svg", "btn"].forEach(which => {
+    const ctx = fresh();
+    const sent = [];
+    ctx.S.shadowExistingOpen = true;
+    ctx.S.shadowChat = "sess-A";
+    ctx.sendToShadow = (t) => { sent.push(t); return Promise.resolve({}); };
+    ctx.loadShadowHome = () => {};
+    const box = withComposer(ctx, "take this chat over");
+    ctx.listeners.click({ target: arrowParts()[which] });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sent)),
+      ["take this chat over"],
+      "clicking the " + which + " must send exactly once");
+    assert.strictEqual(box.value, "", "and clear the composer, as Enter does");
+  });
+
+  /* -- 27b: Enter still sends, unchanged, through the same one path -- */
+  {
+    const ctx = fresh();
+    const sent = [];
+    ctx.S.shadowExistingOpen = true;
+    ctx.S.shadowChat = "sess-A";
+    ctx.sendToShadow = (t) => { sent.push(t); return Promise.resolve({}); };
+    ctx.loadShadowHome = () => {};
+    const box = { value: "typed then Enter", dataset: { shhomecompose: "1" } };
+    ctx.listeners.keydown({ key: "Enter", shiftKey: false, target: box,
+      preventDefault(){} });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sent)),
+      ["typed then Enter"], "Enter still sends exactly once");
+  }
+
+  /* -- 27c: one gesture is one send: the arrow does not also fire Enter -- */
+  {
+    const ctx = fresh();
+    let calls = 0;
+    ctx.S.shadowExistingOpen = true;
+    ctx.S.shadowChat = "sess-A";
+    ctx.sendToShadow = () => { calls++; return Promise.resolve({}); };
+    ctx.loadShadowHome = () => {};
+    withComposer(ctx, "once only");
+    ctx.listeners.click({ target: arrowParts().svg });
+    assert.strictEqual(calls, 1, "exactly one request per arrow click");
+  }
+
+  /* -- 27d: entering the flow targets the chat the founder is IN, every
+        time -- the A -> B journey that failed live -- */
+  {
+    const ctx = fresh();
+    const enter = () => ctx.listeners.click({
+      target: { dataset: { shexisting: "1" }, closest: () => null } });
+    const leave = () => ctx.listeners.click({
+      target: { dataset: { shexisting: "0" }, closest: () => null } });
+
+    ctx.S.openPanes = ["sess-A"];
+    enter();
+    assert.strictEqual(ctx.S.shadowChat, "sess-A", "chat A is the target");
+
+    leave();
+    ctx.S.openPanes = ["sess-B"];          /* the founder opens another chat */
+    enter();
+    assert.strictEqual(ctx.S.shadowChat, "sess-B",
+      "re-entering must target chat B, not keep chat A");
+
+    /* newest pane wins when more than one is open */
+    leave();
+    ctx.S.openPanes = ["sess-B", "sess-C"];
+    enter();
+    assert.strictEqual(ctx.S.shadowChat, "sess-C", "the newest open pane wins");
+
+    /* a hand-picked chip still stands while the founder is INSIDE the flow */
+    ctx.listeners.click({ target: { dataset: { shchat: "sess-PICKED" },
+      closest: () => null } });
+    assert.strictEqual(ctx.S.shadowChat, "sess-PICKED", "the picker wins");
+  }
+
+  /* -- 27e: no pane open = no invented target, and no unscoped turn -- */
+  {
+    const ctx = fresh();
+    const sent = [];
+    ctx.S.openPanes = [];
+    ctx.sendToShadow = (t) => { sent.push(t); return Promise.resolve({}); };
+    ctx.listeners.click({ target: { dataset: { shexisting: "1" },
+      closest: () => null } });
+    assert(!ctx.S.shadowChat || ctx.S.shadowChat === "global",
+      "nothing to target, so nothing is invented");
+    withComposer(ctx, "go");
+    ctx.listeners.click({ target: arrowParts().svg });
+    assert.strictEqual(sent.length, 0, "an unscoped turn is never sent");
+    assert(/Pick the chat/.test(ctx.S.shadowScopeErr || ""),
+      "it says which control is missing");
+  }
+
+  /* -- 27f: the DELEGATED flow is untouched -- global on purpose -- */
+  {
+    const ctx = fresh();
+    const sent = [];
+    ctx.S.shadowExistingOpen = false;      /* + Delegate workspace */
+    ctx.S.shadowChat = "global";
+    ctx.sendToShadow = (t) => { sent.push(t); return Promise.resolve({}); };
+    ctx.loadShadowHome = () => {};
+    withComposer(ctx, "start something new");
+    ctx.listeners.click({ target: arrowParts().svg });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sent)),
+      ["start something new"],
+      "the delegated composer still sends unscoped, exactly as before");
+  }
+  console.log("ok 27 existing chat: the arrow sends, and the target follows "
+    + "the chat the founder is in");
+}
+
 console.log("test_shadow_home.js: all green");

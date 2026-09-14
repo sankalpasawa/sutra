@@ -1,6 +1,6 @@
 {
   "_child": "sutra-ui QA child of /Users/asawa/Claude/dayflow/products/design-qa — run via ./run.sh, which syncs `rules` from rules-sutra.json and the boot fixture action from ../tests/fixtures/toolruns-fanout.json before calling the product CLI on this file",
-  "url": "http://127.0.0.1:8330/",
+  "url": "http://127.0.0.1:7011/",
   "outDir": "runs",
   "viewport": {
     "width": 1280,

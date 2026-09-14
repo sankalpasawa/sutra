@@ -1011,10 +1011,14 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
     must not import app, and chat_store lives on app's side of that line.
     It is what turns the delegate into a NORMAL Sutra chat.
 
-    IT IS CALLED ONLY AFTER THE SESSION IS PROVEN. The `got_result and sid`
-    check below is the boundary, and nothing is published on the failure
-    path -- a chat that never started must not appear in the rail, and the
-    existing RuntimeError keeps the mission's failure semantics untouched.
+    IT IS CALLED AS SOON AS THE SESSION IS IDENTIFIED, not when the first
+    turn ends (founder, 2026-09-13). The boundary is the CLI's own
+    `session_id` announcement, which is the proof the old `got_result and
+    sid` check was standing in for: a provider that dies at its argv parser
+    never announces one, so a chat that never started still never appears in
+    the rail. The RuntimeError and the mission's failure semantics are
+    untouched; only the WAIT is gone, and with it the ~44s during which the
+    founder had started a task with nothing to open.
 
     A publish failure is DELIBERATELY NOT FATAL. The session is live and
     Shadow can drive it; losing the chat record costs discoverability, not
@@ -1026,26 +1030,30 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
     args = build_args()
     await rt.spawn(args, cwd, tuple(args), env=env)
     texts = []
+    #: the id the CLI announced, and whether we have already acted on it
+    early = {"sid": None}
 
-    async def collect(frame):
-        if frame.get("type") == "token":
-            texts.append(frame.get("text") or "")
-
-    await rt.send_user_frame(manifest)
-    (sid, _t, got_result, err, _e) = await rt.demux_turn(collect, None)
-    if not got_result or not sid:
-        rt.kill_group()
-        rt.clear()
-        raise RuntimeError("delegate session failed to boot: %s" % (err,))
-    register(sid, rt)
-    attach_observer(sid, rt)
-    DELEGATES[sid] = rt
-
-    start_pump(rt, sid)
-    shadow_ledger.append("actions", {
-        "mission_id": None, "kind": "spawn",
-        "summary": "delegate session %s spawned (plan mode)" % sid})
-    if publish is not None:
+    def _adopt(sid):
+        """Claim the session and publish its chat. Runs ONCE, at the first
+        moment the id exists -- see the `collect` hook below."""
+        if early["sid"]:
+            return
+        early["sid"] = sid
+        # OWNERSHIP FIRST, and it is not bookkeeping: driving() reads
+        # DELEGATES, and it is what the send guard asks before it lets a pane
+        # take a turn. Published-but-unowned would be a chat the founder can
+        # open AND type into while this turn is still running -- a second
+        # `claude --resume` on the same transcript, which is the one thing
+        # the single-writer invariant exists to prevent. A plain dict write,
+        # with none of the side effects that keep register/attach/pump below.
+        DELEGATES[sid] = rt
+        # STILL EXACTLY ONE spawn row per delegate -- it simply lands when the
+        # session becomes real rather than when its first turn ends.
+        shadow_ledger.append("actions", {
+            "mission_id": None, "kind": "spawn",
+            "summary": "delegate session %s spawned (plan mode)" % sid})
+        if publish is None:
+            return
         try:
             publish(sid)
         except Exception as exc:      # noqa: BLE001 -- reported, never fatal
@@ -1053,6 +1061,51 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
                 "mission_id": None, "kind": "spawn",
                 "summary": "delegate %s NOT published as a chat: %s"
                            % (sid, str(exc)[:180])})
+
+    async def collect(frame):
+        # THE CHAT APPEARS WHILE THE DELEGATE IS STILL WORKING (founder,
+        # 2026-09-13). Publication used to wait for demux_turn to return,
+        # which is the END of the whole first agentic turn -- measured at 44s
+        # on mission m-e14f6acc41aa. For that entire window the founder had
+        # started a task and had nothing to open.
+        #
+        # session_runtime emits this frame from the first event that carries
+        # a session_id, which is ~1s after spawn and long before the turn
+        # ends. That frame is also exactly the boundary the old docstring
+        # wanted: a CLI that dies at its argv parser (the deepseek case)
+        # never emits one, so a session that never started still publishes
+        # nothing. What changed is the wait, not the proof.
+        if frame.get("type") == "session" and frame.get("id"):
+            _adopt(frame["id"])
+        if frame.get("type") == "token":
+            texts.append(frame.get("text") or "")
+
+    await rt.send_user_frame(manifest)
+    (sid, _t, got_result, err, _e) = await rt.demux_turn(collect, None)
+    if not got_result or not sid:
+        # release_delegate is the ONE reaper and is a no-op for a session we
+        # never claimed, so it covers both cases: died before announcing an
+        # id (nothing adopted, nothing published) and died after (the chat
+        # stays, pointing at a real transcript, and the mission fails around
+        # it -- an honest record beats a vanished one).
+        if early["sid"]:
+            release_delegate(early["sid"])
+        else:
+            rt.kill_group()
+            rt.clear()
+        raise RuntimeError("delegate session failed to boot: %s" % (err,))
+    # Belt and braces: demux_turn parses the id the same way the frame does,
+    # so this only fires if the frame hook was somehow missed. Idempotent.
+    _adopt(sid)
+    register(sid, rt)
+    attach_observer(sid, rt)
+    DELEGATES[sid] = rt
+
+    # AFTER the spawn turn, never before: the pump runs its own demux_turn
+    # loop on the same stdout, and two demuxers on one process would split
+    # the stream. attach_observer is late for the same reason -- the spawn
+    # turn's own _turn_boundary must not land in the waiters' queue.
+    start_pump(rt, sid)
     return sid
 
 

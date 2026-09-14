@@ -448,6 +448,22 @@ PERSON_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key",
                "anthropic_key", "openai_key")
 
 
+def model_choice():
+    """{"provider": "claude"|"codex"|"deepseek"|"", "model": ""} the person picked for the agent.
+
+    The person's, not a company's, like their keys. Not a secret, so a plain file. Empty means
+    "never picked", and llm.py then follows the Sutra chat's own default.
+    """
+    c = read_json(os.path.join(root_dir(), "model.json"), {}) or {}
+    return {"provider": str(c.get("provider") or ""), "model": str(c.get("model") or "")}
+
+
+def save_model_choice(provider, model=""):
+    write_json(os.path.join(root_dir(), "model.json"),
+               {"provider": provider or "", "model": model or ""})
+    return model_choice()
+
+
 def _person_connections_file():
     return os.path.join(root_dir(), "connections.json")
 

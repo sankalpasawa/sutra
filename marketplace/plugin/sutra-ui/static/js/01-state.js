@@ -747,6 +747,11 @@ function adoptRealSessions(rows){
          and not a missing one -- the Dept view says which of the reasons it is
          rather than filing the chat under a guess. */
       department: r.department || null,
+      /* The routine run that produced this chat, or null. A routine run is a
+         real transcript, so these rows are indistinguishable from hand-started
+         work without it -- and on the founder's machine they are 84% of the
+         list. Set server-side; see routine_links.attach. */
+      routine: r.routine || null,
       /* Is Shadow holding the pen on this chat right now? Server-resolved
          (app.py api_sessions), the SAME read that enforces the send guard, so
          the pane cannot disagree with the socket. A plain fact on an ordinary

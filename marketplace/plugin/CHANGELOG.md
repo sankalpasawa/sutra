@@ -1,6 +1,40 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-13
+**status**: active · **updated**: 2026-09-14
+## 2.271.9 (2026-09-14)
+
+- **Routines run their scripts, and a dead lock no longer skips a routine forever (mission m-fd37a09d7fb4).** Nine routines had never done their work since 2026-08-07: under `dontAsk` with user-only settings and no allow-list, every Bash call was denied, and the runner before 09-02 recorded those turns as `ok` (116 of 116 for analytics-collect-3h). The records now carry a scoped `allowed_tools` entry per prompt command (an env-prefixed literal such as `Bash(AUDIT_COMMIT=1 bash holding/scripts/daily-governance-audit.sh:*)`, which a dry run showed is the only form that matches). The runner's `.lock` carries its holder's pid; a dead pid, or a pid-less lock older than 2x the watchdog, is cleared, recorded as `skipped` with `stale_lock: true`, and re-acquired, so the lock observability-synthesis-3h had held since 2026-08-07 (279 skips) cannot recur. The runner sets `SUTRA_ROUTINE=1` and `SUTRA_DEFAULTS_DISABLED=1` so plugin nudges stay quiet in a headless run (409 s of wall for 23 s of API before). daily-publish-gate: model sonnet (an empty model meant Fable and a spent $1 budget), budget 2.0, and the deleted `test_local.py` dropped from its prompt. Tests: `test_routine_lock.py` 7 checks.
+
+## 2.271.8 (2026-09-14)
+
+- **Codex shows every model it offers.** Until the Codex settings row had been opened, the picker listed only "CLI default" and the model in your Codex config. It now reads the model list Codex keeps on disk (GPT-5.6-Terra, GPT-5.6-Luna, GPT-5.5 on the owner's account), in chat and in the SEO Writer. Tests: 5 checks.
+
+## 2.271.7 (2026-09-14)
+
+- **Fable can be picked.** Claude's model list now offers Fable beside Opus, Sonnet and Haiku, in chat, routines and the SEO Writer, with its 1M context window. The SEO Writer's empty choice reads "account default", since it is whatever Claude Code picks for the account, not a separate model.
+
+## 2.271.6 (2026-09-14)
+
+- **The SEO Writer reads a CLI reply that arrives with extra output.** "Model call failed: Claude CLI did not return JSON (exit 0)" was a good reply with something else printed beside it; `llm._cli_result` now finds the result object in the output. Tests: 5 checks.
+- **The SEO Writer runs on the model you pick.** Claude, Codex or DeepSeek, the same providers and sign-ins as Sutra's chat, picked next to the message box or in Connections. Defaults to the chat's provider; falls back to Claude when the pick cannot run. Tests: 22 checks, 2 UI pins.
+- **A new release arriving no longer breaks the waiting one.** Staging held the update lock for the whole download, so installing the waiting update timed out ("the update state is in use by another process") and the download overwrote its image. Downloads now run unlocked into a private folder and land under a versioned name; a busy lock is retried quietly instead of shown as a failure. Tests: 14 checks.
+
+## 2.271.3 (2026-09-13)
+
+- **The team's idea sheet reaches everyone who joins.** Nothing ever sent the sheet to the team's `ideas` table and the knowledge pack skips `assets/`, so a joiner's Asset ideas tab stayed empty (0 on the team, 1,892 on the owner's Mac). Every save now sends what changed: up to 25 rows through the queue, more as bulk upserts of 500 that fall back to the queue on failure. Rows from the team are written with `push=False` so they never bounce back. `sync.backfill_ideas` sends an existing sheet once to an empty team, at most every 10 minutes until it finishes. A sheet is only sent when a fifth of its linked rows point at this Mac's catalogue domain, which replaced a "first team member" gate that wrongly refused the owner's own Mac. The Asset ideas tab re-reads the sheet every fourth refresh tick while open. Tests: `test_workspace_ideas`, 37 checks.
+
+## 2.271.0 (2026-09-13)
+
+- **The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and `v2.270.0-desktop` were cut while the manifests still read 2.267.1/2.267.3, so `release-dmg`'s version guard rejected all three before any runner started — no DMG, no Release, three dangling tags. Manifests now read 2.271.0, above every dangling tag, so a fresh `v2.271.0-desktop` passes without rewriting a pushed tag. `test-validate-manifest-json.sh` gains the local twin of that guard: the manifest version must exceed every existing `v*-desktop` tag, and the top `CURRENT-VERSION.md` / `CHANGELOG.md` entries must match it. Tests: 2 new checks.
+
+## 2.267.3 (2026-09-13)
+
+- **A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real server, and a real server runs the project import at startup; it now starts with `SUTRA_SKIP_PROJECT_IMPORT=1` and a throwaway `SUTRA_NATIVE_HOME`. This is how the second parent-less root of 2026-09-13 01:33 was written: a workflow agent ran the test from an older plugin copy against the operator's own registry.
+
+## 2.267.2 (2026-09-13)
+
+- **A retired project folder is not re-imported, and a stray root cannot hijack the tree (DIR-14).** The startup import matched folders against active departments only, so the seven folders the operator had merged into the organisation (Asawa Holding, Sutra, Sutra UI, ...) came back as twins under Desktop on every launch; a retired folder now resolves to its successor and links there, minting nothing. The engine's root readers (`live_root`, `_root_ref`, `_tenant_root`, the I-D6 reuse) and the importer's root pick now take the rooted tree first, so a second parent-less record written by older code no longer becomes the Apps view's root and empties it. Tests: importer 5, root invariant 2.
+
 ## 2.265.19 (2026-09-13)
 
 - **Shadow state tells the truth after a restart (mission m-320173edefa9).** `shadow_app_state.sessions_live` counted a liveness value that never occurs and read 0 forever; it now counts `active`, the rule every other reader uses (`sessions_idle` added). Tests can no longer write the live `~/.sutra-ui/shadow`: conftest redirects the home before collection and re-asserts it before every test, and `shadow_ledger.shadow_home()` refuses the default home under pytest (34 fixture missions and 57 fixture ledger rows had leaked that way). A restart no longer pauses watch missions, and a mission the app itself paused resumes on its own when its chat re-attaches, under Start's cap and one-per-chat rule; delegates stay fenced. `shadow_archive_fixtures.py` moves the leaked debris aside (dry-run by default). Opt-in `test_shadow_smoke_cycle.py` runs one real watch -> say -> verify cycle. Tests: app state 2, home guard 4, restart 10, archive 3.

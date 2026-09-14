@@ -111,6 +111,57 @@ class RootInvariantCase(unittest.TestCase):
         self.assertEqual(self._active_roots(), [root])
         self.assertEqual(E.load_domains()[stale["ref"]]["status"], "retired")
 
+    def test_readers_anchor_on_the_rooted_tree_not_a_childless_stray(self):
+        """2026-09-13: a pre-D76 importer wrote a second parent-less record ("Ramesh Asawa") whose ref sorted before
+        the real root. live_root, _root_ref, _tenant_root and the I-D6 reuse all took the first sorted ref, so the
+        Apps view anchored on the stray and the real tree's apps landed nowhere. Damage fixture written directly
+        (the engine itself refuses to mint it); every reader must still answer with the rooted tree."""
+        E = self.E
+        root, _ = E.mint_domain(None, "Sutra", ["root"], "T-local", origin="operator")
+        desk, _ = E.mint_domain(root, "Desktop", ["desktop"], "T-local", origin="operator")
+        E.mint_domain(desk, "Modules", ["modules"], "T-local", origin="operator")
+        stray = {"ref": "dref-0000000000000001", "name": "Ramesh Asawa", "parent_ref": None, "origin": "project-import",
+                 "status": "active", "successor_refs": [], "tenant_id": "T-local", "mint_evidence": ["root"],
+                 "ts_minted_ms": 1, "retired_at_ms": None, "principles": [], "accountable": "tenant_owner",
+                 "authority": {}}
+        with open(os.path.join(E.DOMAINS, stray["ref"] + ".json"), "w") as fh:
+            json.dump(stray, fh)
+        domains = E.load_domains()
+        self.assertEqual(sorted(self._active_roots())[0], stray["ref"], "fixture: the stray sorts first and is older")
+        self.assertEqual(E.active_roots(domains), [root, stray["ref"]])
+        self.assertEqual(E.live_root(domains), root)
+        self.assertEqual(E._root_ref("T-local"), root)
+        self.assertEqual(E._tenant_root("T-local", domains), root)
+        again, created = E.mint_domain(None, "Anything", ["root"], "T-local", origin="project-import")
+        self.assertEqual(again, root, "a root mint reuses the rooted tree, not the stray")
+        self.assertFalse(created)
+
+    def test_a_frozen_department_still_counts_its_active_children_for_the_root_pick(self):
+        """Subtree size uses live_refs liveness (non-retired): a frozen department under the real root must
+        not hide its active children, or a stray with one child would outrank the real root."""
+        E = self.E
+        root, _ = E.mint_domain(None, "Sutra", ["root"], "T-local", origin="operator")
+        desk, _ = E.mint_domain(root, "Desktop", ["desktop"], "T-local", origin="operator")
+        for name in ("Modules", "Flow", "Humorapp"):
+            E.mint_domain(desk, name, [name.lower()], "T-local", origin="operator")
+        E.set_domain_fields(desk, status="frozen")
+        stray = {"ref": "dref-0000000000000002", "name": "Ramesh Asawa", "parent_ref": None, "origin": "project-import",
+                 "status": "active", "successor_refs": [], "tenant_id": "T-local", "mint_evidence": ["root"],
+                 "ts_minted_ms": 1, "retired_at_ms": None, "principles": [], "accountable": "tenant_owner",
+                 "authority": {}}
+        with open(os.path.join(E.DOMAINS, stray["ref"] + ".json"), "w") as fh:
+            json.dump(stray, fh)
+        child = {"ref": "dref-0000000000000003", "name": "Claude", "parent_ref": stray["ref"], "origin": "project-import",
+                 "status": "active", "successor_refs": [], "tenant_id": "T-local", "mint_evidence": ["/x"],
+                 "ts_minted_ms": 2, "retired_at_ms": None, "principles": [], "accountable": "tenant_owner",
+                 "authority": {}}
+        with open(os.path.join(E.DOMAINS, child["ref"] + ".json"), "w") as fh:
+            json.dump(child, fh)
+        domains = E.load_domains()
+        self.assertEqual(domains[desk]["status"], "frozen")
+        self.assertEqual(E.active_roots(domains)[0], root)
+        self.assertEqual(E.live_root(domains), root)
+
 
 if __name__ == "__main__":
     unittest.main()

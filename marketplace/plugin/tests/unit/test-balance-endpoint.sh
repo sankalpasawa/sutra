@@ -37,8 +37,15 @@ done
 
 start_server(){ # $1 = token value ("" = unset, CLI mode)
   local tok="$1"
+  # A REAL SERVER RUNS THE STARTUP IMPORT. Without these two lines the app under
+  # test minted the operator's projects into the LIVE registry on every run; on
+  # 2026-09-13 a run of an older plugin copy wrote a second parent-less root
+  # ("Ramesh Asawa") beside the real tree (verification workflow wf_7883cbcc-5d9).
+  # Skip the import outright and point the engine at a throwaway registry too.
+  mkdir -p "$TMP/native"
   ( cd "$UI" && \
-    /usr/bin/env SUTRA_UI_BALANCE_DIR="$TMP" ${tok:+SUTRA_DESKTOP_TOKEN="$tok"} \
+    /usr/bin/env SUTRA_UI_BALANCE_DIR="$TMP" SUTRA_SKIP_PROJECT_IMPORT=1 SUTRA_NATIVE_HOME="$TMP/native" \
+    ${tok:+SUTRA_DESKTOP_TOKEN="$tok"} \
     "$PY" -m uvicorn app:app --host 127.0.0.1 --port "$PORT" --log-level error ) &
   SRV=$!
   for i in $(seq 1 40); do curl -sf -m 1 "http://127.0.0.1:$PORT/api/balance" >/dev/null 2>&1 && return 0; sleep 0.5; done

@@ -698,6 +698,8 @@ function shadowStageHtml(){
           stroke-width="2" aria-hidden="true"
           ><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
+    ${S_.shadowScopeErr
+      ? `<div class="shnewerr">${esc(S_.shadowScopeErr)}</div>` : ""}
     ${shadowRecentChatsHtml()}
   </section>`;
 }
@@ -906,10 +908,57 @@ function shadowHomeHtml(){
   </div>`;
 }
 
-async function loadShadowHome(){
+/* ── ONE READ AT A TIME (perf fold 2026-09-13) ───────────────────────────
+   SCREENS.shadow calls loadShadowHome() from inside render(), and render()
+   runs many times a second -- every SSE frame and every scheduleRender tick.
+   Nothing stopped a second read starting while the first was still in the
+   air, so entering Shadow Home against a backend that is not instant issued
+   SIX requests PER PAINTED FRAME: measured 42 reads for one arrival, and the
+   bursts kept landing after the operator had already navigated away, because
+   the five parallel reads only start once /status has answered.
+
+   Two rules fix it, and neither is a cache: the DATA is still read from the
+   server every time somebody asks for it.
+
+     1. coalesce -- a read already in flight is handed to the next caller
+        instead of starting a second one.
+     2. abandon  -- a LAZY read (the one render started) stops the moment the
+        operator leaves the screens that display it, BEFORE it writes any
+        S.shadow* state, so coming back reads again from scratch.
+
+   force=true is for callers that have just CHANGED something and must see
+   the result of their own write (the same force flag loadUsage/loadModules
+   take): they never coalesce onto a read that may predate the write. */
+let _shHomeRead = null;
+
+/* the screens that render what loadShadowHome reads. The overlay card reads
+   S.shadowMissions too, but it is repainted by renderShadowCard() after the
+   action that changed them -- which is a forced read, so it is never the one
+   being abandoned here. */
+function shadowHomeOnScreen(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return S_.screen === "shadow" || S_.screen === "shadowwatching";
+}
+
+function loadShadowHome(force){
+  if (_shHomeRead && !force) return _shHomeRead;
+  const p = _loadShadowHome(!force);
+  if (!p || typeof p.then !== "function") return p;
+  _shHomeRead = p;
+  const clear = () => { if (_shHomeRead === p) _shHomeRead = null; };
+  p.then(clear, clear);
+  return p;
+}
+
+async function _loadShadowHome(lazy){
   if (typeof fetch === "undefined" || typeof S === "undefined") return;
   try {
     const st = await fetch("/api/shadow/status");
+    /* left Shadow Home while /status was in the air: the five reads below
+       are for a screen nobody is looking at. Return BEFORE any assignment --
+       S.shadowHomeDark stays undefined, so the next visit loads properly
+       rather than painting a home with no lists in it. */
+    if (lazy && !shadowHomeOnScreen()) return;
     if (!st.ok){ S.shadowHomeDark = true;
       if (typeof scheduleRender === "function") scheduleRender(); return; }
     S.shadowHomeDark = false;
@@ -941,7 +990,22 @@ async function loadShadowHome(){
     if (typeof scheduleRender === "function") scheduleRender(); }
 }
 
-async function loadShadowSettings(){
+/* Coalesced for the reason loadShadowHome is: SCREENS.shadowsettings asks
+   for this from inside render(), so every frame painted while the answer was
+   outstanding started another identical GET. */
+let _shSettingsRead = null;
+
+function loadShadowSettings(force){
+  if (_shSettingsRead && !force) return _shSettingsRead;
+  const p = _loadShadowSettings();
+  if (!p || typeof p.then !== "function") return p;
+  _shSettingsRead = p;
+  const clear = () => { if (_shSettingsRead === p) _shSettingsRead = null; };
+  p.then(clear, clear);
+  return p;
+}
+
+async function _loadShadowSettings(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return;
   try {
     const r = await fetch("/api/shadow/settings");
@@ -1255,19 +1319,51 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof S !== "undefined"){
         S.shadowChat = d.shchat;
         S.shadowScopeOpen = false;        /* picking closes the picker */
+        S.shadowScopeErr = null;          /* ...and answers the one complaint */
       }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    if (d.shscreen){
-      if (typeof openScreen === "function") openScreen(d.shscreen);
-      else if (typeof S !== "undefined") S.screen = d.shscreen;
-      if (typeof loadShadowSettings === "function") loadShadowSettings();
+    /* THE WHOLE DOOR IS THE CONTROL (founder, 2026-09-13: "it doesn't open,
+       at least immediately anyway").
+
+       It was not slow -- it was DEAD for most of its own surface. The button
+       shadowNavHtml draws wraps an <svg> gear and a <span>Shadow Settings</span>
+       and they fill it, but this handler read ev.target.dataset, so clicking
+       the LABEL or the ICON -- everything a person actually aims at -- hit a
+       child with no dataset and the branch never fired. Only the few px of
+       padding between the two children carried the hook, which is why it
+       opened on some clicks and ignored others.
+
+       Read through closest(), the same way [data-shtask] just above and the
+       rail's own [data-open] (07-loaders.js) have always done. No markup and
+       no style changed; "<- Back to Shadow" keeps working as before, since a
+       button whose only child is a text node was already its own target. */
+    const doorEl = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shscreen]") : null;
+    const shscreen = d.shscreen || (doorEl && doorEl.dataset.shscreen) || "";
+    if (shscreen){
+      if (typeof openScreen === "function") openScreen(shscreen);
+      else if (typeof S !== "undefined") S.screen = shscreen;
+      /* The door does NOT read the settings (perf fold 2026-09-13). It used
+         to call loadShadowSettings() on every shscreen click -- including
+         "<- Back to Shadow", which does not show them -- and the settings
+         screen then asked for the same endpoint again from its own lazy
+         loader. One gesture, two identical GETs, before the render loop
+         multiplied either of them.
+
+         SCREENS.shadowsettings is the one load path now. The single thing
+         the unconditional call really bought is kept: a read that FAILED
+         (null) is cleared here, so leaving and coming back retries, exactly
+         as it has always done. A read that SUCCEEDED is reused -- Shadow
+         Home already put it in S.shadowSettings on its way past. */
+      if (typeof S !== "undefined" && S.shadowSettings === null)
+        delete S.shadowSettings;
       if (typeof render === "function") render();
       return;
     }
     if (d.shreload){
-      if (typeof loadShadowHome === "function") loadShadowHome(); return; }
+      if (typeof loadShadowHome === "function") loadShadowHome(true); return; }
     /* slice 11 foot line. Watching opens the EXISTING plane on its own
        screen (no rows on Home); Conversations is the EXISTING chats
        destination; Memory reveals the EXISTING memory list inline. */
@@ -1292,8 +1388,20 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    /* the send button: the same submit the composer has always done */
-    if (d.shsend){
+    /* THE WHOLE ARROW IS THE CONTROL (founder, 2026-09-13). The send button
+       is a <button data-shsend="1"> whose ONLY child is the arrow <svg>, and
+       the svg covers all of it -- so a dataset read on ev.target matched
+       nothing a person could actually hit and the arrow was dead: measured
+       zero POSTs, the typed text left sitting in the box. Enter worked, the
+       arrow never did.
+
+       Resolved through closest(), the same cure as [data-shtask] and the
+       settings door. There is still exactly ONE submit -- both the arrow and
+       Enter call shadowSubmitCompose, which is the only path to
+       sendToShadow. No second submission path, no markup change. */
+    const sendEl = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shsend]") : null;
+    if (d.shsend || sendEl){
       shadowSubmitCompose(document.querySelector
         && document.querySelector("[data-shhomecompose]"));
       return;
@@ -1342,16 +1450,61 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shexisting !== undefined){
       if (typeof S !== "undefined"){
         S.shadowExistingOpen = d.shexisting === "1";
-        if (S.shadowExistingOpen) S.shadowNewOpen = false;
+        if (S.shadowExistingOpen){
+          S.shadowNewOpen = false;
+          S.shadowScopeErr = null;
+          /* THE FLOW IS BOUND TO THE CHAT THE FOUNDER IS IN (founder,
+             2026-09-13 -- "nothing happens"). It was not: entering the flow
+             left S.shadowChat at "global", sendToShadow drops scope_id for
+             "global", and the turn went out with no target at all. Shadow
+             then answered that "global" is not a chat, so no mission was
+             proposed, nothing took the chat over, and the founder saw a
+             dead Enter.
+
+             The open pane IS the existing chat -- the same S.openPanes the
+             rail and the panes render from, newest last.
+
+             SEEDED ON EVERY ENTRY (founder, 2026-09-13). It used to seed
+             only a scope that was still unset, which meant the FIRST chat
+             the flow was ever opened from became the permanent target:
+             open chat A, use the flow, then open chat B and come back, and
+             the turn still went out scoped to A -- measured live. The flow
+             must target the chat the founder is actually in, so entering it
+             re-resolves the target every time.
+
+             A chip picked by hand still wins: this runs only when the flow
+             is ENTERED, never on a render, so a pick made inside the flow
+             stands until the founder leaves and comes back. With no pane
+             open nothing is seeded and the composer says which control is
+             missing, rather than sending an unscoped turn. Nothing is
+             created here: this picks the target, it does not start work. */
+          const panes = S.openPanes || [];
+          const sid = panes[panes.length - 1];
+          if (sid) S.shadowChat = sid;
+        }
       }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
     /* picking a task in the left column only changes what the right pane
-       shows -- it starts nothing and writes nothing */
-    if (d.shtask){
+       shows -- it starts nothing and writes nothing.
+
+       THE WHOLE ROW IS THE CONTROL (founder, 2026-09-13). Read through
+       closest(), not off ev.target: the row is a <button> wrapping three
+       spans (the dot, the name, the pill) and they fill it, so a dataset
+       read on the event target matched only the few px of padding the spans
+       do not cover. Clicking the task NAME -- the obvious target -- did
+       nothing at all, and a dead click reads as a slow one.
+
+       Same pattern as the rail's own [data-open] (07-loaders.js), which has
+       always done this. `data-shtaskcard` does not match `[data-shtask]` --
+       attribute selectors are exact -- so the right pane's card is
+       untouched, and no markup or style changed here. */
+    const taskRow = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shtask]") : null;
+    if (taskRow){
       if (typeof S !== "undefined"){
-        S.shadowTaskSel = d.shtask;
+        S.shadowTaskSel = taskRow.dataset.shtask;
         S.shadowNewOpen = false;
       }
       if (typeof scheduleRender === "function") scheduleRender();
@@ -1414,14 +1567,36 @@ if (typeof document !== "undefined" && document.addEventListener){
      about what happens on submit changed. */
   function shadowSubmitCompose(el){
     if (!el) return;
-    const text = el.value; el.value = "";
-    if (text && text.trim() && typeof sendToShadow === "function"){
-      sendToShadow(text.trim()).then(() => {
-        if (typeof loadShadowHome === "function") loadShadowHome();
-        if (typeof scheduleRender === "function") scheduleRender();
-      });
+    const S_ = (typeof S !== "undefined") ? S : {};
+    const text = String(el.value || "");
+    /* empty: send nothing AND clear nothing. The box used to empty itself
+       on any Enter, so a stray keypress silently ate a half-written brief. */
+    if (!text.trim()) return;
+    /* THE EXISTING-CHAT FLOW MUST HAVE A CHAT. Without one the turn goes out
+       unscoped and Shadow has no transcript to drive -- the founder's dead
+       Enter. Say which control is missing instead of sending a turn that
+       cannot do what was asked. The delegated composer is untouched: it is
+       global on purpose (+ Delegate starts its own chat). */
+    if (S_.shadowExistingOpen && (!S_.shadowChat || S_.shadowChat === "global")){
+      S_.shadowScopeErr = "Pick the chat Shadow should work in — "
+        + "it will not guess which one.";
       if (typeof scheduleRender === "function") scheduleRender();
+      return;
     }
+    /* never a silent no-op: if the overlay module did not load there is no
+       send path, and that is worth saying out loud */
+    if (typeof sendToShadow !== "function"){
+      S_.shadowScopeErr = "Shadow did not load — reload the app.";
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    S_.shadowScopeErr = null;
+    el.value = "";
+    sendToShadow(text.trim()).then(() => {
+      if (typeof loadShadowHome === "function") loadShadowHome(true);
+      if (typeof scheduleRender === "function") scheduleRender();
+    });
+    if (typeof scheduleRender === "function") scheduleRender();
   }
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
@@ -1502,7 +1677,7 @@ async function shadowCreateTask(){
   S.shadowTaskSel = m.id;
   if (typeof showNudge === "function")
     showNudge("Task created — read the brief, then Start it.");
-  if (typeof loadShadowHome === "function") await loadShadowHome();
+  if (typeof loadShadowHome === "function") await loadShadowHome(true);
   if (typeof scheduleRender === "function") scheduleRender();
   return m;
 }
@@ -1517,7 +1692,9 @@ async function shadowWatchSet(sid, watch){
       showNudge(!r.ok ? "The watch toggle did not stick \u2014 try again"
         : (watch ? "Watching." : "Stopped watching."));
   } catch (e) {}
-  loadShadowHome();
+  /* force: this read must show the write that just happened, so it never
+     coalesces onto a read that was already in the air before the POST. */
+  loadShadowHome(true);
 }
 
 async function shadowInstructionAct(id, action){
@@ -1531,5 +1708,5 @@ async function shadowInstructionAct(id, action){
             ? "Confirmed \u2014 Shadow applies it from its next boot."
             : "Revoked \u2014 kept in the list, struck through."));
   } catch (e) {}
-  loadShadowHome();
+  loadShadowHome(true);
 }

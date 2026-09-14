@@ -166,7 +166,8 @@ class CodexRuntime:
         `codex exec` spawns the model's shell commands as children (measured:
         `/bin/zsh -lc '...'`), so signalling only the parent leaves them
         holding the stdout pipe and the read loop never ends. spawn() uses
-        start_new_session=True to make the child a group leader. Idempotent.
+        process_group=0 to make the child a group leader (a new group, not a
+        new session -- see spawn()). Idempotent.
         """
         p = self.proc
         if p is None or p.returncode is not None:
@@ -301,7 +302,12 @@ class CodexRuntime:
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
             env=dict(os.environ, **(env or {})),
-            start_new_session=True,
+            # A new process GROUP, not a new SESSION. kill_group needs a group
+            # leader; a session leader additionally becomes its own
+            # TCC-responsible process on macOS and loses Sutra's
+            # Files-and-Folders grants, killing any provider spawned under
+            # ~/Desktop with `EPERM: uv_cwd` at startup. See AcpRuntime.spawn.
+            process_group=0,
         )
         self.proc = p
         self.key = key

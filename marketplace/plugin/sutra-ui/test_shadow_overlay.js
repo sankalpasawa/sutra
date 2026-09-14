@@ -347,8 +347,13 @@ function part3(){
   console.log("ok 15 scope rides the turn");
 }
 /* start_now/retry answer BEFORE the mission moves, so one immediate reload
-   reads READY and the row lies until something else loads. Three bounded
-   re-reads, on those two actions only, each skipped once it has moved. */
+   reads READY and the row lies until something else loads. Four bounded
+   re-reads, on those two actions only, each skipped once it has moved.
+
+   THE VALUES ARE PART OF THE BEHAVIOUR, which is why they are asserted and
+   not just counted: the chat is published at ~394ms (measured on the live
+   server), so a first step of 1000ms meant the row lied for 713ms about a
+   chat that already existed. */
 {
   const ctx = fresh();
   const timers = [];
@@ -362,13 +367,13 @@ function part3(){
 
   ctx.shadowMissionAct("m-fib", "start_now").then(() => {
     assert.strictEqual(homeLoads, 1, "the immediate reload still happens");
-    assert.deepStrictEqual(timers.map(t => t.ms), [1000, 3000, 8000],
-      "three bounded re-reads, 1s/3s/8s");
+    assert.deepStrictEqual(timers.map(t => t.ms), [250, 750, 2000, 5000],
+      "four bounded re-reads, 250ms/750ms/2s/5s");
     timers[0].fn();
     assert.strictEqual(homeLoads, 2, "still brief_confirm -> re-read");
-    /* the mission moved: the remaining timers must cost nothing */
+    /* the mission moved: EVERY remaining timer must cost nothing */
     ctx.S.shadowMissions = [{ id: "m-fib", state: "running" }];
-    timers[1].fn(); timers[2].fn();
+    timers[1].fn(); timers[2].fn(); timers[3].fn();
     assert.strictEqual(homeLoads, 2, "no re-read once the mission has moved");
 
     /* every OTHER action is untouched */
@@ -394,7 +399,7 @@ function part3(){
   /* the ORIGINAL is terminal and will never move; the clone has no row yet */
   ctx.S.shadowMissions = [{ id: "m-old", state: "failed" }];
   ctx.shadowMissionAct("m-old", "retry").then(() => {
-    assert.strictEqual(timers.length, 3, "retry re-reads too");
+    assert.strictEqual(timers.length, 4, "retry re-reads too");
     homeLoads = 0;
     timers[0].fn();
     assert.strictEqual(homeLoads, 1,

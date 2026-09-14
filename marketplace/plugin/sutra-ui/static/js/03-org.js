@@ -627,12 +627,35 @@ SCREENS.reorg = () => {
       <p style="font-size:11.5px">now (immediate) — <span class="pill p-mut">label, not a control</span>
         There is no scheduler: a Claude Code plugin has no daemon, and a back- or forward-dated stamp
         would corrupt the monotonic ordering replay depends on.</p>
-      <h3 class="sec" style="margin-top:14px">There is no Apply button in this tier</h3>
-      <p style="font-size:11.5px">Not disabled, not behind a confirm — absent. <code>org apply</code>
-        is the only authority and it re-validates against freshly loaded state inside the RESTRUCTURE
-        flock. The hazard is staleness: the tree gains system-minted siblings while you drag.</p>
-      <div class="cmd"><span class="p">$</span><span class="t">placement_engine.py org plan --import ~/.sutra-ui/drafts/${esc(PLANS[0].plan_id)}.json</span>
-        <button class="btn" id="copyCmd" style="padding:3px 8px">copy</button></div>
+      <h3 class="sec" style="margin-top:14px">Apply</h3>
+      ${(() => {
+        /* Apply commits the composed MOVEs to the registry (founder,
+           2026-09-13, reversing "no Apply button in this tier"). It edits
+           department linkages and NOTHING else: the server refuses any op that
+           is not a move, and a move sets one parent_ref -- no file, project or
+           git repo outside Sutra changes. It re-validates server-side against a
+           fresh read inside the RESTRUCTURE flock, so a stale plan is refused
+           rather than written. The gate below is the same completeness the CLI
+           path required: moves present, a rationale, and nothing blocking. */
+        const reasons = [];
+        if (!ops.length) reasons.push("no moves yet");
+        if (!S.draft.rationale.trim()) reasons.push("rationale required");
+        if (blocking.length) reasons.push(blocking.length + " blocking");
+        if (err) reasons.push("validation failed");
+        const busy = S.applyBusy;
+        const can = !reasons.length && !pend && !busy;
+        return `<p style="font-size:11.5px">Commits ${ops.length} move${ops.length===1?"":"s"} to the
+            registry. Editing linkages only — no file, project or repository outside Sutra changes.
+            Re-checked server-side before anything is written.</p>
+          <button class="btn" id="applyPlan" ${can?"":"disabled"}
+                  style="padding:6px 12px;font-weight:600">
+            ${busy?"Applying…":"Apply "+ops.length+" move"+(ops.length===1?"":"s")}</button>
+          ${reasons.length?`<span style="font-size:11px;color:var(--muted);margin-left:8px">${esc(reasons.join(" · "))}</span>`:""}
+          ${S.applyError?`<div class="note b" style="margin-top:8px"><b>Not applied.</b> ${esc(S.applyError)}</div>`:""}
+          <details style="margin-top:10px"><summary style="font-size:11px;color:var(--muted);cursor:pointer">or apply from the CLI</summary>
+            <div class="cmd" style="margin-top:6px"><span class="p">$</span><span class="t">placement_engine.py org plan --import ~/.sutra-ui/drafts/${esc(PLANS[0].plan_id)}.json</span>
+              <button class="btn" id="copyCmd" style="padding:3px 8px">copy</button></div></details>`;
+      })()}
     </div><div>
       <h3 class="sec">Findings</h3>
       ${err? `<div class="note b"><b>Validation could not run.</b> ${esc(err)}<br>

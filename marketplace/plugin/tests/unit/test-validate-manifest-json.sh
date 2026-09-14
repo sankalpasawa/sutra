@@ -96,6 +96,52 @@ else
   _no "native version DRIFT: catalog=$catalog_native_v != source=$source_native_v"
 fi
 
+# 6) Release-doc sync — the top entry of CURRENT-VERSION.md and of the plugin
+#    CHANGELOG.md must name the manifest version. A bump that moves the JSON
+#    but not the notes ships a release nobody can read the diff of.
+doc_cv=$(grep -m1 -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' "$SUTRA_ROOT/CURRENT-VERSION.md" 2>/dev/null | sed 's/^## v//')
+doc_ch=$(grep -m1 -oE '^## [0-9]+\.[0-9]+\.[0-9]+' "$PLUGIN_ROOT/CHANGELOG.md" 2>/dev/null | sed 's/^## //')
+if [ "$doc_cv" = "$source_core_v" ]; then
+  _ok "CURRENT-VERSION.md top entry: v$doc_cv == plugin.json"
+else
+  _no "CURRENT-VERSION.md top entry is v${doc_cv:-?}, plugin.json is $source_core_v"
+fi
+if [ "$doc_ch" = "$source_core_v" ]; then
+  _ok "CHANGELOG.md top entry: $doc_ch == plugin.json"
+else
+  _no "CHANGELOG.md top entry is ${doc_ch:-?}, plugin.json is $source_core_v"
+fi
+
+# 7) No desktop tag may sit AHEAD of the manifests. This is the local twin of
+#    the release-dmg version guard, which only fires after the tag is pushed.
+#    On 2026-09-13 three tags (v2.268.0, v2.269.0, v2.270.0-desktop) were cut
+#    against manifests still reading 2.267.1/2.267.3; every run died in the
+#    guard job before a runner started. Running this before cutting a tag
+#    turns that into a workstation failure.
+#
+#    Strictly-ahead only: a tag EQUAL to the manifests is the normal state
+#    right after a release, and tags behind them are the whole history.
+if git -C "$SUTRA_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  ahead=$(git -C "$SUTRA_ROOT" tag --list 'v*-desktop' \
+    | sed -E 's/^v//; s/-desktop$//' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -t. -k1,1n -k2,2n -k3,3n \
+    | awk -v cur="$source_core_v" '
+        function cmp(a, b,   x, y, i) {
+          split(a, x, "."); split(b, y, ".")
+          for (i = 1; i <= 3; i++) { if (x[i] + 0 != y[i] + 0) return (x[i] + 0 < y[i] + 0) ? -1 : 1 }
+          return 0
+        }
+        cmp($0, cur) > 0 { print }')
+  if [ -z "$ahead" ]; then
+    _ok "no v*-desktop tag ahead of manifests ($source_core_v)"
+  else
+    _no "desktop tag(s) ahead of manifests ($source_core_v): $(echo "$ahead" | tr '\n' ' ')— bump the manifests, or cut a tag that matches them"
+  fi
+else
+  _ok "skip tag check: not a git work tree"
+fi
+
 echo ""
 echo "  $PASS passed, $FAIL failed"
 exit "$FAIL"

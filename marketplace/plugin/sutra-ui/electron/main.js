@@ -49,8 +49,70 @@ const net = require("net");
 const provision = require("./provision.js");
 
 const HOST = "127.0.0.1";
-const PORT = 8330; // canonical, pinned -- see header
+
+/* CHANNEL: "stable" (Sutra) or "beta" (Sutra Beta), baked into the bundle by
+   make-dmg.sh as Contents/Resources/channel. It is read from a FILE, not from
+   app.getName(): electron-packager sets the .app name but leaves package.json's
+   productName as "Sutra", so getName() returns "Sutra" for the beta build too.
+   Absent/unreadable -> stable, so a normal build and any dev checkout behave
+   exactly as before. The two channels are designed to COEXIST (founder,
+   2026-09-13): a separate app, a separate port, and a separate data namespace,
+   so a beta you install to test a flow never collides with -- or writes into --
+   your production Sutra. */
+function readChannel() {
+  try {
+    const c = fs.readFileSync(path.join(process.resourcesPath || "", "channel"), "utf8").trim();
+    return c === "beta" ? "beta" : "stable";
+  } catch (e) { return "stable"; }
+}
+const CHANNEL = readChannel();
+const IS_BETA = CHANNEL === "beta";
+
+// GIVE BETA ITS OWN ELECTRON IDENTITY, or coexistence silently fails. electron-
+// packager sets the .app/CFBundleName to "Sutra Beta" but leaves package.json's
+// productName as "Sutra", so app.getName() returns "Sutra" for the beta build.
+// Electron derives userData AND the single-instance lock from that name, so the
+// beta would share both with production -- and requestSingleInstanceLock() (far
+// below) returns false whenever production is already open, making the beta
+// app.exit(0) within a second. Rename it and repath userData here, at module
+// load, before either is read. (Caught by installing beta.1 beside production.)
+if (IS_BETA) {
+  app.setName("Sutra Beta");
+  try { app.setPath("userData", path.join(app.getPath("appData"), "Sutra Beta")); }
+  catch (e) { /* getPath valid pre-ready; a failure just keeps the default */ }
+}
+// Stable is pinned to 8330 (the fixed-port product). Beta takes 8331 so both
+// run at once; if you change one, change betaEnv()'s note and the docs.
+const PORT = IS_BETA ? 8331 : 8330;
 const ORIGIN = `http://${HOST}:${PORT}`;
+
+/* The data-path env the backend reads. STABLE passes nothing (the backend's
+   own ~/.sutra-native + ~/.sutra-ui defaults stand). BETA redirects EVERY one
+   to a parallel namespace so the two installs share no registry, chats,
+   routines, drafts, settings or telemetry.
+
+   THIS LIST MUST COVER EVERY DATA-PATH VAR THE BACKEND READS. A var added to
+   the backend but missed here would make the beta write into production for
+   that one thing -- the exact collision coexistence exists to prevent.
+   test_channel_isolation.py greps the backend and fails if any escapes. */
+function betaEnv() {
+  if (!IS_BETA) return {};
+  const nat = path.join(os.homedir(), ".sutra-native-beta");
+  const ui = path.join(os.homedir(), ".sutra-ui-beta");
+  return {
+    SUTRA_NATIVE_HOME:    path.join(nat, "user-kit"),
+    SUTRA_UI_CHATS:       path.join(ui, "chats"),
+    SUTRA_UI_DRAFTS:      path.join(ui, "drafts"),
+    SUTRA_UI_PROPOSALS:   path.join(ui, "proposals"),
+    SUTRA_UI_ROUTINES:    path.join(ui, "routines"),
+    SUTRA_UI_RUNS:        path.join(ui, "runs"),
+    SUTRA_UI_TEAMSUTRA:   path.join(ui, "teamsutra"),
+    SUTRA_UI_SETTINGS:    path.join(ui, "settings.json"),
+    SUTRA_MODULES_HOME:   path.join(ui, "modules"),
+    SUTRA_SHADOW_HOME:    path.join(ui, "shadow"),
+    SUTRA_UI_WS_TELEMETRY: path.join(ui, "workspace-telemetry.jsonl"),
+  };
+}
 
 // Resolved at boot, not at module load: app.getPath() is only valid once the
 // app is ready, and the answer decides which of the two installs we are.
@@ -392,6 +454,9 @@ function startBackend() {
         // The agent's crawler can read a site behind a bot challenge through this
         // app's own hidden window. Address + token, both minted per launch.
         ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),
+        // Beta redirects every data path to ~/.sutra-*-beta; stable adds nothing.
+        // Last so the namespace cannot be overridden by an inherited value.
+        ...betaEnv(),
       } }
   );
   let stderr = "";
@@ -709,10 +774,10 @@ async function boot() {
     return;
   }
   if (await portBusy()) {
-    return fail("Port 8330 is in use",
-      "Something is already listening on 127.0.0.1:8330 and it is not Sutra " +
+    return fail(`Port ${PORT} is in use`,
+      `Something is already listening on 127.0.0.1:${PORT} and it is not Sutra ` +
       "(it did not answer /api/org/health).\n\nQuit that process and open Sutra again.\n\n" +
-      "Find it with:  lsof -ti tcp:8330");
+      `Find it with:  lsof -ti tcp:${PORT}`);
   }
 
   startBrowserFetchService();
@@ -825,7 +890,11 @@ function updateCli(args, timeoutMs) {
     }, (err, stdout) => {
       let parsed = null;
       try { parsed = JSON.parse(String(stdout || "").trim()); } catch (e) { /* judged below */ }
-      if (parsed && parsed.error) return reject(new Error(parsed.error));
+      if (parsed && parsed.error) {
+        const e = new Error(parsed.error);
+        if (parsed.busy === true) e.busy = true;   // lock held a moment; see isUpdateBusy
+        return reject(e);
+      }
       if (err) return reject(new Error(err.killed ? "the updater timed out" : (err.message || "updater failed")));
       if (!parsed) return reject(new Error("the updater returned no answer"));
       resolve(parsed);
@@ -980,6 +1049,15 @@ async function checkUpstreams() {
 }
 
 function startUpdateSchedule() {
+  if (IS_BETA) {
+    // A beta must NOT auto-update. The stable channel (releases/latest) would
+    // replace the beta with production and defeat coexistence -- and a beta is
+    // a throwaway test build you install deliberately, verify, then discard
+    // once its code ships stable. Getting off beta is a manual reinstall of
+    // the stable release, never an update.
+    console.log("[sutra] beta channel: auto-update disabled (install stable to leave beta)");
+    return;
+  }
   if (!updateCapable()) {
     console.log("[sutra] no update capability in this shell (dev checkout); auto-update off");
     return;
@@ -996,10 +1074,39 @@ function startUpdateSchedule() {
 /* Hand the helper this process -- its pid, so it waits for THE SHELL rather
    than for whatever the backend's parent happens to be. */
 async function armUpdate(relaunch, timeoutMs) {
-  const r = await updateOp("arm", { wait_pid: process.pid, relaunch: !!relaunch },
-                           timeoutMs || 60000);
+  const r = await updateOpRetryBusy("arm", { wait_pid: process.pid, relaunch: !!relaunch },
+                                    timeoutMs || 60000);
   armed = true;
   return r;
+}
+
+/* A busy state lock is not a failed update. Another update step (a stage
+   commit, a resolve) held pending-update.json for a moment and the verb gave
+   up after its 5s wait. The CLI flags it `busy`; over HTTP only the message
+   survives, which is updates.STATE_BUSY_MESSAGE. */
+const UPDATE_BUSY_PHRASE = "in use by another process";
+const UPDATE_BUSY_RETRY_MS = 1500;
+const UPDATE_BUSY_MIN_ATTEMPT_MS = 7000;   // the 5s lock wait plus room to finish
+
+function isUpdateBusy(err) {
+  return !!err && (err.busy === true || String(err.message || "").includes(UPDATE_BUSY_PHRASE));
+}
+
+/* Retry busy refusals quietly, but never past the caller's budget: every
+   attempt gets the time LEFT, and no attempt starts without room to finish.
+   The quit path's 8s bound therefore still holds. */
+async function updateOpRetryBusy(verb, body, budgetMs) {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    try {
+      return await updateOp(verb, body, Math.max(1, deadline - Date.now()));
+    } catch (err) {
+      const room = deadline - Date.now() - UPDATE_BUSY_RETRY_MS;
+      if (!isUpdateBusy(err) || room < UPDATE_BUSY_MIN_ATTEMPT_MS) throw err;
+      console.log(`[sutra] update state busy; retrying ${verb}`);
+      await new Promise((r) => setTimeout(r, UPDATE_BUSY_RETRY_MS));
+    }
+  }
 }
 
 /* Launch-time reconciliation, before the window is shown.
@@ -1011,7 +1118,7 @@ async function resolvePendingUpdate() {
   if (!updateCapable()) return false;
   let r;
   try {
-    r = await updateOp("resolve", { installed: app.getVersion() }, 20000);
+    r = await updateOpRetryBusy("resolve", { installed: app.getVersion() }, 20000);
   } catch (err) {
     console.error("[sutra] could not resolve pending update:", err.message);
     return false;
@@ -1050,7 +1157,8 @@ ipcMain.handle("sutra:update-apply", async () => {
     setTimeout(() => app.quit(), 250);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err.message };
+    // busy: the banner retries quietly rather than saying the update failed.
+    return { ok: false, error: err.message, busy: isUpdateBusy(err) };
   }
 });
 

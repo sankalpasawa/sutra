@@ -5,9 +5,14 @@ websockets==15.0.1
 # DMG bundle can install them with --only-binary.
 httpx==0.28.1
 beautifulsoup4==4.15.0
-# The page index (seo_agent/tools/_index.py). 2.0.2 is the newest numpy that still runs on the
-# dev venv's Python 3.9 AND ships cp312 wheels for both macOS arches (arm64 11_0, x86_64 10_9),
-# checked 2026-09-03 with pip download --only-binary=:all: --platform.
+# SUPPORTED PYTHON: 3.11-3.12, for every build. The floor is cryptography (below: its only wheel
+# is cp311-abi3); the ceiling is numpy 2.0.2 (no cp313 wheel). The release DMG bundles 3.12
+# (electron/bundle-runtime.sh) and install.sh/run.sh refuse anything outside the range. The stock
+# macOS python3 is 3.9 and CANNOT install these pins -- trafilatura 2.2.0 alone needs 3.10.
+#
+# The page index (seo_agent/tools/_index.py). numpy 2.0.2 ships cp311 and cp312 wheels for both
+# macOS arches (arm64 11_0, x86_64 10_9), checked 2026-09-03 with pip download --only-binary=:all:
+# --platform. Moving past 3.12 means moving past this pin first.
 numpy==2.0.2
 # The article extractor, rung 2b of the catalogue's ladder. On the original workflow's own
 # catalogue it won 300 of the 334 pages the DOM rung alone did not, so it is nearly the whole of

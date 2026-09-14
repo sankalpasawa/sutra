@@ -102,6 +102,7 @@ def registry_root():
     default so a child never receives an empty root (DeepSeek P2)."""
     return E.HOME or os.path.expanduser("~/.sutra-native/user-kit")
 import teamsutra  # noqa: E402
+import org_apply  # noqa: E402  (isolates the restructure call from this read-mostly module)
 
 import claude_local
 import codex_auth  # Sutra's COPY of the Codex API key (keychain, never here)
@@ -867,6 +868,42 @@ def org_simulate(req: SimulateRequest):
 
 # ------------------------------------------------------------- GET/POST draft
 
+
+
+@router.post("/org/apply")
+def org_apply_plan(req: SimulateRequest):
+    """Commit a drag-and-drop reorg plan -- the studio's Apply button.
+
+    Registry-only by construction: org_apply.apply_moves refuses any op that is
+    not a move, and a move sets one parent_ref plus an audit line under
+    SUTRA_NATIVE_HOME -- no project directory, transcript, git repo or other
+    file is touched (see org_apply's module docstring, and the founder's
+    2026-09-13 constraint).
+
+    NOT desktop-token-gated, deliberately. The renderer never holds that token
+    (main.js), so a gated route could not be called from the drag surface at
+    all; and a move is reversible, registry-scoped structural editing -- the
+    same risk class as POST /api/classify, this router's other loopback write,
+    not the install/restart class the token guards. It re-validates server-side
+    against a FRESH registry read (the same reorg_sim.simulate the rings use) and
+    refuses on any block, so an ungated caller still cannot write an invalid or
+    drifted plan.
+
+    restructure itself lives in org_apply, never here, so test_forbidden_calls
+    stays green: this route names apply_moves, not the mutator.
+    """
+    try:
+        return org_apply.apply_moves(req.ops, base=req.base, now_ms=req.now_ms)
+    except org_apply.ApplyRefused as exc:
+        # 409: the plan was well-formed but the tree moved under it (drift) or a
+        # move became illegal. Detail is a plain string (the message already
+        # names the blocking codes) -- the studio re-simulates on the next
+        # render and the same blocks reappear as rings, so the codes need not
+        # ride the error too. A dict detail would just be JSON-stringified into
+        # the client's error message by _fail().
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 @router.get("/org/draft")
 def org_draft_get():
     if not DRAFT_PATH.exists():
@@ -1760,6 +1797,9 @@ class SettingsRequest(BaseModel):
     # str to GRANT (must equal providers.UNSAFE_ACK_PHRASE), False to withdraw.
     # Deliberately not a bare bool -- see providers.UNSAFE_ACK_PHRASE.
     unsafe_ack: Optional[Union[str, bool]] = None
+    # "sutra" (only chats this app started) | "all" (every transcript on the
+    # machine, whichever provider wrote it). See providers.CHAT_SCOPES.
+    chat_scope: Optional[str] = None
 
 
 @router.post("/settings/provider-bin")
@@ -1800,11 +1840,11 @@ def api_settings_post(req: SettingsRequest):
     """
     if (req.provider is None and req.permission_mode is None
             and req.workdir is None and req.onboarded is None and req.model is None
-            and req.unsafe_ack is None):
+            and req.unsafe_ack is None and req.chat_scope is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
-                   "permission_mode, workdir, onboarded, model")
+                   "permission_mode, workdir, onboarded, model, chat_scope")
     try:
         settings = providers.save_settings(
             provider=req.provider,
@@ -1813,6 +1853,7 @@ def api_settings_post(req: SettingsRequest):
             onboarded=req.onboarded,
             model=req.model,
             unsafe_ack=req.unsafe_ack,
+            chat_scope=req.chat_scope,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

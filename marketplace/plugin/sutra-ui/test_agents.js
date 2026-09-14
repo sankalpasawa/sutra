@@ -2224,6 +2224,19 @@ test("the account card reads the balance out of their reply, and costs nothing",
   assert.strictEqual(acct.free, true, "the card knows it is free, so it can say so");
 });
 
+/* THE IDEA SHEET REFRESHES WHILE IT IS OPEN (owner, 2026-09-13: "why is the asset ideas tab not
+   getting updated when users write the code in the connections"). A joiner's first ideas and every
+   teammate's tick arrive through the workspace poll; the tab read /assets once, on arrival. */
+test("the Asset ideas tab re-reads the sheet on the refresh tick, and only while it is open", () => {
+  const i = SRC.indexOf("async function agRefresh(){");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(i !== -1, "found the refresh tick");
+  assert.ok(/a\.view === "assets"/.test(body), "it knows when the sheet is the screen in front of him");
+  assert.ok(/a\.assets = await agApi\("\/assets"\)/.test(body), "and re-reads it then");
+  assert.ok(/agApi\("\/assets"\)\.catch\(\(\) => a\.assets\)/.test(body),
+            "a failed read keeps the sheet he is looking at instead of blanking it");
+});
+
 test("inside the agent the company is named in the sidebar, and it is the way to the chooser", () => {
   const a = mktBlank(); a.screen = "agent";
   a.health = Object.assign({}, MKT_LIVED, { company: { id: "c1", name: "Acme Hiring" }, companies: 2 });
@@ -3813,4 +3826,27 @@ test("a finished catalogue refresh reports the real counts", () => {
   assert.strictEqual(fired.length, 1);
   assert.ok(/37 new/.test(fired[0].body) && /4 gone/.test(fired[0].body)
             && /112 changed/.test(fired[0].body), fired[0].body);
+});
+
+test("the model picker lists only providers that can run, and marks the pick", () => {
+  const h = { model_provider: "codex-cli", model: { provider: "codex", model: "gpt-5.5", running: "codex-cli", options: [
+    { id: "claude", name: "Claude Code", runnable: true, models: [{ id: "", name: "CLI default" }, { id: "opus", name: "Opus" }] },
+    { id: "codex", name: "OpenAI Codex", runnable: true, models: [{ id: "", name: "CLI default" }, { id: "gpt-5.5", name: "gpt-5.5" }] },
+    { id: "deepseek", name: "DeepSeek", runnable: false, models: [{ id: "deepseek-v4-pro", name: "V4 Pro" }] }] } };
+  const html = A.agModelPickHtml(h, false);
+  assert.ok(/data-agmodel/.test(html), html);
+  assert.ok(/value="codex\|gpt-5.5" selected/.test(html), html);
+  assert.ok(/Claude Code · Opus/.test(html) && /Claude Code · account default/.test(html), html);
+  assert.ok(!/DeepSeek/.test(html), "a provider that cannot run is not offered");
+  assert.ok(/disabled/.test(A.agModelPickHtml(h, true)), "locked while a run is working");
+  const gone = JSON.parse(JSON.stringify(h)); gone.model.provider = "deepseek"; gone.model.model = "deepseek-v4-pro";
+  assert.ok(/value="claude\|" selected/.test(A.agModelPickHtml(gone, false)), "a pick that cannot run shows what runs instead");
+  assert.strictEqual(A.agModelPickHtml({ model_provider: "claude-cli" }, false), "", "an older backend draws no picker");
+});
+
+test("the composer carries the model picker", () => {
+  const a = agReset();
+  a.health = { model_provider: "claude-cli", model: { provider: "claude", model: "", running: "claude-cli",
+    options: [{ id: "claude", name: "Claude Code", runnable: true, models: [{ id: "", name: "CLI default" }] }] } };
+  assert.ok(/data-agmodel/.test(A.agComposerHtml(a)));
 });

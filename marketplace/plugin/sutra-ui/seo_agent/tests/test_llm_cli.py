@@ -196,6 +196,158 @@ llm.subprocess.run = canned({"is_error": False, "result": "plain words"})
 r = llm.call("s", [{"role": "user", "content": "hi"}])
 ok("falls back to the plain result", r["text"] == "plain words" and r["tool_calls"] == [])
 
+print("\nthe CLI printed something besides the result (2026-09-14: 'did not return JSON (exit 0)')")
+llm.CLI_RETRY_SLEEPS = ()
+env(SEO_AGENT_CLAUDE_BIN=sys.executable)
+GOOD = {"type": "result", "is_error": False, "result": "x",
+        "structured_output": {"text": "Which website?",
+                              "tool_calls": [{"name": "ask_user", "input": {"question": "What's the website?"}}]}}
+def printed(stdout):
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+    return run
+for label, out in (("a notice line before the result", "A new version is available\n" + json.dumps(GOOD)),
+                   ("an event line before the result", json.dumps({"type": "system"}) + "\n" + json.dumps(GOOD)),
+                   ("a line after the result", json.dumps(GOOD) + "\nbye"),
+                   ("the whole event list", json.dumps([{"type": "system"}, GOOD]))):
+    llm.subprocess.run = printed(out)
+    try:
+        r = llm.call("s", [{"role": "user", "content": "start on nuplay ai"}], TOOLS)
+        ok(label + " still reads the reply",
+           r["text"] == "Which website?" and r["tool_calls"] and r["tool_calls"][0]["name"] == "ask_user", r)
+    except Exception as e:
+        ok(label + " still reads the reply", False, e)
+llm.subprocess.run = printed("no json at all")
+try:
+    llm.call("s", [{"role": "user", "content": "hi"}])
+    ok("real garbage still fails loudly", False, "no raise")
+except RuntimeError as e:
+    ok("real garbage still fails loudly", "did not return JSON" in str(e), e)
+
+print("\nthe model choice")
+os.environ.pop("SEO_AGENT_CODEX_BIN", None)
+store.save_model_choice("", "")
+llm.set_hooks()
+ok("nothing picked and no chat default means Claude", llm.chosen() == ("claude", "") and llm.provider() == "claude-cli",
+   (llm.chosen(), llm.provider()))
+llm.set_hooks(default_choice=lambda: ("codex", "gpt-5.5"))
+ok("nothing picked follows the Sutra chat's default", llm.chosen() == ("codex", "gpt-5.5"), llm.chosen())
+store.save_model_choice("claude", "opus")
+ok("a pick beats the chat default", llm.chosen() == ("claude", "opus"), llm.chosen())
+llm.subprocess.run = canned({"is_error": False, "result": "", "structured_output": {"text": "pong"}})
+llm.call("s", [{"role": "user", "content": "hi"}])
+c = CAPTURED["cmd"]
+ok("the picked Claude model is passed", "--model" in c and c[c.index("--model") + 1] == "opus", c)
+
+store.save_model_choice("codex", "gpt-5.5")
+os.environ["SEO_AGENT_CODEX_BIN"] = "/nonexistent/codex"
+ok("Codex picked but not installed falls back to Claude", llm.provider() == "claude-cli", llm.provider())
+os.environ["SEO_AGENT_CODEX_BIN"] = sys.executable
+ok("Codex picked and installed runs Codex", llm.provider() == "codex-cli", llm.provider())
+CODEX = {}
+def codex_run(reply, stderr=""):
+    def run(cmd, **kw):
+        CODEX.clear()
+        CODEX.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"))
+        schema = cmd[cmd.index("--output-schema") + 1]
+        CODEX["schema"] = json.load(open(schema))
+        if reply is not None:
+            with open(cmd[cmd.index("-o") + 1], "w") as fh:
+                fh.write(reply)
+        return subprocess.CompletedProcess(cmd, 0 if reply is not None else 1, stdout="", stderr=stderr)
+    return run
+llm.subprocess.run = codex_run(json.dumps({"text": "Which website?", "tool_calls": [
+    {"name": "ask_user", "input": json.dumps({"question": "What's the website?"})},
+    {"name": "log_step", "input": "not json"}]}))
+r = llm.call("You are the SEO writer.", MESSAGES, TOOLS)
+c = CODEX["cmd"]
+ok("codex runs as exec, read-only, ephemeral, reading the prompt from stdin",
+   c[1] == "exec" and "read-only" in c and "--ephemeral" in c and c[-1] == "-", c)
+ok("the picked Codex model is passed with -m", "-m" in c and c[c.index("-m") + 1] == "gpt-5.5", c)
+ok("the schema is strict, so OpenAI accepts it",
+   CODEX["schema"].get("additionalProperties") is False
+   and CODEX["schema"]["properties"]["tool_calls"]["items"]["properties"]["input"]["type"] == "string")
+ok("the prompt carries the system prompt, the tools and the conversation",
+   "You are the SEO writer." in CODEX["input"] and "fake_tool" in CODEX["input"]
+   and "Result of t2" in CODEX["input"], CODEX["input"][:300])
+ok("the API key never reaches codex", "ANTHROPIC_API_KEY" not in (CODEX["env"] or {}))
+ok("a tool input sent as a JSON string comes back as an object",
+   r["tool_calls"][0]["name"] == "ask_user" and r["tool_calls"][0]["input"] == {"question": "What's the website?"}, r)
+ok("an unreadable tool input becomes {} rather than a crash", r["tool_calls"][1]["input"] == {}, r)
+llm.subprocess.run = codex_run(json.dumps({"text": "plain"}))
+ok("text() works through Codex", llm.text("hi") == "plain")
+llm.subprocess.run = codex_run(None, stderr="Error: Not logged in. Run codex login")
+try:
+    llm.call("s", [{"role": "user", "content": "hi"}])
+    ok("a signed-out Codex says so", False, "no raise")
+except llm.NoKey as e:
+    ok("a signed-out Codex says so", "Codex" in str(e), e)
+llm.subprocess.run = codex_run(None, stderr="User: start on nuplay ai\n\nAssistant:\nERROR: You've hit your usage limit. Try again at Sep 26th.\n")
+try:
+    llm.call("s", [{"role": "user", "content": "hi"}])
+    ok("Codex's own complaint is shown, not the echoed prompt", False, "no raise")
+except llm.ModelError as e:
+    ok("Codex's own complaint is shown, not the echoed prompt",
+       "usage limit" in str(e) and "User:" not in str(e), e)
+llm.subprocess.run = canned({"is_error": False, "result": "", "structured_output": {"text": "searched"}})
+r = llm.call("s", [{"role": "user", "content": "find pages"}], web=True)
+ok("a web search stays on Claude while Codex is picked",
+   CAPTURED.get("cmd", [None])[0] == sys.executable and "WebSearch" in CAPTURED["cmd"] and r["text"] == "searched")
+
+print("\nDeepSeek")
+os.environ.pop("SEO_AGENT_CODEX_BIN", None)
+store.save_model_choice("deepseek", "")
+llm.set_hooks(deepseek_key=lambda: "")
+ok("DeepSeek picked without a key falls back to Claude", llm.provider() == "claude-cli", llm.provider())
+llm.set_hooks(deepseek_key=lambda: "sk-ds-test")
+ok("DeepSeek picked with a key runs DeepSeek", llm.provider() == "deepseek", llm.provider())
+REAL_POST = llm.httpx.post
+POSTED = {}
+class Resp:
+    def __init__(self, code, body):
+        self.status_code, self._body, self.text = code, body, json.dumps(body)
+    def json(self):
+        return self._body
+def ds_post(code, body):
+    def post(url, json=None, headers=None, timeout=None):
+        POSTED.clear()
+        POSTED.update(url=url, json=json, headers=headers)
+        return Resp(code, body)
+    return post
+two_calls = [
+    {"role": "user", "content": "go"},
+    {"role": "assistant", "content": [{"type": "text", "text": "Two things."},
+                                      {"type": "tool_use", "id": "a1", "name": "log_step", "input": {"message": "x"}},
+                                      {"type": "tool_use", "id": "a2", "name": "fake_tool", "input": {"a": 2}}]},
+    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "a1", "content": "ok"},
+                                 {"type": "tool_result", "tool_use_id": "a2", "content": {"n": 1}}]}]
+llm.httpx.post = ds_post(200, {"choices": [{"message": {"content": "", "tool_calls": [
+    {"id": "d1", "type": "function", "function": {"name": "ask_user", "arguments": "{\"question\": \"Site?\"}"}}]}}]})
+r = llm.call("sys", two_calls, TOOLS)
+msgs = POSTED["json"]["messages"]
+ok("DeepSeek gets the saved key as a bearer token", POSTED["headers"]["Authorization"] == "Bearer sk-ds-test")
+ok("no model picked runs V4 Flash, the DeepSeek CLI's own default", POSTED["json"]["model"] == "deepseek-v4-flash")
+ok("both tool calls of one turn travel in ONE assistant message, then both results",
+   [m["role"] for m in msgs] == ["system", "user", "assistant", "tool", "tool"]
+   and len(msgs[2]["tool_calls"]) == 2 and msgs[3]["tool_call_id"] == "a1" and msgs[4]["tool_call_id"] == "a2",
+   [m["role"] for m in msgs])
+ok("tools are offered as functions", [t["function"]["name"] for t in POSTED["json"]["tools"]] == ["log_step", "fake_tool"])
+ok("DeepSeek's tool call comes back in the common shape",
+   r["tool_calls"] == [{"id": "d1", "name": "ask_user", "input": {"question": "Site?"}}], r)
+store.save_model_choice("deepseek", "deepseek-v4-pro")
+llm.httpx.post = ds_post(200, {"choices": [{"message": {"content": "hello"}}]})
+ok("text() works through DeepSeek with the picked model",
+   llm.text("hi") == "hello" and POSTED["json"]["model"] == "deepseek-v4-pro")
+llm.httpx.post = ds_post(401, {"error": "bad key"})
+try:
+    llm.call("s", [{"role": "user", "content": "hi"}])
+    ok("a refused DeepSeek key says so", False, "no raise")
+except llm.NoKey as e:
+    ok("a refused DeepSeek key says so", "DeepSeek" in str(e), e)
+llm.httpx.post = REAL_POST
+store.save_model_choice("", "")
+llm.set_hooks()
+
 # --- restore -----------------------------------------------------------------------------
 llm.subprocess.run = REAL_RUN
 for k, v in SAVED_ENV.items():

@@ -372,6 +372,149 @@ def test_placement_root_name_cannot_mint_a_second_root(monkeypatch):
         assert again == root and created is False
 
 
+def test_imported_cwd_on_retired_domain_reuses_live_successor(monkeypatch):
+    """DIR-14 (2026-09-12/13). The desktop re-imported seven folders on every
+    start after their departments had been retired into the organisation
+    (Asawa Holding -> Asawa Inc., Sutra -> Sutra OS, ...): the importer matched
+    cwds against ACTIVE records only, so a retired cwd looked new and was minted
+    again under Desktop. A retired cwd now resolves through the tombstone's
+    successor chain and links there; nothing is minted; the successor keeps its
+    own name and description and gains the cwd join key and the session count."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        root_ref, rows = P.apply_forest(P.build_forest([{"cwd": "/d/holding", "sessions": 3}]))
+        twin = rows[0]["ref"]
+        org, _ = E.mint_domain(root_ref, "Asawa Inc.", ["organisation"], "T-local", origin="operator")
+        E.set_domain_fields(org, description="The holding company")
+        res = E.restructure("merge", twin, target=org)
+        assert res.get("ok"), res
+        assert E.load_domains()[twin]["status"] == "retired"
+        n_before = len(E.load_domains())
+
+        _root, again = P.apply_forest(P.build_forest([{"cwd": "/d/holding", "sessions": 5}]))
+
+        after = E.load_domains()
+        assert len(after) == n_before, "a retired cwd must not be minted again"
+        assert again[0]["ref"] == org and again[0]["created"] is False
+        assert again[0]["via"] == "successor" and again[0]["retired_ref"] == twin
+        live_on_cwd = [r for r, d in after.items()
+                       if d.get("cwd") == "/d/holding" and d.get("status", "active") == "active"]
+        assert live_on_cwd == [org]
+        assert after[org]["name"] == "Asawa Inc." and after[org]["description"] == "The holding company"
+        assert after[org]["sessions"] == 5
+        assert P.department_for_cwd("/d/holding/sub")["ref"] == org
+        # A third run meets the successor as the ACTIVE owner of the cwd. It is
+        # not an imported department, so the folder label must not rename it
+        # and the importer's description must not replace its own; only the
+        # session count moves (DeepSeek review 2026-09-13).
+        _root, third = P.apply_forest(P.build_forest([{"cwd": "/d/holding", "sessions": 7}]))
+        after = E.load_domains()
+        assert len(after) == n_before
+        assert third[0]["ref"] == org and "renamed_from" not in third[0]
+        assert after[org]["name"] == "Asawa Inc." and after[org]["description"] == "The holding company"
+        assert after[org].get("source") is None and after[org]["sessions"] == 7
+
+
+def test_a_nested_folder_under_a_retired_parent_follows_the_successor(monkeypatch):
+    """The live shape of the incident: Claude > Asawa Holding > Sutra > Sutra UI,
+    every level retired into a different department. Each level resolves to its
+    own successor; a child whose parent was absorbed hangs under that successor."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        forest = P.build_forest([{"cwd": "/d/holding", "sessions": 2}, {"cwd": "/d/holding/sutra", "sessions": 2}])
+        root_ref, rows = P.apply_forest(forest)
+        by_cwd = {r["cwd"]: r["ref"] for r in rows}
+        org, _ = E.mint_domain(root_ref, "Asawa Inc.", ["organisation"], "T-local", origin="operator")
+        sutra_os, _ = E.mint_domain(org, "Sutra OS", ["subsidiary"], "T-local", origin="operator")
+        assert E.restructure("merge", by_cwd["/d/holding/sutra"], target=sutra_os).get("ok")
+        assert E.restructure("merge", by_cwd["/d/holding"], target=org).get("ok")
+        n_before = len(E.load_domains())
+
+        _root, again = P.apply_forest(P.build_forest(
+            [{"cwd": "/d/holding", "sessions": 2}, {"cwd": "/d/holding/sutra", "sessions": 2},
+             {"cwd": "/d/holding/newtool", "sessions": 1}]))
+
+        after = E.load_domains()
+        got = {r["cwd"]: r for r in again}
+        assert got["/d/holding"]["ref"] == org and got["/d/holding/sutra"]["ref"] == sutra_os
+        assert got["/d/holding/newtool"]["created"] is True
+        assert got["/d/holding/newtool"]["parent_ref"] == org, "a new child of an absorbed folder hangs under the successor"
+        assert len(after) == n_before + 1
+        assert not [d for d in after.values() if d.get("status", "active") == "active"
+                    and d.get("cwd") in ("/d/holding", "/d/holding/sutra") and d["ref"] not in (org, sutra_os)]
+
+
+def test_two_retired_folders_sharing_one_successor_keep_the_first_cwd(monkeypatch):
+    """Sutra UI and Sutra UI Workspace were both merged into Sutra Desktop. The
+    first absorbed folder gives the successor its cwd; the second must not
+    overwrite it (codex review 2026-09-13: the loop read a stale snapshot)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        forest = P.build_forest([{"cwd": "/d/ui", "sessions": 4}, {"cwd": "/d/ui-workspace", "sessions": 2}])
+        root_ref, rows = P.apply_forest(forest)
+        by_cwd = {r["cwd"]: r["ref"] for r in rows}
+        desk_app, _ = E.mint_domain(root_ref, "Sutra Desktop", ["app"], "T-local", origin="operator")
+        assert E.restructure("merge", by_cwd["/d/ui"], target=desk_app).get("ok")
+        assert E.restructure("merge", by_cwd["/d/ui-workspace"], target=desk_app).get("ok")
+
+        _root, again = P.apply_forest(forest)
+
+        got = {r["cwd"]: r for r in again}
+        assert got["/d/ui"]["ref"] == desk_app and got["/d/ui"]["cwd_kept"] is False
+        assert got["/d/ui-workspace"]["ref"] == desk_app and got["/d/ui-workspace"]["cwd_kept"] is True
+        after = E.load_domains()
+        assert after[desk_app]["cwd"] == "/d/ui", "the first absorbed folder keeps the successor's cwd"
+        assert after[desk_app]["sessions"] == 4, "the count belongs to the kept folder, not the last row"
+        assert P.department_for_cwd("/d/ui/x")["ref"] == desk_app
+        assert P.department_for_cwd("/d/ui-workspace") is None, "the second folder is reported, not resolved"
+
+
+def test_an_importer_minted_successor_keeps_its_name_on_later_boots(monkeypatch):
+    """The Desktop node (and, on a fresh install, the root) are minted by the
+    importer too, so an origin check cannot tell them from a folder's own
+    department. When a folder is merged into Desktop, the next boot must not
+    rename Desktop after the folder, and the boot after that must not mint a
+    second Desktop (verification workflow 2026-09-13, P1)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        forest = P.build_forest([{"cwd": "/d/claude", "sessions": 9}])
+        root_ref, rows = P.apply_forest(forest)
+        domains = E.load_domains()
+        desk = next(r for r, d in domains.items() if d.get("parent_ref") == root_ref and d["name"] == P.DESKTOP_NAME)
+        assert domains[desk]["origin"] == "project-import"
+        assert E.restructure("merge", rows[0]["ref"], target=desk).get("ok")
+        n_before = len(E.load_domains())
+        for _ in range(3):
+            _root, again = P.apply_forest(forest)
+            domains = E.load_domains()
+            assert again[0]["ref"] == desk and "renamed_from" not in again[0]
+            assert domains[desk]["name"] == P.DESKTOP_NAME, "the successor keeps its own name"
+            assert domains[desk]["cwd"] == "/d/claude" and domains[desk]["sessions"] == 9
+            assert len(domains) == n_before, "no second Desktop, nothing minted"
+        assert [d["name"] for d in domains.values() if d.get("parent_ref") == root_ref
+                and d.get("status", "active") == "active"] == [P.DESKTOP_NAME]
+
+
+def test_a_retired_cwd_with_no_live_successor_is_skipped_not_reminted(monkeypatch):
+    """A folder whose department was retired outright (no successor) stays
+    retired: the importer reports the skip and mints nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        P, E = _fresh_engine(Path(tmp))
+        monkeypatch.delenv("PLACEMENT_ROOT_NAME", raising=False)
+        _root, rows = P.apply_forest(P.build_forest([{"cwd": "/d/old", "sessions": 1}]))
+        res = E.retire(rows[0]["ref"], reason_code="dormant")
+        assert res.get("ok"), res
+        n_before = len(E.load_domains())
+        _root, again = P.apply_forest(P.build_forest([{"cwd": "/d/old", "sessions": 1}]))
+        assert again[0]["ref"] is None and again[0]["skipped"] == "retired-no-successor"
+        assert len(E.load_domains()) == n_before
+        assert P.department_for_cwd("/d/old") is None
+
+
 # ------------------------------------------------------------- repo names ---
 
 class _Run:

@@ -673,6 +673,228 @@ def catch_up(client=None, replay_from=None):
         return {"applied": 0, "blocked": True, "why": str(e)[:300]}
 
 
+# ---- the idea sheet ------------------------------------------------------------------------------
+#
+# THE BUG THIS SECTION CLOSES (owner, 2026-09-13: "why is the asset ideas tab not getting updated
+# when users write the code in the connections"). The sheet was designed to travel as rows in the
+# team's `ideas` table -- mirror.py has had the receiving half since the workspace shipped, and the
+# plan lists "ideas, ~1,900, the asset sheet and which are ticked" -- but nothing ever SENT a row.
+# The knowledge pack does not carry assets/ either (pack.CORE_MEMBERS). So a teammate who joined got
+# the catalogue and the brand pack and an empty Asset ideas tab, and kept it empty for good: on the
+# owner's workspace the table held 0 rows while his Mac held 1,892.
+#
+# TWO SHAPES OF CHANGE, TWO ROUTES. A tick is one row, and one row belongs in the queue like every
+# other push: on disk first, so it survives the wifi dropping. A merge or an import rewrites the whole
+# sheet, and the queue sends one request per item -- 1,892 requests, one after another, for one click.
+# So past a small number the changed rows go to the table in bulk, and only if that fails do they
+# fall back to the queue, where at least they are safe.
+IDEAS_QUEUE_MAX = 25          # this many changed rows or fewer: one queued push each
+IDEAS_BULK_CHUNK = 500        # more than that: straight to the table, this many per request
+IDEAS_BACKFILL_EVERY = 600.0  # seconds between backfill attempts that did not finish
+
+
+def _idea_changes(before, after):
+    """The rows of `after` that are new, or differ from the row with the same id in `before`.
+
+    Removals are not sent. A sheet row is retired by its status ("dropped", "done"), which travels as
+    an ordinary field of the row, and a merge that renumbers the sheet would otherwise send a delete
+    and an insert for every idea whose id moved.
+    """
+    old = {str(r.get("id")): r for r in (before or []) if isinstance(r, dict) and r.get("id")}
+    return [r for r in (after or [])
+            if isinstance(r, dict) and r.get("id") and old.get(str(r.get("id"))) != r]
+
+
+# WHOSE SHEET IS THIS. The rule that stops a Mac seeding the team with somebody else's ideas.
+#
+# The first version asked "did this Mac create the workspace?" by picking the team's earliest member.
+# On the owner's own workspace that picked an older registration of his under a different member id,
+# so his Mac -- the one that built all 1,892 ideas -- was told it was not the creator and the upload
+# never ran (found on his live data, 2026-09-13). Nothing on a Mac records creating a workspace, and a
+# join leaves no marker, so membership cannot answer the question reliably.
+#
+# The sheet can. It is built from one company's own pages, so its rows link to that company's site:
+# on the owner's sheet 1,891 of 1,892 rows carry links and testlify.com appears 3,604 times, the next
+# host 207. A sheet from another company links to that company instead. So a sheet is sent only when
+# enough of its linked rows point at the site this Mac's own catalogue is for.
+IDEAS_HOME_SHARE = 0.2        # at least this share of the rows that carry links must link home
+
+
+def _bare_host(value):
+    s = str(value or "").strip().lower()
+    if "://" in s:
+        s = s.split("://", 1)[1]
+    s = s.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    return s[4:] if s.startswith("www.") else s
+
+
+def _catalogue_domain():
+    """This company's own site as this Mac's knowledge records it, or "" when nothing does."""
+    try:
+        idx = store.knowledge("site_index.json") or {}
+        home = _bare_host(idx.get("domain")) if isinstance(idx, dict) else ""
+        if not home:
+            home = _bare_host((store.knowledge("brand/company.json") or {}).get("domain"))
+        return home
+    except Exception:                       # noqa: BLE001
+        return ""
+
+
+def _row_hosts(row):
+    hosts = set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif isinstance(o, str) and o.startswith(("http://", "https://")):
+            h = _bare_host(o)
+            if h:
+                hosts.add(h)
+    walk(row)
+    return hosts
+
+
+def _not_this_company(rows):
+    """"" when the sheet provably belongs to the company this Mac's knowledge is for, else why not.
+
+    Refuses rather than guesses: no catalogue, or a sheet with no links at all, is not proof.
+    """
+    home = _catalogue_domain()
+    if not home:
+        return "this Mac has no catalogue yet, so it cannot tell whose ideas these are"
+    linked = hits = 0
+    for r in rows or []:
+        hosts = _row_hosts(r)
+        if not hosts:
+            continue
+        linked += 1
+        if any(h == home or h.endswith("." + home) for h in hosts):
+            hits += 1
+    if not linked:
+        return "the sheet links to no pages, so it cannot be shown to be %s's" % home
+    if hits < IDEAS_HOME_SHARE * linked:
+        return ("only %d of the %d linked rows point at %s, so this sheet looks like another "
+                "company's" % (hits, linked, home))
+    return ""
+
+
+def _bulk_ideas(rows, client=None):
+    """Upsert rows to the ideas table in chunks. On a failed chunk, queue it and everything after it.
+
+    Every chunk is an upsert keyed on idea_id, so a retry of a chunk that half-landed is harmless.
+    Returns {"sent", "queued", "why"}.
+    """
+    c = _client(client)
+    who = _actor(client)
+    sent = 0
+    for i in range(0, len(rows), IDEAS_BULK_CHUNK):
+        chunk = rows[i:i + IDEAS_BULK_CHUNK]
+        wire = [mirror.to_wire("ideas", str(r["id"]), r, actor=who) for r in chunk]
+        try:
+            c.upsert("ideas", wire, on_conflict="idea_id")
+            sent += len(chunk)
+        except Exception as e:              # noqa: BLE001 — offline is the normal case, not a crash
+            queued = 0
+            for r in rows[i:]:
+                try:
+                    if push("ideas", str(r["id"]), r, client=client):
+                        queued += 1
+                except Exception:           # noqa: BLE001
+                    pass
+            return {"sent": sent, "queued": queued, "why": str(e)[:300]}
+    return {"sent": sent, "queued": 0, "why": ""}
+
+
+def push_ideas(before, after, client=None):
+    """Send the rows of the sheet that changed. Never raises; the local save has already happened.
+
+    Called by assets/_common.save_ideas after every write of the sheet, with the sheet as it was and
+    as it is now. Returns {"sent", "queued", "why"}.
+    """
+    try:
+        if not configured(client):
+            return {"sent": 0, "queued": 0, "why": "no workspace"}
+        allowed, why = _may_push("ideas", client)
+        if not allowed:
+            return {"sent": 0, "queued": 0, "why": why or "this workspace cannot hold ideas yet"}
+        changed = _idea_changes(before, after)
+        if not changed:
+            return {"sent": 0, "queued": 0, "why": ""}
+        # Judged on the WHOLE sheet, not the changed rows: three edited rows about one competitor
+        # would otherwise look like that competitor's sheet.
+        why = _not_this_company(after)
+        if why:
+            return {"sent": 0, "queued": 0, "why": why}
+        if len(changed) <= IDEAS_QUEUE_MAX:
+            queued = 0
+            for r in changed:
+                if push("ideas", str(r["id"]), r, client=client):
+                    queued += 1
+            return {"sent": 0, "queued": queued, "why": ""}
+        return _bulk_ideas(changed, client)
+    except Exception as e:                  # noqa: BLE001
+        return {"sent": 0, "queued": 0, "why": str(e)[:300]}
+
+
+def backfill_ideas(client=None, now=None, rows=None):
+    """Send the whole sheet ONCE, to a team whose ideas table is still empty.
+
+    The push above only sees changes made after it existed. Every sheet built before this fix --
+    the owner's 1,892 ideas among them -- would otherwise never reach anyone, because nothing about
+    them will change until somebody ticks one. So the Mac that holds a sheet checks, at most every
+    IDEAS_BACKFILL_EVERY seconds until it has done it, whether the team has any ideas at all; if it
+    has none, it sends them all. A team that already has ideas is left alone for good: from then on
+    ordinary pushes and the log keep everyone level.
+
+    The caller decides WHICH Mac may do this (agents_api only lets the one that created the
+    workspace), because a joiner's own sheet may belong to a different company entirely.
+    Returns "sent", "queued" or "". Never raises.
+    """
+    now = time.time() if now is None else now
+    try:
+        if not configured(client):
+            return ""
+        st = read_state()
+        bf = st.get("ideas_backfill") or {}
+        if bf.get("done"):
+            return ""
+        if now - float(bf.get("at") or 0) < IDEAS_BACKFILL_EVERY:
+            return ""
+        if rows is None:
+            from ..assets import _common as acm
+            rows = acm.ideas()
+        rows = [r for r in (rows or []) if isinstance(r, dict) and r.get("id")]
+        if not rows:
+            return ""
+        why = _not_this_company(rows)
+        if why:
+            # Not done: a catalogue can arrive later and settle it. The attempt time still rate-limits.
+            st["ideas_backfill"] = {"at": now, "done": False, "sent": 0, "why": why}
+            _save_state(st)
+            return ""
+        allowed, _why = _may_push("ideas", client)
+        if not allowed:
+            return ""
+        have = _client(client).select("ideas", columns="idea_id", limit=1) or []
+        if have:
+            st["ideas_backfill"] = {"at": now, "done": True, "sent": 0,
+                                    "why": "the team already has ideas"}
+            _save_state(st)
+            return ""
+        res = _bulk_ideas(rows, client)
+        st["ideas_backfill"] = {"at": now, "done": not res.get("why"),
+                                "sent": res.get("sent", 0), "queued": res.get("queued", 0),
+                                "why": res.get("why", "")}
+        _save_state(st)
+        return "sent" if res.get("sent") else ("queued" if res.get("queued") else "")
+    except Exception:                       # noqa: BLE001 — a background nicety must never break a poll
+        return ""
+
+
 def push_delete(kind, key, actor=None, client=None, item_id=None):
     """The thing is gone. The trigger logs it, and it reaches everyone as an ordinary change.
 

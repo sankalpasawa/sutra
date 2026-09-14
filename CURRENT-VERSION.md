@@ -1,8 +1,235 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-10
+**status**: active · **updated**: 2026-09-14
 
-## v2.256.2 (2026-09-10, HEAD)
+## v2.271.9 (2026-09-14, HEAD)
+
+**Routines do their work; stale locks clear themselves.** Nine scheduled routines had run under
+`dontAsk` with no allow-list since 2026-08-07, so every Bash call was denied and nothing ran; the
+records now carry a scoped, env-prefixed `allowed_tools` entry per prompt command. The runner's
+overlap lock records its holder's pid and clears a dead or over-age lock instead of skipping every
+fire (observability-synthesis-3h: 279 skips). Headless runs set `SUTRA_DEFAULTS_DISABLED=1`.
+daily-publish-gate runs on sonnet with a $2 budget. Tests: `test_routine_lock.py`, 7 checks.
+
+## v2.271.8 (2026-09-14)
+
+**Codex offers all its models, not one.** `providers._codex_discovered` took `codex_models.cached()`
+and, when that was empty, only the operator's `config.toml` model. `cached()` is filled only by
+`refresh_if_stale`, which runs only from GET `/providers/codex/auth` (the Codex settings row), so
+the SEO Writer and any chat opened before that row showed "CLI default" plus the one config model,
+while Codex's own `~/.codex/models_cache.json` listed GPT-5.6-Terra, GPT-5.6-Luna and GPT-5.5
+(model/list answers the same three on codex-cli 0.144.4, measured). New
+`codex_models.cache_file_models()` reads that file, memoised on mtime and never spawning, and is
+used before the config scan. Discovery still wins when it has run. Tests:
+`test_codex_models.py` +5.
+
+## v2.271.7 (2026-09-14)
+
+**Fable in the Claude model picker.** Claude's list was hardcoded to CLI default / Opus / Sonnet /
+Haiku in `providers._CLAUDE_MODELS`, so Fable could not be picked in chat, in routines or in the
+SEO Writer. Added `fable`, the alias `claude --model` accepts (measured on CLI 2.1.247: resolves to
+`claude-fable-5`; the dated `claude-fable-5-1` id is refused until CLI 2.1.251). Context window 1M,
+read from the CLI's own `modelUsage.contextWindow`, added to `budget.WINDOWS`. The Sutra MCP
+routine tool's model enum gains `fable`. The SEO Writer picker labels the empty choice "account
+default" instead of "default", which read as a fifth model (it resolves to Opus 5 on this
+account). Verified live: the SEO Writer on Fable asks for the website with `ask_user`.
+
+## v2.271.6 (2026-09-14)
+
+**SEO Writer: "Model call failed · did not return JSON", a model picker, and the update banner.**
+(1) A Mac's `claude` CLI printed its result object with something else beside it on stdout, and
+`llm._claude_cli_once` gave up on anything that was not exactly one JSON object, so a good reply
+(an `ask_user` for the website) was reported as a failure. `llm._cli_result` now takes the whole
+output, else the last result line, else the first result object in the text. (2) The SEO Writer
+ran on Claude only. It now offers the providers Sutra's chat offers, found by `providers.py`:
+Claude (CLI), Codex (`codex exec` read-only with a strict `--output-schema`, tool input as a JSON
+string) and DeepSeek (its OpenAI-compatible API with the key saved for DeepSeek chat). The pick is
+the person's (`model.json` in the agent root), defaults to the chat's own provider and model, and
+falls back to Claude when the pick cannot run. Web-search calls stay on Claude. Picker in the
+composer and in Connections; routes `GET/POST /api/agents/seo/model`. (3) "Sutra 2.271.4 could not be applied: the update
+state is in use by another process". `stage_desktop` held the manifest flock (5s wait) for the
+whole ~390MB download, so the arm for 2.271.4 timed out while the shell staged 2.271.5, and the
+banner called that a failure; the download also wrote over the staged 2.271.4 image, which shared
+its file name. The download and Gatekeeper check now run with no lock into `.download-*`, and
+`_commit_stage` takes the lock only to re-read the manifest and move the image into place under a
+versioned name (never over a live install). `arm_desktop` verifies outside the lock. A busy lock
+raises `StateBusy`, the CLI reports `busy`, the shell and banner retry it quietly within their
+time limits. Tests: `test_llm_cli` +27 checks, `test_agents.js` +2, `test_updates_cli.py` +8,
+`test_update_attach.js` +3, `test_update_banner.js` +3.
+
+## v2.271.5 (2026-09-13)
+
+**Providers work inside ~/Desktop again — the TCC session-detach bug (found by 2.271.4's stderr fix).**
+2.271.4 made the ACP child's stderr visible, and the very next DeepSeek failure named its real cause:
+`EPERM: uv_cwd` — the CLI could not read its own working directory. The workdir was under `~/Desktop`
+(a macOS TCC-protected folder). Providers were spawned with `start_new_session=True`; a session leader
+becomes its OWN TCC-responsible process on macOS and stops inheriting the Sutra app's Files-and-Folders
+grants, so the child could not read a Desktop/Documents/Downloads path it was launched into — even
+though the Sutra app itself is granted Desktop access (confirmed in the TCC db: `os.sutra.ui`
+Desktop=allowed, but the detached child was unattributed, so even Full Disk Access would not have
+reached it). Fix: spawn the three provider CLIs (DeepSeek/Claude/Codex) with `process_group=0` instead —
+a new process GROUP, not a new SESSION. `kill_group` only ever needed a group leader (killpg reaches
+descendants); dropping the session detach keeps the child attributed to `os.sutra.ui` so the app's grant
+covers it. Tests: `test_provider_spawn_group.py` (pins process_group=0, forbids start_new_session),
+`test_acp_stderr.py`.
+
+## v2.271.4 (2026-09-13)
+
+**DeepSeek "ACP process closed stdout" — the first-run race, and the swallowed reason.** A
+DeepSeek turn could die with only "could not start '.../deepseek' in <cwd>: ACP process closed
+stdout". Two causes, two fixes. (1) The gemini-cli fork's FIRST run writes shared `~/.gemini`
+state (installation_id, projects.json) with a non-atomic write-tmp-then-rename; two
+`deepseek --acp` spawns within one second race on it and the loser crashes mid-write and closes
+stdout (four orphaned `projects.json.*.tmp` in one second was the fingerprint). `_ACP_CONNECT_LOCK`
+now serializes the connect, but ONLY while first run is pending (installation_id absent) — zero
+steady-state contention. (2) The child's stderr, where the real reason lives, was captured to a
+pipe nothing read. `AcpRuntime` now drains it and `stderr_tail()` appends it to the failure, so a
+death names itself. Tests: `test_acp_stderr.py`.
+
+## v2.271.3 (2026-09-13)
+
+**The team's idea sheet reaches everyone who joins.** A teammate who joined with the link got the
+catalogue and the brand pack and an empty Asset ideas tab, for good. The sheet was designed to travel
+as rows in the team's `ideas` table and `mirror.py` could receive them, but nothing ever sent one, and
+the knowledge pack does not carry `assets/`: the owner's workspace held 0 ideas while his Mac held
+1,892. Every save of the sheet now sends what changed (the queue for a few rows, bulk upserts for a
+rewrite), rows that came from the team are never sent back, a sheet built before this reaches an empty
+team once, and the Asset ideas tab refreshes while it is open. Which Mac may send is decided by the
+sheet's own links -- a fifth of its linked rows must point at this Mac's catalogue domain (97% on the
+owner's) -- because the first rule, "the team's earliest member", picked an older registration of the
+owner's own and never let his Mac send anything. Tests: `test_workspace_ideas`, 37 checks.
+
+## v2.271.2 (2026-09-13)
+
+**A real beta channel + a codified promote flow for everyone (CONTRIBUTING.md).** A
+`-beta.N-desktop` tag builds a COEXISTING "Sutra Beta" app -- own bundle id, port 8331, data
+namespace (`~/.sutra-native-beta`, `~/.sutra-ui-beta`) -- published as a prerelease, so
+`releases/latest` (the production updater and the website) never sees it. Verified end to end:
+Sutra Beta ran on 8331 beside production on 8330 with fully separate data. `scripts/sutra-release.sh
+beta|promote` drives it and bumps the manifests together (the guard footgun). main.js derives the
+channel from a baked marker and gives beta its own Electron identity (name + userData) -- without
+that it shared production's single-instance lock and exited on launch, a bug the beta flow caught
+before stable.
+
+## v2.271.0 (2026-09-13, HEAD)
+
+**The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and
+`v2.270.0-desktop` were all cut while `plugin.json` and `.claude-plugin/marketplace.json` still read
+2.267.1/2.267.3, so `release-dmg`'s version guard — the first job in the workflow — rejected each one
+before a runner started. No DMG was built and no GitHub Release was created for any of the three; the
+tags are dangling, not published. The manifests now read 2.271.0, above every dangling tag, so a fresh
+`v2.271.0-desktop` passes the guard without rewriting a pushed tag.
+
+`tests/unit/test-validate-manifest-json.sh` gains the check that would have stopped this at tag #1:
+the manifest version must exceed every existing `v*-desktop` tag, and the top entries of
+`CURRENT-VERSION.md` and `CHANGELOG.md` must match it. The guard in CI is unchanged — it now has a
+local twin that fails on the workstation instead of after the push.
+
+## v2.267.3 (2026-09-13)
+
+**A test run can no longer write the live registry.** `tests/unit/test-balance-endpoint.sh` boots a real
+server, and a real server runs the project import at startup. The verification workflow behind 2.267.2
+traced the stray root of 2026-09-13 01:33 ("Ramesh Asawa") to exactly that: a workflow agent in another
+session ran this test from a staged 2.264.1 plugin copy, whose pre-D76 importer named the root after the
+macOS account, against `~/.sutra-native/user-kit`. The test now starts the server with
+`SUTRA_SKIP_PROJECT_IMPORT=1` (the opt-out `app.py` already honours) and a throwaway `SUTRA_NATIVE_HOME`.
+No other shell test boots the app.
+
+## v2.267.2 (2026-09-13)
+
+**A retired project folder is not re-imported (DIR-14).** The startup import matched folders against
+active departments only, so the seven folders merged into the organisation on 2026-09-12 (Asawa
+Holding, Sutra, Sutra UI, Sutra UI Workspace, Dayflow, Workdir, Claude) came back as a nested chain
+of twins under Desktop on every launch. A retired folder now resolves through its tombstone's
+explicit successor and links there; the successor gains the cwd join key and the session count and
+keeps its own name, source and description on every later run; nothing is minted. A retired folder
+with no live successor is skipped.
+
+**A stray root cannot hijack the tree.** A pre-D76 importer wrote a second parent-less record
+("Ramesh Asawa") whose ref sorted before the real root, and every reader took the first sorted ref:
+the Apps view anchored on the stray and listed nothing under Sutra. `active_roots` orders parent-less
+records by subtree size, then age; `live_root`, `_root_ref`, `_tenant_root` and the I-D6 reuse share
+it. Tests: `test_project_import` +5, `test_root_invariant` +2. DeepSeek review ADVISORY, codex review PASS
+and a three-lens verification workflow folded (successor identity keyed on the folder's mint evidence,
+not on origin; a second folder onto one successor leaves cwd and count alone; frozen departments keep
+their live subtree in the root pick).
+
+## v2.267.1 (2026-09-13)
+
+**Shadow goal creation and delegation fixes.** Merges the shadow/joy work: delegating a task now
+opens the chat it starts as a normal Sutra chat, the task can be signed off, and Shadow settings get
+their own page. `DELEGATES[sid] = rt` moves earlier in `spawn_delegate_session` so the send guard
+sees a delegate before the manifest turn, with register/attach/pump still landing after the spawn
+turn. New coverage: `test_shadow_delegate.py` (8) and `test_shadow_home.js` (536 lines).
+
+**Known red at publish:** `test_attach_existing.py::test_D5_the_delegate_spawn_path_is_unchanged`
+(INVARIANT 3) still pins the previous call order and fails against the deliberate reordering above;
+the invariant question is open. `test_transcript_ir.py`'s Codex canary is also red on machines whose
+rollouts contain `agent_message`, a type `from_codex_file` drops — pre-existing, unchanged since
+v2.267.0. Published at founder direction with both known.
+
+## v2.267.0 (2026-09-13)
+
+**Drag-and-drop in the Departments studio now commits.** Dragging one department onto another has
+always composed a validated MOVE plan with blocking rings; the only way to commit it was copying a
+CLI string. There is now an **Apply** button (Org -> Reorg plans), gated on a plan that has moves,
+a rationale, and zero blocking findings.
+
+**It edits linkages and nothing else.** A new `org_apply.py` refuses any op that is not a move, and
+a move sets one department's `parent_ref` plus an audit line under the registry -- it re-mints zero
+placements and touches no project directory, transcript, git repo, or any file outside
+`~/.sutra-native/user-kit`. Proven live: after a real move, `~/.claude/projects`, `~/.sutra-ui/chats`
+and the project folders were byte-for-byte unchanged. Apply lives in its own module because
+`org_api.py` is build-forbidden from calling `restructure`; the endpoint (`POST /api/org/apply`)
+re-validates server-side against a fresh registry read and refuses a cycle (ORG-006) or a drifted
+plan (ORG-010), so nothing invalid or stale is written. Reversible: dragging back and applying
+restores the tree exactly.
+
+## v2.266.1 (2026-09-13)
+
+**One supported Python, 3.11-3.12, in every build -- and the release bundles 3.12.14.** The pins
+had quietly outgrown the interpreter half the builds used: `cryptography==46.0.0` ships only a
+cp311-abi3 wheel and `trafilatura==2.2.0` needs 3.10, while `install.sh` and `run.sh` ran a bare
+`python3`, which on a stock Mac is Xcode's 3.9. The dev install died inside `pip install` on every
+default machine. Both now find a 3.12, then a 3.11 (probing Homebrew's prefixes too), honour
+`SUTRA_PYTHON`, refuse anything outside the range with the reason and the fix, and rebuild a venv
+that an earlier run built on 3.9 instead of reusing it. The ceiling is numpy 2.0.2, which has no
+cp313 wheel. The release DMG's bundled interpreter moves from 3.12.13 to **3.12.14**
+(python-build-standalone 20260901; the archive is still verified against the release's own
+SHA256SUMS, for both arches). `test_python_versions.py` holds the three places to one range and
+runs install.sh's real selection code against fake interpreters.
+
+Running the suite on a correct interpreter also showed that 18 of the failures previously counted
+as pre-existing were the 3.9 environment failing to import the pins: 61 failed / 2,009 passed on
+3.9 against 43 failed / 2,055 passed on 3.11.
+
+## v2.266.0 (2026-09-13)
+
+**Every session from every provider can be listed, and routine runs have their own section.** The
+Chats rail was scoped on 2026-09-09 to chats Sutra itself started, which on the founder's machine
+showed 15 rows out of 1,208 transcripts. That scope is kept as the default -- other tools'
+conversations stay out of Sutra's list -- and a new **Settings -> Chats shown** lets an operator
+list every session on the Mac instead (Claude and Codex both). It persists in
+`~/.sutra-ui/settings.json`, outside the app bundle. Measured here: 42 ms for the first page of
+everything against 16 ms scoped.
+
+**Routines is a third grouping beside Recent and Dept.** A routine run is a real chat -- `claude -p`
+writes a transcript and reports its session id, which every run has stored since routines existed
+-- so these rows were always in the list, indistinguishable from hand-started work. On the
+founder's machine they were **1,010 of 1,209 rows**. `routine_links.py` joins run records
+(`~/.sutra-ui/runs/<routine>/index.jsonl` and each run's output) to sessions, cached on the index
+mtimes (53 ms cold, 0.2 ms warm). Each routine heads its own collapsible group with its failure
+count, and a routine that has never succeeded says so: `daily-leetcode-cp` had 38 runs and 0
+successes, and nothing in the app showed it.
+
+**Routine runs count as Sutra's own chats.** They are launched by Sutra's runner, so they join the
+default scope. Without that, every fresh install opened an empty Routines view -- 0 of 1,207 routine
+runs were in the panel's chat index.
+
+All of this -- which department a chat is in, which routine produced it, which chats are listed --
+is decided by plain code at boot. No model is involved.
+
+## v2.256.2 (2026-09-10)
 
 **"Check for changes" gave no sign of life, and the site's own firewall was the reason it needed
 one.** Two separate faults, found together on the owner's real site.

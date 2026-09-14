@@ -1648,6 +1648,72 @@ function renderRail(){
     </li>`;
   };
 
+  /* SHARED BY THE DEPT AND ROUTINE GROUPINGS. It lived inside the dept
+     branch until 2026-09-13; the routines branch needs the identical
+     header, count, fold key and empty-state, and a second copy would be
+     two things to keep in step. */
+    /* ONE department group: a collapsible header plus its chats.
+     Reuses the .rgrph/.rgtog/.rgchev shape the plane groups already use and
+     panel.css already styles -- the CSS for it survived the deletion of
+     project grouping, so this is the mechanism coming back with a new key
+     rather than a second collapse invented beside the first.
+
+     DEFAULT EXPANDED, and only an explicit collapse is stored: a stored map
+     that had to list every open group would make a NEW department (one you
+     have never seen) arrive collapsed and easy to miss.
+
+     The header holds TWO controls. The toggle owns the name and count; the +
+     sits outside it, because nesting a button inside a button is invalid and
+     because clicking + must start a chat rather than fold the group away
+     under the cursor. */
+  const deptGroup = (key, label, rows, plus, trailer, total) => {
+    const shut = !!(S.ui.sessCollapsed && S.ui.sessCollapsed[key]);
+    const bodyId = "dg-" + hashKey(key);
+    /* The department's REAL size when the importer recorded one, else the
+       number of rows here. `total` may legitimately exceed rows.length: the
+       chat list holds one page, the department holds everything. */
+    const n = (typeof total === "number") ? total : rows.length;
+    /* An enumerated department with no row here states WHY, rather than
+       rendering as a heading over a void the operator has to guess at.
+
+       The two numbers mean different things and the sentence must not blur
+       them (owner, 2026-09-09): `n` is every session in that project on this
+       machine, while the rows are SUTRA'S OWN chats -- /api/sessions was
+       scoped to the chats this app started, because listing every transcript
+       on the disk handed the founder 20,255 conversations from other tools.
+       So a department can hold 939 sessions and no Sutra chat at all, and
+       saying "none on this page" would be a plain lie about pagination. */
+    /* The reason a department is empty DEPENDS ON THE SCOPE, and saying the
+       wrong one is worse than saying nothing. With the list scoped to Sutra's
+       own chats, an empty department means the work was done elsewhere. With
+       it showing every session, that sentence is simply false -- the only
+       honest reason left is that those sessions are older than the page the
+       rail has loaded. */
+    const all = (typeof SETTINGS === "object" && SETTINGS
+                 && SETTINGS.chat_scope === "all");
+    const many = n + " session" + (n === 1 ? "" : "s");
+    const body = rows.length
+      ? rows.map(s=>sessRow(s, trailer ? trailer(s) : undefined)).join("")
+      : `<li class="rempty">${
+          !n ? "nothing here yet"
+             : esc(!all ? many + " here, none started in Sutra yet"
+                   : S.sessionsComplete
+                       ? many + " recorded, no transcript on this Mac"
+                       : many + " here, older than the loaded list")}</li>`;
+    return `<div class="rgrp rgrph ${shut ? "collapsed" : ""}">
+        <button type="button" class="rgtog" data-deptcollapse="${esc(key)}"
+                aria-expanded="${!shut}" aria-controls="${bodyId}"
+                title="${shut ? "Expand" : "Collapse"} ${esc(label)}">
+          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="3" aria-hidden="true">
+            <path d="M9 6l6 6-6 6"/></svg>
+          <span class="rgn">${label}</span>
+          <span class="rgc">${n}</span>
+        </button>${plus || ""}
+      </div>
+      <ul class="rlist" id="${bodyId}" ${shut ? "hidden" : ""}>${body}</ul>`;
+  };
+
   let html = "";
   if (S.sgroup === "recent"){
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
@@ -1668,6 +1734,51 @@ function renderRail(){
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`
         : `No sessions on disk under <code>~/.claude/projects</code>, and none started here yet.`}</p>`;
+  } else if (S.sgroup === "routines"){
+    /* CHATS BY THE ROUTINE THAT PRODUCED THEM (founder, 2026-09-13).
+
+       A routine run IS a chat: `claude -p` writes a real transcript and reports
+       its session id, which routines.py has stored in every run since the
+       beginning. So these rows were always in the rail, indistinguishable from
+       work the operator started by hand -- and on the founder's machine they
+       are 1,009 of 1,208 rows, which is why the other two groupings read as a
+       wall of "Run ... script". Separating them is what makes the remaining
+       ~199 hand-started chats findable again.
+
+       Collapsible, counted and keyed exactly like the department groups, so
+       the fold state and the chevron come from the same code rather than a
+       second implementation that drifts. */
+    const g = {};
+    S.sessions.forEach(s=>{
+      const r = s.routine; if (!r || !r.routine) return;
+      (g[r.routine] = g[r.routine] || {id:r.routine, items:[], ok:0, failed:0}).items.push(s);
+    });
+    Object.values(g).forEach(gr => gr.items.forEach(s => {
+      const oc = (s.routine||{}).outcome;
+      if (oc === "ok" || oc === "success") gr.ok++; else if (oc) gr.failed++;
+    }));
+    const groups = Object.values(g).sort((a,b)=>b.items.length-a.items.length);
+    html = groups.map(gr=>{
+      const uniq = pinFirst([...new Map(gr.items.map(s=>[s.id,s])).values()]);
+      /* A routine that has NEVER succeeded must not look like one that works.
+         daily-leetcode-cp has 38 runs and 0 successes on the founder's machine
+         and nothing in the app said so. */
+      const bad = gr.failed && !gr.ok;
+      const health = gr.failed
+        ? `<span class="rgfail${bad?" all":""}">${gr.failed} failed${
+             bad ? ", never succeeded" : ""}</span>`
+        : "";
+      return deptGroup("rtn:" + gr.id, esc(gr.id) + health, uniq, "",
+                       s => { const oc=(s.routine||{}).outcome;
+                              return `<span>${esc(oc || "—")}</span>`; });
+    }).join("");
+    /* A FILTER, NOT A PARTITION (founder, 2026-09-13). Chats no routine
+       produced are left out of this view entirely rather than collected in a
+       "Not from a routine" group -- they already live in Recent and Dept, and
+       repeating them here buried the routines under ~200 unrelated rows. */
+    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+      No routine has recorded a run yet. A routine writes its chat here the first
+      time it fires.</p>`;
   } else {
     /* BY DEPARTMENT PARTITIONS the list -- it does not filter it. Every chat
        Recent shows appears here exactly once: under each department its turns
@@ -1685,55 +1796,6 @@ function renderRail(){
        operator's work when it was an index of the subset that happened to
        route -- the most expensive kind of wrong, because it reads as complete.
        (founder, 2026-09-02) */
-    /* ONE department group: a collapsible header plus its chats.
-       Reuses the .rgrph/.rgtog/.rgchev shape the plane groups already use and
-       panel.css already styles -- the CSS for it survived the deletion of
-       project grouping, so this is the mechanism coming back with a new key
-       rather than a second collapse invented beside the first.
-
-       DEFAULT EXPANDED, and only an explicit collapse is stored: a stored map
-       that had to list every open group would make a NEW department (one you
-       have never seen) arrive collapsed and easy to miss.
-
-       The header holds TWO controls. The toggle owns the name and count; the +
-       sits outside it, because nesting a button inside a button is invalid and
-       because clicking + must start a chat rather than fold the group away
-       under the cursor. */
-    const deptGroup = (key, label, rows, plus, trailer, total) => {
-      const shut = !!(S.ui.sessCollapsed && S.ui.sessCollapsed[key]);
-      const bodyId = "dg-" + hashKey(key);
-      /* The department's REAL size when the importer recorded one, else the
-         number of rows here. `total` may legitimately exceed rows.length: the
-         chat list holds one page, the department holds everything. */
-      const n = (typeof total === "number") ? total : rows.length;
-      /* An enumerated department with no row here states WHY, rather than
-         rendering as a heading over a void the operator has to guess at.
-
-         The two numbers mean different things and the sentence must not blur
-         them (owner, 2026-09-09): `n` is every session in that project on this
-         machine, while the rows are SUTRA'S OWN chats -- /api/sessions was
-         scoped to the chats this app started, because listing every transcript
-         on the disk handed the founder 20,255 conversations from other tools.
-         So a department can hold 939 sessions and no Sutra chat at all, and
-         saying "none on this page" would be a plain lie about pagination. */
-      const body = rows.length
-        ? rows.map(s=>sessRow(s, trailer ? trailer(s) : undefined)).join("")
-        : `<li class="rempty">${n ? esc(n + " session" + (n === 1 ? "" : "s")
-                                       + " here, none started in Sutra yet")
-                                 : "nothing here yet"}</li>`;
-      return `<div class="rgrp rgrph ${shut ? "collapsed" : ""}">
-          <button type="button" class="rgtog" data-deptcollapse="${esc(key)}"
-                  aria-expanded="${!shut}" aria-controls="${bodyId}"
-                  title="${shut ? "Expand" : "Collapse"} ${esc(label)}">
-            <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="3" aria-hidden="true">
-              <path d="M9 6l6 6-6 6"/></svg>
-            <span class="rgn">${label}</span>
-            <span class="rgc">${n}</span>
-          </button>${plus || ""}
-        </div>
-        <ul class="rlist" id="${bodyId}" ${shut ? "hidden" : ""}>${body}</ul>`;
-    };
     /* THE AXIS IS THE CHAT'S DIRECTORY, NOT ITS TURNS (founder, 2026-09-08).
        Every Claude project is now a department (project_import.py), so the
        working directory a chat runs in answers "whose is this" for the WHOLE

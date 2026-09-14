@@ -287,7 +287,9 @@ def _ideas(rows):
         else:
             sheet[i] = idea
         out.append("applied")
-    acm.save_ideas([r for r in sheet if r is not None])
+    # push=False: these rows came FROM the team. Sending them back would log a new change for each
+    # one and set the same rows bouncing between every Mac on the team (see save_ideas).
+    acm.save_ideas([r for r in sheet if r is not None], push=False)
     return out
 
 
