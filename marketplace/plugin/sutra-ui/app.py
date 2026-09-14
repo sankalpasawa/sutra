@@ -2070,6 +2070,50 @@ def _publish_delegate_chat(mission):
         # 1. the session is recoverable from disk from here on
         _stamp(target_session=sid)
 
+        # 1b. ADMIT IT. Execution has begun -- there is a live process, it has
+        #     been sent the brief, and it has announced its session id. The
+        #     record must say so NOW.
+        #
+        #     WHAT WAS WRONG. `spawn_delegate_session` publishes the chat from
+        #     its frame hook the instant the id appears (~1s), but it does not
+        #     RETURN until demux_turn finishes, which is the end of the whole
+        #     first agentic turn. provision_target therefore returns late, and
+        #     `start_mission` -- the only caller of the scheduler on this path
+        #     -- admitted the mission only then. Measured on eight real starts:
+        #     7, 10, 12, 14, 15, 31, 44 and 95 seconds after the click, median
+        #     15s. For that entire window the founder watched a chat with a
+        #     worker visibly talking in it beside a card reading QUEUED, turn
+        #     0 of 20, and the state flipped only as the SECOND exchange began.
+        #     The 2026-09-13 fold already made this argument for the chat
+        #     ("the founder had started a task and had nothing to open"); it
+        #     was simply never applied to the mission state.
+        #
+        #     NOT A NEW STATE AND NOT A NEW AUTHORITY. MissionScheduler.start
+        #     is the one admitter, it is what start_mission already calls, and
+        #     it is idempotent for a mission already running -- so the later
+        #     start_mission call keeps doing everything else it does
+        #     (on_attempt_start, _launch) and simply finds the state settled.
+        #     The launch itself is NOT moved: the pump and the observer must
+        #     still attach after the spawn turn.
+        #
+        #     THE CAP IS NOT BYPASSED. Admission is refused here unless a slot
+        #     is genuinely free, exactly as the scheduler would decide; there
+        #     is no await between the count and the call, so nothing can take
+        #     the slot in between. If the cap did fill during the spawn, this
+        #     does nothing and the existing late path decides as it always
+        #     did -- a queued row must never be a row with a live worker.
+        #
+        #     Best-effort, like every other write in this function: mission
+        #     bookkeeping must not take down a session that started.
+        try:
+            _m = store.load(mission["id"])
+            if _m and _m["state"] == "brief_confirm" \
+                    and len(store.list(states=("running",))) \
+                    < _mission_engine.MAX_RUNNING:
+                _mission_engine.MissionScheduler(store).start(mission["id"])
+        except Exception:           # noqa: BLE001
+            pass
+
         existing = chat_store.resolve("claude", sid)
         if existing:
             _stamp(target_chat=existing)
@@ -2189,6 +2233,12 @@ async def _shadow_recover():
     if providers.shadow_enabled():
         try:
             shadow_runner.recover_on_boot()
+        except Exception:
+            pass
+        try:
+            # a start the last process accepted but never finished is not a
+            # pending start -- give those tasks their Start button back
+            _clear_stale_start_requests()
         except Exception:
             pass
         try:
@@ -2658,6 +2708,132 @@ def _sync_goal_after_founder_end(mission):
     return _goal_hook_safe("on_attempt_end", mission)
 
 
+def _mark_start_requested(store, mid):
+    """Stamp the durable fact that a start was ACCEPTED for this mission.
+
+    THE PROBLEM THIS EXISTS FOR. `start_mission_async` is the deliberate
+    second-flight fix: it answers {"accepted": true} immediately and does
+    admission + provisioning in an app task, because provisioning a delegate
+    can take minutes and holding the request open let client timeouts cancel
+    it mid-spawn. The consequence is a window in which the mission is still
+    `brief_confirm` on disk while Shadow is already starting it -- and
+    brief_confirm is exactly the state the task UI draws a Start button for.
+    So the founder pressed Start and the Start button stayed, and a page
+    refresh inside that window had nothing at all to read it from: the
+    in-memory _STARTING guard is the runner's, not the record's.
+
+    NOT A NEW STATE. `state` is untouched, the transition table is untouched,
+    and nothing reads this to decide what a mission may do -- the scheduler
+    still owns admission and still moves brief_confirm -> running|queued on
+    its own. It is one timestamp the UI reads to draw the EXISTING `queued`
+    face ("QUEUED", admitted and not yet running) instead of an actionable
+    Start, which is the honest reading of a start that has been accepted.
+    Same shape as `pause_reason`: a fact carried beside the state because the
+    state alone is not the whole face.
+
+    Cleared at boot by _clear_stale_start_requests(): a start the previous
+    process accepted and never finished is not a pending start.
+    """
+    m = store.load(mid)
+    if m is None or m.get("state") != "brief_confirm":
+        # running/queued already SAY they started; a terminal mission has
+        # nothing to claim. Only the gap needs covering.
+        return m
+    m["start_requested_at"] = _mission_engine._now()
+    try:
+        store.save(m)
+    except ValueError:
+        # a concurrent writer moved the mission on; its state is now the
+        # truthful face and the stamp is not needed
+        return store.load(mid)
+    return m
+
+
+def _clear_stale_start_requests():
+    """Boot: forget starts the PREVIOUS process accepted but never completed.
+
+    Admission and provisioning run as an app task, so nothing survives a
+    restart to finish them -- a mission still sitting in `brief_confirm` with
+    a stamp on it will never move on its own. Clearing the stamp is what puts
+    Start back in front of the founder instead of leaving a task reading
+    QUEUED forever with no way to act on it.
+
+    Deliberately here and not in shadow_runner.recover_on_boot: this is the
+    request-surface stamp this file writes, and recover_on_boot owns the
+    running-mission/ownership rebuild, which is untouched.
+    """
+    store = _mission_engine.MissionStore()
+    cleared = 0
+    for m in store.list(states=("draft", "brief_confirm")):
+        if not m.get("start_requested_at"):
+            continue
+        m.pop("start_requested_at", None)
+        try:
+            store.save(m)
+            cleared += 1
+        except ValueError:
+            pass
+    return cleared
+
+
+def _delete_delegate_chat(mission):
+    """Remove the chat Shadow MADE for this task, with the task.
+
+    THE OWNERSHIP RULE, and it is the whole of the safety here:
+
+        target_mode == "new"       Shadow spawned this chat for this mission
+                                   and nothing else will ever claim it, so
+                                   deleting the task deletes it too.
+        target_mode == "existing"  the founder's own chat, which Shadow was
+                                   only ever a visitor in. NEVER deleted --
+                                   removing the task must not remove a
+                                   conversation the founder started.
+
+    Both halves reuse machinery that already exists and neither is a second
+    deletion architecture:
+
+      * session_reader.relocate(sid, "trash") is exactly what
+        POST /api/sessions/{sid}/delete does -- the transcript moves to
+        ~/.sutra-ui/trash with a .orig.json beside it, so this is
+        RECOVERABLE, not destruction.
+      * chat_store.delete(sutra_id) drops the record and its index rows.
+        chat_store's reverse index IS the definition of a Sutra chat
+        (_owned_transcripts), so that is what makes the row leave Chats.
+
+    Order matters: transcript first. A failure between the two leaves a
+    record naming a trashed file -- invisible and harmless -- rather than a
+    live transcript that no record claims, which is the orphan the Chats
+    list would go on showing.
+
+    Best-effort by design: a chat that cannot be removed must never block
+    the founder from removing the task. Returns what it actually did, so
+    the caller can say so.
+    """
+    out = {"chat_deleted": False, "transcript_trashed": False}
+    if (mission or {}).get("target_mode") != "new":
+        return out                      # the founder's chat is not ours
+    sid = mission.get("target_session")
+    if not sid:
+        return out
+    try:
+        if sr.relocate(sid, "trash"):
+            out["transcript_trashed"] = True
+    except Exception:                   # noqa: BLE001 -- never block the delete
+        pass
+    sutra_id = mission.get("target_chat")
+    if not sutra_id:
+        try:
+            sutra_id = chat_store.resolve("claude", sid)
+        except Exception:               # noqa: BLE001
+            sutra_id = None
+    if sutra_id:
+        try:
+            out["chat_deleted"] = bool(chat_store.delete(sutra_id))
+        except Exception:               # noqa: BLE001
+            pass
+    return out
+
+
 def _goal_or_404(gid):
     store = _goal_store.GoalStore()
     g = store.load(gid)
@@ -2751,6 +2927,9 @@ def _start_goal_attempt(mission):
             _worker_args, _shadow_workdir_for_delegates(),
             _delegate_manifest(m), register_runtime,
             publish=_publish_delegate_chat(m))
+    # a goal attempt lands in the SAME task list as a delegated task, so it
+    # gets the same honest face while it provisions
+    _mark_start_requested(_mission_engine.MissionStore(), mission["id"])
     return shadow_runner.start_mission_async(
         mission["id"], _validated_say, provisioner=_spawner)
 
@@ -2947,6 +3126,11 @@ async def api_shadow_mission_act(mid: str, request: Request):
                     _worker_args, _shadow_workdir_for_delegates(),
                     _delegate_manifest(mission), register_runtime,
                     publish=_publish_delegate_chat(mission))
+            # BEFORE the launch, not after: the answer is instant and the
+            # founder's next read of the list must already see that the start
+            # was taken. Stamping after would re-open the very window the
+            # stamp exists to close.
+            _mark_start_requested(store, mid)
             # second-flight fix: never hold the request open across a
             # minutes-long provision -- background task, instant answer
             return shadow_runner.start_mission_async(
@@ -2959,6 +3143,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
                     _worker_args, _shadow_workdir_for_delegates(),
                     _delegate_manifest(mission), register_runtime,
                     publish=_publish_delegate_chat(mission))
+            # the CLONE is the mission that starts, so it carries the stamp
+            _mark_start_requested(store, clone["id"])
             return shadow_runner.start_mission_async(
                 clone["id"], _validated_say, provisioner=_respawner)
         if action == "confirm_check":
@@ -2975,6 +3161,47 @@ async def api_shadow_mission_act(mid: str, request: Request):
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, None)
             return m
+        if action == "delete":
+            # THE FOUNDER REMOVES A TASK FROM THE LIST. Not a state and not a
+            # second lifecycle: this ENDS the mission through the EXISTING
+            # founder paths first, and only then removes the record.
+            #
+            #   queued  -> cancel_queued  (the one path for an attempt that
+            #              was admitted but never launched; stamps ended_by)
+            #   live    -> founder_stop   (the same writer Stop uses, so a
+            #              goal reads a founder decision as a founder
+            #              decision and not as machine trouble)
+            #   terminal-> nothing to end
+            #
+            # then release_delegate -- THE one reaper, idempotent and a no-op
+            # for a session Shadow never owned -- so a running task can never
+            # be deleted into an orphaned worker process. The published chat,
+            # its transcript and its index row are untouched: what ends is
+            # Shadow's ownership, exactly as Stop and Take over end it.
+            #
+            # The goal layer is synced BEFORE the record goes, or a goal
+            # would keep pointing current_mission_id at a file that no
+            # longer exists.
+            m = store.load(mid)
+            if m is None:
+                raise HTTPException(404, "no mission %s" % mid)
+            if m["state"] == "queued":
+                m = sched.cancel_queued(mid)
+            elif m["state"] not in _mission_engine.TERMINAL:
+                m = _mission_engine.MissionEngine(
+                    store, None, None, None).founder_stop(
+                        mid, "founder delete (home)")
+            shadow_runner.release_delegate(m.get("target_session"))
+            _sync_goal_after_founder_end(m)
+            # the chat Shadow MADE for this task goes with it; a founder-owned
+            # chat Shadow only visited never does (see _delete_delegate_chat)
+            chat = _delete_delegate_chat(m)
+            # LAST. The mission record is the only thing that still names the
+            # session and the chat, so removing it first would strand both
+            # with nothing left to find them by.
+            removed = store.delete(mid)
+            return {"deleted": bool(removed), "mission_id": mid,
+                    "target_session": m.get("target_session"), **chat}
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     raise HTTPException(400, "unknown action %r" % action)

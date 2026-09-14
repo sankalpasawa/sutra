@@ -345,11 +345,42 @@ function shadowKeyHandler(ev){
 
 /* S70: a mission renders IN the thread as a card that updates in place --
    the state chip gates Start (only a confirmed brief can start). */
+/* ── HAS THIS TASK ALREADY BEEN STARTED? ──────────────────────────────────
+   `brief_confirm` was read as "not started" everywhere, and for a while it
+   was the same thing. It stopped being the same thing when start became a
+   second-flight call: /act answers {accepted:true} and does admission and
+   provisioning in a background task, because provisioning a delegate can
+   take minutes. For that whole window the record still says brief_confirm
+   while Shadow is already starting the task -- so Start stayed on screen
+   after it had been pressed, and a page refresh in that window had nothing
+   to read the pressed start from.
+
+   `start_requested_at` is the server's stamp for exactly that window (see
+   app._mark_start_requested). It is NOT a state: the mission is still
+   brief_confirm, the transition table is untouched, and the scheduler still
+   decides alone whether the next stop is running or queued. It only changes
+   the FACE -- the founder reads the existing `queued` label, which is what
+   "accepted, not running yet" has always been called here -- and it takes
+   Start away, because pressing it again does nothing (shadow_runner guards
+   the double start) and a button that does nothing reads as a dead click.
+
+   Same precedent as shadowMissionNeedsFounder(): a fact carried beside the
+   state, because the state alone is not the whole face. */
+function shadowMissionStarting(m){
+  return !!(m && m.state === "brief_confirm" && m.start_requested_at);
+}
+function shadowMissionStartable(m){
+  return !!(m && m.state === "brief_confirm") && !shadowMissionStarting(m);
+}
+
 function missionCardHtml(m){
   if (!m) return "";
-  const startable = m.state === "brief_confirm";
+  const startable = shadowMissionStartable(m);
+  /* a start that has been taken reads as queued, never as the state it is
+     still technically sitting in */
+  const face = shadowMissionStarting(m) ? "queued" : (m.state || "");
   return `<div class="shmission" data-shmission="${escAttr(m.id || "")}">
-    <span class="shstate shstate-${esc(m.state || "")}">${esc(m.state || "")}</span>
+    <span class="shstate shstate-${esc(face)}">${esc(face)}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
     <span class="shturns">${m.turns_used || 0}/${m.max_turns || "?"}</span>
     ${(m.done_when && m.done_when[0]) ? `<span class="shdone">done when:
@@ -512,7 +543,32 @@ if (typeof document !== "undefined" && typeof fetch !== "undefined"
    with this ladder). The LAST step moved 8000 -> 5000: the window closes
    sooner than it used to, which is the opposite of polling. */
 const SH_START_ACTIONS = ["start_now", "retry"];
-const SH_START_BACKOFF = [250, 750, 2000, 5000];
+/* THE SCHEDULE HAS TO OUTLAST THE START, and it did not (founder,
+   2026-09-14: "chat appears, worker visibly running, card still says
+   QUEUED, turn 0 of 20").
+
+   TWO DIFFERENT WAITS, measured on this machine, and the old tail covered
+   only the first:
+
+     chat published    ~1.2s   _adopt() fires on the CLI's session-id
+                               announcement -- early steps cover this.
+     state -> running  7-95s   provisioning finishes and the scheduler
+                               admits (8 real starts: 7, 10, 12, 14, 15,
+                               31, 44, 95; median 15s).
+
+   The tail ended at 5000ms, so it missed the state transition in 8 of 8
+   measured starts -- every single one. The pane was then left holding the
+   last snapshot the watcher fetched, which is brief_confirm carrying
+   start_requested_at: the QUEUED face, turn 0 of 20, indefinitely. Nothing
+   was wrong with the face, the record or the backend; the UI simply stopped
+   looking a minute too early.
+
+   Geometric out to 90s, which covers the slowest start measured. This is
+   NOT 16 reads per start: the guard below returns the moment the row has
+   something to show, so a normal start spends 3-5 of these and the long
+   tail only runs for a start that is genuinely still provisioning. */
+const SH_START_BACKOFF = [250, 750, 1200, 1600, 2200, 3000, 4500, 6500,
+  9000, 12000, 16000, 22000, 30000, 45000, 60000, 90000];
 
 function shadowWatchStart(mid){
   if (typeof setTimeout !== "function" || !mid) return;
@@ -520,7 +576,17 @@ function shadowWatchStart(mid){
     setTimeout(() => {
       const S_ = (typeof S !== "undefined") ? S : {};
       const row = (S_.shadowMissions || []).find(m => m && m.id === mid);
-      if (row && row.state !== "brief_confirm") return;   /* it moved */
+      /* TWO THINGS ARE BEING WAITED ON, not one. The state leaving
+         brief_confirm was the old test, but the founder is waiting to SEE
+         the conversation, and target_chat lands first and independently --
+         so a watcher that stopped on the state alone could leave the pane
+         without the chat the click just created. Stop when both have
+         landed, or when the start has already ended (a failed start has no
+         chat coming and must not be polled to the end of the schedule). */
+      const ended = row
+        && ["done", "failed", "stopped"].indexOf(row.state) !== -1;
+      const ready = row && row.state !== "brief_confirm" && row.target_chat;
+      if (ended || ready) return;
       if (typeof loadShadowHome === "function") loadShadowHome(true);
     }, ms);
   });
@@ -545,7 +611,10 @@ async function shadowMissionAct(mid, action, extra){
           + "takes the same brief", confirm_check: "Check confirmed.",
         /* the chat strip's Take over: ownership ended, so say what that BUYS
            rather than that a state changed */
-        take_over: "You have the chat \u2014 Shadow stepped back." };
+        take_over: "You have the chat \u2014 Shadow stepped back.",
+        /* the task AND the chat Shadow made for it are gone; the
+           transcript is recoverable from ~/.sutra-ui/trash */
+        "delete": "Task deleted \u2014 its chat went with it." };
       showNudge(said[action] || "Done.");
     }
     if (typeof loadShadowHome === "function") loadShadowHome(true);

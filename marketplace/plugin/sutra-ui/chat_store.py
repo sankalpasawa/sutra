@@ -229,6 +229,43 @@ def save(rec):
     return rec
 
 
+def delete(sutra_id):
+    """REMOVE one chat record and every index row that points at it.
+
+    The missing eraser. save() and _reindex() already own the rule this
+    needs -- "drop every row that currently points at this chat, then re-add
+    from the record" -- and a delete is simply that rule with nothing to
+    re-add, so the row-dropping expression here is _reindex's, verbatim,
+    rather than a second idea about what an index row means.
+
+    WHAT THIS IS NOT. It does not touch the provider's transcript: the
+    .jsonl under ~/.claude/projects is session_reader's, and
+    session_reader.relocate() is the existing, RECOVERABLE way to retire one
+    (it moves the file to ~/.sutra-ui/trash and leaves a .orig.json beside
+    it saying where it came from). A caller that wants the whole chat gone
+    calls both, in that order -- the transcript first, so a crash between
+    the two leaves a record naming a trashed file (invisible, harmless)
+    rather than a live transcript no record claims, which is the orphan the
+    Chats list would keep showing.
+
+    Idempotent: a chat that is already gone returns False rather than
+    raising, so a double-click is a no-op and not a 500.
+    """
+    if not _safe_id(sutra_id):
+        return False
+    idx = json_store.read_json(_index_path(), {})
+    trimmed = {k: v for k, v in idx.items() if v != sutra_id}
+    if len(trimmed) != len(idx):
+        json_store.write_json(_index_path(), trimmed)
+    try:
+        os.remove(_path(sutra_id))
+    except OSError:
+        # the index rows are gone either way -- that is what makes the chat
+        # stop existing for every reader (_owned_transcripts, resolve)
+        return False
+    return True
+
+
 def create(cwd="", branch="", title=""):
     """A new empty chat. No provider is chosen here -- a chat exists before it
     has been sent anywhere, and `begin_segment` is what binds it to one."""

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+import weakref
 
 import mission_engine
 import session_reader
@@ -24,8 +25,24 @@ import shadow_ledger
 RUNNING = {}
 #: session_id -> asyncio.Queue of boundary frames (fed by _attach_observer)
 _BOUNDARIES = {}
-#: runtimes already carrying our observer (identity-keyed)
-_OBSERVED = set()
+#: Runtimes already carrying our observer.
+#:
+#: A WeakSet OF THE RUNTIMES, not a set of id(rt). It was the latter, and
+#: CPython reuses addresses: 2998 of 3000 freshly allocated SessionRuntime
+#: objects landed on a previously-seen id() in a straight measurement. A
+#: recycled address made the guard below return EARLY for a brand-new
+#: runtime, so nothing was subscribed -- no _turn_boundary reached the
+#: waiters, no token reached _RECENT_TEXT, no frame reached _LAST_FRAME_TS.
+#: The mission then waited, saw total silence, and died at STALL_SECS
+#: blaming the worker for Shadow's own bookkeeping.
+#:
+#: The set was also never discarded from, so it grew for the life of the
+#: process. A WeakSet fixes both at once: membership is identity-based
+#: exactly as before (SessionRuntime defines no __eq__/__hash__), an entry
+#: disappears when the runtime is collected, and a replacement runtime is
+#: therefore always a miss. `.clear()` still works, which is what the
+#: existing suites call in setUp.
+_OBSERVED = weakref.WeakSet()
 #: session ids whose runtime WE spawned (delegates) -- ours to clean up
 DELEGATES = {}
 #: session ids of FOUNDER-OWNED chats Shadow has attached a runtime to.
@@ -100,9 +117,9 @@ def attach_observer(session_id, rt):
     prior = ATTACHED.get(session_id)
     if prior is not None and prior is not rt:
         reap_attached(session_id)
-    if id(rt) in _OBSERVED:
+    if rt in _OBSERVED:
         return
-    _OBSERVED.add(id(rt))
+    _OBSERVED.add(rt)
     q = _BOUNDARIES.setdefault(session_id, asyncio.Queue())
 
     def observer(frame):
@@ -122,6 +139,36 @@ def attach_observer(session_id, rt):
             _emit_rescue(session_id, str(frame.get("detail"))[:200])
 
     rt.subscribe(observer)
+
+
+def _forget_session(session_id, rt=None):
+    """Drop the PER-SESSION observer bookkeeping when Shadow lets a runtime go.
+
+    The WeakSet above is only half of lifecycle. It guarantees a REPLACEMENT
+    runtime is a miss and can therefore always subscribe; it says nothing
+    about the three maps keyed by SESSION ID, which outlive the runtime that
+    filled them. A replacement attaching to the SAME id inherited all three:
+
+      _LAST_FRAME_TS  a dead runtime's last stamp reads as "silent since
+                      then", so the waiter can call a stall on a worker that
+                      has not yet been given the chance to say anything;
+      _RECENT_TEXT    the previous worker's prose is handed to the decider as
+                      what the NEW one just said -- evidence from a process
+                      that no longer exists;
+      _BOUNDARIES     a queue still holding frames from a turn that is over.
+
+    Called from the two reapers so ownership unwinds in one shape whichever
+    way it ends, mirroring release_delegate's own "one reaper" rule. Passing
+    `rt` discards the observer entry NOW rather than at the next collection,
+    which is what makes the teardown deterministic instead of GC-timed.
+
+    Idempotent, and a no-op for a session that was never observed.
+    """
+    if rt is not None:
+        _OBSERVED.discard(rt)
+    _BOUNDARIES.pop(session_id, None)
+    _RECENT_TEXT.pop(session_id, None)
+    _LAST_FRAME_TS.pop(session_id, None)
 
 
 def _emit_rescue(session_id, detail):
@@ -973,6 +1020,7 @@ def reap_attached(session_id):
         rt.clear()
     except Exception:
         pass
+    _forget_session(session_id, rt)
     shadow_ledger.append("actions", {
         "mission_id": None, "kind": "stop",
         "summary": "released attached session %s (founder took the wheel)"
@@ -1064,6 +1112,7 @@ def release_delegate(session_id):
         rt.clear()
     except Exception:
         pass
+    _forget_session(session_id, rt)
     return rt
 
 
@@ -1269,7 +1318,30 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                 mm = store.load(mid)
                 # NEVER downgrade a healthy running mission (race fix: the
                 # duplicate starter's failure is not the mission's failure)
-                if mm and mm["state"] in ("brief_confirm", "queued"):
+                #
+                # `running` JOINED THE LIST, NARROWLY. Admission now happens at
+                # session adoption (app._publish_delegate_chat step 1b), so a
+                # spawn that dies AFTER announcing its id -- demux_turn coming
+                # back without a result -- reaches this handler with the state
+                # already `running`. Guarding on the two pre-launch states
+                # alone would leave that mission at RUNNING forever with a
+                # worker that has already been reaped: the same silent freeze
+                # this handler exists to prevent, one state over.
+                #
+                # The race rule above is kept intact by asking about the
+                # DELEGATE, not the state: a healthy running mission always
+                # has its session registered here (spawn_delegate_session
+                # writes DELEGATES[sid] at adoption and release_delegate is
+                # the one reaper). No live delegate means this mission has no
+                # worker, whoever started it -- so it is this mission's
+                # failure, not a duplicate starter's.
+                orphaned = bool(
+                    mm and mm["state"] == "running"
+                    and mm.get("target_mode") == "new"
+                    and mm.get("target_session")
+                    and mm["target_session"] not in DELEGATES)
+                if mm and (mm["state"] in ("brief_confirm", "queued")
+                           or orphaned):
                     store.transition(mm["id"], "failed",
                                      "provision/admit failed: %s"
                                      % str(exc)[:200])

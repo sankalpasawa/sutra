@@ -32,11 +32,30 @@ TERMINAL = ("done", "failed", "stopped")
 #: the two things a founder can decide -- answer/extend (-> running) or
 #: abandon (-> stopped). Nothing in the engine routes INTO it yet; the
 #: budget and ping-pong paths still reach failed/stopped unchanged.
+#:
+#: `brief_confirm -> failed` and `queued -> failed` exist for ONE caller:
+#: shadow_runner.start_mission_async's error handler, which is the only place
+#: that can know a start never got off the ground. It already guarded on
+#: exactly these two states -- they are the two an accepted-but-unlaunched
+#: mission can be sitting in -- and then called transition(..., "failed"),
+#: which raised ValueError because neither row listed it. The raise was
+#: swallowed by that handler's own `except Exception: pass`, so a provisioning
+#: failure (a delegate spawn that dies at argv, a full disk, an interpreter
+#: without process_group) left the mission frozen in brief_confirm with
+#: start_requested_at set -- which the task list renders as QUEUED with no
+#: Start button, forever. The failure had nowhere legal to go, so it went
+#: nowhere.
+#:
+#: This adds no state and changes no successful path: `failed` already exists,
+#: is already TERMINAL, and is already what `running -> failed` means. It is
+#: reachable from two more starting points, so the existing handler can
+#: finish its sentence and the row becomes a normal failed task the founder
+#: can Retry.
 TRANSITIONS = {
     "draft": ("brief_confirm", "stopped"),
-    "brief_confirm": ("running", "queued", "draft", "stopped"),
+    "brief_confirm": ("running", "queued", "draft", "failed", "stopped"),
     "running": ("paused", "blocked", "done", "failed", "stopped"),
-    "queued": ("running", "stopped"),
+    "queued": ("running", "failed", "stopped"),
     "paused": ("running", "stopped", "failed"),
     "blocked": ("running", "stopped"),
     "done": (), "failed": (), "stopped": (),
@@ -272,6 +291,52 @@ class MissionStore:
             "mission_id": mid, "state": m["state"], "seq": m["seq"],
             "note": "founder confirmed check %d" % index})
         return m
+
+    def delete(self, mid):
+        """REMOVE one mission record. The only eraser in the store.
+
+        Every other lifecycle verb ENDS a mission (stopped/failed/done) and
+        leaves the file, which is why the workspace list is a filter rather
+        than a delete -- a concluded mission is still the record a goal's
+        attempts[] points at. This is the founder saying they do not want
+        the row at all, and it is deliberately narrow:
+
+          - it is NOT a state. Nothing transitions here, so the state
+            machine, its transition table and every reader of it are
+            untouched.
+          - it does NOT end anything. A live mission must already have been
+            ended (and its delegate released) by the caller through the
+            EXISTING founder paths -- founder_stop / cancel_queued /
+            release_delegate -- before its record is removed. This method
+            refuses to be that second lifecycle.
+          - the ledger keeps the history. missions.jsonl already holds every
+            transition this mission ever made and one more row is appended
+            here, so deleting the file loses the live record, never the
+            audit trail.
+
+        Idempotent: a mission that is already gone returns False rather than
+        raising, so a double-click is a no-op and not a 500.
+        """
+        m = self.load(mid)
+        if m is None:
+            return False
+        state = m.get("state")
+        path = os.path.join(_home(), mid + ".json")
+        # the lock file the writer uses, and any tmp a crashed write left --
+        # otherwise the "deleted" mission leaves its scaffolding behind
+        for extra in (path + ".tmp", path + ".lock"):
+            try:
+                os.remove(extra)
+            except OSError:
+                pass
+        try:
+            os.remove(path)
+        except OSError:
+            return False
+        shadow_ledger.append("missions", {
+            "mission_id": mid, "state": "deleted",
+            "note": "record deleted by the founder (was %s)" % state})
+        return True
 
     def amend(self, mid, **fields):
         """Amend-not-spawn (S54): a changed brief is a NEW VERSION of the
@@ -511,6 +576,43 @@ class MissionEngine:
                     m["pending_floor_say"] = say_text[:1000]
                     self.store.save(m)
                     return m
+                # THE LAST LOOK BEFORE SPEAKING, and the takeover window it
+                # closes (founder, 2026-09-14: "clicked Take Over on a
+                # running task at turn 3, the task went FAILED").
+                #
+                # Composing an instruction is a model call and takes seconds
+                # -- 9s on mission m-8935e9a46557. Take Over lands inside
+                # that gap: it pauses the mission AND reaps the delegate,
+                # which is exactly what it is supposed to do (ownership must
+                # end or the founder cannot type). The loop was then still
+                # holding the pre-takeover snapshot, said into a session that
+                # no longer had a runtime, got the "no_live_runtime"
+                # precondition back and sent a DELIBERATE disownment down
+                # _out_of_road as a failure:
+                #
+                #   t+206s  say      turn 3
+                #   t+214s  paused   "founder typed in the target session"
+                #   t+215s  say NOT DELIVERED (no_live_runtime)
+                #   t+215s  failed   "say not delivered -- nothing was sent"
+                #
+                # It even cleared pause_reason on the way, so the record no
+                # longer said the founder had taken over at all.
+                #
+                # THE SAME RELOAD THIS LOOP ALREADY DOES, one step earlier.
+                # Step 8 reloads after the boundary wait for precisely this
+                # reason ("nothing terminal is decided on a pre-takeover
+                # snapshot"); the other side of the decision call was simply
+                # never covered. Returning the fresh record preserves the
+                # state and pause_reason the founder's action wrote, and the
+                # same check closes the founder-stop race for free.
+                #
+                # No new state, no special case for no_live_runtime, and
+                # _out_of_road is untouched: the say that would have failed
+                # is never attempted.
+                m = self.store.load(mid)
+                if m["state"] in TERMINAL or m["state"] in ("paused",
+                                                            "blocked"):
+                    return m      # the founder took the wheel mid-compose
                 ok = await self.sayer(m, say_text)
                 # A STRING is a named, retryable precondition -- the say was
                 # never delivered, so nothing about the attempt is spent. It
@@ -534,8 +636,21 @@ class MissionEngine:
                 self.store.save(m)
                 arrived = await self.waiter(m)
                 if arrived is False:
-                    return self.store.transition(
-                        mid, "failed", "boundary wait timed out")
+                    # A STALLED TURN IS OUT OF ROAD, NOT A VERDICT. The wait
+                    # ending without a boundary says the worker stopped
+                    # producing -- it says nothing about whether the outcome
+                    # is reachable. Routing it straight to `failed` was the
+                    # one machine-run exit that skipped _out_of_road, so a
+                    # GOAL could die on a stall with the founder never asked,
+                    # which is exactly what V5 exists to prevent.
+                    #
+                    # _out_of_road keeps both halves intact: a goal attempt
+                    # BLOCKS (founder asked, chat kept alive, Resume works),
+                    # a standalone mission takes the same `failed` transition
+                    # with the same note it always had.
+                    return self._out_of_road(
+                        m, "failed", "turn_stalled",
+                        "boundary wait timed out")
             m = self.store.load(mid)
             if m["state"] in TERMINAL or m["state"] in ("paused", "blocked"):
                 return m          # something terminal happened mid-turn

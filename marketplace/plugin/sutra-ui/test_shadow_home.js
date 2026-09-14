@@ -36,6 +36,10 @@ function fresh(){
   return ctx;
 }
 
+/* one context, reused for the pure predicate assertions below */
+let _ctx0 = null;
+function ctx0(){ if (!_ctx0) _ctx0 = fresh(); return _ctx0; }
+
 const MISSIONS = [
   { id: "m-1", objective: "fix nav", state: "running", turns_used: 3, max_turns: 20 },
   { id: "m-2", objective: "research Y", state: "queued" },
@@ -616,14 +620,19 @@ console.log("ok 6 controls wired");
   ctx.shadowPost = (url, body) => {
     posts.push({ url, body });
     return Promise.resolve({ ok: true, status: 200,
-      json: () => Promise.resolve({ id: "m-new", state: "brief_confirm" }) });
+      json: () => Promise.resolve(/\/act$/.test(url)
+        ? { accepted: true, mission_id: "m-new" }
+        : { id: "m-new", state: "brief_confirm" }) });
   };
   ctx.loadShadowHome = () => Promise.resolve();
+  ctx.renderShadowCard = () => {};
+  ctx.showNudge = () => {};
   ctx.scheduleRender = () => {};
   ctx.S.shadowNew = { objective: "  Fix the EMI rounding  ",
                       done: "tests pass\n\nPR open", kind: "research" };
   await ctx.shadowCreateTask();
-  assert.strictEqual(posts.length, 1, "expected exactly one POST");
+  const creates = posts.filter(p => p.url === "/api/shadow/missions");
+  assert.strictEqual(creates.length, 1, "expected exactly one CREATE");
   assert.strictEqual(posts[0].url, "/api/shadow/missions",
     "must reuse the EXISTING mission endpoint");
   const b = posts[0].body;
@@ -640,11 +649,24 @@ console.log("ok 6 controls wired");
   assert(b.done_when.every(c => c.tier === "founder_confirm"),
     "a founder's own words are theirs to confirm");
   assert(/Fix the EMI rounding/.test(b.manifest), "manifest carries the objective");
-  /* nothing is started: Start stays a separate, explicit press */
-  assert(!posts.some(p => /\/act$/.test(p.url)), "creation must not start work");
+  /* CREATE IS THE START (2026-09-14). This assertion used to read "creation
+     must not start work" -- it is reversed on purpose, and it is the pin for
+     Fix 3: the form the founder filled in IS the confirmation, so a second
+     press was asking them to agree with themselves. What has NOT changed is
+     how it starts: the same /act start_now the Start button posts, once, on
+     the mission that was just created -- no second create, no second launch
+     path and no duplicate spawn. */
+  const acts = posts.filter(p => /\/act$/.test(p.url));
+  assert.strictEqual(acts.length, 1, "create must start the task, exactly once");
+  assert.strictEqual(acts[0].url, "/api/shadow/missions/m-new/act",
+    "the start must be posted to the mission that was just created");
+  assert.strictEqual(acts[0].body.action, "start_now",
+    "must reuse the EXISTING start action, not a new launch path");
+  assert.strictEqual(posts.length, 2, "one create + one start, and nothing else");
   assert.strictEqual(ctx.S.shadowNewOpen, false, "panel closes on success");
   assert.strictEqual(ctx.S.shadowTaskSel, "m-new", "the new task takes focus");
-  console.log("ok 17 + Delegate posts target_mode:new to the existing endpoint");
+  assert.strictEqual(ctx.S.shadowNewBusy, false, "the panel must let go of busy");
+  console.log("ok 17 + Delegate creates AND starts, through the existing paths");
 })().catch(e => { console.error("FAIL 17:", e.message); process.exit(1); });
 
 /* 18. an empty outcome is refused client-side, with no POST */
@@ -1650,6 +1672,232 @@ const SET = { engage: ["outcome first"],
   }
   console.log("ok 27 existing chat: the arrow sends, and the target follows "
     + "the chat the founder is in");
+}
+
+/* 28. DELETE A TASK FROM THE LEFT LIST (founder, 2026-09-14).
+
+   The list had no way to remove a task, so delegated tasks piled up in it
+   forever. These pin the three things that make the remove real rather than
+   cosmetic: the control exists on every row, it goes through the EXISTING
+   mission action endpoint (so the server erases the record and a refresh
+   cannot bring it back), and it never fires by accident. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = MISSIONS;
+  const h = ctx.shadowTaskListHtml();
+  MISSIONS.filter(m => m.state !== "done").forEach(m => {
+    assert(h.indexOf('data-shtaskdel="' + m.id + '"') !== -1,
+      "no remove control on row " + m.id);
+  });
+  /* the selector button is untouched: same hook, same three spans */
+  assert(/data-shtask="m-1"/.test(h), "the row selector hook was lost");
+  assert(/shtaskdot/.test(h) && /shtaskname/.test(h) && /shtpill/.test(h),
+    "the row lost one of its three spans");
+  /* a button may not contain a button: the delete control must be a SIBLING
+     of the selector, not inside it */
+  const rowStart = h.indexOf('data-shtask="m-1"');
+  const closeSel = h.indexOf("</button>", rowStart);
+  assert(h.indexOf('data-shtaskdel="m-1"') > closeSel,
+    "the remove control is nested inside the selector button");
+  console.log("ok 28 every task row carries a remove control");
+}
+
+/* 29. THE REMOVE IS A SERVER DELETE, not a local hide. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [
+    { id: "m-keep", objective: "keep me", state: "brief_confirm" },
+    { id: "m-go", objective: "delete me", state: "brief_confirm" }];
+  ctx.S.shadowTaskSel = "m-go";
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.showNudge = () => {};
+  ctx.renderShadowCard = () => {};
+  ctx.scheduleRender = () => {};
+  /* the server is the only thing that removes the row: the re-read comes
+     back WITHOUT it, exactly as the real endpoint would answer */
+  ctx.loadShadowHome = () => {
+    ctx.S.shadowMissions = ctx.S.shadowMissions.filter(m => m.id !== "m-go");
+    return Promise.resolve();
+  };
+  ctx.shadowPost = (url, body) => {
+    posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ deleted: true, mission_id: "m-go" }) });
+  };
+  await ctx.shadowDeleteTask("m-go");
+  assert.strictEqual(posts.length, 1, "exactly one write");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions/m-go/act",
+    "must reuse the EXISTING mission action endpoint");
+  assert.strictEqual(posts[0].body.action, "delete",
+    "no second deletion architecture");
+  /* the list is re-read from the server, never filtered locally */
+  const ids = ctx.S.shadowMissions.map(m => m.id);
+  assert(!ids.includes("m-go"), "the deleted task is still listed");
+  assert(ids.includes("m-keep"), "an unrelated task was removed too");
+  assert(!/data-shtask="m-go"/.test(ctx.shadowTaskListHtml()),
+    "the deleted row still renders");
+  assert(/data-shtask="m-keep"/.test(ctx.shadowTaskListHtml()),
+    "the unrelated row was lost");
+  assert.strictEqual(ctx.S.shadowTaskSel, null,
+    "focus must not keep pointing at a record that is gone");
+  console.log("ok 29 remove = one POST to the existing endpoint, server-side");
+})().catch(e => { console.error("FAIL 29:", e.message); process.exit(1); });
+
+/* 30. × DELETES ON ONE CLICK (founder, 2026-09-14).
+
+   This used to turn the row into "Delete? Yes / No" in place -- the Agents
+   rail's gesture. In the task list that ask painted UNDERNEATH neighbouring
+   Shadow UI, so Yes could not reliably be clicked and the delete could not be
+   completed at all. The ask is gone. What these pin is that removing it cost
+   nothing else: one click writes exactly one POST to the EXISTING /act
+   endpoint, no confirm() dialog is reachable (the harness defines none, so a
+   surviving call throws), no second ask element renders, and the click does
+   not also select the row on its way out. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.S.shadowMissions = [{ id: "m-go", objective: "x", state: "running" }];
+  ctx.S.shadowTaskSel = "m-1";
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({}) }); };
+  ctx.scheduleRender = () => {};
+  ctx.showNudge = () => {};
+  ctx.renderShadowCard = () => {};
+  ctx.loadShadowHome = () => Promise.resolve();
+
+  /* NO confirm() may exist in this path at all: the harness does not define
+     one, so a surviving call would throw rather than quietly pass. */
+  assert.strictEqual(typeof ctx.confirm, "undefined",
+    "the harness must not supply a confirm -- the code must not need one");
+
+  /* 1. one click on × deletes, through the one existing endpoint */
+  const del = { dataset: { shtaskdel: "m-go" } };
+  del.closest = (sel) => sel === "[data-shtaskdel]" ? del
+    : (sel === "[data-shtask]" ? { dataset: { shtask: "m-go" } } : null);
+  ctx.listeners.click({ target: del });
+  await new Promise(r => setTimeout(r, 0));
+  assert.strictEqual(posts.length, 1, "one click on x must delete, once");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions/m-go/act",
+    "must reuse the EXISTING mission action endpoint");
+  assert.strictEqual(posts[0].body.action, "delete",
+    "no second deletion architecture");
+
+  /* 2. it must not also select the row it is deleting */
+  assert.strictEqual(ctx.S.shadowTaskSel, "m-1",
+    "clicking remove must not also re-select the row");
+
+  /* 3. NO second click exists anywhere in the markup, live or inert */
+  for (const st of ["running", "brief_confirm"]){
+    ctx.S.shadowMissions = [{ id: "m-go", objective: "x", state: st }];
+    const h = ctx.shadowTaskListHtml();
+    assert(/data-shtaskdel="m-go"/.test(h), "the x is missing in " + st);
+    assert(!/data-shtaskdelyes|data-shtaskdelno|shtaskask/.test(h),
+      "a confirmation control came back in " + st);
+    assert(!/Delete\?|Stop &amp; delete\?/.test(h),
+      "the row is asking a question again in " + st);
+  }
+  console.log("ok 30 x deletes on one click: no ask, no dialog, one POST");
+})().catch(e => { console.error("FAIL 30:", e.message); process.exit(1); });
+
+/* 31. START IS NOT OFFERED FOR A TASK THAT HAS ALREADY STARTED
+   (founder, 2026-09-14).
+
+   /act answers {accepted:true} and provisions in the background, so the
+   record sits in brief_confirm while Shadow is already starting the task.
+   `start_requested_at` is the server's stamp for that window. The face is
+   the EXISTING queued one; the Start button is gone, because pressing it
+   again does nothing. */
+{
+  const started = { id: "m-s", objective: "go", state: "brief_confirm",
+    template: "fix", target_mode: "new", turns_used: 0, max_turns: 20,
+    start_requested_at: "2026-09-14T10:00:00Z" };
+  const notYet = { id: "m-r", objective: "wait", state: "brief_confirm",
+    template: "fix", target_mode: "new", turns_used: 0, max_turns: 20 };
+
+  assert(ctx0().shadowMissionStartable(notYet), "READY must offer Start");
+  assert(!ctx0().shadowMissionStarting(notYet), "READY is not starting");
+  assert(!ctx0().shadowMissionStartable(started), "a started task offers Start");
+  assert(ctx0().shadowMissionStarting(started), "the stamp was not read");
+
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [notYet, started];
+
+  ctx.S.shadowTaskSel = "m-r";
+  const ready = ctx.shadowHomeHtml();
+  assert(/data-shstart="m-r"/.test(ready), "READY lost its Start");
+  assert(/>READY</.test(ready), "READY lost its face");
+
+  ctx.S.shadowTaskSel = "m-s";
+  const going = ctx.shadowHomeHtml();
+  assert(!/data-shstart="m-s"/.test(going),
+    "Start is still offered for a task that has already been started");
+  assert(/>QUEUED</.test(going),
+    "a started task must read as the existing QUEUED state");
+  /* the LIST agrees with the card -- one predicate, both surfaces */
+  const list = ctx.shadowTaskListHtml();
+  assert(/shtpill-ready[^>]*>READY/.test(list), "the READY row lost its pill");
+  assert(/QUEUED/.test(list), "the started row still reads READY in the list");
+  /* and the compact in-thread card, which draws Start too */
+  assert(!/data-shstart="m-s"/.test(ctx.missionCardHtml(started)),
+    "the in-thread mission card still offers Start");
+  assert(/data-shstart="m-r"/.test(ctx.missionCardHtml(notYet)),
+    "the in-thread mission card lost a legitimate Start");
+  console.log("ok 31 a started task never offers Start again");
+}
+
+/* 32. EVERY STATE OFFERS ONLY WHAT THE ENGINE WILL ACCEPT.
+   The transition table is mission_engine.TRANSITIONS; these are the actions
+   the task card draws for each state it can be in. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const card = (m) => ctx.shadowTaskCardHtml(Object.assign(
+    { objective: "o", template: "fix", turns_used: 1, max_turns: 20 }, m));
+  const has = (h, act) => new RegExp('data-shact="' + act + '"').test(h)
+    || (act === "start" && /data-shstart=/.test(h));
+
+  const ready = card({ id: "a", state: "brief_confirm" });
+  assert(has(ready, "start"), "READY: Start must be available");
+
+  const running = card({ id: "b", state: "running" });
+  assert(!has(running, "start"), "running: Start must be gone");
+  assert(has(running, "stop"), "running: Stop is the legal exit");
+  assert(!has(running, "resume"), "running: Resume is not legal");
+  assert(!has(running, "retry"), "running: Retry would clone a live mission");
+
+  const queued = card({ id: "c", state: "queued" });
+  assert(!has(queued, "start"), "queued: Start must be gone");
+  assert(has(queued, "drop"), "queued: Drop is the legal exit");
+
+  const paused = card({ id: "d", state: "paused" });
+  assert(!has(paused, "start"), "paused: Start must be gone");
+  assert(has(paused, "resume") && has(paused, "stop"),
+    "paused: its two legal exits");
+
+  const blocked = card({ id: "e", state: "blocked", block_reason: "nope" });
+  assert(!has(blocked, "start"), "NEEDS YOU: Start must be gone");
+  assert(has(blocked, "resume") && has(blocked, "stop"),
+    "NEEDS YOU: blocked's two legal exits are the founder's, and it had "
+    + "neither");
+
+  const done = card({ id: "f", state: "done" });
+  assert(!has(done, "start"), "done: Start must be gone");
+  assert(!has(done, "stop") && !has(done, "resume"),
+    "done is terminal: nothing to stop or resume");
+
+  const failed = card({ id: "g", state: "failed" });
+  assert(!has(failed, "start"), "failed: Start must be gone");
+  assert(has(failed, "retry"), "failed: retry is the product's own re-run");
+
+  const stopped = card({ id: "h", state: "stopped" });
+  assert(!has(stopped, "start"), "stopped: Start must be gone");
+  assert(has(stopped, "retry"), "stopped: retry is offered");
+  console.log("ok 32 each state exposes only the actions the engine accepts");
 }
 
 console.log("test_shadow_home.js: all green");

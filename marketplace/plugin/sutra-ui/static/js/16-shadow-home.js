@@ -237,11 +237,29 @@ function shadowTaskFace(state){
    shadowTaskFace(state) is untouched and still the state->face map; this is
    the MISSION-aware caller, and it is the only thing that knows the mission
    carries pause_reason. */
+/* THE TWO PAUSES THAT ARE REQUESTS. Both mean "Shadow stopped because only
+   the founder can carry this forward", and the engine already treats them as
+   one class -- MissionEngine.pending_confirmations() lists exactly these two
+   as the decisions awaiting an answer. The UI recognised only the first, so a
+   mission paused on a FLOOR (a say that needs founder authority before it may
+   leave the engine) read as a plain PAUSED: Shadow was waiting on the founder
+   and the founder was told nothing was being asked.
+
+   Anything else that pauses -- app_restart, founder_intervened, an ordinary
+   stop -- is NOT a request and stays PAUSED. */
+const SH_FOUNDER_PAUSES = ["founder_confirm", "floor_confirm"];
 function shadowMissionNeedsFounder(m){
-  return !!(m && m.state === "paused" && m.pause_reason === "founder_confirm");
+  return !!(m && m.state === "paused"
+            && SH_FOUNDER_PAUSES.indexOf(m.pause_reason) !== -1);
 }
 function shadowTaskFaceFor(m){
   if (shadowMissionNeedsFounder(m)) return SH_TASK.blocked;
+  /* the second state that is not the whole face: a start that has already
+     been accepted. shadowMissionStarting() explains why brief_confirm alone
+     stopped being enough; the label is the EXISTING queued one, because
+     "admitted, not running yet" is what it has always meant here. */
+  if (typeof shadowMissionStarting === "function" && shadowMissionStarting(m))
+    return SH_TASK.queued;
   return shadowTaskFace(m && m.state);
 }
 
@@ -303,28 +321,92 @@ function shadowSelectedTask(){
   const S_ = (typeof S !== "undefined") ? S : {};
   const picked = rows.find(m => m.id === S_.shadowTaskSel);
   if (picked) return picked;
-  const order = ["blocked", "brief_confirm", "running", "paused", "queued"];
-  for (const st of order){
-    const hit = rows.find(m => m.state === st);
+  /* THE FALLBACK RANKED A DEAD ROW ABOVE A LIVE ONE (founder, 2026-09-14).
+     The report was "the list says RUNNING and the card says QUEUED, turn 0
+     of 20" -- read as the two surfaces disagreeing about one mission. They
+     never did: both call shadowTaskFaceFor on the record the server sent,
+     and for a running mission both say RUNNING. They were showing DIFFERENT
+     MISSIONS, because this fallback picked the card's.
+
+     `brief_confirm` is two different situations wearing one state, and only
+     one of them is a request:
+
+       no start_requested_at   READY -- nobody has started it, and the
+                               founder's click is the next thing that has to
+                               happen. Worth ranking above live work.
+       start_requested_at set  the start was already taken. It is on its way,
+                               or it died on the way. It wants nothing, and
+                               it draws as QUEUED with turn 0 and "a new chat
+                               Shadow starts when you begin" forever.
+
+     Ranking the second kind above `running` meant one stale row -- a start
+     that failed before the transition table could record it -- captured the
+     detail pane for every task the founder created afterwards.
+
+     shadowMissionStartable is the EXISTING predicate for exactly this
+     split (it is what the card already asks before drawing Start), so no
+     second state vocabulary is introduced, nothing is inferred from whether
+     a chat exists, and no local "hasStarted" flag is invented. `blocked`
+     keeps its place at the top untouched. */
+  const byState = (st) => rows.find(m => m.state === st);
+  const attention = byState("blocked");
+  if (attention) return attention;
+  const ready = rows.find(m => (typeof shadowMissionStartable === "function")
+    ? shadowMissionStartable(m)
+    : m.state === "brief_confirm");
+  if (ready) return ready;
+  for (const st of ["running", "paused", "queued", "brief_confirm"]){
+    const hit = byState(st);
     if (hit) return hit;
   }
   return rows[rows.length - 1];
 }
 
+/* A task that is still WORKING says so in the ask: deleting it stops the work
+   first (the server ends it through founder_stop/cancel_queued before the
+   record goes). The founder must not learn that from the result.
+
+   A task that is merely STARTING counts as working, and that is not a third
+   idea about state -- it is shadowMissionStarting(), the same predicate that
+   already takes Start away during provisioning. A start that has been
+   accepted is work in flight, so deleting it stops something. */
+const SH_LIVE_STATES = ["running", "queued", "paused", "blocked"];
+
+function shadowTaskIsLive(m){
+  return !!(m && (SH_LIVE_STATES.includes(m.state)
+    || (typeof shadowMissionStarting === "function" && shadowMissionStarting(m))));
+}
+
 function shadowTaskListHtml(){
   const rows = shadowTasks();
   const sel = shadowSelectedTask();
+  const S_ = (typeof S !== "undefined") ? S : {};
   if (!rows.length)
     return `<div class="shtaskempty">Nothing yet — Delegate a task and
       Shadow will run it in its own chat.</div>`;
+  /* THE ROW IS NOW A ROW, NOT A BUTTON. The selector button is byte-identical
+     to what it was -- same class, same hook, same three spans -- and it is
+     simply no longer the outermost element, because a <button> may not
+     contain another <button> and the list needed a second control on it.
+     [data-shtask] is untouched, so the whole-row-is-the-control behaviour and
+     its test are unaffected; the remove control is a DIFFERENT hook, checked
+     first in the handler, so the two can never be confused for each other. */
   return rows.map(m => {
     const f = shadowTaskFaceFor(m);
-    return `<button class="shtask${sel && m.id === sel.id ? " on" : ""}"
+    const on = sel && m.id === sel.id;
+    return `<div class="shtaskrow${on ? " on" : ""}">
+      <button class="shtask${on ? " on" : ""}"
       type="button" data-shtask="${escAttr(m.id)}">
       <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
       <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
       <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
-    </button>`;
+    </button>
+      <button class="shtaskdel" type="button"
+        data-shtaskdel="${escAttr(m.id)}"
+        title="${shadowTaskIsLive(m) ? "Stop &amp; delete this task"
+                                     : "Delete this task"}"
+        aria-label="Delete task">\u00d7</button>
+    </div>`;
   }).join("");
 }
 
@@ -401,10 +483,76 @@ function shadowCheckRowsHtml(m){
   </div>`;
 }
 
+/* ── THE DELEGATE CHAT, IN THE TASK PANE ─────────────────────────────────
+   THE GAP THIS CLOSES (founder, 2026-09-14). Create Task already started the
+   mission -- shadowCreateTask awaits the existing shadowMissionAct(id,
+   "start_now"), the worker spawns, and _publish_delegate_chat publishes the
+   chat the moment the CLI announces its session id (~1.4s measured). The
+   backend was never the problem. But this pane rendered a STATIC BRIEF --
+   objective, "acts in", "turn 0 of 20" -- and nothing else, so for the
+   fourteen seconds before the row left brief_confirm the founder watched a
+   card that said QUEUED and showed no conversation at all. The chat existed
+   and was simply never drawn.
+
+   NOT A SECOND CHAT SYSTEM, and deliberately not one line of new transcript
+   machinery. goalMessages / goalTranscriptHtml / loadGoalTranscript already
+   render exactly this -- a headless session Shadow drives, keyed by session
+   id -- for the Assignment workspace. They are generic in `sid`, so they are
+   CALLED here, not copied. The gw* classes they emit are already global in
+   panel.css, so no stylesheet moves either.
+
+   THE GUARD IS THE SAME ONE goalCriteriaToChecks USES: panel.html loads
+   18-goal-workspace.js right after this file, so production always has these
+   functions by the time a card renders; a context that loaded this module
+   alone degrades to the brief it drew before rather than throwing.
+
+   ONE FETCH, NOT A STORM. render() runs many times a second, so the fetch is
+   throttled per session exactly the way goalTranscriptChanged throttles the
+   Assignment one: once when nothing is held yet, then no more often than
+   every 1.5s while the mission is still live, and never for a session whose
+   pane is open (09-tail.js already re-reads that one). */
+const SH_TRANSCRIPT_MS = 1500;
+const shTranscriptAt = {};
+
+function shadowTaskTranscript(sid, live){
+  if (!sid || typeof goalMessages !== "function") return undefined;
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const held = (S_.goalTranscript || {})[sid];
+  const open = !!(S_.openPanes && S_.openPanes.indexOf(sid) !== -1);
+  const now = (typeof Date !== "undefined") ? Date.now() : 0;
+  const due = (held === undefined) || (live && now - (shTranscriptAt[sid] || 0)
+                                       > SH_TRANSCRIPT_MS);
+  if (due && !open && typeof loadGoalTranscript === "function"){
+    shTranscriptAt[sid] = now;
+    loadGoalTranscript(sid);
+  }
+  return goalMessages(sid);
+}
+
+/* The conversation block itself. Rendered only once the session EXISTS --
+   before that there is genuinely nothing to show, and the "acts in" row
+   above already says a chat is being started. */
+function shadowTaskChatHtml(m){
+  const sid = m && m.target_session;
+  if (!sid || typeof goalTranscriptHtml !== "function") return "";
+  const live = SH_TERMINAL.indexOf(m.state) === -1;
+  return `<div class="gwchat shcard2chat">
+    <div class="gwchathead">its own chat · ${esc(shadowChatLabel(sid))}</div>
+    ${goalTranscriptHtml(shadowTaskTranscript(sid, live), m)}
+  </div>`;
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
   const f = shadowTaskFaceFor(m);
-  const startable = m.state === "brief_confirm";
+  /* NOT `m.state === "brief_confirm"`. A start that has already been accepted
+     leaves the record in brief_confirm while it provisions, and offering
+     Start there is the button that would not go away -- see
+     shadowMissionStarting() in the overlay module for the whole story. The
+     guard keeps a context that loaded this module alone working. */
+  const startable = (typeof shadowMissionStartable === "function")
+    ? shadowMissionStartable(m)
+    : m.state === "brief_confirm";
   const checks = (m.done_when || []).map(c => c && c.check).filter(Boolean);
   /* the ONE extra state this card knows about: waiting on the founder's
      sign-off. The flat "done when" row is a summary and cannot be acted on,
@@ -439,13 +587,14 @@ function shadowTaskCardHtml(m){
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
+    ${shadowTaskChatHtml(m)}
     <div class="shcard2acts">
       ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id)}">Start the task</button>
         <span class="shcard2hint">…or keep telling me</span>` : ""}
-      ${["running", "paused"].includes(m.state) ? `<button class="btn"
+      ${["running", "paused", "blocked"].includes(m.state) ? `<button class="btn"
         type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
-      ${m.state === "paused" ? `<button class="btn" type="button"
+      ${["paused", "blocked"].includes(m.state) ? `<button class="btn" type="button"
         data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
       ${m.state === "queued" ? `<button class="btn" type="button"
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
@@ -1512,6 +1661,31 @@ if (typeof document !== "undefined" && document.addEventListener){
        always done this. `data-shtaskcard` does not match `[data-shtask]` --
        attribute selectors are exact -- so the right pane's card is
        untouched, and no markup or style changed here. */
+    /* REMOVE, and it is checked BEFORE the row selector on purpose: the
+       delete control sits inside the row, so a click on it is also a click
+       in the row, and selecting the task on the way to deleting it would be
+       a pointless repaint. Attribute selectors are exact, so [data-shtaskdel]
+       and [data-shtask] never match each other's element -- the order here
+       decides which one wins when both are in the ancestor chain. */
+    const close = (sel) => (ev.target && ev.target.closest)
+      ? ev.target.closest(sel) : null;
+    /* ONE CLICK DELETES (founder, 2026-09-14). × used to turn the row into
+       "Delete? Yes / No" in place -- the gesture the Agents rail uses. In the
+       task list that ask rendered UNDERNEATH neighbouring Shadow UI, so the
+       Yes it demanded could not reliably be hit and the delete was, in
+       practice, unreachable. A destructive control the founder cannot
+       complete is worse than one that needs no second click, so the ask is
+       gone: × deletes. Nothing below it changed -- the same
+       shadowDeleteTask, the same single POST to the existing /act endpoint,
+       the same server-side erase, and the chat Shadow drove is still left
+       alone in Chats. A browser confirm() is NOT the fallback: it blocks the
+       Electron window (17-agents.js, founder 2026-09-10). */
+    const delRow = close("[data-shtaskdel]");
+    if (delRow){
+      if (ev.stopPropagation) ev.stopPropagation();
+      shadowDeleteTask(delRow.dataset.shtaskdel);
+      return;
+    }
     const taskRow = (ev.target && ev.target.closest)
       ? ev.target.closest("[data-shtask]") : null;
     if (taskRow){
@@ -1637,9 +1811,25 @@ if (typeof document !== "undefined" && document.addEventListener){
    point of + Delegate: the intent is established by the action, so a
    delegated task can never depend on Shadow having guessed correctly.
 
-   Nothing is started. The mission lands in brief_confirm exactly like a
-   proposal, and Start is still a separate, explicit press -- the same rule
-   every other mission and goal follows. */
+   CREATE IS THE START (founder, 2026-09-14). It used to land the mission in
+   brief_confirm and wait for a second, explicit press, on the rule that
+   every mission and goal confirms its brief before it runs. That rule is
+   about a brief the founder did not write -- a mission Shadow PROPOSED, or a
+   goal attempt composed from earlier ones, where the confirm step is the
+   founder reading something for the first time. It was never about this
+   form: the founder typed the outcome, typed what will count as done, chose
+   the kind and pressed a button labelled "Create the task". There is nothing
+   left to confirm, so the second press only asked them to agree with
+   themselves.
+
+   The press therefore does both, and the SECOND HALF IS THE EXISTING START
+   -- shadowMissionAct(id, "start_now"), the identical call the Start button
+   makes. Nothing about spawning is re-implemented here: one create, one
+   start, one mission, one delegate chat, and the start path keeps its own
+   guards (shadow_runner refuses a double start, the scheduler owns
+   admission and the cap). If the start fails the task is still there, in
+   brief_confirm, with its Start button -- which is the old behaviour, and
+   the honest thing to fall back to. */
 async function shadowCreateTask(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return null;
   const d = shadowNewDraft();
@@ -1693,8 +1883,8 @@ async function shadowCreateTask(){
         + " Work step by step; say what you did and what is left.",
     });
   } catch (e){ r = null; }
-  S.shadowNewBusy = false;
   if (!r || !r.ok){
+    S.shadowNewBusy = false;
     S.shadowNewErr = r
       ? ("Could not create the task (" + r.status + ")")
       : "Could not reach Shadow to create the task.";
@@ -1703,15 +1893,62 @@ async function shadowCreateTask(){
   }
   const m = await r.json();
   /* reconcile with the server, then put the new task in focus so the brief
-     -- and its Start button -- is the next thing on screen */
+     is the next thing on screen — a brief of work already under way, not
+     one waiting for a second press */
   S.shadowNew = { objective: "", done: "", kind: "fix" };
   S.shadowNewOpen = false;
   S.shadowTaskSel = m.id;
-  if (typeof showNudge === "function")
-    showNudge("Task created — read the brief, then Start it.");
+  /* THE EXISTING START, on the mission that was just created. Awaited before
+     the panel lets go of `busy`, so the create button cannot be pressed a
+     second time while the start is still in the air. shadowMissionAct does
+     the rest of what it always does — says it started, re-reads the home,
+     and runs the bounded catch-up re-reads that watch the row leave
+     brief_confirm. */
+  let started = null;
+  if (typeof shadowMissionAct === "function"){
+    try { started = await shadowMissionAct(m.id, "start_now"); }
+    catch (e){ started = null; }
+  }
+  S.shadowNewBusy = false;
+  if (!started && typeof showNudge === "function")
+    showNudge("Task created, but it did not start — press Start on the brief.");
   if (typeof loadShadowHome === "function") await loadShadowHome(true);
   if (typeof scheduleRender === "function") scheduleRender();
   return m;
+}
+
+/* THE REMOVE. One POST, through the EXISTING mission action endpoint --
+   the same shadowMissionAct every other Shadow control uses, so there is no
+   second write surface and no second lifecycle.
+
+   IT IS THE SERVER THAT DELETES. Nothing is hidden locally: the row leaves
+   because shadowMissionAct's forced re-read comes back without it, which is
+   also why a refresh cannot bring it back -- the mission file is gone.
+
+   A LIVE TASK IS ENDED FIRST, by the server, through the paths that already
+   exist (cancel_queued for a queued attempt, founder_stop for a live one,
+   then release_delegate). That is what the warning says out loud: this
+   stops the work, and it is not undoable. The chat Shadow drove is NOT
+   deleted -- it stays in Chats with its transcript, exactly as it does
+   after Stop or Take over.
+
+   THERE IS NO CONFIRMATION STEP (founder, 2026-09-14). The in-row
+   "Delete? Yes / No" that used to gate this painted under neighbouring
+   Shadow UI, so Yes could not reliably be clicked and the delete could not
+   be finished at all. × now calls straight through to here. A confirm()
+   is not the alternative -- it blocks the Electron window (17-agents.js).
+   Everything below this line is unchanged. */
+async function shadowDeleteTask(mid){
+  if (!mid) return null;
+  if (typeof shadowMissionAct !== "function") return null;
+  const doc = await shadowMissionAct(mid, "delete");
+  /* the focus must not keep pointing at a record that no longer exists.
+     shadowSelectedTask() already falls back when its pick is missing, so
+     this only stops a stale id from outliving the row it named. */
+  if (doc && typeof S !== "undefined" && S.shadowTaskSel === mid)
+    S.shadowTaskSel = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  return doc;
 }
 
 async function shadowWatchSet(sid, watch){

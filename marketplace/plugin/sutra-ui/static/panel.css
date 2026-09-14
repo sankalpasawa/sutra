@@ -3086,6 +3086,24 @@
   flex:none}
 .shtaskname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
+/* the row wrapper exists only so the row can carry a SECOND control: a
+   <button> may not contain another <button>. The selector button still fills
+   it, so nothing about the row's density or hit area changed. */
+.shtaskrow{display:flex;align-items:center;border-radius:8px}
+.shtaskrow:hover{background:var(--sepia)}
+.shtaskrow.on{background:var(--acc-bg)}
+/* the row paints the hover/selected tint now, so the button must not paint
+   it a second time underneath the delete control */
+.shtaskrow .shtask:hover,.shtaskrow .shtask.on{background:none}
+/* REMOVE: quiet until the row is pointed at. Destructive and one click, so
+   it must never be the thing the eye lands on -- and never the thing a
+   stray click finds. */
+.shtaskdel{flex:none;width:20px;height:20px;margin-right:5px;padding:0;
+  display:flex;align-items:center;justify-content:center;background:none;
+  border:0;border-radius:5px;cursor:pointer;color:var(--faint);
+  font:14px/1 var(--sans);opacity:0;transition:opacity .1s}
+.shtaskrow:hover .shtaskdel,.shtaskdel:focus-visible{opacity:1}
+.shtaskdel:hover{background:var(--block-bg);color:var(--block)}
 .shtaskempty{color:var(--faint);font-size:12px;padding:8px 9px}
 .shwfoot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
   display:flex;flex-direction:column;gap:2px}
