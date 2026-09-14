@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — design v10.1</title>
-<!-- v10.1 (2026-09-14): polish layer on the same markup (founder: "a little better, modern,
+<title>Shadow on Sutra Desktop — design v10.2</title>
+<!-- v10.2 (2026-09-14): + Delegate is live: an empty task chat with the composer focused, one line,
+     Enter drafts the card, Start runs it and the row appears under Running. No form, no chips.
+     v10.1 (2026-09-14): polish layer on the same markup (founder: "a little better, modern,
      sound-looking"): hierarchy, spacing, card treatment, one soft shadow, micro-motion on
      entrance and state change. Everything below the "polish" comment in <style> is what a
      builder ports into panel.css; no new tokens.
@@ -173,7 +175,7 @@ body{background:#ECEAE6;padding:26px 18px 60px}
   <button class="shdot shdot-live" type="button"><b>S</b><span class="mockbadge" id="badge0">1</span></button>
 </div>
 
-<p class="cap"><b>2</b> Focus &rsaquo; Shadow. Approve the push. Confirm the rule. Open &ldquo;What Shadow knows&rdquo; from the foot.</p>
+<p class="cap"><b>2</b> Focus &rsaquo; Shadow. Click <b>+ Delegate</b>: an empty chat, type one line, Enter, Start. Approve the push. Confirm the rule. Open &ldquo;What Shadow knows&rdquo; from the foot.</p>
 <div class="app" id="app1">
   <nav class="rail" aria-label="Sutra">
     <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
@@ -212,7 +214,12 @@ body{background:#ECEAE6;padding:26px 18px 60px}
           <div class="shwfoot"><nav class="shfoot shnav"><button class="btn shfootitem shnavitem shsetdoor" type="button" data-sheet="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1h-.2a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5v-.2a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1h.2a2 2 0 0 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg><span>What Shadow knows</span></button></nav></div>
         </aside>
         <section class="shwright">
-          <header class="shwhead"><span class="shwseal">S</span><h2 class="shwtitle" id="title1">EMI auto-fix</h2><span class="shtpill shtpill-blocked" id="pill1">NEEDS YOU</span><button class="btn" type="button">Open the chat</button></header>
+          <header class="shwhead"><span class="shwseal">S</span><h2 class="shwtitle" id="title1">EMI auto-fix</h2><span class="shtpill shtpill-blocked" id="pill1">NEEDS YOU</span><button class="btn" type="button" id="openchat1">Open the chat</button></header>
+          <div id="newview" class="hide" data-newtask="1">
+            <div class="shthread" id="newthread"></div>
+            <div class="shwcomp"><div class="shcompwrap"><textarea class="shcompose" id="newcomp" placeholder="What do you have in mind?"></textarea><button class="shsend" type="button" aria-label="Send" data-newsend><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>
+          </div>
+          <div id="focusview">
           <div class="shcard2">
             <div class="shcard2head"><span class="shcard2tag">fix</span><span class="shcard2obj">fix the EMI rounding</span><span class="shtpill shtpill-running">RUNNING</span></div>
             <div class="shcard2row"><span class="shcard2k">where it runs</span><span class="shcard2v">its own chat &middot; paisa</span></div>
@@ -230,6 +237,7 @@ body{background:#ECEAE6;padding:26px 18px 60px}
             <div class="remember" id="rem"><span class="sc">paisa</span><span>I&rsquo;ll remember: run the EMI check before commits.</span><button class="btn pri" type="button" data-keep>Confirm</button></div>
           </div>
           <div class="shwcomp"><div class="shcompwrap"><textarea class="shcompose" placeholder="Say anything…"></textarea><button class="shsend" type="button" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>
+          </div>
         </section>
       </div>
       <div class="shset hide" id="sheet1">
@@ -357,6 +365,21 @@ body{background:#ECEAE6;padding:26px 18px 60px}
   qa('#app1 .shtask[data-t]').forEach(function(r){r.addEventListener('click',function(){qa('#app1 .shtask').forEach(function(x){x.classList.remove('on');});r.classList.add('on');var k=r.getAttribute('data-t');q('#title1').textContent=names[k];var p=q('#pill1');p.textContent=pills[k][0];p.className=pills[k][1];});});
   var ap=q('[data-approve]'); if(ap)ap.addEventListener('click',function(){var c=q('#approval');qa('.btn',c).forEach(function(b){b.classList.add('hide');});q('#did1').classList.remove('hide');var r=q('#app1 .shtask[data-t="emi"]');q('.shtaskdot',r).className='shtaskdot d-running';var s=q('.shtpill',r);s.className='shtpill shtpill-running';s.textContent='RUNNING';q('#g-run').insertBefore(r,q('#g-run').firstChild);var p=q('#pill1');p.textContent='RUNNING';p.className='shtpill shtpill-running';var b=q('#badge1');if(b)b.remove();});
   var kp=q('[data-keep]'); if(kp)kp.addEventListener('click',function(){q('#rem').classList.add('ok');});
+  // + Delegate: an empty task chat, one line, a draft card, Start. No form.
+  var dg=q('#app1 .shdelegate'), nv=q('#newview'), fv=q('#focusview'), nt=q('#newthread'), ncmp=q('#newcomp');
+  function openNew(){ qa('#app1 .shtask').forEach(function(x){x.classList.remove('on');}); dg.classList.add('on'); fv.classList.add('hide'); nv.classList.remove('hide'); q('#title1').textContent='New task'; q('#pill1').classList.add('hide'); q('#openchat1').classList.add('hide'); nt.innerHTML=''; ncmp.value=''; ncmp.focus(); }
+  function draftNew(){ var v=(ncmp.value||'').trim(); if(!v) return; ncmp.value='';
+    var u=document.createElement('div'); u.className='shmsg shmine'; u.textContent=v; nt.appendChild(u);
+    var s=document.createElement('div'); s.className='shmsg shshadow'; s.innerHTML='<span class="who">shadow</span>A fix in paisa. Start when it reads right.'; nt.appendChild(s);
+    var c=document.createElement('div'); c.className='shcard2'; c.id='newcard'; c.innerHTML='<div class="shcard2head"><span class="shcard2tag">fix</span><span class="shcard2obj">'+v.replace(/</g,'&lt;')+'</span><span class="shtpill shtpill-ready">READY</span></div><div class="shcard2row"><span class="shcard2k">where it runs</span><span class="shcard2v">a new chat in paisa</span></div><div class="shcard2row"><span class="shcard2k">done when</span><span class="shcard2v">a tested PR is open</span></div><div class="shcard2acts"><button class="btn pri" type="button" data-newstart>Start the task</button><span class="shcard2hint">&hellip;or keep telling me</span></div>'; nt.appendChild(c);
+    ncmp.placeholder='Say anything…';
+    q('[data-newstart]').addEventListener('click',function(){ var name=v.length>28?v.slice(0,27)+'…':v;
+      var p=c.querySelector('.shtpill'); p.textContent='RUNNING'; p.className='shtpill shtpill-running';
+      c.querySelector('.shcard2acts').innerHTML='<span class="shcard2hint">started &middot; its own chat in paisa</span>';
+      var r=document.createElement('button'); r.className='shtask on'; r.type='button'; r.innerHTML='<span class="shtaskdot d-running"></span><span class="shtaskname">'+name.replace(/</g,'&lt;')+'</span><span class="shtpill shtpill-running">RUNNING</span>'; q('#g-run').insertBefore(r,q('#g-run').firstChild);
+      dg.classList.remove('on'); q('#title1').textContent=name; var pl=q('#pill1'); pl.textContent='RUNNING'; pl.className='shtpill shtpill-running'; pl.classList.remove('hide'); q('#openchat1').classList.remove('hide');
+    }); }
+  if(dg){ dg.addEventListener('click',openNew); ncmp.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); draftNew(); } }); q('[data-newsend]').addEventListener('click',draftNew); }
   var over=q('#over'),ot=q('#over-t'),oc=q('#over-c'),wm=q('#wmsgs'),wc=q('#wcomp');
   function setOver(cls,html,ctrls){over.className='oversee '+cls;ot.innerHTML=html;oc.innerHTML=ctrls;wire();}
   function wire(){var t=q('[data-takeover]');if(t)t.addEventListener('click',takeover);var h=q('[data-handback]');if(h)h.addEventListener('click',handback);var k=q('[data-keepchat]');if(k)k.addEventListener('click',keep);}
