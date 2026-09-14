@@ -2,7 +2,19 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.271.7 (2026-09-14, HEAD)
+## v2.271.8 (2026-09-14, HEAD)
+
+**Codex offers all its models, not one.** `providers._codex_discovered` took `codex_models.cached()`
+and, when that was empty, only the operator's `config.toml` model. `cached()` is filled only by
+`refresh_if_stale`, which runs only from GET `/providers/codex/auth` (the Codex settings row), so
+the SEO Writer and any chat opened before that row showed "CLI default" plus the one config model,
+while Codex's own `~/.codex/models_cache.json` listed GPT-5.6-Terra, GPT-5.6-Luna and GPT-5.5
+(model/list answers the same three on codex-cli 0.144.4, measured). New
+`codex_models.cache_file_models()` reads that file, memoised on mtime and never spawning, and is
+used before the config scan. Discovery still wins when it has run. Tests:
+`test_codex_models.py` +5.
+
+## v2.271.7 (2026-09-14)
 
 **Fable in the Claude model picker.** Claude's list was hardcoded to CLI default / Opus / Sonnet /
 Haiku in `providers._CLAUDE_MODELS`, so Fable could not be picked in chat, in routines or in the

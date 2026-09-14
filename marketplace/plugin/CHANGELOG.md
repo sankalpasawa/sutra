@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-14
+## 2.271.8 (2026-09-14)
+
+- **Codex shows every model it offers.** Until the Codex settings row had been opened, the picker listed only "CLI default" and the model in your Codex config. It now reads the model list Codex keeps on disk (GPT-5.6-Terra, GPT-5.6-Luna, GPT-5.5 on the owner's account), in chat and in the SEO Writer. Tests: 5 checks.
+
 ## 2.271.7 (2026-09-14)
 
 - **Fable can be picked.** Claude's model list now offers Fable beside Opus, Sonnet and Haiku, in chat, routines and the SEO Writer, with its 1M context window. The SEO Writer's empty choice reads "account default", since it is whatever Claude Code picks for the account, not a separate model.

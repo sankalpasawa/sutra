@@ -887,3 +887,53 @@ class PlanUsageIsReadFromCodex(_Base):
         got = codex_models.refresh_if_stale("chatgpt")
         self.assertEqual([m["id"] for m in got],
                          ["gpt-5.6-terra", "gpt-5.6-luna"])
+
+
+class CodexsOwnCacheFileFillsThePickerBeforeDiscovery(_Base):
+    """2026-09-14: "in codex i only see one option". Discovery runs only from
+    GET /providers/codex/auth, so the SEO Writer and any chat opened before the
+    Codex settings row showed "CLI default" plus the config's single model,
+    while Codex's own models_cache.json listed three."""
+
+    CACHE = {"models": [
+        {"slug": "gpt-reserve", "display_name": "reserve", "visibility": "hide"},
+        {"slug": "gpt-5.6-terra", "display_name": "GPT-5.6-Terra", "visibility": "list"},
+        {"slug": "gpt-5.6-luna", "display_name": "GPT-5.6-Luna", "visibility": "list"},
+        {"slug": "gpt-5.5", "display_name": "GPT-5.5", "visibility": "list"},
+    ]}
+
+    def write_cache(self, blob):
+        (Path(os.environ["CODEX_HOME"]) / "models_cache.json").write_text(json.dumps(blob))
+
+    def test_the_cache_file_is_offered_before_discovery_has_run(self):
+        self.write_cache(self.CACHE)
+        (Path(os.environ["CODEX_HOME"]) / "config.toml").write_text('model = "gpt-5.5"\n')
+        providers._CODEX_MODEL_CACHE.clear()
+        self.assertIsNone(codex_models.cached())
+        self.assertEqual(self.ids(), ["", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"])
+
+    def test_reading_it_never_spawns(self):
+        import subprocess as sp
+        self.write_cache(self.CACHE)
+        self.serve(_VISIBLE)
+        with mock.patch.object(sp, "Popen", side_effect=AssertionError("spawned")):
+            self.assertEqual(len(providers.models_for("codex")), 4)
+
+    def test_discovery_still_wins_over_the_file(self):
+        self.write_cache(self.CACHE)
+        self.serve(_VISIBLE)
+        codex_models.refresh_if_stale("chatgpt")
+        self.assertEqual(self.ids(), ["", "gpt-5.6-terra", "gpt-5.6-luna"])
+
+    def test_an_edited_file_is_picked_up(self):
+        self.write_cache(self.CACHE)
+        self.assertEqual(len(providers.models_for("codex")), 4)
+        blob = {"models": self.CACHE["models"][:2]}
+        self.write_cache(blob)
+        p = Path(os.environ["CODEX_HOME"]) / "models_cache.json"
+        os.utime(p, ns=(p.stat().st_atime_ns, p.stat().st_mtime_ns + 5_000_000_000))
+        self.assertEqual(self.ids(), ["", "gpt-5.6-terra"])
+
+    def test_no_file_and_no_config_is_still_cli_default_only(self):
+        providers._CODEX_MODEL_CACHE.clear()
+        self.assertEqual(self.ids(), [""])

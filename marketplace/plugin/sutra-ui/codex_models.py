@@ -427,6 +427,36 @@ def _from_cache_file():
 
 # ------------------------------------------------------------------ the API --
 
+#: (path, mtime_ns, size) -> models, so the picker can read Codex's own cache file on the
+#: render path without re-parsing 140 KB of JSON on every settings read.
+_FILE_MEMO = {"key": None, "models": ()}
+
+
+def cache_file_models():
+    """Codex's own cached roster (models_cache.json), memoised on mtime. PURE, NEVER SPAWNS.
+
+    The picker's fallback before discovery has run in this process. Discovery only runs from
+    GET /providers/codex/auth, so a Sutra that never opened the Codex settings row offered
+    "CLI default" plus the config's one model while Codex itself listed three (owner,
+    2026-09-14: "in codex i only see one option"). Same data model/list answers, same
+    visibility rule, read from the file Codex keeps up to date.
+    """
+    home = Path(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"))
+    path = home / "models_cache.json"
+    try:
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return ()
+    with _LOCK:
+        if _FILE_MEMO["key"] == key:
+            return _FILE_MEMO["models"]
+    models = _from_cache_file()
+    with _LOCK:
+        _FILE_MEMO.update({"key": key, "models": models})
+    return models
+
+
 def cached():
     """What was last discovered: a tuple, or None if nothing ever was.
 

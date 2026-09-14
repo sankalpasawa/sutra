@@ -765,7 +765,10 @@ def _codex_discovered():
     `import app`, and cheap after the first call (sys.modules).
     """
     import codex_models
-    found = codex_models.cached()
+    # Before discovery has run in this process (it runs only from the Codex auth route), Codex's
+    # own models_cache.json is the same roster model/list would answer. Without this the SEO
+    # Writer and any chat opened before the Codex settings row offered one model (2026-09-14).
+    found = codex_models.cached() or codex_models.cache_file_models()
     if not found:
         return codex_config_models()
     # `_default` becomes the public `default`, and `efforts` rides along. Both
