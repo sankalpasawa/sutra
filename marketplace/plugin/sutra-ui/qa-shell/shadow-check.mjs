@@ -28,13 +28,32 @@
  * stopped, debug-flagged or restarted to run this lane.
  */
 import fs from "fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = process.env.SHELL_DEBUG_PORT || "9223";
 const PANEL_PORT = process.env.QA_PANEL_PORT || "8330";
-const OUT = new URL("./out/", import.meta.url).pathname;
-const ART = new URL("./artifacts/", import.meta.url).pathname;
+
+/* fileURLToPath, NEVER url.pathname. A file: URL is percent-encoded, so on a
+   checkout whose path contains a space -- ".../Desktop/Joy Stephen/..." is
+   one -- `.pathname` hands back ".../Joy%20Stephen/..." and fs happily
+   CREATES that as a literal directory. Every screenshot and every artifact
+   this lane has ever written on such a checkout went into a phantom tree
+   beside the real one while the log said "evidence ->" and the gate went
+   green (found 2026-09-15: 11 files sitting in ~/Desktop/Joy%20Stephen).
+   Evidence written somewhere nobody looks is not evidence. */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const OUT = path.join(HERE, "out");
+/* QA_ARTIFACT_DIR aims a run at its own folder. Default is a timestamped run
+   dir rather than artifacts/ itself, so two runs -- or two sessions -- never
+   overwrite each other's evidence, and every picture keeps the run it came
+   from. */
+const ART = process.env.QA_ARTIFACT_DIR
+  ? path.resolve(process.env.QA_ARTIFACT_DIR)
+  : path.join(HERE, "artifacts", "run-" + Math.floor(Date.now() / 1000));
 fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(ART, { recursive: true });
+console.log("artifacts -> " + ART);
 
 let page = null;
 const PANEL_RE = new RegExp("127\\.0\\.0\\.1:" + PANEL_PORT + "(/|$)");
@@ -124,7 +143,7 @@ async function until(expr, ms = 8000){
 }
 async function shot(name){
   const r = await cdp("Page.captureScreenshot", { format: "png" });
-  fs.writeFileSync(OUT + "shadow-" + name + ".png", Buffer.from(r.data, "base64"));
+  fs.writeFileSync(path.join(OUT, "shadow-" + name + ".png"), Buffer.from(r.data, "base64"));
 }
 /* out/ is the rolling trail -- every run overwrites it and it is gitignored.
    artifacts/ is the EVIDENCE a gate points at: committed, named for the gate
@@ -132,7 +151,7 @@ async function shot(name){
    than in a screenshot folder nobody can date. Cropped to the card, because a
    full-window shot of a 152px meter is evidence of nothing. */
 async function artifact(name, selector){
-  const p = ART + name + ".png";
+  const p = path.join(ART, name + ".png");
   let clip = null;
   if (selector){
     const box = await evql(`(() => { const e = document.querySelector(${
@@ -146,7 +165,7 @@ async function artifact(name, selector){
   const r = await cdp("Page.captureScreenshot",
     clip ? { format: "png", clip, captureBeyondViewport: true } : { format: "png" });
   fs.writeFileSync(p, Buffer.from(r.data, "base64"));
-  console.log("       evidence -> qa-shell/artifacts/" + name + ".png");
+  console.log("       evidence -> " + p);
   return p;
 }
 
@@ -293,6 +312,9 @@ landed ? ok("G9 deep link: Open lands on Focus > Shadow, Working tab")
 await shot("5-deeplink-landing");
 
 /* ── G15: the task card's turn-budget meter ──────────────────────────────────
+   CANONICAL. qa-shell/g9-budget-check.mjs is the older standalone probe of the
+   same meter, kept as-is; this gate is the one that runs with the publish check.
+
    THE ONLY GATE HERE THAT MEASURES RATHER THAN MATCHES. Every assertion below
    is one the render tests in test_shadow_home.js structurally cannot make:
    they read a string, and a string does not have a width, a painted colour,
@@ -445,11 +467,15 @@ eq("G15 layout: the card is exactly as wide with the meter as without",
    exist" -- and a colour assertion nobody can look at is the same thing).
    Re-read before each shot so the capture happens on a SETTLED fill, for the
    same reason the measurements do. */
+/* low / mid / high / nomax is the founder's evidence vocabulary for the four
+   budget states, and the older standalone probe already writes under it. The
+   names are kept identical on purpose: the same four pictures, whichever
+   probe took them. Run dirs keep the two from overwriting each other. */
 for (const [id, name] of [
-  ["qa-bud-ok",    "g15-budget-low-5of20"],
-  ["qa-bud-warn",  "g15-budget-mid-15of20"],
-  ["qa-bud-block", "g15-budget-high-19of20"],
-  ["qa-bud-none",  "g15-budget-no-ceiling"],
+  ["qa-bud-ok",    "g9-low"],
+  ["qa-bud-warn",  "g9-mid"],
+  ["qa-bud-block", "g9-high"],
+  ["qa-bud-none",  "g9-nomax"],
 ]){
   await budRead(id);
   await artifact(name, `[data-shtaskcard="${id}"]`);
