@@ -253,7 +253,48 @@ def evidence_text(session_id):
     if not live:
         # nothing streamed for this session: unchanged, byte for byte
         return blob
-    return blob + " " + live[-DECIDE_PROSE_TAIL:]
+    return blob + " " + _prose_tail(live)
+
+
+def _prose_tail(live, limit=DECIDE_PROSE_TAIL):
+    """The last `limit` characters of streamed prose, starting at a WORD.
+
+    THE PHANTOM THIS REMOVES (founder dogfood, 2026-09-14, mission
+    m-f83478e90923). The slice was `live[-limit:]`, which cuts at whatever
+    byte lands there. Shadow reads the result as literally what the worker
+    said, so a cut through "defensi|ble answer in enterprise security" made
+    it believe the message BEGAN mid-word. It spent four turns telling the
+    delegate to stop emitting a leading fragment that never existed:
+
+        "Close, but the message you just sent did not begin with 'BULKHEAD'
+         -- it began mid-word with 'ble answer in enterprise secu'"
+
+    THE CAP IS NOT TOUCHED. The result is a SUFFIX of the same `live[-limit:]`
+    slice, so it is never longer than DECIDE_PROSE_TAIL and never reaches
+    further back; the only change is dropping a partial leading token. And a
+    tail that was never truncated is returned byte for byte, so a short
+    message does not lose its first word.
+
+    Nothing about evidence collection, ordering or content moves: `blob` is
+    unchanged, `live` is unchanged, and any contains_artifact match that was
+    reachable before still is -- `live` is capped at _RECENT_CAP (20000) and
+    therefore sits WHOLE inside the 40000-char blob above, which is not
+    trimmed here.
+    """
+    if len(live) <= limit:
+        return live                     # nothing was cut
+    tail = live[-limit:]
+    if live[-limit - 1].isspace() or tail[:1].isspace():
+        return tail                     # already starts at a boundary
+    cut = 0
+    for i, ch in enumerate(tail):
+        if ch.isspace():
+            cut = i
+            break
+    else:
+        return tail                     # one unbroken token: nothing better
+    trimmed = tail[cut:].lstrip()
+    return trimmed or tail
 
 
 def make_bindings(validated_say):
@@ -873,6 +914,9 @@ YOUR PREVIOUS INSTRUCTION
 WHAT THE TARGET CHAT SAID BACK (most recent output)
 %(last_response)s
 
+WHAT THE FOUNDER TOLD YOU (their answer to your last question, if any)
+%(founder_response)s
+
 Decide. Reply with ONE fenced json block and nothing else:
 
 ```json
@@ -886,10 +930,39 @@ or, if you genuinely cannot make progress and the founder is needed:
 {"action": "ask_founder", "reason": "<what you need from the founder>"}
 ```
 
+An ask_founder MAY also carry a form, when what you need is specific enough
+to ask for directly. The `intervention` key is OPTIONAL -- omit it and the
+line above behaves exactly as it always has:
+
+```json
+{"action": "ask_founder", "reason": "<one short line>",
+ "intervention": {
+   "question": "<the one thing that has to be decided>",
+   "context": "<why you cannot settle it yourself>",
+   "fields": [{"key": "region", "type": "choice", "label": "Default region",
+               "required": true,
+               "options": [{"value": "eu-west-1", "label": "EU West"},
+                           {"value": "us-east-1", "label": "US East"}]}]}}
+```
+
+`type` is one of: boolean, choice, multi_choice, text, long_text, number,
+currency, percent, date, datetime, url, email, ranking. choice, multi_choice
+and ranking need at least two `options`. Use SEVERAL fields when you need
+several things at once -- the founder answers them as one form.
+
 Rules for `instruction`: address the target chat directly, build on what it
 actually said, and name the specific next thing you want. If it asked you a
 question, answer it. If it is stuck or refusing, either unblock it with new
 information or use ask_founder. Do not repeat your previous instruction.
+
+Rules for `ask_founder`: try to resolve it YOURSELF first -- read what the
+chat said, give it another instruction, tell it to go and find out. Escalate
+only when no instruction of yours can settle it and the mission genuinely
+cannot proceed without the founder. Never ask for something you can work out
+yourself or that the chat can be told to establish. Ask the SMALLEST question
+that actually unblocks the mission, and choose the field type that matches
+the answer you need. The founder's reply comes back to YOU, not to the chat:
+you read it, and you decide the next instruction.
 """
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.S)
@@ -910,6 +983,28 @@ def _first_decision(text):
         except ValueError:
             return None
     return None
+
+
+def _founder_answer_text(answer):
+    """The founder's answer, as lines the decider can read.
+
+    LABELLED, NEVER PROSE. It is rendered into its own section of the prompt
+    -- never folded into `last_response` -- so Shadow can always tell what
+    the FOUNDER told it from what the target chat said, and so a submitted
+    value can never be read as the chat's own output. "(none)" for every
+    mission that was never asked anything, which is every mission that
+    existed before interventions.
+    """
+    if not isinstance(answer, dict):
+        return "(none)"
+    rows = answer.get("summary") or []
+    lines = ["- %s: %s" % (r.get("label") or r.get("key"), r.get("value"))
+             for r in rows if isinstance(r, dict)]
+    if not lines:
+        return "(none)"
+    asked = answer.get("question") or ""
+    head = "You asked: %s" % asked if asked else "You asked for input."
+    return "\n".join([head] + lines)
 
 
 def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S):
@@ -947,6 +1042,11 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S):
             "max_turns": context.get("max_turns"),
             "last_instruction": context.get("last_instruction") or "(none)",
             "last_response": context.get("last_response") or "(nothing yet)",
+            # .get() like every key above, so a mission that was never asked
+            # anything cannot KeyError here -- and _decision_context keeps
+            # omitting the key entirely for those, exactly as before.
+            "founder_response": _founder_answer_text(
+                context.get("founder_response")),
         }
         rt = srt.SessionRuntime()
         texts = []

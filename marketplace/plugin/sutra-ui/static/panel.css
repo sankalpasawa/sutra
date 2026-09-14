@@ -3634,3 +3634,22 @@
 .sxmore{background:none;border:0;padding:0;font:inherit;font-size:11.5px;color:var(--acc);
   cursor:pointer;text-decoration:underline}
 .sxmore:hover{color:var(--ink)}
+
+/* ── founder intervention form (Focus › Shadow task card) ─────────────────
+   Only the containers are new. Every control inside reuses the delegate
+   panel's existing classes -- .shnewlabel, .shnewsub, .shnewerr,
+   .shnewkinds/.shkind, .shnewacts -- so the form is the same visual
+   language as + Delegate and nothing existing was restyled. */
+.shiv{margin-top:10px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg2)}
+.shivq{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:2px}
+.shivfield{margin-top:10px}
+.shivfield input,.shivfield textarea{width:100%;box-sizing:border-box;
+  font:inherit;font-size:12.5px;color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.shivreq{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint)}
+.shivev{margin:6px 0 2px;padding-left:8px;border-left:2px solid var(--line)}
+.shivevrow{font-size:11.5px;color:var(--faint);display:flex;gap:6px;
+  flex-wrap:wrap;margin:2px 0}
+.shivevref{font-family:var(--mono,ui-monospace,monospace);color:var(--acc)}

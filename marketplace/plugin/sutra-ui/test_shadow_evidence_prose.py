@@ -155,5 +155,87 @@ class TestTheDeciderWindow(Base):
                          mission_engine.DECISION_TAIL)
 
 
+class TestTheTailStartsAtAWord(Base):
+    """THE PHANTOM FRAGMENT (founder dogfood, 2026-09-14, m-f83478e90923).
+
+    `live[-limit:]` cut wherever the byte landed, and Shadow read the result
+    as literally what the worker said. A cut through "defensi|ble answer in
+    enterprise security" made it believe the message BEGAN mid-word, and it
+    spent four turns telling the delegate to stop emitting a leading fragment
+    that never existed.
+    """
+
+    TAILC = shadow_runner.DECIDE_PROSE_TAIL
+
+    def test_P1_a_cut_inside_a_word_moves_to_the_next_word(self):
+        """The dogfood case, reproduced exactly: the cut falls through
+        "defensi|ble", so the OLD slice began with the fragment 'ble '."""
+        head = "ble answer in enterprise security "
+        after_cut = head + "more words " * 200
+        after_cut = after_cut[:self.TAILC]          # exactly one tail's worth
+        live = ("earlier words " * 50) + "defensi" + after_cut
+        # the pre-fix slice is precisely the phantom Shadow complained about
+        self.assertTrue(live[-self.TAILC:].startswith("ble answer"),
+                        "the fixture must actually cut mid-word")
+        got = shadow_runner._prose_tail(live)
+        self.assertFalse(got.startswith("ble "),
+                         "the mid-word fragment must not survive: %r"
+                         % got[:20])
+        self.assertTrue(got.startswith("answer in enterprise"),
+                        "the tail must start at the next whole word: %r"
+                        % got[:30])
+
+    def test_P2_the_cap_is_never_exceeded(self):
+        live = "word " * 5000
+        self.assertLessEqual(len(shadow_runner._prose_tail(live)), self.TAILC)
+
+    def test_P3_a_tail_that_was_never_truncated_is_byte_identical(self):
+        live = "a short message that fits well inside the window"
+        self.assertEqual(shadow_runner._prose_tail(live), live,
+                         "a short message must not lose its first word")
+
+    def test_P4_a_cut_already_on_a_boundary_is_left_alone(self):
+        """The cut must land EXACTLY after a space, so the tail already
+        begins at a whole word and there is nothing to move."""
+        body = ("word " * 500)[:self.TAILC]
+        live = ("a" * 100) + " " + body
+        self.assertEqual(len(live) - self.TAILC, 101)      # the space is at 100
+        got = shadow_runner._prose_tail(live)
+        self.assertEqual(got, body,
+                         "nothing to fix means nothing is changed")
+
+    def test_P5_one_unbroken_token_is_returned_rather_than_emptied(self):
+        live = "z" * (self.TAILC * 2)
+        got = shadow_runner._prose_tail(live)
+        self.assertEqual(len(got), self.TAILC,
+                         "no whitespace to find: keep the slice, lose nothing")
+
+    def test_P6_evidence_text_uses_it_and_the_blob_is_untouched(self):
+        word = "defensible answer"
+        live = ("q" * (self.TAILC - len(word) + 7)) + word
+        shadow_runner._RECENT_TEXT[SID] = live
+        session_reader.read_session = lambda sid: {}
+        out = shadow_runner.evidence_text(SID)
+        self.assertTrue(out.startswith(live[-40000:][:50]),
+                        "the blob prefix is unchanged")
+        self.assertTrue(out.rstrip().endswith("answer"),
+                        "the appended tail still ends where it did")
+        self.assertNotIn(" ble ", out[-self.TAILC:],
+                         "no mid-word fragment in the appended tail")
+
+    def test_P7_the_appended_tail_loses_no_reachable_match(self):
+        """`live` is capped at _RECENT_CAP and sits WHOLE inside the 40k
+        blob, so trimming a partial token off the APPENDED copy cannot make
+        a contains_artifact check unreachable."""
+        self.assertLessEqual(shadow_runner._RECENT_CAP, 40000)
+        word = "defensible answer"
+        live = ("q" * (self.TAILC - len(word) + 7)) + word
+        shadow_runner._RECENT_TEXT[SID] = live
+        session_reader.read_session = lambda sid: {}
+        out = shadow_runner.evidence_text(SID)
+        self.assertIn("defensible answer", out,
+                      "the whole word is still reachable via the blob")
+
+
 if __name__ == "__main__":
     unittest.main()

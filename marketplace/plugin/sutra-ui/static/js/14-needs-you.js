@@ -120,11 +120,61 @@ function loadNeedsYou(){
 }
 
 /* Override the placeholder registered in 05-chat.js: same empty state when
-   the feed is dark or empty, cards when it speaks. Loading is lazy -- the
-   first paint of the screen kicks the fetch; nothing polls. */
+   the feed is dark or empty, cards when it speaks.
+
+   Loading is lazy -- the first paint of the screen kicks the fetch -- and
+   from 2026-09-15 it also REFRESHES while the screen is open, at most once
+   every NY_POLL_MS. Same defect and same cure as Shadow home: the feed
+   producer already emits a needs_decision row the moment a mission blocks
+   (shadow_runner's emit_mission_feed), but this consumer read once and
+   cached, so a founder sitting on Now never saw it arrive.
+
+   Conservative on purpose: one read every four seconds, never one per
+   frame, only for the ACTIVE screen, and loadNeedsYou's own _needsYouBusy
+   guard still drops anything that would overlap an in-flight fetch. What
+   counts as NEEDS YOU is untouched -- this only changes WHEN the same list
+   is fetched. */
+const NY_POLL_MS = 4000;
+let nyAt = 0;
+
+/* Same missing driver, same cure as Shadow home: SCREENS.now only runs when
+   render() runs, and render() is event-driven rather than a loop, so the
+   throttle below never came round on an idle screen. This interval is the
+   heartbeat; it calls loadNeedsYou() directly (whose completion already
+   calls scheduleRender()) and clears itself the moment Now is no longer the
+   active screen, mirroring ensureRunTicker in 01-state.js. loadNeedsYou's
+   own _needsYouBusy guard still drops anything overlapping an in-flight
+   fetch, and what qualifies as NEEDS YOU is untouched. */
+let _nyTicker = null;
+
+function nyOnScreen(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return S_.screen === "now";
+}
+
+function ensureNeedsYouTicker(){
+  if (_nyTicker || typeof setInterval === "undefined") return;
+  _nyTicker = setInterval(() => {
+    if (!nyOnScreen()){
+      if (typeof clearInterval === "function") clearInterval(_nyTicker);
+      _nyTicker = null;
+      return;
+    }
+    try { loadNeedsYou(); } catch (e) {}
+  }, NY_POLL_MS);
+}
+
 if (typeof SCREENS !== "undefined"){
   SCREENS.now = () => {
-    if (typeof S !== "undefined" && S.needsYou === undefined) loadNeedsYou();
+    ensureNeedsYouTicker();
+    const nyNow = (typeof Date !== "undefined") ? Date.now() : 0;
+    if (typeof S !== "undefined" && S.needsYou === undefined){
+      nyAt = nyNow;
+      loadNeedsYou();
+    } else if (typeof S !== "undefined" && nyNow - nyAt >= NY_POLL_MS){
+      nyAt = nyNow;
+      loadNeedsYou();
+    }
     const items = (typeof S !== "undefined" && S.needsYou) || null;
     if (items && items.length){
       /* mock v5: the module greets, then only what needs the founder */

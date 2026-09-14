@@ -18,6 +18,7 @@ import uuid
 
 import providers
 import shadow_egress
+import shadow_intervention
 import shadow_ledger
 
 STATES = ("draft", "brief_confirm", "running", "queued", "paused",
@@ -118,7 +119,18 @@ def validate_decision(raw):
             return None               # "continue" with nothing to say is not
         return {"action": action, "reason": reason,
                 "instruction": instruction[:DECISION_INSTRUCTION_MAX]}
-    return {"action": action, "reason": reason, "instruction": ""}
+    out = {"action": action, "reason": reason, "instruction": ""}
+    # ADDITIVE, AND ONLY HERE. An ask_founder MAY carry a typed request
+    # (shadow_intervention.validate_request). When it does not -- or when the
+    # payload is malformed -- `out` is byte-identical to what this function
+    # returned before, so every existing ask_founder keeps its prose-only
+    # behaviour and every existing test of it is unaffected. A malformed
+    # intervention degrades to prose rather than failing the decision: the
+    # founder still gets asked, just without the form.
+    iv = shadow_intervention.validate_request(raw.get("intervention"))
+    if iv is not None:
+        out["intervention"] = iv
+    return out
 
 
 TEMPLATES = {
@@ -573,9 +585,20 @@ class MissionEngine:
                 # the stalled-turn routing. Those keep their historical
                 # terminal states for a standalone mission exactly as before.
                 # This is only the exit Shadow takes deliberately.
-                return self.store.block(
+                blocked = self.store.block(
                     mid, "needs_founder",
                     decision["reason"] or "Shadow asked for the founder")
+                # THE FORM RIDES BESIDE THE STATE, exactly as pause_reason,
+                # block_reason and pending_floor_say already do. store.block
+                # is unchanged and still the one writer of block_reason; this
+                # only attaches what Shadow wants ASKED. Without an
+                # intervention the record is byte-identical to before, which
+                # is what keeps every prose-only ask_founder working.
+                iv = decision.get("intervention")
+                if iv:
+                    blocked["intervention"] = iv
+                    self.store.save(blocked)
+                return blocked
             if decision is not None and decision["action"] == "undecided":
                 # R10: never fall back to a generic instruction, never
                 # complete. Say honestly that the driver could not decide.
@@ -851,6 +874,14 @@ class MissionEngine:
             "max_turns": m.get("max_turns") or 0,
             "last_instruction": m.get("last_instruction") or "",
             "last_response": (last_response or "")[-DECISION_TAIL:],
+            # THE ANSWER COMES TO SHADOW, NOT TO THE WORKER. The founder's
+            # reply is a LABELLED BLOCK here -- never folded into
+            # last_response -- so Shadow can tell what it was told from what
+            # the worker said, and so a value can never be mistaken for the
+            # worker's own output. Absent on every mission that has not been
+            # answered, which is every mission that existed before this.
+            **({"founder_response": m["founder_response"]}
+               if m.get("founder_response") else {}),
         }
 
     async def _instruction(self, m, last_response):

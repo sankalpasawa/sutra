@@ -2112,6 +2112,7 @@ async def api_shadow_chat(request: Request):
 # deleted: a revoked instruction stays on the record as inert history
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
+import shadow_intervention as _shadow_intervention
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
 import shadow_precedence
@@ -2833,6 +2834,64 @@ async def api_shadow_mission_act(mid: str, request: Request):
             return settled or store.load(mid)
         if action == "resume":
             m = store.transition(mid, "running", "explicit resume (home)")
+            shadow_runner._launch(mid, _validated_say, None)
+            return m
+        if action == "intervene":
+            # THE FOUNDER ANSWERS THE TYPED QUESTION SHADOW ASKED.
+            #
+            # ONE ACTION FOR EVERY FIELD TYPE. The shape of the answer lives
+            # in the request Shadow stored on the record, so adding a type
+            # never adds a verb here -- which is the whole reason the form is
+            # data rather than an endpoint.
+            #
+            # IT REUSES THE RESUME PATH VERBATIM. Nothing about the delegate
+            # changes: ask_founder deliberately keeps the worker ALIVE, and
+            # _launch drives the mission's existing target_session, so the
+            # SAME worker continues. No respawn, no second chat.
+            m = store.load(mid)
+            if m is None:
+                raise HTTPException(404, "no mission %s" % mid)
+            iv = m.get("intervention")
+            given = str(body.get("intervention_id") or "").strip()
+            # STALE-SAFE, AND IDEMPOTENT. A resubmitted answer to the question
+            # that was just answered is a no-op success (the founder pressed
+            # twice, or a retry landed late). An answer to any OTHER id is
+            # refused, so a late reply can never be read as the answer to a
+            # newer question.
+            answered = m.get("founder_response") or {}
+            if not iv:
+                if given and answered.get("intervention_id") == given:
+                    return m
+                raise HTTPException(409, "no intervention is waiting")
+            if given and given != iv.get("id"):
+                raise HTTPException(409, {
+                    "detail": "that question has been superseded",
+                    "active_intervention_id": iv.get("id")})
+            clean, errors = _shadow_intervention.validate_values(
+                iv, body.get("values") or {})
+            if errors:
+                # THE MISSION STAYS BLOCKED. Nothing is written, so the
+                # founder simply corrects the form and sends again.
+                raise HTTPException(422, {"detail": "some answers need a fix",
+                                          "intervention_id": iv.get("id"),
+                                          "errors": errors})
+            m["founder_response"] = {
+                "intervention_id": iv.get("id"),
+                "question": iv.get("question") or "",
+                "answered_at": _mission_engine._now(),
+                "values": clean,
+                "summary": _shadow_intervention.summarise(iv, clean),
+            }
+            m.pop("intervention", None)     # retired: it has been answered
+            store.save(m)
+            import shadow_ledger      # local, like every other ledger caller
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "intervention",
+                "summary": "founder answered %s (%d field%s)"
+                           % (iv.get("id"), len(clean),
+                              "" if len(clean) == 1 else "s")})
+            # the EXISTING continuation, byte-for-byte the resume path above
+            m = store.transition(mid, "running", "founder answered Shadow")
             shadow_runner._launch(mid, _validated_say, None)
             return m
         if action == "delete":

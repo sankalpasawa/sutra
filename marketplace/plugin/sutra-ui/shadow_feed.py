@@ -12,9 +12,14 @@ import shadow_ledger
 
 REQUIRED = ("item_id", "producer", "kind", "title", "deep_link",
             "dedupe_key", "state")
+#: `intervention_id` is the ONE addition the founder-intervention work makes
+#: to this contract: a needs-you row can name the typed question waiting on
+#: the mission, so opening the card lands on the right form. Optional, so
+#: every existing producer and every existing row stays valid, and
+#: validate() keeps rejecting anything else.
 OPTIONAL = ("mission_id", "thread_id", "severity", "why_now",
             "primary_action", "secondary_actions", "expires_at",
-            "evidence_links")
+            "evidence_links", "intervention_id")
 STATES = ("new", "seen", "handled", "expired")
 
 

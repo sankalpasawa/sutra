@@ -565,6 +565,169 @@ function shadowTaskChatHtml(m){
   </div>`;
 }
 
+/* ── THE FOUNDER INTERVENTION FORM ───────────────────────────────────────
+   Shadow asked a TYPED question and the mission is blocked on the answer.
+
+   ADDITIVE AND SELF-ERASING. Every function here returns "" for a mission
+   with no `intervention`, which is every mission that existed before this
+   -- so a card without one renders exactly the markup it rendered before.
+   `blocked` already draws as NEEDS YOU (SH_TASK.blocked), so no face, no
+   state and no pill changed; only the body of the card gained a form.
+
+   ONE RENDERER FOR EVERY TYPE. The server sends the schema, this draws it.
+   Adding a type later is one more `case` here plus one validator on the
+   server -- not a new panel, not a new endpoint, and nothing in the
+   lifecycle. A type this build does not know is drawn as a disabled row
+   saying so, rather than silently dropped, so an older panel in front of a
+   newer Shadow is honest instead of broken.
+
+   The draft lives on S, exactly like shadowNewDraft's, and the value is
+   interpolated back into the markup on every render for the same reason the
+   delegate panel does it: render() runs constantly and an uncontrolled
+   input would lose what was typed. */
+const SH_IV_INPUT = {
+  text: "text", url: "url", email: "email", number: "number",
+  currency: "number", percent: "number", date: "date",
+  datetime: "datetime-local",
+};
+
+function shadowIvDraft(mid){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (!S_.shadowIv) S_.shadowIv = {};
+  if (!S_.shadowIv[mid])
+    S_.shadowIv[mid] = { values: {}, errors: {}, busy: false, err: null };
+  return S_.shadowIv[mid];
+}
+
+function shadowIvValue(mid, f){
+  const d = shadowIvDraft(mid);
+  if (Object.prototype.hasOwnProperty.call(d.values, f.key))
+    return d.values[f.key];
+  return f.default === undefined ? null : f.default;
+}
+
+function shadowIvFieldHtml(mid, f){
+  const d = shadowIvDraft(mid);
+  const v = shadowIvValue(mid, f);
+  const err = d.errors[f.key];
+  const hook = `data-shivmid="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"`;
+  const opt = (o, on, extra) => `<button class="shkind${on ? " on" : ""}"
+    type="button" ${hook} data-shivopt="${escAttr(o.value)}"
+    title="${escAttr(o.help || "")}">${esc(o.label)}${extra || ""}</button>`;
+  let body;
+  switch (f.type){
+    case "boolean":
+      body = `<div class="shnewkinds">
+        ${opt({ value: "yes", label: "Yes" }, v === true)}
+        ${opt({ value: "no", label: "No" }, v === false)}</div>`;
+      break;
+    case "choice":
+      body = `<div class="shnewkinds">${(f.options || [])
+        .map(o => opt(o, v === o.value)).join("")}</div>`;
+      break;
+    case "multi_choice":
+      body = `<div class="shnewkinds">${(f.options || []).map(o =>
+        opt(o, Array.isArray(v) && v.indexOf(o.value) !== -1)).join("")}</div>`;
+      break;
+    case "ranking":
+      body = `<div class="shnewkinds">${(f.options || []).map(o => {
+        const at = Array.isArray(v) ? v.indexOf(o.value) : -1;
+        return opt(o, at !== -1, at === -1 ? "" : ` <b>${at + 1}</b>`);
+      }).join("")}</div>`;
+      break;
+    case "long_text":
+      body = `<textarea rows="4" ${hook} data-shivtext="1"
+        placeholder="${escAttr(f.help || "")}">${esc(v == null ? "" : v)}</textarea>`;
+      break;
+    default: {
+      const kind = SH_IV_INPUT[f.type];
+      if (!kind){
+        body = `<div class="shnewerr">This panel cannot ask for
+          “${esc(f.type)}” yet — update Sutra to answer it.</div>`;
+        break;
+      }
+      body = `<input type="${escAttr(kind)}" ${hook} data-shivtext="1"
+        value="${escAttr(v == null ? "" : String(v))}"
+        placeholder="${escAttr(f.help || "")}">`;
+    }
+  }
+  return `<div class="shivfield">
+    <label class="shnewlabel">${esc(f.label)}${
+      f.required ? ' <span class="shivreq">required</span>' : ""}</label>
+    ${f.help && f.type !== "long_text" && SH_IV_INPUT[f.type] === undefined
+      ? `<p class="shnewsub">${esc(f.help)}</p>` : ""}
+    ${body}
+    ${err ? `<div class="shnewerr">${esc(err)}</div>` : ""}
+  </div>`;
+}
+
+function shadowInterventionHtml(m){
+  const iv = m && m.intervention;
+  if (!iv || !Array.isArray(iv.fields) || !iv.fields.length) return "";
+  const d = shadowIvDraft(m.id);
+  return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}">
+    <div class="shivq">${esc(iv.question || "")}</div>
+    ${iv.context ? `<p class="shnewsub">${esc(iv.context)}</p>` : ""}
+    ${(iv.evidence || []).length ? `<div class="shivev">${
+      iv.evidence.map(e => `<div class="shivevrow">${
+        e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
+      }<span>${esc(e.text || "")}</span></div>`).join("")}</div>` : ""}
+    ${iv.fields.map(f => shadowIvFieldHtml(m.id, f)).join("")}
+    <div class="shnewacts">
+      <button class="btn pri" type="button"
+        data-shivsend="${escAttr(m.id)}"${d.busy ? " disabled" : ""}
+        >${d.busy ? "Sending…" : esc(iv.submit_label || "Send to Shadow")}</button>
+    </div>
+    ${d.err ? `<div class="shnewerr">${esc(d.err)}</div>` : ""}
+  </div>`;
+}
+
+/* THE ANSWER GOES TO SHADOW. One POST to the mission action endpoint that
+   already exists -- no second write surface -- and the server decides
+   everything: it checks the id is still the live question, validates each
+   value against the schema it stored, and only then resumes the SAME
+   delegate. A 422 comes back with per-field messages and the mission stays
+   blocked, so the founder simply fixes the form and sends again. */
+async function shadowSendIntervention(mid){
+  if (!mid || typeof shadowPost !== "function") return null;
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const m = (S_.shadowMissions || []).find(x => x && x.id === mid);
+  const iv = m && m.intervention;
+  if (!iv) return null;
+  const d = shadowIvDraft(mid);
+  d.busy = true; d.err = null; d.errors = {};
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  try {
+    r = await shadowPost("/api/shadow/missions/" + mid + "/act", {
+      action: "intervene", intervention_id: iv.id, values: d.values });
+  } catch (e){ r = null; }
+  d.busy = false;
+  if (!r){
+    d.err = "Could not reach Shadow just now.";
+  } else if (r.status === 422){
+    let body = null;
+    try { body = await r.json(); } catch (e){ body = null; }
+    const detail = (body && body.detail) || {};
+    d.errors = detail.errors || {};
+    d.err = detail.detail || "Some answers need a fix.";
+  } else if (!r.ok){
+    let body = null;
+    try { body = await r.json(); } catch (e){ body = null; }
+    const detail = (body && body.detail) || null;
+    d.err = (detail && (detail.detail || detail))
+      || ("That did not stick (" + r.status + ")");
+  } else {
+    /* answered: drop the draft so a later question starts clean */
+    if (S_.shadowIv) delete S_.shadowIv[mid];
+    if (typeof showNudge === "function")
+      showNudge("Sent to Shadow — it picks up from here.");
+  }
+  if (typeof loadShadowHome === "function") await loadShadowHome(true);
+  if (typeof scheduleRender === "function") scheduleRender();
+  return r;
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -641,6 +804,7 @@ function shadowTaskCardHtml(m){
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
+    ${shadowInterventionHtml(m)}
     ${chatReady ? `<button class="shchattoggle${chatOpen ? " on" : ""}"
       type="button" data-shtaskchat="${escAttr(m.id)}"
       aria-expanded="${chatOpen ? "true" : "false"}">${
@@ -1515,11 +1679,95 @@ if (typeof TITLES !== "undefined"){
     "chats Shadow keeps an eye on \u00b7 passive"];
 }
 
+/* LIVE WHILE YOU WATCH, WITHOUT THE STORM (founder, 2026-09-15).
+
+   THE BUG. Shadow blocked a mission and attached a founder intervention
+   while the founder was already looking at it. The card went on saying
+   RUNNING until the page was refreshed, because this screen read ONCE:
+   `S.shadowHomeDark === undefined` is true only on first paint, and
+   S.shadowMissions is written in exactly one place (_loadShadowHome). No
+   poll, no subscription, and the session SSE carries transcripts only --
+   so nothing on the client ever learned the mission had blocked.
+
+   WHY IT WAS ONCE-ONLY. The 2026-09-13 perf fold was fixing a real storm:
+   render() runs many times a second and called this on every frame --
+   measured at SIX requests per painted frame, 42 reads for one arrival. It
+   fixed that by making the read once-only, and the live updates went with
+   it.
+
+   THE THROTTLE IS THE MIDDLE GROUND, and it is the idiom already used twice
+   in this file's neighbourhood (goalTranscriptAt, SH_TRANSCRIPT_MS): at most
+   ONE read every SH_HOME_POLL_MS, never one per frame. The storm cannot
+   recur -- 4s is two orders of magnitude off the frame rate -- and nothing
+   about the read itself changed:
+
+     * loadShadowHome() without `force` still hands back an in-flight read
+       rather than starting a second one;
+     * _loadShadowHome(lazy) still returns BEFORE any assignment if the
+       operator navigated away while /status was in the air;
+     * SCREENS.shadow is only called for the ACTIVE screen (06-render.js),
+       so a founder who is not looking at Shadow pays nothing.
+
+   First paint is untouched, and it stamps the clock so the very next render
+   does not immediately fire a second, redundant read. */
+const SH_HOME_POLL_MS = 4000;
+let shHomeAt = 0;
+
+/* THE DRIVER, BECAUSE THERE IS NO RENDER LOOP TO RIDE (founder dogfood,
+   2026-09-15, second failure).
+
+   The throttle above was necessary and not sufficient. It only runs when
+   SCREENS.shadow() runs, SCREENS.shadow() only runs when render() runs, and
+   render() is NOT a loop -- scheduleRender() is a one-shot 100ms debounce
+   fired by events (a keystroke, a frame into an OPEN pane, a finished
+   fetch). A founder watching a headless delegate generates none of those:
+   the delegate chat is opt-in and closed, the session SSE re-reads open
+   panes only, and the two 1s intervals in this app (tickRunStrips,
+   updTick) neither call render() nor are active here. So the refresh was
+   self-extinguishing -- it repainted when something changed, and nothing
+   changed because nothing repainted.
+
+   This is the missing heartbeat, and it is deliberately NOT render(): it
+   calls loadShadowHome() directly, whose completion already calls
+   scheduleRender(). render() keeps its existing event-driven contract.
+
+   SELF-CLEARING, the same shape ensureRunTicker already uses in
+   01-state.js: the tick itself checks whether the screen is still showing
+   and clears its own interval when it is not, so a founder who navigates
+   away pays nothing and no second timer can accumulate. shadowHomeOnScreen()
+   is the EXISTING predicate _loadShadowHome already uses for its lazy
+   abandon.
+
+   No storm is possible: one read per SH_HOME_POLL_MS, from a timer, fully
+   decoupled from frame rate -- which is what the 2026-09-13 perf fold was
+   protecting (six requests per painted frame). loadShadowHome() also still
+   coalesces, so even a burst cannot produce overlapping reads. */
+let _shHomeTicker = null;
+
+function ensureShadowHomeTicker(){
+  if (_shHomeTicker || typeof setInterval === "undefined") return;
+  _shHomeTicker = setInterval(() => {
+    if (!shadowHomeOnScreen()){
+      if (typeof clearInterval === "function") clearInterval(_shHomeTicker);
+      _shHomeTicker = null;
+      return;
+    }
+    try { loadShadowHome(); } catch (e) {}
+  }, SH_HOME_POLL_MS);
+}
+
 if (typeof SCREENS !== "undefined"){
   SCREENS.shadow = () => {
+    ensureShadowHomeTicker();
+    const now = (typeof Date !== "undefined") ? Date.now() : 0;
     if (typeof S !== "undefined" && S.shadowHomeDark === undefined){
+      shHomeAt = now;
       loadShadowHome();
       return `<div class="zero"><h4>Shadow</h4><p>Looking\u2026</p></div>`;
+    }
+    if (now - shHomeAt >= SH_HOME_POLL_MS){
+      shHomeAt = now;
+      loadShadowHome();
     }
     return shadowHomeHtml();
   };
@@ -1809,6 +2057,38 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shcheckmid !== undefined && d.shcheckix !== undefined)
       return shadowMissionAct(d.shcheckmid, "confirm_check",
                               { index: Number(d.shcheckix) });
+    /* THE INTERVENTION FORM. Its option buttons write the draft and repaint;
+       only Send talks to the server. confirm_check above is untouched and
+       stays a separate flow, exactly as it was. */
+    if (d.shivopt && d.shivmid && d.shivkey){
+      const S_ = (typeof S !== "undefined") ? S : {};
+      const mm = (S_.shadowMissions || []).find(x => x && x.id === d.shivmid);
+      const fld = ((mm && mm.intervention && mm.intervention.fields) || [])
+        .find(f => f && f.key === d.shivkey);
+      if (fld){
+        const draft = shadowIvDraft(d.shivmid);
+        const cur = draft.values[d.shivkey];
+        if (fld.type === "boolean"){
+          draft.values[d.shivkey] = (d.shivopt === "yes");
+        } else if (fld.type === "multi_choice"){
+          const list = Array.isArray(cur) ? cur.slice() : [];
+          const at = list.indexOf(d.shivopt);
+          if (at === -1) list.push(d.shivopt); else list.splice(at, 1);
+          draft.values[d.shivkey] = list;
+        } else if (fld.type === "ranking"){
+          const list = Array.isArray(cur) ? cur.slice() : [];
+          const at = list.indexOf(d.shivopt);
+          if (at === -1) list.push(d.shivopt); else list.splice(at, 1);
+          draft.values[d.shivkey] = list;
+        } else {
+          draft.values[d.shivkey] = d.shivopt;
+        }
+        delete draft.errors[d.shivkey];
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shivsend) return shadowSendIntervention(d.shivsend);
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
@@ -1865,6 +2145,12 @@ if (typeof document !== "undefined" && document.addEventListener){
      composer's own text store exists to avoid. */
   document.addEventListener("input", (ev) => {
     const t = ev.target, d = (t && t.dataset) || {};
+    /* the intervention form's typed fields, on the SAME listener the
+       delegate panel already uses -- one input handler, not a second one */
+    if (d.shivtext && d.shivmid && d.shivkey){
+      shadowIvDraft(d.shivmid).values[d.shivkey] = t.value;
+      return;
+    }
     if (!d.shnewobj && !d.shnewdone) return;
     const draft = shadowNewDraft();
     if (d.shnewobj) draft.objective = t.value;
