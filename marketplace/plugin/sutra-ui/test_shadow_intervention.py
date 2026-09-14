@@ -481,11 +481,29 @@ class TheDeciderPrompt(unittest.TestCase):
         self.assertEqual(len(got["intervention"]["fields"][0]["options"]), 2)
 
     def test_every_other_example_still_validates(self):
+        """...EXCEPT the placeholder instruction, which is now refused on
+        purpose (a9910db8). A live decider answered with this very block --
+        instruction "<what to send into the chat next>" -- and the runner
+        said the placeholder INTO the delegate chat twice, tripping the
+        ping-pong guard one second after a restart had rescued the mission.
+        So the prompt still SHOWS the shape, and validate_decision still
+        refuses the shape when it comes back as an answer. Every other
+        example must keep validating, which is what this walks."""
+        placeholders = 0
         for block in self._examples():
             raw = json.loads(block)
-            self.assertIsNotNone(mission_engine.validate_decision(raw),
+            got = mission_engine.validate_decision(raw)
+            if mission_engine._is_template_echo(raw.get("instruction") or ""):
+                placeholders += 1
+                self.assertIsNone(
+                    got, "the prompt's own placeholder must not validate as "
+                         "a decision: %r" % (raw,))
+                continue
+            self.assertIsNotNone(got,
                                  "prompt example is not a valid decision: %r"
                                  % (raw,))
+        self.assertTrue(placeholders,
+                        "the prompt should still SHOW the continue example")
 
     def test_the_prompt_names_every_answerable_type(self):
         for t in siv.ACTIVE_FIELD_TYPES:

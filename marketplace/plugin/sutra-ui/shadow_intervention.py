@@ -154,6 +154,63 @@ def _evidence(raw):
     return [e for e in out if e["text"] or e["ref"]]
 
 
+def _confirms_check(raw, fields):
+    """The `founder_confirm` check this question closes, or None.
+
+    WHY THIS EXISTS (founder, 2026-09-15, mission m-cd009367d41a). Shadow
+    asked "do you accept the test evidence as passing?", the founder answered
+    `tests_pass: True`, and the mission still could not complete: the answer
+    landed in `founder_response` while done_when[2] ("Relevant tests pass.",
+    tier founder_confirm) stayed unmet. Four of five checks had passed; the
+    mission burned its remaining budget and died `failed` on max turns. The
+    founder had said the exact thing the check was asking for, in the only
+    place Shadow had asked it, and nothing carried it across.
+
+    THE ANSWER MUST BE AFFIRMATIVE, NOT MERELY VALID. "Valid" includes "no".
+    So the target names BOTH the check index and the BOOLEAN field that gates
+    it, and the check is confirmed only when that field comes back True. A
+    founder who answers "no, the tests do not pass" must not thereby sign off
+    that the tests pass -- which a value-blind rule would do.
+
+    Boolean ONLY, on purpose. A choice or a text field would need a policy
+    for which answers count as yes, and that policy is exactly the kind of
+    inference this module refuses to make on the founder's behalf.
+
+    Absent, malformed, or pointing at a field that is not a declared boolean
+    -> None, and the intervention behaves exactly as it always has. This is
+    an OPT-IN marker: everything without it is untouched.
+    """
+    got = raw.get("confirms_check")
+    if not isinstance(got, dict):
+        return None
+    idx = got.get("index")
+    if isinstance(idx, bool) or not isinstance(idx, int) or idx < 0:
+        return None
+    key = _s(got.get("field"), 40)
+    if not key:
+        return None
+    if not any(f["key"] == key and f["type"] == "boolean" for f in fields):
+        return None                 # the gate must be a boolean we asked for
+    return {"index": idx, "field": key}
+
+
+def confirmed_index(intervention, values):
+    """The done_when index this ANSWER confirms, or None.
+
+    Read by the /act intervene handler, which passes it to the EXISTING
+    MissionStore.confirm_check -- still the one and only writer of a
+    founder_confirm `met` flag, still stamping confirmed_by/confirmed_at.
+    Nothing here writes mission state.
+    """
+    target = (intervention or {}).get("confirms_check")
+    if not isinstance(target, dict):
+        return None
+    if (values or {}).get(target.get("field")) is not True:
+        return None                 # answered "no", or not answered at all
+    idx = target.get("index")
+    return idx if isinstance(idx, int) and not isinstance(idx, bool) else None
+
+
 def validate_request(raw):
     """A founder-intervention request, or None if it is not one.
 
@@ -186,6 +243,9 @@ def validate_request(raw):
         "fields": fields,
         "submit_label": _s(raw.get("submit_label"), 60) or "Send to Shadow",
         "expires_at": raw.get("expires_at") or None,
+        # OPTIONAL, and absent for every intervention that does not ask the
+        # founder to sign off a specific check. See _confirms_check.
+        "confirms_check": _confirms_check(raw, fields),
     }
 
 

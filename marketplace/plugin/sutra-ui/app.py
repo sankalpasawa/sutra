@@ -2953,6 +2953,42 @@ async def api_shadow_mission_act(mid: str, request: Request):
             }
             m.pop("intervention", None)     # retired: it has been answered
             store.save(m)
+            # AN ANSWER TO A TARGETED QUESTION CLOSES ITS CHECK (founder,
+            # 2026-09-15, mission m-cd009367d41a). Shadow asked "do you
+            # accept the test evidence as passing?", the founder said yes,
+            # and done_when[2] ("Relevant tests pass.", founder_confirm)
+            # stayed unmet -- so a mission with four of five checks passing
+            # ran out of turns and died `failed`. The founder had answered
+            # the exact question the check asks, in the only place Shadow
+            # asked it.
+            #
+            # confirm_check IS STILL THE ONE WRITER. This does not set `met`;
+            # it calls the same method the pane's Confirm button calls, with
+            # by="founder", so confirmed_by and confirmed_at are stamped
+            # identically and the dual-lane rule is intact. Shadow still
+            # cannot satisfy this tier -- a founder action does, and this IS
+            # a founder action.
+            #
+            # OPT-IN AND AFFIRMATIVE-ONLY. Only an intervention whose request
+            # declared `confirms_check` reaches here at all, and only when
+            # its named boolean field came back True (see
+            # shadow_intervention.confirmed_index). Every other intervention
+            # is byte-identical to before.
+            #
+            # FAILS SAFE. A stale or out-of-range index, or a check that is
+            # not founder_confirm, makes confirm_check raise ValueError --
+            # caught here, ledgered, and the answer still stands. An
+            # intervention must never be rejected because its target moved.
+            _ix = _shadow_intervention.confirmed_index(iv, clean)
+            if _ix is not None:
+                try:
+                    m = store.confirm_check(mid, _ix, by="founder")
+                except ValueError as exc:
+                    import shadow_ledger as _sl
+                    _sl.append("actions", {
+                        "mission_id": mid, "kind": "intervention",
+                        "summary": "answer targeted check %s but it could "
+                                   "not be confirmed: %s" % (_ix, exc)})
             import shadow_ledger      # local, like every other ledger caller
             shadow_ledger.append("actions", {
                 "mission_id": mid, "kind": "intervention",

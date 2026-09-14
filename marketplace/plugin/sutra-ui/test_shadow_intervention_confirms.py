@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""An answer to a targeted question closes the check it was asked about.
+
+THE GAP (founder, 2026-09-15, mission m-cd009367d41a). Shadow asked "Do you
+accept the test evidence as passing?", the founder answered
+`tests_pass: True`, and the mission still could not complete. Replayed
+against the real 112,379-character transcript:
+
+    contains_artifact  met=True   The timestamp is visible on the task card.
+    contains_artifact  met=True   Tests cover it.
+    founder_confirm    met=False  Relevant tests pass.      <- the blocker
+    contains_artifact  met=True   The change is actually implemented...
+    contains_artifact  met=True   Shadow reaches DONE.
+
+Four of five passed. The answer landed in `founder_response`; done_when[2]
+stayed unmet, because confirm_check is the only writer of that flag and an
+intervention answer never called it. The mission burned its remaining turns
+and died `failed` on max turns at 21:29:14.
+
+WHAT THIS DOES NOT CHANGE. confirm_check is STILL the one writer, still
+stamps confirmed_by/confirmed_at, and Shadow still cannot satisfy the tier.
+evaluate_done_when, contains_artifact and the turn budget are untouched. The
+integration is opt-in per intervention and affirmative-only.
+
+Run: python3 test_shadow_intervention_confirms.py
+"""
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi.testclient import TestClient      # noqa: E402
+
+import app as app_module                       # noqa: E402
+import mission_engine                          # noqa: E402
+import providers                               # noqa: E402
+import shadow_intervention as siv              # noqa: E402
+import shadow_runner                           # noqa: E402
+from mission_engine import MissionStore        # noqa: E402
+
+MIS = "/api/shadow/missions"
+HDR = {"host": "127.0.0.1"}
+
+#: the real shape: one boolean gate plus an ungated extra field
+def request(index=0, field="tests_pass", extra=True):
+    fields = [{"key": "tests_pass", "type": "boolean",
+               "label": "Do the tests pass?"}]
+    if extra:
+        fields.append({"key": "pixels", "type": "choice", "label": "Pixels?",
+                       "options": [{"value": "ok", "label": "fine"},
+                                   {"value": "need_browser",
+                                    "label": "look in a browser"}]})
+    out = {"question": "Do you accept the test evidence as passing?",
+           "fields": fields}
+    if index is not None:
+        out["confirms_check"] = {"index": index, "field": field}
+    return out
+
+
+CHECKS = [{"tier": "founder_confirm", "check": "Relevant tests pass."},
+          {"tier": "contains_artifact", "check": "FINAL:"}]
+
+
+class Base(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app_module.app, base_url="http://127.0.0.1")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["SUTRA_SHADOW_HOME"] = self.tmp.name
+        self._orig = providers.SETTINGS_PATH
+        p = Path(self.tmp.name) / "settings.json"
+        p.write_text(json.dumps({"shadow.enabled": True}))
+        providers.SETTINGS_PATH = p
+        self.store = MissionStore()
+        self.launched = []
+        self._real_launch = shadow_runner._launch
+        shadow_runner._launch = lambda mid, *a, **k: self.launched.append(mid)
+
+    def tearDown(self):
+        shadow_runner._launch = self._real_launch
+        providers.SETTINGS_PATH = self._orig
+        os.environ.pop("SUTRA_SHADOW_HOME", None)
+        self.tmp.cleanup()
+
+    def blocked_with(self, req, checks=None):
+        m = self.store.create("ship it", "fix", target_mode="new",
+                              target_session="sess-keep",
+                              done_when=list(checks if checks is not None
+                                             else CHECKS))
+        mid = m["id"]
+        self.store.transition(mid, "brief_confirm", "proposed")
+        self.store.transition(mid, "running", "admitted")
+        d = mission_engine.validate_decision(
+            {"action": "ask_founder", "reason": "do the tests pass?",
+             "intervention": req})
+        b = self.store.block(mid, "needs_founder", d["reason"])
+        if d.get("intervention"):
+            b["intervention"] = d["intervention"]
+            self.store.save(b)
+        return mid, self.store.load(mid).get("intervention")
+
+    def act(self, mid, action, **body):
+        return self.client.post("%s/%s/act" % (MIS, mid),
+                                json=dict(body, action=action), headers=HDR)
+
+    def checks(self, mid):
+        return self.store.load(mid)["done_when"]
+
+
+# ============================================ 1 + 4 + 6: the fix ==========
+class TestTargetedAnswerConfirms(Base):
+
+    def test_01_a_targeted_yes_confirms_the_intended_check(self):
+        mid, iv = self.blocked_with(request(index=0))
+        self.assertEqual(iv["confirms_check"], {"index": 0,
+                                                "field": "tests_pass"})
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": True, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        cs = self.checks(mid)
+        self.assertTrue(cs[0]["met"], "the targeted check was not confirmed")
+        self.assertFalse(cs[1].get("met"), "an untargeted check moved")
+
+    def test_02_a_targeted_NO_confirms_nothing(self):
+        """Valid is not affirmative. Answering 'the tests do not pass' must
+        never sign off that the tests pass."""
+        mid, iv = self.blocked_with(request(index=0))
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": False, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(self.checks(mid)[0].get("met"),
+                         "a 'no' confirmed the check")
+
+    def test_03_the_audit_fields_are_preserved(self):
+        mid, iv = self.blocked_with(request(index=0))
+        self.act(mid, "intervene", intervention_id=iv["id"],
+                 values={"tests_pass": True, "pixels": "ok"})
+        c = self.checks(mid)[0]
+        self.assertEqual(c["confirmed_by"], "founder",
+                         "the sign-off must be attributed")
+        self.assertTrue(c.get("confirmed_at"), "confirmed_at was not stamped")
+        self.assertTrue(c["met"])
+
+    def test_04_confirm_check_is_STILL_the_only_writer(self):
+        """The handler must call the method, not set the flag itself."""
+        src = Path(__file__).with_name("app.py").read_text(encoding="utf-8")
+        i = src.index('if action == "intervene"')
+        body = src[i:i + 9000]
+        self.assertIn("store.confirm_check(mid, _ix, by=\"founder\")", body)
+        self.assertNotIn('["met"] = True', body,
+                         "the handler must never write met itself")
+
+    def test_05_the_mission_can_now_reach_DONE(self):
+        """The end of the live failure: with the founder_confirm closed, the
+        remaining artifact check decides, and the mission completes."""
+        mid, iv = self.blocked_with(request(index=0))
+        self.act(mid, "intervene", intervention_id=iv["id"],
+                 values={"tests_pass": True, "pixels": "ok"})
+        m = self.store.load(mid)
+        done, res = mission_engine.evaluate_done_when(m, "...\nFINAL: shipped")
+        self.assertTrue(done, "still not done: %r" % (res,))
+        # and it is genuinely gated -- without the artifact it stays open
+        again, _ = mission_engine.evaluate_done_when(m, "nothing here")
+        self.assertFalse(again)
+
+
+# ============================================ 2 + 5: nothing else moved ===
+class TestUntargetedIsUnchanged(Base):
+
+    def test_10_an_intervention_with_no_target_confirms_nothing(self):
+        mid, iv = self.blocked_with(request(index=None))
+        self.assertIsNone(iv.get("confirms_check"))
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": True, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(self.checks(mid)[0].get("met"),
+                         "an untargeted answer confirmed a check")
+
+    def test_11_the_answer_still_resumes_the_mission(self):
+        for req in (request(index=0), request(index=None)):
+            mid, iv = self.blocked_with(req)
+            self.launched = []
+            r = self.act(mid, "intervene", intervention_id=iv["id"],
+                         values={"tests_pass": True, "pixels": "ok"})
+            self.assertEqual(r.status_code, 200, r.text)
+            m = self.store.load(mid)
+            self.assertEqual(m["state"], "running")
+            self.assertEqual(m["target_session"], "sess-keep",
+                             "the delegate must be kept")
+            self.assertIsNone(m.get("intervention"), "it must be retired")
+            self.assertTrue(m["founder_response"]["values"]["tests_pass"])
+            self.assertEqual(self.launched, [mid])
+
+    def test_12_a_rejected_answer_writes_nothing(self):
+        mid, iv = self.blocked_with(request(index=0))
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"pixels": "not-an-option"})
+        self.assertEqual(r.status_code, 422)
+        self.assertFalse(self.checks(mid)[0].get("met"),
+                         "a refused form confirmed a check")
+        self.assertEqual(self.store.load(mid)["state"], "blocked")
+
+
+# ============================================ 3: stale + malformed ========
+class TestTargetsFailSafely(Base):
+
+    def test_20_an_out_of_range_index_does_not_break_the_answer(self):
+        mid, iv = self.blocked_with(request(index=9))
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": True, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200,
+                         "a stale target must not reject the answer: "
+                         + r.text)
+        self.assertEqual(self.store.load(mid)["state"], "running")
+        self.assertFalse(any(c.get("met") for c in self.checks(mid)))
+
+    def test_21_a_target_on_a_NON_founder_confirm_check_is_refused(self):
+        """confirm_check raises for the wrong tier; the answer still lands."""
+        mid, iv = self.blocked_with(request(index=1))   # contains_artifact
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": True, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(self.checks(mid)[1].get("met"),
+                         "an artifact check was signed off by a founder answer")
+
+    def test_22_a_mission_with_NO_checks_survives_a_target(self):
+        mid, iv = self.blocked_with(request(index=0), checks=[])
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": True, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.store.load(mid)["state"], "running")
+
+    def test_23_malformed_targets_are_dropped_at_validation(self):
+        """The marker is opt-in: anything unparseable means 'no target', not
+        an invalid intervention."""
+        for bad in ({"index": "0", "field": "tests_pass"},
+                    {"index": True, "field": "tests_pass"},
+                    {"index": -1, "field": "tests_pass"},
+                    {"index": 0, "field": "nope"},
+                    {"index": 0, "field": "pixels"},      # not a boolean
+                    {"index": 0}, {"field": "tests_pass"}, "yes", 3, None):
+            raw = {"question": "q?", "fields": [{"key": "tests_pass",
+                                                 "type": "boolean"}],
+                   "confirms_check": bad}
+            got = siv.validate_request(raw)
+            self.assertIsNotNone(got, "the intervention itself must survive")
+            self.assertIsNone(got["confirms_check"], repr(bad))
+
+    def test_24_confirmed_index_requires_a_literal_True(self):
+        iv = siv.validate_request(request(index=0))
+        self.assertEqual(siv.confirmed_index(iv, {"tests_pass": True}), 0)
+        for v in ({"tests_pass": False}, {"tests_pass": "yes"},
+                  {"tests_pass": 1}, {}, None):
+            self.assertIsNone(siv.confirmed_index(iv, v), repr(v))
+        self.assertIsNone(siv.confirmed_index({}, {"tests_pass": True}))
+        self.assertIsNone(siv.confirmed_index(None, {"tests_pass": True}))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
