@@ -1054,6 +1054,66 @@ function shadowTaskUpdatedHtml(m){
     <span class="shcard2v" title="${escAttr(iso)}">${esc(ago)}</span></div>`;
 }
 
+/* ── the budget, as a length ──────────────────────────────────────────────
+   "turn 14 of 20" is two numbers you have to subtract before you reach the
+   thing you actually wanted to know: is this task about to run out of turns.
+   A length answers that at a glance where a pair of integers does not. The
+   numbers stay where they were, as the confirmation -- the same order the
+   Account screen's usage meters already use.
+
+   THE TRACK IS THAT SAME METER, reused unchanged: `.ubar` with the p-ok /
+   p-warn / p-block palette. Nothing new is minted, so the colours mean the
+   same severity here as everywhere else in the panel.
+
+   THE BREAKPOINTS ARE NOT THAT METER'S (founder G9, 2026-09-15): calm below
+   60%, warning from 60% through 85%, critical above 85%. `usageSev` warns at
+   70 and blocks at 80 because a rate-limit window REFILLS -- crossing it
+   costs you a wait. A turn budget does not refill: hitting the ceiling ends
+   the run wherever it happens to be. So the founder's line warns earlier and
+   reserves red for genuinely near-death, and the two meters deliberately
+   disagree on WHERE the line sits while agreeing on what the colours mean.
+
+   Spelled out here rather than called across the module boundary, because
+   this file is loaded alone in the render tests and a bar that silently lost
+   its colour there would be a bar the tests cannot see.
+
+   THE EDGES BELONG TO WARNING. Exactly 60% and exactly 85% both read amber
+   -- "above ~85%" is the founder's wording for critical, so 85 itself is not
+   yet critical. Asserted at those exact values in test_shadow_home.js so the
+   reading cannot drift.
+
+   NO DENOMINATOR, NO BAR. `max_turns` of 0 or missing is "nobody said", not
+   "a budget of zero", and a full red track would be a lie about a task that
+   is fine. The row keeps the text it has always had and draws nothing --
+   the same rule the freshness stamp above follows.
+
+   OVER BUDGET CLAMPS AT 100. A worker one turn past its ceiling is spent,
+   not 105% spent, and the fill cannot overflow its own track. */
+function shadowBudgetPct(m){
+  const max = Number(m && m.max_turns);
+  if (!(max > 0)) return null;
+  const used = Math.max(0, Number(m && m.turns_used) || 0);
+  return Math.min(100, Math.round((used / max) * 100));
+}
+
+function shadowBudgetSev(pct){
+  return pct > 85 ? "p-block" : pct >= 60 ? "p-warn" : "p-ok";
+}
+
+function shadowBudgetBarHtml(m){
+  const pct = shadowBudgetPct(m);
+  if (pct === null) return "";
+  const max = Number(m.max_turns);
+  const used = Math.min(max, Math.max(0, Number(m.turns_used) || 0));
+  /* the arithmetic the bar exists to save you, kept for the screen reader
+     and for hover -- a length is not readable by either */
+  const rest = max - used;
+  const phrase = rest === 1 ? "1 turn left" : rest + " turns left";
+  return `<span class="ubar shcard2bar" role="img" title="${escAttr(phrase)}"
+    aria-label="${escAttr(used + " of " + max + " turns used, " + phrase)}"
+    ><i class="${shadowBudgetSev(pct)}" style="width:${pct}%"></i></span>`;
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -1132,7 +1192,7 @@ function shadowTaskCardHtml(m){
         : "you say so — no check was set, so Shadow will ask"}</span></div>`}
     <div class="shcard2row"><span class="shcard2k">budget</span>
       <span class="shcard2v">turn ${esc(String(m.turns_used || 0))} of ${
-        esc(String(m.max_turns || 0))}</span></div>
+        esc(String(m.max_turns || 0))}${shadowBudgetBarHtml(m)}</span></div>
     ${shadowTaskUpdatedHtml(m)}
     ${m.block_reason ? `<div class="shcard2row"><span class="shcard2k">stopped on</span>
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"

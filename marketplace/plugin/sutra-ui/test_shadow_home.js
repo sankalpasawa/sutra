@@ -2043,4 +2043,126 @@ const SET = { engage: ["outcome first"],
   console.log("ok 33 the task card stamps how fresh the record it drew is");
 }
 
+/* 34. THE BUDGET IS A LENGTH, NOT ONLY A PAIR OF NUMBERS.
+   "turn 14 of 20" makes the founder do the subtraction before learning the
+   one thing the row is for: is this about to run out. The bar answers it at
+   a glance, so what this guards is that the length and the numbers can never
+   disagree -- and that a task with no stated ceiling draws NO bar rather
+   than a full red track, which would be a lie about a task that is fine. */
+{
+  const ctx = fresh();
+  const card = (m) => ctx.shadowTaskCardHtml(Object.assign(
+    { id: "s", objective: "o", template: "fix", state: "running",
+      turns_used: 1, max_turns: 20 }, m));
+  const bar = (h) =>
+    (h.match(/<span class="ubar shcard2bar"[\s\S]*?<\/span>/) || [])[0] || "";
+  const width = (h) => {
+    const w = bar(h).match(/width:(\d+)%/); return w ? Number(w[1]) : null; };
+  const sev = (h) => {
+    const s = bar(h).match(/<i class="(p-[a-z]+)"/); return s ? s[1] : null; };
+
+  /* the arithmetic, on its own */
+  const pct = ctx.shadowBudgetPct;
+  assert.strictEqual(pct({ turns_used: 5, max_turns: 20 }), 25, "5/20 = 25%");
+  assert.strictEqual(pct({ turns_used: 0, max_turns: 20 }), 0,
+    "an untouched budget is 0%, not 'no bar' -- an empty track is a fact");
+  assert.strictEqual(pct({ turns_used: 20, max_turns: 20 }), 100, "spent");
+  assert.strictEqual(pct({ turns_used: 25, max_turns: 20 }), 100,
+    "over budget clamps -- a fill cannot overflow its own track");
+  assert.strictEqual(pct({ turns_used: -3, max_turns: 20 }), 0,
+    "a nonsense count floors at 0 rather than drawing backwards");
+  /* NO DENOMINATOR, NO BAR -- 'nobody said' is not 'a budget of zero' */
+  assert.strictEqual(pct({ turns_used: 4 }), null, "missing max_turns = no bar");
+  assert.strictEqual(pct({ turns_used: 4, max_turns: 0 }), null, "0 max = no bar");
+  assert.strictEqual(pct({}), null, "a bare record draws no bar");
+  assert.strictEqual(pct(null), null, "and neither does no record at all");
+
+  /* G9, THE THRESHOLD-STATE INVARIANT (founder, 2026-09-15): calm below 60,
+     warning 60 THROUGH 85, critical ABOVE 85. Deliberately not usageSev's
+     70/80 -- a rate-limit window refills and a turn budget does not, so this
+     meter warns earlier and reserves red for near-death.
+
+     THE EDGES ARE ASSERTED EXACTLY, not approximately: an off-by-one here is
+     invisible on screen and would only ever be caught by a founder watching a
+     run die amber. 60 and 85 both belong to WARNING. */
+  const s = ctx.shadowBudgetSev;
+  assert.strictEqual(s(0), "p-ok", "an empty budget is calm");
+  assert.strictEqual(s(59), "p-ok", "59 is the last calm percent");
+  assert.strictEqual(s(60), "p-warn", "EXACTLY 60% is warning, not calm");
+  assert.strictEqual(s(61), "p-warn", "and it stays warning above the line");
+  assert.strictEqual(s(84), "p-warn", "84 is still warning");
+  assert.strictEqual(s(85), "p-warn",
+    "EXACTLY 85% is warning -- critical is ABOVE 85, so 85 is not critical");
+  assert.strictEqual(s(86), "p-block", "86 is the first critical percent");
+  assert.strictEqual(s(100), "p-block", "a spent budget is critical");
+
+  /* the same two edges reached through the REAL ratio, not a hand-fed
+     percent -- 12/20 is exactly 60.0%, 17/20 is exactly 85.0% */
+  assert.strictEqual(pct({ turns_used: 12, max_turns: 20 }), 60,
+    "12 of 20 must be exactly 60.0%");
+  assert.strictEqual(s(pct({ turns_used: 12, max_turns: 20 })), "p-warn",
+    "a run exactly 60% through its budget shows warning");
+  assert.strictEqual(pct({ turns_used: 17, max_turns: 20 }), 85,
+    "17 of 20 must be exactly 85.0%");
+  assert.strictEqual(s(pct({ turns_used: 17, max_turns: 20 })), "p-warn",
+    "a run exactly 85% through its budget is still warning, not critical");
+  assert.strictEqual(s(pct({ turns_used: 18, max_turns: 20 })), "p-block",
+    "18 of 20 is 90% -- past the line, critical");
+
+  /* G9's required edge cases, each asserted on its own */
+  assert.strictEqual(s(pct({ turns_used: 0, max_turns: 20 })), "p-ok",
+    "0 turns used is calm, never an alarm");
+  assert.strictEqual(pct({ turns_used: 0, max_turns: 0 }), null,
+    "0 turns AND no ceiling is still 'nobody said' -- no bar, no divide by 0");
+  assert.strictEqual(pct({ turns_used: 7, max_turns: undefined }), null,
+    "missing max_turns falls back to no bar");
+  assert.strictEqual(pct({ turns_used: 7, max_turns: null }), null,
+    "a null ceiling falls back the same way");
+  assert.strictEqual(s(pct({ turns_used: 30, max_turns: 20 })), "p-block",
+    "turns_used past max_turns is critical, not wrapped or negative");
+
+  /* ON THE CARD: the length agrees with the numbers beside it */
+  const live = card({ turns_used: 5, max_turns: 20 });
+  assert(bar(live), "the budget row lost its bar");
+  assert.strictEqual(width(live), 25, "the fill must match 5 of 20");
+  assert.strictEqual(sev(live), "p-ok", "a quarter spent is not a warning");
+  assert(/turn 5 of 20/.test(live),
+    "the bar is beside the count, never instead of it");
+  assert(/class="ubar shcard2bar"/.test(live),
+    "the track must be the panel's existing .ubar, not a new one");
+
+  /* the colour changes where the thresholds say, driven by the record */
+  assert.strictEqual(sev(card({ turns_used: 15, max_turns: 20 })), "p-warn",
+    "15 of 20 is 75% -- the founder should see it coming");
+  assert.strictEqual(sev(card({ turns_used: 19, max_turns: 20 })), "p-block",
+    "one turn left must not still read as fine");
+  const over = card({ turns_used: 23, max_turns: 20 });
+  assert.strictEqual(width(over), 100, "an overrun clamps on the card too");
+  assert.strictEqual(sev(over), "p-block", "and reads as spent");
+
+  /* the arithmetic the bar saves you stays reachable for hover and for a
+     screen reader -- a length is readable by neither */
+  assert(/aria-label="5 of 20 turns used, 15 turns left"/.test(live),
+    "the meter must say what it means in words");
+  assert(/title="15 turns left"/.test(live), "and on hover");
+  assert(/title="1 turn left"/.test(card({ turns_used: 19, max_turns: 20 })),
+    "one is singular -- '1 turns left' is the tell of a generated string");
+  assert(/role="img"/.test(bar(live)),
+    "a bare span is announced as nothing at all");
+
+  /* NO CEILING, NO BAR: the row keeps the text it has always had */
+  const unbounded = card({ turns_used: 4, max_turns: 0 });
+  assert.strictEqual(bar(unbounded), "",
+    "with no stated ceiling the card must draw no track, not a full one");
+  assert(/turn 4 of 0/.test(unbounded),
+    "and the budget row itself is untouched");
+
+  /* it is an addition to a row, not a replacement for the card: the facts
+     around it survive */
+  assert(/shtpill-/.test(live), "the state pill must survive");
+  assert(/done when/.test(live), "the done-when row must survive");
+  assert(/acts in/.test(live), "the acts-in row must survive");
+  console.log("ok 34 the task card draws its turn budget as a length");
+}
+
 console.log("test_shadow_home.js: all green");

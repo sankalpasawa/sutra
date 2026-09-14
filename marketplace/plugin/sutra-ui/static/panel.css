@@ -3170,6 +3170,17 @@
 .shcard2row{display:flex;gap:12px;font-size:12.5px;padding:3px 0}
 .shcard2k{flex:0 0 78px;color:var(--muted)}
 .shcard2v{flex:1;min-width:0}
+/* the budget meter: the Account screen's usage bar (.ubar), unchanged, under
+   the count it summarises. Narrow on purpose -- it is the glance, and a track
+   the full width of the card would read as the card's own progress rather
+   than this one row's. A span, so it is legal inside .shcard2v; .ubar sets no
+   display of its own, hence the block here.
+
+   DECLARED ONCE. The second .shcard2 section further down this file is not
+   media-scoped -- it is an always-on restyle -- so a second .shcard2bar rule
+   there would win unconditionally and leave whatever was written here dead.
+   Checked in the browser against the live CSSOM, not inferred. */
+.shcard2bar{display:block;margin-top:4px;max-width:150px}
 /* the freshness stamp is context for the rows above it, not one of them --
    same row shape so the card's left edge stays a single column, quieter
    type so it never competes with state or budget */
