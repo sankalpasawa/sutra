@@ -1214,6 +1214,15 @@ function settingsHeadHtml(title, sub, backLabel, backTarget){
    default", and the row itself opens that provider's page. The radio group is
    gone -- selection is now one explicit button, so a row that cannot be
    selected is still fully clickable and still leads somewhere useful. */
+/* What this provider needs from the operator, in two words, as the button that
+   takes them to the page where they do it. */
+function setupVerb(p){
+  if (!p.installed) return "Install";
+  if (p.id === "deepseek") return "Add key";
+  if (p.id === "codex") return "Sign in";
+  return p.configured ? "Set up" : "Sign in";
+}
+
 function providerListHtml(st){
   const active = st.provider;
   const provRow = p => {
@@ -1230,9 +1239,17 @@ function providerListHtml(st){
         <svg class="sxcc" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      ${active===p.id ? "" : `<button class="btn sxdef" type="button"
-          data-prov="${esc(p.id)}" ${p.runnable?"":"disabled"}
-          ${busy?'aria-busy="true"':""}>${busy?"Saving…":"Make default"}</button>`}
+      ${active===p.id ? ""
+        /* NOT READY -> SAY WHAT TO DO, AND OPEN THE PLACE THAT DOES IT (owner,
+           2026-09-14: "where does one add their deepseek account? it's not at
+           all clear"). A disabled "Make default" is the least useful thing a
+           row can show somebody whose provider needs a key: it names an action
+           they cannot take and hides the one they can. */
+        : !p.runnable ? `<button class="btn pri sxdef" type="button"
+            data-provpage="${esc(p.id)}">${esc(setupVerb(p))}</button>`
+        : `<button class="btn sxdef" type="button"
+          data-prov="${esc(p.id)}" ${busy?'aria-busy="true"':""}
+          >${busy?"Saving…":"Make default"}</button>`}
     </div>`;
   };
   return `
@@ -1636,111 +1653,12 @@ function routingChart(s){
   </div>`;
 }
 
-/* ── permission mode, at chat level ─────────────────────────────────────────
-   This used to live ONLY in Settings, behind an env var set when starting the
-   server. For a Finder-launched .app that means editing a plist -- so the panel
-   was showing a control, refusing it, and telling the operator to do something
-   they realistically could not. It belongs next to the composer, where the
-   decision is actually made, the way Claude Code puts it in the session.
-
-   The dangerous modes are still not one click away: choosing one opens an
-   explicit confirmation that states what it does, and only that confirmation
-   sends the acknowledgement phrase the server requires. */
-const UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking";
-
-function permSelect(mpid){
-  const st = SETTINGS || {};
-  /* The EFFECTIVE mode, not the stored one. When consent is absent the server
-     clamps at the point of use, and showing the stored value would tell the
-     operator the agent is doing something it is not. */
-  const cur = st.permission_mode_effective || st.permission_mode || "plan";
-  const all = PERM_MODES.length ? PERM_MODES : [{id:cur}];
-  /* ── only the modes THIS PANE'S provider can enforce ──────────────────
-     Three of Claude's six have no DeepSeek equivalent. Offering them there
-     was not cosmetic: selecting one ran `default` while this control kept
-     displaying the choice, so the pane reported a permission posture nothing
-     was enforcing.
-
-     Not-loaded (empty map) or a provider with no entry => the full list, i.e.
-     exactly what this rendered before the map existed. The fallback is
-     deliberately the PERMISSIVE direction here, unlike the turn-options one:
-     a missing entry must never leave a pane with no way to say "plan".
-     Filtering PERM_MODES in place keeps its order and every mode's server-sent
-     note/writes_files/settable metadata -- for Claude the result is the same
-     array, which is what keeps its render byte-identical. */
-  const allowed = Object.keys(PERM_MODES_BY_PROVIDER).length && mpid
-    ? PERM_MODES_BY_PROVIDER[mpid] : null;
-  const modes = allowed ? all.filter(m => allowed.includes(m.id)) : all;
-  /* ── the stored mode this provider cannot offer ───────────────────────
-     THE BUG THIS BRANCH EXISTS FOR. permission_mode is stored GLOBALLY (one
-     value for the panel, unlike models which are per provider), so a pane can
-     inherit a `dontAsk` chosen while Claude was selected. With `cur` filtered
-     out of the list, no <option> carries `selected` and the browser silently
-     displays the FIRST one -- so a pane running `default` claimed to be in
-     `plan`. Filtering alone would have recreated, inside the control meant to
-     fix this, the exact mis-report it was written to end.
-
-     So the stored mode is still shown, still selected, and DISABLED with the
-     reason on it -- the same idiom the Model picker already uses for a
-     catalogued-but-unrunnable model. The operator sees what is stored, learns
-     it does not apply here, and can pick something that does. What is actually
-     running is stated separately by the server's mode_note marker.
-
-     `writes` is looked up in the FULL list on purpose, so Claude's warning
-     colour is computed exactly as before. Safe today because the modes DeepSeek
-     cannot offer (auto/manual/dontAsk) are precisely the non-writing ones --
-     acceptEdits and bypassPermissions both map. If a provider ever omits a
-     writes_files mode, this must switch to what will RUN, or the composer
-     would under-warn. */
-  const unsupported = !modes.some(m => m.id === cur);
-  const writes = (all.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
-  const label = providerLabel(mpid) || mpid || "this provider";
-  /* ── PLAIN NAMES, SAME VALUES (SPEC A) ────────────────────────────────────
-     The four options an operator can actually reason about -- Read only,
-     Accept edits, Approve for me, Full access -- are LABELS over the native
-     mode ids that are already stored and already validated. Nothing about what
-     travels or what is written to settings.json changes; `plan` is still
-     `plan`, so every existing install, routine and saved chat is unaffected.
-
-     A mode with no plain name is a LEGACY one (`manual`, `dontAsk` -- routines
-     use dontAsk). It is not dropped and not relabelled: it goes under an
-     Advanced group with its own id, because a choice someone already made must
-     not disappear because the wording got friendlier.
-
-     THE ORDER IS THE SERVER'S, not the access list's. `modes` is PERM_MODES
-     filtered by provider, and iterating it is what keeps the option order --
-     and therefore what a keyboard user and every existing test see -- exactly
-     what it was. Grouping only decides which <optgroup> a mode lands in. */
-  const named = (typeof accessOptionsFor === "function")
-    ? accessOptionsFor(mpid) : [];
-  const byMode = {};
-  named.forEach(o => { byMode[o.mode] = o; });
-  const optFor = (m) => {
-    const a = byMode[m.id];
-    return `<option value="${esc(m.id)}" ${!unsupported && m.id===cur?"selected":""}
-      title="${esc((a && a.desc) || m.note || "")}"
-      >${esc(a ? a.label : m.id)}${m.writes_files?" ⚠":""}</option>`;
-  };
-  const main = modes.filter(m => byMode[m.id]);
-  const legacy = modes.filter(m => !byMode[m.id]);
-  /* Assembled into ONE string rather than interpolated as a second slot in the
-     template below. An empty `${...}` still leaves its own newline and indent
-     behind, so a Claude pane -- which never has an unsupported mode -- would
-     have gained whitespace inside its <select> for nothing. Concatenating here
-     means Claude's markup comes out byte-for-byte what it was. */
-  const opts = (unsupported
-      ? `<option value="${esc(cur)}" disabled selected
-      title="${esc(label)} has no equivalent — this chat runs in default, which asks before everything"
-      >${esc(cur)} — not supported by ${esc(label)}</option>`
-      : "")
-    + main.map(optFor).join("")
-    + (legacy.length
-        ? `<optgroup label="Advanced">${legacy.map(optFor).join("")}</optgroup>` : "");
-  return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
-      title="What the agent may do without asking — applies to the next message">
-    ${opts}
-  </select>`;
-}
+/* permSelect() LIVED HERE and is gone (2026-09-14). The chat-level permission
+   control moved onto the composer as the access chip (06-render.js:
+   composerAccessChipHtml / composerAccessMenuHtml), which offers the same four
+   plain options, keeps the same consent flow, and keeps `manual` / `dontAsk`
+   under Advanced. Two doors into one setting was the thing the owner asked to
+   be cleaned up, and the select had no caller left. */
 
 /* The confirmation. Rendered as a real block in the pane rather than a
    window.confirm: it has to SAY what the mode does, and a native dialog cannot

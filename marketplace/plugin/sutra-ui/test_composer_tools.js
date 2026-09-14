@@ -184,7 +184,6 @@ function box(over) {
     grab(state, "sessProviderRequest"),
     grab(state, "claudeWsUrl"),
     grab(chat, "providerLabel"),
-    grab(chat, "permSelect"),
     /* 02-helpers: the catalogue, access and tool vocabulary */
     grab(helpers, "_catalogGlobal"), grab(helpers, "_accessOptionsGlobal"),
     grab(helpers, "_accessByProviderGlobal"), grab(helpers, "_settingsGlobal"),
@@ -204,7 +203,7 @@ function box(over) {
     grabConst(render, "TOPT_ALL"), grab(render, "turnOptsFor"),
     grab(render, "paneProvider"), grab(render, "paneDeclProvider"),
     grab(render, "paneModelValid"), grab(render, "composerModelFor"),
-    grab(render, "composerModelLabel"), grab(render, "composerModelChipHtml"),
+    grab(render, "composerModelLabel"), grab(render, "paneMenuHtml"),
     grab(render, "_pickBtn"), grab(render, "composerModelMenuHtml"),
     grab(render, "composerAccessLabel"), grab(render, "composerAccessHtml"),
     grab(render, "composerAccessMenuHtml"),
@@ -229,15 +228,14 @@ const textOf = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 test("1a. the closed chip says who answers, which model, at what level", () => {
   const b = box();
   b.S.turnOpts.A = { effort: "high" };
-  const h = b.composerModelChipHtml(sess(b, "A"));
-  assert(/class="mdlchip"/.test(h), "no chip rendered: " + h);
-  assert(h.includes("Claude · Opus 5 · High"),
-         "the chip must read 'Claude · Opus 5 · High': " + textOf(h));
+  const h = b.composerModelLabel(sess(b, "A"), "claude");
+  assert(h === "Claude · Opus 5 · High",
+         "the Model row must read 'Claude · Opus 5 · High': " + h);
 });
 
 test("1b. no thinking level chosen -> the chip says so by omission, not by guessing", () => {
   const b = box();
-  const h = b.composerModelChipHtml(sess(b, "A"));
+  const h = b.composerModelLabel(sess(b, "A"), "claude");
   assert(h.includes("Claude · Opus 5"), h);
   assert(!/High|Low|Medium/.test(h), "a level nobody chose was printed: " + textOf(h));
 });
@@ -245,7 +243,7 @@ test("1b. no thinking level chosen -> the chip says so by omission, not by guess
 test("1c. Fast mode shows on the chip once it is on", () => {
   const b = box();
   b.S.turnOpts.C = { service_tier: "fast" };
-  const h = b.composerModelChipHtml(sess(b, "C"));
+  const h = b.composerModelLabel(sess(b, "C"), b.paneProvider(sess(b, "C")));
   assert(/Fast/.test(h), "the chip hides a switch that changes what runs: " + textOf(h));
 });
 
@@ -253,7 +251,7 @@ test("1d. the chip asks THIS chat's provider, never the global default", () => {
   /* Settings says claude in every fixture here, so any Claude answer on the
      Codex pane is the defect and not a coincidence. */
   const b = box();
-  const h = b.composerModelChipHtml(sess(b, "C"));
+  const h = b.composerModelLabel(sess(b, "C"), b.paneProvider(sess(b, "C")));
   assert(/Codex/.test(h) && !/Claude/.test(h), textOf(h));
 });
 
@@ -527,35 +525,11 @@ test("4k. the chosen access rides the socket as ?perm=, and only when chosen", (
          "one chat's access leaked onto another chat's socket");
 });
 
-/* ══════════════════ 5. permSelect, the pane menu's twin ════════════════════ */
-
-test("5a. the pane menu's select carries the plain names over the same values", () => {
-  const b = box();
-  const h = b.permSelect("claude");
-  assert(/<select class="permsel"/.test(h), h);
-  const opts = [...h.matchAll(/<option value="([^"]*)"[\s\S]*?>([^<]*)</g)]
-    .map(m => [m[1], m[2].trim()]);
-  deq(opts.map(o => o[0]), PMODES.claude, "the stored values must not move —");
-  assert(opts.find(o => o[0] === "plan")[1].startsWith("Read only"), JSON.stringify(opts));
-  assert(opts.find(o => o[0] === "bypassPermissions")[1].startsWith("Full access"),
-         JSON.stringify(opts));
-});
-
-test("5b. the legacy modes sit under an Advanced group, with their own ids", () => {
-  const b = box();
-  const h = b.permSelect("claude");
-  const i = h.indexOf('<optgroup label="Advanced">');
-  assert(i > 0, "no Advanced group: " + h);
-  const adv = h.slice(i);
-  assert(adv.includes('value="manual"') && adv.includes('value="dontAsk"'), adv);
-  assert(!adv.includes('value="plan"'), "a plain option was buried under Advanced");
-});
-
-test("5c. a provider with no legacy modes gets no Advanced group", () => {
-  const b = box();
-  assert(!/optgroup/.test(b.permSelect("codex")),
-         "an empty Advanced group was drawn: " + b.permSelect("codex"));
-});
+/* SECTION 5 LIVED HERE and is gone (2026-09-14). It covered permSelect(), the
+   pane menu's permission <select>, which has been deleted: the access control is
+   the composer chip above (section 4), and the model picker took its place in the
+   menu. Nothing it proved is lost -- the plain names over native ids, and the
+   legacy modes under Advanced, are 4d, 4f and 4g. */
 
 /* ══════════════════ 6. tool cards, one per kind ════════════════════════════ */
 
@@ -793,10 +767,10 @@ test("8d. a stored error is still an error", () => {
 
 test("9a. no catalogue, no access list -> the controls still render", () => {
   const b = box({ MODEL_CATALOG_BY_PROVIDER: {}, ACCESS_OPTIONS: [], ACCESS_BY_PROVIDER: {} });
-  const chip = b.composerModelChipHtml(sess(b, "A"));
-  assert(/class="mdlchip"/.test(chip), "the chip vanished on an older backend: " + chip);
+  const label = b.composerModelLabel(sess(b, "A"), "claude");
+  assert(label, "the Model row lost its label on an older backend");
   /* It falls back to the FLAT models_by_provider the panel has always had. */
-  assert(chip.includes("Claude · Opus"), textOf(chip));
+  assert(label.includes("Claude · Opus"), label);
   const h = menu(b, "A");
   deq(attrs(h, "mdlpick"), ["A:claude:", "A:claude:opus"],
       "the flat list was not used as the fallback —");
@@ -832,7 +806,7 @@ test("9e. the keys can arrive nested on SETTINGS instead of as globals", () => {
   const b = box({ MODEL_CATALOG_BY_PROVIDER: {}, ACCESS_BY_PROVIDER: {} });
   b.SETTINGS.model_catalog_by_provider = CATALOG;
   b.SETTINGS.access_by_provider = ACCESS_MAP;
-  assert(b.composerModelChipHtml(sess(b, "A")).includes("Opus 5"),
+  assert(b.composerModelLabel(sess(b, "A"), "claude").includes("Opus 5"),
          "the catalogue was ignored where the server actually put it");
   deq(attrs(accMenu(b, "C"), "accpick"), ["C:plan", "C:acceptEdits", "C:bypassPermissions"]);
 });

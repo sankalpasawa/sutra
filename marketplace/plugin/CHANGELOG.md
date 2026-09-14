@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-14
+## 2.273.2 (2026-09-14)
+
+- **The model picker lives in the chat's three-dot menu now.** One row at the top opens it: provider tabs, that provider's models, More models, thinking levels and Fast mode. Access (Read only, Accept edits, Approve for me, Full access) stays under the message box, where you change it while typing.
+- **That menu is tidier.** The separate "Chat AI Provider" and Permissions controls are gone, since the picker's tabs move a chat and the access control covers permissions, and what is left is grouped under headings.
+- **Settings looks like something.** A tighter column, one clear title per screen, quieter borders, colour kept for state, and cards that lift when you point at them. A provider that is not ready now says what to do ("Add key", "Sign in", "Install") instead of showing a disabled button.
+- **Tests no longer write into your chat history.** A test run was filing Shadow fixtures in the live chats folder; the test setup now redirects it, like it already did for the registry, the agent data and Shadow's home.
+
 ## 2.273.1 (2026-09-14)
 
 - **Every AI tool now plugs in the same way.** One adapter per provider owns how it starts, resumes, what it may do and what its answers mean, so the main chat code no longer branches per tool and a vendor's change lands in one file. Old chats, settings and routines are untouched: 56 safety-net checks replay the recorded behaviour and open all 139 of the owner's real chats. Tests: 405 new checks.

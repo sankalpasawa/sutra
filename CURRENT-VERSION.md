@@ -2,7 +2,38 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.273.1 (2026-09-14, HEAD)
+## v2.273.2 (2026-09-14, HEAD)
+
+**The model picker moves into the chat's own menu, and the menu is cleaned up.** Owner, 2026-09-14:
+"when I click on the three dot that is where I should see this model option ... the read only and all
+of that you can keep outside ... many of them don't belong". So: the composer's model chip is gone
+(`composerModelChipHtml` deleted with it) and the menu's first row, under a "What answers" heading,
+opens the same picker -- provider tabs, models, More models, thinking levels, Fast mode. The access
+control stays on the composer, because it is the one you change while typing. Three controls left the
+menu: the "Chat AI Provider" select (the picker's tabs are how a chat moves), the Permissions select
+(`permSelect` deleted -- the composer chip already offers the four plain options, the consent flow and
+the legacy modes under Advanced), and the flat Model select. The rest is grouped under headings
+(What answers / This chat / This pane) and "Turn options" is now "Message options".
+
+**Settings, dressed, and the setup path made obvious.** Owner, same day: "change how it looks ...
+the settings overall". The structure stayed; the surface was a stack of same-weight boxes. One CSS
+layer gives the column a readable measure (760px), makes the page title the loudest thing and the
+section headings the next, spends colour only on state (ready / needs you / refused), and lets a card
+lift on hover instead of every border competing. A provider that cannot run now shows what to do --
+"Add key", "Sign in", "Install" -- opening its page, where a disabled "Make default" used to sit.
+
+**A test suite that was filing chats in the operator's own history.** Comparing the pre-change backup
+with disk showed 26 new chats in `~/.sutra-ui/chats`, every one a Shadow fixture ("hello",
+"[Shadow - mission m-...] run check ... now"). Seven modules boot a real uvicorn and `chat_store`
+defaults to the live folder, so every turn they drove was filed there. Nothing was lost -- no chat
+removed, and the only one modified was itself left by an earlier test run -- but `conftest.py` now
+redirects `SUTRA_UI_CHATS` to a temp dir before collection, beside the three redirects already there.
+Verified: a run of the seven leaves the live count unchanged.
+
+Tests: panel 388, composer and tool cards 69, chat provider 21, pane controls 13, all green; the three
+failing Shadow suites fail identically on clean main.
+
+## v2.273.1 (2026-09-14)
 
 **One adapter per provider, and the screens that follow from it.** Sutra ran three CLIs through three
 near-identical runtimes plus about a dozen `if active_id ==` branches in `ws_chat`, so a provider rule

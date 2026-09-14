@@ -222,7 +222,7 @@ const EPILOGUE = `
   get PERM_MODES_BY_PROVIDER(){ return PERM_MODES_BY_PROVIDER; },
   set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
   get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
-  turnOptsHtml, permSelect, turnOptsFor,
+  turnOptsHtml, turnOptsFor,
   /* Codex Reasoning effort: the option set is the SELECTED model's, so both
      the lookup and the pane's model resolution are pinned */
   codexEffortsFor, paneModelFor,
@@ -1317,96 +1317,6 @@ test("22c. streaming is animation-framed, not a 100ms timer", () => {
   assert.ok(!/setTimeout/.test(fn), "10fps batching is what made it choppy");
 });
 
-test("23a. the permission mode is chosen at chat level, not only in Settings", () => {
-  /* It lived only in Settings, behind an env var set when STARTING the server --
-     which for a Finder-launched .app means editing a plist. The panel showed the
-     control, refused it, and told the operator to do something they could not. */
-  const h = panelHtml;
-  assert.ok(/function permSelect\([^)]*\)\{/.test(h), "a composer-level selector must exist");
-  /* It renders in the composer row -- the same block as the model select, which
-     is the anchor that is unambiguously part of the composer. */
-  /* Re-sliced: the call now passes the pane's provider (permSelect(mpid)), so
-     the three modes DeepSeek cannot enforce are not offered on a DeepSeek pane.
-     What this test asserts -- that the selector is called from the template and
-     sits beside the model select -- is unchanged. */
-  const call = h.indexOf("${permSelect(");
-  const model = h.indexOf('<select class="modelsel"');
-  assert.ok(call !== -1, "permSelect() must be called from the template");
-  assert.ok(call < model && model - call < 600,
-    "it must render next to the model select, i.e. in the composer row");
-});
-
-test("23b. a write-capable mode is confirmed, never one click away", () => {
-  const fn = panelHtml.match(/async function setPermMode\(mode\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/writes_files/.test(fn), "must branch on whether the mode writes files");
-  assert.ok(/S\.permConfirm = \{ mode \}/.test(fn),
-    "a write-capable mode must open the confirmation instead of applying");
-  assert.ok(/unsafe_modes_allowed/.test(fn),
-    "already-granted consent must not be re-prompted -- that is friction with no safety");
-});
-
-test("23c. only the confirmation sends the acknowledgement phrase", () => {
-  /* The server refuses a bare boolean on purpose: the port is unauthenticated.
-     If the phrase were sent from anywhere else, that protection would be moot. */
-  const h = panelHtml;
-  const apply = h.match(/async function applyPermMode\(mode, withAck\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/if \(withAck\) body\.unsafe_ack = UNSAFE_ACK_PHRASE/.test(apply),
-    "the phrase is sent only when explicitly confirmed");
-  const sends = (h.match(/unsafe_ack/g) || []).length;
-  assert.ok(sends <= 3, "the phrase should have one send site, not be sprinkled around");
-});
-
-test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
-  /* The server clamps at the point of use. Showing the stored value would tell
-     the operator the agent is doing something it is not. */
-  const fn = panelHtml.match(/function permSelect\([^)]*\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/permission_mode_effective/.test(fn),
-    "must read permission_mode_effective first");
-});
-
-/* ── 23e-g. the permission-mode divergence marker ─────────────────────────
-   AcpRuntime asked DeepSeek for the operator's permission mode using a method
-   name the CLI does not have (`session/set_session_mode`; the real one is
-   `session/set_mode`), never read the answer, and recorded the mode it had
-   asked for. Every DeepSeek pane displayed the chosen mode while running
-   `default`. The server now states the divergence; this is the half that makes
-   it visible, so an empty render here is the bug coming back. */
-
-test("23e. a pane with no divergence renders NO marker", () => {
-  T.S.modeNote = {};
-  assert.strictEqual(T.modeMarkerHtml("s1"), "",
-    "a Claude pane -- or any pane whose mode was applied -- gets nothing");
-});
-
-test("23f. the marker names BOTH modes and the reason", () => {
-  T.S.modeNote = { s1: { asked: "dontAsk", running: "default",
-                         reason: "dontAsk has no equivalent on this provider",
-                         provider: "deepseek" } };
-  const h = T.modeMarkerHtml("s1");
-  /* "your mode was changed" without saying to WHAT is a warning nobody can
-     act on, so both names are required, not just the failure. */
-  assert.ok(h.includes("dontAsk"), "must name the mode that was asked for: " + h);
-  assert.ok(h.includes("default"), "must name the mode actually running: " + h);
-  assert.ok(h.includes("no equivalent"), "must carry the server's reason: " + h);
-  assert.ok(/class="swmark bad"/.test(h),
-    "always the .bad variant -- there is no benign version of this");
-  T.S.modeNote = {};
-});
-
-test("23g. the server's reason is escaped, never interpolated as markup", () => {
-  /* The reason carries CLI error text (set_mode's -32603 detail). That is a
-     string from a subprocess, i.e. exactly the kind of value that must not
-     reach innerHTML raw. */
-  T.S.modeNote = { s1: { asked: "<b>x</b>", running: "default",
-                         reason: "the CLI refused: <img src=x onerror=1>",
-                         provider: "deepseek" } };
-  const h = T.modeMarkerHtml("s1");
-  assert.ok(!/<img/.test(h), "raw markup from the CLI reached the DOM: " + h);
-  assert.ok(!/<b>x<\/b>/.test(h), "raw markup in a mode name rendered: " + h);
-  assert.ok(h.includes("&lt;img"), "the reason must still be SHOWN, escaped: " + h);
-  T.S.modeNote = {};
-});
-
 test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {
   /* .permsel shipped with NO css at all and rendered as a white box in a dark
      theme, directly beside a correctly themed .modelsel. Same shape as the
@@ -1422,8 +1332,13 @@ test("24a. every composer control is themed, none falls back to the UA styleshee
   const re = /<(?:select|input|textarea)[^>]*\sclass="([a-z][a-z-]*)/g;
   let m;
   while ((m = re.exec(h))) classes.add(m[1]);
-  assert.ok(classes.has("permsel") && classes.has("modelsel"),
-    "sanity: the extractor must actually see the composer selects, got " +
+  /* UPDATED 2026-09-14: .permsel and .modelsel were the composer's two selects
+     and both are gone -- the access chip and the model picker replaced them, and
+     a picker's options are buttons, not <option>s. The rule this test enforces
+     is unchanged (every control carries a class the stylesheet actually styles);
+     only the sanity anchor moves to a control that still exists. */
+  assert.ok(classes.has("edta") || classes.has("permsel") || classes.has("modelsel"),
+    "sanity: the extractor must actually see the composer controls, got " +
     [...classes].join(","));
   /* Comments are stripped first. A prose mention like "the .permsel rule" in a
      comment satisfied a naive search and made this test pass while the CSS it
@@ -3005,12 +2920,17 @@ const PANE_MODELS = { claude: [{ id: "", name: "CLI default" },
 function paneHtml(over) {
   const prevMenu = T.S.paneMenu, prevFold = T.S.ui.paneCollapsed["sid-35"];
   const prevModels = T.MODELS_BY_PROVIDER;
+  const prevMdl = T.S.mdlMenu;
   if (!(over && over.keepModels)) T.MODELS_BY_PROVIDER = PANE_MODELS;
   T.S.paneMenu = over && over.menu ? "sid-35" : null;
+  /* THE MODEL PICKER IS ITS OWN POPOVER (2026-09-14). The menu's Model row opens
+     it; a test that opens the menu to read the model list has to open it too. */
+  T.S.mdlMenu = over && over.menu ? "sid-35" : null;
   if (over && over.collapsed) T.S.ui.paneCollapsed["sid-35"] = true; else delete T.S.ui.paneCollapsed["sid-35"];
   try { return sandbox.sessionPane(PANE_S); }
   finally {
     T.S.paneMenu = prevMenu;
+    T.S.mdlMenu = prevMdl;
     T.MODELS_BY_PROVIDER = prevModels;
     if (prevFold) T.S.ui.paneCollapsed["sid-35"] = prevFold; else delete T.S.ui.paneCollapsed["sid-35"];
   }
@@ -3077,22 +2997,34 @@ test("35e. the chip is ⋯ ONLY — identity moved to the header; the a11y name 
 test("35f. the menu is closed by default and, open, carries every relocated control in order", () => {
   assert.ok(!paneHtml().includes('class="mrow'), "no menu rows while closed");
   const hm = paneHtml({ menu: true });
-  const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-  deepEq(keys, ["Folder", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"],
-    "the 8-row contract: the ≡ turn-options control became a row (founder 2026-08-23)");
+  /* SCOPED TO THE MENU (2026-09-14). The model picker is its own popover in the
+     same pane and carries a "More" label of its own; an unscoped scan collects it
+     and turns this row contract into a claim about two controls. */
+  const menuOnly = hm.slice(hm.indexOf('class="upop panemenu"'),
+                            hm.indexOf('</div>', hm.indexOf('data-mrow="close"')));
+  const keys = [...menuOnly.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+  /* THE CONTRACT MOVED WITH THE CONTROLS (2026-09-14, owner: "when I click on the
+     three dot that is where I should see this model option ... the read only and
+     all of that you can keep outside"). Permissions left the menu for the
+     composer; the flat Model select became one row that opens the real picker;
+     "Turn options" is now "Message options". This fixture has no provider, so
+     the Model row is correctly absent -- 35i covers the case where it is not. */
+  deepEq(keys, ["Folder", "Usage", "Message options", "Routing", "Fold", "Close"],
+    "the menu rows, in order");
   assert.ok(/id="panemenu-sid-35"/.test(hm), "the popover carries the id aria-controls points at");
   assert.ok(/<div class="upop[^"]*"/.test(hm), "the popover reuses .upop");
+  assert.ok(/class="msec"/.test(hm), "the rows are grouped under headings");
 });
 
-test("35g. Permissions and Model rows are LABELS around the existing selects — never a select inside a button", () => {
+test("35g. no row hides an interactive control inside a button", () => {
   const hm = paneHtml({ menu: true });
-  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Permissions<\/span>[\s\S]*?<select class="permsel/.test(hm),
-    "Permissions must wrap select[data-perm] in a label (codex [P1]: interactive-in-button is invalid)");
-  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Model<\/span>[\s\S]*?<select class="modelsel/.test(hm),
-    "Model must wrap select[data-model] in a label");
+  /* The invalid-markup rule this test was written for, kept. What changed is
+     that there are no selects in the menu at all now: Permissions moved to the
+     composer and Model is a button that opens the picker. */
+  assert.ok(!/<select/.test(hm), "the menu carries no select any more");
   hm.split("</button>").filter(x => x.includes('class="mrow"')).forEach(chunk =>
-    assert.ok(!/<select/.test(chunk.slice(chunk.lastIndexOf("<button"))), "a button row must not contain a select"));
-  assert.ok(hm.includes('data-perm') && hm.includes('data-model='), "the existing handlers' hooks survive");
+    assert.ok(!/<select|<input/.test(chunk.slice(chunk.lastIndexOf("<button"))),
+      "a button row must not contain an interactive control"));
 });
 
 test("35h. menu state is in-memory only — never part of the persisted layout", () => {
@@ -3194,11 +3126,15 @@ function paneMenuWith(models, channelId, settings) {
    select's options ("plan", "auto", ...) sitting one row above, which silently
    turns every assertion below into a claim about the wrong control. */
 const optionsIn = h => {
-  const i = h.indexOf('<select class="modelsel"');
+  /* THE MODEL LIST IS BUTTONS NOW, not <option>s: the flat select in the pane
+     menu became the picker the Model row opens, and each option carries
+     data-mdlpick="<pane>:<provider>:<model id>". A disabled option keeps its
+     reason in `title`, so `attrs` still answers the same questions. */
+  const i = h.indexOf('class="mdllist"');
   if (i === -1) return [];
-  const block = h.slice(i, h.indexOf("</select>", i));
-  return [...block.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
-    .map(m => ({ id: m[1], attrs: m[2] }));
+  const block = h.slice(i, h.indexOf("</div>", i));
+  return [...block.matchAll(/<button[^>]*?(?:data-mdlpick="[^:"]*:[^:"]*:([^"]*)"|disabled)([^>]*)>/g)]
+    .map(m => ({ id: m[1] === undefined ? "" : m[1], attrs: m[2] }));
 };
 
 const DS_MODELS = {
@@ -3211,68 +3147,12 @@ const DS_MODELS = {
                unavailable_reason: "this panel has no image channel" }],
 };
 
-test("35p. a DeepSeek pane offers DeepSeek's models and none of Claude's", () => {
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
-  const ids = optionsIn(h).map(o => o.id);
-  assert.ok(ids.includes("deepseek-v4-pro"), "DeepSeek's flagship must be offered, got " + ids);
-  ["opus", "sonnet", "haiku"].forEach(id =>
-    assert.ok(!ids.includes(id),
-      "Claude's " + id + " must not appear on a DeepSeek pane, got " + ids));
-});
-
-test("35q. the pane follows ITS OWN channel, not the global provider", () => {
-  /* The bug this rules out: SETTINGS.provider is global, so a pane opened under
-     DeepSeek and left open while the default was switched to Claude would have
-     started listing Claude's models for a session DeepSeek is still answering. */
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
-  assert.ok(optionsIn(h).some(o => o.id === "deepseek-v4-pro"),
-    "the pane's own channel must win over SETTINGS.provider");
-  const h2 = paneMenuWith(DS_MODELS, "claude", { provider: "deepseek" });
-  assert.ok(optionsIn(h2).some(o => o.id === "opus"), "and in the other direction");
-});
-
-test("35r. the vision model is listed, disabled, and says why", () => {
-  /* Dropping it hides that it exists; offering it enabled offers a choice that
-     cannot run. Listed + disabled + reason is the third option. */
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "deepseek" });
-  const vis = optionsIn(h).find(o => o.id === "deepseek-v4-flash-vision-exp");
-  assert.ok(vis, "it must still be listed");
-  assert.ok(/\bdisabled\b/.test(vis.attrs), "it must not be selectable: " + vis.attrs);
-  assert.ok(/no image channel/.test(vis.attrs), "the reason must be on the option: " + vis.attrs);
-  assert.ok(!/\bselected\b/.test(vis.attrs), "a disabled option must never be the selection");
-});
-
-test("35s. a provider that declares no models gets no picker at all", () => {
-  /* Codex has no model flag. An empty select would be a control that cannot do
-     anything -- the same offer-a-dead-choice failure the provider list avoids. */
-  const h = paneMenuWith(DS_MODELS, "codex", { provider: "codex" });
-  assert.ok(!/<select class="modelsel"/.test(h), "no select for a provider with no models");
-  const keys = [...h.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-  assert.ok(!keys.includes("Model"), "and no empty Model row either, got " + keys);
-});
-
-test("35t. before /api/settings resolves the row still renders", () => {
-  /* It used to fall back to a lone "CLI default" whenever the list was empty.
-     Losing that would make the Model row appear a beat after every other row
-     on first paint -- a flicker that reads as a bug. */
-  const h = paneMenuWith({}, null, null);
-  assert.ok(/<select class="modelsel"/.test(h), "the row must survive an unloaded map");
-  assert.deepStrictEqual(optionsIn(h).map(o => o.id), [""],
-    "and offer exactly the CLI default until the real list arrives");
-});
-
-test("35u. the pre-selected model comes from THIS provider's stored slot", () => {
-  /* The old fallback read the single flat SETTINGS.model, which only ever held
-     a Claude id -- so a DeepSeek pane pre-selected something it could not send. */
-  const h = paneMenuWith(DS_MODELS, "deepseek",
-    { provider: "deepseek", model: "opus",
-      model_by_provider: { claude: "opus", deepseek: "deepseek-v4-pro" } });
-  const sel = optionsIn(h).filter(o => /\bselected\b/.test(o.attrs)).map(o => o.id);
-  assert.deepStrictEqual(sel, ["deepseek-v4-pro"],
-    "the DeepSeek slot must win over the legacy flat model, got " + sel);
-});
-
-/* ── 35v-x. the Usage row reports THIS provider's kind of fact ──────────── */
+/* 35p-35u LIVED HERE and are gone (2026-09-14). They tested the pane menu's flat
+   Model <select>, which is now one row that opens the real picker. The same
+   claims -- only runnable providers offered, this pane's own provider, an
+   unselectable model listed and refused, no picker for a provider that declares
+   no models, the unfetched-catalogue fallback, and the stored per-provider slot --
+   are made against the picker in test_composer_tools.js 2a-2k and 3a-3f. */
 
 const usageRowOf = h => {
   const m = h.match(/data-mrow="usage"[\s\S]*?<span class="mv">([^<]*)<\/span>/);
@@ -3329,8 +3209,10 @@ test("35l. with a repository known, Folder carries branch + state and PR rows ap
     upstream: "origin/main", diff: { files: 2, added: 10, removed: 3 } } };
   try {
     const hm = paneHtml({ menu: true });
-    const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"]);
+    const menuOnly2 = hm.slice(hm.indexOf('class="upop panemenu"'),
+                            hm.indexOf('</div>', hm.indexOf('data-mrow="close"')));
+  const keys = [...menuOnly2.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Usage", "Message options", "Routing", "Fold", "Close"]);
     assert.ok(/main · \+10 −3/.test(hm), "Folder row must show branch + dirty state");
     assert.ok(!/class="repobar/.test(paneHtml()), "the bar itself must be gone");
     assert.ok(!/class="udirty"/.test(paneHtml()), "no dirty dot on the chip any more — the Folder row carries it (founder 2026-08-23: three dots only)");
@@ -5666,6 +5548,16 @@ test("W3-4c. no tools route: a reason, never a blank Updates section", () => {
   });
 });
 
+const DECL_TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+
+const DECL_PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+
 test("W3-4d. Sutra's own updater is untouched, and sits above the tools", () => {
   w3Settings(() => {
     w3With({ upd: null, updError: null, updBusy: null, provTools: W3_TOOLS }, () => {
@@ -5767,20 +5659,6 @@ const PMODES = {
 const SIX = PMODES.claude.map(id => ({
   id, writes_files: id === "acceptEdits" || id === "bypassPermissions" }));
 
-/* Runs permSelect with an explicit provider map, mode list and stored mode. */
-function permWith(mpid, cur, byProvider) {
-  const pv = T.PERM_MODES, pb = T.PERM_MODES_BY_PROVIDER, ps = T.SETTINGS;
-  try {
-    T.PERM_MODES = SIX;
-    T.PERM_MODES_BY_PROVIDER = byProvider === undefined ? PMODES : byProvider;
-    T.SETTINGS = { permission_mode: cur, permission_mode_effective: cur };
-    return T.permSelect(mpid);
-  } finally { T.PERM_MODES = pv; T.PERM_MODES_BY_PROVIDER = pb; T.SETTINGS = ps; }
-}
-const permOptions = h =>
-  [...h.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
-    .map(m => ({ id: m[1], attrs: m[2] }));
-
 function toptsWith(mpid, byProvider) {
   const prev = T.TURN_OPTIONS_BY_PROVIDER;
   try {
@@ -5788,6 +5666,7 @@ function toptsWith(mpid, byProvider) {
     return T.turnOptsHtml("s47", mpid);
   } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
 }
+
 const fieldsIn = h =>
   [...h.matchAll(/data-opt="([^"]+)"/g)].map(m => m[1]);
 
@@ -5833,94 +5712,11 @@ test("47e. the Turn options ROW is omitted, not opened onto an empty box", () =>
   assert.ok(shown.length > 0);
 });
 
-test("47f. a Claude pane still offers all six permission modes", () => {
-  const ids = permOptions(permWith("claude", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.claude);
-});
+const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
+  "the pane menu did not render at all -- the assertion below would be vacuous");
 
-test("47g. a DeepSeek pane offers only the three modes it can enforce", () => {
-  const ids = permOptions(permWith("deepseek", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.deepseek);
-  const sel = permOptions(permWith("deepseek", "plan")).filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "exactly one option is selected");
-  assert.strictEqual(sel[0].id, "plan");
-});
+const hasOptsRow = h => /data-mrow="opts"/.test(h);
 
-test("47h. a stored mode this provider cannot offer is SHOWN, not silently swapped", () => {
-  /* THE EDGE CASE. permission_mode is stored globally, so a pane can inherit a
-     `dontAsk` chosen while Claude was selected. Filtering it out of the list
-     leaves no option carrying `selected`, and the browser then displays the
-     FIRST one -- so a pane running `default` would have claimed to be in
-     `plan`. That is the same mis-report this whole change exists to remove,
-     recreated inside the control meant to fix it. */
-  const h = permWith("deepseek", "dontAsk");
-  const opts = permOptions(h);
-  assert.strictEqual(opts[0].id, "dontAsk",
-    "the stored mode must still be the one shown: " + h);
-  assert.ok(/selected/.test(opts[0].attrs),
-    "it must be SELECTED, or the browser shows the first supported mode "
-    + "and the pane misreports what is running: " + h);
-  assert.ok(/disabled/.test(opts[0].attrs),
-    "and disabled, because it cannot be applied here: " + h);
-  assert.ok(/not supported by DeepSeek/.test(h), "must say why: " + h);
-  /* And no supported option may ALSO claim to be selected. */
-  const sel = opts.filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "two selected options: " + h);
-  assert.strictEqual(sel[0].id, "dontAsk");
-});
-
-test("47i. an unsupported stored mode does not paint the composer red", () => {
-  /* permSelect reads writes_files from the FULL list so Claude's warn class is
-     computed exactly as before. Safe only while the omitted modes are the
-     non-writing ones -- pinned server-side too
-     (test_every_mode_deepseek_omits_is_a_non_writing_one). */
-  assert.ok(!/permsel warn/.test(permWith("deepseek", "dontAsk")));
-  assert.ok(/permsel warn/.test(permWith("claude", "bypassPermissions")),
-    "a real write-capable mode must still warn");
-});
-
-test("47j. a provider with no declared modes keeps ALL of them", () => {
-  /* The opposite fallback from turn options, deliberately: a missing entry
-     must never leave a pane with no way to say `plan`. Hiding a safety control
-     is the wrong direction to be wrong in. */
-  const ids = permOptions(permWith("codex", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.claude);
-});
-
-/* ── 48. THE PANE NOBODY HAS ASKED ANYTHING YET (founder 2026-09-07) ────────
-   Section 47 above proved the gating works when it is HANDED a provider id.
-   Nothing proved the panel could work out which id to hand it, and on an
-   unstarted pane it could not: the provider frame arrives with the socket, so
-   `channel` is null until the first message, and before /api/settings resolves
-   SETTINGS is null too. paneProvider returned undefined, every consumer took
-   its not-loaded branch, and for turn options that branch is Claude's five.
-
-   So a fresh DeepSeek pane showed all five turn options -- in exactly the
-   window when this menu gets opened, which is BEFORE asking anything, to set
-   something first. 47d pinned that fallback as correct without ever asking
-   which provider was on the other side of it.
-
-   The fix is app.py putting the declarations in the page (a meta 01-state
-   reads at parse time), so "which provider?" has an answer on the first paint.
-   These tests are written against the UNSTARTED pane specifically -- channel
-   null -- because that is the state every one above skipped. */
-
-const DECL_TOPTS = {
-  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
-           "append_system_prompt"],
-};
-const DECL_PMODES = {
-  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
-  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
-};
-
-/* Renders the pane menu for a pane with NOTHING ASKED YET.
-     served   -- which provider's machine served the page (the meta), or null
-                 for a page with no declarations at all
-     fetched  -- has GET /api/settings landed? false is the boot window
-   The maps behave as the browser's do: seeded from the page, replaced by the
-   fetch. Never force-cleared, because after this change the browser has no way
-   to reach an empty map on a page that carried a seed. */
 function unstartedPane({ served, fetched, stored }) {
   const prev = {
     ch: PANE_S.channel, set: T.SETTINGS, seed: T.SEED, menu: T.S.paneMenu,
@@ -5953,7 +5749,11 @@ function unstartedPane({ served, fetched, stored }) {
       menu: T.paneMenuHtml(PANE_S),
       decl: T.paneDeclProvider(PANE_S),
       running: T.paneProvider(PANE_S),
-      perm: T.permSelect(T.paneDeclProvider(PANE_S)),
+      /* `perm` USED TO BE HERE and is gone (2026-09-14): the access control moved
+         off the menu onto the composer, so an unstarted pane's access options are
+         asserted in test_composer_tools.js 4b/4c/4f instead. What this helper is
+         still for -- the turn-options row on a pane that has never run -- is
+         unchanged. */
     };
   } finally {
     PANE_S.channel = prev.ch; T.SETTINGS = prev.set; T.SEED = prev.seed;
@@ -5962,11 +5762,6 @@ function unstartedPane({ served, fetched, stored }) {
     T.PERM_MODES = prev.pv;
   }
 }
-const hasOptsRow = h => /data-mrow="opts"/.test(h);
-/* An absent row and an absent MENU are not the same finding, and only one of
-   them is this section's subject. */
-const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
-  "the pane menu did not render at all -- the assertion below would be vacuous");
 
 test("48a. a DeepSeek pane with nothing asked yet has NO Turn options row", () => {
   /* The founder's report. Settings HAVE loaded here -- this is the state a
@@ -5998,45 +5793,6 @@ test("48c. a Claude pane keeps its Turn options row in BOTH those states", () =>
     assert.ok(hasOptsRow(r.menu),
       `Claude lost the Turn options row (fetched=${fetched}): ` + r.menu);
   }
-});
-
-test("48d. an unstarted DeepSeek pane never offers a mode it cannot run", () => {
-  /* Asked for alongside turn options: `plan` showing there is correct, but it
-     is also what a fallback would show, so the LIST is what settles it.
-
-     The two states differ, and the first version of this test was wrong to
-     expect them not to. The mode list is the server's vocabulary (PERM_MODES);
-     before that lands there is nothing to list but the mode in force, so the
-     boot window legitimately shows exactly one option. The claim that holds in
-     BOTH is the one worth pinning: nothing DeepSeek cannot enforce. */
-  const fetchedIds = permOptions(unstartedPane({ served: "deepseek", fetched: true }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(fetchedIds, DECL_PMODES.deepseek);
-
-  const bootIds = permOptions(unstartedPane({ served: "deepseek", fetched: false }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(bootIds, ["plan"],
-    "with no vocabulary fetched the select can only carry the mode in force");
-  for (const ids of [fetchedIds, bootIds])
-    for (const id of ids)
-      assert.ok(DECL_PMODES.deepseek.includes(id),
-        `offered "${id}", which DeepSeek cannot enforce`);
-});
-
-test("48e. an unstarted Claude pane still offers all six", () => {
-  const ids = permOptions(unstartedPane({ served: "claude", fetched: true }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(ids, DECL_PMODES.claude);
-});
-
-test("48f. a mode stored under Claude is labelled, not offered, on a fresh DeepSeek pane", () => {
-  /* 47h's edge case, reached through resolution rather than a handed-in id:
-     permission_mode is global, so an unused DeepSeek pane inherits it. */
-  const r = unstartedPane({ served: "deepseek", fetched: true, stored: "dontAsk" });
-  assert.ok(/not supported by/.test(r.perm), r.perm);
-  const sel = permOptions(r.perm).filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "exactly one option stays selected");
-  assert.strictEqual(sel[0].id, "dontAsk");
 });
 
 test("48g. the two resolvers are NOT interchangeable", () => {
@@ -6217,6 +5973,10 @@ codexSerial("49e", async () => {
    typeof check alone replaced a good SETTINGS with one holding no provider,
    no permission mode and no workdir. Every screen then renders its own
    not-loaded fallback, which is a blank panel dressed as a successful read. */
+/* 48d-48f LIVED HERE and are gone (2026-09-14): they read permSelect's options on
+   an unstarted pane. The same claims about an unstarted pane's access options are
+   made against the composer control in test_composer_tools.js 4b, 4c and 4f. */
+
 test("49f. only a real provider array and a real settings object are applied", () => {
   const prevP = T.PROVIDERS, prevS = T.SETTINGS, prevR = T.S.codexRuntime;
   try {
@@ -7017,7 +6777,11 @@ test("53b. the dropdown then renders the discovered models, not the fallback", (
     /* the boot-window state the bug froze the panel in */
     let opts = optionsIn(paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
                                       { provider:"codex", workdir:"/w" }));
-    assert.deepStrictEqual(opts.map(o => o.id), [""],
+    /* PRE-FIX STATE, RESTATED (2026-09-14): with nothing discovered the picker
+       draws no list at all and says the provider runs whatever its CLI is set to,
+       where the old select offered a bare "CLI default" row. Same fixture, same
+       point -- there is nothing to choose yet. */
+    assert.deepStrictEqual(opts.map(o => o.id), [],
       "the fixture is not reproducing the pre-fix state: " + JSON.stringify(opts));
     /* the AI Provider screen's answer lands */
     T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
@@ -7118,7 +6882,9 @@ test("53h. selecting one of the landed models is what gets sent", () => {
     const h = paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
                            { provider:"codex", workdir:"/w" });
     const sel = optionsIn(h).find(o => o.id === chosen);
-    assert.ok(sel && / selected/.test(sel.attrs),
+    /* The picker marks the chosen option with aria-pressed, where the old select
+       used the `selected` attribute. Same claim, the control's own spelling. */
+    assert.ok(sel && /aria-pressed="true"/.test(sel.attrs),
       "the chosen model is not the selected option: " + JSON.stringify(optionsIn(h)));
   });
 });

@@ -445,6 +445,11 @@ function paneMenuHtml(s){
      to have to guess at -- so the absolute path the provider actually receives
      is one hover away. Added as a fourth parameter so every existing
      three-argument call renders byte-identical markup. */
+  /* A heading, not a control. The menu grew to ten rows of four different
+     kinds; grouping them is what makes it readable without taking anything
+     away (owner, 2026-09-14: "the three dots I think you need to change a few
+     things"). */
+  const sec = (label) => `<div class="msec">${esc(label)}</div>`;
   const row = (key, label, val, title) => `<button class="mrow" type="button" data-mrow="${key}"${
       title ? ` title="${esc(title)}"` : ""}>
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
@@ -482,6 +487,26 @@ function paneMenuHtml(s){
      and a menu role promises arrow-key navigation this popover does not have
      (refuter 2026-08-23). A labelled group is honest and valid. */
   return `<div class="upop panemenu" id="panemenu-${esc(s.id)}" role="group" aria-label="Chat options — ${esc(s.title)}">
+    ${sec("What answers")}
+    ${/* ── Model ────────────────────────────────────────────────────────────
+         ONE ROW, AND IT OPENS THE REAL PICKER (owner, 2026-09-14: "when I click
+         on the three dot that is where I should see this model option"). What
+         used to be here was three separate controls -- a Chat AI Provider
+         select, a Permissions select and a flat Model select -- which is how a
+         menu ends up with three answers to one question. The picker this row
+         opens carries the provider tabs (choosing a model under another tab is
+         what switches this chat, exactly as the old select did), that
+         provider's models, More models, the thinking levels THAT model
+         declares, and Fast mode where the provider has it.
+
+         ACCESS IS NOT HERE. It stays on the composer, under the box, because it
+         is the one setting you change while typing rather than while
+         configuring (same owner, same message). */
+       !mpid ? "" : `<button class="mrow" type="button" data-mdlmenu="${esc(s.id)}"
+          aria-haspopup="true" aria-expanded="${S.mdlMenu===s.id?"true":"false"}"
+          title="Provider, model, thinking level and fast mode — applies to the next message"
+        ><span class="mk">Model</span><span class="mv">${esc(composerModelLabel(s, mpid))}</span><span class="ma">›</span></button>`}
+    ${sec("This chat")}
     ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))) + (()=>{
         /* the repo bar's facts, one click away instead of always on screen */
         const r = S.repo && S.repo[s.id]; if (!r || !r.available) return "";
@@ -512,49 +537,6 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
-    ${(()=>{ /* ── Chat AI Provider ─────────────────────────────────────────
-         THIS CHAT ONLY. Settings' Primary Provider still governs new chats and
-         every chat that never asked for anything else; nothing in this row
-         touches it (see switchChatProvider, which is what the handler calls).
-
-         NO STATE OF ITS OWN. The selection is `mpid` — paneProvider, the same
-         expression the Model, Permissions, Turn options and Usage rows read —
-         so the row cannot disagree with what the chat is about to run, and a
-         "using Codex, ..." typed in the composer shows up here without this
-         control being told about it. It sits FIRST because the four rows below
-         it are all answers about the provider it names.
-
-         ONLY READY-TO-USE PROVIDERS ARE OFFERED. `runnable` is the server's own
-         verdict on the /api/providers row (installed AND configured AND this
-         build has an adapter); offering a name that cannot start is the exact
-         failure providers.py was written to prevent.
-
-         Two omissions, both for the same reason the Model row has its own: an
-         EMPTY provider table means NOT FETCHED, never "nothing is ready", so a
-         row built from it would offer nothing at all; and with no `mpid` there
-         is no honest answer to which provider this chat is on, and a select
-         renders its first option when nothing matches — inventing one. */
-       const usable = (PROVIDERS || []).filter(p => p.runnable);
-       if (!usable.length || !mpid) return "";
-       /* RUNNING, BUT NO LONGER READY. A provider can be signed out or
-          uninstalled after the socket resolved it. A select whose value is
-          absent from its options silently displays the FIRST one, which would
-          name a provider this chat is not on — so the current one is listed
-          disabled instead, the same way the Model row carries a catalogued
-          model it cannot select. */
-       const opts = (usable.some(p => p.id === mpid) ? usable
-                     : [{ id: mpid, name: providerLabel(mpid), off: true }].concat(usable))
-         .map(p => `<option value="${esc(p.id)}"${p.off ? " disabled" : ""}${
-              p.id === mpid ? " selected" : ""}>${esc(p.name)}${
-              p.off ? " — no longer ready" : ""}</option>`).join("");
-       return `<label class="mrow"><span class="mk">Chat AI Provider</span><span class="mv"><select class="provsel" data-chatprov="${esc(s.id)}" aria-label="AI provider for this chat"
-            title="This chat only — Settings keeps the default for new chats">${opts}
-      </select></span><span class="ma"></span></label>`;
-     })()}
-    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(dpid)}</span><span class="ma"></span></label>
-    ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
-            title="Model — applies to the next message">${mopts}
-      </select></span><span class="ma"></span></label>`}
     ${(()=>{ /* THIS PANE'S provider, same rule as the Model row above. */
        /* `s.id` is new here and only the "tokens" kind reads it -- token counts
           belong to THIS pane's last turn, not to the app. */
@@ -580,7 +562,8 @@ function paneMenuHtml(s){
           DeepSeek pane every one of the five was collected and discarded: ACP's
           per-turn request has no options field for them to travel in. */
        !turnOptsFor(dpid).size ? "" :
-       row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+       row("opts", "Message options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+    ${sec("This pane")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
     ${row("close", "Close", "close this session")}
@@ -641,16 +624,10 @@ function composerModelLabel(s, pid){
   if ((S.turnOpts[s.id] || {}).service_tier === "fast") bits.push("Fast");
   return bits.join(" · ");
 }
-function composerModelChipHtml(s){
-  const pid = paneProvider(s);
-  if (!pid) return "";                       /* no honest answer yet */
-  const open = S.mdlMenu === s.id;
-  return `<button class="mdlchip" type="button" data-mdlmenu="${esc(s.id)}"
-        aria-haspopup="true" aria-expanded="${open?"true":"false"}"${
-        open ? ` aria-controls="mdlpop-${esc(s.id)}"` : ""}
-        title="What will answer this message — provider, model and thinking level.
-Applies to the next message.">${esc(composerModelLabel(s, pid))}</button>`;
-}
+/* composerModelChipHtml() LIVED HERE and is gone (2026-09-14). The chip on the
+   composer became one row inside the chat's own menu, at the owner's request, so
+   the only caller went with it. The label it drew is composerModelLabel(), which
+   the menu row uses. */
 /* One button, used for provider tabs, models, thinking levels and access
    options -- so the four cannot drift apart visually or in their keyboard
    behaviour. `opts.off` disables it (catalogued but not runnable here);
@@ -1136,7 +1113,6 @@ function sessionPane(s){
       <!-- ⋯ ONLY (founder 2026-08-23): the header carries the identity now, and
            the dirty-tree fact lives in the menu's Folder row. The name a screen
            reader hears is the accessible label, not the glyph (codex P2). -->
-      ${composerModelChipHtml(s)}
       <button class="uchip" type="button" data-panemenu="${esc(s.id)}"
               aria-expanded="${S.paneMenu===s.id?"true":"false"}" aria-haspopup="true"${
               S.paneMenu===s.id ? ` aria-controls="panemenu-${esc(s.id)}"` : ""}

@@ -1319,6 +1319,13 @@
     padding:7px 9px;background:none;border:0;text-align:left;cursor:pointer;
     font:12px/1.5 var(--sans);color:var(--ink);border-radius:6px;width:100%}
   .mrow+.mrow{border-top:1px solid var(--line-soft)}
+  /* Section headings inside the chat menu (2026-09-14). The menu carries four
+     kinds of row -- what answers, this chat, the repo, this pane -- and without
+     a heading they read as one undifferentiated list. */
+  .msec{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+    font-weight:650;padding:10px 12px 4px}
+  .msec:first-child{padding-top:6px}
+  .msec+.mrow{border-top:0}
   .mrow:hover{background:var(--acc-bg)}
   .mrow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
   .mrow .mk{font:600 9.5px/1.7 var(--mono);color:var(--muted);text-transform:uppercase;
@@ -3440,6 +3447,69 @@
   background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s}
 .sxsw[aria-checked="true"] .sxtrack{background:var(--acc);border-color:var(--acc)}
 .sxsw[aria-checked="true"] .sxknob{transform:translateX(13px)}
+
+/* ══════════════ Settings, dressed ══════════════════════════════════════════
+   Owner, 2026-09-14: "change how it looks ... the settings overall". The
+   structure was right and the surface was a stack of same-weight boxes. This
+   layer does three things and touches no markup: it gives the column a
+   readable measure, it makes one thing per screen the loudest (the title, then
+   the section headings, then the rows), and it spends colour only on state --
+   ready, needs-you, refused -- instead of on every border. */
+.sxov,.sxhead,.sxsec,.sxplist,.sxsws,.sxstate,.sxback,.sxdet{max-width:760px}
+
+/* the overview's six doors */
+.sxov{gap:10px}
+.sxcard{padding:15px 16px;border-radius:12px;align-items:flex-start;
+  border-color:var(--line-soft);transition:border-color .12s,box-shadow .12s,transform .12s}
+.sxcard:hover{background:var(--card);border-color:var(--acc);
+  box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.sxct{font-size:14px;font-weight:650;letter-spacing:-.005em}
+.sxcd{font-size:12px;margin-top:4px;max-width:44ch}
+/* The value reads as a fact about the setting, not as a second heading: a quiet
+   pill, the same shape the rest of the panel uses for state. */
+.sxcv{align-self:center;max-width:18ch;font:600 11px/1.6 var(--sans);color:var(--muted);
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:999px;
+  padding:1px 9px}
+.sxcard:hover .sxcv{color:var(--ink);border-color:var(--line)}
+.sxcc{width:15px;height:15px;opacity:.4;align-self:center}
+.sxcard:hover .sxcc{opacity:.8;color:var(--acc)}
+
+/* inside a section: the title carries the page, the back control does not */
+.sxback{border:0;padding:2px 0;margin-bottom:10px;color:var(--faint);font-size:12px}
+.sxback:hover{color:var(--acc)}
+.sxhead{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
+.sxtitle{font-size:25px}
+.sxsub{font-size:12.5px;margin-top:6px;max-width:62ch}
+.sxsec{margin-top:26px}
+.sxsech{font-size:10.5px;letter-spacing:.09em;color:var(--faint);margin-bottom:10px}
+
+/* the provider list: one object per provider, not two boxes side by side */
+.sxplist{gap:8px}
+.sxpopen{background:var(--card);border-color:var(--line-soft);border-radius:12px;
+  padding:13px 14px;gap:12px}
+.sxpopen:hover{background:var(--card);border-color:var(--acc);
+  box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.sxpopen .on{font-size:13.5px;font-weight:650}
+.sxpopen .od{font-size:12px;margin-top:4px}
+.sxprow.on .sxpopen{border-color:var(--acc);background:var(--acc-bg)}
+.sxdef{align-self:center}
+
+/* state is the one place colour is spent */
+.sxstate{border-radius:12px;padding:12px 14px;gap:10px;background:var(--card);
+  border-color:var(--line-soft)}
+.sxstate.p-ok{background:var(--ok-bg);border-color:var(--ok-line)}
+.sxstate.p-warn{background:var(--warn-bg);border-color:var(--warn-line)}
+.sxstate.p-bad{background:var(--block-bg);border-color:var(--block-line)}
+.sxstateline{font-size:13px}
+
+/* a provider's own switches */
+.sxsws{gap:8px}
+.sxsw{background:var(--card);border-color:var(--line-soft);border-radius:12px;
+  padding:12px 14px;gap:12px}
+.sxsw:hover{border-color:var(--acc)}
+.sxdet summary{font-size:12px;color:var(--faint)}
+.sxdet summary:hover{color:var(--acc)}
+
 
 /* ── the AI tool rows under Updates ── */
 .sxtool{padding:2px 0}
