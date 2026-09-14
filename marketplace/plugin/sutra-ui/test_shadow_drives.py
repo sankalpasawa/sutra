@@ -648,8 +648,12 @@ class TestTheProductionDecider(unittest.TestCase):
         self.assertIn('decider=DEFAULT_DECIDER["fn"]', src,
                       "_launch hands it to the engine")
         app = Path(__file__).with_name("app.py").read_text()
+        # the argv builder and the workdir are still the two positionals;
+        # 2026-09-15 added the runtime factory as a keyword, so Shadow's
+        # reasoning comes from provider_adapters like every chat pane's does
         self.assertIn("shadow_runner.make_decider(_shadow_args, "
-                      "_shadow_workdir())", app)
+                      "_shadow_workdir(),", app)
+        self.assertIn("new_runtime=_shadow_new_runtime", app)
         self.assertEqual(app.count("set_default_decider("), 1)
 
 

@@ -1007,7 +1007,7 @@ def _founder_answer_text(answer):
     return "\n".join([head] + lines)
 
 
-def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S):
+def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     """Shadow's reasoning step as ONE bounded call per mission turn.
 
     WHY NOT THE FOUNDER'S SHADOW SESSION. app keeps a single persistent
@@ -1048,7 +1048,19 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S):
             "founder_response": _founder_answer_text(
                 context.get("founder_response")),
         }
-        rt = srt.SessionRuntime()
+        # THE SAME RUNTIME FACTORY THE CHAT PANES USE, injected the way
+        # build_args, register and publish already are -- this module must not
+        # import app, and the provider gate (SHADOW_PROVIDERS) belongs on
+        # app's side with _shadow_args. None keeps the historical
+        # construction, so the flag path and every existing test are
+        # byte-identical.
+        #
+        # What it is NOT: a chat. There is still no chat_store record, no
+        # sutra_id, no register_runtime and no resume -- the process answers
+        # one prompt and is killed in the finally below. Shadow's reasoning
+        # shares Sutra's runtime layer and deliberately not its conversation
+        # layer.
+        rt = new_runtime() if new_runtime is not None else srt.SessionRuntime()
         texts = []
 
         async def collect(frame):

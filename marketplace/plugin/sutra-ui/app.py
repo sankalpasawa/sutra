@@ -1580,6 +1580,50 @@ def _shadow_args(session_id=None, extra_settings=None):
                             extra_settings=extra_settings)
 
 
+def _shadow_new_runtime():
+    """The runtime Shadow's REASONING turn speaks through.
+
+    ONE RUNTIME FACTORY FOR THE WHOLE APP (founder, 2026-09-15: "Shadow is an
+    AI -- shouldn't it be using Sutra Chat for that too?").
+
+    It was `srt.SessionRuntime()`, constructed by hand inside make_decider.
+    That worked, but it meant the one place in Sutra that decides WHICH
+    runtime class speaks to a provider -- provider_adapters.get(id) ->
+    adapter.new_runtime(), which is what ws_chat asks -- was bypassed for
+    Shadow's own thinking. Two ways to obtain a model runtime is one too
+    many: an adapter change (a new provider, a different runtime class for
+    Claude) would reach every chat pane and silently miss Shadow.
+
+    So Shadow now asks the SAME factory. `_shadow_args` above is unchanged
+    and still resolves the provider, still enforces SHADOW_PROVIDERS and
+    still inherits the founder's permission mode through the same
+    effective_permission_mode() call ws_chat makes -- this only replaces the
+    `new SessionRuntime()` line with the adapter's answer.
+
+    WHAT THIS DELIBERATELY DOES NOT ADOPT, and it is the whole of the
+    "behind the scenes" in the founder's question: chat_store. That reverse
+    index IS the definition of a Sutra chat (_owned_transcripts), so a record
+    here would put Shadow's private prompts, its decision JSON and its
+    reasoning into Chats as an ordinary conversation. Shadow's thinking stays
+    headless: no sutra_id, no index row, no registry entry, no resumable
+    session, and -- because SUTRA_MCP_SHADOW is still not in the spawn env --
+    no tools. It can only answer.
+
+    Never fatal: an adapter this build has not registered falls back to the
+    class Shadow always used, so a missing adapter costs the unification, not
+    Shadow.
+    """
+    try:
+        detail = providers.active_provider_detail()
+        adapter = provider_adapters.get(detail["id"]) if detail else None
+        if adapter is not None:
+            return adapter.new_runtime()
+    except Exception:           # noqa: BLE001 -- reasoning must not die here
+        pass
+    import session_runtime as _srt
+    return _srt.SessionRuntime()
+
+
 def _shadow_workdir_for_delegates():
     """Delegates work where the founder works (their objectives point at the
     real repo), under the SAME permission mode every chat pane runs at --
@@ -1929,7 +1973,8 @@ async def _shadow_recover():
             # fast turns) -- and deliberately WITHOUT SUTRA_MCP_SHADOW, so
             # the reasoning call has no shadow tools and can only answer.
             shadow_runner.set_default_decider(
-                shadow_runner.make_decider(_shadow_args, _shadow_workdir()))
+                shadow_runner.make_decider(_shadow_args, _shadow_workdir(),
+                                           new_runtime=_shadow_new_runtime))
         except Exception:
             pass
         try:
