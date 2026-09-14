@@ -93,3 +93,48 @@
 {"ts":"2026-09-14T18:09:57Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","missing":"classify resolve","mode":"hard","session":"unknown"}
 {"ts":"2026-09-14T18:10:14Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","missing":"classify resolve","mode":"hard","session":"unknown"}
 {"ts":"2026-09-14T18:10:48Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","session":"5c56810b-0d15-4495-a7d9-6b45c9219dde"}
+{"ts":"2026-09-14T18:43:28Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T18:43:57Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-5e7fccf90039-glittery-origami.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:44:11Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-5e7fccf90039-glittery-origami.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:44:41Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-5e7fccf90039-glittery-origami.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:44:58Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-5e7fccf90039-glittery-origami.md","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441"}
+{"ts":"2026-09-14T18:55:53Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:56:13Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/you-are-shadow-driving-silly-giraffe.md","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441"}
+{"ts":"2026-09-14T18:56:50Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/you-are-shadow-driving-silly-giraffe.md","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441"}
+{"ts":"2026-09-14T18:57:03Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:11Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:20Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:28Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:39Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:47Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:57:56Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:58:05Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:58:13Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:58:25Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:58:37Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:58:51Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/you-are-shadow-driving-silly-giraffe.md","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441"}
+{"ts":"2026-09-14T18:59:06Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:59:14Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:59:21Z","event":"flow-stop-warn","session":"c22f9bef-10e8-496e-ad6a-ae6e65eb1441","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T19:08:36Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T19:09:41Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T19:10:04Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-3c2f45621191-nifty-wall.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T19:10:54Z","event":"flow-stop-warn","session":"a0e0232f-a08a-4105-9a7c-377d6abe8ee8","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T19:12:28Z","event":"flow-stop-warn","session":"e1a1d652-d125-4218-976b-123c3e7ee2ac","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T19:20:38Z","event":"flow-stop-warn","session":"610ccde8-0d42-4986-9b76-39866a4399b6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T20:12:39Z","event":"flow-stop-warn","session":"08290ecf-2245-42c3-9c87-0e00c708f29a","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T20:15:24Z","event":"flow-gate-block","path":"mission_engine.py","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T20:15:39Z","event":"flow-gate-pass","path":"mission_engine.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:15:52Z","event":"flow-gate-block","path":"mission_engine.py","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T20:16:10Z","event":"flow-gate-block","path":"mission_engine.py","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T20:16:26Z","event":"flow-gate-pass","path":"mission_engine.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:30Z","event":"flow-gate-pass","path":"mission_engine.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:33Z","event":"flow-gate-pass","path":"shadow_runner.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:38Z","event":"flow-gate-pass","path":"shadow_runner.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:40Z","event":"flow-gate-pass","path":"shadow_runner.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:45Z","event":"flow-gate-pass","path":"shadow_runner.py","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:55Z","event":"flow-gate-pass","path":"static/js/16-shadow-home.js","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:16:57Z","event":"flow-gate-pass","path":"static/js/16-shadow-home.js","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:17:00Z","event":"flow-gate-pass","path":"static/js/16-shadow-home.js","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:17:05Z","event":"flow-gate-pass","path":"static/js/16-shadow-home.js","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}
+{"ts":"2026-09-14T20:17:09Z","event":"flow-gate-pass","path":"static/panel.css","session":"08290ecf-2245-42c3-9c87-0e00c708f29a"}

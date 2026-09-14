@@ -19,3 +19,21 @@ __pycache__/
 *.p8
 *.p12
 *.certSigningRequest
+
+# Per-session governance markers and ledgers, written by the plugin's own
+# hooks on every tool call (flow-gate, dispatch-gate, placement, marker-lib).
+# Per-machine runtime state, regenerated on demand, and never read from git:
+# org_api's _read_jsonl_tail returns (0, [], False) for a missing ledger, and
+# every test that touches these paths builds its own sandbox with a synthetic
+# session id (mktemp + CLAUDE_PROJECT_DIR), so none reads the repo's copies.
+#
+# NOTE: files already tracked under these paths STAY tracked -- .gitignore
+# does not untrack. These rules only stop NEW artifacts from accumulating.
+.claude/sessions/
+.claude/flow-inner
+**/.enforcement/flow-journal/
+**/.enforcement/atom-gate.jsonl
+**/.enforcement/dispatch-gate.jsonl
+**/.enforcement/marker-contamination.jsonl
+**/.enforcement/pytest-isolation-guard.jsonl
+**/.enforcement/placement/gate-log.jsonl
