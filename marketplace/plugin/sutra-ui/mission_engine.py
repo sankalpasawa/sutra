@@ -424,6 +424,123 @@ def evaluate_done_when(mission, transcript_text, verifier=None):
     return all(r["met"] for r in results) if results else False, results
 
 
+#: how much of the surrounding text a matched artifact is shown inside. A
+#: bare substring proves nothing on its own -- the founder needs the run of
+#: text it was found in to judge whether the chat really did the thing.
+ARTIFACT_CONTEXT = 90
+
+#: WHAT SATISFIED EACH TIER, in the founder's words. The tier IS the answer
+#: to "why does Shadow think this is done", so the copy is a fixed map read
+#: off the evaluation -- never composed at runtime, never model-written, and
+#: never a claim the tier does not support. `founder_confirm` says "you",
+#: because confirm_check is the only writer of that flag and only an explicit
+#: founder action calls it.
+HOW_MET = {
+    "verify": "Shadow ran this check and it passed",
+    "contains_artifact": "found in the chat",
+    "founder_confirm": "you confirmed it",
+}
+HOW_UNMET = "still outstanding"
+
+
+def artifact_context(transcript, needle, window=ARTIFACT_CONTEXT):
+    """The matched string INSIDE the run of text it was found in.
+
+    Whitespace is collapsed first, because the evidence blob is streamed
+    prose PLUS a json dump (shadow_runner.evidence_text) and a raw slice of
+    that reads as machine noise. A cut at either end then drops the partial
+    token it landed in -- the same word-boundary rule
+    shadow_runner._prose_tail applies, for the same reason: a fragment reads
+    as something the worker wrote when it is not.
+
+    Returns "" when there is no match, which is the honest answer: the
+    caller shows the check without evidence rather than inventing any.
+    """
+    text = " ".join(str(transcript or "").split())
+    needle = str(needle or "")
+    if not needle:
+        return ""
+    at = text.find(needle)
+    if at < 0:
+        return ""
+    start = max(0, at - window)
+    end = min(len(text), at + len(needle) + window)
+    out = text[start:end]
+    off = at - start                      # where the match sits inside `out`
+    if start > 0:
+        cut = out.find(" ")
+        if 0 <= cut < off:                # never trim INTO the match itself
+            out, off = out[cut + 1:], off - (cut + 1)
+        out, off = "…" + out, off + 1
+    if end < len(text):
+        cut = out.rfind(" ")
+        if cut > off + len(needle):
+            out = out[:cut]
+        out += "…"
+    return out.strip()
+
+
+def completion_summary(mission, results, transcript=""):
+    """WHAT WAS DONE, AND WHY SHADOW CALLS IT DONE.
+
+    THE GAP THIS CLOSES (founder, 2026-09-15). A finished mission said two
+    things to the founder and neither was legible. The feed row carried
+    "mission done", which 14-needs-you.js renders as "done - result inside";
+    and `result_excerpt` was that inside -- 150 characters off the HEAD of
+    the evidence blob plus 250 off its tail, which cuts through
+    `{"role": "assistant", "text": ...}` far more often than it lands on a
+    sentence. The one fact the founder actually wanted -- WHICH criteria
+    were satisfied, and BY WHAT -- was computed on the way past (it is
+    `results`, the loop's own evaluation) and then dropped on the floor.
+
+    DETERMINISTIC, AND NOT A SECOND EVALUATOR. Every value is read off the
+    mission record and off the evaluation evaluate_done_when ALREADY ran:
+    nothing is re-checked, no model is asked, and this cannot change a
+    mission's outcome -- it is called AFTER `done` is decided and only
+    describes it. A check it cannot evidence is reported without evidence
+    rather than with a guess.
+
+    `transcript` is the same evidence text the evaluation read, and is used
+    for exactly one thing: showing a contains_artifact match in context.
+    """
+    checks = mission.get("done_when") or []
+    rows = []
+    for i, r in enumerate(results or []):
+        # the stored check carries who/when for a founder confirmation;
+        # `results` carries the verdict. Index-aligned by construction --
+        # evaluate_done_when walks done_when in order and appends one row
+        # per check.
+        src = checks[i] if i < len(checks) else {}
+        tier = r.get("tier")
+        met = bool(r.get("met"))
+        row = {"check": r.get("check") or "", "tier": tier, "met": met,
+               "how": (HOW_MET.get(tier, "Shadow checked this") if met
+                       else HOW_UNMET)}
+        if met and tier == "contains_artifact":
+            found = artifact_context(transcript, r.get("check"))
+            if found:
+                row["evidence"] = found
+        if met and tier == "founder_confirm":
+            if src.get("confirmed_by"):
+                row["by"] = src["confirmed_by"]
+            if src.get("confirmed_at"):
+                row["at"] = src["confirmed_at"]
+        rows.append(row)
+    met_n = sum(1 for r in rows if r["met"])
+    return {
+        "objective": mission.get("objective") or "",
+        "headline": ("%d of %d checks passed" % (met_n, len(rows))
+                     if rows else "no check was set"),
+        "checks_met": met_n,
+        "checks_total": len(rows),
+        "checks": rows,
+        "turns_used": mission.get("turns_used") or 0,
+        "max_turns": mission.get("max_turns") or 0,
+        "chat": mission.get("target_session"),
+        "at": _now(),
+    }
+
+
 class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 
@@ -774,16 +891,30 @@ class MissionEngine:
         Lifted verbatim out of the loop so the confirmation path below can
         reach the same completion instead of growing a second one. Same
         transition, same excerpt, same ledger row, in the same order.
+
+        The completion summary is stamped HERE for that same reason; see
+        the note under it.
         """
         mm = self.store.transition(
             mid, "done", "done_when met: %s" % json.dumps(results)[:400])
         t = transcript or ""
         mm["result_excerpt"] = (t if len(t) <= 400
                                 else t[:150] + " ... " + t[-250:])
+        # THE SUMMARY IS STAMPED HERE and nowhere else, for the same reason
+        # the transition is: this is the one writer of a done mission, so it
+        # is the one place where "what was done and why it counts" can never
+        # disagree with the state on disk. `result_excerpt` above is
+        # untouched -- every existing reader (goal_lifecycle.
+        # _record_attempt_memory, the overlay's shmission card, three tests)
+        # keeps the field it reads. This adds a field; it replaces none.
+        mm["completion"] = completion_summary(mm, results, t)
         self.store.save(mm)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "result",
-            "summary": mm["result_excerpt"][:200]})
+            # the headline leads: an audit row that opens with "3 of 3
+            # checks passed" is readable, one that opens mid-json is not.
+            "summary": ("%s -- %s" % (mm["completion"]["headline"],
+                                      mm["result_excerpt"]))[:200]})
         return mm
 
     def settle(self, mid):

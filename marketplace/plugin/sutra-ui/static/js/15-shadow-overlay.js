@@ -259,6 +259,18 @@ function shadowRouteDeepLink(link){
     if (m){
       if (typeof S !== "undefined"){
         S.shadowTab = "working"; S.shadowFocusMission = m[1];
+        /* THE LINK NOW OPENS THE TASK IT NAMES (founder, 2026-09-15).
+           This already set shadowFocusMission and opened the `shadow`
+           screen -- but shadowFocusMission is read by shadowPlaneHtml
+           (the Watching screen's row highlight) and NOTHING else, while
+           the workspace this line opens picks its card from
+           S.shadowTaskSel. So every mission deep-link -- every "View" on
+           a Now row, which is how a founder hears a task finished at all
+           -- landed on whichever task the selection ranked first.
+
+           Both are set, neither is renamed: the plane keeps its highlight,
+           and the workspace opens the task the row was about. */
+        S.shadowTaskSel = m[1];
       }
       if (typeof goDest === "function") goDest("focus");
       if (typeof openScreen === "function") openScreen("shadow");

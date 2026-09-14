@@ -340,10 +340,29 @@ function shadowTasks(){
    so the right pane is never blank for no reason. */
 function shadowSelectedTask(){
   const rows = shadowTasks();
-  if (!rows.length) return null;
   const S_ = (typeof S !== "undefined") ? S : {};
-  const picked = rows.find(m => m.id === S_.shadowTaskSel);
-  if (picked) return picked;
+  /* THE TASK YOU ARE LOOKING AT DOES NOT VANISH WHEN IT FINISHES
+     (founder, 2026-09-15). shadowTaskIsActive rule 4 is right and stays --
+     a conclusion leaves the LIST, or the workspace becomes the mission
+     database it exists not to be. But the pane was filtered by the same
+     rule, so the moment a task completed the card it was showing was
+     swapped for another task's, and the completion summary the engine had
+     just stamped had no surface at all: the Now row said "done — result
+     inside" and the inside had already been replaced.
+
+     So the FOUNDER'S OWN PICK is honoured from the full record set, and
+     everything else -- the list, the fallback ranking below, the rules in
+     shadowTaskIsActive -- is untouched. Nothing new can be selected this
+     way: S.shadowTaskSel is only ever written by clicking a row (and only
+     active rows are drawn) or by creating a task, so the one record this
+     reaches that `rows` does not is the one the founder was already
+     reading. It stays until they pick something else.
+
+     Same shape as rule 3b (a founder-stopped row stays): a conclusion the
+     founder has not looked at yet is not history. */
+  const held = (S_.shadowMissions || []).find(m => m && m.id === S_.shadowTaskSel);
+  if (held) return held;
+  if (!rows.length) return null;
   /* THE FALLBACK RANKED A DEAD ROW ABOVE A LIVE ONE (founder, 2026-09-14).
      The report was "the list says RUNNING and the card says QUEUED, turn 0
      of 20" -- read as the two surfaces disagreeing about one mission. They
@@ -502,6 +521,52 @@ function shadowCheckRowsHtml(m){
     <div class="shconfirmsub">Only you can sign these off \u2014 read each one
       and confirm the ones you agree with.${left
         ? " " + left + " left." : ""}</div>
+    <div class="shchecks">${rows}</div>
+  </div>`;
+}
+
+/* ── WHAT SHADOW DID, AND WHY IT CALLS IT DONE ────────────────────────────
+   THE GAP THIS CLOSES (founder, 2026-09-15). A task that finished told the
+   founder two things and neither was legible: the Now row said "mission
+   done" -> "done — result inside", and the inside was `result_excerpt` --
+   150 characters off the head of the evidence blob plus 250 off its tail,
+   which lands mid-json far more often than on a sentence. The fact the
+   founder wanted -- which criteria were satisfied, and by what -- existed
+   all along as the loop's own evaluation, and was thrown away.
+
+   THE SERVER DECIDES, THIS RENDERS. Every value here is read off
+   `m.completion`, which mission_engine._complete stamps at the one place
+   that can write a done mission. Nothing is recomputed client-side: this
+   pane must never be able to claim a check passed that the engine did not
+   pass. A record without the field (a mission completed before it existed)
+   renders nothing and the card falls back to what it drew before.
+
+   THE CLASSES ARE THE SIGN-OFF'S. shcheck / shcheckbox / shchecktxt /
+   shcheckby / shchecks / shconfirm* already style exactly this shape one
+   function up (shadowCheckRowsHtml, the founder_confirm list), and a
+   satisfied check should not look like a different species from a check
+   waiting on you. Only .shcheckev is new. */
+function shadowCompletionHtml(m){
+  const c = m && m.completion;
+  if (!c) return "";
+  const rows = (c.checks || []).map(k => {
+    const met = !!k.met;
+    /* who confirmed rides the HOW line, because "you confirmed it · founder"
+       is one fact, and the tier copy is the server's word not ours */
+    const how = String(k.how || "") + (k.by ? " · " + k.by : "");
+    return `<div class="shcheck${met ? " shcheckmet" : ""}">
+      <span class="shcheckbox" aria-hidden="true">${met ? "✓" : ""}</span>
+      <span class="shchecktxt">${esc(k.check || "")}${k.evidence
+        ? `<span class="shcheckev">${esc(k.evidence)}</span>` : ""}</span>
+      <span class="shcheckby">${esc(how)}</span>
+    </div>`;
+  }).join("");
+  const turns = (c.turns_used || 0) + " of " + (c.max_turns || 0) + " turns";
+  return `<div class="shconfirm shdonesum" data-shdone="${escAttr(m.id)}">
+    <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
+    <div class="shconfirmsub">${esc(c.objective || "")}${c.objective
+      ? " — " : ""}${esc(turns)} used. These are the criteria Shadow
+      checked, and what satisfied each one.</div>
     <div class="shchecks">${rows}</div>
   </div>`;
 }
@@ -776,6 +841,13 @@ function shadowTaskCardHtml(m){
      so in this state the checklist REPLACES it rather than sitting beside it
      -- the same criteria printed twice is not a compact card. */
   const awaiting = shadowMissionNeedsFounder(m);
+  /* and the state after that one: the task FINISHED. The flat "done when"
+     row is the same criteria without the verdicts, so the summary replaces
+     it for exactly the reason the sign-off list does -- the same criteria
+     printed twice is not a compact card. Keyed on the summary the server
+     stamped, never on `state === "done"`, so a mission completed before the
+     field existed keeps the row it has always had. */
+  const finished = !!m.completion;
   /* target_mode + target_session ARE the answer to "where does this run"; no
      second source and nothing inferred. */
   const acts = m.target_mode === "new"
@@ -793,7 +865,7 @@ function shadowTaskCardHtml(m){
     </div>
     <div class="shcard2row"><span class="shcard2k">acts in</span>
       <span class="shcard2v">${acts}</span></div>
-    ${awaiting ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
+    ${awaiting || finished ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
         : "you say so — no check was set, so Shadow will ask"}</span></div>`}
@@ -804,6 +876,7 @@ function shadowTaskCardHtml(m){
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
+    ${finished ? shadowCompletionHtml(m) : ""}
     ${shadowInterventionHtml(m)}
     ${chatReady ? `<button class="shchattoggle${chatOpen ? " on" : ""}"
       type="button" data-shtaskchat="${escAttr(m.id)}"

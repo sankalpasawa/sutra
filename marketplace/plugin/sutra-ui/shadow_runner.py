@@ -185,6 +185,31 @@ def _emit_rescue(session_id, detail):
     })
 
 
+def terminal_why(m):
+    """The feed line for a mission that just ended.
+
+    THE ROW NOW SAYS WHAT PASSED (founder, 2026-09-15). Every terminal
+    mission emitted "mission <state>", and 14-needs-you.js renders the done
+    case as "done - result inside" -- a promise of an inside the founder
+    then had to go and find. `_complete` already stamps the inside as one
+    line ("3 of 3 checks passed"), so the row carries THAT.
+
+    Failed and stopped are byte-identical to before: a mission that never
+    completed has no completion summary, and neither does a done mission
+    written before the field existed, so both fall through to the
+    historical string.
+
+    Both callers -- the runner's terminal branch and settle_confirmation --
+    go through here, because a mission completed by the founder's own
+    confirmation is the one most likely to be read.
+    """
+    if m.get("state") == "done":
+        headline = (m.get("completion") or {}).get("headline")
+        if headline:
+            return headline
+    return "mission %s" % m["state"]
+
+
 def evidence_messages(doc):
     """The transcript messages a check may be verified against.
 
@@ -525,7 +550,7 @@ def _launch(mid, validated_say, verifier):
             release_delegate(m.get("target_session"))
             mission_engine.emit_mission_feed(
                 m, "info" if m["state"] == "done" else "needs_decision",
-                "mission %s" % m["state"])
+                terminal_why(m))
             await _promote_after_slot_freed(store, mid, validated_say,
                                             verifier)
         elif m and m["state"] == "blocked":
@@ -1111,7 +1136,7 @@ def settle_confirmation(mid):
         release_delegate(m.get("target_session"))
         mission_engine.emit_mission_feed(
             m, "info" if m["state"] == "done" else "needs_decision",
-            "mission %s" % m["state"])
+            terminal_why(m))
     # the same funnel the runner uses: the goal can never be left claiming
     # work that has stopped
     _goal_hook("on_attempt_end", m)
