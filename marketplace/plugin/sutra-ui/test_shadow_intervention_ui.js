@@ -234,4 +234,113 @@ const card = (ctx, m) => ctx.shadowTaskCardHtml(m);
   });
 }
 
+/* ── confirms_check: the form says what the Yes signs off ────────────────
+ * The server (39682c81) lets an intervention name one done_when check and
+ * the boolean field that gates it. These hold the UI half: the check text
+ * is QUOTED VERBATIM (founder decision, 2026-09-15), and every condition
+ * the server refuses to act on draws nothing at all.
+ */
+const CHECK = "Relevant tests pass.";
+
+/* The card's flat "done when" row already prints every check, so "is the
+ * text on the card" cannot tell the row apart from that summary. These
+ * assertions look at the FORM only -- opening tag to submit button. */
+const form = (h) => h.slice(h.indexOf('<div class="shiv" '),
+  h.indexOf("data-shivsend"));
+
+/* a mission whose intervention targets done_when[ix]; `over` patches the
+ * target so one helper covers the valid case and every broken one */
+function targeted(over, checks){
+  const m = mission([F("tests_pass", "boolean"), F("note", "text")]);
+  m.done_when = checks || [
+    { tier: "contains_artifact", check: "The change is implemented.", met: true },
+    { tier: "founder_confirm", check: CHECK, met: false },
+  ];
+  if (over !== null)
+    m.intervention.confirms_check = Object.assign(
+      { index: 1, field: "tests_pass" }, over || {});
+  return m;
+}
+
+/* 12. THE CHECK TEXT IS QUOTED, VERBATIM */
+{
+  const ctx = fresh();
+  const h = card(ctx, targeted());
+  assert(/shivsigns/.test(h), "the sign-off row must render");
+  assert(h.indexOf(CHECK) !== -1,
+    "the LITERAL check string must appear -- not a paraphrase of it");
+  assert(/Yes signs off/.test(h), "the row says what the Yes does");
+  assert(h.indexOf("“" + CHECK + "”") !== -1,
+    "quoted, so the founder can see where the criterion starts and ends");
+  /* it belongs to the gating field, not to the form at large */
+  const fields = h.split('class="shivfield"');
+  assert(fields[1].indexOf(CHECK) !== -1, "it sits under tests_pass");
+  assert(fields[2].indexOf(CHECK) === -1, "and not under the other field");
+  console.log("ok 12 confirms_check renders the literal check string");
+}
+
+/* 13. an intervention WITHOUT confirms_check renders exactly as before */
+{
+  const ctx = fresh();
+  const plain = card(ctx, targeted(null));
+  assert(!/shivsigns/.test(plain), "no target -> no row");
+  assert(form(plain).indexOf(CHECK) === -1, "and no check text in the form");
+  assert(/Which region\?/.test(plain) && /data-shivsend=/.test(plain),
+    "the form itself is untouched");
+  /* byte-for-byte: the ONLY difference the feature may make is inserting
+     that one div. Strip it from the targeted card and the two must match. */
+  const stripped = card(ctx, targeted())
+    .replace(/<div class="shivsigns">[\s\S]*?<\/div>/, "");
+  assert.strictEqual(stripped, plain,
+    "a targeted card must differ from an untargeted one by the row alone");
+  console.log("ok 13 a non-confirms_check intervention renders byte-identical"
+    + " to pre-change output");
+}
+
+/* 14. FALLBACK: the check is real but has no text to quote */
+{
+  const ctx = fresh();
+  const blank = [{ tier: "founder_confirm", check: "   ", met: false }];
+  const h = card(ctx, targeted({ index: 0 }, blank));
+  assert(/shivsigns/.test(h), "the sign-off still happens, so it still shows");
+  assert(/Yes signs off/.test(h), "and still says so");
+  assert(/check 1/.test(h), "named by position when it cannot be quoted");
+  assert(/no text for it/.test(h), "and honest that there is nothing to read");
+  assert(!/“\s*”/.test(h), "never quote an empty string as criterion");
+  console.log("ok 14 whitespace-only check text falls back to the generic"
+    + " label");
+}
+
+/* 15. every target the SERVER would refuse draws nothing */
+{
+  const ctx = fresh();
+  const silent = (over, checks, why) => {
+    const h = card(ctx, targeted(over, checks));
+    assert(!/shivsigns/.test(h), why);
+    assert(form(h).indexOf(CHECK) === -1, why + " (and quotes nothing)");
+  };
+  silent({ index: 9 }, null, "an out-of-range index");
+  silent({ index: -1 }, null, "a negative index");
+  silent({ index: 1.5 }, null, "a non-integer index");
+  silent({ index: true }, null, "a boolean index (would read as 1)");
+  silent({ index: "1" }, null, "a string index");
+  silent({ index: 0 }, null, "a check that is not founder_confirm");
+  silent({ field: "note" }, null, "a field that is not boolean");
+  silent({ field: "absent" }, null, "a field that is not on the form");
+  silent({}, [], "a mission with no done_when at all");
+  console.log("ok 15 nine refused targets draw nothing at all");
+}
+
+/* 16. the quote is ESCAPED -- a check is founder text, not markup */
+{
+  const ctx = fresh();
+  const evil = [{ tier: "founder_confirm", met: false,
+    check: "<img src=x onerror=alert(1)>" }];
+  const h = card(ctx, targeted({ index: 0 }, evil));
+  assert(/shivsigns/.test(h), "it still renders");
+  assert(h.indexOf("<img") === -1, "the check text must go through esc()");
+  assert(/&lt;img/.test(h), "escaped, not dropped");
+  console.log("ok 16 check text is escaped before it is quoted");
+}
+
 setTimeout(() => console.log("\nall shadow intervention UI tests passed"), 30);

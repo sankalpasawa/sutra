@@ -3696,6 +3696,15 @@
   border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .shivreq{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--faint)}
+/* what the Yes signs off. Sits under its own boolean control, quoting the
+   done_when check verbatim -- so it reads as a consequence of THAT answer,
+   not as another piece of the question. Same left rule as .shivev because
+   it is the same kind of thing: supporting record, not a control. */
+.shivsigns{margin:6px 0 0;padding-left:8px;border-left:2px solid var(--acc);
+  font-size:11.5px;color:var(--faint);display:flex;gap:6px;flex-wrap:wrap}
+.shivsignsk{letter-spacing:.04em;text-transform:uppercase;font-size:9.5px;
+  line-height:1.5;white-space:nowrap}
+.shivsignsv{color:var(--ink)}
 .shivev{margin:6px 0 2px;padding-left:8px;border-left:2px solid var(--line)}
 .shivevrow{font-size:11.5px;color:var(--faint);display:flex;gap:6px;
   flex-wrap:wrap;margin:2px 0}

@@ -846,7 +846,61 @@ function shadowIvValue(mid, f){
   return f.default === undefined ? null : f.default;
 }
 
-function shadowIvFieldHtml(mid, f){
+/* ── WHAT THE "YES" ACTUALLY SIGNS OFF (founder, 2026-09-15) ─────────────
+   THE GAP. 39682c81 taught the server that an intervention may name one
+   done_when check and the boolean field that gates it (`confirms_check`),
+   so answering Yes calls confirm_check and marks that check met. The form
+   drew none of it: the founder saw "Do the tests pass? [Yes] [No]" with no
+   sign that Yes was signing off a COMPLETION CRITERION. The failure that
+   motivated the server work (m-cd009367d41a burning its whole budget with
+   done_when[2] unmet) was invisible for exactly this reason.
+
+   QUOTED, NEVER PARAPHRASED (founder decision, 2026-09-15). The row prints
+   the check string from the mission record verbatim, in quotes. Generic
+   wording -- "confirm this check" -- would leave the founder signing off
+   something they cannot read, which is the whole defect.
+
+   THE SAME THREE CONDITIONS THE SERVER ENFORCES, and no others, so the row
+   appears if and only if the answer will really write the flag:
+     1. the target names THIS field, and the field is boolean
+        (_confirms_check refuses any other type: choice and text would need
+        a policy for which answers mean yes, which that module declines to
+        invent);
+     2. `index` is a non-bool, non-negative integer;
+     3. done_when[index] exists AND its tier is founder_confirm.
+   Anything else draws NOTHING -- a stale or moved index makes confirm_check
+   raise, the server catches and ledgers it, and the answer still lands. A
+   card must not promise a sign-off the server will decline to write. */
+function shadowIvSignsIndex(m, f){
+  const t = m && m.intervention && m.intervention.confirms_check;
+  if (!t || typeof t !== "object") return -1;
+  if (!f || f.type !== "boolean" || t.field !== f.key) return -1;
+  const i = t.index;
+  /* typeof excludes the boolean true, which would otherwise index as 1 */
+  if (typeof i !== "number" || i !== Math.floor(i) || i < 0) return -1;
+  const c = (m.done_when || [])[i];
+  if (!c || c.tier !== "founder_confirm") return -1;
+  return i;
+}
+
+/* The check is real but its text is empty -- a record written without one,
+   or one blanked since. The row still draws, because the sign-off is still
+   going to happen and hiding it would put the founder back where they
+   started; it just says plainly that there is nothing to read, rather than
+   quoting an empty string as if it were the criterion. */
+function shadowIvSignsHtml(m, f){
+  const i = shadowIvSignsIndex(m, f);
+  if (i === -1) return "";
+  const text = String(((m.done_when || [])[i] || {}).check || "").trim();
+  return `<div class="shivsigns">
+    <span class="shivsignsk">Yes signs off</span>
+    <span class="shivsignsv">${text
+      ? "“" + esc(text) + "”"
+      : "check " + (i + 1) + " — the record has no text for it"}</span>
+  </div>`;
+}
+
+function shadowIvFieldHtml(mid, f, signs){
   const d = shadowIvDraft(mid);
   const v = shadowIvValue(mid, f);
   const err = d.errors[f.key];
@@ -897,6 +951,7 @@ function shadowIvFieldHtml(mid, f){
     ${f.help && f.type !== "long_text" && SH_IV_INPUT[f.type] === undefined
       ? `<p class="shnewsub">${esc(f.help)}</p>` : ""}
     ${body}
+    ${signs || ""}
     ${err ? `<div class="shnewerr">${esc(err)}</div>` : ""}
   </div>`;
 }
@@ -912,7 +967,8 @@ function shadowInterventionHtml(m){
       iv.evidence.map(e => `<div class="shivevrow">${
         e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
       }<span>${esc(e.text || "")}</span></div>`).join("")}</div>` : ""}
-    ${iv.fields.map(f => shadowIvFieldHtml(m.id, f)).join("")}
+    ${iv.fields.map(f => shadowIvFieldHtml(m.id, f, shadowIvSignsHtml(m, f)))
+      .join("")}
     <div class="shnewacts">
       <button class="btn pri" type="button"
         data-shivsend="${escAttr(m.id)}"${d.busy ? " disabled" : ""}
