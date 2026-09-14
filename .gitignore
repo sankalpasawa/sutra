@@ -37,3 +37,37 @@ __pycache__/
 **/.enforcement/marker-contamination.jsonl
 **/.enforcement/pytest-isolation-guard.jsonl
 **/.enforcement/placement/gate-log.jsonl
+
+# ...and the per-turn markers and ledgers the SAME hooks rewrite constantly.
+# These were tracked from the 2026-08-02 import onward and have been churning
+# in every commit since -- 16 files of machine state in a diff whose subject
+# was one .gitignore line. Untracked 2026-09-15 (git rm --cached; the files
+# stay on disk). Safe because nothing reads them from git: every hook that
+# uses one creates it (mkdir -p / touch / >>) and guards for its absence
+# ([ -f ]), so a fresh clone rebuilds them on the first tool call.
+.claude/depth-registered
+.claude/flow-classified
+.claude/flow-type-resolved
+.claude/input-routed
+.claude/placement-registered
+.claude/sutra-estimation.log
+**/.enforcement/.estimation-last-ts
+**/.enforcement/clock-skew-sidecar.jsonl
+**/.enforcement/d30-policy-only.log
+**/.enforcement/marker-resets.jsonl
+**/.enforcement/phase-exit-audit.jsonl
+**/.enforcement/build-layer-ledger.jsonl
+**/.enforcement/flow-gate.jsonl
+**/holding/state/prompts/
+
+# Per-run ledgers the hooks keep adding NEW names for. Enumerated, not
+# wildcarded, and that is deliberate: .enforcement/ still holds 8 tracked
+# files (cascade, md-standard, routing-misses, test-gate, rtk-gate,
+# compliant-turns, the push receipt) and .claude/ holds 43 including
+# commands/ and hooks/, so `**/.enforcement/` would shadow real content.
+# This list will need extending again when a hook invents another name.
+**/.enforcement/bash-summary.jsonl
+**/.enforcement/proto*-warnings.log
+**/.enforcement/placement/touch-log.jsonl
+**/.enforcement/placement/touch-errors.log
+**/.sutra/creation-guard.jsonl
