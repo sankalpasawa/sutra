@@ -890,7 +890,11 @@ function updateCli(args, timeoutMs) {
     }, (err, stdout) => {
       let parsed = null;
       try { parsed = JSON.parse(String(stdout || "").trim()); } catch (e) { /* judged below */ }
-      if (parsed && parsed.error) return reject(new Error(parsed.error));
+      if (parsed && parsed.error) {
+        const e = new Error(parsed.error);
+        if (parsed.busy === true) e.busy = true;   // lock held a moment; see isUpdateBusy
+        return reject(e);
+      }
       if (err) return reject(new Error(err.killed ? "the updater timed out" : (err.message || "updater failed")));
       if (!parsed) return reject(new Error("the updater returned no answer"));
       resolve(parsed);
@@ -1070,10 +1074,39 @@ function startUpdateSchedule() {
 /* Hand the helper this process -- its pid, so it waits for THE SHELL rather
    than for whatever the backend's parent happens to be. */
 async function armUpdate(relaunch, timeoutMs) {
-  const r = await updateOp("arm", { wait_pid: process.pid, relaunch: !!relaunch },
-                           timeoutMs || 60000);
+  const r = await updateOpRetryBusy("arm", { wait_pid: process.pid, relaunch: !!relaunch },
+                                    timeoutMs || 60000);
   armed = true;
   return r;
+}
+
+/* A busy state lock is not a failed update. Another update step (a stage
+   commit, a resolve) held pending-update.json for a moment and the verb gave
+   up after its 5s wait. The CLI flags it `busy`; over HTTP only the message
+   survives, which is updates.STATE_BUSY_MESSAGE. */
+const UPDATE_BUSY_PHRASE = "in use by another process";
+const UPDATE_BUSY_RETRY_MS = 1500;
+const UPDATE_BUSY_MIN_ATTEMPT_MS = 7000;   // the 5s lock wait plus room to finish
+
+function isUpdateBusy(err) {
+  return !!err && (err.busy === true || String(err.message || "").includes(UPDATE_BUSY_PHRASE));
+}
+
+/* Retry busy refusals quietly, but never past the caller's budget: every
+   attempt gets the time LEFT, and no attempt starts without room to finish.
+   The quit path's 8s bound therefore still holds. */
+async function updateOpRetryBusy(verb, body, budgetMs) {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    try {
+      return await updateOp(verb, body, Math.max(1, deadline - Date.now()));
+    } catch (err) {
+      const room = deadline - Date.now() - UPDATE_BUSY_RETRY_MS;
+      if (!isUpdateBusy(err) || room < UPDATE_BUSY_MIN_ATTEMPT_MS) throw err;
+      console.log(`[sutra] update state busy; retrying ${verb}`);
+      await new Promise((r) => setTimeout(r, UPDATE_BUSY_RETRY_MS));
+    }
+  }
 }
 
 /* Launch-time reconciliation, before the window is shown.
@@ -1085,7 +1118,7 @@ async function resolvePendingUpdate() {
   if (!updateCapable()) return false;
   let r;
   try {
-    r = await updateOp("resolve", { installed: app.getVersion() }, 20000);
+    r = await updateOpRetryBusy("resolve", { installed: app.getVersion() }, 20000);
   } catch (err) {
     console.error("[sutra] could not resolve pending update:", err.message);
     return false;
@@ -1124,7 +1157,8 @@ ipcMain.handle("sutra:update-apply", async () => {
     setTimeout(() => app.quit(), 250);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err.message };
+    // busy: the banner retries quietly rather than saying the update failed.
+    return { ok: false, error: err.message, busy: isUpdateBusy(err) };
   }
 });
 

@@ -1325,6 +1325,26 @@ function agSideHtml(a){
       ${r[0] === "connections" && connWarn ? `<span class="ct w">!</span>` : ""}</button></li>`).join("")}</ul>`;
 }
 
+/* THE MODEL PICKER. The same providers and models the Sutra chat offers (owner, 2026-09-14: "why
+   is it not showing the model options which we have configured in a normal sutra chat"). Only
+   providers that can run on this Mac are listed; value is "provider|model". */
+const AG_PROVIDER_LABEL = { "claude-cli": "Claude Code", "codex-cli": "OpenAI Codex", "deepseek": "DeepSeek",
+                            "anthropic": "Anthropic API", "openai": "OpenAI API" };
+function agModelPickHtml(h, disabled){
+  const m = h && h.model;
+  if (!m || !(m.options || []).length) return "";
+  const live = (m.options || []).filter(o => o.runnable);
+  if (!live.length) return "";
+  const chosenOk = live.some(o => o.id === m.provider);
+  const cur = chosenOk ? m.provider + "|" + (m.model || "") : "claude|";
+  const opts = live.map(o => `<optgroup label="${agEsc(o.name)}">${(o.models.length ? o.models : [{ id: "", name: "default" }]).map(md => {
+    const v = o.id + "|" + md.id;
+    const name = md.id ? md.name : "default";
+    return `<option value="${agEsc(v)}"${v === cur ? " selected" : ""}>${agEsc(o.name + " · " + name)}</option>`;
+  }).join("")}</optgroup>`).join("");
+  return `<select class="ag-model" data-agmodel aria-label="Model the agent runs on" title="Model the agent runs on"${disabled ? " disabled" : ""}>${opts}</select>`;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
   const running = live && live.status === "running";
@@ -1350,6 +1370,7 @@ function agComposerHtml(a){
   return `${state}
     <div class="ag-field${running ? " busy" : ""}">
       <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
+      ${agModelPickHtml(a.health, running)}
       ${running ? `<button class="send stop" type="button" data-ag="stop" aria-label="Stop this run" title="Stop — the run halts after the current step"><svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>`
                : `<button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>`}
     </div>`;
@@ -2729,9 +2750,10 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
     <p class="lead">What the agent needs, and your team. Keys stay on this Mac and are never shown again.</p>
     ${agWsHtml(ws, wsForm)}
     <h3 class="sec">Model</h3>
-    <div class="ag-row"><div class="ri"><div class="rn">${prov === "claude-cli" ? "Claude, through the command line" : prov ? agEsc(prov) : "No model available"}
-        <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov ? "connected" : "not signed in"}</span></div>
-      <div class="rd">${prov ? "The same sign-in the chat uses. No API key anywhere." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div></div></div>
+    <div class="ag-row"><div class="ri"><div class="rn">${prov ? agEsc(AG_PROVIDER_LABEL[prov] || prov) : "No model available"}
+        <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov === "codex-cli" ? "your OpenAI sign-in" : prov === "deepseek" ? "your DeepSeek balance" : prov ? "connected" : "not signed in"}</span></div>
+      <div class="rd">${prov ? "The same providers and sign-ins Sutra's chat uses. Pick one here or next to the message box." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div>
+      ${prov ? `<div class="row" style="margin-top:8px">${agModelPickHtml(h, false)}</div>` : ""}</div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
     <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
       <div class="rd">Real search numbers: how many people search, how hard it is to rank, and who ranks now. Research needs it. Under $1 an article.</div>
@@ -4660,6 +4682,15 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     const a = agS(); if (!a) return;
     if (t.matches("[data-agpagetype]")){ a.pageType = t.value; agLoadPages(0); }
     else if (t.matches("[data-agpagelang]")){ a.pageLang = t.value; agLoadPages(0); }
+    else if (t.matches("[data-agmodel]")){
+      const cut = t.value.indexOf("|");
+      const body = { provider: t.value.slice(0, cut), model: t.value.slice(cut + 1) };
+      agPostApi("/model", body)
+        .then(m => { a.health = Object.assign({}, a.health, { model: m, model_provider: m.running }); })
+        .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not switch model: " + ((e && e.message) || e) }); })
+        .then(() => agApi("/health").then(h => { a.health = h; }).catch(() => {}))
+        .then(() => agDraw(true));
+    }
   });
   document.addEventListener("scroll", (ev) => {
     const el = ev.target; if (!el || el.id !== "agScroll") return;

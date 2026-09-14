@@ -86,6 +86,45 @@ def _sync_claude_bin():
 _sync_claude_bin()
 
 
+# ---- which model the agent runs on -----------------------------------------------------------
+# The same providers the Sutra chat offers, found the same way (providers.py), so a Codex sign-in
+# or a DeepSeek key someone set up for chat works here too without setting anything up twice.
+AGENT_PROVIDERS = ("claude", "codex", "deepseek")
+
+
+def _sync_codex_bin():
+    try:
+        path = providers.provider_bin("codex")
+    except Exception:  # noqa: BLE001
+        path = None
+    if path:
+        os.environ["SEO_AGENT_CODEX_BIN"] = path
+    return path
+
+
+def _chat_default_choice():
+    pid = providers.active_provider()
+    return pid or "", (providers.stored_model(pid) or "") if pid else ""
+
+
+llm.set_hooks(deepseek_key=providers.deepseek_api_key, default_choice=_chat_default_choice)
+_sync_codex_bin()
+
+
+def _model_info():
+    """What the picker draws: the choice, what actually runs, and every provider with its models."""
+    options = []
+    for p in providers.discover_providers():
+        if p["id"] not in AGENT_PROVIDERS:
+            continue
+        options.append({"id": p["id"], "name": p["name"], "runnable": bool(p["runnable"]),
+                        "models": [{"id": m["id"], "name": m["name"]}
+                                   for m in providers.models_for(p["id"])
+                                   if m.get("selectable", True) is not False]})
+    pid, model = llm.chosen()
+    return {"provider": pid, "model": model, "running": llm.provider(), "options": options}
+
+
 # ---- one worker per run --------------------------------------------------------------------
 
 _workers = {}
@@ -1094,6 +1133,32 @@ def api_connections():
     the model is the `claude` CLI on the user's subscription, never an API key."""
     c = store.connections()
     return {k: bool((c.get(k) or "").strip()) for k in _CONN_KEYS}
+
+
+@router.get("/model")
+def api_model():
+    return _model_info()
+
+
+@router.post("/model")
+def api_save_model(body: dict = Body(...)):
+    """Pick the provider and model the agent runs on. Only a provider that can run on this Mac,
+    and only a model that provider offers ("" is the provider's own default)."""
+    pid = str(body.get("provider") or "").strip()
+    model = str(body.get("model") or "").strip()
+    info = _model_info()
+    opt = next((o for o in info["options"] if o["id"] == pid), None)
+    if not opt:
+        return JSONResponse({"error": "unknown provider: %s" % pid}, status_code=400)
+    if not opt["runnable"]:
+        return JSONResponse({"error": "%s is not set up on this Mac. Set it up in Sutra's chat "
+                                      "settings first." % opt["name"]}, status_code=400)
+    if model and model not in {m["id"] for m in opt["models"]}:
+        return JSONResponse({"error": "%s does not offer %s" % (opt["name"], model)}, status_code=400)
+    if pid == "codex":
+        _sync_codex_bin()
+    store.save_model_choice(pid, model)
+    return _model_info()
 
 
 @router.post("/connections")
@@ -2634,6 +2699,7 @@ def api_health():
             "company": co,
             "companies": n_companies,
             "model_provider": llm.provider(),
+            "model": _model_info(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()
                                and (c.get("dataforseo_password") or "").strip()),

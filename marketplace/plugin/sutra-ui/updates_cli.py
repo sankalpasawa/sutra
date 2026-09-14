@@ -14,7 +14,8 @@ POST to localhost. A child process spawned by the signed shell is not
 reachable from a web page; adding a token here would protect nothing.
 
 CONTRACT. One verb per invocation. A JSON object on stdout and exit 0 on
-success; {"error": "<reason>"} on stdout and exit 1 on a refusal or failure.
+success; {"error": "<reason>"} on stdout and exit 1 on a refusal or failure,
+plus "busy": true when the only problem was a momentarily held state lock.
 Nothing else is printed to stdout -- the shell parses it.
 
 Run as:  <bundle-python> -m updates_cli <verb> [args]
@@ -69,6 +70,11 @@ def main(argv=None):
                                       relaunch=ns.relaunch)
         else:
             out = updates.resolve_pending(installed_version=ns.installed)
+    except updates.StateBusy as exc:
+        # Another process holds the manifest for a moment. Not a failure: the
+        # shell retries on `busy` instead of telling the user it broke.
+        print(json.dumps({"error": str(exc), "busy": True}))
+        return 1
     except RuntimeError as exc:
         print(json.dumps({"error": str(exc)}))
         return 1

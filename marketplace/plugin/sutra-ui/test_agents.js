@@ -3827,3 +3827,26 @@ test("a finished catalogue refresh reports the real counts", () => {
   assert.ok(/37 new/.test(fired[0].body) && /4 gone/.test(fired[0].body)
             && /112 changed/.test(fired[0].body), fired[0].body);
 });
+
+test("the model picker lists only providers that can run, and marks the pick", () => {
+  const h = { model_provider: "codex-cli", model: { provider: "codex", model: "gpt-5.5", running: "codex-cli", options: [
+    { id: "claude", name: "Claude Code", runnable: true, models: [{ id: "", name: "CLI default" }, { id: "opus", name: "Opus" }] },
+    { id: "codex", name: "OpenAI Codex", runnable: true, models: [{ id: "", name: "CLI default" }, { id: "gpt-5.5", name: "gpt-5.5" }] },
+    { id: "deepseek", name: "DeepSeek", runnable: false, models: [{ id: "deepseek-v4-pro", name: "V4 Pro" }] }] } };
+  const html = A.agModelPickHtml(h, false);
+  assert.ok(/data-agmodel/.test(html), html);
+  assert.ok(/value="codex\|gpt-5.5" selected/.test(html), html);
+  assert.ok(/Claude Code · Opus/.test(html) && /Claude Code · default/.test(html), html);
+  assert.ok(!/DeepSeek/.test(html), "a provider that cannot run is not offered");
+  assert.ok(/disabled/.test(A.agModelPickHtml(h, true)), "locked while a run is working");
+  const gone = JSON.parse(JSON.stringify(h)); gone.model.provider = "deepseek"; gone.model.model = "deepseek-v4-pro";
+  assert.ok(/value="claude\|" selected/.test(A.agModelPickHtml(gone, false)), "a pick that cannot run shows what runs instead");
+  assert.strictEqual(A.agModelPickHtml({ model_provider: "claude-cli" }, false), "", "an older backend draws no picker");
+});
+
+test("the composer carries the model picker", () => {
+  const a = agReset();
+  a.health = { model_provider: "claude-cli", model: { provider: "claude", model: "", running: "claude-cli",
+    options: [{ id: "claude", name: "Claude Code", runnable: true, models: [{ id: "", name: "CLI default" }] }] } };
+  assert.ok(/data-agmodel/.test(A.agComposerHtml(a)));
+});

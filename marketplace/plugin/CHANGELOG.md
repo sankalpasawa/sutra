@@ -1,6 +1,12 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-13
+**status**: active · **updated**: 2026-09-14
+## 2.271.6 (2026-09-14)
+
+- **The SEO Writer reads a CLI reply that arrives with extra output.** "Model call failed: Claude CLI did not return JSON (exit 0)" was a good reply with something else printed beside it; `llm._cli_result` now finds the result object in the output. Tests: 5 checks.
+- **The SEO Writer runs on the model you pick.** Claude, Codex or DeepSeek, the same providers and sign-ins as Sutra's chat, picked next to the message box or in Connections. Defaults to the chat's provider; falls back to Claude when the pick cannot run. Tests: 22 checks, 2 UI pins.
+- **A new release arriving no longer breaks the waiting one.** Staging held the update lock for the whole download, so installing the waiting update timed out ("the update state is in use by another process") and the download overwrote its image. Downloads now run unlocked into a private folder and land under a versioned name; a busy lock is retried quietly instead of shown as a failure. Tests: 14 checks.
+
 ## 2.271.3 (2026-09-13)
 
 - **The team's idea sheet reaches everyone who joins.** Nothing ever sent the sheet to the team's `ideas` table and the knowledge pack skips `assets/`, so a joiner's Asset ideas tab stayed empty (0 on the team, 1,892 on the owner's Mac). Every save now sends what changed: up to 25 rows through the queue, more as bulk upserts of 500 that fall back to the queue on failure. Rows from the team are written with `push=False` so they never bounce back. `sync.backfill_ideas` sends an existing sheet once to an empty team, at most every 10 minutes until it finishes. A sheet is only sent when a fifth of its linked rows point at this Mac's catalogue domain, which replaced a "first team member" gate that wrongly refused the owner's own Mac. The Asset ideas tab re-reads the sheet every fourth refresh tick while open. Tests: `test_workspace_ideas`, 37 checks.

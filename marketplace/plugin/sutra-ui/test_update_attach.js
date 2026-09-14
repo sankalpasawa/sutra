@@ -80,6 +80,41 @@ test("the quit path is bounded on BOTH verbs", () => {
   assert(/armUpdate\(false, 8000\)/.test(body), "quit-path arm unbounded");
 });
 
+test("a busy state lock is retried by the shell, not reported as a failure", () => {
+  /* 2026-09-14: "Sutra 2.271.4 could not be applied. the update state is in use
+     by another process" -- a stage was downloading 2.271.5 and arm lost the lock. */
+  const cli = main.slice(main.indexOf("function updateCli"), main.indexOf("async function updateOp"));
+  assert(/parsed\.busy === true/.test(cli), "updateCli drops the CLI's busy flag");
+  assert(main.includes("function isUpdateBusy"), "no isUpdateBusy()");
+  const i = main.indexOf("async function armUpdate");
+  assert(/updateOpRetryBusy\("arm"/.test(main.slice(i, main.indexOf("\n}", i))),
+         "armUpdate does not retry a busy lock");
+  const j = main.indexOf("async function resolvePendingUpdate");
+  assert(/updateOpRetryBusy\("resolve"/.test(main.slice(j, main.indexOf("\n}", j))),
+         "launch-time resolve does not retry a busy lock");
+  const k = main.indexOf('ipcMain.handle("sutra:update-apply"');
+  assert(/busy:\s*isUpdateBusy\(err\)/.test(main.slice(k, main.indexOf("\n});", k))),
+         "update-apply does not tell the renderer the refusal was only busy");
+});
+
+test("the shell's busy phrase is the one updates.py raises", () => {
+  const py = rd("updates.py");
+  const m = main.match(/const UPDATE_BUSY_PHRASE = "([^"]+)"/);
+  assert(m, "UPDATE_BUSY_PHRASE not declared");
+  const msg = py.slice(py.indexOf("STATE_BUSY_MESSAGE = "), py.indexOf(")", py.indexOf("STATE_BUSY_MESSAGE = ")));
+  assert(msg.replace(/"\s*\n\s*"/g, "").includes(m[1]),
+         "updates.STATE_BUSY_MESSAGE no longer contains '" + m[1] + "'; own-mode HTTP busy errors would read as failures");
+});
+
+test("busy retries never outlive the caller's budget", () => {
+  const i = main.indexOf("async function updateOpRetryBusy");
+  const body = main.slice(i, main.indexOf("\n}", i));
+  assert(/const deadline = Date\.now\(\) \+ budgetMs/.test(body), "no deadline");
+  assert(/deadline - Date\.now\(\)/.test(body), "attempts are not given only the time left");
+  assert(/UPDATE_BUSY_MIN_ATTEMPT_MS/.test(body), "a retry can start without room to finish");
+  assert(/!isUpdateBusy\(err\)[^;]*throw err/.test(body), "genuine failures are retried too");
+});
+
 test("attach boot path resolves pending updates before the window", () => {
   const i = main.indexOf("if (await isSutra())");
   const body = main.slice(i, i + 700);

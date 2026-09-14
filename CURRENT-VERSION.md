@@ -1,8 +1,31 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-13
+**status**: active · **updated**: 2026-09-14
 
-## v2.271.5 (2026-09-13, HEAD)
+## v2.271.6 (2026-09-14, HEAD)
+
+**SEO Writer: "Model call failed · did not return JSON", a model picker, and the update banner.**
+(1) A Mac's `claude` CLI printed its result object with something else beside it on stdout, and
+`llm._claude_cli_once` gave up on anything that was not exactly one JSON object, so a good reply
+(an `ask_user` for the website) was reported as a failure. `llm._cli_result` now takes the whole
+output, else the last result line, else the first result object in the text. (2) The SEO Writer
+ran on Claude only. It now offers the providers Sutra's chat offers, found by `providers.py`:
+Claude (CLI), Codex (`codex exec` read-only with a strict `--output-schema`, tool input as a JSON
+string) and DeepSeek (its OpenAI-compatible API with the key saved for DeepSeek chat). The pick is
+the person's (`model.json` in the agent root), defaults to the chat's own provider and model, and
+falls back to Claude when the pick cannot run. Web-search calls stay on Claude. Picker in the
+composer and in Connections; routes `GET/POST /api/agents/seo/model`. (3) "Sutra 2.271.4 could not be applied: the update
+state is in use by another process". `stage_desktop` held the manifest flock (5s wait) for the
+whole ~390MB download, so the arm for 2.271.4 timed out while the shell staged 2.271.5, and the
+banner called that a failure; the download also wrote over the staged 2.271.4 image, which shared
+its file name. The download and Gatekeeper check now run with no lock into `.download-*`, and
+`_commit_stage` takes the lock only to re-read the manifest and move the image into place under a
+versioned name (never over a live install). `arm_desktop` verifies outside the lock. A busy lock
+raises `StateBusy`, the CLI reports `busy`, the shell and banner retry it quietly within their
+time limits. Tests: `test_llm_cli` +27 checks, `test_agents.js` +2, `test_updates_cli.py` +8,
+`test_update_attach.js` +3, `test_update_banner.js` +3.
+
+## v2.271.5 (2026-09-13)
 
 **Providers work inside ~/Desktop again — the TCC session-detach bug (found by 2.271.4's stderr fix).**
 2.271.4 made the ACP child's stderr visible, and the very next DeepSeek failure named its real cause:
