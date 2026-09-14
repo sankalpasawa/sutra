@@ -480,7 +480,7 @@ def artifact_context(transcript, needle, window=ARTIFACT_CONTEXT):
     return out.strip()
 
 
-def completion_summary(mission, results, transcript=""):
+def completion_summary(mission, results, transcript="", outcome=""):
     """WHAT WAS DONE, AND WHY SHADOW CALLS IT DONE.
 
     THE GAP THIS CLOSES (founder, 2026-09-15). A finished mission said two
@@ -502,6 +502,15 @@ def completion_summary(mission, results, transcript=""):
 
     `transcript` is the same evidence text the evaluation read, and is used
     for exactly one thing: showing a contains_artifact match in context.
+
+    `outcome` IS THE OTHER HALF OF THE ANSWER (founder, 2026-09-15). The
+    rows below say why Shadow calls it done -- three boxes ticked, and what
+    ticked each. They do not say WHAT WAS DONE, and that is the thing a
+    founder opens the pane for. `outcome` is the worker's own closing
+    message, read off the transcript by shadow_runner.last_worker_message
+    and passed in already trimmed. It is QUOTED, never composed: this
+    function does not summarise it, shorten it or reword it, and an absent
+    one stays absent so every surface falls back to what it drew before.
     """
     checks = mission.get("done_when") or []
     rows = []
@@ -529,6 +538,7 @@ def completion_summary(mission, results, transcript=""):
     met_n = sum(1 for r in rows if r["met"])
     return {
         "objective": mission.get("objective") or "",
+        "outcome": str(outcome or ""),
         "headline": ("%d of %d checks passed" % (met_n, len(rows))
                      if rows else "no check was set"),
         "checks_met": met_n,
@@ -577,6 +587,12 @@ def completion_text(completion):
         head.append(str(c["objective"]))
     head.append("%s of %s turns used."
                 % (c.get("turns_used") or 0, c.get("max_turns") or 0))
+    # the worker's own account, in the same place the pane puts it: under
+    # the budget line and above the verdicts. Blank line either side so a
+    # paragraph of prose does not read as one more header row.
+    if c.get("outcome"):
+        head.append("")
+        head.append(str(c["outcome"]))
     rows = []
     for k in c.get("checks") or []:
         how = str(k.get("how") or "")
@@ -597,11 +613,20 @@ class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
-                 verifier=None, on_evaluated=None, decider=None):
+                 verifier=None, on_evaluated=None, decider=None,
+                 outcome_reader=None):
         """`on_evaluated(mission, results, done)` is an OBSERVER of the one
         evaluation this loop already performs -- it is how the goal layer
         keeps per-check progress without a second evaluator. Optional, and
         never load-bearing: its failure cannot change a mission's outcome.
+
+        `outcome_reader(mission) -> str` is the same shape and the same
+        promise: it is asked, once, AFTER `done` is decided, for the
+        worker's own closing words, and it is injected rather than imported
+        because the transcript lives in shadow_runner and this module
+        imports nothing from there. None -- every existing caller and every
+        existing test -- stamps a summary with no outcome, which is exactly
+        the record shape that shipped before it.
         """
         self.store = store
         self.sayer = sayer
@@ -613,6 +638,7 @@ class MissionEngine:
         # template, which is what leaves every standalone mission and every
         # pre-existing test behaving exactly as before.
         self.decider = decider
+        self.outcome_reader = outcome_reader
 
     async def provision_target(self, mid, spawner):
         """S53: target_mode=new -- provision the delegate session ONCE via
@@ -959,7 +985,19 @@ class MissionEngine:
         # untouched -- every existing reader (goal_lifecycle.
         # _record_attempt_memory, the overlay's shmission card, three tests)
         # keeps the field it reads. This adds a field; it replaces none.
-        mm["completion"] = completion_summary(mm, results, t)
+        # THE WORKER'S OWN ACCOUNT, asked for exactly once and here, where
+        # the state it describes is already settled. Guarded the same way
+        # on_evaluated is and for the same reason: a reader that raises must
+        # not be able to lose a mission its completion. A failure costs the
+        # outcome line and nothing else -- the summary, the transition and
+        # the ledger row below are all already decided.
+        outcome = ""
+        if self.outcome_reader:
+            try:
+                outcome = self.outcome_reader(mm) or ""
+            except Exception:
+                outcome = ""
+        mm["completion"] = completion_summary(mm, results, t, outcome)
         self.store.save(mm)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "result",

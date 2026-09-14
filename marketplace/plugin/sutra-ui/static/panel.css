@@ -3214,6 +3214,16 @@
 .shdonesum .shcheck{align-items:flex-start}
 .shcheckev{display:block;color:var(--muted);font-size:11.5px;line-height:1.45;
   margin-top:3px;font-style:italic}
+/* WHAT THE WORKER SAID IT DID, between the criteria line and the verdicts.
+   Quoted prose, so it is set like .shcheckev (the chat's own words under a
+   check) rather than like a header row -- same muted colour, same italic --
+   and it keeps full body size because it is the paragraph a founder reads
+   first, not a footnote to a check. pre-wrap honours the worker's own line
+   breaks; the text is trimmed server-side, so it cannot run the card. */
+.shdonework{margin-top:8px;padding:7px 9px;border-radius:7px;
+  background:var(--sepia);border:1px solid var(--line-soft);
+  color:var(--muted);font-size:12.5px;line-height:1.5;font-style:italic;
+  white-space:pre-wrap;overflow-wrap:anywhere}
 /* Copy result sits ON the headline row, because it acts on the summary the
    headline names and nothing else. Same size as .shcheckdo (the sign-off's
    own Confirm), so the two never read as different weights of control. */

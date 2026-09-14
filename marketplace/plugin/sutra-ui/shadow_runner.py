@@ -163,6 +163,12 @@ _RECENT_CAP = 20000
 #: closing that direction would make the two modules mutually dependent.
 DECIDE_PROSE_TAIL = 2000
 
+#: how much of the worker's closing message the completion summary carries.
+#: Long enough to be a real account of what was done, short enough that the
+#: summary stays a summary -- it renders ABOVE the check list, and a block
+#: that pushes the verdicts off the card defeats the pane it sits in.
+OUTCOME_CHARS = 700
+
 #: session_id -> unix ts of the LAST frame of any kind (stall detection)
 _LAST_FRAME_TS = {}
 STALL_SECS = 240
@@ -361,6 +367,72 @@ def evidence_text(session_id):
         # nothing streamed for this session: unchanged, byte for byte
         return blob
     return blob + " " + _prose_tail(live)
+
+
+def _outcome_trim(text, limit=OUTCOME_CHARS):
+    """`text` capped at `limit`, cut at a SENTENCE if one is near the end.
+
+    The same lesson _prose_tail records, applied at the other end of the
+    string: a cut at whatever byte lands on `limit` reads as something the
+    worker wrote when it is not. A sentence boundary in the last two thirds
+    of the window wins outright and needs no ellipsis, because nothing was
+    left mid-thought; otherwise the cut falls back to a word boundary and
+    SAYS it was cut.
+    """
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    stop = max(head.rfind(". "), head.rfind("! "), head.rfind("? "))
+    if stop > limit // 3:
+        return head[:stop + 1]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > 0 else head).rstrip() + "…"
+
+
+def last_worker_message(session_id):
+    """WHAT THE WORKER SAID IT DID, in its own last words.
+
+    THE GAP THIS CLOSES (founder, 2026-09-15). completion_summary made a
+    finished mission's VERDICT legible -- "3 of 3 checks passed", and which
+    criterion was satisfied by what. That is why Shadow calls it done; it
+    is not WHAT WAS DONE. A founder reading the pane still learned that
+    three boxes were ticked and nothing about the work behind them, and the
+    one account of that work -- the delegate's own closing message, which
+    says what it built and what it ran -- was on disk the whole time and
+    was only ever shown as `result_excerpt`, a byte cut through json.
+
+    NOT A SECOND EVALUATOR, AND NOT A WRITER. This reads the transcript and
+    returns a string. It cannot decide a check, cannot change a state, and
+    is called only after `done` is settled. Nothing is summarised, nothing
+    is asked of a model, and no sentence here is composed: the text is the
+    worker's, verbatim, trimmed.
+
+    IT CANNOT QUOTE SHADOW BACK AT THE FOUNDER. evidence_messages is the
+    existing admissibility filter and is used for exactly the reason the
+    evaluation uses it -- Shadow's says land in the transcript as USER
+    records, and an "outcome" that turned out to be Shadow's own
+    instruction would be the worst possible version of this field. The
+    role check then keeps only assistant turns, so the two guards are
+    independent.
+
+    Returns "" for a session with nothing to quote -- no transcript, no
+    assistant turn, or an empty one. That is what lets every caller fall
+    back to what it rendered before rather than invent a line.
+    """
+    if not session_id:
+        return ""
+    try:
+        doc = session_reader.read_session(session_id) or {}
+    except Exception:
+        return ""
+    for msg in reversed(evidence_messages(doc)):
+        if msg.get("role") != "assistant":
+            continue
+        text = " ".join(str(msg.get("text") or "").split())
+        if text:
+            return _outcome_trim(text)
+    return ""
 
 
 def _prose_tail(live, limit=DECIDE_PROSE_TAIL):
@@ -605,7 +677,9 @@ def _launch(mid, validated_say, verifier):
             "record_evaluation", mission, results, done),
         # SHADOW DRIVES from turn 1. None (no decider injected, e.g. the
         # flag path or a test) keeps the historical template.
-        decider=DEFAULT_DECIDER["fn"])
+        decider=DEFAULT_DECIDER["fn"],
+        # what the delegate said it did, quoted into the completion summary
+        outcome_reader=lambda m: last_worker_message(m.get("target_session")))
 
     async def run():
         try:
@@ -1273,7 +1347,11 @@ def settle_confirmation(mid):
         store, None, None,
         lambda m: evidence_text(m.get("target_session")),
         on_evaluated=lambda mission, results, done: _goal_hook(
-            "record_evaluation", mission, results, done))
+            "record_evaluation", mission, results, done),
+        # the SAME completion the loop writes: a mission the founder's own
+        # confirmation finishes is the one most likely to be read, so it
+        # must not be the one that arrives without the outcome line.
+        outcome_reader=lambda m: last_worker_message(m.get("target_session")))
     m = engine.settle(mid)
     if m and m["state"] in mission_engine.TERMINAL:
         release_delegate(m.get("target_session"))

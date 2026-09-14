@@ -19,6 +19,10 @@
  *   6. the result can LEAVE the pane: Copy result puts the same summary on
  *      the clipboard as text, says so on the button, and says when it could
  *      not (tests 10-14)
+ *   7. and the card says WHAT WAS DONE, not only why it counts: the
+ *      worker's own closing message, quoted above the verdicts, escaped,
+ *      on the clipboard, and absent without a trace when there is none
+ *      (tests 18-20)
  *
  * WHAT THIS SUITE DOES NOT DO, so nobody reads more into it than is here:
  * it calls the REAL renderers (shadowCompletionHtml / shadowTaskCardHtml)
@@ -675,6 +679,96 @@ function copyBtn(ctx, m){
   assert.strictEqual(fireTimers(ctx3), 1, "only the retry's timer is live");
   assert(/>Copy result</.test(copyBtn(ctx3)), "which then heals as normal");
   console.log("ok 17 the feedback clears itself, and the control comes back");
+}
+
+/* ── 18-20. WHAT WAS DONE, not just why it counts ────────────────────────
+   The check rows answer "why does Shadow call this done". They never
+   answered "what did it do", and that is what the founder opens the pane
+   for. `completion.outcome` is the worker's own closing message, read off
+   the transcript by shadow_runner.last_worker_message and stamped by the
+   same _complete -- so it is quoted here, never composed. */
+const WORKED = "Added the tenant loop in emi.py and ran the suite: 42 passed.";
+const DONE_WORK = Object.assign({}, DONE, {
+  completion: Object.assign({}, SUMMARY, { outcome: WORKED }) });
+
+/* 18. the account renders, in its own place, in the worker's own words */
+{
+  const ctx = fresh();
+  const h = ctx.shadowCompletionHtml(DONE_WORK);
+  assert(h.indexOf(WORKED) !== -1, "the worker's account is on the card");
+  assert(/shdonework/.test(h), "and it has its own class");
+  /* ORDER IS THE POINT: what was done sits under the criteria line and
+     above the verdicts, so it is the first thing read. */
+  assert(h.indexOf("shdonework") < h.indexOf("shchecks"),
+    "the account comes before the verdicts");
+  assert(h.indexOf("shconfirmsub") < h.indexOf("shdonework"),
+    "…and after the line that says what was checked");
+  /* it is still the SERVER's account and nothing else changed about it */
+  assert(/3 of 3 checks passed/.test(h), "the headline is untouched");
+  assert.strictEqual((h.match(/shcheckmet/g) || []).length, 3,
+    "and so are the verdicts");
+
+  /* the worker writes prose, so it goes through the text escaper */
+  const evil = ctx.shadowCompletionHtml({ id: "m-e", completion: {
+    headline: "1 of 1 checks passed", outcome: "<img src=x onerror=1>",
+    turns_used: 1, max_turns: 2, checks: [] } });
+  assert(!/<img/.test(evil), "the account is escaped, never injected");
+  assert(/&lt;img/.test(evil), "…and is still shown, escaped");
+  console.log("ok 18 the card says what was done, above why it counts");
+}
+
+/* 19. NO ACCOUNT -> THE MARKUP THAT SHIPPED BEFORE IT, byte for byte.
+      Every mission completed before this field existed, and every one whose
+      transcript had nothing to quote. */
+{
+  const ctx = fresh();
+  const before = ctx.shadowCompletionHtml(DONE);              /* no outcome */
+  assert(!/shdonework/.test(before), "no field -> no block");
+  const blank = ctx.shadowCompletionHtml(Object.assign({}, DONE, {
+    completion: Object.assign({}, SUMMARY, { outcome: "" }) }));
+  assert.strictEqual(blank, before, "an empty account is an absent one");
+  /* and the block is genuinely ADDITIVE: strip it back out of the rendered
+     card and what is left is exactly what rendered before */
+  const stripped = ctx.shadowCompletionHtml(DONE_WORK)
+    .replace(/<div class="shdonework">[^<]*<\/div>/, "");
+  assert.strictEqual(stripped, before,
+    "the account is the only thing that was added");
+  console.log("ok 19 a summary with no account renders as it always did");
+}
+
+/* 20. IT LEAVES THE PANE TOO. The Copy button is how the result reaches a
+       ticket or a colleague, so the account has to be on the clipboard --
+       in the same order mission_engine.completion_text writes it. */
+{
+  const ctx = fresh();
+  const t = ctx.shadowCompletionText(DONE_WORK);
+  const lines = t.split("\n");
+  const at = lines.indexOf(WORKED);
+  assert(at !== -1, "the account is in the text");
+  assert.strictEqual(lines[at - 2], "5 of 20 turns used.",
+    "it follows the budget line");
+  assert.strictEqual(lines[at - 1], "",
+    "a paragraph of prose is not another header row");
+  assert(lines.slice(at).some(l => l.indexOf("✓ EMI-OK") === 0),
+    "and the verdicts still follow it");
+  assert.strictEqual(ctx.shadowCompletionText(DONE),
+    ctx.shadowCompletionText(Object.assign({}, DONE, {
+      completion: Object.assign({}, SUMMARY, { outcome: "" }) })),
+    "no account -> the text that shipped before it");
+
+  /* end to end through the real action: what the button writes is what the
+     pane showed, account included */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [DONE_WORK];
+  const writes = withClipboard(ctx2);
+  clickCopy(ctx2, "m-done");
+  await flush();
+  assert.strictEqual(writes.length, 1, "the copy wrote");
+  assert(writes[0].indexOf(WORKED) !== -1,
+    "and what it wrote carries what the worker said it did");
+  assert.strictEqual(writes[0], ctx2.shadowCompletionText(DONE_WORK),
+    "the clipboard is the pane, as text");
+  console.log("ok 20 the account leaves the pane with the result");
 }
 
 console.log("test_shadow_completion_ui.js: all green");

@@ -541,6 +541,15 @@ function shadowCheckRowsHtml(m){
    pass. A record without the field (a mission completed before it existed)
    renders nothing and the card falls back to what it drew before.
 
+   AND WHAT WAS ACTUALLY DONE (founder, 2026-09-15, second pass). The check
+   rows answer "why does Shadow call this done"; they never answered "what
+   did it do". `c.outcome` does, and it is the worker's own closing message
+   -- read off the transcript by shadow_runner.last_worker_message, stamped
+   by the same _complete, and QUOTED here. Nothing on this client composes,
+   shortens or rewords it, and a summary without the field renders exactly
+   the markup it rendered before, which is every mission completed before
+   the outcome existed.
+
    THE CLASSES ARE THE SIGN-OFF'S. shcheck / shcheckbox / shchecktxt /
    shcheckby / shchecks / shconfirm* already style exactly this shape one
    function up (shadowCheckRowsHtml, the founder_confirm list), and a
@@ -584,6 +593,7 @@ function shadowCompletionHtml(m){
     <div class="shconfirmsub">${esc(c.objective || "")}${c.objective
       ? " — " : ""}${esc(turns)} used. These are the criteria Shadow
       checked, and what satisfied each one.</div>
+    ${c.outcome ? `<div class="shdonework">${esc(c.outcome)}</div>` : ""}
     <div class="shchecks">${rows}</div>
   </div>`;
 }
@@ -608,6 +618,11 @@ function shadowCompletionText(m){
   if (c.objective) head.push(String(c.objective));
   head.push((c.turns_used || 0) + " of " + (c.max_turns || 0)
     + " turns used.");
+  /* the worker's account rides along, in the pane's own order: under the
+     budget line, above the verdicts, with a blank line either side so a
+     paragraph of prose does not read as one more header row. The same
+     shape mission_engine.completion_text writes, deliberately. */
+  if (c.outcome) head.push("", String(c.outcome));
   const rows = (c.checks || []).map(k => {
     const how = String(k.how || "") + (k.by ? " · " + k.by : "");
     /* ✓ / ✗ is the shcheckbox tick in text: a plain reader must be able to

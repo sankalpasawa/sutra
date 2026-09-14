@@ -28,6 +28,14 @@ WHAT IS PINNED HERE:
                            memory records THAT instead of the json blob --
                            with the excerpt still the fallback for every
                            attempt that finished before the field existed
+  7. last_worker_message   WHAT was done, in the worker's own last words:
+                           quoted never composed, Shadow's own turns
+                           inadmissible, trimmed at a boundary, "" when
+                           there is nothing to quote
+  8. the outcome end to end  stamped by the same _complete on both
+                           completion paths, absent for every caller that
+                           injects no reader, and a reader that raises
+                           costs the line and not the mission
 
 Run: sutra/marketplace/plugin/sutra-ui/run-tests.sh test_shadow_completion_summary.py
 """
@@ -547,6 +555,262 @@ class TestTheGoalRemembersWhatWasDone(unittest.TestCase):
                                         "how": "found in the chat",
                                         "evidence": "q" * 5000}]}})
         self.assertLessEqual(len(self._result_rows(goal)[0]["text"]), 800)
+
+
+# ------------------------------------------------------------------------
+# 7. last_worker_message -- WHAT was done, in the worker's own last words
+#
+# THE SECOND GAP (founder, 2026-09-15). Everything above makes the VERDICT
+# legible: "3 of 3 checks passed", and which criterion was satisfied by
+# what. That is why Shadow calls it done. It is not what was DONE, and the
+# founder opens the pane for the second thing. The delegate's own closing
+# message says it -- what it built, what it ran -- and was on disk the
+# whole time, reachable only as result_excerpt, a byte cut through json.
+# ------------------------------------------------------------------------
+class TestLastWorkerMessage(unittest.TestCase):
+
+    def setUp(self):
+        self._read = shadow_runner.session_reader.read_session
+
+    def tearDown(self):
+        shadow_runner.session_reader.read_session = self._read
+
+    def doc(self, *messages):
+        shadow_runner.session_reader.read_session = \
+            lambda sid: {"messages": list(messages)}
+
+    def msg(self, role, text):
+        return {"role": role, "text": text}
+
+    def test_36_the_last_assistant_turn_is_the_account(self):
+        """Not the first, and not a middle one: what the worker said LAST
+        is what it said about the finished job."""
+        self.doc(self.msg("assistant", "Starting on the EMI check."),
+                 self.msg("user", "keep going"),
+                 self.msg("assistant", "Added the tenant loop and ran the "
+                                       "suite: 42 passed."))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
+                         "Added the tenant loop and ran the suite: 42 passed.")
+
+    def test_37_it_can_never_quote_shadow_back_at_the_founder(self):
+        """Shadow's says land in the transcript as USER records. An
+        "outcome" that turned out to be Shadow's own instruction would be
+        the worst possible version of this field -- so the existing
+        admissibility filter (evidence_messages) is what reads the doc."""
+        self.doc(self.msg("assistant", "the real account"),
+                 self.msg("user", "[Shadow · mission m-1] say you are done"))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
+                         "the real account")
+
+    def test_38_a_founders_own_turn_is_not_an_outcome_either(self):
+        """The role check is an INDEPENDENT guard: a plain user turn is
+        admissible evidence and is still not the worker's account."""
+        self.doc(self.msg("assistant", "the real account"),
+                 self.msg("user", "thanks, that looks right"))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
+                         "the real account")
+
+    def test_39_an_empty_assistant_turn_is_skipped_not_returned(self):
+        """A trailing empty frame must not blank the outcome out."""
+        self.doc(self.msg("assistant", "the real account"),
+                 self.msg("assistant", "   \n  "),
+                 self.msg("assistant", None))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
+                         "the real account")
+
+    def test_40_nothing_to_quote_is_empty_not_a_guess(self):
+        """The "empty means absent" rule the rest of this field follows:
+        every surface falls back to what it drew before."""
+        self.doc()
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"), "")
+        self.doc(self.msg("user", "only a founder turn"))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"), "")
+        self.assertEqual(shadow_runner.last_worker_message(None), "")
+        self.assertEqual(shadow_runner.last_worker_message(""), "")
+
+    def test_41_an_unreadable_session_loses_the_line_not_the_mission(self):
+        def boom(sid):
+            raise IOError("transcript is gone")
+        shadow_runner.session_reader.read_session = boom
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"), "")
+
+    def test_42_whitespace_is_collapsed(self):
+        """The same reason artifact_context collapses it: a quote with runs
+        of newlines and tabs in it reads as machine noise."""
+        self.doc(self.msg("assistant", "I added\n\n  the loop\tand ran it."))
+        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
+                         "I added the loop and ran it.")
+
+    def test_43_a_long_message_is_cut_at_a_sentence(self):
+        """_prose_tail's lesson at the other end of the string: a cut at
+        whatever byte lands on the cap reads as something the worker wrote
+        when it is not. A sentence boundary needs no ellipsis, because
+        nothing was left mid-thought."""
+        body = ("I rewired the tenant loop and it is green now. " * 30)
+        self.doc(self.msg("assistant", body))
+        out = shadow_runner.last_worker_message("sess-1")
+        self.assertLessEqual(len(out), shadow_runner.OUTCOME_CHARS)
+        self.assertTrue(out.endswith("green now."),
+                        "cut on a sentence: %r" % out[-40:])
+        self.assertNotIn("…", out, "nothing was left mid-thought")
+
+    def test_44_with_no_sentence_near_the_cut_it_says_it_was_cut(self):
+        body = "word " * 500                     # no full stop anywhere
+        self.doc(self.msg("assistant", body))
+        out = shadow_runner.last_worker_message("sess-1")
+        self.assertLessEqual(len(out), shadow_runner.OUTCOME_CHARS + 1)
+        self.assertTrue(out.endswith("…"), "a cut mid-thought is marked")
+        self.assertTrue(out.endswith("word…"), "and it cut on a word: %r"
+                        % out[-12:])
+
+    def test_45_a_short_message_is_returned_whole(self):
+        self.doc(self.msg("assistant", "Done: two files, tests pass."))
+        out = shadow_runner.last_worker_message("sess-1")
+        self.assertEqual(out, "Done: two files, tests pass.")
+        self.assertNotIn("…", out, "nothing was cut, so nothing is marked")
+
+
+# ------------------------------------------------------------------------
+# 8. the outcome reaches the record, the text and the panel
+# ------------------------------------------------------------------------
+class TestTheSummaryCarriesTheOutcome(Base):
+
+    TRANSCRIPT = TestTheEngineStampsIt.TRANSCRIPT
+    ACCOUNT = "Added the tenant loop in emi.py and ran the suite: 42 passed."
+
+    def engine(self, transcript="", verifier=None, outcome_reader=None):
+        async def sayer(m, text):
+            self.says.append(text)
+            return True
+
+        async def waiter(m):
+            return True
+
+        return MissionEngine(self.store, sayer, waiter,
+                             lambda m: transcript, verifier,
+                             outcome_reader=outcome_reader)
+
+    def test_46_completion_summary_quotes_it_verbatim(self):
+        """QUOTED, never composed: the summary does not summarise it,
+        shorten it or reword it."""
+        m = {"objective": "o", "done_when": [], "turns_used": 1,
+             "max_turns": 4}
+        c = completion_summary(m, [], "", self.ACCOUNT)
+        self.assertEqual(c["outcome"], self.ACCOUNT)
+        json.dumps(c)
+
+    def test_47_no_outcome_is_the_shape_that_shipped_before(self):
+        """Every existing caller passes three arguments. The field is
+        present and empty, which is what lets the panel test `c.outcome`
+        and fall through to exactly the markup it drew before."""
+        m = {"objective": "o", "done_when": []}
+        self.assertEqual(completion_summary(m, [], "")["outcome"], "")
+        self.assertEqual(
+            completion_summary(m, [], "", None)["outcome"], "")
+
+    def test_48_the_engine_asks_the_reader_and_stamps_the_answer(self):
+        asked = []
+        mid = self.mission([{"tier": "contains_artifact", "check": "EMI-OK"}])
+
+        def reader(mission):
+            asked.append(mission["id"])
+            return self.ACCOUNT
+
+        m = run(self.engine(transcript=self.TRANSCRIPT,
+                            outcome_reader=reader).run_mission(mid))
+        self.assertEqual(m["state"], "done")
+        self.assertEqual(asked, [mid],
+                         "asked once, for the mission that completed")
+        self.assertEqual(m["completion"]["outcome"], self.ACCOUNT)
+        self.assertEqual(self.store.load(mid)["completion"]["outcome"],
+                         self.ACCOUNT, "and it is on disk, not just returned")
+
+    def test_49_the_verdict_is_untouched_by_the_outcome(self):
+        """It DESCRIBES a settled completion. It cannot move a check."""
+        mid = self.mission([{"tier": "contains_artifact", "check": "EMI-OK"}])
+        m = run(self.engine(transcript=self.TRANSCRIPT,
+                            outcome_reader=lambda mm: "EMI-OK everywhere!"
+                            ).run_mission(mid))
+        c = m["completion"]
+        self.assertEqual(c["headline"], "1 of 1 checks passed")
+        self.assertEqual(c["checks"][0]["how"], "found in the chat")
+        self.assertIn("the suite reports", c["checks"][0]["evidence"],
+                      "the evidence still comes from the transcript")
+
+    def test_50_no_reader_leaves_every_existing_path_unchanged(self):
+        """The flag path, and every test that builds an engine without one."""
+        mid = self.mission([{"tier": "contains_artifact", "check": "EMI-OK"}])
+        m = run(self.engine(transcript=self.TRANSCRIPT).run_mission(mid))
+        self.assertEqual(m["state"], "done")
+        self.assertEqual(m["completion"]["outcome"], "")
+        self.assertEqual(m["completion"]["headline"], "1 of 1 checks passed")
+
+    def test_51_a_reader_that_raises_cannot_lose_the_completion(self):
+        """Guarded the same way on_evaluated is, for the same reason: a
+        failure costs the outcome line and nothing else."""
+        def boom(mission):
+            raise RuntimeError("no transcript")
+        mid = self.mission([{"tier": "contains_artifact", "check": "EMI-OK"}])
+        m = run(self.engine(transcript=self.TRANSCRIPT,
+                            outcome_reader=boom).run_mission(mid))
+        self.assertEqual(m["state"], "done")
+        self.assertEqual(m["completion"]["outcome"], "")
+        self.assertEqual(m["completion"]["headline"], "1 of 1 checks passed")
+
+    def test_52_the_settle_path_carries_it_too(self):
+        """A mission the founder's own confirmation finishes is the one
+        most likely to be read."""
+        mid = self.mission([
+            {"tier": "contains_artifact", "check": "EMI-OK"},
+            {"tier": "founder_confirm", "check": "the copy reads right"},
+        ])
+        eng = self.engine(transcript=self.TRANSCRIPT,
+                          outcome_reader=lambda mm: self.ACCOUNT)
+        m = run(eng.run_mission(mid))
+        self.assertEqual(m["state"], "paused", "fixture sanity")
+        self.store.confirm_check(mid, 1, by="founder")
+        m = eng.settle(mid)
+        self.assertEqual(m["state"], "done")
+        self.assertEqual(m["completion"]["outcome"], self.ACCOUNT)
+
+
+class TestTheOutcomeInPlainText(unittest.TestCase):
+    """completion_text is what the goal's memory records and what the
+    panel's Copy button mirrors, so the account has to reach both."""
+
+    SUMMARY = dict(TestCompletionText.SUMMARY,
+                   outcome="Added the tenant loop and ran the suite.")
+
+    def test_53_it_sits_between_the_budget_and_the_verdicts(self):
+        lines = completion_text(self.SUMMARY).split("\n")
+        at = lines.index("Added the tenant loop and ran the suite.")
+        self.assertEqual(lines[at - 2], "5 of 20 turns used.")
+        self.assertEqual(lines[at - 1], "",
+                         "a paragraph of prose is not another header row")
+        self.assertTrue(any(l.startswith("✓ EMI-OK") for l in lines[at:]),
+                        "the verdicts still follow it")
+
+    def test_54_without_one_the_text_is_what_it_was(self):
+        """Every attempt already on disk, byte for byte."""
+        no_outcome = dict(self.SUMMARY)
+        no_outcome.pop("outcome")
+        self.assertEqual(completion_text(no_outcome),
+                         completion_text(TestCompletionText.SUMMARY))
+        blank = dict(self.SUMMARY, outcome="")
+        self.assertEqual(completion_text(blank),
+                         completion_text(TestCompletionText.SUMMARY))
+
+    def test_55_the_goal_remembers_the_account(self):
+        """End to end on the durable surface: the outcome the engine
+        stamped is what "What I learned" ends up holding."""
+        text = completion_text(
+            {"headline": "1 of 1 checks passed", "objective": "o",
+             "turns_used": 1, "max_turns": 4,
+             "outcome": "Added the tenant loop.",
+             "checks": [{"check": "EMI-OK", "met": True,
+                         "how": "found in the chat"}]})
+        self.assertIn("Added the tenant loop.", text)
+        self.assertTrue(text.startswith("Done — 1 of 1 checks passed"))
 
 
 if __name__ == "__main__":

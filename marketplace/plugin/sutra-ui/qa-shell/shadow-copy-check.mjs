@@ -56,6 +56,10 @@ const DONE = {
   done_when: [{ tier: "contains_artifact", check: "EMI-OK" }],
   completion: {
     objective: "get the EMI check green", headline: "3 of 3 checks passed",
+    /* the worker's own closing message, as shadow_runner.last_worker_message
+       hands it over: quoted, whitespace collapsed, already trimmed */
+    outcome: "Added the per-tenant loop to emi.py, fixed the stale cache "
+      + "read it depended on, and ran the suite: 42 passed, 0 failed.",
     checks_met: 3, checks_total: 3, turns_used: 5, max_turns: 20,
     chat: "sess-1", at: "2026-09-15T01:20:00Z",
     checks: [
@@ -231,6 +235,22 @@ try {
   ok(await evq(`(draw("m-run"), !!document.querySelector("[data-shtaskcard='m-run']"))`),
     "          (the card itself still renders in every one of those states)");
 
+  /* 2b. WHAT WAS DONE, ON THE LIVE CARD ─────────────────────────────────── */
+  console.log("\n2b. the worker's own account, read back off the DOM");
+  await load();
+  const work = await evq(`(() => { const n =
+    document.querySelector("[data-shdone='m-done'] .shdonework");
+    return n ? n.textContent : null; })()`);
+  console.log(work);
+  ok(work === DONE.completion.outcome,
+    "the account on the card is the server's string, verbatim");
+  ok(await evq(`(() => { const s = document.querySelector("[data-shdone='m-done']");
+      const w = s.querySelector(".shdonework"), c = s.querySelector(".shchecks");
+      return !!(w && c) && (w.compareDocumentPosition(c) & 4) !== 0; })()`),
+    "…and it sits ABOVE the verdicts, so it is read first");
+  ok(await evq(`(draw("m-run"), document.querySelector(".shdonework") === null)`),
+    "a task that has not finished has no account to show");
+
   /* 3. A REAL CLICK, AND THE PAYLOAD IT HANDS OVER ──────────────────────── */
   console.log("\n3. a dispatched MouseEvent, through the module's own listener");
   await load();
@@ -243,6 +263,8 @@ try {
   console.log(writes[0]);
   console.log("---- end ----");
   ok(!/[<>]/.test(writes[0]), "it is the plain-text render, never the markup");
+  ok(writes[0].includes(DONE.completion.outcome),
+    "and it carries what the worker said it did, not only the verdicts");
   const after = await evq(`document.querySelector("[data-shcopydone]").outerHTML`);
   console.log(after);
   ok(/data-shcopystate="copied"/.test(after) && />Copied</.test(after),
