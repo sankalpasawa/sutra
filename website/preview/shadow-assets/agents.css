@@ -1,0 +1,1228 @@
+/* agents.css — the Agents destination and the SEO Writer screen.
+   Every colour, radius and font comes from panel.css tokens, so light and dark
+   are inherited and the accent picker restyles this screen with the rest.
+   Scoped under .ag so nothing here leaks into other screens. */
+
+/* the browse pane gives its padding to the three columns while Agents shows */
+.pane.agwide{min-width:min(100%,940px)}   /* three columns need the room; a chat pane beside it scrolls the row */
+.pane.agwide .pb{padding:0;display:flex;min-height:0}
+.ag{display:flex;flex:1;min-height:0;min-width:0;font-size:12.5px}
+
+/* ── agent column ─────────────────────────────────────────────────────────── */
+.ag-side{width:232px;flex:none;border-right:1px solid var(--line-soft);display:flex;
+  flex-direction:column;min-height:0;background:var(--surface)}
+/* flex-wrap so the faces row drops onto its own line under the name, rather than squeezing it. */
+.ag-agent{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 12px 10px;border-bottom:1px solid var(--line-soft)}
+.ag-mark{width:28px;height:28px;border-radius:8px;background:var(--acc-bg);color:var(--acc);
+  display:grid;place-items:center;flex:none;font:700 12px/1 var(--serif)}
+.ag-agent b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.2}
+.ag-agent span{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:5px}
+.ag-agent .dot{width:6px;height:6px}
+.ag-agent .dot.warn{background:var(--warn)}
+.ag-agent .dot.bad{background:var(--block)}
+/* THE ROW OF FACES. Sits under the agent's name in the header, so it reads as "who is on this"
+   rather than a widget parked in a corner. Overlapping by a few px is deliberate: it reads as
+   one group at a glance, which a row of evenly spaced circles does not. */
+/* SPACED, NOT OVERLAPPED. Overlapping avatars are a pattern for twenty faces in a strip; at
+   five they just collide, and the "here now" ring on one lands on top of its neighbour. */
+.ag-faces{display:flex;align-items:center;gap:4px;flex-basis:100%;margin-top:10px;flex-wrap:wrap}
+.ag-face{width:26px;height:26px;flex:none;border-radius:50%;cursor:pointer;padding:0;
+  background:var(--inset);border:1px solid var(--line);color:var(--muted);
+  display:grid;place-items:center;font:600 9.5px/1 var(--sans);
+  transition:transform .1s ease,border-color .1s ease}
+.ag-face .e{font-size:14px;line-height:1}
+.ag-face:hover{transform:translateY(-1px);border-color:var(--acc)}
+.ag-face:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Seen in the last five minutes. ONE thin ring, not a ring plus a halo: three lit faces out of
+   five was reading as an alarm rather than as presence. */
+.ag-face.here{border-color:var(--ok)}
+/* You are marked by a filled ground, not another ring, so "you" and "here" stay tellable apart. */
+.ag-face.me{background:var(--acc-bg);border-color:var(--acc)}
+.ag-face.me.here{border-color:var(--ok)}
+.ag-face.more{background:none;border-style:dashed;cursor:default;font-size:9px}
+/* Yours, before you have picked one. Dashed and accented so it reads as "do something here",
+   which is the only moment the picker is ever offered. */
+.ag-face[data-pickme]{border-style:dashed;border-color:var(--acc);color:var(--acc)}
+.ag-face[data-pickme]:hover{background:var(--acc-bg)}
+
+/* The picker, under the header while it is open. */
+.ag-facepick{margin:0 10px 8px;padding:9px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card)}
+.ag-facepick .hd{display:flex;align-items:center;font:600 10.5px/1 var(--sans);
+  color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.ag-facepick .hd .x{margin-left:auto;background:none;border:0;color:var(--faint);cursor:pointer;
+  font-size:15px;line-height:1;padding:0 2px}
+.ag-facepick .hd .x:hover{color:var(--ink)}
+.ag-facepick .ld{font-size:11.5px;color:var(--faint)}
+.ag-facepick .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.ag-facepick .f{aspect-ratio:1;border:1px solid transparent;border-radius:7px;cursor:pointer;
+  background:none;font-size:15px;line-height:1;display:grid;place-items:center;padding:0}
+.ag-facepick .f:hover{background:var(--acc-bg);border-color:var(--acc)}
+.ag-facepick .f:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* Taken is dimmed, not disabled: past 32 people somebody HAS to share one. */
+.ag-facepick .f.taken{opacity:.34}
+.ag-facepick .f.taken:hover{opacity:.8}
+
+.ag-side .newBtn{margin:10px 10px 4px}
+.ag-sec{font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+  padding:10px 16px 5px}
+.ag-chats{flex:1;overflow-y:auto;min-height:0;padding:0 6px 6px}
+.ag-chat{display:flex;align-items:center;gap:7px;width:100%;background:none;border:0;cursor:pointer;
+  text-align:left;padding:6px 10px;border-radius:6px;color:var(--muted);font:400 12px/1.35 var(--sans)}
+.ag-chat:hover{background:var(--acc-bg);color:var(--ink)}
+.ag-chat:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-chat[aria-current="true"]{background:var(--acc-bg);color:var(--ink);font-weight:500}
+.ag-chat .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-chat .dot{width:6px;height:6px;flex:none}
+.ag-chat .dot.run{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+.ag-chat .dot.wait{background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg)}
+.ag-chat .dot.idle{background:var(--line)}
+
+/* THE CHAT ROW HOLDS ITS OWN DELETE. The 3-dot only appears on hover or keyboard focus, so a
+   sidebar of ten chats is not ten buttons shouting at you; it is always in the tab order. */
+.ag-chatrow{position:relative;display:flex;align-items:center}
+.ag-chatrow .ag-chat{flex:1;min-width:0}
+.ag-chatdots{flex:none;opacity:0;background:none;border:0;cursor:pointer;color:var(--faint);
+  padding:4px;margin-right:4px;border-radius:5px;line-height:0;transition:opacity .1s ease,color .1s ease}
+.ag-chatdots svg{width:13px;height:13px}
+.ag-chatrow:hover .ag-chatdots,.ag-chatdots:focus-visible{opacity:1}
+.ag-chatdots:hover{color:var(--ink);background:var(--inset)}
+.ag-chatdots:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-chatask{flex:none;display:flex;align-items:center;gap:5px;padding-right:5px;
+  font:500 10.5px/1 var(--sans)}
+.ag-chatask .lb{color:var(--faint)}
+.ag-chatask button{background:none;border:1px solid var(--line);border-radius:5px;cursor:pointer;
+  padding:3px 6px;font:500 10.5px/1 var(--sans);color:var(--muted)}
+.ag-chatask .yes{color:var(--block);border-color:var(--block)}
+.ag-chatask .yes:hover{background:var(--block);color:var(--on-block)}
+.ag-chatask .no:hover{border-color:var(--acc);color:var(--ink)}
+.ag-chatask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-chatrow.asking .ag-chat .t{opacity:.5}
+.ag-empty{padding:8px 16px;font-size:11.5px;color:var(--faint)}
+/* The first-visit hold. Deliberately quiet: it is on screen for a few hundred milliseconds
+   and a loud skeleton would flash harder than the thing it replaces. */
+.ag-vload{display:flex;align-items:center;gap:9px;padding:30px 0;color:var(--faint);font-size:12px}
+.ag-vload .sp{width:11px;height:11px;flex:none;border-radius:50%;border:1.5px solid var(--line);
+  border-top-color:var(--acc);animation:sutraSpin .7s linear infinite}
+.ag-side .nav{padding:6px 6px 8px;border-top:1px solid var(--line-soft)}
+
+/* ── conversation column ──────────────────────────────────────────────────── */
+.ag-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;background:var(--card)}
+.ag-stages{display:flex;align-items:center;gap:2px;padding:8px 18px;border-bottom:1px solid var(--line-soft);
+  font-size:10.5px;color:var(--faint);min-height:34px;flex-wrap:wrap}
+.ag-stage{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;font-weight:500}
+.ag-stage i{width:6px;height:6px;border-radius:50%;background:var(--line);display:inline-block}
+.ag-stage.done{color:var(--muted)} .ag-stage.done i{background:var(--ok)}
+.ag-stage.cur{color:var(--acc);background:var(--acc-bg)} .ag-stage.cur i{background:var(--acc)}
+.ag-stage.wait{color:var(--warn);background:var(--warn-bg)} .ag-stage.wait i{background:var(--warn)}
+.ag-sep{color:var(--line);padding:0 1px}
+.ag-stages .sp{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.ag-stages .sp b{color:var(--ink);font-weight:600}
+
+.ag-scroll{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;padding:16px 18px}
+/* THE CONVERSATION'S LEFT EDGE (owner, 2026-09-10: "why is it leaving out the space on the left
+   while I am chatting... I feel like it is wasting the space over there").
+   The cause was this rule's own margin-left:auto. The measure limit beside it is doing real work
+   -- an 80-character line is about where prose stops being readable, and the run log is prose --
+   so the limit STAYS and the column moves left instead of the text being stretched to fill.
+   Centring a 78ch measure inside a ~670px column is what put a dead strip down the left, and
+   both gutters with it. The settings views and the review panel keep their own margin:0 auto
+   (.ag-view, further down this file, which wins on source order): a reference document reads
+   better centred, a conversation does not. */
+/* AND THE RIGHT EDGE, an hour later. Left-aligning a 78ch measure moved the whole gutter to the
+   other side: on a wide window the conversation ended two thirds across and the rest was blank
+   ("now the right one has become empty white space"). Centring put slack on both sides,
+   left-aligning put it all on one. Neither used it.
+   The answer is that PROSE and STRUCTURE want different widths. A sentence stops being readable
+   somewhere around 80 characters, so paragraphs keep a measure. A step row, an artifact card or a
+   table is not prose and has no such limit -- those fill the column, which is what makes the
+   space look used rather than abandoned. */
+.ag-scroll > *{max-width:min(100%,124ch);margin-left:0;margin-right:auto}
+.ag-scroll .ag-body,
+.ag-scroll .ag-title,
+.ag-scroll .ag-hero p,
+.ag-scroll .ag-say{max-width:78ch}
+
+/* the hero, shown when a chat is empty */
+.ag-hero{padding:26px 0 10px}
+.ag-hero h2{font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px;color:var(--ink)}
+.ag-hero p{color:var(--muted);margin:0 0 16px;max-width:60ch;font-size:12.5px}
+.ag-plays{display:flex;flex-direction:column;gap:8px}
+.ag-play{display:flex;align-items:flex-start;gap:14px;text-align:left;width:100%;cursor:pointer;
+  background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:13px 15px;color:inherit;font:inherit}
+.ag-play:hover{border-color:var(--acc);background:var(--acc-bg)}
+.ag-play:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-play .pi{min-width:0;flex:1;display:block}
+.ag-play .pt{display:block;font-family:var(--serif);font-size:14.5px;font-weight:600;color:var(--ink);line-height:1.3}
+.ag-play .pd{display:block;font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+.ag-play .go{flex:none;align-self:center;font:500 11px/1 var(--sans);color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:6px;padding:6px 10px;white-space:nowrap}
+.ag-play:hover .go{border-color:var(--acc);color:var(--acc)}
+.ag-setup{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.ag-setup .note{margin:0}
+
+/* turns */
+.ag-turn{margin-bottom:18px}
+.ag-turn .u{background:var(--bubble);border:1px solid var(--line-soft);border-radius:11px;
+  padding:8px 11px;width:fit-content;max-width:88%;margin-left:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+.ag-run{margin-top:10px}
+.ag-runhead{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--muted);min-height:26px;flex-wrap:wrap}
+.ag-runhead .runstrip{font-size:11px}
+.ag-runhead .ag-fold{background:none;border:0;color:var(--muted);cursor:pointer;font:500 11px/1 var(--sans);
+  display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:5px}
+.ag-runhead .ag-fold:hover{background:var(--acc-bg);color:var(--ink)}
+.ag-runhead .ag-fold svg{width:10px;height:10px;transition:transform .12s ease}
+.ag-runhead .ag-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.ag-runhead .n{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.ag-worked{font-weight:500;color:var(--ink)}
+
+.ag-steps{margin:8px 0 0 7px;padding-left:18px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:11px}
+.ag-steps[hidden]{display:none}
+.ag-step{position:relative;min-width:0}
+.ag-glyph{position:absolute;left:-26px;top:1px;width:15px;height:15px;border-radius:50%;background:var(--card);
+  display:grid;place-items:center;color:var(--faint);font:700 10px/1 var(--mono)}
+.ag-glyph svg{width:11px;height:11px}
+.ag-step.ok .ag-glyph{color:var(--ok)}
+.ag-step.bad .ag-glyph{color:var(--block)}
+.ag-step.ask .ag-glyph,.ag-step.art .ag-glyph,.ag-step.mem .ag-glyph{color:var(--acc)}
+.ag-step.run .ag-glyph::before{content:"";width:9px;height:9px;border-radius:50%;border:1.5px solid var(--acc);
+  border-top-color:transparent;animation:sutraSpin .7s linear infinite}
+.ag-step.quiet .ag-glyph::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--faint)}
+.ag-title{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.4;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ag-title .ms{font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
+.ag-title .pill{margin-left:2px}
+
+/* A FINISHED STEP FOLDS TO ITS HEADLINE (owner, 2026-09-10: "then they should collapse back...
+   only the thing I should be able to see is 'writing the article'"). The headline is the whole
+   hit area, not the chevron, because a 10px arrow is a bad target and the title reads as the
+   thing you press. The chevron points right when shut and down when open, the same direction
+   language the run header already uses, so the two folds do not contradict each other. */
+.ag-fold-t{background:none;border:0;padding:0;margin:0;width:100%;text-align:left;cursor:pointer;
+  font:600 12.5px/1.4 var(--sans);color:var(--ink);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+/* THE CHEVRON TAKES THE STATE GLYPH'S SLOT, it does not sit beside it. Side by side you get
+   "✓›" jammed together on the rail (seen 2026-09-10). A step that can fold has always finished
+   and always succeeded -- a failure never folds -- so one mark carries both meanings: it is
+   green because the step worked, and it points because there is more underneath. */
+.ag-fold-t .cv{position:absolute;left:-26px;top:1px;width:15px;height:15px;border-radius:50%;
+  background:var(--card);display:inline-flex;align-items:center;justify-content:center;color:var(--ok)}
+.ag-step.ask .ag-fold-t .cv{color:var(--acc)}
+.ag-fold-t .cv svg{width:11px;height:11px;transform:rotate(-90deg);transition:transform .12s ease}
+.ag-fold-t .cv.on svg{transform:none}
+.ag-fold-t:hover{color:var(--acc)}
+.ag-fold-t:hover .cv{color:var(--acc)}
+.ag-fold-t:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:4px}
+.ag-fold-t .n{font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
+/* A folded question: the question itself, then the answer, on one line. */
+.ag-fold-t .qt{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%}
+.ag-fold-t .said{font:500 11px/1.4 var(--sans);color:var(--acc);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-fold-t .said i{font-style:normal;color:var(--faint);font-weight:400;margin-right:4px}
+.ag-body{color:var(--muted);font-size:12px;line-height:1.55;margin-top:2px}
+.ag-body.md{color:var(--muted)}
+.ag-body .md-p{margin:0 0 6px}
+.ag-note{color:var(--muted);font-size:12px;line-height:1.5}
+.ag-subs{margin-top:7px;display:flex;flex-direction:column;gap:3px}
+.ag-subs .trow{font-size:11px;padding:3px 8px}
+.ag-subs .trow .tname{font-weight:500;color:var(--ink);font-family:var(--sans);font-size:11.5px;flex:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+.ag-subs .trow .tsum{font-family:var(--sans)}
+.ag-more{background:none;border:0;color:var(--faint);font:500 10.5px/1 var(--sans);cursor:pointer;padding:3px 0;text-align:left}
+.ag-more:hover{color:var(--acc)}
+/* An artifact that was MADE, not one that is waiting: an inline link inside a quiet note, so the
+   eye passes over it unless it wants it. Nothing here may look like the checkpoint card above it,
+   which is why this is a word in a sentence and not a button with a border. */
+.ag-openlink{background:none;border:0;padding:0;cursor:pointer;color:var(--ink);
+  font:500 12px/1.5 var(--sans);text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:var(--line)}
+.ag-openlink:hover{color:var(--acc);text-decoration-color:var(--acc)}
+.ag-openlink.open{color:var(--acc);text-decoration-color:var(--acc)}
+.ag-openlink:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:3px}
+.ag-detail{margin-top:5px;font:11px/1.45 var(--mono);color:var(--faint);white-space:pre-wrap;max-height:180px;overflow:auto;
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:6px;padding:7px 9px}
+.ag-prose{margin-top:8px;font-size:12.5px;color:var(--ink)}
+.ag-prose .md-p{margin:0 0 8px}
+
+/* the run log, grouped by stage: one line each when shut, the steps inside when open */
+.ag-steps{gap:6px}
+.ag-stagegroup{position:relative}
+.ag-stagehead{width:100%;display:flex;align-items:baseline;gap:9px;background:none;border:0;cursor:pointer;
+  padding:5px 0;text-align:left;color:var(--ink);font:600 12.5px/1.35 var(--sans);min-width:0}
+.ag-stagehead:hover .what,.ag-stagehead:hover b{color:var(--acc)}
+.ag-stagehead .chev{position:absolute;left:-26px;top:5px;width:15px;height:15px;display:grid;place-items:center;
+  color:var(--faint);transition:transform .12s ease}
+.ag-stagehead .chev svg{width:11px;height:11px}
+.ag-stagegroup.open>.ag-stagehead .chev{transform:rotate(90deg);color:var(--acc)}
+.ag-stagehead b{flex:none;font-weight:600}
+.ag-stagehead .meta{flex:none;font:500 10px/1 var(--mono);color:var(--faint);letter-spacing:.04em}
+.ag-stagehead .what{flex:1;min-width:0;font-weight:400;font-size:11.5px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-stagehead.run b,.ag-stagehead.wait b{color:var(--acc)}
+.ag-stagehead.run .chev,.ag-stagehead.wait .chev{color:var(--acc)}
+.ag-stagehead.bad b{color:var(--block)}
+.ag-stagehead.wait .what{color:var(--acc)}
+.ag-stagebody{margin:6px 0 10px 0;padding-left:0;display:flex;flex-direction:column;gap:11px}
+.ag-stagebody[hidden]{display:none}
+/* a summary is a line, not a paragraph: the detail is one click away inside the stage */
+.ag-step.ok .ag-body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* the research conversation and the evidence trail, in the brief panel */
+.ag-qs{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.ag-q{font-size:11.5px;line-height:1.5;color:var(--muted);padding-left:10px;border-left:2px solid var(--line)}
+.ag-q .who{display:block;font:600 10px/1.4 var(--mono);color:var(--faint);letter-spacing:.03em;text-transform:uppercase}
+.ag-trail{margin-top:8px;display:flex;flex-direction:column;gap:2px}
+.ag-trailrow{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;cursor:pointer;
+  background:none;border:0;border-radius:6px;padding:5px 8px;color:var(--ink);font:12px/1.4 var(--sans);min-width:0}
+.ag-trailrow:hover{background:var(--inset)}
+.ag-trailrow b{flex:none;font-weight:600}
+.ag-trailrow .n{flex:1;min-width:0;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-trailrow .b{flex:none;font:500 10px/1 var(--mono);color:var(--faint)}
+.ag-workfile{margin-top:8px;border:1px solid var(--line);border-radius:8px;background:var(--inset);overflow:hidden}
+.ag-workfile .h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;
+  border-bottom:1px solid var(--line-soft);font-size:12px}
+.ag-workfile pre{margin:0;padding:9px 11px;font:11px/1.5 var(--mono);color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+
+/* editing a saved article: it is a document, so the words are edited directly. The traffic
+   import form and the link list borrow the same row and label vocabulary. */
+.ag-libedit{display:flex;flex-direction:column;gap:6px}
+.ag-lbl{font:600 10.5px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-top:4px}
+.ag-libedit .in{width:100%;box-sizing:border-box;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;color:var(--ink);font:13px/1.6 var(--sans)}
+.ag-libedit .in:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-libedit textarea.ta{font:12.5px/1.7 var(--mono);resize:vertical;min-height:340px;white-space:pre-wrap}
+.ag-editrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ag-editrow .ag-sub{margin-left:auto}
+.ag-editrow .ag-err{color:var(--block);font-size:11.5px}
+
+/* KEEPING THE CATALOGUE CURRENT: the engine's own lines, in the space to the right of the
+   catalogue heading. It used to be one spinner beside one fixed sentence, which is what made a
+   six-minute run indistinguishable from a hung one. Three things are drawn now and each is a
+   different thing to look at: what it is doing (the line the engine last said), whether it is
+   WAITING on the site rather than working (a held dot, never the spinner), and what it said
+   before that (the trail, in footnote grey). */
+.ag-refresh{margin:10px 0 2px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--inset)}
+.ag-refresh .msg{font-size:12.5px;color:var(--ink);line-height:1.5}
+.ag-refresh .msg.err{color:var(--block)}
+.ag-refresh.busy{display:block}
+.ag-refresh.busy .now{display:flex;align-items:flex-start;gap:9px}
+.ag-refresh.busy .spin,.ag-refresh.busy .hold{margin-top:3px}
+.ag-refresh .hd{font:600 9.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:7px}
+.ag-refresh .h{color:var(--faint)}
+.ag-refresh .foot{margin:6px 0 0 20px;font-size:11px;color:var(--faint)}
+.ag-refresh.waiting{border-color:var(--warn)}
+.ag-refresh.waiting .foot{color:var(--warn)}
+.ag-refresh .trail{list-style:none;margin:7px 0 0 20px;padding:0;border-top:1px solid var(--line-soft)}
+.ag-refresh .trail li{font-size:11px;color:var(--faint);line-height:1.5;padding-top:4px}
+.ag-refresh .trail b{font-weight:600;color:var(--muted)}
+.ag-refresh.done{border-color:var(--ok)}
+.ag-refresh.stopped{border-color:var(--block)}
+.ag-refresh .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--acc);
+  border-top-color:transparent;animation:sutraSpin .7s linear infinite;flex:none}
+/* the mark for a wait the site imposed. It does NOT spin: a spinner says "working", and the
+   whole point of this state is that nothing is being read while it lasts. */
+.ag-refresh .hold{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--warn);
+  background:var(--warn-bg);animation:agpulse 1.9s ease-in-out infinite;flex:none}
+@media (prefers-reduced-motion:reduce){.ag-refresh .hold{animation:none;opacity:.8}}
+
+/* a question, an approval, a checkpoint — the cards where the agent waits */
+.ag-card{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--inset);padding:11px 13px;max-width:60ch}
+.ag-card.live{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-card .q{font-size:12.5px;color:var(--ink);line-height:1.5}
+.ag-card .why{font-size:11px;color:var(--faint);margin-top:4px}
+.ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ag-chip{background:var(--card);border:1px solid var(--line);color:var(--ink);font:500 11.5px/1 var(--sans);
+  padding:6px 10px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.ag-chip:hover{border-color:var(--acc);color:var(--acc)}
+.ag-chip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-chip.rec{border-color:var(--acc)}
+.ag-chip.rec small{color:var(--acc);font-size:10px}
+.ag-chip.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.ag-chip.pri:hover{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+.ag-chip[disabled]{opacity:.55;cursor:default}
+.ag-chip.chosen{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+.ag-cost{display:flex;gap:8px;align-items:center;margin-top:8px;font:500 11px/1 var(--mono);color:var(--muted)}
+.ag-cost b{color:var(--ink);font-weight:600}
+.ag-answer{margin-top:9px;font-size:11.5px;color:var(--muted);display:flex;gap:7px;align-items:baseline}
+.ag-answer b{color:var(--ink);font-weight:500}
+.ag-hint{margin-top:9px;font-size:11px;color:var(--faint)}
+
+/* the in-flow artifact card, opens the review panel */
+.ag-artcard{margin-top:8px;display:flex;align-items:center;gap:11px;width:100%;max-width:60ch;text-align:left;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 13px;color:inherit;font:inherit}
+.ag-artcard:hover{border-color:var(--acc)}
+.ag-artcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-artcard .ai{width:28px;height:28px;border-radius:7px;background:var(--acc-bg);color:var(--acc);display:grid;place-items:center;flex:none}
+.ag-artcard .ai svg{width:14px;height:14px}
+/* BOTH ARE display:block. They are inline spans in the markup, and .as already carried a
+   margin-top that only a block can honour — so they ran together on one line and every artifact
+   card in the app read "Topic ideasanswered". Visible in every screenshot of a finished run
+   since the card shipped. (2026-09-10) */
+.ag-artcard .at{display:block;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--ink);line-height:1.25}
+.ag-artcard .as{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.ag-artcard .ac{margin-left:auto;flex:none;font:500 10.5px/1 var(--sans);color:var(--muted);display:inline-flex;align-items:center;gap:4px}
+.ag-artcard:hover .ac{color:var(--acc)}
+.ag-artcard.open{border-color:var(--acc);background:var(--acc-bg)}
+
+/* composer — the same .pc / .send vocabulary as a chat pane */
+/* ── THE COMPOSER ─────────────────────────────────────────────────────────────
+   (owner, 2026-09-10: "the chat bar is always supposed to be highlighted, so the
+   user knows where the chat bar is, and proper blinking when the cursor goes over
+   there", and "that outline bolding should happen based on the colour theme which
+   a user chooses on the left bottom".)
+   It used to be a bare textarea and a round button on the page's own ground, with
+   nothing but a hairline above them, so it read as part of the page rather than as
+   somewhere to type. Now the pair sit inside .ag-field, which carries the edge:
+     rest    -- 1px --line on --inset, the same border-and-ground every other input
+                on this screen already has (.ag-row, .ag-libedit .in)
+     hover   -- the accent edge, so it answers a pointer
+     focus   -- the accent edge AND a 3px --acc-bg halo, which is exactly the focus
+                shape .ag-libedit .in already uses; the halo is what separates focus
+                from hover
+   The accent picker at the bottom left sets --acc inline on :root and --acc-bg is
+   mixed from it per theme (panel.css, "v3.3 accent colour"), so BOTH states follow
+   the chosen colour and the chosen theme with no second palette here. There is not
+   a literal colour in this block.
+   The caret is left native and pinned to --ink, the highest-contrast token there
+   is: it is the blinking the owner is asking for, and --ink is the one colour that
+   cannot come out faint against this ground whichever theme or accent is picked. */
+/* the same 18px left edge and the same 78ch measure as .ag-scroll above it, so the box you
+   type in sits under the conversation rather than beside it */
+.ag-main .pc{display:block;padding:10px 18px 12px;border-top:1px solid var(--line-soft)}
+.ag-main .pc[hidden]{display:none}   /* .pc is display:flex, which beats the hidden attribute */
+/* THE FIELD MATCHES THE CONVERSATION ABOVE IT, not the prose measure. It was 78ch, copied from
+   the old text measure, and the conversation has since gone to 124ch — so the box you type in
+   stopped short of the messages and read as a narrow strip in a wide column (owner, 2026-09-10:
+   "the chat bar in the agent is left aligned, it should be a big bar covering properly").
+   A composer is not prose. There is no reading-width argument for an input: it should line up
+   with the widest thing above it, and it now does. */
+.ag-field{display:flex;align-items:flex-end;gap:8px;max-width:min(100%,124ch);background:var(--inset);
+  border:1px solid var(--line);border-radius:10px;padding:7px 8px 7px 11px;
+  transition:border-color .14s ease,box-shadow .14s ease,background .14s ease}
+.ag-field:hover{border-color:var(--acc)}
+.ag-field:focus-within{border-color:var(--acc);background:var(--card);
+  box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-field.busy{border-color:var(--line-soft);background:var(--inset)}
+.ag-field.busy:hover{border-color:var(--line-soft)}
+.ag-main .pc textarea{flex:1;min-width:0;resize:none;max-height:160px;line-height:1.5;
+  padding:3px 0;font-size:12.5px;background:none;border:0;color:var(--ink);caret-color:var(--ink)}
+/* the field owns the focus ring now, so the control inside must not draw a second one
+   two pixels away from it. Overrides .pc textarea:focus-visible in panel.css, which is
+   the only reason that rule can be dropped here without leaving the box unmarked. */
+.ag-main .pc textarea:focus,.ag-main .pc textarea:focus-visible{outline:none}
+.ag-main .pc textarea::placeholder{color:var(--faint)}
+.ag-main .pc textarea:disabled{color:var(--muted);cursor:default}
+.ag-main .pc .send{align-self:flex-end;margin-bottom:1px}
+/* --on-block, not --on-acc: --block is a mid-dark red in BOTH themes while --on-acc flips to
+   near-black on the dark one, which would put dark text on that red. This was a bare #fff until
+   2026-09-12, when a third red button needed the same colour and the token was finally added to
+   the palette in panel.css, where every other colour already lives. */
+.ag-main .pc .send.stop{background:var(--block);color:var(--on-block)}
+.ag-main .pc .send[disabled]{opacity:.35;cursor:default}
+@media (prefers-reduced-motion:reduce){.ag-field{transition:none}}
+.ag-model{flex:none;align-self:center;max-width:190px;font:inherit;font-size:11px;color:var(--faint);
+  background:transparent;border:0;border-radius:6px;padding:3px 2px;cursor:pointer}
+.ag-model:hover{color:var(--acc)}
+.ag-model:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-model:disabled{cursor:default;opacity:.6}
+.ag-cstate{width:100%;display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--faint);padding:0 2px 2px}
+.ag-cstate .dot{width:6px;height:6px}
+.ag-cstate .dot.run{background:var(--ok)}
+.ag-cstate .dot.wait{background:var(--warn)}
+
+/* ── review panel ─────────────────────────────────────────────────────────── */
+.ag-panel{display:none;flex:none;width:0;border-left:1px solid var(--line-soft);flex-direction:column;min-height:0;background:var(--surface)}
+.ag.haspanel .ag-panel{display:flex;width:46%;min-width:360px;max-width:620px}
+.ag-ph{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--line-soft)}
+.ag-ph .pt{min-width:0;flex:1}
+.ag-ph h3{font-family:var(--serif);font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em;color:var(--ink);line-height:1.25}
+.ag-ph .ps{font-size:11px;color:var(--muted);margin-top:3px}
+.ag-pb{flex:1;overflow-y:auto;min-height:0;padding:14px}
+.ag-pf{border-top:1px solid var(--line-soft);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card)}
+.ag-pf .sp{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.ag-pf .btn{padding:7px 12px;font-size:11.5px}
+
+/* topic list */
+.ag-topic{display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
+  background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px}
+.ag-topic:hover{border-color:var(--acc)}
+.ag-topic:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-topic[aria-checked="true"]{border-color:var(--acc);background:var(--acc-bg)}
+.ag-topic .rd{width:13px;height:13px;border-radius:50%;border:1px solid var(--line);flex:none;margin-top:3px;background:var(--card)}
+.ag-topic[aria-checked="true"] .rd{border-color:var(--acc);background:var(--acc);box-shadow:inset 0 0 0 2.5px var(--card)}
+.ag-topic .ti{min-width:0;flex:1}
+.ag-topic .tt{font-family:var(--serif);font-size:14px;font-weight:600;color:var(--ink);line-height:1.3}
+.ag-topic .ta{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+.ag-topic .tm{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;align-items:center}
+.ag-topic .tm .pill{font-size:9px}
+.ag-topic .tw{font-size:11px;color:var(--faint);margin-top:6px;line-height:1.45}
+
+/* research brief */
+.ag-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;margin:0 0 12px}
+.ag-kv dt{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding-top:2px}
+.ag-kv dd{margin:0;color:var(--ink)}
+.ag-kw{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:-.01em;color:var(--ink);line-height:1.2}
+.ag-nums{display:flex;gap:16px;margin:8px 0 14px}
+.ag-num{min-width:84px}
+.ag-num b{display:block;font:600 16px/1.1 var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ag-num span{display:block;font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+.ag-num.demo b{color:var(--warn)}
+.ag-list{margin:0 0 12px;padding-left:18px;font-size:12px;color:var(--ink)}
+.ag-list li{margin:3px 0;line-height:1.45}
+.ag-list li small{color:var(--faint);font-family:var(--mono);font-size:10.5px;margin-left:4px}
+.ag-list a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
+.ag-gap{border-left:2px solid var(--acc);background:var(--acc-bg);padding:9px 12px;border-radius:0 7px 7px 0;
+  font-size:12px;color:var(--ink);line-height:1.55;margin:0 0 12px}
+/* Rules at --line, not --line-soft (owner, 2026-09-09: "table borders darker, so a section is
+   visibly a section"). --line-soft is a hairline meant for dividing rows INSIDE one card; used
+   as a table's only structure it left the rows floating with nothing holding them, and on the
+   light theme it is very nearly the page colour. The head keeps the heavier rule so the columns
+   read as headings, the body rows sit on the plain one, and the table closes with a rule of its
+   own so it ends somewhere. Same two tokens the rest of the screen uses -- no new colours. */
+.ag-pages{width:100%;border-collapse:collapse;font-size:11.5px;margin:0 0 12px;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ag-pages th{text-align:left;font:600 9.5px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  padding:8px 10px 7px 0;border-bottom:1px solid var(--line);background:var(--th-bg)}
+.ag-pages tbody tr:last-child td{border-bottom:0}
+.ag-pages td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--ink)}
+.ag-pages tbody tr:hover td{background:var(--sepia)}
+.ag-pages td.n{font-family:var(--mono);color:var(--faint);width:22px}
+.ag-pages td .h{color:var(--muted);font-size:11px;margin-top:1px}
+.ag-pages td a{color:var(--ink);text-decoration:none}
+.ag-pages td a:hover{color:var(--acc);text-decoration:underline}
+
+/* blueprint */
+.ag-bp{border:1px solid var(--line);border-radius:9px;background:var(--inset);margin-bottom:8px;overflow:hidden}
+.ag-bp .bh{display:flex;align-items:center;gap:8px;padding:9px 11px}
+.ag-bp .bh .n{font:600 10px/1 var(--mono);color:var(--faint);width:18px;flex:none}
+.ag-bp .bh .bt{font-weight:600;color:var(--ink);font-size:12.5px;flex:1;min-width:0}
+.ag-bp .bh .bw{font:500 10px/1 var(--mono);color:var(--faint);flex:none}
+.ag-bp .bh .ib{padding:2px}
+.ag-bp .bc{padding:0 11px 10px 37px;font-size:11.5px;color:var(--muted);line-height:1.5}
+.ag-bp .bl{margin-top:5px;font-size:10.5px;color:var(--faint)}
+.ag-bp .bl a{color:var(--acc);text-decoration:none}
+.ag-bp .be{margin-top:7px;display:flex;gap:6px;align-items:center}
+.ag-bp .be input{flex:1;font-size:11.5px;padding:5px 8px}
+.ag-checks{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px}
+.ag-check{font:500 10.5px/1 var(--mono);padding:4px 7px;border-radius:5px;background:var(--ok-bg);color:var(--ok)}
+.ag-check.bad{background:var(--block-bg);color:var(--block)}
+.ag-check.warn{background:var(--warn-bg);color:var(--warn)}
+
+/* article */
+.ag-doc{font-size:13px;line-height:1.65;color:var(--ink)}
+.ag-blk{position:relative;padding:2px 0;border-radius:6px}
+.ag-blk:hover{background:var(--acc-bg)}
+.ag-blk .md-h{margin:14px 0 6px}
+.ag-blk .md-p{margin:0 0 9px}
+.ag-blk .ib.ag-editbtn{position:absolute;right:-30px;top:2px;opacity:0;color:var(--faint)}
+.ag-blk:hover .ib.ag-editbtn,.ag-blk .ib.ag-editbtn:focus-visible{opacity:1}
+.ag-blk.editing{background:var(--acc-bg);padding:8px 10px}
+.ag-editbox{margin-top:8px;display:flex;flex-direction:column;gap:7px}
+.ag-editbox textarea{width:100%;box-sizing:border-box;background:var(--card);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);font:400 12px/1.45 var(--sans);padding:7px 9px;resize:vertical;min-height:54px}
+.ag-editbox textarea:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+.ag-editbox .row{display:flex;gap:7px;align-items:center}
+.ag-editbox .row .sp{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.ag-diff{margin:8px 0 0;font:11px/1.45 var(--mono);background:var(--inset);border:1px solid var(--line-soft);border-radius:7px;
+  padding:8px 10px;white-space:pre-wrap;max-height:240px;overflow:auto}
+.ag-diff .add{color:var(--ok)} .ag-diff .del{color:var(--block);text-decoration:line-through;opacity:.8}
+.ag-doc .md-t{font-size:12px} .ag-doc .md-tw{margin:0 0 9px}
+.ag-blk .md-l{margin:0 0 9px;padding-left:20px}
+
+/* ── settings views (inside the conversation column) ──────────────────────── */
+.ag-view{padding:18px 20px;max-width:78ch;margin:0 auto}
+.ag-view h2{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px;color:var(--ink)}
+.ag-view > p.lead{color:var(--muted);margin:0 0 16px;font-size:12.5px;max-width:60ch}
+/* SECTION HEADINGS (owner, 2026-09-09: "darker and bigger"). panel.css sets h3.sec globally to
+   10px uppercase at --faint -- a micro-label, right for a dense control panel and wrong for a
+   reference document where these six ("The company", "The site catalogue", "The writer brief",
+   "Product facts", "Links the close may point at", "Competitors") are the only landmarks on a
+   long scroll. Overridden INSIDE .ag only, so every other screen keeps the label it was designed
+   with. Sentence case, because they are written as phrases and shouting "LINKS THE CLOSE MAY
+   POINT AT" is not calm. The hairline under each one is what makes a section look like a
+   section, and it is the same --line the tables now use. */
+.ag .ag-view h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:30px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag .ag-view h3.sec small{font-size:11.5px}
+/* the first heading on a view does not need to push away from the lead paragraph twice */
+.ag .ag-view > h3.sec:first-of-type{margin-top:20px}
+/* a section whose controls belong beside its name, not buried in its body */
+.ag-sechead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:30px 0 10px;
+  padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag .ag-sechead h3.sec{margin:0;padding:0;border-bottom:0;flex:1;min-width:0}
+.ag-secctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ag-secctl .btn{padding:4px 9px;font-size:10.5px}
+.ag-row{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
+  background:var(--inset);margin-bottom:7px}
+/* A row that is asking for something, rather than reporting something. The one place it is used
+   is a file a person has to type into, and the whole point is that it must not read as another
+   built artifact sitting there empty -- which is how the old seed file stayed blank for months.
+   An accent edge and a warm ground, both existing tokens; nothing louder than that. */
+.ag-row.ask{border-color:var(--acc);border-left-width:3px;background:var(--sepia)}
+.ag-row.ask .rn{align-items:baseline}
+.pill.p-ask{background:var(--acc-bg);color:var(--acc)}
+.ag-row .ri{min-width:0;flex:1}
+.ag-row .rn{font-weight:600;color:var(--ink);font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.ag-row .rd{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+.ag-row .rm{font:500 10.5px/1 var(--mono);color:var(--faint);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.ag-row .ra{flex:none;display:flex;gap:6px;align-items:center}
+.ag-row.off{opacity:.55}
+
+/* ── the live Library: a row is born when the run starts and fills in ──────────
+   The Library no longer means "finished articles", so the three states have to be
+   readable in a glance down a scanned list or the tab looks full of broken work.
+   A row being written is the ONLY one with the accent edge and the turning marker
+   in its pill, which is the same accent-means-working vocabulary the chat's stage
+   strip and the running-step spinner already use. Every colour is a token, so the
+   dark theme and the accent picker follow without a second rule. */
+.ag-row.writing{border-color:var(--acc);background:var(--acc-bg)}
+.ag-row .pill .spin{display:inline-block;width:7px;height:7px;border-radius:50%;
+  border:1.5px solid currentColor;border-top-color:transparent;vertical-align:-1px;
+  margin-right:5px;animation:sutraSpin .8s linear infinite}
+
+/* the progress strip: the smaller sibling of .ag-stages in the chat, same three states.
+   One line, chips only, because the Library is a list you scan and not a dashboard. */
+.ag-miles{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:7px}
+.ag-mile{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border:0;border-radius:5px;
+  background:none;font:500 10.5px/1.6 var(--sans);color:var(--faint)}
+.ag-mile i{width:5px;height:5px;border-radius:50%;background:var(--line);flex:none}
+.ag-mile.done{color:var(--muted);cursor:pointer}
+.ag-mile.done i{background:var(--ok)}
+.ag-mile.done:hover{background:var(--card);color:var(--ink)}
+.ag-mile.done:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-mile.cur{color:var(--acc);background:var(--card)}
+.ag-mile.cur i{background:var(--acc);animation:sutraPulse 1.4s ease-in-out infinite}
+.ag-mile.todo{color:var(--faint);opacity:.65}
+.ag-form{display:flex;flex-direction:column;gap:9px;max-width:440px}
+.ag-form label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.ag-form label b{color:var(--ink);font-weight:500;font-size:12px}
+.ag-form input{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+  border-radius:6px;padding:7px 9px;font:400 12px/1.3 var(--sans)}
+.ag-form input:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+.ag-form .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ag-form .row .sp{margin-left:auto;font-size:11px;color:var(--faint)}
+.ag-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+.ag-status .dot{width:7px;height:7px}
+.ag-status .dot.ok{background:var(--ok)} .ag-status .dot.warn{background:var(--warn)} .ag-status .dot.bad{background:var(--block)}
+.ag-addrow{display:flex;gap:7px;margin:0 0 12px}
+.ag-addrow input{flex:1}
+.ag-switch{width:30px;height:17px;border-radius:9px;border:1px solid var(--line);background:var(--inset);position:relative;cursor:pointer;flex:none;padding:0}
+.ag-switch::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--faint);transition:left .12s}
+.ag-switch[aria-checked="true"]{background:var(--acc-bg);border-color:var(--acc)}
+.ag-switch[aria-checked="true"]::after{left:15px;background:var(--acc)}
+.ag-switch:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);
+  font:500 11.5px/1 var(--sans);padding:9px 14px;border-radius:8px;z-index:9500;box-shadow:var(--shadow);opacity:0;transition:opacity .15s}
+.ag-toast.on{opacity:1}
+.ag-err{margin:10px 0;border-left:2px solid var(--block);background:var(--block-bg);padding:9px 12px;border-radius:0 7px 7px 0;
+  font-size:11.5px;color:var(--ink)}
+
+/* ── knowledge: the company, the catalogue, the map, the brand pack ────────── */
+.ag-view.wide{max-width:96ch}
+.ag-form .two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.ag-form textarea.mono{background:var(--inset);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 9px;font:400 12px/1.4 var(--mono);width:100%;box-sizing:border-box}
+.ag-form select{background:var(--inset);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 9px;font:400 12px/1.3 var(--sans)}
+.ag-row .rn .n{font:600 10px/1 var(--mono);color:var(--faint);margin-right:6px}
+.ag-pages td.m,.ag-pages small.m{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.ag-pagelink{background:none;border:0;padding:0;color:var(--ink);font:500 12px/1.35 var(--sans);cursor:pointer;text-align:left}
+.ag-pagelink:hover{color:var(--acc);text-decoration:underline}
+.ag-pager{display:flex;gap:8px;align-items:center;font:500 10.5px/1 var(--mono);color:var(--faint);margin:6px 0 2px}
+.ag-pager .btn{padding:4px 9px;font-size:10.5px}
+.ag-map{position:relative;margin-top:10px;border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
+.ag-map canvas{display:block;width:100%;height:auto;cursor:crosshair}
+.ag-maptip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font:500 11px/1.35 var(--sans);
+  padding:5px 8px;border-radius:6px;max-width:250px;box-shadow:var(--shadow);z-index:3}
+.ag-maplegend{display:flex;gap:12px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid var(--line-soft);font:500 10.5px/1 var(--sans);color:var(--muted)}
+.ag-maplegend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.ag-mapcap{padding:7px 10px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--muted)}
+
+/* the writer brief: a short window on the page, the whole file behind Open, the files it was
+   built from behind one more door */
+/* Capped and scrolling in its own box. The brief is the longest thing on the screen (3,090 words
+   on the first real pack), and left uncapped it buried every section under it. Cut from 62vh to
+   30vh on 2026-09-09: the owner read the real pack and the box still owned the screen, so the
+   window got short and Open in the heading row took over showing the whole thing. */
+.ag-brief{border:1px solid var(--line-soft);border-radius:9px;background:var(--inset);padding:14px 16px;
+  margin:0 0 6px;font-size:12.5px;line-height:1.65;color:var(--ink);
+  max-height:30vh;overflow-y:auto;overscroll-behavior:contain}
+.ag-briefsub{margin:0 0 10px}
+.ag-brief .md-p{margin:0 0 9px}
+.ag-brief .md-h{margin:14px 0 6px}
+.ag-brief .md-l{margin:0 0 9px;padding-left:20px}
+.ag-brief>*:last-child{margin-bottom:0}
+.ag-view .ag-more{font-size:11.5px;color:var(--muted);padding:6px 0}
+
+/* the pages a close may point at: what the crawl suggested, and what the owner added */
+.ag-ctalist{display:flex;flex-direction:column;gap:6px}
+.ag-ctarow{display:flex;gap:7px;align-items:center;border-left:2px solid var(--line);padding-left:9px}
+.ag-ctarow.mine{border-left-color:var(--acc)}
+.ag-ctarow input{flex:1;min-width:0}
+.ag-ctarow input+input{flex:.7}
+.ag-ctasrc{flex:none;width:62px;text-align:right;font:500 10px/1 var(--mono);color:var(--faint)}
+.ag-ctarow.mine .ag-ctasrc{color:var(--acc)}
+.ag-ctarow{flex-wrap:wrap}
+.ag-ctanote{flex:1 0 100%;font-size:11px;color:var(--muted);line-height:1.45;padding:1px 0 2px}
+.ag-files{display:flex;flex-direction:column;gap:6px}
+.ag-file{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:9px;padding:9px 12px}
+.ag-file:hover{border-color:var(--acc)}
+.ag-file:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-file.off{opacity:.5;cursor:default}
+.ag-file .fi{width:24px;height:24px;border-radius:6px;background:var(--acc-bg);color:var(--acc);display:grid;place-items:center;flex:none}
+.ag-file .fi svg{width:12px;height:12px}
+.ag-file .ft{flex:1;min-width:0}
+.ag-file .fn{display:block;font-weight:600;color:var(--ink);font-size:12.5px}
+.ag-file .fd{display:block;font-size:11px;color:var(--muted);margin-top:2px;line-height:1.45}
+.ag-file .fm{flex:none;font:500 10.5px/1 var(--mono);color:var(--faint);padding-top:3px}
+.ag-editbox textarea.tall{min-height:60vh;font-family:var(--mono);font-size:11.5px}
+.ag-setupbar{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0}
+.ag-sstep{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--sans);color:var(--muted);
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:100px;padding:5px 10px}
+.ag-sstep i{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block}
+.ag-sstep.ok{color:var(--ink)} .ag-sstep.ok i{background:var(--ok)}
+.ag-sstep.soft i{background:var(--warn)}
+/* the brief, the plan, the receipts */
+.ag-sub{font-size:11.5px;color:var(--muted);line-height:1.5}
+.ag-why{font-size:12px;color:var(--muted);line-height:1.55;margin:0 0 12px}
+.ag-p{font-size:12.5px;color:var(--ink);line-height:1.6;margin:0 0 10px}
+.ag-list li .h{color:var(--muted);font-size:11px;margin-top:1px}
+.ag-h3s{margin:6px 0 0;padding-left:16px;font-size:11.5px;color:var(--ink)}
+.ag-h3s li{margin:2px 0} .ag-h3s small{color:var(--faint);font-family:var(--mono);font-size:10px}
+.ag-links{margin:0 0 14px}
+.ag-links h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px}
+.ag-link{font-size:12px;color:var(--ink);padding:6px 0;border-bottom:1px solid var(--line-soft);line-height:1.5}
+.ag-link .an{font-weight:500}
+.ag-link a{color:var(--acc);text-decoration:none} .ag-link a:hover{text-decoration:underline}
+.ag-link .h{font-size:11px;color:var(--muted)}
+.ag-score{display:inline-block;margin-left:8px;font:500 10px/1 var(--mono);color:var(--ok);background:var(--ok-bg);padding:3px 6px;border-radius:5px}
+.ag-score.weak{color:var(--block);background:var(--block-bg)}
+h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0}
+
+@media (prefers-reduced-motion:reduce){
+  .ag-step.run .ag-glyph::before{animation:none;border-top-color:var(--acc);opacity:.6}
+  .ag-runhead .ag-fold svg,.ag-switch::after,.ag-toast{transition:none}
+  /* the writing row still reads as writing without moving: the marker stays a ring, the
+     "now" dot stays solid accent, and the accent edge is doing most of the work anyway */
+  .ag-row .pill .spin{animation:none;border-top-color:currentColor;opacity:.6}
+  .ag-mile.cur i{animation:none}
+}
+@media (max-width:1100px){
+  .ag.haspanel .ag-panel{min-width:300px;width:50%}
+  .ag-side{width:200px}
+}
+/* The review panel takes half the row. It used to hide every file blurb as well, which changed
+   the settings document's HEIGHT the instant the panel opened and made the left column jump;
+   the nineteen-tile grid that rule was written for is gone, so the rule is gone with it. What
+   is left only changes the WIDTH, and agDraw's scroll anchor holds the reader's place through
+   the rewrap. */
+.ag.haspanel .ag-view.wide{max-width:none}
+.ag.haspanel .ag-form .two{grid-template-columns:1fr}
+
+/* ── asset ideas ─────────────────────────────────────────────────────────────
+   The next idea is the one row a person acts on, so it gets the weight of a card
+   and everything else is a table under it. */
+/* "Next up" was two uppercase words over a title, and it read as a section label rather than an
+   offer -- "okay next up, oh this is the next topic, all of that's not clear" (owner,
+   2026-09-09). Three things fix it and none of them is a new colour: the label became a
+   sentence that says WHICH idea this is and how many are behind it; the run-on meta line became
+   a labelled list, so "3 out of 4" is attached to the question it answers; and a line under the
+   buttons says what each one does. The card keeps the accent edge so it still reads as the one
+   row on this tab a person is meant to act on. */
+.ag-nextidea{border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:10px;
+  background:var(--inset);padding:15px 17px;margin:2px 0 6px}
+.ag-nextidea .nl{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  font:620 12.5px/1.3 var(--sans);color:var(--ink);margin:0 0 8px}
+.ag-nextidea .nl .nq{font:500 11px/1.3 var(--sans);color:var(--muted)}
+.ag-nextidea .nt{font-size:16px;font-weight:620;line-height:1.35;color:var(--ink);margin:0 0 6px}
+.ag-nextidea .nd{font-size:12.5px;line-height:1.55;color:var(--ink);margin:0 0 11px}
+/* the meta, as label/value pairs rather than one dot-separated run */
+.ag-nextidea .nf{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 13px;
+  padding:10px 0 0;border-top:1px solid var(--line-soft)}
+.ag-nextidea .nf > div{min-width:0}
+.ag-nextidea .nf dt{font:600 9.5px/1 var(--sans);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 4px}
+.ag-nextidea .nf dd{margin:0;font-size:12px;color:var(--ink)}
+/* what the two buttons actually do, said once, under them */
+.ag-nextidea .nh{font-size:11.5px;line-height:1.5;color:var(--muted);margin:9px 0 0}
+.ag-nextidea .nh b{color:var(--ink);font-weight:600}
+.ag-nextidea .nw{font-size:11.5px;line-height:1.5;color:var(--muted);margin:10px 0 0;
+  padding-top:9px;border-top:1px solid var(--line-soft)}
+.ag-nextidea .ag-editrow{margin:0}
+
+/* one idea in the side panel: a label column and its evidence */
+.ag-idea{display:flex;flex-direction:column;gap:0}
+.ag-idea .ir{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--line-soft);
+  font-size:12.5px;line-height:1.6}
+.ag-idea .ir:last-child{border-bottom:0}
+.ag-idea .ir .k{flex:0 0 168px;color:var(--muted)}
+.ag-idea .ir .v{flex:1;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+.ag-idea .ir .v a{color:var(--acc)}
+
+/* ── the Prompts tab ─────────────────────────────────────────────────────────
+   The owner's own writing rules, changed without a developer. Two pieces: the
+   flow across the top, and the prompts under it in one box that scrolls.
+   Everything here uses the tokens the rest of the screen uses, so light, dark
+   and a changed accent all follow with no second set of colours. */
+
+/* The flow. A station name on the left, its steps as phrases running across,
+   with a small chevron between them. Deliberately not a diagram: he asked for
+   phrases, not boxes and arrows. */
+.ag-flow{display:flex;flex-direction:column;gap:6px;margin:0 0 4px}
+.ag-flowrow{display:flex;gap:12px;align-items:baseline;padding:8px 11px;border:1px solid var(--line-soft);
+  border-radius:9px;background:var(--inset)}
+.ag-flowrow .fh{flex:0 0 118px;font:600 11px/1.4 var(--sans);color:var(--ink)}
+.ag-flowrow .fs{flex:1;min-width:0;margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;
+  align-items:baseline;gap:2px 4px;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.ag-flowrow .fs li+li::before{content:"›";color:var(--line);padding-right:5px}
+/* the format rules are the one station on this screen he can open and change, and they sit
+   BEFORE the architect because that is what the architect obeys, so they carry the accent */
+.ag-flowrow.rules{border-color:var(--acc);background:var(--acc-bg)}
+.ag-flowrow.rules .fh{color:var(--acc)}
+.ag-flowrow.rules .fs{color:var(--ink)}
+
+/* The list. It scrolls in its own box and does not take the screen: his words,
+   "it is scrollable, it is not super, it does not cover the entire screen". */
+.ag-promptlist{max-height:46vh;overflow-y:auto;overscroll-behavior:contain;
+  border:1px solid var(--line-soft);border-radius:9px;padding:12px 13px;background:var(--card)}
+.ag-promptgroup+.ag-promptgroup{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.ag-promptgroup .gh{font:600 12px/1.3 var(--sans);color:var(--ink);margin:0 0 3px}
+.ag-promptgroup .gn{font-size:11.5px;color:var(--muted);line-height:1.5;margin:0 0 9px}
+.ag-file.on{border-color:var(--acc);background:var(--acc-bg)}
+.ag-file .fn .pill{margin-left:6px;vertical-align:1px}
+
+/* One prompt in the review panel: the placeholders it fills, then the text. */
+.ag-toks{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;margin:0 0 12px;padding:9px 11px;
+  border-left:2px solid var(--acc);background:var(--acc-bg);border-radius:0 7px 7px 0}
+.ag-toks .tl{flex:1 0 100%;font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px}
+.ag-toks code{font:500 10.5px/1.5 var(--mono);color:var(--acc);background:var(--card);
+  border:1px solid var(--line-soft);border-radius:4px;padding:1px 5px}
+.ag-prompttext{margin:0;font:11.5px/1.6 var(--mono);color:var(--ink);white-space:pre-wrap;
+  overflow-wrap:anywhere;background:var(--inset);border:1px solid var(--line-soft);
+  border-radius:8px;padding:12px 13px}
+.ag-editbox .ag-toks{margin-bottom:8px}
+.ag-editbox .ag-err{margin:8px 0 0}
+/* the refusal sits between the words he typed and the Save button, where he is looking,
+   not below the row where a long message runs off the foot of the panel */
+.ag-editbox .ag-err+.row{margin-top:8px}
+
+/* With the review panel open this column is about 200px wide, and a fixed station
+   label beside a wrapping list of phrases turned every phrase vertical. Narrow, the
+   row stacks: the station name on its own line, its phrases under it. */
+.ag.haspanel .ag-flowrow{flex-direction:column;gap:3px}
+.ag.haspanel .ag-flowrow .fh{flex:none}
+
+/* ── the team workspace (Connections tab) ────────────────────────────────────
+   Nothing new in the vocabulary: the section is ag-row / ag-form / ag-status like every other
+   connection. These five rules are only the pieces those did not already have -- a progress
+   bar, a link that must wrap and stay selectable, and the people in the team. */
+
+/* One bar, two jobs. Creating a workspace drives it off a coarse percentage; joining drives it
+   off real bytes, and when the total is unknown the renderer draws no bar at all rather than a
+   bar that means nothing. */
+.ag-bar{height:5px;border-radius:3px;background:var(--inset);border:1px solid var(--line-soft);
+  overflow:hidden;margin:9px 0 0}
+.ag-bar i{display:block;height:100%;background:var(--acc);border-radius:3px;
+  transition:width .25s ease}
+
+/* The link stays in this tab for good, so it has to be readable at a glance and selectable by
+   hand as well as by the button -- somebody will always want to paste it into chat themselves. */
+.ag-wslink{display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 10px;
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:8px}
+.ag-wslink code{flex:1;min-width:0;font:500 10.5px/1.5 var(--mono);color:var(--ink);
+  overflow-wrap:anywhere;user-select:all}
+.ag-wslink .btn{flex:none}
+
+.ag-wsmembers{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ag-wsmember{display:inline-flex;align-items:baseline;gap:5px;padding:3px 9px;border-radius:20px;
+  background:var(--inset);border:1px solid var(--line-soft);font-size:11.5px;color:var(--ink)}
+.ag-wsmember b{font-weight:600}
+.ag-wsmember i{font-style:normal;font-size:10px;color:var(--acc);text-transform:uppercase;letter-spacing:.06em}
+.ag-wsmember .h{color:var(--faint);font-size:10.5px}
+
+/* The optional access-token box. The word "optional" and the line under the field are the
+   whole of how a person knows the setup-script route is a real choice rather than a dead end,
+   so they are styled to be read, not to be skipped. */
+.ag-opt{font:500 9.5px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  border:1px solid var(--line);border-radius:20px;padding:2px 6px;margin-left:6px;vertical-align:1px}
+.ag-hint{font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:2px}
+.ag-hint a{color:var(--acc)}
+
+.ag-wssteps{margin:9px 0 10px;padding-left:18px;font-size:11.5px;color:var(--muted);line-height:1.7}
+
+/* THE QUIET LINE (plan section 2). He presses Update, the click finishes in about two seconds,
+   and the pack rebuild he was never going to wait for says so here -- at the foot of whatever
+   screen he is on, in the colour of a footnote. It is not a modal, it takes no click to
+   dismiss, and it holds nothing up. It leaves when the server says the rebuild is done. */
+.ag-quiet{flex:none;padding:6px 18px;border-top:1px solid var(--line-soft);background:var(--card);
+  font-size:11px;color:var(--faint);display:flex;align-items:center;gap:7px}
+.ag-quiet .d{width:5px;height:5px;border-radius:50%;background:var(--acc);flex:none;
+  animation:agpulse 1.9s ease-in-out infinite}
+@keyframes agpulse{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ag-quiet .d{animation:none;opacity:.7}}
+
+/* ══ THE MARKETPLACE ══════════════════════════════════════════════════════════
+   The Agents tab opens here now, on a shelf, and the SEO Writer's three columns
+   are somewhere you go from it. This is allowed to be the most generous screen in
+   the app -- a serif heading with room around it, one card with weight -- while
+   still being made of the same six tokens as every other screen. No new colours,
+   no new type scale: --serif at a bigger size, --line for the rules, --acc for the
+   one thing you can press. Restraint is the house style; this is the same house,
+   with the furniture further apart. */
+.ag.ismarket{display:block;flex:1;min-width:0;overflow-y:auto}
+.ag-mktwrap{min-height:100%;background:var(--bg)}
+/* LEFT, not centred (owner: "on the left we see SEO writer"). Same call as the conversation
+   one screen over: the measure limit stays and the column moves left, so a wide window
+   gives the shelf more room rather than more empty margin on both sides. */
+/* position:relative so the mark can be placed against this box rather than the scrolling page */
+.ag-mkt{max-width:74ch;margin:0;padding:52px 30px 44px 34px;position:relative}
+/* THE UNDERLAY. Behind and to the RIGHT of the card, running off into the space one agent leaves
+   empty, rather than centred behind the text where it would sit under every word.
+   OPACITY IS THE WHOLE JUDGEMENT. It is a watermark, not a picture: at .07 it gives the space a
+   shape and the card still reads as if nothing were behind it. If it ever competes with the text,
+   it is too strong — turn it DOWN, never up. Dark themes get a touch more, because a low-opacity
+   accent disappears entirely against a dark ground while the same value glares on light. */
+/* NAMED ag-sutramark, NOT ag-mark: `.ag-mark` is already the 28px badge at the top of this file,
+   and a watermark inheriting a badge's box is the sort of collision that shows up as a mystery
+   later. A test caught it. */
+.ag-sutramark{position:absolute;top:50%;left:52%;width:min(112%,860px);height:auto;
+  transform:translateY(-46%);opacity:.20;pointer-events:none;z-index:0;overflow:visible}
+:root[data-theme="dark"] .ag-sutramark,.dark .ag-sutramark{opacity:.30}
+/* everything real sits above it. z-index only, no stacking context of its own. */
+.ag-mkt > *:not(.ag-sutramark){position:relative;z-index:1}
+/* it arrives with the shelf and then stays still. No idle animation, ever. */
+/* THE MARK NEVER ANIMATES. It faded in with the shelf, which meant it faded in AGAIN every
+   time somebody came back from an agent — reading as the logo suddenly lighting up rather
+   than as a background (owner, 2026-09-10: "when I go back the logo gets highlighted
+   suddenly"). A watermark that announces itself on every navigation is not a watermark. It
+   is simply there, always, at the same strength. */
+@media (max-width:900px){ .ag-sutramark{display:none} }   /* stacked layout has no room to place it well */
+.ag-mkth{margin-bottom:6px}
+/* WHICH COMPANY (2026-09-11). The shelf no longer names a company; the chooser does, with one
+   card per company in the shelf's own card style, the open one marked, and a small form to add
+   or name one. */
+.ag-cocard.on{border-color:var(--acc)}
+.ag-cocard .cm{text-transform:uppercase}
+/* the row holds the card and the dots that delete the company; same shape as a chat row */
+.ag-corow{position:relative;display:flex;align-items:center;gap:6px}
+.ag-corow .ag-cocard{flex:1;min-width:0}
+.ag-codots{flex:none;opacity:0;background:none;border:0;cursor:pointer;color:var(--faint);
+  padding:6px;border-radius:6px;line-height:0;transition:opacity .1s ease,color .1s ease}
+.ag-codots svg{width:15px;height:15px}
+.ag-corow:hover .ag-codots,.ag-codots:focus-visible{opacity:1}
+.ag-codots:hover{color:var(--ink);background:var(--inset)}
+.ag-codots:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-coask{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--sans)}
+.ag-coask .lb{color:var(--faint)}
+.ag-coask button{background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;
+  padding:5px 8px;font:500 11px/1 var(--sans);color:var(--muted)}
+.ag-coask .yes{color:var(--block);border-color:var(--block)}
+.ag-coask .yes:hover{background:var(--block);color:var(--on-block)}
+.ag-coask .no:hover{border-color:var(--acc);color:var(--ink)}
+.ag-coask button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-corow.asking .ag-cocard{opacity:.5}
+
+/* ── the DataForSEO console ────────────────────────────────────────────────
+   Owner, 2026-09-12: "it should cover the entire screen in the right, leaving the left pane, but
+   it should leave slightly things in the corners and that should be transparent". So: a dimmed
+   sheet over everything, and a panel inset from every edge, starting clear of the rail. Tokens
+   only, like the Shadow overlay, so it follows the theme instead of carrying its own palette. */
+.ag-dfsback{position:fixed;inset:0;z-index:80;background:var(--scrim);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.ag-dfs{position:fixed;z-index:81;top:18px;right:18px;bottom:18px;left:248px;
+  display:flex;flex-direction:column;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  box-shadow:var(--shadow)}
+@media (max-width:980px){.ag-dfs{left:16px}}
+.ag-dfsh{display:flex;align-items:center;gap:12px;padding:14px 18px;
+  border-bottom:1px solid var(--line-soft);flex:none}
+.ag-dfsh h2{margin:0;font:600 15px/1.2 var(--sans);color:var(--ink)}
+.ag-dfsh .sp{font-size:11.5px;color:var(--faint)}
+.ag-dfsh .mk{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ag-dfsh .mk input{width:132px;font:400 12px var(--sans);color:var(--ink);background:var(--inset);
+  border:1px solid var(--line);border-radius:7px;padding:5px 8px;outline:none}
+.ag-dfsh .mk input:focus{border-color:var(--acc)}
+.ag-dfsh .x{flex:none;background:none;border:0;cursor:pointer;color:var(--faint);padding:6px;
+  border-radius:7px;line-height:0}
+.ag-dfsh .x:hover{color:var(--ink);background:var(--inset)}
+.ag-dfsb{flex:1;min-height:0;overflow-y:auto;padding:14px 18px 22px}
+.ag-dfscard{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--surface)}
+.ag-dfscard>summary{cursor:pointer;list-style:none;padding:12px 14px;display:flex;
+  align-items:baseline;gap:9px;font:600 13px/1.3 var(--sans)}
+.ag-dfscard>summary::-webkit-details-marker{display:none}
+.ag-dfscard>summary .bl{font:400 12px/1.4 var(--sans);color:var(--faint)}
+.ag-dfscard[open]>summary{border-bottom:1px solid var(--line-soft)}
+.ag-dfsbody{padding:12px 14px}
+.ag-dfsform{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.ag-dfsform .full{grid-column:1/-1}
+.ag-dfsform label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.ag-dfsform input,.ag-dfsform select,.ag-dfsform textarea{width:100%;font:400 12.5px var(--sans);
+  color:var(--ink);background:var(--inset);border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;outline:none}
+.ag-dfsform textarea{min-height:72px;resize:vertical}
+.ag-dfsform input:focus,.ag-dfsform select:focus,.ag-dfsform textarea:focus{border-color:var(--acc)}
+.ag-dfsrow{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.ag-dfsrow .sp{font-size:11.5px;color:var(--faint)}
+.ag-dfsout{margin-top:12px}
+.ag-dfsout table{width:100%;border-collapse:collapse;font-size:12px}
+.ag-dfsout th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);
+  padding:6px 8px;position:sticky;top:0;background:var(--surface)}
+.ag-dfsout td{border-bottom:1px solid var(--line-soft);padding:6px 8px;vertical-align:top}
+.ag-dfsout td.n{text-align:right;font-variant-numeric:tabular-nums}
+.ag-dfswrap{max-height:46vh;overflow:auto;border:1px solid var(--line-soft);border-radius:9px}
+.ag-dfsblk{margin-bottom:12px}
+.ag-dfsblk h4{margin:0 0 5px;font:600 12px var(--sans);color:var(--ink)}
+.ag-dfsblk p,.ag-dfsblk li{font-size:12.5px;line-height:1.5;color:var(--muted);margin:0 0 4px}
+.ag-dfstags{display:flex;flex-wrap:wrap;gap:5px}
+.ag-dfstags span{font-size:11px;color:var(--muted);background:var(--inset);
+  border:1px solid var(--line);border-radius:20px;padding:2px 8px}
+.ag-dfstext{max-height:34vh;overflow:auto;font-size:12.5px;line-height:1.6;color:var(--muted);
+  background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap}
+.ag-dfsraw{max-height:34vh;overflow:auto;font:400 11px/1.5 var(--mono);color:var(--muted);
+  background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap;margin-top:8px}
+
+/* A message the server never took, left on the transcript instead of a toast that fades. It
+   looks like the turn it would have been, so the words are where the person expects them. */
+.ag-sendfail .u{opacity:.75}
+.ag-sendfail .ag-err{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.ag-retry{background:none;border:1px solid var(--line);border-radius:6px;cursor:pointer;
+  padding:4px 9px;font:500 11px/1 var(--sans);color:var(--ink)}
+.ag-retry:hover{border-color:var(--acc);background:var(--inset)}
+.ag-retry:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-coform{margin-top:14px;max-width:460px;display:flex;flex-direction:column;gap:9px}
+.ag-coform label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+.ag-coform label b{color:var(--ink);font-weight:600}
+.ag-coform input{font:400 13px var(--sans);color:var(--ink);background:var(--inset);
+  border:1px solid var(--line);border-radius:9px;padding:9px 12px;outline:none}
+.ag-coform input:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.ag-coform .sp{font-size:11px;color:var(--faint)}
+/* the company name in the agent's sidebar is the way back to the chooser */
+.ag-cosw{display:inline-flex;align-items:center;gap:4px;max-width:100%;margin:2px 0 3px;padding:0;
+  background:none;border:0;cursor:pointer;font:500 11.5px/1.3 var(--sans);color:var(--acc);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-cosw svg{width:10px;height:10px;flex:none}
+.ag-cosw:hover{text-decoration:underline}
+.ag-cosw:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:3px}
+.ag-mkt h1{font-family:var(--serif);font-size:36px;font-weight:600;letter-spacing:-.03em;
+  line-height:1.08;margin:0 0 10px;color:var(--ink)}
+.ag-mkt > .ag-mkth p{margin:0;color:var(--muted);font-size:13px;line-height:1.6;max-width:56ch}
+.ag .ag-mkt h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:38px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.ag-mkt .note{margin:12px 0 0}
+/* THE PROMISE AT THE FOOT OF THE SHELF. Deliberately the loudest thing on the screen: it is the
+   only place the product says what it is going to be, and it is standing in for an empty shelf.
+   Serif, dark, large, with a hairline running out to both edges so it reads as a designed
+   statement rather than a leftover sentence. */
+.ag-more{display:flex;align-items:center;gap:18px;margin:46px 0 10px}
+.ag-more .r{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+.ag-more .r:last-child{background:linear-gradient(90deg,var(--line),transparent)}
+.ag-more p{margin:0;text-align:center;font-family:var(--serif);color:var(--ink);
+  font-size:26px;line-height:1.25;letter-spacing:-.02em;font-weight:600}
+.ag-more em{font-style:normal;color:var(--acc)}
+@media (max-width:720px){ .ag-more p{font-size:20px} .ag-more{gap:10px;margin-top:32px} }
+
+/* the shelf. One column: the card is on the left and stays there, and a second
+   agent later drops in underneath without a layout to rethink. */
+.ag-cards{display:flex;flex-direction:column;gap:10px}
+.ag-mktcard{display:flex;align-items:flex-start;gap:15px;width:100%;text-align:left;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 18px 17px;
+  color:inherit;font:inherit;position:relative;overflow:hidden;
+  transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.ag-mktcard:hover{border-color:var(--acc);background:var(--sepia);transform:translateY(-1px)}
+.ag-mktcard:active{transform:scale(.988);transition-duration:.06s}
+/* THE CARD ANSWERS THE PRESS. Without it the opening begins somewhere else on the screen and the
+   thing you actually clicked never acknowledges you — which is what makes a transition feel
+   bolted on rather than caused. A press, then the columns arrive. (2026-09-10) */
+.ag-mktcard:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ag-mktcard .cm{width:38px;height:38px;border-radius:10px;background:var(--acc-bg);color:var(--acc);
+  display:grid;place-items:center;flex:none;font:700 16px/1 var(--serif)}
+.ag-mktcard .cb{flex:1;min-width:0;display:block}
+.ag-mktcard .ct{display:block;font-family:var(--serif);font-size:17px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink);line-height:1.25}
+.ag-mktcard .cd{display:block;font-size:12px;color:var(--muted);line-height:1.55;margin-top:5px;max-width:54ch}
+.ag-mktcard .cs{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--muted)}
+.ag-mktcard .cs .dot.warn{background:var(--warn)}
+.ag-mktcard .cs .dot.bad{background:var(--block)}
+/* the facts. Each one is a number that was READ; a fact still in flight is not
+   drawn at all, so this row is never a line of zeroes standing in for ignorance. */
+.ag-mktcard .cf{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:11px;color:var(--faint)}
+.ag-mktcard .cf b{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.ag-mktcard .cn{display:block;margin-top:9px;font-size:11.5px;color:var(--acc)}
+.ag-mktcard .cg{flex:none;align-self:center;font:500 11px/1 var(--sans);color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 11px;white-space:nowrap}
+.ag-mktcard:hover .cg{border-color:var(--acc);color:var(--acc)}
+
+/* the way back out, at the top of the agent's own column */
+.ag-back{display:flex;align-items:center;gap:6px;width:calc(100% - 20px);margin:9px 10px 0;
+  background:none;border:0;cursor:pointer;text-align:left;padding:5px 6px;border-radius:6px;
+  color:var(--faint);font:500 11px/1.3 var(--sans)}
+.ag-back:hover{background:var(--acc-bg);color:var(--acc)}
+.ag-back:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+/* ── the first run ────────────────────────────────────────────────────────────
+   Where the hero sits, the first time this agent is opened -- and only then, which
+   agFirstRun decides from real state. It is longer than the hero on purpose and it
+   ends in the hero's own play chip, so there is one door into setup, not two. */
+.ag-intro{padding:22px 0 14px}
+.ag-intro .ag-mark.big{width:40px;height:40px;border-radius:11px;font-size:17px;margin-bottom:13px}
+.ag-intro h2{font-family:var(--serif);font-size:27px;font-weight:600;letter-spacing:-.025em;
+  margin:0 0 9px;color:var(--ink);line-height:1.12}
+.ag-intro .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65;max-width:58ch}
+.ag .ag-intro h3.sec{font:620 13px/1.3 var(--sans);letter-spacing:-.01em;text-transform:none;
+  color:var(--ink);margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.ag-needs{list-style:none;margin:0;padding:0}
+.ag-needs li{display:grid;grid-template-columns:14px auto 1fr;align-items:baseline;gap:4px 9px;
+  padding:6px 0;font-size:12px;color:var(--muted);line-height:1.5}
+.ag-needs li b{color:var(--ink);font-weight:600;white-space:nowrap}
+.ag-needs li span{min-width:0}
+.ag-needs li i{width:7px;height:7px;border-radius:50%;background:var(--line);
+  display:inline-block;justify-self:center;transform:translateY(-1px)}
+.ag-needs li.ok i{background:var(--ok)}
+.ag-needs li.req i{background:var(--acc)}
+.ag-firsts{margin:0;padding-left:19px;font-size:12px;color:var(--ink);line-height:1.7}
+.ag-firsts li::marker{color:var(--faint);font-family:var(--mono);font-size:10.5px}
+.ag-firsts li.ok{color:var(--muted)}
+.ag-intro .i4{margin-top:24px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.ag-intro .i4 .ag-play{max-width:none}
+.ag-skip{background:none;border:0;cursor:pointer;padding:2px 0;color:var(--faint);
+  font:400 11px/1.3 var(--sans);text-decoration:underline;text-underline-offset:3px}
+.ag-skip:hover{color:var(--acc)}
+.ag-skip:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.ag-intro .i5{margin-top:16px}
+
+/* ── arrival ──────────────────────────────────────────────────────────────────
+   "Something which opens in a very crazy manner." The way to honour that is speed
+   and stagger, not length: the whole thing is over in about a third of a second,
+   the pieces arrive in the order you would read them, and NOTHING waits on it --
+   the agent is in the DOM, loading and clickable from the first frame, because
+   these are opacity and transform only and the class is dropped once it has run.
+   An impatient person must never sit through this, least of all twice. */
+/* THE ARRIVAL, made bigger because the first version could not be seen (owner, 2026-09-10: "I
+   don't see any animation, something crazy, when I click on that SEO writer"). It was a 9px rise
+   over .30s, which is the sort of motion you feel rather than notice.
+   More travel, a touch of scale on the column you are actually looking at, and a stagger wide
+   enough to read as three things arriving in order. STILL under half a second end to end, and
+   still nothing waits on it -- the agent is live the moment it paints. A dramatic opening you
+   have to sit through twice is worse than none, and that limit has not moved. */
+@keyframes agRise{from{opacity:0;transform:translateY(16px) scale(.99)}to{opacity:1;transform:none}}
+@keyframes agSlide{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}
+.ag-enter .ag-side{animation:agSlide .40s cubic-bezier(.16,.84,.30,1) both}
+.ag-enter .ag-main{animation:agRise .46s cubic-bezier(.16,.84,.30,1) .07s both}
+.ag-enter .ag-panel{animation:agRise .46s cubic-bezier(.16,.84,.30,1) .13s both}
+.ag-enter .ag-mkth{animation:agRise .42s cubic-bezier(.16,.84,.30,1) both}
+.ag-enter .ag-mkt > h3.sec{animation:agRise .42s cubic-bezier(.16,.84,.30,1) .08s both}
+.ag-enter .ag-cards{animation:agRise .44s cubic-bezier(.16,.84,.30,1) .14s both}
+.ag-enter .ag-more{animation:agRise .42s cubic-bezier(.22,.72,.28,1) .16s both}
+/* the introduction reveals in reading order, once, and only on a first open */
+.ag-intro .i1{animation:agRise .32s cubic-bezier(.22,.72,.28,1) both}
+.ag-intro .i2{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .07s both}
+.ag-intro .i3{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .13s both}
+.ag-intro .i4{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .19s both}
+.ag-intro .i5{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .24s both}
+/* THE LIMIT ON ALL OF IT. Asked for no motion, there is none, and every element is
+   simply there -- no delay, no transform, nothing left half-faded. */
+@media (prefers-reduced-motion:reduce){
+  .ag-enter .ag-side,.ag-enter .ag-main,.ag-enter .ag-panel,
+  .ag-enter .ag-mkth,.ag-enter .ag-mkt > h3.sec,.ag-enter .ag-cards,.ag-enter .ag-more,
+  .ag-intro .i1,.ag-intro .i2,.ag-intro .i3,.ag-intro .i4,.ag-intro .i5{
+    animation:none;opacity:1;transform:none}
+  .ag-mktcard{transition:none}
+  .ag-mktcard:hover{transform:none}
+}
+
+/* narrow: the shelf keeps its air but stops wasting it */
+@media (max-width:640px){
+  .ag-mkt{padding:34px 18px 30px 20px}
+  .ag-mkt h1{font-size:28px}
+  .ag-mktcard{flex-wrap:wrap}
+  .ag-mktcard .cg{align-self:flex-start}
+}
+
+/* ══ THE GUIDE ════════════════════════════════════════════════════════════════
+   What the agent's middle column opens on. It is a document, not a dashboard, so it
+   borrows the marketplace's furniture one size down: the serif title, the 14px
+   sentence-case section heading with a hairline under it, and --acc reserved for the
+   things you can press. No new colour system and no new type scale -- every value
+   below is a token or a size the file already uses. */
+/* THE GUIDE USES THE COLUMN. It was capped at 78ch, so on a wide window the section rules and
+   the tab table stopped two thirds across and the screen read as truncated rather than composed
+   (owner, 2026-09-10: "why does it not cover entire screen, same issue as earlier").
+   Same rule as the conversation: STRUCTURE fills the width, PROSE keeps a measure. The headings,
+   their rules and the table now run the full column; the paragraphs below still stop where a line
+   stops being comfortable to read, which is the one thing a wide window must not take away. */
+.ag-guide{padding:24px 0 16px;max-width:min(100%,124ch)}
+.ag-guide h2{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.025em;
+  margin:0 0 10px;color:var(--ink);line-height:1.12}
+/* THE PARAGRAPHS END WHERE THE RULES END. They had a tighter cap of their own, so a heading's rule
+   ran the full column and the sentence under it stopped two thirds along — and a rule that
+   disagrees with its own text reads as broken rather than as a measure being kept (owner,
+   2026-09-10: "the formatting is still not fixed to the right"). One width for the whole guide. */
+.ag-guide .l{color:var(--muted);margin:0;font-size:13px;line-height:1.65}
+.ag .ag-guide h3.sec,.ag .ag-dive h3.sec{font:620 14px/1.3 var(--sans);letter-spacing:-.01em;
+  text-transform:none;color:var(--ink);margin:28px 0 12px;padding-bottom:7px;
+  border-bottom:1px solid var(--line)}
+.ag-guide .gp{color:var(--muted);margin:0 0 10px;font-size:12.5px;line-height:1.65}
+.ag-guide .gp:last-child{margin-bottom:0}
+
+/* the four steps. The numeral is the landmark, so it is set in the mono face the rest of
+   the screen counts in, and it sits in its own column rather than in the text. */
+.ag-gsteps{list-style:none;margin:0;padding:0;counter-reset:agstep}
+.ag-gsteps li{counter-increment:agstep;display:grid;grid-template-columns:22px 1fr;gap:11px;
+  padding:7px 0;font-size:12.5px;line-height:1.6;color:var(--ink)}
+.ag-gsteps li::before{content:counter(agstep);font:600 11px/1.55 var(--mono);color:var(--acc);
+  font-variant-numeric:tabular-nums}
+
+/* the tab table. Two columns on a wide pane, and the name stacks above its line when the
+   column gets narrow rather than squeezing the sentence into four words a line. */
+.ag-gtabs{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:0 18px;align-items:baseline}
+.ag-gtabs dt{font:600 12.5px/1.6 var(--sans);color:var(--ink);padding:6px 0;white-space:nowrap}
+.ag-gtabs dd{margin:0;padding:6px 0;font-size:12.5px;line-height:1.6;color:var(--muted)}
+@media (max-width:620px){
+  .ag-gtabs{grid-template-columns:1fr;gap:0}
+  .ag-gtabs dt{padding-bottom:0}
+  .ag-gtabs dd{padding-top:2px;padding-bottom:10px}
+}
+
+/* the five doors. One column, so a sixth would drop in underneath without a layout to
+   rethink -- the same call the shelf makes with its cards. */
+.ag-gdives{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ag-gdive{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  text-align:left;cursor:pointer;background:var(--inset);border:1px solid var(--line);
+  border-radius:9px;padding:11px 13px;color:inherit;font:inherit;
+  transition:border-color .16s ease,background .16s ease}
+.ag-gdive span{font-family:var(--serif);font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.3}
+.ag-gdive svg{flex:none;color:var(--faint)}
+.ag-gdive:hover{border-color:var(--acc);background:var(--acc-bg)}
+.ag-gdive:hover svg{color:var(--acc)}
+.ag-gdive:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+
+/* ── a deep dive, in place of the guide ───────────────────────────────────────
+   Same column, same width, same composer underneath. The Back control is drawn by one
+   function and is the first thing in every dive, so it is in the same place on all five
+   and does not move as you go between them. */
+.ag-dive{padding:24px 0 16px;max-width:78ch}
+.ag-dive .d0{margin-bottom:14px}
+.ag-diveback{display:inline-flex;align-items:center;gap:6px;background:none;border:0;cursor:pointer;
+  padding:5px 8px 5px 6px;margin-left:-6px;border-radius:6px;color:var(--faint);
+  font:500 11px/1.3 var(--sans)}
+.ag-diveback:hover{background:var(--acc-bg);color:var(--acc)}
+.ag-diveback:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.ag-dive h2{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:-.02em;
+  margin:0 0 14px;color:var(--ink);line-height:1.15}
+.ag-dive .d2 p{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--muted);max-width:62ch}
+.ag-dive .d2 p:first-child{color:var(--ink)}
+.ag-dive .d2 p:last-child{margin-bottom:0}
+
+/* the arrival, the same one the introduction uses: quick, staggered in reading order, and
+   over before anybody could be waiting on it. NOTHING here gates the text -- these are
+   opacity and transform only, so the guide is readable and the composer usable from the
+   first frame whether the animation runs or not. */
+.ag-enter .ag-guide .g1{animation:agRise .32s cubic-bezier(.22,.72,.28,1) both}
+.ag-enter .ag-guide .g2{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .06s both}
+.ag-enter .ag-guide .g3{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .11s both}
+.ag-enter .ag-guide .g4{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .16s both}
+.ag-enter .ag-guide .g5{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .21s both}
+@media (prefers-reduced-motion:reduce){
+  .ag-enter .ag-guide .g1,.ag-enter .ag-guide .g2,.ag-enter .ag-guide .g3,
+  .ag-enter .ag-guide .g4,.ag-enter .ag-guide .g5{animation:none;opacity:1;transform:none}
+  .ag-gdive{transition:none}
+}

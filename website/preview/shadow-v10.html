@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow on Sutra Desktop — design v10</title>
+<!-- v10 (2026-09-14): the app's OWN stylesheet and markup. shadow-assets/panel.css,
+     workspace.css and agents.css are byte copies of what the app serves; every element
+     below uses the class names 16-shadow-home.js renders (.shwork .shwleft .shtask .shtpill
+     .shcard2 .shwcomp .shset .ssec .rule ...) and the shell from the served index page
+     (.rail .rtop .nav .panes .pane.browse .ph .pb). Only the v3.2 changes are drawn on top:
+     three task groups, the sheet, adding a rule, the working chat with take over, errors,
+     Shadow down. Design of record for holding/plans/shadow/SHADOW-V3.md v3.2. -->
+<link rel="stylesheet" href="shadow-assets/panel.css">
+<link rel="stylesheet" href="shadow-assets/workspace.css">
+<link rel="stylesheet" href="shadow-assets/agents.css">
+<style>
+/* mock-only overrides: several app shells on one scrolling page */
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 60px}
+.wrap{height:auto;overflow:visible;max-width:1300px;margin:0 auto}
+.cap{font:12.5px/1.5 var(--sans);color:var(--muted);margin:0 0 8px}
+.cap b{color:var(--ink);font-weight:600}
+.app{height:640px;position:relative;margin:0 0 30px;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.app .shdot{position:absolute;right:18px;bottom:84px;z-index:9}
+.shcompwrap{position:relative}
+.restartbtn{bottom:92px}
+.mockbadge{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;border-radius:99px;background:var(--acc);color:var(--on-acc);font:700 9px/15px var(--sans);text-align:center;padding:0 4px}
+.restartbtn{position:absolute;right:66px;bottom:24px;z-index:9;display:none}
+.restartbtn.show{display:inline-flex}
+.shwlabel.need{color:var(--acc)}
+.shwlabel+.shtasks{margin-bottom:6px}
+.shwork{height:100%}
+.shthread{margin-top:2px}
+/* the working chat's oversee bar */
+.oversee{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--acc);border-radius:var(--r);background:var(--sepia);font-size:12.5px;margin-bottom:10px}
+.oversee .live{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.oversee.mine{border-color:var(--line);background:var(--inset)} .oversee.mine .live{background:var(--faint)}
+.oversee.ended{border-color:var(--block-line);background:var(--block-bg)} .oversee.ended .live{background:var(--block)}
+.oversee .acts{margin-left:auto;display:flex;gap:8px;align-items:center}
+.oversee .go{font-size:12px;color:var(--acc);background:none;border:0;cursor:pointer;font-weight:500}
+.who{font:600 9px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:3px}
+.shmsg.shag{background:var(--inset);border-left:2px solid var(--faint)}
+.shmsg.shshadow .who{color:var(--acc)}
+.remember{display:inline-flex;align-items:center;gap:8px;margin:6px 0 2px;padding:5px 6px 5px 10px;border:1px solid var(--acc);border-radius:99px;background:var(--acc-bg);font-size:12px}
+.remember .sc{font:600 9px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--acc)}
+.remember.ok .btn{display:none} .remember.ok:after{content:"kept";font:600 9px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok);padding-right:6px}
+.rtext[contenteditable]{cursor:text;border-bottom:1px dashed transparent;outline:none}
+.rtext[contenteditable]:hover{border-bottom-color:var(--faint)} .rtext[contenteditable]:focus{border-bottom:1px solid var(--acc)}
+.rtext.empty{color:var(--faint)}
+.hide{display:none !important}
+/* Now: the feed, then the one way in */
+.nyask{max-width:560px;margin-top:16px}
+.nyask .shcompose{min-height:52px}
+.nycard.gone{opacity:0;transition:opacity .2s}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>1</b> Now. Only what needs you, one action each. Anything else starts in the box: type and press Enter.</p>
+<div class="app" id="app0" style="height:560px">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Agent Marketplace</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v.5M12 11v5"/></svg>Help</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+    <div class="rfoot identity"><button class="idbtn" type="button"><div class="av av-unknown"></div><span class="idtext"><span class="idrole">CEO of Sutra</span><span class="idstat">&mdash;</span></span></button></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Now</h3></div>
+    <div class="pb">
+      <div class="nygreet">Good morning.</div>
+      <div class="nysub" id="nysub"><b>2 things need you.</b></div>
+      <div class="nyfeed" id="nyfeed">
+        <div class="nycard" data-ny="1"><div class="nyhead"><span class="nyprod">Shadow</span><span class="nykind">needs you</span></div><div class="nytitle">Approve the push to paisa? EMI auto-fix, tests 14/14, PR #212</div><div class="nywhy">the push is a floor</div><button class="btn pri nyact" type="button" data-nyopen="1">Approve</button></div>
+        <div class="nycard" data-ny="2"><div class="nyhead"><span class="nyprod">Org</span><span class="nykind">needs you</span></div><div class="nytitle">Charter A1 is waiting on your ratification</div><div class="nywhy">blocks the Shadow build</div><button class="btn pri nyact" type="button" data-nyopen="2">Read it</button></div>
+      </div>
+      <div class="nyask" id="nyask">
+        <div class="shcompwrap"><textarea class="shcompose" id="nycomp" placeholder="What do you have in mind?"></textarea><button class="shsend" type="button" aria-label="Send" data-nysend><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+        <div id="nydraft" class="hide" style="margin-top:10px">
+          <div class="shcard2">
+            <div class="shcard2head"><span class="shcard2tag">fix</span><span class="shcard2obj" id="nydraftobj">fix the rounding differences in the EMI checks</span><span class="shtpill shtpill-ready">READY</span></div>
+            <div class="shcard2row"><span class="shcard2k">where it runs</span><span class="shcard2v">a new chat in paisa</span></div>
+            <div class="shcard2row"><span class="shcard2k">done when</span><span class="shcard2v">the fix runs before every EMI check &middot; a tested PR is open</span></div>
+            <div class="shcard2acts"><button class="btn pri" type="button" data-nystart>Start the task</button><span class="shcard2hint">&hellip;or keep telling me</span><span class="shcard2hint hide" id="nystarted">started &middot; in Focus &rsaquo; Shadow</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section></div>
+  <button class="shdot shdot-live" type="button"><b>S</b><span class="mockbadge" id="badge0">1</span></button>
+</div>
+
+<p class="cap"><b>2</b> Focus &rsaquo; Shadow. Approve the push. Confirm the rule. Open &ldquo;What Shadow knows&rdquo; from the foot.</p>
+<div class="app" id="app1">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button" data-open="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+        <ul class="nav sub"><li><button type="button" aria-current="true">Shadow</button></li><li><button type="button">Balance</button></li><li><button type="button">Optimus</button></li></ul></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Agent Marketplace</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v.5M12 11v5"/></svg>Help</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12a7 7 0 0 0 .1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>Settings</button></li>
+    </ul></div>
+    <div class="rfoot identity"><button class="idbtn" type="button"><div class="av av-unknown"></div><span class="idtext"><span class="idrole">CEO of Sutra</span><span class="idstat">&mdash;</span></span></button></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3 id="ph1">Shadow</h3></div>
+    <div class="pb">
+      <div class="shwork" id="work1">
+        <aside class="shwleft">
+          <button class="shdelegate" type="button">+ Delegate</button>
+          <div class="shwlabel need">Waiting on you</div>
+          <div class="shtasks" id="g-wait">
+            <button class="shtask on" type="button" data-t="emi"><span class="shtaskdot d-blocked"></span><span class="shtaskname">EMI auto-fix</span><span class="shtpill shtpill-blocked">NEEDS YOU</span></button>
+          </div>
+          <div class="shwlabel">Running</div>
+          <div class="shtasks" id="g-run">
+            <button class="shtask" type="button" data-t="watch"><span class="shtaskdot d-running"></span><span class="shtaskname">watch the sutra-ui build</span><span class="shtpill shtpill-running">RUNNING</span></button>
+            <button class="shtask" type="button" data-t="pricing"><span class="shtaskdot d-running"></span><span class="shtaskname">pricing research</span><span class="shtpill shtpill-running">RUNNING</span></button>
+          </div>
+          <div class="shwlabel">Done today</div>
+          <div class="shtasks">
+            <button class="shtask" type="button" data-t="stab"><span class="shtaskdot d-failed"></span><span class="shtaskname">stability pass</span><span class="shtpill shtpill-failed">STOPPED</span></button>
+            <button class="shtask" type="button" data-t="readme"><span class="shtaskdot"></span><span class="shtaskname">README title</span><span class="shtpill shtpill-done">DONE</span></button>
+          </div>
+          <div class="shwfoot"><nav class="shfoot shnav"><button class="btn shfootitem shnavitem shsetdoor" type="button" data-sheet="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1h-.2a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5v-.2a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1h.2a2 2 0 0 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg><span>What Shadow knows</span></button></nav></div>
+        </aside>
+        <section class="shwright">
+          <header class="shwhead"><span class="shwseal">S</span><h2 class="shwtitle" id="title1">EMI auto-fix</h2><span class="shtpill shtpill-blocked" id="pill1">NEEDS YOU</span><button class="btn" type="button">Open the chat</button></header>
+          <div class="shcard2">
+            <div class="shcard2head"><span class="shcard2tag">fix</span><span class="shcard2obj">fix the EMI rounding</span><span class="shtpill shtpill-running">RUNNING</span></div>
+            <div class="shcard2row"><span class="shcard2k">where it runs</span><span class="shcard2v">its own chat &middot; paisa</span></div>
+            <div class="shcard2row"><span class="shcard2k">done when</span><span class="shcard2v">the fix runs before every EMI check &middot; a tested PR is open</span></div>
+            <div class="shcard2row"><span class="shcard2k">turn</span><span class="shcard2v">10 of 12</span></div>
+          </div>
+          <div class="shthread">
+            <div class="shmsg shag"><span class="who">the agent &middot; turn 10</span>14 tests green, PR #212 open. The push is a floor, so I stopped here.</div>
+            <div class="shcard2" id="approval" style="margin-top:6px">
+              <div class="shcard2head"><span class="shcard2obj">Approve the push to paisa?</span><span class="shtpill shtpill-blocked">NEEDS YOU</span></div>
+              <div class="shcard2row"><span class="shcard2k">evidence</span><span class="shcard2v">PR #212 &middot; 14/14</span></div>
+              <div class="shcard2acts"><button class="btn pri" type="button" data-approve>Approve</button><button class="btn" type="button">Stop</button><span class="shcard2hint hide" id="did1">approved</span></div>
+            </div>
+            <div class="shmsg shmine">Always run the EMI check before commits in paisa.</div>
+            <div class="remember" id="rem"><span class="sc">paisa</span><span>I&rsquo;ll remember: run the EMI check before commits.</span><button class="btn pri" type="button" data-keep>Confirm</button></div>
+          </div>
+          <div class="shwcomp"><div class="shcompwrap"><textarea class="shcompose" placeholder="Say anything…"></textarea><button class="shsend" type="button" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>
+        </section>
+      </div>
+      <div class="shset hide" id="sheet1">
+        <header class="sshead"><button class="ssback" type="button" data-sheetclose="1" aria-label="Back to Shadow">&larr;</button><span class="ssmark"><b>S</b></span><h2 class="sstitle">What Shadow knows</h2></header>
+        <div class="ssbody"><div class="sswrap">
+          <section class="ssec"><h3 class="ssh">Rules</h3>
+            <div class="rule"><span class="rscope glob" data-scope>global</span><span class="rtext" contenteditable="true">Always answer with the outcome in the first line.</span><button class="rx" type="button" data-rx>&times;</button></div>
+            <div class="rule"><span class="rscope" data-scope>paisa</span><span class="rtext" contenteditable="true">Run the EMI check before commits.</span><button class="rx" type="button" data-rx>&times;</button></div>
+            <div class="rule"><span class="rscope" data-scope>dayflow</span><span class="rtext" contenteditable="true">Never touch the release branch without me.</span><button class="rx" type="button" data-rx>&times;</button></div>
+            <div class="rule"><span class="rscope glob" data-scope>global</span><span class="rtext empty" contenteditable="true" data-empty>Add a rule&hellip;</span></div>
+          </section>
+          <section class="ssec"><h3 class="ssh">Numbers</h3>
+            <div class="srow"><span class="k">Running at once</span><span class="step" data-step><button type="button" data-dec>&minus;</button><span class="val">5</span><button type="button" data-inc>+</button></span></div>
+            <div class="srow"><span class="k">Budget per task</span><span><span class="ev" contenteditable="true">200k</span> tokens &middot; <span class="ev" contenteditable="true">12</span> turns</span></div>
+            <div class="srow"><span class="k">Quiet hours</span><span><span class="ev" contenteditable="true">9 pm</span> to <span class="ev" contenteditable="true">8 am</span></span></div>
+          </section>
+          <section class="ssec"><h3 class="ssh">Floors</h3>
+            <div class="srow"><span class="floorbar"><span><span class="lk">&#128274;</span>destructive git operations</span><span><span class="lk">&#128274;</span>external client repositories</span><span><span class="lk">&#128274;</span>irreversible external sends</span><span><span class="lk">&#128274;</span>permission prompts &amp; your questions</span></span></div>
+          </section>
+        </div></div>
+      </div>
+    </div>
+  </section></div>
+  <button class="shdot shdot-live" type="button" id="dot1"><b>S</b><span class="mockbadge" id="badge1">1</span></button>
+</div>
+
+<p class="cap"><b>3</b> Shadow working inside a chat. Take over, then hand back or keep the chat. &ldquo;Shadow&rdquo; is one click to its task.</p>
+<div class="app" style="height:560px">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button" aria-current="true" data-open="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button>
+        <ul class="nav sub"><li><button type="button" aria-current="true">paisa &middot; EMI auto-fix<span class="ct">shadow</span></button></li><li><button type="button">dayflow &middot; api deploy</button></li><li><button type="button">sutra-ui &middot; build</button></li></ul></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Agent Marketplace</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v.5M12 11v5"/></svg>Help</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+    <div class="rfoot identity"><button class="idbtn" type="button"><div class="av av-unknown"></div><span class="idtext"><span class="idrole">CEO of Sutra</span><span class="idstat">&mdash;</span></span></button></div>
+  </nav>
+  <div class="panes"><section class="pane">
+    <div class="ph"><h3>paisa &middot; EMI auto-fix</h3><span class="src">shadow &middot; task</span></div>
+    <div class="pb">
+      <div class="oversee" id="over"><span class="live"></span><span id="over-t"><b>Shadow is working here</b> &middot; turn 10 of 12</span><span class="acts" id="over-c"><button class="go" type="button">Shadow &#8250;</button><button class="btn" type="button" data-takeover>Take over</button><button class="btn" type="button">Stop</button></span></div>
+      <div class="shthread" id="wmsgs">
+        <div class="shmsg shshadow"><span class="who">shadow &middot; turn 9</span>Run the EMI check first, then fix the rounding in emi.py.</div>
+        <div class="shmsg shag"><span class="who">paisa agent</span>3 differences, all in the half-up branch. Patching, one test each.</div>
+        <div class="shmsg shshadow"><span class="who">shadow &middot; turn 10</span>Open the PR when green. I stop before the push.</div>
+        <div class="shmsg shag"><span class="who">paisa agent</span>14 tests green. PR #212 open.</div>
+      </div>
+    </div>
+    <div class="pc"><textarea id="wcomp" placeholder="Type here and you take over…" rows="1"></textarea></div>
+  </section></div>
+</div>
+
+<p class="cap"><b>4</b> When it goes wrong. Failed: Retry. Paused after a relaunch: Resume. The Shadow chat down: grey dot, Restart. Click the dot.</p>
+<div class="app" style="height:560px">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button" data-open="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+        <ul class="nav sub"><li><button type="button" aria-current="true">Shadow</button></li><li><button type="button">Balance</button></li><li><button type="button">Optimus</button></li></ul></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Agent Marketplace</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v.5M12 11v5"/></svg>Help</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+    <div class="rfoot identity"><button class="idbtn" type="button"><div class="av av-unknown"></div><span class="idtext"><span class="idrole">CEO of Sutra</span><span class="idstat">&mdash;</span></span></button></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Shadow</h3></div>
+    <div class="pb">
+      <div class="shwork">
+        <aside class="shwleft">
+          <button class="shdelegate" type="button">+ Delegate</button>
+          <div class="shwlabel">Running</div>
+          <div class="shtasks"><button class="shtask" type="button"><span class="shtaskdot d-running"></span><span class="shtaskname">watch the sutra-ui build</span><span class="shtpill shtpill-running">RUNNING</span></button></div>
+          <div class="shwlabel">Paused</div>
+          <div class="shtasks"><button class="shtask" type="button"><span class="shtaskdot"></span><span class="shtaskname">pricing research</span><span class="shtpill">PAUSED</span></button></div>
+          <div class="shwlabel">Done today</div>
+          <div class="shtasks"><button class="shtask on" type="button"><span class="shtaskdot d-failed"></span><span class="shtaskname">stability pass</span><span class="shtpill shtpill-failed">STOPPED</span></button></div>
+          <div class="shwfoot"><nav class="shfoot shnav"><button class="btn shfootitem shnavitem shsetdoor" type="button"><span>What Shadow knows</span></button></nav></div>
+        </aside>
+        <section class="shwright">
+          <header class="shwhead"><span class="shwseal">S</span><h2 class="shwtitle">stability pass</h2><span class="shtpill shtpill-failed" id="pill3">STOPPED</span><button class="btn" type="button">Open the chat</button></header>
+          <div class="shcard2" id="failcard">
+            <div class="shcard2head"><span class="shcard2tag">fix</span><span class="shcard2obj">stability pass on sutra-ui</span><span class="shtpill shtpill-failed">STOPPED</span></div>
+            <div class="shcard2row"><span class="shcard2k">stopped on</span><span class="shcard2v">tests failed to import</span></div>
+            <div class="shcard2row"><span class="shcard2k">turn</span><span class="shcard2v">3 of 12</span></div>
+            <div class="shcard2acts"><button class="btn pri" type="button" data-retry>Retry</button><button class="btn" type="button">Stop</button><span class="shcard2hint hide" id="did3">retrying as a new task</span></div>
+          </div>
+          <div class="shcard2" style="border-color:var(--line)">
+            <div class="shcard2head"><span class="shcard2tag">research</span><span class="shcard2obj">pricing research</span><span class="shtpill">PAUSED</span></div>
+            <div class="shcard2row"><span class="shcard2k">why</span><span class="shcard2v">relaunch</span></div>
+            <div class="shcard2acts"><button class="btn pri" type="button">Resume</button><button class="btn" type="button">Stop</button></div>
+          </div>
+          <div class="shwcomp"><div class="shcompwrap"><textarea class="shcompose" placeholder="Say anything…"></textarea><button class="shsend" type="button" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>
+        </section>
+      </div>
+    </div>
+  </section></div>
+  <button class="btn restartbtn" type="button" id="restart">Restart Shadow</button>
+  <button class="shdot shdot-live" type="button" id="dot3"><b>S</b></button>
+</div>
+
+<p class="cap">Shadow v10 &middot; 2026-09-14 &middot; the app&rsquo;s own panel.css and markup &middot; SHADOW-V3.md v3.2</p>
+</div>
+
+<script>
+(function(){
+  var q=function(s,r){return (r||document).querySelector(s)}, qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  qa('[data-sheet]').forEach(function(b){b.addEventListener('click',function(){q('#work1').classList.add('hide');q('#sheet1').classList.remove('hide');q('#ph1').textContent='What Shadow knows';});});
+  qa('[data-sheetclose]').forEach(function(b){b.addEventListener('click',function(){q('#sheet1').classList.add('hide');q('#work1').classList.remove('hide');q('#ph1').textContent='Shadow';});});
+  var scopes=['global','paisa','dayflow','this chat'];
+  qa('[data-scope]').forEach(function(s){s.addEventListener('click',function(){var i=scopes.indexOf(s.textContent.trim());s.textContent=scopes[(i+1)%scopes.length];s.classList.toggle('glob',s.textContent==='global');});});
+  qa('[data-rx]').forEach(function(x){x.addEventListener('click',function(){x.closest('.rule').remove();});});
+  qa('[data-empty]').forEach(function(t){t.addEventListener('focus',function(){if(t.classList.contains('empty')){t.classList.remove('empty');t.textContent='';}});});
+  qa('[data-step]').forEach(function(s){var v=q('.val',s);q('[data-dec]',s).addEventListener('click',function(){v.textContent=Math.max(1,+v.textContent-1);});q('[data-inc]',s).addEventListener('click',function(){v.textContent=Math.min(12,+v.textContent+1);});});
+  var names={emi:'EMI auto-fix',watch:'watch the sutra-ui build',pricing:'pricing research',stab:'stability pass',readme:'README title'};
+  var pills={emi:['NEEDS YOU','shtpill shtpill-blocked'],watch:['RUNNING','shtpill shtpill-running'],pricing:['RUNNING','shtpill shtpill-running'],stab:['STOPPED','shtpill shtpill-failed'],readme:['DONE','shtpill shtpill-done']};
+  qa('#app1 .shtask[data-t]').forEach(function(r){r.addEventListener('click',function(){qa('#app1 .shtask').forEach(function(x){x.classList.remove('on');});r.classList.add('on');var k=r.getAttribute('data-t');q('#title1').textContent=names[k];var p=q('#pill1');p.textContent=pills[k][0];p.className=pills[k][1];});});
+  var ap=q('[data-approve]'); if(ap)ap.addEventListener('click',function(){var c=q('#approval');qa('.btn',c).forEach(function(b){b.classList.add('hide');});q('#did1').classList.remove('hide');var r=q('#app1 .shtask[data-t="emi"]');q('.shtaskdot',r).className='shtaskdot d-running';var s=q('.shtpill',r);s.className='shtpill shtpill-running';s.textContent='RUNNING';q('#g-run').insertBefore(r,q('#g-run').firstChild);var p=q('#pill1');p.textContent='RUNNING';p.className='shtpill shtpill-running';var b=q('#badge1');if(b)b.remove();});
+  var kp=q('[data-keep]'); if(kp)kp.addEventListener('click',function(){q('#rem').classList.add('ok');});
+  var over=q('#over'),ot=q('#over-t'),oc=q('#over-c'),wm=q('#wmsgs'),wc=q('#wcomp');
+  function setOver(cls,html,ctrls){over.className='oversee '+cls;ot.innerHTML=html;oc.innerHTML=ctrls;wire();}
+  function wire(){var t=q('[data-takeover]');if(t)t.addEventListener('click',takeover);var h=q('[data-handback]');if(h)h.addEventListener('click',handback);var k=q('[data-keepchat]');if(k)k.addEventListener('click',keep);}
+  function msg(cls,who,text){var m=document.createElement('div');m.className='shmsg '+cls;m.innerHTML='<span class="who">'+who+'</span>'+text;wm.appendChild(m);}
+  function takeover(){setOver('mine','<b>You have the chat</b> &middot; paused at turn 10','<button class="go" type="button">Shadow &#8250;</button><button class="btn pri" type="button" data-handback>Hand back</button><button class="btn" type="button" data-keepchat>Keep the chat</button><button class="btn" type="button">Stop</button>');msg('shmine','you','Round the prepayment penalty the same way.');wc.placeholder='Say anything…';}
+  function handback(){setOver('','<b>Shadow is back</b> &middot; turn 11 of 12','<button class="go" type="button">Shadow &#8250;</button><button class="btn" type="button" data-takeover>Take over</button><button class="btn" type="button">Stop</button>');msg('shshadow','shadow &middot; turn 11','Adding the prepayment penalty to the same path, with a test.');wc.placeholder='Type here and you take over…';}
+  function keep(){setOver('ended','<b>Yours</b> &middot; task stopped at turn 10, evidence kept','');wc.placeholder='Say anything…';}
+  if(over)wire();
+  // Now: opening a card retires it; the box drafts a task in place
+  qa('[data-nyopen]').forEach(function(b){b.addEventListener('click',function(){var c=b.closest('.nycard');c.classList.add('gone');setTimeout(function(){c.remove();var n=qa('#nyfeed .nycard').length;q('#nysub').innerHTML=n?'<b>'+n+' thing'+(n===1?'':'s')+' need'+(n===1?'s':'')+' you.</b>':'Nothing needs you.';var bd=q('#badge0');if(bd){if(n)bd.textContent=n;else bd.remove();}},200);});});
+  var nc=q('#nycomp'); function nydraft(){var v=(nc.value||'').trim();if(!v)return;q('#nydraftobj').textContent=v;q('#nydraft').classList.remove('hide');nc.value='';}
+  if(nc){nc.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();nydraft();}});var ns=q('[data-nysend]');if(ns)ns.addEventListener('click',nydraft);}
+  var st=q('[data-nystart]'); if(st)st.addEventListener('click',function(){st.classList.add('hide');qa('#nydraft .shcard2hint').forEach(function(h){h.classList.add('hide');});q('#nystarted').classList.remove('hide');var p=q('#nydraft .shtpill');p.textContent='RUNNING';p.className='shtpill shtpill-running';});
+  var rt=q('[data-retry]'); if(rt)rt.addEventListener('click',function(){var c=q('#failcard');qa('.btn',c).forEach(function(b){b.classList.add('hide');});q('#did3').classList.remove('hide');var p=q('#pill3');p.textContent='RUNNING';p.className='shtpill shtpill-running';});
+  var dot=q('#dot3'),rs=q('#restart'),down=false;
+  if(dot)dot.addEventListener('click',function(){down=!down;dot.className='shdot '+(down?'shdot-down':'shdot-live');rs.classList.toggle('show',down);});
+  if(rs)rs.addEventListener('click',function(){down=false;dot.className='shdot shdot-live';rs.classList.remove('show');});
+})();
+</script>
+</body>
+</html>
