@@ -54,6 +54,7 @@ import providers
 #: family, which reported deepseek-v4-flash / -pro / -flash-vision-exp, all 1M.
 WINDOWS = {
     "claude": {
+        "fable": 1000000,    # Fable 5: contextWindow reported by `claude --model fable`, 2026-09-14.
         "opus": 1000000,
         "sonnet": 1000000,
         "haiku": 200000,     # Haiku 4.5. Five times smaller than its siblings.

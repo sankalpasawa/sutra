@@ -55,6 +55,106 @@ Regression coverage for all four: `test_shadow_waiter.py` 13, `test_premature_pa
 `test_shadow_worker_permissions.py` 20, `test_goal_live.js` 35. Canonical Shadow docs land under
 `docs/shadow/`. No settings change and no new Bash or permission allow-rules.
 
+## v2.271.8 (2026-09-14)
+
+**Codex offers all its models, not one.** `providers._codex_discovered` took `codex_models.cached()`
+and, when that was empty, only the operator's `config.toml` model. `cached()` is filled only by
+`refresh_if_stale`, which runs only from GET `/providers/codex/auth` (the Codex settings row), so
+the SEO Writer and any chat opened before that row showed "CLI default" plus the one config model,
+while Codex's own `~/.codex/models_cache.json` listed GPT-5.6-Terra, GPT-5.6-Luna and GPT-5.5
+(model/list answers the same three on codex-cli 0.144.4, measured). New
+`codex_models.cache_file_models()` reads that file, memoised on mtime and never spawning, and is
+used before the config scan. Discovery still wins when it has run. Tests:
+`test_codex_models.py` +5.
+
+## v2.271.7 (2026-09-14)
+
+**Fable in the Claude model picker.** Claude's list was hardcoded to CLI default / Opus / Sonnet /
+Haiku in `providers._CLAUDE_MODELS`, so Fable could not be picked in chat, in routines or in the
+SEO Writer. Added `fable`, the alias `claude --model` accepts (measured on CLI 2.1.247: resolves to
+`claude-fable-5`; the dated `claude-fable-5-1` id is refused until CLI 2.1.251). Context window 1M,
+read from the CLI's own `modelUsage.contextWindow`, added to `budget.WINDOWS`. The Sutra MCP
+routine tool's model enum gains `fable`. The SEO Writer picker labels the empty choice "account
+default" instead of "default", which read as a fifth model (it resolves to Opus 5 on this
+account). Verified live: the SEO Writer on Fable asks for the website with `ask_user`.
+
+## v2.271.6 (2026-09-14)
+
+**SEO Writer: "Model call failed · did not return JSON", a model picker, and the update banner.**
+(1) A Mac's `claude` CLI printed its result object with something else beside it on stdout, and
+`llm._claude_cli_once` gave up on anything that was not exactly one JSON object, so a good reply
+(an `ask_user` for the website) was reported as a failure. `llm._cli_result` now takes the whole
+output, else the last result line, else the first result object in the text. (2) The SEO Writer
+ran on Claude only. It now offers the providers Sutra's chat offers, found by `providers.py`:
+Claude (CLI), Codex (`codex exec` read-only with a strict `--output-schema`, tool input as a JSON
+string) and DeepSeek (its OpenAI-compatible API with the key saved for DeepSeek chat). The pick is
+the person's (`model.json` in the agent root), defaults to the chat's own provider and model, and
+falls back to Claude when the pick cannot run. Web-search calls stay on Claude. Picker in the
+composer and in Connections; routes `GET/POST /api/agents/seo/model`. (3) "Sutra 2.271.4 could not be applied: the update
+state is in use by another process". `stage_desktop` held the manifest flock (5s wait) for the
+whole ~390MB download, so the arm for 2.271.4 timed out while the shell staged 2.271.5, and the
+banner called that a failure; the download also wrote over the staged 2.271.4 image, which shared
+its file name. The download and Gatekeeper check now run with no lock into `.download-*`, and
+`_commit_stage` takes the lock only to re-read the manifest and move the image into place under a
+versioned name (never over a live install). `arm_desktop` verifies outside the lock. A busy lock
+raises `StateBusy`, the CLI reports `busy`, the shell and banner retry it quietly within their
+time limits. Tests: `test_llm_cli` +27 checks, `test_agents.js` +2, `test_updates_cli.py` +8,
+`test_update_attach.js` +3, `test_update_banner.js` +3.
+
+## v2.271.5 (2026-09-13)
+
+**Providers work inside ~/Desktop again — the TCC session-detach bug (found by 2.271.4's stderr fix).**
+2.271.4 made the ACP child's stderr visible, and the very next DeepSeek failure named its real cause:
+`EPERM: uv_cwd` — the CLI could not read its own working directory. The workdir was under `~/Desktop`
+(a macOS TCC-protected folder). Providers were spawned with `start_new_session=True`; a session leader
+becomes its OWN TCC-responsible process on macOS and stops inheriting the Sutra app's Files-and-Folders
+grants, so the child could not read a Desktop/Documents/Downloads path it was launched into — even
+though the Sutra app itself is granted Desktop access (confirmed in the TCC db: `os.sutra.ui`
+Desktop=allowed, but the detached child was unattributed, so even Full Disk Access would not have
+reached it). Fix: spawn the three provider CLIs (DeepSeek/Claude/Codex) with `process_group=0` instead —
+a new process GROUP, not a new SESSION. `kill_group` only ever needed a group leader (killpg reaches
+descendants); dropping the session detach keeps the child attributed to `os.sutra.ui` so the app's grant
+covers it. Tests: `test_provider_spawn_group.py` (pins process_group=0, forbids start_new_session),
+`test_acp_stderr.py`.
+
+## v2.271.4 (2026-09-13)
+
+**DeepSeek "ACP process closed stdout" — the first-run race, and the swallowed reason.** A
+DeepSeek turn could die with only "could not start '.../deepseek' in <cwd>: ACP process closed
+stdout". Two causes, two fixes. (1) The gemini-cli fork's FIRST run writes shared `~/.gemini`
+state (installation_id, projects.json) with a non-atomic write-tmp-then-rename; two
+`deepseek --acp` spawns within one second race on it and the loser crashes mid-write and closes
+stdout (four orphaned `projects.json.*.tmp` in one second was the fingerprint). `_ACP_CONNECT_LOCK`
+now serializes the connect, but ONLY while first run is pending (installation_id absent) — zero
+steady-state contention. (2) The child's stderr, where the real reason lives, was captured to a
+pipe nothing read. `AcpRuntime` now drains it and `stderr_tail()` appends it to the failure, so a
+death names itself. Tests: `test_acp_stderr.py`.
+
+## v2.271.3 (2026-09-13)
+
+**The team's idea sheet reaches everyone who joins.** A teammate who joined with the link got the
+catalogue and the brand pack and an empty Asset ideas tab, for good. The sheet was designed to travel
+as rows in the team's `ideas` table and `mirror.py` could receive them, but nothing ever sent one, and
+the knowledge pack does not carry `assets/`: the owner's workspace held 0 ideas while his Mac held
+1,892. Every save of the sheet now sends what changed (the queue for a few rows, bulk upserts for a
+rewrite), rows that came from the team are never sent back, a sheet built before this reaches an empty
+team once, and the Asset ideas tab refreshes while it is open. Which Mac may send is decided by the
+sheet's own links -- a fifth of its linked rows must point at this Mac's catalogue domain (97% on the
+owner's) -- because the first rule, "the team's earliest member", picked an older registration of the
+owner's own and never let his Mac send anything. Tests: `test_workspace_ideas`, 37 checks.
+
+## v2.271.2 (2026-09-13)
+
+**A real beta channel + a codified promote flow for everyone (CONTRIBUTING.md).** A
+`-beta.N-desktop` tag builds a COEXISTING "Sutra Beta" app -- own bundle id, port 8331, data
+namespace (`~/.sutra-native-beta`, `~/.sutra-ui-beta`) -- published as a prerelease, so
+`releases/latest` (the production updater and the website) never sees it. Verified end to end:
+Sutra Beta ran on 8331 beside production on 8330 with fully separate data. `scripts/sutra-release.sh
+beta|promote` drives it and bumps the manifests together (the guard footgun). main.js derives the
+channel from a baked marker and gives beta its own Electron identity (name + userData) -- without
+that it shared production's single-instance lock and exited on launch, a bug the beta flow caught
+before stable.
+
 ## v2.271.0 (2026-09-13)
 
 **The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and

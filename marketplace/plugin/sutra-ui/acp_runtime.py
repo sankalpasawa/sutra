@@ -241,6 +241,15 @@ class AcpRuntime:
         self._id_seq = itertools.count(1)
         self._pending = {}          # request id -> asyncio.Future
         self._reader_task = None
+        #: The child's stderr, drained continuously into a bounded buffer. It
+        #: USED TO GO NOWHERE: stderr was a PIPE nothing read, so when the CLI
+        #: died on startup the only thing the operator got was "ACP process
+        #: closed stdout" -- the actual reason (a node ENOENT, an ESM load
+        #: error, a first-run crash) sat unread in the pipe. Kept small; only
+        #: the tail matters for a death message, and an unbounded buffer on a
+        #: chatty child is its own leak.
+        self._stderr_chunks = []
+        self._stderr_task = None
         self._emit = None           # the CURRENT turn's emit; reassigned per prompt_turn
         self._got_text = False
         self._open_tools = set()
@@ -411,6 +420,57 @@ class AcpRuntime:
                 fut.set_exception(ConnectionResetError("ACP process closed stdout"))
         self._pending.clear()
 
+    async def _pump_stderr(self):
+        """Drain the child's stderr for its whole life into a bounded tail.
+
+        Two jobs. (1) A child that writes more than a pipe buffer's worth of
+        stderr with nobody reading it BLOCKS on the write -- a silent hang; a
+        continuous reader removes that failure mode. (2) It keeps the last few
+        KB so stderr_tail() can name the death: the CLI prints its real crash
+        reason here (`env: node: No such file or directory`, an ESM stack, a
+        first-run config error) while stdout only ever goes quiet."""
+        s = self.proc.stderr if self.proc else None
+        if s is None:
+            return
+        kept = 0
+        while True:
+            try:
+                chunk = await s.readline()
+            except (ValueError, asyncio.LimitOverrunError):
+                # one oversized stderr line -- skip it, keep draining
+                if not await _drain_to_newline(s):
+                    return
+                continue
+            except Exception:
+                return
+            if not chunk:
+                return
+            self._stderr_chunks.append(chunk)
+            kept += len(chunk)
+            # ring the buffer down when it grows past ~16KB; the tail is what
+            # a death message needs, not the whole session's warnings.
+            while kept > 16 * 1024 and len(self._stderr_chunks) > 1:
+                kept -= len(self._stderr_chunks.pop(0))
+
+    async def stderr_tail(self, limit=1500, timeout=1.5):
+        """The tail of the child's stderr, for a failure message. When the
+        process has died, wait briefly for the pump to reach EOF so a crash
+        line written just before exit is not missed. Returns "" if there is
+        nothing -- callers append it only when non-empty."""
+        t = self._stderr_task
+        if t is not None and not t.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(t), timeout=timeout)
+            except (asyncio.TimeoutError, Exception):
+                pass
+        raw = b"".join(self._stderr_chunks)
+        if not raw:
+            return ""
+        text = raw.decode("utf-8", "replace").strip()
+        if len(text) > limit:
+            text = "..." + text[-limit:]
+        return text
+
     async def _notify_id_error(self, req_id, method):
         payload = {"jsonrpc": "2.0", "id": req_id, "error": {
             "code": -32601, "message": "no client-side handler for %r yet" % method}}
@@ -513,10 +573,25 @@ class AcpRuntime:
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
             env=dict(os.environ, **(env or {})),
-            start_new_session=True,
+            # A new process GROUP, not a new SESSION. kill_group only needs the
+            # child to be a group leader (killpg reaches its descendants), and
+            # that is all process_group=0 gives. start_new_session=True ALSO
+            # made it a session leader -- and on macOS a session leader becomes
+            # its own TCC-responsible process, so it STOPS inheriting Sutra's
+            # Files-and-Folders grants (Desktop/Documents/Downloads). A provider
+            # spawned into a workdir under ~/Desktop then died at startup with
+            # `EPERM: uv_cwd` -- process.cwd() denied -- even though the Sutra
+            # app itself is granted Desktop access (measured 2026-09-13: the
+            # DeepSeek child, TCC-unattributed, could not read
+            # ~/Desktop/development/asawa-holding). Staying in Sutra's session
+            # keeps the child attributed to os.sutra.ui, so the app's grant
+            # covers it. Same group-kill, no session detach.
+            process_group=0,
         )
         self.proc = p
         self.key = key
+        self._stderr_chunks = []
+        self._stderr_task = asyncio.ensure_future(self._pump_stderr())
         self._reader_task = asyncio.ensure_future(self._reader_loop())
         await self.initialize()
         return p

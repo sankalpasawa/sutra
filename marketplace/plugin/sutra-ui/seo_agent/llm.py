@@ -1,11 +1,17 @@
 """llm.py — the one place a model gets called.
 
 Everything else in the app talks to this file, so swapping provider is a change
-here and nowhere else. Three providers, tried in a fixed order:
+here and nowhere else. The person picks a provider and model (store.model_choice),
+the same three the Sutra chat offers:
 
     claude-cli   the `claude` binary on this machine, billed to the user's Claude
-                 subscription. Chosen first whenever it is installed, unless
-                 SEO_AGENT_NO_CLI=1 switches it off.
+                 subscription. The default, and the fallback whenever the chosen
+                 provider cannot run. SEO_AGENT_NO_CLI=1 switches it off.
+    codex-cli    the `codex` binary, signed in to the person's OpenAI account.
+    deepseek     DeepSeek's API, with the key the person saved for DeepSeek chat.
+
+and two legacy API providers, used only when no CLI is there:
+
     anthropic    the API, when an anthropic_key is saved in Connections.
     openai       the API, when an openai_key is saved in Connections.
 
@@ -52,8 +58,59 @@ def cli_bin():
     return shutil.which(override or "claude")
 
 
+CHOICES = ("claude", "codex", "deepseek")
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-v4-flash"     # what the DeepSeek CLI runs when no model is picked
+
+# The panel (agents_api.py) knows how the Sutra chat finds a DeepSeek key and which provider the
+# chat defaults to. This package imports nothing from the panel, so the panel hands those two
+# answers in here as functions. Unset, DeepSeek has no key and the default is Claude.
+_HOOKS = {"deepseek_key": None, "default_choice": None}
+
+
+def set_hooks(deepseek_key=None, default_choice=None):
+    _HOOKS["deepseek_key"] = deepseek_key
+    _HOOKS["default_choice"] = default_choice
+
+
+def codex_bin():
+    if os.environ.get("SEO_AGENT_NO_CLI", "").strip() == "1":
+        return None
+    override = os.environ.get("SEO_AGENT_CODEX_BIN", "").strip()
+    return shutil.which(override or "codex")
+
+
+def _deepseek_key():
+    fn = _HOOKS["deepseek_key"]
+    try:
+        return (fn() or "").strip() if fn else ""
+    except Exception:  # noqa: BLE001 -- a keychain hiccup means "no key", never a crash
+        return ""
+
+
+def chosen():
+    """(provider, model) the person picked, else the Sutra chat's default, else Claude."""
+    c = store.model_choice()
+    pid, model = c["provider"], c["model"]
+    if pid not in CHOICES and _HOOKS["default_choice"]:
+        try:
+            pid, model = _HOOKS["default_choice"]()
+        except Exception:  # noqa: BLE001
+            pid, model = "", ""
+    if pid not in CHOICES:
+        return "claude", ""
+    return pid, (model or "")
+
+
 def provider():
-    """"claude-cli" | "anthropic" | "openai" | None, in that order of preference."""
+    """What will actually answer: "codex-cli" | "deepseek" | "claude-cli" | "anthropic" |
+    "openai" | None. The chosen provider when it can run, otherwise Claude, so a Codex that got
+    signed out never leaves the agent dead while Claude is right there."""
+    pid, _ = chosen()
+    if pid == "codex" and codex_bin():
+        return "codex-cli"
+    if pid == "deepseek" and _deepseek_key():
+        return "deepseek"
     if cli_bin():
         return "claude-cli"
     a, o = _keys()
@@ -250,6 +307,148 @@ def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=N
             raise
 
 
+def _cli_result(out):
+    """The CLI's result object out of whatever it printed, or None.
+
+    Normally stdout is exactly one JSON object. On 2026-09-14 a Mac got "did not return JSON
+    (exit 0)" with a perfectly good result object in the text, so something else was printed
+    alongside it (a notice line, or more than one JSON line). Take the whole thing when it
+    parses, else the last line that is a result object, else the first object found in the text.
+    """
+    if not out:
+        return None
+    try:
+        data = json.loads(out)
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):          # some builds print the whole event list
+            found = [d for d in data if isinstance(d, dict) and d.get("type") == "result"]
+            return found[-1] if found else None
+    except ValueError:
+        pass
+    fallback = None
+    for line in reversed(out.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            if d.get("type") == "result" or "structured_output" in d:
+                return d
+            fallback = fallback or d
+    if fallback is not None:
+        return fallback
+    dec = json.JSONDecoder()
+    i = out.find("{")
+    while i != -1:
+        try:
+            d, _ = dec.raw_decode(out, i)
+            if isinstance(d, dict) and ("result" in d or "structured_output" in d):
+                return d
+        except ValueError:
+            pass
+        i = out.find("{", i + 1)
+    return None
+
+
+# ---- codex cli -------------------------------------------------------------------------
+# `codex exec` runs one turn and writes its last message to a file. --output-schema forces the
+# reply shape, and OpenAI's strict schemas allow no free-form objects, so a tool's input travels
+# as a JSON string and is parsed back below. It runs read-only in an empty folder: it answers
+# from the prompt, the same as the Claude call with --tools "".
+
+CODEX_TOOL_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["text", "tool_calls"],
+    "properties": {
+        "text": {"type": "string"},
+        "tool_calls": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["name", "input"],
+            "properties": {"name": {"type": "string"},
+                           "input": {"type": "string",
+                                     "description": "the tool's input object, JSON-encoded"}}}},
+    },
+}
+CODEX_TEXT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["text"],
+                     "properties": {"text": {"type": "string"}}}
+CODEX_TOOL_INTRO = ("IMPORTANT: you are the brain of a host program. Do not run shell commands, "
+                    "read files or browse; everything you need is in this prompt. The tools below "
+                    "are run by the host: to call one, put {\"name\", \"input\"} into the "
+                    "tool_calls array of your reply, with input being the tool's arguments as a "
+                    "JSON object encoded into a string, and stop. The result comes back in the "
+                    "next turn as \"Result of <id>\".")
+NOT_SIGNED_IN_CODEX = "Codex is not signed in. Sign in from Sutra's chat settings, or pick another model."
+
+
+def _codex_prompt(system, messages, tools):
+    head = system.rstrip()
+    if tools:
+        lines = [head, "", "## Tools you can call", "", CODEX_TOOL_INTRO, ""]
+        for t in tools:
+            lines.append("- %s: %s" % (t["name"], t["description"]))
+            lines.append("  input_schema: " + _compact(t["input_schema"]))
+        lines += ["", CLI_TOOL_RULE]
+        head = "\n".join(lines)
+    return head + "\n\n---\n\n" + _cli_prompt(messages)
+
+
+def _codex_cli_once(binary, system, messages, tools, model, timeout=None):
+    import tempfile
+    limit = float(timeout or CLI_TIMEOUT)
+    with tempfile.TemporaryDirectory(prefix="seo-codex-") as d:
+        schema_path = os.path.join(d, "schema.json")
+        out_path = os.path.join(d, "last.json")
+        with open(schema_path, "w", encoding="utf-8") as fh:
+            json.dump(CODEX_TOOL_SCHEMA if tools else CODEX_TEXT_SCHEMA, fh)
+        cmd = [binary, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
+               "--color", "never", "-C", d, "--output-schema", schema_path, "-o", out_path]
+        if model:
+            cmd += ["-m", model]
+        cmd.append("-")
+        try:
+            p = subprocess.run(cmd, input=_codex_prompt(system, messages, tools),
+                               capture_output=True, text=True, timeout=limit, env=_cli_env())
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Codex timed out: no answer within %d seconds." % int(limit))
+        except OSError as e:
+            raise RuntimeError("Could not start Codex at %s: %s" % (binary, e))
+        try:
+            with open(out_path, encoding="utf-8") as fh:
+                raw = fh.read().strip()
+        except OSError:
+            raw = ""
+    if not raw:
+        # codex echoes the whole prompt to stderr, so the last 400 characters are mostly our own
+        # prompt. Its real complaint is on the lines that start with ERROR.
+        both = (p.stderr or "") + "\n" + (p.stdout or "")
+        errors = [ln.strip()[6:].strip() for ln in both.splitlines() if ln.strip().startswith("ERROR:")]
+        why = errors[-1] if errors else both.strip()[-300:]
+        low = why.lower()
+        if "not logged in" in low or "log in" in low or "login" in low or "not signed in" in low \
+                or "unauthorized" in low:
+            raise NoKey(NOT_SIGNED_IN_CODEX)
+        raise ModelError("Codex could not answer: %s" % why[:300])
+    data = _cli_result(raw)
+    if not isinstance(data, dict):
+        return {"text": raw, "tool_calls": [], "raw": None}
+    calls = []
+    for c in data.get("tool_calls") or []:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        inp = c.get("input")
+        if isinstance(inp, str):
+            try:
+                inp = json.loads(inp) if inp.strip() else {}
+            except ValueError:
+                inp = {}
+        calls.append({"id": "call-" + uuid.uuid4().hex[:8], "name": c["name"],
+                      "input": inp if isinstance(inp, dict) else {}})
+    text = data.get("text")
+    return {"text": (text if isinstance(text, str) else "").strip(), "tool_calls": calls, "raw": None}
+
+
 def _claude_cli_once(cmd, prompt, binary, timeout=None):
     limit = float(timeout or CLI_TIMEOUT)
     try:
@@ -263,10 +462,7 @@ def _claude_cli_once(cmd, prompt, binary, timeout=None):
         raise RuntimeError("Could not start the Claude CLI at %s: %s" % (binary, e))
 
     out = (p.stdout or "").strip()
-    try:
-        data = json.loads(out) if out else None
-    except ValueError:
-        data = None
+    data = _cli_result(out)
     if not isinstance(data, dict):
         tail = ((p.stderr or "").strip() or out)[-400:]
         if "not logged in" in tail.lower() or "log in" in tail.lower():
@@ -386,11 +582,105 @@ def call(system, messages, tools=None, model=None, on_retry=None, timeout=None, 
         return _call(system, messages, tools, model, on_retry, timeout, web)
 
 
+def _retrying(once, on_retry=None):
+    """Run once(); retry a TRANSIENT RuntimeError after each of CLI_RETRY_SLEEPS. See _claude_cli."""
+    attempts = 1 + len(CLI_RETRY_SLEEPS)
+    for attempt in range(attempts):
+        try:
+            return once()
+        except RuntimeError as e:
+            if attempt + 1 < attempts and _transient(str(e)):
+                wait = CLI_RETRY_SLEEPS[attempt]
+                if on_retry:
+                    try:
+                        on_retry("The model was unavailable (%s). Waiting %ds and trying again, "
+                                 "attempt %d of %d." % (str(e)[:90], wait, attempt + 2, attempts))
+                    except Exception:
+                        pass
+                time.sleep(wait)
+                continue
+            raise
+
+
+def _deepseek(system, messages, tools, key, model, timeout=None):
+    """DeepSeek's OpenAI-compatible API, with native tool calling. The same key and the same
+    account the DeepSeek CLI in Sutra's chat uses."""
+    msgs = [{"role": "system", "content": system}]
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            msgs.append({"role": m.get("role"), "content": content})
+            continue
+        texts, calls, results = [], [], []
+        for block in content or []:
+            kind = block.get("type")
+            if kind == "text":
+                texts.append(block.get("text") or "")
+            elif kind == "tool_use":
+                calls.append({"id": block["id"], "type": "function",
+                              "function": {"name": block["name"],
+                                           "arguments": json.dumps(block.get("input") or {})}})
+            elif kind == "tool_result":
+                body = json.dumps(block.get("content"), ensure_ascii=False)
+                results.append({"role": "tool", "tool_call_id": block["tool_use_id"],
+                                "content": body[:RESULT_CAP]})
+        if m.get("role") == "assistant":
+            out = {"role": "assistant", "content": "\n".join(texts)}
+            if calls:
+                out["tool_calls"] = calls
+            msgs.append(out)
+        else:
+            msgs.extend(results)
+            if texts:
+                msgs.append({"role": "user", "content": "\n".join(texts)})
+    payload = {"model": model or DEEPSEEK_MODEL, "messages": msgs, "max_tokens": 8000}
+    if tools:
+        payload["tools"] = [{"type": "function", "function": {
+            "name": t["name"], "description": t["description"],
+            "parameters": t["input_schema"]}} for t in tools]
+    try:
+        r = httpx.post(DEEPSEEK_URL, json=payload, timeout=float(timeout or CLI_TIMEOUT),
+                       headers={"Authorization": "Bearer " + key, "content-type": "application/json"})
+    except httpx.TimeoutException:
+        raise RuntimeError("DeepSeek timed out.")
+    except httpx.HTTPError as e:
+        raise RuntimeError("Could not reach DeepSeek (temporarily): %s" % e)
+    if r.status_code == 401:
+        raise NoKey("DeepSeek refused the saved key. Sign in to DeepSeek again in Sutra's chat settings.")
+    if r.status_code == 402:
+        raise ModelError("DeepSeek says the balance is empty. Top it up, or pick another model.")
+    if r.status_code >= 400:
+        raise ModelError("DeepSeek returned an error %s: %s" % (r.status_code, r.text[:300]))
+    choice = (r.json().get("choices") or [{}])[0].get("message") or {}
+    calls = []
+    for c in choice.get("tool_calls") or []:
+        fn = c.get("function") or {}
+        try:
+            inp = json.loads(fn.get("arguments") or "{}")
+        except ValueError:
+            inp = {}
+        calls.append({"id": c.get("id") or "call-" + uuid.uuid4().hex[:8], "name": fn.get("name"),
+                      "input": inp if isinstance(inp, dict) else {}})
+    return {"text": (choice.get("content") or "").strip(), "tool_calls": calls, "raw": None}
+
+
 def _call(system, messages, tools=None, model=None, on_retry=None, timeout=None, web=False):
     """on_retry(message) is called before each retry of a transient CLI error, so the
     caller can put a line in the run log instead of leaving the user staring at a spinner."""
+    running = provider()
+    pid, picked = chosen()
+    # A web search is a Claude CLI feature. Those two calls stay on Claude when it is here.
+    if running in ("codex-cli", "deepseek") and not (web and cli_bin()):
+        use = model or picked or None
+        if running == "codex-cli":
+            b = codex_bin()
+            return _retrying(lambda: _codex_cli_once(b, system, messages, tools, use, timeout), on_retry)
+        key = _deepseek_key()
+        return _retrying(lambda: _deepseek(system, messages, tools, key, use, timeout), on_retry)
     binary = cli_bin()
     if binary:
+        if not model and pid == "claude":
+            model = picked or None
         return _claude_cli(system, messages, tools, binary,
                            model or os.environ.get("SEO_AGENT_MODEL", "").strip() or None,
                            on_retry=on_retry, timeout=timeout, web=web)

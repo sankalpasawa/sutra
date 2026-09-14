@@ -420,6 +420,11 @@
 .ag-main .pc .send.stop{background:var(--block);color:var(--on-block)}
 .ag-main .pc .send[disabled]{opacity:.35;cursor:default}
 @media (prefers-reduced-motion:reduce){.ag-field{transition:none}}
+.ag-model{flex:none;align-self:center;max-width:190px;font:inherit;font-size:11px;color:var(--faint);
+  background:transparent;border:0;border-radius:6px;padding:3px 2px;cursor:pointer}
+.ag-model:hover{color:var(--acc)}
+.ag-model:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-model:disabled{cursor:default;opacity:.6}
 .ag-cstate{width:100%;display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--faint);padding:0 2px 2px}
 .ag-cstate .dot{width:6px;height:6px}
 .ag-cstate .dot.run{background:var(--ok)}

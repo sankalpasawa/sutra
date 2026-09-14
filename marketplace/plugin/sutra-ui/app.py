@@ -1806,6 +1806,39 @@ import shadow_session as _shadow_session
 _SHADOW = {"session": None}
 _SHADOW_LOCK = asyncio.Lock()   # boot + turn serialization (codex P2 fold)
 
+#: Serializes the DeepSeek ACP connect DURING FIRST RUN ONLY. The gemini-cli
+#: fork writes shared ~/.gemini state (installation_id, projects.json) on its
+#: first launch with a write-tmp-then-rename that is NOT concurrency-safe: two
+#: panes/missions spawning `deepseek --acp` within the same second race on
+#: projects.json, and the loser crashes mid-write and closes stdout -- the
+#: operator sees "ACP process closed stdout" and ~/.gemini is left littered
+#: with orphaned projects.json.*.tmp files (measured: four in one second on the
+#: founder's machine, 2026-09-13). Holding this across spawn+authenticate+
+#: session/new lets the first connect finish first-run init before the next
+#: starts. It engages ONLY while first run is pending (installation_id absent),
+#: so steady state has zero contention -- a stuck connect can never wedge other
+#: panes once the fork has run once. deepseek is the only id that touches
+#: ~/.gemini; codex and claude are unaffected.
+_ACP_CONNECT_LOCK = asyncio.Lock()
+
+
+def _with_stderr(base, tail):
+    """Append a child's stderr tail to a failure line, when there is one. The
+    ACP child's stderr is where the real death reason lives (a node ENOENT, an
+    ESM stack, a first-run config error); the JSON-RPC side only ever goes
+    quiet. Empty tail -> the base line unchanged."""
+    return ("%s\n\nagent stderr:\n%s" % (base, tail)) if tail else base
+
+
+def _gemini_home_uninitialised():
+    """True when the gemini-cli fork has never completed a first run -- its
+    installation_id marker is absent. Cheap stat, checked to decide whether the
+    first-run connect lock is worth taking."""
+    try:
+        return not (Path.home() / ".gemini" / "installation_id").exists()
+    except Exception:
+        return False
+
 
 #: Providers the Shadow path can actually drive. NOT providers.ADAPTERS: that
 #: set answers "can a CHAT PANE run this", and a pane has two transports
@@ -3804,113 +3837,128 @@ async def ws_chat(ws: WebSocket):
                 # qa/fake_acp_agent.py), not against what this code intended.
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
-                if active_id in ("deepseek", "codex"):
-                    # The `deepseek` command npm publishes is a shim beginning
-                    # `#!/usr/bin/env node`, so Node has to resolve HERE, on
-                    # every launch -- not only during the install that fetched
-                    # it. On a Mac with no Node of its own, without this the CLI
-                    # installs perfectly (through the bundled npm) and then dies
-                    # at spawn with `env: node: No such file or directory`,
-                    # which reads like a broken install rather than a missing
-                    # runtime. No-op outside the packaged app.
-                    #
-                    # `codex` ADDED 2026-09-08 and it is the same fact, measured
-                    # rather than assumed: @openai/codex publishes bin/codex.js,
-                    # 13KB of ESM beginning `#!/usr/bin/env node`, which resolves
-                    # a platform package and execs the Rust binary inside it
-                    # (`file` on an installed copy: "a /usr/bin/env node script
-                    # text executable"). codex_install.py fetches that package,
-                    # so a Codex installed by Sutra on a Node-less Mac had
-                    # exactly the DeepSeek failure waiting for it. Nothing about
-                    # Claude changes -- its CLI is not a node shim and it is
-                    # still excluded.
-                    providers.ensure_bundled_node_path()
-                spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
-                             if active_id == "deepseek" else None)
+                # first-run connect serialization -- see _ACP_CONNECT_LOCK.
+                _acp_locked = (active_id == "deepseek"
+                               and _gemini_home_uninitialised())
+                if _acp_locked:
+                    await _ACP_CONNECT_LOCK.acquire()
                 try:
-                    proc = await rt.spawn(args, workdir, spawn_key, env=spawn_env)
-                except OSError as e:
-                    # Real cause, verbatim -- a dead socket taught the operator nothing.
-                    await ws.send_json({"type": "error", "detail":
-                        "could not start %r in %s: %s" % (agent_bin, workdir, e)})
-                    continue
-                if active_id == "deepseek":
-                    # NARROWED from `!= "claude"` (2026-09-08, Codex adapter).
-                    # This block is the ACP handshake -- authenticate +
-                    # session/new + the mode note -- and `codex exec` has none
-                    # of those: no auth step (the CLI owns ~/.codex/auth.json),
-                    # no session/new (the thread arrives on stdout's first
-                    # line), and its permission mode is spawn-time argv. Left
-                    # as `!= "claude"` a Codex pane would have called
-                    # AcpRuntime methods CodexRuntime does not implement and
-                    # died at the first message with an AttributeError.
-                    #
-                    # A STATEMENT OF TRUTH, NOT A BEHAVIOUR CHANGE: deepseek is
-                    # the only id that has ever reached this line. claude was
-                    # excluded by the old condition and is excluded by this
-                    # one; gemini and unknown ids are refused at connect.
-                    if deepseek_key:
-                        # BEFORE session/new, not instead of the env key.
-                        # AcpRuntime.authenticate's docstring has the wire
-                        # evidence: without this the fork defaults the session
-                        # to Gemini auth and refuses it with "Gemini API key is
-                        # missing or not configured" -- a Gemini error on a
-                        # DeepSeek pane, with a valid DeepSeek key in hand.
+                    if active_id in ("deepseek", "codex"):
+                        # The `deepseek` command npm publishes is a shim beginning
+                        # `#!/usr/bin/env node`, so Node has to resolve HERE, on
+                        # every launch -- not only during the install that fetched
+                        # it. On a Mac with no Node of its own, without this the CLI
+                        # installs perfectly (through the bundled npm) and then dies
+                        # at spawn with `env: node: No such file or directory`,
+                        # which reads like a broken install rather than a missing
+                        # runtime. No-op outside the packaged app.
+                        #
+                        # `codex` ADDED 2026-09-08 and it is the same fact, measured
+                        # rather than assumed: @openai/codex publishes bin/codex.js,
+                        # 13KB of ESM beginning `#!/usr/bin/env node`, which resolves
+                        # a platform package and execs the Rust binary inside it
+                        # (`file` on an installed copy: "a /usr/bin/env node script
+                        # text executable"). codex_install.py fetches that package,
+                        # so a Codex installed by Sutra on a Node-less Mac had
+                        # exactly the DeepSeek failure waiting for it. Nothing about
+                        # Claude changes -- its CLI is not a node shim and it is
+                        # still excluded.
+                        providers.ensure_bundled_node_path()
+                    spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
+                                 if active_id == "deepseek" else None)
+                    try:
+                        proc = await rt.spawn(args, workdir, spawn_key, env=spawn_env)
+                    except OSError as e:
+                        # Real cause, verbatim -- a dead socket taught the operator nothing.
+                        # And when the death IS the child closing stdout ("ACP
+                        # process closed stdout"), its stderr is the only place the
+                        # reason lives -- appended here rather than dropped.
+                        await ws.send_json({"type": "error", "detail": _with_stderr(
+                            "could not start %r in %s: %s" % (agent_bin, workdir, e),
+                            await rt.stderr_tail() if not rt.alive else "")})
+                        continue
+                    if active_id == "deepseek":
+                        # NARROWED from `!= "claude"` (2026-09-08, Codex adapter).
+                        # This block is the ACP handshake -- authenticate +
+                        # session/new + the mode note -- and `codex exec` has none
+                        # of those: no auth step (the CLI owns ~/.codex/auth.json),
+                        # no session/new (the thread arrives on stdout's first
+                        # line), and its permission mode is spawn-time argv. Left
+                        # as `!= "claude"` a Codex pane would have called
+                        # AcpRuntime methods CodexRuntime does not implement and
+                        # died at the first message with an AttributeError.
+                        #
+                        # A STATEMENT OF TRUTH, NOT A BEHAVIOUR CHANGE: deepseek is
+                        # the only id that has ever reached this line. claude was
+                        # excluded by the old condition and is excluded by this
+                        # one; gemini and unknown ids are refused at connect.
+                        if deepseek_key:
+                            # BEFORE session/new, not instead of the env key.
+                            # AcpRuntime.authenticate's docstring has the wire
+                            # evidence: without this the fork defaults the session
+                            # to Gemini auth and refuses it with "Gemini API key is
+                            # missing or not configured" -- a Gemini error on a
+                            # DeepSeek pane, with a valid DeepSeek key in hand.
+                            try:
+                                await rt.authenticate(deepseek_key)
+                            except Exception as e:
+                                await ws.send_json({"type": "error", "detail": _with_stderr(
+                                    "%s did not accept the saved key: %s" % (active_id, e),
+                                    await rt.stderr_tail() if not rt.alive else "")})
+                                rt.kill_group()
+                                rt.clear()
+                                continue
                         try:
-                            await rt.authenticate(deepseek_key)
+                            # session_id is already in scope here: the client's
+                            # `resume` seed on a reconnect (set above, before
+                            # this block -- the same variable Claude's own
+                            # --resume path reads), or None on a cold pane.
+                            # AcpRuntime resolves the fallback-on-dead-id case
+                            # internally -- nothing else to do here.
+                            await rt.new_session(workdir, perm_mode, session_id=session_id,
+                                                 mcp_servers=_sutra_acp_mcp_servers())
                         except Exception as e:
-                            await ws.send_json({"type": "error", "detail":
-                                "%s did not accept the saved key: %s" % (active_id, e)})
+                            await ws.send_json({"type": "error", "detail": _with_stderr(
+                                "could not start a %s session: %s" % (active_id, e),
+                                await rt.stderr_tail() if not rt.alive else "")})
                             rt.kill_group()
                             rt.clear()
                             continue
-                    try:
-                        # session_id is already in scope here: the client's
-                        # `resume` seed on a reconnect (set above, before
-                        # this block -- the same variable Claude's own
-                        # --resume path reads), or None on a cold pane.
-                        # AcpRuntime resolves the fallback-on-dead-id case
-                        # internally -- nothing else to do here.
-                        await rt.new_session(workdir, perm_mode, session_id=session_id,
-                                             mcp_servers=_sutra_acp_mcp_servers())
-                    except Exception as e:
-                        await ws.send_json({"type": "error", "detail":
-                            "could not start a %s session: %s" % (active_id, e)})
-                        rt.kill_group()
-                        rt.clear()
-                        continue
-                    # The permission mode the operator picked did not survive
-                    # the trip to this provider. SAID, once per spawn, because
-                    # the `provider` frame above already told the pane it would
-                    # run `perm_mode` -- and that frame is sent before the
-                    # session exists, so it cannot know. Without this the pane
-                    # keeps displaying a mode nothing is enforcing, which is
-                    # the bug the runtime fix half-solves: the runtime now
-                    # knows the truth, and this is the only channel that can
-                    # carry it to the operator.
-                    #
-                    # A NEW FRAME TYPE, not the existing `notice`. `notice` is
-                    # emitted server-side in three places and the client has NO
-                    # handler for any of them -- it is dropped on the floor
-                    # today (checked, not assumed). Reusing it would look like
-                    # reporting and report nothing. Claude never sends this
-                    # frame, so nothing about Claude's rendering changes.
-                    if rt.acp_mode_note:
-                        await ws.send_json(dict(rt.acp_mode_note,
-                                                type="mode_note",
-                                                provider=active_id))
-                elif active_id == "codex":
-                    # Same divergence, same frame, computed WITHOUT a round
-                    # trip: codex's permission posture is spawn-time argv, so
-                    # the mismatch is known from `perm_mode` alone and needs no
-                    # equivalent of ACP's session/new response. Reachable
-                    # because permission_mode is stored globally -- a `dontAsk`
-                    # chosen while Claude was selected arrives here. Emitted
-                    # once per spawn, exactly like DeepSeek's.
-                    note = codex_mode_note(perm_mode)
-                    if note:
-                        await ws.send_json(dict(note, type="mode_note",
-                                                provider=active_id))
+                        # The permission mode the operator picked did not survive
+                        # the trip to this provider. SAID, once per spawn, because
+                        # the `provider` frame above already told the pane it would
+                        # run `perm_mode` -- and that frame is sent before the
+                        # session exists, so it cannot know. Without this the pane
+                        # keeps displaying a mode nothing is enforcing, which is
+                        # the bug the runtime fix half-solves: the runtime now
+                        # knows the truth, and this is the only channel that can
+                        # carry it to the operator.
+                        #
+                        # A NEW FRAME TYPE, not the existing `notice`. `notice` is
+                        # emitted server-side in three places and the client has NO
+                        # handler for any of them -- it is dropped on the floor
+                        # today (checked, not assumed). Reusing it would look like
+                        # reporting and report nothing. Claude never sends this
+                        # frame, so nothing about Claude's rendering changes.
+                        if rt.acp_mode_note:
+                            await ws.send_json(dict(rt.acp_mode_note,
+                                                    type="mode_note",
+                                                    provider=active_id))
+                    elif active_id == "codex":
+                        # Same divergence, same frame, computed WITHOUT a round
+                        # trip: codex's permission posture is spawn-time argv, so
+                        # the mismatch is known from `perm_mode` alone and needs no
+                        # equivalent of ACP's session/new response. Reachable
+                        # because permission_mode is stored globally -- a `dontAsk`
+                        # chosen while Claude was selected arrives here. Emitted
+                        # once per spawn, exactly like DeepSeek's.
+                        note = codex_mode_note(perm_mode)
+                        if note:
+                            await ws.send_json(dict(note, type="mode_note",
+                                                    provider=active_id))
+                finally:
+                    if _acp_locked:
+                        _ACP_CONNECT_LOCK.release()
             proc = rt.proc
 
             if active_id == "claude":

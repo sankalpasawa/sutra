@@ -243,8 +243,29 @@ def ideas():
     return rows if isinstance(rows, list) else (rows.get("ideas") or [])
 
 
-def save_ideas(rows):
-    return save("ideas.json", rows)
+def save_ideas(rows, push=True):
+    """Write the sheet, then send what changed to the team.
+
+    Every writer of the sheet comes through here -- the merge, the import, a tick, a drop -- which
+    is what makes this the one place the push belongs. It used to be a bare write, and the team's
+    ideas table stayed empty while this Mac held 1,892 rows (2026-09-13).
+
+    The push is last and cannot fail the save: no workspace, no network, or a workspace too old for
+    the table all leave the file written, exactly as before.
+
+    push=False is for workspace/mirror.py, which writes rows that CAME FROM the team. Sending those
+    straight back would log a fresh change for every row it applied, every teammate would pull
+    that, apply it, and send it back again: the same rows bouncing between Macs for ever.
+    """
+    before = ideas() if push else None
+    out = save("ideas.json", rows)
+    if push:
+        try:
+            from ..workspace import sync        # lazy: the workspace package is optional here
+            sync.push_ideas(before, rows)
+        except Exception:                        # noqa: BLE001
+            pass
+    return out
 
 
 def next_open(rows=None):

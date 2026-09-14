@@ -685,6 +685,18 @@ def _write_json(path, obj):
         pass
 
 
+STATE_BUSY_MESSAGE = ("the update state is in use by another process "
+                      "(a stage or install is in progress)")
+STALE_DOWNLOAD_SECONDS = 3600   # a .download-* dir untouched this long is abandoned
+
+
+class StateBusy(RuntimeError):
+    """The manifest lock was not free in time. NOT a failed update: nothing was
+    checked and nothing was refused, so callers retry instead of reporting it.
+    Still a RuntimeError, so every existing `except RuntimeError` keeps working.
+    The shell matches on STATE_BUSY_MESSAGE (HTTP detail) or `busy` (CLI)."""
+
+
 @contextlib.contextmanager
 def _state_lock(timeout=5.0):
     """Serialise manifest read-modify-write across PROCESSES.
@@ -695,8 +707,13 @@ def _state_lock(timeout=5.0):
     this module as a CLI (updates_cli) in attach mode, alongside whatever
     backend also holds these functions. flock, held narrowly and NEVER
     indefinitely: the quit path runs under a hard wall-clock bound, and a lock
-    that outwaits it would freeze the app on exit. Timeout raises RuntimeError
-    like every other refusal here.
+    that outwaits it would freeze the app on exit. Timeout raises StateBusy.
+
+    HELD ONLY AROUND LOCAL FILE WORK. Never around a download, a Gatekeeper
+    check, or a network re-check: a stage used to hold this for the whole
+    ~400MB download, so an arm or resolve arriving meanwhile timed out and the
+    banner reported a perfectly good update as "could not be applied".
+    Manifest writes are atomic renames, so reading WITHOUT the lock is safe.
     """
     path = stage_dir() / ".lock"
     fh = open(path, "a")
@@ -708,9 +725,7 @@ def _state_lock(timeout=5.0):
                 break
             except OSError:
                 if time.time() >= deadline:
-                    raise RuntimeError(
-                        "the update state is in use by another process "
-                        "(a stage or install is in progress)")
+                    raise StateBusy(STATE_BUSY_MESSAGE)
                 time.sleep(0.1)
         yield
     finally:
@@ -776,18 +791,49 @@ def _verify_staged(man, recheck_online=True):
     return {"sha256": got, "reverified_online": bool(published)}
 
 
+def _install_live(man, now=None):
+    """True while a spawned helper may still be using the manifest's DMG."""
+    now = int(time.time()) if now is None else now
+    return bool(man) and man.get("state") == "installing" \
+        and (man.get("lease_until") or 0) > now
+
+
+def _staged_dmg_path(asset, version):
+    """Version-specific name, e.g. Sutra-arm64-2.271.5.dmg. A download of the
+    NEXT release can then never land on the file an armed install is using --
+    they used to share one name, so a stage truncated the staged image."""
+    stem, ext = os.path.splitext(os.path.basename(str(asset or "Sutra.dmg")))
+    safe = re.sub(r"[^0-9.]", "", str(version or "")).strip(".") or "unknown"
+    return stage_dir() / ("%s-%s%s" % (stem or "Sutra", safe, ext or ".dmg"))
+
+
+def _sweep_stale_downloads(root):
+    """Remove .download-* dirs left by a crashed stage. Judged by the newest
+    mtime inside, so a download still being written is never touched."""
+    now = time.time()
+    for p in root.glob(".download-*"):
+        try:
+            if p.is_symlink() or not p.is_dir():
+                continue
+            newest = p.lstat().st_mtime
+            for c in p.iterdir():
+                newest = max(newest, c.lstat().st_mtime)
+            if now - newest > STALE_DOWNLOAD_SECONDS:
+                shutil.rmtree(p, ignore_errors=True)
+        except OSError:
+            pass
+
+
 def stage_desktop():
-    """Public, serialised entry -- see _state_lock for why."""
-    with _state_lock():
-        return _stage_desktop_unlocked()
-
-
-def _stage_desktop_unlocked():
     """Download and verify the newest desktop release, arming nothing.
 
     Split from arming deliberately. While these were one call there was no
     moment at which an update was ready but not yet scheduled -- which is the
     only moment a prompt can happen in.
+
+    The download and the Gatekeeper check run with NO lock held, into a
+    private .download-* dir inside the staging directory (same volume, so the
+    final move is a rename). Only _commit_stage takes the lock.
     """
     state = desktop_state()
     if not state.get("managed"):
@@ -800,21 +846,62 @@ def _stage_desktop_unlocked():
 
     version = state.get("latest")
     existing = read_pending()
+    if _install_live(existing):
+        return {"staged": False, "version": existing.get("version"),
+                "reason": "an installer for %s is already waiting"
+                          % existing.get("version")}
     if existing and existing.get("version") == version and existing.get("dmg"):
         try:
             _verify_staged(existing, recheck_online=False)
             return {"staged": True, "already": True, "version": version,
                     "state": existing.get("state")}
         except RuntimeError:
-            clear_pending()          # unusable; fall through and fetch it again
+            pass     # unusable; fetch it again -- the commit replaces this record
 
+    root = stage_dir()
+    _sweep_stale_downloads(root)
     latest = _latest_desktop()
-    got = download_and_verify(dest_dir=str(stage_dir()))
+    work = Path(tempfile.mkdtemp(prefix=".download-", dir=str(root)))
+    try:
+        got = download_and_verify(dest_dir=str(work))
+        digest = _sha256(got["dmg"])
+        with _state_lock():
+            return _commit_stage(got, got.get("version") or version, digest,
+                                 latest, replaceable=existing)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _commit_stage(got, version, digest, latest, replaceable):
+    """Move a verified download into place and write the manifest. LOCK HELD.
+
+    Re-reads the manifest, because the world moved during the download:
+      - a live install  -> discard; its DMG is never deleted or overwritten
+      - same or newer already staged by someone else -> discard
+      - the broken same-version record we set out to replace -> replace it
+    """
+    cur = read_pending()
+    if _install_live(cur):
+        return {"staged": False, "discarded": version,
+                "version": cur.get("version"),
+                "reason": "an installer for %s is already waiting"
+                          % cur.get("version")}
+    if cur and cur.get("dmg") and _ver_tuple(cur.get("version")) >= _ver_tuple(version):
+        broken_same = cur == replaceable and cur.get("version") == version
+        if not broken_same:
+            return {"staged": True, "already": True, "discarded": version,
+                    "version": cur.get("version"), "state": cur.get("state")}
+
+    src = Path(got["dmg"])
+    if src.is_symlink() or not src.is_file():
+        raise RuntimeError("the verified download disappeared before it was staged")
+    final = _staged_dmg_path(latest.get("asset") or src.name, version)
+    os.replace(src, final)
     _write_json(_pending_path(), {
         "state": "staged",
-        "version": got.get("version") or version,
-        "dmg": got["dmg"],
-        "sha256": _sha256(got["dmg"]),
+        "version": version,
+        "dmg": str(final),
+        "sha256": digest,
         "sha256_url": latest.get("sha256_url"),
         "asset": latest.get("asset"),
         "staged_at": int(time.time()),
@@ -828,41 +915,67 @@ def _stage_desktop_unlocked():
         "install_failures": 0,
         "last_error": None,
     })
+    # Every other image here is now unreferenced: the only other holder of a
+    # DMG path is a live install, refused above. This also retires the old
+    # unversioned Sutra-<arch>.dmg name.
+    for p in stage_dir().glob("*.dmg"):
+        try:
+            if p != final and p.is_file() and not p.is_symlink():
+                p.unlink()
+        except OSError:
+            pass
     try:
         _result_path().unlink()
     except OSError:
         pass
-    return {"staged": True, "version": got.get("version"), "dmg": got["dmg"]}
+    return {"staged": True, "version": version, "dmg": str(final)}
+
+
+ARM_RECORD_RETRIES = 3      # manifest changed between verify and commit
 
 
 def arm_desktop(wait_pid, wait_start=None, relaunch=False):
-    """Public, serialised entry -- see _state_lock for why."""
-    with _state_lock():
-        return _arm_desktop_unlocked(wait_pid, wait_start=wait_start,
-                                     relaunch=relaunch)
-
-
-def _arm_desktop_unlocked(wait_pid, wait_start=None, relaunch=False):
     """Schedule the swap for after the app named by `wait_pid` exits.
 
     Idempotent and single-flight. Two callers can plausibly reach this at once
     -- the countdown firing while the user is already quitting -- and two
     helpers racing to replace the same bundle is exactly the situation the rest
     of this file is written to avoid.
+
+    The image is re-verified (hashing plus a network re-check) OUTSIDE the
+    lock; under the lock the manifest is re-read and must still be exactly the
+    record that was verified, or the whole decision is taken again.
     """
-    man = read_pending()
+    for _ in range(ARM_RECORD_RETRIES):
+        man = read_pending()
+        early = _arm_precheck(man)
+        if early is not None:
+            return early
+        proof = _verify_staged(man)
+        with _state_lock():
+            cur = read_pending()
+            if cur == man:
+                return _arm_locked(cur, proof, wait_pid, wait_start, relaunch)
+    raise StateBusy(STATE_BUSY_MESSAGE)
+
+
+def _arm_precheck(man):
+    """None when `man` may be armed; an answer or a refusal otherwise."""
     if not man:
         raise RuntimeError("there is no staged update to install")
-    now = int(time.time())
-    if man.get("state") == "installing" and (man.get("lease_until") or 0) > now:
+    if _install_live(man):
         return {"scheduled": True, "already": True, "version": man.get("version"),
                 "note": "an installer for this version is already waiting"}
     if man.get("state") == "failed" and man.get("install_failures", 0) >= MAX_APPLY_ATTEMPTS:
         raise RuntimeError("this update failed to install %d times and will not "
                            "be retried automatically: %s"
                            % (man["install_failures"], man.get("last_error") or "unknown"))
+    return None
 
-    proof = _verify_staged(man)
+
+def _arm_locked(man, proof, wait_pid, wait_start, relaunch):
+    """Stamp `installing` and spawn the helper. LOCK HELD; `man` is verified."""
+    now = int(time.time())
 
     # Stamped BEFORE the spawn, so a crash between here and the helper starting
     # is still visible as an attempt at the next launch.

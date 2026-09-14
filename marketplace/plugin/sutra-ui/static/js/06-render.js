@@ -1019,6 +1019,14 @@ function stopUpdCountdown(){
   S.updLeft = null;
 }
 
+/* A `busy` answer means another update step held the state lock for a moment
+   (the shell already retried inside its own time budget). That is not a failed
+   install, so it is not shown as one: the banner keeps saying "restarting" and
+   asks again shortly. Bounded, so a lock that never frees still surfaces. */
+const UPD_BUSY_RETRY_S = 5;
+const UPD_BUSY_MAX_RETRIES = 3;
+let _updBusyRetries = 0;
+
 async function applyUpdateNow(){
   stopUpdCountdown();
   /* Set BEFORE the render below, which would otherwise see "staged, no clock
@@ -1027,12 +1035,20 @@ async function applyUpdateNow(){
   S.updFiring = true;
   S.updApplyError = null;
   renderUpdateBanner();
+  let busy = false;
   try {
     const r = await window.sutra.applyUpdate();
     /* On success the app is already on its way out; leave the banner saying so
        rather than flashing something else in the last frames. */
-    if (!r || !r.ok) S.updApplyError = (r && r.error) || "the restart was refused";
+    if (r && !r.ok && r.busy && _updBusyRetries < UPD_BUSY_MAX_RETRIES) busy = true;
+    else if (!r || !r.ok) S.updApplyError = (r && r.error) || "the restart was refused";
   } catch (e) { S.updApplyError = e.message || String(e); }
+  if (busy){
+    _updBusyRetries += 1;
+    setTimeout(applyUpdateNow, UPD_BUSY_RETRY_S * 1000);
+    return;
+  }
+  _updBusyRetries = 0;                        /* "Try again" starts a fresh budget */
   if (S.updApplyError) S.updFiring = false;   /* the app is staying; allow a retry */
   renderUpdateBanner();
 }

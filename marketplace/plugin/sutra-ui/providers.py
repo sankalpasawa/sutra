@@ -462,6 +462,9 @@ def workdir_allowed(path):
 # not a branch in the picker, it is that each provider carries its own.
 _CLAUDE_MODELS = (
     {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
+    # `fable` is the alias `claude --model` accepts (resolves to claude-fable-5 on CLI 2.1.247;
+    # the dated claude-fable-5-1 id needs 2.1.251+). Owner, 2026-09-14: "why i cant see fable".
+    {"id": "fable",  "name": "Fable",        "note": "newest and most capable, highest cost"},
     {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
     {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
     {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
@@ -762,7 +765,10 @@ def _codex_discovered():
     `import app`, and cheap after the first call (sys.modules).
     """
     import codex_models
-    found = codex_models.cached()
+    # Before discovery has run in this process (it runs only from the Codex auth route), Codex's
+    # own models_cache.json is the same roster model/list would answer. Without this the SEO
+    # Writer and any chat opened before the Codex settings row offered one model (2026-09-14).
+    found = codex_models.cached() or codex_models.cache_file_models()
     if not found:
         return codex_config_models()
     # `_default` becomes the public `default`, and `efforts` rides along. Both

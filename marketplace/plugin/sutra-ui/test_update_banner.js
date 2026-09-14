@@ -71,6 +71,69 @@ test("no banner branch renders without a way out", () => {
     "the dismissal gate is not keyed on the staged version");
 });
 
+/* Behavioural, not textual: run the real applyUpdateNow against a stub shell.
+   The banner once said "Sutra 2.271.4 could not be applied. the update state
+   is in use by another process" -- a busy lock presented as a failed install. */
+function loadApply(answers) {
+  const vm = require("vm");
+  const start = render.indexOf("const UPD_BUSY_RETRY_S");
+  const fnAt = render.indexOf("async function applyUpdateNow");
+  const src = render.slice(start, render.indexOf("\n}\n", fnAt) + 2);
+  const timers = [];
+  const ctx = {
+    S: { updFiring: false, updApplyError: null },
+    renders: 0,
+    window: { sutra: { applyUpdate: async () => answers.shift() } },
+    stopUpdCountdown: () => {},
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); },
+  };
+  ctx.renderUpdateBanner = () => { ctx.renders++; };
+  vm.createContext(ctx);
+  vm.runInContext(src + "\nthis.applyUpdateNow = applyUpdateNow;", ctx);
+  return { ctx, timers };
+}
+
+const pending = [];
+const asyncTest = (n, f) => pending.push(f().then(
+  () => { console.log("ok   - " + n); pass++; },
+  (e) => { console.log("FAIL - " + n + "\n       " + e.message); fail++; }));
+
+const BUSY = { ok: false, busy: true,
+  error: "the update state is in use by another process (a stage or install is in progress)" };
+
+asyncTest("a busy refusal retries quietly instead of showing 'could not be applied'", async () => {
+  const { ctx, timers } = loadApply([BUSY, { ok: true }]);
+  await ctx.applyUpdateNow();
+  assert(ctx.S.updApplyError === null, "busy was reported as a failure: " + ctx.S.updApplyError);
+  assert(ctx.S.updFiring === true, "banner left the restarting state, so the countdown could double-fire");
+  assert(timers.length === 1 && timers[0].ms >= 1000, "no delayed retry was scheduled");
+  await timers[0].fn();
+  assert(ctx.S.updApplyError === null && timers.length === 1, "success after a busy retry misbehaved");
+});
+
+asyncTest("a lock that never frees still surfaces, after a bounded number of retries", async () => {
+  const answers = Array.from({ length: 20 }, () => BUSY);
+  const { ctx, timers } = loadApply(answers);
+  await ctx.applyUpdateNow();
+  for (let i = 0; i < 10 && ctx.S.updApplyError === null; i++) {
+    assert(timers.length === i + 1, "retry " + i + " not scheduled");
+    await timers[i].fn();
+  }
+  assert(ctx.S.updApplyError && /in use by another process/.test(ctx.S.updApplyError),
+         "a permanently busy lock was retried forever and never shown");
+  assert(timers.length <= 5, "too many quiet retries: " + timers.length);
+  assert(ctx.S.updFiring === false, "the error state must allow Try again");
+});
+
+asyncTest("a genuine failure is shown immediately, not retried", async () => {
+  const { ctx, timers } = loadApply([{ ok: false, error: "checksum mismatch" }]);
+  await ctx.applyUpdateNow();
+  assert(ctx.S.updApplyError === "checksum mismatch", "genuine failure hidden");
+  assert(timers.length === 0, "a genuine failure was retried");
+});
+
+Promise.all(pending).then(() => {
 console.log("\n" + "-".repeat(60));
 console.log(`update banner: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+});

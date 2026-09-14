@@ -326,7 +326,7 @@ TOOLS = [
                                "description": "what Sutra runs on each fire"},
                     "cwd": {"type": "string",
                             "description": "absolute path inside the home directory"},
-                    "model": {"type": "string", "enum": ["", "opus", "sonnet", "haiku"]},
+                    "model": {"type": "string", "enum": ["", "fable", "opus", "sonnet", "haiku"]},
                     "permission_mode": {"type": "string", "enum": ["dontAsk", "plan"]},
                     "max_budget_usd": {"type": "number", "minimum": 0.01},
                     "schedule": {"type": "object", "properties": {
