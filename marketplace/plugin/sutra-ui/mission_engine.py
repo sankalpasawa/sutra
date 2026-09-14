@@ -663,7 +663,7 @@ class MissionEngine:
 
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
                  verifier=None, on_evaluated=None, decider=None,
-                 outcome_reader=None):
+                 outcome_reader=None, response_reader=None):
         """`on_evaluated(mission, results, done)` is an OBSERVER of the one
         evaluation this loop already performs -- it is how the goal layer
         keeps per-check progress without a second evaluator. Optional, and
@@ -688,6 +688,21 @@ class MissionEngine:
         # pre-existing test behaving exactly as before.
         self.decider = decider
         self.outcome_reader = outcome_reader
+        # `response_reader(mission) -> str` is WHAT THE DECIDER READS, and it
+        # is injected for the same reason outcome_reader is: the transcript
+        # lives in shadow_runner and this module imports nothing from there.
+        #
+        # It replaces a BYTE TAIL with WHOLE MESSAGES. `last_response` used
+        # to be the evidence blob sliced to DECISION_TAIL, which kept the end
+        # of a message and dropped its beginning -- on mission
+        # m-cd009367d41a the decider saw 9% of a 21,060-char reply, lost the
+        # "## CHANGE" / "## TESTS" headers that opened it, and spent four
+        # turns asking for resends of work that was already finished.
+        #
+        # None -- every existing caller and every existing test -- keeps the
+        # historical byte tail exactly, so nothing that does not inject one
+        # changes behaviour by a single character.
+        self.response_reader = response_reader
 
     async def provision_target(self, mid, spawner):
         """S53: target_mode=new -- provision the delegate session ONCE via
@@ -958,7 +973,23 @@ class MissionEngine:
                 "summary": (("(brief already delivered at spawn) "
                              if briefed else "") + say_text)[:200]})
             transcript = self.reader(m)
+            # TWO READERS, TWO JOBS, AND THEY MUST NOT BE THE SAME STRING.
+            # `transcript` is the EVIDENCE and is untouched: evaluate_done_when
+            # below still receives the full evidence_text, so every
+            # contains_artifact match that was reachable before still is.
+            # `last_response` is only ever read by the DECIDER, and it now
+            # carries whole worker messages instead of the blob's last 2000
+            # bytes -- no JSON envelope, no message cut off at its head.
+            # Falling back to `transcript` keeps the historical value for any
+            # caller that injects no response_reader.
             last_response = transcript
+            if self.response_reader is not None:
+                try:
+                    shaped = self.response_reader(m)
+                except Exception:       # noqa: BLE001 -- never fail a turn
+                    shaped = ""
+                if shaped:
+                    last_response = shaped
             done, results = evaluate_done_when(m, transcript, self.verifier)
             if self.on_evaluated is not None:
                 # progress bookkeeping NEVER decides a mission's fate

@@ -390,6 +390,76 @@ def _outcome_trim(text, limit=OUTCOME_CHARS):
     return (head[:cut] if cut > 0 else head).rstrip() + "…"
 
 
+#: the ceiling on the ONE worker message the decider is shown. Not a tail and
+#: not a cap on any existing field: DECISION_TAIL (2000), DECIDE_PROSE_TAIL
+#: (2000) and _RECENT_CAP (20000) are untouched. Sized above p99 of the
+#: corpus measured on this failure (114 assistant messages across 10 Shadow
+#: sessions: median 1008, p95 10672, p99 13989, max 21060), so it bites only
+#: the pathological single message -- 1 in 114 -- and never the normal case.
+DECIDE_RESPONSE_CHARS = 16000
+
+
+def worker_response(session_id, limit=DECIDE_RESPONSE_CHARS):
+    """The worker's LATEST message, whole.
+
+    THE BOTTLENECK THIS REMOVES (founder, 2026-09-15, mission
+    m-cd009367d41a). `last_response` was evidence_text -- `(live + " " +
+    json.dumps(doc))[-40000:]` -- sliced again to the last DECISION_TAIL
+    (2000) characters. The decider therefore read the last 2000 BYTES OF A
+    JSON DOCUMENT, not a message. When _RECENT_TEXT was cold (it is
+    memory-only, so: after every restart) the real value began
+
+        ':29:09.733Z"}, {"role": "assistant", "text": "## FINAL'
+
+    and when it was warm the window still kept a message's END and dropped
+    its START -- where the structure lives ("## CHANGE", "## TESTS",
+    "## FINAL"). Shadow spent turns 17-20 asking for resends, describing the
+    cut accurately: "`## CHANGE` arrived intact this time". The work was
+    already finished. It then hit max turns and died `failed`.
+
+    THE MESSAGE WAS NEVER TOO BIG. The one Shadow needed was 1,811
+    characters -- it fitted inside the old window twice over. What consumed
+    the window was the ENVELOPE. So this does not widen anything: it returns
+    the latest message instead of a byte range.
+
+    LATEST ONLY, AND THAT IS THE POINT. An earlier draft of this accumulated
+    messages backwards until a budget filled. Measured on the same mission, a
+    24000-char budget pulled in six messages including SUPERSEDED `## CHANGE`
+    drafts -- feeding the decider earlier, wrong versions of the very content
+    it was trying to read. One message cannot do that.
+
+    THE CAP KEEPS THE HEAD. A single message over `limit` is truncated from
+    the END, the opposite of the slice this replaces, because the head is the
+    part that was being lost. At or under the limit the text is returned BYTE
+    FOR BYTE -- no strip, no whitespace collapse, no join.
+
+    WHAT IT REUSES. read_session, then evidence_messages, then the
+    assistant-role check -- the same path last_worker_message walks. Not a
+    parser and not a second evaluator: the parsing is session_reader's, the
+    admissibility rule is evidence_messages' (Shadow's own turns land as USER
+    records and are dropped there; the role check is the independent second
+    guard). It returns a string. evaluate_done_when still receives the FULL
+    evidence_text, so every contains_artifact match reachable before still is.
+
+    Returns "" when there is nothing to quote, which leaves the caller on the
+    value it used before.
+    """
+    if not session_id:
+        return ""
+    try:
+        doc = session_reader.read_session(session_id) or {}
+    except Exception:                   # noqa: BLE001 -- never fail a turn
+        return ""
+    for msg in reversed(evidence_messages(doc)):
+        if msg.get("role") != "assistant":
+            continue
+        text = str(msg.get("text") or "")
+        if not text.strip():
+            continue
+        return text if len(text) <= limit else text[:limit]
+    return ""
+
+
 def last_worker_message(session_id):
     """WHAT THE WORKER SAID IT DID, in its own last words.
 
@@ -679,7 +749,9 @@ def _launch(mid, validated_say, verifier):
         # flag path or a test) keeps the historical template.
         decider=DEFAULT_DECIDER["fn"],
         # what the delegate said it did, quoted into the completion summary
-        outcome_reader=lambda m: last_worker_message(m.get("target_session")))
+        outcome_reader=lambda m: last_worker_message(m.get("target_session")),
+        # what the DECIDER reads: whole worker messages, not a byte tail
+        response_reader=lambda m: worker_response(m.get("target_session")))
 
     async def run():
         try:
@@ -1351,7 +1423,9 @@ def settle_confirmation(mid):
         # the SAME completion the loop writes: a mission the founder's own
         # confirmation finishes is the one most likely to be read, so it
         # must not be the one that arrives without the outcome line.
-        outcome_reader=lambda m: last_worker_message(m.get("target_session")))
+        outcome_reader=lambda m: last_worker_message(m.get("target_session")),
+        # what the DECIDER reads: whole worker messages, not a byte tail
+        response_reader=lambda m: worker_response(m.get("target_session")))
     m = engine.settle(mid)
     if m and m["state"] in mission_engine.TERMINAL:
         release_delegate(m.get("target_session"))
