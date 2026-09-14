@@ -317,16 +317,27 @@ class TestNothingElseMoved(Base):
 
     def test_D6b_shadow_args_is_unchanged_when_no_session_is_given(self):
         src = Path(__file__).with_name("app.py").read_text()
-        self.assertIn("def _shadow_args(session_id=None):", src)
-        # the argv call is unchanged in SHAPE; only the mode it passes is
-        # now inherited rather than the literal "plan" this used to pin
+        # The signature gained `extra_settings`, DEFAULTED OFF, which is what
+        # keeps Shadow's own supervisor and decider byte-identical: only the
+        # worker builder passes it. The no-session call this test names is
+        # still the no-session call.
+        self.assertIn("def _shadow_args(session_id=None, extra_settings=None):",
+                      src)
         self.assertIn('build_agent_args(prov["bin_path"], "", perm_mode,\n'
                       "                            session_id=session_id, "
-                      "stream_input=True)", src)
+                      "stream_input=True,\n"
+                      "                            "
+                      "extra_settings=extra_settings)", src)
         self.assertIn("providers.effective_permission_mode(", src,
                       "the mode comes from the one shared accessor")
-        # the delegate spawner still calls it with no argument at all
-        self.assertIn("_shadow_args, _shadow_workdir_for_delegates()", src)
+        # THE DELEGATE SPAWNER NOW USES THE WORKER BUILDER. Same workdir, same
+        # arity, same no-argument call -- `_worker_args` is a thin wrapper that
+        # adds the founder's project permissions and nothing else. Shadow's own
+        # two processes still take _shadow_args, which is the whole split.
+        self.assertIn("_worker_args, _shadow_workdir_for_delegates()", src)
+        self.assertNotIn("_shadow_args, _shadow_workdir_for_delegates()", src)
+        self.assertIn("make_decider(_shadow_args, _shadow_workdir())", src,
+                      "the decider must NOT inherit repo permissions")
 
 
 # ------------------------------------------------------------------- D7 ---
