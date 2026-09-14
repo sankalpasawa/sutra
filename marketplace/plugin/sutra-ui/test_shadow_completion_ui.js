@@ -20,6 +20,13 @@
  *      the clipboard as text, says so on the button, and says when it could
  *      not (tests 10-14)
  *
+ * WHAT THIS SUITE DOES NOT DO, so nobody reads more into it than is here:
+ * it calls the REAL renderers (shadowCompletionHtml / shadowTaskCardHtml)
+ * and the REAL delegated listener, but the markup it gets back is never
+ * PARSED -- there is no document, no queried node, no dispatched event.
+ * qa-shell/shadow-copy-check.mjs is the lane that does that end to end, in
+ * Chromium, with the clipboard stubbed so no system clipboard is touched.
+ *
  * Run: node test_shadow_completion_ui.js
  */
 "use strict";
