@@ -1,0 +1,46 @@
+[
+  {
+    "case": {
+      "model": null
+    },
+    "argv": [
+      "deepseek",
+      "--acp",
+      "--skip-trust"
+    ]
+  },
+  {
+    "case": {
+      "model": ""
+    },
+    "argv": [
+      "deepseek",
+      "--acp",
+      "--skip-trust"
+    ]
+  },
+  {
+    "case": {
+      "model": "deepseek-v4-pro"
+    },
+    "argv": [
+      "deepseek",
+      "--acp",
+      "--skip-trust",
+      "-m",
+      "deepseek-v4-pro"
+    ]
+  },
+  {
+    "case": {
+      "model": "deepseek-v4-flash"
+    },
+    "argv": [
+      "deepseek",
+      "--acp",
+      "--skip-trust",
+      "-m",
+      "deepseek-v4-flash"
+    ]
+  }
+]

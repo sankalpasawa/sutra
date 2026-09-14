@@ -2,7 +2,72 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.273.0 (2026-09-14, HEAD)
+## v2.273.1 (2026-09-14, HEAD)
+
+**One adapter per provider, and the screens that follow from it.** Sutra ran three CLIs through three
+near-identical runtimes plus about a dozen `if active_id ==` branches in `ws_chat`, so a provider rule
+lived in two places and a vendor's change landed in both. Now: `provider_adapters.py` holds one adapter
+per provider (claude, codex, deepseek, and a cursor adapter gated on the binary existing), `proc_group.py`
+is the one implementation of alive/kill_group/stop/subscribe/fan-out the three runtimes inherit, and
+`tool_kinds.py` is the one tool-kind table. Fourteen adapter calls replace the branches; the DeepSeek
+connect-time key refusal stays, because it is socket policy rather than a spawn rule. The argv builders
+moved behind the adapters and keep their old names as wrappers, so every existing caller and test is
+unchanged.
+
+**The frame vocabulary grows from six to a real list.** Every tool call used to arrive as one flat `tool`
+frame, so a subagent, a shell command and a file edit looked identical. The frame set on the wire is
+unchanged (no old client breaks) and the adapters now fill in `kind` (subagent, command, file_edit,
+file_read, search, web_search, web_fetch, plan, todo, notebook, mcp, compaction, other), `title`, `detail`
+and `meta`. The client draws a card per kind and classifies stored history by tool name, so a chat from
+months ago gets the same cards with no migration of anything on disk.
+
+**Models, thinking and fast mode.** `GET /api/settings` gains `model_catalog_by_provider`: a main list, a
+`more` list (the pinned `claude-opus-4-8` / `-4-7` / `-4-6`, `claude-sonnet-4-6`, `opus[1m]`,
+`sonnet[1m]`), per-model efforts, a `fast` flag and the resolved default. Claude's list gains `best`
+(the newest model the account can run, Fable 5.1 today) and every id was probed against the installed
+CLI. `models_by_provider` still ships byte-identical for older clients and the SEO Writer. `budget.py`
+declares a window for every new id, so none of them silently inherits Haiku's 200K floor. One control
+next to the message box now carries provider tabs, models, thinking levels limited to what that model
+supports, and a Fast mode switch only where the provider declares one (Codex: `-c service_tier="fast"`,
+measured as an alias for `priority` on codex-cli 0.154.0).
+
+**Access, in plain words, per chat.** Four options (Read only, Accept edits, Approve for me, Full access)
+map to the native ids that are still what gets STORED, so every existing install keeps working; `manual`
+and `dontAsk` stay loadable and stay offered under Advanced. `ws_chat` accepts a per-connection `perm`
+parameter (unknown id or a mode the provider cannot enforce is refused; a consent-gated mode clamps and
+says so in the `provider` frame), and the picker hides what a provider cannot do rather than running
+something else.
+
+**Settings, rebuilt.** Opening Settings lands on an overview of six sections (AI providers, Access and
+permissions, Usage limits, Updates, Workspace and folder, Advanced) instead of reopening whatever was
+last expanded; the section is in-memory only, so a reload lands on the overview too. Each provider has
+its own page with its state in one sentence, its default model and access, its installed version, and
+its own switches rendered generically from `provider_settings_schema` (Claude: Chrome, subagents,
+workflows; Codex: memory, subagents), stored under a new `provider_settings` key. Claude's memory switch
+was DROPPED and the reason recorded: on 2.1.270 the only lever is `--bare`, which also disables hooks,
+LSP, plugin sync and CLAUDE.md discovery.
+
+**Usage for every provider on one page**, from the new `GET /api/usage/all`: account, a clean plan label
+("Max (20x)", "Free"), a bar per window with reset times (relative under a day, weekday or date beyond),
+Claude's per-model window, Codex's plan windows labelled from their real durations, and DeepSeek's
+balance. **Tool updates**: `GET /api/providers/tools` reports installed vs latest (npm) vs the declared
+minimum, and `POST /api/providers/tools/{id}/update` runs `claude update` or an npm install into Sutra's
+own prefix, refusing while a chat is running (`providers.chat_lease` in `ws_chat`) and never touching a
+Homebrew install.
+
+**Two bugs the safety net caught.** A declined ACP permission request was audited as "approved"
+(`approved = option_id is not None` is true of a rejection too). And `got_text` was never set on a
+non-streaming Claude answer, so a dead `--resume` replayed a turn whose text was already on screen.
+
+**How this was made safe for people already running Sutra.** `test_provider_golden.py` records today's
+exact frame sequences for all three adapters and ~343 argv rows, and the refactor had to reproduce them;
+the only recorded differences are the additive tool fields and those two fixes. `test_data_compat.py`
+copies the owner's real data (139 chats, 158 index rows, 176 segments, settings, routines) into a temp
+dir and proves every chat loads, resolves and survives a save/load round trip, and that no settings key
+is dropped. Tests: 405 new checks (safety net 56, adapters 87, catalogue and routes 165, settings UI 25,
+composer and tool cards 72). The test venv moved to Python 3.12, which is what the DMG ships.
+
+## v2.273.0 (2026-09-14)
 
 **Shadow's task list is honest about what it is doing, and a task can be removed in one click.**
 One UI change plus eight reliability fixes found in live flights, each pinned by a test that fails

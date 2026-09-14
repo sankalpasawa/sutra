@@ -1,0 +1,17 @@
+{
+  "block_types": {
+    "text": 656
+  },
+  "chats": 139,
+  "index_rows": 158,
+  "message_roles": {
+    "user": 656
+  },
+  "messages": 656,
+  "segment_providers": {
+    "claude": 175,
+    "deepseek": 1
+  },
+  "segments": 176,
+  "switched_chats": 0
+}

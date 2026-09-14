@@ -224,10 +224,29 @@ class TestCodexRegistration(unittest.TestCase):
         """codex-cli 0.153.2 publishes no model list, and `-m` accepts unknown
         ids with only a warning -- so an invented roster would silently degrade
         sessions. Exactly one entry, and it means "let codex decide"."""
-        ids = [m["id"] for m in providers.models_for("codex")]
-        self.assertEqual(ids, [""])
-        self.assertEqual(providers.selectable_model_ids_for("codex"),
-                         frozenset({""}))
+        # ISOLATED (2026-09-14). The picker falls back to codex's own
+        # models_cache.json when discovery has not run in this process, so
+        # without a CODEX_HOME of its own this read the operator's real roster
+        # and failed on a machine that simply has codex installed. The claim is
+        # about what Sutra INVENTS, so the right environment is one where codex
+        # has published nothing.
+        import tempfile
+        import codex_models
+        empty_home = tempfile.mkdtemp(prefix="codex-home-empty-")
+        prev = os.environ.get("CODEX_HOME")
+        os.environ["CODEX_HOME"] = empty_home
+        codex_models._reset_for_tests()
+        try:
+            ids = [m["id"] for m in providers.models_for("codex")]
+            self.assertEqual(ids, [""])
+            self.assertEqual(providers.selectable_model_ids_for("codex"),
+                             frozenset({""}))
+        finally:
+            if prev is None:
+                os.environ.pop("CODEX_HOME", None)
+            else:
+                os.environ["CODEX_HOME"] = prev
+            codex_models._reset_for_tests()
 
     def test_clean_model_gates_unknown_ids(self):
         self.assertIsNone(providers.clean_model("gpt-5-codex", "codex"))
@@ -864,10 +883,22 @@ class TestCodexTurnConfig(unittest.TestCase):
         is the invariant now: no module-level tuple of efforts anywhere.
         """
         self.assertIn("reasoning_effort", providers.turn_options_for("codex"))
-        self.assertFalse(
-            [n for n in dir(providers)
-             if "EFFORT" in n.upper() and isinstance(getattr(providers, n), tuple)],
-            "an effort list became a constant; it must stay per-model")
+        # THE INVARIANT, STATED MORE PRECISELY (2026-09-14). It was "no module-level
+        # effort tuple exists anywhere in providers", which stopped being the right
+        # test when the picker gained per-model effort lists: Claude's five are a
+        # real constant (the CLI validates the same five for every Claude model,
+        # probed against 2.1.270), and codex has a documented fallback used ONLY to
+        # populate the menu before discovery has run. What must never become a
+        # constant is the ALLOW-LIST codex validation gates on, and that is what
+        # these two assertions pin.
+        self.assertEqual(providers.codex_efforts_for("no-such-model"), (),
+                         "the codex allow-list must come from the roster, per model")
+        import inspect
+        import provider_adapters
+        self.assertIn("codex_efforts_for",
+                      inspect.getsource(provider_adapters.codex_turn_config),
+                      "codex_turn_config must validate against the discovered "
+                      "per-model list, never a declared tuple")
         # With nothing discovered there is nothing to allow, and the option is
         # dropped rather than passed through.
         self.assertEqual(app.codex_turn_config({"reasoning_effort": "high"},

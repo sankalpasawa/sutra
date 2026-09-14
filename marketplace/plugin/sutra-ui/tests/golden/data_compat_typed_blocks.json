@@ -1,0 +1,77 @@
+{
+  "branch": "",
+  "cwd": "/tmp/x",
+  "messages": [
+    {
+      "blocks": [
+        {
+          "text": "do a thing",
+          "type": "text"
+        }
+      ],
+      "native_id": "native-typed-1",
+      "provider": "claude",
+      "role": "user",
+      "ts": "<ts>",
+      "turn": 0
+    },
+    {
+      "blocks": [
+        {
+          "text": "private",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_1",
+          "input": {
+            "command": "echo hi"
+          },
+          "name": "Bash",
+          "type": "tool_use"
+        },
+        {
+          "is_error": false,
+          "text": "hi",
+          "tool_use_id": "toolu_1",
+          "type": "tool_result"
+        },
+        {
+          "text": "done",
+          "type": "text"
+        }
+      ],
+      "native_id": "native-typed-1",
+      "provider": "claude",
+      "role": "assistant",
+      "ts": "<ts>",
+      "turn": 0
+    },
+    {
+      "blocks": [
+        {
+          "text": "again",
+          "type": "text"
+        }
+      ],
+      "native_id": "native-typed-2",
+      "provider": "codex",
+      "role": "user",
+      "ts": "<ts>",
+      "turn": 1
+    }
+  ],
+  "provider_history": [
+    {
+      "from_turn": 0,
+      "native_id": "native-typed-1",
+      "provider": "claude"
+    },
+    {
+      "from_turn": 1,
+      "native_id": "native-typed-2",
+      "provider": "codex"
+    }
+  ],
+  "sutra_id": "<generated>",
+  "title": "typed blocks"
+}

@@ -1226,3 +1226,104 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
   .ag-enter .ag-guide .g4,.ag-enter .ag-guide .g5{animation:none;opacity:1;transform:none}
   .ag-gdive{transition:none}
 }
+
+/* ══════════════════ the composer's model + access controls ══════════════════
+   W4's composer work lives here rather than in panel.css only because panel.css
+   belongs to another workstream this cycle; every value is a panel.css token,
+   so the theme picker and both colour schemes apply with nothing extra. */
+
+/* the closed chip: "Claude · Opus 5 · High". Same family as .uchip beside it. */
+.mdlchip{flex:none;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:var(--inset);border:1px solid var(--line);border-radius:7px;color:var(--muted);
+  font:600 11.5px/1.1 var(--sans);padding:7px 9px;cursor:pointer}
+.mdlchip:hover{color:var(--ink);border-color:var(--acc)}
+.mdlchip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.mdlchip[aria-expanded="true"]{color:var(--acc);border-color:var(--acc)}
+
+/* the access chip sits UNDER the box, on its own quiet strip */
+.accrow{display:flex;align-items:center;gap:8px;padding:0 12px 9px;flex-wrap:wrap}
+.pane[data-sess] > .accrow{padding-left:19px}
+.accchip{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);
+  border-radius:999px;color:var(--muted);font:600 10.5px/1 var(--sans);padding:4px 10px 4px 8px;cursor:pointer}
+.accchip:hover{color:var(--ink);border-color:var(--acc)}
+.accchip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.accchip[aria-expanded="true"]{color:var(--acc);border-color:var(--acc)}
+/* a write-capable mode is LOUD; the operator agreed to it and should keep seeing so */
+.accchip.warn{color:var(--warn);border-color:var(--warn)}
+/* chosen in this chat, not inherited from Settings */
+.accchip.local{border-style:dashed}
+
+/* both popovers reuse .upop's box; only the insides differ */
+.mdlpop,.accpop{width:300px}
+.mdltabs{display:flex;gap:4px;flex-wrap:wrap;padding-bottom:7px;margin-bottom:6px;
+  border-bottom:1px solid var(--line-soft)}
+.mdltab{background:none;border:1px solid transparent;border-radius:6px;color:var(--muted);
+  font:600 10.5px/1 var(--sans);padding:5px 8px;cursor:pointer}
+.mdltab:hover{color:var(--ink);border-color:var(--line)}
+.mdltab.on{background:var(--acc-bg);color:var(--acc)}
+
+.mdllist,.acclist{display:flex;flex-direction:column;gap:1px}
+.mdllist.more,.acclist.adv{margin-top:2px;padding-top:4px;border-top:1px dashed var(--line-soft)}
+.mdlopt,.accopt{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;
+  text-align:left;background:none;border:0;border-radius:6px;color:var(--ink);
+  font:inherit;padding:6px 8px;cursor:pointer}
+.mdlopt:hover,.accopt:hover{background:var(--inset)}
+.mdlopt.on,.accopt.on{background:var(--acc-bg);color:var(--acc)}
+.mdlopt[disabled],.accopt[disabled]{opacity:.45;cursor:not-allowed}
+.mdlopt .pkl,.accopt .pkl{font:600 11.5px/1.2 var(--sans)}
+.mdlopt .pkn,.accopt .pkn{font:400 10.5px/1.35 var(--sans);color:var(--muted)}
+.accopt.warn .pkl{color:var(--warn)}
+.accopt.warn.on .pkl{color:var(--warn)}
+.mdlnone,.accnote{margin:4px 0 0;font:400 10.5px/1.4 var(--sans);color:var(--faint)}
+
+.mdlmore,.accadv{display:flex;align-items:baseline;gap:6px;width:100%;text-align:left;
+  background:none;border:0;color:var(--muted);font:600 10.5px/1 var(--sans);
+  padding:6px 8px;margin-top:3px;border-top:1px solid var(--line-soft);cursor:pointer}
+.mdlmore:hover,.accadv:hover{color:var(--acc)}
+.mdlmore span,.accadv span{font-weight:400;color:var(--faint)}
+
+.mdleff{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:7px;padding-top:7px;
+  border-top:1px solid var(--line-soft)}
+.mdleff .mdlk{flex:1 0 100%;font:600 10px/1 var(--sans);color:var(--faint);
+  letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px}
+.effbtn{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);
+  font:600 10.5px/1 var(--sans);padding:5px 8px;cursor:pointer}
+.effbtn:hover{color:var(--ink);border-color:var(--acc)}
+.effbtn.on{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+
+.mdlfast{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px;padding-top:7px;
+  border-top:1px solid var(--line-soft);cursor:pointer}
+.mdlfast .pkl{font:600 11.5px/1 var(--sans);color:var(--ink)}
+.mdlfast .pkn{flex:1 0 100%;font:400 10.5px/1.35 var(--sans);color:var(--muted);
+  padding-left:24px;margin-top:-2px}
+
+/* ══════════════════ tool cards in the timeline ══════════════════════════════
+   .toolcall keeps its own panel.css rules (name pill, input line, output body),
+   so an `other` card is what a flat row always was. These add only the parts
+   the kinds need. */
+.tcard{align-items:baseline}
+.tcard .tcdot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--faint);
+  align-self:center}
+.tcard.ok  .tcdot{background:var(--ok)}
+.tcard.bad .tcdot{background:var(--block)}
+.tcard.unk .tcdot{background:var(--warn)}
+.tcard.run .tcdot{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+  width:9px;height:9px;animation:sutraSpin .7s linear infinite}
+.tcard .tct{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:500 11.5px/1.35 var(--sans);color:var(--ink)}
+.tcard.k-command .tct,.tcard.k-file_edit .tct,.tcard.k-file_read .tct,
+.tcard.k-notebook .tct,.tcard.k-search .tct{font-family:var(--mono);font-size:11px}
+.tcard .tcd{flex:none;font:400 10.5px/1.35 var(--sans);color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.tcard .tcv{flex:none;margin-left:auto;font:400 10.5px/1.35 var(--sans);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+/* a subagent's own steps, and a to-do write's list: both are a nested block
+   under the card head, never a second card */
+.tcsteps,.tctodos{flex-basis:100%;margin:3px 0 2px;padding:0 0 0 18px;
+  font:400 11px/1.5 var(--sans);color:var(--muted)}
+.tcsteps li,.tctodos li{margin:1px 0}
+.tcsteps .tcsn{color:var(--ink)}
+.tcsteps .tcss{color:var(--faint)}
+.tctodos li.completed{color:var(--faint);text-decoration:line-through}
+.tctodos li.in_progress{color:var(--acc)}
+@media (prefers-reduced-motion: reduce){ .tcard.run .tcdot{animation:none} }

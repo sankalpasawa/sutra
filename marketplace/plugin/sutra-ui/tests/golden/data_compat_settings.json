@@ -1,0 +1,22 @@
+{
+  "chat_scope": "sutra",
+  "flags": {},
+  "invalid_stored_values": {},
+  "model": "",
+  "model_by_provider": {
+    "claude": "",
+    "codex": "",
+    "deepseek": ""
+  },
+  "onboarded": true,
+  "permission_mode": "plan",
+  "permission_mode_clamped": false,
+  "permission_mode_effective": "plan",
+  "provider": "claude",
+  "provider_source": "fallback",
+  "provider_stored": null,
+  "unsafe_modes_allowed": true,
+  "unsafe_modes_env": "SUTRA_UI_ALLOW_UNSAFE_PERM_MODES",
+  "workdir": "<home>/Desktop/asawa-holding/holding",
+  "workdir_source": "stored"
+}

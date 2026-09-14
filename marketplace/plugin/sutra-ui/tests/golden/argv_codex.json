@@ -1,0 +1,1530 @@
+[
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "acceptEdits",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "workspace-write",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "sandbox_workspace_write.writable_roots=[\"<workdir>\"]",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "bypassPermissions",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "auto",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "manual",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": null,
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": null,
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": null,
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": "gpt-5.6-terra",
+      "session_id": null,
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "none",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "dontAsk",
+      "model": "gpt-5.6-terra",
+      "session_id": "a-codex-thread",
+      "opts": "full",
+      "codex_efforts_stub": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\"",
+      "-m",
+      "gpt-5.6-terra",
+      "resume",
+      "a-codex-thread",
+      "-"
+    ]
+  }
+]

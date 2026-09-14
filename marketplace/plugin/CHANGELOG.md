@@ -1,6 +1,16 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-14
+## 2.273.1 (2026-09-14)
+
+- **Every AI tool now plugs in the same way.** One adapter per provider owns how it starts, resumes, what it may do and what its answers mean, so the main chat code no longer branches per tool and a vendor's change lands in one file. Old chats, settings and routines are untouched: 56 safety-net checks replay the recorded behaviour and open all 139 of the owner's real chats. Tests: 405 new checks.
+- **The chat shows what the AI actually did.** A tool call now arrives with its kind, title and details, and the screen draws a card per kind: subagent, command, file edit, file read, search, web search, web fetch, plan, to-do, notebook, MCP and context compaction. Old chats get the same cards, with nothing rewritten on disk.
+- **One model button next to the message box.** Provider tabs, that tool's models with older versions under "More models", thinking levels limited to what the model supports, and a Fast mode switch for Codex. Claude gains `best` (the newest model your account can run) and pinned Opus 4.8, 4.7, 4.6 and Sonnet 4.6.
+- **Access in plain words, per chat.** Read only, Accept edits, Approve for me and Full access, with anything a tool cannot enforce hidden rather than silently downgraded. Older saved modes keep working under Advanced.
+- **Settings opens on a settings overview**, not on whatever you last had open, with a page per AI tool: its state in one sentence, its default model and access, its version, and its own switches (Claude: Chrome, subagents, workflows; Codex: memory, subagents).
+- **Usage limits for every tool on one page**, with the plan badge, a bar per limit and real reset times, plus the DeepSeek balance. **Updates** now lists each AI tool's installed and latest version with an Update button, refusing while a chat is running and never touching a Homebrew install.
+- **Two fixes:** a declined permission request was recorded as approved, and a non-streaming answer could be replayed with its text already on screen.
+
 ## 2.273.0 (2026-09-14)
 
 - **Deleting a Shadow task takes one click.** The x on a task row turned the row into "Delete? Yes / No" in place -- the gesture the Agents rail uses. In the task list that ask painted underneath neighbouring Shadow UI, so the Yes it demanded could not reliably be clicked and the delete was, in practice, unreachable. The ask is gone: x deletes. The server path is untouched -- the same single POST to the existing `/act` endpoint, the same `founder_stop` / `cancel_queued` / `release_delegate` ordering, the same `target_mode` ownership rule (a chat Shadow MADE goes with the task; a founder's own chat never does), and the mission record still erased last. No `confirm()` replaces it: the dialog blocks the Electron window. Tests: `test_shadow_home.js` test 30, `test_shadow_task_lifecycle.py` 25 checks.

@@ -1,0 +1,41 @@
+{
+  "argv": [
+    "<app_dir>/tests/golden/fake_acp_rich.py",
+    "--acp",
+    "--skip-trust"
+  ],
+  "agent_capabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+      "image": false
+    }
+  },
+  "unauthenticated_session_new_error": null,
+  "session_id": "golden-acp-session",
+  "session_error": null,
+  "acp_mode": "plan",
+  "acp_mode_note": null,
+  "effective_permission_mode": "plan",
+  "frames": [],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "golden-acp-session",
+      "got_result": true,
+      "error": "DeepSeek API returned 429",
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "golden-acp-session",
+    "got_text": false,
+    "got_result": true,
+    "result_error": "DeepSeek API returned 429",
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle"
+}

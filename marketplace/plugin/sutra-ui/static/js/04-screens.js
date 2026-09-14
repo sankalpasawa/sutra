@@ -341,6 +341,172 @@ function usageRowsHtml(u){
     </div>`).join("");
 }
 
+/* ══════════════ every provider's usage, on ONE page ══════════════════════════
+   Founder ask (2026-09-14): the bb shape -- one card per agent CLI, each with
+   its account, its plan and a bar per window -- instead of a screen that shows
+   only whichever provider happens to be selected. Fed by GET /api/usage/all.
+
+   WHY THIS DOES NOT REPLACE usageRowsHtml/usageSev. Those two draw the ACTIVE
+   provider's own screen and the composer popover, against the older per-provider
+   routes, and both still work exactly as they did. This is an additional reader
+   for an additional route, so a server that does not serve /api/usage/all loses
+   nothing (see usageAllHtml's null branch and SCREENS.settings' fallback).
+
+   THE THRESHOLDS ARE DIFFERENT ON PURPOSE. usageSev() is the usage-GUARD's pair
+   (warn 70 / block 80) and must stay pinned to where tool use actually stops.
+   These cards are bb's: normal under 80, warning from 80, red from 95. Two
+   numbers, two jobs; collapsing them would move the guard or lie about it. */
+const USAGE_BAR_WARN = 80, USAGE_BAR_RED = 95;
+function usageBarSev(pct){
+  /* null and "" both coerce to 0 through Number(), which would paint an ABSENT
+     percentage as a healthy one. The absence is checked first, on purpose. */
+  if (pct === null || pct === undefined || pct === "" || typeof pct === "boolean") return "p-mut";
+  const n = Number(pct);
+  if (!Number.isFinite(n)) return "p-mut";
+  return n >= USAGE_BAR_RED ? "p-block" : n >= USAGE_BAR_WARN ? "p-warn" : "p-ok";
+}
+
+/* `resets_at` is whatever the server sends: seconds since the epoch (what the
+   older usage payload uses), milliseconds, or an ISO string. Guessing wrong by
+   a factor of 1000 would put every reset in 1970 or the year 57000, so the
+   units are SNIFFED rather than assumed -- anything past 1e11 cannot be
+   seconds in this century. */
+function usageResetMs(at){
+  if (at === null || at === undefined || at === "") return null;
+  if (typeof at === "number")
+    return Number.isFinite(at) ? (at > 1e11 ? at : at * 1000) : null;
+  const s = String(at).trim();
+  if (/^-?\d+(\.\d+)?$/.test(s)){ const n = Number(s); return n > 1e11 ? n : n * 1000; }
+  const p = Date.parse(s);
+  return Number.isFinite(p) ? p : null;
+}
+/* Fixed English names rather than toLocaleDateString: this string is asserted
+   in tests and read by an operator who wants the same words every time, and a
+   locale-dependent label would make both unstable. */
+const USAGE_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const USAGE_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function _u2(n){ return (n < 10 ? "0" : "") + n; }
+/* Under an hour: minutes. Under a day: hours and minutes. Under a week: the
+   weekday and the time. Beyond: the date and the time. */
+function usageResetText(at){
+  const ms = usageResetMs(at);
+  if (ms === null) return "";
+  const d = ms - Date.now();
+  if (d <= 0) return "resetting now";
+  if (d < 3600000) return "in " + Math.max(1, Math.round(d / 60000)) + " min";
+  if (d < 86400000){
+    const h = Math.floor(d / 3600000);
+    const m = Math.round((d - h * 3600000) / 60000);
+    return m ? "in " + h + " hr " + m + " min" : "in " + h + " hr";
+  }
+  const dt = new Date(ms);
+  const time = _u2(dt.getHours()) + ":" + _u2(dt.getMinutes());
+  if (d < 7 * 86400000) return USAGE_DAYS[dt.getDay()] + " " + time;
+  return dt.getDate() + " " + USAGE_MONTHS[dt.getMonth()] + " " + time;
+}
+
+/* One bar. Same markup as usageRowsHtml so the two read identically, with this
+   page's severity and this page's reset wording. A percent the server did not
+   send draws NO bar rather than a 0% one -- an empty bar is a claim. */
+function usageAllBarHtml(w){
+  const pct = Number(w && w.percent);
+  const known = Number.isFinite(pct);
+  const sev = usageBarSev(pct);
+  const reset = usageResetText(w && w.resets_at);
+  return `<div class="urow">
+      <div class="uhead">
+        <span class="ulabel">${esc((w && w.label) || "Window")}</span>
+        ${reset ? `<span class="ureset">${esc(reset)}</span>` : `<span class="ureset"></span>`}
+        <span class="upct ${sev}">${known ? Math.round(pct) + "%" : "—"}</span>
+      </div>
+      ${known ? `<div class="ubar" role="img"
+           aria-label="${esc((w && w.label) || "Window")} at ${Math.round(pct)} percent">
+        <i class="${sev}" style="width:${Math.min(100, Math.max(0, pct))}%"></i>
+      </div>` : ""}
+    </div>`;
+}
+
+/* One plain sentence per state, and never more. The long-form diagnosis lives
+   behind the disclosure, which is where the founder asked for it (2026-09-14:
+   "cut the diagnostic walls of text"). */
+const USAGE_STATE_LINE = {
+  not_installed: "Not installed on this Mac.",
+  signed_out:    "Not signed in.",
+  unsupported:   "This one publishes no usage figure.",
+  error:         "Its usage could not be read just now."
+};
+function usageAllCardHtml(p){
+  p = p || {};
+  const state = String(p.state || (p.windows ? "ok" : "error"));
+  const windows = Array.isArray(p.windows) ? p.windows : [];
+  const name = p.name || providerLabel(p.id) || p.id || "Provider";
+  const initial = String(name).trim().charAt(0).toUpperCase() || "?";
+  const detail = p.error || p.reason || "";
+  let body;
+  if (state === "ok" && windows.length) body = windows.map(usageAllBarHtml).join("");
+  else if (state === "ok") body = `<p class="uanote">Signed in, with no metered window right now.</p>`;
+  else body = `<p class="uanote">${esc(USAGE_STATE_LINE[state] || "No usage to report.")}</p>`;
+  /* Sutra's extra, which bb has none of: a pay-as-you-go balance. Drawn for any
+     provider that reports one, not just DeepSeek, and coloured by the same
+     low-balance rule the DeepSeek screen uses. */
+  const bal = p.balance;
+  const balRow = (bal === null || bal === undefined || bal === "") ? "" : `
+      <div class="urow"><div class="uhead">
+        <span class="ulabel">Balance</span>
+        <span class="upct ${deepseekSev(typeof bal === "object" ? bal.total : bal)}">${
+          esc(typeof bal === "object"
+              ? ((bal.currency || "") + " " + (bal.total ?? "—")).trim()
+              : String(bal))}</span>
+      </div></div>`;
+  const stale = (p.stale || p.source === "stale-cache")
+    ? `<div class="uastale">Cached figure — the endpoint could not be reached just now.</div>` : "";
+  return `<section class="uacard" data-uaprov="${esc(p.id || "")}">
+      <div class="uahead">
+        <span class="uaic" aria-hidden="true">${esc(initial)}</span>
+        <span class="uaname">${esc(name)}</span>
+        ${p.account ? `<span class="uaacct" title="${esc(p.account)}">${esc(p.account)}</span>` : ""}
+        ${p.plan ? `<span class="pill p-mut uaplan">${esc(p.plan)}</span>` : ""}
+      </div>
+      ${stale}
+      <div class="uabody">${body}${balRow}</div>
+      ${detail ? `<details class="uadet"><summary class="why">What Sutra found</summary>
+        <p class="why" style="margin:6px 0 0">${esc(detail)}</p></details>` : ""}
+    </section>`;
+}
+
+/* Sutra's OTHER extra: pay-as-you-go credits on the Anthropic account. Read
+   from the existing /api/usage payload, so it survives whether or not
+   /api/usage/all exists. Null limits are stated as "no limit set", never as 0. */
+function usageExtraHtml(){
+  const x = S.usage && S.usage.extra_usage;
+  if (!x) return "";
+  if (!x.enabled) return `<p class="uanote" style="margin-top:11px">Extra usage
+    (pay-as-you-go) is <b>off</b>, so there are no daily, weekly or monthly
+    credit figures for this account.</p>`;
+  return `<div class="uaextra">
+      <div class="uaxhead">Extra usage (pay-as-you-go)</div>
+      <div class="kv"><b>Used</b><span>${esc(String(x.used_credits ?? "—"))} ${esc(x.currency||"")}</span></div>
+      <div class="kv"><b>Daily</b><span>${esc(String(x.daily ?? "no limit set"))}</span></div>
+      <div class="kv"><b>Weekly</b><span>${esc(String(x.weekly ?? "no limit set"))}</span></div>
+      <div class="kv"><b>Monthly limit</b><span>${esc(String(x.monthly_limit ?? "no limit set"))}</span></div>
+      ${x.limit_reached?`<div class="note w" style="margin-top:7px">The spend limit has been reached.</div>`:""}
+    </div>`;
+}
+
+/* The page. Returns null when the route has not answered -- the CALLER decides
+   what to fall back to, because "not fetched yet" and "this server has no such
+   route" want different screens and only the caller knows which it has. */
+function usageAllHtml(){
+  const all = S.usageAll;
+  if (!all || !Array.isArray(all.providers)) return null;
+  if (!all.providers.length) return `<div class="zero"><h4>No providers to report</h4>
+    <p>Sutra found no AI tool on this Mac whose usage it could read.</p></div>`;
+  return `<div class="ualist">${all.providers.map(usageAllCardHtml).join("")}</div>
+    ${usageExtraHtml()}
+    <p class="why" style="margin-top:11px">Read locally from each tool's own
+      account, once a minute at most. Nothing here is a price.</p>`;
+}
+
 /* ── the repository bar ──────────────────────────────────────────────────────
    Under the composer, describing the repository THIS session is in -- which is
    the session's working directory, not the Settings workdir, or the bar would

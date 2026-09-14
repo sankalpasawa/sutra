@@ -1,0 +1,72 @@
+{
+  "argv": [
+    "<app_dir>/qa/fake_claude_agent.py",
+    "-p",
+    "--mcp-config",
+    "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode",
+    "plan",
+    "--resume",
+    "claude-golden-session",
+    "--allowedTools",
+    "mcp__sutra__*"
+  ],
+  "send_error": null,
+  "frames": [
+    {
+      "type": "session",
+      "id": "claude-golden-session"
+    },
+    {
+      "type": "sysinit",
+      "model": "stub-model",
+      "tools": 0,
+      "mcp_servers": [],
+      "slash_commands": 0,
+      "permission_mode": null,
+      "cwd": null
+    },
+    {
+      "type": "token",
+      "text": "ack"
+    },
+    {
+      "type": "done",
+      "session": "claude-golden-session",
+      "duration_ms": "<duration_ms>",
+      "num_turns": 1,
+      "cost_usd": 0.0
+    }
+  ],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "claude-golden-session",
+      "got_result": true,
+      "error": null,
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "claude-golden-session",
+    "got_text": true,
+    "got_result": true,
+    "result_error": null,
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle",
+  "open_tools": []
+}

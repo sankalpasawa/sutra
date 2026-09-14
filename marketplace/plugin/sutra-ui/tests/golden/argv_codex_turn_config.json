@@ -1,0 +1,57 @@
+[
+  {
+    "opts": null,
+    "pairs": []
+  },
+  {
+    "opts": {},
+    "pairs": []
+  },
+  {
+    "opts": {
+      "reasoning_summary": "detailed",
+      "verbosity": "low",
+      "reasoning_effort": "high",
+      "not_a_real_key": "must never reach argv"
+    },
+    "pairs": [
+      "-c",
+      "model_reasoning_summary=\"detailed\"",
+      "-c",
+      "model_verbosity=\"low\"",
+      "-c",
+      "model_reasoning_effort=\"high\""
+    ]
+  },
+  {
+    "opts": {
+      "reasoning_summary": "bogus"
+    },
+    "pairs": []
+  },
+  {
+    "opts": {
+      "verbosity": ""
+    },
+    "pairs": []
+  },
+  {
+    "opts": {
+      "reasoning_effort": "ultracode"
+    },
+    "pairs": []
+  },
+  {
+    "opts": {
+      "reasoning_effort": "xhigh"
+    },
+    "pairs": [
+      "-c",
+      "model_reasoning_effort=\"xhigh\""
+    ]
+  },
+  {
+    "opts": "not a dict",
+    "pairs": []
+  }
+]

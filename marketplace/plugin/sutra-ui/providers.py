@@ -41,12 +41,14 @@ Reads: PATH, and the config dirs (existence only -- never their contents).
 Writes: exactly one file, ~/.sutra-ui/settings.json, via save_settings().
         Never anything under SUTRA_NATIVE_HOME.
 """
+import contextlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -470,6 +472,119 @@ _CLAUDE_MODELS = (
     {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},
 )
 
+# ------------------------------------------------------- model catalogue ----
+# THE SECOND, RICHER VIEW OF THE SAME THING, and it is ADDITIVE ON PURPOSE.
+#
+# `_CLAUDE_MODELS` above is what `models_for()` returns and therefore what
+# `models_by_provider` ships. It does not change: the SEO Writer and every
+# client built before this catalogue existed read that list, and a rename or a
+# reorder there is a break for all of them.
+#
+# What the new screens need on top is four things the flat list cannot carry:
+#   - a MAIN/MORE split, so the picker shows five rows and hides the pinned
+#     historical ids behind "More models"
+#   - the EFFORT values each model accepts, so the effort control is per model
+#     instead of a guess
+#   - a FAST flag, so only a provider that has a service-tier switch renders one
+#   - what `""` RESOLVES TO, so "CLI default" can say what it means
+#
+# so `model_catalog_for()` publishes those beside the flat list rather than
+# instead of it.
+#
+# EVERY ID HERE IS VERIFIED AGAINST THE REAL CLI, not assumed. Probe, which
+# spends no model turn because the run dies on the missing prompt AFTER the
+# model name has already been resolved:
+#
+#     printf '' | claude --model <id> -p --output-format text
+#       known id    -> "Error: Input must be provided ... when using --print"
+#       unknown id  -> '"<id>" isn't described by this version's model catalog'
+#
+# Run over every id below on 2026-09-14 against Claude Code 2.1.270 (the build
+# actually on this Mac; the shared spec was written against 2.1.247). All
+# ACCEPTED: best, opus, sonnet, haiku, fable, claude-opus-5, claude-opus-4-8,
+# claude-opus-4-7, claude-opus-4-6, claude-sonnet-5, claude-sonnet-4-6,
+# opus[1m], sonnet[1m]. A control id, totally-bogus-model, was refused, which is
+# what makes the probe evidence rather than a no-op.
+#
+# `best` RATHER THAN A DATED FABLE ID. `best` is the alias that resolves to the
+# newest model the account can run (Fable 5.1 as measured for the spec on
+# 2.1.247, where the dated `claude-fable-5-1` was still REFUSED and needed
+# 2.1.251+). On this Mac's 2.1.270 the dated id is now accepted too -- but an
+# alias cannot go stale the way a pinned snapshot id does, and the catalogue
+# has to keep working on the older CLI as well, so `best` is what is offered.
+
+#: The `--effort` values the CLI accepts, taken from its own rejection rather
+#: than from documentation. Measured 2026-09-14 on 2.1.270:
+#:
+#:     claude --effort bogus -p
+#:       -> "Warning: Unknown --effort value 'bogus' ... Valid values: low,
+#:          medium, high, xhigh, max."
+#:
+#: The same five are accepted on every model, so this is one tuple rather than a
+#: per-model set (Codex's genuinely differ per model and are discovered; see
+#: codex_efforts_for). `ultracode` is also silently accepted by this build but is
+#: NOT in the CLI's own list of valid values, so it is not offered.
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+#: The rows the picker shows first. Same ids as _CLAUDE_MODELS except that
+#: `fable` is published as `best` -- see the note above.
+_CLAUDE_CATALOG_MODELS = (
+    {"id": "",       "name": "Account default",
+     "note": "whatever `claude` is configured to use"},
+    {"id": "best",   "name": "Best available", "tag": "newest",
+     "note": "the newest model this account can run (Fable 5.1 today)"},
+    {"id": "opus",   "name": "Opus",
+     "note": "most capable, slowest, highest cost"},
+    {"id": "sonnet", "name": "Sonnet",
+     "note": "balanced default for most work"},
+    {"id": "haiku",  "name": "Haiku",
+     "note": "fastest and cheapest, least capable"},
+)
+
+#: "More models": the pinned historical snapshots and the explicit 1M-context
+#: spellings. Behind a disclosure because nobody picking a model for the first
+#: time wants them, and present at all because someone pinning a build for
+#: reproducibility does.
+#:
+#: The `[1m]` suffix is the CLI's own way of asking for the 1M context window on
+#: a model whose default assumption is smaller; it is part of the id string that
+#: reaches `--model`, not a separate flag.
+_CLAUDE_MORE_MODELS = (
+    {"id": "claude-opus-4-8",   "name": "Opus 4.8",   "note": "pinned snapshot"},
+    {"id": "claude-opus-4-7",   "name": "Opus 4.7",   "note": "pinned snapshot"},
+    {"id": "claude-opus-4-6",   "name": "Opus 4.6",   "note": "pinned snapshot"},
+    {"id": "claude-sonnet-4-6", "name": "Sonnet 4.6", "note": "pinned snapshot"},
+    {"id": "opus[1m]",          "name": "Opus · 1M context",
+     "note": "Opus with the 1M-token window requested explicitly"},
+    {"id": "sonnet[1m]",        "name": "Sonnet · 1M context",
+     "note": "Sonnet with the 1M-token window requested explicitly"},
+)
+
+#: DeepSeek's "more" list is empty and that is an answer: the fork publishes
+#: three concrete ids and no aliases, so there is nothing older to hide. Codex's
+#: is empty for the opposite reason -- its roster is discovered per account, so
+#: everything it knows is current by construction.
+_DEEPSEEK_MORE_MODELS = ()
+
+#: Which providers have a fast / service-tier switch. Codex's native binary
+#: carries a `service_tier` config key (recorded in the shared spec); Claude and
+#: DeepSeek have no equivalent, so their panes must not render the control.
+#: Declared here rather than branched on an id at the point of use, same rule as
+#: every other per-provider fact in this file.
+_FAST_PROVIDERS = frozenset({"codex"})
+
+#: What `""` resolves to, per provider, when this build can honestly say.
+#:
+#: Claude is ABSENT on purpose and the asymmetry is the same one budget.py
+#: documents: `claude` with no model selected resolves to whatever the operator
+#: configured the CLI with, which nothing here can read. DeepSeek's default IS
+#: knowable -- its ACP session/new reports deepseek-v4-flash, measured
+#: 2026-09-07. Codex's is discovered and is asked for at call time, so it is not
+#: in this table either.
+_STATIC_DEFAULT_MODEL = {
+    "deepseek": "deepseek-v4-flash",
+}
+
 # DeepSeek's, passed as `-m <id>`. NOT aliases -- the fork takes concrete ids,
 # and its ACP session/new advertises exactly deepseek-v4-pro and
 # deepseek-v4-flash (measured 2026-09-07). `""` is the CLI's own default, which
@@ -668,6 +783,15 @@ def codex_config_models():
 CODEX_REASONING_SUMMARY = ("", "auto", "concise", "detailed", "none")
 CODEX_VERBOSITY = ("", "low", "medium", "high")
 
+#: What the model CATALOGUE offers as efforts for a Codex model the discovered
+#: roster says nothing about. NOT an allow-list for the wire -- build_codex_args
+#: still validates against codex_efforts_for(model), which is the roster and only
+#: the roster. This is a label set for a picker that would otherwise be empty on
+#: a machine where discovery has not run, and it is the intersection every
+#: measured Codex model has agreed on (terra adds `ultra`, luna does not, 5.5
+#: stops at `xhigh`). Declared in the shared spec; kept narrow on purpose.
+CODEX_FALLBACK_EFFORTS = ("low", "medium", "high", "xhigh")
+
 #: Which of PERMISSION_MODES codex can actually enforce, and why the other
 #: three are absent rather than pending.
 #:
@@ -813,16 +937,151 @@ def codex_default_model():
     return codex_models.default_id()
 
 
+def catalog_models_for(pid):
+    """(main, more) for the RICH picker, as two tuples of entry dicts.
+
+    The catalogue view. models_for() is the flat legacy list and is unchanged;
+    this is what model_catalog_for() publishes, and the two deliberately differ
+    for Claude (`best` here, `fable` there -- see the catalogue note above).
+
+    Every provider that is not specially catalogued falls back to its flat list
+    as the main tuple with an empty `more`, so adding a provider needs no change
+    here before its picker works.
+    """
+    if pid == "claude":
+        return _CLAUDE_CATALOG_MODELS, _CLAUDE_MORE_MODELS
+    if pid == "deepseek":
+        return tuple(models_for(pid)), _DEEPSEEK_MORE_MODELS
+    return tuple(models_for(pid)), ()
+
+
+def _catalog_efforts(pid, model_id):
+    """The effort values ONE model accepts, as a list. [] when none apply.
+
+    Claude's five are a constant because the CLI accepts the same set on every
+    model (measured); Codex's are per model and discovered from its own roster,
+    with a documented fallback for a model the roster does not describe;
+    DeepSeek carries no effort lever at all on the ACP wire, which is measured
+    and not a gap (see _CLAUDE_TURN_OPTIONS).
+    """
+    if pid == "claude":
+        return list(CLAUDE_EFFORTS)
+    if pid == "codex":
+        found = codex_efforts_for(model_id or None)
+        return list(found) if found else list(CODEX_FALLBACK_EFFORTS)
+    return []
+
+
+def default_model_for(pid):
+    """The id `""` resolves to for this provider, or "" when it cannot be known.
+
+    "" is the honest answer for Claude and the caller must render it as "the
+    CLI's own default" rather than as a model name -- see _STATIC_DEFAULT_MODEL.
+    """
+    if pid == "codex":
+        try:
+            return codex_default_model() or ""
+        except Exception:
+            return ""
+    return _STATIC_DEFAULT_MODEL.get(pid, "")
+
+
+def fast_supported(pid):
+    """True when this provider has a fast / service-tier switch to offer.
+
+    The one place that question is answered. ws_chat's per-turn `service_tier`
+    option is validated against this, so the control and the validator cannot
+    disagree about which panes may send one.
+    """
+    return pid in _FAST_PROVIDERS
+
+
+def _catalog_entry(pid, entry):
+    """One catalogue row, with its efforts attached. Never mutates the source.
+
+    THE ENTRY'S OWN `efforts` WINS. Codex's discovered rows already carry the
+    set that model published, and that is a stronger source than anything this
+    function can look up -- codex_efforts_for() reads the RPC cache alone, which
+    is empty until the Codex auth route has run, so a fresh process would have
+    downgraded a known per-model set to the generic fallback.
+    """
+    out = dict(entry)
+    own = entry.get("efforts")
+    out["efforts"] = (list(own) if own
+                      else _catalog_efforts(pid, entry.get("id") or ""))
+    out.setdefault("selectable", _model_selectable(entry))
+    return out
+
+
+def model_catalog_for(pid):
+    """The rich catalogue for one provider, or None when it declares no models.
+
+        {"models": [...], "more": [...], "fast": bool, "default": "<id>"}
+
+    None rather than an empty dict for a provider with no picker, so the
+    client's "does this pane have a model control" test is the same test it
+    already uses for models_by_provider: is this provider in the dict.
+    """
+    if not models_for(pid):
+        return None
+    main, more = catalog_models_for(pid)
+    if not main:
+        return None
+    return {
+        "models": [_catalog_entry(pid, m) for m in main],
+        "more": [_catalog_entry(pid, m) for m in more],
+        "fast": fast_supported(pid),
+        "default": default_model_for(pid),
+    }
+
+
+def all_model_catalog_by_provider():
+    """{provider_id: catalogue} for every provider that has a picker.
+
+    Same absent-when-empty contract as all_models_by_provider(), and it rides
+    BESIDE that map in GET /api/settings rather than replacing it.
+    """
+    out = {}
+    for spec in _CATALOG:
+        cat = model_catalog_for(spec["id"]) if spec.get("models") else None
+        if cat:
+            out[spec["id"]] = cat
+    return out
+
+
+def _catalog_extra_entries(pid):
+    """Catalogue rows that are NOT in the flat models_for() list.
+
+    Exists so model_ids_for / selectable_model_ids_for can widen to the
+    catalogue without models_for() -- and therefore models_by_provider -- moving
+    an inch. `best` and the six pinned Claude ids live only here.
+    """
+    have = {m["id"] for m in models_for(pid)}
+    main, more = catalog_models_for(pid)
+    return tuple(m for m in tuple(main) + tuple(more) if m["id"] not in have)
+
+
 def model_ids_for(pid):
-    """Every declared id, selectable or not. Use for "is this catalogued"."""
-    return frozenset(m["id"] for m in models_for(pid))
+    """Every declared id, selectable or not. Use for "is this catalogued".
+
+    WIDENED to the catalogue, deliberately. A user who picks `best` in the new
+    screen has that id written to settings.json; if this set still answered
+    only the flat list, the very next read would call it unknown and the choice
+    would evaporate. Adding an id to the picker and refusing it at the API is
+    the offer-a-choice-that-cannot-run failure this module exists to prevent,
+    pointed the other way round.
+    """
+    return frozenset(m["id"] for m in
+                     tuple(models_for(pid)) + _catalog_extra_entries(pid))
 
 
 def selectable_model_ids_for(pid):
     """The ids a session may actually RUN on. The narrower set, and the one
     clean_model() gates against -- a listed-but-disabled model must be
     unreachable through the API too, not merely greyed out in the menu."""
-    return frozenset(m["id"] for m in models_for(pid) if _model_selectable(m))
+    return frozenset(m["id"] for m in
+                     tuple(models_for(pid)) + _catalog_extra_entries(pid)
+                     if _model_selectable(m))
 
 
 def all_models_by_provider():
@@ -1001,6 +1260,370 @@ PERMISSION_MODE_NOTES = {
     "bypassPermissions": "everything is auto-approved, including shell commands "
                          "-- the widest setting there is.",
 }
+
+
+# --------------------------------------------------------------- access ----
+# WHAT THE SCREEN OFFERS, mapped onto what has always been STORED.
+#
+# The six native ids above are CLI vocabulary: plan / acceptEdits /
+# bypassPermissions / auto / manual / dontAsk. They are precise and nobody
+# outside this codebase knows what they mean. The new screens offer four plain
+# choices instead -- read / edits / auto / full -- and this table is the only
+# place the two vocabularies meet.
+#
+# NOTHING NEW IS STORED. An `access` id lives in the UI and API layer and is
+# translated here; settings.json keeps holding a NATIVE mode under the existing
+# `permission_mode` key, so an older build reading the same file finds exactly
+# what it expects and a routine that wrote `dontAsk` two months ago still runs
+# as `dontAsk`.
+#
+# ONE TABLE, not a switch in the picker and another in the validator. The bug
+# this shape prevents is the one models_by_provider was written about: two
+# copies of a per-provider answer that can drift, so the control displays one
+# choice while something else runs.
+#
+# `manual` and `dontAsk` are DELIBERATELY ABSENT from the four. They are not
+# retired -- they remain valid stored values, they still load, and
+# advanced_permission_modes() below hands them to the UI for its "Advanced"
+# disclosure. A choice someone already made must never vanish because a newer
+# screen has a shorter list.
+#
+# CONSENT IS UNCHANGED. `edits` and `full` map to acceptEdits and
+# bypassPermissions, which are UNSAFE_PERMISSION_MODES, so they go through the
+# same unsafe_modes_allowed() gate and the same UNSAFE_ACK_PHRASE. This table
+# renames nothing about that and weakens nothing about it.
+ACCESS_OPTIONS = (
+    {"id": "read", "label": "Read only",
+     "desc": "Looks and plans. Changes nothing.", "warn": False,
+     "native": {"claude": "plan", "codex": "plan", "deepseek": "plan"}},
+    {"id": "edits", "label": "Accept edits",
+     "desc": "Edits files in this folder. Asks for anything else.", "warn": False,
+     "native": {"claude": "acceptEdits", "codex": "acceptEdits",
+                "deepseek": "acceptEdits"}},
+    # Claude ONLY, and the emptiness elsewhere is measured rather than pending.
+    # codex's approval_policy values all wait for an answer on a channel a chat
+    # pane does not have, and DeepSeek's ACP layer has no equivalent of `auto`
+    # at all -- see _CODEX_PERMISSION_MODES and _DEEPSEEK_PERMISSION_MODES.
+    {"id": "auto", "label": "Approve for me",
+     "desc": "Same limit, but the tool approves routine requests itself.",
+     "warn": False,
+     "native": {"claude": "auto"}},
+    {"id": "full", "label": "Full access",
+     "desc": "Anything on this Mac, without asking.", "warn": True,
+     "native": {"claude": "bypassPermissions", "codex": "bypassPermissions",
+                "deepseek": "bypassPermissions"}},
+)
+
+#: Native modes that are real, still stored, still honoured -- and not one of
+#: the four. Derived from the table rather than typed out twice, so a native id
+#: promoted into ACCESS_OPTIONS leaves this list automatically.
+def advanced_permission_modes():
+    """The native modes the new list does not cover, in PERMISSION_MODES order.
+
+    `manual` and `dontAsk` today. Routines write `dontAsk`, so this is not a
+    legacy shelf -- it is a live part of the product that simply has no plain-
+    English button.
+    """
+    mapped = set()
+    for opt in ACCESS_OPTIONS:
+        mapped.update(opt["native"].values())
+    return [m for m in PERMISSION_MODES if m not in mapped]
+
+
+def access_native(access_id, provider_id):
+    """The native permission mode `access_id` means for `provider_id`, or None.
+
+    None is a real answer, not a failure: `auto` on a Codex pane has no native
+    equivalent, and the caller must refuse rather than substitute one.
+    """
+    for opt in ACCESS_OPTIONS:
+        if opt["id"] == access_id:
+            return opt["native"].get(provider_id)
+    return None
+
+
+def access_for_native(mode, provider_id=None):
+    """The access id a stored native mode shows as, or None for an advanced one.
+
+    The reverse direction, and the UI needs it on every load: settings.json
+    holds `acceptEdits` and the radio group has to come up on "Accept edits".
+    `provider_id` narrows the lookup to that provider's own mapping; without it
+    any provider's mapping counts, which is what a settings screen rendered
+    before a provider is chosen needs.
+    """
+    if mode not in PERMISSION_MODES:
+        return None
+    for opt in ACCESS_OPTIONS:
+        natives = opt["native"]
+        if provider_id is not None:
+            if natives.get(provider_id) == mode:
+                return opt["id"]
+        elif mode in natives.values():
+            return opt["id"]
+    return None
+
+
+def access_options(provider_id=None, settings=None):
+    """The four choices, each with everything a screen needs to draw it.
+
+        {id, label, desc, warn, native, providers, settable, requires_unlock}
+
+    `native` is the native mode for `provider_id` (None when that provider does
+    not offer this option), and `providers` lists every provider that does.
+
+    `settable` answers BEFORE the click, the same way the existing
+    permission_modes list does: an option the server will refuse must say so up
+    front, or the screen reads as broken rather than as gated.
+    """
+    unlocked = unsafe_modes_allowed(settings)
+    out = []
+    for opt in ACCESS_OPTIONS:
+        native_here = opt["native"].get(provider_id) if provider_id else None
+        gated = any(m in UNSAFE_PERMISSION_MODES for m in opt["native"].values())
+        out.append({
+            "id": opt["id"],
+            "label": opt["label"],
+            "desc": opt["desc"],
+            "warn": opt["warn"],
+            "native": native_here,
+            "providers": sorted(opt["native"]),
+            "requires_unlock": gated,
+            "settable": (not gated) or unlocked,
+        })
+    return out
+
+
+def access_by_provider():
+    """{provider_id: [access id, ...]} -- which of the four each pane may offer.
+
+    Absent-when-empty, same contract as models_by_provider and
+    turn_options_by_provider: a provider with no entry has no access control to
+    draw, and the client's test for "does this pane have one" is "is it in this
+    dict".
+    """
+    out = {}
+    for opt in ACCESS_OPTIONS:
+        for pid in opt["native"]:
+            out.setdefault(pid, []).append(opt["id"])
+    order = [o["id"] for o in ACCESS_OPTIONS]
+    return {pid: sorted(ids, key=order.index) for pid, ids in out.items()}
+
+
+def access_native_map():
+    """{access id: {provider id: native mode}} -- the raw table, published.
+
+    Shipped so the client can show which native mode a choice really sets
+    (Settings > Advanced does) without keeping a second copy of this mapping in
+    JavaScript. A JS copy would drift the day a provider is added, silently.
+    """
+    return {opt["id"]: dict(opt["native"]) for opt in ACCESS_OPTIONS}
+
+
+# ----------------------------------------------- per-provider settings -----
+# The switches that belong to ONE assistant rather than to Sutra.
+#
+# Every row is a boolean with a DEFAULT, and the default is the CLI's own
+# behaviour -- so a machine that has never touched this screen behaves exactly
+# as it does today, and `provider_settings` in settings.json is absent
+# entirely. Only a value that DIFFERS from its default is stored, which is why
+# turning something off and back on leaves no trace.
+#
+# NOTHING HERE IS APPLIED BY THIS MODULE. providers.py owns the table and the
+# storage; the spawn path (build_agent_args / build_codex_args) reads
+# provider_settings(pid) and decides what argv it turns into. Keeping the
+# application out of here is what stops this file from growing a second opinion
+# about the CLI's flags.
+#
+# EVERY KEY WAS CHECKED AGAINST THE REAL CLI BEFORE IT WAS LISTED:
+#
+#   claude `chrome`      `--chrome` AND `--no-chrome` are both in
+#                        `claude --help` on 2.1.270, read 2026-09-14.
+#   claude `subagents`   expressible through `--disallowedTools`, which is in
+#                        the same help output. Which tool name goes in it is
+#                        the spawn path's call, not this table's.
+#   claude `workflows`   same lever, same reasoning.
+#   codex  `memory`      `memories.use_memories` / `memories.generate_memories`
+#                        are config keys the Codex native binary carries
+#                        (recorded in the shared spec).
+#   codex  `subagents`   `features.multi_agent`, same source.
+#
+# ONE PLANNED KEY WAS DROPPED RATHER THAN SHIPPED: claude `memory`. There is no
+# memory switch in `claude --help` on 2.1.270 -- the only thing that turns
+# auto-memory off is `--bare`, which ALSO drops hooks, LSP, plugin sync,
+# attribution, background prefetches, keychain reads and CLAUDE.md discovery. A
+# toggle labelled "Memory" that quietly disables seven other things is worse
+# than no toggle, so it is absent until the CLI has a lever that means what the
+# label says.
+PROVIDER_SETTINGS_SCHEMA = {
+    "claude": (
+        {"key": "chrome", "label": "Claude in Chrome",
+         "desc": "Let this assistant drive a Chrome tab you already have open.",
+         "type": "boolean", "default": False},
+        {"key": "subagents", "label": "Subagents",
+         "desc": "Let it start helper agents to work on parts of a task in "
+                 "parallel.",
+         "type": "boolean", "default": True},
+        {"key": "workflows", "label": "Workflows",
+         "desc": "Let it run saved multi-step workflows.",
+         "type": "boolean", "default": True},
+    ),
+    "codex": (
+        {"key": "memory", "label": "Memories",
+         "desc": "Let it read and write its own notes between sessions.",
+         "type": "boolean", "default": True},
+        {"key": "subagents", "label": "Subagents",
+         "desc": "Let it start helper agents to work on parts of a task in "
+                 "parallel.",
+         "type": "boolean", "default": True},
+    ),
+}
+
+#: The settings.json key. NEW and top-level, beside `model_by_provider` and
+#: `permission_mode` -- never inside any of them. Nothing that exists today is
+#: read, rewritten or reordered by this feature.
+PROVIDER_SETTINGS_KEY = "provider_settings"
+
+
+def provider_settings_schema():
+    """{provider_id: [row, ...]} -- every switch, with its default.
+
+    The client renders from this rather than from a hardcoded list, so a key
+    added here appears on the screen without a JS change, and a key removed
+    here disappears from the screen instead of lingering as a control that
+    writes a value nothing reads.
+    """
+    return {pid: [dict(row) for row in rows]
+            for pid, rows in PROVIDER_SETTINGS_SCHEMA.items()}
+
+
+def _schema_rows(pid):
+    return PROVIDER_SETTINGS_SCHEMA.get(pid, ())
+
+
+def _stored_provider_settings(raw=None):
+    """The raw stored map, sanitised to {pid: {known key: bool}}.
+
+    Junk dies here: an unknown provider, an unknown key, a non-boolean value
+    and a non-dict at any level are all dropped rather than carried. The file
+    is hand-editable and is also written by older and newer builds, so this has
+    to survive anything.
+    """
+    data = (raw if raw is not None else _raw_settings()).get(PROVIDER_SETTINGS_KEY)
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for pid, rows in PROVIDER_SETTINGS_SCHEMA.items():
+        got = data.get(pid)
+        if not isinstance(got, dict):
+            continue
+        keep = {}
+        for row in rows:
+            v = got.get(row["key"])
+            if isinstance(v, bool):
+                keep[row["key"]] = v
+        if keep:
+            out[pid] = keep
+    return out
+
+
+def provider_settings(pid, raw=None):
+    """The EFFECTIVE switches for one provider: every key, defaults filled in.
+
+    This is what the spawn path reads. It always answers every key in the
+    schema, so a caller never has to remember a default or handle a missing
+    one -- `provider_settings("claude")["chrome"]` is always a bool.
+
+    {} for a provider with no schema, which is a real answer: gemini and
+    deepseek have no per-provider switches, and their spawn paths ask for
+    nothing.
+
+    NOT the same thing as what is published. GET /api/settings sends
+    stored_provider_settings() -- only the values that differ from a default --
+    because the schema already carries the defaults and sending them twice is
+    two copies of one fact.
+    """
+    rows = _schema_rows(pid)
+    if not rows:
+        return {}
+    stored = _stored_provider_settings(raw).get(pid, {})
+    return {row["key"]: stored.get(row["key"], row["default"]) for row in rows}
+
+
+def stored_provider_settings(raw=None):
+    """{provider_id: {key: value}} for NON-DEFAULT values only.
+
+    The published shape. A provider whose every switch is at its default is
+    absent, so an untouched machine sends `{}` and the client knows nothing was
+    overridden without diffing anything.
+    """
+    out = {}
+    for pid, rows in PROVIDER_SETTINGS_SCHEMA.items():
+        stored = _stored_provider_settings(raw).get(pid, {})
+        diff = {row["key"]: stored[row["key"]] for row in rows
+                if row["key"] in stored and stored[row["key"]] != row["default"]}
+        if diff:
+            out[pid] = diff
+    return out
+
+
+def save_provider_settings(patch):
+    """Merge `{pid: {key: bool}}` into settings.json and return load_settings().
+
+    A PATCH, not a replacement: a provider absent from `patch` is untouched,
+    and a key absent from a provider's dict is untouched. Sending a key back at
+    its default REMOVES it from storage rather than writing it, which is what
+    keeps the file free of rows that only restate the schema.
+
+    Validates BEFORE writing, the same way save_settings() does. An unknown
+    provider, an unknown key or a non-boolean value raises ValueError with the
+    specific reason, so nothing is half-applied and the operator is never told
+    a switch took effect when it did not.
+
+    ONLY the `provider_settings` key is written. Every other key in the file is
+    read and put back exactly as it was.
+    """
+    if not isinstance(patch, dict):
+        raise ValueError("provider_settings must be an object of "
+                         "{provider: {key: true|false}}")
+    for pid, values in patch.items():
+        rows = _schema_rows(pid)
+        if not rows:
+            raise ValueError(
+                "provider %r has no per-provider settings -- known: %s"
+                % (pid, ", ".join(sorted(PROVIDER_SETTINGS_SCHEMA))))
+        if not isinstance(values, dict):
+            raise ValueError("provider_settings[%r] must be an object" % pid)
+        known = {row["key"] for row in rows}
+        for key, value in values.items():
+            if key not in known:
+                raise ValueError(
+                    "unknown setting %r for provider %r -- must be one of: %s"
+                    % (key, pid, ", ".join(sorted(known))))
+            if not isinstance(value, bool):
+                raise ValueError(
+                    "provider_settings[%r][%r] must be true or false, not %r"
+                    % (pid, key, value))
+
+    raw = _raw_settings()
+    current = _stored_provider_settings(raw)
+    for pid, values in patch.items():
+        rows = {row["key"]: row for row in _schema_rows(pid)}
+        slot = dict(current.get(pid, {}))
+        for key, value in values.items():
+            if value == rows[key]["default"]:
+                slot.pop(key, None)      # a default is absence, not a row
+            else:
+                slot[key] = value
+        if slot:
+            current[pid] = slot
+        else:
+            current.pop(pid, None)
+    if current:
+        raw[PROVIDER_SETTINGS_KEY] = current
+    else:
+        raw.pop(PROVIDER_SETTINGS_KEY, None)
+    _write_settings(raw)
+    return load_settings()
 
 # Providers this codebase can actually DRIVE. Keep in lockstep with app.py's
 # ws_chat provider dispatch (SessionRuntime for claude, CodexRuntime for codex,
@@ -2165,6 +2788,23 @@ def load_settings():
         "provider_stored": stored,
         "provider_ignored": detail["ignored"],
         "permission_mode_note": PERMISSION_MODE_NOTES.get(mode),
+        # THE SAME MODE, IN THE NEW VOCABULARY. Not a second setting: `access`
+        # is derived from `permission_mode` above every time it is read, so the
+        # two can never disagree and nothing new is stored. None means the
+        # stored mode is one of the advanced ones (`manual`, `dontAsk`), which
+        # the four-button list does not cover -- the screen then shows the
+        # Advanced disclosure instead of guessing a button.
+        #
+        # Resolved against the ACTIVE provider, because the mapping is
+        # per-provider: `auto` is a Claude-only option.
+        "access": access_for_native(mode, detail["id"]),
+        "access_effective": access_for_native(effective, detail["id"]),
+        "access_advanced": mode in advanced_permission_modes(),
+        # The per-provider switches, NON-DEFAULT VALUES ONLY. {} on a machine
+        # that has never touched the screen. The defaults live in
+        # provider_settings_schema(), which the same response carries, so this
+        # never restates them.
+        "provider_settings": stored_provider_settings(raw),
         # effective-vs-stored: what runs, whether it was clamped, and how to unlock
         "permission_mode_effective": effective,
         "permission_mode_effective_note": PERMISSION_MODE_NOTES.get(effective),
@@ -2217,14 +2857,44 @@ UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
 
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
                   model=None, unsafe_ack=None, model_provider=None,
-                  chat_scope=None):
+                  chat_scope=None, access=None, access_provider=None):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
     permission_mode, raises ValueError carrying the specific reason. Written
     tmp+replace so a crash mid-write cannot leave a truncated file.
+
+    `access` is the NEW vocabulary and the OLD storage: it is translated to a
+    native mode here and written to `permission_mode`, so nothing downstream --
+    the spawn path, an older build, a routine -- learns a new word. It is
+    mutually exclusive with `permission_mode`: sending both would be two
+    answers to one question, and silently preferring one of them is how a
+    screen ends up displaying a mode that is not what ran.
     """
     raw = _raw_settings()
+
+    # RESOLVED FIRST, so everything below sees one value. The translation
+    # happens here rather than in the route because the consent gate, the
+    # per-provider support check and the write all live here, and splitting
+    # them would leave the route re-implementing two of the three.
+    if access is not None:
+        if permission_mode is not None:
+            raise ValueError(
+                "send either access or permission_mode, not both -- they set "
+                "the same thing and there is no rule for which wins")
+        target = access_provider or provider or raw.get("provider") \
+            or active_provider() or "claude"
+        if not any(o["id"] == access for o in ACCESS_OPTIONS):
+            raise ValueError(
+                "unknown access %r -- must be one of: %s"
+                % (access, ", ".join(o["id"] for o in ACCESS_OPTIONS)))
+        native = access_native(access, target)
+        if native is None:
+            offered = access_by_provider().get(target) or []
+            raise ValueError(
+                "%s does not offer %r -- it offers: %s"
+                % (target, access, ", ".join(offered) or "none"))
+        permission_mode = native
 
     # Handled FIRST, so a single request can grant consent and select the mode
     # it unlocks -- otherwise the UI would have to make two round trips and
@@ -2305,7 +2975,12 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
             # unhelpful for an id that IS catalogued and cannot be run -- the
             # operator would go looking for a typo that is not there.
             if isinstance(model, str) and model.strip() in listed:
-                entry = next(m for m in models_for(target)
+                # The union, not models_for() alone: `listed` is model_ids_for(),
+                # which now spans the catalogue, so searching only the flat list
+                # here would raise StopIteration on a catalogue-only entry and
+                # turn a clear refusal into a 500.
+                entry = next(m for m in (tuple(models_for(target))
+                                         + _catalog_extra_entries(target))
                              if m["id"] == model.strip())
                 raise ValueError(
                     "model %r is listed for %s but cannot be selected: %s"
@@ -2328,6 +3003,628 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
 
     _write_settings(raw)
     return load_settings()
+
+
+# ================================================= tool versions & updates ==
+# WHICH BUILD OF EACH CLI IS ON THIS MAC, whether a newer one exists, and -- for
+# the installs Sutra is allowed to touch -- a button that fetches it.
+#
+# FOUR RULES SHAPE ALL OF IT:
+#
+# 1. TOO OLD IS A WARNING, NEVER A REFUSAL. The minimum version is the build the
+#    adapter was measured against. Running an older one is a reason to say
+#    "some of this may not work and here is how to fix it", not a reason to take
+#    the provider away. Sutra has no way to know that an older build is actually
+#    broken, and refusing on a number it did not measure would be inventing a
+#    failure.
+#
+# 2. HOMEBREW IS NEVER TOUCHED. A `brew install` is a package manager's
+#    property: replacing its binary, or shadowing it with a copy of our own,
+#    leaves the operator with two installs and a `brew upgrade` that undoes
+#    whatever we did. Those rows report "update it yourself" with the command to
+#    run, and the update route refuses them outright.
+#
+# 3. EVERY NETWORK CALL IS TIME-BOXED AND FAILS SOFT. An offline Mac gets a row
+#    with `latest_version: null` and a note, not a spinner and not an error.
+#
+# 4. NOTHING IS UPDATED WHILE A CHAT IS RUNNING ON IT. See the chat register
+#    below.
+
+#: The build each adapter was MEASURED against, from the shared spec. Not a
+#: floor the code enforces -- see rule 1 -- but the number the warning quotes.
+PROVIDER_MIN_VERSIONS = {
+    "claude": "2.1.247",
+    "codex": "0.144.4",
+    "deepseek": "1.3.2",
+}
+
+#: The npm package each CLI is published as. Claude's is listed so `npm view`
+#: can report the latest release even though Claude's own installer, not npm, is
+#: what updates it on this Mac.
+PROVIDER_NPM_PACKAGE = {
+    "claude": "@anthropic-ai/claude-code",
+    "codex": CODEX_CLI_PACKAGE,
+    "deepseek": DEEPSEEK_CLI_PACKAGE,
+}
+
+#: `<cli> --version` prints one line and exits. Generous against a cold
+#: filesystem and a Gatekeeper first-run check (codex_install.VERIFY_TIMEOUT is
+#: 60 for the same reason), not against a human.
+TOOL_VERSION_TIMEOUT = 20
+
+#: `npm view <pkg> version` is one registry round trip. Short: this rides on a
+#: screen load, and a slow registry must degrade to "unknown", never to a hang.
+TOOL_LATEST_TIMEOUT = 12
+
+#: An update is a download and an unpack, so it gets the install timeout the
+#: install modules already use.
+TOOL_UPDATE_TIMEOUT = 300
+
+#: How long an answer is reused. The installed version changes only when
+#: something installs, so it is keyed on the binary's (path, mtime, size) as
+#: well -- an update is visible immediately, and an untouched binary is never
+#: re-spawned for. The registry answer has no such key, so it is time-only.
+TOOL_VERSION_TTL = 300.0
+TOOL_LATEST_TTL = 900.0
+
+_TOOL_CACHE_LOCK = threading.Lock()
+_INSTALLED_VERSION_CACHE = {}      # bin key -> (at, version)
+_LATEST_VERSION_CACHE = {}         # package -> (at, version)
+
+#: The first version-looking token in a `--version` line. Deliberately loose:
+#: `2.1.270 (Claude Code)`, `codex-cli 0.154.0` and a bare `1.3.2` all parse,
+#: and anything else yields None rather than a wrong number.
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?(?:[-.]([0-9A-Za-z.\-]+))?")
+
+
+def invalidate_tool_caches():
+    """Forget every cached version answer.
+
+    Called after an update -- the whole point of the (path, mtime, size) key is
+    that a NEW file is a new key, but the registry answer has no such key and
+    would otherwise keep reporting the version that was latest before. Tests use
+    it for the same reason.
+    """
+    with _TOOL_CACHE_LOCK:
+        _INSTALLED_VERSION_CACHE.clear()
+        _LATEST_VERSION_CACHE.clear()
+
+
+#: Kept as the name the rest of this package uses for a test reset hook
+#: (codex_models._reset_for_tests, _reset_plan_for_tests).
+_reset_tool_caches_for_tests = invalidate_tool_caches
+
+
+def parse_version(text):
+    """The version string inside `text`, or None. Never raises."""
+    m = _VERSION_RE.search(text or "")
+    if not m:
+        return None
+    core = ".".join(p for p in m.group(1, 2, 3) if p)
+    return "%s-%s" % (core, m.group(4)) if m.group(4) else core
+
+
+def version_tuple(value):
+    """A comparable tuple for `value`, or () when it is not a version.
+
+    A pre-release suffix sorts BELOW the same release (2.0.0-rc1 < 2.0.0), which
+    is the only property the comparison here needs and the one a naive split
+    gets backwards.
+    """
+    if not isinstance(value, str):
+        return ()
+    m = _VERSION_RE.search(value)
+    if not m:
+        return ()
+    nums = tuple(int(p) for p in m.group(1, 2, 3) if p)
+    nums = nums + (0,) * (3 - len(nums))
+    return nums + ((0, m.group(4)) if m.group(4) else (1, ""))
+
+
+def version_at_least(have, want):
+    """True when `have` >= `want`. False when either cannot be parsed, so an
+    unreadable version is reported as "cannot confirm", never as "fine"."""
+    a, b = version_tuple(have), version_tuple(want)
+    return bool(a) and bool(b) and a >= b
+
+
+def installed_version(pid, bin_path=None):
+    """What `<cli> --version` prints, or None. Never raises, never spawns twice.
+
+    Cached on the binary's identity (path, mtime, size) as well as on time, so
+    an update is reflected on the very next read while an untouched binary costs
+    nothing.
+    """
+    path = bin_path or provider_bin(pid)
+    if not path:
+        return None
+    try:
+        st = os.stat(path)
+        key = (str(path), st.st_mtime, st.st_size)
+    except OSError:
+        return None
+    now = time.time()
+    with _TOOL_CACHE_LOCK:
+        hit = _INSTALLED_VERSION_CACHE.get(key)
+        if hit and (now - hit[0]) < TOOL_VERSION_TTL:
+            return hit[1]
+    ensure_login_path()
+    ensure_bundled_node_path()
+    try:
+        p = subprocess.run([str(path), "--version"], capture_output=True,
+                           text=True, timeout=TOOL_VERSION_TIMEOUT,
+                           stdin=subprocess.DEVNULL)
+        blob = (p.stdout or "").strip() or (p.stderr or "").strip()
+        found = parse_version(blob)
+    except (OSError, subprocess.SubprocessError):
+        found = None
+    with _TOOL_CACHE_LOCK:
+        if len(_INSTALLED_VERSION_CACHE) > 32:
+            _INSTALLED_VERSION_CACHE.clear()
+        _INSTALLED_VERSION_CACHE[key] = (now, found)
+    return found
+
+
+def _npm_bin():
+    """npm, through the same resolver the install modules use.
+
+    Deferred import: codex_install imports THIS module, so a top-level import
+    would be a cycle. Its npm_path() also puts the bundled Node on PATH, which
+    is what makes `npm` runnable inside the packaged .app at all.
+    """
+    try:
+        import codex_install
+        return codex_install.npm_path()
+    except Exception:
+        return shutil.which("npm")
+
+
+def npm_latest(package):
+    """`npm view <package> version`, or None. Never raises, time-boxed.
+
+    None is the OFFLINE answer as well as the no-npm answer, and the caller
+    renders both as "could not check" -- which is the truth in each case and is
+    why they do not need telling apart here.
+    """
+    if not package:
+        return None
+    now = time.time()
+    with _TOOL_CACHE_LOCK:
+        hit = _LATEST_VERSION_CACHE.get(package)
+        if hit and (now - hit[0]) < TOOL_LATEST_TTL:
+            return hit[1]
+    npm = _npm_bin()
+    found = None
+    if npm:
+        try:
+            p = subprocess.run([str(npm), "view", package, "version",
+                                "--no-audit", "--no-fund", "--loglevel=error"],
+                               capture_output=True, text=True,
+                               timeout=TOOL_LATEST_TIMEOUT,
+                               stdin=subprocess.DEVNULL)
+            if p.returncode == 0:
+                found = parse_version(p.stdout)
+        except (OSError, subprocess.SubprocessError):
+            found = None
+    with _TOOL_CACHE_LOCK:
+        _LATEST_VERSION_CACHE[package] = (now, found)
+    return found
+
+
+#: Path fragments that mean Homebrew owns this file. `/Cellar/` is the reliable
+#: one -- every brew formula lands there and `brew --prefix/bin/<x>` is a
+#: symlink into it, which realpath() follows -- and the two prefixes cover a
+#: cask or a keg that is not symlinked.
+_BREW_MARKERS = ("/cellar/", "/opt/homebrew/", "/usr/local/homebrew/",
+                 "/home/linuxbrew/")
+
+
+def _install_kind(pid, bin_path):
+    """WHO owns this binary, which decides whether Sutra may replace it.
+
+        sutra        installed into Sutra's own provider prefix by codex_install
+                     or deepseek_install. Ours to update.
+        claude-self  Claude Code's own native install (~/.local/share/claude/
+                     versions/...). `claude update` is its supported updater, so
+                     it is ours to trigger, not ours to overwrite.
+        homebrew     brew's. NEVER touched -- see rule 2.
+        npm-global   somebody's own `npm install -g`. Not ours either: replacing
+                     it would fight their npm, and shadowing it would leave two.
+        other        anything else, including a SUTRA_UI_<ID>_BIN override.
+    """
+    if not bin_path:
+        return None
+    real = os.path.realpath(str(bin_path)).lower()
+    if any(marker in real for marker in _BREW_MARKERS):
+        return "homebrew"
+    for mod_name, want in (("codex_install", "codex"),
+                           ("deepseek_install", "deepseek")):
+        if pid != want:
+            continue
+        try:
+            mod = __import__(mod_name)
+            if os.path.realpath(str(mod.managed_bin())).lower() == real:
+                return "sutra"
+        except Exception:
+            pass
+    if pid == "claude" and "/share/claude/versions/" in real:
+        return "claude-self"
+    if pid == "claude" and "/.claude/local/" in real:
+        return "claude-self"
+    if "/node_modules/" in real or "/lib/node_modules/" in real:
+        return "npm-global"
+    return "other"
+
+
+# ------------------------------------------------------------ chat register --
+# WHICH PROVIDERS HAVE A LIVE CHAT RIGHT NOW, so an update cannot pull a binary
+# out from under a running turn.
+#
+# A COUNTER, not a boolean: several panes can be open on one provider, and a
+# boolean would be cleared by the first of them to finish while the others were
+# still streaming.
+#
+# THE SPAWN PATH HAS TO CALL THIS. ws_chat lives in app.py, which this
+# workstream does not own, so the register ships here with `chat_lease()` ready
+# to wrap the connection and the wiring is handed to the integrator. Until that
+# one line exists the count is always zero and the update route's refusal is
+# inert -- stated plainly rather than left to be discovered.
+_CHAT_LOCK = threading.Lock()
+_CHATS_RUNNING = {}
+
+
+def chat_started(pid):
+    """Record that a chat has opened on `pid`. Returns the new count."""
+    with _CHAT_LOCK:
+        _CHATS_RUNNING[pid] = _CHATS_RUNNING.get(pid, 0) + 1
+        return _CHATS_RUNNING[pid]
+
+
+def chat_finished(pid):
+    """Record that a chat on `pid` has ended. Never goes below zero: a double
+    release must not make a live chat look idle."""
+    with _CHAT_LOCK:
+        n = max(_CHATS_RUNNING.get(pid, 0) - 1, 0)
+        if n:
+            _CHATS_RUNNING[pid] = n
+        else:
+            _CHATS_RUNNING.pop(pid, None)
+        return n
+
+
+def chats_running(pid=None):
+    """How many chats are open on `pid`, or the whole {pid: n} map."""
+    with _CHAT_LOCK:
+        if pid is None:
+            return dict(_CHATS_RUNNING)
+        return _CHATS_RUNNING.get(pid, 0)
+
+
+@contextlib.contextmanager
+def chat_lease(pid):
+    """`with providers.chat_lease(active_id):` around a chat connection.
+
+    The release is in a finally, so a crashed or disconnected pane cannot leave
+    a provider permanently marked busy -- which would turn the update button off
+    forever with nothing on screen to explain it.
+    """
+    chat_started(pid)
+    try:
+        yield
+    finally:
+        chat_finished(pid)
+
+
+def _update_action(pid, kind):
+    """WHAT the update button would do for this row.
+
+        claude-update  run `claude update` -- Claude Code's own updater, and
+                       the only thing that maintains a native install
+        sutra-npm      npm install into SUTRA'S OWN prefix, then point Sutra at
+                       it. The operator's own copy, if they have one, is never
+                       written to; their terminal keeps resolving exactly what
+                       it resolves today
+        manual         nothing Sutra may do. The row says what to run instead
+
+    npm-global IS `sutra-npm`, NOT `manual`, and that is the point of the
+    --prefix design: someone with their own `npm -g codex` still gets a working
+    Update button, because Sutra fetches its own copy rather than fighting
+    their npm. Homebrew is the one hard no -- a formula's files belong to brew,
+    and a `brew upgrade` later would undo whatever we did.
+
+    Claude has no `sutra-npm` arm on purpose: there is no Sutra-managed Claude
+    install to update into, and quietly shadowing the operator's Claude Code
+    with a second copy is a far bigger act than doing the same for a provider
+    CLI Sutra installed itself.
+    """
+    if kind == "homebrew":
+        return "manual"
+    if pid == "claude":
+        return "claude-update" if kind == "claude-self" else "manual"
+    if kind is None:
+        return "manual"           # nothing installed; Install, not Update
+    return "sutra-npm"
+
+
+def _tool_note(pid, bin_path, kind, installed, latest, minimum, action):
+    """The one sentence the row shows, or None when there is nothing to say."""
+    package = PROVIDER_NPM_PACKAGE.get(pid, pid)
+    if not bin_path:
+        return ("the `%s` CLI is not on this Mac, so there is no version to "
+                "report." % _bin_for(pid, pid))
+    parts = []
+    if installed and minimum and not version_at_least(installed, minimum):
+        parts.append(
+            "this is version %s, and Sutra's %s support was built and measured "
+            "against %s, so some of it may not work here. Nothing is blocked -- "
+            "updating is the fix." % (installed, pid, minimum))
+    if kind == "homebrew":
+        parts.append("Homebrew installed this, so Sutra will not touch it. "
+                     "Update it yourself with `brew upgrade %s`."
+                     % package.split("/")[-1])
+    elif action == "manual" and pid == "claude":
+        parts.append("this `claude` did not come from Claude Code's own "
+                     "installer, so `claude update` is not what maintains it. "
+                     "Update it the way you installed it.")
+    elif kind == "npm-global" and action == "sutra-npm":
+        parts.append("this copy came from your own global npm. Updating here "
+                     "installs a separate copy into Sutra's folder and points "
+                     "Sutra at that -- yours is left exactly as it is.")
+    if installed and not latest:
+        parts.append("the npm registry could not be reached, so whether a "
+                     "newer version exists is unknown.")
+    return " ".join(parts) or None
+
+
+def _tool_row(pid, name):
+    """One provider's version row. Never raises: every probe inside fails soft."""
+    binary = _bin_for(pid, pid)
+    bin_path = provider_bin(pid)
+    kind = _install_kind(pid, bin_path)
+    installed = installed_version(pid, bin_path) if bin_path else None
+    package = PROVIDER_NPM_PACKAGE.get(pid)
+    latest = npm_latest(package) if package else None
+    minimum = PROVIDER_MIN_VERSIONS.get(pid)
+    action = _update_action(pid, kind)
+    if action == "claude-update":
+        command = "%s update" % (bin_path or binary)
+    elif action == "sutra-npm":
+        command = "npm install %s@%s --prefix %s" % (
+            package, latest or "latest",
+            SETTINGS_PATH.parent / "providers" / pid)
+    elif kind == "homebrew":
+        command = "brew upgrade %s" % (package or pid).split("/")[-1]
+    elif kind == "npm-global":
+        command = "npm install -g %s" % package
+    else:
+        command = None
+    return {
+        "id": pid,
+        "name": name,
+        "bin": bin_path or binary,
+        "installed_version": installed,
+        "latest_version": latest,
+        "minimum": minimum,
+        "update_available": bool(installed and latest
+                                 and version_tuple(latest) > version_tuple(installed)),
+        "too_old": bool(installed and minimum
+                        and not version_at_least(installed, minimum)),
+        # Did SUTRA put the binary that is in use there? A fact about the
+        # CURRENT install, and NOT the same question as "may the button be
+        # pressed" -- an operator's own global npm copy is not Sutra-managed and
+        # is still updatable, because Sutra fetches its own rather than touching
+        # theirs. `can_update` is the button's answer.
+        "managed_by_sutra": kind == "sutra",
+        "install_kind": kind,
+        "update_action": action,
+        "can_update": action != "manual" and chats_running(pid) == 0,
+        "update_command": command,
+        # Whether the button may be pressed right now, and why not. Separate
+        # from can_update so the client renders a disabled button with a reason
+        # rather than hiding the control and leaving nothing to explain.
+        "busy": chats_running(pid) > 0,
+        "package": package,
+        "note": _tool_note(pid, bin_path, kind, installed, latest, minimum,
+                           action),
+    }
+
+
+def _warm_latest_versions(pids):
+    """Fetch the three registry answers CONCURRENTLY, into the cache.
+
+    Serially, an offline Mac pays TOOL_LATEST_TIMEOUT three times before the
+    screen draws -- about half a minute of nothing, for three answers that are
+    all going to be "unknown". Each lookup has its own cache key, so a single
+    negative result cannot stand in for the others; running them at once is
+    what turns that into one timeout.
+
+    Failures are swallowed on purpose: npm_latest() already fails soft, and
+    this is only a cache warm -- _tool_row() calls it again and gets the cached
+    answer, or does the lookup itself if this could not.
+    """
+    packages = [p for p in (PROVIDER_NPM_PACKAGE.get(pid) for pid in pids) if p]
+    if len(packages) < 2:
+        return
+    try:
+        import concurrent.futures as _cf
+        with _cf.ThreadPoolExecutor(max_workers=len(packages)) as pool:
+            list(pool.map(npm_latest, packages))
+    except Exception:
+        pass
+
+
+def tools_report():
+    """Every provider that has a CLI to version, in catalogue order.
+
+    gemini is absent: it has no adapter and no declared minimum, so there is
+    nothing true to say about its version and a row of nulls would read as a
+    broken probe rather than as "not supported".
+    """
+    pids = [spec["id"] for spec in _CATALOG if spec["id"] in PROVIDER_MIN_VERSIONS]
+    _warm_latest_versions(pids)
+    names = {spec["id"]: spec["name"] for spec in _CATALOG}
+    return [_tool_row(pid, names[pid]) for pid in pids]
+
+
+class ToolUpdateError(RuntimeError):
+    """A refused or failed update, with a machine-readable `code`. Same shape as
+    CodexInstallError and DeepSeekInstallError so one route handles all three."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _tail(text, limit=4000):
+    s = (text or "").strip()
+    return s[-limit:] if len(s) > limit else s
+
+
+def update_tool(pid):
+    """Update one provider's CLI. Returns {ok, version_before, version_after, log}.
+
+    Raises ToolUpdateError with a code on every refusal, so a caller never has
+    to read the log to find out whether anything happened.
+
+    THE REFUSALS, in the order they are checked:
+      UNKNOWN_PROVIDER   not a provider with a CLI
+      CHAT_RUNNING       a chat is live on it -- rule 4
+      NOT_INSTALLED      nothing to update
+      NOT_OURS           Homebrew's or a global npm's -- rules 2 and the note
+      NO_NPM             npm is not reachable and the update needs it
+      UPDATE_FAILED      the command ran and did not work; the log says how
+
+    NOTHING IS REGISTERED UNTIL THE NEW BINARY RUNS. The npm path installs into
+    Sutra's own prefix, proves `--version` answers there, and only then points
+    Sutra at it -- the same order codex_install.install() uses, and for the same
+    reason: a registered path is a claim the panel renders as "ready".
+    """
+    if pid not in PROVIDER_MIN_VERSIONS:
+        raise ToolUpdateError("UNKNOWN_PROVIDER",
+                              "there is no updatable CLI called %r" % pid)
+    if chats_running(pid) > 0:
+        raise ToolUpdateError("CHAT_RUNNING", (
+            "a %s chat is open, and updating the CLI underneath a running turn "
+            "would kill it. Close the chat and try again." % pid))
+
+    bin_path = provider_bin(pid)
+    if not bin_path:
+        raise ToolUpdateError("NOT_INSTALLED", (
+            "the `%s` CLI is not on this Mac, so there is nothing to update. "
+            "Install it first." % _bin_for(pid, pid)))
+
+    kind = _install_kind(pid, bin_path)
+    action = _update_action(pid, kind)
+    before = installed_version(pid, bin_path)
+
+    if kind == "homebrew":
+        raise ToolUpdateError("NOT_OURS", (
+            "Homebrew installed this copy (%s), and Sutra will not touch a "
+            "package manager's files. Update it yourself: `brew upgrade %s`."
+            % (bin_path, (PROVIDER_NPM_PACKAGE.get(pid) or pid).split("/")[-1])))
+
+    if pid == "claude":
+        if action != "claude-update":
+            raise ToolUpdateError("NOT_OURS", (
+                "this `claude` was not installed by Claude Code's own installer "
+                "(%s), so `claude update` is not what maintains it. Update it "
+                "the way you installed it." % bin_path))
+        ensure_login_path()
+        try:
+            p = subprocess.run([str(bin_path), "update"], capture_output=True,
+                               text=True, timeout=TOOL_UPDATE_TIMEOUT,
+                               stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            raise ToolUpdateError("TIMEOUT", (
+                "`claude update` was still running after %ds and was stopped. "
+                "Nothing here changed it; run it in a terminal to see what it "
+                "is waiting on." % TOOL_UPDATE_TIMEOUT))
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ToolUpdateError("UPDATE_FAILED",
+                                  "`claude update` could not be run (%s)."
+                                  % type(exc).__name__)
+        log = _tail((p.stdout or "") + ("\n" + p.stderr if p.stderr else ""))
+        invalidate_tool_caches()
+        after = installed_version(pid, provider_bin(pid))
+        if p.returncode != 0:
+            raise ToolUpdateError("UPDATE_FAILED", (
+                "`claude update` exited %s. It said: %s"
+                % (p.returncode, _tail(log, 400) or "nothing.")))
+        return {"ok": True, "provider": pid, "version_before": before,
+                "version_after": after, "log": log,
+                "changed": bool(after and after != before)}
+
+    # codex / deepseek: npm, into SUTRA'S OWN PREFIX and nowhere else.
+    #
+    # A global-npm copy is NOT refused here. Installing into our own prefix
+    # writes nothing the operator owns -- their `codex` stays exactly where and
+    # what it is, and their terminal keeps resolving it -- so there is no file
+    # of theirs to protect. What changes is only which copy SUTRA uses, which
+    # is what set_provider_bin has always meant. Homebrew is refused above
+    # because there the files really would be a package manager's.
+    mod_name = "codex_install" if pid == "codex" else "deepseek_install"
+    try:
+        mod = __import__(mod_name)
+    except Exception as exc:
+        raise ToolUpdateError("UPDATE_FAILED",
+                              "the %s installer could not be loaded (%s)."
+                              % (pid, type(exc).__name__))
+
+    npm = _npm_bin()
+    if not npm:
+        raise ToolUpdateError("NO_NPM", (
+            "npm is not reachable from here, and the %s CLI is an npm package "
+            "(%s), so it cannot be updated without it."
+            % (pid, PROVIDER_NPM_PACKAGE.get(pid))))
+
+    package = PROVIDER_NPM_PACKAGE[pid]
+    want = npm_latest(package)
+    spec = "%s@%s" % (package, want) if want else "%s@latest" % package
+    root = mod.prefix()
+    try:
+        mod._write_manifest(root)
+    except OSError as exc:
+        raise ToolUpdateError("UPDATE_FAILED", (
+            "could not prepare %s for the update (%s). Nothing was changed."
+            % (root, type(exc).__name__)))
+    try:
+        p = subprocess.run([str(npm), "install", spec, "--prefix", str(root),
+                            "--no-audit", "--no-fund", "--loglevel=error"],
+                           capture_output=True, text=True,
+                           timeout=TOOL_UPDATE_TIMEOUT,
+                           stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise ToolUpdateError("TIMEOUT", (
+            "npm was still installing %s after %ds, so it was stopped. That is "
+            "usually a slow or blocked connection. Nothing was registered."
+            % (spec, TOOL_UPDATE_TIMEOUT)))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ToolUpdateError("UPDATE_FAILED",
+                              "npm could not be run (%s), so %s was not updated."
+                              % (type(exc).__name__, spec))
+    log = _tail((p.stdout or "") + ("\n" + p.stderr if p.stderr else ""))
+    if p.returncode != 0:
+        raise ToolUpdateError("UPDATE_FAILED", (
+            "npm could not install %s (exit %d). It said: %s"
+            % (spec, p.returncode, _tail(log, 400) or "nothing.")))
+
+    got = mod.managed_bin()
+    invalidate_tool_caches()
+    after = installed_version(pid, str(got))
+    if not after:
+        raise ToolUpdateError("VERIFY_FAILED", (
+            "%s was installed to %s but `--version` did not answer there, so "
+            "nothing has been repointed and the CLI you had is still the one "
+            "in use." % (spec, got)))
+    try:
+        set_provider_bin(pid, str(got))
+    except (ValueError, OSError) as exc:
+        raise ToolUpdateError("REGISTER_FAILED", (
+            "%s was updated at %s and runs, but Sutra could not record where "
+            "(%s)." % (spec, got, type(exc).__name__)))
+    return {"ok": True, "provider": pid, "version_before": before,
+            "version_after": after, "log": log,
+            "changed": bool(after != before)}
 
 
 if __name__ == "__main__":

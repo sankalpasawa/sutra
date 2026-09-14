@@ -1,0 +1,78 @@
+{
+  "argv": [
+    "<app_dir>/qa/fake_codex_agent.py",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "-C",
+    "<workdir>",
+    "--sandbox",
+    "read-only",
+    "-c",
+    "approval_policy=never",
+    "-"
+  ],
+  "argv_as_spawned": [
+    [
+      "<app_dir>/qa/fake_codex_agent.py",
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "-C",
+      "<workdir>",
+      "--sandbox",
+      "read-only",
+      "-c",
+      "approval_policy=never",
+      "-"
+    ]
+  ],
+  "prompt_on_stdin": "hello",
+  "frames": [
+    {
+      "type": "session",
+      "id": "01a08191-7175-7f62-<id:1>"
+    },
+    {
+      "type": "thinking"
+    },
+    {
+      "type": "token",
+      "text": "still here"
+    },
+    {
+      "type": "done",
+      "session": "01a08191-7175-7f62-<id:1>",
+      "duration_ms": null,
+      "num_turns": null,
+      "cost_usd": null,
+      "quota": {
+        "output_tokens": 2
+      }
+    }
+  ],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "01a08191-7175-7f62-<id:1>",
+      "got_result": true,
+      "error": null,
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "01a08191-7175-7f62-<id:1>",
+    "got_text": true,
+    "got_result": true,
+    "result_error": null,
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": "Reading additional input from stdin..."
+  },
+  "state": "idle",
+  "session_id_field": "01a08191-7175-7f62-<id:1>",
+  "last_warning": null,
+  "open_tools": []
+}

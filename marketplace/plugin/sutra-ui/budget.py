@@ -58,6 +58,35 @@ WINDOWS = {
         "opus": 1000000,
         "sonnet": 1000000,
         "haiku": 200000,     # Haiku 4.5. Five times smaller than its siblings.
+        # ---- the rich catalogue's ids (providers._CLAUDE_CATALOG_MODELS and
+        # _CLAUDE_MORE_MODELS). Every one of them is accepted by the CLI --
+        # probed 2026-09-14 against 2.1.270 -- so every one needs a ceiling
+        # here or it resolves through the unknown-model path to the 200K floor
+        # and silently gives up 800K of window.
+        #
+        # `best` resolves to the newest model the account can run, Fable 5.1
+        # today. MEASURED: Fable 5 reports a 1,000,000-token contextWindow (the
+        # `fable` row above). 5.1 is assumed to hold the same window, which is
+        # the only direction it is safe to be wrong in for a newest-model alias
+        # -- if it were ever smaller the payload would be over-sized, so this
+        # is the one entry worth re-checking when Fable moves again.
+        "best": 1000000,
+        # DECLARED, NOT MEASURED. These four are pinned historical snapshots the
+        # CLI still accepts. Nothing on this Mac reports their contextWindow --
+        # `claude --model <id>` answers with no window figure for a snapshot id
+        # -- so 1M is carried forward from their current-generation siblings
+        # rather than read off anything. If one of them turns out to be smaller,
+        # the failure is an over-sized payload; that is why it is written down
+        # here as an assumption instead of left implicit.
+        "claude-opus-4-8": 1000000,
+        "claude-opus-4-7": 1000000,
+        "claude-opus-4-6": 1000000,
+        "claude-sonnet-4-6": 1000000,
+        # The `[1m]` suffix IS the request for the 1M window -- it is part of
+        # the id string that reaches `--model`, not a separate flag -- so these
+        # two are 1M by construction rather than by assumption.
+        "opus[1m]": 1000000,
+        "sonnet[1m]": 1000000,
     },
     "deepseek": {
         "deepseek-v4-pro": 1000000,

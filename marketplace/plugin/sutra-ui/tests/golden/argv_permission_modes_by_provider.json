@@ -1,0 +1,52 @@
+{
+  "all": [
+    "plan",
+    "acceptEdits",
+    "bypassPermissions",
+    "auto",
+    "manual",
+    "dontAsk"
+  ],
+  "unsafe": [
+    "acceptEdits",
+    "bypassPermissions"
+  ],
+  "by_provider": {
+    "claude": [
+      "plan",
+      "acceptEdits",
+      "bypassPermissions",
+      "auto",
+      "manual",
+      "dontAsk"
+    ],
+    "codex": [
+      "plan",
+      "acceptEdits",
+      "bypassPermissions"
+    ],
+    "deepseek": [
+      "plan",
+      "acceptEdits",
+      "bypassPermissions"
+    ]
+  },
+  "claude": [
+    "plan",
+    "acceptEdits",
+    "bypassPermissions",
+    "auto",
+    "manual",
+    "dontAsk"
+  ],
+  "codex": [
+    "plan",
+    "acceptEdits",
+    "bypassPermissions"
+  ],
+  "deepseek": [
+    "plan",
+    "acceptEdits",
+    "bypassPermissions"
+  ]
+}

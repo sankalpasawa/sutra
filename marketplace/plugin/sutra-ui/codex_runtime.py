@@ -22,14 +22,17 @@ provider's file:
   - `codex exec` is ONE PROCESS PER TURN. It reads the prompt, streams JSONL to
     stdout, and EXITS. Continuity comes from re-spawning with `resume <id>`.
 
-The lifecycle members below (alive / kill_group / stop / clear / subscribe /
-_fanout / _observe) are duplicated from SessionRuntime rather than shared,
-exactly as AcpRuntime.kill_group duplicates it and says so. The duplication is
-the point: nothing in this file can change Claude's or DeepSeek's behaviour,
-because nothing in those files is edited or subclassed. Only two genuinely
-provider-neutral helpers are imported -- `_drain_to_newline` (an asyncio
-stream-limit workaround) and `TurnQueue` -- which is precisely what
-acp_runtime.py already imports from there.
+The lifecycle members (alive / kill_group / stop / clear / subscribe /
+unsubscribe / _fanout / _observe / the spawn itself) USED TO BE duplicated from
+SessionRuntime here, on the argument that the duplication was the point. They
+now come from proc_group.ProcRuntime, which Claude and ACP share. The two
+properties those copies existed to protect -- process_group=0 on the spawn and
+killpg on the whole group -- are the same property for every provider, and
+three copies meant a fix could be applied twice. proc_group.py records what is
+deliberately NOT shared (frame-inferred state, the ACP cancel, the post-spawn
+handshake). Everything below this line -- the wire format, the translation, the
+turn -- is still codex's alone and nothing in Claude's or DeepSeek's file
+touches it.
 
 THE PROCESS IS ONE-SHOT, AND THAT IS WHY THIS FILE LOOKS SIMPLER
 ----------------------------------------------------------------
@@ -88,8 +91,10 @@ from Claude's token stream and is the accepted v1 trade.
 import asyncio
 import json
 import os
-import signal
+import signal    # noqa: F401 -- kept for callers that import it from here
 
+from proc_group import ProcRuntime
+import tool_kinds
 from session_runtime import _drain_to_newline, _tool_output, _tool_summary, TurnQueue
 
 #: How long to wait for a one-shot `codex exec` to exit after it emitted a
@@ -119,7 +124,7 @@ _TOOL_DONE_STATUSES = ("completed", "failed")
 _TRANSLATED_ITEM_TYPES = ("agent_message", "command_execution")
 
 
-class CodexRuntime:
+class CodexRuntime(ProcRuntime):
     """Owns exactly one `codex exec` subprocess for one turn of one chat pane.
 
     Field meanings are kept identical to SessionRuntime's so the socket layer
@@ -151,126 +156,23 @@ class CodexRuntime:
         self.last_warning = None
 
     # ------------------------------------------------------------ lifecycle --
-    # alive / kill_group / clear are IDENTICAL to SessionRuntime's -- the same
-    # process-group semantics apply to any subprocess, and AcpRuntime already
-    # duplicates them for the same reason. Copied rather than imported so this
-    # provider cannot be changed by an edit to Claude's file.
-
-    @property
-    def alive(self):
-        return self.proc is not None and self.proc.returncode is None
-
-    def kill_group(self):
-        """Kill the process GROUP, not just the direct child.
-
-        `codex exec` spawns the model's shell commands as children (measured:
-        `/bin/zsh -lc '...'`), so signalling only the parent leaves them
-        holding the stdout pipe and the read loop never ends. spawn() uses
-        process_group=0 to make the child a group leader (a new group, not a
-        new session -- see spawn()). Idempotent.
-        """
-        p = self.proc
-        if p is None or p.returncode is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                return False
-        return True
-
-    def stop(self):
-        """The OPERATOR pressed stop: record the intent, THEN kill.
-
-        Order matters for the same reason it does in SessionRuntime.stop -- the
-        stdout loop can end between the signal and the assignment, and would
-        then report the operator's own interrupt as a crash.
-
-        There is no in-band cancel to try first (unlike ACP's session/cancel):
-        `codex exec` has no control channel, its stdin is already closed by the
-        time a turn is streaming, and killing the group is the only interrupt.
-        Measured 2026-09-08: SIGTERM mid-turn ends stdout with NO terminal
-        event, which prompt_turn reports as eof -- and ws_chat's existing
-        `if rt.stopped:` branch turns that into a `stopped` frame while keeping
-        session_id, so the next message resumes the same thread.
-        """
-        self.stopped = True
-        self.state = "stopped"
-        if self.turn_queue is not None:
-            self.turn_queue.clear_shadow()
-        return self.kill_group()
-
-    def clear(self):
-        """Forget the process reference. Deliberately does NOT touch
-        session_id: the codex thread outlives every process that served it,
-        and dropping it here would silently start a new conversation on the
-        next message."""
-        self.proc = None
-        self.key = None
-
-    # ------------------------------------------------------------ observers --
-    # Same contract as SessionRuntime: the websocket's send_json is the PRIMARY
-    # emit and its exceptions propagate; subscribers are additional observers
-    # and a broken one is dropped per frame rather than costing a turn.
-
-    def subscribe(self, cb):
-        self.subscribers.append(cb)
-        return cb
-
-    def unsubscribe(self, cb):
-        try:
-            self.subscribers.remove(cb)
-        except ValueError:
-            pass
-
-    def _observe(self, frame):
-        """Update coarse turn state from a frame passing through the fanout.
-        Purely mechanical, no policy -- mirrors SessionRuntime._observe so
-        Shadow's state machine reads the same on a Codex pane."""
-        t = frame.get("type")
-        if t == "retrying":
-            self.state = "retrying"
-        elif t in ("token", "sysinit", "session", "thinking"):
-            if self.state != "stopped":
-                self.state = "active"
-        elif t == "tool":
-            if self.state != "stopped":
-                self.state = "active"
-            if frame.get("phase") == "start" and frame.get("id"):
-                self.open_tools.add(frame["id"])
-            elif frame.get("phase") == "end" and frame.get("id"):
-                self.open_tools.discard(frame["id"])
-        elif t == "_turn_boundary":
-            if self.state != "stopped":
-                self.state = "idle"
-            self.open_tools.clear()
-
-    async def _notify_subscribers(self, frame):
-        self._observe(frame)
-        for cb in list(self.subscribers):
-            try:
-                res = cb(frame)
-                if asyncio.iscoroutine(res):
-                    await res
-            except Exception:
-                pass
-
-    def _fanout(self, primary):
-        """Wrap the primary emit with subscriber fan-out. Snapshot per FRAME,
-        so an observer attaching mid-turn starts seeing frames then."""
-        async def emit(frame):
-            self._observe(frame)
-            await primary(frame)
-            for cb in list(self.subscribers):
-                try:
-                    res = cb(frame)
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-        return emit
+    # alive / kill_group / stop / clear and the observer surface (subscribe /
+    # unsubscribe / _observe / _notify_subscribers / _fanout) come from
+    # proc_group.ProcRuntime, shared with Claude and ACP.
+    #
+    # `stop` HAS NO IN-BAND CANCEL TO TRY FIRST, unlike ACP's session/cancel:
+    # `codex exec` has no control channel, its stdin is already closed by the
+    # time a turn is streaming, and killing the group is the only interrupt.
+    # ProcRuntime._before_kill is therefore left at its no-op default.
+    # Measured 2026-09-08: SIGTERM mid-turn ends stdout with NO terminal event,
+    # which prompt_turn reports as eof -- and ws_chat's existing `if
+    # rt.stopped:` branch turns that into a `stopped` frame while KEEPING
+    # session_id, so the next message resumes the same thread.
+    #
+    # `clear` deliberately does NOT touch session_id: the codex thread outlives
+    # every process that served it (one process per turn), and dropping it here
+    # would silently start a new conversation on the next message. ProcRuntime's
+    # clear() only forgets proc + key, which is exactly that.
 
     # ---------------------------------------------------------------- spawn --
 
@@ -295,23 +197,7 @@ class CodexRuntime:
         default raises "Separator is not found, and chunk exceed the limit",
         which would kill the socket mid-answer.
         """
-        p = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=8 * 1024 * 1024,
-            env=dict(os.environ, **(env or {})),
-            # A new process GROUP, not a new SESSION. kill_group needs a group
-            # leader; a session leader additionally becomes its own
-            # TCC-responsible process on macOS and loses Sutra's
-            # Files-and-Folders grants, killing any provider spawned under
-            # ~/Desktop with `EPERM: uv_cwd` at startup. See AcpRuntime.spawn.
-            process_group=0,
-        )
-        self.proc = p
-        self.key = key
-        return p
+        return await self._spawn_process(args, cwd, key, env=env)
 
     async def send_prompt(self, msg):
         """Deliver the turn's prompt on stdin and CLOSE the stream.
@@ -361,6 +247,14 @@ class CodexRuntime:
             return
         command = item.get("command")
         command = command if isinstance(command, str) else ""
+        itype = item.get("type") or ""
+        summary = _tool_summary({"command": command})
+        # ADDITIVE: kind/title/detail/meta beside every key this frame already
+        # carried. codex's ITEM TYPE is what the table is keyed on here, because
+        # the item type is the only tool identity this surface publishes -- see
+        # the `name` field below.
+        k = tool_kinds.classify("codex", itype, {"command": command},
+                                {"title": summary})
         await self._emit({
             "type": "tool",
             "phase": "start",
@@ -368,7 +262,7 @@ class CodexRuntime:
             # The item type IS the tool name here. codex has no per-tool names
             # on this surface, so inventing "Bash" would assert a Claude tool
             # identity that nothing sent us.
-            "name": item.get("type") or "",
+            "name": itype,
             # Through the SAME helper Claude's tool frames use, so the summary
             # is whitespace-collapsed and capped identically rather than by a
             # second rule that could drift.
@@ -378,6 +272,10 @@ class CodexRuntime:
             "command": command,
             # codex publishes no caller/agent attribution on this surface.
             "caller": None,
+            "kind": k["kind"],
+            "title": k["title"],
+            "detail": k["detail"],
+            "meta": k["meta"],
         })
 
     async def _emit_tool_end(self, item):
@@ -391,11 +289,20 @@ class CodexRuntime:
         # exit_code 3 with status `completed` (it ran and the command itself
         # failed) are both failures the operator has to see.
         ok = (status == "completed") and (exit_code == 0 or exit_code is None)
+        # THE ONE END FRAME THAT CAN CARRY DETAIL WITHOUT GUESSING: codex reports
+        # the exit code on the completed item, so "exit 3" is a fact already in
+        # hand rather than something re-derived. Claude's and ACP's end frames
+        # carry only an id, which is why neither classifies at the end.
+        k = tool_kinds.classify("codex", item.get("type") or "", None,
+                                {"exit_code": exit_code})
         await self._emit({
             "type": "tool",
             "phase": "end",
             "id": tool_id,
             "ok": ok,
+            "kind": k["kind"],
+            "detail": k["detail"],
+            "meta": k["meta"],
             # BEST-EFFORT DISPLAY DATA, capped through the same helper Claude's
             # tool_result output goes through.
             #

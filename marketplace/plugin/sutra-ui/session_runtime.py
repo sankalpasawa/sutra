@@ -8,7 +8,10 @@ freezes the behavior this move must not change.
 import asyncio
 import json
 import os
-import signal
+import signal    # noqa: F401 -- re-exported; tests and old callers import it here
+
+from proc_group import ProcRuntime
+import tool_kinds
 
 
 def _tool_output(content, limit=4000):
@@ -145,8 +148,14 @@ async def _drain_to_newline(reader):
             return False
 
 
-class SessionRuntime:
+class SessionRuntime(ProcRuntime):
     """Owns exactly one agent subprocess for one chat channel.
+
+    Process lifecycle (alive / kill_group / stop / clear / _spawn_process) and
+    observer fan-out (subscribe / unsubscribe / _observe / _notify_subscribers /
+    _fanout) come from proc_group.ProcRuntime, which the Codex and ACP runtimes
+    share. They used to be copied into all three files; see proc_group.py for
+    why one implementation is the honest version of that guarantee.
 
     These three fields were a closure dict (`live`) inside ws_chat; the
     meanings are unchanged:
@@ -183,127 +192,27 @@ class SessionRuntime:
         # condition (a coalesced Event cannot stall a non-empty queue).
         self.queue_event = asyncio.Event()
 
-    def stop(self):
-        """The OPERATOR pressed stop (S22): record the intent, then kill the
-        group. Kept as one method so the reader task cannot get the order
-        wrong -- the flag must be set BEFORE the kill, or the stdout loop can
-        end between the signal and the assignment and report the operator's
-        own interrupt as a crash.
-
-        Ordering contract (codex fold, 2026-08-25):
-        - a turn cut by stop still ends with a `_turn_boundary` to observers
-          (eof context) -- watchers always see the turn close;
-        - queued SHADOW turns are dropped, queued OPERATOR turns are kept
-          (the founder's words outrank automation, even mid-interrupt);
-        - the ws handler unregisters from the registry AFTER the kill, in its
-          finally -- a lookup during teardown may briefly see a dying runtime,
-          which is why sayers must check `alive` before writing."""
-        self.stopped = True
-        self.state = "stopped"
-        if getattr(self, "turn_queue", None) is not None:
-            self.turn_queue.clear_shadow()
-        return self.kill_group()
-
-    def _observe(self, frame):
-        """S21: update coarse state from a frame passing through the fanout.
-        Purely mechanical -- no policy, no timers."""
-        t = frame.get("type")
-        if t == "retrying":
-            self.state = "retrying"
-        elif t in ("token", "sysinit", "session", "thinking"):
-            if self.state != "stopped":
-                self.state = "active"
-        elif t == "tool":
-            if self.state != "stopped":
-                self.state = "active"
-            if frame.get("phase") == "start" and frame.get("id"):
-                self.open_tools.add(frame["id"])
-            elif frame.get("phase") == "end" and frame.get("id"):
-                self.open_tools.discard(frame["id"])
-        elif t == "_turn_boundary":
-            if self.state != "stopped":
-                self.state = "idle"
-            self.open_tools.clear()
-
-    async def _notify_subscribers(self, frame):
-        """Deliver one frame to the observers only (never the primary).
-        Snapshot + isolation semantics identical to _fanout."""
-        self._observe(frame)
-        for cb in list(self.subscribers):
-            try:
-                res = cb(frame)
-                if asyncio.iscoroutine(res):
-                    await res
-            except Exception:
-                pass
-
-    def subscribe(self, cb):
-        """Register an observer for client frames. cb(frame) may be sync or
-        async; it is called AFTER the primary emit for each frame. Returns cb
-        so callers can hold it for unsubscribe."""
-        self.subscribers.append(cb)
-        return cb
-
-    def unsubscribe(self, cb):
-        try:
-            self.subscribers.remove(cb)
-        except ValueError:
-            pass
-
-    def _fanout(self, primary):
-        """Wrap the primary emit with subscriber fan-out.
-
-        Snapshot semantics: the subscriber list is captured per FRAME (not per
-        turn) so an observer attached mid-turn starts seeing frames then --
-        the Shadow watcher attaches to already-running panes. Primary
-        exceptions propagate (frozen behavior); subscriber exceptions are
-        swallowed per-frame -- an observer must never cost the operator a turn.
-        """
-        import asyncio as _asyncio
-
-        async def emit(frame):
-            self._observe(frame)
-            await primary(frame)
-            for cb in list(self.subscribers):
-                try:
-                    res = cb(frame)
-                    if _asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-        return emit
-
-    @property
-    def alive(self):
-        return self.proc is not None and self.proc.returncode is None
-
-    def kill_group(self):
-        """Kill the process GROUP, not just the direct child.
-
-        `claude` spawns helpers; signalling only the parent leaves them holding
-        the stdout pipe, so the read loop never ends and the turn never actually
-        stops. spawn() uses process_group=0, which makes the child a group
-        leader so this reaches its descendants too (a new group, not a new
-        session -- see spawn() for why the session detach was dropped).
-        Idempotent: a dead or absent process returns False and signals nothing.
-        """
-        p = self.proc
-        if p is None or p.returncode is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                return False
-        return True
+    # stop / _observe / _notify_subscribers / subscribe / unsubscribe /
+    # _fanout / alive / kill_group all come from ProcRuntime. Claude INFERS its
+    # coarse state from the frames passing through the fanout, which is
+    # ProcRuntime's default (OBSERVES_FRAMES = True).
 
     async def spawn(self, args, cwd, key, env=None):
         """Start the persistent process and adopt it as self.proc.
 
+        The process creation itself is ProcRuntime._spawn_process, shared with
+        Codex and ACP: same PIPE on all three streams, same 8 MiB line limit,
+        same process_group=0 (and the same reason the session detach was
+        dropped). No ANTHROPIC_API_KEY in the inherited env -> subscription
+        auth, which is the socket layer's refusal, not this one's.
+
+        stdin is a PIPE, not DEVNULL: it is the channel the turns arrive on.
+        (DEVNULL was there because a plain inherited stdin made claude wait 3s
+        for piped input on every message -- with stream-json that wait IS the
+        feature.)
+
         On OSError nothing is assigned -- the caller keeps whatever stale proc
-        was there (the socket layer\'s liveness check already treats a dead one
+        was there (the socket layer's liveness check already treats a dead one
         as not-alive), and the error policy stays at the socket layer.
 
         env: optional environment OVERLAY for this spawn only (P5: Shadow's
@@ -311,36 +220,7 @@ class SessionRuntime:
         shadow tools; chat panes never get the marker). Default None keeps the
         frozen behavior byte-identical.
         """
-        p = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd,
-            # stdin is a PIPE, not DEVNULL: it is the channel the turns arrive
-            # on. (DEVNULL was there because a plain inherited stdin made claude
-            # wait 3s for piped input on every message -- with stream-json that
-            # wait IS the feature.)
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            # 8 MiB, not asyncio\'s 64 KiB default. stream-json is ONE JSON
-            # object per line, and a `user` frame carrying a tool_result
-            # routinely exceeds 64 KiB -- any Read of a sizeable file, any
-            # verbose Bash capture. At the default, StreamReader.readline()
-            # raises "Separator is not found, and chunk exceed the limit",
-            # which killed the socket and the child mid-answer. Reproduced
-            # directly: a 200 KB line raises at the default and reads clean at
-            # this limit.
-            limit=8 * 1024 * 1024,
-            env=dict(os.environ, **(env or {})),  # no ANTHROPIC_API_KEY -> subscription auth
-            # A new process GROUP, not a new SESSION -- kill_group needs a group
-            # leader, nothing needs a session leader. A session leader becomes
-            # its own TCC-responsible process on macOS and loses Sutra's
-            # Files-and-Folders grants, so a CLI spawned under ~/Desktop died at
-            # startup with `EPERM: uv_cwd`. See AcpRuntime.spawn for the full
-            # note; Claude has the same latent bug and the same fix.
-            process_group=0,
-        )
-        self.proc = p
-        self.key = key
-        return p
+        return await self._spawn_process(args, cwd, key, env=env)
 
     async def send_user_frame(self, msg):
         """One turn: one stream-json user frame on stdin.
@@ -355,14 +235,6 @@ class SessionRuntime:
                         "content": [{"type": "text", "text": msg}]},
         }) + "\n").encode("utf-8"))
         await self.proc.stdin.drain()
-
-    def clear(self):
-        """Forget the process reference after the socket layer has drained and
-        reaped it. Deliberately does NOT read or discard pending output --
-        hiding unread terminal output here would swallow the very stderr the
-        error policy reports."""
-        self.proc = None
-        self.key = None
 
     async def demux_turn(self, emit, session_id):
         """S20 wrapper: run the turn, then hand a boundary event to the
@@ -455,6 +327,31 @@ class SessionRuntime:
                 for blk in (ev.get("message") or {}).get("content", []):
                     # fallback when partial deltas are absent: emit full text blocks
                     if blk.get("type") == "text" and blk.get("text") and not got_text:
+                        # SET THE FLAG, which this branch did not (found by the
+                        # safety-net workstream, 2026-09-14). It emitted a
+                        # `token` and left got_text False, so a turn answered
+                        # WITHOUT partial deltas looked text-less to the socket
+                        # layer.
+                        #
+                        # THE CONSEQUENCE IS A DUPLICATED ANSWER, which is why
+                        # this is a fix and not a tidy-up. ws_chat's replay guard
+                        # is `if not got_text:` -- it re-sends the operator's
+                        # message when a turn failed because the resumed thread
+                        # was gone, and is guarded on got_text precisely because
+                        # "once any answer has streamed to the client, replaying
+                        # would duplicate it". With the flag unset, a
+                        # non-streaming answer that then hit a dead --resume was
+                        # replayed WITH its text already on screen.
+                        #
+                        # Narrow in practice: build_agent_args always passes
+                        # --include-partial-messages, so this fallback only fires
+                        # when deltas are absent. Narrow is not the same as
+                        # unreachable.
+                        #
+                        # `and not got_text` stays: it is what stops a streamed
+                        # turn from rendering its own text twice, once as deltas
+                        # and once as the whole block.
+                        got_text = True
                         await emit({"type": "token", "text": blk["text"]})
                     elif blk.get("type") == "thinking":
                         # Presence only. The thinking TEXT is deliberately not
@@ -471,20 +368,36 @@ class SessionRuntime:
                         # == tool_result.tool_use_id). Without it the UI could show
                         # that a tool was CALLED but never that it finished, so every
                         # tool appeared to run forever.
+                        _name = blk.get("name", "")
+                        _summary = _tool_summary(blk.get("input"))
+                        # WHAT KIND OF THING THIS IS, so the client can draw a
+                        # subagent, a shell command and a file edit as three
+                        # different cards instead of three identical rows. Four
+                        # ADDITIVE keys: every key this frame already carried is
+                        # untouched, and an unknown tool classifies as `other`
+                        # and renders exactly as it does today. The summary is
+                        # handed in as the title fallback so the header and the
+                        # summary beside it cannot disagree.
+                        _k = tool_kinds.classify("claude", _name,
+                                                 blk.get("input"),
+                                                 {"title": _summary})
                         await emit({
                             "type": "tool",
                             "phase": "start",
                             "id": blk.get("id"),
-                            "name": blk.get("name", ""),
-                            "summary": _tool_summary(blk.get("input")),
+                            "name": _name,
+                            "summary": _summary,
                             # Shell commands only, in full -- what "open this in
                             # the terminal" needs. "" for every other tool.
-                            "command": _tool_command(blk.get("name", ""),
-                                                     blk.get("input")),
+                            "command": _tool_command(_name, blk.get("input")),
                             # Forwarded VERBATIM. Observed {"type":"direct"} for a
                             # main-agent call; other shapes are not guessed at here,
                             # and the client labels whatever actually arrives.
                             "caller": (blk.get("caller") or {}).get("type"),
+                            "kind": _k["kind"],
+                            "title": _k["title"],
+                            "detail": _k["detail"],
+                            "meta": _k["meta"],
                         })
             elif t == "user":
                 # tool_result lives on USER messages, not assistant ones. This branch
@@ -510,6 +423,12 @@ class SessionRuntime:
                             "phase": "end",
                             "id": blk.get("tool_use_id"),
                             "ok": not blk.get("is_error"),
+                            # NO `kind` ON AN END FRAME. The end carries only a
+                            # tool_use_id, not a name, so classifying here would
+                            # mean guessing -- and the client already holds the
+                            # start frame's kind against that same id. One
+                            # decision, in one place (proc_group's _observe pairs
+                            # the ids for the same reason).
                             # WHAT THE TOOL ACTUALLY RETURNED. This was dropped:
                             # the frame carried {id, ok} and the whole content
                             # array was discarded server-side, so an operator

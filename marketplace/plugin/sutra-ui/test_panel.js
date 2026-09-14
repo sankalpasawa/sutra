@@ -299,7 +299,24 @@ const EPILOGUE = `
      the ONLY place an operator learns their chosen mode is not the one
      running -- a marker that renders nothing recreates the silent fallback
      it was written to end. */
-  modeMarkerHtml
+  modeMarkerHtml,
+  /* ── Settings, rebuilt as overview-first (2026-09-14) ───────────────────
+     The whole point of the change is that NOTHING is remembered: S.setSection
+     is in-memory and openScreen clears it. Exported so a test can prove the
+     landing screen rather than eyeball it, and so the section renderers can be
+     driven without a DOM. */
+  settingsOverviewHtml, settingsValueOf, SETTINGS_SECTIONS,
+  providerListHtml, providerPageHtml, providerSwitchesHtml, providerSettingValue,
+  provState, providerDefaultModel, providerVersion, providerUsageLine,
+  accessSectionHtml, accessOptions, accessNativeMap, accessNativeFor,
+  accessIdForNative, accessLabelFor,
+  usageSectionHtml, updatesSectionHtml, workspaceSectionHtml, advancedSectionHtml,
+  toolsListHtml,
+  openSettingsSection, saveProviderOption, settingsSectionLoad,
+  loadUsageAll, loadProviderTools, updateProviderTool,
+  /* ── every provider's usage on one page ── */
+  usageAllHtml, usageAllCardHtml, usageBarSev, usageResetText, usageResetMs,
+  usageExtraHtml, openScreen
 };
 `;
 
@@ -5184,6 +5201,532 @@ test("46i. NO render state can contain a key, on any transport", () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   W3. SETTINGS IS AN OVERVIEW FIRST, AND THE SECTIONS BEHIND IT
+   ══════════════════════════════════════════════════════════════════════════
+   Founder, 2026-09-14: "when I open settings it should open like a big tab of
+   settings, it should not automatically open a particular thing which I have
+   selected earlier."
+
+   The old screen was one stack of folds whose open/closed state was PERSISTED
+   in S.ui.folds, so every visit restored whatever was last open. These tests
+   pin the three things that make the new behaviour real rather than incidental:
+   the landing screen, the fact that nothing on disk can change it, and that
+   re-entering from the rail resets it. */
+
+const W3_SETTINGS = {
+  provider: "claude",
+  permission_mode: "plan",
+  permission_mode_effective: "plan",
+  workdir: "/Users/x/work/sutra-ui-workspace",
+  workdir_root: "/Users/x",
+  chat_scope: "sutra",
+  model_catalog_by_provider: {
+    claude: { default: "best",
+              models: [{ id:"", name:"Account default" }, { id:"best", name:"Fable 5.1" }],
+              more: [{ id:"claude-opus-4-8", name:"Opus 4.8" }], fast:false },
+    codex:  { default: "gpt-5.6-terra", models: [{ id:"gpt-5.6-terra", name:"GPT-5.6 Terra" }], fast:true }
+  },
+  access_options: [
+    { id:"read",  label:"Read only",      desc:"Looks and plans. Changes nothing.", warn:false },
+    { id:"edits", label:"Accept edits",   desc:"Edits files in this folder. Asks for anything else.", warn:false },
+    { id:"auto",  label:"Approve for me", desc:"Same limit, but the tool approves routine requests itself.", warn:false },
+    { id:"full",  label:"Full access",    desc:"Anything on this Mac, without asking.", warn:true }
+  ],
+  access_by_provider: {
+    claude: { read:"plan", edits:"acceptEdits", auto:"auto", full:"bypassPermissions" },
+    codex:  { read:"plan", edits:"acceptEdits", full:"bypassPermissions" }
+  },
+  provider_settings_schema: {
+    claude: [
+      { key:"chrome",    label:"Chrome",    desc:"Let Claude drive a browser.",     type:"boolean", default:false },
+      { key:"subagents", label:"Subagents", desc:"Let Claude start helper agents.", type:"boolean", default:true  },
+      { key:"workflows", label:"Workflows", desc:"Let Claude run workflow scripts.",type:"boolean", default:true  },
+      { key:"memory",    label:"Memory",    desc:"Let Claude keep memories.",       type:"boolean", default:true  }
+    ],
+    codex: [
+      { key:"memory",    label:"Memory",    desc:"Let Codex keep memories.",        type:"boolean", default:true  },
+      { key:"subagents", label:"Subagents", desc:"Let Codex start helper agents.",  type:"boolean", default:true  }
+    ]
+  },
+  provider_settings: { claude: { chrome: true }, codex: { memory: false } }
+};
+const W3_TOOLS = [
+  { id:"claude", name:"Claude Code", bin:"claude", installed_version:"2.1.247",
+    latest_version:"2.1.251", minimum:"2.1.251", update_available:true, too_old:true,
+    managed_by_sutra:true, note:"Fable 5.1 needs Claude Code 2.1.251" },
+  { id:"codex", name:"OpenAI Codex", bin:"codex", installed_version:"0.144.4",
+    latest_version:"0.144.4", minimum:"0.144.4", update_available:false, too_old:false,
+    managed_by_sutra:true },
+  { id:"deepseek", name:"DeepSeek", bin:"deepseek", installed_version:null,
+    latest_version:"1.3.2", minimum:"1.3.2", update_available:false, too_old:false,
+    managed_by_sutra:false, update_command:"npm i -g deepseek-cli" }
+];
+const W3_PROVIDERS = [
+  { id:"claude",   name:"Claude Code", runnable:true,  installed:true,  configured:true,  version:"2.1.247" },
+  { id:"codex",    name:"OpenAI Codex",runnable:false, installed:true,  configured:false, reason:"codex CLI on PATH but ~/.codex/auth.json holds no credential" },
+  { id:"deepseek", name:"DeepSeek",    runnable:false, installed:false, configured:false }
+];
+/* A tiny fixture for the two routes W1/W2 are building in parallel. They do not
+   exist in this worktree, so the client is written to read them defensively and
+   this is what "present and well-formed" looks like when they land. */
+function w3UsageAll(now){
+  return { providers: [
+    { id:"claude", name:"Claude Code", state:"ok", account:"dev@example.com", plan:"Max 20x",
+      windows: [ { label:"Session (5 hr)", percent:62.4, resets_at: (now + 30*60*1000)/1000, kind:"session" },
+                 { label:"Week",           percent:88,   resets_at: (now + 5*3600*1000)/1000, kind:"week" } ] },
+    { id:"codex", name:"OpenAI Codex", state:"ok", account:"dev@example.com", plan:"Plus",
+      windows: [ { label:"30 days", percent:96.2, resets_at: new Date(now + 3*86400*1000).toISOString(), kind:"month" } ] },
+    { id:"deepseek", name:"DeepSeek", state:"ok", account:"sk-…9f2a",
+      balance: { currency:"USD", total:"12.40" },
+      windows: [ { label:"Rolling", percent:12, resets_at: now + 10*86400*1000, kind:"other" } ] }
+  ] };
+}
+function w3With(state, fn){
+  const prev = {};
+  Object.keys(state).forEach(k => { prev[k] = T.S[k]; T.S[k] = state[k]; });
+  try { return fn(); }
+  finally { Object.keys(prev).forEach(k => { T.S[k] = prev[k]; }); }
+}
+function w3Settings(fn){
+  const pS = T.SETTINGS, pP = T.PROVIDERS, pM = T.PERM_MODES, pSec = T.S.setSection;
+  T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+  T.PROVIDERS = JSON.parse(JSON.stringify(W3_PROVIDERS));
+  T.PERM_MODES = [
+    { id:"plan",              note:"Plans only.",          writes_files:false, default:true },
+    { id:"acceptEdits",       note:"Writes files.",        writes_files:true },
+    { id:"auto",              note:"Approves for you.",    writes_files:true },
+    { id:"bypassPermissions", note:"Anything, no asking.", writes_files:true, settable:false },
+    { id:"manual",            note:"Asks every time.",     writes_files:false },
+    { id:"dontAsk",           note:"Routines use this.",   writes_files:true }
+  ];
+  try { return fn(); }
+  finally { T.SETTINGS = pS; T.PROVIDERS = pP; T.PERM_MODES = pM; T.S.setSection = pSec;
+            /* openScreen fires the lazy loaders, and the harness's fetch never
+               settles -- so the in-flight flags would stay set for every later
+               test. Cleared here rather than left to the next reader. */
+            T.S.usageAllBusy = false; T.S.provToolsBusy = false; }
+}
+
+test("W3-1a. Settings lands on the overview, listing every section in order", () => {
+  w3Settings(() => {
+    T.S.setSection = null;
+    const out = T.SCREENS.settings();
+    assert.ok(/class="sxov"/.test(out), "the overview grid did not render: " + out.slice(0, 200));
+    const ids = [...out.matchAll(/data-setsec="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(ids, ["providers","access","usage","updates","workspace","advanced"],
+      "the overview must offer the six sections, in the founder's order");
+    /* An overview is an overview: no subsection body may be on screen. */
+    assert.ok(!/data-provopt=/.test(out), "a provider's switches rendered on the overview");
+    assert.ok(!/data-pmode-set=/.test(out), "the permission rows rendered on the overview");
+    assert.ok(!/data-workdir-input/.test(out), "the folder editor rendered on the overview");
+  });
+});
+
+test("W3-1b. every overview card states the CURRENT value, not a placeholder", () => {
+  w3Settings(() => {
+    T.S.setSection = null;
+    const out = T.SCREENS.settings();
+    assert.ok(out.includes("Claude Code · 1 ready of 3"), "the provider card has no live value");
+    assert.ok(out.includes("Read only"), "the access card does not name the running mode");
+    assert.ok(out.includes("sutra-ui-workspace"), "the folder card does not name the folder");
+    /* Every card renders a value cell; none is left blank, which would read as
+       "nothing is set" rather than "not read yet". */
+    const vals = [...out.matchAll(/class="sxcv">([^<]*)</g)].map(m => m[1].trim());
+    assert.strictEqual(vals.length, 6, "expected six value cells, got " + vals.length);
+    vals.forEach(v => assert.ok(v.length > 0, "an overview card rendered an empty value"));
+  });
+});
+
+test("W3-1c. THE BUG: a remembered section must not survive re-opening Settings", () => {
+  w3Settings(() => {
+    /* Land inside a section, the way a click does. */
+    T.S.setSection = "advanced";
+    assert.ok(/Advanced/.test(T.SCREENS.settings()), "precondition: the section renders");
+    /* Now open Settings again from the rail. This is the gesture the founder
+       described; before the change it restored the last fold. */
+    T.openScreen("settings");
+    assert.strictEqual(T.S.setSection, null, "openScreen must clear the section");
+    assert.ok(/class="sxov"/.test(T.SCREENS.settings()), "re-opening did not land on the overview");
+  });
+});
+
+test("W3-1d. the section is NEVER persisted, so a reload cannot restore it", () => {
+  w3Settings(() => {
+    T.S.setSection = "provider:claude";
+    /* saveLayout() writes S.ui and nothing else. If the section ever moved into
+       S.ui it would survive a reload and this whole change would be undone. */
+    assert.ok(!("setSection" in T.S.ui),
+      "S.ui carries the open section -- saveLayout would persist it");
+    const stored = JSON.parse(JSON.stringify(T.S.ui));
+    assert.ok(!JSON.stringify(stored).includes("setSection"),
+      "the persisted layout mentions the open section");
+    /* And what a reload actually restores: loadLayout's own shape. */
+    const fresh = T.loadLayout();
+    assert.strictEqual(fresh.setSection, undefined,
+      "loadLayout brings a section back -- a reload would land inside it");
+  });
+});
+
+test("W3-1e. an unknown or stale section id lands on the overview, never a blank pane", () => {
+  w3Settings(() => {
+    T.S.setSection = "a-section-that-was-deleted";
+    assert.ok(/class="sxov"/.test(T.SCREENS.settings()), "a stale id blanked the screen");
+    T.S.setSection = "provider:not-a-provider";
+    const out = T.SCREENS.settings();
+    assert.ok(/No such provider/.test(out), "an unknown provider id blanked the screen");
+    assert.ok(/data-setback=/.test(out), "and it must still offer the way back");
+  });
+});
+
+test("W3-1f. every section renders, carries a back control, and opens nothing else", () => {
+  w3Settings(() => {
+    T.SETTINGS.provider_ignored = [];
+    ["providers","access","usage","updates","workspace","advanced"].forEach(id => {
+      T.S.setSection = id;
+      const out = T.SCREENS.settings();
+      assert.ok(out.length > 60, id + " rendered almost nothing");
+      assert.ok(/data-setback=/.test(out), id + " has no back control");
+      assert.ok(!/class="sxov"/.test(out), id + " fell back to the overview");
+    });
+  });
+});
+
+test("W3-1g. no section leaks a raw undefined, NaN or [object Object]", () => {
+  /* The screens read a dozen fields W1 and W2 are still building. A missing one
+     must become "not reported" or an omitted block -- never the word undefined
+     in front of an operator. Run over the FULL payload and over a bare one. */
+  const payloads = [JSON.parse(JSON.stringify(W3_SETTINGS)),
+                    { provider:"claude", permission_mode:"plan", workdir:"/tmp" },
+                    { provider:"claude" }];
+  payloads.forEach((p, n) => {
+    w3Settings(() => {
+      T.SETTINGS = p;
+      w3With({ usageAll: w3UsageAll(Date.now()), provTools: W3_TOOLS,
+               upd: null, updError: null, usage: null, account: null }, () => {
+        const screens = ["providers","access","usage","updates","workspace","advanced",
+                         "provider:claude","provider:codex","provider:deepseek", null];
+        screens.forEach(id => {
+          T.S.setSection = id;
+          const out = T.SCREENS.settings();
+          [/\bundefined\b/, /\[object Object\]/, /\bNaN\b/].forEach(bad =>
+            assert.ok(!bad.test(out),
+              "payload " + n + ", section " + id + " leaked " + bad + ": "
+              + out.slice(Math.max(0, out.search(bad) - 80), out.search(bad) + 80)));
+        });
+      });
+    });
+  });
+});
+
+/* ── W3-2. the provider page ─────────────────────────────────────────────── */
+
+test("W3-2a. a provider page renders its schema switches, with the stored values", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("claude", T.SETTINGS);
+    const keys = [...out.matchAll(/data-provoptkey="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(keys, ["chrome","subagents","workflows","memory"],
+      "the switches must come from provider_settings_schema, in its order");
+    /* chrome defaults false and is STORED true; workflows defaults true and is
+       not stored. Both have to read off the right source. */
+    const row = k => out.slice(out.indexOf('data-provoptkey="' + k + '"') - 200,
+                               out.indexOf('data-provoptkey="' + k + '"'));
+    assert.ok(/aria-checked="true"/.test(row("chrome")), "a stored true did not win over the default");
+    assert.ok(/aria-checked="true"/.test(row("workflows")), "an unstored key did not take its default");
+    assert.ok(out.includes("Let Claude drive a browser."), "the switch description is missing");
+    /* And the rest of the page the founder asked for. */
+    assert.ok(/Fable 5\.1/.test(out), "the default MODEL is not named (model_catalog_by_provider)");
+    assert.ok(/Read only/.test(out), "the default ACCESS option is not named");
+    assert.ok(/2\.1\.247/.test(out), "the installed version is missing");
+    assert.ok(/Ready to use/.test(out), "the state line is missing");
+  });
+});
+
+test("W3-2b. the long diagnostic is behind a disclosure, not on the page", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("codex", T.SETTINGS);
+    assert.ok(/Installed, but not signed in yet/.test(out), "the one plain sentence is missing");
+    const i = out.indexOf("auth.json");
+    assert.ok(i > 0, "the detail must still be reachable");
+    const before = out.slice(0, i);
+    assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+      "the server's diagnostic sentence is on the page rather than behind a disclosure");
+  });
+});
+
+test("W3-2c. a provider with no schema says so rather than drawing an empty box", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("deepseek", T.SETTINGS);
+    assert.ok(/no options of its own/.test(out), "an empty options box: " + out.slice(-300));
+    assert.ok(!/data-provopt=/.test(out), "a switch rendered with no schema to draw it from");
+  });
+});
+
+test("W3-2d. an older server that sends no catalogue, access list or schema still renders", () => {
+  w3Settings(() => {
+    T.SETTINGS = { provider:"claude", permission_mode:"plan", workdir:"/tmp" };
+    const out = T.providerPageHtml("claude", T.SETTINGS);
+    assert.ok(out.length > 100, "the page collapsed on a bare settings payload");
+    assert.ok(/no options of its own/.test(out), "no schema must read as no options");
+    assert.ok(/not reported/.test(out) || /2\.1\.247/.test(out),
+      "a missing version must say so rather than render blank");
+    /* The four access options are the client's own fallback, so the line is
+       still answerable with nothing from the server. */
+    assert.ok(/Read only/.test(out), "the access fallback did not apply");
+  });
+});
+
+codexSerial("W3-2e. toggling a switch posts the WHOLE provider_settings map", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  const pS = T.SETTINGS, pP = T.PROVIDERS;
+  let sent = null;
+  sandbox.render = () => {};
+  sandbox.fetch = (url, opts) => {
+    sent = { url, body: JSON.parse(opts.body) };
+    return Promise.resolve({ ok:true, json: () => Promise.resolve({
+      settings: Object.assign({}, W3_SETTINGS, { provider_settings: sent.body.provider_settings }) }) });
+  };
+  try {
+    T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+    T.PROVIDERS = JSON.parse(JSON.stringify(W3_PROVIDERS));
+    await T.saveProviderOption("claude", "subagents", false);
+    assert.ok(/\/api\/settings$/.test(sent.url), "wrong route: " + sent.url);
+    const ps = sent.body.provider_settings;
+    assert.strictEqual(ps.claude.subagents, false, "the toggled key was not sent");
+    assert.strictEqual(ps.claude.chrome, true,
+      "the OTHER key on this provider was dropped -- the route replaces what it is given");
+    assert.strictEqual(ps.codex.memory, false,
+      "another provider's options were dropped by a single-key write");
+    assert.strictEqual(T.S.setBusy, null, "the busy flag was left set");
+    assert.ok(/subagents is now off/.test(String(T.S.setOk)), "no receipt: " + T.S.setOk);
+    /* and the switch now reads back as off, from the server's own answer */
+    assert.ok(/data-provoptkey="subagents"/.test(T.providerSwitchesHtml("claude")));
+    assert.strictEqual(T.providerSettingValue("claude", { key:"subagents", default:true }), false);
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.SETTINGS = pS; T.PROVIDERS = pP; T.S.setBusy = null;
+              T.S.setOk = null; T.S.setError = null; }
+});
+
+codexSerial("W3-2f. a refused write reports the refusal and never claims it saved", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  const pS = T.SETTINGS;
+  sandbox.render = () => {};
+  sandbox.fetch = () => Promise.reject(new Error("provider_settings: unknown key"));
+  try {
+    T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+    await T.saveProviderOption("claude", "chrome", false);
+    assert.ok(/unknown key/.test(String(T.S.setError)), "the refusal was swallowed");
+    assert.strictEqual(T.S.setOk, null, "a failed write reported as saved");
+    assert.strictEqual(T.S.setBusy, null, "the control was left spinning");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender; T.SETTINGS = pS;
+              T.S.setError = null; T.S.setBusy = null; }
+});
+
+/* ── W3-3. every provider's usage on one page ────────────────────────────── */
+
+test("W3-3a. the usage page draws one card per provider, with account and plan", () => {
+  const now = Date.now();
+  w3With({ usageAll: w3UsageAll(now), usage: null }, () => {
+    const out = T.usageAllHtml();
+    const cards = [...out.matchAll(/data-uaprov="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(cards, ["claude","codex","deepseek"], "one card per provider, in the server's order");
+    assert.ok(out.includes("dev@example.com"), "the account is missing");
+    assert.ok(out.includes("Max 20x"), "the plan badge is missing");
+    assert.ok(out.includes("USD 12.40"), "Sutra's DeepSeek balance -- bb has none -- was dropped");
+  });
+});
+
+test("W3-3b. bar colours: normal under 80, warning from 80, red from 95", () => {
+  assert.strictEqual(T.usageBarSev(0),    "p-ok");
+  assert.strictEqual(T.usageBarSev(79.9), "p-ok");
+  assert.strictEqual(T.usageBarSev(80),   "p-warn",  "80 is the warning threshold, not 81");
+  assert.strictEqual(T.usageBarSev(94.9), "p-warn");
+  assert.strictEqual(T.usageBarSev(95),   "p-block", "95 is red, not 96");
+  assert.strictEqual(T.usageBarSev(100),  "p-block");
+  assert.strictEqual(T.usageBarSev(null), "p-mut",   "an absent percent must not colour as healthy");
+  const now = Date.now();
+  w3With({ usageAll: w3UsageAll(now) }, () => {
+    const out = T.usageAllHtml();
+    const claude = out.slice(out.indexOf('data-uaprov="claude"'), out.indexOf('data-uaprov="codex"'));
+    assert.ok(/<i class="p-ok" style="width:62\.4%/.test(claude),  "62.4% is not a normal bar");
+    assert.ok(/<i class="p-warn" style="width:88%/.test(claude),   "88% is not a warning bar");
+    const codex = out.slice(out.indexOf('data-uaprov="codex"'), out.indexOf('data-uaprov="deepseek"'));
+    assert.ok(/<i class="p-block" style="width:96\.2%/.test(codex), "96.2% is not a red bar");
+  });
+});
+
+test("W3-3c. reset text: minutes, hours, weekday, then date", () => {
+  const now = Date.now();
+  assert.strictEqual(T.usageResetText((now + 42*60*1000)/1000), "in 42 min");
+  assert.strictEqual(T.usageResetText((now + 3*3600*1000 + 10*60*1000)/1000), "in 3 hr 10 min");
+  assert.strictEqual(T.usageResetText((now + 5*3600*1000)/1000), "in 5 hr",
+    "an exact hour must not read 'in 5 hr 0 min'");
+  const wk = new Date(now + 3*86400*1000);
+  const pad = n => (n < 10 ? "0" : "") + n;
+  assert.strictEqual(T.usageResetText(wk.toISOString()),
+    ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][wk.getDay()] + " " + pad(wk.getHours()) + ":" + pad(wk.getMinutes()));
+  const far = new Date(now + 10*86400*1000);
+  assert.strictEqual(T.usageResetText(far.getTime()),
+    far.getDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][far.getMonth()]
+    + " " + pad(far.getHours()) + ":" + pad(far.getMinutes()));
+  assert.strictEqual(T.usageResetText(now - 60000), "resetting now", "a past reset must not read negative");
+  assert.strictEqual(T.usageResetText(null), "", "a missing reset draws nothing, never 1970");
+  /* the three wire shapes a server could send for the same instant */
+  const t = now + 45*60*1000;
+  assert.strictEqual(T.usageResetText(t/1000), "in 45 min", "seconds");
+  assert.strictEqual(T.usageResetText(t),      "in 45 min", "milliseconds");
+  assert.strictEqual(T.usageResetText(new Date(t).toISOString()), "in 45 min", "ISO");
+});
+
+test("W3-3d. a provider that is missing, signed out or broken gets ONE plain sentence", () => {
+  const states = { not_installed:"Not installed on this Mac.", signed_out:"Not signed in.",
+                   unsupported:"This one publishes no usage figure.",
+                   error:"Its usage could not be read just now." };
+  Object.keys(states).forEach(st => {
+    const out = T.usageAllCardHtml({ id:"codex", name:"OpenAI Codex", state:st,
+                                     error:"spawn codex ENOENT at /usr/local/bin" });
+    assert.ok(out.includes(states[st]), st + " does not get its plain sentence");
+    assert.ok(!/class="ubar"/.test(out), st + " drew a usage bar it has no data for");
+    const i = out.indexOf("ENOENT");
+    if (i > 0){
+      const before = out.slice(0, i);
+      assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+        st + " put the diagnostic on the card rather than behind a disclosure");
+    }
+  });
+});
+
+test("W3-3e. the stale-cache notice survives, and so does the extra-usage block", () => {
+  const out = T.usageAllCardHtml({ id:"claude", name:"Claude Code", state:"ok",
+                                   source:"stale-cache", windows:[{ label:"Week", percent:10 }] });
+  assert.ok(/Cached figure/.test(out), "the stale-cache notice was lost");
+  w3With({ usage: { available:true, extra_usage:{ enabled:true, used_credits:3.2, currency:"USD",
+                                                  daily:null, weekly:null, monthly_limit:50 } } }, () => {
+    const x = T.usageExtraHtml();
+    assert.ok(/Extra usage/.test(x), "the extra-usage credits block was lost");
+    assert.ok(/no limit set/.test(x), "a null limit must not render as 0");
+  });
+});
+
+test("W3-3f. no /api/usage/all: the section falls back instead of going blank", () => {
+  w3Settings(() => {
+    w3With({ usageAll: null, usageAllError: "404 Not Found", usage: null, account: null }, () => {
+      assert.strictEqual(T.usageAllHtml(), null, "a missing payload must not fake a page");
+      T.S.setSection = "usage";
+      const out = T.SCREENS.settings();
+      assert.ok(/not available/.test(out), "the operator is not told why the cards are missing");
+      assert.ok(out.length > 200, "the usage section went blank on an older server");
+      assert.ok(/data-setback=/.test(out), "and the way back must survive");
+    });
+  });
+});
+
+/* ── W3-4. the AI tools under Updates ────────────────────────────────────── */
+
+
+test("W3-4a. the tools list renders versions, an Update button, and the too-old warning", () => {
+  w3With({ provTools: W3_TOOLS, provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    assert.ok(out.includes("2.1.247"), "the installed version is missing");
+    assert.ok(out.includes("2.1.251 available"), "the latest version is missing");
+    assert.ok(/data-toolupdate="claude"/.test(out), "there is no way to run the update");
+    assert.ok(out.includes("Fable 5.1 needs Claude Code 2.1.251"),
+      "the too-old warning is missing or reworded");
+    /* up to date: stated, and NOT offered an update that would do nothing */
+    const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("DeepSeek"));
+    assert.ok(/up to date/.test(codex), "a current tool is not said to be current");
+    assert.ok(!/data-toolupdate="codex"/.test(codex), "a current tool was offered a dead Update button");
+    /* not installed, not managed here: says so, and names the real command */
+    const ds = out.slice(out.indexOf("DeepSeek"));
+    assert.ok(/not installed/.test(ds), "an absent tool is not said to be absent");
+    assert.ok(/npm i -g deepseek-cli/.test(ds), "an unmanaged tool does not name its own update path");
+  });
+});
+
+test("W3-4b. too_old with no server sentence still explains itself", () => {
+  w3With({ provTools: [Object.assign({}, W3_TOOLS[0], { note: undefined })],
+           provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    assert.ok(/older than 2\.1\.251/.test(out), "the warning names no version: " + out.slice(0, 400));
+    assert.ok(/will not work until you update/.test(out), "the warning says nothing to do");
+  });
+});
+
+test("W3-4c. no tools route: a reason, never a blank Updates section", () => {
+  w3With({ provTools: null, provToolsError: "404 Not Found" }, () => {
+    assert.ok(/not available on this server/.test(T.toolsListHtml()),
+      "a 404 renders as nothing at all");
+  });
+  w3With({ provTools: null, provToolsError: null }, () => {
+    assert.ok(/Reading the AI tools/.test(T.toolsListHtml()),
+      "not-read-yet must not look like an empty list");
+  });
+  w3With({ provTools: [], provToolsError: null }, () => {
+    assert.ok(/found no AI tool/.test(T.toolsListHtml()), "an empty list says nothing");
+  });
+});
+
+test("W3-4d. Sutra's own updater is untouched, and sits above the tools", () => {
+  w3Settings(() => {
+    w3With({ upd: null, updError: null, updBusy: null, provTools: W3_TOOLS }, () => {
+      T.S.setSection = "updates";
+      const out = T.SCREENS.settings();
+      assert.ok(/data-upd="check"/.test(out), "Sutra's own update check is gone");
+      assert.ok(out.indexOf('data-upd="check"') < out.indexOf("data-toolupdate"),
+        "the AI tools were put above Sutra's own updater");
+    });
+  });
+});
+
+codexSerial("W3-4e. an update keeps the log, on success AND on refusal", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  sandbox.render = () => {};
+  try {
+    T.S.provTools = W3_TOOLS; T.S.toolLog = null; T.S.toolBusy = null;
+    sandbox.fetch = (url, opts) => Promise.resolve({ ok:true, json: () => Promise.resolve(
+      /^POST$/.test(opts && opts.method)
+        ? { ok:true, version_before:"2.1.247", version_after:"2.1.251", log:"updated cleanly" }
+        : W3_TOOLS) });
+    await T.updateProviderTool("claude");
+    assert.strictEqual(T.S.toolBusy, null, "the button was left spinning");
+    assert.strictEqual(T.S.toolLog.version_after, "2.1.251", "the new version was not read back");
+    assert.ok(/updated cleanly/.test(T.toolsListHtml()), "the log is not on screen");
+
+    /* the server refuses while a chat is running for that provider */
+    T.S.toolLog = null;
+    sandbox.fetch = () => Promise.reject(new Error("a chat is running for claude"));
+    await T.updateProviderTool("claude");
+    assert.strictEqual(T.S.toolLog.ok, false, "a refusal was recorded as a success");
+    assert.ok(/a chat is running for claude/.test(T.toolsListHtml()),
+      "the refusal never reached the screen");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.S.provTools = null; T.S.toolLog = null; T.S.toolBusy = null; }
+});
+
+codexSerial("W3-4f. a 404 on either new route is recorded, not treated as an empty answer", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  sandbox.render = () => {};
+  try {
+    T.S.usageAll = null; T.S.usageAllError = null; T.S.provTools = null; T.S.provToolsError = null;
+    sandbox.fetch = () => Promise.resolve({ ok:false, status:404,
+      text: () => Promise.resolve("Not Found"), json: () => Promise.resolve({}) });
+    await T.loadUsageAll(true);
+    await T.loadProviderTools(true);
+    assert.strictEqual(T.S.usageAll, null, "a 404 was stored as a usage payload");
+    assert.ok(T.S.usageAllError, "usage/all: a 404 left no reason to show the operator");
+    assert.strictEqual(T.S.provTools, null, "a 404 was stored as a tool list");
+    assert.ok(T.S.provToolsError, "providers/tools: a 404 left no reason to show the operator");
+    /* a 200 of the WRONG SHAPE is the same class of non-answer */
+    T.S.usageAll = null; T.S.usageAllError = null;
+    sandbox.fetch = () => Promise.resolve({ ok:true, json: () => Promise.resolve({ nope:1 }) });
+    await T.loadUsageAll(true);
+    assert.strictEqual(T.S.usageAll, null, "a shapeless 200 was accepted as a payload");
+    assert.ok(T.S.usageAllError, "a shapeless 200 left no reason");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.S.usageAll = null; T.S.usageAllError = null;
+              T.S.provTools = null; T.S.provToolsError = null; }
+});
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {
@@ -5612,11 +6155,15 @@ codexSerial("49b", async () => {
 codexSerial("49c", async () => {
   const h = codexStub(jsonOnce({
     state:"chatgpt", providers:[CODEX_ROW_READY], settings:{ provider:"claude" } }));
-  const prevSettings = T.SETTINGS, prevModes = T.PERM_MODES;
+  const prevSettings = T.SETTINGS, prevModes = T.PERM_MODES, prevSec = T.S.setSection;
   try {
     T.PROVIDERS = [CODEX_ROW_BLOCKED];
     T.SETTINGS = { provider:"claude", permission_mode:"plan", workdir:"/tmp" };
     T.PERM_MODES = [];
+    /* Settings opens on the OVERVIEW now (2026-09-14), so the provider list is
+       one click in. The claim under test is unchanged -- what the row says
+       about a Codex that has just signed in -- only where it is rendered. */
+    T.S.setSection = "providers";
     const before = T.SCREENS.settings();
     assert.ok(/Installed, but not signed in yet/.test(before), before.slice(0, 400));
 
@@ -5625,7 +6172,8 @@ codexSerial("49c", async () => {
     assert.ok(/Ready to use/.test(after), "the row never says Ready to use");
     const row = after.slice(after.indexOf('data-prov="codex"'));
     assert.ok(!/^[^>]*disabled/.test(row), "the radio is still disabled: " + row.slice(0, 200));
-  } finally { h.restore(); T.SETTINGS = prevSettings; T.PERM_MODES = prevModes; }
+  } finally { h.restore(); T.SETTINGS = prevSettings; T.PERM_MODES = prevModes;
+              T.S.setSection = prevSec; }
 });
 
 /* 49d. THE OPPOSITE DIRECTION, and the more dangerous one. A row saying

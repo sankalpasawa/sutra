@@ -129,6 +129,11 @@ class _SeedCase(unittest.TestCase):
         env["SUTRA_UI_WORKDIR"] = cls.workdir
         env["SUTRA_UI_CLAUDE_BIN"] = shim
         env["SUTRA_UI_CHATS"] = cls.chats_dir
+        # THE ONE OVERRIDE THIS FILE WAS MISSING. Without it every run appended to
+        # the operator's real ~/.sutra-ui/switch-egress.jsonl: all 191 rows in that
+        # file on 2026-09-14 carried this module's fixture session id, and not one
+        # was a real switch. The audit log belongs to the machine, not to a test.
+        env["SUTRA_UI_SWITCH_EGRESS"] = os.path.join(cls.tmpdir, "switch-egress.jsonl")
         env["CODEX_HOME"] = cls.codex_home
         env["SUTRA_FAKE_CLAUDE_ARGV"] = cls.argv_path
         env["SUTRA_FAKE_CLAUDE_SESSION"] = CLAUDE_ID
@@ -446,6 +451,7 @@ class DeepSeekSeedUnchanged(unittest.TestCase):
         env["SUTRA_NATIVE_HOME"] = cls.tmpdir
         env.pop("ANTHROPIC_API_KEY", None)
         env["SUTRA_UI_WORKDIR"] = cls.workdir
+        env["SUTRA_UI_SWITCH_EGRESS"] = os.path.join(cls.tmpdir, "switch-egress.jsonl")
         env["SUTRA_UI_DEEPSEEK_BIN"] = shim
         env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
         env["SUTRA_UI_CHATS"] = cls.chats_dir

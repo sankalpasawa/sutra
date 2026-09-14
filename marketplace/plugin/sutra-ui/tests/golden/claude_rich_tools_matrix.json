@@ -1,0 +1,374 @@
+{
+  "argv": [
+    "<app_dir>/tests/golden/fake_claude_rich.py",
+    "-p",
+    "--mcp-config",
+    "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode",
+    "plan",
+    "--allowedTools",
+    "mcp__sutra__*"
+  ],
+  "send_error": null,
+  "frames": [
+    {
+      "type": "session",
+      "id": "golden-session-0001"
+    },
+    {
+      "type": "sysinit",
+      "model": "stub-model",
+      "tools": 3,
+      "mcp_servers": [
+        {
+          "name": "sutra",
+          "status": "connected"
+        }
+      ],
+      "slash_commands": 2,
+      "permission_mode": "plan",
+      "cwd": "<workdir>"
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_10",
+      "name": "Bash",
+      "summary": "ls -la /tmp",
+      "command": "ls -la /tmp",
+      "caller": null,
+      "kind": "command",
+      "title": "ls -la /tmp",
+      "detail": null,
+      "meta": {
+        "command": "ls -la /tmp"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_11",
+      "name": "Read",
+      "summary": "/etc/hosts",
+      "command": "",
+      "caller": null,
+      "kind": "file_read",
+      "title": "hosts",
+      "detail": null,
+      "meta": {
+        "path": "/etc/hosts"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_12",
+      "name": "Edit",
+      "summary": "/tmp/a.py",
+      "command": "",
+      "caller": null,
+      "kind": "file_edit",
+      "title": "a.py",
+      "detail": null,
+      "meta": {
+        "path": "/tmp/a.py"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_13",
+      "name": "Write",
+      "summary": "/tmp/b.py",
+      "command": "",
+      "caller": null,
+      "kind": "file_edit",
+      "title": "b.py",
+      "detail": null,
+      "meta": {
+        "path": "/tmp/b.py"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_14",
+      "name": "Grep",
+      "summary": "/tmp",
+      "command": "",
+      "caller": null,
+      "kind": "search",
+      "title": "def run",
+      "detail": null,
+      "meta": {
+        "pattern": "def run"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_15",
+      "name": "Glob",
+      "summary": "**/*.py",
+      "command": "",
+      "caller": null,
+      "kind": "search",
+      "title": "**/*.py",
+      "detail": null,
+      "meta": {
+        "pattern": "**/*.py"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_16",
+      "name": "WebSearch",
+      "summary": "acp protocol spec",
+      "command": "",
+      "caller": null,
+      "kind": "web_search",
+      "title": "acp protocol spec",
+      "detail": null,
+      "meta": {
+        "query": "acp protocol spec"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_17",
+      "name": "WebFetch",
+      "summary": "https://example.com/a",
+      "command": "",
+      "caller": null,
+      "kind": "web_fetch",
+      "title": "https://example.com/a",
+      "detail": null,
+      "meta": {
+        "url": "https://example.com/a"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_18",
+      "name": "TodoWrite",
+      "summary": "",
+      "command": "",
+      "caller": null,
+      "kind": "todo",
+      "title": "TodoWrite",
+      "detail": null,
+      "meta": {}
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_19",
+      "name": "ExitPlanMode",
+      "summary": "step one, step two",
+      "command": "",
+      "caller": null,
+      "kind": "plan",
+      "title": "step one, step two",
+      "detail": null,
+      "meta": {}
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_20",
+      "name": "NotebookEdit",
+      "summary": "/tmp/n.ipynb",
+      "command": "",
+      "caller": null,
+      "kind": "notebook",
+      "title": "n.ipynb",
+      "detail": null,
+      "meta": {
+        "path": "/tmp/n.ipynb"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_21",
+      "name": "mcp__sutra__propose",
+      "summary": "a proposal",
+      "command": "",
+      "caller": null,
+      "kind": "mcp",
+      "title": "sutra \u00b7 propose",
+      "detail": null,
+      "meta": {
+        "server": "sutra",
+        "tool": "propose"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_22",
+      "name": "BashOutput",
+      "summary": "tail -f log",
+      "command": "tail -f log",
+      "caller": null,
+      "kind": "command",
+      "title": "tail -f log",
+      "detail": null,
+      "meta": {
+        "command": "tail -f log"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_23",
+      "name": "AToolFromTheFuture",
+      "summary": "some value",
+      "command": "",
+      "caller": null,
+      "kind": "other",
+      "title": "some value",
+      "detail": null,
+      "meta": {}
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_10",
+      "ok": true,
+      "output": "result for toolu_10"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_11",
+      "ok": true,
+      "output": "result for toolu_11"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_12",
+      "ok": true,
+      "output": "result for toolu_12"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_13",
+      "ok": true,
+      "output": "result for toolu_13"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_14",
+      "ok": true,
+      "output": "result for toolu_14"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_15",
+      "ok": true,
+      "output": "result for toolu_15"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_16",
+      "ok": true,
+      "output": "result for toolu_16"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_17",
+      "ok": true,
+      "output": "result for toolu_17"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_18",
+      "ok": true,
+      "output": "result for toolu_18"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_19",
+      "ok": true,
+      "output": "result for toolu_19"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_20",
+      "ok": true,
+      "output": "result for toolu_20"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_21",
+      "ok": true,
+      "output": "result for toolu_21"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_22",
+      "ok": true,
+      "output": "result for toolu_22"
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_23",
+      "ok": true,
+      "output": "result for toolu_23"
+    },
+    {
+      "type": "done",
+      "session": "golden-session-0001",
+      "duration_ms": "<duration_ms>",
+      "num_turns": 2,
+      "cost_usd": 0.0042
+    }
+  ],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "golden-session-0001",
+      "got_result": true,
+      "error": null,
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "golden-session-0001",
+    "got_text": false,
+    "got_result": true,
+    "result_error": null,
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle",
+  "open_tools": []
+}

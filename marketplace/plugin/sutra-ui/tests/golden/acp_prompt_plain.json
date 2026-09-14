@@ -1,0 +1,93 @@
+{
+  "argv": [
+    "<app_dir>/tests/golden/fake_acp_rich.py",
+    "--acp",
+    "--skip-trust"
+  ],
+  "agent_capabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+      "image": false
+    }
+  },
+  "unauthenticated_session_new_error": null,
+  "session_id": "golden-acp-session",
+  "session_error": null,
+  "acp_mode": "plan",
+  "acp_mode_note": null,
+  "effective_permission_mode": "plan",
+  "frames": [
+    {
+      "type": "token",
+      "text": "Checking the file. "
+    },
+    {
+      "type": "thinking"
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "tc_1",
+      "name": "edit",
+      "summary": "Write /tmp/written.txt",
+      "command": "",
+      "caller": null,
+      "kind": "file_edit",
+      "title": "Write /tmp/written.txt",
+      "detail": null,
+      "meta": {}
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "tc_1",
+      "ok": true,
+      "output": "wrote 1 line\n[diff] /tmp/written.txt"
+    },
+    {
+      "type": "token",
+      "text": "Done."
+    },
+    {
+      "type": "done",
+      "session": "golden-acp-session",
+      "duration_ms": null,
+      "num_turns": null,
+      "cost_usd": null,
+      "quota": {
+        "token_count": {
+          "input_tokens": 118,
+          "output_tokens": 24
+        },
+        "model_usage": [
+          {
+            "model": "deepseek-v4-flash",
+            "input_tokens": 118,
+            "output_tokens": 24
+          }
+        ]
+      }
+    }
+  ],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "golden-acp-session",
+      "got_result": true,
+      "error": null,
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "golden-acp-session",
+    "got_text": true,
+    "got_result": true,
+    "result_error": null,
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle"
+}

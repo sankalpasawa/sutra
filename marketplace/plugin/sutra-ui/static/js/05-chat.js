@@ -950,196 +950,607 @@ function deepseekAuthHtml(){
     </div>`;
 }
 
+/* ══════════════════════ Settings ══════════════════════════════════════════
+   OVERVIEW FIRST, ALWAYS (founder, 2026-09-14: "when I open settings it should
+   open like a big tab of settings, it should not automatically open a
+   particular thing which I have selected earlier").
+
+   What this replaces: one long stack of folds whose open/closed state was
+   PERSISTED in S.ui.folds and therefore restored on every visit, so opening
+   Settings dropped you wherever you were last -- mid-way down a subsection,
+   with no sense of what else the screen held.
+
+   THE STATE IS DELIBERATELY IN-MEMORY AND UNPERSISTED. `S.setSection` is set by
+   a click and never written to S.ui, so saveLayout() cannot carry it and a
+   reload cannot restore it. That is the whole mechanism behind "never on the
+   last thing that was open": there is nothing on disk to land on. openScreen()
+   clears it too, so re-entering from the rail also lands on the overview.
+
+   ROUTING IS UNCHANGED. This is still the one screen id `settings`, still
+   registered in SCREENS, still reached through openScreen("settings") and still
+   listed in DEST_PLANES. Sections are not screens and take no nav rows: adding
+   six ids would put six rows in the rail, which is the opposite of an
+   overview. */
+const SETTINGS_SECTIONS = [
+  { id:"providers", title:"AI providers",
+    desc:"Which AI answers your messages, and how each one is set up." },
+  { id:"access",    title:"Access and permissions",
+    desc:"What the AI may change on this Mac without asking you first." },
+  { id:"usage",     title:"Usage limits",
+    desc:"How much of each provider's allowance you have used." },
+  { id:"updates",   title:"Updates",
+    desc:"Sutra itself, and the AI tools it runs." },
+  { id:"workspace", title:"Workspace and folder",
+    desc:"The folder your AI works in." },
+  { id:"advanced",  title:"Advanced",
+    desc:"Which chats are listed, saved values Sutra could not use, and the technical detail." }
+];
+
+/* ── the four access options (SPEC A) ──────────────────────────────────────
+   The server owns this list (`access_options`); these are the fallback for a
+   server that predates it, so the section renders the same four choices either
+   way. `native` is what is actually STORED -- the existing permission-mode ids,
+   untouched -- which is why an old install keeps working and why the click can
+   go on using the existing [data-pmode-set] handler with its consent gate. */
+/* ONE COPY, IN 02-helpers.js. The settings section and the composer both need
+   these four options and the id->native mapping, and both were written against
+   the same SPEC; keeping a second copy here declared `ACCESS_FALLBACK` twice in
+   one scope, which is a SyntaxError that took the whole panel down, and would
+   have drifted the moment either list changed. The shared ones accept both
+   server shapes (a map, or a bare list of ids) and fall back to
+   PERM_MODES_BY_PROVIDER when the server sends neither. */
+function accessOptions(){
+  const server = (typeof ACCESS_OPTIONS !== "undefined" && ACCESS_OPTIONS.length)
+    ? ACCESS_OPTIONS : ((SETTINGS || {}).access_options || []);
+  const list = server.length ? server : ACCESS_FALLBACK;
+  return list.filter(o => o && o.id);
+}
+function accessNativeMap(pid){ return accessMapFor(pid); }
+function accessNativeFor(pid, accessId){ return accessNativeMap(pid)[accessId] || null; }
+function accessIdForNative(pid, native){
+  const m = accessNativeMap(pid);
+  return Object.keys(m).find(k => m[k] === native) || null;
+}
+/* The label an operator reads for whatever mode is actually running. Falls
+   back to the raw id, because a mode we have no friendly name for (`manual`,
+   `dontAsk`, or one added later) must still be nameable. */
+function accessLabelFor(pid, native){
+  const id = accessIdForNative(pid, native);
+  const o = accessOptions().find(x => x.id === id);
+  return o ? o.label : (native || "—");
+}
+
+/* ── per-provider one-liners ─────────────────────────────────────────────────
+   The server sends none today, so these are the fallback. `p.summary` wins the
+   moment a backend starts sending one. */
+const PROVIDER_BLURB = {
+  claude:   "Anthropic's Claude Code, run as a command-line tool on this Mac.",
+  codex:    "OpenAI's Codex, run as a command-line tool on this Mac.",
+  deepseek: "DeepSeek, billed per message against an API key you supply.",
+  gemini:   "Google's Gemini command-line tool."
+};
+function providerBlurb(p){
+  if (!p) return "";
+  return p.summary || p.blurb || PROVIDER_BLURB[p.id] || "An AI tool Sutra can run on this Mac.";
+}
+
+/* ONE STATE PER PROVIDER, in a user's words. The exact sentences the old
+   radio rows used, kept verbatim -- they were the outcome of a field incident
+   (Claude Desktop vs Claude Code) and a founder pass, and nothing here is an
+   excuse to rewrite them. What is new is only the `key` and the pill, so the
+   list can be scanned without reading four sentences. */
+function provState(p){
+  if (!p) return { key:"unknown", pill:"p-mut", badge:"unknown",
+                   line:"Sutra could not read this one." };
+  if (p.runnable) return { key:"ready", pill:"p-ok", badge:"ready", line:"Ready to use" };
+  if (p.desktop_only) return { key:"not_installed", pill:"p-warn", badge:"not installed",
+    line:"Claude Desktop is installed, but this needs Claude Code — a different app" };
+  if (!p.installed) return { key:"not_installed", pill:"p-warn", badge:"not installed",
+    line:"Not installed on this Mac" };
+  if (!p.configured) return { key:"signin", pill:"p-warn", badge:"needs sign in",
+    line:"Installed, but not signed in yet" };
+  return { key:"blocked", pill:"p-warn", badge:"not ready",
+    line:"Installed, but Sutra can’t chat with it yet" };
+}
+
+/* The installed version of a provider's own CLI. Two possible sources and both
+   are optional: the provider row, and the tools list behind
+   GET /api/providers/tools. Neither existing means "not reported", never a
+   guess. */
+function providerVersion(pid){
+  const p = (PROVIDERS || []).find(x => x.id === pid) || {};
+  if (p.version || p.installed_version) return p.version || p.installed_version;
+  const t = (S.provTools || []).find(x => x && (x.id === pid || x.provider === pid));
+  return (t && t.installed_version) || null;
+}
+
+/* The default model, by NAME where the catalogue gives one. `default` is an id;
+   showing the raw id where a name exists ("best" instead of "Fable 5.1") is the
+   sort of internals leak this screen exists to stop. */
+function providerDefaultModel(pid){
+  const cat = ((SETTINGS || {}).model_catalog_by_provider || {})[pid];
+  if (cat){
+    const want = cat.default;
+    const all = [].concat(cat.models || [], cat.more || []);
+    const hit = all.find(m => m && m.id === want);
+    if (hit) return hit.name || hit.id || null;
+    if (want) return String(want);
+    const first = all.find(m => m && m.id);
+    if (first) return first.name || first.id;
+  }
+  const flat = (typeof MODELS_BY_PROVIDER !== "undefined" && MODELS_BY_PROVIDER)
+    ? MODELS_BY_PROVIDER[pid] : null;
+  const f = (flat || []).find(m => m && m.id);
+  return f ? (f.name || f.id) : null;
+}
+
+/* ── the per-provider switches (SPEC C) ────────────────────────────────────
+   Rendered GENERICALLY from `provider_settings_schema`, never from a hardcoded
+   list: W1 may drop a switch it cannot verify against the real CLI, and a
+   hardcoded row would then be a control that does nothing. No schema, no
+   switches, and the section says so rather than showing an empty box. */
+function providerSettingValue(pid, row){
+  const stored = ((SETTINGS || {}).provider_settings || {})[pid] || {};
+  return Object.prototype.hasOwnProperty.call(stored, row.key)
+    ? !!stored[row.key] : !!row.default;
+}
+function providerSwitchesHtml(pid){
+  const schema = ((SETTINGS || {}).provider_settings_schema || {})[pid];
+  if (!Array.isArray(schema) || !schema.length)
+    return `<p class="why" style="margin:0">This provider has no options of its own.</p>`;
+  return schema.filter(r => r && r.key).map(r => {
+    const on = providerSettingValue(pid, r);
+    const busyKey = "pset:" + pid + ":" + r.key;
+    /* type is "boolean" today. Anything else is rendered read-only rather than
+       as a switch that would write the wrong kind of value. */
+    if (r.type && r.type !== "boolean")
+      return `<div class="kv"><b>${esc(r.label||r.key)}</b><span>${esc(String(on))}</span></div>`;
+    return `<button class="sxsw" type="button" role="switch" aria-checked="${on}"
+        data-provopt="${esc(pid)}" data-provoptkey="${esc(r.key)}"
+        ${S.setBusy===busyKey?'aria-busy="true"':""}>
+      <span class="sxtrack" aria-hidden="true"><span class="sxknob"></span></span>
+      <span class="oi"><span class="on">${esc(r.label || r.key)}${
+        S.setBusy===busyKey?' <span class="pill p-acc">saving…</span>':""}</span>
+        ${r.desc?`<span class="od">${esc(r.desc)}</span>`:""}</span>
+    </button>`;
+  }).join("");
+}
+
+/* A provider's usage in ONE line, for its own page. The full bars live on the
+   Usage limits section; repeating them here would be the second copy of a
+   number that is the whole reason the usage page exists. */
+function providerUsageLine(pid){
+  const all = S.usageAll;
+  const row = all && Array.isArray(all.providers)
+    ? all.providers.find(x => x && x.id === pid) : null;
+  if (!row) return "Open Usage limits to read it.";
+  const state = String(row.state || "ok");
+  if (state !== "ok") return USAGE_STATE_LINE[state] || "No usage to report.";
+  const w = (row.windows || []).find(x => x && Number.isFinite(Number(x.percent)));
+  if (!w) return (row.balance !== undefined && row.balance !== null)
+    ? "Pay as you go — see Usage limits for the balance."
+    : "Signed in, with no metered window right now.";
+  const reset = usageResetText(w.resets_at);
+  return Math.round(Number(w.percent)) + "% of " + (w.label || "the current window")
+       + " used" + (reset ? ", resets " + reset : "") + ".";
+}
+
+function settingsBanner(){
+  return S.setError
+    ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
+    : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
+}
+
+/* The one-line current value on each overview card. Every one of these reads
+   live state and degrades to "—" rather than throwing on a field an older
+   server does not send. */
+function settingsValueOf(id, st){
+  const active = st.provider;
+  const running = st.permission_mode_effective || st.permission_mode;
+  switch (id){
+    case "providers": {
+      const ready = (PROVIDERS || []).filter(p => p.runnable).length;
+      return (active ? providerLabel(active) : "none runnable")
+           + " · " + ready + " ready of " + (PROVIDERS || []).length;
+    }
+    case "access":    return accessLabelFor(active, running);
+    case "usage": {
+      const all = S.usageAll;
+      if (all && Array.isArray(all.providers)){
+        const pcts = all.providers.map(p =>
+          ((p && p.windows) || []).map(w => Number(w && w.percent))
+            .filter(Number.isFinite)).reduce((a,b)=>a.concat(b), []);
+        if (pcts.length) return "highest " + Math.round(Math.max.apply(null, pcts)) + "%";
+        return all.providers.length + " provider" + (all.providers.length===1?"":"s");
+      }
+      const a = S.usage ? usageActive(S.usage) : null;
+      return a ? Math.round(a.percent) + "% of " + a.label : "not read yet";
+    }
+    case "updates": {
+      const tools = (S.provTools || []).filter(t => t && t.update_available).length;
+      const app = S.upd && ((S.upd.desktop||{}).update_available || (S.upd.plugin||{}).update_available);
+      const n = tools + (app ? 1 : 0);
+      if (!S.upd && !(S.provTools||[]).length) return "not checked yet";
+      return n ? n + " update" + (n===1?"":"s") + " available" : "up to date";
+    }
+    case "workspace": return (st.workdir || "").split("/").pop() || "—";
+    case "advanced":  return (st.chat_scope === "all") ? "every session listed" : "Sutra chats listed";
+  }
+  return "";
+}
+
+/* ── the overview ──────────────────────────────────────────────────────────
+   Six rows, each with what it is and what it is set to right now. Nothing is
+   open; nothing is scrolled. */
+function settingsOverviewHtml(st){
+  const card = s => `<button class="sxcard" type="button" data-setsec="${esc(s.id)}">
+      <span class="sxci">
+        <span class="sxct">${esc(s.title)}</span>
+        <span class="sxcd">${esc(s.desc)}</span>
+      </span>
+      <span class="sxcv">${esc(settingsValueOf(s.id, st) || "—")}</span>
+      <svg class="sxcc" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`;
+  return `${settingsBanner()}
+    <div class="sxov">${SETTINGS_SECTIONS.map(card).join("")}</div>
+    <p class="why" style="margin-top:12px">Everything here is saved on this Mac, in
+      Sutra's own settings file. Nothing is sent anywhere.</p>`;
+}
+
+function settingsBackHtml(label, target){
+  return `<button class="sxback" type="button" data-setback="${esc(target || "")}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>${esc(label)}</button>`;
+}
+function settingsHeadHtml(title, sub, backLabel, backTarget){
+  return `${settingsBackHtml(backLabel, backTarget)}
+    <div class="sxhead"><h2 class="sxtitle">${esc(title)}</h2>
+      ${sub?`<p class="sxsub">${esc(sub)}</p>`:""}</div>`;
+}
+
+/* ── AI providers: the list ─────────────────────────────────────────────────
+   A row per provider: name, state, the one thing to do about it, "Make
+   default", and the row itself opens that provider's page. The radio group is
+   gone -- selection is now one explicit button, so a row that cannot be
+   selected is still fully clickable and still leads somewhere useful. */
+function providerListHtml(st){
+  const active = st.provider;
+  const provRow = p => {
+    const s = provState(p);
+    const busy = S.setBusy === "prov:" + p.id;
+    return `<div class="sxprow${active===p.id?" on":""}">
+      <button class="sxpopen" type="button" data-provpage="${esc(p.id)}">
+        <span class="oi">
+          <span class="on">${esc(p.name)}
+            ${active===p.id?'<span class="pill p-ok">default</span>':""}
+            <span class="pill ${s.pill}">${esc(s.badge)}</span></span>
+          <span class="od">${esc(s.line)}</span>
+        </span>
+        <svg class="sxcc" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      ${active===p.id ? "" : `<button class="btn sxdef" type="button"
+          data-prov="${esc(p.id)}" ${p.runnable?"":"disabled"}
+          ${busy?'aria-busy="true"':""}>${busy?"Saving…":"Make default"}</button>`}
+    </div>`;
+  };
+  return `
+    <h3 class="sxsech">Default provider</h3>
+    <p style="margin-bottom:11px">Which AI answers your messages. New chats start with
+      the default, and your next message in any open chat moves to it too — nothing
+      already written changes.</p>
+    <div class="sxplist" role="group" aria-label="Default provider">${
+      (PROVIDERS || []).map(provRow).join("")}</div>
+    ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-top:11px">
+      <b>Your saved choice could not be used.</b>
+      ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
+        but it is not ready to use right now.</div>`).join("")}
+      <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
+    ${(PROVIDERS || []).filter(p=>p.runnable).length<2?`<p class="why" style="margin-top:11px">
+      Only ${esc(providerLabel(active))} is ready to use on this Mac right now.</p>`:""}`;
+}
+
+/* ── one provider's own page ──────────────────────────────────────────────── */
+function providerPageHtml(pid, st){
+  const p = (PROVIDERS || []).find(x => x.id === pid);
+  if (!p) return `${settingsHeadHtml("Provider", "", "AI providers", "providers")}
+    <div class="zero"><h4>No such provider</h4>
+      <p>Sutra does not know a provider called <code>${esc(pid)}</code> on this Mac.</p></div>`;
+  const s = provState(p);
+  const active = st.provider === pid;
+  const ver = providerVersion(pid);
+  const model = providerDefaultModel(pid);
+  const running = st.permission_mode_effective || st.permission_mode;
+  /* The access line names THIS provider's default, which is the stored mode
+     when this provider is the default one and its own read-only option
+     otherwise -- claiming another provider's mode would be a false statement
+     about what this one would do if picked. */
+  const accessNative = active ? running : accessNativeFor(pid, "read");
+  const signin = pid === "codex" ? codexAuthHtml()
+               : pid === "deepseek" ? deepseekAuthHtml() : "";
+  return `
+    ${settingsHeadHtml(p.name, providerBlurb(p), "AI providers", "providers")}
+    ${settingsBanner()}
+    <div class="sxstate ${esc(s.pill)}">
+      <span class="pill ${s.pill}">${esc(s.badge)}</span>
+      <span class="sxstateline">${esc(s.line)}.</span>
+      ${active?"":`<button class="btn" type="button" data-prov="${esc(pid)}"
+          ${p.runnable?"":"disabled"} ${S.setBusy==="prov:"+pid?'aria-busy="true"':""}>${
+          S.setBusy==="prov:"+pid?"Saving…":"Make default"}</button>`}
+      ${active?'<span class="pill p-ok">default</span>':""}
+    </div>
+    ${p.reason?`<details class="sxdet"><summary class="why">What Sutra checked</summary>
+      <p class="why" style="margin:6px 0 0">${esc(p.reason)}</p></details>`:""}
+
+    <section class="sxsec"><h3 class="sxsech">Defaults</h3>
+      <div class="kv"><b>Model</b><span>${model?esc(model):`<span class="why">the provider's own default</span>`}</span></div>
+      <div class="kv"><b>Access</b><span>${esc(accessLabelFor(pid, accessNative))}</span></div>
+      <div class="kv"><b>Installed version</b><span>${ver?`<code>${esc(ver)}</code>`:`<span class="why">not reported</span>`}</span></div>
+      <div class="kv"><b>Usage</b><span>${esc(providerUsageLine(pid))}</span></div>
+    </section>
+
+    <section class="sxsec"><h3 class="sxsech">Options</h3>
+      <div class="sxsws">${providerSwitchesHtml(pid)}</div>
+    </section>
+
+    ${signin ? `<section class="sxsec"><h3 class="sxsech">Sign in</h3>${signin}</section>` : ""}`;
+}
+
+/* ── Access and permissions ────────────────────────────────────────────────
+   The four bb choices, and everything older behind a disclosure so nothing an
+   operator already chose disappears. Each button carries the NATIVE mode id, so
+   the existing [data-pmode-set] handler -- with its gate check and its typed
+   consent -- runs unchanged. */
+function accessSectionHtml(st){
+  const active = st.provider;
+  const running = st.permission_mode_effective || st.permission_mode;
+  const map = accessNativeMap(active);
+  const opts = accessOptions().filter(o => map[o.id]);
+  const spec = n => (PERM_MODES || []).find(m => m.id === n) || {};
+  const row = o => {
+    const native = map[o.id];
+    const m = spec(native);
+    const on = running === native;
+    const busy = S.setBusy === "mode:" + native;
+    return `<button class="opt" type="button" role="radio" aria-checked="${on}"
+        data-pmode-set="${esc(native)}"
+        ${m.settable===false?'data-pmode-locked="1"':""}
+        ${busy?'aria-busy="true"':""}>
+      <span class="rd" aria-hidden="true"></span>
+      <span class="oi">
+        <span class="on">${esc(o.label)}
+          ${on?'<span class="pill p-ok">in use</span>':""}
+          ${o.warn?'<span class="pill p-warn">risky</span>':""}
+          ${m.settable===false?'<span class="pill p-mut">locked</span>':""}
+          ${busy?'<span class="pill p-acc">saving…</span>':""}</span>
+        <span class="od">${esc(o.desc || m.note || "")}</span>
+      </span>
+    </button>`;
+  };
+  /* Anything stored that the four options do not cover -- `manual`, `dontAsk`,
+     and whatever a later release adds. Listed, not hidden: a routine runs on
+     `dontAsk` and an operator must be able to see and reach it. */
+  const covered = new Set(Object.keys(map).map(k => map[k]));
+  const rest = (PERM_MODES || []).filter(m => !covered.has(m.id));
+  const running_covered = covered.has(running);
+  return `
+    ${settingsHeadHtml("Access and permissions",
+      "What the AI may change on this Mac without asking you first.", "Settings")}
+    ${settingsBanner()}
+    ${st.permission_mode_clamped?`<div class="note w"><b>The setting on file is not the one running.</b>
+      Sutra is starting sessions as <b>${esc(accessLabelFor(active, running))}</b>.
+      ${esc(st.permission_mode_clamp_reason||"")}
+      <details style="margin-top:6px"><summary class="why">Why</summary>
+      <p class="why" style="margin:6px 0 0">To honour it, restart the server with
+      <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code>. The gate is
+      out of band on purpose: this endpoint is unauthenticated, so anything that could reach
+      the port could otherwise widen the agent's authority.</p></details></div>`:""}
+    <p style="margin-bottom:11px">This applies to
+      <b>${esc(providerLabel(active))}</b>, the default provider. A chat can be given
+      its own setting from the chat itself.</p>
+    <div role="radiogroup" aria-label="Access">${opts.map(row).join("")}</div>
+    ${!running_covered && running ? `<div class="note" style="margin-top:11px">
+      <b>You are on an older setting.</b> Sessions start as
+      <code>${esc(running)}</code>, which is not one of the four above. Picking one
+      replaces it.</div>` : ""}
+    ${rest.length ? fold("set.mode", "Older permission modes",
+        rest.length + " more", `
+      <p class="why" style="margin:0 0 9px">Kept because they still work and
+        because routines use them. Nothing here is new.</p>
+      <div role="radiogroup" aria-label="Older permission modes">
+        ${rest.map(m => `<button class="opt" type="button" role="radio"
+            aria-checked="${running===m.id}" data-pmode-set="${esc(m.id)}"
+            ${m.settable===false?'data-pmode-locked="1"':""}
+            ${S.setBusy==="mode:"+m.id?'aria-busy="true"':""}>
+          <span class="rd" aria-hidden="true"></span>
+          <span class="oi"><span class="on"><code>${esc(m.id)}</code>
+            ${running===m.id?'<span class="pill p-ok">in use</span>':""}
+            ${m.writes_files?'<span class="pill p-block">writes files</span>':""}</span>
+            <span class="od">${esc(m.note||"")}</span></span>
+        </button>`).join("")}
+      </div>`, false) : ""}`;
+}
+
+/* ── Usage limits ──────────────────────────────────────────────────────────
+   Every provider on one page, from GET /api/usage/all. A server without that
+   route falls back to SCREENS.usage(), which is exactly today's screen for
+   today's selected provider -- so an older backend loses the other cards and
+   nothing else. */
+function usageSectionHtml(fallback){
+  const all = usageAllHtml();
+  return `
+    ${settingsHeadHtml("Usage limits",
+      "How much of each provider's allowance you have used.", "Settings")}
+    ${settingsBanner()}
+    ${all !== null ? all
+      : `${S.usageAllError?`<div class="note w"><b>The all-provider view is not available
+           on this server.</b> Showing the current provider only.</div>`
+         :`<p class="why" style="margin-bottom:11px">Reading every provider…</p>`}
+         ${typeof fallback === "function" ? fallback() : ""}`}`;
+}
+
+/* ── Updates ───────────────────────────────────────────────────────────────
+   Sutra's own updater is untouched: updatesHtml() is rendered verbatim. What is
+   new is the list of AI TOOLS below it, which had no home at all before. */
+function toolsListHtml(){
+  const tools = S.provTools;
+  if (S.provToolsError) return `<div class="note w"><b>The AI tool list is not available on this server.</b>
+    ${esc(S.provToolsError)}</div>`;
+  if (!tools) return `<p class="why" style="margin:0">Reading the AI tools…</p>`;
+  if (!tools.length) return `<p class="why" style="margin:0">Sutra found no AI tool
+    to report on this Mac.</p>`;
+  return tools.map(t => {
+    const id = String(t.id || "");
+    const busy = S.toolBusy === id;
+    const log = S.toolLog && S.toolLog.id === id ? S.toolLog : null;
+    const state = t.update_available
+      ? `<span class="pill p-acc">${esc(t.latest_version || "update")} available</span>`
+      : t.installed_version ? `<span class="pill p-ok">up to date</span>`
+      : `<span class="pill p-mut">not installed</span>`;
+    /* TOO OLD IS A WARNING, NEVER A REFUSAL (SPEC F). It names the feature and
+       the version, because "too old" on its own tells nobody what to do. */
+    const old = t.too_old ? `<div class="note w" style="margin:6px 0 0">${
+      esc(t.note || ((t.name || id) + " " + (t.installed_version || "on this Mac")
+          + " is older than " + (t.minimum || "the version Sutra was built against")
+          + ". Some things will not work until you update it."))}</div>` : "";
+    return `<div class="sxtool">
+      <div class="kv"><b>${esc(t.name || id)}</b><span>
+        <code>${esc(t.installed_version || "not installed")}</code> ${state}
+        ${t.update_available ? `<button class="btn" type="button" data-toolupdate="${esc(id)}"
+            ${S.toolBusy?"disabled":""}>${busy?"Updating…":"Update"}</button>` : ""}
+      </span></div>
+      ${old}
+      ${t.update_command && !t.managed_by_sutra ? `<p class="why" style="margin:6px 0 0">
+        Sutra does not manage this one. Update it with
+        <code>${esc(t.update_command)}</code>.</p>` : ""}
+      ${log ? `<details class="sxdet" open><summary class="why">${
+          log.ok === false ? "The update failed" : "Update log"}</summary>
+        <pre class="sxlog">${esc(String(log.log || "").slice(0, 8000))}</pre>
+        ${log.version_after ? `<p class="why" style="margin:6px 0 0">Now on
+          <code>${esc(log.version_after)}</code>${log.version_before
+          ? ` (was <code>${esc(log.version_before)}</code>)` : ""}.</p>` : ""}
+      </details>` : ""}
+    </div>`;
+  }).join("");
+}
+function updatesSectionHtml(){
+  return `
+    ${settingsHeadHtml("Updates", "Sutra itself, and the AI tools it runs.", "Settings")}
+    ${settingsBanner()}
+    ${updatesHtml()}
+    <section class="chsec"><h3 class="sec">AI tools</h3>
+      <p class="why" style="margin:0 0 9px">The command-line tools Sutra runs to
+        answer your messages. Each one updates on its own schedule.</p>
+      ${toolsListHtml()}
+    </section>`;
+}
+
+/* ── Workspace and folder ────────────────────────────────────────────────── */
+function workspaceSectionHtml(st){
+  return `
+    ${settingsHeadHtml("Workspace and folder", "The folder your AI works in.", "Settings")}
+    ${settingsBanner()}
+    <p style="margin-bottom:9px">Your AI can read and change files here, and this is
+      where anything it creates will go. If the folder does not exist yet, it is made
+      for you.</p>
+    <p style="margin-bottom:9px">A change applies to your <b>next</b> chat. A chat that is
+      already running stays where it is — moving it mid-answer would break the work it is in
+      the middle of.</p>
+    <div class="wdrow">
+      <input type="text" class="wdin" data-workdir-input
+             value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
+             spellcheck="false" autocapitalize="off" autocorrect="off"
+             aria-label="Project folder" placeholder="~/sutra-ui-workspace">
+      ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
+        title="Choose a folder in Finder">Browse…</button>`:""}
+      <button class="btn" type="button" data-workdir-save
+        ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
+          S.setBusy==="workdir"?"Saving…":"Use this folder"}</button>
+    </div>
+    <p class="why" style="margin:7px 0 9px">Has to be somewhere inside
+      <code>${esc(st.workdir_root||"~")}</code>. Your AI can read every file in the folder you
+      pick, so picking the top of your drive would hand it everything on this Mac.</p>
+    <div class="kv"><b>Working in</b><span><code>${esc(st.workdir||"—")}</code></span></div>`;
+}
+
+/* ── Advanced ──────────────────────────────────────────────────────────────
+   Everything technical that does not belong on the first screen: which chats
+   are listed, saved values the server refused, and the file everything lives
+   in. Folds here are kept (they are three unrelated blocks on one page), and
+   their keys are the existing ones so an operator's collapsed state survives. */
+function advancedSectionHtml(st){
+  const scope = (st.chat_scope === "all") ? "all" : "sutra";
+  const opt = (id, title, body) => `
+    <button class="opt" type="button" role="radio" aria-checked="${scope===id}"
+        data-chatscope="${id}" ${S.setBusy==="scope:"+id?'aria-busy="true"':""}>
+      <span class="rd" aria-hidden="true"></span>
+      <span class="oi"><b>${title}</b><span class="osub">${body}</span></span>
+    </button>`;
+  const invalid = Object.keys(st.invalid_stored_values||{}).length
+    ? `<div class="note w"><b>Some saved settings could not be used.</b>
+        ${Object.entries(st.invalid_stored_values).map(([k,v])=>
+          `<div>${esc(k.replace(/_/g," "))} — <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
+        Nothing was changed behind your back; the normal default is being used instead.</div>`
+    : `<p class="why" style="margin:0">Every saved setting loaded cleanly.</p>`;
+  return `
+    ${settingsHeadHtml("Advanced",
+      "Which chats are listed, saved values Sutra could not use, and the technical detail.",
+      "Settings")}
+    ${settingsBanner()}
+    ${fold("set.chatscope", "Chats shown",
+      scope === "all" ? "Every session" : "Started in Sutra", `
+      <p style="margin-bottom:9px">Which conversations the Chats list shows. This changes the
+        list only — nothing is deleted, moved or hidden on disk either way.</p>
+      <div role="radiogroup" aria-label="Chats shown">
+        ${opt("sutra", "Only chats started in Sutra",
+              "The conversations this app began. Work you did in a terminal or another editor "
+            + "stays out of Sutra's list.")}
+        ${opt("all", "Every session on this Mac",
+              "Every transcript any AI provider wrote here — Claude, Codex, DeepSeek — whichever "
+            + "tool started it. Departments then count and group all of it.")}
+      </div>`)}
+    ${fold("set.invalid", "Saved values", Object.keys(st.invalid_stored_values||{}).length
+      ? Object.keys(st.invalid_stored_values).length + " refused" : "all fine", invalid, false)}
+    ${fold("set.diag", "Where this is stored", "settings.json", `
+      <div class="kv"><b>Settings file</b><span><code>~/.sutra-ui/settings.json</code></span></div>
+      <div class="kv"><b>Running as</b><span><code>${esc(st.permission_mode_effective || st.permission_mode || "—")}</code></span></div>
+      <div class="kv"><b>On file</b><span><code>${esc(st.permission_mode || "—")}</code></span></div>
+      <div class="kv"><b>Default provider</b><span><code>${esc(st.provider || "—")}</code></span></div>
+      <p class="why" style="margin:9px 0 0">These are the raw values. The screens above
+        are the same settings in plain words.</p>`, false)}`;
+}
+
 SCREENS.settings = () => {
   if (!SETTINGS) return `<div class="zero"><h4>Settings unavailable</h4>
     <p>${esc(S.runtimeError || S.setError || "GET /api/settings has not answered.")}</p>
     ${S.runtimeError?`<p style="font-size:11px;color:var(--faint)">The registry loaded; only the
       runtime call failed, so the rest of the panel is still live. Reload to retry.</p>`:""}</div>`;
   const st = SETTINGS;
-  const active = st.provider;
-  const upd = updatesHtml();
-  const banner = S.setError
-    ? `<div class="note b"><b>The last change was refused.</b> ${esc(S.setError)}</div>`
-    : S.setOk ? `<div class="note"><b>Saved.</b> ${esc(S.setOk)}</div>` : "";
-
-  /* ONE PLAIN LINE PER ROW, and deliberately no `p.reason` under it (founder
-     2026-09-07: "only show minimum a user might want to see").
-
-     What used to render here was the backend's diagnostic sentence -- up to
-     400 characters naming binary paths, ~/.codex/auth.json, PATH, npm package
-     names, the ACP and stream-json protocols, a codex-cli version pin, the
-     keychain service and account a key would live at, and which shape of
-     record settings.json keeps. All true. None of it answers the only question
-     this list is asked: can I pick this one, and if not, what do I do.
-
-     THE DETAIL IS NOT LOST. `reason` still ships in the API and still renders
-     where someone who wants it goes looking -- Health ("Why nothing here
-     runs", 04-screens.js) and the onboarding blocked-provider facts
-     (06-render.js) -- and the Codex and DeepSeek sign-in blocks directly below
-     carry the credential specifics for their own providers. This is a change
-     of AUDIENCE, not a deletion.
-
-     ONE CASE EARNS MORE THAN A STATUS. "Not installed on this Mac" is actively
-     misleading for someone who has Claude Desktop and reasonably believes they
-     installed Claude -- a field incident, per providers.py's own note. So the
-     backend sends `desktop_only` as a FLAG and the sentence lives here, in the
-     UI, in the words a user has. Sutra deciding what to say is this file's
-     job; Sutra deciding what is true is providers.py's.
-
-     WHAT WENT WITH IT: "Set the full path in Settings below, or
-     SUTRA_UI_<ID>_BIN". No such field is rendered anywhere in the panel --
-     POST /settings/provider-bin exists as a route with no control in front of
-     it -- so that sentence sent people looking for something that is not
-     there. Removing it removes a wrong instruction, not a useful one. */
-  const provRow = p => `
-    <button class="opt" type="button" role="radio"
-        aria-checked="${active===p.id}" data-prov="${esc(p.id)}"
-        ${p.runnable?"":"disabled"}
-        ${S.setBusy==="prov:"+p.id?"aria-busy=\"true\"":""}>
-      <span class="rd" aria-hidden="true"></span>
-      <span class="oi">
-        <span class="on">${esc(p.name)}
-          ${active===p.id?'<span class="pill p-ok">in use</span>':""}
-          ${S.setBusy==="prov:"+p.id?'<span class="pill p-acc">saving…</span>':""}</span>
-        <span class="od">${p.runnable
-            ? "Ready to use"
-            : p.desktop_only ? "Claude Desktop is installed, but this needs Claude Code — a different app"
-            : !p.installed ? "Not installed on this Mac"
-            : !p.configured ? "Installed, but not signed in yet"
-            : "Installed, but Sutra can’t chat with it yet"}</span>
-      </span>
-    </button>`;
-
-  /* `running` is the mode that actually reaches the spawn; `stored` is what is
-     on file. They diverge when an unsafe mode was written without the
-     out-of-band opt-in, and the row has to distinguish them -- labelling the
-     stored value "active" is precisely the claim that was false. */
-  const running = st.permission_mode_effective || st.permission_mode;
-  const modeRow = m => `
-    <button class="opt" type="button" role="radio"
-        aria-checked="${running===m.id}" data-pmode-set="${esc(m.id)}"
-        ${m.settable===false?'data-pmode-locked="1"':""}
-        ${S.setBusy==="mode:"+m.id?"aria-busy=\"true\"":""}>
-      <span class="rd" aria-hidden="true"></span>
-      <span class="oi">
-        <span class="on"><code>${esc(m.id)}</code>
-          ${m.default?'<span class="pill p-mut">default</span>':""}
-          ${m.writes_files?'<span class="pill p-block">writes files</span>':'<span class="pill p-ok">read-only</span>'}
-          ${running===m.id?'<span class="pill p-ok">running</span>':""}
-          ${st.permission_mode===m.id&&running!==m.id?'<span class="pill p-warn">on file · not honoured</span>':""}
-          ${m.settable===false?'<span class="pill p-mut">locked</span>':""}
-          ${S.setBusy==="mode:"+m.id?'<span class="pill p-acc">saving…</span>':""}</span>
-        <span class="od">${esc(m.note||"")}</span>
-        ${m.settable===false?`<span class="why">gated: the server must be started with
-          <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code>
-          before this can be selected.</span>`:""}
-      </span>
-    </button>`;
-
-  /* Derived from what RUNS, not from what is stored. */
-  const writes = (PERM_MODES.find(m=>m.id===running)||{}).writes_files;
-
-  return `
-    ${banner}
-    ${upd}
-    ${fold("set.prov", "Default provider", esc(active||"none runnable"), `
-      <p style="margin-bottom:9px">Which AI answers your messages. New chats start here, and your
-        next message in any open chat moves to it too — nothing already written changes.</p>
-      <p style="margin-bottom:9px">Only the ones ready to use can be picked. The rest are listed
-        with what they need.</p>
-      <div role="radiogroup" aria-label="Default provider">${PROVIDERS.map(provRow).join("")}</div>
-      ${deepseekAuthHtml()}
-      ${codexAuthHtml()}
-      ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-bottom:0">
-        <b>Your saved choice could not be used.</b>
-        ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
-          but it is not ready to use right now.</div>`).join("")}
-        <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
-      ${PROVIDERS.filter(p=>p.runnable).length<2?`<p style="font-size:11px;color:var(--faint);margin:9px 0 0">
-        Only ${esc(providerLabel(active))} is ready to use on this Mac right now.</p>`:""}`)}
-
-    ${fold("set.mode", "Permission mode", esc(running||"—"), `
-      ${st.permission_mode_clamped?`<div class="note w"><b>The stored mode is not the one running.</b>
-        <code>${esc(st.permission_mode)}</code> is on file, but sessions start as
-        <code>${esc(running)}</code>. ${esc(st.permission_mode_clamp_reason||"")}
-        <div style="margin-top:6px">To honour it, restart the server with
-        <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code> — the gate is
-        deliberately out of band, because this endpoint is unauthenticated and anything that can
-        reach the port could otherwise widen the agent's authority.</div></div>`:""}
-      ${writes?`<div class="note b"><b>This mode lets the agent write files without asking.</b>
-        With <code>${esc(running)}</code> running, a session started from this panel can
-        create, change and delete files under the workdir below — and
-        <code>bypassPermissions</code> also auto-approves shell commands. Nothing will prompt you
-        per edit.</div>`:`<div class="note"><b>Read-only planning.</b> The agent proposes edits and
-        you approve each one. Choosing <code>acceptEdits</code> below removes that prompt.</div>`}
-      <div role="radiogroup" aria-label="Permission mode">${PERM_MODES.map(modeRow).join("")}</div>`)}
-
-    ${(() => {
-      /* WHICH CHATS THE LIST SHOWS (founder, 2026-09-13).
-         The rail lists only chats Sutra itself started -- the owner's decision
-         of 2026-09-09, taken on a disk holding 20,255 transcripts of which one
-         was a Sutra chat. An operator who uses Sutra as the one place to see
-         all their work wants the opposite, and neither is wrong, so it is a
-         setting rather than a default somebody loses. */
-      const scope = (st.chat_scope === "all") ? "all" : "sutra";
-      const opt = (id, title, body) => `
-        <button class="opt" type="button" role="radio" aria-checked="${scope===id}"
-            data-chatscope="${id}" ${S.setBusy==="scope:"+id?'aria-busy="true"':""}>
-          <span class="rd" aria-hidden="true"></span>
-          <span class="oi"><b>${title}</b><span class="osub">${body}</span></span>
-        </button>`;
-      return fold("set.chatscope", "Chats shown",
-        scope === "all" ? "Every session" : "Started in Sutra", `
-        <p style="margin-bottom:9px">Which conversations the Chats list shows. This changes the
-          list only — nothing is deleted, moved or hidden on disk either way.</p>
-        <div role="radiogroup" aria-label="Chats shown">
-          ${opt("sutra", "Only chats started in Sutra",
-                "The conversations this app began. Work you did in a terminal or another editor "
-              + "stays out of Sutra's list.")}
-          ${opt("all", "Every session on this Mac",
-                "Every transcript any AI provider wrote here — Claude, Codex, DeepSeek — whichever "
-              + "tool started it. Departments then count and group all of it.")}
-        </div>`);
-    })()}
-
-    ${fold("set.workdir", "Project folder", esc((st.workdir||"").split("/").pop()||"—"), `
-      <p style="margin-bottom:9px">The folder your AI works in. It can read and change files here,
-        and this is where anything it creates will go. If the folder does not exist yet, it is
-        made for you.</p>
-      <p style="margin-bottom:9px">A change applies to your <b>next</b> chat. A chat that is
-        already running stays where it is — moving it mid-answer would break the work it is in
-        the middle of.</p>
-      <div class="wdrow">
-        <input type="text" class="wdin" data-workdir-input
-               value="${esc(S.workdirDraft !== null ? S.workdirDraft : (st.workdir||""))}"
-               spellcheck="false" autocapitalize="off" autocorrect="off"
-               aria-label="Project folder" placeholder="~/sutra-ui-workspace">
-        ${dirPickerAvailable()?`<button class="btn" type="button" data-workdir-browse
-          title="Choose a folder in Finder">Browse…</button>`:""}
-        <button class="btn" type="button" data-workdir-save
-          ${S.setBusy==="workdir"?'aria-busy="true" disabled':""}>${
-            S.setBusy==="workdir"?"Saving…":"Use this folder"}</button>
-      </div>
-      <p style="font-size:11px;color:var(--faint);margin:7px 0 9px">Has to be somewhere inside
-        <code>${esc(st.workdir_root||"~")}</code>. Your AI can read every file in the folder you
-        pick, so picking the top of your drive would hand it everything on this Mac.</p>
-      <div class="kv"><b>Working in</b><span><code>${esc(st.workdir||"—")}</code></span></div>
-      ${Object.keys(st.invalid_stored_values||{}).length?`<div class="note w">
-        <b>Some saved settings could not be used.</b>
-        ${Object.entries(st.invalid_stored_values).map(([k,v])=>
-          `<div>${esc(k.replace(/_/g," "))} — <code>${esc(JSON.stringify(v))}</code></div>`).join("")}
-        Nothing was changed behind your back; the normal default is being used instead.</div>`:""}`)}
-    ${/* Usage lives HERE now (founder 2026-09-03), not as a nav row of its own.
-          It is a fact about the assistant you just picked -- how much of it you
-          have used, or what is left to spend -- and it changed shape with the
-          provider, so a separate destination made you cross the app to answer a
-          question this screen had just raised.
-
-          SCREENS.usage is still registered and still renders whichever shape
-          the selected provider needs, so deep links and openScreen("usage")
-          keep working; only the nav row went. */""}
-    <section class="chsec"><h3 class="sec">Usage</h3>${SCREENS.usage()}</section>`;
+  /* THE DEFAULT IS THE OVERVIEW, and it is the default because S.setSection is
+     undefined until a click in this session sets it. */
+  const sec = S.setSection || null;
+  if (!sec) return settingsOverviewHtml(st);
+  if (sec.indexOf("provider:") === 0) return providerPageHtml(sec.slice(9), st);
+  switch (sec){
+    case "providers": return `${settingsHeadHtml("AI providers",
+        "Which AI answers your messages, and how each one is set up.", "Settings")}
+      ${settingsBanner()}${providerListHtml(st)}`;
+    case "access":    return accessSectionHtml(st);
+    /* The fallback is passed from HERE, not looked up inside, so this screen's
+       one dependency on the old per-provider usage render is visible at the
+       call site: an older backend with no /api/usage/all still gets a usage
+       screen, and `usage` keeps its only route into the shell. */
+    case "usage":     return usageSectionHtml(() => SCREENS.usage());
+    case "updates":   return updatesSectionHtml();
+    case "workspace": return workspaceSectionHtml(st);
+    case "advanced":  return advancedSectionHtml(st);
+  }
+  /* An id nothing renders (a stale one, or a typo in a caller) lands on the
+     overview rather than on a blank pane. */
+  return settingsOverviewHtml(st);
 };
+
 
 /* ── Staged department creation (§3.3). Four collapsible sections and a completion meter —
    NOT a Next/Back wizard. Nothing is minted at any step; the last step renders a CLI string. */
@@ -1159,7 +1570,10 @@ const TITLES = {
   skills:["Skills","~/.claude · ~/.codex — read at request time"],
   routines:["Routines","~/.sutra-ui/routines · launchd user agents — runs on this Mac"],
   automation:["Automation",".sutra/*.jsonl · .enforcement/*.jsonl — read-only, over the workdir"],
-  settings:["AI Provider","which provider runs, what it may do, and where · ~/.sutra-ui/settings.json"],
+  /* RENAMED 2026-09-14, with the rail row in 02-helpers.js: this screen used to be
+     the provider list and was labelled "AI Provider". It now opens as an overview of
+     six sections, so the old name described only the first of them. */
+  settings:["Settings","providers, access, usage, updates and your folder · ~/.sutra-ui/settings.json"],
   balance:["Balance","holding/state/balance/ — not yet observing · design preview"],
   optimus:["Optimus","the daemon, visible — ~/.sutra-native/daemon · asks, routes, runs"],
   /* Registering a screen means BOTH a SCREENS entry and a TITLES one. render()
@@ -1281,6 +1695,34 @@ function permSelect(mpid){
   const unsupported = !modes.some(m => m.id === cur);
   const writes = (all.find(m=>m.id===cur)||{}).writes_files ? " warn" : "";
   const label = providerLabel(mpid) || mpid || "this provider";
+  /* ── PLAIN NAMES, SAME VALUES (SPEC A) ────────────────────────────────────
+     The four options an operator can actually reason about -- Read only,
+     Accept edits, Approve for me, Full access -- are LABELS over the native
+     mode ids that are already stored and already validated. Nothing about what
+     travels or what is written to settings.json changes; `plan` is still
+     `plan`, so every existing install, routine and saved chat is unaffected.
+
+     A mode with no plain name is a LEGACY one (`manual`, `dontAsk` -- routines
+     use dontAsk). It is not dropped and not relabelled: it goes under an
+     Advanced group with its own id, because a choice someone already made must
+     not disappear because the wording got friendlier.
+
+     THE ORDER IS THE SERVER'S, not the access list's. `modes` is PERM_MODES
+     filtered by provider, and iterating it is what keeps the option order --
+     and therefore what a keyboard user and every existing test see -- exactly
+     what it was. Grouping only decides which <optgroup> a mode lands in. */
+  const named = (typeof accessOptionsFor === "function")
+    ? accessOptionsFor(mpid) : [];
+  const byMode = {};
+  named.forEach(o => { byMode[o.mode] = o; });
+  const optFor = (m) => {
+    const a = byMode[m.id];
+    return `<option value="${esc(m.id)}" ${!unsupported && m.id===cur?"selected":""}
+      title="${esc((a && a.desc) || m.note || "")}"
+      >${esc(a ? a.label : m.id)}${m.writes_files?" ⚠":""}</option>`;
+  };
+  const main = modes.filter(m => byMode[m.id]);
+  const legacy = modes.filter(m => !byMode[m.id]);
   /* Assembled into ONE string rather than interpolated as a second slot in the
      template below. An empty `${...}` still leaves its own newline and indent
      behind, so a Claude pane -- which never has an unsupported mode -- would
@@ -1291,8 +1733,9 @@ function permSelect(mpid){
       title="${esc(label)} has no equivalent — this chat runs in default, which asks before everything"
       >${esc(cur)} — not supported by ${esc(label)}</option>`
       : "")
-    + modes.map(m=>`<option value="${esc(m.id)}" ${!unsupported && m.id===cur?"selected":""}
-      >${esc(m.id)}${m.writes_files?" ⚠":""}</option>`).join("");
+    + main.map(optFor).join("")
+    + (legacy.length
+        ? `<optgroup label="Advanced">${legacy.map(optFor).join("")}</optgroup>` : "");
   return `<select class="permsel${writes}" data-perm aria-label="Permission mode"
       title="What the agent may do without asking — applies to the next message">
     ${opts}
@@ -2083,30 +2526,17 @@ function turnResponse(t){
   /* toolRuns (live, with lifecycle) is preferred; `tools` (flat names, which is all a
      replayed transcript records) is the fallback. A replayed turn therefore shows what
      ran but never claims a pass/fail it does not know. */
+  /* ONE RENDERER FOR BOTH (2026-09-14). This used to be an inline template that
+     drew every run as the same flat .trow -- so a subagent, a shell command and
+     a file edit were one picture -- while a REPLAYED turn went through
+     toolCallsHtml just below and got a second, different flat row. Both now go
+     through the card renderer in 06-render.js, which draws a card per `kind`
+     and keeps the three things this row has always carried: the running dot,
+     the output expander (same data-toolout key), and the terminal re-open
+     control for a shell command. `tools` -- the flat name list a transcript
+     records and a test pins -- is untouched and is still the last fallback. */
   const tools = runs.length
-    ? `<div class="toolRow">${runs.length > 12 ? `<div class="trow unk">
-           <span class="tstate" aria-hidden="true"></span>
-           <span class="tname">${runs.length - 12} earlier tool call${runs.length-12===1?"":"s"}</span>
-           <span class="tsum">not shown</span></div>` : ""}${runs.slice(-12).map(r=>`
-         <div class="trow ${r.running?"run":(r.ok===false?"bad":(r.ok===null?"unk":"ok"))}">
-           <span class="tstate" aria-hidden="true"></span>
-           <span class="tname">${esc(r.name)}</span>
-           ${r.summary?`<span class="tsum">${esc(r.summary)}</span>`:""}
-           ${r.output?`<button class="tout" type="button" data-toolout="${esc(r.id||"")}"
-                        aria-expanded="${S.toolOpen&&S.toolOpen[r.id]?"true":"false"}"
-                        title="Show what this tool returned">${
-                          S.toolOpen&&S.toolOpen[r.id]?"hide":"output"}</button>`:""}
-           ${r.command?`<button class="tout tterm" type="button" data-toolterm="${esc(r.id||"")}"
-                        title="Open the terminal with this command typed in, ready to run.
-It is NOT executed for you — press Enter yourself once you have read it.">terminal</button>`:""}
-           ${r.caller && r.caller!=="direct"?`<span class="pill p-acc">${esc(r.caller)}</span>`:""}
-           <span class="tverdict">${r.startedAt
-               ? esc(fmtDur((r.endedAt || Date.now()) - r.startedAt)) + " · " : ""}${r.running ? "running"
-                                   : r.ok === false ? "error"
-                                   : r.ok === null ? "unknown"
-                                   : "done"}</span>
-         </div>${r.output && S.toolOpen && S.toolOpen[r.id]
-           ? `<pre class="toutbody">${esc(r.output)}</pre>` : ""}`).join("")}</div>`
+    ? toolTimelineHtml(t)
     : (t.calls && t.calls.length ? toolCallsHtml(t.calls)
        : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
