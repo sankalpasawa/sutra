@@ -968,6 +968,36 @@ async function shadowSendIntervention(mid){
   return r;
 }
 
+/* ── "last updated": how fresh the thing you are reading is ──────────────
+   THE SERVER'S CLOCK, NEVER THE RENDERER'S. MissionStore.save() re-stamps
+   `updated_at` on every write, so this is the age of the RECORD. A local
+   render time would read "just now" forever on a task that has not moved,
+   which is the exact question this row exists to answer.
+
+   Relative, because "is this still moving?" is what a founder asks a live
+   card; the exact instant stays on hover for when the relative word is not
+   enough. Empty string when there is no usable stamp -- a card that cannot
+   say how fresh it is must say nothing rather than guess. */
+function shadowStampAgo(iso, now){
+  const ms = Date.parse(String(iso == null ? "" : iso));
+  if (isNaN(ms)) return "";
+  const d = (now == null ? Date.now() : now) - ms;
+  /* a stamp in the future is clock skew between the server and this box,
+     not news from later -- it reads as fresh, never as "-3m ago" */
+  if (d < 60000) return "just now";
+  if (d < 3600000) return Math.floor(d / 60000) + "m ago";
+  if (d < 86400000) return Math.floor(d / 3600000) + "h ago";
+  return Math.floor(d / 86400000) + "d ago";
+}
+
+function shadowTaskUpdatedHtml(m){
+  const iso = m && (m.updated_at || m.created_at);
+  const ago = shadowStampAgo(iso);
+  if (!ago) return "";
+  return `<div class="shcard2row shcard2stamp"><span class="shcard2k">last updated</span>
+    <span class="shcard2v" title="${escAttr(iso)}">${esc(ago)}</span></div>`;
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -1047,6 +1077,7 @@ function shadowTaskCardHtml(m){
     <div class="shcard2row"><span class="shcard2k">budget</span>
       <span class="shcard2v">turn ${esc(String(m.turns_used || 0))} of ${
         esc(String(m.max_turns || 0))}</span></div>
+    ${shadowTaskUpdatedHtml(m)}
     ${m.block_reason ? `<div class="shcard2row"><span class="shcard2k">stopped on</span>
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}

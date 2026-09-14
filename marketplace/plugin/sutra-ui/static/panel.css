@@ -3170,6 +3170,11 @@
 .shcard2row{display:flex;gap:12px;font-size:12.5px;padding:3px 0}
 .shcard2k{flex:0 0 78px;color:var(--muted)}
 .shcard2v{flex:1;min-width:0}
+/* the freshness stamp is context for the rows above it, not one of them --
+   same row shape so the card's left edge stays a single column, quieter
+   type so it never competes with state or budget */
+.shcard2stamp{font-size:11.5px}
+.shcard2stamp .shcard2v{color:var(--faint)}
 /* REVEAL THE WORKER CHAT. Quiet by default -- the control room above it is
    what the founder acts on, and this is the way back to the transcript, not
    a call to read it. Sits where the transcript itself used to start, so the
@@ -3311,6 +3316,7 @@
 .shcard2tag{font-size:8px;padding:3px 6px}
 .shcard2obj{font-size:13px}
 .shcard2row{font-size:12px;padding:2px 0;gap:10px}
+.shcard2stamp{font-size:11px}
 .shcard2k{flex-basis:66px;font-size:11.5px}
 .shcard2acts{margin-top:9px;gap:8px}
 .shcard2acts .btn{padding:5px 10px;font-size:11.5px}

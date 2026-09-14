@@ -94,6 +94,37 @@ class TestStore(Base):
         with self.assertRaises(ValueError):
             self.store.confirm_check(m["id"], 5)
 
+    def test_05_updated_at_is_on_every_listed_mission_and_advances(self):
+        """The freshness stamp the task card reads.
+
+        The card's "last updated" row is this field and nothing else, so two
+        things have to hold: every mission the list endpoint hands the UI
+        carries it in a shape Date.parse understands, and a write MOVES it.
+        A stamp that never moved would make a wedged task read as fresh --
+        the exact lie the row exists to prevent.
+        """
+        m = self.store.create("stamp the record", "fix")
+        self.assertIn("updated_at", m, "a new mission is born stamped")
+
+        for row in self.store.list():
+            self.assertRegex(
+                row["updated_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+                "the UI parses this stamp as a UTC instant")
+
+        first = self.store.load(m["id"])["updated_at"]
+        # _now() is second-granularity, so hold the clock still and assert the
+        # WRITE is what re-stamps -- not the passage of wall-clock time.
+        orig_now = mission_engine._now
+        try:
+            mission_engine._now = lambda: "2026-09-15T12:00:00Z"
+            self.store.transition(m["id"], "brief_confirm")
+        finally:
+            mission_engine._now = orig_now
+        after = self.store.load(m["id"])["updated_at"]
+        self.assertEqual(after, "2026-09-15T12:00:00Z",
+                         "save() must re-stamp updated_at on every write")
+        self.assertNotEqual(after, first, "the stamp moved with the record")
+
 
 class TestLoop(Base):
     def _running(self, template="fix", done_when=None, objective="do the thing"):

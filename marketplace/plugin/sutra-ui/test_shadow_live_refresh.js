@@ -31,8 +31,14 @@ const RealDate = Date;
 function ctxFor(files, extra){
   const clock = { t: 1000000 };
   const timers = [];                       // every setInterval the module made
+  /* only `now` is faked -- that is the clock this file drives. The rest of
+     Date is carried across verbatim, because a partial stub of a global is a
+     trap: it turns an ordinary Date.parse anywhere in the module under test
+     into "Date.parse is not a function", which reads as a product bug. */
   function FakeDate(...a){ return new RealDate(...a); }
   FakeDate.now = () => clock.t;
+  FakeDate.parse = RealDate.parse;
+  FakeDate.UTC = RealDate.UTC;
   const ctx = Object.assign({
     console, Date: FakeDate, clock, timers,
     setTimeout: (fn) => ({ fn }),

@@ -1979,4 +1979,68 @@ const SET = { engage: ["outcome first"],
   console.log("ok 32 each state exposes only the actions the engine accepts");
 }
 
+/* 33. "LAST UPDATED": THE CARD SAYS HOW FRESH WHAT IT SHOWS IS.
+   The stamp is the server's `updated_at` (MissionStore.save re-stamps it on
+   every write), rendered relative. The failure this guards against is a row
+   that reads "just now" forever because it was drawn from the RENDER clock
+   instead of the record -- which would make a wedged task look alive. */
+{
+  const ctx = fresh();
+  const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+  const card = (m) => ctx.shadowTaskCardHtml(Object.assign(
+    { id: "s", objective: "o", template: "fix", state: "running",
+      turns_used: 1, max_turns: 20 }, m));
+  const stamp = (h) =>
+    (h.match(/last updated<\/span>\s*<span class="shcard2v"[^>]*>([^<]*)</) || [])[1];
+
+  /* the bands, against a pinned clock -- no wall-clock flake */
+  const NOW = Date.parse("2026-09-15T12:00:00Z");
+  const ago = (s) => ctx.shadowStampAgo(s, NOW);
+  assert.strictEqual(ago(iso(NOW - 5000)), "just now", "seconds = just now");
+  assert.strictEqual(ago(iso(NOW - 59000)), "just now", "under a minute");
+  assert.strictEqual(ago(iso(NOW - 3 * MIN)), "3m ago", "minutes");
+  assert.strictEqual(ago(iso(NOW - 59 * MIN)), "59m ago", "up to the hour");
+  assert.strictEqual(ago(iso(NOW - 2 * HOUR)), "2h ago", "hours");
+  assert.strictEqual(ago(iso(NOW - 4 * DAY)), "4d ago", "days");
+  /* server ahead of this box is skew, never news from later */
+  assert.strictEqual(ago(iso(NOW + 5 * MIN)), "just now",
+    "a future stamp must not render as negative time");
+  /* nothing to say beats guessing */
+  assert.strictEqual(ago(""), "", "empty stamp renders nothing");
+  assert.strictEqual(ago(null), "", "missing stamp renders nothing");
+  assert.strictEqual(ago("not a date"), "", "garbage stamp renders nothing");
+
+  /* ON THE CARD: visible, and driven by the record */
+  const live = card({ updated_at: iso(Date.now() - 2 * MIN) });
+  assert(/shcard2stamp/.test(live), "the card lost its last-updated row");
+  assert(/last updated/.test(live), "the row lost its label");
+  assert.strictEqual(stamp(live), "2m ago", "the card must print the age");
+
+  /* THE REGRESSION: an old record must NOT read as fresh */
+  const stale = card({ updated_at: iso(Date.now() - 6 * HOUR) });
+  assert.strictEqual(stamp(stale), "6h ago",
+    "the stamp is pinned to the render clock, not the mission record");
+
+  /* the exact instant stays reachable, for when the relative word is not
+     enough -- and it goes through the attribute escaper */
+  assert(new RegExp('title="' + iso(Date.parse("2026-09-14T08:30:00Z"))
+    + '"').test(card({ updated_at: "2026-09-14T08:30:00Z" })),
+    "the precise timestamp must survive on hover");
+
+  /* a record that predates the field still has created_at; one with neither
+     draws no row at all rather than an empty one */
+  assert.strictEqual(stamp(card({ created_at: iso(Date.now() - HOUR) })),
+    "1h ago", "created_at is the fallback when updated_at is absent");
+  const bare = card({});
+  assert(!/shcard2stamp/.test(bare) && !/last updated/.test(bare),
+    "with no usable stamp the card must say nothing, not 'last updated —'");
+
+  /* it is a row on the card, not a replacement for one: the facts beside it
+     are untouched */
+  assert(/turn 1 of 20/.test(live), "the budget row must survive");
+  assert(/shtpill-/.test(live), "the state pill must survive");
+  console.log("ok 33 the task card stamps how fresh the record it drew is");
+}
+
 console.log("test_shadow_home.js: all green");
