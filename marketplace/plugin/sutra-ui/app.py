@@ -338,8 +338,70 @@ def _sutra_allow_hook():
     }]}})
 
 
+def project_permissions_for(workdir):
+    """The `permissions` subtree a NORMAL chat at `workdir` would receive.
+
+    WHY THIS EXISTS (forensic, 2026-09-14). Claude resolves project settings
+    from the process cwd and does NOT walk up to the git root. A normal chat
+    runs at the repo root and picks up <repo>/.claude/settings.json, whose
+    permissions.allow carries a bare `Bash`. A Shadow-created worker runs in
+    the delegate workdir, which has no .claude/ at all, so it received NO
+    permission rules and every non-trivial Bash fell into the approval path
+    with nobody to answer it (`-p`). Measured: 0 Bash denials across 76
+    repo-root sessions, 16 across 116 sessions in the delegate workdir.
+
+    So the worker is handed the SAME permissions object, by the same
+    mechanism -- --settings is documented as "load ADDITIONAL settings from",
+    i.e. it merges -- WITHOUT moving its cwd. Isolation is unchanged.
+
+    PERMISSIONS ONLY. The project file also carries `hooks`, and those are
+    deliberately dropped: four use paths relative to the repo root (`bash
+    .claude/hooks/...`), which do not resolve from the worker's cwd, and
+    seven point at /Users/abhishekasawa/... -- a home that does not exist on
+    this machine, so they already fail in normal chat. Copying them would
+    fire a failing hook on every Edit/Write/Bash the worker makes.
+
+    The walk STOPS BEFORE $HOME: ~/.claude/settings.json is the USER layer,
+    which the CLI loads by itself. Treating it as a project file here would
+    duplicate a layer Claude already has.
+
+    Returns {"permissions": {...}} or {} -- never raises. A missing or
+    malformed file means "no inheritance", which is exactly today's
+    behaviour, so the worst case is the bug we started from, not a crash.
+    """
+    # AN EMPTY WORKDIR IS NOT "HERE" (caught by this change's own test 14).
+    # os.path.realpath("") resolves to the SERVER PROCESS's cwd, so a blank
+    # or absent workdir would have silently inherited whichever project the
+    # backend happened to be started from -- the repo root, in every dev run.
+    # Falsy means no inheritance, which is the pre-fix behaviour.
+    if not workdir or not str(workdir).strip():
+        return {}
+    try:
+        d = os.path.realpath(os.path.expanduser(str(workdir)))
+        home = os.path.realpath(os.path.expanduser("~"))
+    except Exception:  # noqa: BLE001 -- a bad path must not stop a spawn
+        return {}
+    for _ in range(32):                       # bounded: no symlink loop can spin
+        if not d or d == home:
+            break
+        cand = os.path.join(d, ".claude", "settings.json")
+        if os.path.isfile(cand):
+            try:
+                with open(cand, encoding="utf-8") as handle:
+                    raw = json.load(handle)
+            except (OSError, ValueError):
+                return {}
+            perms = (raw or {}).get("permissions")
+            return {"permissions": perms} if isinstance(perms, dict) else {}
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return {}
+
+
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
-                     opts=None, stream_input=False):
+                     opts=None, stream_input=False, extra_settings=None):
     """The full argv for one turn.
 
     Separated from the socket loop so it is testable without a subprocess, and
@@ -377,9 +439,20 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
         # --allowedTools does not help, because the MODE is evaluated first.
         # A PreToolUse hook is evaluated BEFORE the mode. See mcp_allow_hook.py
         # for why allowing exactly this namespace is safe.
+        # `extra_settings` is MERGED into that same inline object rather than
+        # emitted as a second --settings: the CLI takes one value for this
+        # flag, so a second occurrence would silently drop whichever the
+        # parser did not keep -- the same trap --allowedTools carries below.
+        # Position is unchanged, so every argv that already existed is
+        # byte-identical when extra_settings is None.
         hook = _sutra_allow_hook()
-        if hook:
-            args += ["--settings", hook]
+        settings_obj = json.loads(hook) if hook else {}
+        if extra_settings:
+            settings_obj.update(extra_settings)
+        if settings_obj:
+            args += ["--settings", json.dumps(settings_obj)]
+    elif extra_settings:
+        args += ["--settings", json.dumps(extra_settings)]
     if stream_input:
         args += ["--input-format", "stream-json"]
     else:
@@ -1776,7 +1849,7 @@ def _gemini_home_uninitialised():
 SHADOW_PROVIDERS = frozenset({"claude"})
 
 
-def _shadow_args(session_id=None):
+def _shadow_args(session_id=None, extra_settings=None):
     """Claude's argv for Shadow and its runtimes.
 
     `session_id` is the ONE addition (2026-09-11): passed through to
@@ -1811,15 +1884,62 @@ def _shadow_args(session_id=None):
             "active provider is %r (%s). Switch to Claude to use Shadow -- "
             "chat panes still run %s." % (prov["id"], prov["name"],
                                           prov["name"]))
-    return build_agent_args(prov["bin_path"], "", "plan",
-                            session_id=session_id, stream_input=True)
+    # ONE SOURCE OF TRUTH FOR PERMISSION MODE. This passed a literal "plan",
+    # so a founder who had put the app in acceptEdits got chat panes that
+    # could write and delegates that could not -- the delegate would design
+    # the change and then stop, because the flag forbade doing it. Shadow is
+    # not a separate trust domain; it is the same operator working through a
+    # different surface.
+    #
+    # NO SHADOW-SPECIFIC SETTING and no second clamp: this is the SAME call
+    # ws_chat makes (app.py, `perm_mode = providers.effective_permission_mode(
+    # settings["permission_mode"])`), so every gate is inherited rather than
+    # re-implemented -- unsafe modes stay clamped to plan unless
+    # unsafe_modes_allowed(), an unknown value still resolves to plan, and a
+    # hand-edited settings.json is still clamped at the point of USE.
+    # load_settings() always returns permission_mode (it is one of the three
+    # contract keys), so there is no missing-key path.
+    perm_mode = providers.effective_permission_mode(
+        providers.load_settings()["permission_mode"])
+    return build_agent_args(prov["bin_path"], "", perm_mode,
+                            session_id=session_id, stream_input=True,
+                            extra_settings=extra_settings)
 
 
 def _shadow_workdir_for_delegates():
     """Delegates work where the founder works (their objectives point at the
-    real repo), but in PLAN mode -- reads and plans, no writes until granted."""
+    real repo), under the SAME permission mode every chat pane runs at --
+    see _shadow_args. It said "but in PLAN mode" while that was hardcoded."""
     settings = providers.load_settings()
     return settings.get("workdir") or WORKDIR
+
+
+def _worker_args(session_id=None):
+    """argv for a Shadow-created WORKER chat -- the actor, not the supervisor.
+
+    THE ONLY BUILDER THAT INHERITS PROJECT PERMISSIONS, and the split is the
+    whole point of this function existing. `_shadow_args` is shared by three
+    very different processes:
+
+        supervisor  ShadowSession       cwd ~/.sutra-ui/shadow/workdir
+        decider     make_decider        cwd ~/.sutra-ui/shadow/workdir
+        WORKER      spawn_delegate_*    cwd _shadow_workdir_for_delegates()
+
+    Only the worker acts on the founder's problem, so only the worker is
+    handed the founder's project permissions. Shadow's own two processes keep
+    exactly the argv they had -- `_shadow_args` defaults extra_settings to
+    None -- which is what stops "Shadow supervises" from quietly becoming
+    "Shadow has a shell in the founder's repo".
+
+    The ATTACH path (ensure_runtime) deliberately does NOT come through here.
+    It resumes a chat the FOUNDER created, in that session's own cwd, so the
+    CLI resolves that project's settings natively -- there is nothing to
+    inherit and nothing to inject.
+    """
+    return _shadow_args(
+        session_id=session_id,
+        extra_settings=project_permissions_for(
+            _shadow_workdir_for_delegates()))
 
 
 def _shadow_workdir():
@@ -1982,7 +2102,7 @@ async def _default_delegate_spawner(mission):
     """Registered with the runner so PROMOTED queued missions (whose
     originating request is long gone) can still get a delegate."""
     return await shadow_runner.spawn_delegate_session(
-        _shadow_args, _shadow_workdir_for_delegates(),
+        _worker_args, _shadow_workdir_for_delegates(),
         _delegate_manifest(mission), register_runtime,
         publish=_publish_delegate_chat(mission))
 
@@ -2136,7 +2256,11 @@ async def api_shadow_status():
     sess = _SHADOW["session"]
     return {"watching": bool(sess and sess.alive),
             "session": sess.session_id if sess else None,
-            "permission_mode": "plan",
+            # the mode Shadow ACTUALLY runs at, from the one source of
+            # truth -- reporting a literal "plan" here would keep lying the
+            # moment the founder raised the global mode
+            "permission_mode": providers.effective_permission_mode(
+                providers.load_settings()["permission_mode"]),
             "active_missions": shadow_runner.active_mission_count(),
             "alerts": _shadow_alert_count()}
 
@@ -2624,7 +2748,7 @@ def _start_goal_attempt(mission):
     every other mission."""
     async def _spawner(m):
         return await shadow_runner.spawn_delegate_session(
-            _shadow_args, _shadow_workdir_for_delegates(),
+            _worker_args, _shadow_workdir_for_delegates(),
             _delegate_manifest(m), register_runtime,
             publish=_publish_delegate_chat(m))
     return shadow_runner.start_mission_async(
@@ -2820,7 +2944,7 @@ async def api_shadow_mission_act(mid: str, request: Request):
         if action == "start_now":
             async def _spawner(mission):
                 return await shadow_runner.spawn_delegate_session(
-                    _shadow_args, _shadow_workdir_for_delegates(),
+                    _worker_args, _shadow_workdir_for_delegates(),
                     _delegate_manifest(mission), register_runtime,
                     publish=_publish_delegate_chat(mission))
             # second-flight fix: never hold the request open across a
@@ -2832,7 +2956,7 @@ async def api_shadow_mission_act(mid: str, request: Request):
 
             async def _respawner(mission):
                 return await shadow_runner.spawn_delegate_session(
-                    _shadow_args, _shadow_workdir_for_delegates(),
+                    _worker_args, _shadow_workdir_for_delegates(),
                     _delegate_manifest(mission), register_runtime,
                     publish=_publish_delegate_chat(mission))
             return shadow_runner.start_mission_async(

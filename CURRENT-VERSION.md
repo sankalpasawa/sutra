@@ -2,7 +2,7 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.271.9 (2026-09-14, HEAD)
+## v2.272.1 (2026-09-14, HEAD)
 
 **Routines do their work; stale locks clear themselves.** Nine scheduled routines had run under
 `dontAsk` with no allow-list since 2026-08-07, so every Bash call was denied and nothing ran; the
@@ -10,6 +10,58 @@ records now carry a scoped, env-prefixed `allowed_tools` entry per prompt comman
 overlap lock records its holder's pid and clears a dead or over-age lock instead of skipping every
 fire (observability-synthesis-3h: 279 skips). Headless runs set `SUTRA_DEFAULTS_DISABLED=1`.
 daily-publish-gate runs on sonnet with a $2 budget. Tests: `test_routine_lock.py`, 7 checks.
+## v2.272.0 (2026-09-14)
+
+**Shadow finishes a delegated mission.** Reliability fixes found in live flights, each pinned by a
+test that fails against the old behaviour.
+
+**A long turn is not a dead turn.** The boundary wait in `shadow_runner.make_bindings.waiter` was a
+flat `BOUNDARY_TIMEOUT_S` = 300s wall clock measured from the say. Real worker turns ran 73s, 138s,
+62s, 273s and 209s — rising as the task deepened — and turn 7 was killed at exactly 300s with the
+delegate alive and its boundary never emitted; the mission died `failed` at 6 of 20 turns with five
+turns of real work already in the chat. The only other multi-turn mission in the app's history died
+the same way, also at exactly 300s. Duration was never the signal that separated a slow turn from a
+dead one. Silence is. The wait now takes two independent bounds: no frame for `STALL_SECS` = 240
+(reading `_LAST_FRAME_TS`, which `attach_observer` has always stamped on every frame, and reusing
+this project's existing definition of "that session has gone quiet"), re-checked every `POLL_SECS`
+= 15; and an absolute `MAX_TURN_SECS` = 3600 ceiling for the one case silence cannot catch, a worker
+that emits frames forever without finishing a turn. A dead process still unblocks through the EOF
+boundary `demux_turn` already emits. `BOUNDARY_TIMEOUT_S` is retired.
+
+**A confirmation pause must be earned.** `all(r["met"] for r in results if tier != "founder_confirm")`
+is True for an empty generator, so a mission whose checks were *all* `founder_confirm` paused on its
+first evaluation having driven nothing — running to paused inside one second, turn 1 of 20, no
+decider call and no instruction sent, asking the founder to sign off four criteria the delegate had
+not begun. Three of three real missions hit it. The boundary in `mission_engine.run_mission` now
+requires a machine check to exist and to have passed. The Delegate form fed the same defect by
+stamping `founder_confirm` on every criterion, guaranteeing zero machine checks; its `Done When`
+criteria now go through `goalCriteriaToChecks`, the classifier the goal card already uses, so the
+two surfaces classify identically. `is_literal_artifact` is unchanged.
+
+**One source of truth for permission mode.** `app._shadow_args` passed a literal `"plan"`, so a
+founder working in `acceptEdits` got chat panes that could write and delegates that could not — the
+delegate designed the change and then stopped. It now makes the same
+`providers.effective_permission_mode(providers.load_settings()["permission_mode"])` call `ws_chat`
+makes, so every gate is inherited rather than re-implemented: unsafe modes stay clamped to plan
+unless `unsafe_modes_allowed()`, an unknown value still resolves to plan, and a hand-edited
+`settings.json` is still clamped at the point of use. Shadow is not a separate trust domain; it is
+the same operator on a different surface. This inherits whatever mode is set — it widens nothing.
+Two ledger rows that claimed "(plan mode)" no longer assert a mode they do not set.
+
+**The decider reads prose, not JSON.** `shadow_runner.evidence_text` built its blob live-first and
+json-last, and `_decision_context` takes the *last* `DECISION_TAIL` = 2000 characters of it. On one
+live delegate `json.dumps(doc)` alone was 90,676 characters, so the decider's entire window landed
+inside the serialization — escaped unicode, `\n` literals, message wrappers — and the clean streamed
+prose at the front was unreachable. It cost a real turn: the decider re-issued a stage the chat had
+already completed. Clean prose is now appended *after* the blob (`DECIDE_PROSE_TAIL` = 2000, sized
+to match `DECISION_TAIL`). Nothing is removed or reordered — the 40k blob remains an exact prefix,
+so the verifier's evidence is byte-identical, and the appended text is assistant prose that was
+already admissible.
+
+Regression coverage for all four: `test_shadow_waiter.py` 13, `test_premature_pause.py` 8,
+`test_shadow_evidence_prose.py` 7, `test_shadow_permission_inherit.py` 10,
+`test_shadow_worker_permissions.py` 20, `test_goal_live.js` 35. Canonical Shadow docs land under
+`docs/shadow/`. No settings change and no new Bash or permission allow-rules.
 
 ## v2.271.8 (2026-09-14)
 
@@ -111,7 +163,7 @@ channel from a baked marker and gives beta its own Electron identity (name + use
 that it shared production's single-instance lock and exited on launch, a bug the beta flow caught
 before stable.
 
-## v2.271.0 (2026-09-13, HEAD)
+## v2.271.0 (2026-09-13)
 
 **The desktop tag and the manifests agree again.** `v2.268.0-desktop`, `v2.269.0-desktop` and
 `v2.270.0-desktop` were all cut while `plugin.json` and `.claude-plugin/marketplace.json` still read

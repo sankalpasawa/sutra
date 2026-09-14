@@ -567,8 +567,34 @@ class MissionEngine:
             pending_confirm = [r for r in results
                                if r["tier"] == "founder_confirm"
                                and not r["met"]]
-            others_met = all(r["met"] for r in results
-                             if r["tier"] != "founder_confirm")
+            # A CONFIRMATION PAUSE MUST BE EARNED, NOT INHERITED FROM AN
+            # EMPTY SET (live, missions m-b7d534be84d7 / m-0213b89e5feb /
+            # m-d817efbe3aa1 -- three of three).
+            #
+            # This was `all(r["met"] for r in results if tier != confirm)`.
+            # When EVERY check is founder_confirm that generator is empty and
+            # all([]) is True, so the mission paused on its FIRST evaluation
+            # having verified nothing and driven nothing: m-b7d534be84d7 went
+            # running -> paused inside the same second, turn 1 of 20, no
+            # decider call, no instruction ever sent. The founder was asked to
+            # sign off four criteria the delegate had not begun.
+            #
+            # And all-founder_confirm is the DEFAULT, not an edge case:
+            # shadow_protocol.tier_for demotes every check that is not a
+            # short literal marker, so a founder describing an outcome in
+            # ordinary words gets exactly this shape.
+            #
+            # THE RULE: the confirmation boundary is reached only when there
+            # was machine-checkable work AND it passed. With no machine check
+            # at all there is nothing to have passed, so the loop keeps
+            # driving and the founder confirms whenever they are ready --
+            # confirm_check + settle_confirmation already work from outside
+            # the loop, and are untouched here.
+            #
+            # This cannot complete a mission: `done` still comes only from
+            # evaluate_done_when above, and _complete is still its one writer.
+            machine = [r for r in results if r["tier"] != "founder_confirm"]
+            others_met = bool(machine) and all(r["met"] for r in machine)
             if results and pending_confirm and others_met:
                 m = self.store.transition(
                     mid, "paused", "awaiting founder confirmation")

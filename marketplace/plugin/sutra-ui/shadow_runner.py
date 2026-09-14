@@ -55,6 +55,15 @@ _ORPHANED = set()
 _RECENT_TEXT = {}
 _RECENT_CAP = 20000
 
+#: how much CLEAN streamed prose evidence_text appends after the evidence
+#: blob, so the decider's own tail lands on what the worker actually said
+#: rather than on the tail of a json.dumps. Deliberately the same size as
+#: mission_engine.DECISION_TAIL (2000) -- that is the window this exists to
+#: fill, and a smaller value would leave json in it. Not imported from
+#: mission_engine on purpose: mission_engine imports nothing from here, and
+#: closing that direction would make the two modules mutually dependent.
+DECIDE_PROSE_TAIL = 2000
+
 #: session_id -> unix ts of the LAST frame of any kind (stall detection)
 _LAST_FRAME_TS = {}
 STALL_SECS = 240
@@ -63,7 +72,18 @@ STALL_SECS = 240
 #: allowed to stall the mission loop the way a real turn may
 DECIDE_TIMEOUT_S = 90
 
-BOUNDARY_TIMEOUT_S = 300   # delegates in a governance-heavy repo run long turns
+#: how often the boundary wait wakes to re-check liveness. Small relative to
+#: STALL_SECS so a worker that goes quiet is caught within one poll of the
+#: threshold, and small enough that a cancelled q.get() costs nothing.
+POLL_SECS = 15
+
+#: THE ABSOLUTE CEILING ON ONE WORKER TURN. Not a new number: start_pump has
+#: always waited 3600s on its queue_event, so this is the outer bound the
+#: pump already had, now enforced on the waiting side too. It exists only to
+#: bound the runaway case -- a worker that emits frames forever and never
+#: finishes a turn keeps the silence clock fresh, so silence alone would
+#: never stop it.
+MAX_TURN_SECS = 3600
 
 
 def attach_observer(session_id, rt):
@@ -154,13 +174,39 @@ def evidence_text(session_id):
     contains_artifact check be satisfied by Shadow having ASKED for the
     thing rather than by the chat having done it. Every other field of the
     doc is passed through exactly as before.
+
+    THE DECIDER READS THE TAIL, AND THE TAIL WAS JSON (measured on the live
+    delegate 0423e185, mission m-1e37cbe31708). The blob is built live-first,
+    json-last; _decision_context then takes the LAST DECISION_TAIL (2000)
+    characters of it. On that session json.dumps(doc) alone was 90,676 chars,
+    so the decider's whole 2.2% window landed inside the serialization --
+    escaped unicode, `\\n` literals, `{"role": "assistant", "text": ...}` --
+    and `live`, the clean streamed prose, was never reachable. It cost a
+    real turn: at 05:16:47 the decider reported "Stage 3 didn't land, the
+    last thing on the wire is still the Stage 2 tail" and spent turn 6
+    re-issuing work the chat had already done.
+
+    So the clean prose is APPENDED after the blob. Nothing is removed and
+    nothing is reordered: the 40k blob is byte-identical to what it was, and
+    it is still what carries the historical and tool evidence the verifier
+    reads. The tail is simply no longer the last thing in the string.
+
+    The appended text is assistant prose that was ALREADY admissible -- the
+    same `live` that has always been at the front -- so a contains_artifact
+    check can match nothing it could not match before. Shadow's own turns are
+    not in _RECENT_TEXT at all (session_runtime emits tokens for assistant
+    text only), so the authorship boundary above is untouched.
     """
     live = _RECENT_TEXT.get(session_id, "")
     doc = session_reader.read_session(session_id) or {}
     if doc:
         doc = dict(doc)
         doc["messages"] = evidence_messages(doc)
-    return (live + " " + json.dumps(doc))[-40000:]
+    blob = (live + " " + json.dumps(doc))[-40000:]
+    if not live:
+        # nothing streamed for this session: unchanged, byte for byte
+        return blob
+    return blob + " " + live[-DECIDE_PROSE_TAIL:]
 
 
 def make_bindings(validated_say):
@@ -209,15 +255,74 @@ def make_bindings(validated_say):
                 pass
             return False
 
-    async def waiter(mission):
-        q = _BOUNDARIES.get(mission["target_session"])
+    async def waiter(mission, clock=time.time, poll_secs=POLL_SECS,
+                     max_turn_secs=MAX_TURN_SECS, stall_secs=STALL_SECS):
+        """Wait for THIS turn's boundary, bounded by SILENCE and a ceiling.
+
+        WHY THIS IS NOT A WALL-CLOCK TIMEOUT ANY MORE (live flight, mission
+        m-1e37cbe31708, 2026-09-14). This waited a flat BOUNDARY_TIMEOUT_S =
+        300s from the say. Measured worker turns on that mission ran 73s,
+        138s, 62s, 273s, 209s -- rising as the task deepened -- and turn 7
+        was killed at exactly 300s with the delegate still alive and its
+        boundary never emitted. The mission died `failed` at 6 of 20 turns
+        with five turns of real work in the chat. The only other multi-turn
+        mission in the app's history (m-bc6b262cc889, 2026-09-13) died the
+        same way, also at exactly 300s. A LONG TURN IS NOT A DEAD TURN, and
+        duration was never the signal that told them apart.
+
+        SILENCE IS. `_LAST_FRAME_TS[sid]` is stamped by attach_observer on
+        EVERY frame of every type, and STALL_SECS is already this project's
+        definition of "that session has gone quiet" (check_stalls). Both
+        existed; neither was consulted here. This consults them.
+
+        TWO INDEPENDENT BOUNDS, and both are required:
+
+          silence   no frame for stall_secs  -> False. Catches a hung
+                    process, a permission prompt, and a pump that died
+                    without emitting a boundary (start_pump kills and
+                    returns on exception, so no boundary is ever pushed).
+          ceiling   max_turn_secs from the say -> False. Catches the ONE
+                    case silence cannot: a runaway worker emitting frames
+                    forever without ever finishing a turn.
+
+        A DEAD PROCESS DOES NOT REACH EITHER. demux_turn emits a
+        `_turn_boundary` after _demux_turn_inner returns, and that return
+        includes the EOF path -- so a worker that exits unblocks this wait
+        through the queue, exactly as it always did.
+
+        The return contract is unchanged: True = this turn ended, False =
+        stop waiting. mission_engine treats False as a failed turn and is
+        untouched. Every bound is an injectable keyword with a production
+        default, the same seam check_stalls uses, so tests drive a fake
+        clock instead of sleeping.
+        """
+        sid = mission["target_session"]
+        q = _BOUNDARIES.get(sid)
         if q is None:
             return False
-        try:
-            await asyncio.wait_for(q.get(), BOUNDARY_TIMEOUT_S)
-            return True
-        except asyncio.TimeoutError:
-            return False
+        deadline = clock() + max_turn_secs
+        while True:
+            try:
+                await asyncio.wait_for(q.get(), poll_secs)
+                return True
+            except asyncio.TimeoutError:
+                # a boundary that lands while this poll is being cancelled
+                # stays in the queue -- asyncio.Queue.get() never consumes an
+                # item it does not return -- so the next poll picks it up.
+                pass
+            now = clock()
+            if now >= deadline:
+                return False
+            last = _LAST_FRAME_TS.get(sid)
+            if last is None:
+                # never-heard-from target: start its clock HERE, the same
+                # grace check_stalls gives a freshly resumed mission, so a
+                # stuck-from-birth turn still fails one stall_secs later
+                # instead of being treated as infinitely fresh.
+                _LAST_FRAME_TS[sid] = now
+                continue
+            if now - last >= stall_secs:
+                return False
 
     def reader(mission):
         return evidence_text(mission["target_session"])
@@ -679,7 +784,7 @@ async def ensure_runtime(session_id, build_args, register):
     start_pump(rt, session_id)
     shadow_ledger.append("actions", {
         "mission_id": None, "kind": "spawn",
-        "summary": "attached to existing session %s (plan mode, --resume)"
+        "summary": "attached to existing session %s (--resume)"
                    % session_id})
     return rt
 
@@ -1051,7 +1156,7 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
         # session becomes real rather than when its first turn ends.
         shadow_ledger.append("actions", {
             "mission_id": None, "kind": "spawn",
-            "summary": "delegate session %s spawned (plan mode)" % sid})
+            "summary": "delegate session %s spawned" % sid})
         if publish is None:
             return
         try:

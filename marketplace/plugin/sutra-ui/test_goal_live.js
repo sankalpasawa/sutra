@@ -468,4 +468,70 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   assert(/goalTranscriptChanged\(s\.id\)/.test(tail));
   ok("no socket, no second store, no new endpoint");
 }
+
+/* ============== THE DELEGATE FORM USES THE SAME CLASSIFIER ==============
+   + Delegate used to stamp founder_confirm on EVERY criterion line. That is
+   what made the engine's premature-pause bug reachable from the form every
+   single time: with zero machine-checkable checks the confirmation boundary
+   was satisfied vacuously (all([]) === true) on turn 1, and three real
+   missions handed themselves back having built nothing.
+
+   These tests load 15 + 16 + 18 exactly as panel.html does, so they exercise
+   the REAL goalCriteriaToChecks rather than a stub. */
+
+/* 34. a literal-shaped criterion survives as machine-checkable */
+{
+  const ctx=fresh();
+  ctx.S.shadowNew={objective:"build the tracker",
+    done:"exit code 0\nBUILD GREEN",kind:"fix"};
+  ctx.loadShadowHome=()=>Promise.resolve();
+  ctx.shadowCreateTask();
+  const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
+  assert.strictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.tier)))
+    .join(","),"contains_artifact,contains_artifact",
+    "a short literal marker is Shadow's to check, not the founder's");
+  ok("Delegate keeps machine-checkable criteria machine-checkable");
+}
+
+/* 35. a semantic criterion is still the founder's, and is never dropped */
+{
+  const ctx=fresh();
+  ctx.S.shadowNew={objective:"build the tracker",done:SEMANTIC,kind:"fix"};
+  ctx.loadShadowHome=()=>Promise.resolve();
+  ctx.shadowCreateTask();
+  const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
+  assert.strictEqual(b.done_when[0].tier,"founder_confirm",
+    "is_literal_artifact is NOT loosened");
+  assert.strictEqual(b.done_when[0].check,SEMANTIC,"wording preserved");
+  ok("Delegate leaves semantic criteria to the founder");
+}
+
+/* 36. the mixed case -- the shape that actually reaches the pause boundary */
+{
+  const ctx=fresh();
+  ctx.S.shadowNew={objective:"build the tracker",
+    done:"BUILD GREEN\n"+SEMANTIC,kind:"fix"};
+  ctx.loadShadowHome=()=>Promise.resolve();
+  ctx.shadowCreateTask();
+  const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
+  assert.strictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.tier)))
+    .join(","),"contains_artifact,founder_confirm",
+    "each line judged on its own shape, exactly as the goal card does");
+  assert(b.done_when.some(c=>c.tier!=="founder_confirm"),
+    "at least one machine check exists, so the engine boundary can be EARNED");
+  ok("Delegate produces the mixed shape the confirmation boundary needs");
+}
+
+/* 37. blank lines still dropped, order still kept, nothing invented */
+{
+  const ctx=fresh();
+  ctx.S.shadowNew={objective:"x",done:"BUILD GREEN\n\n   \n"+SEMANTIC,kind:"fix"};
+  ctx.loadShadowHome=()=>Promise.resolve();
+  ctx.shadowCreateTask();
+  const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
+  assert.strictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.check)))
+    .join("|"),"BUILD GREEN|"+SEMANTIC,"blank lines dropped, order kept");
+  ok("Delegate criteria parsing is otherwise unchanged");
+}
+
 setTimeout(()=>console.log("test_goal_live.js: all green"),60);
