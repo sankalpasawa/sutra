@@ -3836,7 +3836,7 @@ test("the model picker lists only providers that can run, and marks the pick", (
   const html = A.agModelPickHtml(h, false);
   assert.ok(/data-agmodel/.test(html), html);
   assert.ok(/value="codex\|gpt-5.5" selected/.test(html), html);
-  assert.ok(/Claude Code · Opus/.test(html) && /Claude Code · default/.test(html), html);
+  assert.ok(/Claude Code · Opus/.test(html) && /Claude Code · account default/.test(html), html);
   assert.ok(!/DeepSeek/.test(html), "a provider that cannot run is not offered");
   assert.ok(/disabled/.test(A.agModelPickHtml(h, true)), "locked while a run is working");
   const gone = JSON.parse(JSON.stringify(h)); gone.model.provider = "deepseek"; gone.model.model = "deepseek-v4-pro";

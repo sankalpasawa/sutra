@@ -462,6 +462,9 @@ def workdir_allowed(path):
 # not a branch in the picker, it is that each provider carries its own.
 _CLAUDE_MODELS = (
     {"id": "",       "name": "CLI default",  "note": "whatever `claude` is configured to use"},
+    # `fable` is the alias `claude --model` accepts (resolves to claude-fable-5 on CLI 2.1.247;
+    # the dated claude-fable-5-1 id needs 2.1.251+). Owner, 2026-09-14: "why i cant see fable".
+    {"id": "fable",  "name": "Fable",        "note": "newest and most capable, highest cost"},
     {"id": "opus",   "name": "Opus",         "note": "most capable, slowest, highest cost"},
     {"id": "sonnet", "name": "Sonnet",       "note": "balanced default for most work"},
     {"id": "haiku",  "name": "Haiku",        "note": "fastest and cheapest, least capable"},

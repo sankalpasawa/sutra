@@ -2,7 +2,18 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.271.6 (2026-09-14, HEAD)
+## v2.271.7 (2026-09-14, HEAD)
+
+**Fable in the Claude model picker.** Claude's list was hardcoded to CLI default / Opus / Sonnet /
+Haiku in `providers._CLAUDE_MODELS`, so Fable could not be picked in chat, in routines or in the
+SEO Writer. Added `fable`, the alias `claude --model` accepts (measured on CLI 2.1.247: resolves to
+`claude-fable-5`; the dated `claude-fable-5-1` id is refused until CLI 2.1.251). Context window 1M,
+read from the CLI's own `modelUsage.contextWindow`, added to `budget.WINDOWS`. The Sutra MCP
+routine tool's model enum gains `fable`. The SEO Writer picker labels the empty choice "account
+default" instead of "default", which read as a fifth model (it resolves to Opus 5 on this
+account). Verified live: the SEO Writer on Fable asks for the website with `ask_user`.
+
+## v2.271.6 (2026-09-14)
 
 **SEO Writer: "Model call failed · did not return JSON", a model picker, and the update banner.**
 (1) A Mac's `claude` CLI printed its result object with something else beside it on stdout, and

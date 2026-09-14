@@ -1339,7 +1339,9 @@ function agModelPickHtml(h, disabled){
   const cur = chosenOk ? m.provider + "|" + (m.model || "") : "claude|";
   const opts = live.map(o => `<optgroup label="${agEsc(o.name)}">${(o.models.length ? o.models : [{ id: "", name: "default" }]).map(md => {
     const v = o.id + "|" + md.id;
-    const name = md.id ? md.name : "default";
+    /* "default" alone read as a fifth model (owner, 2026-09-14). It is not: it is whatever that
+       CLI picks for the signed-in account, so say so. */
+    const name = md.id ? md.name : "account default";
     return `<option value="${agEsc(v)}"${v === cur ? " selected" : ""}>${agEsc(o.name + " · " + name)}</option>`;
   }).join("")}</optgroup>`).join("");
   return `<select class="ag-model" data-agmodel aria-label="Model the agent runs on" title="Model the agent runs on"${disabled ? " disabled" : ""}>${opts}</select>`;

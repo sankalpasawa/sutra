@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-14
+## 2.271.7 (2026-09-14)
+
+- **Fable can be picked.** Claude's model list now offers Fable beside Opus, Sonnet and Haiku, in chat, routines and the SEO Writer, with its 1M context window. The SEO Writer's empty choice reads "account default", since it is whatever Claude Code picks for the account, not a separate model.
+
 ## 2.271.6 (2026-09-14)
 
 - **The SEO Writer reads a CLI reply that arrives with extra output.** "Model call failed: Claude CLI did not return JSON (exit 0)" was a good reply with something else printed beside it; `llm._cli_result` now finds the result object in the output. Tests: 5 checks.

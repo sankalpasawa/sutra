@@ -232,7 +232,8 @@ class WindowTest(unittest.TestCase):
     def test_the_other_providers_windows_are_untouched_by_4a(self):
         """Frozen: 4A adds one DEFAULT_WINDOWS key and nothing else."""
         self.assertEqual(budget.WINDOWS["claude"],
-                         {"opus": 1000000, "sonnet": 1000000, "haiku": 200000})
+                         {"fable": 1000000, "opus": 1000000, "sonnet": 1000000,
+                          "haiku": 200000})
         self.assertEqual(budget.DEFAULT_WINDOWS["deepseek"], 1000000)
         self.assertEqual(budget.window_for("claude", "opus")["tokens"], 1000000)
         self.assertEqual(budget.window_for("claude", "haiku")["tokens"], 200000)
