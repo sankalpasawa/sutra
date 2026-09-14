@@ -1217,6 +1217,8 @@ OUTCOME
 %(outcome)s
 
 COMPLETION CHECKS (verifier-owned; [x] already satisfied)
+The number in #N is that check's INDEX. It is the only correct value for
+`confirms_check.index` below -- never count positions, never guess.
 %(checks)s
 
 BUDGET
@@ -1258,6 +1260,38 @@ line above behaves exactly as it always has:
                "options": [{"value": "eu-west-1", "label": "EU West"},
                            {"value": "us-east-1", "label": "US East"}]}]}}
 ```
+
+WHEN THE QUESTION *IS* A founder_confirm CHECK, SAY SO. A `founder_confirm`
+check is met by ONE thing: the founder signing it off. If the intervention
+you are raising is asking for exactly that sign-off, mark it, and the
+founder's Yes closes the check instead of only answering you:
+
+```json
+{"action": "ask_founder", "reason": "<one short line>",
+ "intervention": {
+   "question": "Do the relevant tests pass?",
+   "fields": [{"key": "tests_pass", "type": "boolean",
+               "label": "Relevant tests pass."}],
+   "confirms_check": {"index": 2, "field": "tests_pass"}}}
+```
+
+The rules are strict, and a marker that breaks one is DROPPED -- the
+intervention still works, it simply confirms nothing:
+
+  * `index` is the #N of a check in COMPLETION CHECKS above, copied, not
+    counted. It must name a `founder_confirm` check -- a machine tier is
+    refused, because only the verifier may satisfy those.
+  * `field` is the `key` of a field in THIS intervention's own `fields`,
+    and that field must have `"type": "boolean"`. Anything else is dropped:
+    a choice or a text answer would need a policy for which reply means
+    yes, and that judgement is the founder's, not yours to encode.
+  * Only True confirms. An answer of False leaves the check open, which is
+    correct -- "no, they do not pass" must never sign off that they pass.
+
+OMIT `confirms_check` FOR EVERY OTHER QUESTION. Asking which region to
+deploy in, or what the budget cap is, decides nothing about a check. Most
+interventions carry no marker at all. Never attach one to make a mission
+finish sooner: it is a description of what you are asking, not a lever.
 
 `type` is one of: boolean, choice, multi_choice, text, long_text, number,
 currency, percent, date, datetime, url, email, ranking. choice, multi_choice
@@ -1348,10 +1382,17 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
         import session_runtime as srt
         prompt = _DECIDE_PROMPT % {
             "outcome": context.get("outcome") or "(none)",
+            # THE INDEX IS PART OF THE PROMPT (founder, 2026-09-15). A check
+            # rendered without one cannot be CITED: `confirms_check.index`
+            # has to be the real done_when position, and a decider that has
+            # to count them will eventually miscount. The list is already in
+            # done_when order -- _decision_context builds it straight off the
+            # record -- so the position IS the index; it just was not shown.
             "checks": "\n".join(
-                "- [%s] (%s) %s" % ("x" if c.get("met") else " ",
-                                    c.get("tier"), c.get("check"))
-                for c in (context.get("checks") or [])) or "- (none)",
+                "- #%d [%s] (%s) %s" % (i, "x" if c.get("met") else " ",
+                                        c.get("tier"), c.get("check"))
+                for i, c in enumerate(context.get("checks") or []))
+            or "- (none)",
             "turns_used": context.get("turns_used"),
             "max_turns": context.get("max_turns"),
             "last_instruction": context.get("last_instruction") or "(none)",

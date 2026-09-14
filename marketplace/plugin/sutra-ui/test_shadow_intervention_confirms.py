@@ -41,6 +41,7 @@ import mission_engine                          # noqa: E402
 import providers                               # noqa: E402
 import shadow_intervention as siv              # noqa: E402
 import shadow_runner                           # noqa: E402
+import shadow_runner                           # noqa: E402
 from mission_engine import MissionStore        # noqa: E402
 
 MIS = "/api/shadow/missions"
@@ -261,6 +262,70 @@ class TestTargetsFailSafely(Base):
             self.assertIsNone(siv.confirmed_index(iv, v), repr(v))
         self.assertIsNone(siv.confirmed_index({}, {"tests_pass": True}))
         self.assertIsNone(siv.confirmed_index(None, {"tests_pass": True}))
+
+
+# ================== the PROMPT: the marker has to be reachable ===========
+class TestThePromptTeachesTheMarker(unittest.TestCase):
+    """39682c81 shipped the plumbing INERT. Measured on mission
+    m-fba93ae7c89f: the founder answered an intervention at 21:55:17 and
+    every founder_confirm check stayed unmet, because the decider prompt
+    never mentioned `confirms_check` -- so no request could carry one, and
+    confirmed_index() had nothing to read. A path nothing can emit into is
+    not a feature."""
+
+    def setUp(self):
+        self.p = shadow_runner._DECIDE_PROMPT
+
+    def test_30_the_prompt_documents_confirms_check(self):
+        self.assertIn("confirms_check", self.p,
+                      "the decider cannot emit what it is never told about")
+
+    def test_31_the_example_is_a_VALID_request(self):
+        """The documented shape must survive validate_request, or the prompt
+        is teaching something the validator drops."""
+        raw = {"question": "Do the relevant tests pass?",
+               "fields": [{"key": "tests_pass", "type": "boolean",
+                           "label": "Relevant tests pass."}],
+               "confirms_check": {"index": 2, "field": "tests_pass"}}
+        got = siv.validate_request(raw)
+        self.assertIsNotNone(got)
+        self.assertEqual(got["confirms_check"],
+                         {"index": 2, "field": "tests_pass"},
+                         "the prompt's own example is dropped by the parser")
+
+    def test_32_the_prompt_states_every_rule_the_parser_enforces(self):
+        """Each rule below is enforced in _confirms_check/confirmed_index.
+        A rule the parser applies but the prompt omits is a silent drop."""
+        for needle, why in (
+                ("#N", "index must be copied from the rendered list"),
+                ('"type": "boolean"', "the gate must be boolean"),
+                ("founder_confirm", "a machine tier is refused"),
+                ("OMIT", "most interventions carry no marker"),
+                ("False", "only True confirms")):
+            self.assertIn(needle, self.p, why)
+
+    def test_33_the_CHECK_LIST_carries_its_index(self):
+        """Without #N the decider must COUNT positions to cite one, which is
+        the 'invent an index' failure the rules forbid."""
+        ctx = {"outcome": "o", "checks": [
+                   {"tier": "contains_artifact", "check": "FINAL:", "met": False},
+                   {"tier": "founder_confirm", "check": "tests pass", "met": False}],
+               "turns_used": 1, "max_turns": 20,
+               "last_instruction": "i", "last_response": "r"}
+        rendered = "\n".join(
+            "- #%d [%s] (%s) %s" % (i, "x" if c.get("met") else " ",
+                                    c.get("tier"), c.get("check"))
+            for i, c in enumerate(ctx["checks"]))
+        self.assertIn("- #0 [ ] (contains_artifact) FINAL:", rendered)
+        self.assertIn("- #1 [ ] (founder_confirm) tests pass", rendered)
+        # and the prompt tells it what the number is for
+        self.assertIn("INDEX", self.p)
+
+    def test_34_the_prompt_still_shows_the_UNMARKED_form(self):
+        """Most interventions have no marker; the plain example must remain
+        so the common case is not pushed toward carrying one."""
+        self.assertIn('"key": "region"', self.p,
+                      "the unmarked example was lost")
 
 
 if __name__ == "__main__":
