@@ -30,6 +30,7 @@
  */
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 /* fileURLToPath, NOT new URL(...).pathname: this checkout lives under a
    directory with a space in it ("Joy Stephen"), and .pathname hands back the
    PERCENT-ENCODED form. Writing to that string silently creates a decoy
@@ -40,22 +41,45 @@ import { fileURLToPath } from "url";
 const PORT = process.env.G9_PORT || "8340";
 const CDP_PORT = process.env.G9_CDP || "9343";
 const APP = `http://127.0.0.1:${PORT}/`;
-const ART = path.join(path.dirname(fileURLToPath(import.meta.url)), "artifacts");
-fs.mkdirSync(ART, { recursive: true });
+/* A RUN GETS ITS OWN DIRECTORY, and that is not tidiness.
+   `qa-shell/artifacts/` is SHARED: a concurrent agent writes its own shots
+   there under its own names. Shared-directory evidence cannot be defended --
+   "18k and dated today" says nothing about WHO wrote it, and a name collision
+   hands back someone else's screenshot as proof of your change. A fresh
+   run-<epoch>/ closes that window permanently instead of narrowing it, because
+   nothing else has the path. G9_RUN_DIR pins it for a caller that wants to
+   name the run itself. */
+const ART_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "artifacts");
+const RUN = process.env.G9_RUN_DIR || ("run-" + Math.floor(Date.now() / 1000));
+const ART = path.join(ART_ROOT, RUN);
 /* prove the destination decodes to a real path before writing four files into
    it -- a wrong-but-consistent directory passes every downstream size check */
 if (/%[0-9A-Fa-f]{2}/.test(ART)){
   console.error("FATAL: artifact dir is still percent-encoded: " + ART);
   process.exit(2);
 }
+/* refuse to REUSE one: an existing run dir means a clock collision or a second
+   writer, and either makes the artifacts unattributable again */
+if (fs.existsSync(ART) && !process.env.G9_RUN_DIR){
+  console.error("FATAL: run dir already exists, refusing to share it: " + ART);
+  process.exit(2);
+}
+fs.mkdirSync(ART, { recursive: true });
 console.log("artifacts -> " + ART);
 
 const STATE_TIMEOUT_MS = 15000;   /* hard per-state cap */
 const READY_TIMEOUT_MS = 45000;
 
-let pass = 0, fail = 0;
-const ok  = (n, d) => { pass++; console.log("ok   - " + n + (d ? "  [" + d + "]" : "")); };
-const bad = (n, d) => { fail++; console.log("FAIL - " + n + (d ? "\n       " + d : "")); };
+/* TAP 13, so this lane reads like every other test runner here and can be
+   piped into one. The plan line is emitted LAST (`1..N`) rather than up front:
+   the assertion count depends on how many states survive their timeouts, and a
+   plan printed before the run would have to be a guess. A trailing plan is
+   valid TAP and is the honest one. */
+console.log("TAP version 13");
+let pass = 0, fail = 0, tap = 0;
+const ok  = (n, d) => { pass++; console.log("ok " + (++tap) + " - " + n + (d ? "  [" + d + "]" : "")); };
+const bad = (n, d) => { fail++; console.log("not ok " + (++tap) + " - " + n
+  + (d ? "\n  ---\n  " + String(d).replace(/\n/g, "\n  ") + "\n  ..." : "")); };
 const is  = (n, got, want) => (JSON.stringify(got) === JSON.stringify(want))
   ? ok(n, JSON.stringify(got))
   : bad(n, "got " + JSON.stringify(got) + " want " + JSON.stringify(want));
@@ -149,7 +173,9 @@ const STATES = [
     objective: "Watch the deploy" },
 ];
 
-const MOUNT = (s) => `(() => {
+/* the mount as bare STATEMENTS, so it can be replayed inside another
+   expression without dragging a `return` along with it */
+const MOUNT_BODY = (s) => `
   const host = document.getElementById("g9-host") || document.createElement("div");
   host.id = "g9-host";
   host.setAttribute("style",
@@ -163,11 +189,23 @@ const MOUNT = (s) => `(() => {
     done_when: [{ check: "the suite is green" }],
     updated_at: new Date(Date.now() - 4 * 60000).toISOString()
   });
-  if (!host.isConnected) document.body.appendChild(host);
+  if (!host.isConnected) document.body.appendChild(host);`;
+
+const MOUNT = (s) => `(() => {
+  ${MOUNT_BODY(s)}
   return !!document.querySelector('#g9-host [data-shtaskcard="g9-${s.name}"]');
 })()`;
 
+/* MOUNT IS RE-RUN INSIDE MEASURE, ATOMICALLY.
+   The panel repaints on its own schedule (scheduleRender), and a repaint that
+   lands between "mount" and "measure" wipes #g9-host off document.body. That
+   is not hypothetical: it ate the nomax state on a real run, and because the
+   screenshot was taken afterwards the artifact silently became a byte-for-byte
+   copy of the PREVIOUS state's PNG -- a placeholder that every size check
+   happily passed. Mount and measure in one evaluate so no repaint can fit
+   between them. */
 const MEASURE = (s) => `(() => {
+  ${MOUNT_BODY(s)}
   const card = document.querySelector('#g9-host [data-shtaskcard="g9-${s.name}"]');
   if (!card) return { error: "card missing" };
   const track = card.querySelector(".shcard2bar");
@@ -219,6 +257,17 @@ for (const s of STATES){
         colours[s.name] = m.colour;
       }
 
+      /* CAPTURE WHAT WE JUST MEASURED. Re-assert the mount immediately before
+         the shutter for the same reason MEASURE replays it: a repaint between
+         measure and capture would photograph the previous state. Verified in
+         the page, not assumed, and the state fails rather than saving a PNG
+         of the wrong card. */
+      const onScreen = await evql(`(() => {
+        ${MOUNT_BODY(s)}
+        const c = document.querySelector('#g9-host [data-shtaskcard="g9-${s.name}"]');
+        return !!c && c.getBoundingClientRect().height > 0;
+      })()`);
+      if (!onScreen) throw new Error("card not on screen at capture time");
       const shot = await cdp("Page.captureScreenshot", { format: "png" });
       fs.writeFileSync(path.join(ART, s.file), Buffer.from(shot.data, "base64"));
     })());
@@ -243,7 +292,27 @@ for (const s of STATES){
   console.log("     " + p + "  (" + sz + " bytes)");
 }
 
+/* FOUR STATES MUST BE FOUR DIFFERENT PICTURES.
+   "exists and is non-zero" is satisfied by four copies of the same PNG -- which
+   is exactly what a repaint race produced once here, byte for byte. Hash them:
+   if two states photographed the same screen, the evidence is a placeholder and
+   this lane has to say so. */
+const digests = STATES.map(s => {
+  const p = path.join(ART, s.file);
+  return { name: s.name,
+    sha: fs.existsSync(p)
+      ? crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex").slice(0, 12)
+      : null };
+});
+digests.forEach(d => console.log("     " + d.name + "  sha256:" + d.sha));
+is("the four artifacts are four DISTINCT images",
+  new Set(digests.map(d => d.sha)).size, 4);
+
 is("zero uncaught page errors during the drive", pageErrors, []);
 
-console.log("\n=== G9: " + pass + " passed, " + fail + " failed ===");
+/* the plan line closes the stream: a consumer that counted fewer `ok` lines
+   than this number knows the run died mid-flight rather than passing quietly */
+console.log("1.." + tap);
+console.log("# page-errors: " + pageErrors.length);
+console.log("# G9: " + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
