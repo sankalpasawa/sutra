@@ -522,10 +522,13 @@ console.log("ok 6 controls wired");
     { id: "m-blocked", objective: "blocked", state: "blocked",
       block_reason: "ping_pong", goal_id: "g-live" },
     { id: "m-fail",    objective: "failed",  state: "failed" },
-    /* --- must NOT appear: concluded ----------------------------------- */
-    { id: "m-done",    objective: "old done",    state: "done" },
+    /* the founder pressed Stop: they know it exists and may still Retry it */
     { id: "m-stop",    objective: "old stopped", state: "stopped",
       ended_by: "founder" },
+    /* --- must NOT appear: concluded ----------------------------------- */
+    { id: "m-done",    objective: "old done",    state: "done" },
+    /* a MACHINE stop (ping-pong) carries no ended_by and stays history */
+    { id: "m-mstop",   objective: "machine stopped", state: "stopped" },
     { id: "m-retried", objective: "superseded",  state: "failed",
       retried_to: "m-fresh" },
     /* a goal that has concluded settles its attempts, whatever state they
@@ -549,14 +552,16 @@ console.log("ok 6 controls wired");
   assert(ids.includes("m-blocked"), "an actionable blocked mission was hidden");
   /* a failed mission keeps its pending Retry */
   assert(ids.includes("m-fail"), "a retryable failure was hidden");
+  /* a stop the FOUNDER pressed stays: it is not history until they say so */
+  assert(ids.includes("m-stop"), "a founder-stopped task was hidden");
   /* 4. historical terminal records do not */
-  ["m-done", "m-stop", "m-retried", "m-vestigial", "m-wonattempt"]
+  ["m-done", "m-mstop", "m-retried", "m-vestigial", "m-wonattempt"]
     .forEach(id => assert(!ids.includes(id), "history leaked into the list: " + id));
-  assert(!/old done|old stopped|superseded/.test(h),
+  assert(!/old done|machine stopped|superseded/.test(h),
     "concluded work rendered in the workspace");
 
   /* 5. the RECORDS are untouched -- this is a filter, not a delete */
-  assert.strictEqual(ctx.S.shadowMissions.length, 11,
+  assert.strictEqual(ctx.S.shadowMissions.length, 12,
     "the mission list itself must not be mutated");
   assert(ctx.S.shadowMissions.some(m => m.id === "m-done"),
     "a hidden mission must still be in state");
@@ -581,6 +586,80 @@ console.log("ok 6 controls wired");
   assert(ctx2.shadowTasks().map(m => m.id).includes("m-x"),
     "an unknown goal must not hide live work");
   console.log("ok 15b active work only; history stays on disk and in Goals");
+}
+
+/* 15c. STOP MUST NOT LOOK LIKE DELETE (founder, 2026-09-14).
+
+   Clicking Stop ran founder_stop, left the record on disk and reaped the
+   delegate -- all correct -- and then the row vanished from the list in the
+   same gesture. That reads as the task having been deleted, and it took the
+   Retry button with it: the card only renders for a mission shadowTasks()
+   still returns, so the one action a stopped task offers was unreachable.
+
+   The discriminator is the one founder_stop ALREADY writes. These pin each
+   arm of it separately, because "stopped" is two endings in one state. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.goals = [];
+
+  const only = (rows) => { ctx.S.shadowMissions = rows;
+    return ctx.shadowTasks().map(m => m.id); };
+
+  /* 1. the founder pressed Stop -> stays */
+  assert.deepStrictEqual(
+    only([{ id: "m-fs", objective: "x", state: "stopped",
+            ended_by: "founder" }]), ["m-fs"],
+    "a founder-stopped mission must stay visible");
+
+  /* 2. the MACHINE stopped it (ping-pong, ask_founder on a standalone
+        mission before it learned to block) -> still history */
+  assert.deepStrictEqual(
+    only([{ id: "m-ms", objective: "x", state: "stopped" }]), [],
+    "a machine stop must stay hidden");
+  assert.deepStrictEqual(
+    only([{ id: "m-ms2", objective: "x", state: "stopped",
+            ended_by: "machine" }]), [],
+    "only ended_by=founder qualifies");
+
+  /* 3. done is untouched: nothing is left to want */
+  assert.deepStrictEqual(
+    only([{ id: "m-done", objective: "x", state: "done",
+            ended_by: "founder" }]), [],
+    "a completed mission must never come back into the list");
+
+  /* 4. a founder stop that was RETRIED steps aside for its successor --
+        the same rule the failed arm has always used */
+  assert.deepStrictEqual(
+    only([{ id: "m-old", objective: "x", state: "stopped",
+            ended_by: "founder", retried_to: "m-new" }]), [],
+    "a retried founder-stop must step aside");
+
+  /* 5. the failed arm is completely unchanged */
+  assert.deepStrictEqual(
+    only([{ id: "m-f", objective: "x", state: "failed" }]), ["m-f"],
+    "an un-retried failure must still show");
+  assert.deepStrictEqual(
+    only([{ id: "m-f2", objective: "x", state: "failed",
+            retried_to: "m-new" }]), [],
+    "a retried failure must still step aside");
+
+  /* 6. the restored row is ACTIONABLE -- Retry was the point */
+  ctx.S.shadowMissions = [{ id: "m-fs", objective: "stopped task",
+                            state: "stopped", ended_by: "founder" }];
+  ctx.S.shadowTaskSel = "m-fs";
+  const h = ctx.shadowHomeHtml();
+  assert(/data-shtask="m-fs"/.test(h), "the row must render");
+  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-fs"/.test(h),
+    "a founder-stopped task must offer Retry");
+  assert(/STOPPED/.test(h), "it must still read as stopped, not as live work");
+
+  /* 7. nothing was mutated -- this is a filter, not a write */
+  assert.strictEqual(ctx.S.shadowMissions.length, 1);
+  assert.strictEqual(ctx.S.shadowMissions[0].state, "stopped");
+  assert.strictEqual(ctx.S.shadowMissions[0].ended_by, "founder");
+  console.log("ok 15c a founder stop stays visible and retryable; "
+    + "machine stops and done stay history");
 }
 
 /* 16. + Delegate opens the new-task panel IN THE RIGHT PANE, and says NEW CHAT */

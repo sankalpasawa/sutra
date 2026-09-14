@@ -426,6 +426,39 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   assert(!/\[Shadow · mission/.test(html),"the tag is stripped for display");
   ok("multiple Shadow/chat turns accumulate and stay attributed");
 }
+
+/* 30b. A SKILL BODY MUST NEVER REACH THE FOUNDER ROW (founder, 2026-09-14).
+
+   The parser (session_reader._parse_transcript) now drops the record a Skill
+   invocation injects -- type "user", isMeta + sourceToolUseID, carrying the
+   whole SKILL.md. This pins the UI half of that contract: goalTranscriptHtml
+   classifies on `role` ALONE, so anything that reaches it wearing role "user"
+   without Shadow's tag renders as the founder having typed it. With the
+   parser filtering upstream the body never arrives; what must keep working
+   is that a real founder turn still reads as the founder, and Shadow's own
+   say still reads as Shadow. */
+{
+  const ctx=fresh();
+  ctx.S.openPanes=[]; ctx.S.sessions=[];
+  const d=detail({state:"working"});
+  /* what the parser now hands the UI for the same stretch of transcript:
+     the founder's turn, Shadow's say, and the chat's answer -- no skill body */
+  ctx.S.goalTranscript={ "d5740ce7": [
+    {role:"user", text:"recommend a database"},
+    {role:"user", text:"[Shadow · mission m-9ce90234465a] Start with the repo"},
+    {role:"assistant", text:"FINAL: postgres"}
+  ]};
+  const html=ctx.goalTranscriptHtml(ctx.goalMessages("d5740ce7"),d);
+  assert(!/Base directory for this skill/.test(html),
+    "a skill body must never render");
+  assert.strictEqual((html.match(/gwturn-founder/g)||[]).length,1,
+    "exactly one founder row: the turn the founder actually typed");
+  assert.strictEqual((html.match(/gwturn-shadow/g)||[]).length,1,
+    "Shadow's say must still be attributed to Shadow");
+  assert.strictEqual((html.match(/gwturn-chat/g)||[]).length,1,
+    "the chat's answer must still render");
+  ok("no skill body in the founder row; real turns keep their attribution");
+}
 /* 31. a refresh does not yank a founder who scrolled up */
 {
   const ctx=fresh();

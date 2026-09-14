@@ -313,18 +313,145 @@ class TestAskFounder(Base):
         self.assertEqual(gg["block_reason"], "needs_founder")
         self.assertEqual(gg["target_session"], SID, "chat kept, not cloned")
 
-    def test_11_a_standalone_mission_keeps_its_historical_terminal(self):
+    def test_11_a_standalone_mission_ESCALATES_instead_of_stopping(self):
+        """THE DOGFOOD BUG (founder, 2026-09-14, m-98f1b3adf69f).
+
+        This used to assert `stopped` with no block_reason -- "no goal, no
+        blocking". That made Shadow's one mid-mission way of reaching the
+        founder indistinguishable from giving up: terminal, so the runner
+        reaped the delegate, and the reason survived only in a ledger note
+        nothing surfaces. ask_founder is an escalation, so it now takes the
+        SAME exit the goal arm always took.
+        """
         self.replies = ["stuck", "x"]
         mid = self.mission()
         out = run(self.engine(self.recorder([
             {"action": "ask_founder", "reason": "cannot proceed"}
         ])).run_mission(mid))
-        self.assertEqual(out["state"], "stopped",
-                         "no goal, no blocking -- unchanged contract")
-        self.assertNotIn("block_reason", out,
-                         "and no blocker is stamped on a standalone mission")
+        self.assertEqual(out["state"], "blocked",
+                         "a standalone ask_founder must reach the founder")
+        self.assertEqual(out["block_reason"], "needs_founder",
+                         "the blocker must be stamped on the record")
         self.assertTrue(any("cannot proceed" in n for n in self.notes(mid)),
-                        "the reason lives in the ledger note")
+                        "the reason still lives in the ledger note")
+
+    def test_11b_the_reason_survives_onto_the_record(self):
+        """The founder is asked something specific, and the something has to
+        reach the card. transition() does not stamp block_reason; block()
+        is the one writer, which is why the exit had to change."""
+        self.replies = ["stuck", "x"]
+        mid = self.mission()
+        out = run(self.engine(self.recorder([
+            {"action": "ask_founder",
+             "reason": "it needs the deploy region and I do not have it"}
+        ])).run_mission(mid))
+        self.assertEqual(out["block_reason"], "needs_founder")
+        self.assertTrue(
+            any("deploy region" in n for n in self.notes(mid)),
+            "what Shadow actually needed must be recoverable")
+
+    def test_11c_the_session_is_kept_alive_for_the_founder_to_answer(self):
+        """blocked is NOT terminal, and that is load-bearing: the runner
+        reaps a delegate only on TERMINAL, so the chat the founder has to
+        answer in stays alive. Asserted on the contract, not on a mock."""
+        self.replies = ["stuck", "x"]
+        mid = self.mission()
+        out = run(self.engine(self.recorder([
+            {"action": "ask_founder", "reason": "need a human"}
+        ])).run_mission(mid))
+        self.assertNotIn("blocked", mission_engine.TERMINAL,
+                         "if blocked became terminal the delegate would be "
+                         "reaped and there would be nothing to answer in")
+        self.assertEqual(out["target_session"], SID,
+                         "the original worker session must be kept, not cloned")
+
+    def test_11d_resume_returns_to_the_SAME_worker(self):
+        """blocked -> running is the existing resume edge, and it must land
+        back on the same session: no respawn, no second chat."""
+        self.replies = ["stuck", "x"]
+        mid = self.mission()
+        out = run(self.engine(self.recorder([
+            {"action": "ask_founder", "reason": "need a human"}
+        ])).run_mission(mid))
+        self.assertEqual(out["state"], "blocked")
+        self.assertIn("running", mission_engine.TRANSITIONS["blocked"],
+                      "resume must be a legal edge out of blocked")
+
+        # the founder answered in the chat; Shadow is resumed
+        self.said = []
+        self.replies = ["FINAL: postgres", "x"]
+        resumed = self.store.transition(mid, "running", "explicit resume")
+        self.assertEqual(resumed["target_session"], SID)
+        out2 = run(self.engine(self.recorder([
+            {"action": "continue", "reason": "founder answered",
+             "instruction": "Given the region, finish it."}
+        ])).run_mission(mid))
+        self.assertEqual({sid for sid, _t in self.said}, {SID},
+                         "the resumed mission drove a DIFFERENT session")
+        self.assertEqual(out2["target_session"], SID)
+
+    def test_11e_continue_is_untouched_and_still_runs_out_of_budget(self):
+        """The escalation exit must not become the ordinary one: a mission
+        that keeps deciding `continue` still spends its budget and still
+        ends `failed` for a standalone mission -- _out_of_road, unchanged."""
+        self.replies = ["a", "b", "c", "d", "e", "f"]
+        mid = self.mission(max_turns=2)
+        out = run(self.engine(self.recorder([
+            {"action": "continue", "reason": "keep going",
+             "instruction": "step one"},
+            {"action": "continue", "reason": "keep going",
+             "instruction": "step two"},
+            {"action": "continue", "reason": "keep going",
+             "instruction": "step three"},
+        ]), max_turns=2).run_mission(mid))
+        self.assertEqual(out["state"], "failed",
+                         "budget exhaustion is still a standalone failure")
+        self.assertNotIn("block_reason", out,
+                         "running out of budget is not an escalation")
+
+    def test_11f_ping_pong_still_stops_a_standalone_mission(self):
+        """_out_of_road's other exits are untouched: only the deliberate
+        ask_founder exit changed."""
+        self.replies = ["same", "same", "same"]
+        mid = self.mission()
+        out = run(self.engine(self.recorder([
+            {"action": "continue", "reason": "r", "instruction": "identical"},
+            {"action": "continue", "reason": "r", "instruction": "identical"},
+        ])).run_mission(mid))
+        self.assertEqual(out["state"], "stopped",
+                         "ping-pong must still be a stop, not an escalation")
+        self.assertNotIn("block_reason", out)
+
+    def test_11g_the_needs_you_feed_row_is_the_existing_emitter(self):
+        """The runner's blocked branch emits through emit_mission_feed, the
+        same function the terminal branch uses. No new architecture: this
+        asserts the EXISTING emitter produces an actionable row for a
+        blocked mission, keyed so one block surfaces exactly once."""
+        self.replies = ["stuck", "x"]
+        mid = self.mission()
+        out = run(self.engine(self.recorder([
+            {"action": "ask_founder", "reason": "need a human"}
+        ])).run_mission(mid))
+        accepted, problems = mission_engine.emit_mission_feed(
+            out, "needs_decision", out.get("block_reason") or "Shadow needs you")
+        self.assertTrue(accepted,
+                        "the existing emitter must accept a blocked mission: "
+                        + str(problems))
+        import shadow_feed
+        rows = [json.loads(l) for l
+                in open(shadow_feed._feed_path(), encoding="utf-8")
+                if mid in l]
+        self.assertEqual(len(rows), 1, "one row for one block")
+        self.assertEqual(rows[0]["severity"], "action",
+                         "needs_decision is what makes the row actionable")
+        self.assertEqual(rows[0]["kind"], "needs_decision")
+        self.assertIn("blocked", rows[0]["dedupe_key"],
+                      "one row per block, per version")
+
+        # and it does not double-prompt: the same block re-emits once only
+        again, _ = mission_engine.emit_mission_feed(
+            out, "needs_decision", out.get("block_reason") or "Shadow needs you")
+        self.assertFalse(again, "the same block must not prompt twice")
 
     def test_12_ask_founder_sends_nothing_into_the_chat(self):
         self.replies = ["hmm", "x"]

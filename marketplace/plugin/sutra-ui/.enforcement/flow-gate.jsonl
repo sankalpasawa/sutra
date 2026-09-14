@@ -13,3 +13,83 @@
 {"ts":"2026-09-03T04:11:02Z","event":"flow-stop-warn","session":"117d233c-ec26-4944-82fe-be346a53e414","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
 {"ts":"2026-09-07T08:25:07Z","event":"flow-stop-warn","session":"2daf382b-d39c-4781-9a2a-d85b3606f344","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
 {"ts":"2026-09-08T02:22:05Z","event":"flow-stop-warn","session":"e7891fb3-3bc9-4649-8a63-525af95947f1","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:24:39Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-98f1b3adf69f-magical-shore.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:25:16Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-98f1b3adf69f-magical-shore.md","session":"6fbcb6c2-ac3d-48d0-8028-32a8beb7cf1d"}
+{"ts":"2026-09-14T14:27:15Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-98f1b3adf69f-magical-shore.md","session":"6fbcb6c2-ac3d-48d0-8028-32a8beb7cf1d"}
+{"ts":"2026-09-14T14:32:43Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T14:33:23Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-40b1f4c629ab-cuddly-rain.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:33:51Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-40b1f4c629ab-cuddly-rain.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:34:29Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-40b1f4c629ab-cuddly-rain.md","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6"}
+{"ts":"2026-09-14T14:34:55Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:35:06Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:35:18Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:35:40Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:35:55Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:36:16Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:36:36Z","event":"flow-stop-warn","session":"f0c5a7a3-7027-4bed-a6ee-7a0d13de66f6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:39:05Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9ce90234465a-purring-nebula.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:39:32Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9ce90234465a-purring-nebula.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:40:03Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9ce90234465a-purring-nebula.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T14:41:18Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9ce90234465a-purring-nebula.md","session":"88696584-b230-49fb-b240-3c669156d6e6"}
+{"ts":"2026-09-14T14:55:05Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:55:21Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:55:39Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:55:48Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:55:58Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:56:11Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:56:33Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:56:58Z","event":"flow-stop-warn","session":"2e66df78-5717-4795-969d-e58506b53297","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:57:02Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:57:22Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:57:39Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:57:52Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:58:01Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:58:11Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T14:58:20Z","event":"flow-stop-warn","session":"88696584-b230-49fb-b240-3c669156d6e6","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:40:18Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T17:41:06Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-8716ff040b76-calm-pine.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:41:30Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-8716ff040b76-calm-pine.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:42:25Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-synchronous-sifakis.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:42:44Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-8716ff040b76-calm-pine.md","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4"}
+{"ts":"2026-09-14T17:42:49Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-synchronous-sifakis.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:43:07Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-synchronous-sifakis.md","session":"9b8d5715-6db3-4ea5-a6f0-8f562d9acd74"}
+{"ts":"2026-09-14T17:44:11Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-8716ff040b76-calm-pine.md","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4"}
+{"ts":"2026-09-14T17:44:37Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:44:57Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:45:19Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:45:28Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:45:35Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-moonlit-badger.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:45:39Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:45:49Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:45:55Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-moonlit-badger.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:46:00Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:46:09Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:46:17Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/placement-unresolved-no-moonlit-badger.md","session":"07b60927-d93d-4a84-9e49-3c4a7a97cdcb"}
+{"ts":"2026-09-14T17:46:19Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:46:31Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:46:40Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:46:53Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:47:04Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:47:13Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:47:23Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:47:33Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:47:48Z","event":"flow-stop-warn","session":"5f01409e-b2cb-40e0-86af-f2ab6c0976b4","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:57:23Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T17:58:28Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9107c6b07a61-gentle-hartmanis.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:58:50Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9107c6b07a61-gentle-hartmanis.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T17:59:07Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-9107c6b07a61-gentle-hartmanis.md","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e"}
+{"ts":"2026-09-14T17:59:30Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:59:39Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:59:47Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T17:59:56Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:00:07Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:00:17Z","event":"flow-stop-warn","session":"8180a3ba-b468-4ab1-8909-42c3cae4332e","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:06:14Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T18:07:06Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-cac860353a8f-shiny-turtle.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:07:28Z","event":"flow-stop-warn","session":"5b9c22d5-282d-44d0-8371-ba9dd971efc1","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:07:41Z","event":"flow-stop-warn","session":"5b9c22d5-282d-44d0-8371-ba9dd971efc1","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:07:51Z","event":"flow-stop-warn","session":"5b9c22d5-282d-44d0-8371-ba9dd971efc1","reason":"flow-did-not-fire","mode":"warn","profile":"individual"}
+{"ts":"2026-09-14T18:09:02Z","event":"flow-gate-block","tool":"Agent","reason":"dispatch-without-classify","mode":"hard"}
+{"ts":"2026-09-14T18:09:57Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:10:14Z","event":"flow-gate-block","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","missing":"classify resolve","mode":"hard","session":"unknown"}
+{"ts":"2026-09-14T18:10:48Z","event":"flow-gate-pass","path":"/Users/joytadanki/.claude/plans/shadow-mission-m-6268f3cfffdb-eventual-sphinx.md","session":"5c56810b-0d15-4495-a7d9-6b45c9219dde"}

@@ -884,6 +884,36 @@ def _parse_transcript(f) -> Dict:
                                 "is_error": bool(b.get("is_error"))}
                 if _is_tool_result(content):
                     continue
+                # CONTEXT A TOOL INJECTED IS NOT SOMETHING THE FOUNDER SAID
+                # (founder, 2026-09-14).
+                #
+                # Invoking a Skill makes the CLI write THREE records: the
+                # assistant's `tool_use`, a `tool_result` ("Launching skill:
+                # X"), and then the skill's whole SKILL.md body as a third
+                # record with type "user". That third one is a plain text
+                # block, so `_is_tool_result` does not catch it and it does
+                # not start with "<" either -- it was appended as an ordinary
+                # user turn and rendered as the founder having typed 21,271
+                # characters of `core:flow` into the chat. Measured across
+                # 363 transcripts the same shape reaches 107,959 characters.
+                # It also reached Shadow: evidence_text reads this parser's
+                # output, so an injected skill body counted as chat evidence.
+                #
+                # The CLI already says so. `isMeta` marks a record that is
+                # not conversation, and `sourceToolUseID` names the tool call
+                # the context was injected FOR. BOTH are required here on
+                # purpose: `isMeta` alone also covers rows a reader does want
+                # (an "[Image: ...]" placeholder, "Continue from where you
+                # left off"), while the pair is exactly the injected-by-a-
+                # tool class -- 11 of 11 in the corpus, no false positives.
+                #
+                # THE CALL ITSELF STAYS VISIBLE. Only this companion record
+                # is dropped; the assistant's Skill `tool_use` is parsed by
+                # the branch below and still renders, so the transcript still
+                # shows that the skill ran. Nothing else is filtered, and the
+                # tool_result capture above already ran for this record.
+                if d.get("isMeta") and d.get("sourceToolUseID"):
+                    continue
                 text = _text_of(content).strip()
                 if text and not text.startswith("<"):
                     messages.append({"role": "user", "text": text, "ts": d.get("timestamp", "")})

@@ -302,6 +302,29 @@ function shadowTaskIsActive(m, goals){
   }
   if (!SH_TERMINAL.includes(m.state)) return true;           // (2)
   if (m.state === "failed" && !m.retried_to) return true;    // (3)
+  /* A STOP THE FOUNDER PRESSED IS NOT HISTORY YET (founder, 2026-09-14).
+     Stop left the record on disk and reaped the delegate correctly, but the
+     row vanished from the list in the same gesture -- which reads as the
+     task having been deleted, and takes the card's Retry button with it,
+     since the card only renders for something shadowTasks() still returns.
+
+     `stopped` is two different endings wearing one state, and founder_stop
+     ALREADY stamps the discriminator: `ended_by = "founder"`, written so
+     the goal layer can tell a founder decision from machine trouble. The
+     list simply never read it. A machine stop (ping-pong, and ask_founder
+     on a standalone mission before it learned to block) carries no
+     ended_by and still drops here, exactly as before.
+
+     Same shape as the `failed` line above it, and for the same reason: an
+     ending the founder has not dealt with yet still wants something from
+     them. `!retried_to` is the same step-aside -- once a retry exists, the
+     superseded row makes way for its successor.
+
+     PRESENTATION ONLY. Nothing is deleted, no state moves, the backend stop
+     path is untouched, the delegate is still reaped and the chat Shadow
+     drove still stands in Chats. */
+  if (m.state === "stopped" && m.ended_by === "founder"
+      && !m.retried_to) return true;                         // (3b)
   return false;                                              // (4)
 }
 
@@ -544,7 +567,38 @@ function shadowTaskChatHtml(m){
 
 function shadowTaskCardHtml(m){
   if (!m) return "";
+  const S_ = (typeof S !== "undefined") ? S : {};
   const f = shadowTaskFaceFor(m);
+  /* THE WORKER CHAT IS COLLAPSED BY DEFAULT (founder, 2026-09-14).
+
+     This pane is Shadow's control room: the state, the budget, what it is
+     still waiting on, and the checks only the founder can sign off. Those
+     are the things a founder acts on, and the transcript -- the longest
+     block on the card by far -- pushed them off the top.
+
+     NOTHING IS REMOVED. The transcript is the same block, drawn by the same
+     shadowTaskChatHtml through the same Assignment-workspace machinery
+     (goalMessages / goalTranscriptHtml / loadGoalTranscript); only whether
+     it is expanded changed, and it is one click away. The v2.273.0 gap it
+     closed -- a static brief while the chat already existed -- stays closed
+     for anyone who opens it, and the two fixes that shipped beside it
+     (early admit, list/card agreement) are what keep the COLLAPSED card
+     honest about progress on its own.
+
+     A fetch follows the render, so a collapsed chat is not polled at all.
+
+     `shadowTaskChatOpen` holds the mission id, not a boolean: selecting a
+     different task collapses again rather than carrying one task's choice
+     onto the next. Same shape as the other per-selection flags here.
+
+     The toggle is drawn only when there is genuinely something behind it --
+     a session AND the transcript module -- so it is never a control that
+     opens nothing. That is the same pair shadowTaskChatHtml itself tests,
+     kept in one place. "Open the chat" in the actions row is unchanged and
+     still leaves for the real session. */
+  const chatReady = !!(m.target_session
+    && typeof goalTranscriptHtml === "function");
+  const chatOpen = chatReady && S_.shadowTaskChatOpen === m.id;
   /* NOT `m.state === "brief_confirm"`. A start that has already been accepted
      leaves the record in brief_confirm while it provisions, and offering
      Start there is the button that would not go away -- see
@@ -587,7 +641,11 @@ function shadowTaskCardHtml(m){
       <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
         ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
-    ${shadowTaskChatHtml(m)}
+    ${chatReady ? `<button class="shchattoggle${chatOpen ? " on" : ""}"
+      type="button" data-shtaskchat="${escAttr(m.id)}"
+      aria-expanded="${chatOpen ? "true" : "false"}">${
+      chatOpen ? "\u2304 Hide worker chat" : "\u203a Show worker chat"}</button>` : ""}
+    ${chatOpen ? shadowTaskChatHtml(m) : ""}
     <div class="shcard2acts">
       ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id)}">Start the task</button>
@@ -1578,6 +1636,16 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (d.shtab === "goals" && typeof loadGoals === "function"
           && typeof S !== "undefined" && S.goals === undefined) loadGoals();
       if (typeof scheduleRender === "function") scheduleRender(); return; }
+    /* reveal or re-collapse the worker transcript, in place. Presentation
+       only: no read, no write, no mission state -- the next render decides
+       whether to draw the block, and drawing it is what triggers the
+       existing throttled transcript fetch. */
+    if (d.shtaskchat){
+      S.shadowTaskChatOpen =
+        (S.shadowTaskChatOpen === d.shtaskchat) ? null : d.shtaskchat;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
     if (d.shtakeover){
       /* navigation, never mutation: land the founder where the delegate
          session can be resumed by hand */

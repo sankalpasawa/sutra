@@ -543,10 +543,38 @@ class MissionEngine:
                         (" | why: " + decision["reason"][:80])
                         if decision.get("reason") else "")})
             if decision is not None and decision["action"] == "ask_founder":
-                # the EXISTING founder-facing exit: a goal attempt blocks and
-                # the founder is asked, a standalone mission stays terminal
-                return self._out_of_road(
-                    m, "stopped", "needs_founder",
+                # ASKING THE FOUNDER IS AN ESCALATION, NOT AN ENDING
+                # (founder, 2026-09-14, dogfood m-98f1b3adf69f).
+                #
+                # This used to route through _out_of_road, which branches on
+                # goal_id: a goal attempt blocked and the founder was asked,
+                # and a STANDALONE mission was transitioned straight to
+                # `stopped`. For the standalone case that made "I cannot make
+                # progress, I need the human" indistinguishable from giving
+                # up -- terminal, so the delegate was reaped by the runner,
+                # and `block_reason` was dropped on the floor because
+                # transition() does not stamp it. The founder saw a task that
+                # had quietly stopped, with the reason only in a ledger note
+                # nothing surfaces. Shadow's one way of speaking to the
+                # founder mid-mission could not be heard.
+                #
+                # It is the SAME escalation either way, so it now takes the
+                # same exit either way: store.block, which is what the goal
+                # arm already called. Nothing else moves. `blocked` is an
+                # existing state, `running -> blocked` was already legal and
+                # already reached from here for goals, the UI has read it as
+                # NEEDS YOU since it first existed, and the runner already
+                # treats it as the one non-terminal stop -- the delegate is
+                # deliberately kept ALIVE so the founder can answer in the
+                # chat, while the execution slot is freed so the queue moves.
+                #
+                # _out_of_road is UNTOUCHED and still owns the three exits
+                # that really are out of road: budget spent, ping-pong, and
+                # the stalled-turn routing. Those keep their historical
+                # terminal states for a standalone mission exactly as before.
+                # This is only the exit Shadow takes deliberately.
+                return self.store.block(
+                    mid, "needs_founder",
                     decision["reason"] or "Shadow asked for the founder")
             if decision is not None and decision["action"] == "undecided":
                 # R10: never fall back to a generic instruction, never

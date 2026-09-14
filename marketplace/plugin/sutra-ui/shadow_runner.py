@@ -495,9 +495,21 @@ def _launch(mid, validated_say, verifier):
             # the same path terminal uses -- otherwise a few blocked
             # missions freeze the whole queue at the cap of 5.
             #
-            # No feed item here on purpose: the escalation copy and its
-            # dedupe key (which V5 R3 wants keyed on block reason + attempt)
-            # belong to the slice that actually routes work into blocked.
+            # THE FEED ROW THIS COMMENT WAS WAITING FOR (founder,
+            # 2026-09-14). It said the escalation copy belonged to "the slice
+            # that actually routes work into blocked" -- that slice is the
+            # ask_founder exit, which now blocks for a standalone mission as
+            # well as a goal attempt, so the row lands here.
+            #
+            # The EXISTING emitter, unchanged: emit_mission_feed already
+            # keys its dedupe on mission + state + version, which IS the
+            # "block reason + attempt" keying V5 R3 asked for -- a mission
+            # blocks once per version, and an amend bumps the version and so
+            # re-surfaces exactly once. `needs_decision` is the existing kind
+            # and is what gives the item severity "action".
+            mission_engine.emit_mission_feed(
+                m, "needs_decision",
+                m.get("block_reason") or "Shadow needs you")
             await _promote_after_slot_freed(store, mid, validated_say,
                                             verifier)
         elif m and m.get("pause_reason"):
