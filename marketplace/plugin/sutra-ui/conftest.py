@@ -88,6 +88,36 @@ def _redirect_agent_data_to_temp() -> None:
     atexit.register(shutil.rmtree, home, True)
 
 
+def _redirect_chats_to_temp() -> None:
+    """The chat store, for the same reason and by the same rule.
+
+    FOUND 2026-09-14, by comparing a backup of the operator's live data with what was on
+    disk after a whole-directory pytest run: 26 chats had been written into
+    ~/.sutra-ui/chats, each one a Shadow fixture ("hello", "[Shadow - mission m-...] run
+    check ... now"). Seven test modules boot a REAL uvicorn -- test_activity,
+    test_feed_latency, test_shadow_delegate, test_shadow_runner, test_shadow_say,
+    test_shadow_smoke_cycle, test_workspace_api -- and chat_store defaults to
+    ~/.sutra-ui/chats, so every turn they drove was filed in the operator's own history.
+    Nothing was lost (no existing chat was removed and only a chat a previous test run had
+    left behind was appended to), but a test suite must not put rows in somebody's
+    inventory.
+
+    Set here rather than in each of the seven, for the same reason the three redirects
+    above are here: a module that boots a server tomorrow inherits the protection instead
+    of having to remember it. A caller who has already pointed the variable somewhere
+    outside the live folder is left alone.
+    """
+    live = os.path.realpath(os.path.expanduser("~/.sutra-ui/chats"))
+    current = os.environ.get("SUTRA_UI_CHATS", "").strip()
+    if current:
+        resolved = os.path.realpath(os.path.expanduser(current))
+        if resolved != live and not resolved.startswith(live + os.sep):
+            return  # caller-provided temp store: theirs, not ours
+    home = tempfile.mkdtemp(prefix="sutra-ui-pytest-chats-")
+    os.environ["SUTRA_UI_CHATS"] = home
+    atexit.register(shutil.rmtree, home, True)
+
+
 _SHADOW_TEST_HOME = ""
 
 
@@ -127,4 +157,5 @@ def pytest_runtest_setup(item):
 
 _redirect_registry_home_to_temp()
 _redirect_agent_data_to_temp()
+_redirect_chats_to_temp()
 _redirect_shadow_home_to_temp()

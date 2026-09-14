@@ -88,6 +88,9 @@ function makeBox(opts) {
     /* Chat A on Codex (the server said so), Chat B on the global default. */
     S: { paneMenu: "A", chatProvider: {}, chatProviderNote: {}, repo: {}, prs: {},
          optsOpen: {}, sessTab: {}, model: {}, ui: { paneCollapsed: {} },
+         /* the model picker's own state: which pane's picker is open, which
+            provider tab is being browsed, and whether More models is open */
+         mdlMenu: null, mdlTab: {}, mdlMore: {}, turnOpts: {},
          sessions: o.sessions || [
            { id: "A", title: "Chat A", channel: { id: "codex", source: "chat-history" } },
            { id: "B", title: "Chat B", channel: { id: "claude", source: "settings" } },
@@ -95,6 +98,9 @@ function makeBox(opts) {
     /* THE GLOBAL PRIMARY PROVIDER. Every test below re-reads this at the end:
        a chat-level switch that moves it is the one failure that cannot be
        undone from inside a chat. */
+    escAttr: (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c =>
+           ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    MODEL_CATALOG_BY_PROVIDER: {}, ACCESS_OPTIONS: [], ACCESS_BY_PROVIDER: {},
     SETTINGS: { provider: "claude", model_by_provider: {} },
     SEED: { provider: "claude",
             provider_aliases: { "codex": "codex", "claude": "claude",
@@ -124,6 +130,15 @@ function makeBox(opts) {
     grab(render, "paneProvider"),
     grab(render, "paneDeclProvider"),
     grab(render, "paneMenuHtml"),
+    grab(helpers, "_catalogGlobal"), grab(helpers, "_settingsGlobal"),
+    grab(helpers, "_modelsGlobal"), grab(helpers, "_permModesByProviderGlobal"),
+    grab(helpers, "modelCatalogFor"), grab(helpers, "modelEntries"),
+    grab(helpers, "modelEntryFor"), grab(helpers, "modelNameFor"),
+    grab(helpers, "modelEffortsFor"), grab(helpers, "effortKeyFor"),
+    grab(helpers, "effortLabel"),
+    grab(render, "paneModelValid"), grab(render, "composerModelFor"),
+    grab(render, "composerModelLabel"), grab(render, "_pickBtn"),
+    grab(render, "composerModelMenuHtml"),
     grab(helpers, "switchChatProvider"),
     /* the natural-language path, whole, so convergence is tested and not assumed */
     "var PROVIDER_INTENT_PREFIX = " + /PROVIDER_INTENT_PREFIX = ([^\n]+)/.exec(helpers)[1],
@@ -155,33 +170,40 @@ function selectProvider(box, sid, value) {
   box.__sel.onchange();
 }
 
-/* The row's <option> list and which one is selected, from the real markup. */
+/* WHICH PROVIDER THIS CHAT IS ON, read from the control that now says so.
+   The "Chat AI Provider" <select> in the menu is gone (2026-09-14): the model
+   picker's provider tabs are how a chat moves, and the menu's Model row names
+   the provider in its label. Same claims, the controls that exist. */
 function row(box, sid) {
   const s = box.S.sessions.find(x => x.id === sid);
-  const prev = box.S.paneMenu;
-  box.S.paneMenu = sid;
-  const html = box.paneMenuHtml(s);
-  box.S.paneMenu = prev;
-  const m = /<span class="mk">Chat AI Provider<\/span>[\s\S]*?<\/select>/.exec(html);
-  if (!m) return { present: false, html: html, options: [], selected: null };
-  const block = m[0];
-  const options = [...block.matchAll(/<option value="([^"]*)"([^>]*)>([^<]*)</g)]
-    .map(o => ({ id: o[1], disabled: /\bdisabled\b/.test(o[2]),
-                 selected: /\bselected\b/.test(o[2]), label: o[3] }));
-  return { present: true, html: html, block: block, options: options,
+  const prevMenu = box.S.paneMenu, prevMdl = box.S.mdlMenu;
+  box.S.paneMenu = sid; box.S.mdlMenu = sid;
+  const menu = box.paneMenuHtml(s);
+  const html = box.composerModelMenuHtml(s);
+  box.S.paneMenu = prevMenu; box.S.mdlMenu = prevMdl;
+  const options = [...html.matchAll(/<button class="mdltab([^"]*)"[^>]*data-mdltab="[^:"]*:([^"]*)"[^>]*aria-pressed="(true|false)"[\s\S]*?<span class="pkl">([^<]*)</g)]
+    .map(o => ({ id: o[2], disabled: /\bdisabled\b/.test(o[1]),
+                 selected: o[3] === "true", label: o[4] }));
+  const label = (menu.match(/data-mdlmenu[\s\S]*?<span class="mv">([^<]*)</) || [])[1] || "";
+  return { present: options.length > 0, html: html, menu: menu, block: html,
+           label: label, options: options,
            selected: (options.find(o => o.selected) || {}).id || null };
 }
 
 /* ── 1. the row mirrors the chat's active provider ────────────────────────── */
 
-test("the row is labelled exactly \"Chat AI Provider\"", () => {
+test("the menu's Model row names the provider, and never borrows Settings' label", () => {
+  /* RENAMED WITH THE CONTROL (2026-09-14). The menu's "Chat AI Provider" select
+     is gone; the Model row names what will answer and opens the picker, whose
+     tabs are how a chat moves. What must not happen is unchanged: this is a
+     chat-level control and must not wear the global one's name. */
   const box = makeBox();
+  const prev = box.S.paneMenu; box.S.paneMenu = "A";
   const html = box.paneMenuHtml(box.S.sessions[0]);
-  assert(/<span class="mk">Chat AI Provider<\/span>/.test(html),
-         "the label is not the agreed one -- it is what the operator looks for");
-  /* NOT the global control's name. "Primary Provider" is Settings' label for a
-     different thing, and reusing it here is how a chat-level switch gets read
-     as a global one. */
+  box.S.paneMenu = prev;
+  assert(/<span class="mk">Model<\/span>/.test(html), "no Model row in the menu");
+  assert(/data-mdlmenu="A"/.test(html), "the Model row does not open the picker");
+  assert(/OpenAI Codex/.test(html), "the row does not name this chat's provider: " + html);
   assert(!/Primary Provider/.test(html), "the row borrows Settings' label");
 });
 
@@ -263,16 +285,19 @@ test("the row never renders from an UNFETCHED table", () => {
 });
 
 test("the provider a chat is RUNNING is never dropped from its own row", () => {
-  /* Signed out after the socket resolved it. A select whose value is absent
-     from its options displays the FIRST one, i.e. names a provider this chat
-     is not on -- so it is listed, disabled. */
+  /* Signed out after the socket resolved it. The old select listed it disabled,
+     because a select with no matching option displays the first one and would
+     name a provider this chat is not on. The picker cannot make that mistake --
+     its tabs are only what can start -- so the claim moves to the row that does
+     the naming: the Model row still says Codex, and the tabs do not offer it. */
   const box = makeBox({ providers: [
     { id: "claude", name: "Claude Code", runnable: true },
     { id: "codex", name: "OpenAI Codex", runnable: false, reason: "signed out" }] });
   const r = row(box, "A");
-  eq(r.selected, "codex", "the row stopped naming the provider actually running");
-  const cur = r.options.find(o => o.id === "codex");
-  assert(cur && cur.disabled, "the running-but-unready provider is selectable");
+  assert(/OpenAI Codex/.test(r.label),
+         "the row stopped naming the provider actually running: " + r.label);
+  assert(!r.options.some(o => o.id === "codex"),
+         "a provider that cannot start was offered as a tab");
 });
 
 /* ── 4. selecting one switches THIS chat, through the existing path ──────── */

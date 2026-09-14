@@ -1,0 +1,47 @@
+{
+  "argv": [
+    "<app_dir>/qa/fake_claude_agent.py",
+    "-p",
+    "--mcp-config",
+    "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode",
+    "plan",
+    "--resume",
+    "a-foreign-id",
+    "--allowedTools",
+    "mcp__sutra__*"
+  ],
+  "send_error": null,
+  "frames": [],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": null,
+      "got_result": false,
+      "error": null,
+      "eof": true
+    }
+  ],
+  "result": {
+    "session_id": null,
+    "got_text": false,
+    "got_result": false,
+    "result_error": null,
+    "eof": true
+  },
+  "exit": {
+    "returncode": 1,
+    "stderr": "No conversation found with session ID: a-foreign-id"
+  },
+  "state": "idle",
+  "open_tools": []
+}

@@ -25,8 +25,10 @@ import asyncio
 import itertools
 import json
 import os
-import signal
+import signal    # noqa: F401 -- kept for callers that import it from here
 
+from proc_group import ProcRuntime
+import tool_kinds
 from session_runtime import _drain_to_newline, TurnQueue
 
 
@@ -167,6 +169,32 @@ def _choose_permission_option(effective_permission_mode, tool_kind, options,
     return None
 
 
+def _option_is_approval(option_id, options):
+    """True when `option_id` names an ALLOW option, False for a reject or for no
+    answer at all.
+
+    ACP gives each permission option a `kind`, one of allow_once / allow_always /
+    reject_once / reject_always. That field is the answer when it is there. When
+    an agent omits it, the id itself is the fallback -- every fork observed spells
+    its reject options with "reject" or "deny" in the id.
+
+    Conservative on ambiguity: an option we cannot read as an allow is reported
+    as NOT approved, because over-reporting an approval in an audit line is the
+    direction that misleads.
+    """
+    if option_id is None:
+        return False
+    for opt in options or []:
+        if not isinstance(opt, dict) or opt.get("optionId") != option_id:
+            continue
+        kind = str(opt.get("kind") or "").lower()
+        if kind:
+            return kind.startswith("allow")
+        break
+    low = str(option_id).lower()
+    return not ("reject" in low or "deny" in low or "cancel" in low)
+
+
 def _content_text(content, limit=4000):
     """Flatten a ToolCallUpdate's `content` array (zToolCallContent: "content"
     wraps a {type:"text",text}; "diff" carries path/oldText/newText; "terminal"
@@ -200,7 +228,7 @@ def _content_text(content, limit=4000):
     return text
 
 
-class AcpRuntime:
+class AcpRuntime(ProcRuntime):
     """Owns one ACP agent subprocess for one chat channel.
 
     Duck-type peer of SessionRuntime -- same .alive / .stop() / .kill_group()
@@ -255,88 +283,44 @@ class AcpRuntime:
         self._open_tools = set()
         self.turn_queue = TurnQueue()
         self.queue_event = asyncio.Event()
+        #: WHICH ACP agent this instance is driving. Only the tool-kind table
+        #: reads it, and both ACP agents share one table, so "deepseek" is a
+        #: correct default rather than an assumption -- a Cursor pane sets it to
+        #: "cursor" and gets the identical mapping. Nothing else in this file
+        #: branches on it.
+        self.provider_id = "deepseek"
 
-    @property
-    def alive(self):
-        return self.proc is not None and self.proc.returncode is None
+    #: ACP sets `self.state` DIRECTLY at each transition rather than inferring
+    #: it from the frames passing through the fanout, so the shared fanout must
+    #: NOT observe -- a second state writer would fight the first. This is the
+    #: one behavioural difference between this runtime's observer surface and
+    #: the other two, and it is why ProcRuntime carries the flag at all.
+    OBSERVES_FRAMES = False
 
-    def kill_group(self):
-        """Identical to SessionRuntime.kill_group -- same process-group
-        semantics apply to any subprocess, ACP or not."""
-        p = self.proc
-        if p is None or p.returncode is not None:
-            return False
-        try:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                return False
-        return True
+    # alive / kill_group / stop / clear / subscribe / unsubscribe /
+    # _notify_subscribers / _fanout and the process creation inside spawn() all
+    # come from proc_group.ProcRuntime -- the same process-group semantics apply
+    # to any subprocess, ACP or not, and they used to be copied into all three
+    # runtime files (this one's kill_group said "Identical to
+    # SessionRuntime.kill_group" out loud).
+    #
+    # The shared _fanout is what lets Shadow's observer
+    # (shadow_runner.attach_observer) see every frame type, not just the
+    # _turn_boundary ones prompt_turn pushes via _notify_subscribers directly.
+    # Without it, subscribers never saw a "token" frame: _RECENT_TEXT (mission
+    # live-text preview) stayed empty for a DeepSeek target, and _LAST_FRAME_TS
+    # (stall detection) only advanced at turn start/end instead of continuously
+    # -- a long single ACP turn (session/prompt is one request/response, not
+    # Claude's multi-frame demux) could false-positive a stall mid-turn.
 
-    def stop(self):
-        """The operator pressed stop. Unlike Claude (no in-band cancel),
-        ACP has one: try it first for a clean agent-side abort, then kill
-        the group regardless -- a hung or ignored cancel must not leave the
-        process running."""
-        self.stopped = True
-        self.state = "stopped"
-        self.turn_queue.clear_shadow()
+    def _before_kill(self):
+        """ACP has an in-band cancel; Claude and Codex have none. Try it first
+        for a clean agent-side abort -- ProcRuntime.stop() kills the group
+        immediately afterwards regardless, because a hung or ignored cancel must
+        not leave the process running."""
         if self.session_id:
             asyncio.ensure_future(
                 self._notify("session/cancel", {"sessionId": self.session_id}))
-        return self.kill_group()
-
-    def clear(self):
-        self.proc = None
-        self.key = None
-
-    def subscribe(self, cb):
-        self.subscribers.append(cb)
-        return cb
-
-    def unsubscribe(self, cb):
-        try:
-            self.subscribers.remove(cb)
-        except ValueError:
-            pass
-
-    async def _notify_subscribers(self, frame):
-        for cb in list(self.subscribers):
-            try:
-                res = cb(frame)
-                if asyncio.iscoroutine(res):
-                    await res
-            except Exception:
-                pass
-
-    def _fanout(self, primary):
-        """Wrap a turn's primary emit with subscriber fan-out -- mirrors
-        SessionRuntime._fanout (session_runtime.py) so Shadow's observer
-        (shadow_runner.attach_observer) sees every frame type, not just the
-        _turn_boundary ones prompt_turn already pushes via
-        _notify_subscribers directly. Without this, subscribers never saw a
-        "token" frame: _RECENT_TEXT (mission live-text preview) stayed empty
-        for a DeepSeek target, and _LAST_FRAME_TS (stall detection) only
-        advanced at turn start/end instead of continuously -- a long single
-        ACP turn (session/prompt is one request/response, not Claude's
-        multi-frame demux) could false-positive a stall mid-turn.
-
-        No _observe call here (unlike SessionRuntime's version): AcpRuntime
-        already sets self.state directly at each transition rather than
-        inferring it from frames passing through.
-        """
-        async def emit(frame):
-            await primary(frame)
-            for cb in list(self.subscribers):
-                try:
-                    res = cb(frame)
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-        return emit
 
     # ------------------------------------------------------------- wire --
 
@@ -490,10 +474,25 @@ class AcpRuntime:
             tool_call.get("title"))
         if option_id is not None:
             result = {"outcome": {"outcome": "selected", "optionId": option_id}}
-            approved = True
         else:
             result = {"outcome": {"outcome": "cancelled"}}
-            approved = False
+
+        # WHETHER WE SAID YES, not whether we answered. This was
+        # `approved = option_id is not None`, which is True for a REJECTION too
+        # -- a rejection is a selected option like any other (`reject_once` /
+        # `reject_always`), so the audit line below called every decline an
+        # approval. Found by the safety-net workstream, 2026-09-14; nobody had
+        # seen it because `notice` still has no client handler.
+        #
+        # The DECISION was always right: _choose_permission_option picks a
+        # reject option under `plan`. Only the sentence describing it was wrong,
+        # which is the worse half to get wrong in an audit line.
+        #
+        # Read off the chosen option's own id, because that is what the agent
+        # sent us; the option KIND ("reject_once"/"reject_always" in ACP's
+        # vocabulary) is checked first and the id is the fallback for an agent
+        # that omits it.
+        approved = _option_is_approval(option_id, options)
         payload = {"jsonrpc": "2.0", "id": req_id, "result": result}
         try:
             self.proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
@@ -551,12 +550,26 @@ class AcpRuntime:
             })
         elif tool_id not in self._open_tools:
             self._open_tools.add(tool_id)
+            acp_kind = update.get("kind") or ""
+            title = update.get("title") or ""
+            # ADDITIVE: kind/title/detail/meta beside every key this frame
+            # already carried. ACP publishes its OWN kind vocabulary
+            # (read/edit/execute/search/fetch/...), which is what goes in `name`
+            # here, so the table maps that rather than a tool name -- and
+            # `rawInput`, when the agent sends one, is what turns "execute" into
+            # the actual command on the card.
+            k = tool_kinds.classify(self.provider_id, acp_kind,
+                                    update.get("rawInput"), {"title": title})
             await self._emit({
                 "type": "tool", "phase": "start", "id": tool_id,
-                "name": update.get("kind") or "",
-                "summary": update.get("title") or "",
+                "name": acp_kind,
+                "summary": title,
                 "command": "",
                 "caller": None,
+                "kind": k["kind"],
+                "title": k["title"],
+                "detail": k["detail"],
+                "meta": k["meta"],
             })
 
     # --------------------------------------------------------- lifecycle --
@@ -566,30 +579,7 @@ class AcpRuntime:
         handshake. Unlike SessionRuntime.spawn, this is followed
         immediately by `initialize` -- ACP is a stateful connection from
         the first byte; there is no per-turn respawn-with---resume."""
-        p = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=8 * 1024 * 1024,
-            env=dict(os.environ, **(env or {})),
-            # A new process GROUP, not a new SESSION. kill_group only needs the
-            # child to be a group leader (killpg reaches its descendants), and
-            # that is all process_group=0 gives. start_new_session=True ALSO
-            # made it a session leader -- and on macOS a session leader becomes
-            # its own TCC-responsible process, so it STOPS inheriting Sutra's
-            # Files-and-Folders grants (Desktop/Documents/Downloads). A provider
-            # spawned into a workdir under ~/Desktop then died at startup with
-            # `EPERM: uv_cwd` -- process.cwd() denied -- even though the Sutra
-            # app itself is granted Desktop access (measured 2026-09-13: the
-            # DeepSeek child, TCC-unattributed, could not read
-            # ~/Desktop/development/asawa-holding). Staying in Sutra's session
-            # keeps the child attributed to os.sutra.ui, so the app's grant
-            # covers it. Same group-kill, no session detach.
-            process_group=0,
-        )
-        self.proc = p
-        self.key = key
+        p = await self._spawn_process(args, cwd, key, env=env)
         self._stderr_chunks = []
         self._stderr_task = asyncio.ensure_future(self._pump_stderr())
         self._reader_task = asyncio.ensure_future(self._reader_loop())

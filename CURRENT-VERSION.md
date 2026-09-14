@@ -2,7 +2,128 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.273.0 (2026-09-14, HEAD)
+## v2.273.3 (2026-09-14, HEAD)
+
+**Settings is called Setup, and it looks like something.** Owner, 2026-09-14: "even when I click on
+settings inside settings it should not be named settings ... the way it looks could be improved by a
+good deal ... make it a bit text-light". The rail row and the screen title are now **Setup** (the id,
+the routing and every back control move with it). Each of the six sections carries its own line mark,
+drawn on the rail's grid and stroke. A new panel/row/field vocabulary replaces the stack of
+same-weight boxes: `.sxpanel` is one object with hairline rows, `.sxkv` is a label and a value,
+`.sxfield` is a label above its control, and every select and input on these screens is one height,
+one radius, one ground -- which is the alignment complaint fixed at its root rather than per control.
+
+**Two screens rebuilt.** Workspace and folder was three paragraphs above an unaligned row; it is now
+the field first, one line of consequence, and the two facts that were buried in the prose (where it
+is working, what it is allowed inside) as rows. Advanced was three collapsed folds wrapping prose;
+it is now three panels of values -- what the Chats list shows, anything Sutra refused, and the raw
+settings behind the screens.
+
+**Long server sentences stop landing on screen.** `shortReason`/`reasonHtml` cut a backend reason to
+its first sentence with the rest behind "More". The backend writes them to be complete (paths,
+variables, what was searched), which is right in a log and wrong as the first thing somebody reads.
+
+**Help's empty state is a state, not an essay** -- a heading, one line, and the mechanics behind a
+disclosure. Tests: panel 388, provider switch 102, the rest unchanged; the three failing Shadow
+suites fail identically on clean main.
+
+## v2.273.2 (2026-09-14)
+
+**The model picker moves into the chat's own menu, and the menu is cleaned up.** Owner, 2026-09-14:
+"when I click on the three dot that is where I should see this model option ... the read only and all
+of that you can keep outside ... many of them don't belong". So: the composer's model chip is gone
+(`composerModelChipHtml` deleted with it) and the menu's first row, under a "What answers" heading,
+opens the same picker -- provider tabs, models, More models, thinking levels, Fast mode. The access
+control stays on the composer, because it is the one you change while typing. Three controls left the
+menu: the "Chat AI Provider" select (the picker's tabs are how a chat moves), the Permissions select
+(`permSelect` deleted -- the composer chip already offers the four plain options, the consent flow and
+the legacy modes under Advanced), and the flat Model select. The rest is grouped under headings
+(What answers / This chat / This pane) and "Turn options" is now "Message options".
+
+**Settings, dressed, and the setup path made obvious.** Owner, same day: "change how it looks ...
+the settings overall". The structure stayed; the surface was a stack of same-weight boxes. One CSS
+layer gives the column a readable measure (760px), makes the page title the loudest thing and the
+section headings the next, spends colour only on state (ready / needs you / refused), and lets a card
+lift on hover instead of every border competing. A provider that cannot run now shows what to do --
+"Add key", "Sign in", "Install" -- opening its page, where a disabled "Make default" used to sit.
+
+**A test suite that was filing chats in the operator's own history.** Comparing the pre-change backup
+with disk showed 26 new chats in `~/.sutra-ui/chats`, every one a Shadow fixture ("hello",
+"[Shadow - mission m-...] run check ... now"). Seven modules boot a real uvicorn and `chat_store`
+defaults to the live folder, so every turn they drove was filed there. Nothing was lost -- no chat
+removed, and the only one modified was itself left by an earlier test run -- but `conftest.py` now
+redirects `SUTRA_UI_CHATS` to a temp dir before collection, beside the three redirects already there.
+Verified: a run of the seven leaves the live count unchanged.
+
+Tests: panel 388, composer and tool cards 69, chat provider 21, pane controls 13, all green; the three
+failing Shadow suites fail identically on clean main.
+
+## v2.273.1 (2026-09-14)
+
+**One adapter per provider, and the screens that follow from it.** Sutra ran three CLIs through three
+near-identical runtimes plus about a dozen `if active_id ==` branches in `ws_chat`, so a provider rule
+lived in two places and a vendor's change landed in both. Now: `provider_adapters.py` holds one adapter
+per provider (claude, codex, deepseek, and a cursor adapter gated on the binary existing), `proc_group.py`
+is the one implementation of alive/kill_group/stop/subscribe/fan-out the three runtimes inherit, and
+`tool_kinds.py` is the one tool-kind table. Fourteen adapter calls replace the branches; the DeepSeek
+connect-time key refusal stays, because it is socket policy rather than a spawn rule. The argv builders
+moved behind the adapters and keep their old names as wrappers, so every existing caller and test is
+unchanged.
+
+**The frame vocabulary grows from six to a real list.** Every tool call used to arrive as one flat `tool`
+frame, so a subagent, a shell command and a file edit looked identical. The frame set on the wire is
+unchanged (no old client breaks) and the adapters now fill in `kind` (subagent, command, file_edit,
+file_read, search, web_search, web_fetch, plan, todo, notebook, mcp, compaction, other), `title`, `detail`
+and `meta`. The client draws a card per kind and classifies stored history by tool name, so a chat from
+months ago gets the same cards with no migration of anything on disk.
+
+**Models, thinking and fast mode.** `GET /api/settings` gains `model_catalog_by_provider`: a main list, a
+`more` list (the pinned `claude-opus-4-8` / `-4-7` / `-4-6`, `claude-sonnet-4-6`, `opus[1m]`,
+`sonnet[1m]`), per-model efforts, a `fast` flag and the resolved default. Claude's list gains `best`
+(the newest model the account can run, Fable 5.1 today) and every id was probed against the installed
+CLI. `models_by_provider` still ships byte-identical for older clients and the SEO Writer. `budget.py`
+declares a window for every new id, so none of them silently inherits Haiku's 200K floor. One control
+next to the message box now carries provider tabs, models, thinking levels limited to what that model
+supports, and a Fast mode switch only where the provider declares one (Codex: `-c service_tier="fast"`,
+measured as an alias for `priority` on codex-cli 0.154.0).
+
+**Access, in plain words, per chat.** Four options (Read only, Accept edits, Approve for me, Full access)
+map to the native ids that are still what gets STORED, so every existing install keeps working; `manual`
+and `dontAsk` stay loadable and stay offered under Advanced. `ws_chat` accepts a per-connection `perm`
+parameter (unknown id or a mode the provider cannot enforce is refused; a consent-gated mode clamps and
+says so in the `provider` frame), and the picker hides what a provider cannot do rather than running
+something else.
+
+**Settings, rebuilt.** Opening Settings lands on an overview of six sections (AI providers, Access and
+permissions, Usage limits, Updates, Workspace and folder, Advanced) instead of reopening whatever was
+last expanded; the section is in-memory only, so a reload lands on the overview too. Each provider has
+its own page with its state in one sentence, its default model and access, its installed version, and
+its own switches rendered generically from `provider_settings_schema` (Claude: Chrome, subagents,
+workflows; Codex: memory, subagents), stored under a new `provider_settings` key. Claude's memory switch
+was DROPPED and the reason recorded: on 2.1.270 the only lever is `--bare`, which also disables hooks,
+LSP, plugin sync and CLAUDE.md discovery.
+
+**Usage for every provider on one page**, from the new `GET /api/usage/all`: account, a clean plan label
+("Max (20x)", "Free"), a bar per window with reset times (relative under a day, weekday or date beyond),
+Claude's per-model window, Codex's plan windows labelled from their real durations, and DeepSeek's
+balance. **Tool updates**: `GET /api/providers/tools` reports installed vs latest (npm) vs the declared
+minimum, and `POST /api/providers/tools/{id}/update` runs `claude update` or an npm install into Sutra's
+own prefix, refusing while a chat is running (`providers.chat_lease` in `ws_chat`) and never touching a
+Homebrew install.
+
+**Two bugs the safety net caught.** A declined ACP permission request was audited as "approved"
+(`approved = option_id is not None` is true of a rejection too). And `got_text` was never set on a
+non-streaming Claude answer, so a dead `--resume` replayed a turn whose text was already on screen.
+
+**How this was made safe for people already running Sutra.** `test_provider_golden.py` records today's
+exact frame sequences for all three adapters and ~343 argv rows, and the refactor had to reproduce them;
+the only recorded differences are the additive tool fields and those two fixes. `test_data_compat.py`
+copies the owner's real data (139 chats, 158 index rows, 176 segments, settings, routines) into a temp
+dir and proves every chat loads, resolves and survives a save/load round trip, and that no settings key
+is dropped. Tests: 405 new checks (safety net 56, adapters 87, catalogue and routes 165, settings UI 25,
+composer and tool cards 72). The test venv moved to Python 3.12, which is what the DMG ships.
+
+## v2.273.0 (2026-09-14)
 
 **Shadow's task list is honest about what it is doing, and a task can be removed in one click.**
 One UI change plus eight reliability fixes found in live flights, each pinned by a test that fails

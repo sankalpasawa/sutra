@@ -1,0 +1,93 @@
+{
+  "argv": [
+    "<app_dir>/tests/golden/fake_claude_rich.py",
+    "-p",
+    "--mcp-config",
+    "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--permission-mode",
+    "plan",
+    "--allowedTools",
+    "mcp__sutra__*"
+  ],
+  "send_error": null,
+  "frames": [
+    {
+      "type": "session",
+      "id": "golden-session-0001"
+    },
+    {
+      "type": "sysinit",
+      "model": "stub-model",
+      "tools": 3,
+      "mcp_servers": [
+        {
+          "name": "sutra",
+          "status": "connected"
+        }
+      ],
+      "slash_commands": 2,
+      "permission_mode": "plan",
+      "cwd": "<workdir>"
+    },
+    {
+      "type": "tool",
+      "phase": "start",
+      "id": "toolu_03",
+      "name": "Task",
+      "summary": "Explore: find the caller",
+      "command": "",
+      "caller": null,
+      "kind": "subagent",
+      "title": "Explore: find the caller",
+      "detail": null,
+      "meta": {
+        "agent": "Explore"
+      }
+    },
+    {
+      "type": "tool",
+      "phase": "end",
+      "id": "toolu_03",
+      "ok": true,
+      "output": "found it in app.py"
+    },
+    {
+      "type": "done",
+      "session": "golden-session-0001",
+      "duration_ms": "<duration_ms>",
+      "num_turns": 2,
+      "cost_usd": 0.0042
+    }
+  ],
+  "boundaries": [
+    {
+      "type": "_turn_boundary",
+      "session": "golden-session-0001",
+      "got_result": true,
+      "error": null,
+      "eof": false
+    }
+  ],
+  "result": {
+    "session_id": "golden-session-0001",
+    "got_text": false,
+    "got_result": true,
+    "result_error": null,
+    "eof": false
+  },
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle",
+  "open_tools": []
+}

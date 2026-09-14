@@ -1,0 +1,50 @@
+[
+  {
+    "perm_mode": "plan",
+    "sandbox": "read-only",
+    "supported": true,
+    "mode_note": null
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "sandbox": "workspace-write",
+    "supported": true,
+    "mode_note": null
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "sandbox": null,
+    "supported": true,
+    "mode_note": null
+  },
+  {
+    "perm_mode": "auto",
+    "sandbox": null,
+    "supported": false,
+    "mode_note": {
+      "asked": "auto",
+      "running": "plan",
+      "reason": "codex has no equivalent for 'auto'. Its approval policies are untrusted/on-failure/on-request/granular/never, and every one except `never` waits for an answer on a channel a chat pane does not have -- a `codex exec` run has nobody to approve anything, so it would stall rather than prompt. This turn runs read-only instead of running something wider than you asked for."
+    }
+  },
+  {
+    "perm_mode": "manual",
+    "sandbox": null,
+    "supported": false,
+    "mode_note": {
+      "asked": "manual",
+      "running": "plan",
+      "reason": "codex has no equivalent for 'manual'. Its approval policies are untrusted/on-failure/on-request/granular/never, and every one except `never` waits for an answer on a channel a chat pane does not have -- a `codex exec` run has nobody to approve anything, so it would stall rather than prompt. This turn runs read-only instead of running something wider than you asked for."
+    }
+  },
+  {
+    "perm_mode": "dontAsk",
+    "sandbox": null,
+    "supported": false,
+    "mode_note": {
+      "asked": "dontAsk",
+      "running": "plan",
+      "reason": "codex has no equivalent for 'dontAsk'. Its approval policies are untrusted/on-failure/on-request/granular/never, and every one except `never` waits for an answer on a channel a chat pane does not have -- a `codex exec` run has nobody to approve anything, so it would stall rather than prompt. This turn runs read-only instead of running something wider than you asked for."
+    }
+  }
+]

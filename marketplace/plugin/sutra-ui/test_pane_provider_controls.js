@@ -320,6 +320,9 @@ function paneBox(models) {
   const box = {
     S: { paneMenu: "A", sessions: SESSIONS(), chatProvider: {}, chatProviderNote: {},
          repo: {}, prs: {}, optsOpen: {}, sessTab: {}, model: {}, turnOpts: {},
+         /* the picker's own state: which provider tab is being browsed, whether
+            "More models" is open, and which pane's picker is open at all */
+         mdlTab: {}, mdlMore: {}, mdlMenu: null,
          ui: { paneCollapsed: {} }, usagePop: null, usage: null, codexPlan: null },
     SETTINGS: { provider: "claude", model_by_provider: {} },
     SEED: { provider: "claude" },
@@ -330,6 +333,9 @@ function paneBox(models) {
     PERM_MODES_BY_PROVIDER: { claude: ["plan", "acceptEdits"], codex: ["plan", "acceptEdits"] },
     esc: (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c =>
            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    escAttr: (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c =>
+           ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])),
+    MODEL_CATALOG_BY_PROVIDER: {}, ACCESS_OPTIONS: [], ACCESS_BY_PROVIDER: {},
     cwdLabel: () => "sutra-ui", sessCwd: () => "/w",
     permSelect: () => '<select data-perm="x"></select>',
     providerUsage: () => null, usageKindOf: () => "tokens",
@@ -345,21 +351,42 @@ function paneBox(models) {
     grab(render, "paneDeclProvider"),
     grab(render, "codexEffortsFor"),
     grab(render, "paneMenuHtml"),
+    /* THE MODEL LIST MOVED (2026-09-14). The pane menu's flat <select> became
+       one row that opens the real picker, so the options this file reads now
+       live in composerModelMenuHtml -- with the helpers it leans on. */
+    grab(helpers, "_catalogGlobal"),
+    grab(helpers, "_accessOptionsGlobal"),
+    grab(helpers, "_accessByProviderGlobal"),
+    grab(helpers, "_settingsGlobal"),
+    grab(helpers, "_modelsGlobal"),
+    grab(helpers, "_permModesByProviderGlobal"),
+    grab(helpers, "modelCatalogFor"),
+    grab(helpers, "modelEntries"),
+    grab(helpers, "modelEntryFor"),
+    grab(helpers, "modelNameFor"),
+    grab(helpers, "modelEffortsFor"),
+    grab(helpers, "effortKeyFor"),
+    grab(helpers, "effortLabel"),
+    grab(render, "paneModelValid"),
+    grab(render, "composerModelFor"),
+    grab(render, "composerModelLabel"),
+    grab(render, "_pickBtn"),
+    grab(render, "composerModelMenuHtml"),
     grab(loaders, "codexApplyState"),
-  ].join("\n") + "\n;globalThis.__P={paneMenuHtml,codexEffortsFor,codexApplyState};",
+  ].join("\n") + "\n;globalThis.__P={paneMenuHtml,composerModelMenuHtml,codexEffortsFor,codexApplyState};",
     { filename: "pane#extract" }).runInContext(box);
   return box;
 }
 function modelOptions(box, sid) {
   const s = box.S.sessions.find(x => x.id === sid);
-  /* paneMenuHtml draws nothing for a pane whose menu is shut, so the pane
-     being asked about is the one opened. */
-  const prev = box.S.paneMenu;
-  box.S.paneMenu = sid;
-  const html = box.__P.paneMenuHtml(s);
-  box.S.paneMenu = prev;
-  const m = /<span class="mk">Model<\/span>[\s\S]*?<\/select>/.exec(html);
-  return m ? [...m[0].matchAll(/<option value="([^"]*)"/g)].map(o => o[1]) : null;
+  /* The picker draws nothing unless it is the open one, so open it, read it and
+     put the state back. Every option carries data-mdlpick="<pane>:<provider>:<model id>". */
+  const prev = box.S.mdlMenu;
+  box.S.mdlMenu = sid;
+  const html = box.__P.composerModelMenuHtml(s);
+  box.S.mdlMenu = prev;
+  if (!html) return null;
+  return [...html.matchAll(/data-mdlpick="[^:"]*:[^:"]*:([^"]*)"/g)].map(m => m[1]);
 }
 
 test("COLD: the Codex Model dropdown has nothing but the CLI default", async () => {

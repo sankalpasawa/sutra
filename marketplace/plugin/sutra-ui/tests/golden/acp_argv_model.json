@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "<app_dir>/qa/fake_acp_agent.py",
+    "--acp",
+    "--skip-trust",
+    "-m",
+    "deepseek-v4-pro"
+  ],
+  "agent_capabilities": {
+    "loadSession": true
+  },
+  "unauthenticated_session_new_error": null,
+  "session_id": "fake-session",
+  "session_error": null,
+  "acp_mode": "plan",
+  "acp_mode_note": null,
+  "effective_permission_mode": "plan",
+  "frames": [],
+  "boundaries": [],
+  "result": null,
+  "exit": {
+    "returncode": 0,
+    "stderr": ""
+  },
+  "state": "idle"
+}

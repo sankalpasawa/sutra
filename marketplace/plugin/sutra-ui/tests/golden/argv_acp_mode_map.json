@@ -1,0 +1,17 @@
+{
+  "mode_for_permission_mode": {
+    "plan": "plan",
+    "acceptEdits": "autoEdit",
+    "bypassPermissions": "yolo"
+  },
+  "default_mode": "default",
+  "allow_kinds": [
+    "allow_once",
+    "allow_always"
+  ],
+  "reject_kinds": [
+    "reject_once",
+    "reject_always"
+  ],
+  "sutra_mcp_title_suffix": " (sutra MCP Server)"
+}

@@ -67,9 +67,28 @@ class WindowTest(unittest.TestCase):
         EVERY provider that has a picker, not just Claude's. A DeepSeek entry
         added to the catalogue without a window here would resolve through the
         unknown-model path, and this is the thing that says so at test time
-        instead of at a rejected request."""
+        instead of at a rejected request.
+
+        CODEX IS EXEMPT, and this is the correction of a stale assertion rather
+        than a loophole. budget.py deliberately keeps NO static WINDOWS["codex"]
+        table -- its own note says why: codex's roster is DISCOVERED per
+        account, so a static table would claim windows for ids models_for()
+        does not offer in a fresh process, and would go stale the day OpenAI
+        ships another model. window_for("codex", ...) therefore asks
+        codex_models for the figure the roster itself declares.
+
+        This loop was never updated for that, so on any machine with a real
+        ~/.codex/models_cache.json it failed on the first discovered id --
+        which is exactly what it did here before this change, and for a reason
+        that had nothing to do with any model being unpriced. Codex's real
+        cover is test_every_visible_codex_model_resolves_to_its_own_declared_window
+        below, which is stronger: it checks the window RESOLVES per model, not
+        that someone typed it into a dict."""
+        DISCOVERED_ROSTER = {"codex"}
         for spec in providers._CATALOG:
             pid = spec["id"]
+            if pid in DISCOVERED_ROSTER:
+                continue
             for m in providers.models_for(pid):
                 mid = m["id"]
                 if mid == "":
@@ -77,6 +96,38 @@ class WindowTest(unittest.TestCase):
                 self.assertIn(mid, budget.WINDOWS.get(pid, {}),
                               "%s model %r is in the picker but has no "
                               "declared context window" % (pid, mid))
+
+    def test_every_rich_catalogue_model_has_a_window(self):
+        """The same pin, for the catalogue the new screens read.
+
+        models_for() is the flat legacy list and is deliberately unchanged, so
+        the test above cannot see `best` or any of the six pinned ids -- yet
+        those are exactly the ones a user can now select, and a missing window
+        for one of them costs 800K of ceiling with nothing to report it.
+
+        CLAUDE ONLY. Codex's roster is discovered per account and its windows
+        come from that roster at call time (see budget.DEFAULT_WINDOWS), so a
+        static table for it would be the staleness this file refuses.
+        """
+        cat = providers.model_catalog_for("claude")
+        for entry in cat["models"] + cat["more"]:
+            if entry["id"] == "":
+                continue
+            self.assertIn(entry["id"], budget.WINDOWS["claude"],
+                          "claude catalogue model %r has no declared context "
+                          "window" % entry["id"])
+            self.assertEqual(
+                budget.window_for("claude", entry["id"])["source"], "declared",
+                "%r resolves through the unknown-model path" % entry["id"])
+
+    def test_the_pinned_and_1m_claude_ids_are_not_given_haikus_window(self):
+        """The concrete failure the entries above prevent: without them every
+        one of these lands on FLOOR_WINDOW, which is Haiku's 200K."""
+        for mid in ("best", "claude-opus-4-8", "claude-opus-4-7",
+                    "claude-opus-4-6", "claude-sonnet-4-6",
+                    "opus[1m]", "sonnet[1m]"):
+            self.assertEqual(budget.window_for("claude", mid)["tokens"], 1000000,
+                             "%s fell to the floor" % mid)
 
     def test_no_provider_declares_a_window_for_a_model_it_does_not_offer(self):
         """The other direction. A window left behind after a model is retired
@@ -230,10 +281,21 @@ class WindowTest(unittest.TestCase):
                          budget.DEFAULT_WINDOWS["codex"])
 
     def test_the_other_providers_windows_are_untouched_by_4a(self):
-        """Frozen: 4A adds one DEFAULT_WINDOWS key and nothing else."""
-        self.assertEqual(budget.WINDOWS["claude"],
-                         {"fable": 1000000, "opus": 1000000, "sonnet": 1000000,
-                          "haiku": 200000})
+        """Frozen: 4A adds one DEFAULT_WINDOWS key and nothing else.
+
+        RELAXED FROM EXACT EQUALITY 2026-09-14, and only in the one direction
+        that is safe. The rich model catalogue added `best` and six pinned
+        Claude ids to the picker, and every catalogued model must carry a
+        window -- so WINDOWS["claude"] legitimately grew. What this test is
+        actually about is that 4A did not MOVE any of the four windows that
+        existed, so it now pins those four by value and leaves the size of the
+        dict to test_every_catalogued_model_has_a_window_or_is_the_default,
+        which is the check that additions are answerable for.
+        """
+        for mid, tokens in (("fable", 1000000), ("opus", 1000000),
+                            ("sonnet", 1000000), ("haiku", 200000)):
+            self.assertEqual(budget.WINDOWS["claude"][mid], tokens,
+                             "4A moved %r" % mid)
         self.assertEqual(budget.DEFAULT_WINDOWS["deepseek"], 1000000)
         self.assertEqual(budget.window_for("claude", "opus")["tokens"], 1000000)
         self.assertEqual(budget.window_for("claude", "haiku")["tokens"], 200000)

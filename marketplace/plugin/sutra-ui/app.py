@@ -38,12 +38,22 @@ import secrets as _secrets
 import shadow_egress
 import switch
 import switch_egress
+# SessionRuntime / CodexRuntime / AcpRuntime are no longer CONSTRUCTED here --
+# ws_chat asks `adapter.new_runtime()` instead -- but they stay imported: other
+# modules read them off `app`, and dropping a public name from this module is a
+# breakage nothing in this change needs.
 from session_runtime import (SessionRuntime, _drain_to_newline,
                              _tool_command, _tool_output, _tool_summary,
                              register_runtime, unregister_runtime,
                              lookup_runtime, NoLiveRuntime)
 from acp_runtime import AcpRuntime
 from codex_runtime import CodexRuntime
+import provider_adapters
+# The flag validators and EFFORT_LEVELS moved to provider_adapters with the
+# argv builders that use them. Re-exported under their old names so nothing
+# that referenced app._flag_list or app.EFFORT_LEVELS changed.
+from provider_adapters import (_flag_str, _flag_list, _flag_money,
+                               EFFORT_LEVELS)
 
 # BEFORE anything reads PATH. A Finder/Dock launch inherits launchd's minimal PATH,
 # so `claude` at /opt/homebrew/bin was invisible and the desktop app reported "no AI
@@ -208,40 +218,8 @@ INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to le
 # several seconds later as a dead socket, which reads as "the panel is broken"
 # rather than "that input was wrong".
 
-def _flag_str(value, limit=4000):
-    if not isinstance(value, str):
-        return None
-    v = value.strip()
-    return v[:limit] if v else None
-
-
-def _flag_list(value, limit=64):
-    """A repeated flag's values. Non-strings and blanks are dropped rather than
-    stringified -- passing `None` to the CLI as the text "None" is worse than
-    passing nothing."""
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        return []
-    out = []
-    for v in value:
-        v = _flag_str(v, 1024)
-        if v:
-            out.append(v)
-    return out[:limit]
-
-
-def _flag_money(value):
-    """A budget ceiling. Rejects anything non-positive or unparseable: a `0`
-    silently means "spend nothing" and would look like a hung turn."""
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return None
-    return ("%.4f" % f).rstrip("0").rstrip(".") if f > 0 else None
-
-
-EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+# _flag_str / _flag_list / _flag_money / EFFORT_LEVELS now live in
+# provider_adapters.py, imported above under the same names.
 
 
 def _sutra_mcp_config():
@@ -400,369 +378,65 @@ def project_permissions_for(workdir):
     return {}
 
 
+# --------------------------------------------------------- the argv builders --
+# THESE MOVED TO provider_adapters.py. The bodies are unchanged there (plus one
+# additive `switches=` keyword each, which carries the per-provider settings
+# flags); what is left here is a thin wrapper per name.
+#
+# The wrappers are not ceremony. `build_agent_args`, `build_codex_args`,
+# `build_acp_args` and `codex_turn_config` are referenced by name in switch.py's
+# transport table, in providers.py's comments, and directly by ~60 assertions
+# across test_app.py, test_codex_runtime.py, test_codex_chat.py, test_switch.py
+# and test_switch_seed.py. Keeping the names callable from app is what makes the
+# move a MOVE rather than a rename every one of those has to follow.
+#
+# The two JSON blobs Claude's builder needs are built from app-level state (this
+# directory, this interpreter, org_api.registry_root()), so app INJECTS them
+# rather than provider_adapters importing app back.
+provider_adapters.set_claude_hooks(_sutra_mcp_config, _sutra_allow_hook)
+
+#: Sutra permission modes codex can enforce -> its sandbox mode. Re-exported
+#: from provider_adapters, which is where the table now lives.
+_CODEX_SANDBOX_FOR_MODE = provider_adapters._CODEX_SANDBOX_FOR_MODE
+_CODEX_TURN_CONFIG = provider_adapters._CODEX_TURN_CONFIG
+
+
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
-                     opts=None, stream_input=False, extra_settings=None):
-    """The full argv for one turn.
-
-    Separated from the socket loop so it is testable without a subprocess, and
-    so adding a flag cannot accidentally change the ordering of the ones that
-    already work.
-
-    stream_input=True builds a PERSISTENT process: `-p` with no positional
-    prompt plus `--input-format stream-json`, so messages arrive on stdin as
-    JSON frames and one process serves many turns. Verified against the binary:
-    two messages, one process, one session id, both answered.
-    """
-    opts = opts if isinstance(opts, dict) else {}
-    args = [agent_bin, "-p"]
-
-    # ---- Sutra's own tools ------------------------------------------------
-    # Without this the chat can DESCRIBE a routine but not make one: the CLI has
-    # no path back into this panel. sutra_mcp.py is a stdio MCP server the CLI
-    # spawns for THIS RUN via --mcp-config, so nothing is installed and the
-    # operator's global ~/.claude.json is never touched.
-    #
-    # --strict-mcp-config: use ONLY what we pass. Without it the CLI also loads
-    # whatever servers the user has configured globally, which would silently
-    # change what the panel's chat can reach depending on the machine.
-    #
-    # --allowedTools scoped to mcp__sutra__*: these tools must not sit behind an
-    # approval prompt, because a -p run has nobody to answer one -- the call
-    # would stall the turn. They are safe to pre-allow precisely because the
-    # mutating ones only write an inert proposal (see proposals.py).
-    mcp_cfg = _sutra_mcp_config()
-    if mcp_cfg:
-        args += ["--mcp-config", mcp_cfg, "--strict-mcp-config"]
-        # AND the hook that makes them reachable. MEASURED, not assumed: with
-        # --permission-mode plan (the panel's default) every mcp__sutra__ call
-        # comes back in permission_denials and the server is never invoked --
-        # --allowedTools does not help, because the MODE is evaluated first.
-        # A PreToolUse hook is evaluated BEFORE the mode. See mcp_allow_hook.py
-        # for why allowing exactly this namespace is safe.
-        # `extra_settings` is MERGED into that same inline object rather than
-        # emitted as a second --settings: the CLI takes one value for this
-        # flag, so a second occurrence would silently drop whichever the
-        # parser did not keep -- the same trap --allowedTools carries below.
-        # Position is unchanged, so every argv that already existed is
-        # byte-identical when extra_settings is None.
-        hook = _sutra_allow_hook()
-        settings_obj = json.loads(hook) if hook else {}
-        if extra_settings:
-            settings_obj.update(extra_settings)
-        if settings_obj:
-            args += ["--settings", json.dumps(settings_obj)]
-    elif extra_settings:
-        args += ["--settings", json.dumps(extra_settings)]
-    if stream_input:
-        args += ["--input-format", "stream-json"]
-    else:
-        args += [msg]
-    args += [
-        "--output-format", "stream-json",
-        "--verbose", "--include-partial-messages",
-        "--permission-mode", perm_mode,
-    ]
-    if session_id:
-        args += ["--resume", session_id]
-        # Only meaningful WITH --resume: it forks the resumed thread instead of
-        # continuing it. Passing it alone is silently ignored by the CLI, which
-        # would make a UI toggle look broken.
-        if opts.get("fork_session"):
-            args += ["--fork-session"]
-    if model:
-        args += ["--model", model]
-
-    # "claude" is not a default here, it is a fact: build_agent_args builds
-    # CLAUDE's argv, and --fallback-model is Claude's flag.
-    fallback = providers.clean_model(opts.get("fallback_model"), "claude")
-    if fallback and fallback != model:
-        args += ["--fallback-model", fallback]
-
-    effort = _flag_str(opts.get("effort"))
-    if effort in EFFORT_LEVELS:
-        args += ["--effort", effort]
-
-    # Extra roots the tools may touch. Confined to $HOME for the same reason the
-    # workdir is: this is a loopback web app, and a directory arriving over a
-    # socket must not be able to hand the agent "/".
-    home = os.path.realpath(os.path.expanduser("~"))
-    for d in _flag_list(opts.get("add_dir"), 16):
-        real = os.path.realpath(os.path.expanduser(d))
-        if real == home or real.startswith(home + os.sep):
-            args += ["--add-dir", real]
-
-    allowed = _flag_list(opts.get("allowed_tools"), 64)
-    # ONE --allowedTools, not two. Sutra's own tools are appended to whatever the
-    # turn asked for rather than emitted as a second flag: the CLI takes this as
-    # a variadic list, so a second occurrence is a conflict, and whichever the
-    # parser kept would silently drop the other -- either losing the operator's
-    # per-turn allow-list or losing Sutra's tools, with no error either way.
-    #
-    # They are pre-allowed because a -p run has NOBODY to answer a permission
-    # prompt: a tool sitting behind one would stall the turn. That is safe here
-    # precisely because the mutating tools only write an inert proposal.
-    #
-    # ONLY the sutra namespace is pre-allowed. User connectors merged into
-    # mcp_cfg are NOT added here — they run under the session's --permission-mode.
-    if mcp_cfg:
-        allowed = list(allowed) + ["mcp__sutra__*"]
-    if allowed:
-        args += ["--allowedTools"] + allowed
-    denied = _flag_list(opts.get("disallowed_tools"), 64)
-    if denied:
-        args += ["--disallowedTools"] + denied
-
-    extra_prompt = _flag_str(opts.get("append_system_prompt"), 8000)
-    if extra_prompt:
-        args += ["--append-system-prompt", extra_prompt]
-
-    budget = _flag_money(opts.get("max_budget_usd"))
-    if budget:
-        args += ["--max-budget-usd", budget]
-
-    return args
+                     opts=None, stream_input=False, extra_settings=None,
+                     switches=None):
+    """Claude's full argv for one turn. See provider_adapters.build_agent_args."""
+    return provider_adapters.build_agent_args(
+        agent_bin, msg, perm_mode, session_id=session_id, model=model,
+        opts=opts, stream_input=stream_input, extra_settings=extra_settings,
+        switches=switches)
 
 
 def build_acp_args(agent_bin, model=None):
-    """The full argv for the ACP subprocess. Unlike build_agent_args, this is
-    spawn-time only -- ACP's permission-mode and session are protocol-level
-    (session/new, session/set_session_mode), so there is no per-message argv to
-    build. The MODEL is the exception, and the reason this takes an argument.
-
-    -m: THE MODEL WAS BEING DROPPED ON THE FLOOR. This function used to take
-    only the binary, so `chosen_model` -- resolved a few lines above the spawn,
-    validated, and announced to the client in the `start` frame -- reached
-    Claude's argv and nothing at all on DeepSeek's. The pane displayed a model
-    the CLI had never been told about, for every DeepSeek session this panel
-    has ever run. Measured on the wire (2026-09-07): with no -m the fork sends
-    `deepseek-v4-flash` whatever the panel claimed; with -m it sends what it
-    was given.
-
-    The caller passes a value that has already been through
-    providers.clean_model(value, "deepseek"), because the fork does NOT
-    validate this flag -- an unknown `deepseek-`-prefixed id is forwarded
-    verbatim to the API and anything else silently becomes `deepseek-chat`.
-    Passing "" or None means "no flag", which lets the CLI use its own default
-    rather than asserting one here.
-
-    Model is spawn-time here, and the reason recorded above this line was
-    WRONG. It said this build answers session/set_model with -32601. It does
-    not. Re-probed on the wire, 2026-09-07:
-
-        session/set_model                 -> {}        (implemented)
-        session/unstable_setSessionModel  -> -32601    (never was a method --
-                                                        it is the AGENT-SIDE
-                                                        HANDLER name for
-                                                        session/set_model, so
-                                                        calling it was always
-                                                        going to 404)
-
-    The original probe evidently tried the handler name, got -32601, and
-    generalised to both. A wrong recorded finding is worse than none: anyone
-    revisiting this would have believed the door was locked without checking.
-
-    THE RESPAWN DESIGN STANDS, on a better reason. `Session.setModel` is a bare
-    `config.setModel(modelId)` with NO validation -- it accepted
-    "totally-bogus-model-xyz" and "" with {} on the same probe -- so a success
-    here says nothing about whether the id is real, and the allow-list plus a
-    respawn remains the only thing that can refuse one. Whether set_model
-    changes the model MID-SESSION is untested: proving it needs a billed prompt
-    turn, which that probe deliberately did not run. So it is not "impossible",
-    it is "unverified and not needed" -- respawn already works, because
-    spawn_key is tuple(args) and this argv carries the model.
-
-    --skip-trust: this CLI is spawned into whatever workdir the operator's
-    Sutra workdir setting points at -- the same directory Claude is spawned
-    into -- which by definition was never trusted from an interactive
-    `deepseek` prompt first. Without this flag the underlying Gemini-CLI-
-    fork trust dialog stalls the process waiting for a TTY answer that
-    never comes.
-    """
-    args = [agent_bin, "--acp", "--skip-trust"]
-    if model:
-        args += [providers.model_flag_for("deepseek") or "-m", model]
-    return args
-
-
-#: Sutra permission modes codex can enforce -> its sandbox mode. Anything not
-#: in here has NO codex equivalent and is answered by the safest option rather
-#: than the nearest-looking one (see build_codex_args).
-_CODEX_SANDBOX_FOR_MODE = {
-    "plan": "read-only",
-    "acceptEdits": "workspace-write",
-    # bypassPermissions is deliberately ABSENT: it is not a --sandbox value, it
-    # is a different flag that replaces the sandbox entirely.
-}
+    """DeepSeek's ACP argv. See provider_adapters.build_acp_args -- which takes
+    two more keywords, for a SECOND ACP agent (Cursor); this wrapper keeps the
+    two-argument shape every existing caller uses."""
+    return provider_adapters.build_acp_args(agent_bin, model)
 
 
 def codex_mode_note(perm_mode):
     """None when codex can honour `perm_mode`, else the divergence to STATE.
-
-    Reachable because permission_mode is stored GLOBALLY, not per provider: an
-    operator who picks `dontAsk` while Claude is selected and then switches to
-    Codex arrives here with a mode codex has no equivalent for. The client's
-    picker already hides those on a Codex pane (permission_modes_for), but it
-    cannot un-store a value chosen on another provider.
-
-    Same contract and same frame as DeepSeek's `rt.acp_mode_note`: the pane's
-    permission chip is showing what the operator chose, and if nothing is
-    enforcing it they have to be told rather than left to infer it.
-    """
-    if perm_mode in providers.permission_modes_for("codex"):
-        return None
-    return {
-        "asked": perm_mode,
-        "running": "plan",
-        "reason": "codex has no equivalent for %r. Its approval policies are "
-                  "untrusted/on-failure/on-request/granular/never, and every "
-                  "one except `never` waits for an answer on a channel a chat "
-                  "pane does not have -- a `codex exec` run has nobody to "
-                  "approve anything, so it would stall rather than prompt. "
-                  "This turn runs read-only instead of running something "
-                  "wider than you asked for." % perm_mode,
-    }
-
-
-#: The two per-turn config keys codex enumerates, and the enum each is checked
-#: against. Sutra emits NOTHING it has not validated: codex accepts `-c` values
-#: fairly loosely (a bad `model_reasoning_effort` sailed through), so the
-#: allow-list is the only thing standing between a typo in a client payload and
-#: a silently different run.
-_CODEX_TURN_CONFIG = (
-    ("reasoning_summary", "model_reasoning_summary", providers.CODEX_REASONING_SUMMARY),
-    ("verbosity", "model_verbosity", providers.CODEX_VERBOSITY),
-)
+    See provider_adapters.codex_mode_note."""
+    return provider_adapters.codex_mode_note(perm_mode)
 
 
 def codex_turn_config(opts, model=None):
-    """`-c key=value` pairs for one turn's options. [] when there are none.
-
-    PURE, so the mapping from a client payload to argv can be tested without a
-    subprocess -- the same reason build_codex_args is separate from the socket
-    loop.
-
-    A value not in its enum is DROPPED, not passed on and not an error. Codex
-    would take an unknown one and run with a fallback, which is a turn that
-    quietly did something other than what the control said; leaving the key off
-    means codex uses its own default, which is what the empty option means
-    anyway. "" is the empty option and is skipped by the same test.
-
-    TOML, not bare text: `-c` parses the value as TOML and falls back to a
-    literal string, so a quoted scalar is what these enums actually are.
-    """
-    if not isinstance(opts, dict):
-        return []
-    out = []
-    for key, cfg, allowed in _CODEX_TURN_CONFIG:
-        val = opts.get(key)
-        if not isinstance(val, str):
-            continue
-        v = val.strip()
-        if not v or v not in allowed:
-            continue
-        out += ["-c", '%s="%s"' % (cfg, v)]
-
-    # REASONING EFFORT, validated against a list that depends on the MODEL --
-    # which is why it cannot live in the table above. Measured on one account:
-    # terra offers `ultra`, luna does not, 5.5 stops at `xhigh`. A fixed list
-    # would offer every model the union, and codex takes an unsupported value
-    # silently, so the turn would just quietly run at something else.
-    #
-    # `model` is the id already chosen for this turn, or None for "CLI
-    # default" -- codex_efforts_for() resolves None to whatever model/list
-    # marked isDefault, the same resolution the client's picker uses, so the
-    # control and this check cannot disagree about what is offerable.
-    #
-    # Unknown model, no discovery, or an effort this model does not support all
-    # end the same way: nothing is emitted and codex uses its own default.
-    effort = opts.get("reasoning_effort")
-    if isinstance(effort, str) and effort.strip():
-        v = effort.strip()
-        if v in providers.codex_efforts_for(model):
-            out += ["-c", 'model_reasoning_effort="%s"' % v]
-    return out
+    """`-c key=value` pairs for one codex turn's options. See
+    provider_adapters.codex_turn_config."""
+    return provider_adapters.codex_turn_config(opts, model)
 
 
 def build_codex_args(agent_bin, perm_mode, workdir, model=None, session_id=None,
-                     opts=None):
-    """The full argv for one `codex exec` turn.
-
-    ONE PROCESS PER TURN, unlike the other two builders. codex exec reads the
-    prompt, streams JSONL and exits; continuity is `resume <thread_id>`. So
-    everything -- model, sandbox, approval policy, resume -- is spawn-time
-    argv, which is also why the provider declares no turn_options.
-
-    Every element below was verified against codex-cli 0.153.2 on 2026-09-08.
-
-    FLAG ORDER IS LOAD-BEARING. `codex exec resume` accepts only
-    -c/--last/--all/--enable/--disable/-i/--strict-config -- NOT --json,
-    --sandbox, -C, --skip-git-repo-check or -m. Measured both ways:
-
-        exec --json --sandbox read-only -C wd --skip-git-repo-check resume ID -
-            -> parsed, ran, emitted JSONL
-        exec resume --last --json
-            -> plain-text error, NO JSON on stdout at all
-
-    So `resume` goes LAST, after every flag, and the prompt marker after it.
-
-    --skip-git-repo-check is MANDATORY, not defensive. Without it codex refuses
-    with "Not inside a trusted directory and --skip-git-repo-check was not
-    specified." and emits nothing -- and the Sutra workdir is frequently not a
-    git repo. This is the direct analogue of DeepSeek's --skip-trust.
-
-    THE PROMPT IS NOT HERE. The argv ends with `-`, codex's documented "read
-    instructions from stdin" form, and CodexRuntime.send_prompt writes it
-    there. Putting the message in argv would work for short turns and die at
-    exec with E2BIG on a long one -- which is the failure switch.py's
-    ARGV_SAFETY_FRACTION exists to predict, and which stdin has no ceiling for.
-
-    approval_policy=never is what makes a headless run possible: all three
-    probe turns ran with stdin closed after the prompt and never stalled
-    waiting for a TTY answer.
-    """
-    args = [agent_bin, "exec", "--json", "--skip-git-repo-check", "-C", workdir]
-
-    if perm_mode == "bypassPermissions":
-        # NOT a --sandbox value. This flag replaces the sandbox rather than
-        # selecting one, so it is passed alone -- adding --sandbox beside it
-        # would be asking for two different things at once.
-        args += ["--dangerously-bypass-approvals-and-sandbox"]
-    else:
-        # Unknown modes land on read-only, the NARROWEST option. Widening on an
-        # unrecognised value is the one direction this must never be wrong in;
-        # codex_mode_note() says so on screen rather than letting it be silent.
-        sandbox = _CODEX_SANDBOX_FOR_MODE.get(perm_mode, "read-only")
-        args += ["--sandbox", sandbox, "-c", "approval_policy=never"]
-        if sandbox == "workspace-write":
-            # NAMED EXPLICITLY rather than inherited. Whether workspace-write
-            # defaults its writable root to the -C directory on the exec path
-            # was NOT measured, and a wrong guess here either blocks the edits
-            # the operator opted into or widens them past the workdir. Stating
-            # it removes the guess. json.dumps for the escaping: this is a TOML
-            # array of basic strings, and a path is operator-supplied.
-            args += ["-c", "sandbox_workspace_write.writable_roots=%s"
-                     % json.dumps([workdir])]
-
-    # PER-TURN OPTIONS, and they belong here rather than on a running session
-    # because `codex exec` has none: one process per turn means a spawn-time
-    # `-c` IS a per-turn control. Emitted BEFORE `resume` for the same reason
-    # every other flag is -- `codex exec resume` accepts no flags after it.
-    args += codex_turn_config(opts, model)
-
-    if model:
-        # Pre-validated by the caller through providers.clean_model(value,
-        # "codex"). codex does NOT validate this: measured, an unknown id is
-        # accepted with a "Model metadata ... not found" warning and then runs
-        # on fallback metadata, so the allow-list is the only thing that can
-        # refuse one.
-        args += [providers.model_flag_for("codex") or "-m", model]
-
-    if session_id:
-        args += ["resume", session_id]
-
-    # Prompt on stdin. Must be the final element.
-    args += ["-"]
-    return args
+                     opts=None, switches=None):
+    """The full argv for one `codex exec` turn. See
+    provider_adapters.build_codex_args."""
+    return provider_adapters.build_codex_args(
+        agent_bin, perm_mode, workdir, model=model, session_id=session_id,
+        opts=opts, switches=switches)
 
 
 def _ensure_workdir(path=None):
@@ -3530,6 +3204,27 @@ async def ws_chat(ws: WebSocket):
         await ws.close()
         return
 
+    # ---- the adapter for this provider ----------------------------------
+    # ONE LOOKUP, and every provider-specific question below goes through it
+    # instead of another `if active_id == ...`. See provider_adapters.py for
+    # what an adapter answers and what deliberately stayed here.
+    #
+    # None is an HONEST REFUSAL rather than a confusing crash: the frames below
+    # parse Claude Code's `--output-format stream-json`, Codex's `exec --json`
+    # or an ACP agent's JSON-RPC. Spawning another vendor's CLI with those flags
+    # would fail on argument parsing and report as though the provider were
+    # broken. No adapter has been written, so say that.
+    adapter = provider_adapters.get(active_id)
+    if adapter is None:
+        await ws.send_json({"type": "error", "code": "no-adapter", "detail":
+            "Active provider is %r (%s at %s). No chat adapter has been "
+            "written for it here, so it is not being run rather than run "
+            "wrongly. Use the provider selector to switch to %s, or the "
+            "terminal tab." % (active_id, prov["name"], prov["bin_path"],
+                               ", ".join(provider_adapters.ids()))})
+        await ws.close()
+        return
+
     deepseek_key = None
     if active_id == "deepseek":
         # Mirrors the ANTHROPIC_API_KEY refusal above, for the opposite
@@ -3537,6 +3232,13 @@ async def ws_chat(ws: WebSocket):
         # REFUSES a stray key; DeepSeek has no subscription path at all and
         # REQUIRES one. Refused here, at connect time, rather than left to
         # fail inside spawn() as a dead socket with no text.
+        #
+        # STILL AN `if active_id ==` AND DELIBERATELY SO. This is not a spawn
+        # rule, it is a CONNECT-TIME REFUSAL with its own error code and its own
+        # close -- socket policy, which is this handler's job. What the adapter
+        # owns is what the key is FOR: DeepSeekAdapter.spawn_env() turns it into
+        # the environment overlay, which is the part that used to be a second
+        # branch further down.
         #
         # THROUGH THE RESOLVER, not os.environ. This read was its own
         # os.environ.get("DEEPSEEK_API_KEY") and deepseek_usage.py's balance
@@ -3558,31 +3260,61 @@ async def ws_chat(ws: WebSocket):
                 "Active provider is 'deepseek', but %s" % why})
             await ws.close()
             return
-    elif active_id not in ("claude", "codex"):
-        # Honest refusal instead of a confusing crash: the frames below parse
-        # Claude Code's `--output-format stream-json`, Codex's `exec --json`
-        # or DeepSeek's ACP protocol. Spawning another vendor's CLI with these
-        # flags would fail on argument parsing and report as though the
-        # provider were broken. No adapter has been written, so say that.
-        #
-        # `not in (...)` rather than `!= "claude"` (2026-09-08, Codex adapter).
-        # The truth table is unchanged for every id that could already reach
-        # this line: claude was False and stays False; deepseek returns or
-        # falls through from the arm above and never arrives here; gemini and
-        # any unknown id are still refused. Only `codex` changed answer.
-        await ws.send_json({"type": "error", "code": "no-adapter", "detail":
-            "Active provider is %r (%s at %s). No chat adapter has been "
-            "written for it here, so it is not being run rather than run "
-            "wrongly. Use the provider selector to switch to claude, codex or "
-            "deepseek, or the terminal tab." % (active_id, prov["name"], prov["bin_path"])})
-        await ws.close()
-        return
 
     settings = providers.load_settings()
     # Clamp at the point of USE, not just where it was written: a settings.json
     # from an older build, hand-edited, or written by another local process
     # would otherwise reach the spawn below with the ceiling raised.
     perm_mode = providers.effective_permission_mode(settings["permission_mode"])
+    # ---- PER-CONNECTION permission mode (SPEC section E) ------------------
+    # `?perm=<native mode id>` overrides the stored setting for THIS CONNECTION
+    # ONLY. Nothing is written to settings.json, so the global default and every
+    # other pane are untouched. ABSENT means "use the stored setting", which is
+    # exactly today's behaviour -- every existing caller sends no `perm` and
+    # takes the unchanged path.
+    #
+    # A QUERY PARAM AND NOT A MESSAGE FIELD, for the reason `?provider=` is one:
+    # the permission mode is SPAWN-TIME on Claude (--permission-mode) and on
+    # Codex (--sandbox / --dangerously-bypass...), and protocol-level at
+    # session/new on ACP. It is fixed when the process starts, so a per-message
+    # field would promise something this handler cannot deliver. Changing it
+    # drops the socket and the next message opens a new one.
+    #
+    # THE SAME THREE CHECKS THE STORED VALUE GETS, in the same order:
+    #   1. is it a real mode id            -> providers.PERMISSION_MODES
+    #   2. does THIS provider enforce it   -> adapter.supports_mode()
+    #   3. is it consent-gated             -> effective_permission_mode()
+    #
+    # (1) and (2) REFUSE rather than fall back. There is no sensible clamp for
+    # "that mode does not exist" or "this provider cannot do that", and the
+    # precedent is a few lines up: `?provider=` refuses an unrunnable request
+    # rather than silently answering as something else, because a pane that runs
+    # wider than the operator asked is the failure this whole surface exists to
+    # prevent.
+    #
+    # (3) CLAMPS, exactly as the stored value does, and says so -- the consent
+    # gate is a settings-level fact (providers.unsafe_modes_allowed), and
+    # clamping an unconsented mode down to `plan` is what already happens to a
+    # stored one. `permission_clamped` in the provider frame below carries it to
+    # the screen so nothing is silent.
+    req_perm = (ws.query_params.get("perm") or "").strip()
+    perm_requested = None
+    if req_perm:
+        if req_perm not in providers.PERMISSION_MODES:
+            await ws.send_json({"type": "error", "code": "unknown-perm-mode",
+                "detail": "unknown permission mode %r -- known ids: %s"
+                          % (req_perm, ", ".join(providers.PERMISSION_MODES))})
+            await ws.close()
+            return
+        if not adapter.supports_mode(req_perm):
+            await ws.send_json({"type": "error", "code": "perm-mode-unsupported",
+                "detail": "provider %r cannot enforce %r. It offers: %s"
+                          % (active_id, req_perm,
+                             ", ".join(adapter.native_modes()))})
+            await ws.close()
+            return
+        perm_requested = req_perm
+        perm_mode = providers.effective_permission_mode(req_perm)
     workdir = settings["workdir"] or WORKDIR
     # Per-session working directory. The settings value is the DEFAULT; a session
     # may run somewhere else, which is what the composer's folder control sets.
@@ -3602,6 +3334,13 @@ async def ws_chat(ws: WebSocket):
     if not providers.workdir_allowed(workdir):
         workdir = WORKDIR
     agent_bin = prov["bin_path"]
+    # SECTION C: this provider's own switches (Claude's chrome/subagents/
+    # workflows, Codex's memory/subagents), read ONCE per connect rather than
+    # per turn -- they are spawn-time flags, so re-reading the file on every
+    # message would cost a stat per turn and still could not take effect until
+    # the next respawn. Defaults filled in, so a settings.json with no
+    # `provider_settings` key at all yields exactly today's argv.
+    provider_switches = adapter.settings()
 
     if _ensure_workdir(workdir) is None:
         await ws.send_json({"type": "error", "detail":
@@ -3620,6 +3359,11 @@ async def ws_chat(ws: WebSocket):
         "source": detail["source"],
         "permission_mode": perm_mode,
         "permission_note": providers.PERMISSION_MODE_NOTES.get(perm_mode),
+        # What ?perm= asked for, and whether the consent gate clamped it. Both
+        # null on every connection that did not send one, so an old client sees
+        # the frame it has always seen.
+        "permission_requested": perm_requested,
+        "permission_clamped": bool(perm_requested and perm_requested != perm_mode),
         "writes_files": perm_mode in ("acceptEdits", "bypassPermissions"),
         "workdir": workdir,
         # Stated, not swallowed: the session is running somewhere other than what
@@ -3664,9 +3408,7 @@ async def ws_chat(ws: WebSocket):
     # Claude's arm is FIRST and unchanged; the final else still yields
     # AcpRuntime for deepseek, which is the only other id that reaches here
     # (everything else was refused above). Only codex takes the new branch.
-    rt = (SessionRuntime() if active_id == "claude"
-          else CodexRuntime() if active_id == "codex"
-          else AcpRuntime())
+    rt = adapter.new_runtime()
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
 
@@ -3694,6 +3436,12 @@ async def ws_chat(ws: WebSocket):
 
     reader_task = asyncio.create_task(_reader())
 
+    # BUSY, FOR THE UPDATE BUTTON. Updating a provider's CLI out from under a
+    # running chat is how a turn dies mid-sentence, so POST /providers/tools/{id}
+    # /update refuses while this count is above zero. Counted, not a boolean --
+    # several panes can hold the same provider -- and released in the finally
+    # below, so a disconnected browser cannot leave a provider busy forever.
+    providers.chat_started(active_id)
     try:
         while True:
             if pending is not None:
@@ -3988,40 +3736,26 @@ async def ws_chat(ws: WebSocket):
             # carry the thread across with --resume. That keeps per-message
             # overrides working instead of silently ignoring them, which is what
             # a naive "always reuse" would do.
-            if active_id == "claude":
-                args = build_agent_args(agent_bin, msg, perm_mode,
-                                        session_id=None, model=chosen_model,
-                                        opts=payload.get("opts"), stream_input=True)
-            elif active_id == "codex":
-                # RESUME IS BAKED IN HERE, unlike Claude's path, and that is
-                # correct rather than a copy of the bug below. Claude keeps ONE
-                # PROCESS across turns, so a resume-bearing spawn_key made the
-                # reuse test permanently unequal and cold-started the CLI every
-                # message. `codex exec` is one process per TURN -- it exits
-                # after answering -- so `alive` is always False at the top of
-                # the next turn and the comparison can never mis-fire. The
-                # thread id therefore belongs in the argv the key is built
-                # from.
-                #
-                # THE PROMPT IS NOT PASSED. build_codex_args ends the argv with
-                # `-` and CodexRuntime.send_prompt delivers `msg` on stdin, so
-                # no message text ever reaches argv (and E2BIG cannot happen on
-                # a long provider-switch payload).
-                args = build_codex_args(agent_bin, perm_mode, workdir,
-                                        model=chosen_model,
-                                        session_id=session_id,
-                                        # The pane's own per-turn controls,
-                                        # validated in codex_turn_config rather
-                                        # than trusted here -- same policy the
-                                        # Claude arm applies to its own opts.
-                                        opts=payload.get("opts"))
-            else:
-                # Permission-mode is set once in new_session below, not per
-                # message. The MODEL is spawn-time argv (ACP exposes no
-                # set_model on this build), so it goes here -- and because
-                # spawn_key is tuple(args), changing it respawns through the
-                # same path a permission-mode change already uses.
-                args = build_acp_args(agent_bin, chosen_model)
+            # ONE CALL, NO PROVIDER BRANCH. Each adapter knows its own builder,
+            # its own resume policy and its own settings switches; what the
+            # socket knows is the inputs. The three arms this replaces differed
+            # in exactly those three things and in nothing else.
+            #
+            # Claude's argv deliberately carries NO --resume here: the reuse
+            # test below compares a RESUME-FREE key built each message, and a
+            # resume-bearing one made that comparison permanently unequal, so
+            # any pane opened from an existing transcript cold-started claude
+            # every message. The resume-bearing argv is built by
+            # adapter.resume_args() a few lines down, for the spawn only.
+            # Codex's argv DOES carry `resume <id>`, correctly: its process is
+            # one-shot, so `alive` is always False at the top of the next turn
+            # and the comparison can never mis-fire.
+            args = adapter.spawn_args(
+                agent_bin, msg, perm_mode, workdir, model=chosen_model,
+                session_id=session_id,
+                # The pane's own per-turn controls, validated inside the
+                # builder rather than trusted here.
+                opts=payload.get("opts"), settings=provider_switches)
             spawn_key = tuple(args)
             proc = rt.proc
             alive = rt.alive
@@ -4034,10 +3768,19 @@ async def ws_chat(ws: WebSocket):
                 except Exception:
                     pass
                 alive = False
-            if not alive and session_id and active_id == "claude":
-                args = build_agent_args(agent_bin, msg, perm_mode,
-                                        session_id=session_id, model=chosen_model,
-                                        opts=payload.get("opts"), stream_input=True)
+            if not alive and session_id:
+                # RESUME, if this provider has one. Claude is the only one that
+                # does: it keeps one process across turns, so a dead process
+                # plus a known thread means "spawn with --resume". Codex bakes
+                # `resume <id>` into the spawn argv already (one process per
+                # turn) and ACP has no --resume flag at all, so both adapters
+                # answer None here and `args` is left exactly as built.
+                _resumed = adapter.resume_args(
+                    agent_bin, msg, perm_mode, workdir, model=chosen_model,
+                    session_id=session_id, opts=payload.get("opts"),
+                    settings=provider_switches)
+                if _resumed is not None:
+                    args = _resumed
                 # DELIBERATELY NOT re-keying spawn_key here. The reuse test at the
                 # top compares the RESUME-FREE key (session_id=None) built each
                 # message; storing the resume-BEARING key made that comparison
@@ -4072,12 +3815,15 @@ async def ws_chat(ws: WebSocket):
                 await ws.send_json({"type": "start", "model": chosen_model})
             if not alive:
                 # first-run connect serialization -- see _ACP_CONNECT_LOCK.
-                _acp_locked = (active_id == "deepseek"
+                # The lock is for the gemini-cli fork's FIRST RUN, which is a
+                # DeepSeek fact, so the adapter owns "am I that provider" and
+                # this line owns "is the marker still missing".
+                _acp_locked = (getattr(adapter, "id", "") == "deepseek"
                                and _gemini_home_uninitialised())
                 if _acp_locked:
                     await _ACP_CONNECT_LOCK.acquire()
                 try:
-                    if active_id in ("deepseek", "codex"):
+                    if adapter.needs_bundled_node:
                         # The `deepseek` command npm publishes is a shim beginning
                         # `#!/usr/bin/env node`, so Node has to resolve HERE, on
                         # every launch -- not only during the install that fetched
@@ -4098,8 +3844,9 @@ async def ws_chat(ws: WebSocket):
                         # Claude changes -- its CLI is not a node shim and it is
                         # still excluded.
                         providers.ensure_bundled_node_path()
-                    spawn_env = ({"DEEPSEEK_API_KEY": deepseek_key}
-                                 if active_id == "deepseek" else None)
+                    # None for every provider that needs no overlay; DeepSeek
+                    # turns the key resolved at connect into its env var.
+                    spawn_env = adapter.spawn_env(deepseek_key)
                     try:
                         proc = await rt.spawn(args, workdir, spawn_key, env=spawn_env)
                     except OSError as e:
@@ -4111,8 +3858,23 @@ async def ws_chat(ws: WebSocket):
                             "could not start %r in %s: %s" % (agent_bin, workdir, e),
                             await rt.stderr_tail() if not rt.alive else "")})
                         continue
-                    if active_id == "deepseek":
-                        # NARROWED from `!= "claude"` (2026-09-08, Codex adapter).
+                    if adapter.needs_acp_handshake:
+                        # KEYED ON A CAPABILITY, NOT AN ID (was `active_id ==
+                        # "deepseek"`, and `!= "claude"` before that). This block
+                        # is the ACP handshake -- authenticate + session/new +
+                        # the mode note -- so the question it is really asking is
+                        # "does this provider speak ACP", which is exactly what
+                        # the flag says. A second ACP agent (Cursor) therefore
+                        # gets it with no edit here, and Codex still does not:
+                        # `codex exec` has no auth step (the CLI owns
+                        # ~/.codex/auth.json), no session/new (the thread arrives
+                        # on stdout's first line), and its permission mode is
+                        # spawn-time argv.
+                        #
+                        # STILL A STATEMENT OF TRUTH, NOT A BEHAVIOUR CHANGE:
+                        # deepseek is the only id that has ever reached this
+                        # line, and it is the only registered adapter that sets
+                        # the flag today.
                         # This block is the ACP handshake -- authenticate +
                         # session/new + the mode note -- and `codex exec` has none
                         # of those: no auth step (the CLI owns ~/.codex/auth.json),
@@ -4178,15 +3940,22 @@ async def ws_chat(ws: WebSocket):
                             await ws.send_json(dict(rt.acp_mode_note,
                                                     type="mode_note",
                                                     provider=active_id))
-                    elif active_id == "codex":
+                    else:
                         # Same divergence, same frame, computed WITHOUT a round
-                        # trip: codex's permission posture is spawn-time argv, so
-                        # the mismatch is known from `perm_mode` alone and needs no
-                        # equivalent of ACP's session/new response. Reachable
-                        # because permission_mode is stored globally -- a `dontAsk`
-                        # chosen while Claude was selected arrives here. Emitted
-                        # once per spawn, exactly like DeepSeek's.
-                        note = codex_mode_note(perm_mode)
+                        # trip for a provider whose permission posture is
+                        # spawn-time argv -- the mismatch is known from
+                        # `perm_mode` alone and needs no equivalent of ACP's
+                        # session/new response. Reachable because permission_mode
+                        # is stored globally: a `dontAsk` chosen while Claude was
+                        # selected arrives here on a Codex pane. Emitted once per
+                        # spawn, exactly like DeepSeek's.
+                        #
+                        # ASKED OF THE ADAPTER, so it is Codex's answer that
+                        # arrives rather than Codex's name being tested. Claude
+                        # returns None (it enforces every mode), so the `elif
+                        # active_id == "codex"` this replaces has the same truth
+                        # table it always had.
+                        note = adapter.mode_note(perm_mode)
                         if note:
                             await ws.send_json(dict(note, type="mode_note",
                                                     provider=active_id))
@@ -4195,31 +3964,27 @@ async def ws_chat(ws: WebSocket):
                         _ACP_CONNECT_LOCK.release()
             proc = rt.proc
 
-            if active_id == "claude":
-                # The turn itself: one stream-json frame on stdin.
-                try:
-                    await rt.send_user_frame(msg)
-                except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
-                    # the process died between the liveness check and the write
-                    rt.proc = None
-                    await ws.send_json({"type": "error", "detail":
-                        "the agent process closed before the message was sent (%s)" % e})
-                    continue
+            # ONE CALL FOR EVERY PROVIDER. Claude's turn is a stream-json
+            # user frame on stdin plus a demux loop; Codex's and ACP's are one
+            # send-then-read-to-terminal. Both shapes return the SAME 5-tuple,
+            # which is why everything below this point -- stderr/rc reap,
+            # stop/failed/done handling, the chat bookkeeping -- was already
+            # provider-neutral and needs no arm of its own.
+            try:
                 (session_id, got_text, got_result,
-                 result_error, eof) = await rt.demux_turn(ws.send_json, session_id)
-            else:
-                # ACP's session/prompt is one request/response -- send and
-                # read-until-terminal collapse into one call. Same 5-tuple
-                # contract as demux_turn, so everything below this point
-                # (stderr/rc reap, stop/failed/done handling) is unchanged.
-                #
-                # CODEX SHARES THIS CALL UNCHANGED (2026-09-08). Its turn is
-                # also one send-then-read-to-terminal, so CodexRuntime
-                # implements the same prompt_turn(msg, emit, session_id)
-                # signature and returns the same 5-tuple -- which is why the
-                # third provider needed no third arm here.
-                (session_id, got_text, got_result,
-                 result_error, eof) = await rt.prompt_turn(msg, ws.send_json, session_id)
+                 result_error, eof) = await adapter.run_turn(
+                     rt, msg, ws.send_json, session_id)
+            except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
+                # The process died between the liveness check and the write.
+                # Claude's arm always handled this; Codex's prompt_turn handles
+                # it internally and never reaches here. ACP's did NOT -- its
+                # session/prompt write could raise straight out of the handler.
+                # Catching it here makes that a clean error frame instead, which
+                # is the same policy the other two already had.
+                rt.proc = None
+                await ws.send_json({"type": "error", "detail":
+                    "the agent process closed before the message was sent (%s)" % e})
+                continue
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
@@ -4337,8 +4102,12 @@ async def ws_chat(ws: WebSocket):
                 # but real: eof with an empty stderr on a codex pane would
                 # otherwise report "claude exited -1" about a process named
                 # codex.
-                fallback = ("codex exited " + str(rc) if active_id == "codex"
-                            else "claude exited " + str(rc))
+                # NAMES THE PROCESS THAT ACTUALLY DIED. Interpolating the
+                # adapter's own label rather than testing for codex: an eof with
+                # an empty stderr on a codex pane used to report "claude exited
+                # -1" about a process named codex, and the same would have been
+                # true of the next provider added.
+                fallback = "%s exited %s" % (adapter.exit_label, rc)
                 detail = err.strip()[:600] or result_error or fallback
                 frame = {"type": "error", "detail": detail}
                 if switch_planned and session_id is None:
@@ -4416,6 +4185,7 @@ async def ws_chat(ws: WebSocket):
         reader_task.cancel()
         rt.kill_group()
         unregister_runtime(session_id, rt)
+        providers.chat_finished(active_id)
 
 
 @app.websocket("/ws/term")

@@ -1369,13 +1369,18 @@ function agComposerHtml(a){
      :focus-within lights up, so clicking anywhere in the box reads as focused -- which is what
      it actually is. `busy` is the run's own state, so a disabled box looks disabled rather than
      looking broken. */
+  /* THE SAME SHAPE AS THE MAIN CHAT (owner, 2026-09-14: "the agent marketplace chat
+     and this chat looks different"). Over there the message box holds the text and
+     the send button, and the controls that say what will answer sit on their own
+     strip UNDER it. This screen had its model select inside the box, which is why
+     the two read as different products. Same place, same weight, here too. */
+  const under = agModelPickHtml(a.health, running);
   return `${state}
     <div class="ag-field${running ? " busy" : ""}">
       <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
-      ${agModelPickHtml(a.health, running)}
       ${running ? `<button class="send stop" type="button" data-ag="stop" aria-label="Stop this run" title="Stop — the run halts after the current step"><svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>`
                : `<button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>`}
-    </div>`;
+    </div>${under ? `<div class="ag-under">${under}</div>` : ""}`;
 }
 
 /* What they typed, kept on screen because the server never took it. It is drawn like a turn so it

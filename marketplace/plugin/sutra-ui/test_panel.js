@@ -222,7 +222,7 @@ const EPILOGUE = `
   get PERM_MODES_BY_PROVIDER(){ return PERM_MODES_BY_PROVIDER; },
   set PERM_MODES_BY_PROVIDER(v){ PERM_MODES_BY_PROVIDER = v; },
   get PERM_MODES(){ return PERM_MODES; }, set PERM_MODES(v){ PERM_MODES = v; },
-  turnOptsHtml, permSelect, turnOptsFor,
+  turnOptsHtml, turnOptsFor,
   /* Codex Reasoning effort: the option set is the SELECTED model's, so both
      the lookup and the pane's model resolution are pinned */
   codexEffortsFor, paneModelFor,
@@ -299,7 +299,24 @@ const EPILOGUE = `
      the ONLY place an operator learns their chosen mode is not the one
      running -- a marker that renders nothing recreates the silent fallback
      it was written to end. */
-  modeMarkerHtml
+  modeMarkerHtml,
+  /* ── Settings, rebuilt as overview-first (2026-09-14) ───────────────────
+     The whole point of the change is that NOTHING is remembered: S.setSection
+     is in-memory and openScreen clears it. Exported so a test can prove the
+     landing screen rather than eyeball it, and so the section renderers can be
+     driven without a DOM. */
+  settingsOverviewHtml, settingsValueOf, SETTINGS_SECTIONS,
+  providerListHtml, providerPageHtml, providerSwitchesHtml, providerSettingValue,
+  provState, providerDefaultModel, providerVersion, providerUsageLine,
+  accessSectionHtml, accessOptions, accessNativeMap, accessNativeFor,
+  accessIdForNative, accessLabelFor,
+  usageSectionHtml, updatesSectionHtml, workspaceSectionHtml, advancedSectionHtml,
+  toolsListHtml,
+  openSettingsSection, saveProviderOption, settingsSectionLoad,
+  loadUsageAll, loadProviderTools, updateProviderTool,
+  /* ── every provider's usage on one page ── */
+  usageAllHtml, usageAllCardHtml, usageBarSev, usageResetText, usageResetMs,
+  usageExtraHtml, openScreen
 };
 `;
 
@@ -1300,96 +1317,6 @@ test("22c. streaming is animation-framed, not a 100ms timer", () => {
   assert.ok(!/setTimeout/.test(fn), "10fps batching is what made it choppy");
 });
 
-test("23a. the permission mode is chosen at chat level, not only in Settings", () => {
-  /* It lived only in Settings, behind an env var set when STARTING the server --
-     which for a Finder-launched .app means editing a plist. The panel showed the
-     control, refused it, and told the operator to do something they could not. */
-  const h = panelHtml;
-  assert.ok(/function permSelect\([^)]*\)\{/.test(h), "a composer-level selector must exist");
-  /* It renders in the composer row -- the same block as the model select, which
-     is the anchor that is unambiguously part of the composer. */
-  /* Re-sliced: the call now passes the pane's provider (permSelect(mpid)), so
-     the three modes DeepSeek cannot enforce are not offered on a DeepSeek pane.
-     What this test asserts -- that the selector is called from the template and
-     sits beside the model select -- is unchanged. */
-  const call = h.indexOf("${permSelect(");
-  const model = h.indexOf('<select class="modelsel"');
-  assert.ok(call !== -1, "permSelect() must be called from the template");
-  assert.ok(call < model && model - call < 600,
-    "it must render next to the model select, i.e. in the composer row");
-});
-
-test("23b. a write-capable mode is confirmed, never one click away", () => {
-  const fn = panelHtml.match(/async function setPermMode\(mode\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/writes_files/.test(fn), "must branch on whether the mode writes files");
-  assert.ok(/S\.permConfirm = \{ mode \}/.test(fn),
-    "a write-capable mode must open the confirmation instead of applying");
-  assert.ok(/unsafe_modes_allowed/.test(fn),
-    "already-granted consent must not be re-prompted -- that is friction with no safety");
-});
-
-test("23c. only the confirmation sends the acknowledgement phrase", () => {
-  /* The server refuses a bare boolean on purpose: the port is unauthenticated.
-     If the phrase were sent from anywhere else, that protection would be moot. */
-  const h = panelHtml;
-  const apply = h.match(/async function applyPermMode\(mode, withAck\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/if \(withAck\) body\.unsafe_ack = UNSAFE_ACK_PHRASE/.test(apply),
-    "the phrase is sent only when explicitly confirmed");
-  const sends = (h.match(/unsafe_ack/g) || []).length;
-  assert.ok(sends <= 3, "the phrase should have one send site, not be sprinkled around");
-});
-
-test("23d. the selector shows the EFFECTIVE mode, not the stored one", () => {
-  /* The server clamps at the point of use. Showing the stored value would tell
-     the operator the agent is doing something it is not. */
-  const fn = panelHtml.match(/function permSelect\([^)]*\)\{[\s\S]*?\n\}/)[0];
-  assert.ok(/permission_mode_effective/.test(fn),
-    "must read permission_mode_effective first");
-});
-
-/* ── 23e-g. the permission-mode divergence marker ─────────────────────────
-   AcpRuntime asked DeepSeek for the operator's permission mode using a method
-   name the CLI does not have (`session/set_session_mode`; the real one is
-   `session/set_mode`), never read the answer, and recorded the mode it had
-   asked for. Every DeepSeek pane displayed the chosen mode while running
-   `default`. The server now states the divergence; this is the half that makes
-   it visible, so an empty render here is the bug coming back. */
-
-test("23e. a pane with no divergence renders NO marker", () => {
-  T.S.modeNote = {};
-  assert.strictEqual(T.modeMarkerHtml("s1"), "",
-    "a Claude pane -- or any pane whose mode was applied -- gets nothing");
-});
-
-test("23f. the marker names BOTH modes and the reason", () => {
-  T.S.modeNote = { s1: { asked: "dontAsk", running: "default",
-                         reason: "dontAsk has no equivalent on this provider",
-                         provider: "deepseek" } };
-  const h = T.modeMarkerHtml("s1");
-  /* "your mode was changed" without saying to WHAT is a warning nobody can
-     act on, so both names are required, not just the failure. */
-  assert.ok(h.includes("dontAsk"), "must name the mode that was asked for: " + h);
-  assert.ok(h.includes("default"), "must name the mode actually running: " + h);
-  assert.ok(h.includes("no equivalent"), "must carry the server's reason: " + h);
-  assert.ok(/class="swmark bad"/.test(h),
-    "always the .bad variant -- there is no benign version of this");
-  T.S.modeNote = {};
-});
-
-test("23g. the server's reason is escaped, never interpolated as markup", () => {
-  /* The reason carries CLI error text (set_mode's -32603 detail). That is a
-     string from a subprocess, i.e. exactly the kind of value that must not
-     reach innerHTML raw. */
-  T.S.modeNote = { s1: { asked: "<b>x</b>", running: "default",
-                         reason: "the CLI refused: <img src=x onerror=1>",
-                         provider: "deepseek" } };
-  const h = T.modeMarkerHtml("s1");
-  assert.ok(!/<img/.test(h), "raw markup from the CLI reached the DOM: " + h);
-  assert.ok(!/<b>x<\/b>/.test(h), "raw markup in a mode name rendered: " + h);
-  assert.ok(h.includes("&lt;img"), "the reason must still be SHOWN, escaped: " + h);
-  T.S.modeNote = {};
-});
-
 test("24a. every composer control is themed, none falls back to the UA stylesheet", () => {
   /* .permsel shipped with NO css at all and rendered as a white box in a dark
      theme, directly beside a correctly themed .modelsel. Same shape as the
@@ -1405,8 +1332,13 @@ test("24a. every composer control is themed, none falls back to the UA styleshee
   const re = /<(?:select|input|textarea)[^>]*\sclass="([a-z][a-z-]*)/g;
   let m;
   while ((m = re.exec(h))) classes.add(m[1]);
-  assert.ok(classes.has("permsel") && classes.has("modelsel"),
-    "sanity: the extractor must actually see the composer selects, got " +
+  /* UPDATED 2026-09-14: .permsel and .modelsel were the composer's two selects
+     and both are gone -- the access chip and the model picker replaced them, and
+     a picker's options are buttons, not <option>s. The rule this test enforces
+     is unchanged (every control carries a class the stylesheet actually styles);
+     only the sanity anchor moves to a control that still exists. */
+  assert.ok(classes.has("edta") || classes.has("permsel") || classes.has("modelsel"),
+    "sanity: the extractor must actually see the composer controls, got " +
     [...classes].join(","));
   /* Comments are stripped first. A prose mention like "the .permsel rule" in a
      comment satisfied a naive search and made this test pass while the CSS it
@@ -2988,12 +2920,17 @@ const PANE_MODELS = { claude: [{ id: "", name: "CLI default" },
 function paneHtml(over) {
   const prevMenu = T.S.paneMenu, prevFold = T.S.ui.paneCollapsed["sid-35"];
   const prevModels = T.MODELS_BY_PROVIDER;
+  const prevMdl = T.S.mdlMenu;
   if (!(over && over.keepModels)) T.MODELS_BY_PROVIDER = PANE_MODELS;
   T.S.paneMenu = over && over.menu ? "sid-35" : null;
+  /* THE MODEL PICKER IS ITS OWN POPOVER (2026-09-14). The menu's Model row opens
+     it; a test that opens the menu to read the model list has to open it too. */
+  T.S.mdlMenu = over && over.menu ? "sid-35" : null;
   if (over && over.collapsed) T.S.ui.paneCollapsed["sid-35"] = true; else delete T.S.ui.paneCollapsed["sid-35"];
   try { return sandbox.sessionPane(PANE_S); }
   finally {
     T.S.paneMenu = prevMenu;
+    T.S.mdlMenu = prevMdl;
     T.MODELS_BY_PROVIDER = prevModels;
     if (prevFold) T.S.ui.paneCollapsed["sid-35"] = prevFold; else delete T.S.ui.paneCollapsed["sid-35"];
   }
@@ -3060,22 +2997,34 @@ test("35e. the chip is ⋯ ONLY — identity moved to the header; the a11y name 
 test("35f. the menu is closed by default and, open, carries every relocated control in order", () => {
   assert.ok(!paneHtml().includes('class="mrow'), "no menu rows while closed");
   const hm = paneHtml({ menu: true });
-  const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-  deepEq(keys, ["Folder", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"],
-    "the 8-row contract: the ≡ turn-options control became a row (founder 2026-08-23)");
+  /* SCOPED TO THE MENU (2026-09-14). The model picker is its own popover in the
+     same pane and carries a "More" label of its own; an unscoped scan collects it
+     and turns this row contract into a claim about two controls. */
+  const menuOnly = hm.slice(hm.indexOf('class="upop panemenu"'),
+                            hm.indexOf('</div>', hm.indexOf('data-mrow="close"')));
+  const keys = [...menuOnly.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+  /* THE CONTRACT MOVED WITH THE CONTROLS (2026-09-14, owner: "when I click on the
+     three dot that is where I should see this model option ... the read only and
+     all of that you can keep outside"). Permissions left the menu for the
+     composer; the flat Model select became one row that opens the real picker;
+     "Turn options" is now "Message options". This fixture has no provider, so
+     the Model row is correctly absent -- 35i covers the case where it is not. */
+  deepEq(keys, ["Folder", "Usage", "Message options", "Routing", "Fold", "Close"],
+    "the menu rows, in order");
   assert.ok(/id="panemenu-sid-35"/.test(hm), "the popover carries the id aria-controls points at");
   assert.ok(/<div class="upop[^"]*"/.test(hm), "the popover reuses .upop");
+  assert.ok(/class="msec"/.test(hm), "the rows are grouped under headings");
 });
 
-test("35g. Permissions and Model rows are LABELS around the existing selects — never a select inside a button", () => {
+test("35g. no row hides an interactive control inside a button", () => {
   const hm = paneHtml({ menu: true });
-  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Permissions<\/span>[\s\S]*?<select class="permsel/.test(hm),
-    "Permissions must wrap select[data-perm] in a label (codex [P1]: interactive-in-button is invalid)");
-  assert.ok(/<label class="mrow"[^>]*>[\s\S]*?<span class="mk">Model<\/span>[\s\S]*?<select class="modelsel/.test(hm),
-    "Model must wrap select[data-model] in a label");
+  /* The invalid-markup rule this test was written for, kept. What changed is
+     that there are no selects in the menu at all now: Permissions moved to the
+     composer and Model is a button that opens the picker. */
+  assert.ok(!/<select/.test(hm), "the menu carries no select any more");
   hm.split("</button>").filter(x => x.includes('class="mrow"')).forEach(chunk =>
-    assert.ok(!/<select/.test(chunk.slice(chunk.lastIndexOf("<button"))), "a button row must not contain a select"));
-  assert.ok(hm.includes('data-perm') && hm.includes('data-model='), "the existing handlers' hooks survive");
+    assert.ok(!/<select|<input/.test(chunk.slice(chunk.lastIndexOf("<button"))),
+      "a button row must not contain an interactive control"));
 });
 
 test("35h. menu state is in-memory only — never part of the persisted layout", () => {
@@ -3177,11 +3126,15 @@ function paneMenuWith(models, channelId, settings) {
    select's options ("plan", "auto", ...) sitting one row above, which silently
    turns every assertion below into a claim about the wrong control. */
 const optionsIn = h => {
-  const i = h.indexOf('<select class="modelsel"');
+  /* THE MODEL LIST IS BUTTONS NOW, not <option>s: the flat select in the pane
+     menu became the picker the Model row opens, and each option carries
+     data-mdlpick="<pane>:<provider>:<model id>". A disabled option keeps its
+     reason in `title`, so `attrs` still answers the same questions. */
+  const i = h.indexOf('class="mdllist"');
   if (i === -1) return [];
-  const block = h.slice(i, h.indexOf("</select>", i));
-  return [...block.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
-    .map(m => ({ id: m[1], attrs: m[2] }));
+  const block = h.slice(i, h.indexOf("</div>", i));
+  return [...block.matchAll(/<button[^>]*?(?:data-mdlpick="[^:"]*:[^:"]*:([^"]*)"|disabled)([^>]*)>/g)]
+    .map(m => ({ id: m[1] === undefined ? "" : m[1], attrs: m[2] }));
 };
 
 const DS_MODELS = {
@@ -3194,68 +3147,12 @@ const DS_MODELS = {
                unavailable_reason: "this panel has no image channel" }],
 };
 
-test("35p. a DeepSeek pane offers DeepSeek's models and none of Claude's", () => {
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
-  const ids = optionsIn(h).map(o => o.id);
-  assert.ok(ids.includes("deepseek-v4-pro"), "DeepSeek's flagship must be offered, got " + ids);
-  ["opus", "sonnet", "haiku"].forEach(id =>
-    assert.ok(!ids.includes(id),
-      "Claude's " + id + " must not appear on a DeepSeek pane, got " + ids));
-});
-
-test("35q. the pane follows ITS OWN channel, not the global provider", () => {
-  /* The bug this rules out: SETTINGS.provider is global, so a pane opened under
-     DeepSeek and left open while the default was switched to Claude would have
-     started listing Claude's models for a session DeepSeek is still answering. */
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "claude" });
-  assert.ok(optionsIn(h).some(o => o.id === "deepseek-v4-pro"),
-    "the pane's own channel must win over SETTINGS.provider");
-  const h2 = paneMenuWith(DS_MODELS, "claude", { provider: "deepseek" });
-  assert.ok(optionsIn(h2).some(o => o.id === "opus"), "and in the other direction");
-});
-
-test("35r. the vision model is listed, disabled, and says why", () => {
-  /* Dropping it hides that it exists; offering it enabled offers a choice that
-     cannot run. Listed + disabled + reason is the third option. */
-  const h = paneMenuWith(DS_MODELS, "deepseek", { provider: "deepseek" });
-  const vis = optionsIn(h).find(o => o.id === "deepseek-v4-flash-vision-exp");
-  assert.ok(vis, "it must still be listed");
-  assert.ok(/\bdisabled\b/.test(vis.attrs), "it must not be selectable: " + vis.attrs);
-  assert.ok(/no image channel/.test(vis.attrs), "the reason must be on the option: " + vis.attrs);
-  assert.ok(!/\bselected\b/.test(vis.attrs), "a disabled option must never be the selection");
-});
-
-test("35s. a provider that declares no models gets no picker at all", () => {
-  /* Codex has no model flag. An empty select would be a control that cannot do
-     anything -- the same offer-a-dead-choice failure the provider list avoids. */
-  const h = paneMenuWith(DS_MODELS, "codex", { provider: "codex" });
-  assert.ok(!/<select class="modelsel"/.test(h), "no select for a provider with no models");
-  const keys = [...h.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-  assert.ok(!keys.includes("Model"), "and no empty Model row either, got " + keys);
-});
-
-test("35t. before /api/settings resolves the row still renders", () => {
-  /* It used to fall back to a lone "CLI default" whenever the list was empty.
-     Losing that would make the Model row appear a beat after every other row
-     on first paint -- a flicker that reads as a bug. */
-  const h = paneMenuWith({}, null, null);
-  assert.ok(/<select class="modelsel"/.test(h), "the row must survive an unloaded map");
-  assert.deepStrictEqual(optionsIn(h).map(o => o.id), [""],
-    "and offer exactly the CLI default until the real list arrives");
-});
-
-test("35u. the pre-selected model comes from THIS provider's stored slot", () => {
-  /* The old fallback read the single flat SETTINGS.model, which only ever held
-     a Claude id -- so a DeepSeek pane pre-selected something it could not send. */
-  const h = paneMenuWith(DS_MODELS, "deepseek",
-    { provider: "deepseek", model: "opus",
-      model_by_provider: { claude: "opus", deepseek: "deepseek-v4-pro" } });
-  const sel = optionsIn(h).filter(o => /\bselected\b/.test(o.attrs)).map(o => o.id);
-  assert.deepStrictEqual(sel, ["deepseek-v4-pro"],
-    "the DeepSeek slot must win over the legacy flat model, got " + sel);
-});
-
-/* ── 35v-x. the Usage row reports THIS provider's kind of fact ──────────── */
+/* 35p-35u LIVED HERE and are gone (2026-09-14). They tested the pane menu's flat
+   Model <select>, which is now one row that opens the real picker. The same
+   claims -- only runnable providers offered, this pane's own provider, an
+   unselectable model listed and refused, no picker for a provider that declares
+   no models, the unfetched-catalogue fallback, and the stored per-provider slot --
+   are made against the picker in test_composer_tools.js 2a-2k and 3a-3f. */
 
 const usageRowOf = h => {
   const m = h.match(/data-mrow="usage"[\s\S]*?<span class="mv">([^<]*)<\/span>/);
@@ -3312,8 +3209,10 @@ test("35l. with a repository known, Folder carries branch + state and PR rows ap
     upstream: "origin/main", diff: { files: 2, added: 10, removed: 3 } } };
   try {
     const hm = paneHtml({ menu: true });
-    const keys = [...hm.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
-    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Permissions", "Model", "Usage", "Turn options", "Routing", "Fold", "Close"]);
+    const menuOnly2 = hm.slice(hm.indexOf('class="upop panemenu"'),
+                            hm.indexOf('</div>', hm.indexOf('data-mrow="close"')));
+  const keys = [...menuOnly2.matchAll(/<span class="mk">([^<]+)<\/span>/g)].map(m => m[1]);
+    deepEq(keys, ["Folder", "Pull requests", "Create PR", "Usage", "Message options", "Routing", "Fold", "Close"]);
     assert.ok(/main · \+10 −3/.test(hm), "Folder row must show branch + dirty state");
     assert.ok(!/class="repobar/.test(paneHtml()), "the bar itself must be gone");
     assert.ok(!/class="udirty"/.test(paneHtml()), "no dirty dot on the chip any more — the Folder row carries it (founder 2026-08-23: three dots only)");
@@ -5184,6 +5083,542 @@ test("46i. NO render state can contain a key, on any transport", () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════════════════
+   W3. SETTINGS IS AN OVERVIEW FIRST, AND THE SECTIONS BEHIND IT
+   ══════════════════════════════════════════════════════════════════════════
+   Founder, 2026-09-14: "when I open settings it should open like a big tab of
+   settings, it should not automatically open a particular thing which I have
+   selected earlier."
+
+   The old screen was one stack of folds whose open/closed state was PERSISTED
+   in S.ui.folds, so every visit restored whatever was last open. These tests
+   pin the three things that make the new behaviour real rather than incidental:
+   the landing screen, the fact that nothing on disk can change it, and that
+   re-entering from the rail resets it. */
+
+const W3_SETTINGS = {
+  provider: "claude",
+  permission_mode: "plan",
+  permission_mode_effective: "plan",
+  workdir: "/Users/x/work/sutra-ui-workspace",
+  workdir_root: "/Users/x",
+  chat_scope: "sutra",
+  model_catalog_by_provider: {
+    claude: { default: "best",
+              models: [{ id:"", name:"Account default" }, { id:"best", name:"Fable 5.1" }],
+              more: [{ id:"claude-opus-4-8", name:"Opus 4.8" }], fast:false },
+    codex:  { default: "gpt-5.6-terra", models: [{ id:"gpt-5.6-terra", name:"GPT-5.6 Terra" }], fast:true }
+  },
+  access_options: [
+    { id:"read",  label:"Read only",      desc:"Looks and plans. Changes nothing.", warn:false },
+    { id:"edits", label:"Accept edits",   desc:"Edits files in this folder. Asks for anything else.", warn:false },
+    { id:"auto",  label:"Approve for me", desc:"Same limit, but the tool approves routine requests itself.", warn:false },
+    { id:"full",  label:"Full access",    desc:"Anything on this Mac, without asking.", warn:true }
+  ],
+  access_by_provider: {
+    claude: { read:"plan", edits:"acceptEdits", auto:"auto", full:"bypassPermissions" },
+    codex:  { read:"plan", edits:"acceptEdits", full:"bypassPermissions" }
+  },
+  provider_settings_schema: {
+    claude: [
+      { key:"chrome",    label:"Chrome",    desc:"Let Claude drive a browser.",     type:"boolean", default:false },
+      { key:"subagents", label:"Subagents", desc:"Let Claude start helper agents.", type:"boolean", default:true  },
+      { key:"workflows", label:"Workflows", desc:"Let Claude run workflow scripts.",type:"boolean", default:true  },
+      { key:"memory",    label:"Memory",    desc:"Let Claude keep memories.",       type:"boolean", default:true  }
+    ],
+    codex: [
+      { key:"memory",    label:"Memory",    desc:"Let Codex keep memories.",        type:"boolean", default:true  },
+      { key:"subagents", label:"Subagents", desc:"Let Codex start helper agents.",  type:"boolean", default:true  }
+    ]
+  },
+  provider_settings: { claude: { chrome: true }, codex: { memory: false } }
+};
+const W3_TOOLS = [
+  { id:"claude", name:"Claude Code", bin:"claude", installed_version:"2.1.247",
+    latest_version:"2.1.251", minimum:"2.1.251", update_available:true, too_old:true,
+    managed_by_sutra:true, note:"Fable 5.1 needs Claude Code 2.1.251" },
+  { id:"codex", name:"OpenAI Codex", bin:"codex", installed_version:"0.144.4",
+    latest_version:"0.144.4", minimum:"0.144.4", update_available:false, too_old:false,
+    managed_by_sutra:true },
+  { id:"deepseek", name:"DeepSeek", bin:"deepseek", installed_version:null,
+    latest_version:"1.3.2", minimum:"1.3.2", update_available:false, too_old:false,
+    managed_by_sutra:false, update_command:"npm i -g deepseek-cli" }
+];
+const W3_PROVIDERS = [
+  { id:"claude",   name:"Claude Code", runnable:true,  installed:true,  configured:true,  version:"2.1.247" },
+  { id:"codex",    name:"OpenAI Codex",runnable:false, installed:true,  configured:false, reason:"codex CLI on PATH but ~/.codex/auth.json holds no credential" },
+  { id:"deepseek", name:"DeepSeek",    runnable:false, installed:false, configured:false }
+];
+/* A tiny fixture for the two routes W1/W2 are building in parallel. They do not
+   exist in this worktree, so the client is written to read them defensively and
+   this is what "present and well-formed" looks like when they land. */
+function w3UsageAll(now){
+  return { providers: [
+    { id:"claude", name:"Claude Code", state:"ok", account:"dev@example.com", plan:"Max 20x",
+      windows: [ { label:"Session (5 hr)", percent:62.4, resets_at: (now + 30*60*1000)/1000, kind:"session" },
+                 { label:"Week",           percent:88,   resets_at: (now + 5*3600*1000)/1000, kind:"week" } ] },
+    { id:"codex", name:"OpenAI Codex", state:"ok", account:"dev@example.com", plan:"Plus",
+      windows: [ { label:"30 days", percent:96.2, resets_at: new Date(now + 3*86400*1000).toISOString(), kind:"month" } ] },
+    { id:"deepseek", name:"DeepSeek", state:"ok", account:"sk-…9f2a",
+      balance: { currency:"USD", total:"12.40" },
+      windows: [ { label:"Rolling", percent:12, resets_at: now + 10*86400*1000, kind:"other" } ] }
+  ] };
+}
+function w3With(state, fn){
+  const prev = {};
+  Object.keys(state).forEach(k => { prev[k] = T.S[k]; T.S[k] = state[k]; });
+  try { return fn(); }
+  finally { Object.keys(prev).forEach(k => { T.S[k] = prev[k]; }); }
+}
+function w3Settings(fn){
+  const pS = T.SETTINGS, pP = T.PROVIDERS, pM = T.PERM_MODES, pSec = T.S.setSection;
+  T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+  T.PROVIDERS = JSON.parse(JSON.stringify(W3_PROVIDERS));
+  T.PERM_MODES = [
+    { id:"plan",              note:"Plans only.",          writes_files:false, default:true },
+    { id:"acceptEdits",       note:"Writes files.",        writes_files:true },
+    { id:"auto",              note:"Approves for you.",    writes_files:true },
+    { id:"bypassPermissions", note:"Anything, no asking.", writes_files:true, settable:false },
+    { id:"manual",            note:"Asks every time.",     writes_files:false },
+    { id:"dontAsk",           note:"Routines use this.",   writes_files:true }
+  ];
+  try { return fn(); }
+  finally { T.SETTINGS = pS; T.PROVIDERS = pP; T.PERM_MODES = pM; T.S.setSection = pSec;
+            /* openScreen fires the lazy loaders, and the harness's fetch never
+               settles -- so the in-flight flags would stay set for every later
+               test. Cleared here rather than left to the next reader. */
+            T.S.usageAllBusy = false; T.S.provToolsBusy = false; }
+}
+
+test("W3-1a. Settings lands on the overview, listing every section in order", () => {
+  w3Settings(() => {
+    T.S.setSection = null;
+    const out = T.SCREENS.settings();
+    assert.ok(/class="sxov"/.test(out), "the overview grid did not render: " + out.slice(0, 200));
+    const ids = [...out.matchAll(/data-setsec="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(ids, ["providers","access","usage","updates","workspace","advanced"],
+      "the overview must offer the six sections, in the founder's order");
+    /* An overview is an overview: no subsection body may be on screen. */
+    assert.ok(!/data-provopt=/.test(out), "a provider's switches rendered on the overview");
+    assert.ok(!/data-pmode-set=/.test(out), "the permission rows rendered on the overview");
+    assert.ok(!/data-workdir-input/.test(out), "the folder editor rendered on the overview");
+  });
+});
+
+test("W3-1b. every overview card states the CURRENT value, not a placeholder", () => {
+  w3Settings(() => {
+    T.S.setSection = null;
+    const out = T.SCREENS.settings();
+    assert.ok(out.includes("Claude Code · 1 ready of 3"), "the provider card has no live value");
+    assert.ok(out.includes("Read only"), "the access card does not name the running mode");
+    assert.ok(out.includes("sutra-ui-workspace"), "the folder card does not name the folder");
+    /* Every card renders a value cell; none is left blank, which would read as
+       "nothing is set" rather than "not read yet". */
+    const vals = [...out.matchAll(/class="sxcv">([^<]*)</g)].map(m => m[1].trim());
+    assert.strictEqual(vals.length, 6, "expected six value cells, got " + vals.length);
+    vals.forEach(v => assert.ok(v.length > 0, "an overview card rendered an empty value"));
+  });
+});
+
+test("W3-1c. THE BUG: a remembered section must not survive re-opening Settings", () => {
+  w3Settings(() => {
+    /* Land inside a section, the way a click does. */
+    T.S.setSection = "advanced";
+    assert.ok(/Advanced/.test(T.SCREENS.settings()), "precondition: the section renders");
+    /* Now open Settings again from the rail. This is the gesture the founder
+       described; before the change it restored the last fold. */
+    T.openScreen("settings");
+    assert.strictEqual(T.S.setSection, null, "openScreen must clear the section");
+    assert.ok(/class="sxov"/.test(T.SCREENS.settings()), "re-opening did not land on the overview");
+  });
+});
+
+test("W3-1d. the section is NEVER persisted, so a reload cannot restore it", () => {
+  w3Settings(() => {
+    T.S.setSection = "provider:claude";
+    /* saveLayout() writes S.ui and nothing else. If the section ever moved into
+       S.ui it would survive a reload and this whole change would be undone. */
+    assert.ok(!("setSection" in T.S.ui),
+      "S.ui carries the open section -- saveLayout would persist it");
+    const stored = JSON.parse(JSON.stringify(T.S.ui));
+    assert.ok(!JSON.stringify(stored).includes("setSection"),
+      "the persisted layout mentions the open section");
+    /* And what a reload actually restores: loadLayout's own shape. */
+    const fresh = T.loadLayout();
+    assert.strictEqual(fresh.setSection, undefined,
+      "loadLayout brings a section back -- a reload would land inside it");
+  });
+});
+
+test("W3-1e. an unknown or stale section id lands on the overview, never a blank pane", () => {
+  w3Settings(() => {
+    T.S.setSection = "a-section-that-was-deleted";
+    assert.ok(/class="sxov"/.test(T.SCREENS.settings()), "a stale id blanked the screen");
+    T.S.setSection = "provider:not-a-provider";
+    const out = T.SCREENS.settings();
+    assert.ok(/No such provider/.test(out), "an unknown provider id blanked the screen");
+    assert.ok(/data-setback=/.test(out), "and it must still offer the way back");
+  });
+});
+
+test("W3-1f. every section renders, carries a back control, and opens nothing else", () => {
+  w3Settings(() => {
+    T.SETTINGS.provider_ignored = [];
+    ["providers","access","usage","updates","workspace","advanced"].forEach(id => {
+      T.S.setSection = id;
+      const out = T.SCREENS.settings();
+      assert.ok(out.length > 60, id + " rendered almost nothing");
+      assert.ok(/data-setback=/.test(out), id + " has no back control");
+      assert.ok(!/class="sxov"/.test(out), id + " fell back to the overview");
+    });
+  });
+});
+
+test("W3-1g. no section leaks a raw undefined, NaN or [object Object]", () => {
+  /* The screens read a dozen fields W1 and W2 are still building. A missing one
+     must become "not reported" or an omitted block -- never the word undefined
+     in front of an operator. Run over the FULL payload and over a bare one. */
+  const payloads = [JSON.parse(JSON.stringify(W3_SETTINGS)),
+                    { provider:"claude", permission_mode:"plan", workdir:"/tmp" },
+                    { provider:"claude" }];
+  payloads.forEach((p, n) => {
+    w3Settings(() => {
+      T.SETTINGS = p;
+      w3With({ usageAll: w3UsageAll(Date.now()), provTools: W3_TOOLS,
+               upd: null, updError: null, usage: null, account: null }, () => {
+        const screens = ["providers","access","usage","updates","workspace","advanced",
+                         "provider:claude","provider:codex","provider:deepseek", null];
+        screens.forEach(id => {
+          T.S.setSection = id;
+          const out = T.SCREENS.settings();
+          [/\bundefined\b/, /\[object Object\]/, /\bNaN\b/].forEach(bad =>
+            assert.ok(!bad.test(out),
+              "payload " + n + ", section " + id + " leaked " + bad + ": "
+              + out.slice(Math.max(0, out.search(bad) - 80), out.search(bad) + 80)));
+        });
+      });
+    });
+  });
+});
+
+/* ── W3-2. the provider page ─────────────────────────────────────────────── */
+
+test("W3-2a. a provider page renders its schema switches, with the stored values", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("claude", T.SETTINGS);
+    const keys = [...out.matchAll(/data-provoptkey="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(keys, ["chrome","subagents","workflows","memory"],
+      "the switches must come from provider_settings_schema, in its order");
+    /* chrome defaults false and is STORED true; workflows defaults true and is
+       not stored. Both have to read off the right source. */
+    const row = k => out.slice(out.indexOf('data-provoptkey="' + k + '"') - 200,
+                               out.indexOf('data-provoptkey="' + k + '"'));
+    assert.ok(/aria-checked="true"/.test(row("chrome")), "a stored true did not win over the default");
+    assert.ok(/aria-checked="true"/.test(row("workflows")), "an unstored key did not take its default");
+    assert.ok(out.includes("Let Claude drive a browser."), "the switch description is missing");
+    /* And the rest of the page the founder asked for. */
+    assert.ok(/Fable 5\.1/.test(out), "the default MODEL is not named (model_catalog_by_provider)");
+    assert.ok(/Read only/.test(out), "the default ACCESS option is not named");
+    assert.ok(/2\.1\.247/.test(out), "the installed version is missing");
+    assert.ok(/Ready to use/.test(out), "the state line is missing");
+  });
+});
+
+test("W3-2b. the long diagnostic is behind a disclosure, not on the page", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("codex", T.SETTINGS);
+    assert.ok(/Installed, but not signed in yet/.test(out), "the one plain sentence is missing");
+    const i = out.indexOf("auth.json");
+    assert.ok(i > 0, "the detail must still be reachable");
+    const before = out.slice(0, i);
+    assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+      "the server's diagnostic sentence is on the page rather than behind a disclosure");
+  });
+});
+
+test("W3-2c. a provider with no schema says so rather than drawing an empty box", () => {
+  w3Settings(() => {
+    const out = T.providerPageHtml("deepseek", T.SETTINGS);
+    assert.ok(/no options of its own/.test(out), "an empty options box: " + out.slice(-300));
+    assert.ok(!/data-provopt=/.test(out), "a switch rendered with no schema to draw it from");
+  });
+});
+
+test("W3-2d. an older server that sends no catalogue, access list or schema still renders", () => {
+  w3Settings(() => {
+    T.SETTINGS = { provider:"claude", permission_mode:"plan", workdir:"/tmp" };
+    const out = T.providerPageHtml("claude", T.SETTINGS);
+    assert.ok(out.length > 100, "the page collapsed on a bare settings payload");
+    assert.ok(/no options of its own/.test(out), "no schema must read as no options");
+    assert.ok(/not reported/.test(out) || /2\.1\.247/.test(out),
+      "a missing version must say so rather than render blank");
+    /* The four access options are the client's own fallback, so the line is
+       still answerable with nothing from the server. */
+    assert.ok(/Read only/.test(out), "the access fallback did not apply");
+  });
+});
+
+codexSerial("W3-2e. toggling a switch posts the WHOLE provider_settings map", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  const pS = T.SETTINGS, pP = T.PROVIDERS;
+  let sent = null;
+  sandbox.render = () => {};
+  sandbox.fetch = (url, opts) => {
+    sent = { url, body: JSON.parse(opts.body) };
+    return Promise.resolve({ ok:true, json: () => Promise.resolve({
+      settings: Object.assign({}, W3_SETTINGS, { provider_settings: sent.body.provider_settings }) }) });
+  };
+  try {
+    T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+    T.PROVIDERS = JSON.parse(JSON.stringify(W3_PROVIDERS));
+    await T.saveProviderOption("claude", "subagents", false);
+    assert.ok(/\/api\/settings$/.test(sent.url), "wrong route: " + sent.url);
+    const ps = sent.body.provider_settings;
+    assert.strictEqual(ps.claude.subagents, false, "the toggled key was not sent");
+    assert.strictEqual(ps.claude.chrome, true,
+      "the OTHER key on this provider was dropped -- the route replaces what it is given");
+    assert.strictEqual(ps.codex.memory, false,
+      "another provider's options were dropped by a single-key write");
+    assert.strictEqual(T.S.setBusy, null, "the busy flag was left set");
+    assert.ok(/subagents is now off/.test(String(T.S.setOk)), "no receipt: " + T.S.setOk);
+    /* and the switch now reads back as off, from the server's own answer */
+    assert.ok(/data-provoptkey="subagents"/.test(T.providerSwitchesHtml("claude")));
+    assert.strictEqual(T.providerSettingValue("claude", { key:"subagents", default:true }), false);
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.SETTINGS = pS; T.PROVIDERS = pP; T.S.setBusy = null;
+              T.S.setOk = null; T.S.setError = null; }
+});
+
+codexSerial("W3-2f. a refused write reports the refusal and never claims it saved", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  const pS = T.SETTINGS;
+  sandbox.render = () => {};
+  sandbox.fetch = () => Promise.reject(new Error("provider_settings: unknown key"));
+  try {
+    T.SETTINGS = JSON.parse(JSON.stringify(W3_SETTINGS));
+    await T.saveProviderOption("claude", "chrome", false);
+    assert.ok(/unknown key/.test(String(T.S.setError)), "the refusal was swallowed");
+    assert.strictEqual(T.S.setOk, null, "a failed write reported as saved");
+    assert.strictEqual(T.S.setBusy, null, "the control was left spinning");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender; T.SETTINGS = pS;
+              T.S.setError = null; T.S.setBusy = null; }
+});
+
+/* ── W3-3. every provider's usage on one page ────────────────────────────── */
+
+test("W3-3a. the usage page draws one card per provider, with account and plan", () => {
+  const now = Date.now();
+  w3With({ usageAll: w3UsageAll(now), usage: null }, () => {
+    const out = T.usageAllHtml();
+    const cards = [...out.matchAll(/data-uaprov="([a-z]+)"/g)].map(m => m[1]);
+    deepEq(cards, ["claude","codex","deepseek"], "one card per provider, in the server's order");
+    assert.ok(out.includes("dev@example.com"), "the account is missing");
+    assert.ok(out.includes("Max 20x"), "the plan badge is missing");
+    assert.ok(out.includes("USD 12.40"), "Sutra's DeepSeek balance -- bb has none -- was dropped");
+  });
+});
+
+test("W3-3b. bar colours: normal under 80, warning from 80, red from 95", () => {
+  assert.strictEqual(T.usageBarSev(0),    "p-ok");
+  assert.strictEqual(T.usageBarSev(79.9), "p-ok");
+  assert.strictEqual(T.usageBarSev(80),   "p-warn",  "80 is the warning threshold, not 81");
+  assert.strictEqual(T.usageBarSev(94.9), "p-warn");
+  assert.strictEqual(T.usageBarSev(95),   "p-block", "95 is red, not 96");
+  assert.strictEqual(T.usageBarSev(100),  "p-block");
+  assert.strictEqual(T.usageBarSev(null), "p-mut",   "an absent percent must not colour as healthy");
+  const now = Date.now();
+  w3With({ usageAll: w3UsageAll(now) }, () => {
+    const out = T.usageAllHtml();
+    const claude = out.slice(out.indexOf('data-uaprov="claude"'), out.indexOf('data-uaprov="codex"'));
+    assert.ok(/<i class="p-ok" style="width:62\.4%/.test(claude),  "62.4% is not a normal bar");
+    assert.ok(/<i class="p-warn" style="width:88%/.test(claude),   "88% is not a warning bar");
+    const codex = out.slice(out.indexOf('data-uaprov="codex"'), out.indexOf('data-uaprov="deepseek"'));
+    assert.ok(/<i class="p-block" style="width:96\.2%/.test(codex), "96.2% is not a red bar");
+  });
+});
+
+test("W3-3c. reset text: minutes, hours, weekday, then date", () => {
+  const now = Date.now();
+  assert.strictEqual(T.usageResetText((now + 42*60*1000)/1000), "in 42 min");
+  assert.strictEqual(T.usageResetText((now + 3*3600*1000 + 10*60*1000)/1000), "in 3 hr 10 min");
+  assert.strictEqual(T.usageResetText((now + 5*3600*1000)/1000), "in 5 hr",
+    "an exact hour must not read 'in 5 hr 0 min'");
+  const wk = new Date(now + 3*86400*1000);
+  const pad = n => (n < 10 ? "0" : "") + n;
+  assert.strictEqual(T.usageResetText(wk.toISOString()),
+    ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][wk.getDay()] + " " + pad(wk.getHours()) + ":" + pad(wk.getMinutes()));
+  const far = new Date(now + 10*86400*1000);
+  assert.strictEqual(T.usageResetText(far.getTime()),
+    far.getDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][far.getMonth()]
+    + " " + pad(far.getHours()) + ":" + pad(far.getMinutes()));
+  assert.strictEqual(T.usageResetText(now - 60000), "resetting now", "a past reset must not read negative");
+  assert.strictEqual(T.usageResetText(null), "", "a missing reset draws nothing, never 1970");
+  /* the three wire shapes a server could send for the same instant */
+  const t = now + 45*60*1000;
+  assert.strictEqual(T.usageResetText(t/1000), "in 45 min", "seconds");
+  assert.strictEqual(T.usageResetText(t),      "in 45 min", "milliseconds");
+  assert.strictEqual(T.usageResetText(new Date(t).toISOString()), "in 45 min", "ISO");
+});
+
+test("W3-3d. a provider that is missing, signed out or broken gets ONE plain sentence", () => {
+  const states = { not_installed:"Not installed on this Mac.", signed_out:"Not signed in.",
+                   unsupported:"This one publishes no usage figure.",
+                   error:"Its usage could not be read just now." };
+  Object.keys(states).forEach(st => {
+    const out = T.usageAllCardHtml({ id:"codex", name:"OpenAI Codex", state:st,
+                                     error:"spawn codex ENOENT at /usr/local/bin" });
+    assert.ok(out.includes(states[st]), st + " does not get its plain sentence");
+    assert.ok(!/class="ubar"/.test(out), st + " drew a usage bar it has no data for");
+    const i = out.indexOf("ENOENT");
+    if (i > 0){
+      const before = out.slice(0, i);
+      assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+        st + " put the diagnostic on the card rather than behind a disclosure");
+    }
+  });
+});
+
+test("W3-3e. the stale-cache notice survives, and so does the extra-usage block", () => {
+  const out = T.usageAllCardHtml({ id:"claude", name:"Claude Code", state:"ok",
+                                   source:"stale-cache", windows:[{ label:"Week", percent:10 }] });
+  assert.ok(/Cached figure/.test(out), "the stale-cache notice was lost");
+  w3With({ usage: { available:true, extra_usage:{ enabled:true, used_credits:3.2, currency:"USD",
+                                                  daily:null, weekly:null, monthly_limit:50 } } }, () => {
+    const x = T.usageExtraHtml();
+    assert.ok(/Extra usage/.test(x), "the extra-usage credits block was lost");
+    assert.ok(/no limit set/.test(x), "a null limit must not render as 0");
+  });
+});
+
+test("W3-3f. no /api/usage/all: the section falls back instead of going blank", () => {
+  w3Settings(() => {
+    w3With({ usageAll: null, usageAllError: "404 Not Found", usage: null, account: null }, () => {
+      assert.strictEqual(T.usageAllHtml(), null, "a missing payload must not fake a page");
+      T.S.setSection = "usage";
+      const out = T.SCREENS.settings();
+      assert.ok(/not available/.test(out), "the operator is not told why the cards are missing");
+      assert.ok(out.length > 200, "the usage section went blank on an older server");
+      assert.ok(/data-setback=/.test(out), "and the way back must survive");
+    });
+  });
+});
+
+/* ── W3-4. the AI tools under Updates ────────────────────────────────────── */
+
+
+test("W3-4a. the tools list renders versions, an Update button, and the too-old warning", () => {
+  w3With({ provTools: W3_TOOLS, provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    assert.ok(out.includes("2.1.247"), "the installed version is missing");
+    assert.ok(out.includes("2.1.251 available"), "the latest version is missing");
+    assert.ok(/data-toolupdate="claude"/.test(out), "there is no way to run the update");
+    assert.ok(out.includes("Fable 5.1 needs Claude Code 2.1.251"),
+      "the too-old warning is missing or reworded");
+    /* up to date: stated, and NOT offered an update that would do nothing */
+    const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("DeepSeek"));
+    assert.ok(/up to date/.test(codex), "a current tool is not said to be current");
+    assert.ok(!/data-toolupdate="codex"/.test(codex), "a current tool was offered a dead Update button");
+    /* not installed, not managed here: says so, and names the real command */
+    const ds = out.slice(out.indexOf("DeepSeek"));
+    assert.ok(/not installed/.test(ds), "an absent tool is not said to be absent");
+    assert.ok(/npm i -g deepseek-cli/.test(ds), "an unmanaged tool does not name its own update path");
+  });
+});
+
+test("W3-4b. too_old with no server sentence still explains itself", () => {
+  w3With({ provTools: [Object.assign({}, W3_TOOLS[0], { note: undefined })],
+           provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    assert.ok(/older than 2\.1\.251/.test(out), "the warning names no version: " + out.slice(0, 400));
+    assert.ok(/will not work until you update/.test(out), "the warning says nothing to do");
+  });
+});
+
+test("W3-4c. no tools route: a reason, never a blank Updates section", () => {
+  w3With({ provTools: null, provToolsError: "404 Not Found" }, () => {
+    assert.ok(/not available on this server/.test(T.toolsListHtml()),
+      "a 404 renders as nothing at all");
+  });
+  w3With({ provTools: null, provToolsError: null }, () => {
+    assert.ok(/Reading the AI tools/.test(T.toolsListHtml()),
+      "not-read-yet must not look like an empty list");
+  });
+  w3With({ provTools: [], provToolsError: null }, () => {
+    assert.ok(/found no AI tool/.test(T.toolsListHtml()), "an empty list says nothing");
+  });
+});
+
+const DECL_TOPTS = {
+  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
+           "append_system_prompt"],
+};
+
+const DECL_PMODES = {
+  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
+  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
+};
+
+test("W3-4d. Sutra's own updater is untouched, and sits above the tools", () => {
+  w3Settings(() => {
+    w3With({ upd: null, updError: null, updBusy: null, provTools: W3_TOOLS }, () => {
+      T.S.setSection = "updates";
+      const out = T.SCREENS.settings();
+      assert.ok(/data-upd="check"/.test(out), "Sutra's own update check is gone");
+      assert.ok(out.indexOf('data-upd="check"') < out.indexOf("data-toolupdate"),
+        "the AI tools were put above Sutra's own updater");
+    });
+  });
+});
+
+codexSerial("W3-4e. an update keeps the log, on success AND on refusal", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  sandbox.render = () => {};
+  try {
+    T.S.provTools = W3_TOOLS; T.S.toolLog = null; T.S.toolBusy = null;
+    sandbox.fetch = (url, opts) => Promise.resolve({ ok:true, json: () => Promise.resolve(
+      /^POST$/.test(opts && opts.method)
+        ? { ok:true, version_before:"2.1.247", version_after:"2.1.251", log:"updated cleanly" }
+        : W3_TOOLS) });
+    await T.updateProviderTool("claude");
+    assert.strictEqual(T.S.toolBusy, null, "the button was left spinning");
+    assert.strictEqual(T.S.toolLog.version_after, "2.1.251", "the new version was not read back");
+    assert.ok(/updated cleanly/.test(T.toolsListHtml()), "the log is not on screen");
+
+    /* the server refuses while a chat is running for that provider */
+    T.S.toolLog = null;
+    sandbox.fetch = () => Promise.reject(new Error("a chat is running for claude"));
+    await T.updateProviderTool("claude");
+    assert.strictEqual(T.S.toolLog.ok, false, "a refusal was recorded as a success");
+    assert.ok(/a chat is running for claude/.test(T.toolsListHtml()),
+      "the refusal never reached the screen");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.S.provTools = null; T.S.toolLog = null; T.S.toolBusy = null; }
+});
+
+codexSerial("W3-4f. a 404 on either new route is recorded, not treated as an empty answer", async () => {
+  const prevFetch = sandbox.fetch, prevRender = sandbox.render;
+  sandbox.render = () => {};
+  try {
+    T.S.usageAll = null; T.S.usageAllError = null; T.S.provTools = null; T.S.provToolsError = null;
+    sandbox.fetch = () => Promise.resolve({ ok:false, status:404,
+      text: () => Promise.resolve("Not Found"), json: () => Promise.resolve({}) });
+    await T.loadUsageAll(true);
+    await T.loadProviderTools(true);
+    assert.strictEqual(T.S.usageAll, null, "a 404 was stored as a usage payload");
+    assert.ok(T.S.usageAllError, "usage/all: a 404 left no reason to show the operator");
+    assert.strictEqual(T.S.provTools, null, "a 404 was stored as a tool list");
+    assert.ok(T.S.provToolsError, "providers/tools: a 404 left no reason to show the operator");
+    /* a 200 of the WRONG SHAPE is the same class of non-answer */
+    T.S.usageAll = null; T.S.usageAllError = null;
+    sandbox.fetch = () => Promise.resolve({ ok:true, json: () => Promise.resolve({ nope:1 }) });
+    await T.loadUsageAll(true);
+    assert.strictEqual(T.S.usageAll, null, "a shapeless 200 was accepted as a payload");
+    assert.ok(T.S.usageAllError, "a shapeless 200 left no reason");
+  } finally { sandbox.fetch = prevFetch; sandbox.render = prevRender;
+              T.S.usageAll = null; T.S.usageAllError = null;
+              T.S.provTools = null; T.S.provToolsError = null; }
+});
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {
@@ -5224,20 +5659,6 @@ const PMODES = {
 const SIX = PMODES.claude.map(id => ({
   id, writes_files: id === "acceptEdits" || id === "bypassPermissions" }));
 
-/* Runs permSelect with an explicit provider map, mode list and stored mode. */
-function permWith(mpid, cur, byProvider) {
-  const pv = T.PERM_MODES, pb = T.PERM_MODES_BY_PROVIDER, ps = T.SETTINGS;
-  try {
-    T.PERM_MODES = SIX;
-    T.PERM_MODES_BY_PROVIDER = byProvider === undefined ? PMODES : byProvider;
-    T.SETTINGS = { permission_mode: cur, permission_mode_effective: cur };
-    return T.permSelect(mpid);
-  } finally { T.PERM_MODES = pv; T.PERM_MODES_BY_PROVIDER = pb; T.SETTINGS = ps; }
-}
-const permOptions = h =>
-  [...h.matchAll(/<option value="([^"]*)"([^>]*)>/g)]
-    .map(m => ({ id: m[1], attrs: m[2] }));
-
 function toptsWith(mpid, byProvider) {
   const prev = T.TURN_OPTIONS_BY_PROVIDER;
   try {
@@ -5245,6 +5666,7 @@ function toptsWith(mpid, byProvider) {
     return T.turnOptsHtml("s47", mpid);
   } finally { T.TURN_OPTIONS_BY_PROVIDER = prev; }
 }
+
 const fieldsIn = h =>
   [...h.matchAll(/data-opt="([^"]+)"/g)].map(m => m[1]);
 
@@ -5290,94 +5712,11 @@ test("47e. the Turn options ROW is omitted, not opened onto an empty box", () =>
   assert.ok(shown.length > 0);
 });
 
-test("47f. a Claude pane still offers all six permission modes", () => {
-  const ids = permOptions(permWith("claude", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.claude);
-});
+const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
+  "the pane menu did not render at all -- the assertion below would be vacuous");
 
-test("47g. a DeepSeek pane offers only the three modes it can enforce", () => {
-  const ids = permOptions(permWith("deepseek", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.deepseek);
-  const sel = permOptions(permWith("deepseek", "plan")).filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "exactly one option is selected");
-  assert.strictEqual(sel[0].id, "plan");
-});
+const hasOptsRow = h => /data-mrow="opts"/.test(h);
 
-test("47h. a stored mode this provider cannot offer is SHOWN, not silently swapped", () => {
-  /* THE EDGE CASE. permission_mode is stored globally, so a pane can inherit a
-     `dontAsk` chosen while Claude was selected. Filtering it out of the list
-     leaves no option carrying `selected`, and the browser then displays the
-     FIRST one -- so a pane running `default` would have claimed to be in
-     `plan`. That is the same mis-report this whole change exists to remove,
-     recreated inside the control meant to fix it. */
-  const h = permWith("deepseek", "dontAsk");
-  const opts = permOptions(h);
-  assert.strictEqual(opts[0].id, "dontAsk",
-    "the stored mode must still be the one shown: " + h);
-  assert.ok(/selected/.test(opts[0].attrs),
-    "it must be SELECTED, or the browser shows the first supported mode "
-    + "and the pane misreports what is running: " + h);
-  assert.ok(/disabled/.test(opts[0].attrs),
-    "and disabled, because it cannot be applied here: " + h);
-  assert.ok(/not supported by DeepSeek/.test(h), "must say why: " + h);
-  /* And no supported option may ALSO claim to be selected. */
-  const sel = opts.filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "two selected options: " + h);
-  assert.strictEqual(sel[0].id, "dontAsk");
-});
-
-test("47i. an unsupported stored mode does not paint the composer red", () => {
-  /* permSelect reads writes_files from the FULL list so Claude's warn class is
-     computed exactly as before. Safe only while the omitted modes are the
-     non-writing ones -- pinned server-side too
-     (test_every_mode_deepseek_omits_is_a_non_writing_one). */
-  assert.ok(!/permsel warn/.test(permWith("deepseek", "dontAsk")));
-  assert.ok(/permsel warn/.test(permWith("claude", "bypassPermissions")),
-    "a real write-capable mode must still warn");
-});
-
-test("47j. a provider with no declared modes keeps ALL of them", () => {
-  /* The opposite fallback from turn options, deliberately: a missing entry
-     must never leave a pane with no way to say `plan`. Hiding a safety control
-     is the wrong direction to be wrong in. */
-  const ids = permOptions(permWith("codex", "plan")).map(o => o.id);
-  assert.deepStrictEqual(ids, PMODES.claude);
-});
-
-/* ── 48. THE PANE NOBODY HAS ASKED ANYTHING YET (founder 2026-09-07) ────────
-   Section 47 above proved the gating works when it is HANDED a provider id.
-   Nothing proved the panel could work out which id to hand it, and on an
-   unstarted pane it could not: the provider frame arrives with the socket, so
-   `channel` is null until the first message, and before /api/settings resolves
-   SETTINGS is null too. paneProvider returned undefined, every consumer took
-   its not-loaded branch, and for turn options that branch is Claude's five.
-
-   So a fresh DeepSeek pane showed all five turn options -- in exactly the
-   window when this menu gets opened, which is BEFORE asking anything, to set
-   something first. 47d pinned that fallback as correct without ever asking
-   which provider was on the other side of it.
-
-   The fix is app.py putting the declarations in the page (a meta 01-state
-   reads at parse time), so "which provider?" has an answer on the first paint.
-   These tests are written against the UNSTARTED pane specifically -- channel
-   null -- because that is the state every one above skipped. */
-
-const DECL_TOPTS = {
-  claude: ["effort", "max_budget_usd", "allowed_tools", "disallowed_tools",
-           "append_system_prompt"],
-};
-const DECL_PMODES = {
-  claude: ["plan", "acceptEdits", "bypassPermissions", "auto", "manual", "dontAsk"],
-  deepseek: ["plan", "acceptEdits", "bypassPermissions"],
-};
-
-/* Renders the pane menu for a pane with NOTHING ASKED YET.
-     served   -- which provider's machine served the page (the meta), or null
-                 for a page with no declarations at all
-     fetched  -- has GET /api/settings landed? false is the boot window
-   The maps behave as the browser's do: seeded from the page, replaced by the
-   fetch. Never force-cleared, because after this change the browser has no way
-   to reach an empty map on a page that carried a seed. */
 function unstartedPane({ served, fetched, stored }) {
   const prev = {
     ch: PANE_S.channel, set: T.SETTINGS, seed: T.SEED, menu: T.S.paneMenu,
@@ -5410,7 +5749,11 @@ function unstartedPane({ served, fetched, stored }) {
       menu: T.paneMenuHtml(PANE_S),
       decl: T.paneDeclProvider(PANE_S),
       running: T.paneProvider(PANE_S),
-      perm: T.permSelect(T.paneDeclProvider(PANE_S)),
+      /* `perm` USED TO BE HERE and is gone (2026-09-14): the access control moved
+         off the menu onto the composer, so an unstarted pane's access options are
+         asserted in test_composer_tools.js 4b/4c/4f instead. What this helper is
+         still for -- the turn-options row on a pane that has never run -- is
+         unchanged. */
     };
   } finally {
     PANE_S.channel = prev.ch; T.SETTINGS = prev.set; T.SEED = prev.seed;
@@ -5419,11 +5762,6 @@ function unstartedPane({ served, fetched, stored }) {
     T.PERM_MODES = prev.pv;
   }
 }
-const hasOptsRow = h => /data-mrow="opts"/.test(h);
-/* An absent row and an absent MENU are not the same finding, and only one of
-   them is this section's subject. */
-const assertOpen = h => assert.ok(/class="upop panemenu"/.test(h),
-  "the pane menu did not render at all -- the assertion below would be vacuous");
 
 test("48a. a DeepSeek pane with nothing asked yet has NO Turn options row", () => {
   /* The founder's report. Settings HAVE loaded here -- this is the state a
@@ -5455,45 +5793,6 @@ test("48c. a Claude pane keeps its Turn options row in BOTH those states", () =>
     assert.ok(hasOptsRow(r.menu),
       `Claude lost the Turn options row (fetched=${fetched}): ` + r.menu);
   }
-});
-
-test("48d. an unstarted DeepSeek pane never offers a mode it cannot run", () => {
-  /* Asked for alongside turn options: `plan` showing there is correct, but it
-     is also what a fallback would show, so the LIST is what settles it.
-
-     The two states differ, and the first version of this test was wrong to
-     expect them not to. The mode list is the server's vocabulary (PERM_MODES);
-     before that lands there is nothing to list but the mode in force, so the
-     boot window legitimately shows exactly one option. The claim that holds in
-     BOTH is the one worth pinning: nothing DeepSeek cannot enforce. */
-  const fetchedIds = permOptions(unstartedPane({ served: "deepseek", fetched: true }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(fetchedIds, DECL_PMODES.deepseek);
-
-  const bootIds = permOptions(unstartedPane({ served: "deepseek", fetched: false }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(bootIds, ["plan"],
-    "with no vocabulary fetched the select can only carry the mode in force");
-  for (const ids of [fetchedIds, bootIds])
-    for (const id of ids)
-      assert.ok(DECL_PMODES.deepseek.includes(id),
-        `offered "${id}", which DeepSeek cannot enforce`);
-});
-
-test("48e. an unstarted Claude pane still offers all six", () => {
-  const ids = permOptions(unstartedPane({ served: "claude", fetched: true }).perm)
-    .map(o => o.id);
-  assert.deepStrictEqual(ids, DECL_PMODES.claude);
-});
-
-test("48f. a mode stored under Claude is labelled, not offered, on a fresh DeepSeek pane", () => {
-  /* 47h's edge case, reached through resolution rather than a handed-in id:
-     permission_mode is global, so an unused DeepSeek pane inherits it. */
-  const r = unstartedPane({ served: "deepseek", fetched: true, stored: "dontAsk" });
-  assert.ok(/not supported by/.test(r.perm), r.perm);
-  const sel = permOptions(r.perm).filter(o => /selected/.test(o.attrs));
-  assert.strictEqual(sel.length, 1, "exactly one option stays selected");
-  assert.strictEqual(sel[0].id, "dontAsk");
 });
 
 test("48g. the two resolvers are NOT interchangeable", () => {
@@ -5612,11 +5911,15 @@ codexSerial("49b", async () => {
 codexSerial("49c", async () => {
   const h = codexStub(jsonOnce({
     state:"chatgpt", providers:[CODEX_ROW_READY], settings:{ provider:"claude" } }));
-  const prevSettings = T.SETTINGS, prevModes = T.PERM_MODES;
+  const prevSettings = T.SETTINGS, prevModes = T.PERM_MODES, prevSec = T.S.setSection;
   try {
     T.PROVIDERS = [CODEX_ROW_BLOCKED];
     T.SETTINGS = { provider:"claude", permission_mode:"plan", workdir:"/tmp" };
     T.PERM_MODES = [];
+    /* Settings opens on the OVERVIEW now (2026-09-14), so the provider list is
+       one click in. The claim under test is unchanged -- what the row says
+       about a Codex that has just signed in -- only where it is rendered. */
+    T.S.setSection = "providers";
     const before = T.SCREENS.settings();
     assert.ok(/Installed, but not signed in yet/.test(before), before.slice(0, 400));
 
@@ -5625,7 +5928,8 @@ codexSerial("49c", async () => {
     assert.ok(/Ready to use/.test(after), "the row never says Ready to use");
     const row = after.slice(after.indexOf('data-prov="codex"'));
     assert.ok(!/^[^>]*disabled/.test(row), "the radio is still disabled: " + row.slice(0, 200));
-  } finally { h.restore(); T.SETTINGS = prevSettings; T.PERM_MODES = prevModes; }
+  } finally { h.restore(); T.SETTINGS = prevSettings; T.PERM_MODES = prevModes;
+              T.S.setSection = prevSec; }
 });
 
 /* 49d. THE OPPOSITE DIRECTION, and the more dangerous one. A row saying
@@ -5669,6 +5973,10 @@ codexSerial("49e", async () => {
    typeof check alone replaced a good SETTINGS with one holding no provider,
    no permission mode and no workdir. Every screen then renders its own
    not-loaded fallback, which is a blank panel dressed as a successful read. */
+/* 48d-48f LIVED HERE and are gone (2026-09-14): they read permSelect's options on
+   an unstarted pane. The same claims about an unstarted pane's access options are
+   made against the composer control in test_composer_tools.js 4b, 4c and 4f. */
+
 test("49f. only a real provider array and a real settings object are applied", () => {
   const prevP = T.PROVIDERS, prevS = T.SETTINGS, prevR = T.S.codexRuntime;
   try {
@@ -6469,7 +6777,11 @@ test("53b. the dropdown then renders the discovered models, not the fallback", (
     /* the boot-window state the bug froze the panel in */
     let opts = optionsIn(paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
                                       { provider:"codex", workdir:"/w" }));
-    assert.deepStrictEqual(opts.map(o => o.id), [""],
+    /* PRE-FIX STATE, RESTATED (2026-09-14): with nothing discovered the picker
+       draws no list at all and says the provider runs whatever its CLI is set to,
+       where the old select offered a bare "CLI default" row. Same fixture, same
+       point -- there is nothing to choose yet. */
+    assert.deepStrictEqual(opts.map(o => o.id), [],
       "the fixture is not reproducing the pre-fix state: " + JSON.stringify(opts));
     /* the AI Provider screen's answer lands */
     T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
@@ -6570,7 +6882,9 @@ test("53h. selecting one of the landed models is what gets sent", () => {
     const h = paneMenuWith(T.MODELS_BY_PROVIDER, "codex",
                            { provider:"codex", workdir:"/w" });
     const sel = optionsIn(h).find(o => o.id === chosen);
-    assert.ok(sel && / selected/.test(sel.attrs),
+    /* The picker marks the chosen option with aria-pressed, where the old select
+       used the `selected` attribute. Same claim, the control's own spelling. */
+    assert.ok(sel && /aria-pressed="true"/.test(sel.attrs),
       "the chosen model is not the selected option: " + JSON.stringify(optionsIn(h)));
   });
 });

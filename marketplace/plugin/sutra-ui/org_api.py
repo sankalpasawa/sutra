@@ -1065,6 +1065,90 @@ def _codex_state():
             "runtime": codex_install.state()}
 
 
+# ==================================================== provider tool versions ==
+# Which build of each CLI is on this Mac, whether a newer one exists, and -- for
+# the installs Sutra is allowed to touch -- a button that fetches it. The whole
+# policy (who owns a binary, what counts as too old, what may be updated) lives
+# in providers.py; these two routes are the transport.
+
+@router.get("/providers/tools")
+def api_provider_tools():
+    """Version rows for every provider that has a CLI.
+
+        [ {id, name, bin, installed_version, latest_version, minimum,
+           update_available, too_old, managed_by_sutra, install_kind,
+           update_command, busy, package, note} ]
+
+    TOO OLD IS A WARNING, NEVER A REFUSAL. `minimum` is the build the adapter
+    was measured against; running an older one sets `too_old` and puts a
+    sentence in `note`, and changes nothing about whether the provider can be
+    selected or run.
+
+    `null` VERSIONS ARE AN ANSWER. `installed_version: null` means the binary
+    is absent or did not answer `--version`; `latest_version: null` means the
+    npm registry could not be reached. Both degrade to "we do not know",
+    never to an error and never to a guess.
+
+    Read-only and argument-free. Every subprocess and network call inside is
+    time-boxed and cached (providers.TOOL_VERSION_TTL / TOOL_LATEST_TTL), so a
+    screen that polls this does not re-spawn three CLIs each time.
+    """
+    return providers.tools_report()
+
+
+@router.post("/providers/tools/{tool_id}/update")
+def api_provider_tool_update(tool_id: str, request: Request):
+    """Update one provider's CLI. Returns {ok, version_before, version_after, log}.
+
+        Claude   `claude update`, and ONLY when Claude Code's own native
+                 installer is what put it there.
+        Codex    npm install into Sutra's own provider prefix, then verify,
+                 then repoint Sutra at it -- never `-g`, never over anyone
+                 else's copy.
+        DeepSeek the same.
+
+    REFUSED, with `ok: false` and a code, when:
+      CHAT_RUNNING     a chat is open on that provider. Updating the binary
+                       under a running turn would kill it.
+      NOT_OURS         Homebrew's, or a global npm's. Sutra does not touch a
+                       package manager's files; the message names the command
+                       to run instead.
+      NOT_INSTALLED    there is nothing there to update.
+      NO_NPM           npm is not reachable and this update needs it.
+
+    SYNCHRONOUS for the same reason POST /providers/codex/cli is: uvicorn runs
+    a sync endpoint on a worker thread and does not cancel it when the client
+    goes away, so a download started here finishes whatever the panel does
+    next.
+
+    Gated by the same panel-token control as the CLI install, because it is the
+    same class of act: fetching and registering an executable.
+
+    200 with ok:false on a refusal, matching its neighbours -- the tools rows
+    ride along either way so the screen corrects itself even when nothing was
+    updated. 4xx stays for real protocol problems: no token, or an unknown id.
+    """
+    _codex_install_control(request)
+    if tool_id not in providers.PROVIDER_MIN_VERSIONS:
+        raise HTTPException(status_code=404, detail={
+            "code": "UNKNOWN_PROVIDER",
+            "message": "there is no updatable CLI called %r -- known: %s"
+                       % (tool_id, ", ".join(sorted(providers.PROVIDER_MIN_VERSIONS)))})
+    try:
+        out = providers.update_tool(tool_id)
+    except providers.ToolUpdateError as exc:
+        return {"ok": False, "code": exc.code, "message": str(exc),
+                "provider": tool_id, "version_before": None,
+                "version_after": None, "log": "",
+                "tools": providers.tools_report()}
+    return {**out, "code": "UPDATED" if out.get("changed") else "ALREADY",
+            "message": ("updated to %s." % out["version_after"]
+                        if out.get("changed") else
+                        "already on %s -- nothing changed."
+                        % (out.get("version_after") or "the installed build")),
+            "tools": providers.tools_report()}
+
+
 @router.get("/providers/codex/auth")
 def api_codex_auth():
     """Which credential the Codex CLI is holding -- and therefore how the
@@ -1729,8 +1813,9 @@ def api_settings_get():
       bypassPermissions  everything auto-approved, including shell commands.
     """
     unlocked = providers.unsafe_modes_allowed()
+    settings = providers.load_settings()
     return {
-        "settings": providers.load_settings(),
+        "settings": settings,
         "permission_modes": [
             {"id": m, "note": providers.PERMISSION_MODE_NOTES.get(m),
              "default": m == providers.DEFAULT_PERMISSION_MODE,
@@ -1774,6 +1859,47 @@ def api_settings_get():
         # provider in this dict".
         "turn_options_by_provider": providers.all_turn_options_by_provider(),
         "permission_modes_by_provider": providers.all_permission_modes_by_provider(),
+        # THE RICH MODEL CATALOGUE, beside the flat list and never instead of
+        # it. models_by_provider above is what the SEO Writer and every client
+        # built before this reads, and it is byte-identical to what it was.
+        #
+        # What this adds: a main/more split so the picker shows five rows and
+        # hides the pinned snapshots; the effort values each model accepts, so
+        # the effort control is per model rather than a guess; a `fast` flag so
+        # only a provider with a service-tier switch renders one; and what ""
+        # resolves to, so "Account default" can say what it means.
+        #
+        #   {pid: {models: [{id, name, note, tag?, efforts: [...],
+        #                    selectable, unavailable_reason?}],
+        #          more: [same], fast: bool, default: "<id>"}}
+        "model_catalog_by_provider": providers.all_model_catalog_by_provider(),
+        # THE FOUR PLAIN-ENGLISH ACCESS CHOICES, and the mapping onto the
+        # native modes that are actually STORED. Nothing new goes in
+        # settings.json: `permission_mode` keeps holding plan / acceptEdits /
+        # auto / bypassPermissions exactly as it always has, so an older build
+        # reading the same file finds what it expects.
+        #
+        # The flat `permission_modes` list above is UNCHANGED and still carries
+        # all six with their notes and gating -- it is the vocabulary, and the
+        # Advanced disclosure renders from it. `permission_modes_advanced`
+        # names the two the four-button list does not cover (manual, dontAsk),
+        # so the client does not have to re-derive that subtraction and get it
+        # wrong the day a fifth button is added.
+        "access_options": providers.access_options(settings.get("provider")),
+        "access_by_provider": providers.access_by_provider(),
+        "access_native": providers.access_native_map(),
+        "permission_modes_advanced": providers.advanced_permission_modes(),
+        # THE PER-PROVIDER SWITCHES. The schema carries the defaults; the
+        # settings payload (see load_settings) carries only what differs from
+        # them, so the two never restate each other.
+        "provider_settings_schema": providers.provider_settings_schema(),
+        # The same value load_settings() already carries, hoisted to the top
+        # level beside the schema it pairs with. Two spellings of one read, not
+        # two sources: both come from providers.stored_provider_settings() in
+        # the same call, so they cannot disagree. The panel does
+        # `SETTINGS = r.settings`, so the nested copy is the one it uses; the
+        # top-level one is what the documented contract names.
+        "provider_settings": settings.get("provider_settings") or {},
         "providers": providers.discover_providers(),
         # Who is signed in to Claude on this machine. None when unknown -- the
         # panel must render an unknown identity rather than a placeholder that
@@ -1800,6 +1926,22 @@ class SettingsRequest(BaseModel):
     # "sutra" (only chats this app started) | "all" (every transcript on the
     # machine, whichever provider wrote it). See providers.CHAT_SCOPES.
     chat_scope: Optional[str] = None
+    # The NEW vocabulary for the SAME setting: read | edits | auto | full.
+    # Translated to a native mode by providers.save_settings and written to the
+    # existing `permission_mode` key -- nothing new is stored. Mutually
+    # exclusive with permission_mode, which keeps working untouched for every
+    # client that already sends it (and for `manual` / `dontAsk`, which the
+    # four-button list does not cover).
+    access: Optional[str] = None
+    #: Which provider's mapping to use for `access`. Defaults to the provider
+    #: in the same request, then the stored one, then the active one. Named
+    #: explicitly because `auto` exists for Claude and for nobody else, so the
+    #: answer genuinely depends on who is being configured.
+    access_provider: Optional[str] = None
+    #: {provider_id: {key: true|false}} -- a PATCH over the per-provider
+    #: switches. Its own path through save_provider_settings(), which writes
+    #: only the new top-level `provider_settings` key.
+    provider_settings: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 @router.post("/settings/provider-bin")
@@ -1840,27 +1982,56 @@ def api_settings_post(req: SettingsRequest):
     """
     if (req.provider is None and req.permission_mode is None
             and req.workdir is None and req.onboarded is None and req.model is None
-            and req.unsafe_ack is None and req.chat_scope is None):
+            and req.unsafe_ack is None and req.chat_scope is None
+            and req.access is None and req.provider_settings is None):
         raise HTTPException(
             status_code=400,
             detail="nothing to update -- send at least one of: provider, "
-                   "permission_mode, workdir, onboarded, model, chat_scope")
-    try:
-        settings = providers.save_settings(
-            provider=req.provider,
-            permission_mode=req.permission_mode,
-            workdir=req.workdir,
-            onboarded=req.onboarded,
-            model=req.model,
-            unsafe_ack=req.unsafe_ack,
-            chat_scope=req.chat_scope,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except OSError as exc:
-        raise HTTPException(status_code=500,
-                            detail="could not write settings: %s" % exc)
-    return {"settings": settings}
+                   "permission_mode, access, workdir, onboarded, model, "
+                   "chat_scope, provider_settings")
+    settings = None
+    # ITS OWN WRITE, and deliberately not folded into save_settings(). The
+    # per-provider switches live under a NEW top-level key and touch nothing
+    # else; keeping them on a separate path is what guarantees that a bug here
+    # cannot reach `permission_mode`, `workdir` or `model_by_provider`.
+    #
+    # FIRST, so a single request can set a switch and a mode and the response
+    # carries both. Both writes go through providers' atomic tmp+replace, so
+    # the file is never seen half-written -- but they are two writes, and a
+    # crash between them leaves the first applied. That is the same guarantee
+    # every partial update in this endpoint has always had.
+    if req.provider_settings is not None:
+        try:
+            settings = providers.save_provider_settings(req.provider_settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="could not write provider settings: %s" % exc)
+    if (req.provider is not None or req.permission_mode is not None
+            or req.workdir is not None or req.onboarded is not None
+            or req.model is not None or req.unsafe_ack is not None
+            or req.chat_scope is not None or req.access is not None):
+        try:
+            settings = providers.save_settings(
+                provider=req.provider,
+                permission_mode=req.permission_mode,
+                workdir=req.workdir,
+                onboarded=req.onboarded,
+                model=req.model,
+                unsafe_ack=req.unsafe_ack,
+                chat_scope=req.chat_scope,
+                access=req.access,
+                access_provider=req.access_provider,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(status_code=500,
+                                detail="could not write settings: %s" % exc)
+    return {"settings": settings if settings is not None
+            else providers.load_settings()}
 
 
 # ============================================================ filesystem =====
@@ -2150,6 +2321,37 @@ def api_account():
     """
     import usage
     return usage.account()
+
+
+@router.get("/usage/all")
+def api_usage_all(refresh: int = 1):
+    """Every provider's usage in ONE shape, for the Usage screen.
+
+    `/usage`, `/account` and `/deepseek/usage` are UNCHANGED and still answer
+    exactly what they did -- this is a fourth view built on top of the same
+    three reads, not a replacement for any of them.
+
+        {"providers": [ {id, name, state, account, plan,
+                         windows: [{label, percent, resets_at, resets_epoch,
+                                    kind, active}],
+                         balance, error} ],
+         "fetched_at": epoch, "source": "live" | "cache"}
+
+    `state` is ok | not_installed | signed_out | unsupported | error, and it is
+    the first thing a row reads: it decides whether the client draws a figure,
+    an install button, a sign-in button, nothing at all, or a reason.
+
+    `refresh=0` answers from cache and spawns nothing, for a caller that must
+    not pay for a probe. The default DOES spawn: reading a ChatGPT plan means
+    asking codex, which is the same cost `/providers/codex/auth` already
+    accepts, and it is cached for usage.ALL_TTL so a client polling after every
+    turn does not re-probe.
+
+    Never 5xx: usage.all_providers() catches per provider, so one broken CLI
+    costs one row and not the screen.
+    """
+    import usage
+    return usage.all_providers(refresh=bool(refresh))
 
 
 @router.get("/deepseek/usage")

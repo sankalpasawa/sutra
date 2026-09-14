@@ -1319,6 +1319,13 @@
     padding:7px 9px;background:none;border:0;text-align:left;cursor:pointer;
     font:12px/1.5 var(--sans);color:var(--ink);border-radius:6px;width:100%}
   .mrow+.mrow{border-top:1px solid var(--line-soft)}
+  /* Section headings inside the chat menu (2026-09-14). The menu carries four
+     kinds of row -- what answers, this chat, the repo, this pane -- and without
+     a heading they read as one undifferentiated list. */
+  .msec{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+    font-weight:650;padding:10px 12px 4px}
+  .msec:first-child{padding-top:6px}
+  .msec+.mrow{border-top:0}
   .mrow:hover{background:var(--acc-bg)}
   .mrow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
   .mrow .mk{font:600 9.5px/1.7 var(--mono);color:var(--muted);text-transform:uppercase;
@@ -3374,3 +3381,256 @@
 .shexback{align-self:flex-start;background:none;border:0;padding:0;
   font:11.5px/1.3 var(--sans);color:var(--faint);cursor:pointer}
 .shexback:hover{color:var(--acc)}
+
+/* ══════════════ Settings: overview first ═══════════════════════════════════
+   Founder, 2026-09-14: Settings opens as "a big tab of settings", not as the
+   subsection you happened to leave open. Six cards, each stating what it is and
+   what it is set to; a click opens one, a back control returns. Nothing here
+   collapses, because a collapsed card is the state this replaced. */
+.sxov{display:grid;grid-template-columns:1fr;gap:8px}
+@media (min-width:720px){.sxov{grid-template-columns:1fr 1fr}}
+.sxcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  color:inherit;font:inherit;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;padding:13px 14px;transition:border-color .12s,background .12s}
+.sxcard:hover{border-color:var(--acc);background:var(--acc-bg)}
+.sxcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.sxci{min-width:0;flex:1;display:block}
+.sxct{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.sxcd{display:block;font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45}
+/* The current value, on the right. Truncated rather than wrapped: it is a
+   glance, and a two-line value would make six cards unscannable. */
+.sxcv{flex:none;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:600 11px/1.3 var(--mono);color:var(--acc);text-align:right}
+.sxcc{width:14px;height:14px;flex:none;opacity:.55}
+
+/* ── inside a section ── */
+.sxback{display:inline-flex;align-items:center;gap:5px;background:none;
+  border:1px solid var(--line);border-radius:6px;padding:4px 9px 4px 6px;
+  font:500 11.5px/1.3 var(--sans);color:var(--muted);cursor:pointer;margin-bottom:12px}
+.sxback svg{width:13px;height:13px}
+.sxback:hover{color:var(--ink);border-color:var(--acc)}
+.sxback:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.sxhead{margin-bottom:14px}
+.sxtitle{font-family:var(--serif);font-size:21px;font-weight:600;letter-spacing:-.01em;
+  margin:0;line-height:1.2;color:var(--ink)}
+.sxsub{margin:5px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
+.sxsec{margin-top:18px}
+.sxsech{font:600 11px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin:0 0 9px}
+.sxdet{margin-top:9px}
+.sxdet summary{cursor:pointer}
+
+/* ── the provider list ── */
+.sxplist{display:flex;flex-direction:column;gap:7px}
+.sxprow{display:flex;align-items:stretch;gap:7px}
+.sxprow.on .sxpopen{border-color:var(--acc);background:var(--acc-bg)}
+.sxpopen{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-align:left;
+  cursor:pointer;color:inherit;font:inherit;background:var(--inset);
+  border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+.sxpopen:hover{border-color:var(--acc);background:var(--acc-bg)}
+.sxpopen:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.sxpopen .oi{min-width:0;flex:1}
+.sxpopen .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
+  align-items:center;gap:7px;flex-wrap:wrap}
+.sxpopen .od{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.sxdef{flex:none;align-self:center;white-space:nowrap}
+
+/* The provider page's one-line state, above everything it explains. */
+.sxstate{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--inset)}
+.sxstate.p-ok{border-color:var(--ok-line)}
+.sxstate.p-warn{border-color:var(--warn-line)}
+.sxstateline{font-size:12.5px;color:var(--ink);flex:1;min-width:0}
+
+/* ── a provider's own switches, rendered from provider_settings_schema ── */
+.sxsws{display:flex;flex-direction:column;gap:7px}
+.sxsw{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;cursor:pointer;
+  color:inherit;font:inherit;background:var(--inset);border:1px solid var(--line);
+  border-radius:9px;padding:10px 12px}
+.sxsw:hover{border-color:var(--acc)}
+.sxsw:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.sxsw .oi{min-width:0;flex:1}
+.sxsw .on{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;
+  align-items:center;gap:7px;flex-wrap:wrap}
+.sxsw .od{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.sxtrack{flex:none;width:30px;height:17px;border-radius:999px;background:var(--line);
+  border:1px solid var(--line);margin-top:1px;position:relative;transition:background .12s}
+.sxknob{position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:50%;
+  background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s}
+.sxsw[aria-checked="true"] .sxtrack{background:var(--acc);border-color:var(--acc)}
+.sxsw[aria-checked="true"] .sxknob{transform:translateX(13px)}
+
+/* ══════════════ Settings, dressed ══════════════════════════════════════════
+   Owner, 2026-09-14: "change how it looks ... the settings overall". The
+   structure was right and the surface was a stack of same-weight boxes. This
+   layer does three things and touches no markup: it gives the column a
+   readable measure, it makes one thing per screen the loudest (the title, then
+   the section headings, then the rows), and it spends colour only on state --
+   ready, needs-you, refused -- instead of on every border. */
+.sxov,.sxhead,.sxsec,.sxplist,.sxsws,.sxstate,.sxback,.sxdet{max-width:760px}
+
+/* the overview's six doors */
+.sxov{gap:10px}
+.sxcard{padding:15px 16px;border-radius:12px;align-items:flex-start;
+  border-color:var(--line-soft);transition:border-color .12s,box-shadow .12s,transform .12s}
+.sxcard:hover{background:var(--card);border-color:var(--acc);
+  box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.sxct{font-size:14px;font-weight:650;letter-spacing:-.005em}
+.sxcd{font-size:12px;margin-top:4px;max-width:44ch}
+/* The value reads as a fact about the setting, not as a second heading: a quiet
+   pill, the same shape the rest of the panel uses for state. */
+.sxcv{align-self:center;max-width:18ch;font:600 11px/1.6 var(--sans);color:var(--muted);
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:999px;
+  padding:1px 9px}
+.sxcard:hover .sxcv{color:var(--ink);border-color:var(--line)}
+.sxcc{width:15px;height:15px;opacity:.4;align-self:center}
+.sxcard:hover .sxcc{opacity:.8;color:var(--acc)}
+
+/* inside a section: the title carries the page, the back control does not */
+.sxback{border:0;padding:2px 0;margin-bottom:10px;color:var(--faint);font-size:12px}
+.sxback:hover{color:var(--acc)}
+.sxhead{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
+.sxtitle{font-size:25px}
+.sxsub{font-size:12.5px;margin-top:6px;max-width:62ch}
+.sxsec{margin-top:26px}
+.sxsech{font-size:10.5px;letter-spacing:.09em;color:var(--faint);margin-bottom:10px}
+
+/* the provider list: one object per provider, not two boxes side by side */
+.sxplist{gap:8px}
+.sxpopen{background:var(--card);border-color:var(--line-soft);border-radius:12px;
+  padding:13px 14px;gap:12px}
+.sxpopen:hover{background:var(--card);border-color:var(--acc);
+  box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.sxpopen .on{font-size:13.5px;font-weight:650}
+.sxpopen .od{font-size:12px;margin-top:4px}
+.sxprow.on .sxpopen{border-color:var(--acc);background:var(--acc-bg)}
+.sxdef{align-self:center}
+
+/* state is the one place colour is spent */
+.sxstate{border-radius:12px;padding:12px 14px;gap:10px;background:var(--card);
+  border-color:var(--line-soft)}
+.sxstate.p-ok{background:var(--ok-bg);border-color:var(--ok-line)}
+.sxstate.p-warn{background:var(--warn-bg);border-color:var(--warn-line)}
+.sxstate.p-bad{background:var(--block-bg);border-color:var(--block-line)}
+.sxstateline{font-size:13px}
+
+/* a provider's own switches */
+.sxsws{gap:8px}
+.sxsw{background:var(--card);border-color:var(--line-soft);border-radius:12px;
+  padding:12px 14px;gap:12px}
+.sxsw:hover{border-color:var(--acc)}
+.sxdet summary{font-size:12px;color:var(--faint)}
+.sxdet summary:hover{color:var(--acc)}
+
+
+/* ── the AI tool rows under Updates ── */
+.sxtool{padding:2px 0}
+.sxlog{margin:7px 0 0;padding:9px 10px;background:var(--inset);border:1px solid var(--line-soft);
+  border-radius:7px;font:11px/1.5 var(--mono);color:var(--muted);
+  white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto}
+
+/* ══════════════ Usage: every provider on one page ══════════════════════════
+   One card per provider, each with its account, its plan and a bar per window.
+   The bars reuse .urow/.ubar so this page and the composer popover cannot
+   drift apart visually. */
+.ualist{display:flex;flex-direction:column;gap:10px}
+.uacard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.uahead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.uaic{flex:none;width:22px;height:22px;border-radius:6px;background:var(--acc-bg);
+  color:var(--acc);display:inline-flex;align-items:center;justify-content:center;
+  font:600 11px/1 var(--sans)}
+.uaname{font-size:13px;font-weight:600;color:var(--ink)}
+.uaacct{font:400 11px/1 var(--sans);color:var(--muted);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;max-width:26ch}
+.uaplan{margin-left:auto}
+.uabody{margin-top:4px}
+.uanote{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
+.uastale{margin:4px 0 0;font:400 11px/1.45 var(--sans);color:var(--warn)}
+.uadet{margin-top:7px}
+.uadet summary{cursor:pointer}
+.uaextra{margin-top:12px;border:1px solid var(--line-soft);border-radius:9px;padding:10px 12px}
+.uaxhead{font:600 11px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:7px}
+
+/* ══════════════ Setup: panels, rows, fields, marks ═════════════════════════
+   Owner, 2026-09-14: "the way it looks could be improved by a good deal ...
+   make it a bit text-light". So: fewer words on screen and more structure. A
+   panel is one object with hairline rows inside it, a row is a label and a
+   value, a field is a label above its control, and every section card carries its
+   own mark. Type is lighter throughout: labels carry the weight, values do not. */
+.sxcico{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:var(--acc-bg);color:var(--acc);margin-top:1px}
+.sxcico svg{width:16px;height:16px}
+.sxcard:hover .sxcico{background:var(--acc);color:var(--on-acc)}
+
+.sxpanel{background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+  overflow:hidden;max-width:760px}
+.sxpanel>*+*{border-top:1px solid var(--line-soft)}
+
+/* label / value, the workhorse row */
+.sxkv{display:flex;align-items:baseline;gap:14px;padding:11px 14px;font-size:12.5px}
+.sxk{flex:none;min-width:116px;color:var(--muted)}
+.sxv{flex:1;min-width:0;color:var(--ink);word-break:break-word}
+.sxv code{background:transparent;border:0;padding:0;font-size:12px;color:var(--ink)}
+.sxv.ok{color:var(--ok)}
+.sxv.bad{color:var(--block)}
+
+/* a control with its own label, aligned with every other control on the screen */
+.sxfield{padding:13px 14px;display:block}
+.sxflab{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:650;margin-bottom:7px}
+.sxfrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sxfrow input[type="text"],.sxfrow input[type="password"]{flex:1;min-width:220px}
+.sxhint{margin:8px 0 0;font-size:11.5px;color:var(--muted);line-height:1.5;max-width:62ch}
+
+/* the radio rows inside a panel (Chats shown) */
+.sxopt{display:flex;gap:11px;width:100%;text-align:left;cursor:pointer;color:inherit;
+  font:inherit;background:transparent;border:0;padding:12px 14px;align-items:flex-start}
+.sxopt:hover{background:var(--inset)}
+.sxopt:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.sxopt .rd{flex:none;width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);
+  margin-top:2px}
+.sxopt[aria-checked="true"] .rd{border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--acc)}
+.sxoi{min-width:0;display:block}
+.sxoi b{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.sxoi .sxhint{margin-top:3px}
+
+/* every control on these screens is the same height, so a column of them lines up */
+.sxpanel select,.sxpanel input[type="text"],.sxpanel input[type="password"],
+.sxfrow select,.sxfrow input{height:30px;font:inherit;font-size:12.5px;color:var(--ink);
+  background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:0 9px}
+.sxpanel select:focus-visible,.sxpanel input:focus-visible,
+.sxfrow select:focus-visible,.sxfrow input:focus-visible{outline:2px solid var(--acc);
+  outline-offset:1px}
+
+/* a smaller empty state, for screens whose emptiness is ordinary */
+.zero.zsm{padding:22px 18px;max-width:560px}
+.zero.zsm h4{font-size:15px;margin:0 0 5px}
+.zero.zsm p{font-size:12.5px;color:var(--muted);margin:0}
+.zero.zsm details{margin-top:10px}
+.zero.zsm summary{cursor:pointer;font-size:12px;color:var(--faint)}
+.zero.zsm summary:hover{color:var(--acc)}
+.zero.zsm details p{margin-top:6px}
+
+/* Alignment, everywhere on these screens (owner: "the drop down is not aligned
+   properly for every each one of them"). One height, one radius, one ground for
+   every control the Setup screens draw, whether or not it sits in a panel. */
+.sxsec select,.sxsec input[type="text"],.sxsec input[type="password"],
+.sxsec input[type="number"],.sxstate select{height:30px;font:inherit;font-size:12.5px;
+  color:var(--ink);background:var(--inset);border:1px solid var(--line);border-radius:8px;
+  padding:0 9px;max-width:100%}
+.sxsec select:hover,.sxsec input:hover{border-color:var(--acc)}
+.sxsec label{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
+  color:var(--muted)}
+
+/* The provider page's rows, in the same shape as a panel's, so a page that mixes
+   both does not read as two designs. */
+.sxsec .kv{display:flex;align-items:baseline;gap:14px;padding:11px 14px;font-size:12.5px;
+  background:var(--card);border:1px solid var(--line-soft);border-radius:10px;margin:0 0 6px;
+  max-width:760px}
+.sxsec .kv b{flex:none;min-width:116px;font-weight:400;color:var(--muted)}
+.sxsec .kv span{flex:1;min-width:0;color:var(--ink);word-break:break-word}
+.sxsec .kv code{background:transparent;border:0;padding:0;font-size:12px}
+.sxmore{background:none;border:0;padding:0;font:inherit;font-size:11.5px;color:var(--acc);
+  cursor:pointer;text-decoration:underline}
+.sxmore:hover{color:var(--ink)}

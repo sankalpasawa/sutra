@@ -289,6 +289,126 @@ function codexApplyState(r){
   return applied;
 }
 
+/* ── every provider's usage, and the AI tools ───────────────────────────────
+   Two routes that a server older than this build does not have. BOTH failures
+   are recorded as a reason rather than as an empty answer, because the screens
+   render them differently: "not read yet" says Reading…, a recorded error says
+   "this server does not serve it" and falls back to what the old screen showed.
+   A 404 must never reach the operator as a blank page.
+
+   Neither is fetched on load. They are lazy like Git, fired from openScreen and
+   from the section that renders them, so opening any other screen costs
+   nothing. */
+async function loadUsageAll(force){
+  if (S.usageAll && !force) return;
+  /* `force` bypasses BOTH guards, the way loadCodexAuth's does: a forced
+     re-read follows a change, so the answer still in flight is precisely the
+     stale one. Without this a never-settling call would wedge the route. */
+  if (S.usageAllBusy && !force) return;
+  S.usageAllBusy = true;
+  try {
+    const r = await apiGet("/api/usage/all");
+    /* A 200 whose shape this build does not recognise is NOT an answer. Kept as
+       an error so the screen falls back instead of drawing an empty page. */
+    if (r && Array.isArray(r.providers)){ S.usageAll = r; S.usageAllError = null; }
+    else { S.usageAll = null; S.usageAllError = "the all-provider usage route answered without a provider list"; }
+  } catch (e){
+    S.usageAll = null; S.usageAllError = e.message;
+  } finally { S.usageAllBusy = false; }
+  render();
+}
+
+async function loadProviderTools(force){
+  if (S.provTools && !force) return;
+  if (S.provToolsBusy && !force) return;   /* same rule as loadUsageAll above */
+  S.provToolsBusy = true;
+  try {
+    const r = await apiGet("/api/providers/tools");
+    /* Accepts the bare list SPEC F describes, and a {tools:[...]} envelope,
+       because one of those is what a wrapper would add later and neither is
+       worth a blank screen. */
+    const list = Array.isArray(r) ? r : (r && Array.isArray(r.tools) ? r.tools : null);
+    if (list){ S.provTools = list; S.provToolsError = null; }
+    else { S.provTools = null; S.provToolsError = "the AI tool route answered without a list"; }
+  } catch (e){
+    S.provTools = null; S.provToolsError = e.message;
+  } finally { S.provToolsBusy = false; }
+  render();
+}
+
+/* One tool's update. The LOG IS ALWAYS KEPT, success or failure: an update that
+   reports "done" and changed nothing is the case an operator most needs to read,
+   and the server refuses while a chat is running for that provider -- which
+   arrives here as an error message and must be shown, not swallowed. */
+async function updateProviderTool(id){
+  if (S.toolBusy) return;
+  S.toolBusy = id; S.toolLog = null; render();
+  try {
+    const r = await apiPost("/api/providers/tools/" + encodeURIComponent(id) + "/update", {});
+    S.toolLog = { id, ok: r && r.ok !== false, log: (r && r.log) || "",
+                  version_before: r && r.version_before, version_after: r && r.version_after };
+  } catch (e){
+    S.toolLog = { id, ok:false, log: e.message };
+  }
+  S.toolBusy = null;
+  /* Re-read rather than assuming the update moved the version -- the same rule
+     installUpdate() follows for Sutra's own components. */
+  try { await loadProviderTools(true); } catch (e){ render(); }
+}
+
+/* What a Settings section needs before it can draw. Called when a section is
+   OPENED, not when Settings is: the overview reads only what is already in
+   hand, so landing on it costs no request at all.
+
+   force=true on usage for the reason openScreen already forced it: utilization
+   moves while you are not looking, and a stale percentage is the one number
+   this screen must not show. The tools list is NOT forced -- a version number
+   does not drift between two clicks, and the update action re-reads it itself. */
+/* Move to a Settings section (or back to the overview with null). A FUNCTION
+   rather than three inline click bodies, so the one rule that matters -- the
+   section lives in S and never in S.ui, so it is never persisted -- has exactly
+   one place to be wrong, and can be driven in a test without a DOM. */
+function openSettingsSection(sec){
+  S.setSection = sec || null;
+  S.setError = null; S.setOk = null;
+  settingsSectionLoad(S.setSection);
+  render();
+}
+
+/* Write one provider option. The POST carries the WHOLE provider_settings map
+   with this one key changed, never a bare key: the route replaces what it is
+   given, so sending one key would drop every other provider's options. */
+function saveProviderOption(pid, key, next){
+  if (!pid || !key) return Promise.resolve();
+  const all = JSON.parse(JSON.stringify((SETTINGS || {}).provider_settings || {}));
+  all[pid] = Object.assign({}, all[pid] || {});
+  all[pid][key] = !!next;
+  S.setBusy = "pset:" + pid + ":" + key; S.setError = null; S.setOk = null; render();
+  return apiPost("/api/settings", { provider_settings: all })
+    .then(r=>{ SETTINGS = r.settings || SETTINGS;
+               S.setOk = key + " is now " + (next ? "on" : "off") + " for "
+                       + providerLabel(pid) + "."; })
+    .catch(e=>{ S.setError = e.message; })
+    .then(()=>{ S.setBusy = null; render(); });
+}
+
+function settingsSectionLoad(sec){
+  if (!sec) return;
+  if (sec === "usage"){
+    if (typeof loadUsageAll === "function") loadUsageAll(true);
+    if (typeof loadUsage === "function") loadUsage(true);   /* the fallback + extra credits */
+    return;
+  }
+  if (sec === "updates"){ loadProviderTools(false); return; }
+  if (sec === "providers" || sec.indexOf("provider:") === 0){
+    loadProviderTools(false);              /* installed versions live here */
+    if (typeof loadCodexAuth === "function") loadCodexAuth(false);
+    /* A provider page states that provider's usage in one line. Cheap because
+       both loaders reuse what they already hold unless forced. */
+    if (sec.indexOf("provider:") === 0 && typeof loadUsageAll === "function") loadUsageAll(false);
+  }
+}
+
 /* Is there nothing to run, and could Sutra fix that? Read off the row rather
    than off S.codexAuth: `no_binary` is the sign-in probe's word for the same
    machine state, but the ROW is what the install has to move, and after an
@@ -766,6 +886,34 @@ function wire(){
   wireDivider();
 
   /* ── settings: every control posts, and reports the server's refusal ── */
+  /* ── Settings navigation (overview -> section -> provider page) ──────────
+     S.setSection is IN-MEMORY ONLY. It is never written into S.ui, so
+     saveLayout() cannot persist it and a reload lands on the overview. That is
+     the whole "never opens on the last thing you had open" mechanism; putting
+     it in S.ui would silently undo the change. */
+  scBody.querySelectorAll("[data-setsec]").forEach(b=>b.onclick=()=>
+    openSettingsSection(b.dataset.setsec || null));
+  scBody.querySelectorAll("[data-setback]").forEach(b=>b.onclick=()=>
+    openSettingsSection(b.dataset.setback || null));
+  scBody.querySelectorAll("[data-provpage]").forEach(b=>b.onclick=()=>
+    openSettingsSection("provider:" + b.dataset.provpage));
+  /* "More" on a capped server sentence reveals the rest in place. No state and
+     no re-render: the paragraph is already on the page, hidden. */
+  scBody.querySelectorAll("[data-sxmore]").forEach(b=>b.onclick=()=>{
+    const p = b.closest("p"); const rest = p && p.nextElementSibling;
+    if (rest && rest.classList.contains("sxmorep")){ rest.hidden = false; b.remove(); }
+  });
+
+  /* One provider switch, from provider_settings_schema. */
+  scBody.querySelectorAll("[data-provopt]").forEach(b=>b.onclick=()=>
+    saveProviderOption(b.dataset.provopt, b.dataset.provoptkey,
+                       b.getAttribute("aria-checked") !== "true"));
+
+  /* ── one AI tool's update (Settings -> Updates) ── */
+  scBody.querySelectorAll("[data-toolupdate]").forEach(b=>b.onclick=()=>{
+    if (b.disabled) return;
+    updateProviderTool(b.dataset.toolupdate); });
+
   /* ── updates ── */
   scBody.querySelectorAll("[data-upd]").forEach(b=>b.onclick=()=>{
     const what = b.dataset.upd;
@@ -2386,16 +2534,26 @@ function openScreen(id){
      may have written it since the last look (the v1 "watcher"). Same guard. */
   if (id === "modules" && typeof loadModules === "function") loadModules(true);
 
+  /* OPENING SETTINGS ALWAYS LANDS ON THE OVERVIEW (founder, 2026-09-14). The
+     section is in-memory state, so a reload already lands there; this is the
+     other entry -- clicking the rail row from inside a section is "open
+     Settings", not "stay where I was". */
+  if (id === "settings") S.setSection = null;
   /* force=true: unlike a repo, utilization moves while you are not looking, and
      a stale percentage is the one number this screen must not show. The 60s
      server cache is what keeps re-opening cheap. */
-  /* "settings" too: Usage renders as a section of the AI Provider screen,
-     so opening that screen has to fetch it -- otherwise the section would
-     sit on "Reading usage..." until something else happened to load it. */
+  /* "settings" too: the overview's Usage card states the highest window in
+     use, and the Usage section falls back to this payload on a server with no
+     /api/usage/all -- so opening Settings has to fetch it, or the card would
+     read "not read yet" until something else happened to load it. */
   if (id === "usage" || id === "settings") loadUsage(true);
-  /* Codex's sign-in state, for the same reason usage is fetched here: the row
-     renders on this screen and nothing else would ever ask for it. Spawns
-     `codex login status`, hence lazy -- see loadCodexAuth. */
+  /* The all-provider figures behind the same card. NOT forced: the route is new
+     and may not exist, and re-asking a 404 on every open buys nothing. */
+  if (id === "settings") loadUsageAll(false);
+  /* Codex's sign-in state. Still fetched on the Settings open rather than on
+     the Codex page alone, because wire()'s codexNeedsProbe() asks for it on
+     this screen either way and an unanswered probe is a permanent
+     "Reading the Codex sign-in…". Spawns `codex login status`, hence lazy. */
   if (id === "settings") loadCodexAuth(true);
   if (id === "evals") loadEvals(false);     /* lazy, like Git */
   if (id === "routines"){ loadRoutines(false); loadProposals(false); }
@@ -2673,6 +2831,13 @@ async function loadRuntime(){
     SETTINGS = settings.settings || null;
     PERM_MODES = settings.permission_modes || [];
     MODELS_BY_PROVIDER = settings.models_by_provider || {};
+    /* The rich catalogue and the plain access levels, beside the flat list rather
+       than instead of it: an older server sends neither, and every reader treats
+       an empty value as "not fetched" and falls back to models_by_provider and
+       permission_modes_by_provider (01-state.js). */
+    MODEL_CATALOG_BY_PROVIDER = settings.model_catalog_by_provider || {};
+    ACCESS_OPTIONS = settings.access_options || [];
+    ACCESS_BY_PROVIDER = settings.access_by_provider || {};
     TURN_OPTIONS_BY_PROVIDER = settings.turn_options_by_provider || {};
     PERM_MODES_BY_PROVIDER = settings.permission_modes_by_provider || {};
     CLAUDE_ACCOUNT = settings.claude_account || null;

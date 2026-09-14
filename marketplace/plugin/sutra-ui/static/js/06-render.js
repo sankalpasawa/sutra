@@ -137,6 +137,206 @@ function agentDetailHtml(meta, messages){
   return `${head}${taskHtml}<div class="agsteps">${stepsHtml}</div>`;
 }
 
+/* ══════════════════ the timeline understands every tool ════════════════════
+   Every tool call used to render as one flat line: a pill with the tool's name
+   and, if there was one, its input. A subagent, a shell command and a file edit
+   were the same picture. The frame set on the wire is unchanged (no old client
+   breaks); what changed is that a `tool` frame now carries `kind` / `title` /
+   `detail` / `meta`, and this draws a different CARD per kind.
+
+   THE SAME CLASSIFIER RUNS OVER STORED HISTORY. A chat from three months ago
+   has no frames at all — only `tool_use` blocks with a tool NAME — so the name
+   goes through the same table (02-helpers' toolKindOf) and gets the same cards,
+   with no migration of anything on disk.
+
+   THREE RULES THIS MUST NOT BREAK:
+     · an unknown or missing kind renders AT LEAST as well as it did before —
+       the name pill and the input line are still there, under `other`;
+     · the output expander keeps its data-toolout key, so an open output stays
+       open across the rebuild that follows a frame;
+     · a shell command keeps its terminal re-open control.
+   This function is DEFINED HERE rather than in 05-chat.js, and overrides the
+   flat renderer there: 06-render.js is loaded after it, so both the replayed
+   transcript and the subagent viewer pick this one up. */
+function _tcBase(p){
+  const s = String(p == null ? "" : p).replace(/\/+$/, "");
+  const b = s.split("/").filter(Boolean).pop();
+  return b || s;
+}
+/* +3 −1, when the adapter measured it. Absent rather than zero when it did
+   not: "+0 −0" is a claim that nothing changed, which is a different fact from
+   "nobody counted". */
+function _tcDiff(meta){
+  const a = meta.lines_added, r = meta.lines_removed;
+  if (typeof a !== "number" && typeof r !== "number") return "";
+  return "+" + (a || 0) + " −" + (r || 0);
+}
+/* What one call should SAY: a kind, a short label for the card head, the one
+   thing worth naming, and at most one line under it. Everything is taken from
+   what the adapter sent (title / detail / meta) and falls back to what a flat
+   row always had (name / input), so no field here is invented. */
+function toolCardParts(c){
+  const kind = toolKindFor(c);
+  const meta = (c && c.meta && typeof c.meta === "object") ? c.meta : {};
+  const name = String((c && c.name) || "tool");
+  const input = c && c.input != null ? String(c.input) : "";
+  const title = c && c.title ? String(c.title) : "";
+  const detail = c && c.detail ? String(c.detail) : "";
+  const p = { kind, label: TOOL_KIND_LABEL[kind] || "Tool", title, detail, extra: "", code: "" };
+  switch (kind){
+    case "subagent":
+      if (meta.agent) p.label = "Subagent · " + meta.agent;
+      p.title = title || input || name;
+      p.detail = detail || (typeof meta.steps === "number"
+        ? meta.steps + " step" + (meta.steps === 1 ? "" : "s") : "");
+      /* THE NESTED STEPS, when the adapter captured them. Each is one line —
+         what ran, and its own one-line summary. The agent's RESULT is its
+         output, which the expander below already carries, so it is not
+         duplicated here. */
+      if (Array.isArray(meta.steps_list) && meta.steps_list.length){
+        p.extra = `<ol class="tcsteps">${meta.steps_list.slice(0, 20).map(x =>
+          `<li><span class="tcsn">${esc(String((x && x.name) || x || ""))}</span>${
+            x && x.summary ? `<span class="tcss">${esc(String(x.summary))}</span>` : ""}</li>`
+          ).join("")}</ol>`;
+      }
+      break;
+    case "command":
+      p.title = title || (c && c.command) || input || name;
+      p.detail = detail || (typeof meta.exit_code === "number"
+        ? "exit " + meta.exit_code : "");
+      break;
+    case "file_edit":
+    case "notebook":
+      p.title = title || _tcBase(meta.path) || input || name;
+      p.detail = detail || _tcDiff(meta) || (meta.path ? String(meta.path) : "");
+      break;
+    case "file_read":
+      p.title = title || _tcBase(meta.path) || input || name;
+      p.detail = detail || (typeof meta.lines === "number"
+        ? meta.lines + " line" + (meta.lines === 1 ? "" : "s") : "")
+        || (meta.path ? String(meta.path) : "");
+      break;
+    case "search":
+      p.title = title || meta.pattern || input || name;
+      p.detail = detail || (typeof meta.matches === "number"
+        ? meta.matches + " match" + (meta.matches === 1 ? "" : "es") : "");
+      break;
+    case "web_search":
+      p.title = title || meta.query || input || name;
+      p.detail = detail || (typeof meta.results === "number"
+        ? meta.results + " result" + (meta.results === 1 ? "" : "s") : "");
+      break;
+    case "web_fetch":
+      p.title = title || meta.url || input || name;
+      p.detail = detail || (meta.status != null ? String(meta.status) : "");
+      break;
+    case "plan":
+      p.title = title || "Plan put up for approval";
+      p.detail = detail || input;
+      break;
+    case "todo":
+      p.title = title || "To-do list updated";
+      p.detail = detail || (typeof meta.done === "number" && typeof meta.total === "number"
+        ? meta.done + " of " + meta.total + " done" : "");
+      if (Array.isArray(meta.todos) && meta.todos.length){
+        p.extra = `<ul class="tctodos">${meta.todos.slice(0, 20).map(x =>
+          `<li class="${esc(String((x && x.status) || "pending"))}">${
+            esc(String((x && (x.content || x.text)) || x || ""))}</li>`).join("")}</ul>`;
+      }
+      break;
+    case "mcp": {
+      /* mcp__<server>__<tool>: the server is who is being trusted, so it is
+         what the card head names. Anything that does not split keeps the whole
+         name, rather than being cut at a guess. */
+      const bits = name.split("__").filter(Boolean);
+      if (bits.length >= 3) p.label = "MCP · " + bits[1];
+      p.title = title || (bits.length >= 3 ? bits.slice(2).join("__") : name);
+      p.detail = detail || input;
+      break;
+    }
+    case "compaction":
+      p.title = title || "Earlier conversation compacted";
+      p.detail = detail || (typeof meta.tokens_saved === "number"
+        ? meta.tokens_saved + " tokens dropped" : "");
+      break;
+    default:
+      /* `other`, and every kind this build does not recognise. EXACTLY what a
+         flat row always showed: the tool's own name, and its input verbatim. */
+      p.label = name;
+      p.title = title;
+      p.code = input;
+      p.detail = detail;
+  }
+  /* Any card may still carry the raw input as a code line when it has nothing
+     else to show — better a verbatim argument than an empty card. */
+  if (!p.code && !p.title && input) p.code = input;
+  return p;
+}
+/* One call, one card. `opts.live` switches on the lifecycle a streaming turn
+   has and a replayed one does not: the running dot, the elapsed/verdict, and
+   the toolOpen key (live rows are keyed by the server's tool_use id, replayed
+   ones by the "c:" key the transcript renderer has always used — changing
+   either would silently reopen the wrong output). */
+function toolCardHtml(c, i, opts){
+  const live = !!(opts && opts.live);
+  const p = toolCardParts(c);
+  const key = live ? String(c.id || ("r:" + i))
+                   : "c:" + (c.id || (c.name + ":" + i));
+  const open = !!(S.toolOpen && S.toolOpen[key]);
+  const out = String(c.output == null ? "" : c.output);
+  const bad = live ? (c.ok === false) : !!c.is_error;
+  const state = live
+    ? (c.running ? "run" : (c.ok === false ? "bad" : (c.ok === null ? "unk" : "ok")))
+    : (c.is_error ? "bad" : "ok");
+  const btn = out.length ? `<button class="tc-btn" type="button" data-toolout="${esc(key)}"
+      aria-expanded="${open?"true":"false"}">${open ? "hide" : (bad ? "error" : "output")}</button>` : "";
+  /* Shell only, and only when the server sent the command — this is what
+     re-opens the terminal with it typed in, unexecuted. */
+  const term = (live && c.command) ? `<button class="tc-btn tterm" type="button"
+      data-toolterm="${esc(c.id || "")}"
+      title="Open the terminal with this command typed in, ready to run.
+It is NOT executed for you — press Enter yourself once you have read it.">terminal</button>` : "";
+  const verdict = live ? `<span class="tcv">${c.startedAt
+      ? esc(fmtDur((c.endedAt || Date.now()) - c.startedAt)) + " · " : ""}${
+      c.running ? "running" : c.ok === false ? "error" : c.ok === null ? "unknown" : "done"}</span>` : "";
+  const caller = (c.caller && c.caller !== "direct")
+    ? `<span class="pill p-acc">${esc(c.caller)}</span>` : "";
+  const body = (out.length && open)
+    ? `<pre class="tc-outbody${bad?" err":""}">${esc(out)}</pre>` : "";
+  return `<div class="toolcall tcard k-${esc(p.kind)} ${state}" data-toolkind="${esc(p.kind)}">
+      <span class="tcdot" aria-hidden="true"></span>
+      <span class="tc-name pill ${bad?"p-block":"p-acc"}">${esc(p.label)}</span>${
+      p.title ? `<span class="tct">${esc(p.title)}</span>` : ""}${
+      p.code ? `<code class="tc-in">${esc(p.code)}</code>` : ""}${
+      p.detail ? `<span class="tcd">${esc(p.detail)}</span>` : ""
+      }${btn}${term}${caller}${verdict}${p.extra}${body}</div>`;
+}
+/* The whole tool block for one turn. Accepts BOTH shapes on purpose — the
+   replayed transcript's `calls` and a live turn's `toolRuns` — because they
+   describe the same events and two renderers would drift apart within a week.
+   Capped the way the flat rows were: on a long fan-out the ones worth reading
+   are the recent ones, and the line says how many are not drawn. */
+const TOOLCARD_WINDOW = 12;
+function toolCallsHtml(calls, opts){
+  if (!calls || !calls.length) return "";
+  const live = !!(opts && opts.live);
+  const hidden = calls.length - TOOLCARD_WINDOW;
+  const head = (live && hidden > 0)
+    ? `<div class="toolcall tcard k-other unk"><span class="tcdot" aria-hidden="true"></span>
+        <span class="tc-name pill p-mut">${hidden} earlier tool call${
+          hidden === 1 ? "" : "s"}</span><span class="tcd">not shown</span></div>` : "";
+  const drawn = live && hidden > 0 ? calls.slice(-TOOLCARD_WINDOW) : calls;
+  const off = live && hidden > 0 ? hidden : 0;
+  return `<div class="toolcalls toolcards">${head}${
+    drawn.map((c, i) => toolCardHtml(c, i + off, opts)).join("")}</div>`;
+}
+/* The live turn's tool block, for the timeline. One call, so the hook in
+   turnResponse is a single expression rather than an inline template. */
+function toolTimelineHtml(t){
+  const runs = (t && t.toolRuns) || [];
+  return toolCallsHtml(runs, { live: true });
+}
+
 /* The composer's PANE menu (chat-surface chrome, founder 2026-08-18): every
    control the pane header used to carry, in one place. Namespaced paneMenu /
    data-panemenu on purpose -- S.sessMenu + sessMenuHtml() already belong to the
@@ -245,6 +445,11 @@ function paneMenuHtml(s){
      to have to guess at -- so the absolute path the provider actually receives
      is one hover away. Added as a fourth parameter so every existing
      three-argument call renders byte-identical markup. */
+  /* A heading, not a control. The menu grew to ten rows of four different
+     kinds; grouping them is what makes it readable without taking anything
+     away (owner, 2026-09-14: "the three dots I think you need to change a few
+     things"). */
+  const sec = (label) => `<div class="msec">${esc(label)}</div>`;
   const row = (key, label, val, title) => `<button class="mrow" type="button" data-mrow="${key}"${
       title ? ` title="${esc(title)}"` : ""}>
       <span class="mk">${label}</span><span class="mv">${val}</span><span class="ma">›</span></button>`;
@@ -282,6 +487,26 @@ function paneMenuHtml(s){
      and a menu role promises arrow-key navigation this popover does not have
      (refuter 2026-08-23). A labelled group is honest and valid. */
   return `<div class="upop panemenu" id="panemenu-${esc(s.id)}" role="group" aria-label="Chat options — ${esc(s.title)}">
+    ${sec("What answers")}
+    ${/* ── Model ────────────────────────────────────────────────────────────
+         ONE ROW, AND IT OPENS THE REAL PICKER (owner, 2026-09-14: "when I click
+         on the three dot that is where I should see this model option"). What
+         used to be here was three separate controls -- a Chat AI Provider
+         select, a Permissions select and a flat Model select -- which is how a
+         menu ends up with three answers to one question. The picker this row
+         opens carries the provider tabs (choosing a model under another tab is
+         what switches this chat, exactly as the old select did), that
+         provider's models, More models, the thinking levels THAT model
+         declares, and Fast mode where the provider has it.
+
+         ACCESS IS NOT HERE. It stays on the composer, under the box, because it
+         is the one setting you change while typing rather than while
+         configuring (same owner, same message). */
+       !mpid ? "" : `<button class="mrow" type="button" data-mdlmenu="${esc(s.id)}"
+          aria-haspopup="true" aria-expanded="${S.mdlMenu===s.id?"true":"false"}"
+          title="Provider, model, thinking level and fast mode — applies to the next message"
+        ><span class="mk">Model</span><span class="mv">${esc(composerModelLabel(s, mpid))}</span><span class="ma">›</span></button>`}
+    ${sec("This chat")}
     ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))) + (()=>{
         /* the repo bar's facts, one click away instead of always on screen */
         const r = S.repo && S.repo[s.id]; if (!r || !r.available) return "";
@@ -312,49 +537,6 @@ function paneMenuHtml(s){
         return row("prs", "Pull requests", n != null ? `${n} open` : "on " + esc(r.remote))
              + (r.detached ? "" : row("pr", "Create PR", "propose — nothing is pushed until you approve"));
       })()}
-    ${(()=>{ /* ── Chat AI Provider ─────────────────────────────────────────
-         THIS CHAT ONLY. Settings' Primary Provider still governs new chats and
-         every chat that never asked for anything else; nothing in this row
-         touches it (see switchChatProvider, which is what the handler calls).
-
-         NO STATE OF ITS OWN. The selection is `mpid` — paneProvider, the same
-         expression the Model, Permissions, Turn options and Usage rows read —
-         so the row cannot disagree with what the chat is about to run, and a
-         "using Codex, ..." typed in the composer shows up here without this
-         control being told about it. It sits FIRST because the four rows below
-         it are all answers about the provider it names.
-
-         ONLY READY-TO-USE PROVIDERS ARE OFFERED. `runnable` is the server's own
-         verdict on the /api/providers row (installed AND configured AND this
-         build has an adapter); offering a name that cannot start is the exact
-         failure providers.py was written to prevent.
-
-         Two omissions, both for the same reason the Model row has its own: an
-         EMPTY provider table means NOT FETCHED, never "nothing is ready", so a
-         row built from it would offer nothing at all; and with no `mpid` there
-         is no honest answer to which provider this chat is on, and a select
-         renders its first option when nothing matches — inventing one. */
-       const usable = (PROVIDERS || []).filter(p => p.runnable);
-       if (!usable.length || !mpid) return "";
-       /* RUNNING, BUT NO LONGER READY. A provider can be signed out or
-          uninstalled after the socket resolved it. A select whose value is
-          absent from its options silently displays the FIRST one, which would
-          name a provider this chat is not on — so the current one is listed
-          disabled instead, the same way the Model row carries a catalogued
-          model it cannot select. */
-       const opts = (usable.some(p => p.id === mpid) ? usable
-                     : [{ id: mpid, name: providerLabel(mpid), off: true }].concat(usable))
-         .map(p => `<option value="${esc(p.id)}"${p.off ? " disabled" : ""}${
-              p.id === mpid ? " selected" : ""}>${esc(p.name)}${
-              p.off ? " — no longer ready" : ""}</option>`).join("");
-       return `<label class="mrow"><span class="mk">Chat AI Provider</span><span class="mv"><select class="provsel" data-chatprov="${esc(s.id)}" aria-label="AI provider for this chat"
-            title="This chat only — Settings keeps the default for new chats">${opts}
-      </select></span><span class="ma"></span></label>`;
-     })()}
-    <label class="mrow"><span class="mk">Permissions</span><span class="mv">${permSelect(dpid)}</span><span class="ma"></span></label>
-    ${!mlist.length ? "" : `<label class="mrow"><span class="mk">Model</span><span class="mv"><select class="modelsel" data-model="${esc(s.id)}" aria-label="Model for this session"
-            title="Model — applies to the next message">${mopts}
-      </select></span><span class="ma"></span></label>`}
     ${(()=>{ /* THIS PANE'S provider, same rule as the Model row above. */
        /* `s.id` is new here and only the "tokens" kind reads it -- token counts
           belong to THIS pane's last turn, not to the app. */
@@ -380,11 +562,383 @@ function paneMenuHtml(s){
           DeepSeek pane every one of the five was collected and discarded: ACP's
           per-turn request has no options field for them to travel in. */
        !turnOptsFor(dpid).size ? "" :
-       row("opts", "Turn options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+       row("opts", "Message options", S.optsOpen[s.id] ? "hide effort, budget and tool limits" : "effort, budget and tool limits for the next message")}
+    ${sec("This pane")}
     ${row("route", "Routing", (S.sessTab[s.id]||"chat")==="route" ? "back to the chat" : "departments this session touched")}
     ${row("fold", "Fold", "collapse this pane")}
     ${row("close", "Close", "close this session")}
   </div>`;
+}
+
+/* ══════════════════ the message box's own two controls ══════════════════════
+   bb's shape, ported: what will answer, and what it may do, both sitting ON the
+   composer instead of three clicks down a menu.
+
+     MODEL CHIP   one button that reads "Claude · Opus 5 · High". Its menu
+                  carries provider tabs, that provider's models (with "More
+                  models" for the older pinned ids and aliases), the thinking
+                  levels THAT model declares, and a Fast switch only where the
+                  catalogue says the provider has one.
+     ACCESS CHIP  under the box: Read only / Accept edits / Approve for me /
+                  Full access, minus whatever this provider cannot do, with any
+                  legacy stored mode kept under Advanced.
+
+   THE PANE MENU'S OWN Model and Permissions rows STAY. They are not a second
+   source of truth -- both surfaces read and write the same state (S.model /
+   S.perm / SETTINGS.model_by_provider), so they are two doors into one value --
+   and removing them would break saved muscle memory and the markup contract
+   another workstream's tests pin. The chip is the primary surface; the row is
+   the same setting, still where it was. */
+
+/* WHICH MODEL THIS PANE WILL SEND, validated against the provider it will send
+   it to. The raw per-pane override (S.model[sid]) is NOT per provider -- it was
+   written by the pane menu's picker, which only ever showed one provider's list
+   -- so after a switch it can hold an id the new provider has never heard of.
+   Ignoring a stale override is what makes "switch away and back restores the
+   model" true: the stored model_by_provider entry for the provider takes over.
+   Only ever ignored when the catalogue is LOADED and genuinely lacks the id;
+   an unfetched catalogue changes nothing. */
+function paneModelValid(pid, id){
+  if (!id) return true;
+  const c = modelCatalogFor(pid);
+  if (!c) return true;                       /* nothing known -> not our call */
+  return c.models.concat(c.more).some(m => m && (m.id || "") === id);
+}
+/* This pane's chosen model id, per provider. */
+function composerModelFor(s, pid){
+  const over = S.model[s.id];
+  if (over !== undefined && paneModelValid(pid, over)) return over;
+  return ((SETTINGS || {}).model_by_provider || {})[pid] || "";
+}
+/* The chip's closed label: who answers, which model, at what thinking level.
+   Each part is dropped when it is not known, rather than filled with a guess --
+   a chip that says "Claude" alone is honest on a boot-window paint. */
+function composerModelLabel(s, pid){
+  const model = composerModelFor(s, pid);
+  const bits = [providerLabel(pid) || pid || "Assistant"];
+  const name = modelCatalogFor(pid) ? modelNameFor(pid, model) : "";
+  if (name) bits.push(name);
+  const key = effortKeyFor(pid);
+  const eff = key ? ((S.turnOpts[s.id] || {})[key] || "") : "";
+  if (eff) bits.push(effortLabel(eff));
+  if ((S.turnOpts[s.id] || {}).service_tier === "fast") bits.push("Fast");
+  return bits.join(" · ");
+}
+/* composerModelChipHtml() LIVED HERE and is gone (2026-09-14). The chip on the
+   composer became one row inside the chat's own menu, at the owner's request, so
+   the only caller went with it. The label it drew is composerModelLabel(), which
+   the menu row uses. */
+/* One button, used for provider tabs, models, thinking levels and access
+   options -- so the four cannot drift apart visually or in their keyboard
+   behaviour. `opts.off` disables it (catalogued but not runnable here);
+   `opts.quiet` keeps the note as a tooltip only, for the narrow controls that
+   have no room for a second line. */
+function _pickBtn(cls, attr, val, label, on, note, opts){
+  const o = opts || {};
+  return `<button class="${cls}${on?" on":""}" type="button" ${o.off ? "disabled" : `${attr}="${esc(val)}"`}
+      aria-pressed="${on?"true":"false"}"${note?` title="${escAttr(note)}"`:""}
+    ><span class="pkl">${esc(label)}</span>${note && !o.quiet
+      ? `<span class="pkn">${esc(note)}</span>` : ""}</button>`;
+}
+function composerModelMenuHtml(s){
+  if (S.mdlMenu !== s.id) return "";
+  const chatPid = paneProvider(s);
+  /* THE TAB BEING BROWSED is not the chat's provider: you look at Codex's
+     models before deciding to move the chat there. Defaults to the chat's own,
+     and picking a model under another tab is what performs the switch. */
+  const pid = S.mdlTab[s.id] || chatPid;
+  /* Only providers the server says can actually start. Offering a name that
+     cannot run is the exact failure providers.py exists to prevent. An empty
+     table means NOT FETCHED, so the tabs are omitted rather than drawn empty --
+     the model list below still renders for the chat's own provider. */
+  const usable = (PROVIDERS || []).filter(p => p.runnable);
+  const tabs = usable.length > 1 ? `<div class="mdltabs" role="group"
+      aria-label="AI provider">${usable.map(p => _pickBtn("mdltab",
+        "data-mdltab", s.id + ":" + p.id, p.name, p.id === pid,
+        p.id === chatPid ? "this chat runs here" : "switches this chat to " + p.name,
+        { quiet: true })).join("")}
+    </div>` : "";
+  const cat = modelCatalogFor(pid);
+  const sel = pid === chatPid ? composerModelFor(s, pid)
+                              : (((SETTINGS || {}).model_by_provider || {})[pid] || "");
+  const opt = (m) => _pickBtn("mdlopt", "data-mdlpick", s.id + ":" + pid + ":" + (m.id || ""),
+      m.name || m.id || "Default", (m.id || "") === sel,
+      m.selectable === false ? (m.unavailable_reason || "not available here")
+                             : (m.note || ""),
+      { off: m.selectable === false });
+  const main = cat && cat.models.length
+    ? `<div class="mdllist">${cat.models.map(opt).join("")}</div>`
+    : `<p class="mdlnone">${esc(providerLabel(pid) || pid)} declares no model
+         choice — it runs whatever its CLI is configured for.</p>`;
+  /* "More models": the older pinned versions and aliases. ADDITIVE — never a
+     replacement for the main list, and absent entirely when the catalogue
+     carries none (an old backend sends the flat list only). */
+  const moreOpen = !!S.mdlMore[s.id];
+  const more = (cat && cat.more.length) ? `<button class="mdlmore" type="button"
+        data-mdlmore="${esc(s.id)}" aria-expanded="${moreOpen?"true":"false"}"
+      >${moreOpen ? "Hide" : "More models"} <span>${cat.more.length} older version${
+        cat.more.length===1?"":"s"} and aliases</span></button>${
+      moreOpen ? `<div class="mdllist more">${cat.more.map(opt).join("")}</div>` : ""}` : "";
+  /* THINKING LEVELS ARE THE SELECTED MODEL'S, never a constant: the sets differ
+     per model and an unsupported value is taken silently, so a fixed union
+     would let a turn quietly run at something other than what this says.
+     Nothing declared -> no row at all, which is what the control looked like
+     before this existed. */
+  const key = effortKeyFor(pid);
+  const efforts = key ? modelEffortsFor(pid, sel) : [];
+  const curEff = key ? ((S.turnOpts[s.id] || {})[key] || "") : "";
+  const levels = efforts.length ? `<div class="mdleff" role="group" aria-label="Thinking level">
+      <span class="mdlk">Thinking</span>
+      ${[""].concat(efforts).map(v => _pickBtn("effbtn", "data-mdleff",
+          s.id + ":" + v, v ? effortLabel(v) : "Default", curEff === v, "",
+          { quiet: true })).join("")}
+    </div>` : "";
+  /* FAST MODE ONLY WHERE THE CATALOGUE SAYS SO. It rides out as the turn
+     option `service_tier`, which the server accepts for exactly those
+     providers — so a switch drawn anywhere else would be collected and
+     dropped, which reads as a setting that took effect. */
+  const fastOn = (S.turnOpts[s.id] || {}).service_tier === "fast";
+  const fast = (cat && cat.fast) ? `<label class="mdlfast">
+      <input type="checkbox" data-mdlfast="${esc(s.id)}"${fastOn?" checked":""}/>
+      <span class="pkl">Fast mode</span>
+      <span class="pkn">answers sooner, thinks less</span></label>` : "";
+  /* The turn options that survived are REACHABLE, not on the bar: budget,
+     allow only, never, extra instructions. Codex's summary and verbosity are
+     inside the same box and are emitted for Codex alone (turnOptsHtml gates
+     every field on what the provider declares). */
+  const moreOpts = !turnOptsFor(paneDeclProvider(s)).size ? "" :
+    `<button class="mrow" type="button" data-mdlopts="${esc(s.id)}">
+      <span class="mk">More</span><span class="mv">${S.optsOpen[s.id]
+        ? "hide budget, allow only, never, extra instructions"
+        : "budget, allow only, never, extra instructions"}</span><span class="ma">›</span></button>`;
+  return `<div class="upop mdlpop" id="mdlpop-${esc(s.id)}" role="group"
+      aria-label="What answers — ${esc(s.title)}">
+    ${tabs}${main}${more}${levels}${fast}${moreOpts}
+  </div>`;
+}
+
+/* ── access, under the message box ───────────────────────────────────────── */
+/* The label for whatever mode is in force here. A legacy mode (`manual`,
+   `dontAsk`) has no plain name, so it shows its own id rather than being
+   silently relabelled as one of the four. */
+function composerAccessLabel(s, pid){
+  const mode = sessPermEffective(s.id);
+  const hit = accessForMode(pid, mode);
+  return hit ? hit.label : mode;
+}
+function composerAccessHtml(s){
+  const pid = paneDeclProvider(s);
+  if (!pid) return "";
+  const mode = sessPermEffective(s.id);
+  const hit = accessForMode(pid, mode);
+  const writes = ((PERM_MODES || []).find(m => m.id === mode) || {}).writes_files;
+  const open = S.accMenu === s.id;
+  /* CHAT-LOCAL IS STATED. The chip is the chat's own choice when it made one,
+     and the stored global otherwise — and an operator has to be able to tell
+     which, because only one of them moves when Settings changes. */
+  const local = !!(S.perm || {})[s.id];
+  return `<button class="accchip${writes?" warn":""}${local?" local":""}" type="button"
+        data-accmenu="${esc(s.id)}" aria-haspopup="true"
+        aria-expanded="${open?"true":"false"}"${
+        open ? ` aria-controls="accpop-${esc(s.id)}"` : ""}
+        title="${escAttr((hit ? hit.desc : "A permission mode saved earlier.")
+          + (local ? "\nThis chat only — Settings keeps the default."
+                   : "\nFrom Settings — shared by every chat that has not chosen."))}"
+      ><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.9" aria-hidden="true"><path d="M5 11V8a7 7 0 0114 0v3"/><rect
+           x="4" y="11" width="16" height="9" rx="2"/></svg
+      ><span class="accn">${esc(composerAccessLabel(s, pid))}</span></button>`;
+}
+function composerAccessMenuHtml(s){
+  if (S.accMenu !== s.id) return "";
+  const pid = paneDeclProvider(s);
+  const mode = sessPermEffective(s.id);
+  const opts = accessOptionsFor(pid);
+  /* WHAT THE PROVIDER CANNOT DO IS NOT OFFERED. accessOptionsFor already drops
+     anything it has no native mode for — Codex and DeepSeek have no
+     "Approve for me" — so nothing here can be chosen and then quietly run as
+     something else. */
+  const rows = opts.map(o => _pickBtn("accopt" + (o.warn ? " warn" : ""),
+      "data-accpick", s.id + ":" + o.mode, o.label, o.mode === mode, o.desc)).join("");
+  /* ── Advanced: the modes that are not in the new list but ARE on file ─────
+     `manual` and `dontAsk` remain valid stored values (routines use dontAsk),
+     and a choice someone already made must not disappear because the wording
+     got friendlier. Listed with their own ids, because that is what they are
+     called everywhere else. */
+  const known = new Set(opts.map(o => o.mode));
+  const allowed = Object.keys(PERM_MODES_BY_PROVIDER).length && pid
+    ? PERM_MODES_BY_PROVIDER[pid] : null;
+  const legacy = (PERM_MODES || [])
+    .filter(m => !known.has(m.id) && (!allowed || allowed.includes(m.id)));
+  const advOpen = !!S.accAdv[s.id] || legacy.some(m => m.id === mode);
+  const adv = legacy.length ? `<button class="accadv" type="button"
+        data-accadv="${esc(s.id)}" aria-expanded="${advOpen?"true":"false"}"
+      >Advanced <span>${legacy.length} older mode${legacy.length===1?"":"s"}</span></button>${
+      advOpen ? `<div class="acclist adv">${legacy.map(m => _pickBtn(
+        "accopt" + (m.writes_files ? " warn" : ""), "data-accpick",
+        s.id + ":" + m.id, m.id, m.id === mode,
+        m.note || "a permission mode saved before the plain names existed")).join("")}</div>` : ""}` : "";
+  return `<div class="upop accpop" id="accpop-${esc(s.id)}" role="group"
+      aria-label="What ${esc(providerLabel(pid) || "the assistant")} may do — ${esc(s.title)}">
+    <div class="acclist">${rows}</div>${adv}
+    <p class="accnote">Applies to this chat's next message. The server validates
+      it and says so if it had to run something narrower.</p>
+  </div>`;
+}
+
+/* ── the handlers for both controls ──────────────────────────────────────────
+   Delegated from ONE document listener installed on the first render, rather
+   than re-bound per node: #panes is rebuilt wholesale on every paint, and a
+   listener attached to a node that no longer exists is the classic way a
+   control silently stops working mid-stream. Installed here because this file
+   owns these controls; wire() keeps every control it already had. */
+let _composerCtlWired = false;
+function wireComposerControls(){
+  if (_composerCtlWired || typeof document === "undefined"
+      || !document.addEventListener) return;
+  _composerCtlWired = true;
+  document.addEventListener("click", composerControlClick);
+  document.addEventListener("change", composerControlChange);
+}
+/* Both popovers close when the click lands outside them — the same behaviour
+   the pane menu has, and the reason this listener is on the document. */
+function composerControlClick(e){
+  const t = e && e.target && e.target.closest ? e.target : null;
+  if (!t) return;
+  const hit = (sel) => t.closest(sel);
+  let act;
+  if ((act = hit("[data-mdlmenu]"))){
+    const sid = act.dataset.mdlmenu;
+    S.mdlMenu = S.mdlMenu === sid ? null : sid;
+    S.accMenu = null;
+    if (S.mdlMenu) S.mdlTab[sid] = paneProvider(
+      (S.sessions || []).find(x => x.id === sid) || {}) || S.mdlTab[sid];
+    render(); return;
+  }
+  if ((act = hit("[data-accmenu]"))){
+    const sid = act.dataset.accmenu;
+    S.accMenu = S.accMenu === sid ? null : sid;
+    S.mdlMenu = null;
+    render(); return;
+  }
+  if ((act = hit("[data-mdltab]"))){
+    const [sid, pid] = act.dataset.mdltab.split(":");
+    S.mdlTab[sid] = pid;                      /* browse only — nothing switches yet */
+    render(); return;
+  }
+  if ((act = hit("[data-mdlmore]"))){
+    const sid = act.dataset.mdlmore;
+    S.mdlMore[sid] = !S.mdlMore[sid];
+    render(); return;
+  }
+  if ((act = hit("[data-mdlpick]"))){
+    /* "sid:pid:modelid" — the model id may itself be empty (the account
+       default), so split off exactly two leading fields and keep the rest. */
+    const raw = act.dataset.mdlpick;
+    const i = raw.indexOf(":"), j = raw.indexOf(":", i + 1);
+    pickComposerModel(raw.slice(0, i), raw.slice(i + 1, j), raw.slice(j + 1));
+    return;
+  }
+  if ((act = hit("[data-mdleff]"))){
+    const raw = act.dataset.mdleff;
+    const i = raw.indexOf(":");
+    setComposerEffort(raw.slice(0, i), raw.slice(i + 1));
+    return;
+  }
+  if ((act = hit("[data-mdlopts]"))){
+    const sid = act.dataset.mdlopts;
+    S.optsOpen[sid] = !S.optsOpen[sid];
+    S.mdlMenu = null;
+    render(); return;
+  }
+  if ((act = hit("[data-accadv]"))){
+    const sid = act.dataset.accadv;
+    S.accAdv[sid] = !S.accAdv[sid];
+    render(); return;
+  }
+  if ((act = hit("[data-accpick]"))){
+    const raw = act.dataset.accpick;
+    const i = raw.indexOf(":");
+    setSessAccess(raw.slice(0, i), raw.slice(i + 1));
+    return;
+  }
+  /* outside either popover: shut it */
+  if (S.mdlMenu && !t.closest(".mdlpop")){ S.mdlMenu = null; render(); return; }
+  if (S.accMenu && !t.closest(".accpop")){ S.accMenu = null; render(); }
+}
+function composerControlChange(e){
+  const t = e && e.target && e.target.closest ? e.target : null;
+  const f = t && t.closest("[data-mdlfast]");
+  if (!f) return;
+  const sid = f.dataset.mdlfast;
+  const o = (S.turnOpts[sid] = S.turnOpts[sid] || {});
+  /* Absent, not `false`: the turn options object is sent as-is and the server
+     only accepts "fast", so an off switch must leave nothing behind. */
+  if (f.checked) o.service_tier = "fast"; else delete o.service_tier;
+  render();
+}
+/* PICKING A MODEL UNDER ANOTHER PROVIDER'S TAB IS THE SWITCH. Not a second
+   mechanism: it calls switchChatProvider, the same one the pane menu's Chat AI
+   Provider row and the typed "using Codex, ..." both perform, so readiness,
+   the mid-reply refusal and the socket drop all behave identically. */
+function pickComposerModel(sid, pid, model){
+  const s = (S.sessions || []).find(x => x.id === sid);
+  if (!s) return;
+  S.mdlMenu = null;
+  if (pid && pid !== paneProvider(s)){
+    const verdict = switchChatProvider(s, pid);
+    /* Refused (not ready, or a reply is streaming). switchChatProvider has
+       already written the reason onto the pane; changing the model as well
+       would leave the chat on its OLD provider holding the NEW provider's
+       model id. */
+    if (verdict === "unready" || verdict === "busy"){ render(); return; }
+  }
+  /* The per-pane override, exactly the key the pane menu's picker writes. */
+  S.model[sid] = model;
+  rememberModelForProvider(pid, model);
+  render();
+}
+/* REMEMBERED PER PROVIDER, so switching away and back restores the choice.
+   Written through POST /api/settings as `model_by_provider` — the API already
+   accepts the key and no control was writing it, which is why the pane menu's
+   picker forgot everything on reload. Optimistic locally so the chip moves on
+   the same paint; the server's answer replaces it. A failed write is not
+   surfaced: the per-pane override still governs the message being composed. */
+function rememberModelForProvider(pid, model){
+  if (!pid) return;
+  const cur = ((SETTINGS || {}).model_by_provider) || {};
+  if ((cur[pid] || "") === (model || "")) return;
+  const next = Object.assign({}, cur);
+  next[pid] = model || "";
+  if (SETTINGS) SETTINGS.model_by_provider = next;
+  apiPost("/api/settings", { model_by_provider: next })
+    .then(r => { if (r && r.settings) SETTINGS = r.settings; render(); })
+    .catch(() => {});
+}
+/* One value, one home: the thinking level IS the turn option the Turn options
+   box already edits (`effort` on Claude, `reasoning_effort` on Codex), so the
+   two controls can never disagree about what the next message will run at. */
+function setComposerEffort(sid, level){
+  const s = (S.sessions || []).find(x => x.id === sid);
+  const key = effortKeyFor(paneProvider(s || {}));
+  if (!key) return;
+  const o = (S.turnOpts[sid] = S.turnOpts[sid] || {});
+  if (level) o[key] = level; else delete o[key];
+  render();
+}
+/* ACCESS, for this chat. The consent gate is UNCHANGED: a write-capable mode
+   with no acknowledgement on file opens the existing confirmation, which is
+   the only place the acknowledgement phrase is sent. Nothing is remembered for
+   the chat until that has happened — arming it first would let the socket
+   carry a mode the operator has not yet agreed to. */
+function setSessAccess(sid, mode){
+  S.accMenu = null;
+  const m = (PERM_MODES || []).find(x => x.id === mode) || {};
+  if (m.writes_files && !(SETTINGS || {}).unsafe_modes_allowed){
+    if (typeof setPermMode === "function"){ setPermMode(mode); return; }
+  }
+  S.perm[sid] = mode;
+  render();
 }
 
 function sessionPane(s){
@@ -596,6 +1150,8 @@ function sessionPane(s){
                ? "Shadow is driving this chat — sending is unavailable"
                : "Continue this session"}">${esc(S.composerText[s.id]||"")}</textarea>
       ${paneMenuHtml(s)}
+      ${composerModelMenuHtml(s)}
+      ${composerAccessMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
       ${streamingFor(s.id)
         ? `<button class="send stop" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
@@ -607,7 +1163,12 @@ function sessionPane(s){
                ? "Shadow is driving this chat — sending is unavailable" : "Send"}">
              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
            </button>`}
-    </div></section>`;
+    </div>
+    <!-- UNDER the box, not in it: what the assistant may do is a standing
+         property of the chat, read before you type rather than reached for
+         while typing. Its popover renders inside .pc above, so it opens
+         upwards over the transcript like every other composer popover. -->
+    <div class="accrow">${composerAccessHtml(s)}</div></section>`;
 }
 
 /* render() does a full innerHTML rebuild, and now some rebuilds are triggered by an
@@ -1401,6 +1962,9 @@ function render(){
     }
   }
   wire();
+  /* The composer's model and access chips are delegated from the document, so
+     this installs once and then costs nothing — see wireComposerControls. */
+  wireComposerControls();
 
   /* Fill the repository bar for whatever panes are open. Idempotent -- loadRepo
      returns immediately once S.repo[sid] is set -- so calling it from render()

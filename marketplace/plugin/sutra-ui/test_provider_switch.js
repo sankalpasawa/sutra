@@ -511,11 +511,17 @@ test("the percentage is derived in exactly one place", () => {
 
 /* ── 6. the Provider row (founder 2026-09-03; renamed 2026-09-07) ─────────── */
 
-test("the nested row is called AI Provider, not Settings", () => {
-  // "Settings" inside the Settings destination repeated its parent and said
-  // nothing about what was behind it.
-  assert(helpers.includes('n:"AI Provider"'), "railSpec does not label the row AI Provider");
-  assert(chat.includes('settings:["AI Provider"'), "TITLES does not say AI Provider");
+test("the nested row is called Setup", () => {
+  // Renamed BACK on 2026-09-14. "AI Provider" was right while the screen was
+  // three folds about the provider; it is now a six-section overview -- models,
+  // access, per-provider switches, usage and tool versions as well -- so naming
+  // it for one section understated it. The screen id and routing did not move.
+  // RENAMED AGAIN 2026-09-14, by the owner: "even when I click on settings
+  // inside settings it should not be named settings". The destination is the
+  // place you set Sutra up, so it is called Setup; the screen id and routing
+  // did not move, and neither did anything the row points at.
+  assert(helpers.includes('n:"Setup"'), "railSpec does not label the row Setup");
+  assert(chat.includes('settings:["Setup"'), "TITLES does not say Setup");
   // This assertion used to run the other way -- it FORBADE "AI Provider", on
   // the reasoning that the provider is one of the screen's three folds
   // (provider, permission mode, workdir). Founder direction 2026-09-07
@@ -561,18 +567,20 @@ function foldSrc(a, b) {
 }
 
 test("the provider fold carries no implementation jargon", () => {
-  const src = foldSrc('fold("set.prov"', 'fold("set.mode"');
+  /* Anchors moved 2026-09-14: the Settings screen's folds became sections, so
+     the range is bounded by the two function names that now hold this copy. */
+  const src = foldSrc("function providerListHtml(", "function providerPageHtml(");
   ["binary", "on PATH", "config directory", "adapter", "stream-json",
    "Resolved via", "catalog default"].forEach(j =>
     assert(!src.includes(j), "operator-facing copy still says " + JSON.stringify(j)));
 });
 
 test("the project-folder fold carries no implementation jargon", () => {
-  const src = foldSrc('fold("set.workdir"', "Some saved settings could not be used");
+  const src = foldSrc("function workspaceSectionHtml(", "function advancedSectionHtml(");
   ["working directory", "read oracle", "In force", "cwd",
    "SUTRA_UI_WORKDIR_ROOT"].forEach(j =>
     assert(!src.includes(j), "operator-facing copy still says " + JSON.stringify(j)));
-  assert(src.includes('"Project folder"'), "the fold is still called Workdir");
+  assert(src.includes("Project folder"), "the folder screen lost its plain label");
 });
 
 test("a provider that cannot run says WHY, in a user's words", () => {
@@ -642,10 +650,10 @@ test("Usage renders inside the AI Provider screen, not as its own row", () => {
 });
 
 test("the usage figure moved onto the row you can actually click", () => {
-  const i = helpers.indexOf('{id:"settings",n:"AI Provider"');
-  assert(i > 0, "the AI Provider entry is gone");
+  const i = helpers.indexOf('{id:"settings",n:"Setup"');
+  assert(i > 0, "the Setup entry is gone");
   assert(/providerUsage\(\)/.test(helpers.slice(i, i + 260)),
-         "the AI Provider row carries no usage count");
+         "the Setup row carries no usage count");
   const j = helpers.indexOf('{id:"usage"');
   assert(!/providerUsage\(\)/.test(helpers.slice(j, j + 160)),
          "the row-less usage entry still computes a badge nobody sees");

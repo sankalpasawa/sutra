@@ -73,6 +73,21 @@ let SEED = readDeclarations();
 let PROVIDERS = [], SETTINGS = null, PERM_MODES = [], MODELS_BY_PROVIDER = {},
     TURN_OPTIONS_BY_PROVIDER = SEED.turn_options_by_provider || {},
     PERM_MODES_BY_PROVIDER = SEED.permission_modes_by_provider || {};
+/* ── the three keys the composer's controls read (SPEC B + A) ───────────────
+   MODEL_CATALOG_BY_PROVIDER is the RICH catalogue: per provider a main list, a
+   "More models" list, the per-model thinking levels, and whether the provider
+   has a fast/service-tier switch. MODELS_BY_PROVIDER above is NOT replaced by
+   it -- the flat list keeps being sent and keeps being read, so an old client
+   and the SEO Writer are untouched.
+   ACCESS_OPTIONS / ACCESS_BY_PROVIDER are the four plain access levels and
+   which of them each provider can enforce.
+
+   EMPTY MEANS NOT FETCHED, exactly like MODELS_BY_PROVIDER, and every reader
+   (02-helpers: modelCatalogFor / accessOptionsFor) falls back to what the panel
+   already had rather than drawing a blank control. They are declared here, and
+   left empty here, so the panel works unchanged on a backend that has never
+   heard of them. */
+let MODEL_CATALOG_BY_PROVIDER = {}, ACCESS_OPTIONS = [], ACCESS_BY_PROVIDER = {};
 
 /* True while a turn on this session is still streaming. The composer's send button
    becomes a STOP button on exactly this condition, so the control that appears is
@@ -1361,6 +1376,19 @@ function claudeWsUrl(sid){
   if (want) q.push("provider=" + encodeURIComponent(want));
   const sutra = sid ? sessSutraId(sid) : "";
   if (sutra) q.push("sutra=" + encodeURIComponent(sutra));
+  /* ACCESS FOR THIS CHAT ONLY, and sent on exactly the same terms as provider
+     above: only when this chat actually asked for something. Absent means "use
+     the stored setting", which is today's behaviour and the behaviour of every
+     chat that never touched the new control -- so an ordinary socket url is
+     byte-identical to what it was.
+     `perm` is a NATIVE mode id (plan / acceptEdits / auto / bypassPermissions
+     / manual / dontAsk), never the UI's access id: what travels and what is
+     stored stay the values the server has always validated, so the same
+     consent rules and the same per-provider support apply unchanged. The
+     server validates it and may refuse or clamp -- this proposes, ws_chat
+     disposes, and the mode_note marker reports any divergence. */
+  const perm = (sid && typeof sessPerm === "function") ? sessPerm(sid) : "";
+  if (perm) q.push("perm=" + encodeURIComponent(perm));
   return q.length ? base + "?" + q.join("&") : base;
 }
 /* Provider is chosen in Settings and nowhere else (founder direction
@@ -1628,12 +1656,38 @@ function claudeChannel(s, side){
           if (r){ r.running = false; r.ok = f.ok !== false; r.endedAt = Date.now();
                   /* what the tool RETURNED -- the server used to discard it, so a
                      failing tool showed a red dot with no reason attached */
-                  if (f.output) r.output = f.output; }
+                  if (f.output) r.output = f.output;
+                  /* THE END FRAME IS WHERE THE RESULT IS KNOWN, so it is where
+                     an exit code, a row count or a match count can first be
+                     stated. Merged onto the start frame's meta rather than
+                     replacing it: the start carries the path/command, the end
+                     carries the outcome, and a card wants both. Every field is
+                     optional -- an adapter that sends none leaves the row
+                     exactly as it was. */
+                  if (f.kind) r.kind = f.kind;
+                  if (f.title) r.title = f.title;
+                  if (f.detail) r.detail = f.detail;
+                  if (f.meta && typeof f.meta === "object")
+                    r.meta = Object.assign({}, r.meta || {}, f.meta); }
         } else {
           runs.push({ id:f.id, name:f.name || "tool", summary:f.summary || "",
                       /* Shell commands only, and only when the server sent one --
                          this is what the "terminal" control re-opens. */
                       command:f.command || "",
+                      /* ── what KIND of thing this was (SPEC D) ─────────────
+                         The adapter classifies, because only it sees the raw
+                         item and can tell a Codex `file_change` from a Claude
+                         `Edit`. Four new OPTIONAL fields, all absent on any
+                         build that has not shipped them yet -- which is why
+                         `kind` falls back to the client's own classifier over
+                         the tool NAME. Same table both sides (02-helpers'
+                         toolKindOf), so a live turn and a stored one classify
+                         identically, and an unknown name lands on `other` and
+                         still renders. */
+                      kind: f.kind || toolKindOf(f.name, f.meta),
+                      title: f.title || "",
+                      detail: f.detail || "",
+                      meta: (f.meta && typeof f.meta === "object") ? f.meta : null,
                       caller:f.caller || null, running:true, ok:null,
                       startedAt: Date.now() });
           ch.turn.thinking = false;      /* a tool call ends the thinking phase */

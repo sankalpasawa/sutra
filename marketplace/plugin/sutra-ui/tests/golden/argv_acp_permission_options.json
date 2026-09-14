@@ -1,0 +1,1082 @@
+[
+  {
+    "perm_mode": "plan",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "plan",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "acceptEdits",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "bypassPermissions",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "auto",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "manual",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "edit",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "edit",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "edit",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "delete",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "delete",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "delete",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "move",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "move",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "move",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "execute",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "execute",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "execute",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "read",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "read",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "read",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "fetch",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "fetch",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "fetch",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "search",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "search",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "search",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "think",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "think",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "think",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "other",
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "other",
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": "other",
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": null,
+    "title": null,
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": null,
+    "title": "Write /tmp/x",
+    "chosen": "cancel"
+  },
+  {
+    "perm_mode": "dontAsk",
+    "tool_kind": null,
+    "title": "propose (sutra MCP Server)",
+    "chosen": "proceed_once"
+  }
+]

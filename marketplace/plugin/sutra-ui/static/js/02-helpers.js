@@ -589,6 +589,22 @@ const S = {
      per-session OVERRIDE; undefined means "inherit the stored setting", which is why
      it is not seeded with a value. */
   attach:{}, model:{},
+  /* ── the composer's own controls (bb-style message box) ──────────────────
+     `perm` is the ACCESS this chat asked for, as a NATIVE permission mode id
+     (plan / acceptEdits / auto / bypassPermissions / manual / dontAsk). Per
+     SESSION, undefined meaning "use the stored global setting" -- which is why
+     it is not seeded. claudeWsUrl sends it as ?perm= only when it is present,
+     so a chat that never chose keeps today's behaviour exactly.
+     `mdlMenu` / `accMenu` are which pane has the model / access popover open
+     (session id or null) -- same one-at-a-time shape as S.usagePop, and for the
+     same reason: two panes are on screen and a bare boolean opens both.
+     `mdlTab` is the provider tab selected INSIDE an open model menu, which is
+     not the same thing as the chat's provider: you browse Codex's models
+     before deciding to move the chat there. `mdlMore` is whether that menu's
+     "More models" list is expanded; `accAdv` whether the access menu's
+     Advanced (legacy modes) disclosure is open. All per session, all
+     memory-only -- never in S.ui, so saveLayout() can never persist them. */
+  perm:{}, mdlMenu:null, accMenu:null, mdlTab:{}, mdlMore:{}, accAdv:{},
   /* Side chats. Turns live HERE, never in s.turns: a branch that appeared in the main
      transcript would not be a branch. Keyed by session id, per pane. */
   sideOpen:{}, sideTurns:{}, sideText:{},
@@ -1108,16 +1124,16 @@ function railSpec(){
       {id:"terminal",n:"Terminal", i:"term", toggle:true},
       /* Settings is not a count -- it is provider + permission mode + workdir,
          all three of which are single values with a live server behind them. */
-      /* "AI Provider", not "Settings": this row sits inside the Settings
-         destination, so the old label repeated its parent and told an operator
-         nothing about what was behind it. The screen configures which
-         provider runs, what it may do without asking, and where it works.
-         Named for the provider on founder direction 2026-09-07 -- the word
-         the composer row and /api/providers already use for the same thing. */
+      /* "Settings" again (2026-09-14). It was renamed "AI Provider" while the
+         screen really was three folds about the provider; it is now a full
+         overview with six sections -- provider, models, access, per-provider
+         switches, usage and tool versions -- so naming it for one of them
+         understates it and sends an operator looking elsewhere for the rest.
+         The screen ID and every route are untouched: this is the label only. */
       /* Carries the usage figure now that Usage is a section of this screen.
          Provider-aware: a percentage while DeepSeek is selected would describe
          a plan the panel is not using. See providerUsage. */
-      {id:"settings",n:"AI Provider", i:"gear",
+      {id:"settings",n:"Setup", i:"gear",
        c:((providerUsage() || {}).short) ?? undefined}
     ]
   };
@@ -1957,4 +1973,258 @@ function paintAvatar(){
     el.classList.add("av-unknown");
     el.title = "Not signed in to Claude on this machine";
   }
+}
+
+/* ══════════════════ the composer's vocabulary ══════════════════════════════
+   Three things the message box now has to be able to say, and every one of
+   them is READ DEFENSIVELY from the server: the catalogue of models a provider
+   offers, the plain-English access levels it can enforce, and what kind of
+   thing a tool call was.
+
+   DEFENSIVE IS NOT OPTIONAL HERE. `model_catalog_by_provider`, `access_options`
+   and `access_by_provider` are new keys on GET /api/settings, shipping in a
+   different workstream. Until they land -- and on any older backend, and in a
+   browser holding a cached page -- they are simply absent, and every function
+   below falls back to what the panel already knows (MODELS_BY_PROVIDER,
+   PERM_MODES_BY_PROVIDER). Absent must render today's behaviour, never a
+   blank control. */
+
+/* The four globals these functions read are declared with `let` in 01-state.js,
+   which puts them in the SCRIPT scope rather than on globalThis -- so they are
+   reachable by name but not as a property, and a test that extracts one
+   function has none of them at all. `typeof` is the only read that answers
+   "absent" instead of throwing, so each has a one-line accessor and nothing
+   below ever names a global directly. */
+function _catalogGlobal(){
+  return typeof MODEL_CATALOG_BY_PROVIDER !== "undefined" ? MODEL_CATALOG_BY_PROVIDER : null;
+}
+function _accessOptionsGlobal(){
+  return typeof ACCESS_OPTIONS !== "undefined" ? ACCESS_OPTIONS : null;
+}
+function _accessByProviderGlobal(){
+  return typeof ACCESS_BY_PROVIDER !== "undefined" ? ACCESS_BY_PROVIDER : null;
+}
+function _settingsGlobal(){ return typeof SETTINGS !== "undefined" ? (SETTINGS || {}) : {}; }
+function _modelsGlobal(){
+  return typeof MODELS_BY_PROVIDER !== "undefined" ? (MODELS_BY_PROVIDER || {}) : {};
+}
+function _permModesByProviderGlobal(){
+  return typeof PERM_MODES_BY_PROVIDER !== "undefined" ? (PERM_MODES_BY_PROVIDER || {}) : {};
+}
+
+/* THE CATALOGUE FOR ONE PROVIDER, normalised to one shape:
+     { models: [...], more: [...], fast: bool, default: "<id>", derived: bool }
+   `derived:true` means it was built from the OLD flat models_by_provider list,
+   i.e. the server has not sent a catalogue yet -- the control then draws the
+   flat list with no "More models" and no Fast switch, which is exactly what the
+   pane menu's picker has always drawn.
+   null means the provider declares no models at all (codex has no model flag on
+   some builds), and the caller draws no picker rather than an empty one. */
+function modelCatalogFor(pid){
+  if (!pid) return null;
+  /* EMPTY MEANS NOT FETCHED, the same sentinel MODELS_BY_PROVIDER uses -- so an
+     empty global falls through to wherever else the answer might be rather than
+     being read as "this build has no catalogue". */
+  const g = _catalogGlobal();
+  const byProv = (g && Object.keys(g).length)
+    ? g : (_settingsGlobal().model_catalog_by_provider || {});
+  const flatMap = _modelsGlobal();
+  const flat = Array.isArray(flatMap[pid]) ? flatMap[pid] : null;
+  const raw = (byProv && typeof byProv === "object" && !Array.isArray(byProv))
+    ? byProv[pid] : null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)){
+    if (!flat) return null;
+    return { models: flat, more: [], fast: false, default: "", derived: true };
+  }
+  return {
+    models: Array.isArray(raw.models) ? raw.models : (flat || []),
+    /* `more` is ADDITIVE (spec B): never a replacement for `models`. */
+    more: Array.isArray(raw.more) ? raw.more : [],
+    fast: raw.fast === true,
+    default: typeof raw.default === "string" ? raw.default : "",
+    derived: false,
+  };
+}
+/* Every entry in one provider's catalogue, main list then More. */
+function modelEntries(pid){
+  const c = modelCatalogFor(pid);
+  if (!c) return [];
+  return c.models.concat(c.more);
+}
+function modelEntryFor(pid, id){
+  const want = id || "";
+  const hit = modelEntries(pid).find(m => m && (m.id || "") === want);
+  if (hit) return hit;
+  /* An id the catalogue does not carry is still SHOWN by name -- a model chosen
+     on a warmer catalogue, or one this build has not heard of. Inventing
+     "CLI default" for it would misreport what the next turn will run. */
+  return want ? { id: want, name: want } : null;
+}
+/* The name to print for a selected model. "" is the account default, and the
+   catalogue's own `default` names what it resolves to -- so the chip can say
+   "Opus 5" instead of the uninformative "CLI default" when the server knows. */
+function modelNameFor(pid, id){
+  const e = modelEntryFor(pid, id);
+  if (e) return e.name || e.id;
+  const c = modelCatalogFor(pid);
+  const dflt = c && c.default ? modelEntryFor(pid, c.default) : null;
+  return (dflt && (dflt.name || dflt.id)) || "Default model";
+}
+/* The thinking levels THIS model supports. Per model and discovered, never a
+   constant: codex's terra offers `ultra` and 5.5 stops at `xhigh`, and an
+   unsupported value is taken silently -- so a fixed union would let a turn run
+   at something other than what the control said. [] means "nothing declared",
+   and the caller draws no level row at all. */
+function modelEffortsFor(pid, id){
+  const e = modelEntryFor(pid, id);
+  if (e && Array.isArray(e.efforts) && e.efforts.length) return e.efforts;
+  const c = modelCatalogFor(pid);
+  const d = c && c.default ? modelEntryFor(pid, c.default) : null;
+  return (d && Array.isArray(d.efforts)) ? d.efforts : [];
+}
+/* WHICH TURN-OPTION KEY the thinking level writes. There is no second store:
+   the level buttons and the Turn options box are two faces of ONE value, so
+   they read and write the same S.turnOpts field (single source of truth). */
+function effortKeyFor(pid){
+  const on = (typeof turnOptsFor === "function") ? turnOptsFor(pid) : null;
+  if (!on) return "effort";
+  if (on.has("effort")) return "effort";
+  if (on.has("reasoning_effort")) return "reasoning_effort";
+  return null;
+}
+function effortLabel(v){
+  if (!v) return "";
+  return v.charAt(0).toUpperCase() + v.slice(1);
+}
+
+/* ── access: the four plain options, and the legacy modes nobody loses ──────
+   Shared contract (SPEC A). `id` lives only in the UI; what is STORED stays the
+   native permission-mode id, so every existing install keeps working. */
+const ACCESS_FALLBACK = [
+  { id:"read",  label:"Read only",     desc:"Looks and plans. Changes nothing.", warn:false },
+  { id:"edits", label:"Accept edits",  desc:"Edits files in this folder. Asks for anything else.", warn:false },
+  { id:"auto",  label:"Approve for me",desc:"Same limit, but the tool approves routine requests itself.", warn:false },
+  { id:"full",  label:"Full access",   desc:"Anything on this Mac, without asking.", warn:true },
+];
+/* access id -> native mode, per provider (SPEC A's second table). Used only
+   while the server sends no access_by_provider. */
+const ACCESS_NATIVE_FALLBACK = {
+  read: "plan", edits: "acceptEdits", auto: "auto", full: "bypassPermissions",
+};
+/* {accessId: nativeMode} for one provider. Both server shapes are accepted --
+   an object (the mapping itself) and an array of access ids -- because the key
+   is new and reading it one way only would make the control go blank on the
+   other. */
+function accessMapFor(pid){
+  const g = _accessByProviderGlobal();
+  const byProv = (g && Object.keys(g).length)
+    ? g : (_settingsGlobal().access_by_provider || {});
+  const raw = (byProv && typeof byProv === "object") ? byProv[pid] : null;
+  if (raw && !Array.isArray(raw) && typeof raw === "object") return raw;
+  if (Array.isArray(raw)){
+    const out = {};
+    raw.forEach(id => { if (ACCESS_NATIVE_FALLBACK[id]) out[id] = ACCESS_NATIVE_FALLBACK[id]; });
+    return out;
+  }
+  /* NOTHING DECLARED. Fall back to the native modes this provider already says
+     it can enforce -- PERM_MODES_BY_PROVIDER, which the panel has had for a
+     while. An empty map there means "not fetched", so every access option is
+     offered, which is the permissive direction and the right one to be wrong
+     in: hiding a safety control is worse than showing one that is refused. */
+  const pm = _permModesByProviderGlobal();
+  const allowed = (Object.keys(pm).length && pid) ? pm[pid] : null;
+  const out = {};
+  Object.keys(ACCESS_NATIVE_FALLBACK).forEach(id => {
+    const native = ACCESS_NATIVE_FALLBACK[id];
+    if (!allowed || allowed.includes(native)) out[id] = native;
+  });
+  return out;
+}
+/* The access options THIS provider can actually honour, in the shared order,
+   each carrying the native mode it maps to. */
+function accessOptionsFor(pid){
+  const server = _accessOptionsGlobal() || _settingsGlobal().access_options;
+  const list = (Array.isArray(server) && server.length) ? server : ACCESS_FALLBACK;
+  const map = accessMapFor(pid);
+  return list
+    .map(o => Object.assign({}, o, { mode: map[o.id] }))
+    .filter(o => !!o.mode);
+}
+/* Reverse: which access option is this stored native mode? null for a legacy
+   mode (`manual`, `dontAsk`) -- which is what puts it under Advanced instead of
+   quietly disappearing. */
+function accessForMode(pid, mode){
+  if (!mode) return null;
+  return accessOptionsFor(pid).find(o => o.mode === mode) || null;
+}
+/* WHAT THIS CHAT WILL RUN AS. The chat's own choice first (S.perm), then the
+   effective stored mode -- effective, not stored, because the server clamps at
+   the point of use and showing the stored value would claim the agent is doing
+   something it is not. */
+function sessPerm(sid){
+  const v = (S.perm || {})[sid];
+  return v || "";
+}
+function sessPermEffective(sid){
+  const st = _settingsGlobal();
+  return sessPerm(sid) || st.permission_mode_effective || st.permission_mode || "plan";
+}
+
+/* ── the tool vocabulary (SPEC D) ───────────────────────────────────────────
+   One classifier, used in two places: the live `tool` frame (01-state.js, which
+   prefers the `kind` the adapter sends and falls back to this) and STORED
+   history, where there is no frame at all and the tool NAME is the only thing
+   on disk. Same table both times, so a three-month-old chat gets the same cards
+   as a live one with no migration of saved files.
+
+   UNKNOWN FALLS BACK TO `other` AND STILL RENDERS. This table may never be a
+   reason a tool call disappears from the screen. */
+const TOOL_KIND_BY_NAME = {
+  /* Claude */
+  task:"subagent", agent:"subagent",
+  bash:"command", bashoutput:"command", killshell:"command",
+  edit:"file_edit", write:"file_edit", multiedit:"file_edit",
+  read:"file_read",
+  grep:"search", glob:"search",
+  websearch:"web_search", webfetch:"web_fetch",
+  exitplanmode:"plan", todowrite:"todo", notebookedit:"notebook",
+  /* Codex item types */
+  command_execution:"command", file_change:"file_edit", patch_apply:"file_edit",
+  file_read:"file_read", file_search:"search",
+  web_search:"web_search", web_fetch:"web_fetch",
+  /* ACP (DeepSeek / Cursor) */
+  execute:"command", search:"search", fetch:"web_fetch", plan:"plan",
+  /* compaction notices, however they are spelled */
+  compaction:"compaction", compact:"compaction", context_compaction:"compaction",
+};
+const TOOL_KINDS = ["subagent","command","file_edit","file_read","search","web_search",
+                    "web_fetch","plan","todo","notebook","mcp","compaction","other"];
+const TOOL_KIND_LABEL = {
+  subagent:"Subagent", command:"Command", file_edit:"Edited", file_read:"Read",
+  search:"Search", web_search:"Web search", web_fetch:"Fetched", plan:"Plan",
+  todo:"To-dos", notebook:"Notebook", mcp:"MCP tool", compaction:"Compacted",
+  other:"Tool",
+};
+/* `name` is the tool name off the wire or out of a stored tool_use block.
+   `meta` is the optional dict the adapter may send; an `agent` field in it is
+   how ACP reports a delegation, which has no distinguishing tool name. */
+function toolKindOf(name, meta){
+  const n = String(name == null ? "" : name).trim();
+  if (!n) return (meta && meta.agent) ? "subagent" : "other";
+  /* every mcp__<server>__<tool>, before any other test -- the prefix is the
+     whole identity of an MCP call and its tail is a third party's word */
+  if (/^mcp__/i.test(n)) return "mcp";
+  const hit = TOOL_KIND_BY_NAME[n.toLowerCase()];
+  if (hit) return hit;
+  if (meta && meta.agent) return "subagent";
+  return "other";
+}
+/* The kind a RENDERED card should use: what the adapter said, when it said
+   something this build understands; the name-based classifier otherwise. An
+   unrecognised kind string is not trusted into a card that would drop fields --
+   it degrades to `other`, which shows everything it was given. */
+function toolKindFor(call){
+  const c = call || {};
+  if (c.kind && TOOL_KINDS.includes(c.kind)) return c.kind;
+  return toolKindOf(c.name, c.meta);
 }

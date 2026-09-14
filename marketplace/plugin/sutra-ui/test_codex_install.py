@@ -787,30 +787,32 @@ class TheSpawnRepairsPathForCodexToo(unittest.TestCase):
     DeepSeek bug this comment's neighbour in app.py was written about.
     """
 
+    # THE LIST MOVED, THE FACT DID NOT (2026-09-14). ws_chat used to carry
+    # `if active_id in ("codex", "deepseek")` inline; every provider rule now
+    # lives on that provider's adapter, so the question "is codex inside the
+    # condition" is now "does the codex adapter declare needs_bundled_node".
+    # The guard is still asserted in the source, because the behaviour it
+    # protects is still only observable on a packaged DMG on a Node-less Mac.
+
     def test_codex_is_in_the_bundled_node_condition(self):
         import inspect
 
         import app
+        import provider_adapters
         src = inspect.getsource(app.ws_chat)
-        guarded = re.search(
-            r'if active_id in \(([^)]*)\):\s*\n(?:\s*#[^\n]*\n)*'
-            r'\s*providers\.ensure_bundled_node_path\(\)', src)
         self.assertIsNotNone(
-            guarded,
-            "no `if active_id in (...)` guarding ensure_bundled_node_path()")
-        self.assertIn('"codex"', guarded.group(1))
-        self.assertIn('"deepseek"', guarded.group(1),
-                      "DeepSeek must keep the repair it already had")
+            re.search(r'if adapter\.needs_bundled_node:\s*\n(?:\s*#[^\n]*\n)*'
+                      r'\s*providers\.ensure_bundled_node_path\(\)', src),
+            "no `if adapter.needs_bundled_node:` guarding "
+            "ensure_bundled_node_path()")
+        self.assertTrue(provider_adapters.get("codex").needs_bundled_node)
+        self.assertTrue(provider_adapters.get("deepseek").needs_bundled_node,
+                        "DeepSeek must keep the repair it already had")
 
     def test_claude_is_still_excluded(self):
         """Claude's CLI is not a node shim, and nothing about it changes."""
-        import inspect
-
-        import app
-        src = inspect.getsource(app.ws_chat)
-        guarded = re.search(r'if active_id in \(([^)]*)\):\s*\n(?:\s*#[^\n]*\n)*'
-                            r'\s*providers\.ensure_bundled_node_path\(\)', src)
-        self.assertNotIn('"claude"', guarded.group(1))
+        import provider_adapters
+        self.assertFalse(provider_adapters.get("claude").needs_bundled_node)
 
 
 if __name__ == "__main__":
