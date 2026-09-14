@@ -95,6 +95,39 @@ _CRITERION_MARKER = re.compile(
     "|relevant|valid|reasonable|must|should|listed|stated|named"
     "|tied|hedge|at least|no more than)\\b)", re.I)
 
+#: OUTCOME-SHAPED CRITERIA ARE NOT ARTIFACTS (founder, 2026-09-15).
+#:
+#: THE LIVE FAILURE, mission m-245777cf1467. The founder wrote "The task
+#: reaches DONE." as a criterion. It is short, five words, and carries no
+#: marker above -- so is_literal_artifact called it literal, tier_for kept
+#: contains_artifact, and evaluate_done_when tests that tier with
+#:
+#:     met = check["check"] in transcript_text
+#:
+#: which made the criterion satisfiable by the WORKER SAYING ITS WORDS. The
+#: delegate duly wrote "Committed as f96c3ade. The task reaches DONE." A
+#: check about whether the work finished became a check about whether the
+#: chat contained a sentence.
+#:
+#: The distinction the shape test could not draw is KIND, not form: an
+#: artifact is a string that will appear in the transcript because the work
+#: PRODUCED it (a filename, a marker, an exact output line); an outcome is a
+#: statement ABOUT the work, and only the founder can judge one. These are
+#: the phrasings that describe a state of the task itself.
+#:
+#: Demotion is the safe direction and the existing one: tier_for already
+#: sends everything non-literal to founder_confirm, which no machine can
+#: satisfy. A false demotion costs one sign-off; a false artifact is a check
+#: the worker can close by talking, which is what this prevents.
+_OUTCOME_MARKER = re.compile(
+    "\\b(?:reach(?:es|ed)?|is|are|was|were|be|becomes?)\\s+"
+    "(?:done|complete[d]?|finished|working|ready|green|passing)\\b"
+    "|\\b(?:task|mission|work|feature|it)\\s+(?:is|was)\\s+"
+    "(?:done|complete[d]?|finished)\\b"
+    "|\\bstill\\s+works?\\b"
+    "|\\btests?\\s+pass(?:es|ed)?\\b"
+    "|\\bcover(?:s|ed)?\\s+the\\b", re.I)
+
 
 def is_literal_artifact(check):
     """Could this string plausibly appear VERBATIM in a transcript?
@@ -109,6 +142,9 @@ def is_literal_artifact(check):
         return False
     if len(s.split()) > _ARTIFACT_MAX_WORDS:
         return False
+    if _OUTCOME_MARKER.search(s) is not None:
+        return False                  # a statement ABOUT the work, not a
+                                      # string the work produces
     return _CRITERION_MARKER.search(s) is None
 
 

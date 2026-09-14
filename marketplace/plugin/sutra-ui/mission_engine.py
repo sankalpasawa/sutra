@@ -100,6 +100,53 @@ DECISION_TAIL = 2000
 DECISION_INSTRUCTION_MAX = 2000
 
 
+#: The decider prompt shows the shape it wants by EXAMPLE, and the example's
+#: fields are angle-bracket placeholders. A model that answers with the
+#: example verbatim is not deciding -- it is copying the form.
+_TEMPLATE_ECHOES = frozenset({
+    "<what to send into the chat next>",
+    "<one short line: why this, now>",
+    "<what you need from the founder>",
+    "<one short line>",
+})
+
+
+def _is_template_echo(instruction):
+    """Is this the decider's own placeholder rather than an instruction?
+
+    THE LIVE FAILURE (founder, 2026-09-15, mission m-245777cf1467). After
+    resume_after_restart re-adopted a delegate, the decider answered with the
+    example straight out of its own prompt:
+
+        {"action": "continue",
+         "instruction": "<what to send into the chat next>",
+         "reason": "<one short line: why this, now>"}
+
+    `instruction` was a non-empty string, so this validated, and the runner
+    said `<what to send into the chat next>` INTO THE DELEGATE CHAT. It did
+    it twice, the ping-pong guard saw two identical says, and the mission was
+    stopped one second after it had been rescued.
+
+    Why the model echoes: a resumed loop starts with last_response = None, so
+    the decider's first turn after any resume is composed with an empty "what
+    the target said back". That is a separate weakness and is NOT addressed
+    here -- this only stops its output from being mistaken for a decision.
+
+    DELIBERATELY NARROW. An instruction is rejected only when, after
+    stripping, it IS one of the prompt's placeholders (case-insensitively).
+    A real instruction that merely CONTAINS angle brackets -- "replace <sid>
+    in the config", "the <div> is unclosed", quoting a diff -- is untouched,
+    because a substring or bracket-shape test would refuse ordinary
+    engineering English, which is most of what Shadow says.
+
+    Returning None routes into the caller's EXISTING honest-failure path (R10:
+    a malformed decision must not degrade into a generic nudge). No new state
+    and no new action.
+    """
+    s = str(instruction or "").strip()
+    return s.lower() in _TEMPLATE_ECHOES
+
+
 def validate_decision(raw):
     """A Shadow decision, or None if it is not one.
 
@@ -117,6 +164,8 @@ def validate_decision(raw):
         instruction = str(raw.get("instruction") or "").strip()
         if not instruction:
             return None               # "continue" with nothing to say is not
+        if _is_template_echo(instruction):
+            return None               # the PROMPT's own example, not a decision
         return {"action": action, "reason": reason,
                 "instruction": instruction[:DECISION_INSTRUCTION_MAX]}
     out = {"action": action, "reason": reason, "instruction": ""}
