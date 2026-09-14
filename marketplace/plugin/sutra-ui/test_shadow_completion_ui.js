@@ -16,6 +16,9 @@
  *   3. a record without the field renders exactly as it did before
  *   4. the task the founder is READING survives its own completion...
  *   5. ...while the LIST still drops it (rule 4 is unchanged)
+ *   6. the result can LEAVE the pane: Copy result puts the same summary on
+ *      the clipboard as text, says so on the button, and says when it could
+ *      not (tests 10-14)
  *
  * Run: node test_shadow_completion_ui.js
  */
@@ -27,12 +30,21 @@ const assert = require("assert");
 
 function fresh(){
   const ctx = {
-    console, Date, setTimeout: () => ({}),
+    console, Date,
+    /* timers are CAPTURED, not run: the copy feedback clears itself on one,
+       and a suite that cannot fire it cannot prove the button goes back to
+       offering the action */
+    timers: [], cleared: [], renders: 0,
+    setTimeout: (fn, ms) => { ctx.timers.push({ fn, ms }); return ctx.timers.length; },
+    clearTimeout: (id) => { ctx.cleared.push(id); },
+    scheduleRender: () => { ctx.renders++; },
     S: {}, SCREENS: {}, TITLES: {},
     esc: (x) => String(x == null ? "" : x)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+    listeners: {},
     document: {
-      addEventListener(){}, body: { appendChild(){} },
+      addEventListener(t, fn){ ctx.listeners[t] = fn; },
+      body: { appendChild(){} },
       createElement(){ return { setAttribute(){}, remove(){}, dataset: {} }; },
       querySelector(){ return null; },
     },
@@ -254,4 +266,248 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   console.log("ok 9 the Now row opens the task it is about");
 }
 
+/* ── COPY RESULT ─────────────────────────────────────────────────────────
+   THE GAP (founder, 2026-09-15). The summary is the one legible account of
+   what a finished task did, and it could not leave the pane: telling anyone
+   else meant retyping it or drag-selecting across three nested divs. What
+   is pinned below is that the text is the SAME summary (never a second
+   rendering that could drift from it), that the clipboard is actually
+   written, and that the founder is told either way. */
+
+/* a click as the delegated listener really receives one. `closest` is
+   selector-aware because the handler asks it three different questions on
+   the way past ([data-shscreen], [data-shsend], [data-shcopydone]) and a
+   stub that answers yes to all of them proves nothing. */
+function clickCopy(ctx, mid, opts){
+  const el = { dataset: { shcopydone: mid } };
+  el.closest = (sel) => sel === "[data-shcopydone]" ? el : null;
+  const target = (opts && opts.viaChild)
+    /* the label text node inside the button: no dataset of its own, which
+       is exactly the bug closest() exists to prevent here */
+    ? { dataset: {}, closest: (sel) => sel === "[data-shcopydone]" ? el : null }
+    : el;
+  return ctx.listeners.click({ target, stopPropagation(){} });
+}
+
+function withClipboard(ctx, impl){
+  const writes = [];
+  ctx.navigator = { clipboard: { writeText: async (t) => {
+    if (impl) return impl(t);
+    writes.push(t);
+  } } };
+  return writes;
+}
+
+const flush = () => new Promise(r => setTimeout(r, 0));
+
+(async () => {
+
+/* 10. the text IS the summary -- same source, same order, no markup */
+{
+  const ctx = fresh();
+  const t = ctx.shadowCompletionText(DONE);
+  assert.strictEqual(t.split("\n")[0], "Done — 3 of 3 checks passed",
+    "the headline leads, as it does on screen");
+  assert(t.indexOf("get the EMI check green") !== -1, "the objective is named");
+  assert(t.indexOf("5 of 20 turns used.") !== -1, "the budget it spent");
+  SUMMARY.checks.forEach(k =>
+    assert(t.indexOf(k.check) !== -1, "check missing: " + k.check));
+  assert(t.indexOf("✓ EMI-OK — found in the chat") !== -1,
+    "a check carries its verdict and the server's HOW copy");
+  assert(t.indexOf("you confirmed it · founder") !== -1,
+    "a confirmation still names who signed it off");
+  assert(t.indexOf("\n    …the suite reports EMI-OK for every tenant…") !== -1,
+    "the quoted artifact is indented under its check");
+  assert(!/[<>]/.test(t), "it is text, not markup");
+  assert.strictEqual((t.match(/✓/g) || []).length, 3, "three ticks");
+  /* the order on the clipboard is the order on screen */
+  assert(t.indexOf("EMI-OK") < t.indexOf("pytest test_emi.py passes")
+    && t.indexOf("pytest test_emi.py passes") < t.indexOf("the copy reads right"),
+    "checks keep the server's order");
+  console.log("ok 10 the result renders as text");
+}
+
+/* 11. nothing to copy -> no text, and an unmet check is marked unmet */
+{
+  const ctx = fresh();
+  assert.strictEqual(ctx.shadowCompletionText({ id: "m-1" }), "",
+    "a mission without the field has no result text");
+  assert.strictEqual(ctx.shadowCompletionText(null), "", "null is safe");
+  const t = ctx.shadowCompletionText({ id: "m-x", completion: {
+    headline: "1 of 2 checks passed", objective: "o",
+    turns_used: 1, max_turns: 4,
+    checks: [{ check: "found it", met: true, how: "found in the chat" },
+             { check: "not yet", met: false, how: "still outstanding" }] } });
+  assert(t.indexOf("✓ found it") !== -1, "the met check ticks");
+  assert(t.indexOf("✗ not yet — still outstanding") !== -1,
+    "the unmet one says so without the CSS");
+  console.log("ok 11 the text never invents a verdict");
+}
+
+/* 12. the control is THERE, on the block and on the card */
+{
+  const ctx = fresh();
+  const h = ctx.shadowCompletionHtml(DONE);
+  assert(/data-shcopydone="m-done"/.test(h), "the button names its mission");
+  assert(/Copy result/.test(h), "and says what it does");
+  assert(/3 of 3 checks passed/.test(h), "the headline is still there");
+  const card = ctx.shadowTaskCardHtml(DONE);
+  assert(/data-shcopydone="m-done"/.test(card), "the card carries it");
+  /* a task that has not finished has no result to copy */
+  const live = Object.assign({}, DONE, { state: "running" });
+  delete live.completion;
+  assert(!/data-shcopydone/.test(ctx.shadowTaskCardHtml(live)),
+    "a live task offers no copy");
+  console.log("ok 12 the copy action is on a finished card, and only there");
+}
+
+/* 13. CLICKING IT COPIES -- through the real delegated listener */
+{
+  for (const viaChild of [false, true]){
+    const ctx = fresh();
+    ctx.S.shadowMissions = [DONE];
+    const writes = withClipboard(ctx);
+    clickCopy(ctx, "m-done", { viaChild });
+    await flush();
+    assert.strictEqual(writes.length, 1, "exactly one write per click");
+    assert.strictEqual(writes[0], ctx.shadowCompletionText(DONE),
+      "what lands on the clipboard is the summary that is on screen");
+    /* ...and the founder is TOLD */
+    assert.strictEqual(ctx.S.shadowResultCopied.ok, true, "it worked");
+    assert.strictEqual(ctx.S.shadowResultCopied.id, "m-done", "on this task");
+    assert(ctx.renders > 0, "and a repaint was asked for");
+    const h = ctx.shadowCompletionHtml(DONE);
+    assert(/Copied/.test(h) && /shdonecopy ok/.test(h),
+      "the button says Copied" + (viaChild ? " (clicked on the label)" : ""));
+    assert(!/>Copy result</.test(h), "and is not still offering the action");
+
+    /* the feedback belongs to ONE record: another finished task on screen
+       still offers the action */
+    const other = Object.assign({}, DONE, { id: "m-two" });
+    assert(/Copy result/.test(ctx.shadowCompletionHtml(other)),
+      "another task's button is untouched");
+
+    /* and it goes back, on the timer it set */
+    assert.strictEqual(ctx.timers.length, 1, "one timer, not one per render");
+    ctx.timers[0].fn();
+    assert.strictEqual(ctx.S.shadowResultCopied, null, "the flag clears");
+    assert(/Copy result/.test(ctx.shadowCompletionHtml(DONE)),
+      "the button offers the action again");
+  }
+  console.log("ok 13 clicking copies the result, and says so");
+}
+
+/* 14. A REFUSED CLIPBOARD IS SHOWN, NOT SWALLOWED. A button that says
+       nothing after a click is the disease this pane keeps curing. */
+{
+  const ctx = fresh();
+  ctx.S.shadowMissions = [DONE];
+  withClipboard(ctx, async () => { throw new Error("denied"); });
+  assert.strictEqual(await ctx.shadowCopyResult("m-done"), false,
+    "the failure is reported");
+  assert.strictEqual(ctx.S.shadowResultCopied.ok, false, "and recorded");
+  const h = ctx.shadowCompletionHtml(DONE);
+  assert(/Copy failed/.test(h) && /shdonecopy bad/.test(h),
+    "the button says it failed");
+
+  /* NEITHER api -- no navigator.clipboard and no execCommand -- reads the
+     same way. This is the only case that may still say "Copy failed". */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [DONE];
+  assert.strictEqual(await ctx2.shadowCopyResult("m-done"), false,
+    "no clipboard and no fallback is a failure, not a throw");
+  assert(/Copy failed/.test(ctx2.shadowCompletionHtml(DONE)),
+    "and it is still said out loud");
+
+  /* a mission with nothing to copy writes nothing and claims nothing */
+  const ctx3 = fresh();
+  ctx3.S.shadowMissions = [{ id: "m-old", objective: "no summary" }];
+  const writes = withClipboard(ctx3);
+  assert.strictEqual(await ctx3.shadowCopyResult("m-old"), false,
+    "an unfinished record copies nothing");
+  assert.strictEqual(await ctx3.shadowCopyResult("m-gone"), false,
+    "and an id that is not there is safe");
+  assert.strictEqual(writes.length, 0, "the clipboard was never touched");
+  assert(!ctx3.S.shadowResultCopied, "and nothing was claimed");
+  console.log("ok 14 a copy that could not happen says so");
+}
+
+/* 15. THE FALLBACK ACTUALLY COPIES. navigator.clipboard is undefined on an
+       insecure origin and refused on an unfocused page -- both reachable
+       whenever the panel is opened outside the Electron shell. On that path
+       the founder must still get the text, not an apology. */
+{
+  /* a document whose execCommand("copy") really copies the selected node,
+     which is what a browser without the async API gives us */
+  function withExecCommand(ctx, succeeds){
+    const seen = { made: 0, mounted: 0, removed: 0, selected: 0, copied: [] };
+    let live = null;
+    ctx.document.createElement = (tag) => {
+      seen.made++;
+      const node = { tag, value: "", attrs: {}, style: {},
+        setAttribute(k, v){ node.attrs[k] = v; },
+        select(){ seen.selected++; },
+        remove(){ seen.removed++; live = null; } };
+      live = node;
+      return node;
+    };
+    ctx.document.body.appendChild = () => { seen.mounted++; };
+    ctx.document.execCommand = (cmd) => {
+      if (cmd !== "copy" || !succeeds) return false;
+      seen.copied.push(live ? live.value : null);
+      return true;
+    };
+    return seen;
+  }
+
+  /* no async clipboard at all -> the old API carries it */
+  const ctx = fresh();
+  ctx.S.shadowMissions = [DONE];
+  const seen = withExecCommand(ctx, true);
+  assert.strictEqual(await ctx.shadowCopyResult("m-done"), true,
+    "the fallback reports success");
+  assert.strictEqual(seen.copied.length, 1, "exactly one copy");
+  assert.strictEqual(seen.copied[0], ctx.shadowCompletionText(DONE),
+    "and it copied the SAME summary the async path would have");
+  assert.strictEqual(seen.selected, 1, "the node was selected first");
+  assert.strictEqual(seen.removed, 1, "and taken back out of the document");
+  assert.strictEqual(seen.mounted, 1, "having been mounted exactly once");
+  assert.strictEqual(ctx.S.shadowResultCopied.ok, true, "the founder is told");
+  assert(/Copied/.test(ctx.shadowCompletionHtml(DONE)),
+    "the button says Copied on the fallback path too");
+
+  /* an async clipboard that THROWS (a refused page) falls back as well */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [DONE];
+  withClipboard(ctx2, async () => { throw new Error("denied"); });
+  const seen2 = withExecCommand(ctx2, true);
+  assert.strictEqual(await ctx2.shadowCopyResult("m-done"), true,
+    "a refusal is retried on the old API, not surfaced as a failure");
+  assert.strictEqual(seen2.copied[0], ctx2.shadowCompletionText(DONE),
+    "with the same text");
+
+  /* execCommand that REFUSES is still reported honestly, and still cleans up */
+  const ctx3 = fresh();
+  ctx3.S.shadowMissions = [DONE];
+  const seen3 = withExecCommand(ctx3, false);
+  assert.strictEqual(await ctx3.shadowCopyResult("m-done"), false,
+    "a refused fallback is a failure");
+  assert.strictEqual(seen3.copied.length, 0, "nothing was copied");
+  assert.strictEqual(seen3.removed, 1, "and no stray node was left behind");
+  assert(/Copy failed/.test(ctx3.shadowCompletionHtml(DONE)),
+    "which is said out loud");
+
+  /* and a fallback that THROWS mid-way still removes its node */
+  const ctx4 = fresh();
+  ctx4.S.shadowMissions = [DONE];
+  const seen4 = withExecCommand(ctx4, true);
+  ctx4.document.execCommand = () => { throw new Error("boom"); };
+  assert.strictEqual(await ctx4.shadowCopyResult("m-done"), false,
+    "a throwing fallback is caught");
+  assert.strictEqual(seen4.removed, 1, "the finally still ran");
+  console.log("ok 15 the fallback copies when the clipboard API is missing");
+}
+
 console.log("test_shadow_completion_ui.js: all green");
+
+})().catch(e => { console.error(e); process.exit(1); });

@@ -562,13 +562,128 @@ function shadowCompletionHtml(m){
     </div>`;
   }).join("");
   const turns = (c.turns_used || 0) + " of " + (c.max_turns || 0) + " turns";
+  const S_ = (typeof S !== "undefined") ? S : {};
+  /* the copy action's own feedback, and it is per-record: a flag holding
+     another mission's id must leave THIS button reading "Copy result". */
+  const copied = (S_.shadowResultCopied
+    && S_.shadowResultCopied.id === m.id) ? S_.shadowResultCopied : null;
   return `<div class="shconfirm shdonesum" data-shdone="${escAttr(m.id)}">
-    <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
+    <div class="shdonehead">
+      <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
+      <button class="btn shdonecopy${copied
+        ? (copied.ok ? " ok" : " bad") : ""}" type="button"
+        data-shcopydone="${escAttr(m.id)}" aria-live="polite"
+        title="Copy this result as text">${copied
+          ? (copied.ok ? "Copied" : "Copy failed") : "Copy result"}</button>
+    </div>
     <div class="shconfirmsub">${esc(c.objective || "")}${c.objective
       ? " — " : ""}${esc(turns)} used. These are the criteria Shadow
       checked, and what satisfied each one.</div>
     <div class="shchecks">${rows}</div>
   </div>`;
+}
+
+/* ── THE RESULT, AS TEXT YOU CAN PASTE SOMEWHERE ELSE ─────────────────────
+   THE GAP THIS CLOSES (founder, 2026-09-15). The summary above is the one
+   legible account of what a finished task did, and it was trapped in the
+   pane: to tell anyone else -- a colleague, a ticket, the chat that asked
+   for the work -- the founder had to retype it or drag-select across three
+   nested divs and paste the markup's whitespace with it.
+
+   THE SAME SOURCE, THE SAME ORDER. This reads `m.completion` and nothing
+   else, exactly as shadowCompletionHtml does, so what lands on the
+   clipboard is what was on screen -- headline, objective, budget, then one
+   line per check carrying its verdict, the server's HOW copy, and the
+   quoted artifact indented under it. No second evaluator, nothing
+   recomputed, and no record without the field can produce text at all. */
+function shadowCompletionText(m){
+  const c = m && m.completion;
+  if (!c) return "";
+  const head = ["Done — " + String(c.headline || "")];
+  if (c.objective) head.push(String(c.objective));
+  head.push((c.turns_used || 0) + " of " + (c.max_turns || 0)
+    + " turns used.");
+  const rows = (c.checks || []).map(k => {
+    const how = String(k.how || "") + (k.by ? " · " + k.by : "");
+    /* ✓ / ✗ is the shcheckbox tick in text: a plain reader must be able to
+       tell a satisfied check from an outstanding one without the CSS. */
+    const line = (k.met ? "✓ " : "✗ ") + String(k.check || "")
+      + (how ? " — " + how : "");
+    return k.evidence ? line + "\n    " + String(k.evidence) : line;
+  });
+  return head.join("\n") + (rows.length ? "\n\n" + rows.join("\n") : "");
+}
+
+/* how long "Copied" stays before the button goes back to offering the
+   action. Long enough to read, short enough that it is never the label a
+   founder comes back to and mistakes for the control. */
+const SH_COPY_MS = 2200;
+let shCopyTimer = null;
+
+/* THE FALLBACK, for a context the async clipboard is not offered in.
+   `navigator.clipboard` is undefined on an insecure origin and refused on a
+   page the OS does not consider focused -- both reachable here, since the
+   panel is served over plain http to a browser whenever the founder opens it
+   outside the Electron shell. execCommand("copy") is deprecated and is still
+   the only thing that works there. It needs a real selected node, so a
+   textarea is mounted off-screen for exactly one tick and removed in a
+   `finally` -- an early return must never leave a stray node in the body.
+
+   readOnly, not disabled: a disabled field cannot be selected, and readOnly
+   is what stops the mobile keyboard from opening over the summary. */
+function shadowCopyFallback(text){
+  if (typeof document === "undefined" || !document.createElement) return false;
+  const ta = document.createElement("textarea");
+  try {
+    ta.value = text;
+    if (ta.setAttribute) ta.setAttribute("readonly", "");
+    /* off-screen rather than hidden: display:none cannot hold a selection */
+    if (ta.style){ ta.style.position = "fixed"; ta.style.top = "-1000px"; }
+    if (document.body && document.body.appendChild) document.body.appendChild(ta);
+    if (ta.select) ta.select();
+    return !!(document.execCommand && document.execCommand("copy"));
+  } catch (e) {
+    return false;
+  } finally {
+    if (ta && ta.remove) ta.remove();
+  }
+}
+
+/* THE ACTION ITSELF. Named rather than inlined in the click handler for the
+   reason every other Shadow action is: the wiring below is one `if` that
+   delegates, and the behaviour is testable without a DOM.
+
+   It is presentation-only -- no read, no write, no mission state. A failure
+   that BOTH paths refuse (an older browser with neither API, a page the OS
+   locks the clipboard on) is SHOWN, not swallowed: a button that says
+   nothing after a click is the disease this pane keeps curing. */
+async function shadowCopyResult(mid){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const m = (S_.shadowMissions || []).find(x => x && x.id === mid);
+  const text = shadowCompletionText(m);
+  if (!text) return false;                /* nothing to copy, nothing to say */
+  let ok = false;
+  try {
+    const cb = (typeof navigator !== "undefined") && navigator.clipboard;
+    if (!cb || !cb.writeText) throw new Error("no clipboard");
+    await cb.writeText(text);
+    ok = true;
+  } catch (e) {
+    /* the async API was missing or refused -- try the old one before
+       telling the founder it could not be done */
+    ok = shadowCopyFallback(text);
+  }
+  S_.shadowResultCopied = { id: mid, ok: ok };
+  if (typeof scheduleRender === "function") scheduleRender();
+  if (typeof clearTimeout === "function" && shCopyTimer) clearTimeout(shCopyTimer);
+  if (typeof setTimeout === "function") shCopyTimer = setTimeout(() => {
+    /* only clear what this click set -- a later copy of another task owns
+       the flag by then, and must keep its own feedback */
+    if (S_.shadowResultCopied && S_.shadowResultCopied.id === mid)
+      S_.shadowResultCopied = null;
+    if (typeof scheduleRender === "function") scheduleRender();
+  }, SH_COPY_MS);
+  return ok;
 }
 
 /* ── THE DELEGATE CHAT, IN THE TASK PANE ─────────────────────────────────
@@ -1967,6 +2082,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
+    /* Copy result. Resolved through closest() for the same reason the send
+       arrow and the settings door are -- a click that lands on anything
+       inside the button must still be the button. */
+    const copyEl = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shcopydone]") : null;
+    const copyMid = d.shcopydone
+      || (copyEl && copyEl.dataset && copyEl.dataset.shcopydone) || "";
+    if (copyMid){ shadowCopyResult(copyMid); return; }
     if (d.shtakeover){
       /* navigation, never mutation: land the founder where the delegate
          session can be resumed by hand */

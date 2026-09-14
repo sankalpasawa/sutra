@@ -3214,6 +3214,18 @@
 .shdonesum .shcheck{align-items:flex-start}
 .shcheckev{display:block;color:var(--muted);font-size:11.5px;line-height:1.45;
   margin-top:3px;font-style:italic}
+/* Copy result sits ON the headline row, because it acts on the summary the
+   headline names and nothing else. Same size as .shcheckdo (the sign-off's
+   own Confirm), so the two never read as different weights of control. */
+.shdonehead{display:flex;align-items:flex-start;gap:10px}
+.shdonehead .shconfirmq{flex:1;min-width:0}
+.shdonecopy{flex:none;padding:3px 9px;font-size:11.5px}
+/* the feedback IS the button: it says what just happened, in place, and
+   goes back to offering the action a couple of seconds later */
+.shdonecopy.ok{color:var(--ok);border-color:var(--ok-line);
+  background:var(--ok-bg)}
+.shdonecopy.bad{color:var(--block);border-color:var(--block-line);
+  background:var(--block-bg)}
 
 /* ── "Shadow is driving" strip, inside a normal chat pane ───────────────── */
 .shdrive{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
