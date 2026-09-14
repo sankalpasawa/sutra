@@ -2,7 +2,34 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.272.1 (2026-09-14, HEAD)
+## v2.273.0 (2026-09-14, HEAD)
+
+**Shadow's task list is honest about what it is doing, and a task can be removed in one click.**
+One UI change plus eight reliability fixes found in live flights, each pinned by a test that fails
+against the old behaviour.
+
+**Delete takes one click.** The x on a task row turned the row into "Delete? Yes / No" in place.
+That ask painted underneath neighbouring Shadow UI, so the Yes could not reliably be clicked and the
+delete was, in practice, unreachable. The ask is gone. The server path is untouched: the same single
+POST to the existing `/act` endpoint, the same `founder_stop` / `cancel_queued` / `release_delegate`
+ordering, the same `target_mode` ownership rule -- a chat Shadow MADE goes with the task, a founder's
+own chat never does -- and the record still erased last.
+
+**A start is visible when it starts.** `provision_target` returned only when the whole first agentic
+turn finished, so a mission was admitted up to 94s after its worker was visibly talking in its chat.
+**A replacement runtime is always observable**: `_OBSERVED` keyed on `id(rt)`, and a recycled CPython
+address made `attach_observer` skip a brand-new runtime, so the mission waited on a queue nobody fed
+and died at `STALL_SECS` blaming the worker. **A stalled turn asks the founder** through `_out_of_road`
+instead of transitioning a goal's attempt straight to `failed`. **A start that dies pre-launch ends**
+rather than hanging as QUEUED forever behind a swallowed ValueError. **Take Over stays PAUSED** when
+it lands inside the 9s window a compose call takes. **A floor pause reads NEEDS YOU**, matching what
+`pending_confirmations()` already said. **Create Task draws its chat** instead of a static brief for
+fourteen seconds, and **the list and the card agree** on which mission the detail pane shows.
+
+Tests: 10 shadow suites green -- early admit 10, observer lifecycle 8, stall routing 7, start failure
+7, takeover race 9, task lifecycle 25, floor needs-you 3, task chat 11, task status 8, home 32.
+
+## v2.272.1 (2026-09-14)
 
 **Routines do their work; stale locks clear themselves.** Nine scheduled routines had run under
 `dontAsk` with no allow-list since 2026-08-07, so every Bash call was denied and nothing ran; the
