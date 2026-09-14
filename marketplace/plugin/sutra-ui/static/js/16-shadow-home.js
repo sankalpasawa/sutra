@@ -378,10 +378,22 @@ function shadowCheckRowsHtml(m){
     </div>`;
   }).join("");
   if (!rows) return "";
+  /* SHADOW NEVER SAYS IT IS DONE, and the old headline here claimed it did
+     ("Shadow says it is done and is waiting on you"). It cannot say that:
+     DECISION_ACTIONS is ("continue", "ask_founder") with no stop and no
+     done, and _complete is the only writer of a done mission. What actually
+     happened is narrower, and is what the headline now states: the checks
+     Shadow CAN check have passed, and only the founder's are left.
+
+     The CONDITION was already correct -- this block renders only from the
+     awaiting branch, i.e. shadowMissionNeedsFounder(m) -- so only the
+     sentence changed. It matters more after the engine fix: an
+     all-founder_confirm mission now keeps RUNNING instead of parking here,
+     so the headline is reached only at a boundary that was really earned. */
   const left = (m.done_when || []).filter(c =>
     c && c.tier === "founder_confirm" && !c.met).length;
   return `<div class="shconfirm">
-    <div class="shconfirmq">Shadow says it is done and is waiting on you.</div>
+    <div class="shconfirmq">Shadow's own checks have passed — these are waiting on you.</div>
     <div class="shconfirmsub">Only you can sign these off \u2014 read each one
       and confirm the ones you agree with.${left
         ? " " + left + " left." : ""}</div>
@@ -1637,12 +1649,32 @@ async function shadowCreateTask(){
     if (typeof scheduleRender === "function") scheduleRender();
     return null;
   }
-  const done_when = String(d.done || "").split("\n")
-    .map(s => s.trim()).filter(Boolean)
-    /* founder_confirm is the honest default: a line the founder typed is a
-       criterion in their words, and only they can say it is met. The literal
-       substring tier is never invented for them here. */
-    .map(check => ({ tier: "founder_confirm", check }));
+  /* THE SAME CLASSIFIER THE GOAL CARD USES, not a second opinion.
+     This used to stamp founder_confirm on EVERY line. The reasoning was that
+     a line the founder typed is theirs to judge -- but goalCriteriaToChecks
+     already settled exactly this question for founder-typed text and settled
+     it the other way: shape is the only signal there is, and a
+     literal-shaped marker genuinely IS substring-matchable, so refusing to
+     machine-check it makes contains_artifact unreachable from the UI without
+     buying any safety.
+
+     It is also what made the engine's premature-pause bug reachable from the
+     Delegate form every single time: with zero machine checks the
+     confirmation boundary was satisfied vacuously on turn 1.
+
+     Nothing is loosened -- goalIsLiteralArtifact is unchanged (<=60 chars,
+     <=8 words, no criterion vocabulary), so "exit code 0" machine-checks and
+     "three distinct reasons" still becomes the founder's to confirm.
+
+     The guard is real: panel.html loads 18-goal-workspace.js right after
+     this file, so production always takes the first branch; a context that
+     loaded this module alone degrades to the previous behaviour rather than
+     throwing. */
+  const done_when = (typeof goalCriteriaToChecks === "function")
+    ? goalCriteriaToChecks(d.done)
+    : String(d.done || "").split("\n")
+        .map(s => s.trim()).filter(Boolean)
+        .map(check => ({ tier: "founder_confirm", check }));
   S.shadowNewBusy = true;
   S.shadowNewErr = null;
   if (typeof scheduleRender === "function") scheduleRender();

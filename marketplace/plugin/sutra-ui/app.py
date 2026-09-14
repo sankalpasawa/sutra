@@ -1778,13 +1778,31 @@ def _shadow_args(session_id=None):
             "active provider is %r (%s). Switch to Claude to use Shadow -- "
             "chat panes still run %s." % (prov["id"], prov["name"],
                                           prov["name"]))
-    return build_agent_args(prov["bin_path"], "", "plan",
+    # ONE SOURCE OF TRUTH FOR PERMISSION MODE. This passed a literal "plan",
+    # so a founder who had put the app in acceptEdits got chat panes that
+    # could write and delegates that could not -- the delegate would design
+    # the change and then stop, because the flag forbade doing it. Shadow is
+    # not a separate trust domain; it is the same operator working through a
+    # different surface.
+    #
+    # NO SHADOW-SPECIFIC SETTING and no second clamp: this is the SAME call
+    # ws_chat makes (app.py, `perm_mode = providers.effective_permission_mode(
+    # settings["permission_mode"])`), so every gate is inherited rather than
+    # re-implemented -- unsafe modes stay clamped to plan unless
+    # unsafe_modes_allowed(), an unknown value still resolves to plan, and a
+    # hand-edited settings.json is still clamped at the point of USE.
+    # load_settings() always returns permission_mode (it is one of the three
+    # contract keys), so there is no missing-key path.
+    perm_mode = providers.effective_permission_mode(
+        providers.load_settings()["permission_mode"])
+    return build_agent_args(prov["bin_path"], "", perm_mode,
                             session_id=session_id, stream_input=True)
 
 
 def _shadow_workdir_for_delegates():
     """Delegates work where the founder works (their objectives point at the
-    real repo), but in PLAN mode -- reads and plans, no writes until granted."""
+    real repo), under the SAME permission mode every chat pane runs at --
+    see _shadow_args. It said "but in PLAN mode" while that was hardcoded."""
     settings = providers.load_settings()
     return settings.get("workdir") or WORKDIR
 
@@ -2096,7 +2114,11 @@ async def api_shadow_status():
     sess = _SHADOW["session"]
     return {"watching": bool(sess and sess.alive),
             "session": sess.session_id if sess else None,
-            "permission_mode": "plan",
+            # the mode Shadow ACTUALLY runs at, from the one source of
+            # truth -- reporting a literal "plan" here would keep lying the
+            # moment the founder raised the global mode
+            "permission_mode": providers.effective_permission_mode(
+                providers.load_settings()["permission_mode"]),
             "active_missions": shadow_runner.active_mission_count(),
             "alerts": _shadow_alert_count()}
 

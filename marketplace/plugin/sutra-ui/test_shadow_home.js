@@ -830,6 +830,15 @@ const AWAITING = {
   ctx.S.shadowTaskSel = "m-fib";
   const h = ctx.shadowHomeHtml();
   assert(/waiting on you/.test(h), "it must say what it is waiting for");
+  /* ...and it must NOT claim Shadow declared the work finished. Shadow has
+     no `done`/`stop` action (mission_engine.DECISION_ACTIONS is exactly
+     ("continue", "ask_founder")) and _complete is the only writer of a done
+     mission, so the old headline -- "Shadow says it is done and is waiting
+     on you" -- asserted something that could never have happened. It read
+     worst in the premature-pause bug, where the mission parked here on turn
+     1 having built nothing. */
+  assert(!/says it is done/.test(h),
+    "the card must not claim Shadow declared completion");
   assert(/the README explains it clearly/.test(h)
     && /a working Python example is included/.test(h)
     && /the example is syntactically correct/.test(h),

@@ -205,17 +205,26 @@ class TestShadowArgsGuard(unittest.TestCase):
             {"id": pid, "name": name, "bin_path": bin_path,
              "runnable": True, "reason": None})
 
-    def test_01_claude_builds_the_persistent_plan_mode_argv(self):
+    def test_01_claude_builds_the_persistent_inherited_mode_argv(self):
         self._pretend("claude", "Claude Code", "/opt/homebrew/bin/claude")
         args = app._shadow_args()
         self.assertEqual(args[0], "/opt/homebrew/bin/claude",
                          "the ACTIVE provider's binary, not CLAUDE_BIN")
         self.assertEqual(args[1], "-p")
-        # PLAN MODE. The delegate's whole v1 safety promise is this flag; an
-        # ACP port has to carry it as session/set_session_mode instead, and
-        # losing it silently means delegates that write unsupervised.
+        # THE MODE IS INHERITED, NOT HARDCODED (2026-09-14). This asserted a
+        # literal "plan", which is what kept delegates read-only while the
+        # founder's own chat panes could write -- the delegate designed the
+        # change and then stopped. The flag is still load-bearing and still
+        # asserted; what it must EQUAL is now the one value ws_chat computes
+        # from the same settings, clamps included. test_shadow_permission_
+        # inherit.py drives every mode and both authorization states; this
+        # keeps the argv-shape assertion it has always made.
         self.assertIn("--permission-mode", args)
-        self.assertEqual(args[args.index("--permission-mode") + 1], "plan")
+        self.assertEqual(
+            args[args.index("--permission-mode") + 1],
+            providers.effective_permission_mode(
+                providers.load_settings()["permission_mode"]),
+            "Shadow runs at the same effective mode as a normal chat")
         # PERSISTENT process: turns arrive as stdin frames, so one process
         # serves the manifest AND every later say from the pump.
         self.assertIn("--input-format", args)
@@ -370,11 +379,16 @@ class TestSpawnDelegateSession(unittest.TestCase):
         #    and the frame clock feeds check_stalls
         self.assertIn("echo: SAY-ONE", shadow_runner._RECENT_TEXT[sid])
         self.assertIn(sid, shadow_runner._LAST_FRAME_TS)
-        # 8. one ledger row, naming the mode it was spawned in
+        # 8. EXACTLY ONE ledger row for the spawn. It used to end
+        # "(plan mode)"; the mode is inherited now (see _shadow_args), so a
+        # row that still said plan would be wrong whenever the founder had
+        # raised the global ceiling. The row's job -- one per delegate,
+        # naming the session -- is what is asserted.
         rows = [r for r in shadow_ledger.read("actions", 50)
                 if r.get("kind") == "spawn" and sid in (r.get("summary") or "")]
         self.assertEqual(len(rows), 1, rows)
-        self.assertIn("plan mode", rows[0]["summary"])
+        self.assertNotIn("plan mode", rows[0]["summary"],
+                         "the ledger must not claim a mode it no longer sets")
 
     def test_11_a_child_that_never_results_raises_and_leaks_nothing(self):
         build_args = self._build_args(self.dead)
@@ -479,7 +493,7 @@ class TestSpawnDelegateSession(unittest.TestCase):
         rows = [r for r in shadow_ledger.read("actions", 50)
                 if r.get("kind") == "spawn" and sid in (r.get("summary") or "")]
         self.assertEqual(len(rows), 1, rows)
-        self.assertIn("plan mode", rows[0]["summary"])
+        self.assertIn(sid, rows[0]["summary"])
 
     def test_13_a_child_that_never_announces_an_id_publishes_nothing(self):
         """The property the old `got_result and sid` gate was really buying:

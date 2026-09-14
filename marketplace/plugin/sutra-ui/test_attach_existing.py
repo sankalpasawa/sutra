@@ -318,9 +318,13 @@ class TestNothingElseMoved(Base):
     def test_D6b_shadow_args_is_unchanged_when_no_session_is_given(self):
         src = Path(__file__).with_name("app.py").read_text()
         self.assertIn("def _shadow_args(session_id=None):", src)
-        self.assertIn('build_agent_args(prov["bin_path"], "", "plan",\n'
+        # the argv call is unchanged in SHAPE; only the mode it passes is
+        # now inherited rather than the literal "plan" this used to pin
+        self.assertIn('build_agent_args(prov["bin_path"], "", perm_mode,\n'
                       "                            session_id=session_id, "
                       "stream_input=True)", src)
+        self.assertIn("providers.effective_permission_mode(", src,
+                      "the mode comes from the one shared accessor")
         # the delegate spawner still calls it with no argument at all
         self.assertIn("_shadow_args, _shadow_workdir_for_delegates()", src)
 
