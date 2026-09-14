@@ -326,9 +326,25 @@ def _record_attempt_memory(gs, gid, mission):
             "already satisfied: " + "; ".join(c for c in proven if c),
             attempt=attempt, mission_id=mid)
 
-    if mission.get("result_excerpt"):
-        gs.record_learned(gid, "result",
-                          str(mission["result_excerpt"])[:800],
+    # WHAT THE ATTEMPT DID, in the words the founder is shown everywhere
+    # else. The completion summary is the legible account of a finished
+    # mission and it is already on the record here; this row used to carry
+    # `result_excerpt` instead -- the head/tail cut of the evidence blob,
+    # which opens mid-json far more often than on a sentence, and which the
+    # goal workspace then rendered verbatim under "What I learned".
+    #
+    # STILL DETERMINISTIC, AND STILL NOTHING NEW IS READ. completion_text
+    # formats a field mission_engine._complete already stamped; no
+    # transcript is opened here that was not opened before, and no verdict
+    # is reached. The excerpt remains the fallback, so every mission
+    # completed before the field existed -- and every terminal state that
+    # never gets one, a blocked or stopped attempt -- records exactly what
+    # it recorded before.
+    result_text = mission_engine.completion_text(mission.get("completion"))
+    if not result_text and mission.get("result_excerpt"):
+        result_text = str(mission["result_excerpt"])
+    if result_text:
+        gs.record_learned(gid, "result", result_text[:800],
                           attempt=attempt, mission_id=mid)
     return gs.load(gid)
 

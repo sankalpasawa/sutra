@@ -24,6 +24,10 @@ WHAT IS PINNED HERE:
   4. settle()              the founder-confirm path stamps the same thing
   5. terminal_why          the feed row carries the headline, and failed /
                            stopped / pre-field records are byte-identical
+  6. completion_text       the same account as plain text, and the goal
+                           memory records THAT instead of the json blob --
+                           with the excerpt still the fallback for every
+                           attempt that finished before the field existed
 
 Run: sutra/marketplace/plugin/sutra-ui/run-tests.sh test_shadow_completion_summary.py
 """
@@ -34,11 +38,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import goal_lifecycle
 import mission_engine
 import providers
 import shadow_runner
+from goal_store import GoalStore
 from mission_engine import (artifact_context, completion_summary,
-                            MissionEngine, MissionStore)
+                            completion_text, MissionEngine, MissionScheduler,
+                            MissionStore)
 
 
 def run(coro):
@@ -358,6 +365,188 @@ class TestTheFeedRowSaysWhatPassed(unittest.TestCase):
         """Defensive: `state` decides, not the presence of the field."""
         m = {"state": "stopped", "completion": {"headline": "2 of 2 passed"}}
         self.assertEqual(shadow_runner.terminal_why(m), "mission stopped")
+
+
+# ------------------------------------------------------------------------
+# 6. completion_text -- the same account for a reader with no pane, and
+#    the goal memory that was still recording the json blob
+# ------------------------------------------------------------------------
+class TestCompletionText(unittest.TestCase):
+    """The plain-text twin of 16-shadow-home.js shadowCompletionText."""
+
+    SUMMARY = {
+        "objective": "ship the EMI check",
+        "headline": "2 of 3 checks passed",
+        "turns_used": 5, "max_turns": 20,
+        "checks": [
+            {"check": "EMI-OK", "tier": "contains_artifact", "met": True,
+             "how": "found in the chat",
+             "evidence": "the suite reports EMI-OK for every tenant"},
+            {"check": "the copy reads right", "tier": "founder_confirm",
+             "met": True, "how": "you confirmed it", "by": "founder"},
+            {"check": "pytest passes", "tier": "verify", "met": False,
+             "how": "still outstanding"},
+        ],
+    }
+
+    def test_25_it_leads_with_the_headline_and_the_budget(self):
+        out = completion_text(self.SUMMARY)
+        self.assertTrue(out.startswith("Done — 2 of 3 checks passed"),
+                        "a reader must not open mid-json: %r" % out[:60])
+        self.assertIn("ship the EMI check", out)
+        self.assertIn("5 of 20 turns used.", out)
+
+    def test_26_every_check_carries_its_verdict_and_its_how(self):
+        out = completion_text(self.SUMMARY)
+        self.assertIn("✓ EMI-OK — found in the chat", out)
+        self.assertIn("✓ the copy reads right — you confirmed it · founder",
+                      out, "who confirmed rides the how line")
+        self.assertIn("✗ pytest passes — still outstanding", out,
+                      "an outstanding check is shown, not hidden")
+
+    def test_27_evidence_is_quoted_under_the_check_it_proves(self):
+        lines = completion_text(self.SUMMARY).split("\n")
+        at = next(i for i, l in enumerate(lines) if l.startswith("✓ EMI-OK"))
+        self.assertEqual(
+            lines[at + 1],
+            "    the suite reports EMI-OK for every tenant",
+            "the quote is indented under its own check")
+
+    def test_28_it_reaches_no_verdict_of_its_own(self):
+        """PURE, and not a second evaluator: `how` and `met` are the
+        server's words, copied. A row claiming nothing renders nothing."""
+        out = completion_text({"headline": "1 of 1 checks passed",
+                               "checks": [{"check": "x", "met": True}]})
+        self.assertIn("✓ x", out)
+        self.assertNotIn("—  ", out, "no how -> no empty dash")
+
+    def test_29_an_absent_summary_is_empty_not_a_stub(self):
+        """The "empty means absent" rule terminal_why already applies, so
+        the caller can fall back rather than print a header with no facts."""
+        for absent in (None, {}, "", [], 0):
+            self.assertEqual(completion_text(absent), "",
+                             "%r must read as absent" % (absent,))
+
+    def test_30_it_survives_a_summary_with_no_checks(self):
+        out = completion_text({"headline": "no check was set",
+                               "turns_used": 2, "max_turns": 4})
+        self.assertEqual(out, "Done — no check was set\n2 of 4 turns used.")
+
+
+class TestTheGoalRemembersWhatWasDone(unittest.TestCase):
+    """THE SURFACE THAT WAS LEFT BEHIND. goal_lifecycle._record_attempt_
+    memory writes the attempt's `result` into durable goal memory, which
+    18-goal-workspace.js renders verbatim under "What I learned". It was
+    still recording result_excerpt."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["SUTRA_SHADOW_HOME"] = self.tmp.name
+        self._orig = providers.SETTINGS_PATH
+        settings = Path(self.tmp.name) / "settings.json"
+        settings.write_text(json.dumps({"shadow.enabled": True}))
+        providers.SETTINGS_PATH = settings
+        self.goals = GoalStore()
+        self.missions = MissionStore()
+        self.says = []
+
+    def tearDown(self):
+        providers.SETTINGS_PATH = self._orig
+        os.environ.pop("SUTRA_SHADOW_HOME", None)
+        self.tmp.cleanup()
+
+    #: the shape evidence_text really hands over -- a json dump with the
+    #: chat's own sentence buried past the 150-character head cut
+    TRANSCRIPT = ('{"role": "assistant", "text": "..."} ' + ("z" * 300)
+                  + " I re-ran it and the suite reports EMI-OK for every "
+                    "tenant, so the check is green.")
+
+    def _done_attempt(self):
+        g = self.goals.create(
+            "get the EMI check green", "sess-1",
+            done_when=[{"tier": "contains_artifact", "check": "EMI-OK"}])
+        m = goal_lifecycle.start_first_attempt(g["id"])
+        MissionScheduler(self.missions).start(m["id"])
+        goal_lifecycle.on_attempt_start(self.missions.load(m["id"]))
+
+        async def sayer(mm, text):
+            self.says.append(text)
+            return True
+
+        async def waiter(mm):
+            return True
+
+        eng = MissionEngine(self.missions, sayer, waiter,
+                            lambda mm: self.TRANSCRIPT)
+        out = run(eng.run_mission(m["id"]))
+        self.assertEqual(out["state"], "done", "fixture sanity")
+        return goal_lifecycle.on_attempt_end(out), out
+
+    def _result_rows(self, goal):
+        return [r for r in (goal.get("learned") or [])
+                if r.get("kind") == "result"]
+
+    def test_31_the_remembered_result_is_the_legible_account(self):
+        goal, out = self._done_attempt()
+        rows = self._result_rows(goal)
+        self.assertEqual(len(rows), 1, "still exactly one result memory")
+        text = rows[0]["text"]
+        self.assertTrue(text.startswith("Done — 1 of 1 checks passed"),
+                        "the goal's memory must not open mid-json: %r"
+                        % text[:80])
+        self.assertIn("✓ EMI-OK — found in the chat", text)
+        self.assertIn("the suite reports EMI-OK", text,
+                      "the chat's own sentence, quoted")
+        self.assertNotIn('{"role"', text, "the json blob is gone")
+        self.assertTrue(out["result_excerpt"].startswith('{"role"'),
+                        "and the excerpt field itself is untouched")
+
+    def test_32_a_record_from_before_the_field_falls_back(self):
+        """Every attempt already on disk. No completion -> the excerpt, so
+        nothing that finished before this shipped is remembered differently.
+        """
+        g = self.goals.create("outcome", "sess-1")
+        goal = goal_lifecycle._record_attempt_memory(
+            self.goals, g["id"],
+            {"id": "m-old", "state": "done", "objective": "o",
+             "turns_used": 1, "max_turns": 2,
+             "result_excerpt": '{"role": "assistant"} tail'})
+        rows = self._result_rows(goal)
+        self.assertEqual([r["text"] for r in rows],
+                         ['{"role": "assistant"} tail'])
+
+    def test_33_an_empty_completion_falls_back_too(self):
+        """Defensive: a stamped-but-empty field must not beat the excerpt
+        and leave the goal remembering nothing at all."""
+        g = self.goals.create("outcome", "sess-1")
+        goal = goal_lifecycle._record_attempt_memory(
+            self.goals, g["id"],
+            {"id": "m-x", "state": "done", "completion": {},
+             "result_excerpt": "the tail"})
+        self.assertEqual([r["text"] for r in self._result_rows(goal)],
+                         ["the tail"])
+
+    def test_34_an_attempt_with_no_result_at_all_records_none(self):
+        """A blocked attempt never reaches _complete, so it has neither
+        field. It must not gain an empty memory row."""
+        g = self.goals.create("outcome", "sess-1")
+        goal = goal_lifecycle._record_attempt_memory(
+            self.goals, g["id"], {"id": "m-b", "state": "blocked",
+                                  "block_reason": "budget_exhausted"})
+        self.assertEqual(self._result_rows(goal), [])
+
+    def test_35_the_memory_is_bounded(self):
+        """record_learned is durable goal state read back into every later
+        briefing -- the 800-char cap the excerpt had still applies."""
+        g = self.goals.create("outcome", "sess-1")
+        goal = goal_lifecycle._record_attempt_memory(
+            self.goals, g["id"],
+            {"id": "m-l", "state": "done",
+             "completion": {"headline": "1 of 1 checks passed",
+                            "checks": [{"check": "c", "met": True,
+                                        "how": "found in the chat",
+                                        "evidence": "q" * 5000}]}})
+        self.assertLessEqual(len(self._result_rows(goal)[0]["text"]), 800)
 
 
 if __name__ == "__main__":

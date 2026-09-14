@@ -541,6 +541,58 @@ def completion_summary(mission, results, transcript=""):
     }
 
 
+def completion_text(completion):
+    """THE SAME ACCOUNT, AS PLAIN TEXT, for a reader that has no pane.
+
+    THE GAP THIS CLOSES (founder, 2026-09-15). completion_summary made a
+    finished mission legible on every surface that renders HTML -- the Now
+    card, the Home pane, the Copy button. One surface was left behind:
+    goal_lifecycle._record_attempt_memory, which writes the attempt's
+    `result` into the goal's durable memory and renders it under "What I
+    learned". It was still recording `result_excerpt` -- the same head/tail
+    cut of the evidence blob this work exists to stop showing people -- so
+    the one place a completed attempt is remembered was the one place it
+    still read as machine noise.
+
+    THE TWIN OF shadowCompletionText, DELIBERATELY. 16-shadow-home.js
+    renders exactly this text onto the clipboard; the same order, the same
+    ✓/✗, the same indented evidence. A founder reading a goal's memory
+    should see what the Copy button would have given them, not a second
+    dialect of the same fact.
+
+    PURE, AND NOT A SECOND EVALUATOR. It formats the record completion_
+    summary already stamped and reads nothing else -- no mission, no
+    transcript, no verdict of its own.
+
+    An empty or missing summary returns "", which is what lets the caller
+    fall back to the excerpt for a mission completed before the field
+    existed. That is the same "empty means absent" rule shadow_runner.
+    terminal_why already applies to this field.
+    """
+    c = completion if isinstance(completion, dict) else None
+    if not c:
+        return ""
+    head = ["Done — %s" % (c.get("headline") or "")]
+    if c.get("objective"):
+        head.append(str(c["objective"]))
+    head.append("%s of %s turns used."
+                % (c.get("turns_used") or 0, c.get("max_turns") or 0))
+    rows = []
+    for k in c.get("checks") or []:
+        how = str(k.get("how") or "")
+        if k.get("by"):
+            how += " · %s" % k["by"]
+        # ✓ / ✗ is the pane's tick in text: a plain reader must be able to
+        # tell a satisfied check from an outstanding one without the CSS.
+        line = ("✓ " if k.get("met") else "✗ ") + str(k.get("check") or "")
+        if how:
+            line += " — " + how
+        if k.get("evidence"):
+            line += "\n    " + str(k["evidence"])
+        rows.append(line)
+    return "\n".join(head) + (("\n\n" + "\n".join(rows)) if rows else "")
+
+
 class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 

@@ -156,8 +156,14 @@ class TestShadowItselfStaysIsolated(Base):
         cfg = settings_of(app._shadow_args())
         self.assertNotIn("permissions", cfg)
         src = Path(app.__file__).read_text()
-        self.assertIn("make_decider(_shadow_args, _shadow_workdir())", src)
-        self.assertIn("_shadow_args, _shadow_workdir(),", src)
+        # WHICH BUILDER, not which signature. This used to pin the whole
+        # call including its closing paren, so 42f2d0f2 adding the runtime
+        # factory (`new_runtime=`) broke it while the property it guards --
+        # the decider is built from _shadow_args, never _worker_args -- was
+        # never in question. Pin the property.
+        self.assertIn("make_decider(_shadow_args, _shadow_workdir(),", src)
+        self.assertNotIn("make_decider(_worker_args", src,
+                         "the decider must never get repo authority")
 
     def test_09_the_attach_path_is_untouched(self):
         """ensure_runtime resumes a chat the FOUNDER made, in that session's
