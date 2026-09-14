@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow on Sutra Desktop — design v9</title>
+<!-- v9 (2026-09-14): built to the six desktop design guidelines (DESIGN-GUIDELINES.md): production
+     tokens, glass on floating surfaces only, micro animations on state change only, one primary
+     action per screen, no explainer copy. Covers: the list + chat, the sheet, adding a rule,
+     the working chat with take over, errors, Shadow down + restart. Design of record for
+     holding/plans/shadow/SHADOW-V3.md v3.2. v8.x stays as history. -->
+<style>
+:root{
+  --serif:ui-serif,"Iowan Old Style",Palatino,Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --bg:#fafaf9;--surface:#fff;--line:#e2e0dd;--line-soft:#eeecea;--ink:#1c1917;--muted:#78716c;--faint:#a8a29e;
+  --acc:#8A5D2E;--acc-bg:#f6efe7;--ok:#3f7d54;--ok-bg:#eef4ef;--ok-line:#cfe0d4;--block:#9c3f34;--block-bg:#faeeec;--block-line:#eccfc9;
+  --bubble:#f5f4f2;--sepia:#faf6ef;--shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16);
+  --ease:cubic-bezier(.2,.7,.2,1);--t:200ms;
+}
+*{box-sizing:border-box}
+body{background:#ECEAE6;color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;margin:0;padding:28px 20px 60px;-webkit-font-smoothing:antialiased}
+.cap{max-width:1300px;margin:0 auto 10px;font-size:12.5px;color:var(--muted)} .cap b{color:var(--ink);font-weight:600}
+.stage{max-width:1300px;margin:0 auto 34px;overflow-x:auto}
+.app{width:1300px;max-width:100%;height:620px;display:grid;grid-template-columns:224px 1fr;gap:9px;background:var(--surface);padding:9px;border-radius:12px;border:1px solid #d8d5d0;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.rail{display:flex;flex-direction:column;padding:10px 8px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;padding:6px 8px 14px}
+.brand .sq{width:20px;height:20px;border-radius:5px;background:var(--acc);color:#fff;font-family:var(--serif);font-size:12px;display:flex;align-items:center;justify-content:center}
+.ri{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;font-size:13.5px;color:var(--muted)}
+.ri .ic{width:16px;text-align:center;color:var(--faint);font-size:13px} .ri .chev{margin-left:auto;color:var(--faint);font-size:11px}
+.ri.on{background:var(--acc-bg);color:var(--ink);font-weight:500} .ri.on .ic{color:var(--acc)}
+.ri.sub{padding:6px 10px 6px 30px;font-size:13px} .ri.sub.on{background:var(--bg)}
+.who{margin-top:auto;display:flex;align-items:center;gap:9px;padding:8px 10px;font-size:12px;color:var(--muted)}
+.who .av{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--acc)}
+.who b{display:block;font-weight:500;color:var(--ink);font-size:12.5px}
+.pane{border:1px solid var(--line-soft);border-radius:10px;background:var(--surface);display:flex;flex-direction:column;min-width:0;overflow:hidden;position:relative}
+.ph{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line-soft);font-size:13.5px;font-weight:600}
+.ph .bk,.ph .x{color:var(--faint);font-weight:400;font-size:14px} .ph .x{margin-left:auto}
+.ph .go{font-size:12px;font-weight:500;color:var(--acc);cursor:pointer;margin-left:6px}
+.body{flex:1;display:flex;min-height:0}
+/* list */
+.tasks{width:290px;flex:none;border-right:1px solid var(--line-soft);display:flex;flex-direction:column;padding:12px;position:relative}
+.delegate{background:var(--acc);color:#fff;border:0;border-radius:8px;font:inherit;font-size:14px;font-weight:600;padding:10px;cursor:pointer;transition:transform var(--t) var(--ease),filter var(--t)}
+.delegate:hover{transform:translateY(-1px);filter:brightness(.96)} .delegate:active{transform:scale(.985)}
+.grp{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:16px 2px 4px;display:flex;gap:8px} .grp.need{color:var(--acc)}
+.row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer;transition:background var(--t),transform var(--t) var(--ease);animation:in .26s var(--ease) both}
+.row:nth-child(2){animation-delay:40ms} .row:nth-child(3){animation-delay:80ms}
+.row:hover{background:var(--bg)} .row.on{background:var(--acc-bg)}
+.row .d{width:7px;height:7px;border-radius:50%;background:var(--acc);flex:none;transition:background var(--t)}
+.row .d.run{background:var(--ok)} .row .d.stop{background:var(--block)} .row .d.done{background:var(--faint)} .row .d.pause{background:var(--faint)}
+.row .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;border-radius:99px;padding:2px 7px;border:1px solid var(--line);color:var(--muted);flex:none;transition:color var(--t),border-color var(--t),background var(--t)}
+.st.need{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)} .st.run{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg)} .st.stop{color:var(--block);border-color:var(--block-line);background:var(--block-bg)}
+.foot{margin-top:auto;border-top:1px solid var(--line-soft);padding-top:8px}
+.knows{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);padding:6px 4px;cursor:pointer;border-radius:8px;transition:background var(--t),color var(--t)}
+.knows:hover{color:var(--ink);background:var(--bg)}
+/* chat */
+.chat{flex:1;display:flex;flex-direction:column;min-width:0}
+.ch{display:flex;align-items:center;gap:10px;padding:12px 18px 10px;font-size:15px;font-weight:600}
+.ch .s{font-family:var(--serif);color:var(--acc);font-size:14px} .ch .st{margin-left:auto}
+.ch .go{font-size:12px;font-weight:500;color:var(--acc);cursor:pointer}
+.ch .stop{font-size:12px;color:var(--block);border:1px solid var(--block-line);border-radius:99px;padding:2px 9px;font-weight:500;cursor:pointer}
+.msgs{flex:1;overflow:auto;padding:4px 18px 12px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.u{align-self:flex-end;background:var(--bubble);border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px;padding:8px 11px;max-width:80%}
+.a{align-self:flex-start;background:var(--sepia);border-left:2px solid var(--acc);border-radius:0 10px 10px 10px;padding:8px 11px;max-width:86%}
+.a .w,.m .w{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.card{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:12px 14px;transition:border-color var(--t),background var(--t)}
+.card.need{border-color:var(--acc);background:var(--acc-bg)} .card.bad{border-color:var(--block-line);background:var(--block-bg)}
+.card .hd{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px} .card .hd .st{margin-left:auto}
+.kv{display:flex;gap:10px;margin-top:7px;font-size:13px} .kv .k{font-family:var(--mono);font-size:11px;color:var(--muted);width:92px;flex:none;padding-top:2px}
+.acts{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.btn{font:inherit;font-size:13px;font-weight:500;border-radius:7px;padding:6px 11px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);transition:transform var(--t) var(--ease),background var(--t)}
+.btn:hover{transform:translateY(-1px)} .btn:active{transform:scale(.98)}
+.btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)} .btn.stop{color:var(--block)}
+.did{font-size:12.5px;color:var(--ok);display:none} .card.ok .btn{display:none} .card.ok .did{display:inline;animation:in .2s var(--ease)}
+.remember{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:99px;padding:5px 6px 5px 11px;animation:in .26s var(--ease)}
+.remember .sc{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc)}
+.remember .btn{padding:3px 9px;font-size:12px} .remember.ok .btn{display:none} .remember.ok:after{content:"kept";font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ok);padding-right:6px}
+.comp{margin:0 18px 12px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13.5px;color:var(--faint);min-height:50px;transition:border-color var(--t)} .comp:hover{border-color:var(--acc)}
+/* glass sheet over the list */
+.glass{background:rgba(255,255,255,.66);-webkit-backdrop-filter:saturate(1.4) blur(18px);backdrop-filter:saturate(1.4) blur(18px);border:1px solid rgba(255,255,255,.75);box-shadow:var(--shadow)}
+.sheet{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;opacity:0;visibility:hidden;transform:translateX(-14px);transition:opacity 240ms ease,transform 240ms var(--ease),visibility 0s 240ms}
+.sheet.open{opacity:1;visibility:visible;transform:none;transition:opacity 240ms ease,transform 240ms var(--ease)}
+.sheet .ph{border-bottom-color:rgba(28,25,23,.08)}
+.sb{flex:1;overflow:auto;padding:8px 22px 20px}
+.sec{padding:16px 0 6px;border-bottom:1px solid rgba(28,25,23,.08)} .sec:last-child{border-bottom:0}
+.sec h3{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 8px}
+.rule{display:flex;align-items:center;gap:10px;padding:8px 0}
+.scope{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:99px;padding:3px 8px;flex:none;cursor:pointer;transition:color var(--t),border-color var(--t)} .scope:hover{color:var(--acc);border-color:var(--acc)}
+.rt{flex:1;font-size:13.5px;padding:3px 4px;border-radius:5px;outline:none;border-bottom:1px dashed transparent;transition:background var(--t),border-color var(--t)}
+.rt:hover{background:rgba(255,255,255,.7);border-bottom-color:var(--faint)} .rt:focus{background:#fff;border-bottom:1px solid var(--acc)}
+.rt.empty{color:var(--faint)}
+.rx{color:var(--faint);font-size:16px;cursor:pointer;line-height:1;padding:0 4px;border-radius:5px;transition:color var(--t)} .rx:hover{color:var(--block)}
+.nr{display:flex;align-items:center;gap:12px;padding:8px 0;font-size:13.5px} .nr .k{flex:1}
+.ev{font-weight:600;padding:2px 6px;border-radius:5px;outline:none;border-bottom:1px dashed var(--faint);cursor:text;font-variant-numeric:tabular-nums} .ev:focus{background:#fff;border-bottom:1px solid var(--acc)}
+.step{display:flex;align-items:center;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:rgba(255,255,255,.7)}
+.step button{width:28px;height:28px;border:0;background:transparent;color:var(--muted);font-size:15px;cursor:pointer} .step .val{min-width:34px;text-align:center;font-weight:600;border-left:1px solid var(--line);border-right:1px solid var(--line);height:28px;line-height:28px}
+.chips{display:flex;flex-wrap:wrap;gap:6px} .chip{font-size:12px;background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:99px;padding:4px 10px;color:var(--muted)}
+/* working chat */
+.over{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--acc-bg);border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--acc);transition:background 240ms,color 240ms}
+.over .live{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none;transition:background 240ms} .over b{color:var(--ink);font-weight:600}
+.over .c{margin-left:auto;display:flex;gap:8px;align-items:center} .over .go{font-size:12px;font-weight:500;color:var(--acc);cursor:pointer;margin-right:4px}
+.over.mine{background:var(--bg);color:var(--muted)} .over.mine .live{background:var(--faint)}
+.over.ended{background:var(--block-bg);color:var(--block)} .over.ended .live{background:var(--block)}
+.m{align-self:flex-start;max-width:86%;padding:8px 11px;border-radius:0 10px 10px 10px;font-size:13px;animation:in .22s var(--ease)}
+.m.sh{background:var(--sepia);border-left:2px solid var(--acc)} .m.sh .w{color:var(--acc)}
+.m.ag{background:var(--bubble);border-left:2px solid var(--faint)}
+.m.me{align-self:flex-end;background:var(--bubble);border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px}
+/* the dot + compact chat */
+.dot{position:absolute;right:22px;bottom:22px;width:48px;height:48px;border-radius:50%;border:2px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:22px;color:var(--acc);cursor:pointer;z-index:6;transition:border-color 240ms,color 240ms,transform var(--t) var(--ease)}
+.dot:hover{transform:scale(1.04)}
+.dot .n{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;border-radius:99px;background:var(--acc);color:#fff;font-family:var(--sans);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;animation:pop .3s var(--ease)}
+.dot.need{animation:breathe .6s ease-out 1}
+.dot.grey{border-color:var(--faint);color:var(--faint)}
+.restart{position:absolute;right:80px;bottom:30px;font-size:12.5px;font-weight:500;color:var(--ink);border-radius:99px;padding:6px 12px;cursor:pointer;z-index:6;opacity:0;transform:translateX(6px);transition:opacity var(--t),transform var(--t) var(--ease)}
+.restart.show{opacity:1;transform:none}
+.mini{position:absolute;right:22px;bottom:80px;width:340px;height:330px;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;z-index:7;animation:in .26s var(--ease)}
+.mini .ch{font-size:14px;padding:10px 14px 8px;border-bottom:1px solid rgba(28,25,23,.08)} .mini .msgs{padding:10px 14px;font-size:12.5px} .mini .comp{margin:0 14px 12px;min-height:42px;padding:9px 12px;font-size:12.5px;background:rgba(255,255,255,.6)}
+.foot2{max-width:1300px;margin:12px auto 0;font-size:11.5px;color:var(--faint)}
+@keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes pop{from{transform:scale(.6)}to{transform:none}}
+@keyframes breathe{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms !important;transition-duration:1ms !important}.sheet{transform:none}}
+@media (max-width:640px){body{padding:18px 16px 50px}}
+</style>
+</head>
+<body>
+
+<p class="cap"><b>1</b> Focus &rsaquo; Shadow. Approve the push. Say &ldquo;always&hellip;&rdquo; and confirm. Open what Shadow knows.</p>
+<div class="stage"><div class="app">
+  <nav class="rail">
+    <div class="brand"><span class="sq">S</span>Sutra</div>
+    <div class="ri"><span class="ic">&#9678;</span>Now</div>
+    <div class="ri on"><span class="ic">&#9673;</span>Focus<span class="chev">&#8964;</span></div>
+    <div class="ri sub on">Shadow</div><div class="ri sub">Balance</div><div class="ri sub">Optimus</div>
+    <div class="ri"><span class="ic">&#9998;</span>Chats</div><div class="ri"><span class="ic">&#10038;</span>Agent Marketplace</div><div class="ri"><span class="ic">&#9638;</span>Org<span class="chev">&#8250;</span></div><div class="ri"><span class="ic">&#9432;</span>Help</div><div class="ri"><span class="ic">&#9881;</span>Settings</div>
+    <div class="who"><span class="av">A</span><span><b>CEO of Sutra</b>&mdash;</span></div>
+  </nav>
+  <section class="pane">
+    <div class="ph"><span class="bk">&#8249;</span>Shadow<span class="x">&times;</span></div>
+    <div class="body">
+      <aside class="tasks">
+        <button class="delegate">+ Delegate</button>
+        <div class="grp need">Waiting on you</div>
+        <div id="g-wait"><div class="row on" data-t="emi"><span class="d"></span><span class="t">EMI auto-fix</span><span class="st need">approve</span></div></div>
+        <div class="grp">Running</div>
+        <div id="g-run"><div class="row" data-t="watch"><span class="d run"></span><span class="t">watch the sutra-ui build</span><span class="st run">running</span></div><div class="row" data-t="pricing"><span class="d run"></span><span class="t">pricing research</span><span class="st run">running</span></div></div>
+        <div class="grp">Done today</div>
+        <div><div class="row" data-t="stab"><span class="d stop"></span><span class="t">stability pass</span><span class="st stop">stopped</span></div><div class="row" data-t="readme"><span class="d done"></span><span class="t">README title</span><span class="st">done</span></div></div>
+        <div class="foot"><div class="knows" data-open="sheet1" role="button" tabindex="0"><span>&#9881;</span>What Shadow knows</div></div>
+        <div class="sheet glass" id="sheet1">
+          <div class="ph"><span class="bk" data-close style="cursor:pointer">&#8249;</span>What Shadow knows</div>
+          <div class="sb">
+            <div class="sec"><h3>Rules</h3>
+              <div class="rule"><span class="scope" data-scope>global</span><span class="rt" contenteditable="true">Answer with the outcome first.</span><span class="rx" data-rx>&times;</span></div>
+              <div class="rule"><span class="scope" data-scope>paisa</span><span class="rt" contenteditable="true">Run the EMI check before commits.</span><span class="rx" data-rx>&times;</span></div>
+              <div class="rule"><span class="scope" data-scope>dayflow</span><span class="rt" contenteditable="true">Never touch the release branch.</span><span class="rx" data-rx>&times;</span></div>
+              <div class="rule"><span class="scope" data-scope>global</span><span class="rt empty" contenteditable="true" data-empty>Add a rule&hellip;</span></div>
+            </div>
+            <div class="sec"><h3>Numbers</h3>
+              <div class="nr"><span class="k">Running at once</span><span class="step" data-step><button data-dec>&minus;</button><span class="val">5</span><button data-inc>+</button></span></div>
+              <div class="nr"><span class="k">Per task</span><span><span class="ev" contenteditable="true">200k</span> tokens &middot; <span class="ev" contenteditable="true">12</span> turns</span></div>
+              <div class="nr"><span class="k">Quiet</span><span><span class="ev" contenteditable="true">9 pm</span> to <span class="ev" contenteditable="true">8 am</span></span></div>
+            </div>
+            <div class="sec"><h3>Floors</h3><div class="chips"><span class="chip">&#128274; push, reset, branch delete</span><span class="chip">&#128274; client repos</span><span class="chip">&#128274; external sends</span><span class="chip">&#128274; your questions</span></div></div>
+          </div>
+        </div>
+      </aside>
+      <div class="chat">
+        <div class="ch"><span class="s">S</span><span id="cname">EMI auto-fix</span><span class="st need" id="cstate">waiting on you</span><span class="go">Open the chat &#8250;</span><span class="stop">Stop</span></div>
+        <div class="msgs" id="msgs">
+          <div class="u">Fix the rounding differences in the EMI checks in paisa and ship it.</div>
+          <div class="card">
+            <div class="hd">fix the EMI rounding<span class="st run">running</span></div>
+            <div class="kv"><span class="k">where</span><span>a new chat in the paisa session</span></div>
+            <div class="kv"><span class="k">done when</span><span>the fix runs before every EMI check and a tested PR is open</span></div>
+            <div class="kv"><span class="k">turn</span><span>10 of 12</span></div>
+          </div>
+          <div class="a"><div class="w">the agent &middot; turn 10</div>14 tests green, PR #212 open. The push is a floor, so I stopped here.</div>
+          <div class="card need" id="approval">
+            <div class="hd">Approve the push to paisa?</div>
+            <div class="kv"><span class="k">evidence</span><span>PR #212 &middot; 14/14</span></div>
+            <div class="acts"><button class="btn pri" data-approve>Approve</button><button class="btn stop">Stop</button><span class="did">approved</span></div>
+          </div>
+          <div class="u">Always run the EMI check before commits in paisa.</div>
+          <div class="remember" id="rem"><span class="sc">paisa</span><span>I&rsquo;ll remember: run the EMI check before commits.</span><button class="btn pri" data-keep>Confirm</button></div>
+        </div>
+        <div class="comp">Say anything&hellip;</div>
+      </div>
+    </div>
+    <div class="dot need" data-open="sheet1">S<span class="n" id="badge">1</span></div>
+  </section>
+</div></div>
+
+<p class="cap"><b>2</b> Shadow working in a chat. Take over, hand back, or keep the chat. &ldquo;Shadow &rsaquo;&rdquo; is one click to its task chat.</p>
+<div class="stage"><div class="app" style="height:560px">
+  <nav class="rail">
+    <div class="brand"><span class="sq">S</span>Sutra</div>
+    <div class="ri"><span class="ic">&#9678;</span>Now</div><div class="ri"><span class="ic">&#9673;</span>Focus<span class="chev">&#8250;</span></div>
+    <div class="ri on"><span class="ic">&#9998;</span>Chats</div><div class="ri sub on">paisa &middot; EMI auto-fix</div><div class="ri sub">dayflow &middot; api deploy</div>
+    <div class="ri"><span class="ic">&#10038;</span>Agent Marketplace</div><div class="ri"><span class="ic">&#9638;</span>Org<span class="chev">&#8250;</span></div><div class="ri"><span class="ic">&#9432;</span>Help</div><div class="ri"><span class="ic">&#9881;</span>Settings</div>
+    <div class="who"><span class="av">A</span><span><b>CEO of Sutra</b>&mdash;</span></div>
+  </nav>
+  <section class="pane">
+    <div class="ph"><span class="bk">&#8249;</span>paisa &middot; EMI auto-fix<span class="x">&times;</span></div>
+    <div class="over" id="over"><span class="live"></span><span id="over-t"><b>Shadow is working here</b> &middot; turn 6 of 12</span><span class="c" id="over-c"><span class="go">Shadow &#8250;</span><button class="btn" data-takeover>Take over</button><button class="btn stop">Stop</button></span></div>
+    <div class="body" style="flex-direction:column">
+      <div class="msgs" id="wmsgs" style="padding-top:12px">
+        <div class="m sh"><div class="w">shadow &middot; turn 5</div>Run the EMI check first, then fix the rounding in emi.py.</div>
+        <div class="m ag"><div class="w">paisa agent</div>3 differences, all in the half-up branch. Patching, one test each.</div>
+        <div class="m sh"><div class="w">shadow &middot; turn 6</div>Open the PR when green. I stop before the push.</div>
+        <div class="m ag"><div class="w">paisa agent</div>14 tests green. PR #212 open.</div>
+      </div>
+      <div class="comp" id="wcomp">Type here and you take over&hellip;</div>
+    </div>
+  </section>
+</div></div>
+
+<p class="cap"><b>3</b> When it goes wrong. Failed: Retry. Paused after a relaunch: Resume. The Shadow chat down: grey dot, Restart. Click the dot.</p>
+<div class="stage"><div class="app" style="height:520px">
+  <nav class="rail">
+    <div class="brand"><span class="sq">S</span>Sutra</div>
+    <div class="ri"><span class="ic">&#9678;</span>Now</div><div class="ri"><span class="ic">&#9673;</span>Focus<span class="chev">&#8250;</span></div><div class="ri"><span class="ic">&#9998;</span>Chats</div><div class="ri"><span class="ic">&#10038;</span>Agent Marketplace</div>
+    <div class="ri on"><span class="ic">&#9638;</span>Org<span class="chev">&#8250;</span></div><div class="ri"><span class="ic">&#9432;</span>Help</div><div class="ri"><span class="ic">&#9881;</span>Settings</div>
+    <div class="who"><span class="av">A</span><span><b>CEO of Sutra</b>&mdash;</span></div>
+  </nav>
+  <section class="pane">
+    <div class="ph"><span class="bk">&#8249;</span>Departments<span class="x">&times;</span></div>
+    <div class="body" style="padding:20px;color:var(--faint);font-size:13px">org chart</div>
+    <div class="mini glass" id="mini">
+      <div class="ch"><span class="s">S</span>stability pass<span class="st stop" id="mstate">stopped</span></div>
+      <div class="msgs" id="mmsgs">
+        <div class="card bad" id="failcard"><div class="hd">tests failed to import</div><div class="kv"><span class="k">turn</span><span>3 of 12</span></div><div class="acts"><button class="btn pri" data-retry>Retry</button><button class="btn stop">Stop</button><span class="did">retrying as a new task</span></div></div>
+        <div class="card"><div class="hd">pricing research<span class="st">paused</span></div><div class="kv"><span class="k">why</span><span>relaunch</span></div><div class="acts"><button class="btn pri">Resume</button><button class="btn stop">Stop</button></div></div>
+      </div>
+      <div class="comp">Say anything&hellip;</div>
+    </div>
+    <span class="restart glass" id="restart" data-restart>Restart Shadow</span>
+    <div class="dot" id="dot3" data-down>S<span class="n">1</span></div>
+  </section>
+</div></div>
+
+<p class="foot2">Shadow v9 &middot; 2026-09-14 &middot; SHADOW-V3.md v3.2 &middot; DESIGN-GUIDELINES.md</p>
+
+<script>
+(function(){
+  var q=function(s,r){return (r||document).querySelector(s)}, qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  qa('[data-open]').forEach(function(t){t.addEventListener('click',function(){var s=document.getElementById(t.getAttribute('data-open'));if(s)s.classList.add('open');});});
+  qa('[data-close]').forEach(function(b){b.addEventListener('click',function(){b.closest('.sheet').classList.remove('open');});});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')qa('.sheet.open').forEach(function(s){s.classList.remove('open');});});
+  var scopes=['global','paisa','dayflow','this chat'];
+  qa('[data-scope]').forEach(function(s){s.addEventListener('click',function(){s.textContent=scopes[(scopes.indexOf(s.textContent.trim())+1)%scopes.length];});});
+  qa('[data-rx]').forEach(function(x){x.addEventListener('click',function(){var r=x.closest('.rule');r.style.transition='opacity .18s';r.style.opacity='0';setTimeout(function(){r.remove();},180);});});
+  qa('[data-empty]').forEach(function(t){t.addEventListener('focus',function(){if(t.classList.contains('empty')){t.classList.remove('empty');t.textContent='';}});});
+  qa('[data-step]').forEach(function(s){var v=q('.val',s);q('[data-dec]',s).addEventListener('click',function(){v.textContent=Math.max(1,+v.textContent-1);});q('[data-inc]',s).addEventListener('click',function(){v.textContent=Math.min(12,+v.textContent+1);});});
+  // list selection
+  var names={emi:'EMI auto-fix',watch:'watch the sutra-ui build',pricing:'pricing research',stab:'stability pass',readme:'README title'};
+  var st={emi:['waiting on you','st need'],watch:['running','st run'],pricing:['running','st run'],stab:['stopped','st stop'],readme:['done','st']};
+  qa('.row[data-t]').forEach(function(r){r.addEventListener('click',function(){qa('.row').forEach(function(x){x.classList.remove('on');});r.classList.add('on');var k=r.getAttribute('data-t');q('#cname').textContent=names[k];var c=q('#cstate');c.textContent=st[k][0];c.className=st[k][1];});});
+  // approve: card resolves, row moves, badge goes
+  var ap=q('[data-approve]'); if(ap)ap.addEventListener('click',function(){var c=q('#approval');c.classList.add('ok');c.classList.remove('need');var r=q('.row[data-t="emi"]');q('.d',r).className='d run';var s=q('.st',r);s.className='st run';s.textContent='turn 7';q('#g-run').insertBefore(r,q('#g-run').firstChild);var cs=q('#cstate');cs.textContent='running';cs.className='st run';var b=q('#badge');if(b)b.remove();q('.dot').classList.remove('need');});
+  // remember: confirm keeps it
+  var kp=q('[data-keep]'); if(kp)kp.addEventListener('click',function(){q('#rem').classList.add('ok');});
+  // working chat: take over / hand back / keep
+  var over=q('#over'),ot=q('#over-t'),oc=q('#over-c'),wm=q('#wmsgs'),wc=q('#wcomp');
+  function setOver(cls,html,ctrls){over.className='over '+cls;ot.innerHTML=html;oc.innerHTML=ctrls;wire();}
+  function wire(){var t=q('[data-takeover]');if(t)t.addEventListener('click',takeover);var h=q('[data-handback]');if(h)h.addEventListener('click',handback);var k=q('[data-keepchat]');if(k)k.addEventListener('click',keep);}
+  function takeover(){setOver('mine','<b>You have the chat</b> &middot; paused at turn 6','<span class="go">Shadow &#8250;</span><button class="btn pri" data-handback>Hand back</button><button class="btn" data-keepchat>Keep the chat</button><button class="btn stop">Stop</button>');var m=document.createElement('div');m.className='m me';m.innerHTML='<div class="w">you</div>Round the prepayment penalty the same way.';wm.appendChild(m);wc.textContent='Say anything…';}
+  function handback(){setOver('','<b>Shadow is back</b> &middot; turn 7 of 12','<span class="go">Shadow &#8250;</span><button class="btn" data-takeover>Take over</button><button class="btn stop">Stop</button>');var m=document.createElement('div');m.className='m sh';m.innerHTML='<div class="w">shadow &middot; turn 7</div>Adding the prepayment penalty to the same path, with a test.';wm.appendChild(m);wc.textContent='Type here and you take over…';}
+  function keep(){setOver('ended','<b>Yours</b> &middot; task stopped at turn 6, evidence kept','');wc.textContent='Say anything…';}
+  if(over)wire();
+  // errors: retry; shadow down: grey dot, restart
+  var rt=q('[data-retry]'); if(rt)rt.addEventListener('click',function(){var c=q('#failcard');c.classList.add('ok');c.classList.remove('bad');var s=q('#mstate');s.textContent='running';s.className='st run';});
+  var dot=q('#dot3'),rs=q('#restart'),down=false;
+  // the Shadow chat down: grey dot, one action; tasks keep running
+  if(dot)dot.addEventListener('click',function(){down=!down;dot.classList.toggle('grey',down);rs.classList.toggle('show',down);var n=q('.n',dot);if(n)n.style.opacity=down?'0':'1';});
+  if(rs)rs.addEventListener('click',function(e){e.stopPropagation();down=false;dot.classList.remove('grey');rs.classList.remove('show');var n=q('.n',dot);if(n)n.style.opacity='1';});
+})();
+</script>
+</body>
+</html>

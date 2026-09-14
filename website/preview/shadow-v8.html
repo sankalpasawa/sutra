@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shadow on Sutra Desktop — design v8.1 (one chat, one list)</title>
-<!-- v8.1 (2026-09-14): re-skinned to the production panel.css tokens (system sans, serif only on
+<title>Shadow on Sutra Desktop — design v8.2 (one chat, one list)</title>
+<!-- v8.2 (2026-09-14): adds section 4, Shadow working inside a chat: oversee bar, who-wrote-what,
+     Take over pauses the task; then Hand back / Keep it and end the task / Stop (SHADOW-V3.md v3.1).
+     v8.1 (2026-09-14): re-skinned to the production panel.css tokens (system sans, serif only on
      the settings title and section headings, the app's rail and pane header). No masthead, no
      decorative chrome. Every row of "What Shadow knows" is editable in place (pencil), not only
      removable. Design of record for holding/plans/shadow/SHADOW-V3.md.
@@ -125,6 +127,22 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--sans);font-size:14px;
 .mini{position:absolute;right:22px;bottom:80px;width:340px;height:380px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;z-index:7}
 .mini .ch{font-size:14px;padding:10px 14px 8px;border-bottom:1px solid var(--line-soft)} .mini .ch .full{margin-left:auto;font-size:11.5px;color:var(--acc);font-weight:500;cursor:pointer}
 .mini .msgs{padding:10px 14px;font-size:12.5px} .mini .comp{margin:0 14px 12px;min-height:44px;padding:10px 12px;font-size:12.5px}
+/* Shadow working inside a chat: the oversee bar, who-said-what, take over / hand back */
+.over{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--acc-bg);border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--acc)}
+.over .live{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.over b{color:var(--ink);font-weight:600} .over .c{margin-left:auto;display:flex;gap:8px}
+.over.mine{background:var(--bg);color:var(--muted)} .over.mine .live{background:var(--faint)}
+.over.ended{background:var(--block-bg);color:var(--block)} .over.ended .live{background:var(--block)}
+.m{align-self:flex-start;max-width:86%;padding:8px 11px;border-radius:0 10px 10px 10px;font-size:13px}
+.m .w{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px}
+.m.sh{background:var(--sepia);border-left:2px solid var(--acc)} .m.sh .w{color:var(--acc)}
+.m.ag{background:var(--bubble);border-left:2px solid var(--faint)} .m.ag .w{color:var(--muted)}
+.m.me{align-self:flex-end;background:var(--bubble);border:1px solid var(--line-soft);border-radius:10px 10px 3px 10px} .m.me .w{color:var(--muted)}
+.lane{margin:0 18px 12px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lane .r{display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:13px;color:var(--faint)}
+.lane .r+.r{border-top:1px solid var(--line-soft)}
+.lane .lb{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:99px;padding:2px 7px;color:var(--muted);flex:none}
+.lane .r.sh .lb{color:var(--acc);border-color:var(--acc)} .lane .r.off{opacity:.5}
 .tbl{max-width:1300px;margin:0 auto;background:var(--surface);border:1px solid var(--line-soft);border-radius:10px;overflow:auto}
 .tbl table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:600px}
 .tbl th,.tbl td{padding:8px 14px;border-top:1px solid var(--line-soft);text-align:left;vertical-align:top}
@@ -289,7 +307,36 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--sans);font-size:14px;
   </section>
 </div></div>
 
-<p class="cap"><span class="k">Shadow v8.1</span><b>4. Shadow down.</b> The dot goes grey and says so.</p>
+<p class="cap"><span class="k">Shadow v8.2</span><b>4. Shadow working inside a chat.</b> In Chats, the session the task runs in. An oversee bar says Shadow is working here; every message says who wrote it. Type, or press Take over, and the task pauses. Then: hand it back, keep the chat and end the task, or stop. Click through it.</p>
+<div class="stage"><div class="app" style="height:600px">
+  <nav class="rail">
+    <div class="brand"><span class="sq">S</span>Sutra<span class="tg">&#9707;</span></div>
+    <div class="ri"><span class="ic">&#9678;</span>Now</div><div class="ri"><span class="ic">&#9673;</span>Focus<span class="chev">&#8250;</span></div>
+    <div class="ri on"><span class="ic">&#9998;</span>Chats</div>
+    <div class="ri sub on">paisa &middot; EMI auto-fix<span class="soon" style="color:var(--acc)">shadow</span></div>
+    <div class="ri sub">dayflow &middot; api deploy</div><div class="ri sub">sutra-ui &middot; build</div>
+    <div class="ri"><span class="ic">&#10038;</span>Agent Marketplace</div><div class="ri"><span class="ic">&#9638;</span>Org<span class="chev">&#8250;</span></div><div class="ri"><span class="ic">&#9432;</span>Help</div><div class="ri"><span class="ic">&#9881;</span>Settings</div>
+    <div class="who"><span class="av">A</span><span><b>CEO of Sutra</b>&mdash;</span></div>
+  </nav>
+  <section class="pane">
+    <div class="ph"><span class="bk">&#8249;</span>paisa &middot; EMI auto-fix<span class="st need" style="margin-left:6px">shadow &middot; task</span><span class="x">&times;</span></div>
+    <div class="over" id="over"><span class="live"></span><span id="over-t"><b>Shadow is working here</b> &middot; turn 6 of 12 &middot; done when a tested PR is open</span><span class="c" id="over-c"><button class="btn" data-takeover>Take over</button><button class="btn stop">Stop</button></span></div>
+    <div class="body" style="flex-direction:column">
+      <div class="msgs" id="wmsgs" style="padding-top:12px">
+        <div class="m sh"><div class="w">shadow &middot; turn 5</div>Run the EMI check first, then fix the rounding in emi.py. Keep the diff inside the paisa repo.</div>
+        <div class="m ag"><div class="w">paisa agent</div>EMI check run: 3 differences, all in the half-up rounding branch. Patching emi.py and adding a test per difference.</div>
+        <div class="m sh"><div class="w">shadow &middot; turn 6</div>Good. Open the PR when the tests pass; I will stop before the push, that is a floor.</div>
+        <div class="m ag"><div class="w">paisa agent</div>14 tests green. PR #212 open. Waiting.</div>
+      </div>
+      <div class="lane" id="lane">
+        <div class="r sh"><span class="lb">shadow</span><span>writes the next turn at the boundary &middot; turn 7</span></div>
+        <div class="r"><span class="lb">you</span><span>Type here and you take over; the task pauses.</span></div>
+      </div>
+    </div>
+  </section>
+</div></div>
+
+<p class="cap"><span class="k">Shadow v8.1</span><b>5. Shadow down.</b> The dot goes grey and says so.</p>
 <div class="stage"><div class="app" style="height:200px">
   <nav class="rail"><div class="brand"><span class="sq">S</span>Sutra</div><div class="ri"><span class="ic">&#9678;</span>Now</div><div class="ri on"><span class="ic">&#9673;</span>Focus</div></nav>
   <section class="pane"><div class="ph"><span class="bk">&#8249;</span>Shadow<span class="x">&times;</span></div><div class="dot grey">S</div></section>
@@ -305,7 +352,7 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--sans);font-size:14px;
   <tr><td>Autonomy ladder, &ldquo;ask before top tier&rdquo;, Delegate offer chips, per-chat tabs, dot menu</td><td><span class="tag">removed</span></td><td>&sect;8</td></tr>
 </table></div>
 
-<p class="footer">Shadow design v8.1 &middot; 2026-09-14 &middot; production tokens (panel.css light theme) &middot; design of record for SHADOW-V3.md &middot; sections 1 and 2 are interactive.</p>
+<p class="footer">Shadow design v8.2 &middot; 2026-09-14 &middot; production tokens (panel.css light theme) &middot; design of record for SHADOW-V3.md v3.1 &middot; sections 1, 2 and 4 are interactive.</p>
 
 <script>
 (function(){
@@ -322,6 +369,29 @@ body{background:#ECEAE6;color:var(--ink);font-family:var(--sans);font-size:14px;
   var names={emi:'EMI auto-fix',watch:'watch the sutra-ui build',pricing:'pricing research',stab:'stability pass',readme:'README title'};
   var st={emi:['waiting on you','st need'],watch:['running','st run'],pricing:['running','st run'],stab:['stopped: max turns','st stop'],readme:['done','st']};
   document.querySelectorAll('.row[data-t]').forEach(function(r){r.addEventListener('click',function(){document.querySelectorAll('.row').forEach(function(x){x.classList.remove('on');});r.classList.add('on');var k=r.getAttribute('data-t');document.getElementById('cname').textContent=names[k];var c=document.getElementById('cstate');c.textContent=st[k][0];c.className=st[k][1];});});
+  // take over / hand back / keep it, on the working chat
+  var over=document.getElementById('over'), ot=document.getElementById('over-t'), oc=document.getElementById('over-c'), lane=document.getElementById('lane'), wm=document.getElementById('wmsgs');
+  function setOver(cls,html,ctrls){ if(!over)return; over.className='over '+cls; ot.innerHTML=html; oc.innerHTML=ctrls; wire(); }
+  function wire(){
+    var t=document.querySelector('[data-takeover]'); if(t)t.addEventListener('click',takeover);
+    var h=document.querySelector('[data-handback]'); if(h)h.addEventListener('click',handback);
+    var k=document.querySelector('[data-keep]'); if(k)k.addEventListener('click',keep);
+  }
+  function takeover(){
+    setOver('mine','<b>You have the chat.</b> The task is paused at turn 6; Shadow will read what you write.','<button class="btn pri" data-handback>Hand back to Shadow</button><button class="btn" data-keep>Keep it, end the task</button><button class="btn stop">Stop</button>');
+    lane.innerHTML='<div class="r sh off"><span class="lb">shadow</span><span>paused</span></div><div class="r"><span class="lb">you</span><span>Say anything &mdash; the task is paused.</span></div>';
+    var m=document.createElement('div'); m.className='m me'; m.innerHTML='<div class="w">you</div>Also round the prepayment penalty the same way.'; wm.appendChild(m);
+  }
+  function handback(){
+    setOver('','<b>Shadow is back.</b> It read your line &middot; turn 7 of 12','<button class="btn" data-takeover>Take over</button><button class="btn stop">Stop</button>');
+    lane.innerHTML='<div class="r sh"><span class="lb">shadow</span><span>writes the next turn at the boundary &middot; turn 7</span></div><div class="r"><span class="lb">you</span><span>Type here and you take over; the task pauses.</span></div>';
+    var m=document.createElement('div'); m.className='m sh'; m.innerHTML='<div class="w">shadow &middot; turn 7</div>Adding the prepayment penalty to the same rounding path, with a test. Then back to the PR.'; wm.appendChild(m);
+  }
+  function keep(){
+    setOver('ended','<b>This chat is yours.</b> Task ended: stopped by you at turn 6 &middot; evidence kept on the task','');
+    lane.innerHTML='<div class="r"><span class="lb">you</span><span>Say anything &mdash; this is an ordinary chat now.</span></div>';
+  }
+  wire();
   var ap=document.querySelector('[data-approve]');
   if(ap)ap.addEventListener('click',function(){var c=document.getElementById('approval');c.classList.add('ok');c.classList.remove('need');var r=document.querySelector('.row[data-t="emi"]');r.querySelector('.d').className='d run';var s=r.querySelector('.st');s.className='st run';s.textContent='turn 7';document.getElementById('g-run').insertBefore(r,document.getElementById('g-run').firstChild);document.getElementById('n-wait').textContent='0';document.getElementById('n-run').textContent='3';var cs=document.getElementById('cstate');cs.textContent='running';cs.className='st run';var b=document.getElementById('badge');if(b)b.remove();});
 })();
