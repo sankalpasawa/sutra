@@ -3226,6 +3226,12 @@
   background:var(--ok-bg)}
 .shdonecopy.bad{color:var(--block);border-color:var(--block-line);
   background:var(--block-bg)}
+/* ...and the same news for somebody who cannot see the button. Off-screen,
+   never display:none or [hidden] -- those are the two ways to make a live
+   region silent, which is the one thing this node must not be. */
+.shdoneannounce{position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;
+  border:0}
 
 /* ── "Shadow is driving" strip, inside a normal chat pane ───────────────── */
 .shdrive{display:flex;align-items:center;gap:8px;flex-wrap:wrap;

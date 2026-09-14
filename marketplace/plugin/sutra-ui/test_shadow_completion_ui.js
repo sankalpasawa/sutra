@@ -31,21 +31,38 @@ const assert = require("assert");
 function fresh(){
   const ctx = {
     console, Date,
-    /* timers are CAPTURED, not run: the copy feedback clears itself on one,
-       and a suite that cannot fire it cannot prove the button goes back to
-       offering the action */
-    timers: [], cleared: [], renders: 0,
-    setTimeout: (fn, ms) => { ctx.timers.push({ fn, ms }); return ctx.timers.length; },
-    clearTimeout: (id) => { ctx.cleared.push(id); },
+    /* FAKE TIMERS, and they honour clearTimeout. The copy feedback clears
+       itself on one, and a second click cancels the first click's timer --
+       a harness that cannot cancel would let a stale timer fire and would
+       prove the opposite of what happens in a browser. */
+    timers: [], cleared: [], renders: 0, nodes: [],
+    setTimeout: (fn, ms) => {
+      const t = { fn, ms, id: ctx.timers.length + 1, cancelled: false, fired: 0 };
+      ctx.timers.push(t);
+      return t.id;
+    },
+    clearTimeout: (id) => {
+      ctx.cleared.push(id);
+      const t = ctx.timers.find(x => x.id === id);
+      if (t) t.cancelled = true;
+    },
     scheduleRender: () => { ctx.renders++; },
     S: {}, SCREENS: {}, TITLES: {},
     esc: (x) => String(x == null ? "" : x)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
     listeners: {},
+    /* enough DOM to hold a live region: it is created once, looked up by id
+       on every later copy, and read back by the announcement tests */
     document: {
       addEventListener(t, fn){ ctx.listeners[t] = fn; },
-      body: { appendChild(){} },
-      createElement(){ return { setAttribute(){}, remove(){}, dataset: {} }; },
+      body: { appendChild(n){ ctx.nodes.push(n); } },
+      getElementById(id){ return ctx.nodes.find(n => n && n.id === id) || null; },
+      createElement(tag){
+        return { tag, value: "", textContent: "", attrs: {}, style: {},
+          dataset: {},
+          setAttribute(k, v){ this.attrs[k] = v; },
+          select(){}, remove(){} };
+      },
       querySelector(){ return null; },
     },
   };
@@ -300,6 +317,21 @@ function withClipboard(ctx, impl){
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
+/* advance the fake clock: run every timer that is still due, once */
+function fireTimers(ctx){
+  let n = 0;
+  for (const t of ctx.timers) if (!t.cancelled && !t.fired){ t.fired = 1; t.fn(); n++; }
+  return n;
+}
+/* the live region, if the code has made one yet */
+const announcer = (ctx) => ctx.nodes.find(n => n && n.id === "shdoneannounce");
+/* the copy control as rendered, pulled straight out of the pane's markup */
+function copyBtn(ctx, m){
+  const h = ctx.shadowCompletionHtml(m || DONE);
+  const i = h.indexOf("<button");
+  return h.slice(i, h.indexOf("</button>", i) + 9);
+}
+
 (async () => {
 
 /* 10. the text IS the summary -- same source, same order, no markup */
@@ -451,7 +483,12 @@ const flush = () => new Promise(r => setTimeout(r, 0));
       live = node;
       return node;
     };
-    ctx.document.body.appendChild = () => { seen.mounted++; };
+    /* tag-aware: the live region mounts a <div> on this same body, and
+       "mounted exactly once" is a claim about the copy TEXTAREA */
+    ctx.document.body.appendChild = (n) => {
+      ctx.nodes.push(n);
+      if (n && n.tag === "textarea") seen.mounted++;
+    };
     ctx.document.execCommand = (cmd) => {
       if (cmd !== "copy" || !succeeds) return false;
       seen.copied.push(live ? live.value : null);
@@ -506,6 +543,131 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     "a throwing fallback is caught");
   assert.strictEqual(seen4.removed, 1, "the finally still ran");
   console.log("ok 15 the fallback copies when the clipboard API is missing");
+}
+
+/* 16. THE NEWS REACHES SOMEBODY WHO CANNOT SEE THE BUTTON.
+       The label change is the sighted feedback and was the only feedback:
+       `aria-live` sat on the button itself, and this pane repaints by
+       replacing innerHTML, so that node was destroyed and rebuilt on every
+       render -- a live region that did not exist before the text changed
+       announces nothing. The region is outside the markup now, made once. */
+{
+  const ctx = fresh();
+  ctx.S.shadowMissions = [DONE];
+
+  /* idle: the control offers the action, is not disabled, and says what it
+     is to a screen reader as well as to an eye */
+  const idle = copyBtn(ctx);
+  assert(/data-shcopystate="idle"/.test(idle), "idle state is declared");
+  assert(/aria-label="Copy result — this summary as text"/.test(idle),
+    "and named for a screen reader");
+  assert(/>Copy result</.test(idle), "with the visible label inside the name");
+  assert(!/disabled/.test(idle), "a control that can be used is never disabled");
+  assert(!announcer(ctx), "nothing is announced before anything happens");
+
+  /* copied */
+  const writes = withClipboard(ctx);
+  clickCopy(ctx, "m-done");
+  await flush();
+  const okBtn = copyBtn(ctx);
+  assert(/data-shcopystate="copied"/.test(okBtn), "the state is on the node");
+  assert(/class="btn shdonecopy ok"/.test(okBtn), "and in its class");
+  assert(/>Copied</.test(okBtn), "the label says it");
+  assert(/aria-label="Copied — the result is on your clipboard"/.test(okBtn),
+    "the accessible name says it too");
+  assert(!/disabled/.test(okBtn), "and the control stays usable");
+  const live = announcer(ctx);
+  assert(live, "a live region was created");
+  assert.strictEqual(live.attrs.role, "status", 'role="status"');
+  assert.strictEqual(live.attrs["aria-live"], "polite", 'aria-live="polite"');
+  assert.strictEqual(live.textContent, "Result copied to the clipboard.",
+    "and it carries the news");
+  assert.strictEqual(writes.length, 1, "one copy, one announcement");
+
+  /* IT IS NOT INSIDE THE REPAINTED MARKUP -- the whole reason it works */
+  assert(!/shdoneannounce/.test(ctx.shadowCompletionHtml(DONE)),
+    "the region must not be rebuilt by the pane's own render");
+
+  /* failed */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [DONE];
+  withClipboard(ctx2, async () => { throw new Error("denied"); });
+  await ctx2.shadowCopyResult("m-done");
+  const bad = copyBtn(ctx2);
+  assert(/data-shcopystate="failed"/.test(bad), "the failure is a state");
+  assert(/class="btn shdonecopy bad"/.test(bad), "with its own class");
+  assert(/>Copy failed</.test(bad), "and its own label");
+  assert(/aria-label="Copy failed — the result is not on your clipboard"/.test(bad),
+    "which does not lie to a screen reader about where the text is");
+  assert(!/disabled/.test(bad), "a failed copy leaves the button clickable");
+  assert.strictEqual(announcer(ctx2).textContent,
+    "The result could not be copied to the clipboard.", "and is announced");
+
+  /* one region, however many copies */
+  fireTimers(ctx2);
+  await ctx2.shadowCopyResult("m-done");
+  assert.strictEqual(ctx2.nodes.filter(n => n && n.id === "shdoneannounce").length,
+    1, "the live region is made once and written to after that");
+  console.log("ok 16 the copy is announced, not just drawn");
+}
+
+/* 17. THE FEEDBACK IS TRANSIENT AND SELF-HEALING. Fake timers, no sleeps. */
+{
+  /* success reverts */
+  const ctx = fresh();
+  ctx.S.shadowMissions = [DONE];
+  withClipboard(ctx);
+  clickCopy(ctx, "m-done");
+  await flush();
+  assert(/>Copied</.test(copyBtn(ctx)), "…Copied…");
+  assert.strictEqual(fireTimers(ctx), 1, "one timer was due");
+  const back = copyBtn(ctx);
+  assert(/>Copy result</.test(back), "…and back to Copy result");
+  assert(/data-shcopystate="idle"/.test(back), "the state went with it");
+  assert(!/shdonecopy ok/.test(back), "the green is gone");
+  assert(!/disabled/.test(back), "and it is clickable again");
+  assert.strictEqual(announcer(ctx).textContent, "",
+    "the announcement is cleared, so the next copy is a change and speaks");
+
+  /* clickable again really means it COPIES again */
+  clickCopy(ctx, "m-done");
+  await flush();
+  assert(/>Copied</.test(copyBtn(ctx)), "a second click copies again");
+  assert.strictEqual(announcer(ctx).textContent, "Result copied to the clipboard.",
+    "and is announced again");
+
+  /* failure reverts the same way -- it must not be a dead end */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [DONE];
+  withClipboard(ctx2, async () => { throw new Error("denied"); });
+  clickCopy(ctx2, "m-done");
+  await flush();
+  assert(/>Copy failed</.test(copyBtn(ctx2)), "…Copy failed…");
+  assert.strictEqual(fireTimers(ctx2), 1, "the failure is on a timer too");
+  assert(/>Copy result</.test(copyBtn(ctx2)), "…and it heals");
+
+  /* A SECOND CLICK AFTER A FAILURE CAN STILL SUCCEED, and the failure's own
+     timer must not survive to wipe the success early. */
+  const ctx3 = fresh();
+  ctx3.S.shadowMissions = [DONE];
+  withClipboard(ctx3, async () => { throw new Error("denied"); });
+  clickCopy(ctx3, "m-done");
+  await flush();
+  assert.strictEqual(ctx3.S.shadowResultCopied.ok, false, "the first click failed");
+  const writes = withClipboard(ctx3);           /* the clipboard comes back */
+  clickCopy(ctx3, "m-done");
+  await flush();
+  assert.strictEqual(writes.length, 1, "the retry wrote");
+  assert.strictEqual(writes[0], ctx3.shadowCompletionText(DONE),
+    "the same text the first click could not write");
+  assert.strictEqual(ctx3.S.shadowResultCopied.ok, true, "and it says so");
+  assert(/>Copied</.test(copyBtn(ctx3)), "the button recovered");
+  assert.strictEqual(ctx3.timers[0].cancelled, true,
+    "the failure's timer was cancelled by the retry");
+  assert(ctx3.cleared.includes(ctx3.timers[0].id), "explicitly, by id");
+  assert.strictEqual(fireTimers(ctx3), 1, "only the retry's timer is live");
+  assert(/>Copy result</.test(copyBtn(ctx3)), "which then heals as normal");
+  console.log("ok 17 the feedback clears itself, and the control comes back");
 }
 
 console.log("test_shadow_completion_ui.js: all green");

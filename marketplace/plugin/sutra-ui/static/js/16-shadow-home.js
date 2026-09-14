@@ -572,7 +572,12 @@ function shadowCompletionHtml(m){
       <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
       <button class="btn shdonecopy${copied
         ? (copied.ok ? " ok" : " bad") : ""}" type="button"
-        data-shcopydone="${escAttr(m.id)}" aria-live="polite"
+        data-shcopydone="${escAttr(m.id)}" data-shcopystate="${copied
+          ? (copied.ok ? "copied" : "failed") : "idle"}"
+        aria-label="${copied
+          ? (copied.ok ? "Copied — the result is on your clipboard"
+                       : "Copy failed — the result is not on your clipboard")
+          : "Copy result — this summary as text"}"
         title="Copy this result as text">${copied
           ? (copied.ok ? "Copied" : "Copy failed") : "Copy result"}</button>
     </div>
@@ -649,6 +654,40 @@ function shadowCopyFallback(text){
   }
 }
 
+/* ── THE ANNOUNCEMENT, FOR SOMEBODY WHO CANNOT SEE THE BUTTON ─────────────
+   THE GAP THIS CLOSES (founder, 2026-09-15). The button changing its own
+   label is the SIGHTED feedback and it was the only feedback. `aria-live`
+   sat on the button itself, which is the wrong node twice over: an
+   interactive control as its own live region is announced inconsistently,
+   and -- the fatal half -- this pane repaints by replacing innerHTML, so
+   every render DESTROYS that node and builds a new one. A live region that
+   did not exist before the text changed has nothing to compare against and
+   announces nothing. The label change was silent.
+
+   So the region lives OUTSIDE the repainted markup, created once and then
+   only ever written to -- the same shape agToast has used since it shipped
+   (17-agents.js), and the reason it actually speaks. Off-screen rather than
+   hidden: display:none and [hidden] are ignored by screen readers, which is
+   the one thing this node must not be. */
+function shadowCopyAnnounce(msg){
+  if (typeof document === "undefined" || !document.createElement) return null;
+  let n = document.getElementById && document.getElementById("shdoneannounce");
+  if (!n){
+    n = document.createElement("div");
+    n.id = "shdoneannounce";
+    n.className = "shdoneannounce";
+    if (n.setAttribute){
+      n.setAttribute("role", "status");
+      n.setAttribute("aria-live", "polite");
+    }
+    if (document.body && document.body.appendChild) document.body.appendChild(n);
+  }
+  /* cleared on the way back to idle, so the NEXT copy of the same task is a
+     change of text and is announced again rather than swallowed as a repeat */
+  n.textContent = msg;
+  return n;
+}
+
 /* THE ACTION ITSELF. Named rather than inlined in the click handler for the
    reason every other Shadow action is: the wiring below is one `if` that
    delegates, and the behaviour is testable without a DOM.
@@ -674,13 +713,19 @@ async function shadowCopyResult(mid){
     ok = shadowCopyFallback(text);
   }
   S_.shadowResultCopied = { id: mid, ok: ok };
+  shadowCopyAnnounce(ok ? "Result copied to the clipboard."
+                        : "The result could not be copied to the clipboard.");
   if (typeof scheduleRender === "function") scheduleRender();
+  /* a second click's feedback replaces the first's, and takes the first's
+     timer with it -- otherwise the older one fires mid-way through the newer
+     feedback and wipes it early */
   if (typeof clearTimeout === "function" && shCopyTimer) clearTimeout(shCopyTimer);
   if (typeof setTimeout === "function") shCopyTimer = setTimeout(() => {
     /* only clear what this click set -- a later copy of another task owns
        the flag by then, and must keep its own feedback */
     if (S_.shadowResultCopied && S_.shadowResultCopied.id === mid)
       S_.shadowResultCopied = null;
+    shadowCopyAnnounce("");
     if (typeof scheduleRender === "function") scheduleRender();
   }, SH_COPY_MS);
   return ok;
