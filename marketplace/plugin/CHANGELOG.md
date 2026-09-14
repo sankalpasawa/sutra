@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-14
+## 2.273.3 (2026-09-14)
+
+- **Settings is now called Setup, and it has been redesigned.** Each section has its own icon, the screens use one consistent panel and row style, and every dropdown and field lines up. Opening it still lands on the overview, never on what you last had open.
+- **Workspace and folder, and Advanced, were rebuilt.** The folder screen leads with the field and states where it is working and what it is allowed inside. Advanced is now three panels of values instead of collapsed folds of prose.
+- **Less text.** Long explanations from the server are cut to one sentence with a "More" link, and the Help screen's empty state is a short line instead of a paragraph.
+
 ## 2.273.2 (2026-09-14)
 
 - **The model picker lives in the chat's three-dot menu now.** One row at the top opens it: provider tabs, that provider's models, More models, thinking levels and Fast mode. Access (Read only, Accept edits, Approve for me, Full access) stays under the message box, where you change it while typing.

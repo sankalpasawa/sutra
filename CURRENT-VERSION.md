@@ -2,7 +2,32 @@
 
 **status**: active · **updated**: 2026-09-14
 
-## v2.273.2 (2026-09-14, HEAD)
+## v2.273.3 (2026-09-14, HEAD)
+
+**Settings is called Setup, and it looks like something.** Owner, 2026-09-14: "even when I click on
+settings inside settings it should not be named settings ... the way it looks could be improved by a
+good deal ... make it a bit text-light". The rail row and the screen title are now **Setup** (the id,
+the routing and every back control move with it). Each of the six sections carries its own line mark,
+drawn on the rail's grid and stroke. A new panel/row/field vocabulary replaces the stack of
+same-weight boxes: `.sxpanel` is one object with hairline rows, `.sxkv` is a label and a value,
+`.sxfield` is a label above its control, and every select and input on these screens is one height,
+one radius, one ground -- which is the alignment complaint fixed at its root rather than per control.
+
+**Two screens rebuilt.** Workspace and folder was three paragraphs above an unaligned row; it is now
+the field first, one line of consequence, and the two facts that were buried in the prose (where it
+is working, what it is allowed inside) as rows. Advanced was three collapsed folds wrapping prose;
+it is now three panels of values -- what the Chats list shows, anything Sutra refused, and the raw
+settings behind the screens.
+
+**Long server sentences stop landing on screen.** `shortReason`/`reasonHtml` cut a backend reason to
+its first sentence with the rest behind "More". The backend writes them to be complete (paths,
+variables, what was searched), which is right in a log and wrong as the first thing somebody reads.
+
+**Help's empty state is a state, not an essay** -- a heading, one line, and the mechanics behind a
+disclosure. Tests: panel 388, provider switch 102, the rest unchanged; the three failing Shadow
+suites fail identically on clean main.
+
+## v2.273.2 (2026-09-14)
 
 **The model picker moves into the chat's own menu, and the menu is cleaned up.** Owner, 2026-09-14:
 "when I click on the three dot that is where I should see this model option ... the read only and all

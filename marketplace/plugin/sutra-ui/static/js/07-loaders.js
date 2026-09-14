@@ -897,6 +897,12 @@ function wire(){
     openSettingsSection(b.dataset.setback || null));
   scBody.querySelectorAll("[data-provpage]").forEach(b=>b.onclick=()=>
     openSettingsSection("provider:" + b.dataset.provpage));
+  /* "More" on a capped server sentence reveals the rest in place. No state and
+     no re-render: the paragraph is already on the page, hidden. */
+  scBody.querySelectorAll("[data-sxmore]").forEach(b=>b.onclick=()=>{
+    const p = b.closest("p"); const rest = p && p.nextElementSibling;
+    if (rest && rest.classList.contains("sxmorep")){ rest.hidden = false; b.remove(); }
+  });
 
   /* One provider switch, from provider_settings_schema. */
   scBody.querySelectorAll("[data-provopt]").forEach(b=>b.onclick=()=>

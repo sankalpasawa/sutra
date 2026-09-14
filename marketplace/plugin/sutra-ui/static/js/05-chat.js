@@ -767,6 +767,28 @@ function codexAuthHtml(){
    the backend from the last four characters. The input is uncontrolled -- no
    value bound to state -- so the typed key lives only in the DOM node until the
    click reads it, and any re-render clears it. */
+/* A SERVER SENTENCE, CUT TO A SCREEN'S WORTH (owner, 2026-09-14: "it goes on to
+   talk about paragraph and shit ... that's not supposed to be there"). The
+   backend's reasons are written to be complete -- they name paths, variables and
+   what was searched -- which is right in a log and wrong as the first thing
+   somebody reads. First sentence on screen, the rest one click away. */
+function shortReason(text, keep){
+  const t = String(text || "").trim();
+  if (!t) return { head: "", rest: "" };
+  const cut = Math.max(0, keep || 120);
+  if (t.length <= cut) return { head: t, rest: "" };
+  const dot = t.indexOf(". ");
+  const head = (dot > 0 && dot <= cut) ? t.slice(0, dot + 1) : t.slice(0, cut).replace(/\s+\S*$/, "") + "…";
+  return { head: head, rest: t.slice(head.length).trim() };
+}
+function reasonHtml(text, keep){
+  const r = shortReason(text, keep);
+  if (!r.head) return "";
+  return `<p class="sxhint">${esc(r.head)}${r.rest
+    ? ` <button class="sxmore" type="button" data-sxmore>More</button>` : ""}</p>${
+    r.rest ? `<p class="sxhint sxmorep" hidden>${esc(r.rest)}</p>` : ""}`;
+}
+
 function deepseekAuthHtml(){
   const a = SETTINGS && SETTINGS.deepseek_auth;
   if (!a) return "";                       /* older backend: say nothing */
