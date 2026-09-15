@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.274.2 (2026-09-15)
+
+- **A finished Shadow task stays in the list.** The row left the moment a mission completed, taking the completion summary with it -- so unless you were already on that card, there was no way back to what was done. A completion now stays until it is retried, the same rule a failure and a founder-stopped task already follow. Nothing is stored or transitioned differently; the list simply stops discarding records the server was already sending.
+- **The Shadow workspace drops the old existing-chat surface.** The "Working with" chat picker, the recent-chat chips and the "Say anything -- it starts or continues a task" box with its "Work in an existing chat instead" door are gone. What stays is the one composer that delegates: "Tell Shadow what outcome you want". + Delegate, starting a task, mission actions, take over, delete, and the NEEDS YOU / intervention answer path are all unchanged.
+- **A "done when" line you type is yours to confirm again.** Since 2.274.0 the Delegate form guessed a tier from the SHAPE of each line, so anything short and plain -- "The file contains HELLO", "Tests cover it." -- became a literal transcript search. Those describe a state; the worker proves them by doing the thing, never by repeating the sentence, so the check could never pass and Shadow spent its whole budget asking for more proof of finished work. Four missions died that way. Founder-typed criteria go back to being yours to sign off.
+
 ## 2.274.1 (2026-09-15)
 
 - **A usage card no longer says "in 4 hr 60 min".** For the last half-minute of every hour, the time until your usage resets was written with sixty minutes in it instead of rolling over into the next hour. An exact five hours now reads "in 5 hr". Every other way that line can be written -- minutes, hours and minutes, a weekday, a date -- is unchanged.

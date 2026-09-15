@@ -1,4 +1,5 @@
 # Build the installable Sutra.dmg and attach it to a GitHub Release.
+# BEFORE TAGGING: marketplace/plugin/sutra-ui/release-checklist.md -- checks 1-4 are blocking.
 #
 # WHY A RELEASE ASSET AND NOT THE WEBSITE
 # ---------------------------------------
