@@ -101,13 +101,16 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: exactly seven destinations, in the founder's order", () => {
+test("model: eight destinations, in the founder's order; the new Org sits above Old Org", () => {
   /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
      agent that works in front of you (design/GAME-PLAN-agents.md). */
   /* Seven again since 2026-09-04: Routines went back under Settings ->
      Automation, the home it held before the 2026-09-02 promotion. */
+  /* Eight since 2.275.0 (holding BUILD-PLAN.md): org2 is the new one-screen Org.
+     Since 2.278.0 it is ON by default (flags.org2: false is the opt-out), so
+     the rail SHOWS eight buttons: Org above Old Org. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org2","org","team","settings"]));
 });
 test("model: routines is a Settings -> Automation row, not a destination", () => {
   /* One home, not two: it must be a row on the Settings plane AND absent from
@@ -192,11 +195,18 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints seven data-dest buttons", () => {
+test("rail: renderRail paints eight data-dest buttons (Org above Old Org); flags.org2 false hides one", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
-  const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
+  let out = els["railnav"].innerHTML;
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8);
+  assert(out.indexOf('data-dest="org2"') < out.indexOf('data-dest="org"'), "Org sits above Old Org");
+  const prev = T.SETTINGS;
+  T.SETTINGS = { flags: { org2: false } };
+  T.renderRail();
+  out = els["railnav"].innerHTML;
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "opt-out hides the new Org");
+  T.SETTINGS = prev;
 });
 
 /* §chats ─ S8: the Code tab's controls survive, verbatim, exactly once */
@@ -1155,7 +1165,7 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8, "still eight destinations");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");

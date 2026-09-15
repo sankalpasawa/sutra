@@ -485,7 +485,9 @@ test("screen parity: apps-frameworks/screens.json equals every SCREENS.<id> regi
   const seen = new Map();
   for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".js"))){
     const text = fs.readFileSync(path.join(dir, f), "utf8");
-    for (const m of text.matchAll(/SCREENS\.([a-z_]+)\s*=/g)) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+    /* [a-z0-9_]: a screen id may carry a digit (org2, 2.275.0); the earlier
+       [a-z_] class read "SCREENS.org2 =" as "org" and reported a false drift. */
+    for (const m of text.matchAll(/SCREENS\.([a-z0-9_]+)\s*=/g)) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
   }
   const registered = [...seen.keys()].filter(id => id !== "terminal" && id !== "usage").sort();
   const shipped = JSON.parse(fs.readFileSync(path.join(__dirname, "apps-frameworks", "screens.json"), "utf8"));

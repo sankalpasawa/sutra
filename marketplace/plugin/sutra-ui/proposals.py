@@ -59,6 +59,14 @@ KINDS = (
     # (modules_api.publish_app). The press authorized a seeded chat, not a
     # bypass of this gate -- the staged copy is what leaves the machine next.
     "app.publish",
+    # The new Org screen's pencil (BUILD-PLAN.md phase 8): a rename, a move and
+    # a new sub-department are each FILED here and wait in Approvals; approving
+    # one applies it through org2_apply, registry-only. Nothing on that screen
+    # writes the tree without this gate.
+    "org.rename",
+    "org.move",
+    "org.create",
+    "org.charter",      # write or amend a charter by succession (D-O3, 2026-09-15)
 )
 
 

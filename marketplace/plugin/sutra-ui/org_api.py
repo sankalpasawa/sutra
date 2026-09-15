@@ -2563,6 +2563,12 @@ def _apply_proposal(kind, args):
     if kind == "app.publish":
         import modules_api                       # Publish program P3: export, bump, sign, stage (ruling P-6)
         return modules_api.apply_publish(args)
+    if kind in ("org.rename", "org.move", "org.create", "org.charter"):
+        import org2_apply                        # the Org screen's requests (BUILD-PLAN phase 8); registry-only
+        try:
+            return org2_apply.apply_request(kind, args)
+        except org_apply.ApplyRefused as exc:
+            raise ValueError(str(exc))
     raise ValueError("no way to apply %r" % kind)
 
 

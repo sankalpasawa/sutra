@@ -53,6 +53,7 @@ Peer-review folds (deepseek consult 2026-07-29, CHANGES-REQUIRED):
     averaged in with them.
 """
 
+import copy
 import fcntl
 import hashlib
 import json
@@ -230,6 +231,43 @@ def _lock(name):
 
 # ---------------------------------------------------------------- domains ---
 
+# ------------------------------------------------------------ read cache ----
+# STAT-VALIDATED, never trusted blind (sutra-ui speed unit, 2026-09-15). Every
+# hit re-stats its file and re-parses on any change of (mtime_ns, size); a
+# vanished file drops out. So no writer has to know the cache exists: every
+# writer here goes through json.dump onto the same path, which moves mtime.
+# Charter bodies are content-addressed and immutable, placements are
+# append-only, sidecars change rarely -- the parse was the cost, not the stat.
+# Measured on the live registry: all_placements 94 ms -> a few ms of stats;
+# the charter-heavy Org reads (filter, health, /org/charters) 0.5-1.1 s ->
+# well under 100 ms. Callers get a DEEP COPY: several engine paths mutate the
+# dict they were handed before saving it, and a shared object would let a
+# half-applied change leak into the next reader while the file is unchanged.
+_JSON_CACHE = {}            # path -> ((mtime_ns, size), parsed)
+_JSON_CACHE_MAX = 50000
+
+
+def _read_json_cached(path, copy_out=True):
+    """json.load(path) with a stat-validated memo. Raises like open()/json.load().
+    `copy_out=False` hands back the cached object itself: for a caller that only
+    READS one key to decide whether it wants the record at all (charters_for),
+    copying every non-match was the remaining cost. Such a caller must not
+    mutate what it gets and must copy before returning it."""
+    st = os.stat(path)                                   # OSError propagates
+    # inode too (DeepSeek review 2.278.1 P1-2): a file swapped in by rename
+    # with copied timestamps and an equal size is a different inode.
+    key = (st.st_mtime_ns, st.st_size, st.st_ino)
+    hit = _JSON_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return copy.deepcopy(hit[1]) if copy_out else hit[1]
+    with open(path, "r", encoding="utf-8") as fh:
+        obj = json.load(fh)
+    if len(_JSON_CACHE) >= _JSON_CACHE_MAX:
+        _JSON_CACHE.clear()
+    _JSON_CACHE[path] = (key, obj)
+    return copy.deepcopy(obj) if copy_out else obj
+
+
 def load_domains():
     """ref -> domain dict. Reads the per-domain files (the authority)."""
     _ensure_dirs()
@@ -393,10 +431,53 @@ def ancestor_chain(ref, domains=None):
     return out
 
 
-def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
+#: D76 node kinds (Org BUILD-PLAN S94). STORED on the row at mint, never derived
+#: in a browser: a derived rule breaks the moment an instance is renamed (the
+#: F0 rename of 2026-09-14 turned "Desktop" into "Claude"), so the screen
+#: reads what the mint recorded. Absent on rows minted before this field
+#: existed; `backfill_node_kind()` fills them once by the same rule.
+NODE_KINDS = ("root", "machine", "organisation", "department")
+
+
+def node_kind_for(parent_ref, origin, domains):
+    """The D76 kind of a node from its place in the tree at mint (or backfill)
+    time: no parent = root; under the root, the desktop importer's node is the
+    machine and every other child is an organisation; deeper is a department."""
+    if not parent_ref:
+        return "root"
+    if parent_ref in set(active_roots(domains)):
+        return "machine" if str(origin or "") == "project-import" else "organisation"
+    return "department"
+
+
+def backfill_node_kind(dry_run=False):
+    """One-time fill of `node_kind` on rows minted before the field existed
+    (S94). Under the restructure lock; one summary event covers the batch
+    (the rows themselves are written with emit=False, the `backfill_sidecars`
+    precedent), so the history log gains one line, not one per department."""
+    with _lock("RESTRUCTURE"):
+        domains = load_domains()
+        todo = [r for r, d in domains.items() if d.get("node_kind") not in NODE_KINDS]
+        if dry_run or not todo:
+            return {"missing": len(todo), "written": 0}
+        written = 0
+        for r in todo:
+            d = _load_domain(r)
+            if d is None:
+                continue
+            d["node_kind"] = node_kind_for(d.get("parent_ref"), d.get("origin"), domains)
+            _save_domain(d, emit=False)
+            written += 1
+        _append_jsonl(DOMAIN_INDEX, {"event": "node_kind_backfilled", "count": written, "ts_ms": _now_ms()})
+        return {"missing": len(todo), "written": written}
+
+
+def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted", node_kind=None):
     """Atomic check-then-insert under the parent (I-D2 / I-P10).
 
     Returns (ref, created_bool). A concurrent loser adopts the winner's ref.
+    `node_kind` (S94) is stored on the row: computed by `node_kind_for` unless
+    the caller names one of NODE_KINDS.
 
     Locking (§2.1 Mint interlock, P0): RESTRUCTURE **outermost**, then the
     per-parent lock. The per-parent flock alone is a DIFFERENT lock FILE from
@@ -462,6 +543,7 @@ def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
             "touched_by_operator": False,
             "mint_evidence": sorted(set(evidence))[:24],
             "ts_minted_ms": _now_ms(),
+            "node_kind": node_kind if node_kind in NODE_KINDS else node_kind_for(parent_ref, origin, domains),
             # ---- lifecycle (I-D5). Absent status reads as "active". ----
             "status": "active",
             "successor_refs": [],
@@ -501,13 +583,12 @@ def charters_for(domain_ref, tenant_id=None):
         if not _is_body_file(fn):
             continue
         try:
-            with open(os.path.join(CHARTERS, fn), "r", encoding="utf-8") as fh:
-                c = json.load(fh)
-            if c.get("domain_ref") != domain_ref:
+            c = _read_json_cached(os.path.join(CHARTERS, fn), copy_out=False)
+            if not isinstance(c, dict) or c.get("domain_ref") != domain_ref:
                 continue
             if tenant_id and c.get("tenant_id") != tenant_id:
                 continue
-            out.append(c)
+            out.append(copy.deepcopy(c))                 # only the matches are copied out
         except (ValueError, OSError):
             continue
     return out
@@ -607,8 +688,7 @@ def load_charter(charter_id):
     if not charter_id:
         return None
     try:
-        with open(os.path.join(CHARTERS, charter_id + ".json"), "r", encoding="utf-8") as fh:
-            c = json.load(fh)
+        c = _read_json_cached(os.path.join(CHARTERS, charter_id + ".json"))
         return c if isinstance(c, dict) else None
     except (ValueError, OSError):
         return None
@@ -658,8 +738,7 @@ def load_sidecar(charter_id):
     reports `ts_ms: None` — UNKNOWN, never a fabricated now()."""
     base = _sidecar_default()
     try:
-        with open(_sidecar_path(charter_id), "r", encoding="utf-8") as fh:
-            sc = json.load(fh)
+        sc = _read_json_cached(_sidecar_path(charter_id))
         if isinstance(sc, dict):
             base.update(sc)
             return base
@@ -806,8 +885,9 @@ def all_placements(tenant_id=None):
         if not (fn.startswith("PL-") and fn.endswith(".json")):
             continue
         try:
-            with open(os.path.join(PLACEMENTS, fn), "r", encoding="utf-8") as fh:
-                p = json.load(fh)
+            p = _read_json_cached(os.path.join(PLACEMENTS, fn))
+            if not isinstance(p, dict):
+                continue
             if tenant_id and p.get("tenant_id") != tenant_id:
                 continue
             out.append(p)
@@ -1352,7 +1432,7 @@ def _reorg_id(ref, op):
 #: the mutable set §2.5 requires before/after on. `d_path` is RECORDED, never
 #: recomputed at replay time — sibling ordinals depend on the tree's membership
 #: at that instant.
-_EVENT_FIELDS = ("name", "description", "parent_ref", "status", "successor_refs")
+_EVENT_FIELDS = ("name", "description", "parent_ref", "status", "successor_refs", "node_kind")
 
 
 def _domain_snapshot(ref, domains):
@@ -1429,6 +1509,8 @@ def _restructure_locked(op, ref, target=None, name=None, tenant_id="T-local"):
             return {"ok": False, "error": "cycle: target is inside the moved subtree"}
         d["parent_ref"] = target
         d["touched_by_operator"] = True
+        if d.get("node_kind") in NODE_KINDS:  # S94: a move to or from under the root changes the kind
+            d["node_kind"] = node_kind_for(target, d.get("origin"), domains)
         _save_domain(d, emit=False)
         moved = 0                             # the whole point of stable refs
 
@@ -1535,6 +1617,8 @@ def _dispose_onto(ref, successor, reason, tenant_id, domains):
     for cref, cd in sorted(domains.items()):
         if cd.get("parent_ref") == ref:
             cd["parent_ref"] = successor
+            if successor and cd.get("node_kind") in NODE_KINDS:   # S94: a child re-homed under the root changes kind
+                cd["node_kind"] = node_kind_for(successor, cd.get("origin"), domains)
             _save_domain(cd)
             disposition["children"].append({"ref": cref, "to": successor})
     return moved, disposition

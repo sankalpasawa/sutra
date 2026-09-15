@@ -2,7 +2,96 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.274.1 (2026-09-15, HEAD)
+## v2.278.2 (2026-09-15, HEAD)
+
+**Review folds for the speed release.** The transcript memo appends only when the file grew, kept its inode
+and the 64 bytes before the old offset still match; otherwise it re-parses. A complete last record without
+a newline shows provisionally. The memo holds 16 files, least-recently-read first out. The registry memo
+key includes the inode.
+
+## v2.278.1 (2026-09-15)
+
+**Speed.** An open chat pane re-reads its transcript incrementally (from the last offset) instead of parsing
+the whole file on every write, which is what held the backend at 100% CPU while a long session ran. Registry
+reads memoise placements, charter bodies and sidecars per file with stat validation; the Org screen's filter,
+Health and search scan charters once per request. The startup project import runs in a background thread.
+
+## v2.278.0 (2026-09-15)
+
+**The new Org tab is on by default** (`flags.org2: false` is the opt-out; Old Org unchanged). **Edit a
+charter, by succession**: the pencil's Edit charter… (or Write the charter on an empty view) files an
+`org.charter` proposal; approval mints a successor body with `supersedes` set, carries the sidecar's status,
+artifacts, links, goals, metrics, milestones and todos, marks the old sidecar superseded and re-points filed
+work; Filed work lists current placements only. Founder ruling D-O3 (2026-09-15). Tests: `test_org2.js` 57,
+`test_org2_api.py` 15.
+
+## v2.277.2 (2026-09-15)
+
+**New Org screen: a changed registry says so** ("The registry changed" + Refresh when a department read
+reports another history length than the tree was loaded with). **DeepSeek review folds** (ADVISORY, 25
+items, 5 folded): sibling-name refusal for rename and new sub-department at request and at approval,
+"Not saved" once when a save fails after the document was left, stale filter answers never clear the newer
+flag, the kind backfill counts real writes, a successor-less merge leaves children's kind alone.
+
+## v2.277.1 (2026-09-15)
+
+**The new Org screen starts at the root.** It builds its tree from the whole registry the app already
+fetches (ORG_ALL), not the role-scoped slice Old Org's studio uses, so the machine and every organisation
+show under the D76 root and the address facet reads from it.
+
+## v2.277.0 (2026-09-15)
+
+**The registry stores each department's kind** (`node_kind`: root, machine, organisation, department; set
+at mint, re-set on a move to or from under the root; `backfill_node_kind` fills older rows once on the
+startup import with one history line). **New Org screen, slice C** (behind `flags.org2`): arrow keys walk
+the tree, a Recent group lists the last four things opened in a department this session, the viewer title
+shows an `unsaved` chip while the editor has changes, and an app page is probed before it is framed
+("Nothing to show yet" + Retry when it does not answer). Tests: `test_org2.js` 55, `test_org2_api.py` 14.
+
+## v2.276.1 (2026-09-15)
+
+**Move preview shows only what the move adds.** The preview subtracts the tree's standing findings and
+collapses duplicates, so a clean move reads "Nothing in the way" instead of the registry's old debris.
+
+## v2.276.0 (2026-09-15)
+
+**The new Org screen edits, filters and asks** (BUILD-PLAN.md phases 6-9, still behind `flags.org2`). The
+screen takes the whole row, so the tree, the list and the viewer stay beside each other. A document opens
+in the Workspace's editor and saves in place through `/api/fs/write`; a file changed elsewhere shows
+"Changed in another session" with Reload. Search reaches charter titles, filed work and documents; the
+funnel filters by kind and charter state. The pencil gains Rename, Move (previewed with the studio's own
+check) and New sub-department, each filed as a proposal that waits in Approvals and is applied registry-only
+by `org2_apply.py` on approval. Health lists departments with no charter, one-line charters and overlapping
+siblings. A filed .html opens in the app page frame under the page CSP. Routes: `search`, `filter`,
+`request`, `health/{ref}`, `page` under `/api/org2`. Old Org untouched. Tests: `test_org2.js` 48,
+`test_org2_api.py` 13.
+
+## v2.275.0 (2026-09-15)
+
+**A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the
+rail gains **Org** above the earlier Org accordion, which now reads **Old Org** and keeps every screen,
+id and test it had. The new screen is the design approved on the canvas (holding
+`departments/experience/org/`, BUILD-PLAN.md phases 0-5): one tree of department names with one Search
+field; a department strip with two icons, Chart and a pencil; a list of names grouped as Charter,
+Departments, Filed work, Other charters, Documents and Apps; and a viewer that opens on the charter
+with its facet rows beneath (Address, Lifecycle, Relations, Filed under this charter, Governance, and
+three rows that read "not sourced yet" until the engine carries them), or a document in place, or an
+app in its page frame, or the chart from that level. The pencil holds Changes, Approvals and Health
+scoped to the department. Names, never paths; no counts at rest; one quiet line and at most one action
+per empty or error state.
+
+**What it reuses.** `dirData()` from `03-org.js` for the tree, `loadOrg()` for the registry reads (now
+wrapped with loading and error state), `mdHtml()` and `/api/fs/read` for documents, the Apps page frame
+for apps, and one new read-only route, `GET /api/org2/department/{ref}` in `org2_api.py`, scanned by
+`test_forbidden_calls.py` like the org routes. Two small fixes on the way: `test_modules.js` read
+`SCREENS.org2 =` as `org` (its regex had no digits), and boot no longer restores onto a destination
+whose default screen is not registered. The flag is opt-in until the founder's acceptance; the plan's
+later phases (search across charters and artifacts, the filter, the editor in place, the page route,
+Rename as a request, Preview a move) land behind the same flag. Tests: `test_org2.js` 35,
+`test_org2_api.py` 7, `test_nav.js` 75, `test_modules.js` 27, `test_panel.js` 388,
+`test_workspace.js` 55, `test_charter_filter.js` 31; the python lanes green.
+
+## v2.274.1 (2026-09-15)
 
 **The last half-minute of every hour stopped reading "in 4 hr 60 min".** `usageResetText` floors the
 hours and ROUNDS the remaining minutes, so any gap from 59.5 minutes up rounded to 60 and was printed

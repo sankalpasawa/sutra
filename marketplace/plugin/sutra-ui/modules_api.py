@@ -79,7 +79,7 @@ LINK_FORBIDDEN = ("terminal", "usage")   # terminal is a pane toggle; usage rend
 # build_kit.py so check.py can read it offline (Apps frameworks, step 4).
 SCREEN_IDS = ("agents", "automation", "balance", "charters", "connectors", "departments", "editor",
               "evals", "git", "goal", "goals", "health", "history", "modules", "now", "optimus",
-              "placements", "reorg", "routines", "settings", "shadow", "shadowsettings",
+              "org2", "placements", "reorg", "routines", "settings", "shadow", "shadowsettings",
               "shadowwatching", "skills", "teamsutra", "workspace")
 RECORD_FILE = "APP.md"                    # the per-app record (Apps frameworks); never an edit of the app
 FLAG = "modules"

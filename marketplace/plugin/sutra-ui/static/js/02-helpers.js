@@ -1177,10 +1177,12 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
+/* 2.275.0 (founder, 2026-09-14): the earlier Org accordion reads "Old Org";
+   the new one-screen Org (19-org2.js) takes the name, behind flags.org2. */
 const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agent Marketplace",
-                     org:"Org", team:"Help", settings:"Settings" };
+                     org2:"Org", org:"Old Org", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
-                     org:"dept", team:"team", settings:"gear" };
+                     org2:"dept", org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
    its screen opens directly — a persisted destSel must not reroute it (codex
@@ -1218,6 +1220,12 @@ function goDest(d){
     let fallback = DEST_DEFAULT_SCREEN[d];
     if (d === "org" && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
       fallback = "workspace";
+    /* The new Org registers only while its flag is on (19-org2.js); with the
+       flag off the destination lands on Old Org rather than on an absent screen. */
+    if (d === "org2"){
+      if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
+      if (!SCREENS.org2) fallback = "departments";
+    }
     const target = (sel && SCREENS[sel]) ? sel : fallback;
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
     else { S.ui.browseClosed = false; S.screen = target; }
@@ -1600,7 +1608,11 @@ function invalidateHtmlCache(el){ if (el) el.__lastHtml = null; }
 
 function renderRail(){
   const nav = document.getElementById("railnav");
-  const railHtml = !nav ? "" : DESTS.map(d=>{
+  /* The new Org (19-org2.js) registers its screen here, on the first paint after
+     SETTINGS answered, and its row shows only while flags.org2 is on. */
+  if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
+  const org2On = typeof org2FlagOn === "function" && org2FlagOn();
+  const railHtml = !nav ? "" : DESTS.filter(d => d !== "org2" || org2On).map(d=>{
     const inline = destInline(d);
     const open = inline && S.ui.railOpen === d;
     /* While the accordion is open the CHILD row carries the highlight and the

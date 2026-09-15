@@ -183,7 +183,11 @@ async function boot(){
   else {
     const sel = (typeof destFullBleed === "function" && destFullBleed(S.ui.dest))
       ? null : S.ui.destSel[S.ui.dest];
-    S.screen = (sel && SCREENS[sel]) ? sel : (DEST_DEFAULT_SCREEN[S.ui.dest] || S.screen);
+    /* A destination whose default screen registers only behind a flag (org2)
+       must not restore onto an absent screen: render() would throw on
+       TITLES[S.screen]. Fall through to whatever S.screen already holds. */
+    const dflt = DEST_DEFAULT_SCREEN[S.ui.dest];
+    S.screen = (sel && SCREENS[sel]) ? sel : ((dflt && SCREENS[dflt]) ? dflt : S.screen);
   }
   /* One registry holds one org. This used to read /api/tenants first and gate
      the whole boot on the answer -- including a silent `if (!S.tenant) return`

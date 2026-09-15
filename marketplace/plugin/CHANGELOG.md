@@ -1,6 +1,47 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.2 (2026-09-15)
+
+- **Review folds for the speed release (DeepSeek, CHANGES-REQUIRED, 22 items, 4 folded).** The incremental transcript read now treats only true appends as appends: the file must have grown, kept its inode, and the last 64 bytes before the old offset must still read the same, otherwise it re-parses from zero; a complete last record without its newline shows provisionally; the memo keeps 16 files, least-recently-read leaving first. The registry memo's key gains the inode, so a file swapped in by rename with copied timestamps is never a hit.
+
+## 2.278.1 (2026-09-15)
+
+- **The app stays responsive while a chat is being written.** An open chat pane re-reads its transcript on every write; the whole file was parsed each time, so a long live session (58 MB on the founder's machine) cost seconds of CPU per second for as long as it ran. The transcript is now read from where the last read stopped and the messages appended; a rewritten or shrunk file is parsed from zero. Same output, a fraction of the work.
+- **Registry reads stop re-parsing files that did not change.** Placements, charter bodies and sidecars are memoised per file and re-validated by stat on every read, so no writer needs to know. The Org screen's filter, Health and search scan the charters once per request instead of once per department. Measured: department read 190 to 77 ms, Health 1071 to 570 ms before the per-request scan, /org/charters 885 to 454 ms.
+- **The startup project import runs in a background thread**, so the panel answers immediately after a start; new departments appear on the next tree read.
+
+## 2.278.0 (2026-09-15)
+
+- **The new Org tab is on by default.** The rail shows **Org** above **Old Org** unless `~/.sutra-ui/settings.json` says `flags.org2: false`. Old Org keeps every screen, id and test.
+- **Edit a charter, by succession.** The pencil gains **Edit charter…** (and an empty charter view offers **Write the charter**). The sheet files a proposal; approval mints a new charter body that supersedes the old one, carries its status, artifacts, links, goals, metrics, milestones and todos, and re-points the work filed under it. The old body stays on disk, listed under Other charters. Nothing is edited in place (founder ruling D-O3). Filed work now lists current placements only, so a re-pointed item shows once.
+
+## 2.277.2 (2026-09-15)
+
+- **New Org screen: a changed registry says so.** Each department read carries the registry's history length; when it differs from the one the tree was loaded with, one line, "The registry changed", offers Refresh, which re-reads the tree and what is open.
+- **Review folds (DeepSeek, ADVISORY, 25 items, 5 folded).** A rename or a new sub-department is refused, at request time and again at approval, when a live sibling already carries the name. A save that fails after the document was left shows "Not saved" once instead of vanishing. A stale filter answer no longer clears the newer request's in-flight flag. The kind backfill reports rows actually written. A merge with no successor leaves the children's kind alone.
+
+## 2.277.1 (2026-09-15)
+
+- **The new Org screen starts at the root.** It had been reading the role-scoped slice Old Org's studio uses (on the live registry: 43 of 76 departments, topped by the inner "Sutra"), so the machine and the other organisations were missing and the address facet began mid-tree. It now builds from the whole registry the app already fetches and opens on the rooted tree.
+
+## 2.277.0 (2026-09-15)
+
+- **The registry stores each department's kind.** Every department row now carries `node_kind` (root, machine, organisation, department), set when it is minted and re-set when it moves to or from under the root; rows from before the field get it once, on the app's startup import (`backfill_node_kind`, one history line for the batch). The new Org screen reads the stored kind and falls back to its old rule only for a row not yet filled. Design rationale: a kind derived from a name broke the day the instance was renamed.
+- **New Org screen, slice C** (still behind `flags.org2`): arrow keys walk the tree (right opens then descends, left closes then climbs, Enter selects, focus survives the paint); a Recent group after the charter lists the last four things opened in that department this session; the viewer title shows an `unsaved` chip while the editor has changes; an app page is asked for before it is framed, and one that does not answer says "Nothing to show yet" with Retry. Tests: `test_org2.js` 55, `test_org2_api.py` 14.
+
+## 2.276.1 (2026-09-15)
+
+- **Move preview shows only what the move adds.** Seen live on the registry: the preview listed every finding the tree already had, sixteen lines of old debris above the one about the move. It now subtracts the tree's standing findings and collapses duplicates; a clean move reads "Nothing in the way".
+
+## 2.276.0 (2026-09-15)
+
+- **The new Org screen edits, filters and asks.** Still behind `flags.org2`. The screen now takes the whole row like Agents does, so the tree, the list and the viewer are always beside each other. A document opens in the Workspace's own editor and saves in place; a file changed elsewhere shows one line, "Changed in another session", with Reload. Search reaches charter titles, filed work and documents (`GET /api/org2/search`); the funnel beside it filters by kind and by charter state (`GET /api/org2/filter`). The pencil gains Rename, Move (with a preview from the same check the studio uses) and New sub-department: each files a proposal (`POST /api/org2/request`) that waits in Approvals, and an approval applies it registry-only through the new `org2_apply.py`. Health adds what the server reads from charters: departments with no charter, one-line charters and overlapping siblings (`GET /api/org2/health/{ref}`). A filed .html opens in the app page frame under the same CSP (`GET /api/org2/page`). Old Org is untouched. Tests: `test_org2.js` 48, `test_org2_api.py` 13.
+
+## 2.275.0 (2026-09-15)
+
+- **A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the rail gains **Org** above the earlier Org, which now reads **Old Org** and keeps every screen it had. The new screen is one tree of department names with one Search field, a department strip with Chart and a pencil, a list of names (Charter, Departments, Filed work, Other charters, Documents, Apps), and a viewer that opens on the charter with its facets beneath, a document in place, an app in its page frame, or the chart from that level. The pencil holds Changes, Approvals and Health for that department. One new read-only route, `GET /api/org2/department/{ref}`, under the same forbidden-calls guard as the org routes. Design and plan: holding `departments/experience/org/` (BUILD-PLAN.md, canvas 6e5e3f8b). Tests: `test_org2.js` 35, `test_org2_api.py` 7.
+
 ## 2.274.2 (2026-09-15)
 
 - **A finished Shadow task stays in the list.** The row left the moment a mission completed, taking the completion summary with it -- so unless you were already on that card, there was no way back to what was done. A completion now stays until it is retried, the same rule a failure and a founder-stopped task already follow. Nothing is stored or transitioned differently; the list simply stops discarding records the server was already sending.

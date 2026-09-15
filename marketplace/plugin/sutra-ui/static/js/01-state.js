@@ -184,7 +184,11 @@ function lsSet(key, value){
    on it next to the surfaces you work in all day. The name does not change --
    "Routines" is still what the row and the screen are called, only the address
    moved back: Settings -> Automation, next to Skills and Automation. */
-const DESTS = ["now","focus","chats","agents","org","team","settings"];
+/* org2 (2.275.0, holding BUILD-PLAN.md): the new Org screen sits above the
+   earlier Org accordion, which the rail now labels "Old Org". The row renders
+   only while flags.org2 is on (renderRail filters it), so the count the rail
+   shows stays seven until the flag flips. */
+const DESTS = ["now","focus","chats","agents","org2","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -215,6 +219,8 @@ const DEST_PLANES = {
                 screen id, flag and API keep the internal name `modules`. */
              {screen:"modules", label:"Apps", flag:"modules"},
              {screen:"reorg"}],
+  /* The new Org is ONE screen: full-bleed, no plane, no accordion (2.275.0). */
+  org2:     [],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it
@@ -250,6 +256,7 @@ const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               agents:"agents",
+                              org2:"org2",
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
