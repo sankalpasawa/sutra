@@ -1,15 +1,19 @@
-"""freeze.py — Planner step 4: the final gate. Checks the verified plan's SHAPE, then stamps it.
+"""freeze.py — Planner step 3: the final gate. Checks the selected plan's SHAPE, then stamps it.
 
 HARD flags (structural breakage, the plan is NOT frozen): no sections · a section with zero H3s · an H3
 with zero cards · missing h1 / primary keyword / archetype · word band missing or zero.
 SOFT notes (recorded, never blocking): a hard-hole (a gap / table-stake / PAA question no H3 serves) ·
-fewer than 3 sections · source verification cut more than 15 cards · cards left unverified.
+fewer than 3 sections.
 Shape checks only: every judgment already happened upstream. Freeze is a bouncer, not a judge.
+
+Until 2026-09-16 this also read the verify step's police log (cards cut, cards kept unsourced). That
+step is gone: sources are now checked after the body is written (write/source_check.py), so there is
+nothing about sources to note here. A work-freeze.json written by the older code has the same shape
+as this one writes, so a paused run resumes from it without change.
 """
 
 
-def run(plan, police=None):
-    police = police or {}
+def run(plan):
     hard, soft = [], []
     secs = plan.get("sections") or []
     if not secs:
@@ -37,13 +41,4 @@ def run(plan, police=None):
                 soft.append("HOLE (%s): %s" % (kind, item[:70]))
     if len(secs) < 3:
         soft.append("only %d sections" % len(secs))
-    cuts = len(police.get("cut") or [])
-    if cuts > 15:
-        soft.append("source verification cut %d cards" % cuts)
-    unchecked = len(police.get("needs_source") or []) + len(police.get("kept_unsourced") or [])
-    if unchecked:
-        soft.append("%d card(s) kept without a checked source; still in the plan" % unchecked)
-    unloadable = len(police.get("unverifiable_kept") or [])
-    if unloadable > 20:
-        soft.append("%d cards kept with sources that would not load; verify before publishing" % unloadable)
     return {"hard": hard, "soft": soft, "plan": None if hard else plan}

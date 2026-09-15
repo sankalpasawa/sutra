@@ -241,7 +241,11 @@ function agStepsFromEvents(events, state){
       }
       case "substep_finished": {
         const p = (ev.parent && byId[ev.parent]) || lastStep;
-        if (p) p.subs.push({ label: ev.label || "", note: ev.note || "", ms: ev.ms });
+        /* `artifact` is the file a one-line substep stands for (the source check's report, say):
+           the row then carries a Details link that opens it, so a step that says one sentence
+           in the chat still has its full account one click away. */
+        if (p) p.subs.push({ label: ev.label || "", note: ev.note || "", ms: ev.ms,
+                             artifact: ev.artifact || "", view: ev.view || "" });
         else push({ kind: "note", text: ev.label || "", t: ev.t });
         break;
       }
@@ -515,15 +519,21 @@ function agGlyph(e){
   return "";
 }
 
-function agSubsHtml(subs, stepId, open){
+function agSubsHtml(subs, stepId, open, runId){
   if (!subs || !subs.length) return "";
   const show = open ? subs : subs.slice(-AG_MAX_SUBS);
   const hidden = subs.length - show.length;
+  /* A substep that stands for a file (s.artifact) gets a Details link in place of nothing: the
+     same ag-openlink the "Ready to read" row uses, opening the same artifact panel. One row in the
+     chat, the whole account behind it. */
+  const details = (s) => s.artifact
+    ? `<button class="ag-openlink tdetail" type="button" data-ag="open" data-arg="${agEsc(s.artifact)}" data-view="${agEsc(s.view || "article")}" data-run="${agEsc(runId || "")}">Details</button>`
+    : "";
   return `<div class="ag-subs">
     ${hidden > 0 ? `<button class="ag-more" type="button" data-ag="more" data-arg="${agEsc(stepId)}">${hidden} earlier …</button>` : ""}
     ${show.map(s => `<div class="trow ok"><span class="tstate" aria-hidden="true"></span>
       <span class="tname" title="${agEsc(s.label)}">${agEsc(s.label)}</span>
-      <span class="tsum" title="${agEsc(s.note)}">${agEsc(s.note)}</span>
+      <span class="tsum" title="${agEsc(s.note)}">${agEsc(s.note)}</span>${details(s)}
       ${s.ms ? `<span class="tverdict">${agEsc(agDur(s.ms))}</span>` : ""}</div>`).join("")}
   </div>`;
 }
@@ -561,7 +571,7 @@ function agEntryHtml(e, ctx){
         ${shown && e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
         ${e.state === "bad" && e.reason ? `<div class="ag-body" style="color:var(--block)">${agEsc(e.reason)}</div>` : ""}
         ${e.state === "ok" && e.summary && !n ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
-        ${shown ? agSubsHtml(e.subs, e.id, open) : ""}
+        ${shown ? agSubsHtml(e.subs, e.id, open, ctx.run_id) : ""}
         ${e.state === "ok" && e.summary && n ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.id)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;

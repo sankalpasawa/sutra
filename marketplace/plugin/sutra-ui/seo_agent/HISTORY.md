@@ -438,3 +438,34 @@ knowledge pack split in two.
   because it deserves a bound and nobody should discover it by accident.
 - The bundled app has no Playwright; it uses the shell's window. A source checkout without Playwright says plainly that a challenged site needs the app.
 - The wrapper's FAQ and close are not run through the source check, so a number there can be unsupported. The body is checked; the wrapper is the next place to check.
+
+## The source check moves after the body (2026-09-16)
+
+The planner's verify step is deleted (`write/verify_sources.py`, `prompts/write/verify-worthy.md`).
+An overnight experiment on three live runs measured it: 600 to 850 cards checked per article, about
+1,000 model calls, 2.5 to 4 hours, and its "not supported" verdicts right 30% of the time. Two bugs
+did most of the damage. A citation marker like `[11]` inside a card's text was read as the claim's
+number, so the page was rejected for lacking an "11" (426 cards across the three runs were sent to
+the checker only because of a marker). And one failing claim marked its url bad for every other card
+citing it, which flagged cards that were fine (20 of 20 sampled).
+
+**What replaced it: `write/source_check.py`, right after `write_body`, before `blend`.** Measured on
+the same three articles: 59 to 85 claims, 102 to 158 calls, 6 to 8.5 minutes.
+
+| Part | What it does | Where the rule is enforced |
+|---|---|---|
+| Filter | Only the claims the body carries. Markers and `[c<id>]` tags stripped before any number is looked for. Statistics by `checks/digit_guard`'s rules, plus named-source claims. The writer's own sums and comparisons are `derived` and recomputed from the cards in code, never judged against a page. Notes about the research itself are skipped. | code, `classify()` |
+| Check | One page fetch and one judge call per claim (`source-judge.md`, now reads the claim as the article states it). `supported` / `not_supported` / `unreadable`; unreadable (no load, or under 500 characters) is kept. No url-wide spread. Runs `llm.PARALLEL` claims at once. | `check_one()` |
+| Hunt | At most 10 `not_supported` claims, headings first then article order. Same `source-queries.md`, same queued search as enrich, same judge. A hit swaps the url on the card and in the provenance. | `hunt()`, `HUNT_CAP` |
+| Fix | One model call per affected section (`source-fix.md`): correct the figure to what the page states, else soften, else remove with a bridge from the paragraph's own words. Code diffs the paragraph: no new figure (only the page's quoted figure for a correction), no new tag, no added sentence, unlisted sentences kept word for word or joined by a connective. A rejected answer is retried once with the fault named, then the sentence is removed in code. | `validate_block()`, `fix_section()` |
+| Report | `artifacts/source-check.json` and `source-check.md`: counts, every verdict with its reason, every before/after. The chat gets ONE line ("Checked 59 facts: 50 fine, 3 new sources, 1 corrected, 3 softened, 2 removed") with a Details link that opens the report (17-agents.js: a substep carrying `artifact`). | `run()` |
+
+**Compatibility.** Three runs were paused with the old `work-verify.json` and `work-freeze.json` on
+disk. `freeze.run(plan)` no longer takes the police log and writes the same shape as before, so the
+cached freeze is reused as it is; the verify cache is never read. Tested in `test_source_check`
+("resuming a run that was paused with the OLD work-verify.json"). The draft's digit guard now also
+reads `source-check.json`, so a figure the check CORRECTED to the page's own sentence traces to
+evidence rather than failing as invented.
+
+Suites: `test_source_check` (new, 62 checks), `test_write`, `test_stations`, `test_prompts_parity`
+(`verify-worthy.md` recorded as not ported, `source-judge.md` as adapted), `test_agents.js`.

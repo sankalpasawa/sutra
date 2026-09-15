@@ -34,8 +34,7 @@ LISTICLE_MIN_ITEMS = 5              # fewer than this and it has stopped being a
 # ---- the planner ----------------------------------------------------------------------------------
 SELECT_H3_COVERAGE = 0.45           # an H2 survives at >= this fraction of tagged H3s
 MAX_TABLE_STAKES = 7                # how many "every ranking page covers this" topics reach the architect
-PAGE_CHARS = 8000                   # how much of a source page the judge reads
-VERIFY_BATCH = 80                   # cards per verify-worthy AI call
+PAGE_CHARS = 8000                   # how much of a source page the source-check judge reads
 FETCH_TIMEOUT = 15.0
 
 # ---- the company's own material -------------------------------------------------------------------
@@ -120,11 +119,11 @@ INLINE_LINKS_CAP = 5
 # lot at once is big: a whole-article round trip, and the planner's batched judgment calls.
 #
 # THE PLANNER RAN AT 300 (fixed 2026-09-10). Only blend, wrapper, coherence and readable raised the
-# ceiling, so select and verify_sources kept llm.CLI_TIMEOUT — five minutes for a tag pass over a
-# whole section menu, or a verify-worthy call carrying VERIFY_BATCH (80) cards. A planner call that
-# ran long was killed, and a killed call was not retried, so a slow run lost the plan for no reason
-# at all. The planner's calls now pass this ceiling per call, which is what llm.call asks for
-# ("per call, never a global swap"); long_call() below stays for the whole-article steps.
+# ceiling, so select kept llm.CLI_TIMEOUT — five minutes for a tag pass over a whole section menu.
+# A planner call that ran long was killed, and a killed call was not retried, so a slow run lost
+# the plan for no reason at all. The planner's calls, and the source check's judge and fix calls,
+# now pass this ceiling per call, which is what llm.call asks for ("per call, never a global
+# swap"); long_call() below stays for the whole-article steps.
 LONG_CALL_TIMEOUT = 2400.0
 
 ARCHETYPES = {
@@ -293,7 +292,7 @@ def persona_short(blueprint, research):
 
 # ---- the network, behind one door -----------------------------------------------------------------
 # Tests replace these two names and nothing in the write phase ever reaches the network. The source
-# verifier reads a page; the links pass asks whether a page answers. Nothing else here fetches.
+# check reads a page; the links pass asks whether a page answers. Nothing else here fetches.
 
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 _HOST_LOCKS, _HOST_LAST, _LOCKS_GUARD = {}, {}, threading.Lock()

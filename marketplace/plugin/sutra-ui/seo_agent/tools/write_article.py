@@ -7,11 +7,18 @@ Writes: article.json, draft.md, links-report.json, write-report.json, plus one w
 This file is PURE SEQUENCING. It calls each step's run() in order and passes outputs along; every
 judgment lives in write/<step>.py, every prompt in prompts/write/. The four stations:
 
-  PLANNER    gather -> route -> select -> verify_sources -> freeze   (a HARD freeze flag stops the run)
+  PLANNER    gather -> route -> select -> freeze   (a HARD freeze flag stops the run)
   ARCHITECT  shape -> enrich -> brand_cards -> allocate_words -> section_keywords -> headings
   FIELD      what practitioners say in public, read and filtered into one briefing
-  WRITER     write_body -> blend -> wrapper -> coherence -> readable -> sentence_pass -> slop_pass
-             -> links (editing/links_pass.py) -> clean -> assemble
+  WRITER     write_body -> source_check -> blend -> wrapper -> coherence -> readable -> sentence_pass
+             -> slop_pass -> links (editing/links_pass.py) -> clean -> assemble
+
+THE SOURCE CHECK MOVED (2026-09-16). The planner used to run a verify step over every card in the
+plan, 600 to 850 of them, about 1,000 model calls and 2.5 to 4 hours a run, and its "not supported"
+verdicts were right about 30% of the time. It now runs AFTER the body is written, over only the 60
+to 90 claims the article actually carries (write/source_check.py). A run paused before the change
+still has work-verify.json and work-freeze.json on disk: the freeze cache is reused as it is, the
+verify cache is simply never read, and the run carries on into shape and then the new check.
 
 FIELD SITS BETWEEN THE ARCHITECT AND THE WRITER, which is where the original puts it: run_article.py
 sequences planner -> architect -> field -> writer, and the station reads the architect's finished
@@ -28,22 +35,12 @@ from .. import store
 from ..editing import links_pass
 from ..write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, enrich,
                      field, fmt_router, freeze, gather, headings, plan_select, readable, section_keywords,
-                     sentence_pass, shape, slop_pass, verify_sources, wrapper, write_body)
+                     sentence_pass, shape, slop_pass, source_check, wrapper, write_body)
 from . import _shared as sh
 
-STEPS = ["gather", "route", "select", "verify", "freeze", "shape", "enrich", "brand_cards", "allocate",
-         "section_keywords", "headings", "field", "write_body", "blend", "wrapper", "coherence", "readable",
-         "sentences", "slop", "links", "clean", "assemble"]
-
-
-def _apply_card_fixes(idx, fixes):
-    for cid, fx in (fixes or {}).items():
-        c = idx.get(C.nid(cid))
-        if c is None:
-            continue
-        c["source_urls"] = list(fx.get("source_urls") or [])
-        if fx.get("needs_source"):
-            c["needs_source"] = True
+STEPS = ["gather", "route", "select", "freeze", "shape", "enrich", "brand_cards", "allocate",
+         "section_keywords", "headings", "field", "write_body", "source_check", "blend", "wrapper", "coherence",
+         "readable", "sentences", "slop", "links", "clean", "assemble"]
 
 
 def _merge_brand_cards(idx, used):
@@ -154,15 +151,8 @@ def run(ctx, redo=False):
     reports["select"] = sel["audit"]["stats"]
     reports["select"]["dead_h2s"] = sel["audit"]["drops"]["dead_h2s"]
 
-    ver = step("verify", "Checking the sources behind every number",
-               lambda: verify_sources.run(C.deep(sel["plan"]), idx, say))
-    _apply_card_fixes(idx, ver.get("card_fixes"))
-    pol = ver["police"]
-    reports["verify"] = {k: (len(v) if isinstance(v, list) else v) for k, v in pol.items() if k != "coverage"}
-    reports["verify"]["coverage"] = pol.get("coverage")
-    skipped.append("Source hunt: " + pol.get("hunt", ""))
-
-    fr = step("freeze", "Freezing the plan", lambda: freeze.run(C.deep(ver["plan"]), pol))
+    # A work-freeze.json written before 2026-09-16 (verify's plan, same shape) is reused as it is.
+    fr = step("freeze", "Freezing the plan", lambda: freeze.run(C.deep(sel["plan"])))
     reports["freeze"] = {"hard": fr["hard"], "soft": fr["soft"]}
     if fr["hard"]:
         say("The plan cannot be frozen", "; ".join(fr["hard"])[:200])
@@ -246,6 +236,18 @@ def run(ctx, redo=False):
                                           for s in body["sections"]],
                              "contract_misses": body.get("contract_misses", []), "contract_leaked": body.get("contract_leaked", [])}
 
+    # THE SOURCE CHECK. Only the claims the body carries, one page and one verdict each, then a capped
+    # hunt and a per-section fix of what still fails. ONE line reaches the chat; the detail is the
+    # artifact. The step's output is the body with the fixes applied, so `body` is rebound to it and
+    # every later pass edits the checked text.
+    sc = step("source_check", "Checking the sources behind the facts the body uses",
+              lambda: source_check.run(body, idx, say))
+    body = sc["body"]
+    store.save_artifact(chat_id, run_id, "source-check.json", dict(sc["report"], generated_at=store.now()))
+    store.save_artifact(chat_id, run_id, "source-check.md", sc["markdown"])
+    reports["source_check"] = sc["report"]["counts"]
+    skipped.append("Source check: " + sc["report"]["summary"])
+
     bl = step("blend", "Editing the sections into one piece", lambda: blend.run(body, st, inputs, ctx_a, say))
     reports["blend"] = {k: bl[k] for k in ("edits", "guard_failures", "warnings", "applied", "tag_audit", "keywords_measured",
                                            "counter_before", "counter_after", "length_before", "length_after")}
@@ -302,9 +304,11 @@ def run(ctx, redo=False):
                          "enrichment_resolved": (reports.get("enrich") or {}).get("resolved") or 0,
                          "enrichment_cards": (reports.get("enrich") or {}).get("new_cards") or 0,
                          "field_findings": (reports.get("field") or {}).get("findings") or 0,
-                         "sources_replaced": len((reports.get("verify") or {}).get("replaced") or []),
-                         "claims_checked": (reports.get("verify") or {}).get("actually_judged"),
-                         "claims_to_check": (reports.get("verify") or {}).get("claims_to_check"),
+                         "sources_replaced": (reports.get("source_check") or {}).get("replaced") or 0,
+                         "claims_checked": (reports.get("source_check") or {}).get("checked"),
+                         "claims_unreadable": (reports.get("source_check") or {}).get("unreadable"),
+                         "claims_fixed": sum((reports.get("source_check") or {}).get(k) or 0
+                                             for k in ("corrected", "softened", "removed")),
                          "coverage_checklist": asm["coverage"]["checklist"],
                          "length": asm["coverage"]["length"]})
     n = asm["coverage"]["length"]["words"]
@@ -316,10 +320,15 @@ def run(ctx, redo=False):
         summary += ". Keyword checklist missed: " + "; ".join(fails)
     if demo:
         summary = "DEMO RESEARCH, so no cited number is real. " + summary
-    ver = reports.get("verify") or {}
-    if ver.get("claims_to_check") and not ver.get("actually_judged"):
-        # 0 of 7 judged used to read exactly like 7 of 7. Say it in the summary.
-        summary += ". None of the %d claims that needed a source could be checked" % ver["claims_to_check"]
+    scn = reports.get("source_check") or {}
+    if scn.get("checked") and scn.get("unreadable") == scn.get("checked"):
+        # 0 of 7 read used to look exactly like 7 of 7. Say it in the summary.
+        summary += ". None of the %d facts' source pages could be read, so none was checked" % scn["checked"]
+    fixed = sum(scn.get(k) or 0 for k in ("corrected", "softened", "removed"))
+    if fixed:
+        # A figure that left the article is something the reader of the summary has to know.
+        summary += ". The source check changed %s (%d corrected, %d softened, %d removed)" % (
+            sh.plural(fixed, "sentence"), scn.get("corrected") or 0, scn.get("softened") or 0, scn.get("removed") or 0)
     enr = reports.get("enrich") or {}
     if enr.get("new_cards"):
         summary += ". Extra research added %s to %s that asked for it" % (
