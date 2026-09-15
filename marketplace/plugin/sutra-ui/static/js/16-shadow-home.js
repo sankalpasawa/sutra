@@ -2027,7 +2027,7 @@ function shadowTaskCardHtml(m){
     ${awaiting || finished || askedOff ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
-        : "you say so — no check was set, so Shadow will ask"}</span></div>`}
+        : "Shadow is writing these — you left it open"}</span></div>`}
     ${/* THE TURN ROW IS THE COUNT, WITHOUT THE TRACK (founder, 2026-09-15).
          The meter came off the brief; the numbers it was drawn from are
          exactly the ones still printed here. shadowBudgetPct / SevbarHtml,

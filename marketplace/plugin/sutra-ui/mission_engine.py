@@ -147,6 +147,48 @@ def _is_template_echo(instruction):
     return s.lower() in _TEMPLATE_ECHOES
 
 
+#: Tiers a DECIDER may write. `founder_confirm` (the founder signs it off)
+#: and `verify` (a deterministic verifier settles it) only.
+#:
+#: contains_artifact IS DELIBERATELY NOT HERE. It is evaluated as
+#: `check in transcript_text` -- a literal substring search over the worker's
+#: words -- so a check describing a STATE can never be satisfied by doing the
+#: thing, only by uttering the sentence. The founder-typed path already
+#: refused it for exactly that reason (2026-09-15); a Shadow-written check
+#: must not reach it either.
+DECIDER_TIERS = ("founder_confirm", "verify")
+
+#: A mission the founder left open should not be handed twenty checks.
+MAX_DECIDER_CHECKS = 6
+
+
+def validate_done_when(raw):
+    """The checks a decider wrote, or [] if they are not usable.
+
+    Lenient where the cost of refusing is high and strict where the cost of
+    accepting is: a single malformed row is dropped, the rest stand, and a
+    payload that is not a list at all yields nothing. Never raises -- the
+    caller is mid-decision and a bad criteria list must not cost the
+    instruction that came with it.
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        check = str(row.get("check") or "").strip()
+        if not check:
+            continue
+        tier = str(row.get("tier") or "").strip() or "founder_confirm"
+        if tier not in DECIDER_TIERS:
+            continue
+        out.append({"tier": tier, "check": check[:DECISION_INSTRUCTION_MAX]})
+        if len(out) >= MAX_DECIDER_CHECKS:
+            break
+    return out
+
+
 def validate_decision(raw):
     """A Shadow decision, or None if it is not one.
 
@@ -166,8 +208,19 @@ def validate_decision(raw):
             return None               # "continue" with nothing to say is not
         if _is_template_echo(instruction):
             return None               # the PROMPT's own example, not a decision
-        return {"action": action, "reason": reason,
-                "instruction": instruction[:DECISION_INSTRUCTION_MAX]}
+        out = {"action": action, "reason": reason,
+               "instruction": instruction[:DECISION_INSTRUCTION_MAX]}
+        # ADDITIVE, exactly like `intervention` below: a continue MAY carry
+        # the checks Shadow wrote for a mission the founder left without any.
+        # Absent or malformed -> the key is simply not there and `out` is
+        # byte-identical to what this returned before, so every existing
+        # decision and every test of one is unaffected. A bad list degrades to
+        # no criteria rather than failing the decision: the instruction is
+        # still worth sending, and Shadow is asked again next turn.
+        checks = validate_done_when(raw.get("done_when"))
+        if checks:
+            out["done_when"] = checks
+        return out
     out = {"action": action, "reason": reason, "instruction": ""}
     # ADDITIVE, AND ONLY HERE. An ask_founder MAY carry a typed request
     # (shadow_intervention.validate_request). When it does not -- or when the
@@ -842,6 +895,29 @@ class MissionEngine:
                 say_text, decision = self._next_say(m), None
             else:
                 say_text, decision = await self._instruction(m, last_response)
+            # SHADOW WRITES THE CHECKS THE FOUNDER DID NOT (founder,
+            # 2026-09-15). "Done when" is optional on the form; the outcome is
+            # not. A mission with no checks could never finish --
+            # evaluate_done_when returns False for an empty set, so it ran to
+            # max_turns and failed -- and the founder who declined to spell
+            # out the criteria is exactly the one who should not have to.
+            #
+            # ONLY ONTO AN EMPTY SET, so the founder's own words can never be
+            # edited, replaced or appended to by Shadow: a mission that
+            # arrived with criteria takes this branch never, and its prompt
+            # does not even carry the request. Written once, before the
+            # evaluation below runs, so the checks are live from this turn.
+            if (decision is not None and decision.get("done_when")
+                    and not (m.get("done_when") or [])):
+                m["done_when"] = [dict(c) for c in decision["done_when"]]
+                self.store.save(m)
+                shadow_ledger.append("actions", {
+                    "mission_id": mid, "kind": "criteria",
+                    "summary": "Shadow wrote %d check(s) the founder left "
+                               "open: %s" % (
+                                   len(m["done_when"]),
+                                   "; ".join(c["check"]
+                                             for c in m["done_when"])[:160])})
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated

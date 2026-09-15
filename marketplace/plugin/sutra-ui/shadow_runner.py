@@ -1203,6 +1203,45 @@ async def ensure_runtime(session_id, build_args, register):
     return rt
 
 
+#: ASKED ONLY OF A MISSION THAT HAS NO CHECKS (founder, 2026-09-15). The
+#: founder may leave "Done when" empty -- the outcome is still required, but
+#: what would COUNT as done is Shadow's to write when they did not say. It is
+#: rendered into the prompt only in that case, so every mission that already
+#: carries criteria sends a byte-identical prompt and cannot be invited to
+#: rewrite the founder's own words.
+#:
+#: Shadow answers it ONCE. After the first turn writes them the mission has
+#: checks, this section disappears, and the normal loop resumes.
+_CRITERIA_ASK = """
+THIS MISSION HAS NO COMPLETION CHECKS, AND YOU MUST WRITE THEM
+The founder gave an outcome but did not say what would count as done, which
+leaves it to you. With THIS decision only, add a `done_when` key: two to four
+checks that, taken together, mean the outcome above is genuinely achieved.
+
+```json
+{"action": "continue", "instruction": "<what to send into the chat next>",
+ "reason": "<one short line: why this, now>",
+ "done_when": [{"tier": "founder_confirm", "check": "<a state, not a task>"}]}
+```
+
+  * Write a STATE that is true when the work is done ("the EMI check passes"),
+    never an instruction to perform ("run the EMI check").
+  * `tier` is `founder_confirm` -- the founder signs it off -- unless a
+    deterministic verifier could settle it, which is `verify`.
+  * Derive them from the OUTCOME above and what the chat has said so far.
+    Do not invent scope the founder did not ask for, and keep the set small:
+    every check is something a human will have to look at.
+  * DO NOT ASK THE FOUNDER FOR THEM. An empty "Done when" is not a gap in
+    the brief and it is not a question for you to raise: the founder named
+    the outcome, which is theirs, and left what would count as done to you,
+    which is yours. An `ask_founder` whose reason is that the criteria are
+    missing is the one answer this section exists to prevent -- you have the
+    outcome and the chat, and that is enough to write them.
+  * Omit the key only if you truly cannot tell yet, and then CONTINUE
+    anyway; you will be asked again next turn. Never stop for it.
+"""
+
+
 _DECIDE_PROMPT = """You are Shadow, driving one target chat toward an outcome.
 
 You do NOT do the work. A separate Claude session -- with its own context,
@@ -1246,6 +1285,7 @@ Decide. Reply with ONE fenced json block and nothing else:
  "reason": "<one short line: why this, now>"}
 ```
 
+%(criteria_ask)s
 or, if you genuinely cannot make progress and the founder is needed:
 
 ```json
@@ -1424,6 +1464,12 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
             "founder_response": _founder_answer_text(
                 context.get("founder_response")),
             "founder_says": _founder_says_text(context.get("founder_says")),
+            # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
+            # it does not, and _decision_context already carries them. Empty
+            # -> Shadow is asked to write them; otherwise this renders to the
+            # empty string and the prompt is exactly what it was before.
+            "criteria_ask": ("" if (context.get("checks") or [])
+                             else _CRITERIA_ASK),
         }
         # THE SAME RUNTIME FACTORY THE CHAT PANES USE, injected the way
         # build_args, register and publish already are -- this module must not
