@@ -2,7 +2,18 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.3 (2026-09-15, HEAD)
+## v2.278.4 (2026-09-15, HEAD)
+
+**Switch or add a Claude account again.** A user reported he could no longer switch the Claude account
+Sutra runs on. "Switch account" / "Sign in" lived in the Account fold of the old per-provider usage
+screen (`accountFold` in 04-screens.js); the Usage limits page rebuilt in 2.273.1 replaced that screen,
+so nothing drew the fold any more, although `accountHtml`, `accountLoginHtml`, the `[data-auth-login]`
+handler and the Electron `authLogin` bridge (`claude auth login`) were all intact. Setup -> AI
+providers -> Claude Code now carries an **Account** section: who is signed in, email, plan,
+organisation, the Switch account / Sign in button, and the details disclosure. Opening that page reads
+the account when nothing has read it yet. Tests: panel +1.
+
+## v2.278.3 (2026-09-15)
 
 **SEO Writer: "aim it at hiring teams" is researched, not replayed.** Aparna asked for "white collar vs
 blue collar"; the topic gate said page one was career explainers for job seekers, which was fair. She

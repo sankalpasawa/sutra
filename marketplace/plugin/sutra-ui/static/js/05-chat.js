@@ -1326,7 +1326,13 @@ function providerPageHtml(pid, st){
      otherwise -- claiming another provider's mode would be a false statement
      about what this one would do if picked. */
   const accessNative = active ? running : accessNativeFor(pid, "read");
-  const signin = pid === "codex" ? codexAuthHtml()
+  /* CLAUDE'S ACCOUNT IS BACK ON ITS OWN PAGE (2026-09-15). "Switch account" and "Sign in"
+     lived in the Account fold of the old per-provider usage screen; the rebuilt Usage limits
+     page replaced that screen and the fold went with it, so nobody could switch or add a
+     Claude account from the app any more. The panel, its button and its handler were all
+     still here -- only the place that drew them was gone. This is that place now. */
+  const signin = pid === "claude" ? accountHtml()
+               : pid === "codex" ? codexAuthHtml()
                : pid === "deepseek" ? deepseekAuthHtml() : "";
   return `
     ${settingsHeadHtml(p.name, providerBlurb(p), "AI providers", "providers")}
@@ -1353,7 +1359,7 @@ function providerPageHtml(pid, st){
       <div class="sxsws">${providerSwitchesHtml(pid)}</div>
     </section>
 
-    ${signin ? `<section class="sxsec"><h3 class="sxsech">Sign in</h3>${signin}</section>` : ""}`;
+    ${signin ? `<section class="sxsec"><h3 class="sxsech">${pid === "claude" ? "Account" : "Sign in"}</h3>${signin}</section>` : ""}`;
 }
 
 /* ── Access and permissions ────────────────────────────────────────────────
