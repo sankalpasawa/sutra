@@ -1016,14 +1016,16 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 /* THE PROMISE AT THE FOOT OF THE SHELF. Deliberately the loudest thing on the screen: it is the
    only place the product says what it is going to be, and it is standing in for an empty shelf.
    Serif, dark, large, with a hairline running out to both edges so it reads as a designed
-   statement rather than a leftover sentence. */
-.ag-more{display:flex;align-items:center;gap:18px;margin:46px 0 10px}
-.ag-more .r{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
-.ag-more .r:last-child{background:linear-gradient(90deg,var(--line),transparent)}
-.ag-more p{margin:0;text-align:center;font-family:var(--serif);color:var(--ink);
+   statement rather than a leftover sentence. Its own class on purpose: .ag-more is the small
+   "N earlier …" button inside a running step, and when this banner shared that name its 46px
+   margin opened a blank gap under every live step (2.278.5). */
+.ag-promise{display:flex;align-items:center;gap:18px;margin:46px 0 10px}
+.ag-promise .r{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+.ag-promise .r:last-child{background:linear-gradient(90deg,var(--line),transparent)}
+.ag-promise p{margin:0;text-align:center;font-family:var(--serif);color:var(--ink);
   font-size:26px;line-height:1.25;letter-spacing:-.02em;font-weight:600}
-.ag-more em{font-style:normal;color:var(--acc)}
-@media (max-width:720px){ .ag-more p{font-size:20px} .ag-more{gap:10px;margin-top:32px} }
+.ag-promise em{font-style:normal;color:var(--acc)}
+@media (max-width:720px){ .ag-promise p{font-size:20px} .ag-promise{gap:10px;margin-top:32px} }
 
 /* the shelf. One column: the card is on the left and stays there, and a second
    agent later drops in underneath without a layout to rethink. */
@@ -1116,7 +1118,7 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .ag-enter .ag-mkth{animation:agRise .42s cubic-bezier(.16,.84,.30,1) both}
 .ag-enter .ag-mkt > h3.sec{animation:agRise .42s cubic-bezier(.16,.84,.30,1) .08s both}
 .ag-enter .ag-cards{animation:agRise .44s cubic-bezier(.16,.84,.30,1) .14s both}
-.ag-enter .ag-more{animation:agRise .42s cubic-bezier(.22,.72,.28,1) .16s both}
+.ag-enter .ag-promise{animation:agRise .42s cubic-bezier(.22,.72,.28,1) .16s both}
 /* the introduction reveals in reading order, once, and only on a first open */
 .ag-intro .i1{animation:agRise .32s cubic-bezier(.22,.72,.28,1) both}
 .ag-intro .i2{animation:agRise .32s cubic-bezier(.22,.72,.28,1) .07s both}
@@ -1127,7 +1129,7 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
    simply there -- no delay, no transform, nothing left half-faded. */
 @media (prefers-reduced-motion:reduce){
   .ag-enter .ag-side,.ag-enter .ag-main,.ag-enter .ag-panel,
-  .ag-enter .ag-mkth,.ag-enter .ag-mkt > h3.sec,.ag-enter .ag-cards,.ag-enter .ag-more,
+  .ag-enter .ag-mkth,.ag-enter .ag-mkt > h3.sec,.ag-enter .ag-cards,.ag-enter .ag-promise,
   .ag-intro .i1,.ag-intro .i2,.ag-intro .i3,.ag-intro .i4,.ag-intro .i5{
     animation:none;opacity:1;transform:none}
   .ag-mktcard{transition:none}

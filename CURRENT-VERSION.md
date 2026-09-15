@@ -2,7 +2,18 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.4 (2026-09-15, HEAD)
+## v2.278.5 (2026-09-15, HEAD)
+
+**No empty gap under the running step.** In an agent chat (the SEO Writer's included), a live step
+with more than eight finished rows drew a blank block, about three lines tall, between its subtitle and
+the "N earlier …" line. The cause was a shared class name: the Agents shelf's "More are coming. Fasten
+your seatbelt." banner was `class="ag-more"`, the same as the small "N earlier …" button, and its rule
+later in `agents.css` (`margin:46px 0 10px`, `display:flex`) won over the button's. The banner is now
+`.ag-promise`; the button keeps its 3px padding and nothing else changes. Same text, same order, same
+behaviour, whether the step is running or finished. Tests: agents +1 (the two classes may never share a
+name again).
+
+## v2.278.4 (2026-09-15)
 
 **Switch or add a Claude account again.** A user reported he could no longer switch the Claude account
 Sutra runs on. "Switch account" / "Sign in" lived in the Account fold of the old per-provider usage
