@@ -127,7 +127,9 @@ function agPath(url){
 /* Markdown blocks, split EXACTLY like editing/edit_block.py: paragraphs on blank
    lines, fences kept whole, ids p0..pN. The server addresses an edit by this id, so a
    splitter that disagreed by one would rewrite the wrong paragraph. */
-function agBlocks(md){
+/* Alternating [kind, text] pieces, kind "block" or "gap", losing nothing: joining every text
+   gives the document back byte for byte. edit_block.chunks in Python, line for line. */
+function agChunks(md){
   const lines = String(md || "").split(/(?<=\n)/);
   const out = []; let cur = [], kind = null, fence = null;
   for (const line of lines){
@@ -141,7 +143,42 @@ function agBlocks(md){
     cur.push(line);
   }
   if (cur.length) out.push([kind, cur.join("")]);
-  return out.filter(p => p[0] === "block").map(p => p[1]);
+  return out;
+}
+function agBlocks(md){
+  return agChunks(md).filter(p => p[0] === "block").map(p => p[1]);
+}
+
+/* The article's SECTIONS: split at every H1 and H2 block, H3s stay inside, anything before the
+   first heading is a section called "Opening". The Library's pencils address sections by these
+   ids (s0, s1, ...), and seo_agent/library_edit.sections is the same split in Python, so the
+   section a person clicks is the section the server rewrites. tests/fixtures/agents-sections.json
+   is a split the Python side produced, and test_agents.js holds this to it byte for byte. */
+function agSections(md){
+  const ch = agChunks(md);
+  const out = []; let cur = null;
+  ch.forEach((p, i) => {
+    if (p[0] !== "block") return;
+    const first = p[1].replace(/^\s+/, "").split("\n")[0].replace(/\s+$/, "");
+    const m = /^(#{1,2})\s+(.*)$/.exec(first);
+    if (cur === null || m){
+      cur = { id: "s" + out.length, heading: m ? m[2].trim() : "Opening", level: m ? m[1].length : 0, first: i, last: i };
+      out.push(cur);
+    } else cur.last = i;
+  });
+  return out.map(s => ({ id: s.id, heading: s.heading, level: s.level,
+                         text: ch.slice(s.first, s.last + 1).map(p => p[1]).join(""), first: s.first, last: s.last }));
+}
+/* One section replaced, everything else byte for byte. The gap after the section is kept, so the
+   new text should end the way the old one did (a newline); a missing one is added. */
+function agSpliceSection(md, sectionId, text){
+  const ch = agChunks(md);
+  const s = agSections(md).find(x => x.id === sectionId);
+  if (!s) return md;
+  const old = s.text, tail = old.slice(old.replace(/\n+$/, "").length);
+  let body = String(text || "").replace(/\n+$/, "");
+  body += tail || (s.last < ch.length - 1 ? "\n" : "");
+  return ch.map((p, i) => i === s.first ? body : (i > s.first && i <= s.last) ? "" : p[1]).join("");
 }
 
 /* ── state ─────────────────────────────────────────────────────────────────── */
@@ -183,6 +220,10 @@ function agS(){
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
     compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
+    /* the open Library article: the buffer being edited (draft, title, the version it was opened
+       at, dirty), the one section editor that is open, who last saved it, and a teammate's newer
+       save that blocked ours */
+    libBuf: null, libSec: null, libMeta: null, libConflict: null,
     fileEdit: null,
     prompts: null, promptEdit: null,   /* the Prompts tab's payload, and the open editor's draft */
     /* the team workspace. `ws` is GET /workspace exactly as the server sent it -- including the
@@ -1006,7 +1047,8 @@ function agResetCompany(a){
     cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, compForm: null, coForm: null, memForm: null,
-    connForm: null, libOpen: null, libEdit: null, detailOpen: {}, fileEdit: null,
+    connForm: null, libOpen: null, libEdit: null, libBuf: null, libSec: null, libMeta: null, libConflict: null,
+    detailOpen: {}, fileEdit: null,
     prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
   });
 }
@@ -1564,8 +1606,16 @@ function agChecksHtml(checks){
   }).join("")}</div>`;
 }
 
+/* Before and after. The server's make_diff sends a LIST of {type, text} rows with a folded
+   {type: "context", count} standing in for a long unchanged run; an older shape was one unified
+   string, and both still render. (The list was drawn as "[object Object]" until 2026-09-16.) */
 function agDiffHtml(diff){
-  if (!diff) return "";
+  if (!diff || (Array.isArray(diff) && !diff.length)) return "";
+  if (Array.isArray(diff)){
+    return `<pre class="ag-diff">${diff.map(r => r.type === "context" ? `<span class="fold">… ${agEsc(agNum(r.count))} unchanged line${r.count === 1 ? "" : "s"}</span>`
+      : r.type === "add" ? `<span class="add">+ ${agEsc(r.text)}</span>`
+      : r.type === "remove" ? `<span class="del">- ${agEsc(r.text)}</span>` : `  ${agEsc(r.text)}`).join("\n")}</pre>`;
+  }
   return `<pre class="ag-diff">${String(diff).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${agEsc(l)}</span>`
     : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
 }
@@ -1711,6 +1761,83 @@ function agLibEditHtml(p, ed){
     </div></div>`;
 }
 
+/* The buffer the Library panel edits: what is on screen once a section has been changed and not
+   yet saved, else the saved article. One place decides it, so the section view, the whole-article
+   editor and the AI route all start from the same words. */
+function agLibText(p, a){
+  return (a && a.libBuf && typeof a.libBuf.draft === "string") ? a.libBuf.draft : ((p && p.data && p.data.text) || "");
+}
+
+/* The line under the title of an open Library article: version, who saved it last, and whether
+   a save from this Mac reaches the team. The team line is the server's own sentence
+   (library_edit.team_status), never guessed here. */
+function agLibMetaLine(a){
+  const m = (a && a.libMeta) || {};
+  const bits = [];
+  if (m.version) bits.push(`version ${agEsc(agNum(m.version))}`);
+  if (m.edited_by) bits.push(`saved by ${agEsc(m.edited_by)}${m.edited_at ? " " + agEsc(agAgo(m.edited_at)) : ""}`);
+  const team = m.team || null;
+  if (team) bits.push(team.member ? "shared with the team" : `<span title="${agEsc(team.why || "")}">on this Mac only</span>`);
+  return bits.join(" · ");
+}
+
+/* A teammate saved a newer version while this one was open. Nothing was written; the person
+   chooses. "Load their version" reopens the article; "Overwrite with mine" saves again with force. */
+function agLibConflictHtml(c, libId){
+  if (!c) return "";
+  return `<div class="ag-conflict" role="alert">
+    <b>Updated by ${agEsc(c.edited_by || "a teammate")} ${agEsc(agAgo(c.edited_at) || "just now")}.</b>
+    Your changes were not saved over theirs.
+    <div class="row"><button class="btn pri" type="button" data-ag="libreload" data-arg="${agEsc(libId)}">Load their version</button>
+      <button class="btn" type="button" data-ag="liboverwrite" data-arg="${agEsc(libId)}">Overwrite with mine</button></div></div>`;
+}
+
+/* The one open section editor. Two ways in, one way out: type over the text, or ask the model,
+   and either way the result lands in the buffer and nothing is saved until Save. The AI proposal
+   is shown as a diff first and only "Use this" takes it. */
+function agLibSecEditorHtml(s, ed, libId){
+  const mode = ed.mode === "ai" ? "ai" : "text";
+  const tabs = `<div class="row ag-tabs" role="tablist">
+      <button class="btn ${mode === "text" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "text"}" data-ag="libsecmode" data-arg="text">Edit the text</button>
+      <button class="btn ${mode === "ai" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "ai"}" data-ag="libsecmode" data-arg="ai">Edit with AI</button></div>`;
+  if (mode === "text"){
+    return `<div class="ag-editbox ag-secbox">${tabs}
+      <textarea class="tall" data-aglibsec aria-label="This section">${agEsc(ed.text == null ? s.text : ed.text)}</textarea>
+      <div class="row"><button class="btn pri" type="button" data-ag="libsecdone" data-arg="${agEsc(s.id)}">Done</button>
+        <button class="btn" type="button" data-ag="libseccancel">Cancel</button>
+        <span class="sp">Done puts it in the article. Save, below, keeps it.</span></div></div>`;
+  }
+  const pr = ed.proposal;
+  return `<div class="ag-editbox ag-secbox">${tabs}
+    <textarea data-aglibinstr placeholder="What should change in this section? Only this section is rewritten; the rest stays as it is." aria-label="Instruction">${agEsc(ed.instruction || "")}</textarea>
+    <div class="row"><button class="btn pri" type="button" data-ag="libsecai" data-arg="${agEsc(s.id)}" ${ed.busy ? "disabled" : ""}>${ed.busy ? "Rewriting…" : "Rewrite with AI"}</button>
+      <button class="btn" type="button" data-ag="libseccancel">Cancel</button>
+      <span class="sp">${ed.error ? `<span class="ag-err">${agEsc(ed.error)}</span>` : "No new figures. The rest of the article does not move."}</span></div>
+    ${pr ? `${agDiffHtml(pr.diff)}
+      <div class="row"><button class="btn pri" type="button" data-ag="libsecuse" data-arg="${agEsc(s.id)}">Use this</button>
+        <button class="btn" type="button" data-ag="libsecdrop">Discard</button>
+        <span class="sp">Use this puts it in the article. Save, below, keeps it.</span></div>` : ""}</div>`;
+}
+
+/* A saved article, read by sections, a pencil on each. Anyone on the team can open one and change
+   it; Save writes it here and to the team's workspace. The buffer (a.libBuf) is what is drawn once
+   anything changed, so a redraw between keystrokes cannot lose an edit. */
+function agLibArticleHtml(p, a){
+  const text = agLibText(p, a);
+  const secs = agSections(text);
+  if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
+  const ed = a.libSec;
+  const dirty = !!(a.libBuf && a.libBuf.dirty);
+  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words · ${secs.length} section${secs.length === 1 ? "" : "s"}${agLibMetaLine(a) ? " · " + agLibMetaLine(a) : ""}${dirty ? ` · <b>unsaved changes</b>` : ""}</p>
+    ${agLibConflictHtml(a.libConflict, p.libId)}
+    <div class="ag-doc">${secs.map(s => {
+      const editing = ed && ed.id === s.id;
+      return `<div class="ag-sec ${editing ? "editing" : ""}" data-sec="${agEsc(s.id)}">${agMd(s.text)}
+        ${editing ? "" : `<button class="ib ag-editbtn ag-pencil" type="button" data-ag="libsec" data-arg="${agEsc(s.id)}" aria-label="Edit ${agEsc(s.heading)}" title="Edit this section, by hand or with AI">${AG_ICON.pencil}</button>`}
+        ${editing ? agLibSecEditorHtml(s, ed, p.libId) : ""}</div>`;
+    }).join("")}</div>`;
+}
+
 /* One idea, with everything that argues for it. Every field here traces to a step that produced
    it, so a person can tell an idea backed by fifteen competitor pages from one a model liked. */
 function agIdeaHtml(d){
@@ -1783,10 +1910,19 @@ function agPanelHtml(a){
       <button class="btn" type="button" data-ag="changes" data-text="About the plan: ">Ask for changes</button>
       <span class="sp">${p.dirty ? "Reordered · saved on approve" : ""}</span>`;
   } else if (p.view === "article"){
+    /* A Library article is drawn by SECTIONS with a pencil each (agLibArticleHtml); a run's draft
+       keeps the per-block view. The whole-article editor (libedit) is still there for a title
+       change or a big rewrite, and both save through the same route with the same version check. */
     body = (p.libId && a.libEdit) ? agLibEditHtml(p, a.libEdit)
+      : p.libId ? agLibArticleHtml(p, a)
       : agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly, { links: p.links, write: p.write });
     if (p.readOnly) footer = a.libEdit ? ""
-      : `${p.libId ? `<button class="btn pri" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit</button>` : ""}<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+      : p.libId ? `<button class="btn pri" type="button" data-ag="libsavebuf" data-arg="${agEsc(p.libId)}" ${(a.libBuf && a.libBuf.dirty && !a.busy) ? "" : "disabled"}>${a.busy ? "Saving…" : "Save"}</button>
+          ${a.libBuf && a.libBuf.dirty ? `<button class="btn" type="button" data-ag="libdiscard">Discard changes</button>` : ""}
+          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
+          ${a.libMeta && a.libMeta.has_previous ? `<button class="btn" type="button" data-ag="librevert" data-arg="${agEsc(p.libId)}" title="Bring back the version before the last save">Undo last save</button>` : ""}
+          <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`
+      : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
       ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
@@ -3351,6 +3487,7 @@ async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
+  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -3386,6 +3523,7 @@ async function agOpenLibMilestone(itemId, key, label){
   a.panel = { run_id: null, name, view: AG_MILE_VIEW[key] || "", data: null, loading: true, error: null,
               title: label || AG_MILE_LABEL[key] || key, subtitle: "", readOnly: true, libMile: key };
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
+  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -3402,6 +3540,63 @@ async function agOpenLibMilestone(itemId, key, label){
     }
   }
   agDraw();
+}
+
+/* Opening a Library article. Always a fresh read, so what he sees is the article as it is now,
+   including a teammate's save the poller mirrored a moment ago. The buffer starts clean at the
+   version read, and that version is what a save is checked against. */
+async function agLibOpen(itemId){
+  const a = agS();
+  const it = await agApi(`/library/${encodeURIComponent(itemId)}`);
+  a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false,
+              readOnly: true, libId: it.id, title: it.title,
+              subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
+  a.libBuf = { draft: it.draft || "", title: it.title || "", base_version: Number(it.version || 0), dirty: false };
+  a.libMeta = { version: Number(it.version || 0), edited_by: it.edited_by || "", edited_at: it.edited_at || "",
+                team: it.team || null, has_previous: typeof it.previous_draft === "string" && it.previous_draft.length > 0 };
+  a.libEdit = null; a.libSec = null; a.libConflict = null;
+  return it;
+}
+
+/* A changed article into the buffer. Nothing is saved: the footer's Save is what keeps it. */
+function agLibTake(a, draft){
+  const base = a.libBuf ? a.libBuf.base_version : 0;
+  const title = a.libBuf ? a.libBuf.title : ((a.panel && a.panel.title) || "");
+  a.libBuf = { draft, title, base_version: base, dirty: true };
+}
+
+function agLibSavedWord(m){
+  const t = (m && m.team) || {};
+  if (t.synced) return "Saved. The team sees it in a moment.";
+  if (t.queued) return "Saved here. It reaches the team when the network is back.";
+  return t.why ? "Saved here. " + t.why : "Saved";
+}
+
+/* THE ONE SAVE. Both editors and the overwrite button come through here. It carries the version
+   the article was opened at; the server refuses to write over a newer one and answers with who
+   and when, which lands in a.libConflict for the person to decide. Returns true (saved), false
+   (a conflict is on screen), or the sentence to show when it failed. */
+async function agLibSave(a, itemId, draft, title, force){
+  a.busy = true; agDraw();
+  try {
+    const body = { draft, title, force: !!force };
+    if (a.libBuf && a.libBuf.base_version != null) body.base_version = a.libBuf.base_version;
+    const m = await agPostApi(`/library/${encodeURIComponent(itemId)}/save`, body);
+    if (m && m.conflict){ a.libConflict = m.conflict; return false; }
+    a.library = await agApi("/library").catch(() => a.library);
+    if (a.panel){
+      a.panel.data = { text: draft };
+      a.panel.title = (m && m.title) || title;
+      a.panel.subtitle = `${agNum(m && m.words)} words · ${(m && m.status) || "draft"} · edited by you`;
+    }
+    a.libBuf = { draft, title: (m && m.title) || title, base_version: Number((m && m.version) || 0), dirty: false };
+    a.libMeta = { version: Number((m && m.version) || 0), edited_by: (m && m.edited_by) || "", edited_at: (m && m.edited_at) || "",
+                  team: (m && m.team) || (a.libMeta && a.libMeta.team) || null, has_previous: true };
+    a.libSec = null; a.libConflict = null;
+    agToast(agLibSavedWord(m));
+    return true;
+  } catch (e) { return agWhy(e); }
+  finally { a.busy = false; }
 }
 
 async function agOpenBrandFile(name, back, label){
@@ -3901,7 +4096,11 @@ async function agAction(act, el){
       else await agOpenArtifact(run, arg, el.getAttribute("data-view") || "article");
       break;
     }
-    case "closepanel": a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null; agDraw(); break;
+    case "closepanel": {
+      if (a.libBuf && a.libBuf.dirty && typeof confirm === "function" && !confirm("Close without saving? The changes to this article are lost.")) break;
+      a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null;
+      a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null; agDraw(); break;
+    }
     case "back": {
       const live = agLiveRun();
       if (live && live.waiting_on && live.waiting_on.artifact === "brand") await agOpenArtifact(live.run_id, "brand", "brand_pack");
@@ -4173,13 +4372,73 @@ async function agAction(act, el){
       catch (e) { agToast("Could not change: " + (e.message || e)); }
       agDraw(); break;
     }
-    case "libopen": {
-      try { const it = await agApi(`/library/${encodeURIComponent(arg)}`);
-        a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false,
-                    readOnly: true, libId: it.id, title: it.title, subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
-        a.libEdit = null; }
+    case "libopen": case "libreload": {
+      try { await agLibOpen(arg); }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
       agDraw(); break;
+    }
+    /* ── one section of a Library article ──────────────────────────────────── */
+    case "libsec": {
+      a.libSec = { id: arg, mode: "text", text: null, instruction: "", busy: false, error: "", proposal: null };
+      agDraw();
+      setTimeout(() => { const t = document.querySelector("[data-aglibsec]"); if (t) t.focus(); }, 0);
+      break;
+    }
+    case "libsecmode": { if (a.libSec){ a.libSec.mode = arg === "ai" ? "ai" : "text"; a.libSec.error = ""; } agDraw(); break; }
+    case "libseccancel": a.libSec = null; agDraw(); break;
+    case "libsecdone": {
+      const ed = a.libSec; if (!ed || !a.panel) break;
+      const cur = agLibText(a.panel, a);
+      const s = agSections(cur).find(x => x.id === arg); if (!s) { a.libSec = null; agDraw(); break; }
+      const text = ed.text == null ? s.text : String(ed.text);
+      if (!text.trim()){ ed.error = "A section cannot be emptied here. Delete its words in the whole-article editor instead."; agDraw(); break; }
+      agLibTake(a, agSpliceSection(cur, arg, text));
+      a.libSec = null; agDraw(); break;
+    }
+    case "libsecai": {
+      const ed = a.libSec; if (!ed || !a.panel) break;
+      /* the input listener keeps ed.instruction current; the live box is read too in case a
+         keystroke and the click landed in the same tick */
+      const ta = typeof document !== "undefined" ? document.querySelector("[data-aglibinstr]") : null;
+      const instruction = String((ta && ta.value) || ed.instruction || "").trim();
+      if (!instruction){ ed.error = "Say what should change in this section."; agDraw(); break; }
+      ed.instruction = instruction; ed.busy = true; ed.error = ""; ed.proposal = null; agDraw();
+      try {
+        const r = await agPostApi(`/library/${encodeURIComponent(a.panel.libId)}/ai-section`,
+                                  { draft: agLibText(a.panel, a), section_id: arg, instruction });
+        if (a.libSec === ed){ ed.proposal = r; ed.busy = false; }
+      } catch (e) { if (a.libSec === ed){ ed.busy = false; ed.error = agWhy(e); } }
+      agDraw(); break;
+    }
+    case "libsecuse": {
+      const ed = a.libSec; if (!ed || !ed.proposal || !a.panel) break;
+      agLibTake(a, agSpliceSection(agLibText(a.panel, a), arg, ed.proposal.proposed));
+      a.libSec = null; agToast("Section replaced. Save to keep it."); agDraw(); break;
+    }
+    case "libsecdrop": { if (a.libSec){ a.libSec.proposal = null; } agDraw(); break; }
+    case "libsavebuf": {
+      if (!a.libBuf || !a.libBuf.dirty || a.busy) break;
+      await agLibSave(a, arg, a.libBuf.draft, a.libBuf.title, false);
+      agDraw(); break;
+    }
+    case "liboverwrite": {
+      if (!a.libBuf) break;
+      await agLibSave(a, arg, a.libBuf.draft, a.libBuf.title, true);
+      agDraw(); break;
+    }
+    case "libdiscard": {
+      if (a.libBuf && a.panel){ a.libBuf = { draft: (a.panel.data && a.panel.data.text) || "", title: a.panel.title || "",
+                                            base_version: a.libBuf.base_version, dirty: false }; }
+      a.libSec = null; a.libConflict = null; agDraw(); break;
+    }
+    case "librevert": {
+      if (a.busy) break;
+      if (typeof confirm === "function" && !confirm("Bring back the version before the last save? The current one becomes the one you can undo to.")) break;
+      a.busy = true; agDraw();
+      try { const m = await agPostApi(`/library/${encodeURIComponent(arg)}/revert`, {});
+        await agLibOpen(arg); agToast(agLibSavedWord(m)); }
+      catch (e) { agToast("Could not undo: " + agWhy(e)); }
+      a.busy = false; agDraw(); break;
     }
     case "libmile": {
       const key = el.getAttribute("data-name") || "";
@@ -4190,7 +4449,9 @@ async function agAction(act, el){
     }
     case "libedit": {
       const p2 = a.panel; if (!p2) break;
-      a.libEdit = { title: p2.title || "", draft: (p2.data && p2.data.text) || "", busy: false, error: "" };
+      /* starts from the buffer, so a section already changed by hand is not thrown away */
+      a.libEdit = { title: (a.libBuf && a.libBuf.title) || p2.title || "", draft: agLibText(p2, a), busy: false, error: "" };
+      a.libSec = null;
       agDraw();
       setTimeout(() => { const t = document.querySelector("[data-aglibbody]"); if (t) t.focus(); }, 0);
       break;
@@ -4201,16 +4462,10 @@ async function agAction(act, el){
       const title = String(ed.title || "").trim(), draft = String(ed.draft || "");
       if (!draft.trim()){ a.libEdit = { title, draft, busy: false, error: "An empty article is not a save." }; agDraw(); break; }
       a.libEdit = { title, draft, busy: true, error: "" }; agDraw();
-      try {
-        const m = await agPostApi(`/library/${encodeURIComponent(arg)}/save`, { draft, title });
-        a.library = await agApi("/library").catch(() => a.library);
-        if (a.panel){
-          a.panel.data = { text: draft };
-          a.panel.title = (m && m.title) || title;
-          a.panel.subtitle = `${agNum(m && m.words)} words · ${(m && m.status) || "draft"} · edited by you`;
-        }
-        a.libEdit = null; agToast("Saved");
-      } catch (e) { a.libEdit = { title, draft, busy: false, error: String((e && e.message) || e) }; }
+      const saved = await agLibSave(a, arg, draft, title, false);
+      if (saved === true) a.libEdit = null;
+      else if (saved === false) a.libEdit = null;                 /* a teammate's newer version: the conflict box takes over */
+      else a.libEdit = { title, draft, busy: false, error: saved };
       agDraw(); break;
     }
     case "libstatus": {
@@ -4659,6 +4914,8 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     }
     else if (t.matches("[data-aglibtitle]")){ if (a.libEdit) a.libEdit.title = t.value; }
     else if (t.matches("[data-aglibbody]")){ if (a.libEdit) a.libEdit.draft = t.value; }
+    else if (t.matches("[data-aglibsec]")){ if (a.libSec) a.libSec.text = t.value; }
+    else if (t.matches("[data-aglibinstr]")){ if (a.libSec){ a.libSec.instruction = t.value; a.libSec.error = ""; } }
     else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
     else if (t.matches("[data-agprompttext]")){ if (a.promptEdit){ a.promptEdit.text = t.value; a.promptEdit.msg = ""; } }
     else if (t.matches("[data-agdfs]")){

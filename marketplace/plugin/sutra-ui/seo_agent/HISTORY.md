@@ -419,6 +419,17 @@ knowledge pack split in two.
 75. The traffic ceiling says so out loud, on the pull and on every later run that reuses the file.
     Both source files claimed it was loud and the cap had been folded into the same `break` as
     reaching the end of the data, so it returned identically.
+76. The Library is editable by the whole team (2026-09-16, `library_edit.py`). An open article is
+    drawn by sections (H1/H2, the same split in Python and in `agSections`), a pencil on each opens
+    an editor with two ways in: type over the section, or ask the model with the new
+    `edit_article_section` prompt, shown as a diff before "Use this". Save is the one writer: it
+    bumps `meta.version`, stamps who and when, keeps the body before in `previous.md` (Undo last
+    save), and pushes the row to the team's `library` table. A save from a stale version is refused
+    with who and when; the team's row is read too, so a save the poller has not mirrored yet cannot
+    be overwritten. Found on the way: NOTHING had ever pushed a `library` row, so no article had ever
+    left the Mac it was written on; `loop.save_to_library` now pushes when a workspace is connected.
+    No schema change: version, editor and the previous body ride in the existing `meta` jsonb. 59
+    checks in `test_library_edit.py`, 3 route tests, 14 screen tests.
 
 ### Not done, and said so
 

@@ -531,8 +531,22 @@
 .ag-diff{margin:8px 0 0;font:11px/1.45 var(--mono);background:var(--inset);border:1px solid var(--line-soft);border-radius:7px;
   padding:8px 10px;white-space:pre-wrap;max-height:240px;overflow:auto}
 .ag-diff .add{color:var(--ok)} .ag-diff .del{color:var(--block);text-decoration:line-through;opacity:.8}
+.ag-diff .fold{color:var(--faint);font-style:italic}
 .ag-doc .md-t{font-size:12px} .ag-doc .md-tw{margin:0 0 9px}
 .ag-blk .md-l{margin:0 0 9px;padding-left:20px}
+
+/* a Library article, by sections: the same hover, the same pencil, one section at a time */
+.ag-sec{position:relative;padding:2px 0 4px;border-radius:6px}
+.ag-sec:hover{background:var(--acc-bg)}
+.ag-sec .md-h{margin:14px 0 6px} .ag-sec .md-p{margin:0 0 9px} .ag-sec .md-l{margin:0 0 9px;padding-left:20px}
+.ag-sec .ib.ag-pencil{position:absolute;right:-30px;top:8px;opacity:0;color:var(--faint)}
+.ag-sec:hover .ib.ag-pencil,.ag-sec .ib.ag-pencil:focus-visible{opacity:1}
+.ag-sec.editing{background:var(--acc-bg);padding:8px 10px}
+.ag-secbox .ag-tabs .btn.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+.ag-secbox textarea.tall{min-height:180px;max-height:50vh;font:12.5px/1.6 var(--mono);white-space:pre-wrap}
+.ag-conflict{margin:0 0 12px;border-left:2px solid var(--warn,var(--block));background:var(--warn-bg,var(--block-bg));
+  padding:9px 12px;border-radius:0 7px 7px 0;font-size:12px;line-height:1.5}
+.ag-conflict .row{display:flex;gap:7px;align-items:center;margin-top:8px}
 
 /* ── settings views (inside the conversation column) ──────────────────────── */
 .ag-view{padding:18px 20px;max-width:78ch;margin:0 auto}

@@ -739,9 +739,17 @@ def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_
         meta["run_id"] = run_id
     extra.pop("chat_id", None)
     extra.pop("run_id", None)
+    # THE PREVIOUS BODY IS A FILE, NEVER A META FIELD. A teammate's edit arrives through the
+    # workspace with `previous_draft` inside its meta so an undo works on every Mac, but meta.json
+    # is what library_list reads on every poll of the Library screen, and a second whole article
+    # in every row would double that read for nothing. So it lands in previous.md beside draft.md,
+    # and library_get puts it back on the single item only. (2026-09-16)
+    previous_draft = extra.pop("previous_draft", None)
     meta.update(extra)
     os.makedirs(d, exist_ok=True)
     _write_text(os.path.join(d, "draft.md"), draft_md or "")
+    if isinstance(previous_draft, str) and previous_draft:
+        _write_text(os.path.join(d, PREVIOUS_FILE), previous_draft)
     if meta.get("chat_id") and meta.get("run_id"):
         for name in ("research.json", "blueprint.json", "topics.json"):
             src = artifact_path(meta["chat_id"], meta["run_id"], name)
@@ -759,8 +767,38 @@ def library_save(chat_id, run_id, title, draft_md, meta_extra=None):
     return meta["id"]
 
 
-def library_update(item_id, draft_md, title=None):
-    """Write an edited article back over itself, and re-count it.
+# The one version back, beside draft.md. An edit moves draft.md here before writing the new one,
+# so the last save can always be undone, on this Mac and (through the workspace) on every other.
+PREVIOUS_FILE = "previous.md"
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def _stamp_edit(meta, draft_md, title, actor, actor_id, old_draft):
+    """The bookkeeping every edit shares: the count, the title, who, when, the version, and the
+    version before. `previous` is small on purpose (no body): the body is previous.md."""
+    meta["previous"] = {"version": int(meta.get("version") or 0),
+                        "title": meta.get("title") or "",
+                        "edited_by": meta.get("edited_by") or "",
+                        "edited_at": meta.get("edited_at") or meta.get("finished_at") or ""}
+    meta["version"] = int(meta.get("version") or 0) + 1
+    meta["words"] = len((draft_md or "").split())
+    if title:
+        meta["title"] = title
+    meta["edited_by"] = actor or ""
+    meta["edited_by_id"] = actor_id or ""
+    meta["edited_at"] = now()
+    return meta
+
+
+def library_update(item_id, draft_md, title=None, actor="", actor_id=""):
+    """Write an edited article back over itself, keep the one before it, and say who did it.
 
     A saved article is a document, not a transcript of a run: fixing a sentence should not need a
     live agent. Title and body only. Status has its own route, and everything else in the meta is
@@ -769,7 +807,11 @@ def library_update(item_id, draft_md, title=None):
     Restored 2026-09-09. It was built, then lost when a corrupted git store forced a fresh clone,
     which left the Library read-only with the route calling a function that was no longer there.
 
-    The body is written through a temp file in the same folder and renamed over the target, like
+    Since 2026-09-16 every save also: moves the body it replaces into previous.md, bumps `version`
+    by one, and stamps `edited_by` / `edited_at`. The version is what a teammate's save is checked
+    against (library_edit.save), and previous.md is what "Undo last save" reads.
+
+    Every write goes through a temp file in the same folder and a rename over the target, like
     every other save here: a crash mid-write must leave the old complete article, never half of a
     new one.
     """
@@ -778,14 +820,33 @@ def library_update(item_id, draft_md, title=None):
     if not meta:
         return None
     path = os.path.join(d, "draft.md")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(draft_md)
-    os.replace(tmp, path)
-    meta["words"] = len(draft_md.split())
-    if title:
-        meta["title"] = title
-    meta["edited_at"] = now()
+    old = _read_text(path)
+    if old is not None:
+        _write_text(os.path.join(d, PREVIOUS_FILE), old)
+    _write_text(path, draft_md)
+    _stamp_edit(meta, draft_md, title, actor, actor_id, old)
+    write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
+
+def library_revert(item_id, actor="", actor_id=""):
+    """Undo the last save: the previous body becomes the article, and the article becomes the
+    previous body, so an undo can itself be undone. Counts as an edit (new version, new author).
+
+    None when there is no article, or nothing to go back to.
+    """
+    d = os.path.join(library_dir(), item_id)
+    meta = read_json(os.path.join(d, "meta.json"))
+    if not meta:
+        return None
+    previous = _read_text(os.path.join(d, PREVIOUS_FILE))
+    if previous is None:
+        return None
+    current = _read_text(os.path.join(d, "draft.md")) or ""
+    title = (meta.get("previous") or {}).get("title") or meta.get("title")
+    _write_text(os.path.join(d, PREVIOUS_FILE), current)
+    _write_text(os.path.join(d, "draft.md"), previous)
+    _stamp_edit(meta, previous, title, actor, actor_id, current)
     write_json(os.path.join(d, "meta.json"), meta)
     return meta
 
@@ -821,6 +882,10 @@ def library_get(item_id):
         meta["draft"] = ""
     meta["research"] = read_json(os.path.join(d, "research.json"))
     meta["blueprint"] = read_json(os.path.join(d, "blueprint.json"))
+    # the one version back, on the single item only (see library_finish for why not the list)
+    previous = _read_text(os.path.join(d, PREVIOUS_FILE))
+    if previous is not None:
+        meta["previous_draft"] = previous
     meta.setdefault("status", "draft")
     meta["milestones"] = milestones(meta.get("chat_id"), meta.get("run_id"))
     return meta
