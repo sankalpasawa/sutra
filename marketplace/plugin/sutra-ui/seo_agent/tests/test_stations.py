@@ -2,8 +2,8 @@
 
   ENRICH          turns a needs_research marker into a real query, a real page read and a new card
                   numbered from 9001, and says so honestly when the search finds nothing.
-  THE SOURCE HUNT a claim whose page does not support it goes and finds one that does; a claim whose
-                  page DOES support it is left alone and never re-hunted.
+  THE SOURCE CHECK a claim whose page does not support it goes and finds one that does; a claim whose
+                  page DOES support it is left alone and never re-hunted; one that stays unsupported is fixed.
   FIELD           real forum posts become prose; no posts means no file at all, never an invented one.
 
 NOTHING HERE TOUCHES THE NETWORK. The model is a local dispatcher, DataForSEO's `post` raises if it is
@@ -21,7 +21,7 @@ _fixture.setup()
 from seo_agent import llm, store
 from seo_agent.research import evidence, web
 from seo_agent.tools import dfs
-from seo_agent.write import _common as C, enrich, field, verify_sources
+from seo_agent.write import _common as C, enrich, field, source_check
 
 FAILS, PASSES = [], []
 
@@ -181,18 +181,20 @@ ok("a DEMO search result is thrown away, because researching from made-up urls i
 dfs.available = lambda: False
 
 # ======================================================================================
-print("\nverify_sources: a dead source is replaced, a good one is left alone")
+print("\nsource_check: a dead source is replaced by the hunt, a good one is left alone")
 
 CARDS = [
     {"id": 1, "gloss": "Average cost per hire is 4,700 dollars",
-     "verbatim": "The average cost per hire was $4,700 in 2023, per the SHRM benchmarking survey.",
+     "verbatim": "The average cost per hire was $4,700 in 2023, per the SHRM benchmarking survey [11].",
      "source_urls": ["https://good.example.org/cost-per-hire"], "tag": "evidence"},
     {"id": 2, "gloss": "Time to fill averages 42 days",
      "verbatim": "The average time to fill a position is 42 days.",
      "source_urls": ["https://wrong.example.org/culture"], "tag": "evidence"},
 ]
-PLAN = {"h1": "x", "sections": [{"h2": "Costs", "h3s": [
-    {"h3": "The benchmark", "card_ids": [1, 2]}]}]}
+BODY = {"sections": [{"headline": "Costs", "job": "", "word_target": 300, "words": 30,
+                      "prose": "The average cost per hire was $4,700 in 2023 [c1]. Filling a seat takes 42 days on "
+                               "average [c2]. Both numbers move with the market.",
+                      "provenance": [], "bad_tags_dropped": 0}]}
 PAGES.update({
     "https://good.example.org/cost-per-hire":
         "The average cost per hire was $4,700 in 2023, per the SHRM benchmarking survey. " * 20,
@@ -213,7 +215,6 @@ def _judge_reply(p):
 
 
 REPLIES[:] = [
-    (lambda p: '{"verify": [' in p, {"verify": [1, 2]}),
     (lambda p: '"supports"' in p, _judge_reply),
     (lambda p: '"queries": ["<query>"' in p and "published source for ONE factual claim" in p,
      {"queries": ["average time to fill 42 days"]}),
@@ -221,42 +222,47 @@ REPLIES[:] = [
 ]
 SAY.clear()
 idx = C.card_index(CARDS)
-ver = verify_sources.run(copy.deepcopy(PLAN), idx, say)
-pol = ver["police"]
+out = source_check.run(copy.deepcopy(BODY), idx, say)
+rep = out["report"]
+by_card = {c["card_id"]: c for c in rep["claims"] if c["kind"] == "check"}
 ok("the good source is confirmed and left exactly as it was",
-   1 in pol["kept_ok"] and idx[1]["source_urls"] == ["https://good.example.org/cost-per-hire"], pol["kept_ok"])
-ok("the claim whose page did not support it got a NEW source",
-   [r["card_id"] for r in pol["replaced"]] == [2]
-   and idx[2]["source_urls"] == ["https://replacement.example.net/time-to-fill"], pol["replaced"])
-ok("the replaced card is not marked as needing a source, and is not cut",
-   not idx[2].get("needs_source") and not pol["cut"] and not pol["needs_source"], (pol["cut"], pol["needs_source"]))
+   by_card[1]["verdict"] == "supported" and not by_card[1].get("replaced")
+   and idx[1]["source_urls"] == ["https://good.example.org/cost-per-hire"], by_card.get(1))
+ok("the claim whose page did not support it got a NEW source, on the card and in the provenance",
+   by_card[2].get("replaced") and idx[2]["source_urls"] == ["https://replacement.example.net/time-to-fill"]
+   and any(p["card_id"] == 2 and p["source_url"].startswith("https://replacement") for p in out["body"]["sections"][0]["provenance"]),
+   (by_card.get(2), out["body"]["sections"][0]["provenance"]))
+ok("the sentence itself was not touched", out["body"]["sections"][0]["prose"] == BODY["sections"][0]["prose"])
 ok("the search was planned from the claim itself, gloss and verbatim both",
    any("published source for ONE factual claim" in p and "42 days" in p and "Time to fill" in p for p in SEEN))
-ok("the hunt report says how many were replaced, and names its route",
-   "1 of 1" in pol["hunt"] and "DataForSEO" in pol["hunt"], pol["hunt"])
-ok("the good source was never re-hunted", JUDGED.count("https://good.example.org/cost-per-hire") == 1)
-ok("it logged live", bool(said("Hunting a replacement")) and bool(said("New source found")), [s[0] for s in SAY])
+ok("the judge never saw the card's citation marker as part of the claim",
+   all("survey [11]" not in p and "[11]." not in p for p in SEEN if '"supports"' in p))
+ok("the good source was never re-hunted", JUDGED.count("https://good.example.org/cost-per-hire") == 1, JUDGED)
+ok("the chat got exactly ONE line, and it names the new source",
+   len(SAY) == 1 and SAY[0][0].startswith("Checked 2 facts") and "1 new source" in SAY[0][0], SAY)
 
-print("\nverify_sources: when the hunt finds nothing, the card is kept and flagged")
+print("\nsource_check: when the hunt finds nothing, the sentence is fixed, never left citing a wrong page")
 REPLIES[:] = [
-    (lambda p: '{"verify": [' in p, {"verify": [1, 2]}),
     (lambda p: '"supports"' in p, _judge_reply),
     (lambda p: '"queries": ["<query>"' in p and "published source for ONE factual claim" in p,
      {"queries": ["nothing will be found"]}),
     (lambda p: '"urls": ["https://' in p, {"urls": []}),
+    (lambda p: '"action": "correct" | "soften" | "remove"' in p, _fixture.stub_write_json),
 ]
+SAY.clear()
 idx_b = C.card_index(CARDS)
-ver_b = verify_sources.run(copy.deepcopy(PLAN), idx_b, say)
-# A failed hunt used to DELETE the card. The claim was never disproved — only the page behind it —
-# so a deletion threw away a fact the research paid for and left nothing on screen to say so.
-ok("a numeric claim with no page behind it and no replacement is KEPT, never cut",
-   [x["card_id"] for x in ver_b["police"]["needs_source"]] == [2] and not ver_b["police"]["cut"],
-   (ver_b["police"]["needs_source"], ver_b["police"]["cut"]))
-ok("the flag says the hunt ran and found nothing", "hunt" in ver_b["police"]["needs_source"][0]["why"])
-ok("the card keeps its claim, loses the bad url and carries the stamp",
-   idx_b[2].get("needs_source") and idx_b[2]["source_urls"] == [] and idx_b[2].get("verbatim"), idx_b[2])
-ok("its H3 is still in the plan", any(h["card_ids"] for s in ver_b["plan"]["sections"] for h in s["h3s"]))
-ok("the good card still survives", 1 in ver_b["police"]["kept_ok"])
+out_b = source_check.run(copy.deepcopy(BODY), idx_b, say)
+prose_b = out_b["body"]["sections"][0]["prose"]
+ok("the unsupported sentence is gone and the paragraph still reads",
+   "42 days" not in prose_b and "$4,700" in prose_b and "Both numbers move with the market." in prose_b, prose_b)
+ok("the change is on the record, before and after",
+   out_b["report"]["changes"] and out_b["report"]["changes"][0]["action"] == "removed"
+   and "42 days" in out_b["report"]["changes"][0]["before"], out_b["report"]["changes"])
+ok("the hunt log says the search found nothing, not that it did not run",
+   out_b["report"]["hunt"] and out_b["report"]["hunt"][0]["searched"] is False
+   and "did not come back" in out_b["report"]["hunt"][0]["outcome"], out_b["report"]["hunt"])
+ok("the good card still stands", idx_b[1]["source_urls"] == ["https://good.example.org/cost-per-hire"])
+ok("still one line", len(SAY) == 1 and "1 removed" in SAY[0][0], SAY)
 
 # ======================================================================================
 print("\nfield: real posts become prose")

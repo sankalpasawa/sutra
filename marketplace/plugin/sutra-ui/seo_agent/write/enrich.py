@@ -54,9 +54,9 @@ FIRST_CARD_ID = 9001          # enriched cards are numbered from here, as the or
 
 
 # ---- the one search-and-read path the two hunting stations share -----------------------------------
-# verify_sources imports `route`, `search` and `read_pages` from here rather than growing a second
-# copy. One value decided in one place: whether this run can search at all is decided by `route`, and
-# both stations report the same sentence about it.
+# source_check's replacement hunt imports `route`, `search_many` and `_interleave` from here rather
+# than growing a second copy. One value decided in one place: whether this run can search at all is
+# decided by `route`, and both stations report the same sentence about it.
 
 def route():
     """How this run can search: ("dataforseo" | "model", the sentence the report prints).

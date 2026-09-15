@@ -1950,6 +1950,28 @@ test("the tab's shelf has a heading and exactly ONE agent, with nothing invented
    Its rule sat later in agents.css with margin:46px 0 10px, so every live step with more than
    AG_MAX_SUBS rows showed a blank block between its subtitle and the list. The banner now has
    its own class; this pins both halves so the names cannot drift back together. */
+/* ONE ROW, THE DETAIL A CLICK AWAY (2026-09-16). The source check says one sentence in the chat
+   and writes its full account to source-check.md. The substep carries `artifact`, and the row
+   grows a Details link that opens it; a substep without one is exactly the row it always was. */
+test("a substep that names an artifact gets a Details link; one that does not stays plain", () => {
+  const evs = [
+    { t: 1, type: "step_started", id: "s1", label: "Writing the article", tool: "write_article", stage: "draft" },
+    { t: 2, type: "substep_finished", parent: "s1", label: "Checked 59 facts: 50 fine, 3 new sources, 1 corrected, 3 softened, 2 removed",
+      note: "the verdicts and every before and after are in source-check.md", artifact: "source-check.md", view: "article" },
+    { t: 3, type: "substep_finished", parent: "s1", label: "Written: Costs", note: "300 words" },
+  ];
+  const step = A.agStepsFromEvents(evs, { status: "running" }).find(e => e.id === "s1");
+  assert.strictEqual(step.subs.length, 2, "both substeps are on the step");
+  assert.strictEqual(step.subs[0].artifact, "source-check.md", "the artifact rides on the substep");
+  assert.strictEqual(step.subs[1].artifact, "", "and is empty where the event had none");
+  const html = A.agSubsHtml(step.subs, "s1", true, "r7");
+  assert.strictEqual((html.match(/class="trow ok"/g) || []).length, 2, "one row each, no extra rows");
+  assert.ok(html.indexOf('data-ag="open" data-arg="source-check.md" data-view="article" data-run="r7">Details</button>') !== -1,
+    "the check's row opens its report in the run's own panel");
+  assert.strictEqual((html.match(/>Details</g) || []).length, 1, "the plain substep has no link");
+  assert.ok(html.indexOf("Checked 59 facts") !== -1, "the one line is the row's label");
+});
+
 test("the 'N earlier' button and the shelf's promise banner do not share a class", () => {
   const subs = [];
   for (let i = 0; i < 30; i++) subs.push({ label: "Read page " + i, note: "ok", ms: 400 });

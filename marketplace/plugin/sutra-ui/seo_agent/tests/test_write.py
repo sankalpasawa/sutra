@@ -21,7 +21,7 @@ from seo_agent import llm, store
 from seo_agent.tools import _index, _shared as sh, dfs, voyage
 from seo_agent.write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, fmt_router,
                              freeze, gather, headings, plan_select, readable, section_keywords, sentence_pass, shape,
-                             slop_pass, verify_sources, wrapper, write_body)
+                             slop_pass, wrapper, write_body)
 from seo_agent.editing import links_pass
 
 FAILS, PASSES = [], []
@@ -85,141 +85,41 @@ good, bad, rcp = plan_select._clean_tags([{"tag": "asset-angle", "cards": [99]},
                                          plan_select._tag_maps(inputs["group_b"]), [1, 2])
 ok("a tag with no valid receipt is refused", good == ["gap: The cost of the empty seat, priced"] and bad and rcp["gap: The cost of the empty seat, priced"] == [1], (good, bad))
 
-fr = freeze.run(copy.deepcopy(plan), {})
+fr = freeze.run(copy.deepcopy(plan))
 ok("a sound plan freezes", not fr["hard"] and fr["plan"] is not None, fr["hard"])
 broken = copy.deepcopy(plan)
 broken["sections"][0]["h3s"][0]["card_ids"] = []
 broken["h1"] = ""
 broken["word_band"] = {"min": 0, "max": 0}
-fr2 = freeze.run(broken, {})
+fr2 = freeze.run(broken)
 ok("hard flags: missing h1, empty H3, no word band", len(fr2["hard"]) >= 3 and fr2["plan"] is None, fr2["hard"])
-ok("soft notes never block", freeze.run(copy.deepcopy(plan), {"cut": [{}] * 16})["plan"] is not None)
+thin = copy.deepcopy(plan); thin["sections"] = thin["sections"][:2]
+ok("soft notes never block", freeze.run(thin)["plan"] is not None and freeze.run(thin)["soft"])
 
 # ======================================================================================
-print("\nplanner: source verification (fetch stubbed)")
-PAGES = {
-    "https://www.shrm.org/research/cost-per-hire": "SHRM report. The average cost per hire was $4,700 in 2023. Soft costs make up about 60% of the total. " * 20,
-    "https://www.shrm.org/research/time-to-fill": "This page says nothing about days at all, only about culture. " * 40,
-    "https://research.example.net/turnover-study": "__ERR__HTTP403",
-    "https://journals.example.org/schmidt-hunter": "Validity of structured interviews sits near 0.51 in the meta-analysis. " * 30,
-}
-C.FETCH_ONCE = lambda url, timeout=15.0: PAGES.get(url, "__ERR__ConnectError")
-OVERRIDES.append((lambda p: '{"verify": [' in p, {"verify": [1, 2, 3, 4, 5]}))
-idx2 = C.card_index(CARDS)
-idx2[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill", "https://dead.example.org/mirror"]
-ver = verify_sources.run(copy.deepcopy(plan), idx2, say)
-pol = ver["police"]
-ok("a page that states the number is kept ok", 1 in pol["kept_ok"] and 4 in pol["kept_ok"], pol["kept_ok"])
-ok("an unloadable page is kept, not punished", 5 in pol["unverifiable_kept"], pol["unverifiable_kept"])
-ok("a wrong page plus an unreadable backup -> needs a source, not cut",
-   any(x["card_id"] == 3 for x in pol["needs_source"]) and not any(x["card_id"] == 3 for x in pol["cut"]), pol["needs_source"])
-ok("the proven-bad url is stripped from the card", idx2[3]["source_urls"] == ["https://dead.example.org/mirror"] and idx2[3].get("needs_source"))
-ok("the hunt is declared skipped", "skipped" in pol["hunt"] and "DataForSEO" in pol["hunt"])
-# A FAILED HUNT MUST NEVER DELETE A CARD. This used to cut the card outright — numeric, one source,
-# the source proven wrong, no replacement found — and with it went its H3. The claim itself was never
-# disproved, only the page behind it, so a deletion loses a fact the research paid for and leaves
-# nothing on screen to say a fact has gone. Kept, stripped of the bad url, and flagged.
-idx3 = C.card_index(CARDS)
-idx3[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
-ver3 = verify_sources.run(copy.deepcopy(plan), idx3, say)
-pol3 = ver3["police"]
-ok("a numeric card whose only source is wrong is KEPT and flagged, never cut",
-   any(x["card_id"] == 3 for x in pol3["needs_source"]) and not pol3["cut"], pol3["cut"])
-ok("the proven-wrong url is stripped and the card carries the stamp",
-   idx3[3]["source_urls"] == [] and idx3[3].get("needs_source"), idx3[3])
-ok("the fix written back to the plan says needs_source, so the writer sees it",
-   ver3["card_fixes"][3]["needs_source"] and not ver3["card_fixes"][3]["source_urls"], ver3["card_fixes"].get(3))
-ok("its H3 survives with it", any(h["h3"] == "The benchmark" for s in ver3["plan"]["sections"] for h in s["h3s"]))
-ok("nothing at all was dropped from the plan",
-   not pol3["dropped_h3s"] and not pol3["dropped_sections"], (pol3["dropped_h3s"], pol3["dropped_sections"]))
-ok("freeze turns the flag into a note a person reads, and never blocks on it",
-   any("without a checked source" in n for n in freeze.run(copy.deepcopy(ver3["plan"]), pol3)["soft"]),
-   freeze.run(copy.deepcopy(ver3["plan"]), pol3)["soft"])
-# A card the RESEARCH already stamped needs_source skips the "is this worth checking?" judgment: it
-# is the one card known to be unsourced, so leaving it to a model that might answer no is the one
-# way it slips through unexamined.
-idx4 = C.card_index(CARDS)
-idx4[2]["needs_source"] = True
-ok("a card the research stamped needs_source is always worth verifying",
-   C.nid(2) in verify_sources._worthy_ids([idx4[2]])[0], verify_sources._worthy_ids([idx4[2]]))
-OVERRIDES.clear()
-
-# ======================================================================================
-print("\nplanner: the replacement-source hunt buys its searches in ONE queued batch")
-# WHY THIS IS HERE. The hunt used to fire one live/advanced search per claim: $0.002 each against
-# $0.0006 through the standard queue (tools/dfs.SERP_LIVE_USD and SERP_QUEUED_USD, both measured by
-# the owner), so three and a third times the price of the same result, on his account, every
-# article. The original batches it, so this does too.
-BATCHES = []            # every call to dfs.serp_batch: the query list it was handed
-_real_batch, _real_avail, _real_bal = dfs.serp_batch, dfs.available, dfs.balance
-BATCH_URLS = {}         # query -> [url]; a query missing from here never comes back at all
-
-
-def fake_batch(queries, location_name=None, language_code=None, depth=10, say=None):
-    BATCHES.append(list(queries))
-    got = {q: list(BATCH_URLS[q]) for q in queries if q in BATCH_URLS}
-    return {"urls": got, "cost": len(queries) * dfs.SERP_QUEUED_USD,
-            "missing": [q for q in queries if q not in got], "demo": False}
-
-
-def _live_landmine(*a, **kw):
-    raise AssertionError("the hunt bought a LIVE search; it must go through the queued batch")
-
-
-dfs.serp_batch, dfs.available, dfs.balance = fake_batch, (lambda: True), (lambda: 50.0)
-dfs.serp_advanced = _live_landmine
-# two claims, both with a wrong source, whose planned queries overlap
-OVERRIDES.append((lambda p: '{"verify": [' in p, {"verify": [1, 2, 3, 4, 5]}))
-OVERRIDES.append((lambda p: "source-queries" in p or "search queries" in p.lower(),
-                  {"queries": ["cost per hire benchmark", "shared query"]}))
-BATCH_URLS["cost per hire benchmark"] = ["https://www.shrm.org/research/cost-per-hire"]
-BATCH_URLS["shared query"] = ["https://www.shrm.org/research/cost-per-hire"]
-idx5 = C.card_index(CARDS)
-idx5[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
-idx5[2]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
-BATCHES.clear()
-ver5 = verify_sources.run(copy.deepcopy(plan), idx5, say)
-ok("the whole hunt bought its searches in ONE call, not one per claim", len(BATCHES) == 1, BATCHES)
-ok("the same query planned for two claims is paid for once",
-   BATCHES and len(BATCHES[0]) == len(set(BATCHES[0])), BATCHES[0] if BATCHES else None)
-ok("no live search was fired at all", True)     # _live_landmine would have raised
-ok("and the batch's urls really were read and judged, so a replacement was found",
-   any(r["new"] == "https://www.shrm.org/research/cost-per-hire" for r in ver5["police"]["replaced"]),
-   ver5["police"]["replaced"])
-# A QUERY THAT NEVER CAME BACK IS NOT A QUERY THAT FOUND NOTHING. This is the failure the original
-# records: one article had 745 of 745 queries silently abandoned and 428 claims shipped unverified
-# behind a report that read "0 cut".
-BATCH_URLS.clear()
-idx6 = C.card_index(CARDS)
-idx6[3]["source_urls"] = ["https://www.shrm.org/research/time-to-fill"]
-ver6 = verify_sources.run(copy.deepcopy(plan), idx6, say)
-ok("a claim whose searches never came back is left unverified, and the report says the hunt could "
-   "not search rather than that it found nothing",
-   any(x["card_id"] == 3 and "could not search" in x["why"] for x in ver6["police"]["needs_source"]),
-   ver6["police"]["needs_source"])
-ok("nothing was cut over a search that did not happen", not ver6["police"]["cut"], ver6["police"]["cut"])
-ok("the price ratio is written down where the queue is chosen, and is his measurement",
-   round(dfs.SERP_LIVE_USD / dfs.SERP_QUEUED_USD, 2) == 3.33 and dfs.BATCH_FETCH == "regular",
-   (dfs.SERP_LIVE_USD, dfs.SERP_QUEUED_USD, dfs.BATCH_FETCH))
+print("\nthe queued search batch: the shapes dfs hands back")
+# The replacement-source hunt (write/source_check.py, tested in test_source_check) buys its searches
+# through dfs.serp_batch. These two checks pin the batch parser it depends on.
 # THE QUEUE'S ONE TRAP. A task still in the queue answers task_get with a 200 and a top-level
 # 20000, and says "in queue" one level down. Read as an empty result it becomes "this search found
 # nothing", which strips a real source off a real claim for a search that had not run yet.
 ok("a task still in the queue is not mistaken for a search that found nothing",
-   _real_batch is not None
-   and dfs._batch_urls({"tasks": [{"status_code": 40602}]}, 10) is None
+   dfs._batch_urls({"tasks": [{"status_code": 40602}]}, 10) is None
    and dfs._batch_urls({"tasks": [{"status_code": 20000, "result": []}]}, 10) == [])
 ok("...and a finished task hands back its organic urls only, in rank order",
    dfs._batch_urls({"tasks": [{"status_code": 20000, "result": [{"items": [
        {"type": "paid", "url": "https://ad"}, {"type": "organic", "url": "https://a"},
        {"type": "organic", "url": "https://b"}]}]}]}, 10) == ["https://a", "https://b"])
+ok("the price ratio is written down where the queue is chosen, and is his measurement",
+   round(dfs.SERP_LIVE_USD / dfs.SERP_QUEUED_USD, 2) == 3.33 and dfs.BATCH_FETCH == "regular",
+   (dfs.SERP_LIVE_USD, dfs.SERP_QUEUED_USD, dfs.BATCH_FETCH))
 OVERRIDES.clear()
-dfs.serp_batch, dfs.available, dfs.balance = _real_batch, _real_avail, _real_bal
 
 # ======================================================================================
 print("\nplanner: a big call gets the write phase's ceiling, and a timed-out call is retried")
 # The planner ran on llm.CLI_TIMEOUT (300s) where the original gives every write-phase call 2400
 # (04-write-phase/scripts/config.py: CLAUDE_TIMEOUT, after 300 and then 900 both proved too short).
-# One planner call carries a whole H2's sub-headings, or VERIFY_BATCH (80) cards.
+# One planner call carries a whole H2's sub-headings at once.
 TIMEOUTS = []
 _saved_json = llm.json_call
 llm.json_call = lambda p, system=None, retries=1, timeout=None, **kw: (
@@ -613,9 +513,9 @@ ok("the close links a CTA page", art["cta_link"] == "https://example.com/program
 ok("links-report has the original's keys", all(k in lrep for k in ("placed", "failed", "integrity", "integrity_clean", "external_kept", "competitor_urls_blocked", "dead_links_dropped", "citations_thinned")))
 ok("the competitor citation was blocked from the visible sources", "https://rival-one.com/blog/faster-screening" in lrep["competitor_urls_blocked"])
 ok("write-report names every step and what was skipped",
-   set(wrep.get("steps", {})) >= {"gather", "select", "verify", "freeze", "shape", "enrich", "brand_cards", "allocate", "section_keywords", "headings",
-                                  "write_body", "blend", "wrapper", "coherence", "readable", "sentences", "slop", "links", "clean", "assemble"}
-   and any("hunt" in s.lower() for s in wrep["skipped"]) and any("enrich" in s.lower() for s in wrep["skipped"]) and any("field" in s.lower() for s in wrep["skipped"]))
+   set(wrep.get("steps", {})) >= {"gather", "select", "freeze", "shape", "enrich", "brand_cards", "allocate", "section_keywords", "headings",
+                                  "write_body", "source_check", "blend", "wrapper", "coherence", "readable", "sentences", "slop", "links", "clean", "assemble"}
+   and any("source check" in s.lower() for s in wrep["skipped"]) and any("enrich" in s.lower() for s in wrep["skipped"]) and any("field" in s.lower() for s in wrep["skipped"]))
 ok("the coverage checklist is in the report", isinstance(wrep.get("coverage_checklist"), dict) and "primary in H1" in wrep["coverage_checklist"])
 ok("progress was emitted in plain English", len(events) > 30 and all(e.get("parent") == "s1" for e in events))
 ok("no tool names leak into the notes", not any("json" in (e.get("label") or "").lower() for e in events))

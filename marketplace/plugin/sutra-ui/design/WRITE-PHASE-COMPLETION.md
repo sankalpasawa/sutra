@@ -161,6 +161,14 @@ the enrich step, plus the owner's two prompts.
 
 ## 4. The replacement-source hunt
 
+> **Superseded 2026-09-16.** `verify_sources` is gone. The planner no longer checks sources at all;
+> `write/source_check.py` runs right after `write_body` and checks only the claims the body carries
+> (60 to 90 a run instead of 600 to 850, about 100 to 160 model calls instead of about 1,000). One
+> verdict per claim, no url-wide spread, the hunt capped at 10 claims, and what still fails is
+> corrected, softened or removed in the prose with code enforcing the rules. The hunt below shipped
+> in 2.253.0 inside verify and now lives in `source_check.hunt`, same queries prompt, same queued
+> search, same judge. The report is `artifacts/source-check.md`; the chat gets one line.
+
 `verify_sources` already classifies every card four ways: kept-ok · unloadable-kept · needs-source ·
 cut. Today a `needs-source` card is reported. In the original, it goes and finds a replacement
 (`source-queries.md`).
