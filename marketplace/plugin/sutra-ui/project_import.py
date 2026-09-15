@@ -626,6 +626,14 @@ def sync(tenant_id="T-local", root_name=None):
     kept, skipped = discover()
     forest = build_forest(kept)
     _root, rows = apply_forest(forest, tenant_id=tenant_id, root_name=root_name)
+    # Org BUILD-PLAN S94: rows minted before `node_kind` existed get it once,
+    # here, on the same startup path that already writes the registry. Fills
+    # only the missing field; a row that has one is never touched. Never fails
+    # the sync: the tree is more important than the kind label.
+    try:
+        E.backfill_node_kind()
+    except Exception:                          # noqa: BLE001 -- best effort, logged by the engine's own writes
+        pass
     return {"created": [r["name"] for r in rows if r["created"]],
             "linked": sum(1 for r in rows if not r["created"] and r.get("ref") and r.get("via") != "successor"),
             "absorbed": [r["name"] for r in rows if r.get("via") == "successor"],

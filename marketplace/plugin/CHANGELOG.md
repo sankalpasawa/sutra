@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.277.0 (2026-09-15)
+
+- **The registry stores each department's kind.** Every department row now carries `node_kind` (root, machine, organisation, department), set when it is minted and re-set when it moves to or from under the root; rows from before the field get it once, on the app's startup import (`backfill_node_kind`, one history line for the batch). The new Org screen reads the stored kind and falls back to its old rule only for a row not yet filled. Design rationale: a kind derived from a name broke the day the instance was renamed.
+- **New Org screen, slice C** (still behind `flags.org2`): arrow keys walk the tree (right opens then descends, left closes then climbs, Enter selects, focus survives the paint); a Recent group after the charter lists the last four things opened in that department this session; the viewer title shows an `unsaved` chip while the editor has changes; an app page is asked for before it is framed, and one that does not answer says "Nothing to show yet" with Retry. Tests: `test_org2.js` 55, `test_org2_api.py` 14.
+
 ## 2.276.1 (2026-09-15)
 
 - **Move preview shows only what the move adds.** Seen live on the registry: the preview listed every finding the tree already had, sixteen lines of old debris above the one about the move. It now subtracts the tree's standing findings and collapses duplicates; a clean move reads "Nothing in the way".

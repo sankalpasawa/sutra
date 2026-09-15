@@ -33,7 +33,7 @@ function org2FlagOn(){
 function o2S(){
   if (!S.o2) S.o2 = { sel:null, view:"charter", doc:null, app:null, other:null, page:null, q:"", lq:"",
                       hits:null, filter:{ open:false, kind:[], state:[], refs:null, busy:false },
-                      sheet:null, flash:null, health:{}, edHandle:null,
+                      sheet:null, flash:null, health:{}, edHandle:null, recent:{}, appOk:{}, focusRef:null,
                       expanded:null, more:{}, loading:false, error:null, loaded:false,
                       dept:{}, deptErr:{}, apps:{}, menu:false, panel:null };
   return S.o2;
@@ -73,11 +73,14 @@ function o2Data(){
     return { live: [], byRef: new Map(), kids: new Map(), root: null };
   return dirData();
 }
-/* Interim node kind (plan S27) until the engine stores one (S94): the root has
-   no parent; under the root, the machine is the importer's "Desktop" or any
-   node carrying a cwd or an import origin; the other root children are
+/* Node kind: the engine's stored `node_kind` (plan S94) when the row carries
+   one; otherwise the interim rule (S27) for rows not yet backfilled: the root
+   has no parent; under the root, the machine is the importer's "Desktop" or
+   any node carrying a cwd or an import origin; the other root children are
    organisations; everything below is a department. */
+const O2_KIND_MAP = { root: "root", machine: "machine", organisation: "org", department: "dept" };
 function o2Kind(n, d){
+  if (n.node_kind && O2_KIND_MAP[n.node_kind]) return O2_KIND_MAP[n.node_kind];
   if (!n.parent_ref || !d.byRef.has(n.parent_ref)) return "root";
   if (d.root && n.parent_ref === d.root.ref){
     if (n.name === "Desktop" || n.cwd || /import/i.test(String(n.origin || ""))) return "machine";
@@ -202,6 +205,16 @@ async function o2LoadHealth(ref, force){
 }
 
 /* ── selection and opens ──────────────────────────────────────────────────── */
+const O2_RECENT = 4;                     /* names kept per department in Recent (plan S41) */
+/* Remembered for the session only: what was opened last in this department,
+   newest first, one row per thing. Nothing is stored on disk. */
+function o2Remember(ref, row){
+  const st = o2S();
+  if (!ref || !row || !row.id) return;
+  const list = (st.recent[ref] || []).filter(x => !(x.kind === row.kind && x.id === row.id));
+  list.unshift(row);
+  st.recent[ref] = list.slice(0, O2_RECENT);
+}
 function o2Select(ref){
   const st = o2S(), d = o2Data();
   if (!d.byRef.has(ref)) return;
@@ -221,6 +234,7 @@ async function o2OpenCharter(cid){
   try {
     const r = await apiGet("/api/org2/charter/" + encodeURIComponent(cid));
     if (st.other && st.other.id === cid) st.other.data = r;
+    if (r && r.charter) o2Remember(st.sel, { kind: "charter", id: cid, title: r.charter.title || "Charter" });
   } catch (e) {
     if (st.other && st.other.id === cid) st.other.error = (e && e.message) || String(e);
   }
@@ -234,11 +248,12 @@ async function o2OpenDoc(path, title){
   const st = o2S();
   if (!o2IsDoc(path)) return;
   o2UnmountEditor();
-  st.view = "doc"; st.doc = { path, title: title || path, text: null, error: null, editable: null, bytes: null, conflict: false, saveState: null };
+  st.view = "doc"; st.doc = { path, title: title || path, text: null, error: null, editable: null, bytes: null, conflict: false, saveState: null, dirty: false };
   st.menu = false; st.sheet = null; o2Render();
   try {
     const r = await apiGet("/api/fs/read?path=" + encodeURIComponent(path));
     if (st.doc && st.doc.path === path){ st.doc.text = String(r.text == null ? "" : r.text); st.doc.editable = !!r.editable; st.doc.bytes = r.bytes; }
+    o2Remember(st.sel, { kind: "doc", id: path, title: title || String(path).split("/").pop() });
   } catch (e) {
     if (st.doc && st.doc.path === path) st.doc.error = (e && e.message) || String(e);
   }
@@ -251,12 +266,31 @@ function o2OpenPage(path, title){
   if (!o2IsPage(path)) return;
   o2UnmountEditor();
   st.view = "page"; st.page = { path, title: title || String(path).split("/").pop() };
-  st.menu = false; st.sheet = null; o2Render();
+  st.menu = false; st.sheet = null;
+  o2Remember(st.sel, { kind: "page", id: path, title: st.page.title });
+  o2Render();
 }
 function o2OpenApp(m){
   const st = o2S();
   o2UnmountEditor();
-  st.view = "app"; st.app = m; st.menu = false; st.sheet = null; o2Render();
+  st.view = "app"; st.app = m; st.menu = false; st.sheet = null;
+  o2Remember(st.sel, { kind: "app", id: m.id, title: m.name });
+  if (m.kind === "page" && m.has_page && st.appOk[m.id] === undefined) o2ProbeApp(m);
+  o2Render();
+}
+/* An app page that fails (plan S65): the frame would show a blank or the
+   server's error text, so the page is asked for first, with the panel token,
+   and only a 200 gets a frame; anything else is "Nothing to show yet" + Retry. */
+async function o2ProbeApp(m){
+  const st = o2S();
+  const api = (typeof MOD_API !== "undefined") ? MOD_API : "/api/modules";
+  st.appOk[m.id] = null;                                /* in flight */
+  try {
+    const headers = (typeof panelToken === "function") ? { "X-Sutra-Panel": panelToken() } : {};
+    const r = await fetch(((typeof API !== "undefined") ? API : "") + api + "/" + encodeURIComponent(m.id) + "/page", { headers });
+    st.appOk[m.id] = !!r.ok;
+  } catch (e) { st.appOk[m.id] = false; }
+  o2Render();
 }
 function o2CloseViewer(){
   const st = o2S();
@@ -302,11 +336,18 @@ async function o2MountEditor(el){
         throw e;
       }
     },
-    onDirty: () => {},
-    onSaveState: (s) => { doc.saveState = s; if (s === "failed") o2Render(); },
+    /* the unsaved chip (plan S57) flips in place: no render() per keystroke */
+    onDirty: (dirty) => { doc.dirty = !!dirty; o2DirtyChip(); },
+    onSaveState: (s) => { doc.saveState = s; if (s === "saved") { doc.dirty = false; o2DirtyChip(); } if (s === "failed") o2Render(); },
     navigate: (ref) => { if (o2IsDoc(ref)) o2OpenDoc(ref); },
     flash: (m) => { st.flash = String(m || ""); o2Render(); },
   });
+}
+function o2DirtyChip(){
+  if (typeof document === "undefined" || !document.querySelector) return;
+  const el = document.querySelector("#scBody .o2vh [data-o2dirty]");
+  const st = S.o2;
+  if (el) el.hidden = !(st && st.doc && st.doc.dirty);
 }
 function o2UnmountEditor(){
   const st = S.o2;
@@ -324,11 +365,49 @@ function wireOrg2(scBody){
   const st = S.o2;
   if (!st) return;
   if (S.screen !== "org2"){ o2UnmountEditor(); return; }
+  /* keyboard focus survives the paint: the row asked for by o2TreeKey (plan S30) */
+  if (st.focusRef && scBody && scBody.querySelector){
+    const row = scBody.querySelector('[role="treeitem"][data-o2ref="' + String(st.focusRef).replace(/"/g, "") + '"]');
+    st.focusRef = null;
+    if (row && row.focus) row.focus();
+  }
   const el = scBody && scBody.querySelector ? scBody.querySelector("[data-o2editor]") : null;
   if (!el){ o2UnmountEditor(); return; }
   if (!st.edHandle){ void o2MountEditor(el); return; }
   const dom = st.edHandle.view && st.edHandle.view.dom;
   if (dom && dom.isConnected === false) el.appendChild(dom);
+}
+
+/* ── keyboard in the tree (plan S30) ─────────────────────────────────────── */
+/* Pure: given the key and the row it landed on, returns what to do --
+   { focus: ref } to move, { toggle: ref, open: bool } to expand or collapse,
+   { select: ref } on Enter, or null. `visible` is the tree's rows in paint
+   order (what the arrows walk); the handler paints and wireOrg2 restores focus. */
+function o2TreeKey(key, ref, visible, d, ex){
+  const i = visible.indexOf(ref);
+  if (i === -1) return null;
+  const n = d.byRef.get(ref);
+  const kids = n ? (d.kids.get(ref) || []) : [];
+  if (key === "ArrowDown") return i + 1 < visible.length ? { focus: visible[i + 1] } : null;
+  if (key === "ArrowUp") return i > 0 ? { focus: visible[i - 1] } : null;
+  if (key === "Home") return { focus: visible[0] };
+  if (key === "End") return { focus: visible[visible.length - 1] };
+  if (key === "ArrowRight"){
+    if (!kids.length) return null;
+    return ex.has(ref) ? { focus: kids[0].ref } : { toggle: ref, open: true };
+  }
+  if (key === "ArrowLeft"){
+    if (kids.length && ex.has(ref)) return { toggle: ref, open: false };
+    return (n && n.parent_ref && d.byRef.has(n.parent_ref)) ? { focus: n.parent_ref } : null;
+  }
+  if (key === "Enter" || key === " ") return { select: ref };
+  return null;
+}
+function o2VisibleRefs(d, ex){
+  const out = [];
+  const walk = (n) => { out.push(n.ref); if (ex.has(n.ref)) (d.kids.get(n.ref) || []).forEach(walk); };
+  if (d.root) walk(d.root);
+  return out;
 }
 
 /* ── requests: rename, move, new sub-department (plan S60, S70, S72) ─────── */
@@ -495,6 +574,15 @@ function o2ListHtml(n, d, dept, err){
       ? o2Row(c.title || n.name, O2_SHIELD, `data-o2act="charter"`, st.view === "charter")
       : o2Row("No charter yet", O2_SHIELD, `data-o2act="charter"`, st.view === "charter", "mut");
     groups += o2Group("Charter", keep(c ? c.title : "No charter yet") ? [charterRow] : [], "charter");
+    const recentAttr = r => r.kind === "doc" ? `data-o2doc="${o2Esc(r.id)}" data-o2title="${o2Esc(r.title)}"`
+      : r.kind === "page" ? `data-o2filed="${o2Esc(r.id)}" data-o2title="${o2Esc(r.title)}"`
+      : r.kind === "app" ? `data-o2app="${o2Esc(r.id)}"` : `data-o2charter="${o2Esc(r.id)}"`;
+    const recentSvg = r => r.kind === "doc" ? O2_DOC : r.kind === "page" ? O2_PAGE : r.kind === "app" ? O2_APP : O2_SHIELD;
+    const recentOn = r => (r.kind === "doc" && st.view === "doc" && st.doc && st.doc.path === r.id)
+      || (r.kind === "page" && st.view === "page" && st.page && st.page.path === r.id)
+      || (r.kind === "app" && st.view === "app" && st.app && st.app.id === r.id)
+      || (r.kind === "charter" && st.view === "other" && st.other && st.other.id === r.id);
+    groups += o2Group("Recent", (st.recent[n.ref] || []).filter(r => keep(r.title)).map(r => o2Row(r.title, recentSvg(r), recentAttr(r), recentOn(r))), "recent");
     groups += o2Group("Departments", (dept.children || []).filter(x => keep(x.name)).map(x => o2Row(x.name, o2Svg("dept"), `data-o2ref="${o2Esc(x.ref)}"`, false)), "departments");
     groups += o2Group("Filed work", (dept.filed || []).filter(x => keep(x.label)).map(x => o2Row(x.label, o2IsPage(x.id) ? O2_PAGE : o2Svg("plc"), `data-o2filed="${o2Esc(x.id || "")}" data-o2title="${o2Esc(x.label)}"`, st.view === "page" && st.page && st.page.path === x.id)), "filed");
     groups += o2Group("Other charters", (dept.charters || []).filter(x => keep(x.title)).map(x => o2Row(x.title, O2_SHIELD, `data-o2charter="${o2Esc(x.id)}"`, st.view === "other" && st.other && st.other.id === x.id)), "charters");
@@ -530,8 +618,8 @@ function o2FacetsHtml(n, d, dept){
     ${o2FacetRow("Org scope", "", true)}${o2FacetRow("Tier reach", "", true)}${o2FacetRow("Build layer", "", true)}
   </div>`;
 }
-function o2ViewerShell(title, svg, body, cls){
-  return `<div class="o2viewer${cls ? " " + cls : ""}"><div class="o2vh">${svg}<b>${o2Esc(title)}</b><button type="button" class="o2ib o2x" data-o2act="close" aria-label="Close">${O2_X}</button></div>${body}</div>`;
+function o2ViewerShell(title, svg, body, cls, chip){
+  return `<div class="o2viewer${cls ? " " + cls : ""}"><div class="o2vh">${svg}<b>${o2Esc(title)}</b>${chip || ""}<button type="button" class="o2ib o2x" data-o2act="close" aria-label="Close">${O2_X}</button></div>${body}</div>`;
 }
 function o2CharterBody(n, d, dept, c){
   const kind = (c && c.kind) || "standing", status = (c && c.status) || "active";
@@ -585,6 +673,8 @@ function o2DocHtml(doc){
       ? `<div class="o2vline warn"><span>Changed in another session</span><button type="button" class="btn" data-o2act="reload">Reload</button></div>`
       : (doc.saveState === "failed" ? `<div class="o2vline warn"><span>Not saved</span><button type="button" class="btn" data-o2act="reload">Reload</button></div>` : "");
     body = `${line}<div class="o2ed" data-o2editor></div>`;
+    const chip = `<span class="pill p-warn" data-o2dirty${doc.dirty ? "" : " hidden"}>unsaved</span>`;
+    return o2ViewerShell(title, O2_DOC, body, "", chip);
   }
   else body = `<div class="o2vb"><div class="ws-mdbody o2md">${typeof mdHtml === "function" ? mdHtml(doc.text) : "<pre>" + o2Esc(doc.text) + "</pre>"}</div></div>`;
   return o2ViewerShell(title, O2_DOC, body);
@@ -595,6 +685,9 @@ function o2PageHtml(p){
 }
 function o2AppHtml(m){
   if (m.kind === "page" && m.has_page){
+    const ok = o2S().appOk[m.id];
+    if (ok === false) return o2ViewerShell(m.name, O2_APP, `<div class="o2vb"><div class="o2empty">${O2_APP}<h1>Nothing to show yet</h1><button type="button" class="btn" data-o2act="appretry">Retry</button></div></div>`, "wide");
+    if (ok === null || ok === undefined) return `<div class="o2viewer wide" aria-busy="true"><div class="o2vb"><div class="o2skel" style="width:260px;height:22px;margin:0 0 18px"></div><div class="o2skel" style="width:520px"></div></div></div>`;
     const theme = (typeof modTheme === "function") ? modTheme() : "dark";
     const api = (typeof MOD_API !== "undefined") ? MOD_API : "/api/modules";
     return o2ViewerShell(m.name, O2_APP, `<iframe class="o2frame" src="${o2Esc(api + "/" + m.id + "/page?theme=" + theme)}" title="${o2Esc(m.name)}" sandbox="allow-scripts"></iframe>`, "wide");
@@ -767,6 +860,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (act === "sheetclose"){ st.sheet = null; o2Render(); return; }
     if (act === "request"){ o2SendRequest(); return; }
     if (act === "healthretry"){ if (st.sel){ delete st.health[st.sel]; o2LoadHealth(st.sel, true); o2Render(); } return; }
+    if (act === "appretry"){ if (st.app){ delete st.appOk[st.app.id]; o2ProbeApp(st.app); o2Render(); } return; }
     if (act === "changes" || act === "approvals" || act === "health"){ st.panel = st.panel === act ? null : act; st.menu = false; o2Render(); return; }
     if (act === "panelclose"){ st.panel = null; o2Render(); return; }
   });
@@ -787,9 +881,15 @@ if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("keydown", (ev) => {
     if (!S.o2 || S.screen !== "org2") return;
     if (ev.key === "Escape" && (S.o2.menu || S.o2.panel || S.o2.filter.open || S.o2.sheet)){ S.o2.menu = false; S.o2.panel = null; S.o2.filter.open = false; S.o2.sheet = null; o2Render(); return; }
-    if (ev.key === "Enter" && ev.target && ev.target.dataset){
-      if (ev.target.dataset.o2sname !== undefined && ev.target.closest && ev.target.closest(".o2")){ ev.preventDefault(); o2SendRequest(); return; }
-      if (ev.target.dataset.o2ref !== undefined && ev.target.closest && ev.target.closest(".o2")) o2Select(ev.target.dataset.o2ref);
-    }
+    if (ev.key === "Enter" && ev.target && ev.target.dataset && ev.target.dataset.o2sname !== undefined && ev.target.closest && ev.target.closest(".o2")){ ev.preventDefault(); o2SendRequest(); return; }
+    const t = ev.target;
+    if (!t || !t.dataset || t.dataset.o2ref === undefined || !t.closest || !t.closest(".o2tree")) return;
+    const d = o2Data(), ex = o2Expanded();
+    const act = o2TreeKey(ev.key, t.dataset.o2ref, o2VisibleRefs(d, ex), d, ex);
+    if (!act) return;
+    ev.preventDefault();
+    if (act.select){ o2Select(act.select); S.o2.focusRef = act.select; return; }
+    if (act.toggle){ if (act.open) ex.add(act.toggle); else ex.delete(act.toggle); S.o2.focusRef = act.toggle; o2Render(); return; }
+    if (act.focus){ S.o2.focusRef = act.focus; o2Render(); }
   });
 }

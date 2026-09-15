@@ -90,7 +90,12 @@ def _root_ref(live: Dict[str, Dict[str, Any]]) -> Optional[str]:
 
 
 def _kind(ref: str, d: Dict[str, Any], live: Dict[str, Dict[str, Any]], root_ref: Optional[str]) -> str:
-    """Interim node kind (plan S27) until the engine stores one (S94)."""
+    """The stored `node_kind` (engine, plan S94) when the row carries one; the
+    interim rule (S27) only for rows minted before the field existed and not
+    yet backfilled."""
+    stored = d.get("node_kind")
+    if stored in KINDS:
+        return stored
     pr = d.get("parent_ref")
     if not pr or pr not in live:
         return "root"

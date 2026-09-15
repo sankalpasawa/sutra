@@ -393,10 +393,51 @@ def ancestor_chain(ref, domains=None):
     return out
 
 
-def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
+#: D76 node kinds (Org BUILD-PLAN S94). STORED on the row at mint, never derived
+#: in a browser: a derived rule breaks the moment an instance is renamed (the
+#: F0 rename of 2026-09-14 turned "Desktop" into "Claude"), so the screen
+#: reads what the mint recorded. Absent on rows minted before this field
+#: existed; `backfill_node_kind()` fills them once by the same rule.
+NODE_KINDS = ("root", "machine", "organisation", "department")
+
+
+def node_kind_for(parent_ref, origin, domains):
+    """The D76 kind of a node from its place in the tree at mint (or backfill)
+    time: no parent = root; under the root, the desktop importer's node is the
+    machine and every other child is an organisation; deeper is a department."""
+    if not parent_ref:
+        return "root"
+    if parent_ref in set(active_roots(domains)):
+        return "machine" if str(origin or "") == "project-import" else "organisation"
+    return "department"
+
+
+def backfill_node_kind(dry_run=False):
+    """One-time fill of `node_kind` on rows minted before the field existed
+    (S94). Under the restructure lock; one summary event covers the batch
+    (the rows themselves are written with emit=False, the `backfill_sidecars`
+    precedent), so the history log gains one line, not one per department."""
+    with _lock("RESTRUCTURE"):
+        domains = load_domains()
+        todo = [r for r, d in domains.items() if d.get("node_kind") not in NODE_KINDS]
+        if dry_run or not todo:
+            return {"missing": len(todo), "written": 0}
+        for r in todo:
+            d = _load_domain(r)
+            if d is None:
+                continue
+            d["node_kind"] = node_kind_for(d.get("parent_ref"), d.get("origin"), domains)
+            _save_domain(d, emit=False)
+        _append_jsonl(DOMAIN_INDEX, {"event": "node_kind_backfilled", "count": len(todo), "ts_ms": _now_ms()})
+        return {"missing": len(todo), "written": len(todo)}
+
+
+def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted", node_kind=None):
     """Atomic check-then-insert under the parent (I-D2 / I-P10).
 
     Returns (ref, created_bool). A concurrent loser adopts the winner's ref.
+    `node_kind` (S94) is stored on the row: computed by `node_kind_for` unless
+    the caller names one of NODE_KINDS.
 
     Locking (§2.1 Mint interlock, P0): RESTRUCTURE **outermost**, then the
     per-parent lock. The per-parent flock alone is a DIFFERENT lock FILE from
@@ -462,6 +503,7 @@ def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted"):
             "touched_by_operator": False,
             "mint_evidence": sorted(set(evidence))[:24],
             "ts_minted_ms": _now_ms(),
+            "node_kind": node_kind if node_kind in NODE_KINDS else node_kind_for(parent_ref, origin, domains),
             # ---- lifecycle (I-D5). Absent status reads as "active". ----
             "status": "active",
             "successor_refs": [],
@@ -1352,7 +1394,7 @@ def _reorg_id(ref, op):
 #: the mutable set §2.5 requires before/after on. `d_path` is RECORDED, never
 #: recomputed at replay time — sibling ordinals depend on the tree's membership
 #: at that instant.
-_EVENT_FIELDS = ("name", "description", "parent_ref", "status", "successor_refs")
+_EVENT_FIELDS = ("name", "description", "parent_ref", "status", "successor_refs", "node_kind")
 
 
 def _domain_snapshot(ref, domains):
@@ -1429,6 +1471,8 @@ def _restructure_locked(op, ref, target=None, name=None, tenant_id="T-local"):
             return {"ok": False, "error": "cycle: target is inside the moved subtree"}
         d["parent_ref"] = target
         d["touched_by_operator"] = True
+        if d.get("node_kind") in NODE_KINDS:  # S94: a move to or from under the root changes the kind
+            d["node_kind"] = node_kind_for(target, d.get("origin"), domains)
         _save_domain(d, emit=False)
         moved = 0                             # the whole point of stable refs
 
@@ -1535,6 +1579,8 @@ def _dispose_onto(ref, successor, reason, tenant_id, domains):
     for cref, cd in sorted(domains.items()):
         if cd.get("parent_ref") == ref:
             cd["parent_ref"] = successor
+            if cd.get("node_kind") in NODE_KINDS:   # S94: a child re-homed under the root changes kind
+                cd["node_kind"] = node_kind_for(successor, cd.get("origin"), domains)
             _save_domain(cd)
             disposition["children"].append({"ref": cref, "to": successor})
     return moved, disposition

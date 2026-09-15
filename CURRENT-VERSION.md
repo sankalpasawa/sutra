@@ -2,7 +2,16 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.276.1 (2026-09-15, HEAD)
+## v2.277.0 (2026-09-15, HEAD)
+
+**The registry stores each department's kind** (`node_kind`: root, machine, organisation, department; set
+at mint, re-set on a move to or from under the root; `backfill_node_kind` fills older rows once on the
+startup import with one history line). **New Org screen, slice C** (behind `flags.org2`): arrow keys walk
+the tree, a Recent group lists the last four things opened in a department this session, the viewer title
+shows an `unsaved` chip while the editor has changes, and an app page is probed before it is framed
+("Nothing to show yet" + Retry when it does not answer). Tests: `test_org2.js` 55, `test_org2_api.py` 14.
+
+## v2.276.1 (2026-09-15)
 
 **Move preview shows only what the move adds.** The preview subtracts the tree's standing findings and
 collapses duplicates, so a clean move reads "Nothing in the way" instead of the registry's old debris.

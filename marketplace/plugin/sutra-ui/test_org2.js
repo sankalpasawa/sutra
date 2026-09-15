@@ -256,7 +256,7 @@ test("a missing document: one line and one action", () => {
   assert.ok(/Not on disk anymore/.test(html) && /Show in Changes/.test(html));
 });
 test("an app opens in the sandboxed page frame; a page without a body says so", () => {
-  const c = fresh();
+  const c = fresh(); c.o2S().appOk.board = true;
   const html = c.o2AppHtml({ id: "board", name: "Pipeline board", kind: "page", has_page: true });
   assert.ok(/<iframe class="o2frame" src="\/api\/modules\/board\/page\?theme=dark" [^>]*sandbox="allow-scripts"/.test(html));
   assert.ok(/Nothing to show yet/.test(c.o2AppHtml({ id: "x", name: "X", kind: "page", has_page: false })));
@@ -511,6 +511,92 @@ test("the request kinds are proposal kinds and the applier routes them to org2_a
   const ap = apiSrc.slice(apiSrc.indexOf("def _apply_proposal"), apiSrc.indexOf("def _apply_proposal") + 1600);
   assert.ok(/org2_apply\.apply_request/.test(ap));
   assert.ok(!/import org2_apply|from org2_apply/.test(fs.readFileSync(path.join(__dirname, "org2_api.py"), "utf8")), "the read module never imports the applier");
+});
+/* ── slice C: stored node kind, keyboard, Recent, unsaved chip, app probe ── */
+test("node kind: the engine's stored field wins over the interim rule", () => {
+  const rows = TREE.map(x => Object.assign({}, x));
+  rows[1].node_kind = "organisation";          /* Desktop renamed and re-kinded by the engine */
+  rows[2].node_kind = "machine";
+  const c = fresh({ DOMAINS: rows }); const d = c.o2Data();
+  assert.strictEqual(c.o2Kind(d.byRef.get("r1"), d), "org");
+  assert.strictEqual(c.o2Kind(d.byRef.get("r2"), d), "machine");
+  assert.strictEqual(c.o2Kind(d.byRef.get("r3"), d), "dept", "no field: the interim rule");
+  assert.strictEqual(c.o2Kind(Object.assign({}, ROOT, { node_kind: "planet" }), d), "root", "an unknown value falls back");
+});
+test("keyboard: arrows walk the visible rows, right expands then descends, left collapses then climbs", () => {
+  const c = fresh(); const d = c.o2Data(); const ex = c.o2Expanded();   /* home open: r0 > r1 r2 r9? (retired hidden) */
+  let vis = c.o2VisibleRefs(d, ex);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vis)), ["r0", "r1", "r2"]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("ArrowDown", "r0", vis, d, ex))), { focus: "r1" });
+  assert.strictEqual(c.o2TreeKey("ArrowUp", "r0", vis, d, ex), null);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("End", "r0", vis, d, ex))), { focus: "r2" });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("ArrowRight", "r2", vis, d, ex))), { toggle: "r2", open: true });
+  ex.add("r2"); vis = c.o2VisibleRefs(d, ex);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("ArrowRight", "r2", vis, d, ex))), { focus: "r3" }, "open: descend");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("ArrowLeft", "r2", vis, d, ex))), { toggle: "r2", open: false });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("ArrowLeft", "r3", vis, d, ex))), { focus: "r2" }, "leaf-like: climb");
+  assert.strictEqual(c.o2TreeKey("ArrowRight", "r1", vis, d, ex), null, "a leaf has nowhere to go");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.o2TreeKey("Enter", "r3", vis, d, ex))), { select: "r3" });
+  assert.strictEqual(c.o2TreeKey("x", "r3", vis, d, ex), null);
+});
+test("focus asked for by the keyboard is restored after the paint", () => {
+  const focused = [];
+  const c = fresh(); c.o2S().focusRef = "r2";
+  const row = { focus(){ focused.push("r2"); } };
+  c.wireOrg2({ querySelector: (sel) => (/data-o2ref="r2"/.test(sel) ? row : null) });
+  assert.deepStrictEqual(focused, ["r2"]);
+  assert.strictEqual(c.o2S().focusRef, null, "used once");
+});
+test("Recent: the last things opened in a department, newest first, one row each, capped", async () => {
+  const c = fresh({ apiGet: () => Promise.resolve({ text: "x", editable: false, bytes: 1 }) });
+  c.o2S().sel = "r4"; c.o2S().dept.r4 = DEPT_EXP; c.o2S().apps.r4 = [];
+  await c.o2OpenDoc("a.md", "A"); await c.o2OpenDoc("b.md", "B"); await c.o2OpenDoc("a.md", "A");
+  c.o2OpenPage("p.html", "P"); c.o2OpenApp({ id: "board", name: "Board", kind: "chat" });
+  const rec = c.o2S().recent.r4;
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rec.map(r => r.title))), ["Board", "P", "A", "B"], "cap of four, newest first, A once");
+  const d = c.o2Data();
+  const html = c.o2ListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+  const order = ["Charter", "Recent", "Departments"].map(l => html.indexOf(">" + l + "<"));
+  assert.ok(order.every(i => i !== -1) && order[0] < order[1] && order[1] < order[2], "Recent sits between Charter and Departments");
+  const recent = html.slice(html.indexOf(">Recent<"), html.indexOf(">Departments<"));
+  assert.ok(/data-o2app="board"/.test(recent) && /data-o2filed="p\.html"/.test(recent) && /data-o2doc="a\.md"/.test(recent));
+  assert.ok(!/a\.md</.test(recent), "names, not paths");
+  const c2 = fresh(); assert.ok(c2.o2ListHtml(c2.o2Data().byRef.get("r4"), c2.o2Data(), DEPT_EXP, null).indexOf(">Recent<") === -1, "nothing opened: no group");
+});
+test("unsaved chip: hidden at rest, shown by onDirty without a paint, cleared on save", async () => {
+  const c = fresh({ window: { SutraEditor: { mount(o){ c._opts = o; return { view: {}, forceSave(){}, destroy(){} }; } } } });
+  c.wsLoadEditorScript = () => Promise.resolve();
+  const chip = { hidden: true };
+  c.document.querySelector = (sel) => (/data-o2dirty/.test(sel) ? chip : null);
+  c.o2S().sel = "r4"; c.o2S().view = "doc";
+  const doc = { path: "a.md", title: "A", text: "# A", editable: true, bytes: 3, conflict: false, saveState: null, dirty: false };
+  c.o2S().doc = doc;
+  let html = c.o2DocHtml(doc);
+  assert.ok(/data-o2dirty hidden>unsaved</.test(html), "hidden at rest");
+  await c.o2MountEditor({ isConnected: true });
+  const renders = c.calls.render;
+  c._opts.onDirty(true);
+  assert.strictEqual(chip.hidden, false); assert.strictEqual(c.calls.render, renders, "no paint per keystroke");
+  assert.ok(/data-o2dirty>unsaved</.test(c.o2DocHtml(doc)), "a later paint keeps it");
+  c._opts.onSaveState("saved");
+  assert.strictEqual(chip.hidden, true); assert.strictEqual(doc.dirty, false);
+});
+test("an app page is asked for first: a 200 gets the frame, anything else says so with Retry", async () => {
+  const seen = [];
+  let ok = false;
+  const c = fresh(); c.fetch = (url, opts) => { seen.push({ url, h: opts && opts.headers }); return Promise.resolve({ ok }); };
+  c.panelToken = () => "tok"; c.API = "";
+  const m = { id: "board", name: "Board", kind: "page", has_page: true };
+  c.o2S().sel = "r4";
+  c.o2OpenApp(m);
+  assert.ok(/aria-busy="true"/.test(c.o2AppHtml(m)), "asking");
+  await sleep();
+  assert.strictEqual(seen[0].url, "/api/modules/board/page"); assert.strictEqual(seen[0].h["X-Sutra-Panel"], "tok");
+  let html = c.o2AppHtml(m);
+  assert.ok(/Nothing to show yet/.test(html) && /data-o2act="appretry"/.test(html) && !/<iframe/.test(html));
+  ok = true; delete c.o2S().appOk.board; await c.o2ProbeApp(m);
+  assert.ok(/<iframe class="o2frame"/.test(c.o2AppHtml(m)));
+  assert.strictEqual(seen.length, 2, "one probe per open, not per paint");
 });
 test("panel.css carries a scoped .o2 block with tokens only", () => {
   const start = css.indexOf("/* ── Org (org2");

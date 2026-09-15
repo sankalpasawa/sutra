@@ -29,7 +29,7 @@ def _fresh(tmp):
 def _tree(E):
     """Root Co with the machine node Desktop, an organisation A and A's child A1."""
     root, _ = E.mint_domain(None, "Co", ["root"], "T-local", origin="test")
-    desk, _ = E.mint_domain(root, "Desktop", ["desk"], "T-local", origin="test")
+    desk, _ = E.mint_domain(root, "Desktop", ["desk"], "T-local", origin="project-import")
     a, _ = E.mint_domain(root, "A", ["a"], "T-local", origin="test")
     a1, _ = E.mint_domain(a, "A1", ["a1"], "T-local", origin="test")
     return root, desk, a, a1
@@ -59,6 +59,46 @@ def test_node_kinds_root_machine_organisation_department():
         assert M.department(desk)["kind"] == "machine"
         assert M.department(a)["kind"] == "organisation"
         assert M.department(a1)["kind"] == "department"
+
+
+def test_node_kind_is_stored_at_mint_backfilled_once_and_preferred():
+    """BUILD-PLAN S94: the engine stores node_kind; the read prefers it; a move
+    to or from under the root re-kinds; the backfill fills only what is missing."""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        M, E = _fresh(Path(tmp))
+        root, desk, a, a1 = _tree(E)
+        rows = E.load_domains()
+        assert [rows[r]["node_kind"] for r in (root, desk, a, a1)] == ["root", "machine", "organisation", "department"]
+        # a caller may name the kind; an unknown value falls back to the rule
+        x, _ = E.mint_domain(a, "Named", ["x"], "T-local", origin="test", node_kind="machine")
+        y, _ = E.mint_domain(a, "Odd", ["y"], "T-local", origin="test", node_kind="planet")
+        assert E.load_domains()[x]["node_kind"] == "machine" and E.load_domains()[y]["node_kind"] == "department"
+        # the read prefers the stored field even where the interim rule disagrees
+        E.set_domain_fields(desk, node_kind="organisation")
+        assert M.department(desk)["kind"] == "organisation"
+        E.set_domain_fields(desk, node_kind="machine")
+        # a move under the root makes a department an organisation, and back
+        E.restructure("move", a1, target=root)
+        assert E.load_domains()[a1]["node_kind"] == "organisation"
+        E.restructure("move", a1, target=a)
+        assert E.load_domains()[a1]["node_kind"] == "department"
+        # rows minted before the field existed: strip it, backfill, once
+        p = Path(tmp) / "domains" / (a + ".json")
+        if not p.exists():
+            p = next(Path(tmp).rglob(a + ".json"))
+        doc = json.loads(p.read_text(encoding="utf-8"))
+        doc.pop("node_kind", None)
+        p.write_text(json.dumps(doc, sort_keys=True, indent=2), encoding="utf-8")
+        assert "node_kind" not in E.load_domains()[a]
+        assert M.department(a)["kind"] == "organisation", "the interim rule still answers meanwhile"
+        assert E.backfill_node_kind(dry_run=True) == {"missing": 1, "written": 0}
+        assert E.backfill_node_kind() == {"missing": 1, "written": 1}
+        assert E.load_domains()[a]["node_kind"] == "organisation"
+        assert E.backfill_node_kind() == {"missing": 0, "written": 0}
+        events = [r for r in E._read_jsonl(E.DOMAIN_INDEX) if r.get("event") == "node_kind_backfilled"]
+        assert len(events) == 1 and events[0]["count"] == 1, "one summary event, not one per row"
+        assert M.filter_departments(kind="organisation")["refs"] == [a]
 
 
 def test_unknown_department_is_404():
