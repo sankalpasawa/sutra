@@ -1233,6 +1233,12 @@ WHAT THE TARGET CHAT SAID BACK (most recent output)
 WHAT THE FOUNDER TOLD YOU (their answer to your last question, if any)
 %(founder_response)s
 
+WHAT THE FOUNDER SAID UNPROMPTED (asides since your last turn, newest last)
+%(founder_says)s
+These were volunteered, not answers -- nothing was asked. Treat them as the
+founder steering the work: they may change what you instruct next, narrow it,
+or call for a stop. They confirm no check and resolve no question.
+
 Decide. Reply with ONE fenced json block and nothing else:
 
 ```json
@@ -1333,6 +1339,21 @@ def _first_decision(text):
     return None
 
 
+def _founder_says_text(says):
+    """The founder's unprompted asides, as lines the decider can read.
+
+    Same shape and same reasoning as _founder_answer_text below: its own
+    labelled section of the prompt, never folded into last_response, so what
+    the FOUNDER volunteered can never be read as the target chat's output.
+    "(none)" for every mission nobody has said anything to, which is every
+    mission that existed before this.
+    """
+    rows = [s for s in (says or []) if isinstance(s, dict)]
+    lines = ["- %s" % str(s.get("text") or "").strip()
+             for s in rows if str(s.get("text") or "").strip()]
+    return "\n".join(lines) or "(none)"
+
+
 def _founder_answer_text(answer):
     """The founder's answer, as lines the decider can read.
 
@@ -1402,6 +1423,7 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
             # omitting the key entirely for those, exactly as before.
             "founder_response": _founder_answer_text(
                 context.get("founder_response")),
+            "founder_says": _founder_says_text(context.get("founder_says")),
         }
         # THE SAME RUNTIME FACTORY THE CHAT PANES USE, injected the way
         # build_args, register and publish already are -- this module must not

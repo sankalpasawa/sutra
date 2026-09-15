@@ -1222,6 +1222,18 @@ class MissionEngine:
             # answered, which is every mission that existed before this.
             **({"founder_response": m["founder_response"]}
                if m.get("founder_response") else {}),
+            # WHAT THE FOUNDER VOLUNTEERED, unprompted, since Shadow last
+            # decided. A separate block from founder_response for the same
+            # reason that one is separate from last_response: an aside the
+            # founder chose to send is not an answer to a question Shadow
+            # asked, and Shadow must be able to tell them apart. Only the
+            # UNSEEN ones -- once a turn has read an aside it is standing
+            # context, not news, and repeating it every turn would let one
+            # sentence dominate the prompt for the rest of the mission.
+            **({"founder_says": [s for s in (m.get("founder_says") or [])
+                                 if not s.get("seen")]}
+               if any(not s.get("seen")
+                      for s in (m.get("founder_says") or [])) else {}),
         }
 
     async def _instruction(self, m, last_response):
@@ -1242,7 +1254,16 @@ class MissionEngine:
         if m["turns_used"] == 0 or self.decider is None:
             return self._next_say(m), None
         try:
-            raw = await self.decider(self._decision_context(m, last_response))
+            ctx = self._decision_context(m, last_response)
+            raw = await self.decider(ctx)
+            # CONSUMED, and persisted by the save this turn already does
+            # (m is the same dict the caller writes back after composing the
+            # instruction). Marking AFTER the decider returns is deliberate:
+            # if the turn dies before that save the asides stay unseen and go
+            # again next turn, which is the safe direction to fail.
+            if ctx.get("founder_says"):
+                for said in (m.get("founder_says") or []):
+                    said["seen"] = True
         except Exception as exc:      # noqa: BLE001 -- reported, not hidden
             return None, {"action": "undecided",
                           "reason": "decider failed: %s" % str(exc)[:160]}

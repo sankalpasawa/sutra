@@ -46,7 +46,8 @@ function fresh(){
     fetched: [], posted: [],
     listeners: {},
     document: {
-      addEventListener(t, fn){ ctx.listeners[t] = fn; },
+      addEventListener(t, fn){
+        (ctx.listeners[t] = ctx.listeners[t] || []).push(fn); },
       createElement(){ return { setAttribute(){}, remove(){}, dataset: {} }; },
       body: { appendChild(){} }, querySelector(){ return null; },
     },
@@ -54,6 +55,11 @@ function fresh(){
   vm.createContext(ctx);
   vm.runInContext(overlay, ctx);
   vm.runInContext(src, ctx);
+  /* shadowSubmitCompose is scoped inside the wiring block, not a global, so
+     the composer is driven the way the app drives it: Enter on the box. */
+  ctx.typeAndSend = (el) => (ctx.listeners.keydown || []).forEach(fn => fn({
+    key: "Enter", shiftKey: false, target: el,
+    preventDefault(){}, stopPropagation(){} }));
   /* the Assignment module's real contract, same shape as 18-goal-workspace */
   ctx.loadGoalTranscript = (sid) => { ctx.fetched.push(sid); };
   ctx.goalMessages = (sid) => (ctx.S.goalTranscript || {})[sid];
@@ -1008,6 +1014,314 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
   console.log("ok 8m a real conclusion survives; the working beside it does not");
 }
 
+/* ── 8n. SAY ANYTHING REACHES SHADOW, NOT THE WORKER ─────────────
+   (founder, 2026-09-15.) The composer posted to /api/shadow/chat -- the
+   chief-of-staff conversation, which holds no mission and cannot act on one.
+   With a task in focus it now posts an aside to THAT task, and the decider
+   reads it on its next turn. Nothing here reaches the delegate session. */
+function sayCtx(over){
+  const ctx = fresh();
+  ctx.posted = [];
+  ctx.shadowPost = (path, body) => {
+    ctx.posted.push({ path: path, body: body });
+    return Promise.resolve(Object.assign(
+      { ok: true, status: 200, json: () => Promise.resolve({ id: "m-1" }) },
+      over || {}));
+  };
+  ctx.sendToShadow = (t) => { ctx.chatted = t; return Promise.resolve(null); };
+  ctx.loadShadowHome = () => {};
+  ctx.showNudge = (t) => { ctx.nudged = t; };
+  return ctx;
+}
+const box = () => ({ value: "", dataset: { shhomecompose: "1" } });
+
+/* 1/4/10. it goes to the MISSION action endpoint, never to the worker */
+{
+  const ctx = sayCtx();
+  ctx.S.shadowMissions = [M({ state: "running" })];
+  ctx.S.shadowTaskSel = "m-1";
+  const el = box();
+  el.value = "Prioritize release safety over code cleanliness.";
+  ctx.typeAndSend(el);
+  assert.strictEqual(ctx.posted.length, 1, "exactly one POST");
+  assert.strictEqual(ctx.posted[0].path, "/api/shadow/missions/m-1/act",
+    "it must go to the mission that is in focus");
+  assert.strictEqual(ctx.posted[0].body.action, "say",
+    "its own verb -- not intervene, which answers a question");
+  assert.strictEqual(ctx.posted[0].body.text,
+    "Prioritize release safety over code cleanliness.");
+  assert(!ctx.posted[0].body.values && !ctx.posted[0].body.intervention_id,
+    "an aside carries no intervention payload");
+  /* NOT the worker, and NOT the chief-of-staff chat */
+  assert.strictEqual(ctx.chatted, undefined,
+    "with a task in focus it must not go to /api/shadow/chat");
+  assert(ctx.posted[0].path.indexOf("sessions") === -1,
+    "it must never address the worker session");
+  /* 12. the box clears */
+  assert.strictEqual(el.value, "", "the composer clears on send");
+  console.log("ok 8n-1 the aside goes to Shadow, for this mission only");
+}
+
+/* 6. no intervention on screen is fine -- an aside is unsolicited */
+{
+  const ctx = sayCtx();
+  ctx.S.shadowMissions = [M({ state: "running" })];   /* no intervention */
+  ctx.S.shadowTaskSel = "m-1";
+  const el = box(); el.value = "Keep going, but verify it.";
+  ctx.typeAndSend(el);
+  assert.strictEqual(ctx.posted.length, 1,
+    "Say anything works with no question outstanding");
+}
+
+/* with NOTHING in focus the briefing composer is untouched */
+{
+  const ctx = sayCtx();
+  ctx.S.shadowMissions = []; ctx.S.goals = [];
+  const el = box(); el.value = "what should I take on?";
+  ctx.typeAndSend(el);
+  assert.strictEqual(ctx.posted.length, 0, "no mission POST");
+  assert.strictEqual(ctx.chatted, "what should I take on?",
+    "the chief-of-staff channel is unchanged when no task is selected");
+}
+
+/* 12. duplicate submission while a send is in flight */
+{
+  const ctx = sayCtx();
+  ctx.S.shadowMissions = [M({ state: "running" })];
+  ctx.S.shadowTaskSel = "m-1";
+  ctx.shadowPost = (path, body) => {
+    ctx.posted.push({ path: path, body: body });
+    return new Promise(() => {});           /* never settles: still in flight */
+  };
+  const a = box(); a.value = "first";
+  ctx.typeAndSend(a);
+  const b = box(); b.value = "second";
+  ctx.typeAndSend(b);
+  assert.strictEqual(ctx.posted.length, 1,
+    "a second send while one is in flight must not post again");
+}
+
+/* 12. an API failure must not swallow what was typed. The restore lands
+   after the POST settles, so this one is asserted asynchronously -- and a
+   failure inside a promise must still fail the run, hence the exitCode. */
+const asyncChecks = [];
+{
+  const ctx = sayCtx({ ok: false, status: 500 });
+  ctx.S.shadowMissions = [M({ state: "running" })];
+  ctx.S.shadowTaskSel = "m-1";
+  const el = box(); el.value = "don't touch that file";
+  /* the send's own promise, so the assertion cannot race the restore */
+  const typed = el.value;
+  el.value = "";                       /* the composer clears optimistically */
+  asyncChecks.push(ctx.shadowSayToShadow("m-1", typed, el).then(() => {
+    assert.strictEqual(el.value, "don't touch that file",
+      "the text must come back when the send fails");
+    assert(/still in the box/.test(ctx.nudged || ""),
+      "and the founder is told, rather than left guessing");
+    console.log("ok 8n-4 a failed send hands the text back");
+  }));
+}
+
+/* 2/3/7. the asides are timeline events, chronological, and they persist:
+   they are read off the RECORD, so a refresh redraws them */
+{
+  const ctx = fresh();
+  ctx.S.goalTranscript = { "sess-1": [
+    SH("2026-09-15T10:00:00Z"), W("Inspected the repo.", "2026-09-15T10:01:00Z"),
+    SH("2026-09-15T10:04:00Z"), W("Wrote the module.", "2026-09-15T10:05:00Z"),
+    SH("2026-09-15T10:08:00Z"), W("Added the tests.", "2026-09-15T10:09:00Z"),
+  ] };
+  const h = pane(ctx, M({ state: "running", turns_used: 3, founder_says: [
+    { text: "Prioritize release safety.", at: "2026-09-15T10:03:00Z" },
+    { text: "Use the existing implementation.", at: "2026-09-15T10:07:00Z" },
+  ] }));
+  const order = [];
+  const re = /shagenthead">([^<]*)<|class="shsaidhead">([^<]*)<|class="shsaidtext">([^<]*)</g;
+  let x; while ((x = re.exec(h))) order.push(x[1] || x[2] || x[3]);
+  assert.deepStrictEqual(order, [
+    "Worker agent \u00b7 turn 1",
+    "You \u2192 Shadow", "Prioritize release safety.",
+    "Worker agent \u00b7 turn 2",
+    "You \u2192 Shadow", "Use the existing implementation.",
+    "Worker agent \u00b7 turn 3",
+  ], "worker -> aside -> worker -> aside -> worker, in order");
+  /* 3. an aside must not replace worker history */
+  assert(/Inspected the repo/.test(h) && /Wrote the module/.test(h)
+      && /Added the tests/.test(h), "every worker turn survives");
+  /* 11. nothing is put in Shadow's mouth */
+  assert(!/Shadow understood|Shadow is considering|Working on it/.test(h),
+    "no fabricated Shadow reply");
+  console.log("ok 8n-2 asides are chronological events beside the worker turns");
+}
+
+/* 9. DELETE is untouched by any of this */
+{
+  const ctx = fresh();
+  ctx.S.shadowMissions = [M({ state: "running",
+    founder_says: [{ text: "hi", at: "2026-09-15T10:00:00Z" }] })];
+  ctx.S.shadowTaskSel = "m-1";
+  assert(/data-shtaskdel="m-1"/.test(ctx.shadowTaskListHtml()),
+    "the DELETE hook is untouched");
+  assert.strictEqual(
+    (ctx.shadowHomeHtml().match(/data-shtaskdel=/g) || []).length, 1,
+    "exactly one delete control");
+  console.log("ok 8n-3 Delete untouched by Say anything");
+}
+
+/* ── 8o. THE ASIDES MERGE INTO THE STREAM, THEY DO NOT FOLLOW IT ────
+   THE BUG (founder, 2026-09-15). The founder spoke after turn 1 and the pane
+   drew TURN 1 / TURN 2 / TURN 3 / YOU -> SHADOW. The sort existed; its
+   FALLBACK defeated it -- a comparison where either side had no parseable
+   stamp fell through to original index, and the asides are pushed after the
+   worker loop, so one unstamped worker message dropped every aside to the
+   end. The worker spine now always carries a stamp, so there is something
+   real to sort against. */
+const WU = (ts) => ({ role: "user", text: "[Shadow · mission m-1] go",
+                      ts: ts || "" });
+const WA = (t, ts) => ({ role: "assistant", text: t, ts: ts || "" });
+function stream(msgs, says, turns){
+  const ctx = fresh();
+  ctx.S.goalTranscript = { "sess-1": msgs };
+  const h = pane(ctx, M({ state: "running", turns_used: turns,
+                          founder_says: says }));
+  const out = [];
+  const re = /shagenthead">([^<]*)<|class="shsaidtext">([^<]*)</g;
+  let x; while ((x = re.exec(h))) out.push(x[1] || ("YOU: " + x[2]));
+  return { rows: out, h: h };
+}
+
+/* A. turn 1 -> aside -> turn 2, exactly the founder's sequence */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("Inspected the repo.", "2026-09-15T10:01:00Z"),
+    WU("2026-09-15T10:02:30Z"), WA("Wrote the module.", "2026-09-15T10:03:00Z"),
+  ], [{ text: "Prioritize release safety.", at: "2026-09-15T10:02:00Z" }], 2);
+  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
+    "YOU: Prioritize release safety.", "Worker agent \u00b7 turn 2"],
+    "the aside belongs between the turns it happened between");
+}
+
+/* A-hard. THE REGRESSION ITSELF: assistant messages with NO stamp. This is
+   the shape that defeated the old fallback. */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("Inspected the repo."),
+    WU("2026-09-15T10:02:30Z"), WA("Wrote the module."),
+    WU("2026-09-15T10:04:30Z"), WA("Added the tests."),
+  ], [{ text: "Prioritize release safety.", at: "2026-09-15T10:02:00Z" }], 3);
+  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
+    "YOU: Prioritize release safety.", "Worker agent \u00b7 turn 2",
+    "Worker agent \u00b7 turn 3"],
+    "an unstamped worker message must not push the aside to the end");
+}
+
+/* B. an aside sent AFTER the last turn stays last */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
+    WU("2026-09-15T10:02:00Z"), WA("Two.", "2026-09-15T10:03:00Z"),
+  ], [{ text: "That's good, leave it.", at: "2026-09-15T10:09:00Z" }], 2);
+  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
+    "Worker agent \u00b7 turn 2", "YOU: That's good, leave it."],
+    "an aside after the last turn must not be pulled forward");
+}
+
+/* C. several asides interleave, each in its own place */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
+    WU("2026-09-15T10:04:00Z"), WA("Two.", "2026-09-15T10:05:00Z"),
+    WU("2026-09-15T10:08:00Z"), WA("Three.", "2026-09-15T10:09:00Z"),
+  ], [{ text: "a1", at: "2026-09-15T10:02:00Z" },
+      { text: "a2", at: "2026-09-15T10:06:00Z" },
+      { text: "a3", at: "2026-09-15T10:07:00Z" }], 3);
+  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1", "YOU: a1",
+    "Worker agent \u00b7 turn 2", "YOU: a2", "YOU: a3",
+    "Worker agent \u00b7 turn 3"], "every aside lands where it happened");
+}
+
+/* D. an aside is never pulled to the front merely for living in its own
+   array -- one sent after turn 2 must not precede turn 1 */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
+    WU("2026-09-15T10:02:00Z"), WA("Two.", "2026-09-15T10:03:00Z"),
+  ], [{ text: "later", at: "2026-09-15T10:04:00Z" }], 2);
+  assert.strictEqual(t.rows[0], "Worker agent \u00b7 turn 1",
+    "a worker turn opens the stream, never a separately-stored aside");
+}
+
+/* E. numbering is the record's, and inserting asides does not renumber */
+{
+  const t = stream([
+    WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
+    WU("2026-09-15T10:04:00Z"), WA("Two.", "2026-09-15T10:05:00Z"),
+  ], [{ text: "mid", at: "2026-09-15T10:02:00Z" }], 2);
+  assert(/turn 1$/.test(t.rows[0]) && /turn 2$/.test(t.rows[2]),
+    "turns stay 1 and 2 with an aside between them");
+  assert(!/turn 3/.test(t.h), "no turn is invented by the insertion");
+}
+
+/* F. nothing is put in Shadow's mouth */
+{
+  const t = stream([WU("2026-09-15T10:00:00Z"),
+                    WA("One.", "2026-09-15T10:01:00Z")],
+    [{ text: "do X instead", at: "2026-09-15T10:02:00Z" }], 1);
+  assert(/YOU \u2192 Shadow/.test(t.h) || /shsaidhead/.test(t.h),
+    "the aside is labelled as the founder's");
+  assert(!/Shadow understood|Shadow is considering|Working on it/.test(t.h),
+    "no fabricated Shadow reply");
+}
+
+/* G + H. Delete and the intervention surface are untouched by all of this */
+{
+  const ctx = fresh();
+  ctx.S.goalTranscript = { "sess-1": [WU("2026-09-15T10:00:00Z"),
+                                      WA("One.", "2026-09-15T10:01:00Z")] };
+  const h = pane(ctx, M({ state: "blocked", turns_used: 1,
+    founder_says: [{ text: "context for you", at: "2026-09-15T10:02:00Z" }],
+    intervention: { id: "iv-1", question: "Ship it?", evidence: [],
+      submit_label: "Send to Shadow",
+      fields: [{ key: "ok", type: "boolean", label: "Ship it" }] } }));
+  assert(/data-shivform="iv-1"/.test(h), "the ask still renders");
+  assert(/data-shivsend="m-1"/.test(h), "with its submit hook");
+  assert(/shtpill-blocked[^>]*>NEEDS YOU</.test(h), "and still reads NEEDS YOU");
+  assert(/class="shsaidtext">context for you</.test(h),
+    "the aside renders beside it, not instead of it");
+  ctx.S.shadowMissions = [M({ state: "blocked" })];
+  ctx.S.shadowTaskSel = "m-1";
+  assert(/data-shtaskdel="m-1"/.test(ctx.shadowTaskListHtml()),
+    "the DELETE hook is untouched");
+  assert.strictEqual((h.match(/data-shtaskdel=/g) || []).length, 1,
+    "exactly one delete control");
+  console.log("ok 8o asides merge into the stream by stamp, never appended");
+}
+
+/* ── 8p. THE NEW-TASK COMPOSER IS NOT ON THE WORKSPACE ──────────── */
+{
+  const ctx = fresh();
+  const h = pane(ctx, M({ state: "running" }));
+  assert(!/What should I take on/.test(h),
+    "the new-task ask must not draw under an active task");
+  assert(!/Tell Shadow the outcome you want/.test(h),
+    "nor its subtitle");
+  assert(/placeholder="Say anything…"/.test(h),
+    "the active task keeps exactly one composer");
+  assert.strictEqual((h.match(/data-shhomecompose/g) || []).length, 1,
+    "exactly one composer on the page");
+  /* ...and it is untouched where it belongs: the New Task panel */
+  const ctx2 = fresh();
+  ctx2.S.shadowMissions = [M({ state: "running" })];
+  ctx2.S.shadowTaskSel = "m-1";
+  ctx2.S.shadowNewOpen = true;
+  const nt = ctx2.shadowHomeHtml();
+  assert(/What should I take on/.test(nt),
+    "the New Task composer must survive");
+  assert(/Tell Shadow what outcome you want/.test(nt),
+    "with its own placeholder");
+  console.log("ok 8p one composer on the workspace; New Task keeps its own");
+}
+
 /* ── 9. MEMORY: the existing confirm, in the founder's flow ───────────── */
 {
   const ctx = fresh();
@@ -1132,4 +1446,9 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
   console.log("ok 14 sign-off checklist and NEEDS YOU survive; floors off the brief");
 }
 
-console.log("\nall shadow RHS tests passed");
+Promise.all(asyncChecks).then(() => {
+  console.log("\nall shadow RHS tests passed");
+}, (err) => {
+  console.error(err && err.message ? err.message : err);
+  process.exitCode = 1;
+});

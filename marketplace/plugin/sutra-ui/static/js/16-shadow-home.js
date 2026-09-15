@@ -1677,6 +1677,65 @@ function shadowAgentTurnHtml(m){
    EVERY SOURCE IS ALREADY HERE: the same throttled transcript reader, the
    same cleaning rules, and founder_response as the server stamped it. No
    endpoint, no field, no summary is invented. */
+/* ── SAY ANYTHING: THE FOUNDER TALKING TO SHADOW ─────────────────────────
+   (founder, 2026-09-15.) The composer posted to /api/shadow/chat, which is
+   the chief-of-staff conversation -- a different Shadow session that has no
+   mission in hand and no way into the delegation. So an aside typed while a
+   task was running reached something that could reply about it and nothing
+   that could act on it.
+
+   WITH A TASK IN FOCUS IT NOW GOES TO THE TASK, through the mission action
+   endpoint every other Shadow control already uses. The server appends it to
+   the record; run_mission re-loads the record at the top of every turn, so
+   the DECIDER reads it next turn and decides for itself whether it changes
+   the instruction. Nothing here sends into the delegate session -- the
+   founder talks to Shadow, and Shadow drives the worker, which is the whole
+   point of the surface.
+
+   WITH NO TASK IN FOCUS nothing changes: the briefing composer is still the
+   chief-of-staff channel, and sendToShadow is untouched.
+
+   THE TEXT IS NOT LOST IF THE SEND FAILS. It is cleared optimistically so
+   the box feels instant, and put back verbatim if the POST does not land --
+   a founder who typed three sentences into a dead network must not have to
+   remember them. */
+const shSaying = {};
+async function shadowSayToShadow(mid, text, el){
+  if (!mid || !text) return null;
+  /* one in flight per task: a second Enter while the first is still in the
+     air would post the same aside twice, and Shadow would read it twice */
+  if (shSaying[mid]) return null;
+  shSaying[mid] = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let doc = null;
+  try {
+    const r = await shadowPost("/api/shadow/missions/" + mid + "/act",
+      { action: "say", text: text });
+    if (r && r.ok){
+      doc = await r.json();
+      if (typeof showNudge === "function") showNudge("Sent to Shadow.");
+    } else {
+      /* 409 is the one refusal with a reason the founder needs in words: the
+         task has finished, so nothing is listening. Everything else is a
+         plain failure. */
+      const why = (r && r.status === 409)
+        ? "That task has finished — Shadow is no longer working on it."
+        : "That did not send" + (r ? " (" + r.status + ")" : "")
+          + " — your message is still in the box.";
+      if (typeof showNudge === "function") showNudge(why);
+      if (el) el.value = text;            /* nothing typed is ever lost */
+    }
+  } catch (e) {
+    if (typeof showNudge === "function")
+      showNudge("That did not send — your message is still in the box.");
+    if (el) el.value = text;
+  }
+  shSaying[mid] = false;
+  if (doc && typeof loadShadowHome === "function") loadShadowHome(true);
+  if (typeof scheduleRender === "function") scheduleRender();
+  return doc;
+}
+
 function shadowTimelineEvents(m){
   const out = [];
   const sid = m && m.target_session;
@@ -1689,12 +1748,15 @@ function shadowTimelineEvents(m){
     let cur = null;
     for (const t of msgs){
       if (!t) continue;
-      if (t.role === "user"){ cur = { n: turns.length + 1, says: [] };
+      if (t.role === "user"){
+        /* the instruction that opened the turn is the turn's own clock, and
+           it is the fallback when the delegate's reply carries no stamp */
+        cur = { n: turns.length + 1, says: [], at: Date.parse(t.ts || "") };
         turns.push(cur); continue; }
       if (t.role !== "assistant") continue;
       /* an assistant turn before any injected instruction still counts as
          turn 1 -- the delegate spoke, and the founder should see it */
-      if (!cur){ cur = { n: 1, says: [] }; turns.push(cur); }
+      if (!cur){ cur = { n: 1, says: [], at: NaN }; turns.push(cur); }
       cur.says.push(t);
     }
     /* THE NUMBERS ARE ANCHORED TO THE RECORD, NOT TO WHAT WE HOLD. The
@@ -1711,8 +1773,23 @@ function shadowTimelineEvents(m){
       for (let i = t.says.length - 1; i >= 0; i--){
         const say = shadowSayGist(shadowSayClean(t.says[i].text));
         if (say){
+          /* A TURN IS A SPAN, AND IT SORTS BY WHEN IT OPENED (founder,
+             2026-09-15, mission m-8ef75c0f2f78). The row shows one message
+             but the turn covers everything from Shadow's instruction to the
+             delegate's last word -- turn 1 there ran 10:56:51 to 10:57:49.
+             Keying the row on the message it DISPLAYS put an aside sent at
+             10:57:37, mid-turn, in front of turn 1.
+
+             An aside sent while a turn is still speaking cannot have reached
+             that turn: Shadow reads the record at the START of the next one.
+             So it belongs after the turn it interrupted, and the boundary
+             that decides this is the turn's OPENING stamp. Opens are
+             monotonic, so keying on them also guarantees the turns keep
+             their own order. The displayed message's stamp is the fallback
+             for a turn whose opening instruction carries none. */
+          const own = Date.parse(t.says[i].ts || "");
           out.push({ kind: "worker", n: base + t.n, say: say,
-                     ts: Date.parse(t.says[i].ts || "") });
+                     ts: isNaN(t.at) ? own : t.at });
           break;
         }
       }
@@ -1735,10 +1812,52 @@ function shadowTimelineEvents(m){
   const fr = m && m.founder_response;
   if (fr && typeof fr === "object")
     out.push({ kind: "answered", ts: Date.parse(fr.answered_at || "") });
-  /* chronological. A stable sort keeps transcript order wherever a stamp is
-     missing (Codex transcripts carry no per-message ts), so an unstampable
-     answer settles at the end rather than jumping the queue. */
-  return out.map((e, i) => Object.assign({ i: i }, e)).sort((a, b) => {
+  /* WHAT THE FOUNDER VOLUNTEERED. Every aside is kept -- these are a list on
+     the record, not a single field, so unlike an answer the older ones are
+     still there and each takes its own place in the order it was sent. */
+  for (const said of (m && m.founder_says) || []){
+    const text = String((said && said.text) || "").trim();
+    if (text) out.push({ kind: "said", text: text,
+                         ts: Date.parse((said && said.at) || "") });
+  }
+  /* ── ONE STREAM, SORTED ON REAL STAMPS (founder, 2026-09-15) ──────────
+     THE BUG. The founder said something after turn 1 and the pane drew
+
+         TURN 1 · TURN 2 · TURN 3 · YOU -> SHADOW
+
+     -- every worker turn, then the aside appended. The sort was here and was
+     right; what defeated it was the FALLBACK. A comparison where either side
+     had no parseable stamp fell through to original index, and because the
+     asides are pushed after the worker loop their index is always highest,
+     so a single unstamped worker message dropped every aside to the end.
+
+     THE SPINE ALWAYS HAS A CLOCK NOW. A worker event takes its own message
+     stamp; failing that, the stamp of the instruction that opened its turn;
+     failing that, it carries the previous event's stamp forward (or the next
+     one's, for a leading gap). Transcript order is ground truth for the
+     worker turns, so carrying a stamp along it cannot reorder them -- it
+     only gives the asides something real to sort against.
+
+     Asides always have a stamp: the server writes `at` when it records them.
+     One with none left (an older record) keeps its place by index rather
+     than jumping the queue.
+
+     Index remains the tiebreaker for genuinely equal stamps, so the order is
+     deterministic and a worker turn precedes an aside sent in the same
+     second. */
+  const seq = out.map((e, i) => Object.assign({ i: i }, e));
+  /* carry a known stamp ALONG THE WORKER SPINE, forwards then backwards */
+  const spine = seq.filter(e => e.kind === "worker");
+  let carry = NaN;
+  for (const e of spine){
+    if (!isNaN(e.ts)) carry = e.ts; else if (!isNaN(carry)) e.ts = carry;
+  }
+  carry = NaN;
+  for (let i = spine.length - 1; i >= 0; i--){
+    const e = spine[i];
+    if (!isNaN(e.ts)) carry = e.ts; else if (!isNaN(carry)) e.ts = carry;
+  }
+  return seq.sort((a, b) => {
     const at = isNaN(a.ts) ? null : a.ts, bt = isNaN(b.ts) ? null : b.ts;
     if (at !== null && bt !== null && at !== bt) return at - bt;
     return a.i - b.i;
@@ -1748,9 +1867,14 @@ function shadowTimelineEvents(m){
 function shadowTimelineHtml(m){
   const events = shadowTimelineEvents(m);
   if (!events.length) return "";
-  return `<div class="shtimeline">${events.map(e => e.kind === "answered"
-    ? shadowStoryHtml(m)
-    : shadowAgentRowHtml(e.n, e.say)).join("")}</div>`;
+  return `<div class="shtimeline">${events.map(e => {
+    if (e.kind === "answered") return shadowStoryHtml(m);
+    if (e.kind === "said") return `<div class="shsaid">
+      <div class="shsaidhead">You \u2192 Shadow</div>
+      <div class="shsaidtext">${esc(e.text)}</div>
+    </div>`;
+    return shadowAgentRowHtml(e.n, e.say);
+  }).join("")}</div>`;
 }
 
 /* ── THE STORY: what happened either side of the founder's answer ─────────
@@ -2330,7 +2454,13 @@ function shadowHomeHtml(){
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
-      ${shadowStageHtml(!newOpen && !!sel)}
+      ${/* THE ASK BLOCK IS THE NEW-TASK COMPOSER (founder, 2026-09-15).
+           "What should I take on? / Tell Shadow the outcome you want" is
+           how a task is CREATED, and it was drawing under the workspace as
+           a second composer below the task. The workspace gets "Say
+           anything…" and nothing else; + Delegate opens the New Task panel,
+           where that copy still belongs and is untouched. */""}
+      ${shadowStageHtml(!newOpen)}
     </section>
   </div>`;
 }
@@ -3124,6 +3254,20 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     S_.shadowScopeErr = null;
+    /* WITH A TASK IN FOCUS, THE ASIDE GOES TO THE TASK (founder,
+       2026-09-15). Same box, same hooks, same gesture -- the destination is
+       decided by whether the founder is looking at a delegation. With none
+       selected this is still the briefing composer and the path below is
+       byte-identical to what it always was. */
+    const sel = (typeof shadowSelectedTask === "function")
+      ? shadowSelectedTask() : null;
+    if (sel && sel.id && !S_.shadowNewOpen){
+      const said = text.trim();
+      el.value = "";
+      shadowSayToShadow(sel.id, said, el);
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
     el.value = "";
     sendToShadow(text.trim()).then(() => {
       if (typeof loadShadowHome === "function") loadShadowHome(true);

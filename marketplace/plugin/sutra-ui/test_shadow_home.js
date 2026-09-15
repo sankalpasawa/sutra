@@ -440,12 +440,22 @@ console.log("ok 6 controls wired");
   assert(/Say anything/.test(h), "the calm composer placeholder was lost");
   assert(!/Tell Shadow the outcome you want/.test(h),
     "the teaching copy belongs to the un-focused pane, not the task pane");
-  /* WITH NOTHING IN FOCUS the full delegation brief is unchanged */
+  /* THE ASK BLOCK BELONGS TO NEW TASK (founder, 2026-09-15). "What should I
+     take on? / Tell Shadow the outcome you want" is how a task is CREATED,
+     so it draws behind + Delegate and nowhere else -- the workspace, focused
+     or empty, carries exactly one composer and it says "Say anything…". */
   const empty = (() => { const c = fresh(); c.S.shadowHomeDark = false;
     c.S.shadowMissions = []; c.S.goals = []; return c.shadowHomeHtml(); })();
-  assert(/Tell Shadow what outcome you want/.test(empty),
+  assert(!/Tell Shadow the outcome you want/.test(empty),
+    "the new-task ask must not draw on the workspace");
+  assert.strictEqual((empty.match(/data-shhomecompose/g) || []).length, 1,
+    "an empty workspace still has exactly one composer");
+  const newTask = (() => { const c = fresh(); c.S.shadowHomeDark = false;
+    c.S.shadowMissions = MISSIONS; c.S.goals = []; c.S.shadowNewOpen = true;
+    return c.shadowHomeHtml(); })();
+  assert(/Tell Shadow what outcome you want/.test(newTask),
     "the delegation placeholder was lost");
-  assert(/Tell Shadow the outcome you want/.test(empty),
+  assert(/Tell Shadow the outcome you want/.test(newTask),
     "the shask copy was lost");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
   console.log("ok 14b existing-chat flow removed; delegation composer stays");
