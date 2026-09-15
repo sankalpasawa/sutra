@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.276.1 (2026-09-15)
+
+- **Move preview shows only what the move adds.** Seen live on the registry: the preview listed every finding the tree already had, sixteen lines of old debris above the one about the move. It now subtracts the tree's standing findings and collapses duplicates; a clean move reads "Nothing in the way".
+
 ## 2.276.0 (2026-09-15)
 
 - **The new Org screen edits, filters and asks.** Still behind `flags.org2`. The screen now takes the whole row like Agents does, so the tree, the list and the viewer are always beside each other. A document opens in the Workspace's own editor and saves in place; a file changed elsewhere shows one line, "Changed in another session", with Reload. Search reaches charter titles, filed work and documents (`GET /api/org2/search`); the funnel beside it filters by kind and by charter state (`GET /api/org2/filter`). The pencil gains Rename, Move (with a preview from the same check the studio uses) and New sub-department: each files a proposal (`POST /api/org2/request`) that waits in Approvals, and an approval applies it registry-only through the new `org2_apply.py`. Health adds what the server reads from charters: departments with no charter, one-line charters and overlapping siblings (`GET /api/org2/health/{ref}`). A filed .html opens in the app page frame under the same CSP (`GET /api/org2/page`). Old Org is untouched. Tests: `test_org2.js` 48, `test_org2_api.py` 13.

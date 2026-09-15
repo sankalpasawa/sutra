@@ -2,7 +2,12 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.276.0 (2026-09-15, HEAD)
+## v2.276.1 (2026-09-15, HEAD)
+
+**Move preview shows only what the move adds.** The preview subtracts the tree's standing findings and
+collapses duplicates, so a clean move reads "Nothing in the way" instead of the registry's old debris.
+
+## v2.276.0 (2026-09-15)
 
 **The new Org screen edits, filters and asks** (BUILD-PLAN.md phases 6-9, still behind `flags.org2`). The
 screen takes the whole row, so the tree, the list and the viewer stay beside each other. A document opens

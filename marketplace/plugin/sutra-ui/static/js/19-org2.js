@@ -389,9 +389,16 @@ function o2MovePreviewHtml(n, d){
   const sh = o2S().sheet;
   if (!sh.target || typeof simulate !== "function") return "";
   const sim = simulate([{ op: "move", ref: n.ref, target: sh.target }]);
-  if (!sim || sim.pending) return `<div class="o2prev o2quiet">Checking…</div>`;
+  const base = simulate([]);                             /* the tree as it stands */
+  if (!sim || sim.pending || !base || base.pending) return `<div class="o2prev o2quiet">Checking…</div>`;
   if (sim.error) return `<div class="o2prev o2quiet">The check could not run</div>`;
-  const rows = (sim.findings || []);
+  /* Only what the move ADDS. The simulation reports the whole tree, and a
+     registry with old debris would bury the one line about this move under
+     findings that are true with or without it. */
+  const key = f => (f.code || "") + "|" + (f.subject || "");
+  const had = new Set((base.error ? [] : (base.findings || [])).map(key));
+  const seen = new Set();
+  const rows = (sim.findings || []).filter(f => { const k = key(f); if (had.has(k) || seen.has(k)) return false; seen.add(k); return true; });
   const sev = s => s === "block" ? "var(--block)" : s === "warn" ? "var(--warn)" : "var(--ok)";
   if (!rows.length) return `<div class="o2prev"><div class="o2prow"><span class="o2dot" style="background:var(--ok)"></span><span>Nothing in the way</span></div></div>`;
   return `<div class="o2prev">${rows.map(f => `<div class="o2prow"><span class="o2dot" style="background:${sev(f.sev)}"></span><span>${o2Esc(f.subject || f.code || "")}</span></div>`).join("")}</div>`;

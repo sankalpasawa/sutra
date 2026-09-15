@@ -457,8 +457,10 @@ test("rename: the sheet files org.rename, then Approvals opens with one line", a
   assert.ok(/Waiting for approval · Rename Experience to Experience Design/.test(c.o2S().flash));
   assert.ok(/Waiting for approval/.test(c.SCREENS.org2 ? c.o2ScreenHtml() : c.o2ScreenHtml()));
 });
-test("move: targets exclude the subtree and the current parent; the preview runs the simulation on one op", () => {
-  const c = fresh({ simulate: (ops) => { c._ops = ops; return { pending: false, error: null, findings: [{ code: "ORG-004", sev: "warn", subject: "Experience is deeper than four" }] }; } });
+test("move: targets exclude the subtree and the current parent; the preview shows only what the move adds", () => {
+  const OLD = { code: "ORG-020", sev: "warn", subject: "Sutra Charter is homed to retired Sutra" };
+  const NEW = { code: "ORG-004", sev: "warn", subject: "Experience is deeper than four" };
+  const c = fresh({ simulate: (ops) => { if (ops.length) c._ops = ops; return { pending: false, error: null, findings: ops.length ? [OLD, NEW, NEW, OLD] : [OLD] }; } });
   c.o2Select("r4"); c.o2OpenSheet("move");
   const d = c.o2Data();
   const refs = c.o2MoveTargets(d.byRef.get("r4"), d).map(t => t.ref);
@@ -468,6 +470,11 @@ test("move: targets exclude the subtree and the current parent; the preview runs
   const html = c.o2SheetHtml(d.byRef.get("r4"), d);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c._ops)), [{ op: "move", ref: "r4", target: "r6" }]);
   assert.ok(/Experience is deeper than four/.test(html) && !/Apply/.test(html));
+  assert.ok(html.indexOf("homed to retired") === -1, "a finding true before the move is not the move's");
+  assert.strictEqual((html.match(/deeper than four/g) || []).length, 1, "duplicates collapse");
+  const c2 = fresh({ simulate: (ops) => ({ pending: false, error: null, findings: [OLD] }) });
+  c2.o2Select("r4"); c2.o2OpenSheet("move"); c2.o2S().sheet.target = "r6";
+  assert.ok(/Nothing in the way/.test(c2.o2SheetHtml(c2.o2Data().byRef.get("r4"), c2.o2Data())));
 });
 test("new sub-department: the sheet files org.create under the selected department", async () => {
   const c = fresh(); c.loadProposals = () => {};
