@@ -319,6 +319,14 @@ have been misread as exactly that.
 ./run-tests.sh --which                     # which interpreter it resolved
 ```
 
+**Run it from this directory.** `run-tests.sh` resolves its own location to find
+the lane files, but it never `cd`s there — each lane inherits *your* working
+directory. Lanes that walk the tree therefore change verdict with where you
+stood: `test_shadow_flag.py` passes here and fails from the repo root, where its
+"is the accessor the only read path" grep escapes into the whole monorepo and
+returns 48 offenders. That is a real cwd bug in the runner, not a flaky test —
+until it is fixed, `cd` first and the results are stable.
+
 **One process per file is not incidental.** Under a single pytest process the
 Shadow lanes leak an asyncio event loop into one another: `pytest -k shadow`
 reports dozens of `RuntimeError: Event loop is closed` and `There is no current
@@ -326,16 +334,22 @@ event loop` failures in lanes that pass cleanly on their own. Reach for pytest
 to run *one* file, or to get `conftest.py`'s collection rules — not to sweep a
 subsystem.
 
+**pytest is not installed by `install.sh` and is not in `requirements.txt`.** It
+has to be added deliberately:
+
 ```bash
+.venv/bin/pip install pytest
 .venv/bin/python -m pytest -q test_shadow_criteria.py
 ```
 
-`conftest.py` applies **only** under pytest. It repoints the registry home and
-the SEO agent's data dir at temp dirs *before collection*, after a
-whole-directory run emptied the operator's live registry twice on 2026-09-11.
-Running a file as a plain script skips that; the suites bind their own temp
-homes in `setUp()` and `test_shadow_home_guard.py` pins both layers, but pytest
-is the safer invocation for anything you did not write.
+That matters more than one broken command, because `conftest.py` applies **only**
+under pytest. It repoints the registry home and the SEO agent's data dir at temp
+dirs *before collection*, after a whole-directory run emptied the operator's live
+registry twice on 2026-09-11. So on an install that never added pytest, that
+guard is not merely unused — it is unreachable, and every lane is relying on the
+temp home it binds itself in `setUp()`. `test_shadow_home_guard.py` pins both
+layers, but pytest is still the safer invocation for anything you did not write,
+and installing it is what makes that choice available.
 
 JS lanes are plain `node` — no runner, no `npm install`, no browser. They load
 the real `static/js/*.js` through `vm`, so they test the shipped module, not a
@@ -362,6 +376,19 @@ is enforced locally.
 of them `test_mission_engine.py`, `test_mission_scheduler.py` and the
 `test_goal_*` pair that wraps missions.
 
+One command, copy-pasteable from the repo root, no install step beyond
+`install.sh`:
+
+```bash
+cd marketplace/plugin/sutra-ui && ./run-tests.sh test_shadow_*.py
+```
+
+The `cd` is part of the command, not a preamble. The glob is expanded by your
+shell against the lane files, so from the repo root it matches nothing and the
+shell refuses with `no matches found` before the script ever starts — and the
+cwd bug above would flip verdicts even if it did. Already in this directory,
+`./run-tests.sh test_shadow_*.py` is the same thing.
+
 ```bash
 ./run-tests.sh test_shadow_*.py            # the 38 Python lanes, one process each
 
@@ -376,6 +403,75 @@ stopping at the first red hides the state of every lane after it and leaves you
 reading a raw stack trace instead of a result. To see why one failed, run that
 one on its own — `node test_shadow_overlay.js` — where it prints its `ok` lines
 up to the assertion that went.
+
+#### What a pass looks like
+
+Nothing here runs in CI, so recognising a pass by eye *is* the gate. Both sweeps
+answer in the same shape: one line per lane, and an exit code.
+
+**Python.** `run-tests.sh` prints the lane name padded to 34 columns, then `PASS`
+and the `Ran N tests` it greps back out of unittest's own summary. A contiguous
+stretch of one real run — lanes 4 through 17 of 38, copied unedited, nothing
+dropped from inside it:
+
+```
+test_shadow_completion_summary.py  PASS  Ran 55 tests
+test_shadow_criteria.py            PASS  Ran 38 tests
+test_shadow_decider_window.py      PASS  Ran 16 tests
+test_shadow_decision_integrity.py  PASS  Ran 13 tests
+test_shadow_delegate.py            PASS  Ran 8 tests
+test_shadow_drives.py              PASS  Ran 33 tests
+test_shadow_early_admit.py         PASS  Ran 10 tests
+test_shadow_evidence_prose.py      PASS  Ran 14 tests
+test_shadow_feed.py                PASS  Ran 6 tests
+test_shadow_flag.py                PASS  Ran 6 tests
+test_shadow_floor_choke.py         PASS  Ran 7 tests
+test_shadow_founder_says.py        PASS  Ran 11 tests
+test_shadow_home_api.py            PASS  Ran 3 tests
+test_shadow_home_guard.py          PASS  Ran 4 tests
+```
+
+Green means every line reads `PASS` and the script exits `0`. A red lane prints
+`FAIL`, then the last 18 lines of its output indented four spaces, and the sweep
+keeps going and exits `1` at the end, so one failure never hides the lanes behind
+it. Abridged below; the elapsed time differs every run:
+
+```
+test_shadow_intervention.py        FAIL
+    ERROR: test_the_template_formats_with_a_context_that_has_no_answer (...)
+    The substitution dict must not KeyError on an old-shaped context.
+    ----------------------------------------------------------------------
+    Traceback (most recent call last):
+      File ".../test_shadow_intervention.py", line 562, in test_the_template_...
+        rendered = shadow_runner._DECIDE_PROMPT % {
+    KeyError: 'founder_says'
+    ----------------------------------------------------------------------
+    Ran 61 tests in 0.077s
+    FAILED (errors=1)
+```
+
+**JS.** Each lane prints `ok <n> <description>` per assertion, then a summary in
+one of two wordings — both mean pass:
+
+```
+test_shadow_home.js: all green        # home, overlay, now, completion_ui, floor_needs_you, briefing
+all shadow RHS tests passed           # rhs, live_refresh, task_chat, task_status, intervention_ui
+```
+
+**The summary is not reliably the last line.** The async lanes resolve their `ok`
+lines after it — `test_shadow_home.js` prints its summary at line 47 of 53. So
+the exit code is the signal and the summary is the confirmation; never judge a
+lane by tailing it. That is why the sweep loop above branches on `&&` rather than
+grepping for the wording. A green sweep is 11 `PASS` lines and nothing else.
+
+**The suite is not all-green today** (checked 2026-09-15): 35 of 38 Python lanes
+and 9 of 11 JS lanes pass. `test_shadow_chat_publication.py`,
+`test_shadow_intervention.py`, `test_shadow_signs_e2e.py`,
+`test_shadow_briefing.js` and `test_shadow_overlay.js` are red, and all five are
+red on a clean checkout of `main` too — they are standing breakage, not something
+your working tree did. Re-check that list before trusting it; the point of the
+paragraph is that a first run showing five red lanes is the expected state, not
+evidence you installed something wrong.
 
 | Lane | What it pins |
 |---|---|
@@ -593,4 +689,5 @@ all `403` when the flag is off. `POST /api/shadow/missions/{mid}/act` carries th
 verbs: `take_over`, `stop`, `drop`, `start_now`, `retry`, `confirm_check`,
 `resume`, `say`, `intervene`, `delete`.
 
-Running the tests: **Shadow tests** under `## Tests` above.
+Running the tests: **Shadow tests** under `## Tests` above — the command, and
+**What a pass looks like** for reading the result.
