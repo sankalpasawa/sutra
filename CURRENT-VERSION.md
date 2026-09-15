@@ -2,7 +2,26 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.274.0 (2026-09-15, HEAD)
+## v2.274.1 (2026-09-15, HEAD)
+
+**The last half-minute of every hour stopped reading "in 4 hr 60 min".** `usageResetText` floors the
+hours and ROUNDS the remaining minutes, so any gap from 59.5 minutes up rounded to 60 and was printed
+as its own minute count -- on every usage card, for the last 30 seconds of every hour. The sixtieth
+minute now carries into the hour. Nothing else moves: `resetting now`, the under-an-hour minutes, the
+weekday and the date branches, and all minute arithmetic below 59.5 are untouched. The fix is six
+lines in `static/js/04-screens.js` (`f33a49d2`). Tests: `test_panel.js` 388, `test_nav.js` 75,
+`test_charter_filter.js` 31 -- the three suites the release workflow's Panel step runs -- all green,
+plus a frozen-clock check of the shipped function at the hour boundary.
+
+**This is also why v2.274.0 shipped for Apple Silicon only.** W3-3c asserts that an exact five-hour
+gap reads "in 5 hr", but the test captures `now` and `usageResetText` reads `Date.now()` a moment
+later: landing in the same millisecond passes, one millisecond later renders "in 4 hr 60 min". The
+Intel runner lost that race and its leg failed at the Panel step, before the DMG was built; arm64 won
+it and published. The `verify` job then refused the one-architecture release, which is exactly what it
+is for. **v2.274.0 is left as published -- not deleted, not re-tagged.** v2.274.1 is the complete
+release, and carries everything v2.274.0 carried.
+
+## v2.274.0 (2026-09-15)
 
 **Shadow asks a typed question now, not a 300-character sentence.** `ask_founder` still exits
 through `store.block()`, and the request rides beside the state the way `pause_reason` already does

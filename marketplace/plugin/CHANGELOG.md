@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.274.1 (2026-09-15)
+
+- **A usage card no longer says "in 4 hr 60 min".** For the last half-minute of every hour, the time until your usage resets was written with sixty minutes in it instead of rolling over into the next hour. An exact five hours now reads "in 5 hr". Every other way that line can be written -- minutes, hours and minutes, a weekday, a date -- is unchanged.
+- **This release also carries the Intel build, which 2.274.0 was missing.** The same rounding bug failed that build before its installer was made, so 2.274.0 published for Apple Silicon only. Everything in 2.274.0 is included here.
+
 ## 2.274.0 (2026-09-15)
 
 - **Shadow can ask you a proper question.** Instead of one short sentence, it can put up a small form -- several fields, each checked as you fill it in -- and your answer goes straight back to the same worker, which picks up where it left off instead of starting over. The form shows the exact check your Yes signs off.
