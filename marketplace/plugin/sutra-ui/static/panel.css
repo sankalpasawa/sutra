@@ -3408,6 +3408,15 @@
 .shtimeline{display:flex;flex-direction:column}
 .shtimeline .shagent{margin-top:9px}
 .shtimeline .shstory{margin-top:9px}
+.shtimeline .shsaid{margin-top:9px}
+/* the founder's own aside: the accent rail the pane already uses for "this
+   came from you", set apart from the worker's grey rows */
+.shsaid{padding:11px 15px;background:var(--acc-bg);
+  border-left:3px solid var(--acc);border-radius:0 10px 10px 0}
+.shsaidhead{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--acc);margin-bottom:6px}
+.shsaidtext{font-size:13px;line-height:1.55;color:var(--ink);
+  white-space:pre-wrap;overflow-wrap:anywhere}
 /* ── what the worker agent just did: ONE report, not the transcript */
 .shagent{margin-top:12px;padding:11px 15px;background:var(--bubble);
   border-left:3px solid var(--line);border-radius:0 10px 10px 0}

@@ -2822,6 +2822,11 @@ async def api_shadow_goal_act(gid: str, request: Request):
     raise HTTPException(400, "unknown action %r" % action)
 
 
+# A founder aside is a sentence or two, not a brief. Long enough for any real
+# instruction, short enough that it cannot crowd the decider's prompt.
+_SAY_MAX = 2000
+
+
 @app.post("/api/shadow/missions/{mid}/act")
 async def api_shadow_mission_act(mid: str, request: Request):
     if not providers.shadow_enabled():
@@ -2919,6 +2924,47 @@ async def api_shadow_mission_act(mid: str, request: Request):
         if action == "resume":
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, None)
+            return m
+        if action == "say":
+            # FREE-FORM FOUNDER INPUT, UNPROMPTED. "Actually, prioritise
+            # release safety." -- something the founder decides to tell
+            # Shadow mid-flight, with no question outstanding.
+            #
+            # IT IS NOT AN INTERVENTION AND MUST NOT LOOK LIKE ONE. An
+            # intervention is a question Shadow asked with a schema attached,
+            # answered through `intervene`, and it closes a decision. This is
+            # the founder volunteering something; it answers nothing, resolves
+            # nothing, and confirms no check. Separate verb, separate field.
+            #
+            # IT REACHES SHADOW, NEVER THE WORKER. Nothing here sends into the
+            # delegate session. The record is where Shadow reads, and
+            # run_mission re-loads it at the top of every turn, so the decider
+            # sees this on its next turn and decides for itself whether it
+            # changes the next instruction. That is the whole delivery
+            # mechanism: no new endpoint on the loop, no new state, no
+            # runtime change.
+            text = str(body.get("text") or "").strip()
+            if not text:
+                raise HTTPException(400, "text required")
+            m = store.load(mid)
+            if m is None:
+                raise HTTPException(404, "no mission %s" % mid)
+            # A TERMINAL MISSION IS NOT LISTENING. run_mission has already
+            # left its loop, so nothing would ever read this -- and writing it
+            # would tell the founder a finished task had been re-steered.
+            # Refuse, and let the pane say so.
+            if m["state"] in _mission_engine.TERMINAL:
+                raise HTTPException(409, {
+                    "detail": "this task has finished -- Shadow is no longer "
+                              "working on it",
+                    "state": m["state"]})
+            says = list(m.get("founder_says") or [])
+            says.append({"text": text[:_SAY_MAX],
+                         "at": _mission_engine._now(),
+                         "at_turn": m.get("turns_used") or 0,
+                         "seen": False})
+            m["founder_says"] = says
+            store.save(m)
             return m
         if action == "intervene":
             # THE FOUNDER ANSWERS THE TYPED QUESTION SHADOW ASKED.
