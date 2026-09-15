@@ -14,10 +14,20 @@ What this proves, with the wire faked (httpx) and the model and the web stubbed,
   * if EVERY search fails, the round still fails loudly;
   * the conversation is kept turn by turn, and a resume does not buy the same searches again.
 """
+import os
 import shutil
 import sys
 
 import httpx
+
+# THE SUITES SHARE ONE DATA FOLDER, so this one leaves it as it found it. _fixture.setup() plants a
+# company record (domain example.com), a site index, traffic and a content database; left behind,
+# the company record told test_workspace_ideas "this Mac's company is example.com" in the check that
+# needs there to be no catalogue at all. Whatever setup plants that was not there before is removed
+# at the end.
+_PLANTED = ("site_index.json", "top-pages.json", "brand/company.json", "content-database.jsonl")
+_DATA = os.environ.get("SEO_AGENT_DATA", "").strip()
+_HAD = {n for n in _PLANTED if _DATA and os.path.exists(os.path.join(_DATA, "knowledge", n))}
 
 from seo_agent.tests import _fixture
 _fixture.setup()
@@ -240,6 +250,12 @@ curate.run = _real_run
 
 # ---- tidy up ------------------------------------------------------------------------------------
 shutil.rmtree(store.chat_dir(chat), ignore_errors=True)
+for _name in _PLANTED:
+    if _name not in _HAD:
+        try:
+            os.remove(os.path.join(store.knowledge_dir(), _name))
+        except OSError:
+            pass
 dfs.post, dfs.get, dfs._auth, dfs.balance = _real["post"], _real["get"], _real["auth"], _real["balance"]
 dfs.serp_advanced, dfs.RETRY_SLEEPS = _real["serp_advanced"], _real["sleeps"]
 print("\nFaked wire, stubbed model and web. Proves temporary DataForSEO trouble is waited out, one bad "
