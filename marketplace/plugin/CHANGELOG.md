@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.3 (2026-09-15)
+
+- **Re-aiming an article actually re-researches it.** When the SEO Writer turned a topic down and you asked it to aim the article at a different reader, it replayed the first attempt's saved results and gave the same answer in under a second. A new topic or angle now starts the research fresh, and the "is this topic ours?" check sees the article's title and angle instead of only Google's first page. Tests: 4 checks.
+
 ## 2.278.2 (2026-09-15)
 
 - **Review folds for the speed release (DeepSeek, CHANGES-REQUIRED, 22 items, 4 folded).** The incremental transcript read now treats only true appends as appends: the file must have grown, kept its inode, and the last 64 bytes before the old offset must still read the same, otherwise it re-parses from zero; a complete last record without its newline shows provisionally; the memo keeps 16 files, least-recently-read leaving first. The registry memo's key gains the inode, so a file swapped in by rename with copied timestamps is never a hit.

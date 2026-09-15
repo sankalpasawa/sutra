@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.2 (2026-09-15, HEAD)
+## v2.278.3 (2026-09-15, HEAD)
+
+**SEO Writer: "aim it at hiring teams" is researched, not replayed.** Aparna asked for "white collar vs
+blue collar"; the topic gate said page one was career explainers for job seekers, which was fair. She
+answered "keep the topic, aim it at hiring teams", and the agent called `run_research` again with a new
+title and angle in the SAME run. Every step saves to `_work/<name>.json` under the run and reuses it,
+so world, seeds, keywords, the SERP, the pages and the topic gate all came back from the first call's
+files in under a second (the `_work` files were all stamped 15:03 to 15:11; the second `research.json`
+at 15:13 carried the new title over the old verdict), and the agent reported that as if Google had
+been re-read. Two fixes: `run_research` records the topic and angle a run was researched for in
+`_work/input.json` and redoes every step when a call asks about a different one (the length-question
+resume, which reuses the same topic, still reuses the paid work); and the topic-relevance judge is
+now shown the working title and angle, where before it saw only who ranks, so no angle could ever
+change its answer. Tests: `test_research` +4 checks; engine suite green.
+
+## v2.278.2 (2026-09-15)
 
 **Review folds for the speed release.** The transcript memo appends only when the file grew, kept its inode
 and the 64 bytes before the old offset still match; otherwise it re-parses. A complete last record without
