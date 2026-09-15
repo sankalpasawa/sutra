@@ -11,6 +11,12 @@ Standing rules from the user (they may widen or narrow the scope):
 {{MEMORY}}
 
 ────────────────────────────────────────────────────────────────────────
+THE ARTICLE WE WOULD WRITE
+
+Working title: {{TOPIC}}
+Angle: {{ANGLE}}
+
+────────────────────────────────────────────────────────────────────────
 WHO RANKS FOR THIS SEARCH
 
 {{WHO_RANKS}}

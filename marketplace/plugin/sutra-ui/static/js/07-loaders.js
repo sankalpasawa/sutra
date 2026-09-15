@@ -923,6 +923,15 @@ function wire(){
     else installUpdate(what);
   });
 
+  /* The Claude Code page shows who is signed in, so it reads the account when it opens and
+     nothing has read it yet (a boot that failed, or a sign-in finished elsewhere). One read,
+     not a poll: loadUsage refreshes the account and usage together. */
+  if (S.screen === "settings" && S.setSection === "provider:claude"
+      && !S.account && !S.accountError && !S.accountLoading){
+    S.accountLoading = true;
+    Promise.resolve(loadUsage(true)).catch(()=>{}).then(()=>{ S.accountLoading = false; render(); });
+  }
+
   /* ── account sign-in (Usage screen) ── the same button cancels while a
      sign-in runs; on completion the account+usage re-read shows who won.
      One delayed retry covers the CLI still flushing ~/.claude.json. */

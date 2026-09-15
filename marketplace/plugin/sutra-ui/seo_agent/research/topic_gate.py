@@ -34,7 +34,11 @@ def run(topic, angle, snapshot, lists, company):
         return verdict
 
     # ---- call 1: is this ours? ------------------------------------------------------------
+    # THE ARTICLE IS PART OF THE QUESTION (2026-09-15). The judge used to see only who ranks, so
+    # "aim it at hiring teams" could never change its answer: the same page one was judged the same
+    # way whatever the article was for. It now sees the working title and the angle too.
     p1 = _c.prompt("topic-relevance", brand=tok["brand"], brand_scope=scope,
+                   topic=_c.na(topic), angle=_c.na(angle),
                    who_ranks=snapshot.get("who_ranks_text") or "(no ranking summary captured)",
                    ai_overview=aio, common_topics=common)
     got = llm.json_call(p1) or {}

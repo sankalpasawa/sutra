@@ -5324,6 +5324,35 @@ test("W3-2a. a provider page renders its schema switches, with the stored values
   });
 });
 
+test("W3-2k. the Claude Code page carries the account: who is signed in, and Switch account", () => {
+  /* 2026-09-15: switching the Claude account went missing when the old usage screen, which drew
+     the Account fold, was replaced. The panel belongs on Claude Code's own page. */
+  w3Settings(() => {
+    /* The harness makes `window` the sandbox itself (sandbox.window = sandbox), so the
+       desktop bridge is set as `sutra` on the sandbox, exactly where window.sutra reads it. */
+    const prevAcct = T.S.account, prevErr = T.S.accountError, prevSutra = sandbox.sutra;
+    sandbox.sutra = Object.assign({}, prevSutra || {}, { authLogin: () => Promise.resolve({ ok: true }) });
+    T.S.accountError = null;
+    T.S.account = { available: true, profile: { full_name: "Test Person", email: "person@example.com",
+                                               plan: "Max (20x)" }, subscription: {} };
+    try {
+      const out = T.providerPageHtml("claude", T.SETTINGS);
+      assert.ok(/<h3 class="sxsech">Account<\/h3>/.test(out), "no Account section on the Claude Code page");
+      assert.ok(out.includes("person@example.com"), "the signed-in email is not shown");
+      assert.ok(/data-auth-login/.test(out) && /Switch account/.test(out),
+        "there is no Switch account button");
+      T.S.account = { available: false, reason: "no Claude account is signed in" };
+      const signedOut = T.providerPageHtml("claude", T.SETTINGS);
+      assert.ok(/data-auth-login/.test(signedOut) && />\s*Sign in\s*</.test(signedOut),
+        "a signed-out Mac is not offered Sign in");
+      assert.ok(!/data-auth-login/.test(T.providerPageHtml("codex", T.SETTINGS)),
+        "Claude's account control leaked onto the Codex page");
+    } finally {
+      T.S.account = prevAcct; T.S.accountError = prevErr; sandbox.sutra = prevSutra;
+    }
+  });
+});
+
 test("W3-2b. the long diagnostic is behind a disclosure, not on the page", () => {
   w3Settings(() => {
     const out = T.providerPageHtml("codex", T.SETTINGS);
