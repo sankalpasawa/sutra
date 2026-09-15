@@ -288,11 +288,30 @@ def api_send(chat_id: str, body: dict = Body(...)):
     # person pressed (by="user") still starts fresh, as before.
     # The newest run by when it started. list_runs sorts by folder name, and a run folder is named
     # r-HHMMSS-..., the time of day with no date, so its last row is not always the newest run.
+    #
+    # A RUN THAT FAILED IS CARRIED ON TOO (2026-09-15). A model call that errors (the Claude usage
+    # limit, a CLI that fell over, a missing key) marks the run "failed", and a message used to throw
+    # its saved steps away exactly as above: three articles lost hours of research and a finished
+    # article plan to one "session limit" reply. Nobody chose that either, so it continues. The test
+    # is the status "failed" on its own, not "failed with recovering=false": every path that fails a
+    # run (loop.step's two model-call handlers, and _guarded around the whole loop) emits its
+    # step_failed with recovering=False, so reading the flag as well would pick out the same runs from
+    # a second place. A tool that errors never fails the run; its error goes back to the model. The
+    # conversation is whole here too: a failed model call returns before anything is appended, so
+    # messages.json ends on the previous turn's saved tool results. _close_open_tool_calls still mends
+    # the one shape that could break a provider (an assistant tool call saved with no results, if the
+    # loop itself crashed at a pause), so the continued run always starts from a valid turn.
     last = max(runs, key=lambda r: str(r.get("started_at") or "")) if runs else None
-    if last and last.get("status") == "stopped" and _stopped_by_restart(chat_id, last["run_id"]):
+    failed = bool(last) and last.get("status") == "failed"
+    if last and (failed or (last.get("status") == "stopped"
+                            and _stopped_by_restart(chat_id, last["run_id"]))):
         run_id = last["run_id"]
+        _close_open_tool_calls(chat_id)
+        store.patch_state(chat_id, run_id, error=None)
         store.emit(chat_id, run_id, "resumed", by="user", answer=text[:200],
-                   note="carrying on after Sutra was closed, from the steps already saved")
+                   note=("carrying on after the last step failed, from the steps already saved"
+                         if failed else
+                         "carrying on after Sutra was closed, from the steps already saved"))
         _sync_claude_bin()
         _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                           lambda: loop.start(chat_id, run_id, text)))
@@ -323,6 +342,24 @@ def api_send(chat_id: str, body: dict = Body(...)):
     _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                       lambda: loop.start(chat_id, run_id, text)))
     return {"run_id": run_id, "answered": False, "state": store.get_state(chat_id, run_id)}
+
+
+def _close_open_tool_calls(chat_id):
+    """Give every tool call the conversation left without a result an error result, so the next
+    model turn is valid on every provider. A no-op when the last saved turn is complete."""
+    messages = store.get_messages(chat_id)
+    last = messages[-1] if messages else None
+    if not (last and last.get("role") == "assistant" and isinstance(last.get("content"), list)):
+        return
+    open_ids = [b.get("id") for b in last["content"]
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")]
+    if not open_ids:
+        return
+    messages.append({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": i,
+        "content": {"error": "This step was interrupted before it returned.",
+                    "hint": "Run it again if it is still needed."}} for i in open_ids]})
+    store.save_messages(chat_id, messages)
 
 
 def _stopped_by_restart(chat_id, run_id):

@@ -2,7 +2,21 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.9 (2026-09-15, HEAD)
+## v2.278.10 (2026-09-15, HEAD)
+
+**SEO Writer: a run that failed on a model error carries on from its saved steps.** When a model
+call errors (the Claude usage limit, a CLI that fell over) `loop.step` marks the run `failed`. A
+message then made a NEW run with an empty artifacts folder, the same loss 2.278.9 fixed for a quit:
+three articles lost their research caches and a finished article plan to one "session limit" reply.
+`agents_api.api_send` now continues the newest run when its status is `failed`, as well as when it
+was stopped by the restart sweep. The test is the status alone: every path that fails a run emits
+`step_failed` with `recovering=False`, and a tool error never fails a run. A failed model call
+appends nothing, so `messages.json` ends on the previous turn's tool results; a new
+`_close_open_tool_calls` still gives any tool call left without a result an error result, so the
+continued run starts from a valid turn on every provider. The stale `error` is cleared. A Stop the
+person pressed still starts fresh. Tests: agents api +3.
+
+## v2.278.9 (2026-09-15)
 
 **SEO Writer: closing Sutra no longer throws away a run's saved work.** Quitting the app while an
 article was mid-step marks that run stopped at the next start (`store.reconcile_stale_runs`,

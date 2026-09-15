@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.10 (2026-09-15)
+
+- **An article that failed on a model error no longer starts over.** If the SEO Writer stopped because Claude's usage limit ran out (or a model call failed some other way), sending a message afterwards started the article from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 3 checks.
+
 ## 2.278.9 (2026-09-15)
 
 - **Closing Sutra no longer throws away an article's progress.** If the app was quit while the SEO Writer was mid-step, sending a message afterwards started the article over from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 2 checks.
