@@ -1,8 +1,49 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-14
+**status**: active · **updated**: 2026-09-15
 
-## v2.273.3 (2026-09-14, HEAD)
+## v2.274.0 (2026-09-15, HEAD)
+
+**Shadow asks a typed question now, not a 300-character sentence.** `ask_founder` still exits
+through `store.block()`, and the request rides beside the state the way `pause_reason` already does
+-- no new mission state, no new lifecycle, no per-type endpoint, and an `ask_founder` without an
+intervention is byte-identical to what it returned before. What is new is the form: 13 answerable
+field types with one validator each, one `intervene` action on the EXISTING mission endpoint, and a
+resume that continues the SAME delegate rather than starting a fresh one. A stale id is refused; a
+duplicate submission is a safe no-op. The form quotes the check a Yes signs off, so what is being
+agreed to is on screen, and the answer reaches Shadow's next decision as a LABELLED block -- never
+folded into what the worker said.
+
+**The task card draws its turn budget as a length.** `turns_used / max_turns` renders as a bar with
+three threshold bands -- calm below 60%, warning to 85%, critical above -- plus the honest case a
+string test cannot see: a record with NO ceiling draws NO bar, not an empty one and not a full one.
+Over-budget clamps to its track instead of spilling across the card. Two browser gates hold it
+permanently: G15 inside `shadow-check.mjs` (geometry, three measured colours, a11y, and the layout
+invariant that the meter never changes the card's width) and G9, which now runs twice -- once
+against the renderer, once through the app's own data path, from real mission files on disk to a
+real click on a real task row.
+
+**A finished task says what was done, not only why it counts.** The goal remembers what the attempt
+did rather than the json it ended in; a conclusion leaves the pane readable instead of closing it;
+Copy result is proven end to end in a real document, and its feedback announces itself and heals.
+Words are not work: a template echo is rejected and outcome checks are demoted rather than counted
+as progress. The card also says how fresh the record it drew is, and the "last updated" key stops
+wrapping in its left column.
+
+**Four reliability fixes behind all of it.** A restart adopts the delegate whose worker is provably
+gone -- and only that one. The decider's worker-response window is corrected, its provider comes
+from the runtime factory like every other surface, and a resumed loop no longer starts empty: the
+existing worker output is seeded on the first turn. Escalation reaches the founder rather than
+stopping at a surface that cannot show it.
+
+Tests: 35 Shadow backend suites green; 9 of 11 Shadow JS suites green; G15 27/27, G9 31/31, G9
+through the data path 44/44, zero uncaught page errors in the real shell. Four known failures are
+accepted as baseline and are NOT from this release -- `G6` home tabs and `shell-check` pane-menu
+order (both on surfaces these commits do not touch: `05-chat.js` is untouched and zero `shtab`
+lines changed), and `test_shadow_briefing.js` / `test_shadow_overlay.js`, which fail identically at
+v2.273.3-desktop.
+
+## v2.273.3 (2026-09-14)
 
 **Settings is called Setup, and it looks like something.** Owner, 2026-09-14: "even when I click on
 settings inside settings it should not be named settings ... the way it looks could be improved by a

@@ -1,6 +1,13 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-14
+**status**: active · **updated**: 2026-09-15
+## 2.274.0 (2026-09-15)
+
+- **Shadow can ask you a proper question.** Instead of one short sentence, it can put up a small form -- several fields, each checked as you fill it in -- and your answer goes straight back to the same worker, which picks up where it left off instead of starting over. The form shows the exact check your Yes signs off.
+- **A task shows how much of its turn budget it has spent.** A bar fills as the task works and changes colour as it nears its limit. A task with no limit shows no bar rather than a misleading empty one, and a task that runs past its limit fills the bar without spilling out of the card.
+- **A finished task tells you what it did.** The result stays open to be read, copies out with confirmation, and the card says how fresh the information it drew is. Work that only restates the instruction no longer counts as progress.
+- **Restarts, resumes and escalation are steadier.** A restart picks up a task whose worker is genuinely gone, a resumed task no longer starts from an empty slate, and an escalation reaches you.
+
 ## 2.273.3 (2026-09-14)
 
 - **Settings is now called Setup, and it has been redesigned.** Each section has its own icon, the screens use one consistent panel and row style, and every dropdown and field lines up. Opening it still lands on the overview, never on what you last had open.
