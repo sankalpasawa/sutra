@@ -720,7 +720,11 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
             and not promoted.get("target_session"):
         # a promoted queued mission may still need its delegate
         # (codex P1 fold: queued rows spawn nothing until here)
-        eng2 = mission_engine.MissionEngine(store, None, None, None)
+        # the decider rides along so provision_target can decide the bar
+        # before the spawner briefs the worker (see _criteria_before_first_
+        # contact). None -- the flag path, a test -- keeps the old behaviour.
+        eng2 = mission_engine.MissionEngine(store, None, None, None,
+                                            decider=DEFAULT_DECIDER["fn"])
         try:
             await eng2.provision_target(promoted["id"], prov)
             remember_delegate_pid(store, promoted["id"])
@@ -1870,8 +1874,11 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                 m = store.load(mid)
                 if prov and m and m.get("target_mode") == "new" \
                         and not m.get("target_session"):
-                    eng = mission_engine.MissionEngine(store, None, None,
-                                                       None)
+                    eng = mission_engine.MissionEngine(
+                        store, None, None, None,
+                        # same reason as the promote path: the criteria are
+                        # decided before the spawner says the first word
+                        decider=DEFAULT_DECIDER["fn"])
                     await eng.provision_target(mid, prov)
                     remember_delegate_pid(store, mid)
                 start_mission(mid, validated_say, verifier)

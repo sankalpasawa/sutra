@@ -378,6 +378,299 @@ class TheLivePathWritesCriteriaAndFinishes(CriteriaBase):
                         "and the prompt shows them, so no ask is rendered")
 
 
+# ----------------------------- THE FIRST DECISION, ON THE BRIEFED PATH -----
+class TheBarExistsBeforeTheWorkerIsSupervised(CriteriaBase):
+    """THE DOGFOOD FAILURE (founder, 2026-09-15). Objective set, "Done when"
+    blank, mission started -- and the card sat on "Shadow is writing these"
+    at TURN 0 while the worker was already on turn 1 and exploring.
+
+    ROOT CAUSE, pinned here. A target_mode="new" delegate is briefed by the
+    SPAWN, so provision_target stamps manifest_delivered and run_mission takes
+    its `briefed` branch, which sends nothing AND set `decision = None`. That
+    None was the only thing that could have carried Shadow's criteria, so the
+    whole first turn ran with an empty completion bar and nothing was written
+    until turn 1 -- if the mission lived that long.
+
+    These drive the REAL run_mission on the REAL briefed shape. A test that
+    lets the loop run to the budget cannot see this: the criteria do arrive
+    eventually. The bar has to exist on the FIRST turn, and that is what is
+    asserted."""
+
+    OBJECTIVE = ("Update the project README to explain what Shadow does "
+                 "and how to run the Shadow tests.")
+    WROTE = [{"tier": "founder_confirm",
+              "check": "The README explains what Shadow does."},
+             {"tier": "founder_confirm",
+              "check": "The README shows how to run the Shadow tests."}]
+
+    def _briefed_mission(self, done_when=None):
+        """Exactly what the composer + spawn produce."""
+        r = self.create(objective=self.OBJECTIVE, done_when=done_when or [])
+        mid = r.json()["id"]
+        m = self.store.load(mid)
+        m["manifest_delivered"] = True     # the SPAWN delivered the brief
+        m["target_session"] = "sess-live"
+        m["max_turns"] = 1                 # one iteration, then stop
+        self.store.save(m)
+        self.store.transition(mid, "running", "admitted")
+        return mid
+
+    def _run(self, mid, decision):
+        import asyncio
+        self.says, self.seen = [], []
+
+        async def sayer(m, text):
+            self.says.append(text)
+            return True
+
+        async def waiter(m):
+            return True
+
+        def reader(m):
+            return ""
+
+        eng = mission_engine.MissionEngine(self.store, sayer, waiter, reader)
+
+        async def decider(ctx):
+            self.seen.append(ctx)
+            return dict(decision)
+
+        eng.decider = decider
+        asyncio.new_event_loop().run_until_complete(eng.run_mission(mid))
+        return self.store.load(mid)
+
+    def test_the_criteria_exist_after_the_FIRST_turn(self):
+        mid = self._briefed_mission()
+        self.assertEqual(self.store.load(mid)["done_when"], [])
+        m = self._run(mid, {"action": "continue", "instruction": "explore",
+                            "reason": "r", "done_when": self.WROTE})
+        self.assertEqual([c["check"] for c in m["done_when"]],
+                         [c["check"] for c in self.WROTE],
+                         "the bar must exist on the first turn, not turn 1")
+
+    def test_shadow_is_actually_consulted_on_that_turn(self):
+        mid = self._briefed_mission()
+        self._run(mid, {"action": "continue", "instruction": "explore",
+                        "reason": "r", "done_when": self.WROTE})
+        self.assertTrue(self.seen, "the decider was never asked (the bug)")
+        self.assertEqual(self.seen[0]["checks"], [],
+                         "and it must be asked while the set is still empty, "
+                         "so criteria_ask renders")
+        self.assertEqual(self.seen[0]["outcome"], self.OBJECTIVE)
+
+    def test_the_brief_is_NOT_sent_twice(self):
+        """The spawn already briefed the delegate. The criteria pass must
+        discard the instruction it came with."""
+        mid = self._briefed_mission()
+        self._run(mid, {"action": "continue",
+                        "instruction": "THIS MUST NOT REACH THE WORKER",
+                        "reason": "r", "done_when": self.WROTE})
+        self.assertNotIn("THIS MUST NOT REACH THE WORKER", self.says)
+        self.assertEqual(self.says, [],
+                         "a briefed turn 0 says nothing, before and after")
+
+    def test_the_criteria_are_PERSISTED_not_held_in_memory(self):
+        """Re-read from the store, not from the dict the loop mutated."""
+        mid = self._briefed_mission()
+        self._run(mid, {"action": "continue", "instruction": "explore",
+                        "reason": "r", "done_when": self.WROTE})
+        fresh = mission_engine.MissionStore().load(mid)   # a NEW store object
+        self.assertEqual(len(fresh["done_when"]), 2,
+                         "the checks must survive on disk for the UI to read")
+        for c in fresh["done_when"]:
+            self.assertIn("tier", c)
+            self.assertIn("check", c)
+
+    def test_what_the_UI_reads_back_carries_the_criteria(self):
+        """The card renders from GET /api/shadow/missions -- the same read
+        the 4s refresh does. A criteria write the API does not serve is a
+        write the founder never sees."""
+        mid = self._briefed_mission()
+        self._run(mid, {"action": "continue", "instruction": "explore",
+                        "reason": "r", "done_when": self.WROTE})
+        rows = self.client.get(MIS).json()["missions"]
+        row = [r for r in rows if r["id"] == mid][0]
+        self.assertEqual([c["check"] for c in row["done_when"]],
+                         [c["check"] for c in self.WROTE],
+                         "the refreshed mission state must carry the bar")
+
+    def test_those_criteria_are_what_completion_then_measures(self):
+        mid = self._briefed_mission()
+        m = self._run(mid, {"action": "continue", "instruction": "explore",
+                            "reason": "r", "done_when": self.WROTE})
+        done, results = mission_engine.evaluate_done_when(m, "")
+        self.assertFalse(done)
+        self.assertEqual(len(results), 2, "both checks are evaluated")
+        m["done_when"][0]["met"] = True
+        m["done_when"][1]["met"] = True
+        self.store.save(m)
+        done, _ = mission_engine.evaluate_done_when(
+            self.store.load(mid), "")
+        self.assertTrue(done)
+
+    def test_a_founder_who_DID_say_is_never_consulted_about_it(self):
+        """The prompt does not even carry the request, and nothing is
+        overwritten."""
+        mine = [{"tier": "founder_confirm", "check": "The founder's own."}]
+        mid = self._briefed_mission(done_when=mine)
+        m = self._run(mid, {"action": "continue", "instruction": "x",
+                            "reason": "r", "done_when": self.WROTE})
+        self.assertEqual([c["check"] for c in m["done_when"]],
+                         ["The founder's own."])
+        self.assertEqual(self.seen, [],
+                         "a briefed turn 0 WITH criteria must not spend a "
+                         "decider turn at all")
+
+    def test_a_failing_decider_costs_nothing(self):
+        """Turn 1 asks again; the mission is not harmed."""
+        import asyncio
+        mid = self._briefed_mission()
+
+        async def sayer(m, text):
+            return True
+
+        async def waiter(m):
+            return True
+
+        eng = mission_engine.MissionEngine(self.store, sayer, waiter,
+                                           lambda m: "")
+
+        async def boom(ctx):
+            raise RuntimeError("shadow is down")
+
+        eng.decider = boom
+        asyncio.new_event_loop().run_until_complete(eng.run_mission(mid))
+        m = self.store.load(mid)
+        self.assertEqual(m["done_when"], [], "nothing written, nothing broken")
+
+
+# ------------------------------------- 5. BEFORE THE FIRST WORKER CONTACT --
+class TheBarExistsBeforeTheWorkerIsSpokenTo(CriteriaBase):
+    """The order the founder asked for, asserted as an ORDER.
+
+    Objective entered -> Shadow decides done_when -> persisted -> FIRST
+    worker interaction. The turn-0 tests above prove the criteria arrive on
+    the first loop iteration; they cannot see that the spawn already briefed
+    the worker before that iteration began. This records the sequence
+    itself: what the spawner sees when it is handed the mission.
+    """
+
+    OBJECTIVE = "Update the README to explain what Shadow does."
+    WROTE = [{"tier": "founder_confirm",
+              "check": "The README explains what Shadow does."}]
+
+    def _provision(self, done_when=None):
+        """Run the real provision_target with a spawner that RECORDS the
+        mission as it stood when the brief went out."""
+        import asyncio
+        mid = self.create(objective=self.OBJECTIVE,
+                          done_when=done_when or []).json()["id"]
+        self.at_spawn, self.seen = [], []
+
+        async def spawner(m):
+            # the first Shadow -> Worker interaction: read from the STORE,
+            # not from the dict handed in, so this is what the UI would see
+            self.at_spawn.append(
+                list(self.store.load(m["id"]).get("done_when") or []))
+            return "sess-live"
+
+        async def decider(ctx):
+            self.seen.append(ctx)
+            return {"action": "continue", "instruction": "explore",
+                    "reason": "r", "done_when": self.WROTE}
+
+        eng = mission_engine.MissionEngine(self.store, None, None, None,
+                                           decider=decider)
+        asyncio.new_event_loop().run_until_complete(
+            eng.provision_target(mid, spawner))
+        return mid
+
+    def test_blank_done_when_is_filled_BEFORE_the_worker_is_briefed(self):
+        mid = self._provision()
+        self.assertEqual(len(self.at_spawn), 1, "the spawner ran once")
+        self.assertEqual([c["check"] for c in self.at_spawn[0]],
+                         [c["check"] for c in self.WROTE],
+                         "the criteria must be on disk BEFORE the spawner "
+                         "sends the brief -- not after the first turn")
+        self.assertEqual([c["check"] for c in
+                          self.store.load(mid)["done_when"]],
+                         [c["check"] for c in self.WROTE])
+
+    def test_the_UI_can_read_them_before_the_worker_ever_answers(self):
+        mid = self._provision()
+        row = [r for r in self.client.get(MIS).json()["missions"]
+               if r["id"] == mid][0]
+        self.assertEqual([c["check"] for c in row["done_when"]],
+                         [c["check"] for c in self.WROTE])
+
+    def test_a_founder_who_supplied_them_is_not_consulted_at_all(self):
+        mine = [{"tier": "founder_confirm", "check": "The founder's own."}]
+        mid = self._provision(done_when=mine)
+        self.assertEqual(self.seen, [], "Shadow must generate nothing")
+        self.assertEqual([c["check"] for c in self.at_spawn[0]],
+                         ["The founder's own."],
+                         "used exactly, and still before the brief")
+        self.assertEqual([c["check"] for c in
+                          self.store.load(mid)["done_when"]],
+                         ["The founder's own."])
+
+    def test_a_failing_decider_still_spawns_the_worker(self):
+        """The bar is worth a decider turn, never the mission."""
+        import asyncio
+        mid = self.create(objective=self.OBJECTIVE,
+                          done_when=[]).json()["id"]
+
+        async def spawner(m):
+            return "sess-live"
+
+        async def boom(ctx):
+            raise RuntimeError("shadow is down")
+
+        eng = mission_engine.MissionEngine(self.store, None, None, None,
+                                           decider=boom)
+        sid = asyncio.new_event_loop().run_until_complete(
+            eng.provision_target(mid, spawner))
+        self.assertEqual(sid, "sess-live")
+        self.assertEqual(self.store.load(mid)["done_when"], [],
+                         "nothing written; turn 0 asks again")
+
+    def test_an_existing_target_mission_decides_before_ITS_first_say(self):
+        """No spawn on this path -- turn 0's say is the first contact."""
+        import asyncio
+        r = self.client.post(MIS, json={"template": "fix",
+                                        "target_mode": "existing",
+                                        "target_session": "sess-live",
+                                        "objective": self.OBJECTIVE,
+                                        "done_when": []})
+        mid = r.json()["id"]
+        m = self.store.load(mid)
+        m["max_turns"] = 1
+        self.store.save(m)
+        self.store.transition(mid, "running", "admitted")
+        at_say = []
+
+        async def sayer(mission, text):
+            at_say.append(
+                list(self.store.load(mission["id"]).get("done_when") or []))
+            return True
+
+        async def waiter(mission):
+            return True
+
+        async def decider(ctx):
+            return {"action": "continue", "instruction": "explore",
+                    "reason": "r", "done_when": self.WROTE}
+
+        eng = mission_engine.MissionEngine(self.store, sayer, waiter,
+                                           lambda mission: "",
+                                           decider=decider)
+        asyncio.new_event_loop().run_until_complete(eng.run_mission(mid))
+        self.assertTrue(at_say, "turn 0 said the brief")
+        self.assertEqual([c["check"] for c in at_say[0]],
+                         [c["check"] for c in self.WROTE],
+                         "the bar must be on disk before the first say")
+
+
 # --------------------------------------------------------------- untouched --
 class NothingElseMoved(CriteriaBase):
     def test_delete_still_works(self):

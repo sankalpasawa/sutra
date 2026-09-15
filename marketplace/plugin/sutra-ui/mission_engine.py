@@ -769,6 +769,14 @@ class MissionEngine:
             return m["target_session"]
         if m["target_mode"] != "new":
             raise ValueError("provision_target on an existing-target mission")
+        # THE BAR IS SET BEFORE THE WORKER IS EVER SPOKEN TO (founder,
+        # 2026-09-15). The spawner sends the manifest and waits out the whole
+        # first agentic turn, so by the time it returns Shadow has already
+        # supervised a turn it had no criteria for. The order the founder
+        # asked for is: objective -> Shadow decides done_when -> persisted and
+        # on the card -> first worker interaction. This is that one step, in
+        # the one place that runs before the spawner does.
+        await self._criteria_before_first_contact(m)
         sid = await spawner(m)
         m = self.store.load(mid)
         m["target_session"] = sid
@@ -849,6 +857,16 @@ class MissionEngine:
                     last_response = self.response_reader(seed_m) or None
             except Exception:       # noqa: BLE001 -- a seed must never fail a run
                 last_response = None
+        # ...AND THE BAR COMES BEFORE THE FIRST WORD, on this path too. An
+        # existing-target mission is never provisioned, so its first contact
+        # with the worker is turn 0's own say a few lines below. Guarded on
+        # turns_used == 0 because a RESUMED loop has long since spoken; there
+        # the ordinary decision path is what writes any missing criteria, as
+        # it always did. A new-target mission arrives here with the checks
+        # already written by provision_target and this is a no-op.
+        m0 = self.store.load(mid)
+        if m0 is not None and (m0.get("turns_used") or 0) == 0:
+            await self._criteria_before_first_contact(m0)
         while True:
             if not providers.shadow_enabled():
                 return self.store.transition(mid, "stopped",
@@ -893,31 +911,30 @@ class MissionEngine:
                        and bool(m.get("manifest_delivered")))
             if briefed:
                 say_text, decision = self._next_say(m), None
+                # THE COMPLETION BAR CANNOT WAIT FOR TURN 1 (founder dogfood,
+                # 2026-09-15).
+                #
+                # WHAT WENT WRONG. A target_mode="new" delegate is briefed by
+                # the SPAWN, so provision_target stamps manifest_delivered and
+                # this branch deliberately sends nothing -- and it also set
+                # `decision = None`, which is the only thing that could have
+                # carried Shadow's criteria. A mission whose founder left
+                # "Done when" blank therefore ran its whole first turn with an
+                # empty bar: the card said "Shadow is writing these" while the
+                # worker was already exploring, and nothing was written until
+                # turn 1 -- if the mission lived that long.
+                #
+                # So the criteria, and ONLY the criteria, are taken here. The
+                # brief already went out at spawn and is not re-sent: say_text
+                # above is untouched, `decision` stays None, and every other
+                # thing this branch did is byte-identical. What changes is
+                # that the bar Shadow supervises against exists before it
+                # supervises anything.
+                if self.decider is not None and not (m.get("done_when") or []):
+                    await self._first_criteria(m, last_response)
             else:
                 say_text, decision = await self._instruction(m, last_response)
-            # SHADOW WRITES THE CHECKS THE FOUNDER DID NOT (founder,
-            # 2026-09-15). "Done when" is optional on the form; the outcome is
-            # not. A mission with no checks could never finish --
-            # evaluate_done_when returns False for an empty set, so it ran to
-            # max_turns and failed -- and the founder who declined to spell
-            # out the criteria is exactly the one who should not have to.
-            #
-            # ONLY ONTO AN EMPTY SET, so the founder's own words can never be
-            # edited, replaced or appended to by Shadow: a mission that
-            # arrived with criteria takes this branch never, and its prompt
-            # does not even carry the request. Written once, before the
-            # evaluation below runs, so the checks are live from this turn.
-            if (decision is not None and decision.get("done_when")
-                    and not (m.get("done_when") or [])):
-                m["done_when"] = [dict(c) for c in decision["done_when"]]
-                self.store.save(m)
-                shadow_ledger.append("actions", {
-                    "mission_id": mid, "kind": "criteria",
-                    "summary": "Shadow wrote %d check(s) the founder left "
-                               "open: %s" % (
-                                   len(m["done_when"]),
-                                   "; ".join(c["check"]
-                                             for c in m["done_when"])[:160])})
+            self._adopt_criteria(m, decision)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated
@@ -1311,6 +1328,62 @@ class MissionEngine:
                if any(not s.get("seen")
                       for s in (m.get("founder_says") or [])) else {}),
         }
+
+    def _adopt_criteria(self, m, decision):
+        """Write the checks Shadow composed, onto an empty set only.
+
+        ONE WRITER for both callers -- the turn-0 criteria pass and the
+        ordinary decision path -- so the founder's own criteria are protected
+        by one condition in one place rather than two that can drift apart.
+        Returns True when something was written.
+        """
+        if decision is None or not decision.get("done_when"):
+            return False
+        if m.get("done_when") or []:
+            return False              # the founder said; it is not Shadow's
+        m["done_when"] = [dict(c) for c in decision["done_when"]]
+        self.store.save(m)
+        shadow_ledger.append("actions", {
+            "mission_id": m["id"], "kind": "criteria",
+            "summary": "Shadow wrote %d check(s) the founder left open: %s"
+                       % (len(m["done_when"]),
+                          "; ".join(c["check"] for c in m["done_when"])[:160])})
+        return True
+
+    async def _criteria_before_first_contact(self, m):
+        """Decide the bar before the worker hears anything. Idempotent.
+
+        ONE GUARD for both first-contact callers -- provision_target (the
+        spawn brief) and run_mission's turn 0 (the said brief) -- so "only
+        when Shadow has a decider and the founder left the box empty" is
+        stated once. A founder who supplied criteria is never consulted and
+        never overwritten; that rule lives in _adopt_criteria and is not
+        duplicated here.
+        """
+        if self.decider is None or (m.get("done_when") or []):
+            return False
+        return await self._first_criteria(m, None)
+
+    async def _first_criteria(self, m, last_response):
+        """Shadow's first decision, consulted for its CRITERIA alone.
+
+        The same decider, the same context and the same validator the normal
+        turn uses -- no second decision path and no new state. Its
+        `instruction` is deliberately discarded: the brief is either still
+        to be delivered (first contact) or was delivered by the spawn, and in
+        neither case may an instruction composed here reach the worker -- the
+        first would pre-empt the brief, the second would be the double-brief
+        the briefed branch exists to prevent. The CRITERIA are the one thing
+        taken from this decision.
+
+        Never raises. A decider that fails or answers badly leaves the mission
+        exactly where it was, and turn 1 asks again.
+        """
+        try:
+            raw = await self.decider(self._decision_context(m, last_response))
+        except Exception:             # noqa: BLE001 -- turn 1 will ask again
+            return False
+        return self._adopt_criteria(m, validate_decision(raw))
 
     async def _instruction(self, m, last_response):
         """(say_text, decision) for this iteration.
