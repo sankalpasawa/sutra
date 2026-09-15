@@ -502,17 +502,27 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   ok("no socket, no second store, no new endpoint");
 }
 
-/* ============== THE DELEGATE FORM USES THE SAME CLASSIFIER ==============
-   + Delegate used to stamp founder_confirm on EVERY criterion line. That is
-   what made the engine's premature-pause bug reachable from the form every
-   single time: with zero machine-checkable checks the confirmation boundary
-   was satisfied vacuously (all([]) === true) on turn 1, and three real
-   missions handed themselves back having built nothing.
+/* ====== THE DELEGATE FORM DOES *NOT* USE THE SHAPE CLASSIFIER ==========
+   REVERSED 2026-09-15 (founder). 34/35/36 used to pin the opposite: that
+   + Delegate routed founder-typed lines through goalCriteriaToChecks so a
+   literal-shaped one became contains_artifact. That is the regression --
+   contains_artifact is evaluated as `check in transcript_text`, so a line
+   describing a STATE ("The file contains HELLO") could only be satisfied by
+   the worker uttering the sentence. Four missions burned their budget on it.
 
-   These tests load 15 + 16 + 18 exactly as panel.html does, so they exercise
-   the REAL goalCriteriaToChecks rather than a stub. */
+   THE OTHER REASON THESE TESTS GAVE NO LONGER HOLDS. The header argued the
+   old all-founder_confirm default "made the engine's premature-pause bug
+   reachable ... all([]) === true on turn 1". e1c8d0ea fixed that in
+   mission_engine the same day -- `others_met = bool(machine) and all(...)`
+   -- so with no machine check there is nothing to have passed and the
+   boundary cannot be satisfied vacuously. 36's "so the boundary can be
+   EARNED" premise is therefore obsolete; test_premature_pause.py owns it.
 
-/* 34. a literal-shaped criterion survives as machine-checkable */
+   goalCriteriaToChecks, goalTierFor and goalIsLiteralArtifact are UNCHANGED
+   and still tested by 7 and 8 above -- what changed is only that the
+   Delegate form no longer consults them for the founder's own words. */
+
+/* 34. a literal-shaped founder line is STILL the founder's */
 {
   const ctx=fresh();
   ctx.S.shadowNew={objective:"build the tracker",
@@ -521,9 +531,9 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   ctx.shadowCreateTask();
   const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
   assert.strictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.tier)))
-    .join(","),"contains_artifact,contains_artifact",
-    "a short literal marker is Shadow's to check, not the founder's");
-  ok("Delegate keeps machine-checkable criteria machine-checkable");
+    .join(","),"founder_confirm,founder_confirm",
+    "a line the founder typed is theirs to confirm, whatever its shape");
+  ok("Delegate never infers a machine check from the founder's wording");
 }
 
 /* 35. a semantic criterion is still the founder's, and is never dropped */
@@ -539,7 +549,7 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   ok("Delegate leaves semantic criteria to the founder");
 }
 
-/* 36. the mixed case -- the shape that actually reaches the pause boundary */
+/* 36. the mixed case: both halves are the founder's, both preserved */
 {
   const ctx=fresh();
   ctx.S.shadowNew={objective:"build the tracker",
@@ -548,11 +558,11 @@ const MSGS  = n => { const o=[]; for(let i=0;i<n;i++){
   ctx.shadowCreateTask();
   const b=ctx.posts.find(p=>p.url==="/api/shadow/missions").body;
   assert.strictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.tier)))
-    .join(","),"contains_artifact,founder_confirm",
-    "each line judged on its own shape, exactly as the goal card does");
-  assert(b.done_when.some(c=>c.tier!=="founder_confirm"),
-    "at least one machine check exists, so the engine boundary can be EARNED");
-  ok("Delegate produces the mixed shape the confirmation boundary needs");
+    .join(","),"founder_confirm,founder_confirm",
+    "shape no longer decides anything on this path");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(b.done_when.map(c=>c.check))),
+    ["BUILD GREEN",SEMANTIC],"every line preserved verbatim, order kept");
+  ok("Delegate preserves both lines and leaves both to the founder");
 }
 
 /* 37. blank lines still dropped, order still kept, nothing invented */

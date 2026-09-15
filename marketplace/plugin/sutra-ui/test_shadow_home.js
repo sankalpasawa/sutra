@@ -179,19 +179,16 @@ console.log("ok 6 controls wired");
      a briefing, not a chat list. The scoping it provided now lives in one
      chip beside the composer, which still emits data-shchat, so the
      one-mind-many-threads model below is unchanged. */
-  /* WORKSPACE SLICE: the existing-chat flow is opt-in in the delegated-task
-     workspace, so this opens it first. What it asserts is unchanged -- the
-     scoping is ONE CHIP, not a tab strip -- only where it now lives. */
-  ctx.S.shadowExistingOpen = true;
+  /* SLICE 11 removed the tab strip and left one scope chip. PASS 2
+     (founder, 2026-09-15) removed the chip too, with the existing-chat
+     flow it belonged to -- shadowTargetHtml and shadowRecentChatsHtml are
+     gone and so is the "Work in an existing chat instead" door. Neither
+     scoping control is on Home now; the DELEGATION composer stays. */
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
-  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
-  ctx.S.shadowScopeOpen = true;
-  const open = ctx.shadowHomeHtml();
-  assert(/data-shchat="global"/.test(open), "no-chat option offered");
-  assert(/data-shchat="sess-paisa"/.test(open), "a chat can be picked");
-  assert(!/data-shtab="global"/.test(open),
-    "picks use their OWN namespace — data-shtab stays the plane's");
+  assert(!/data-shscopepick/.test(h), "the scope chip went with the flow");
+  assert(!/data-shchat=/.test(h), "no chat is pickable from the workspace");
+  assert(/data-shhomecompose/.test(h), "the delegation composer must remain");
   /* and the plane still renders its own tabs, on its own surface */
   const plane = ctx.shadowPlaneHtml(["sess-paisa"], [], "watching");
   assert(/data-shtab="watching"/.test(plane), "the plane is untouched");
@@ -240,17 +237,17 @@ console.log("ok 6 controls wired");
                     { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
-  /* SLICE 11: the tab strip is gone from Home; scoping is one chip.
-     WORKSPACE SLICE: that chip lives in the existing-chat flow, which the
-     delegated-task workspace renders only when it is opened. */
-  ctx.S.shadowExistingOpen = true;
+  /* SLICE 11 removed the tab strip and left one scope chip. PASS 2
+     (founder, 2026-09-15) removed the chip too, with the existing-chat
+     flow it belonged to -- shadowTargetHtml and shadowRecentChatsHtml are
+     gone and so is the "Work in an existing chat instead" door. Neither
+     scoping control is on Home now; the DELEGATION composer stays. */
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
-  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
-  ctx.S.shadowScopeOpen = true;
-  const open2 = ctx.shadowHomeHtml();
-  assert(/data-shchat="sess-paisa"/.test(open2), "a chat can be picked");
-  console.log("ok 10 tab strip removed; scoping is one chip");
+  assert(!/data-shscopepick/.test(h), "the scope chip went with the flow");
+  assert(!/data-shchat=/.test(h), "no chat is pickable from the workspace");
+  assert(/data-shhomecompose/.test(h), "the delegation composer must remain");
+  console.log("ok 10 neither tab strip nor scope chip is on Home");
 }
 {
   /* threads are isolated per tab, and the accessor survives reassignment */
@@ -295,17 +292,17 @@ console.log("ok 6 controls wired");
                     { id: "sess-dayflow", title: "Dayflow", updated_ms: 100 }];
   ctx.S.shadowMissions = [{ id: "m-1", objective: "x", state: "running",
                             target_session: "sess-paisa" }];
-  /* SLICE 11: the tab strip is gone from Home; scoping is one chip.
-     WORKSPACE SLICE: that chip lives in the existing-chat flow, which the
-     delegated-task workspace renders only when it is opened. */
-  ctx.S.shadowExistingOpen = true;
+  /* SLICE 11 removed the tab strip and left one scope chip. PASS 2
+     (founder, 2026-09-15) removed the chip too, with the existing-chat
+     flow it belonged to -- shadowTargetHtml and shadowRecentChatsHtml are
+     gone and so is the "Work in an existing chat instead" door. Neither
+     scoping control is on Home now; the DELEGATION composer stays. */
   const h = ctx.shadowHomeHtml();
   assert(!/shchattabs/.test(h), "the tab strip is not on Home any more");
-  assert(/data-shscopepick/.test(h), "the target chat is a single chip");
-  ctx.S.shadowScopeOpen = true;
-  const open2 = ctx.shadowHomeHtml();
-  assert(/data-shchat="sess-paisa"/.test(open2), "a chat can be picked");
-  console.log("ok 10 tab strip removed; scoping is one chip");
+  assert(!/data-shscopepick/.test(h), "the scope chip went with the flow");
+  assert(!/data-shchat=/.test(h), "no chat is pickable from the workspace");
+  assert(/data-shhomecompose/.test(h), "the delegation composer must remain");
+  console.log("ok 10 neither tab strip nor scope chip is on Home");
 }
 {
   /* threads are isolated per tab, and the accessor survives reassignment */
@@ -355,14 +352,13 @@ console.log("ok 6 controls wired");
   assert(/^session /.test(ctx.shadowChatLabel("sess-unknown")),
     "an unknown chat says session <id>, never a bare id");
   assert.strictEqual(ctx.shadowChatLabel("global"), "new");
-  /* SLICE 11: names are now worn by the scope picker rather than a strip --
-     same shadowChatLabel, same no-raw-id rule. */
-  ctx.S.shadowScopeOpen = true;
-  ctx.S.shadowExistingOpen = true;   /* the picker lives in that flow now */
-  const h = ctx.shadowHomeHtml();
-  assert(/Paisa EMI rounding fix/.test(h), "the picker renders the name");
-  assert(!/>sess-pai/.test(h), "no raw id leaks into a label");
-  console.log("ok 13 chats wear real names in the scope picker");
+  /* SLICE 11 moved names onto the scope picker; PASS 2 removed that picker
+     with the existing-chat flow. shadowChatLabel is UNCHANGED and still the
+     only namer -- the task card's "acts in" row renders it, and every rule
+     above still holds. What went is the surface, not the naming. */
+  assert.strictEqual(ctx.shadowChatLabel("sess-paisa"), "Paisa EMI rounding fix",
+    "the namer is untouched by the picker going away");
+  console.log("ok 13 chats wear real names (shadowChatLabel; picker gone)");
 }
 
 /* ── 14-19: the Shadow workspace + "+ Delegate" ─────────────────────────
@@ -396,41 +392,46 @@ console.log("ok 6 controls wired");
   console.log("ok 14 workspace: two columns, + Delegate, one settings door");
 }
 
-/* 14b. THE DELEGATED WORKSPACE IS TASK-FOCUSED.
-   The existing-chat flow is PRESERVED, not rendered: preserving a behaviour
-   and always showing its UI are different things, and this workspace is
-   about one delegated task. Opening the flow brings the whole thing back
-   exactly as it was. */
+/* 14b. THE DELEGATED WORKSPACE IS TASK-FOCUSED, AND THE EXISTING-CHAT FLOW
+   IS GONE (founder, 2026-09-15, PASS 2). This used to assert the flow was
+   "preserved, opt-in, not default" -- rendered only when opened. It is now
+   removed outright: shadowTargetHtml (the "Working with" picker),
+   shadowRecentChatsHtml (the chips) and shadowWorkComposerHtml (the
+   "Say anything" box plus "Work in an existing chat instead") are deleted,
+   and d.shchat / d.shscopepick / d.shexisting went with them.
+
+   WHAT STAYS IS THE DELEGATION COMPOSER, and it is now rendered
+   unconditionally rather than behind the flow: the shask copy, the
+   data-shhomecompose textarea and its scope attribute, the send arrow. */
 {
   const ctx = fresh();
   ctx.S.shadowHomeDark = false;
   ctx.S.shadowMissions = MISSIONS;
   ctx.S.sessions = [{ id: "s-1", title: "paisa emi" }];
   ctx.S.shadowWatching = ["s-1"];
-  const closed = ctx.shadowHomeHtml();
-  /* none of the existing-chat surface by default */
-  assert(!/data-shscopepick/.test(closed), "'Working with' picker rendered");
-  assert(!/Choose a conversation/.test(closed), "'Choose a conversation' rendered");
-  assert(!/Recent conversations/.test(closed), "recent-chat chips rendered");
-  assert(!/Tell Shadow the outcome you want/.test(closed),
-    "the old briefing copy rendered");
-  assert(!/data-shchat=/.test(closed), "chat chips (+N more) rendered");
-  /* but the composer is still there, with the SAME hook and scope attribute */
-  assert(/data-shhomecompose/.test(closed), "the workspace has no composer");
-  assert(/data-shscope=/.test(closed), "the composer lost its scope attribute");
-  /* and the door into the flow is offered */
-  assert(/data-shexisting="1"/.test(closed), "no way into the existing-chat flow");
+  const h = ctx.shadowHomeHtml();
 
-  /* opened: the real stage, unchanged */
-  ctx.S.shadowExistingOpen = true;
-  const open = ctx.shadowHomeHtml();
-  assert(/data-shscopepick/.test(open), "the picker did not come back");
-  assert(/Choose a conversation/.test(open), "the picker lost its copy");
-  assert(/Recent conversations/.test(open), "the recent chips did not come back");
-  assert(/Tell Shadow the outcome you want/.test(open),
-    "the briefing copy did not come back");
-  assert(/data-shexisting="0"/.test(open), "no way back to the tasks");
-  console.log("ok 14b existing-chat flow: preserved, opt-in, not default");
+  /* the existing-chat surface is gone, and cannot be brought back */
+  assert(!/data-shscopepick/.test(h), "the 'Working with' picker survived");
+  assert(!/Choose a conversation/.test(h), "picker copy survived");
+  assert(!/Recent conversations/.test(h), "recent-chat chips survived");
+  assert(!/data-shchat=/.test(h), "chat chips survived");
+  assert(!/data-shexisting/.test(h), "the existing-chat door survived");
+  assert(!/Say anything/.test(h), "the old workspace composer survived");
+  assert(!/Work in an existing chat/.test(h), "the door label survived");
+  ctx.S.shadowExistingOpen = true;          /* nothing can set this now */
+  assert(!/data-shscopepick/.test(ctx.shadowHomeHtml()),
+    "the flow came back when the dead flag was set");
+
+  /* ...and the DELEGATION composer renders, unconditionally */
+  assert(/data-shhomecompose/.test(h), "the delegation composer was lost");
+  assert(/data-shscope=/.test(h), "the composer lost its scope attribute");
+  assert(/Tell Shadow what outcome you want/.test(h),
+    "the delegation placeholder was lost");
+  assert(/Tell Shadow the outcome you want/.test(h),
+    "the shask copy was lost");
+  assert(/data-shsend="1"/.test(h), "the send arrow was lost");
+  console.log("ok 14b existing-chat flow removed; delegation composer stays");
 }
 
 /* 14c. NO GLOBAL HISTORY UNDER A DELEGATED TASK.
@@ -525,8 +526,13 @@ console.log("ok 6 controls wired");
     /* the founder pressed Stop: they know it exists and may still Retry it */
     { id: "m-stop",    objective: "old stopped", state: "stopped",
       ended_by: "founder" },
+    /* a completion the founder has not read yet: the card carries the
+       summary the engine just stamped, so the row has to survive */
+    { id: "m-done",    objective: "fresh done",  state: "done" },
     /* --- must NOT appear: concluded ----------------------------------- */
-    { id: "m-done",    objective: "old done",    state: "done" },
+    /* ...but a done row that was RETRIED steps aside for its successor */
+    { id: "m-donered", objective: "superseded done", state: "done",
+      retried_to: "m-fresh2" },
     /* a MACHINE stop (ping-pong) carries no ended_by and stays history */
     { id: "m-mstop",   objective: "machine stopped", state: "stopped" },
     { id: "m-retried", objective: "superseded",  state: "failed",
@@ -554,16 +560,18 @@ console.log("ok 6 controls wired");
   assert(ids.includes("m-fail"), "a retryable failure was hidden");
   /* a stop the FOUNDER pressed stays: it is not history until they say so */
   assert(ids.includes("m-stop"), "a founder-stopped task was hidden");
+  /* a completion stays too -- it is the one row carrying the summary */
+  assert(ids.includes("m-done"), "a finished task was hidden");
   /* 4. historical terminal records do not */
-  ["m-done", "m-mstop", "m-retried", "m-vestigial", "m-wonattempt"]
+  ["m-donered", "m-mstop", "m-retried", "m-vestigial", "m-wonattempt"]
     .forEach(id => assert(!ids.includes(id), "history leaked into the list: " + id));
-  assert(!/old done|machine stopped|superseded/.test(h),
+  assert(!/machine stopped|superseded/.test(h),
     "concluded work rendered in the workspace");
 
   /* 5. the RECORDS are untouched -- this is a filter, not a delete */
-  assert.strictEqual(ctx.S.shadowMissions.length, 12,
+  assert.strictEqual(ctx.S.shadowMissions.length, 13,
     "the mission list itself must not be mutated");
-  assert(ctx.S.shadowMissions.some(m => m.id === "m-done"),
+  assert(ctx.S.shadowMissions.some(m => m.id === "m-mstop"),
     "a hidden mission must still be in state");
   /* 6. goals untouched */
   assert.strictEqual(ctx.S.goals.length, 3, "goals must not be touched");
@@ -622,11 +630,21 @@ console.log("ok 6 controls wired");
             ended_by: "machine" }]), [],
     "only ended_by=founder qualifies");
 
-  /* 3. done is untouched: nothing is left to want */
+  /* 3. done STAYS now (founder, 2026-09-15, rule 4a) -- the completion
+     summary lives on that card, so the row carrying it has to survive.
+     Retried is the one exception, and it is the same !retried_to the
+     failed and founder-stopped rules already use. */
   assert.deepStrictEqual(
     only([{ id: "m-done", objective: "x", state: "done",
-            ended_by: "founder" }]), [],
-    "a completed mission must never come back into the list");
+            ended_by: "founder" }]), ["m-done"],
+    "a completed mission must stay readable in the list");
+  assert.deepStrictEqual(
+    only([{ id: "m-done", objective: "x", state: "done" }]), ["m-done"],
+    "ended_by is irrelevant to a completion");
+  assert.deepStrictEqual(
+    only([{ id: "m-old", objective: "x", state: "done",
+            retried_to: "m-new" }]), [],
+    "a retried completion steps aside for its successor");
 
   /* 4. a founder stop that was RETRIED steps aside for its successor --
         the same rule the failed arm has always used */
@@ -746,6 +764,72 @@ console.log("ok 6 controls wired");
   assert.strictEqual(ctx.S.shadowTaskSel, "m-new", "the new task takes focus");
   assert.strictEqual(ctx.S.shadowNewBusy, false, "the panel must let go of busy");
   console.log("ok 17 + Delegate creates AND starts, through the existing paths");
+
+/* 17b. A FOUNDER-TYPED CRITERION IS THEIRS TO CONFIRM (founder, 2026-09-15).
+
+   THE REGRESSION. e1c8d0ea routed the Delegate form's "done when" box through
+   goalCriteriaToChecks, which infers a tier from SHAPE -- so any short,
+   unadorned line became contains_artifact, a tier evaluated as
+   `check in transcript_text`. Four missions died on it: "The file contains
+   HELLO" (m-307fc348352b, m-1eec37dfd145), "The file exists and contains 5
+   bullets." (m-b7ee410c3c3e), and "Tests cover it." / "The timestamp is
+   visible on the task card." / "Shadow reaches DONE." (m-cd009367d41a). Each
+   describes a STATE; the worker proves it by doing the thing, never by
+   uttering the sentence, so met stayed False and Shadow burned its budget.
+
+   THE PIN THAT WAS MISSING. Test 17 above already asserted
+   `every(tier === "founder_confirm")` -- and kept passing through the whole
+   regression, because this harness does not load 18-goal-workspace.js, so
+   `typeof goalCriteriaToChecks === "function"` was false and the old code
+   fell to its else-branch. It never exercised the live path. This block
+   DEFINES the classifier in the context first, so the branch that shipped is
+   the branch under test. */
+{
+  const ctx = fresh();
+  const posts = [];
+  /* the real classifier, present exactly as panel.html provides it. If
+     shadowCreateTask consults it for founder-typed text, these come back
+     contains_artifact and the assertions below fail -- which is the point. */
+  ctx.goalCriteriaToChecks = (text) =>
+    String(text || "").split("\n").map(s => s.trim()).filter(Boolean)
+      .map(check => ({ tier: "contains_artifact", check }));
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ id: "m-x", state: "brief_confirm" }) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve(/\/act$/.test(url)
+        ? { accepted: true, mission_id: "m-x" }
+        : { id: "m-x", state: "brief_confirm" }) }); };
+  ctx.loadShadowHome = () => Promise.resolve();
+  ctx.renderShadowCard = () => {};
+  ctx.showNudge = () => {};
+  ctx.scheduleRender = () => {};
+
+  const CRITERIA = ["The file contains HELLO",
+                    "The file exists and contains 5 bullets.",
+                    "Tests cover it.",
+                    "The timestamp is visible on the task card.",
+                    "Shadow reaches DONE."];
+  ctx.S.shadowNew = { objective: "make the file", kind: "fix",
+                      done: CRITERIA.join("\n") };
+  (async () => {
+    await ctx.shadowCreateTask();
+    const b = posts.filter(p => p.url === "/api/shadow/missions")[0].body;
+    const tiers = JSON.parse(JSON.stringify(b.done_when.map(c => c.tier)));
+    const checks = JSON.parse(JSON.stringify(b.done_when.map(c => c.check)));
+    assert(tiers.every(t => t === "founder_confirm"),
+      "every founder-typed criterion must be theirs to confirm, got: "
+      + tiers.join(","));
+    /* 5. the wording is preserved verbatim, never normalised or dropped */
+    assert.deepStrictEqual(checks, CRITERIA,
+      "the founder's own words must survive unchanged");
+    /* and the classifier was NOT consulted for this path */
+    assert(!tiers.includes("contains_artifact"),
+      "shape inference leaked back into the Delegate form");
+    console.log("ok 17b founder-typed done_when stays founder_confirm");
+  })().catch(e => { console.error("FAIL 17b:", e.message); process.exit(1); });
+}
+
 })().catch(e => { console.error("FAIL 17:", e.message); process.exit(1); });
 
 /* 18. an empty outcome is refused client-side, with no POST */
@@ -1490,95 +1574,24 @@ const SET = { engage: ["outcome first"],
   };
   const enter = (ctx, el) => ctx.listeners.keydown({ key: "Enter",
     shiftKey: false, target: el, preventDefault(){ ctx.prevented = true; } });
-  const openFlow = (ctx) => ctx.listeners.click({
-    target: { dataset: { shexisting: "1" }, closest: () => null } });
 
-  /* 26a. the chat the founder has open IS the target */
-  {
-    const ctx = armed();
-    ctx.S.sessions = [{ id: "sess-open", title: "Paisa EMI" }];
-    ctx.S.openPanes = ["sess-open"];
-    openFlow(ctx);
-    assert.strictEqual(ctx.S.shadowChat, "sess-open",
-      "opening the flow must bind it to the chat already open");
-    const h = ctx.shadowHomeHtml();
-    assert(/Paisa EMI/.test(h), "and the picker must name it");
-    assert(/data-shscope="sess-open"/.test(h),
-      "the composer must carry that scope");
-  }
-
-  /* 26b. Enter sends ONE request, for the EXISTING chat -- the regression */
-  {
-    const ctx = armed();
-    ctx.S.sessions = [{ id: "sess-open", title: "Paisa EMI" }];
-    ctx.S.openPanes = ["sess-open"];
-    openFlow(ctx);
-    const el = compose("take this chat over");
-    enter(ctx, el);
-    assert(ctx.prevented, "Enter must not fall through to a newline");
-    assert.strictEqual(ctx.posts.length, 1, "exactly one request");
-    assert.strictEqual(ctx.posts[0].url, "/api/shadow/chat",
-      "the existing Shadow endpoint, not a new one");
-    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-open",
-      "THE BUG: the turn went out with no chat to act in");
-    assert.strictEqual(ctx.posts[0].body.message, "take this chat over");
-    assert.strictEqual(el.value, "", "a sent brief clears the box");
-    await Promise.resolve();
-    assert(!ctx.posts.some(p => /\/missions$/.test(p.url)),
-      "and it must NOT delegate a new chat -- that is + Delegate's path");
-  }
-
-  /* 26c. a chat picked by hand still wins -- INSIDE the flow, which is the
-     only place the picker exists (shadowTargetHtml renders inside
-     shadowStageHtml). Re-ordered 2026-09-13: entering the flow now re-seeds
-     the target every time, because the old "seed only when unset" rule made
-     the FIRST chat the flow was ever opened from the permanent target --
-     open A, use it, open B, come back, and the turn still went to A
-     (measured live). Picking still wins for as long as the founder is in the
-     flow; leaving and coming back re-targets, which is the point. */
-  {
-    const ctx = armed();
-    ctx.S.sessions = [{ id: "sess-open" }, { id: "sess-picked" }];
-    ctx.S.openPanes = ["sess-open"];
-    openFlow(ctx);
-    assert.strictEqual(ctx.S.shadowChat, "sess-open", "bound to the open chat");
-    ctx.listeners.click({ target: { dataset: { shchat: "sess-picked" },
-      closest: () => null } });
-    assert.strictEqual(ctx.S.shadowChat, "sess-picked",
-      "a pick made in the flow stands");
-    enter(ctx, compose("go"));
-    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-picked");
-  }
+  /* 26a/26b/26c/26e removed (founder, 2026-09-15, PASS 2): all four drove
+     the existing-chat flow through data-shexisting -- binding the target to
+     the open pane, sending a scoped turn, letting a hand-pick win, and
+     refusing an unscoped send. None of that surface exists now. What is
+     kept below is what still runs: empty input is refused (26d), the
+     DELEGATED composer is global on purpose (26f), and the send button
+     takes the same single path as Enter (26g). */
 
   /* 26d. empty input starts nothing AND eats nothing */
   {
     const ctx = armed();
     ctx.S.openPanes = ["sess-open"];
-    openFlow(ctx);
+    /* openFlow removed with the flow; the guard is composer-level */
     const el = compose("   ");
     enter(ctx, el);
     assert.strictEqual(ctx.posts.length, 0, "whitespace must not be sent");
     assert.strictEqual(el.value, "   ", "and must not be silently cleared");
-  }
-
-  /* 26e. no chat to act in: said out loud, never sent unscoped */
-  {
-    const ctx = armed();
-    ctx.S.openPanes = [];                      /* nothing open to seed from */
-    openFlow(ctx);
-    assert.strictEqual(ctx.S.shadowChat, "global", "nothing to seed");
-    const el = compose("take it over");
-    enter(ctx, el);
-    assert.strictEqual(ctx.posts.length, 0,
-      "an unscoped turn cannot take a chat over -- it must not be sent");
-    assert.strictEqual(el.value, "take it over", "the brief survives");
-    assert(/Pick the chat/.test(ctx.S.shadowScopeErr || ""),
-      "the founder must be told what is missing");
-    assert(/Pick the chat/.test(ctx.shadowHomeHtml()), "and must see it");
-    /* picking one answers it */
-    ctx.listeners.click({ target: { dataset: { shchat: "sess-open" },
-      closest: () => null } });
-    assert.strictEqual(ctx.S.shadowScopeErr, null, "picking clears the gripe");
   }
 
   /* 26f. the DELEGATED composer is untouched: it is global on purpose */
@@ -1594,19 +1607,18 @@ const SET = { engage: ["outcome first"],
   /* 26g. the send BUTTON takes the same path, once */
   {
     const ctx = armed();
-    ctx.S.openPanes = ["sess-open"];
-    openFlow(ctx);
     const el = compose("via the button");
     ctx.document.querySelector = (sel) =>
       sel === "[data-shhomecompose]" ? el : null;
     ctx.listeners.click({ target: { dataset: { shsend: "1" },
       closest: () => null } });
     assert.strictEqual(ctx.posts.length, 1, "one request, from the button too");
-    assert.strictEqual(ctx.posts[0].body.scope_id, "sess-open");
+    assert.strictEqual(ctx.posts[0].body.scope_id, undefined,
+      "the delegation composer is global on purpose");
   }
 
-  console.log("ok 26 existing-chat flow: Enter sends ONE scoped turn for the "
-    + "chat already open; empty and target-less are refused out loud");
+  console.log("ok 26 the delegation composer: empty refused, global "
+    + "scope, one send from Enter or the button");
 })().catch(e => { console.error("FAIL 27:", e.message); process.exit(1); });
 
 /* 27. THE EXISTING-CHAT FLOW: the arrow sends, and the target follows the
@@ -1687,53 +1699,13 @@ const SET = { engage: ["outcome first"],
     assert.strictEqual(calls, 1, "exactly one request per arrow click");
   }
 
-  /* -- 27d: entering the flow targets the chat the founder is IN, every
-        time -- the A -> B journey that failed live -- */
-  {
-    const ctx = fresh();
-    const enter = () => ctx.listeners.click({
-      target: { dataset: { shexisting: "1" }, closest: () => null } });
-    const leave = () => ctx.listeners.click({
-      target: { dataset: { shexisting: "0" }, closest: () => null } });
-
-    ctx.S.openPanes = ["sess-A"];
-    enter();
-    assert.strictEqual(ctx.S.shadowChat, "sess-A", "chat A is the target");
-
-    leave();
-    ctx.S.openPanes = ["sess-B"];          /* the founder opens another chat */
-    enter();
-    assert.strictEqual(ctx.S.shadowChat, "sess-B",
-      "re-entering must target chat B, not keep chat A");
-
-    /* newest pane wins when more than one is open */
-    leave();
-    ctx.S.openPanes = ["sess-B", "sess-C"];
-    enter();
-    assert.strictEqual(ctx.S.shadowChat, "sess-C", "the newest open pane wins");
-
-    /* a hand-picked chip still stands while the founder is INSIDE the flow */
-    ctx.listeners.click({ target: { dataset: { shchat: "sess-PICKED" },
-      closest: () => null } });
-    assert.strictEqual(ctx.S.shadowChat, "sess-PICKED", "the picker wins");
-  }
-
-  /* -- 27e: no pane open = no invented target, and no unscoped turn -- */
-  {
-    const ctx = fresh();
-    const sent = [];
-    ctx.S.openPanes = [];
-    ctx.sendToShadow = (t) => { sent.push(t); return Promise.resolve({}); };
-    ctx.listeners.click({ target: { dataset: { shexisting: "1" },
-      closest: () => null } });
-    assert(!ctx.S.shadowChat || ctx.S.shadowChat === "global",
-      "nothing to target, so nothing is invented");
-    withComposer(ctx, "go");
-    ctx.listeners.click({ target: arrowParts().svg });
-    assert.strictEqual(sent.length, 0, "an unscoped turn is never sent");
-    assert(/Pick the chat/.test(ctx.S.shadowScopeErr || ""),
-      "it says which control is missing");
-  }
+  /* -- 27d/27e removed (founder, 2026-09-15, PASS 2). Both drove the
+     existing-chat entry point: 27d pinned that entering the flow targets
+     the pane the founder is in, 27e that an unscoped turn is refused with
+     "Pick the chat". data-shexisting is no longer rendered or handled and
+     shadowExistingOpen can no longer be set, so both tested a path that no
+     longer exists. 27f below -- the DELEGATED flow, global on purpose --
+     is untouched and is the behaviour that matters now. */
 
   /* -- 27f: the DELEGATED flow is untouched -- global on purpose -- */
   {

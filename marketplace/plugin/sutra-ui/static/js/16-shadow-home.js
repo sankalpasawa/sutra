@@ -325,6 +325,20 @@ function shadowTaskIsActive(m, goals){
      drove still stands in Chats. */
   if (m.state === "stopped" && m.ended_by === "founder"
       && !m.retried_to) return true;                         // (3b)
+  /* A FINISHED TASK IS STILL SOMETHING TO READ (founder, 2026-09-15).
+     `done` fell to rule 4, so the row left the list the moment the mission
+     completed -- taking the completion summary the engine had just stamped
+     with it, and leaving a founder who was not already on that card with no
+     way back to it. Rules 3 and 3b already make this judgement for an ending
+     the founder has not dealt with yet; a completion is one of those, and
+     `!retried_to` is the same step-aside they use -- once a retry exists the
+     superseded row makes way for its successor.
+
+     PRESENTATION ONLY, exactly like the rules above it: /api/shadow/missions
+     returns store.list() with no state filter, so every done record was
+     already being sent here and discarded. Nothing is stored, returned or
+     transitioned differently. */
+  if (m.state === "done" && !m.retried_to) return true;      // (4a)
   return false;                                              // (4)
 }
 
@@ -1264,36 +1278,6 @@ function shadowDelegatePanelHtml(){
   </div>`;
 }
 
-/* THE WORKSPACE COMPOSER: one line, nothing else.
-
-   shadowStageHtml() renders the EXISTING-CHAT flow -- the "Working with"
-   target picker, the recent-conversation chips, the briefing copy -- around
-   the same composer. All of that is still built, still wired, and still
-   reachable (shadowHomeHtml renders the real thing the moment the founder
-   opens that flow). It is simply not what a DELEGATED TASK workspace is
-   about, so it is not rendered here by default.
-
-   Same hook, same scope attribute, same submit path as the stage's composer:
-   the delegated workspace and the existing-chat flow share one composer
-   implementation, so a turn typed in either goes the same way. */
-function shadowWorkComposerHtml(){
-  const S_ = (typeof S !== "undefined") ? S : {};
-  return `<div class="shwcomp">
-    <div class="shcompwrap">
-      <textarea class="shcompose" data-shhomecompose="1"
-        data-shscope="${escAttr(S_.shadowChat || "global")}"
-        placeholder="Say anything — it starts or continues a task…"></textarea>
-      <button class="shsend" type="button" data-shsend="1"
-        title="Send (or press Enter)" aria-label="Send">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2" aria-hidden="true"
-          ><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
-    </div>
-    <button class="shexisting" type="button" data-shexisting="1">Work in an
-      existing chat instead</button>
-  </div>`;
-}
-
 function shadowGoalsBy(state){
   const S_ = (typeof S !== "undefined") ? S : {};
   return (S_.goals || []).filter(g => g && g.state === state);
@@ -1395,70 +1379,14 @@ function shadowMastHtml(){
   </header>`;
 }
 
-/* the target chat. Same data-shscopepick to open the list, same data-shchat
-   to pick -- only the presentation is new. */
-function shadowTargetHtml(){
-  const S_ = (typeof S !== "undefined") ? S : {};
-  const active = S_.shadowChat && S_.shadowChat !== "global"
-    ? S_.shadowChat : null;
-  return `<div class="shscope">
-    <div class="shscopelabel">Working with</div>
-    <button class="shtarget${active ? " on" : ""}" type="button"
-      data-shscopepick="1">
-      <span class="shtargeticon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.7"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0
-          1-3.9-.9L3 20.5l1.6-4.6A8.4 8.4 0 0 1 3.6 11a8.4 8.4 0 0 1 8.4-8.4
-          8.4 8.4 0 0 1 9 8.9z"/></svg></span>
-      <span class="shtargettext">
-        <span class="shtargetname">${active
-          ? esc(shadowChatLabel(active)) : "Choose a conversation"}</span>
-        <span class="shtargetkind">${active
-          ? "Existing conversation" : "Pick the chat Shadow takes on"}</span>
-      </span>
-      <svg class="shtargetchev" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="2" aria-hidden="true"
-        ><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-  </div>`;
-}
-
 /* the recent-conversation chips ARE the picker: same data-shchat hook the
    dropdown list has always used, shown inline instead of behind a toggle.
    "+N more" opens the existing list rather than inventing a second one. */
 const SH_CHIP_CAP = 4;
-function shadowRecentChatsHtml(){
-  const S_ = (typeof S !== "undefined") ? S : {};
-  const keys = (typeof shadowChatKeys === "function") ? shadowChatKeys() : [];
-  if (!keys.length) return "";
-  const active = S_.shadowChat && S_.shadowChat !== "global"
-    ? S_.shadowChat : null;
-  const shown = keys.slice(0, SH_CHIP_CAP);
-  const hidden = keys.length - shown.length;
-  return `<div class="shrecent">
-    <span class="shrecentlabel">Recent conversations</span>
-    <div class="shrecentrow">
-      ${shown.map(k => `<button class="shchip${k === active ? " on" : ""}"
-        type="button" data-shchat="${escAttr(k)}"
-        >${esc(shadowChatLabel(k))}</button>`).join("")}
-      ${hidden > 0 ? `<button class="shchip shchipmore" type="button"
-        data-shscopepick="1">+${hidden} more</button>` : ""}
-    </div>
-    ${S_.shadowScopeOpen ? `<div class="shscopelist">${
-      [`<button class="btn shscopeopt" type="button"
-         data-shchat="global">no chat — just talk</button>`]
-        .concat(keys.map(k => `<button class="btn shscopeopt${
-          k === active ? " on" : ""}" type="button"
-          data-shchat="${escAttr(k)}">${esc(shadowChatLabel(k))}</button>`))
-        .join("")}</div>` : ""}
-  </div>`;
-}
-
 function shadowStageHtml(){
   const S_ = (typeof S !== "undefined") ? S : {};
   return `<section class="shstage">
     <div class="shstagetop">
-      ${shadowTargetHtml()}
       <div class="shask">
         <div class="shasklabel">What should I take on?</div>
         <div class="shasktitle">Tell Shadow the outcome you want.</div>
@@ -1478,7 +1406,6 @@ function shadowStageHtml(){
     </div>
     ${S_.shadowScopeErr
       ? `<div class="shnewerr">${esc(S_.shadowScopeErr)}</div>` : ""}
-    ${shadowRecentChatsHtml()}
   </section>`;
 }
 
@@ -1652,11 +1579,6 @@ function shadowHomeHtml(){
      focus, the conversation, and everything that was already there. */
   const sel = shadowSelectedTask();
   const newOpen = !!S.shadowNewOpen;
-  /* THE EXISTING-CHAT FLOW IS OPT-IN HERE, not deleted. Off, this workspace
-     is about one delegated task; on, shadowStageHtml renders the target
-     picker, the recent chats and the briefing copy exactly as it always has.
-     Preserving the behaviour is not the same as rendering it everywhere. */
-  const existing = !!S.shadowExistingOpen;
   const face = sel ? shadowTaskFaceFor(sel) : null;
   return `<div class="shwork">
     <aside class="shwleft">
@@ -1677,11 +1599,7 @@ function shadowHomeHtml(){
       ${newOpen ? shadowDelegatePanelHtml()
                 : (sel ? shadowTaskCardHtml(sel) : "")}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
-      ${existing ? `<div class="shexwrap">
-        <button class="shexback" type="button" data-shexisting="0"
-          >← Back to tasks</button>
-        ${shadowStageHtml()}
-      </div>` : shadowWorkComposerHtml()}
+      ${shadowStageHtml()}
     </section>
   </div>`;
 }
@@ -2177,15 +2095,11 @@ if (typeof TITLES !== "undefined"){
 if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("click", (ev) => {
     const d = (ev.target && ev.target.dataset) || {};
-    if (d.shchat){
-      if (typeof S !== "undefined"){
-        S.shadowChat = d.shchat;
-        S.shadowScopeOpen = false;        /* picking closes the picker */
-        S.shadowScopeErr = null;          /* ...and answers the one complaint */
-      }
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
+    /* d.shchat / d.shscopepick went with the existing-chat picker they
+       served (founder, 2026-09-15). Both were rendered only by
+       shadowTargetHtml and shadowRecentChatsHtml, and both are gone.
+       S.shadowChat keeps its default "global", which is what the delegation
+       composer wants -- + Delegate starts its own chat. */
     /* THE WHOLE DOOR IS THE CONTROL (founder, 2026-09-13: "it doesn't open,
        at least immediately anyway").
 
@@ -2244,13 +2158,7 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    /* the composer's target chat: one chip, not the removed tab strip */
-    if (d.shscopepick){
-      if (typeof S !== "undefined") S.shadowScopeOpen = !S.shadowScopeOpen;
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
-    /* THE WHOLE ARROW IS THE CONTROL (founder, 2026-09-13). The send button
+        /* THE WHOLE ARROW IS THE CONTROL (founder, 2026-09-13). The send button
        is a <button data-shsend="1"> whose ONLY child is the arrow <svg>, and
        the svg covers all of it -- so a dataset read on ev.target matched
        nothing a person could actually hit and the arrow was dead: measured
@@ -2325,47 +2233,9 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (d.shnewcreate){ shadowCreateTask(); return; }
-    /* the existing-chat flow: entered and left explicitly. Nothing about it
-       changes -- only whether the delegated-task workspace is showing it. */
-    if (d.shexisting !== undefined){
-      if (typeof S !== "undefined"){
-        S.shadowExistingOpen = d.shexisting === "1";
-        if (S.shadowExistingOpen){
-          S.shadowNewOpen = false;
-          S.shadowScopeErr = null;
-          /* THE FLOW IS BOUND TO THE CHAT THE FOUNDER IS IN (founder,
-             2026-09-13 -- "nothing happens"). It was not: entering the flow
-             left S.shadowChat at "global", sendToShadow drops scope_id for
-             "global", and the turn went out with no target at all. Shadow
-             then answered that "global" is not a chat, so no mission was
-             proposed, nothing took the chat over, and the founder saw a
-             dead Enter.
-
-             The open pane IS the existing chat -- the same S.openPanes the
-             rail and the panes render from, newest last.
-
-             SEEDED ON EVERY ENTRY (founder, 2026-09-13). It used to seed
-             only a scope that was still unset, which meant the FIRST chat
-             the flow was ever opened from became the permanent target:
-             open chat A, use the flow, then open chat B and come back, and
-             the turn still went out scoped to A -- measured live. The flow
-             must target the chat the founder is actually in, so entering it
-             re-resolves the target every time.
-
-             A chip picked by hand still wins: this runs only when the flow
-             is ENTERED, never on a render, so a pick made inside the flow
-             stands until the founder leaves and comes back. With no pane
-             open nothing is seeded and the composer says which control is
-             missing, rather than sending an unscoped turn. Nothing is
-             created here: this picks the target, it does not start work. */
-          const panes = S.openPanes || [];
-          const sid = panes[panes.length - 1];
-          if (sid) S.shadowChat = sid;
-        }
-      }
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
+        /* d.shexisting went with its UI: it was rendered in exactly two places,
+       the workspace composer's "Work in an existing chat instead" and the
+       shexwrap "Back to tasks", and both are gone. */
     /* picking a task in the left column only changes what the right pane
        shows -- it starts nothing and writes nothing.
 
@@ -2509,17 +2379,12 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* empty: send nothing AND clear nothing. The box used to empty itself
        on any Enter, so a stray keypress silently ate a half-written brief. */
     if (!text.trim()) return;
-    /* THE EXISTING-CHAT FLOW MUST HAVE A CHAT. Without one the turn goes out
-       unscoped and Shadow has no transcript to drive -- the founder's dead
-       Enter. Say which control is missing instead of sending a turn that
-       cannot do what was asked. The delegated composer is untouched: it is
-       global on purpose (+ Delegate starts its own chat). */
-    if (S_.shadowExistingOpen && (!S_.shadowChat || S_.shadowChat === "global")){
-      S_.shadowScopeErr = "Pick the chat Shadow should work in — "
-        + "it will not guess which one.";
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
+    /* The existing-chat scope guard that stood here went with its flow
+       (founder, 2026-09-15): shadowExistingOpen can no longer be set, so the
+       branch was unreachable. The delegation composer it deliberately
+       exempted is the only one left, and it is global on purpose --
+       + Delegate starts its own chat. shadowScopeErr itself STAYS: the
+       "Shadow did not load" message below still uses it. */
     /* never a silent no-op: if the overlay module did not load there is no
        send path, and that is worth saying out loud */
     if (typeof sendToShadow !== "function"){
@@ -2596,32 +2461,39 @@ async function shadowCreateTask(){
     if (typeof scheduleRender === "function") scheduleRender();
     return null;
   }
-  /* THE SAME CLASSIFIER THE GOAL CARD USES, not a second opinion.
-     This used to stamp founder_confirm on EVERY line. The reasoning was that
-     a line the founder typed is theirs to judge -- but goalCriteriaToChecks
-     already settled exactly this question for founder-typed text and settled
-     it the other way: shape is the only signal there is, and a
-     literal-shaped marker genuinely IS substring-matchable, so refusing to
-     machine-check it makes contains_artifact unreachable from the UI without
-     buying any safety.
+  /* A LINE THE FOUNDER TYPED IS THEIRS TO JUDGE (founder, 2026-09-15).
+     Restores the pre-e1c8d0ea default for THIS path. That commit routed the
+     Delegate form through goalCriteriaToChecks, which infers a tier from
+     SHAPE -- so any short, unadorned line became contains_artifact, and that
+     tier is evaluated as `check in transcript_text`, a literal substring
+     search over the worker's words.
 
-     It is also what made the engine's premature-pause bug reachable from the
-     Delegate form every single time: with zero machine checks the
-     confirmation boundary was satisfied vacuously on turn 1.
+     MEASURED, four missions. "The file contains HELLO" (m-307fc348352b,
+     m-1eec37dfd145), "The file exists and contains 5 bullets."
+     (m-b7ee410c3c3e), "Tests cover it." / "The timestamp is visible on the
+     task card." / "Shadow reaches DONE." (m-cd009367d41a) all classified
+     contains_artifact. Every one describes a STATE; the worker proves it by
+     doing the thing, never by uttering the sentence. So met stayed False
+     forever, `done` was unreachable, and Shadow spent its budget demanding
+     more proof of work that was already finished.
 
-     Nothing is loosened -- goalIsLiteralArtifact is unchanged (<=60 chars,
-     <=8 words, no criterion vocabulary), so "exit code 0" machine-checks and
-     "three distinct reasons" still becomes the founder's to confirm.
+     THE COMMIT'S SECOND REASON NO LONGER HOLDS. It argued the old default
+     made the premature-pause bug reachable -- "with zero machine checks the
+     confirmation boundary was satisfied vacuously on turn 1". The SAME
+     commit fixed that in mission_engine: `others_met = bool(machine) and
+     all(...)`. With no machine check there is nothing to have passed, so an
+     all-founder_confirm mission cannot pause vacuously. This was defending a
+     hole that was already closed.
 
-     The guard is real: panel.html loads 18-goal-workspace.js right after
-     this file, so production always takes the first branch; a context that
-     loaded this module alone degrades to the previous behaviour rather than
-     throwing. */
-  const done_when = (typeof goalCriteriaToChecks === "function")
-    ? goalCriteriaToChecks(d.done)
-    : String(d.done || "").split("\n")
-        .map(s => s.trim()).filter(Boolean)
-        .map(check => ({ tier: "founder_confirm", check }));
+     THE COST, STATED: contains_artifact is no longer reachable from the
+     Delegate form unless Shadow proposes it. That is the right trade --
+     unreachable-but-honest beats reachable-but-unsatisfiable -- and Shadow's
+     own proposals still reach the tier through goalTierFor, which is
+     untouched, as are goalCriteriaToChecks, goalIsLiteralArtifact and the
+     goal card's path. */
+  const done_when = String(d.done || "").split("\n")
+    .map(s => s.trim()).filter(Boolean)
+    .map(check => ({ tier: "founder_confirm", check }));
   S.shadowNewBusy = true;
   S.shadowNewErr = null;
   if (typeof scheduleRender === "function") scheduleRender();

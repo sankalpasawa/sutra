@@ -216,16 +216,26 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   assert(/3 of 3 checks passed/.test(ctx.shadowTaskCardHtml(sel)),
     "and it is showing the summary");
 
-  /* 5b. the LIST still drops it -- the workspace is not a mission database */
+  /* 5b. THE LIST KEEPS IT NOW (founder, 2026-09-15, rule 4a). This used to
+     assert the opposite -- "a conclusion still leaves the list" -- and the
+     held-pick machinery above existed precisely because it did: the card
+     survived while the row vanished. A founder who was not already on that
+     card had no way back to the summary, so the row stays too. The
+     retried case is the one that still steps aside. */
   const ids = ctx.shadowTasks().map(m => m.id);
-  assert(!ids.includes("m-done"), "a conclusion still leaves the list");
+  assert(ids.includes("m-done"), "a conclusion must stay readable in the list");
   assert(ids.includes("m-other"), "live work is still listed");
+  const kept = ctx.S.shadowMissions;
+  ctx.S.shadowMissions = [Object.assign({}, DONE, { retried_to: "m-fresh" })];
+  assert(!ctx.shadowTasks().map(m => m.id).includes("m-done"),
+    "a RETRIED completion still steps aside");
+  ctx.S.shadowMissions = kept;
 
   /* and picking something else lets go of it */
   ctx.S.shadowTaskSel = "m-other";
   assert.strictEqual(ctx.shadowSelectedTask().id, "m-other",
     "the founder's next pick wins");
-  console.log("ok 6 held task survives completion; the list does not grow");
+  console.log("ok 6 held task survives completion; the row stays too");
 }
 
 /* 7. nothing selected -> the existing fallback ranking is untouched */
