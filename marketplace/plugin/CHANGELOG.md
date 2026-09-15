@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.6 (2026-09-15)
+
+- **SEO Writer research survives a bad moment at DataForSEO.** One failed search out of about 48 used to stop the whole research step and throw away what the research team had found, so "Try again" paid for every search twice. Temporary DataForSEO errors are now waited out and retried, a search that still fails is skipped and counted, and the interviews are saved as they go, so a retry picks up where it stopped. A real refusal (bad login, no credits) is still reported at once, and research with no searches at all still stops. Tests: 31 checks.
+
 ## 2.278.5 (2026-09-15)
 
 - **No empty gap under the running step.** While an agent worked, the live step showed a blank block about three lines tall between its subtitle and the "N earlier …" list. The list now sits right under the subtitle. The text, order and behaviour are unchanged; only the spacing is fixed. It was a shared style name between that line and the "More are coming" banner on the Agents shelf.

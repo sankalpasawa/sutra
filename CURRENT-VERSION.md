@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.5 (2026-09-15, HEAD)
+## v2.278.6 (2026-09-15, HEAD)
+
+**SEO Writer: one bad moment at DataForSEO no longer throws the research away.** Three research runs
+died within ten minutes on "DataForSEO task failed (40101): Internal SE Server Error." The research
+team makes about 48 live searches; one of them failing raised straight through `pool.map` in
+`research/curate.py`, and everything the other researchers had already found was lost, because curate
+is only saved when the whole round finishes. Three fixes. `tools/dfs.py` now waits and retries (5, 15,
+40 seconds) the codes DataForSEO's own error list calls temporary (40101, 40103, 40202, 40209, 50000,
+50303, 50401), HTTP 5xx, timeouts and dropped connections, and never retries a refusal (bad login, no
+money, bad parameters); a many-task queue post is never re-sent over one task's code. A search that still
+fails is skipped and counted ("N of M searches failed and were skipped"); if none worked at all the step
+still fails loudly. And the interviews are saved turn by turn to `_work/curate-partial.json`, so a retry
+picks up where it stopped instead of paying for the same searches twice. Tests: engine +31
+(`test_dfs_retry`).
+
+## v2.278.5 (2026-09-15)
 
 **No empty gap under the running step.** In an agent chat (the SEO Writer's included), a live step
 with more than eight finished rows drew a blank block, about three lines tall, between its subtitle and
