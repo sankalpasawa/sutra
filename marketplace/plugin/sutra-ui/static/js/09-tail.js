@@ -1,3 +1,11 @@
+/* A chat Shadow is driving asks for a LIST refresh (below), and this stream
+   fires on every write to it -- so for the whole of a mission the list was
+   re-fetched continuously, 1.5-3.7 s a call on the founder's disk
+   (2026-09-15). Ownership ending still shows within this window; nothing
+   else about the row waits on it (2.278.8). */
+const SHADOW_LIST_REFRESH_MS = 5000;
+let _shadowListAt = 0;
+
 function applySessionChange(rows){
   let needList = false;
   rows.forEach(row=>{
@@ -9,8 +17,12 @@ function applySessionChange(rows){
        driving is being written constantly, so asking for a list refresh while
        the flag is set is what makes the pane become usable within a poll of
        the mission finishing, instead of staying disabled until a reload.
-       Bounded to Shadow-driven chats, which is normally none. */
-    if (s.shadow_driving) needList = true;
+       Bounded to Shadow-driven chats, which is normally none, and to one
+       refresh per SHADOW_LIST_REFRESH_MS while one is being driven. */
+    if (s.shadow_driving){
+      const t = Date.now();
+      if (t - _shadowListAt >= SHADOW_LIST_REFRESH_MS){ _shadowListAt = t; needList = true; }
+    }
     s.mtime = row.mtime; s.size = row.size; s.live = row.live;
     /* Without this the rail can never render "3 agents" from data: the field
        arrives on every changed row and is dropped by a three-field copy. */

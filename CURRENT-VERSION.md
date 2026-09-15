@@ -2,7 +2,21 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.7 (2026-09-15, HEAD)
+## v2.278.8 (2026-09-15, HEAD)
+
+**The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged
+transcripts; this release covers the ones that change every second. Measured on the founder's Mac
+during a mission (app 2.278.6): backend at 93-128% CPU, `GET /api/activity` 6.5 s on a 2 s
+`setInterval` (overlapping calls), `GET /api/sessions` 1.5-3.7 s re-fetched on every stream frame
+of the driven chat. Four fixes: `session_reader._scan_meta` folds only the bytes appended since the
+last title scan (a 57 MB driven chat cost 0.22 s per refresh, now its new lines; provisional
+unterminated tail, `i <= 40` head window kept); `live_agents` is stat-first (113 agent files, 2
+live: 550 ms -> 2 ms) with an anchored first-prompt memo; `10-activity.js` chains its poll with
+setTimeout; `09-tail.js` refreshes the list for a Shadow-driven chat at most every 5 s. Tests:
+`test_session_reader_incremental_meta.py` (8), reader lanes 41 green. Codex consult: no P1, 3 P2
+folded. Second of two delegates on Shadow mission m-ce071bbeb269 (the first shipped 2.278.7).
+
+## v2.278.7 (2026-09-15)
 
 **The desktop app no longer burns CPU while idle.** Measured on the founder's Mac with four Shadow
 runtimes writing: backend at 58-85% CPU, five worker threads flat out, nobody touching the app. Two

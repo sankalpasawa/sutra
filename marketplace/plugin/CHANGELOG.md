@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.8 (2026-09-15)
+
+- **The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged transcripts; this covers the ones that change every second. A driven chat's title is now read from its new lines only (a 57 MB chat cost 0.22 s per refresh before), the Activity panel opens only agents that are actually running (113 files, 2 live: 550 ms to 2 ms) and waits for one answer before asking again, and a driven chat refreshes the Chats list at most every 5 s instead of on every write. Tests: 8 new checks.
+
 ## 2.278.7 (2026-09-15)
 
 - **The app no longer burns CPU while idle.** With four Shadow runtimes writing, the backend sat at 60-85% CPU and the app felt slow: every refresh of the Chats list re-read all 1,500 transcripts (3.7 s), and the open pane re-parsed all 113 of its agents every 1.5 s (0.7 s). Both now remember what they read per file and only re-read a file that has changed: 0.19 s and 0.04 s. A rename in Claude still shows on the next refresh. Tests: 4 new checks.

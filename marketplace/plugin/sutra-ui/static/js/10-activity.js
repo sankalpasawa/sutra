@@ -238,6 +238,15 @@
   }
 
   // ---- poll ----------------------------------------------------------------
+  // CHAINED, not setInterval: the next request is queued only after this one
+  // has answered, so a slow server never has two of these in flight. Measured
+  // 2026-09-15: 6.5 s per call under load on a 2 s interval, three overlapping
+  // polls at any moment, and the server never idled (2.278.8). One outstanding
+  // timer at a time; scheduled on the success AND the failure path.
+  function actSchedule() {
+    if (actPollTimer) clearTimeout(actPollTimer);
+    actPollTimer = setTimeout(actPoll, POLL_MS);
+  }
   function actPoll() {
     fetch("/api/activity", { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
@@ -251,7 +260,8 @@
       .catch(function () {
         actState.error = true;
         actRender();
-      });
+      })
+      .then(actSchedule, actSchedule);
   }
 
   // ---- event wiring (delegated, survives re-renders) -----------------------
@@ -268,10 +278,9 @@
     actInjectStyle();
     actBuild();
     actSyncTriggers();
-    actPoll();                       // immediate, don't wait a full interval
-    if (actPollTimer) clearInterval(actPollTimer);
+    if (actPollTimer) clearTimeout(actPollTimer);
     if (actTickTimer) clearInterval(actTickTimer);
-    actPollTimer = setInterval(actPoll, POLL_MS);
+    actPoll();                       // immediate; it schedules its own successor
     actTickTimer = setInterval(actTick, TICK_MS);
     document.addEventListener("click", actOnClick);
     document.addEventListener("keydown", actOnKey);

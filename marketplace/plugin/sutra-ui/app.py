@@ -1086,9 +1086,11 @@ def api_activity() -> dict:
                 "elapsed_s": max(0, int(now - rec["mtime"])),
             })
         if rec.get("agents_live"):
-            for a in sr.list_agents(sid):
-                if not a.get("running"):
-                    continue
+            # Stat-first: only a live agent file is opened, and only as far as
+            # its first user record (session_reader.live_agents). list_agents
+            # parsed every agent under the session and dropped the idle ones
+            # after the fact -- 113 parses to keep 2, every 2 s (2.278.8).
+            for a in sr.live_agents(sid):
                 agents.append({
                     "parent_sid": sid,
                     "id": a["id"],

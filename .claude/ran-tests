@@ -1,3 +1,3 @@
-ts=1789152725
+ts=1789474280
 exit=0
-cmd=bash /Users/asawa/Claude/asawa-holding/.tmp/registry-fix/verify-envexport.sh
+cmd=marketplace/plugin/sutra-ui/run-tests.sh test_session_reader_incremental_meta.py test_activity.py test_session_list_memo.py test_session_reader_cache.py

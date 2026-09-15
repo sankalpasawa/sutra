@@ -132,42 +132,126 @@ def _stat_memo(fn):
     return wrapped
 
 
+# ------------------------------------------------- incremental title scan --
+# The stat memo above answers only while a file is unchanged. A transcript
+# Shadow is driving (or the founder is typing into) moves every second, so for
+# exactly the chats a live rail refresh is about, the memo missed on every
+# call and the reader re-read the WHOLE file for title records -- measured
+# 0.22 s per call on a 57 MB driven chat, on every refresh (2.278.8). This
+# scanner keeps, per file, where the last scan stopped and folds only the
+# bytes appended since, under the same append rule _parse_transcript_incremental
+# uses (offset + 64-byte anchor; a shrink, a same-size rewrite or a new inode
+# re-scans from zero). A partial last line waits for its newline, but a
+# COMPLETE unterminated last record is folded provisionally for the answer,
+# never committed, so the whole-file scan and this one always agree.
+_SCAN_CACHE: Dict[str, Dict] = {}
+_SCAN_CACHE_MAX = 512          # a few hundred bytes a row: no messages are kept
+_SCAN_CHUNK = 4 * 1024 * 1024  # a cold 57 MB file is folded in chunks, never held whole
+_HEAD_LINES = 40               # head fields come from line indexes 0..40 (41 lines), as always
+_SCAN_FIELDS = ("cwd", "branch", "first_msg", "custom_title", "ai_title")
+
+
+def _meta_fold(raw: bytes, state: Dict) -> None:
+    """Fold the complete lines of `raw` into state's title/head fields. Mutates
+    state; leaves state["tail"] holding an incomplete last line."""
+    buf = state.get("tail", b"") + raw
+    lines = buf.split(b"\n")
+    state["tail"] = lines.pop()                 # b"" when raw ended on a newline
+    for rawline in lines:
+        i = state["lines_seen"]
+        state["lines_seen"] = i + 1
+        head = i <= _HEAD_LINES
+        # LAST title record wins: a rename overwrites an earlier one.
+        titley = b"customTitle" in rawline or b"aiTitle" in rawline
+        if not head and not titley:
+            continue
+        try:
+            d = json.loads(rawline.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        if titley:
+            if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
+                state["custom_title"] = d["customTitle"].strip() or state["custom_title"]
+            elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
+                state["ai_title"] = d["aiTitle"].strip() or state["ai_title"]
+        if head:
+            state["cwd"] = state["cwd"] or d.get("cwd", "")
+            state["branch"] = state["branch"] or d.get("gitBranch", "")
+            if not state["first_msg"] and d.get("type") == "user":
+                msg = d.get("message", {})
+                if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
+                    t = _strip_injected(_text_of(msg.get("content")))
+                    t = t.strip().replace("\n", " ")
+                    if t and not t.startswith("<"):
+                        state["first_msg"] = t[:90]
+
+
+def _scan_meta(f) -> Dict[str, str]:
+    """{cwd, branch, first_msg, custom_title, ai_title} for one Claude
+    transcript, reading only what was appended since the last call. Raises
+    OSError like an open would; a fresh dict every call."""
+    path = str(f)
+    st = os.stat(path)
+    with _CACHE_LOCK:
+        state = _SCAN_CACHE.pop(path, None)          # re-inserted below as most recent
+    fresh = {"size": 0, "mtime_ns": 0, "ino": st.st_ino, "offset": 0, "tail": b"",
+             "anchor": b"", "lines_seen": 0,
+             "cwd": "", "branch": "", "first_msg": "", "custom_title": "", "ai_title": ""}
+    unchanged = state is not None and (
+        (st.st_size, st.st_mtime_ns, st.st_ino) == (state["size"], state["mtime_ns"], state["ino"]))
+    grown = state is not None and not unchanged and (
+        st.st_size > state["size"] and st.st_mtime_ns >= state["mtime_ns"] and st.st_ino == state["ino"])
+    if state is None:
+        state = fresh
+    if not unchanged:
+        # ONE open per changed file (the rail memo's test counts them): the
+        # anchor check and the read share the handle.
+        with Path(path).open("rb") as fh:
+            if grown:
+                # GROWN -- an append only if the bytes before the old offset still read the same
+                fh.seek(max(0, state["offset"] - len(state["anchor"])))
+                if fh.read(len(state["anchor"])) != state["anchor"]:
+                    state = fresh
+            else:
+                state = fresh                        # shrunk, same-size rewrite, or a new inode
+            if st.st_size > state["offset"]:
+                fh.seek(state["offset"])
+                while True:
+                    raw = fh.read(_SCAN_CHUNK)
+                    if not raw:
+                        break
+                    _meta_fold(raw, state)
+                    state["offset"] += len(raw)
+                    state["anchor"] = (state["anchor"] + raw)[-_PARSE_ANCHOR:]
+    state["size"], state["mtime_ns"], state["ino"] = st.st_size, st.st_mtime_ns, st.st_ino
+    with _CACHE_LOCK:
+        while len(_SCAN_CACHE) >= _SCAN_CACHE_MAX:
+            _SCAN_CACHE.pop(next(iter(_SCAN_CACHE)))  # insertion order: oldest first
+        _SCAN_CACHE[path] = state
+    out = {k: state[k] for k in _SCAN_FIELDS}
+    if state["tail"]:
+        # A complete last record with no newline yet: the whole-file scan read
+        # it, so fold it for THIS answer without committing it to the memo.
+        tmp = dict(state, tail=b"")
+        _meta_fold(state["tail"] + b"\n", tmp)
+        out = {k: tmp[k] for k in _SCAN_FIELDS}
+    return out
+
+
 @_stat_memo
 def _claude_session_meta(f: Path) -> dict:
     """One Claude transcript -> the sidebar's session dict. See list_sessions
     for the title-precedence and cost notes; unchanged, just extracted so the
-    DeepSeek side can be merged into the same paginated slice."""
-    first_msg, cwd, branch = "", "", ""
-    custom_title = ai_title = ""
+    DeepSeek side can be merged into the same paginated slice. The fields come
+    from _scan_meta, so a file that only grew costs its appended bytes."""
     try:
-        with f.open(encoding="utf-8", errors="replace") as fh:
-            for i, line in enumerate(fh):
-                head = i <= 40
-                # LAST title record wins: a rename overwrites an earlier one.
-                titley = "customTitle" in line or "aiTitle" in line
-                if not head and not titley:
-                    continue
-                try:
-                    d = json.loads(line)
-                except ValueError:
-                    continue
-                if titley:
-                    if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
-                        custom_title = d["customTitle"].strip() or custom_title
-                    elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
-                        ai_title = d["aiTitle"].strip() or ai_title
-                if head:
-                    cwd = cwd or d.get("cwd", "")
-                    branch = branch or d.get("gitBranch", "")
-                    if not first_msg and d.get("type") == "user":
-                        msg = d.get("message", {})
-                        if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
-                            t = _strip_injected(_text_of(msg.get("content")))
-                            t = t.strip().replace("\n", " ")
-                            if t and not t.startswith("<"):
-                                first_msg = t[:90]
+        m = _scan_meta(f)
     except OSError:
-        pass
+        m = dict.fromkeys(_SCAN_FIELDS, "")
+    first_msg, cwd, branch = m["first_msg"], m["cwd"], m["branch"]
+    custom_title, ai_title = m["custom_title"], m["ai_title"]
     # A title you set is verbatim -- NOT run through _strip_injected, which is
     # only for the machine preamble on a first message.
     title = custom_title or ai_title or first_msg or "(no prompt)"
@@ -645,36 +729,14 @@ def head_meta(session_id: str) -> Dict[str, str]:
     p = resolve_path(session_id)
     if p is None:
         return {"title": "", "cwd": ""}
-    first_msg = cwd = custom_title = ai_title = ""
+    # The active sessions are exactly the ones that grow between two polls, so
+    # this reads their appended bytes, not the whole file (2.278.8).
     try:
-        with p.open(encoding="utf-8", errors="replace") as fh:
-            for i, line in enumerate(fh):
-                head = i <= 40
-                titley = "customTitle" in line or "aiTitle" in line
-                if not head and not titley:
-                    continue
-                try:
-                    d = json.loads(line)
-                except ValueError:
-                    continue
-                if titley:
-                    if d.get("type") == "custom-title" and isinstance(d.get("customTitle"), str):
-                        custom_title = d["customTitle"].strip() or custom_title
-                    elif d.get("type") == "ai-title" and isinstance(d.get("aiTitle"), str):
-                        ai_title = d["aiTitle"].strip() or ai_title
-                if head:
-                    cwd = cwd or d.get("cwd", "")
-                    if not first_msg and d.get("type") == "user":
-                        msg = d.get("message", {})
-                        if isinstance(msg, dict) and not _is_tool_result(msg.get("content")):
-                            t = _strip_injected(_text_of(msg.get("content")))
-                            t = t.strip().replace("\n", " ")
-                            if t and not t.startswith("<"):
-                                first_msg = t[:90]
+        m = _scan_meta(p)
     except OSError:
-        return {"title": "", "cwd": cwd}
-    title = custom_title or ai_title or first_msg or "(no prompt)"
-    return {"title": title[:90], "cwd": cwd}
+        return {"title": "", "cwd": ""}
+    title = m["custom_title"] or m["ai_title"] or m["first_msg"] or "(no prompt)"
+    return {"title": title[:90], "cwd": m["cwd"]}
 
 
 # How recently a transcript must have been written to count as each state. These
@@ -1372,6 +1434,98 @@ def list_agents(parent_sid: str) -> List[dict]:
             "mtime": int(st.st_mtime),
             "running": liveness(st.st_mtime) == "active",
         })
+    return out
+
+
+_PROMPT_CACHE: Dict[str, tuple] = {}    # agent path -> (ino, end_offset, anchor, prompt)
+_PROMPT_CACHE_MAX = 2048
+_PROMPT_ANCHOR = 64
+
+
+def _agent_first_prompt(f: Path, st) -> str:
+    """The first user message of ONE agent transcript -- its spawning prompt --
+    read line by line and stopped at that record, never the whole file.
+
+    Memoised per path once found, and reused only while the file still looks
+    like the same append-only history: same inode, at least as many bytes as
+    the record ended at, and the 64 bytes before that end unchanged (codex,
+    2.278.8: a truncate-and-rewrite keeps the inode and could otherwise serve a
+    stale label). The user-turn predicate is the one _parse_records applies.
+    """
+    key = str(f)
+    with _CACHE_LOCK:
+        hit = _PROMPT_CACHE.get(key)
+    if hit is not None and hit[0] == st.st_ino and st.st_size >= hit[1]:
+        try:
+            with f.open("rb") as fh:
+                fh.seek(max(0, hit[1] - len(hit[2])))
+                if fh.read(len(hit[2])) == hit[2]:
+                    return hit[3]
+        except OSError:
+            return ""
+    text, end, anchor = "", 0, b""
+    try:
+        with f.open("rb") as fh:
+            while True:
+                rawline = fh.readline()
+                if not rawline:
+                    break
+                end += len(rawline)
+                if not rawline.endswith(b"\n"):
+                    break                       # the writer is mid-record: wait
+                if b'"user"' not in rawline:
+                    continue                    # cheap gate: every user record carries "type":"user"
+                try:
+                    d = json.loads(rawline.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                if not isinstance(d, dict) or d.get("type") != "user":
+                    continue
+                msg = d.get("message", {})
+                content = msg.get("content") if isinstance(msg, dict) else None
+                if _is_tool_result(content):
+                    continue
+                if d.get("isMeta") and d.get("sourceToolUseID"):
+                    continue
+                t = _text_of(content).strip()
+                if t and not t.startswith("<"):
+                    text, anchor = t, rawline[-_PROMPT_ANCHOR:]
+                    break
+    except OSError:
+        return ""
+    if text:
+        with _CACHE_LOCK:
+            while len(_PROMPT_CACHE) >= _PROMPT_CACHE_MAX:
+                _PROMPT_CACHE.pop(next(iter(_PROMPT_CACHE)))
+            _PROMPT_CACHE[key] = (st.st_ino, end, anchor, text)
+    return text
+
+
+def live_agents(parent_sid: str) -> List[dict]:
+    """Subagents under one session whose transcript is being written right
+    now: {id, label, mtime}, newest first. Read-only, fails to [].
+
+    STAT-FIRST. Liveness is decided from the stat alone and only a live file
+    is opened, and then only as far as its first user record. list_agents is
+    the pane fold's tool -- every agent, fully parsed -- and the wrong one for
+    a 2 s poll: measured 113 agent files under one session with 2 live, and
+    /api/activity parsed all 113 to drop 111, every 2 s (2.278.8).
+    """
+    root = _subagents_root(parent_sid)
+    if root is None:
+        return []
+    now = time.time()
+    out = []
+    for f in root.glob("**/agent-*.jsonl"):
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        if liveness(st.st_mtime, now) != "active":
+            continue
+        label = _agent_first_prompt(f, st).strip().replace("\n", " ") or f.stem
+        out.append({"id": f.stem, "label": label[:200], "mtime": int(st.st_mtime)})
+    out.sort(key=lambda a: a["mtime"], reverse=True)
     return out
 
 
