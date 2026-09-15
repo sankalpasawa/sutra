@@ -66,8 +66,24 @@ function shadowPlaneHtml(watching, missions, tab){
     <div class="shmissionrow${m.id === foc ? " shfocused" : ""}" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
-        ${m.state === "queued" ? `<button class="btn" type="button"
-            data-shact="start_now" data-shmid="${escAttr(m.id)}">Start now</button>
+        ${/* QUEUED IS NOT A DECISION THE FOUNDER CAN CLICK PAST.
+
+              A task is `queued` for exactly one reason -- every slot the run
+              limit allows is in use -- so the Start now button that used to
+              be drawn here could not do anything: admission would read the
+              same full cap and leave the row exactly where it was (and, until
+              MissionScheduler.start was made idempotent, a queued -> queued
+              transition marked the task FAILED instead). A control whose only
+              outcomes are "nothing" and "harm" is not a control.
+
+              The two things that ARE true are said instead: what it is
+              waiting for, and Drop, which the founder can still decide. The
+              action and its handler are untouched and still what starts a
+              brief_confirm task -- this row simply stopped offering it for a
+              state it cannot move. Raise Running at once, or end something,
+              and the queue promotes this row on its own. */""}
+        ${m.state === "queued" ? `<span class="shrowwait">Waiting for a free
+            slot</span>
           <button class="btn" type="button" data-shact="drop"
             data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
         ${m.state === "paused" ? `<button class="btn" type="button"
@@ -227,6 +243,16 @@ const SH_TASK = {
 };
 function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
+}
+
+/* The cap the page has already been told about, or 0 when it has not been
+   told yet. One reader, so a card and a settings row can never print two
+   different limits, and a card that renders before /api/shadow/settings
+   lands says less rather than something wrong. */
+function shadowRunLimit(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const n = ((S_.shadowSettings || {}).tasks || {}).running_at_once;
+  return typeof n === "number" && n > 0 ? n : 0;
 }
 
 /* THE STATE IS NOT ALWAYS THE WHOLE FACE. `paused` is one word for two very
@@ -2035,6 +2061,33 @@ function shadowTaskCardHtml(m){
     <div class="shcard2row"><span class="shcard2k">turn</span>
       <span class="shcard2v">${esc(String(m.turns_used || 0))} of ${
         esc(String(m.max_turns || 0))}</span></div>
+    ${/* WHY IT IS WAITING, ON THE CARD THE FOUNDER ACTUALLY OPENS.
+
+         The QUEUED pill says the state; it does not say the cause, and the
+         cause is the one thing that makes the state make sense -- a task
+         "queued" for no visible reason reads as a task that failed to
+         start. The reason is never ambiguous: `queued` is written by
+         MissionScheduler.start and by nothing else, and it means one thing
+         -- every slot the run limit allows is in use.
+
+         MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16). This
+         sentence was first put on the Watching plane's row, where
+         shadowPlaneHtml draws the queued row's actions. That plane's
+         "Working" tab is unreachable: SCREENS.shadowwatching passes the
+         literal "watching" to shadowPlaneHtml, so the tab renders as a
+         button that changes nothing. The copy was live, correct, tested --
+         and on a surface the founder cannot open. It belongs here, on the
+         task card, which is where the founder was already looking.
+
+         The number comes from the settings the page has already loaded --
+         no new fetch, and no second opinion about the cap. Absent (the card
+         rendered before the settings landed), the sentence stands without
+         it rather than guessing a number. */""}
+    ${m.state === "queued" ? `<div class="shcard2row"><span class="shcard2k"
+      >waiting for</span><span class="shcard2v">a free slot${
+        shadowRunLimit() ? ` — Running at once is ${esc(String(
+          shadowRunLimit()))}` : ""}. It starts on its own when one
+        frees.</span></div>` : ""}
     ${/* LAST UPDATED IS NOT DRAWN (founder, 2026-09-15). Presentation only:
          updated_at is still on the record, still returned by the API, and
          still what the freshness helpers below read -- the row simply does
@@ -2899,9 +2952,28 @@ if (typeof SCREENS !== "undefined"){
       loadShadowHome();
       return `<div class="zero"><h4>Watching</h4><p>Looking\u2026</p></div>`;
     }
+    /* THE TAB THE FOUNDER PRESSED, not the one this screen was born on.
+       The literal "watching" here made the plane's own Working and Goals
+       tabs render as buttons that change nothing: the click handler sets
+       S.shadowTab and re-renders, and the re-render threw the answer away.
+
+       MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16), and the
+       cost was not cosmetic. shadowPlaneHtml's Working rows carry Stop and
+       Resume -- and the task card deliberately does NOT draw them ("this
+       pane is where Shadow reports and asks, not a worker control panel",
+       founder 2026-09-15), on the stated understanding that "the same two
+       buttons on the same two hooks still render in shadowPlaneHtml". With
+       the tab pinned shut, that understanding was false in effect: there
+       was no reachable way to STOP a running task, only the row's × which
+       deletes it. The design note and this line disagreed; the note is the
+       decision, so this line is what changes.
+
+       Nothing else moves: the same function, the same three tabs, the same
+       data-shtab hooks the QA probes read, and "watching" remains the
+       default for a page that has not been told otherwise. */
     return `<div class="shwatchscreen">${
       shadowPlaneHtml(S_.shadowWatching || [], S_.shadowMissions || [],
-                      "watching")}</div>`;
+                      S_.shadowTab || "watching")}</div>`;
   };
 }
 if (typeof TITLES !== "undefined"){

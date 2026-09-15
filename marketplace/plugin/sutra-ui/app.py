@@ -2002,6 +2002,27 @@ async def _shadow_recover():
                 ensure_delegate_async=_ensure_delegate_runtime)
         except Exception:
             pass
+        try:
+            # AND THE QUEUE, LAST. A restart is the one free slot nobody
+            # asked for: recover_on_boot pauses what the app was driving, and
+            # resume_after_restart deliberately leaves a delegate paused
+            # while its worker may still be writing -- so an install can come
+            # up with room under the cap and tasks waiting for it, and
+            # nothing on the way in would have noticed.
+            #
+            # A QUEUED ROW IS THE SAFE ONE TO START HERE, and it is the only
+            # kind this touches. The fence resume_after_restart keeps exists
+            # because a paused delegate may have a live process on its
+            # transcript; a queued mission has never been provisioned at all
+            # (it spawns nothing until promotion), so promoting it starts a
+            # worker where there was none rather than a second one.
+            #
+            # Bounded and idempotent: drain_queue stops the moment the cap is
+            # full or the queue is empty, and it is the same sweep the
+            # settings route and every founder action use.
+            await shadow_runner.drain_queue(_validated_say)
+        except Exception:
+            pass
 
 
 @app.on_event("shutdown")
@@ -2367,9 +2388,9 @@ async def api_shadow_settings_tasks(request: Request):
     running_now = len(store.list(states=("running",)))
     queued_now = len(store.list(states=("queued",)))
     # how many the drain can actually take: free slots, bounded by the queue
-    starting = max(0, min(queued_now, value - running_now))
+    starting = _free_slots(store, value)
     if starting:
-        _drain_queue_in_background(value)
+        _drain_queue_in_background("cap raised to %d" % value)
     _shadow_ledger_safe({
         "kind": "setting", "mission_id": None,
         "summary": "running_at_once set to %d (%d running, %d queued, "
@@ -2384,25 +2405,90 @@ async def api_shadow_settings_tasks(request: Request):
             "over_cap": max(0, running_now - value)}
 
 
-def _drain_queue_in_background(value):
+def _free_slots(store=None, cap=None):
+    """How many queued missions could start RIGHT NOW: free slots, bounded by
+    the queue. Never negative.
+
+    ONE DEFINITION of "there is room and someone is waiting", because two
+    callers need the same arithmetic for different answers -- the settings
+    route needs the COUNT (it reports `starting`), the founder-action routes
+    need the BOOLEAN (schedule a drain, or do not bother). A second copy of
+    `min(queued, cap - running)` is how the two drift apart.
+    """
+    store = store or _mission_engine.MissionStore()
+    cap = _mission_engine.max_running() if cap is None else cap
+    return max(0, min(len(store.list(states=("queued",))),
+                      cap - len(store.list(states=("running",)))))
+
+
+def _drain_queue_in_background(why):
     """Schedule the promotion sweep off the request. Extracted so the route
     reads as one decision and so a test can watch the schedule without
-    spawning a delegate."""
+    spawning a delegate.
+
+    `why` is the phrase the ledger uses if the sweep fails -- "cap raised to
+    5", "task m-abc stopped". The action that CAUSED the free slot has
+    already happened and stands on its own; this is the queue catching up
+    with it, and a failure here must be recorded against the right cause.
+    """
     async def go():
         try:
             await shadow_runner.drain_queue(_validated_say)
         except Exception as exc:          # noqa: BLE001
-            # the SETTING is saved either way -- a promotion that failed must
-            # not make the founder think their limit did not stick
+            # the ACTION is done either way -- a promotion that failed must
+            # not make the founder think their stop, or their limit, did not
+            # stick
             _shadow_ledger_safe({"kind": "setting", "mission_id": None,
-                                 "summary": "cap raised to %d but the queue "
-                                            "did not drain: %s"
-                                            % (value, str(exc)[:160])})
+                                 "summary": "the queue did not drain after "
+                                            "%s: %s"
+                                            % (why, str(exc)[:160])})
     # create_task, not get_event_loop().create_task: the only caller is an
     # async route, so a loop is always running here, and the bare form is
     # what the rest of this file uses (_reader, pump_out, autostart).
     # get_event_loop() is deprecated off-loop and would warn on 3.12+.
     asyncio.create_task(go())
+
+
+def _drain_queue_after(why):
+    """THE ONE THING EVERY FOUNDER ACTION THAT FREES A SLOT DOES NEXT.
+
+    WHY THIS EXISTS. Promotion had exactly two triggers: the runner loop's
+    own wrapper (a mission that ran to a terminal state or blocked) and the
+    settings route (the cap went up). Every OTHER way a slot frees went
+    unnoticed, and each one left a task sitting queued behind capacity that
+    was no longer in use:
+
+      stop        the act route ends the mission itself. The wrapper only
+                  promotes if a loop was alive AND reached its next boundary
+                  check -- so a stop landed between turns waited out a whole
+                  turn, and a stop on a mission with no live loop (adopted
+                  after a restart, a loop that died) never promoted at all.
+      take over   running -> paused. The slot is free, the wrapper's paused
+                  branch emits a feed row and promotes nothing.
+      delete      the record is REMOVED, so the wrapper reloads None and
+                  cannot promote against a mission that no longer exists.
+      abandon     the goal route stops its live attempt through the same
+                  founder_stop, one layer up.
+
+    IT IS A SWEEP, NOT A SECOND WAY TO START. drain_queue is the settings
+    route's own path and promotes through MissionScheduler.on_terminal, so a
+    promoted row provisions and launches exactly as it always did.
+
+    DOUBLE-SAFE BY CONSTRUCTION. The wrapper may also promote for the same
+    freed slot; on_terminal returns None the moment the cap is full again,
+    and _launch no-ops for a mission already running. Nothing here can start
+    a task twice.
+
+    NEVER RAISES, and never blocks: a queue that cannot be read must not
+    fail the stop that was asked for.
+    """
+    try:
+        if not _free_slots():
+            return False                  # nothing waiting, or no room yet
+        _drain_queue_in_background(why)
+        return True
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return False
 
 
 def _shadow_ledger_safe(row):
@@ -2903,6 +2989,10 @@ async def api_shadow_goal_act(gid: str, request: Request):
         if action == "stop":
             _goal_lifecycle.abandon(
                 gid, body.get("note") or "founder abandoned the goal")
+            # abandon() stops the live ATTEMPT through the same founder_stop
+            # the task route uses, so it frees a slot for the same reason and
+            # advances the queue through the same sweep
+            _drain_queue_after("goal %s abandoned" % gid)
             return _goal_detail(store, store.load(gid))
         if action == "guidance":
             text = (body.get("text") or "").strip()
@@ -2985,6 +3075,9 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 store.save(m)
             shadow_runner.release_delegate(m.get("target_session"))
             _goal_hook_safe("on_attempt_end", m)
+            # the founder now owns the chat, so Shadow is no longer running
+            # this task -- the slot it held belongs to whatever is waiting
+            _drain_queue_after("task %s taken over" % mid)
             return m
         if action == "stop":
             # founder_stop, not a bare transition (slice 3 finding): it is
@@ -2994,6 +3087,13 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 store, None, None, None).founder_stop(
                     mid, "founder stop (home)")
             _sync_goal_after_founder_end(m)
+            # THE SLOT IS FREE THE MOMENT THE STOP IS WRITTEN, and the queue
+            # must not wait for the loop to notice. The runner's wrapper
+            # still promotes on its own exit and that stays the path for a
+            # mission that ENDS ITSELF; this covers the stop that lands
+            # between turns, and the one on a mission with no live loop at
+            # all -- adopted after a restart, or a loop that died under it.
+            _drain_queue_after("task %s stopped" % mid)
             return m
         if action == "drop":
             # a dropped QUEUED attempt never reaches the runner's funnel,
@@ -3040,6 +3140,38 @@ async def api_shadow_mission_act(mid: str, request: Request):
             settled = shadow_runner.settle_confirmation(mid)
             return settled or store.load(mid)
         if action == "resume":
+            # THE CAP IS A CAP ON RUNNING WORK, however the work got there.
+            # Resume was the one door into `running` with no admission check
+            # on it: at a cap of 2 with 2 running, resuming a paused task
+            # made three, and the setting the founder had just chosen was
+            # simply wrong on screen.
+            #
+            # REFUSED, NOT QUEUED, and that is the existing ruling rather
+            # than a new one: `paused -> queued` is not a legal edge, and
+            # shadow_runner.resume_after_restart already leaves a mission
+            # that does not fit paused with a ledger note. This says the
+            # same thing to the founder's face, with the two numbers and
+            # both ways out, instead of silently doing nothing.
+            #
+            # ANSWERING SHADOW IS NOT RESUMING. `intervene`, `confirm_check`
+            # and settle_confirmation continue a task that is already in
+            # flight and whose question the founder just answered; refusing
+            # those would strand a mission with its answer recorded and no
+            # road left. They are deliberately NOT gated here.
+            # NOT _free_slots: that asks "how many QUEUED tasks could start",
+            # and a resume must not be refused merely because nothing happens
+            # to be queued. The question here is only "is there room for one
+            # more running task".
+            running_n = len(store.list(states=("running",)))
+            cap = _mission_engine.max_running()
+            if running_n >= cap:
+                raise HTTPException(409, {
+                    "detail": "Shadow is already running %d of %d tasks. "
+                              "Stop one, or raise Running at once."
+                              % (running_n, cap),
+                    "at_capacity": True,
+                    "running_now": running_n,
+                    "running_at_once": cap})
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, None)
             return m
@@ -3217,6 +3349,10 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # session and the chat, so removing it first would strand both
             # with nothing left to find them by.
             removed = store.delete(mid)
+            # ...and the slot goes with it. The runner's wrapper cannot do
+            # this one: it reloads the mission to decide, and the record it
+            # would read is exactly what was just removed.
+            _drain_queue_after("task %s deleted" % mid)
             return {"deleted": bool(removed), "mission_id": mid,
                     "target_session": m.get("target_session"), **chat}
     except ValueError as exc:

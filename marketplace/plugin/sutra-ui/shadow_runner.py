@@ -842,6 +842,25 @@ def _launch(mid, validated_say, verifier):
         elif m and m.get("pause_reason"):
             mission_engine.emit_mission_feed(
                 m, "needs_decision", m.get("pause_reason"))
+            # A PAUSE FREES THE SLOT TOO, and this branch was the last exit
+            # from the loop that did not say so.
+            #
+            # The accounting is not a judgement call: MissionScheduler
+            # counts states=("running",), and `paused` is not one -- so the
+            # moment this branch is reached the cap has room the queue
+            # cannot see. It is the same argument the blocked branch above
+            # makes, and every pause that lands here is a mission the loop
+            # has genuinely stopped driving: awaiting founder confirmation,
+            # held at a floor, or handed to the founder mid-turn.
+            #
+            # MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16).
+            # It matters most for the SHIPPED completion path: the New Task
+            # form writes founder_confirm checks, a mission whose checks are
+            # all founder_confirm pauses here for sign-off, and with nothing
+            # promoting, a queued task could wait behind a colleague that
+            # had stopped working and was waiting on a human.
+            await _promote_after_slot_freed(store, mid, validated_say,
+                                            verifier)
         # ONE funnel for every way an attempt can end -- terminal, blocked
         # or paused all land here, so the goal can never be left claiming
         # work that stopped.

@@ -81,7 +81,14 @@ const MISSIONS = [
 {
   const ctx = fresh();
   const g = ctx.shadowPlaneHtml([], MISSIONS, "working");
-  assert(/data-shact="start_now" data-shmid="m-2"/.test(g), "queued: Start now");
+  /* QUEUED OFFERS NO START. The row is waiting on the run limit and nothing
+     else, so admission would refuse the click and leave it exactly where it
+     is -- the row says what it is waiting for, and keeps the one decision
+     that is really the founder's. */
+  assert(!/data-shact="start_now" data-shmid="m-2"/.test(g),
+    "queued: no Start now -- the cap is what holds it, not a missing click");
+  assert(/Waiting for a free\s+slot[\s\S]{0,120}data-shmid="m-2"/.test(g),
+    "queued: says what it is waiting for");
   assert(/data-shact="drop"[\s\S]{0,60}data-shmid="m-2"/.test(g),
     "queued: Drop");
   assert(/data-shact="resume" data-shmid="m-3"/.test(g), "paused: Resume");
@@ -2395,6 +2402,71 @@ const SET = { engage: ["outcome first"],
   assert(/done when/.test(live), "the done-when row must survive");
   assert(/where it runs/.test(live), "the acts-in row must survive");
   console.log("ok 34 the TURN row is the count; the meter itself is unchanged");
+}
+
+/* 35. A QUEUED CARD SAYS WHAT IT IS WAITING FOR, and names the limit.
+
+   The pill says the state; the founder needs the CAUSE, and there is only
+   one -- every slot the run limit allows is in use. Found in the live app:
+   a task sat on QUEUED with a Drop button and nothing saying why, which
+   reads as a task that failed to start. */
+{
+  const ctx = fresh();
+  const card = (m, cap) => {
+    ctx.S.shadowSettings = cap === undefined ? undefined
+      : { tasks: { running_at_once: cap } };
+    return ctx.shadowTaskCardHtml(Object.assign(
+      { id: "m-q", objective: "waits", template: "fix", max_turns: 20 }, m));
+  };
+
+  const queued = card({ state: "queued" }, 2);
+  assert(/waiting for/.test(queued), "the queued card states the wait");
+  assert(/a free slot/.test(queued), "…in the founder's words");
+  assert(/Running at once is 2/.test(queued),
+    "…and names the limit that is holding it, from the settings the page "
+    + "already loaded");
+  assert(/starts on its own/.test(queued),
+    "…and that no click is owed: promotion is automatic");
+
+  /* the cap is not known yet: say less, never guess a number */
+  const early = card({ state: "queued" }, undefined);
+  assert(/waiting for/.test(early) && /a free slot/.test(early),
+    "the sentence stands without the settings");
+  assert(!/Running at once is/.test(early),
+    "a card that has not been told the cap must not invent one");
+
+  /* and it belongs to `queued` alone -- a running task is not waiting */
+  for (const st of ["running", "paused", "blocked", "done", "brief_confirm"])
+    assert(!/waiting for/.test(card({ state: st }, 2)),
+      st + " is not waiting for a slot");
+  console.log("ok 35 a queued card says why it is waiting");
+}
+
+/* 36. THE WATCHING SCREEN RENDERS THE TAB THE FOUNDER PRESSED.
+
+   It passed the literal "watching", so the plane's Working and Goals tabs
+   were buttons that changed nothing -- and since the task card deliberately
+   does not draw Stop or Resume ("the same two buttons still render in
+   shadowPlaneHtml"), there was no reachable way to STOP a running task at
+   all. Measured in the live app, 2026-09-16. */
+{
+  const ctx = fresh();
+  ctx.S.shadowWatching = [];
+  ctx.S.shadowMissions = MISSIONS;
+
+  const def = ctx.SCREENS.shadowwatching();
+  assert(/data-shtab="watching"/.test(def),
+    "the three tabs are still drawn");
+  assert(!/data-shact="stop"/.test(def),
+    "watching is still the default a page starts on");
+
+  ctx.S.shadowTab = "working";
+  const working = ctx.SCREENS.shadowwatching();
+  assert(/data-shact="stop" data-shmid="m-1"/.test(working),
+    "pressing Working must actually reach the rows that carry Stop");
+  assert(/Waiting for a free\s+slot/.test(working),
+    "…and the queued row's reason with them");
+  console.log("ok 36 the watching screen honours the tab that was pressed");
 }
 
 console.log("test_shadow_home.js: all green");

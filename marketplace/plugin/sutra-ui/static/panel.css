@@ -2120,6 +2120,9 @@
   border:1px solid var(--line); border-radius:8px; padding:6px 8px;
   font-size:12px; }
 .shrowacts{ display:flex; gap:6px; }
+/* a queued row states WHY it is waiting, where its actions would be: the
+   only thing holding it is the run limit, and there is no button for that */
+.shrowwait{ color:var(--muted); font-size:11.5px; align-self:center; }
 .shmemory{ display:flex; flex-direction:column; gap:6px; }
 .shmem{ display:flex; align-items:center; gap:8px; font-size:12px;
   border:1px solid var(--line-soft, var(--line)); border-radius:8px;

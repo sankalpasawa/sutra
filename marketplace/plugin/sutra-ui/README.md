@@ -480,7 +480,7 @@ evidence you installed something wrong.
 | `test_shadow_home_guard.py` | a test can never write the live Shadow home, in two layers |
 | `test_shadow_floor_choke.py` | the floors hold on the direct say path |
 | `test_shadow_journeys.py` | the designed journeys, end to end |
-| `test_shadow_run_limit.py` | "Running at once" at all three levels — the store clamps and never raises, admission re-reads the cap per decision, the route drains on a raise and refuses to kill on a lower |
+| `test_shadow_run_limit.py` | "Running at once" end to end — the store clamps and never raises, admission re-reads the cap per decision, the route drains on a raise and refuses to kill on a lower, **every** way a slot frees advances the queue (finish, stop, take over, delete, abandon a goal), and no door reaches `running` past the cap |
 | `test_shadow_home.js` · `test_shadow_rhs.js` | the two screens, against the real shipped modules |
 
 One lane is **opt-in and deliberately outside the gate**:
@@ -648,6 +648,17 @@ does not even carry the request in its prompt.
 `contains_artifact` is refused to Shadow deliberately: it is a literal substring
 search over the worker's words, so a check describing a *state* could be
 satisfied by uttering the sentence rather than doing the thing.
+
+**Observed, not yet decided (run-limit walkthrough, 2026-09-16).** That refusal
+plus the Delegate form's own tier leaves no path from the UI to a
+`contains_artifact` check: the form writes `founder_confirm`, Shadow may write
+`founder_confirm` or `verify`, and no verifier is wired into the runner today,
+so `verify` cannot pass either. A task created on the Shadow screen therefore
+reaches `done` only when you sign its checks off — otherwise it ends at
+`max_turns` or on ping-pong. The tier still arrives through a Shadow `mission`
+block proposed in chat, which is how it was exercised. Whether that is the
+intended shape, or wants a verifier, is an open product question; nothing has
+been built for it.
 
 ### What stands between Shadow and an effect
 

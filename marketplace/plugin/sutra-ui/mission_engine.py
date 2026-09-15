@@ -1583,6 +1583,27 @@ class MissionScheduler:
                 % m["target_session"])
         if len(running) < self.max_running:
             return self.store.transition(mid, "running", "admitted")
+        # ALREADY WAITING IS NOT A NEW DECISION, and this return is what
+        # stops "Start now" from DESTROYING the task it was pressed on.
+        #
+        # THE MEASURED FAILURE. A queued row draws a Start now button
+        # (shadowPlaneHtml). Pressed while the cap is still full, it reached
+        # here in state `queued` and fell through to the transition below --
+        # queued -> queued, which is not in TRANSITIONS and so raises. The
+        # raise lands in start_mission_async's error handler, whose whole
+        # job is to rescue a start that never got off the ground, and that
+        # handler guards on exactly `("brief_confirm", "queued")` -> it
+        # transitioned the mission to `failed`. So the one control a queued
+        # row offers took a task that was waiting its turn and marked it
+        # failed, with a note claiming a provisioning error that never
+        # happened.
+        #
+        # IDEMPOTENT, EXACTLY LIKE THE `running` GUARD ABOVE. Nothing is
+        # written, the FIFO position (created_ns) is untouched so pressing
+        # Start now cannot jump the queue either, and the mission is
+        # promoted by the ordinary path when a slot frees.
+        if m["state"] == "queued":
+            return m
         return self.store.transition(mid, "queued",
                                      "cap %d reached" % self.max_running)
 

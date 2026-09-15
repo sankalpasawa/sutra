@@ -604,6 +604,28 @@ function shadowWatchStart(mid){
   });
 }
 
+/* WHEN THE SERVER REFUSES, SAY WHAT IT SAID.
+
+   "That did not stick (409) \u2014 try again" is the right answer to a refusal
+   with no explanation, and the wrong one to a refusal that came with a
+   sentence written for the founder: Resume at the run limit answers with
+   "Shadow is already running 2 of 2 tasks. Stop one, or raise Running at
+   once", which names the cause AND both ways out. Telling the founder to
+   "try again" sends them to click the same button against the same limit.
+
+   FastAPI puts a raised HTTPException's payload under `detail`, and this
+   file's routes raise both shapes -- a bare string, and an object whose own
+   `detail` is the sentence beside machine-readable fields. Anything else
+   (html, a proxy error, a body that will not parse) falls back to the
+   status line that shipped. */
+function shadowRefusalText(body){
+  const d = body && body.detail;
+  if (typeof d === "string" && d.trim()) return d.trim();
+  if (d && typeof d.detail === "string" && d.detail.trim())
+    return d.detail.trim();
+  return null;
+}
+
 /* R19/R24: mission actions from any surface (card or home). */
 async function shadowMissionAct(mid, action, extra){
   if (typeof fetch === "undefined") return null;
@@ -613,7 +635,10 @@ async function shadowMissionAct(mid, action, extra){
     const doc = r.ok ? await r.json() : null;
     if (!r.ok && typeof showNudge === "function"){
       /* survey fold: a failed action must never look like a dead click */
-      showNudge("That did not stick (" + r.status + ") \u2014 try again");
+      let said = null;
+      try { said = shadowRefusalText(await r.json()); } catch (e){ said = null; }
+      showNudge(said
+        || ("That did not stick (" + r.status + ") \u2014 try again"));
     }
     if (doc && typeof showNudge === "function"){
       /* founder 2026-08-26: a working click must SAY it worked */

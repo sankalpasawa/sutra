@@ -411,6 +411,53 @@ function part3(){
   });
 }
 
+/* A REFUSAL THAT CAME WITH A SENTENCE SAYS THE SENTENCE (run-limit slice).
+
+   Resume at the run limit answers 409 with copy written for the founder --
+   the two numbers and both ways out. "That did not stick (409) -- try again"
+   would send them back to the same button against the same limit. */
+{
+  const bare = { ok: false, status: 409,
+    json: async () => ({ detail: "Shadow is already running 2 of 2 tasks. "
+      + "Stop one, or raise Running at once." }) };
+  const nested = { ok: false, status: 409,
+    json: async () => ({ detail: { at_capacity: true, running_now: 2,
+      running_at_once: 2,
+      detail: "Shadow is already running 2 of 2 tasks. Stop one, or raise "
+        + "Running at once." } }) };
+  /* a proxy error, an html page, a body that will not parse */
+  const opaque = { ok: false, status: 500,
+    json: async () => { throw new Error("not json"); } };
+
+  const run = (reply) => {
+    const ctx = fresh();
+    const said = [];
+    ctx.showNudge = (t) => said.push(t);
+    ctx.loadShadowHome = () => {};
+    /* shadowMissionAct's own first line is a `typeof fetch` guard */
+    ctx.fetch = () => Promise.resolve({ ok: true, json: async () => ({}) });
+    ctx.shadowPost = () => Promise.resolve(reply);
+    ctx.S.shadowMissions = [{ id: "m-cap", state: "paused" }];
+    return ctx.shadowMissionAct("m-cap", "resume").then(() => said);
+  };
+
+  Promise.all([run(bare), run(nested), run(opaque)]).then(([b, n, o]) => {
+    for (const [name, said] of [["a bare string detail", b],
+                                ["an object detail", n]]){
+      assert.strictEqual(said.length, 1, name + ": exactly one nudge");
+      assert(/already running 2 of 2/.test(said[0]),
+        name + ": the server's own sentence reaches the founder, not "
+        + "a status code (" + said[0] + ")");
+      assert(/Running at once/.test(said[0]),
+        name + ": the refusal must name the way out");
+    }
+    assert.strictEqual(o.length, 1, "an unreadable refusal still nudges");
+    assert(/did not stick \(500\)/.test(o[0]),
+      "with nothing to quote, the status line that shipped is the fallback");
+    console.log("ok 18 a refusal with a sentence says the sentence");
+  });
+}
+
 /* the no-poller pin, restated for the new timers */
 assert(!/setInterval/.test(src), "the bounded re-read must not become a poller");
 
