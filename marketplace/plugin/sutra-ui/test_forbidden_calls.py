@@ -27,6 +27,7 @@ HERE = Path(__file__).resolve().parent
 FILES_UNDER_TEST = [
     HERE / "org_api.py",
     HERE / "reorg_sim.py",
+    HERE / "org2_api.py",      # the new Org screen's read-only aggregates (2.275.0)
 ]
 
 # The exact mutator names SAFETY rule 2 forbids.

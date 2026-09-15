@@ -2,7 +2,32 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.274.1 (2026-09-15, HEAD)
+## v2.275.0 (2026-09-15, HEAD)
+
+**A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the
+rail gains **Org** above the earlier Org accordion, which now reads **Old Org** and keeps every screen,
+id and test it had. The new screen is the design approved on the canvas (holding
+`departments/experience/org/`, BUILD-PLAN.md phases 0-5): one tree of department names with one Search
+field; a department strip with two icons, Chart and a pencil; a list of names grouped as Charter,
+Departments, Filed work, Other charters, Documents and Apps; and a viewer that opens on the charter
+with its facet rows beneath (Address, Lifecycle, Relations, Filed under this charter, Governance, and
+three rows that read "not sourced yet" until the engine carries them), or a document in place, or an
+app in its page frame, or the chart from that level. The pencil holds Changes, Approvals and Health
+scoped to the department. Names, never paths; no counts at rest; one quiet line and at most one action
+per empty or error state.
+
+**What it reuses.** `dirData()` from `03-org.js` for the tree, `loadOrg()` for the registry reads (now
+wrapped with loading and error state), `mdHtml()` and `/api/fs/read` for documents, the Apps page frame
+for apps, and one new read-only route, `GET /api/org2/department/{ref}` in `org2_api.py`, scanned by
+`test_forbidden_calls.py` like the org routes. Two small fixes on the way: `test_modules.js` read
+`SCREENS.org2 =` as `org` (its regex had no digits), and boot no longer restores onto a destination
+whose default screen is not registered. The flag is opt-in until the founder's acceptance; the plan's
+later phases (search across charters and artifacts, the filter, the editor in place, the page route,
+Rename as a request, Preview a move) land behind the same flag. Tests: `test_org2.js` 35,
+`test_org2_api.py` 7, `test_nav.js` 75, `test_modules.js` 27, `test_panel.js` 388,
+`test_workspace.js` 55, `test_charter_filter.js` 31; the python lanes green.
+
+## v2.274.1 (2026-09-15)
 
 **The last half-minute of every hour stopped reading "in 4 hr 60 min".** `usageResetText` floors the
 hours and ROUNDS the remaining minutes, so any gap from 59.5 minutes up rounded to 60 and was printed

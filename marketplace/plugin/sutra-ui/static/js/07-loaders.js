@@ -2505,6 +2505,12 @@ function openScreen(id){
   if ((id === "knowledge" || id === "files")
       && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
     id = "workspace";
+  /* The new Org (19-org2.js) exists only while flags.org2 is on; a deep link or
+     a restored selection lands on Old Org otherwise, never on a dead end. */
+  if (id === "org2"){
+    if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
+    if (!(typeof org2FlagOn === "function" && org2FlagOn()) || !SCREENS.org2) id = "departments";
+  }
   if (!id || !SCREENS[id]) return;
   S.screen = id;
   /* Keep the rail honest (visual audit r4): the active highlight and the pane
@@ -2530,6 +2536,7 @@ function openScreen(id){
   /* Workspace (flag-gated): guard mirrors wire() -- a missing 13-workspace.js
      must not break every other screen's open path. */
   if (id === "workspace" && typeof loadWorkspace === "function") loadWorkspace(false);
+  if (id === "org2" && typeof loadOrg2 === "function") loadOrg2(false);
   /* Modules: refresh on EVERY open -- the folder is the registry and anything
      may have written it since the last look (the v1 "watcher"). Same guard. */
   if (id === "modules" && typeof loadModules === "function") loadModules(true);

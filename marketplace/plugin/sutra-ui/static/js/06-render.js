@@ -1357,7 +1357,7 @@ function _focusedInputSelector(){
      matches a bare data-x. */
   for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
                       "data-prf", "data-edta", "data-workdir-input", "data-edfilter",
-                      "data-wssearch", "data-gitfilter"]) {
+                      "data-wssearch", "data-gitfilter", "data-o2q", "data-o2lq"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;

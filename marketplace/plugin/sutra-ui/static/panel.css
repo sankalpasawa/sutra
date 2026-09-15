@@ -3440,6 +3440,120 @@
   font:11.5px/1.3 var(--sans);color:var(--faint);cursor:pointer}
 .shexback:hover{color:var(--acc)}
 
+/* ── Org (org2, 19-org2.js; holding BUILD-PLAN.md, canvas 6e5e3f8b) ─────────
+   Every rule is prefixed .o2 and uses tokens only. Layout: the tree column on
+   the left, then the strip, then the list column beside the viewer. The pane
+   itself is .pane.browse; its width decides the stacking (container queries,
+   never the viewport). */
+.o2{display:flex;gap:12px;height:100%;min-height:0}
+.o2left{width:232px;flex:none;display:flex;flex-direction:column;min-height:0;
+  border-right:1px solid var(--line-soft);padding-right:10px}
+.o2search{display:flex;align-items:center;gap:6px;background:var(--inset);border:1px solid var(--line);
+  border-radius:6px;padding:4px 8px;color:var(--faint);flex:none}
+.o2search svg{width:12px;height:12px;flex:none}
+.o2search input{flex:1;min-width:0;background:none;border:0;color:var(--ink);font:400 12px/1.3 var(--sans);outline:none}
+.o2search input::placeholder{color:var(--faint)}
+.o2search:focus-within{border-color:var(--acc)}
+.o2funnel{background:none;border:0;padding:2px;color:var(--faint);cursor:pointer;display:flex}
+.o2funnel svg{width:12px;height:12px}
+.o2funnel[aria-pressed="true"]{color:var(--acc)}
+.o2tree{flex:1;overflow:auto;margin-top:6px;min-height:0}
+.o2row{display:flex;align-items:center;gap:4px;padding:3px 6px 3px calc(6px + var(--d,0) * 14px);
+  border-radius:5px;min-height:22px;cursor:pointer;font:400 12px/1.3 var(--sans);color:var(--ink)}
+.o2row[aria-selected="true"]{background:var(--acc-bg)}
+.o2row[aria-selected="true"] .o2name{font-weight:500}
+.o2row.o2k-root .o2name,.o2row.o2k-org .o2name{font:600 12.5px/1.3 var(--serif)}
+.o2row.o2k-machine .o2name{color:var(--faint)}
+.o2row.dim{opacity:.35}
+.o2row:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.o2name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o2chev{width:14px;height:14px;flex:none;background:none;border:0;padding:0;color:var(--faint);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.o2chev svg{width:10px;height:10px;transition:transform .12s}
+.o2row[aria-expanded="true"] .o2chev svg{transform:rotate(90deg)}
+.o2main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;gap:10px;position:relative}
+.o2line{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:7px;font:500 12px/1.4 var(--sans);flex:none}
+.o2line.warn{background:var(--warn-bg);color:var(--warn)}
+.o2line.acc{background:var(--acc-bg);color:var(--acc)}
+.o2line span{flex:1}
+.o2strip{display:flex;align-items:center;gap:10px;position:relative;flex:none;min-height:28px}
+.o2strip h2{font:600 17px/1.2 var(--serif);margin:0;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o2parent{font:400 11.5px/1.3 var(--sans);color:var(--muted)}
+.o2acts{margin-left:auto;display:flex;align-items:center;gap:4px;position:relative}
+.o2ib{width:28px;height:28px;border-radius:6px;border:0;background:none;color:var(--muted);
+  display:grid;place-items:center;cursor:pointer;padding:0}
+.o2ib svg{width:14px;height:14px}
+.o2ib:hover,.o2ib[aria-pressed="true"],.o2ib[aria-expanded="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2ib:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.o2menu{top:32px;right:0}
+.o2body{flex:1;min-height:0;display:flex;gap:10px;position:relative}
+.o2list{width:236px;flex:none;display:flex;flex-direction:column;min-height:0;
+  border-right:1px solid var(--line-soft);padding-right:8px;overflow:auto}
+.o2lsearch{margin-bottom:4px}
+.o2gl{font:600 9px/1.6 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:8px 8px 2px}
+.o2li{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:none;border:0;
+  width:100%;text-align:left;cursor:pointer;font:400 12.5px/1.3 var(--sans);color:var(--ink)}
+.o2li svg{width:13px;height:13px;flex:none;color:var(--faint)}
+.o2li span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o2li:hover{background:var(--acc-bg)}
+.o2li.on{background:var(--acc-bg)}
+.o2li.on svg{color:var(--acc)}
+.o2li.on span{font-weight:500}
+.o2li.mut span{color:var(--muted)}
+.o2li:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.o2more{background:none;border:0;padding:3px 8px;font:400 11px/1.3 var(--sans);color:var(--faint);cursor:pointer}
+.o2more:hover{color:var(--acc)}
+.o2quiet{font:400 12.5px/1.5 var(--sans);color:var(--muted);padding:8px}
+.o2viewer{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line-soft);
+  border-radius:9px;overflow:hidden;background:var(--card)}
+.o2vh{display:flex;align-items:center;gap:8px;padding:5px 7px 5px 11px;border-bottom:1px solid var(--line-soft);
+  font:600 12px/1.3 var(--sans);color:var(--ink)}
+.o2vh > svg{width:14px;height:14px;color:var(--acc);flex:none}
+.o2vh b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o2vh .o2x{margin-left:auto;color:var(--faint)}
+.o2vb{flex:1;min-height:0;overflow:auto;padding:16px 20px}
+.o2mono{font:500 10.5px/1.4 var(--mono);color:var(--acc);display:flex;align-items:center;gap:8px}
+.o2vb h1{font:500 26px/1.15 var(--serif);margin:6px 0 14px;color:var(--ink);letter-spacing:-.01em}
+.o2purpose{font:400 14px/1.6 var(--sans);color:var(--ink);margin:0;max-width:62ch}
+.o2facets{margin-top:26px;max-width:680px}
+.o2f{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:8px 0;
+  border-top:1px solid var(--line-soft);font:400 12.5px/1.5 var(--sans);color:var(--ink)}
+.o2f b{font:600 9px/1.8 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.o2f .ns,.o2f span .ns{color:var(--faint);font-style:italic}
+.o2empty{max-width:520px;margin-top:40px;display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.o2empty > svg{width:28px;height:28px;color:var(--faint)}
+.o2empty h1{font:500 22px/1.2 var(--serif);margin:0}
+.o2skel{height:10px;border-radius:5px;background:var(--line-soft);margin:7px 8px}
+.o2md{font-size:13px}
+.o2frame{flex:1;width:100%;border:0;background:var(--card);min-height:0}
+.o2chart{position:relative}
+.o2crow{display:flex;justify-content:center}
+.o2tile{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:0 10px;height:40px;
+  min-width:120px;max-width:180px;font:600 12px/1.25 var(--sans);color:var(--ink);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.o2tile:hover{border-color:var(--acc)}
+.o2tile.on{background:var(--acc-bg);border-color:var(--acc)}
+.o2tile.sm{height:32px;min-width:0;font-weight:500}
+.o2tile.mut{color:var(--faint)}
+.o2tile:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.o2cols{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;padding-top:22px;border-top:1px solid var(--line);justify-content:center}
+.o2col{display:flex;flex-direction:column;gap:8px;align-items:flex-start;position:relative}
+.o2col::before{content:"";position:absolute;top:-22px;left:50%;height:22px;border-left:1px solid var(--line)}
+.o2gc{display:flex;flex-direction:column;gap:6px;padding-left:22px;border-left:1px solid var(--line);margin-left:12px}
+.o2panel{position:absolute;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--card);border-left:1px solid var(--line);
+  box-shadow:var(--shadow);padding:14px 16px;overflow:auto;z-index:5}
+.o2panel h4{font:600 17px/1.2 var(--serif);margin:0 0 6px;display:flex;align-items:center;gap:8px;color:var(--ink)}
+.o2panel h4 .o2x{margin-left:auto}
+.o2prow{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:8px 0;
+  border-top:1px solid var(--line-soft);font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.o2prow .dt{font:500 10px/1.6 var(--mono);color:var(--faint);min-width:40px}
+.o2prow b{font:600 11.5px/1.4 var(--sans)}
+.o2pact{display:flex;gap:6px;margin-top:6px}
+.o2dot{width:8px;height:8px;border-radius:50%;margin-top:6px;display:inline-block}
+.o2band{margin-top:14px;padding:6px 10px;border-radius:6px;background:var(--warn-bg);color:var(--warn);font:500 11px/1.4 var(--sans)}
+.o2.off .o2tree{opacity:.45}
+@container (max-width:760px){ .o2left{display:none} .o2list{display:none} }
+
 /* ══════════════ Settings: overview first ═══════════════════════════════════
    Founder, 2026-09-14: Settings opens as "a big tab of settings", not as the
    subsection you happened to leave open. Six cards, each stating what it is and

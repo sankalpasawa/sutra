@@ -101,13 +101,16 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: exactly seven destinations, in the founder's order", () => {
+test("model: eight destinations, in the founder's order; the new Org sits above Old Org", () => {
   /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
      agent that works in front of you (design/GAME-PLAN-agents.md). */
   /* Seven again since 2026-09-04: Routines went back under Settings ->
      Automation, the home it held before the 2026-09-02 promotion. */
+  /* Eight since 2.275.0 (holding BUILD-PLAN.md): org2 is the new one-screen Org,
+     rendered only while flags.org2 is on, so the rail still SHOWS seven buttons
+     in these tests (SETTINGS carries no flag here). */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org2","org","team","settings"]));
 });
 test("model: routines is a Settings -> Automation row, not a destination", () => {
   /* One home, not two: it must be a row on the Settings plane AND absent from

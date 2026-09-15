@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.275.0 (2026-09-15)
+
+- **A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the rail gains **Org** above the earlier Org, which now reads **Old Org** and keeps every screen it had. The new screen is one tree of department names with one Search field, a department strip with Chart and a pencil, a list of names (Charter, Departments, Filed work, Other charters, Documents, Apps), and a viewer that opens on the charter with its facets beneath, a document in place, an app in its page frame, or the chart from that level. The pencil holds Changes, Approvals and Health for that department. One new read-only route, `GET /api/org2/department/{ref}`, under the same forbidden-calls guard as the org routes. Design and plan: holding `departments/experience/org/` (BUILD-PLAN.md, canvas 6e5e3f8b). Tests: `test_org2.js` 35, `test_org2_api.py` 7.
+
 ## 2.274.1 (2026-09-15)
 
 - **A usage card no longer says "in 4 hr 60 min".** For the last half-minute of every hour, the time until your usage resets was written with sixty minutes in it instead of rolling over into the next hour. An exact five hours now reads "in 5 hr". Every other way that line can be written -- minutes, hours and minutes, a weekday, a date -- is unchanged.
