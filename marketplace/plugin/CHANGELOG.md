@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.276.0 (2026-09-15)
+
+- **The new Org screen edits, filters and asks.** Still behind `flags.org2`. The screen now takes the whole row like Agents does, so the tree, the list and the viewer are always beside each other. A document opens in the Workspace's own editor and saves in place; a file changed elsewhere shows one line, "Changed in another session", with Reload. Search reaches charter titles, filed work and documents (`GET /api/org2/search`); the funnel beside it filters by kind and by charter state (`GET /api/org2/filter`). The pencil gains Rename, Move (with a preview from the same check the studio uses) and New sub-department: each files a proposal (`POST /api/org2/request`) that waits in Approvals, and an approval applies it registry-only through the new `org2_apply.py`. Health adds what the server reads from charters: departments with no charter, one-line charters and overlapping siblings (`GET /api/org2/health/{ref}`). A filed .html opens in the app page frame under the same CSP (`GET /api/org2/page`). Old Org is untouched. Tests: `test_org2.js` 48, `test_org2_api.py` 13.
+
 ## 2.275.0 (2026-09-15)
 
 - **A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the rail gains **Org** above the earlier Org, which now reads **Old Org** and keeps every screen it had. The new screen is one tree of department names with one Search field, a department strip with Chart and a pencil, a list of names (Charter, Departments, Filed work, Other charters, Documents, Apps), and a viewer that opens on the charter with its facets beneath, a document in place, an app in its page frame, or the chart from that level. The pencil holds Changes, Approvals and Health for that department. One new read-only route, `GET /api/org2/department/{ref}`, under the same forbidden-calls guard as the org routes. Design and plan: holding `departments/experience/org/` (BUILD-PLAN.md, canvas 6e5e3f8b). Tests: `test_org2.js` 35, `test_org2_api.py` 7.

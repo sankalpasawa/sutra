@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
 if _LIB_DIR not in sys.path:
@@ -32,7 +34,13 @@ router = APIRouter(prefix="/api/org2", tags=["org2"])
 FILED_MAX = 200          # placements returned per department (newest first)
 DOCS_MAX = 200
 LABEL_MAX = 60
+SEARCH_MAX = 200         # departments a search or a filter may return
+ONE_LINE_MAX = 60        # a charter purpose shorter than this, with no second sentence, is "one line"
 DESKTOP_NAME = "Desktop"  # project_import.DESKTOP_NAME: the machine node under the root
+KINDS = ("root", "machine", "organisation", "department")
+STATES = ("active", "no-charter", "one-line")
+REQUEST_KINDS = ("org.rename", "org.move", "org.create")   # org2_apply.KINDS; pinned here so the route needs no import
+PAGE_EXT = (".html", ".htm")
 
 _SEP = re.compile(r"[-_]+")
 _EXT = re.compile(r"\.[A-Za-z0-9]{1,6}$")
@@ -207,6 +215,214 @@ def department(ref: str):
         "retired_at_ms": d.get("retired_at_ms"),
         "retire_reason_code": d.get("retire_reason_code"),
     }
+
+
+def _one_line(v: Optional[Dict[str, Any]]) -> bool:
+    p = " ".join(str((v or {}).get("purpose") or "").split())
+    return bool(v) and 0 < len(p) < ONE_LINE_MAX and ". " not in p
+
+
+def _subtree(ref: str, live: Dict[str, Dict[str, Any]]) -> List[str]:
+    kids: Dict[str, List[str]] = {}
+    for r, d in live.items():
+        kids.setdefault(d.get("parent_ref"), []).append(r)
+    out, stack, seen = [], [ref], set()
+    while stack:
+        x = stack.pop()
+        if x in seen or x not in live:
+            continue
+        seen.add(x)
+        out.append(x)
+        stack.extend(kids.get(x, []))
+    return out
+
+
+def _standing(ref: str):
+    try:
+        return _charters(ref)[0]
+    except Exception:
+        return None
+
+
+@router.get("/filter")
+def filter_departments(kind: str = "", state: str = "", where: str = ""):
+    """The live departments that match every given axis (plan S76): `kind` and
+    `state` are comma lists over KINDS and STATES, `where` narrows to one
+    subtree. Refs only: the screen already holds the names. An empty query
+    matches everything, so the funnel can be cleared with the same call."""
+    kinds = [k for k in kind.split(",") if k]
+    states = [s for s in state.split(",") if s]
+    bad = [k for k in kinds if k not in KINDS] + [s for s in states if s not in STATES]
+    if bad:
+        raise HTTPException(status_code=400, detail="unknown filter value %s" % ", ".join(bad))
+    domains = E.load_domains()
+    live = E.live_refs(domains)
+    root_ref = _root_ref(live)
+    pool = _subtree(where, live) if where else list(live.keys())
+    if where and not pool:
+        raise HTTPException(status_code=404, detail="no department %s" % where)
+    out = []
+    for r in pool:
+        d = live[r]
+        if kinds and _kind(r, d, live, root_ref) not in kinds:
+            continue
+        if states:
+            standing = _standing(r)
+            ok = ("active" in states and d.get("status", "active") == "active") \
+                or ("no-charter" in states and standing is None) \
+                or ("one-line" in states and _one_line(standing))
+            if not ok:
+                continue
+        out.append(r)
+        if len(out) >= SEARCH_MAX:
+            break
+    return {"refs": out, "n": len(out)}
+
+
+@router.get("/search")
+def search(q: str = ""):
+    """Departments whose charter title or purpose, filed work or documents
+    mention `q` (plan S74). Names are matched on the screen already; they are
+    included here too so one answer covers the whole ask."""
+    needle = " ".join(q.split()).lower()
+    if len(needle) < 2:
+        return {"refs": [], "n": 0}
+    domains = E.load_domains()
+    live = E.live_refs(domains)
+    hits: Dict[str, bool] = {}
+    for r, d in live.items():
+        if needle in str(d.get("name") or "").lower():
+            hits[r] = True
+    for p in E.all_placements():
+        r = p.get("domain_ref")
+        if r in live and r not in hits and needle in _label((p.get("work_ref") or {}).get("id")).lower():
+            hits[r] = True
+    for r in live:
+        if r in hits:
+            continue
+        for c in E.charters_for(r):
+            v = E.charter_view(c)
+            if v and (needle in str(v.get("title") or "").lower() or needle in str(v.get("purpose") or "").lower()):
+                hits[r] = True
+                break
+    refs = list(hits.keys())[:SEARCH_MAX]
+    return {"refs": refs, "n": len(refs)}
+
+
+@router.get("/health/{ref}")
+def health(ref: str):
+    """What the Health panel shows for one subtree, as names: departments with
+    no standing charter, charters that are one line, and sibling overlaps the
+    engine's MECE report finds inside the subtree (plan S84-S86)."""
+    domains = E.load_domains()
+    live = E.live_refs(domains)
+    if ref not in live:
+        raise HTTPException(status_code=404, detail="no department %s" % ref)
+    refs = _subtree(ref, live)
+    inside = set(refs)
+    unowned, one_line = [], []
+    for r in refs:
+        standing = _standing(r)
+        if standing is None:
+            unowned.append({"ref": r, "name": live[r].get("name")})
+        elif _one_line(standing):
+            one_line.append({"ref": r, "name": live[r].get("name"), "title": standing.get("title")})
+    overlaps = []
+    try:
+        rep = E.mece_report((live[ref].get("tenant_id") or "T-local"))
+        for o in rep.get("overlaps") or []:
+            if o.get("a") in inside or o.get("b") in inside:
+                overlaps.append({"a": o.get("a_name"), "b": o.get("b_name"), "similarity": o.get("similarity")})
+    except Exception:
+        overlaps = []
+    return {"ref": ref, "name": live[ref].get("name"), "unowned": unowned, "one_line": one_line,
+            "overlaps": overlaps, "checked": len(refs)}
+
+
+class RequestBody(BaseModel):
+    kind: str
+    args: Dict[str, Any] = {}
+    summary: str = ""
+
+
+def _request_check(kind: str, args: Dict[str, Any]):
+    """Shape only. The tree is re-read at APPLY time (org2_apply), so a rename
+    of a department retired between the request and the approval is refused
+    then, with the reason in the proposal's result."""
+    if kind not in REQUEST_KINDS:
+        raise HTTPException(status_code=400, detail="unknown request %r; one of: %s" % (kind, ", ".join(REQUEST_KINDS)))
+    domains = E.load_domains()
+    live = E.live_refs(domains)
+    need = {"org.rename": ("ref", "name"), "org.move": ("ref", "target"), "org.create": ("parent", "name")}[kind]
+    for k in need:
+        if not str(args.get(k) or "").strip():
+            raise HTTPException(status_code=400, detail="%s needs %s" % (kind, k))
+    for k in ("ref", "target", "parent"):
+        if k in need and args.get(k) not in live:
+            raise HTTPException(status_code=404, detail="no live department %s" % args.get(k))
+    if kind == "org.move":
+        if args["target"] in _subtree(args["ref"], live):
+            raise HTTPException(status_code=400, detail="a department cannot move under itself")
+        if live[args["ref"]].get("parent_ref") == args["target"]:
+            raise HTTPException(status_code=400, detail="it is already there")
+    return live
+
+
+@router.post("/request", status_code=201)
+def request(body: RequestBody):
+    """File a rename, a move or a new sub-department as a PROPOSAL (plan S60,
+    S70, S72). Nothing is applied here: the record waits in Approvals and an
+    approval applies it through org2_apply. The summary is composed server-side
+    from names, so what the approver reads is never client text."""
+    import proposals   # the panel's own gate; lazy so a broken store cannot take the reads down
+    args = dict(body.args or {})
+    live = _request_check(body.kind, args)
+    name_of = lambda r: (live.get(r) or {}).get("name") or r   # noqa: E731
+    if body.kind == "org.rename":
+        summary = "Rename %s to %s" % (name_of(args["ref"]), " ".join(str(args["name"]).split()))
+    elif body.kind == "org.move":
+        summary = "Move %s under %s" % (name_of(args["ref"]), name_of(args["target"]))
+    else:
+        summary = "New department %s under %s" % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
+    try:
+        rec = proposals.create(body.kind, args, summary, session_id="org2")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"proposal": rec, "summary": summary}
+
+
+def _page_html(rel: str, theme: Optional[str]) -> str:
+    """One .html under the workdir, wrapped the way an app page is: the panel's
+    tokens first, the theme stamped, the same CSP on the response (plan S56).
+    Resolution goes through org_api._fs_resolve, the one workdir guard."""
+    import org_api      # lazy: the fs helpers, not the router
+    if not rel or not rel.lower().endswith(PAGE_EXT):
+        raise HTTPException(status_code=400, detail="only an .html page opens here")
+    root, target = org_api._fs_resolve(rel)
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="%s is not a file" % rel)
+    if os.path.getsize(target) > org_api.FS_MAX_READ:
+        raise HTTPException(status_code=413, detail="%s is too large to open here" % rel)
+    with open(target, "r", encoding="utf-8", errors="replace") as fh:
+        body = fh.read()
+    import modules_api
+    theme = theme if theme in ("dark", "light") else ""
+    head = ('<meta charset="utf-8"><meta name="color-scheme" content="dark light">'
+            '<style id="sutra-tokens">%s</style>' % modules_api.TOKEN_CSS)
+    if theme:
+        head += '<script>document.documentElement.setAttribute("data-theme","%s")</script>' % theme
+    return head + body
+
+
+@router.get("/page")
+def page(path: str = "", theme: str = ""):
+    import modules_api
+    html = _page_html(path, theme)
+    return HTMLResponse(html, headers={
+        "Content-Security-Policy": modules_api.PAGE_CSP,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store, max-age=0",
+    })
 
 
 @router.get("/charter/{cid}")

@@ -1502,6 +1502,8 @@ function wire(){
   /* Workspace (flag-gated): its own wiring lives in 13-workspace.js; the
      guard keeps wire() intact if that file ever fails to load. */
   if (typeof wireWorkspace === "function") wireWorkspace(scBody);
+  /* Org (19-org2.js): mounts or re-attaches the document editor after a paint. */
+  if (typeof wireOrg2 === "function") wireOrg2(scBody);
   /* sidecar iframe wiring removed — PLAN-25-EDITOR S15: Files folded into
      the Workspace and editing is native; no [data-sbframe] exists to mount. */
   /* (r5) the Knowledge->Files [data-openfiles] bridge is gone with both

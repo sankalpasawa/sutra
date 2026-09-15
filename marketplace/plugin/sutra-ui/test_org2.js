@@ -62,9 +62,11 @@ const DEPT_EXP = {
 
 function fresh(opts){
   opts = opts || {};
-  const calls = { apiGet: [], render: 0, openScreen: [] };
+  const calls = { apiGet: [], apiPost: [], render: 0, openScreen: [] };
   const ctx = {
-    console, Date, Number, String, Array, Set, Map, JSON, Promise, encodeURIComponent,
+    console, Date, Number, String, Array, Set, Map, JSON, Promise, encodeURIComponent, setTimeout, clearTimeout,
+    apiPost: opts.apiPost || ((p, body) => { calls.apiPost.push({ p, body }); return Promise.resolve({}); }),
+    window: opts.window || {},
     esc: (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"),
     SCREENS: { departments: () => "", charters: () => "", placements: () => "", reorg: () => "", history: () => "", health: () => "" },
     TITLES: { departments: ["Departments", ""] },
@@ -342,6 +344,166 @@ test("boot restore falls back when the destination's default screen is not regis
 test("panel.html loads 19-org2.js before 09-tail.js", () => {
   const a = panelHtml.indexOf('<script src="/static/js/19-org2.js'), b = panelHtml.indexOf('<script src="/static/js/09-tail.js');
   assert.ok(a !== -1 && b !== -1 && a < b, "the module tag precedes the boot tag");
+});
+/* ── slice B: alone on the row, the editor, filter, search, requests, page, health ── */
+const renderSrc = fs.readFileSync(path.join(JS, "06-render.js"), "utf8");
+const apiSrc = fs.readFileSync(path.join(__dirname, "org_api.py"), "utf8");
+const propSrc = fs.readFileSync(path.join(__dirname, "proposals.py"), "utf8");
+test("the screen opens alone: soloScreen names org2 and the pane takes the row", () => {
+  const solo = renderSrc.slice(renderSrc.indexOf("const soloScreen"), renderSrc.indexOf("const soloScreen") + 200);
+  assert.ok(/S\.screen === "org2"/.test(solo), "soloScreen");
+  assert.ok(/classList\.toggle\("o2wide"/.test(renderSrc), "the o2wide class");
+  assert.ok(/\.pane\.browse\.o2wide\{flex:1 1 100%/.test(css), "panel.css gives it the row");
+  assert.ok(/wireOrg2/.test(loadersSrc), "wire() calls the per-paint hook");
+});
+test("an editable document emits the editor container; a conflict offers Reload only", () => {
+  const c = fresh();
+  let html = c.o2DocHtml({ path: "a.md", title: "A", text: "# A", editable: true, bytes: 3, conflict: false, saveState: null });
+  assert.ok(/data-o2editor/.test(html) && !/ws-mdbody/.test(html));
+  html = c.o2DocHtml({ path: "a.md", title: "A", text: "# A", editable: true, bytes: 3, conflict: true, saveState: "failed" });
+  assert.ok(/Changed in another session/.test(html) && /data-o2act="reload"/.test(html));
+  assert.strictEqual((html.match(/data-o2act="reload"/g) || []).length, 1, "one action");
+  html = c.o2DocHtml({ path: "a.md", title: "A", text: "# A", editable: false });
+  assert.ok(/ws-mdbody/.test(html), "read-only renders the text");
+});
+test("wireOrg2 mounts the Workspace editor once, re-attaches the live view, tears down off-screen", async () => {
+  const mounts = [], destroyed = [], appended = [];
+  const handle = { view: { dom: { isConnected: false } }, forceSave(){}, destroy(){ destroyed.push(1); } };
+  const el = { isConnected: true, appendChild(x){ appended.push(x); } };
+  const win = { SutraEditor: { mount(o){ mounts.push(o); return handle; } } };
+  const c = fresh({ window: win });
+  c.wsLoadEditorScript = () => Promise.resolve();
+  c.o2S().sel = "r4"; c.o2S().view = "doc";
+  c.o2S().doc = { path: "a.md", title: "A", text: "# A", editable: true, bytes: 3, conflict: false, saveState: null };
+  const scBody = { querySelector: () => el };
+  c.wireOrg2(scBody); await sleep(); await sleep();
+  assert.strictEqual(mounts.length, 1, "mounted once");
+  assert.strictEqual(mounts[0].path, "a.md");
+  assert.strictEqual(mounts[0].readOnly, false);
+  c.wireOrg2(scBody);
+  assert.strictEqual(mounts.length, 1, "no second mount while the handle lives");
+  assert.strictEqual(appended.length, 1, "the live view is moved back into the new container");
+  c.S.screen = "chats"; c.wireOrg2(scBody);
+  assert.strictEqual(destroyed.length, 1, "leaving the screen destroys the editor");
+  assert.strictEqual(c.o2S().edHandle, null);
+});
+test("saving goes through /api/fs/write with the bytes read; a 409 marks the conflict", async () => {
+  const posts = [];
+  let fail = false;
+  const c = fresh({ apiPost: (p, body) => { posts.push({ p, body }); if (fail){ const e = new Error("changed"); e.status = 409; return Promise.reject(e); } return Promise.resolve({ bytes: 9 }); },
+                    window: { SutraEditor: { mount(o){ c._opts = o; return { view: {}, forceSave(){}, destroy(){} }; } } } });
+  c.wsLoadEditorScript = () => Promise.resolve();
+  c.o2S().sel = "r4"; c.o2S().view = "doc";
+  const doc = { path: "a.md", title: "A", text: "# A", editable: true, bytes: 3, conflict: false, saveState: null };
+  c.o2S().doc = doc;
+  await c.o2MountEditor({ isConnected: true });
+  await c._opts.save("# A!");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[0])), { p: "/api/fs/write", body: { path: "a.md", text: "# A!", base_bytes: 3 } });
+  assert.strictEqual(doc.bytes, 9);
+  fail = true;
+  let threw = false;
+  try { await c._opts.save("# A!!"); } catch (e) { threw = true; }
+  assert.ok(threw && doc.conflict === true, "409 -> conflict, and the editor learns the save failed");
+});
+test("the funnel: chips, one server call, matching subtrees stay and the rest dim", async () => {
+  const c = fresh({ apiGet: (p) => { c.calls.apiGet.push(p); return Promise.resolve({ refs: ["r2"], n: 1 }); } });
+  c.o2S().filter.open = true;
+  let html = c.o2SearchHtml();
+  for (const l of ["Organisations", "Departments", "Machine", "Active", "No charter", "One-line charter"]) assert.ok(html.indexOf(">" + l + "<") !== -1, l);
+  c.o2S().filter.kind.push("organisation");
+  await c.o2ApplyFilter();
+  assert.ok(c.calls.apiGet.some(p => p === "/api/org2/filter?kind=organisation&state="));
+  html = c.o2TreeHtml();
+  assert.ok(/class="o2row o2k-machine dim"/.test(html), "Desktop dims");
+  assert.ok(/class="o2row o2k-dept dim"[^>]*data-o2ref="r3"/.test(html), "a department outside the answer dims");
+  assert.ok(!/class="o2row o2k-org dim"/.test(html), "the matching organisation stays");
+  assert.ok(/aria-pressed="true"/.test(c.o2SearchHtml()), "the funnel lights up");
+  c.o2S().filter.kind = []; await c.o2ApplyFilter();
+  assert.strictEqual(c.o2S().filter.refs, null, "cleared without a call");
+});
+test("search: server hits join the name match", async () => {
+  const c = fresh({ apiGet: (p) => { c.calls.apiGet.push(p); return Promise.resolve({ refs: ["r6"], n: 1 }); } });
+  c.o2S().q = "lending";
+  await c.o2SearchServer();
+  assert.ok(c.calls.apiGet.indexOf("/api/org2/search?q=lending") !== -1);
+  const html = c.o2TreeHtml();
+  assert.ok(/data-o2ref="r6"/.test(html) && !/class="o2row o2k-dept dim"[^>]*data-o2ref="r6"/.test(html), "the hit stays");
+  assert.ok(/class="o2row o2k-machine dim"/.test(html));
+});
+test("the pencil menu: Rename, Move, New sub-department above the three views; the root and the machine lose what they cannot do", () => {
+  const c = fresh(); const d = c.o2Data();
+  let html = c.o2MenuHtml(d.byRef.get("r4"), d);
+  const order = ["Rename…", "Move…", "New sub-department…", "Changes", "Approvals", "Health"].map(l => html.indexOf(">" + l + "<"));
+  assert.ok(order.every(i => i !== -1) && order.every((v, i, a) => i === 0 || v > a[i - 1]), order.join(","));
+  html = c.o2MenuHtml(d.byRef.get("r0"), d);
+  assert.ok(html.indexOf("Rename") === -1 && html.indexOf("Move") === -1 && html.indexOf("New sub-department") !== -1);
+  html = c.o2MenuHtml(d.byRef.get("r1"), d);
+  assert.ok(html.indexOf("Rename") !== -1 && html.indexOf("Move…") === -1);
+});
+test("rename: the sheet files org.rename, then Approvals opens with one line", async () => {
+  const c = fresh({ apiPost: (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.resolve({ summary: "Rename Experience to Experience Design" }); } });
+  c.loadProposals = () => {};
+  c.o2Select("r4"); c.o2OpenSheet("rename");
+  let html = c.o2SheetHtml(c.o2Data().byRef.get("r4"), c.o2Data());
+  assert.ok(/<h1>Rename<\/h1>/.test(html) && /value="Experience"/.test(html) && /data-o2act="request"/.test(html));
+  await c.o2SendRequest();
+  assert.strictEqual(c.calls.apiPost.length, 0, "the current name is not a request");
+  assert.ok(/current name/.test(c.o2S().sheet.error));
+  c.o2S().sheet.name = "Experience Design";
+  await c.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0])), { p: "/api/org2/request", body: { kind: "org.rename", args: { ref: "r4", name: "Experience Design" } } });
+  assert.strictEqual(c.o2S().sheet, null);
+  assert.strictEqual(c.o2S().panel, "approvals");
+  assert.ok(/Waiting for approval · Rename Experience to Experience Design/.test(c.o2S().flash));
+  assert.ok(/Waiting for approval/.test(c.SCREENS.org2 ? c.o2ScreenHtml() : c.o2ScreenHtml()));
+});
+test("move: targets exclude the subtree and the current parent; the preview runs the simulation on one op", () => {
+  const c = fresh({ simulate: (ops) => { c._ops = ops; return { pending: false, error: null, findings: [{ code: "ORG-004", sev: "warn", subject: "Experience is deeper than four" }] }; } });
+  c.o2Select("r4"); c.o2OpenSheet("move");
+  const d = c.o2Data();
+  const refs = c.o2MoveTargets(d.byRef.get("r4"), d).map(t => t.ref);
+  for (const r of ["r4", "r5", "r3"]) assert.ok(refs.indexOf(r) === -1, r + " is out");
+  for (const r of ["r0", "r1", "r2", "r6"]) assert.ok(refs.indexOf(r) !== -1, r + " is in");
+  c.o2S().sheet.target = "r6";
+  const html = c.o2SheetHtml(d.byRef.get("r4"), d);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c._ops)), [{ op: "move", ref: "r4", target: "r6" }]);
+  assert.ok(/Experience is deeper than four/.test(html) && !/Apply/.test(html));
+});
+test("new sub-department: the sheet files org.create under the selected department", async () => {
+  const c = fresh(); c.loadProposals = () => {};
+  c.o2Select("r4"); c.o2OpenSheet("create");
+  c.o2S().sheet.name = "  Design  ";
+  await c.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body)), { kind: "org.create", args: { parent: "r4", name: "Design" } });
+});
+test("a filed .html opens in the sandboxed frame from /api/org2/page", () => {
+  const c = fresh(); c.o2S().sel = "r4";
+  c.o2OpenPage("holding/website/org.html", "Org page");
+  const html = c.o2PageHtml(c.o2S().page);
+  assert.ok(/<iframe class="o2frame" src="\/api\/org2\/page\?path=holding%2Fwebsite%2Forg\.html&amp;theme=dark" [^>]*sandbox="allow-scripts"/.test(html));
+  c.o2OpenPage("notes.txt");
+  assert.strictEqual(c.o2S().page.path, "holding/website/org.html", "only an html path opens as a page");
+});
+test("health: the server's charter findings, as names that open the department", () => {
+  const c = fresh({ simulate: () => ({ pending: false, error: null, findings: [] }) });
+  const d = c.o2Data();
+  let html = c.o2HealthHtml(d.byRef.get("r4"), d);
+  assert.ok(c.calls.apiGet.indexOf("/api/org2/health/r4") !== -1, "asked once");
+  assert.ok(/Checking/.test(html));
+  c.o2S().health.r4 = { data: { unowned: [{ ref: "r5", name: "Org" }], one_line: [{ ref: "r4", name: "Experience", title: "Experience Charter" }], overlaps: [{ a: "Org", b: "Org design", similarity: 0.6 }] }, error: null };
+  html = c.o2HealthHtml(d.byRef.get("r4"), d);
+  assert.ok(/No charter: <button[^>]*data-o2ref="r5"[^>]*>Org<\/button>/.test(html));
+  assert.ok(/One line: /.test(html) && /Org and Org design overlap/.test(html));
+  c.o2S().health.r4 = { data: { unowned: [], one_line: [], overlaps: [] }, error: null };
+  assert.ok(/Every department under Experience has a charter/.test(c.o2HealthHtml(d.byRef.get("r4"), d)));
+  c.o2S().health.r4 = { data: null, error: "boom" };
+  assert.ok(/data-o2act="healthretry"/.test(c.o2HealthHtml(d.byRef.get("r4"), d)));
+});
+test("the request kinds are proposal kinds and the applier routes them to org2_apply", () => {
+  for (const k of ["org.rename", "org.move", "org.create"]) assert.ok(propSrc.indexOf('"' + k + '"') !== -1, k);
+  const ap = apiSrc.slice(apiSrc.indexOf("def _apply_proposal"), apiSrc.indexOf("def _apply_proposal") + 1600);
+  assert.ok(/org2_apply\.apply_request/.test(ap));
+  assert.ok(!/import org2_apply|from org2_apply/.test(fs.readFileSync(path.join(__dirname, "org2_api.py"), "utf8")), "the read module never imports the applier");
 });
 test("panel.css carries a scoped .o2 block with tokens only", () => {
   const start = css.indexOf("/* ── Org (org2");

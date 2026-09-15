@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.275.0 (2026-09-15, HEAD)
+## v2.276.0 (2026-09-15, HEAD)
+
+**The new Org screen edits, filters and asks** (BUILD-PLAN.md phases 6-9, still behind `flags.org2`). The
+screen takes the whole row, so the tree, the list and the viewer stay beside each other. A document opens
+in the Workspace's editor and saves in place through `/api/fs/write`; a file changed elsewhere shows
+"Changed in another session" with Reload. Search reaches charter titles, filed work and documents; the
+funnel filters by kind and charter state. The pencil gains Rename, Move (previewed with the studio's own
+check) and New sub-department, each filed as a proposal that waits in Approvals and is applied registry-only
+by `org2_apply.py` on approval. Health lists departments with no charter, one-line charters and overlapping
+siblings. A filed .html opens in the app page frame under the page CSP. Routes: `search`, `filter`,
+`request`, `health/{ref}`, `page` under `/api/org2`. Old Org untouched. Tests: `test_org2.js` 48,
+`test_org2_api.py` 13.
+
+## v2.275.0 (2026-09-15)
 
 **A new Org screen, behind a flag.** Set `flags.org2: true` in `~/.sutra-ui/settings.json` and the
 rail gains **Org** above the earlier Org accordion, which now reads **Old Org** and keeps every screen,

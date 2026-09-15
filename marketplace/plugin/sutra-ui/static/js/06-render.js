@@ -1820,8 +1820,11 @@ function render(){
      96/4 and the chat column four words wide. Same contract as Agents:
      S.openPanes is untouched, leaving the goal brings every pane back, and
      this is solo only while the goal screen is actually painting. */
+  /* THE ORG SCREEN OPENS ALONE too (19-org2.js, BUILD-PLAN slice B): it carries
+     a tree column, a list column and a viewer; measured beside one session pane
+     the container query hid both columns and the viewer alone was left. */
   const soloScreen = !bClosed
-    && (S.screen === "agents" || S.screen === "goal");
+    && (S.screen === "agents" || S.screen === "goal" || S.screen === "org2");
   const open = soloScreen ? []
     : S.openPanes.map(id=>S.sessions.find(s=>s.id===id)).filter(Boolean);
   const bCol = !!S.ui.paneCollapsed.browse;
@@ -1959,6 +1962,10 @@ function render(){
       const gww = S.screen === "goal" && !bCol;
       bp.classList.toggle("gwwide", gww);
       if (gww && bp.style) bp.style.flex = "1 1 100%";
+      /* and the Org screen (19-org2.js): tree, list and viewer need the row */
+      const o2w = S.screen === "org2" && !bCol;
+      bp.classList.toggle("o2wide", o2w);
+      if (o2w && bp.style) bp.style.flex = "1 1 100%";
     }
   }
   wire();

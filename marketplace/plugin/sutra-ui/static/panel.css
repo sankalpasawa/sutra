@@ -3552,6 +3552,37 @@
 .o2dot{width:8px;height:8px;border-radius:50%;margin-top:6px;display:inline-block}
 .o2band{margin-top:14px;padding:6px 10px;border-radius:6px;background:var(--warn-bg);color:var(--warn);font:500 11px/1.4 var(--sans)}
 .o2.off .o2tree{opacity:.45}
+/* the screen takes the row (06-render.js sets .o2wide the way it sets .agwide) */
+.pane.browse.o2wide{flex:1 1 100%;min-width:min(100%,720px)}
+/* filter popover under the funnel: two rows of chips, nothing else */
+.o2pop{position:absolute;top:34px;left:0;right:0;z-index:6;background:var(--card);border:1px solid var(--line);
+  border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.o2chips{display:flex;flex-wrap:wrap;gap:5px}
+.o2chip{border:1px solid var(--line);background:none;border-radius:999px;padding:2px 9px;font:500 11px/1.5 var(--sans);
+  color:var(--muted);cursor:pointer}
+.o2chip[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+.o2chip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.o2left{position:relative}
+/* the document editor in place: the vendored editor fills the viewer body */
+.o2ed{flex:1;min-height:0;display:flex;flex-direction:column}
+.o2ed > *{flex:1;min-height:0}
+.o2vline{display:flex;align-items:center;gap:10px;padding:5px 11px;border-bottom:1px solid var(--line-soft);
+  font:500 11.5px/1.4 var(--sans);color:var(--muted);flex:none}
+.o2vline.warn{background:var(--warn-bg);color:var(--warn)}
+.o2vline span{flex:1}
+/* a request sheet in the viewer: one field, one preview, one action */
+.o2sheet{max-width:520px}
+.o2sheet label{display:block;font:600 9px/1.8 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
+.o2sheet input,.o2sheet select{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;
+  padding:6px 9px;color:var(--ink);font:400 13px/1.4 var(--sans);outline:none}
+.o2sheet input:focus,.o2sheet select:focus{border-color:var(--acc)}
+.o2sheet .o2acts2{display:flex;gap:8px;margin-top:18px;align-items:center}
+.o2sheet .o2err{color:var(--warn);font:400 12px/1.4 var(--sans)}
+.o2sheet .o2prev{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:8px}
+.o2menu .o2msep{height:1px;background:var(--line-soft);margin:4px 0}
+/* a department's name inside a Health line opens it */
+.o2lnk{background:none;border:0;padding:0;font:inherit;color:var(--acc);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.o2lnk:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 @container (max-width:760px){ .o2left{display:none} .o2list{display:none} }
 
 /* ══════════════ Settings: overview first ═══════════════════════════════════
