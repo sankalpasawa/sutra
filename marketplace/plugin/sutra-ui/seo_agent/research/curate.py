@@ -28,10 +28,24 @@ own publisher calls superseded") instead of a sentence copied from one page.
 Not ported, deliberately: the OpenAI shim (`11-storm/scripts/shim.py`). It exists only because
 dspy/litellm speak the OpenAI HTTP API; this package calls the CLI directly.
 
+A SEARCH THAT FAILS IS A SEARCH WE DO WITHOUT (2026-09-15). The conversation issues ~48 live
+searches. One of them coming back "40101: Internal SE Server Error" used to raise straight through
+pool.map and throw away everything the other researchers had already found. dfs.py now waits and
+retries temporary trouble; a search that still fails after that is skipped and counted, the way an
+unreadable page already was. If NO search worked at all the round still fails loudly, because an
+article with no research behind it must not be written.
+
+AND THE WORK IS KEPT AS IT HAPPENS. `keep` (optional) is called with the whole conversation so far
+after every finished turn, and `resume` hands a saved one back, so a round that dies part way picks
+up where it stopped instead of paying for the same searches twice. run_research wires both to
+_work/curate-partial.json.
+
 Reads: topic, angle, spine, world, company. Returns
-{"team": [...], "turns": [...], "pages": [...], "queries": [...], "cost": float, "demo": bool}.
+{"team": [...], "turns": [...], "pages": [...], "queries": [...], "cost": float, "demo": bool,
+ "searches": int, "failed_searches": int}.
 """
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -52,6 +66,7 @@ TOTAL_TIMEOUT = 900.0     # and for the whole conversation: past this it stops a
 ANSWER_WORDS = 2500       # per-source word cap inside one answer prompt (the deep-RAG tweak)
 INFO_WORDS = 15000        # and the whole prompt's cap, so one answer cannot run away
 END = "thank you so much for your help"
+FAIL_FAST = 6             # searches failed with none ever working: stop asking, the service is down
 
 
 def _words(text, limit):
@@ -211,10 +226,20 @@ def _answer(topic, question, sources):
         return "I cannot answer this question based on the available information (%s)." % str(e)[:80]
 
 
-def _converse(persona, topic, article, company, pages, budget, say=None):
-    """One persona's interview: TURNS questions, each one searched and answered."""
-    turns = []
-    for _ in range(TURNS):
+def _dead(budget):
+    """Has every search so far failed, enough of them to call it? Then asking more is pointless."""
+    return budget["failed"] >= FAIL_FAST and budget["failed"] == budget["searched"]
+
+
+def _converse(persona, topic, article, company, pages, budget, say=None, turns=None, on_turn=None):
+    """One persona's interview: TURNS questions, each one searched and answered.
+
+    `turns` is the conversation so far when a saved round is resumed; `on_turn` is told after every
+    finished turn, so the work can be kept."""
+    turns = list(turns or [])
+    for _ in range(TURNS - len(turns)):
+        if _dead(budget):
+            break
         if len(pages) >= budget["max_pages"]:
             break
         if time.time() > budget["deadline"]:
@@ -229,15 +254,34 @@ def _converse(persona, topic, article, company, pages, budget, say=None):
         if q.lower().startswith(END) and len(turns) >= FLOOR_TURNS:
             break
         qs = _queries(topic, q)
-        urls, cost, demo = [], 0.0, False
+        urls, cost, demo, failed = [], 0.0, False, 0
         for query in qs:
-            u, c, d = _search(query, company)
+            try:
+                u, c, d = _search(query, company)
+            except Exception as e:  # noqa: BLE001 — a failed search is a search we do without
+                failed += 1
+                with budget["lock"]:
+                    budget["searched"] += 1
+                    budget["failed"] += 1
+                    budget["last_error"] = str(e)[:200]
+                continue
+            with budget["lock"]:
+                budget["searched"] += 1
             urls += u
             cost += c
             demo = demo or d
-        budget["cost"] += cost
-        budget["demo"] = budget["demo"] or demo
-        budget["queries"] += qs
+        with budget["lock"]:
+            budget["cost"] += cost
+            budget["demo"] = budget["demo"] or demo
+            budget["queries"] += qs
+        if qs and failed == len(qs):
+            # Nothing came back for this question at all, so there is nothing to answer from. It is
+            # not kept as a turn: an "I cannot answer" turn would only be saved and replayed.
+            if say:
+                say("%s's searches failed" % persona["role"],
+                    "%d of %d searches for \"%s\" did not come back; moving on"
+                    % (failed, len(qs), q[:70]))
+            continue
         urls = [u for u in dict.fromkeys(urls)][: budget["max_pages"] - len(pages)]
         fresh = len(_read(urls, pages))
         sources = []
@@ -248,34 +292,81 @@ def _converse(persona, topic, article, company, pages, budget, say=None):
         answer = _answer(topic, q, sources[:SEARCH_TOP_K])
         turns.append({"persona": persona["role"], "question": q, "queries": qs,
                       "urls": [u for u, _ in sources], "answer": answer})
+        if on_turn:
+            on_turn(persona, turns, False)
         if say:
             say("%s asked: %s" % (persona["role"], q[:70]),
                 "%d new page%s read, %d already seen, %d answered from"
                 % (fresh, "" if fresh == 1 else "s", len(urls) - fresh, len(sources)))
+    if on_turn and not _dead(budget):
+        on_turn(persona, turns, True)      # this persona is finished; a resume skips it
     return turns
 
 
-def run(topic, angle, spine_ctx, company, own_domain="", max_pages=MAX_PAGES, say=None):
-    """The whole curation round. Personas run in parallel; each one's turns are sequential."""
+def run(topic, angle, spine_ctx, company, own_domain="", max_pages=MAX_PAGES, say=None,
+        resume=None, keep=None):
+    """The whole curation round. Personas run in parallel; each one's turns are sequential.
+
+    resume: a saved round (what `keep` was last given), reused as far as it got. keep: called with
+    the round so far after every finished turn."""
     article = _article_block(topic, angle, spine_ctx)
-    team = pick_team(topic, angle, spine_ctx, company)
+    saved = resume if isinstance(resume, dict) and resume.get("team") else {}
+    team = saved.get("team") or pick_team(topic, angle, spine_ctx, company)
     if not team:
         return {"team": [], "turns": [], "pages": [], "queries": [], "cost": 0.0, "demo": False,
                 "skipped": "no research team came back, so no interviews ran"}
+    prior = {r: list(ts or []) for r, ts in (saved.get("turns") or {}).items()}
+    done = set(saved.get("done") or [])
     if say:
-        say("Chose %d researchers" % len(team), "; ".join(r["role"] for r in team))
+        if saved:
+            say("Picking the interviews up where they stopped",
+                "%d questions already answered, %d of %d researchers finished; those searches are "
+                "not bought again" % (sum(len(v) for v in prior.values()), len(done), len(team)))
+        else:
+            say("Chose %d researchers" % len(team), "; ".join(r["role"] for r in team))
 
-    pages, budget = {}, {"cost": 0.0, "demo": False, "queries": [], "max_pages": max_pages,
-                        "deadline": time.time() + TOTAL_TIMEOUT}
+    pages = dict(saved.get("pages") or {})
+    budget = {"cost": float(saved.get("cost") or 0.0), "demo": bool(saved.get("demo")),
+              "queries": list(saved.get("queries") or []), "max_pages": max_pages,
+              "deadline": time.time() + TOTAL_TIMEOUT, "searched": 0, "failed": 0,
+              "last_error": "", "lock": threading.Lock()}
+    save_lock = threading.Lock()
+
+    def on_turn(persona, rows, finished):
+        if not keep:
+            return
+        with save_lock:                    # one writer at a time, so a later save never loses a turn
+            prior[persona["role"]] = list(rows)
+            if finished:
+                done.add(persona["role"])
+            with budget["lock"]:
+                state = {"team": team, "turns": dict(prior), "done": sorted(done),
+                         "pages": dict(pages), "queries": list(budget["queries"]),
+                         "cost": budget["cost"], "demo": budget["demo"]}
+            keep(state)
+
+    def converse(r):
+        if r["role"] in done:
+            return prior.get(r["role"]) or []
+        return _converse(r, topic, article, company, pages, budget, say=say,
+                         turns=prior.get(r["role"]), on_turn=on_turn)
+
     with ThreadPoolExecutor(max_workers=len(team)) as pool:
-        results = list(pool.map(
-            lambda r: _converse(r, topic, article, company, pages, budget, say=say), team))
+        results = list(pool.map(converse, team))
     turns = [t for rows in results for t in rows]
+    worked = budget["searched"] - budget["failed"]
+    if budget["failed"] and worked == 0 and not any(prior.get(r["role"]) for r in team):
+        raise RuntimeError("Every research search failed (%d of %d), so there is nothing to write "
+                           "from. The last error: %s"
+                           % (budget["failed"], budget["searched"], budget["last_error"]))
     own = (own_domain or "").lower().lstrip("www.")
     kept = [dict(p, url=u) for u, p in pages.items()
             if not (own and (u.split("/")[2].lower().lstrip("www.") if "://" in u else "").endswith(own))]
     if say:
-        say("Interviews done", "%d questions asked, %d pages read across %d searches"
-            % (len(turns), len(kept), len(budget["queries"])))
+        say("Interviews done", "%d questions asked, %d pages read across %d searches%s"
+            % (len(turns), len(kept), len(budget["queries"]),
+               "; %d of %d searches failed and were skipped" % (budget["failed"], budget["searched"])
+               if budget["failed"] else ""))
     return {"team": team, "turns": turns, "pages": kept, "queries": budget["queries"],
-            "cost": budget["cost"], "demo": budget["demo"]}
+            "cost": budget["cost"], "demo": budget["demo"],
+            "searches": budget["searched"], "failed_searches": budget["failed"]}

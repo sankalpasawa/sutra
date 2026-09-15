@@ -138,6 +138,26 @@ MIN_CREDITS = _c.MIN_CREDITS
 PAID_STEPS = ("pool", "metrics", "serp", "gap-evidence")
 EVIDENCE_STEPS = ("curate", "evidence")
 
+# The research conversation, kept turn by turn while it runs (2026-09-15). "curate" is only written
+# when the whole round finishes, so a round that died part way used to take every search it had
+# bought with it, and the retry paid for all of them again. This file holds the round so far, with
+# the topic and angle it belongs to, and curate.run picks up from it.
+CURATE_PARTIAL = "curate-partial"
+
+
+def _curate(ctx, fresh, topic, angle, spine_ctx, company, say):
+    """curate.run, resumable. fresh=True throws any saved round away first (a redo, or the thin
+    dossier's second attempt, which must not be the first attempt replayed)."""
+    key = {"topic": topic, "angle": angle}
+    if fresh:
+        _c.save_work(ctx, CURATE_PARTIAL, {})
+    saved = _c.load_work(ctx, CURATE_PARTIAL) or {}
+    if (saved.get("topic"), saved.get("angle")) != (topic, angle):
+        saved = {}
+    return curate.run(topic, angle, spine_ctx, company, own_domain=company.get("domain") or "",
+                      say=say, resume=saved or None,
+                      keep=lambda state: _c.save_work(ctx, CURATE_PARTIAL, dict(state, **key)))
+
 
 def _paid_work_left(ctx, redo):
     """Is there anything left in this run that has to be bought?
@@ -461,8 +481,7 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     # grounded in what the last answer said. The dossier is written from what they retrieved, and
     # the cards are lifted out of the dossier, which is what lets one card cite two sources.
     spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"]}
-    cur, reused_cur = step("curate", lambda: curate.run(
-        topic, angle, spine_ctx, company, own_domain=company.get("domain") or "", say=say))
+    cur, reused_cur = step("curate", lambda: _curate(ctx, redo, topic, angle, spine_ctx, company, say))
     article_brief = curate._article_block(topic, angle, spine_ctx)
     dos = har = None
     if cur.get("turns"):
@@ -480,8 +499,8 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
             say("The research came back too thin (%s, under %s)"
                 % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS)),
                 "A healthy dossier runs to thousands of words. Running the interviews again, once")
-            cur, _ = _c.cached(ctx, "curate", True, lambda: curate.run(
-                topic, angle, spine_ctx, company, own_domain=company.get("domain") or "", say=say))
+            cur, _ = _c.cached(ctx, "curate", True,
+                               lambda: _curate(ctx, True, topic, angle, spine_ctx, company, say))
             reused_cur = False
             if not cur.get("turns"):
                 dos = None

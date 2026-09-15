@@ -69,17 +69,72 @@ def demo_mode():
 
 # ---- the one call ----------------------------------------------------------------------
 
-def post(path, payload):
+# TEMPORARY TROUBLE ON THEIR SIDE IS RETRIED, HERE, ONCE FOR EVERY CALLER (2026-09-15). Three
+# research runs died in ten minutes on "DataForSEO task failed (40101): Internal SE Server Error":
+# one of ~48 live searches hit a bad moment at their Google fetch, the error went straight up, and
+# the whole research conversation was thrown away. The Claude CLI calls already wait and try again
+# (llm.CLI_RETRY_SLEEPS); these did not. Same waits.
+#
+# The codes are from their own list (docs.dataforseo.com/v3/appendix/errors), and only the ones it
+# describes as temporary: 40101 search engine server error, 40103 task failed and retry recommended,
+# 40202 rate limit, 40209 too many simultaneous requests, 50000 unexpected internal error, 50303 API
+# being updated, 50401 live task timed out. A real refusal is NEVER retried, because it will say the
+# same thing again: bad login (40100), no money (40200, 40210, HTTP 402), bad parameters (405xx).
+RETRY_SLEEPS = (5, 15, 40)
+RETRY_CODES = frozenset({40101, 40103, 40202, 40209, 50000, 50303, 50401})
+
+
+def _retryable(data):
+    """Does this answer say "try again in a moment"? The top-level code, or the task's own code when
+    the call carried exactly one task. A many-task call (the queue's task_post) is never re-sent over
+    one task's code: that would buy every other search in it twice."""
+    code = (data or {}).get("status_code")
+    if code in RETRY_CODES:
+        return True
+    tasks = (data or {}).get("tasks") or []
+    return len(tasks) == 1 and (tasks[0] or {}).get("status_code") in RETRY_CODES
+
+
+def _send(method, path, payload=None):
+    """One HTTP call with the retry above. Returns the parsed body; raises what the last try raised.
+
+    A temporary answer that is still temporary after the last wait is RETURNED, not raised here, so
+    the caller's normal check (the top-level 20000 below, or _items() for a task) raises it with the
+    message DataForSEO gave, exactly as before this retry existed."""
     auth = _auth()
     if auth is None:
         raise NoCredentials(
             "DataForSEO is not connected. Add dataforseo_login and dataforseo_password "
             "in the Connections tab."
         )
-    r = httpx.post(BASE + path, auth=auth, json=payload, timeout=TIMEOUT,
-                   headers={"content-type": "application/json"})
-    r.raise_for_status()
-    data = r.json()
+    attempts = 1 + len(RETRY_SLEEPS)
+    for attempt in range(attempts):
+        last = attempt + 1 >= attempts
+        try:
+            if method == "post":
+                r = httpx.post(BASE + path, auth=auth, json=payload, timeout=TIMEOUT,
+                               headers={"content-type": "application/json"})
+            else:
+                r = httpx.get(BASE + path, auth=auth, timeout=TIMEOUT)
+            if r.status_code >= 500 and not last:
+                time.sleep(RETRY_SLEEPS[attempt])
+                continue
+            r.raise_for_status()
+            data = r.json()
+        except (httpx.TimeoutException, httpx.TransportError):
+            # a timeout, a dropped connection, a DNS blip: nothing was answered, so ask again
+            if last:
+                raise
+            time.sleep(RETRY_SLEEPS[attempt])
+            continue
+        if _retryable(data) and not last:
+            time.sleep(RETRY_SLEEPS[attempt])
+            continue
+        return data
+
+
+def post(path, payload):
+    data = _send("post", path, payload)
     # They answer 200 with the real verdict inside the body, so the HTTP code alone is
     # no proof the call worked. 20000 is their "ok".
     code = data.get("status_code")
@@ -91,16 +146,8 @@ def post(path, payload):
 
 def get(path):
     """The same call, for the endpoints that only answer to GET (the queue's tasks_ready and
-    task_get). Same credential, same 20000 discipline, same one place."""
-    auth = _auth()
-    if auth is None:
-        raise NoCredentials(
-            "DataForSEO is not connected. Add dataforseo_login and dataforseo_password "
-            "in the Connections tab."
-        )
-    r = httpx.get(BASE + path, auth=auth, timeout=TIMEOUT)
-    r.raise_for_status()
-    data = r.json()
+    task_get). Same credential, same 20000 discipline, same retry, same one place."""
+    data = _send("get", path)
     code = data.get("status_code")
     if code is not None and code != 20000:
         raise RuntimeError("DataForSEO refused the call (%s): %s"
