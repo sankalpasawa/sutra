@@ -738,6 +738,34 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
     return promoted
 
 
+async def drain_queue(validated_say, verifier=None, store=None):
+    """Fill every free execution slot from the FIFO queue. Returns the ids
+    promoted, oldest first.
+
+    THE RAISE-THE-CAP PATH. A mission finishing frees exactly one slot, so
+    the terminal/blocked funnel calls _promote_after_slot_freed once and that
+    is right. Raising "Running at once" from 2 to 5 frees THREE at once, and
+    a single promotion would leave two tasks sitting queued behind a limit
+    that no longer exists -- the founder would have to wait for unrelated
+    work to end before their own setting took effect.
+
+    Bounded by construction: _promote_after_slot_freed returns None the
+    moment the queue is empty or the cap is full again, and the loop also
+    carries a hard ceiling in case a promotion fails in a way that leaves the
+    row queued (a spawner that throws transitions it to `failed`, but a
+    future path that does not must still not spin here).
+    """
+    store = store or mission_engine.MissionStore()
+    promoted = []
+    for _ in range(mission_engine.RUNNING_CEILING + 1):
+        m = await _promote_after_slot_freed(store, None, validated_say,
+                                            verifier)
+        if m is None:
+            break
+        promoted.append(m["id"])
+    return promoted
+
+
 def _launch(mid, validated_say, verifier):
     if mid in RUNNING and not RUNNING[mid].done():
         return
@@ -977,6 +1005,10 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
     running_sids = {m.get("target_session") for m in running
                     if m.get("target_session")}
     running_n = len(running)
+    # the founder's cap, read ONCE for the whole sweep: this loop counts
+    # admissions as it goes, and a mid-sweep settings change that moved the
+    # bar under it would make the count and the limit disagree
+    cap = mission_engine.max_running()
     resumed, left = [], []
     paused = sorted(store.list(states=("paused",)),
                     key=lambda m: m.get("created_ns", 0))
@@ -1032,8 +1064,8 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                                   % sid)
                 left.append(mid)
                 continue
-            if running_n >= mission_engine.MAX_RUNNING:
-                _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+            if running_n >= cap:
+                _left_paused(mid, "cap %d reached" % cap)
                 left.append(mid)
                 continue
             if not session_reader.read_session(sid):
@@ -1059,8 +1091,8 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                               % sid)
             left.append(mid)
             continue
-        if running_n >= mission_engine.MAX_RUNNING:
-            _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+        if running_n >= cap:
+            _left_paused(mid, "cap %d reached" % cap)
             left.append(mid)
             continue
         if not session_reader.read_session(sid):
@@ -1867,7 +1899,7 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                 # cap BEFORE any spawn (codex P1): a full scheduler must
                 # queue cheaply, never leak a live delegate for a queued row
                 if len(store.list(states=("running",))) \
-                        >= mission_engine.MAX_RUNNING:
+                        >= mission_engine.max_running():
                     mission_engine.MissionScheduler(store).start(mid)
                     return
                 prov = provisioner or DEFAULT_PROVISIONER["fn"]

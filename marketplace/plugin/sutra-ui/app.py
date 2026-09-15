@@ -1833,7 +1833,7 @@ def _publish_delegate_chat(mission):
             _m = store.load(mission["id"])
             if _m and _m["state"] == "brief_confirm" \
                     and len(store.list(states=("running",))) \
-                    < _mission_engine.MAX_RUNNING:
+                    < _mission_engine.max_running():
                 _mission_engine.MissionScheduler(store).start(mission["id"])
         except Exception:           # noqa: BLE001
             pass
@@ -2266,6 +2266,15 @@ async def api_shadow_settings():
     for r in live:
         if shadow_precedence.row_scope(r) == "chat":
             per_chat.setdefault(r.get("scope_id") or "?", []).append(r)
+    # best-effort, like the instruction read above: a settings page must not
+    # 500 because the mission store is unreadable. The counts degrade to 0
+    # and the cap still comes back.
+    try:
+        _tasks_store = _mission_engine.MissionStore()
+        _run_n = len(_tasks_store.list(states=("running",)))
+        _queued_n = len(_tasks_store.list(states=("queued",)))
+    except Exception:                     # noqa: BLE001
+        _run_n = _queued_n = 0
     return {
         "engage": [
             "Answer with the outcome in the first line.",
@@ -2285,18 +2294,125 @@ async def api_shadow_settings():
             "external client repositories",
             "irreversible external sends",
         ],
-        # The two task limits this build actually runs at, READ-ONLY. Not new
-        # settings and not a new store: both are existing constants in
-        # mission_engine, and the Tasks section of Shadow settings was the
-        # only reader that could not see them from the browser. Surfacing a
-        # number the engine already enforces is the alternative to the
-        # settings page printing one that is merely plausible.
+        # The task limits this build actually runs at. `running_at_once` is
+        # now WRITABLE (POST /api/shadow/settings/tasks) and this read is the
+        # same resolver admission uses, so the page states the cap the engine
+        # keeps rather than one that is merely plausible. The turn budget
+        # stays read-only: it is chosen by the KIND of work, not by taste.
+        #
+        # `running_now` rides along because the founder needs it to read the
+        # cap honestly -- lowering the cap below what is in flight queues the
+        # NEXT task, it does not kill the ones already working, and a bare
+        # number cannot say that.
         "tasks": {
-            "running_at_once": _mission_engine.MAX_RUNNING,
+            "running_at_once": _mission_engine.max_running(),
+            "running_at_once_min": _mission_engine.MIN_RUNNING,
+            "running_at_once_max": _mission_engine.RUNNING_CEILING,
+            "running_now": _run_n,
+            "queued_now": _queued_n,
             "turn_budget": {k: v["max_turns"]
                             for k, v in _mission_engine.TEMPLATES.items()},
         },
     }
+
+
+@app.post("/api/shadow/settings/tasks")
+async def api_shadow_settings_tasks(request: Request):
+    """Write "Running at once" -- the only task limit the founder owns.
+
+    WHY THIS IS A SEPARATE ROUTE and not a PUT over /api/shadow/settings:
+    almost everything that GET returns is DERIVED (the floors are constants,
+    memory is the instructions ledger, attention is the watch lists, the turn
+    budget belongs to the kind of work). A whole-object write would invite a
+    client to send those back and make the shape look settable when it is
+    not. One route, one field, no ambiguity about what a write can move.
+
+    RAISING THE CAP DRAINS THE QUEUE, IN THE BACKGROUND. Otherwise the
+    setting is a promise the founder cannot see kept: tasks queued behind the
+    old limit would sit there until unrelated work happened to finish.
+    Promotion goes through the SAME path a finishing mission uses
+    (MissionScheduler.on_terminal via shadow_runner.drain_queue), so a
+    promoted row provisions its delegate and launches exactly as it always
+    did -- this route adds no second way for a mission to start.
+
+    WHY IT CANNOT BE AWAITED HERE. A promoted mission with target_mode "new"
+    still has to SPAWN, and spawning a delegate takes minutes: awaiting the
+    drain would hold this request open across it and let a client timeout
+    cancel a promotion mid-spawn. That is the exact failure
+    start_mission_async was written for ("second-flight fix"), and the same
+    answer applies -- the drain is an app task, the answer is instant, and
+    the mission files are the progress surface the UI re-reads.
+
+    SO THE RESPONSE SAYS `starting`, NOT `promoted`. The number of slots the
+    drain will try to fill is known here and is true here; which missions
+    actually reached `running` is not knowable until the spawns land, and
+    reporting ids this route has not seen admitted would be a guess wearing
+    a result's clothes.
+
+    LOWERING NEVER KILLS. See mission_engine.set_max_running: the overflow
+    drains as work ends. The response says how many are over so the UI can
+    tell the founder rather than leaving them to wonder why 7 are running
+    under a cap of 3.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    if "running_at_once" not in body:
+        raise HTTPException(400, "running_at_once required")
+    try:
+        value = _mission_engine.set_max_running(body["running_at_once"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    store = _mission_engine.MissionStore()
+    running_now = len(store.list(states=("running",)))
+    queued_now = len(store.list(states=("queued",)))
+    # how many the drain can actually take: free slots, bounded by the queue
+    starting = max(0, min(queued_now, value - running_now))
+    if starting:
+        _drain_queue_in_background(value)
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "running_at_once set to %d (%d running, %d queued, "
+                   "starting %d)" % (value, running_now, queued_now, starting)})
+    return {"running_at_once": value,
+            "min": _mission_engine.MIN_RUNNING,
+            "max": _mission_engine.RUNNING_CEILING,
+            "running_now": running_now,
+            "queued_now": queued_now,
+            "starting": starting,
+            # honest about the one thing a lower cap cannot do
+            "over_cap": max(0, running_now - value)}
+
+
+def _drain_queue_in_background(value):
+    """Schedule the promotion sweep off the request. Extracted so the route
+    reads as one decision and so a test can watch the schedule without
+    spawning a delegate."""
+    async def go():
+        try:
+            await shadow_runner.drain_queue(_validated_say)
+        except Exception as exc:          # noqa: BLE001
+            # the SETTING is saved either way -- a promotion that failed must
+            # not make the founder think their limit did not stick
+            _shadow_ledger_safe({"kind": "setting", "mission_id": None,
+                                 "summary": "cap raised to %d but the queue "
+                                            "did not drain: %s"
+                                            % (value, str(exc)[:160])})
+    # create_task, not get_event_loop().create_task: the only caller is an
+    # async route, so a loop is always running here, and the bare form is
+    # what the rest of this file uses (_reader, pump_out, autostart).
+    # get_event_loop() is deprecated off-loop and would warn on 3.12+.
+    asyncio.create_task(go())
+
+
+def _shadow_ledger_safe(row):
+    """Audit rows are a record, never a reason to fail the write that caused
+    them -- the house rule every other Shadow write in this file follows."""
+    try:
+        import shadow_ledger
+        shadow_ledger.append("actions", row)
+    except Exception:                     # noqa: BLE001
+        pass
 
 
 @app.get("/api/shadow/watches")

@@ -390,7 +390,7 @@ cwd bug above would flip verdicts even if it did. Already in this directory,
 `./run-tests.sh test_shadow_*.py` is the same thing.
 
 ```bash
-./run-tests.sh test_shadow_*.py            # the 38 Python lanes, one process each
+./run-tests.sh test_shadow_*.py            # the 39 Python lanes, one process each
 
 # the 11 JS lanes — run-tests.sh covers Python only
 for f in test_shadow_*.js; do
@@ -480,6 +480,7 @@ evidence you installed something wrong.
 | `test_shadow_home_guard.py` | a test can never write the live Shadow home, in two layers |
 | `test_shadow_floor_choke.py` | the floors hold on the direct say path |
 | `test_shadow_journeys.py` | the designed journeys, end to end |
+| `test_shadow_run_limit.py` | "Running at once" at all three levels — the store clamps and never raises, admission re-reads the cap per decision, the route drains on a raise and refuses to kill on a lower |
 | `test_shadow_home.js` · `test_shadow_rhs.js` | the two screens, against the real shipped modules |
 
 One lane is **opt-in and deliberately outside the gate**:

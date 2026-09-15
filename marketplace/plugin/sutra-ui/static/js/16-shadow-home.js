@@ -2685,22 +2685,35 @@ function shadowSetMemoryHtml(d){
    stepper, Budget per task as a value with the AUTO pill, and Delegate
    offers as removable chips with "+ add".
 
-   THE TWO NUMBERS ARE REAL. running_at_once is mission_engine.MAX_RUNNING --
-   the cap MissionScheduler actually enforces before it queues -- and the
-   budget is TEMPLATES[kind].max_turns, which is what a mission is created
-   with and what fails it when spent. Both now ride the settings endpoint
-   that was already being read, so this page states the limits the engine
-   keeps rather than a number that merely looks right.
+   THE TWO NUMBERS ARE REAL. running_at_once is the cap MissionScheduler
+   actually enforces before it queues -- and the budget is
+   TEMPLATES[kind].max_turns, which is what a mission is created with and
+   what fails it when spent. Both ride the settings endpoint that was
+   already being read, so this page states the limits the engine keeps
+   rather than a number that merely looks right.
+
+   THE STEPPER NOW WRITES, and it is the only control on this page that
+   does. It POSTs to /api/shadow/settings/tasks, which is the same cap
+   admission reads, so - and + move what the engine enforces rather than a
+   display copy of it. The clamp is the SERVER's (min/max come back from
+   the endpoint); the button is only disabled at the ends so a founder is
+   not invited to click into a refusal.
 
    AUTO IS LITERALLY TRUE HERE: the budget is not a preference, it is chosen
    by the kind of work. The pill says so, and the row names the kind it is
-   quoting rather than implying one number governs every task.
+   quoting rather than implying one number governs every task. It carries no
+   hook for that reason, not for want of a writer.
 
-   WHAT DOES NOT WRITE. The stepper's -/+, the chips' x and "+ add" are drawn
-   because the reference draws them, and carry NO action hook: there is no
-   writer for any of the three, and a control that answers a click by doing
-   nothing is worse than one that says it cannot yet. Same rule the Autonomy
-   section follows. */
+   WHAT STILL DOES NOT WRITE. The chips' x and "+ add" are drawn because the
+   reference draws them and carry NO action hook: there is nowhere to keep a
+   new delegate kind, and a control that answers a click by doing nothing is
+   worse than one that says it cannot yet. Same rule Autonomy follows.
+
+   WHAT THE SUB-LINE IS FOR. Lowering the cap does not stop work already
+   underway -- the server says so and refuses to pretend otherwise -- so
+   when more are running than the cap allows, the row says which, rather
+   than leaving the founder to read "3" beside five live tasks and conclude
+   the setting is broken. */
 function shadowSetTasksHtml(d){
   const t = (d && d.tasks) || {};
   const run = t.running_at_once;
@@ -2710,18 +2723,44 @@ function shadowSetTasksHtml(d){
   const kind = (shadowNewDraft().kind) || SH_KINDS[0];
   const turns = budgets[kind];
   const dead = ' aria-disabled="true" tabindex="-1" title="Not configurable yet"';
+  const lo = (typeof t.running_at_once_min === "number")
+    ? t.running_at_once_min : 1;
+  const hi = (typeof t.running_at_once_max === "number")
+    ? t.running_at_once_max : 20;
+  const busy = (typeof S !== "undefined" && S.shadowRunLimitBusy) || false;
+  /* an end-stop says so instead of clicking into a no-op; `busy` holds both
+     ends down for the one round-trip, so a double-click cannot send two */
+  const end = (atEnd) => (atEnd || busy)
+    ? ` aria-disabled="true" tabindex="-1" title="${escAttr(
+        busy ? "Saving\u2026" : (atEnd === "lo"
+          ? "At least " + lo + " task runs at a time"
+          : "At most " + hi + " tasks run at once"))}"`
+    : "";
   const stepper = run === undefined
     ? `<span class="ssempty">not reported</span>`
-    : `<span class="step"><button type="button"${dead
-        } aria-label="fewer">\u2212</button><span class="val">${
-        esc(String(run))}</span><button type="button"${dead
-        } aria-label="more">+</button></span>`;
+    : `<span class="step"><button type="button"${end(run <= lo && "lo")
+        } data-shrunlimit="${escAttr(String(Math.max(lo, run - 1)))}"
+        aria-label="fewer">\u2212</button><span class="val">${
+        esc(String(run))}</span><button type="button"${end(run >= hi && "hi")
+        } data-shrunlimit="${escAttr(String(Math.min(hi, run + 1)))}"
+        aria-label="more">+</button></span>`;
+  const over = (typeof t.running_now === "number" && run !== undefined
+                && t.running_now > run) ? t.running_now - run : 0;
+  const note = over
+    ? `<div class="srow ssnote">${esc(String(t.running_now))} are still
+        running \u2014 the new limit holds the next ${esc(String(over))
+        } back, it does not stop work already underway.</div>`
+    : (t.queued_now
+        ? `<div class="srow ssnote">${esc(String(t.queued_now))} waiting for a
+            free slot.</div>`
+        : "");
   const budget = turns === undefined
     ? `<span class="ssempty">not reported</span>`
     : `<span><span class="ev">${esc(String(turns))}</span> turns
         <span class="auto" title="set by the kind of work, not by you"
           >auto</span></span>`;
   return `<div class="srow"><span class="k">Running at once</span>${stepper}</div>
+    ${note}
     <div class="srow"><span class="k">Budget per task</span>${budget}</div>
     <div class="srow"><span class="k" style="flex:none">Delegate offers</span>
       <span class="chips">${SH_KINDS.map(k => `<span class="chip"${
@@ -3239,6 +3278,12 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
+    /* RUNNING AT ONCE. The one settings control on this page with a store
+       behind it. The button carries the value it would MOVE TO (already
+       clamped to the server's band when it was drawn), so the handler sends
+       a number rather than a direction -- a repeated click cannot compound
+       into a value nobody asked for while an earlier write is in flight. */
+    if (d.shrunlimit !== undefined) return shadowSetRunLimit(d.shrunlimit);
     if (d.shivsend) return shadowSendIntervention(d.shivsend);
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
@@ -3484,6 +3529,65 @@ async function shadowWatchSet(sid, watch){
   } catch (e) {}
   /* force: this read must show the write that just happened, so it never
      coalesces onto a read that was already in the air before the POST. */
+  loadShadowHome(true);
+}
+
+/* Write "Running at once".
+
+   THE SERVER IS THE CLAMP, and the answer is what the row repaints from --
+   never the optimistic value. Two reasons: the server floors/ceilings the
+   number, and raising the cap PROMOTES queued tasks, so the counts beside
+   the stepper change as a result of the write. Painting the requested value
+   and then discovering the server stored something else is the failure this
+   avoids.
+
+   BUSY HOLDS BOTH ENDS DOWN for the round-trip: a founder clicking + four
+   times quickly would otherwise send four writes off ONE rendered value and
+   land on 2 instead of 5. */
+async function shadowSetRunLimit(n){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowRunLimitBusy) return;
+  S.shadowRunLimitBusy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/tasks",
+                               { running_at_once: Number(n) });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && S.shadowSettings){
+      /* fold the answer into the settings object the page already reads --
+         one state, not a second copy of the cap living beside it */
+      S.shadowSettings.tasks = Object.assign({}, S.shadowSettings.tasks, {
+        running_at_once: body.running_at_once,
+        running_at_once_min: body.min,
+        running_at_once_max: body.max,
+        running_now: body.running_now,
+        queued_now: body.queued_now,
+      });
+    }
+    if (typeof showNudge === "function"){
+      if (!body){
+        showNudge("That limit did not stick — try again");
+      } else if (body.starting){
+        /* STARTING, not started: a promoted task may still have to spawn its
+           worker, which is why the server does not await the drain. The list
+           is what reports arrival. */
+        showNudge("Running at once is " + body.running_at_once
+          + " — starting " + body.starting + " that were waiting.");
+      } else if (body.over_cap){
+        showNudge("Running at once is " + body.running_at_once
+          + " — " + body.over_cap + " already underway keep going.");
+      } else {
+        showNudge("Running at once is " + body.running_at_once + ".");
+      }
+    }
+  } catch (e) {
+    if (typeof showNudge === "function")
+      showNudge("That limit did not stick — try again");
+  }
+  S.shadowRunLimitBusy = false;
+  /* re-read rather than trust the fold: a promotion moves mission rows too,
+     and the home is what draws them */
+  loadShadowSettings(true);
   loadShadowHome(true);
 }
 

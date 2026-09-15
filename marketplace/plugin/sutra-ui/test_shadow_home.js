@@ -1273,7 +1273,8 @@ const SET = { engage: ["outcome first"],
   const step = (sec.match(/<span class="step">[\s\S]*?<\/span>\s*<\/div>/) || [""])[0];
   assert(/\u2212/.test(step) && /\+</.test(step), "the stepper needs - and +");
   assert(/<span class="val">5<\/span>/.test(step),
-    "the stepper must show MAX_RUNNING, got: " + step.slice(0, 160));
+    "the stepper must show the cap the engine enforces, got: "
+      + step.slice(0, 160));
   /* the budget: the real per-kind turn budget, with the AUTO pill */
   assert(/<span class="ev">20<\/span> turns/.test(sec),
     "budget must quote TEMPLATES[fix].max_turns");
@@ -1285,11 +1286,16 @@ const SET = { engage: ["outcome first"],
     new RegExp('class="chip"[^>]*>' + k + '<span class="cx"').test(sec),
     "Delegate offer missing its chip or x: " + k));
   assert(/class="chipadd"[\s\S]{0,120}\+ add</.test(sec), "no + add pill");
-  /* NOTHING IN HERE WRITES. Same invariant Autonomy keeps. */
-  assert(!/data-sh[a-z]+=/.test(sec),
-    "an unbacked Tasks control carries an action hook");
-  assert((sec.match(/aria-disabled="true"/g) || []).length >= 7,
-    "the -, +, every x and + add must say they are not operable");
+  /* THE STEPPER IS THE ONE CONTROL HERE THAT WRITES (it has a store behind
+     it now). Everything else on this section still must not: there is
+     nowhere to keep a new delegate kind, and the budget is chosen by the
+     kind of work. Same invariant Autonomy keeps, one exception, named. */
+  const notStep = sec.split(step).join("");
+  assert(!/data-sh[a-z]+=/.test(notStep),
+    "an unbacked Tasks control carries an action hook: "
+      + (notStep.match(/data-sh[a-z]+="[^"]*"/) || [""])[0]);
+  assert((notStep.match(/aria-disabled="true"/g) || []).length >= 5,
+    "every chip x and + add must say they are not operable");
   /* and when the server sends no limits, none are invented */
   const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
   ctx.S.shadowSettings = d2;
@@ -1298,6 +1304,174 @@ const SET = { engage: ["outcome first"],
   assert(!/class="val">5</.test(bare), "a limit was invented from nowhere");
   console.log("ok 22e tasks: reference layout, engine-enforced numbers");
 }
+
+/* ── "RUNNING AT ONCE" IS A REAL CONTROL ──────────────────────────────────
+   22e1-22e6. The stepper used to be drawn dead beside a number the page could
+   only read. It writes now, and these are the four things that has to mean:
+   the buttons carry the value they move TO, they stop at the server's band,
+   one click sends exactly one write, and what repaints is the SERVER's
+   answer -- never the value that was asked for. */
+
+/* 22e1. the buttons carry a DESTINATION, already clamped when drawn. Sending
+   a direction instead would let a repeated click compound off one render. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks = { running_at_once: 3, running_at_once_min: 1,
+              running_at_once_max: 20, turn_budget: SET.tasks.turn_budget };
+  ctx.S.shadowSettings = d;
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/data-shrunlimit="2"[^>]*aria-label="fewer"/.test(sec)
+      || /aria-label="fewer"[^>]*data-shrunlimit="2"/.test(sec),
+    "minus must target 2, got: " + sec.slice(sec.indexOf("step"), 400));
+  assert(/data-shrunlimit="4"/.test(sec), "plus must target 4");
+  console.log("ok 22e1 the stepper's buttons carry the value they move to");
+}
+
+/* 22e2. the ends stop instead of inviting a click into a refusal -- and the
+   server's band is what decides where the ends are, not a number in here */
+{
+  const ctx = fresh();
+  const at = (n, lo, hi) => {
+    const d = JSON.parse(JSON.stringify(SET));
+    d.tasks = { running_at_once: n, running_at_once_min: lo,
+                running_at_once_max: hi, turn_budget: SET.tasks.turn_budget };
+    ctx.S.shadowSettings = d;
+    const h = ctx.shadowSettingsHtml();
+    return h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  };
+  const lo = at(1, 1, 6);
+  const minus = (lo.match(/<button[^>]*aria-label="fewer"[^>]*>/) || [""])[0];
+  assert(/aria-disabled="true"/.test(minus),
+    "at the floor, minus must say it cannot go lower: " + minus);
+  assert(!/aria-disabled/.test(
+    (lo.match(/<button[^>]*aria-label="more"[^>]*>/) || [""])[0]),
+    "plus is still live at the floor");
+  const hi = at(6, 1, 6);
+  assert(/aria-disabled="true"/.test(
+    (hi.match(/<button[^>]*aria-label="more"[^>]*>/) || [""])[0]),
+    "at the SERVER's ceiling (6, not 20) plus must stop");
+  assert(!/aria-disabled/.test(
+    (hi.match(/<button[^>]*aria-label="fewer"[^>]*>/) || [""])[0]),
+    "minus is still live at the ceiling");
+  console.log("ok 22e2 the stepper stops at the band the server reports");
+}
+
+/* 22e3. one click, one write -- and it is the number, not a nudge */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ running_at_once: 4, min: 1, max: 20,
+        running_now: 1, queued_now: 0, starting: 0, over_cap: 0 }) }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  ctx.showNudge = () => {};
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/tasks",
+    "the write goes to the tasks settings route");
+  assert.strictEqual(posts[0].body.running_at_once, 4,
+    "the value is sent as a NUMBER, not a string or a direction");
+  console.log("ok 22e3 one click sends exactly one numeric write");
+})().catch(e => { console.error("FAIL 22e3:", e.message); process.exit(1); });
+
+/* 22e4. the SERVER's answer is what the row repaints from. The server clamps,
+   and raising the cap promotes queued tasks, so the counts beside the
+   stepper change as a RESULT of the write -- an optimistic paint would show
+   a value the engine never stored. */
+(async () => {
+  const ctx = fresh();
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ running_at_once: 20, min: 1, max: 20,
+      running_now: 20, queued_now: 3, starting: 2, over_cap: 0 }) });
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const nudges = [];
+  ctx.showNudge = (t) => nudges.push(t);
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  /* the founder asked for 999; the server kept 20 */
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "999" } } });
+  assert.strictEqual(ctx.S.shadowSettings.tasks.running_at_once, 20,
+    "the row must show what was STORED, not what was asked for");
+  assert.strictEqual(ctx.S.shadowSettings.tasks.queued_now, 3,
+    "the counts come back with the write");
+  /* STARTING, not started: the server does not await the spawn, so the
+     nudge must not claim an arrival it has not seen */
+  assert(/starting 2 that were waiting/.test(nudges.join(" ")),
+    "a promotion must be said out loud: " + nudges.join(" | "));
+  assert(!/started 2/.test(nudges.join(" ")),
+    "the nudge must not claim work already arrived");
+  /* the rest of the settings object is untouched -- one state, not a copy */
+  assert.deepStrictEqual(ctx.S.shadowSettings.tasks.turn_budget,
+    SET.tasks.turn_budget, "the write clobbered an unrelated limit");
+  console.log("ok 22e4 the stepper repaints from the server's answer");
+})().catch(e => { console.error("FAIL 22e4:", e.message); process.exit(1); });
+
+/* 22e5. lowering below what is in flight is NOT a kill switch, and the page
+   says so rather than leaving the founder to read 1 beside three live tasks
+   and conclude the setting is broken */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks = { running_at_once: 1, running_at_once_min: 1,
+              running_at_once_max: 20, running_now: 3, queued_now: 0,
+              turn_budget: SET.tasks.turn_budget };
+  ctx.S.shadowSettings = d;
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/3 are still\s+running/.test(sec),
+    "the overflow must be stated: " + sec.slice(0, 500));
+  assert(/does not stop work already underway/.test(sec),
+    "and it must say what the lower cap does NOT do");
+  /* no overflow, but a queue -> the waiting count instead */
+  d.tasks.running_at_once = 5; d.tasks.queued_now = 2;
+  const sec2 = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert(/2 waiting for a\s+free slot/.test(sec2),
+    "a queue under the cap must be named: " + sec2.slice(0, 400));
+  /* nothing to say -> nothing said */
+  d.tasks.queued_now = 0; d.tasks.running_now = 1;
+  const sec3 = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert(!/still\s+running|waiting for a/.test(sec3),
+    "a quiet cap must not editorialise");
+  console.log("ok 22e5 the cap row is honest about work already underway");
+}
+
+/* 22e6. a write in flight holds BOTH ends down: four fast clicks off one
+   rendered value would otherwise land on 2 instead of 5 */
+(async () => {
+  const ctx = fresh();
+  let release = null;
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  let sent = 0;
+  ctx.shadowPost = () => { sent++;
+    return new Promise(r => { release = () => r({ ok: true, status: 200,
+      json: () => Promise.resolve({ running_at_once: 4, min: 1, max: 20,
+        running_now: 0, queued_now: 0, starting: 0, over_cap: 0 }) }); }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  ctx.showNudge = () => {};
+  const first = ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  assert.strictEqual(sent, 1, "a second click while one is in flight resent");
+  /* and while it is in flight the stepper says it is saving */
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert((sec.match(/Saving…/g) || []).length === 2,
+    "both ends must say they are saving: " + sec.slice(0, 400));
+  release(); await first;
+  assert(!ctx.S.shadowRunLimitBusy, "the hold must be released");
+  console.log("ok 22e6 a write in flight cannot be double-sent");
+})().catch(e => { console.error("FAIL 22e6:", e.message); process.exit(1); });
 
 /* 22f. PRESENCE + ADD A CONTROL, to the reference -- and the two rows that
    have real state behind them are wired to the flags the overlay owns. */

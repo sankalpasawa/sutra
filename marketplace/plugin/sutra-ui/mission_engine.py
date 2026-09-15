@@ -242,7 +242,95 @@ TEMPLATES = {
     "watch": {"max_turns": 0, "invariants": ("never_say",)},
 }
 
+#: The DEFAULT cap, not the cap. Every admission decision now goes through
+#: max_running() below, which prefers the founder's setting and falls back to
+#: this. The constant stays exported because it is what an unconfigured
+#: install runs at and what several tests build their fixtures around.
 MAX_RUNNING = 5
+
+#: The band the setting is clamped into. One running task is the floor --
+#: zero would be a pause switch wearing a cap's clothes, and Shadow already
+#: has stop/pause for that, so a 0 must not silently become "nothing ever
+#: starts again". The ceiling is not a taste call: each running mission owns
+#: a live worker process and its own turn budget, so the number is bounded by
+#: what one machine can actually host, not by what the stepper can reach.
+MIN_RUNNING = 1
+RUNNING_CEILING = 20
+
+
+def limits_path():
+    """The one file the founder-set task limits live in.
+
+    Beside the ledgers and the mission files, under the SAME resolver
+    (shadow_ledger.shadow_home), so a test that redirects the shadow home
+    redirects this too and can never write a limit into the live install.
+
+    NOT "settings.json", deliberately: providers.SETTINGS_PATH is already a
+    settings.json and several test modules point BOTH at one tmp dir. Two
+    unrelated stores sharing a filename is a collision waiting for the run
+    order to expose it.
+    """
+    return os.path.join(os.path.realpath(shadow_ledger.shadow_home()),
+                        "task-limits.json")
+
+
+def _read_limits():
+    import json_store
+    return json_store.read_json(limits_path(), {})
+
+
+def clamp_running(n):
+    """Coerce anything to a legal cap, or raise ValueError.
+
+    Raises rather than silently clamping on a non-number, because a settings
+    write that quietly stores 5 when the founder typed "five" is worse than
+    one that says no. Out-of-band NUMBERS do clamp: a stepper held down past
+    the ceiling should stop at the ceiling, not error.
+    """
+    try:
+        v = int(n)
+    except (TypeError, ValueError):
+        raise ValueError("running_at_once must be a whole number")
+    return max(MIN_RUNNING, min(RUNNING_CEILING, v))
+
+
+def max_running():
+    """The cap admission ACTUALLY enforces: the founder's setting, else the
+    default.
+
+    NEVER RAISES. This is read on every admission path and inside the runner's
+    restart sweep; a corrupt settings file, an unreadable home, or the
+    shadow_home pytest refusal must degrade to the default rather than take
+    down a mission that was otherwise fine. read_json already swallows
+    missing/corrupt, so the try here is for the home resolution itself.
+    """
+    try:
+        raw = _read_limits().get("running_at_once")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return MAX_RUNNING
+    if raw is None:
+        return MAX_RUNNING
+    try:
+        return clamp_running(raw)
+    except ValueError:
+        return MAX_RUNNING                # a hand-edited junk value
+
+
+def set_max_running(n):
+    """Persist the cap. Returns the value actually stored (post-clamp).
+
+    Deliberately does NOT touch running missions. Lowering the cap below the
+    number in flight stops further ADMISSIONS; it does not kill work that is
+    already underway, because the founder asked for a queueing rule, not a
+    kill switch, and stopping a worker mid-turn abandons a real turn budget.
+    The overflow drains naturally as missions finish or are stopped.
+    """
+    v = clamp_running(n)
+    import json_store
+    cur = _read_limits()
+    cur["running_at_once"] = v
+    json_store.write_json(limits_path(), cur)
+    return v
 
 
 def _home():
@@ -1453,13 +1541,31 @@ class MissionEngine:
 
 
 class MissionScheduler:
-    """S55/S56: cap-5 admission with FIFO queue, promotion, and the
+    """S55/S56: capped admission with FIFO queue, promotion, and the
     disambiguation helper. One mission per target session is enforced at
-    admission -- amend, never spawn a duplicate."""
+    admission -- amend, never spawn a duplicate.
 
-    def __init__(self, store, max_running=MAX_RUNNING):
+    THE CAP IS READ, NOT CAPTURED. `max_running` is a property that resolves
+    to the founder's setting on every read unless a caller passed an explicit
+    number (tests do, to build a two-slot world). Binding it in __init__ --
+    which is what the old `max_running=MAX_RUNNING` default did -- would mean
+    a scheduler built before a settings change kept enforcing the old cap,
+    and the runner holds schedulers across promotions.
+    """
+
+    def __init__(self, store, max_running=None):
         self.store = store
-        self.max_running = max_running
+        #: None means "ask the setting each time"; a number pins it
+        self._max_running = max_running
+
+    @property
+    def max_running(self):
+        return max_running() if self._max_running is None \
+            else self._max_running
+
+    @max_running.setter
+    def max_running(self, value):
+        self._max_running = value
 
     def start(self, mid):
         m = self.store.load(mid)
