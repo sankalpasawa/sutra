@@ -3401,13 +3401,28 @@
 .shwright .shcard2v{color:var(--ink);line-height:1.5}
 .shwright .shcard2stamp .shcard2k{font-size:9.5px;flex-basis:104px}
 
-/* ── what the agent just did: ONE report, not the transcript */
+/* ── THE DELEGATION TIMELINE: one line per turn, in the order it happened.
+   No inner scroller on purpose -- the pane is already the scroller, and a
+   second one inside it is the thing this surface exists not to be. Rows are
+   one line each, so a ten-turn mission is ten lines. */
+.shtimeline{display:flex;flex-direction:column}
+.shtimeline .shagent{margin-top:9px}
+.shtimeline .shstory{margin-top:9px}
+/* ── what the worker agent just did: ONE report, not the transcript */
 .shagent{margin-top:12px;padding:11px 15px;background:var(--bubble);
   border-left:3px solid var(--line);border-radius:0 10px 10px 0}
 .shagenthead{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
   text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+/* A PREVIEW IS ONE LINE. The text is already collapsed to a single line by
+   shadowSayGist; this is the VISUAL floor under it, so a long sentence or a
+   narrow pane can never grow the block into a paragraph. pre-wrap was here
+   before and would honour a newline the gist can no longer contain -- normal
+   keeps it on one row. The full sentence is on the title, the full turn is
+   behind Open the chat. */
 .shagentsay{font-size:13px;line-height:1.55;color:var(--ink);
-  white-space:pre-wrap}
+  white-space:normal;overflow:hidden;text-overflow:ellipsis;
+  display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;
+  -webkit-box-orient:vertical;overflow-wrap:anywhere}
 
 /* ── the ask: Shadow's decision boundary, as its own card */
 .shwright .shiv{margin-top:14px;padding:16px 19px;background:var(--acc-bg);
@@ -3415,6 +3430,12 @@
   border-radius:0 12px 12px 0}
 .shwright .shivq{font-size:15px;font-weight:700;line-height:1.35;
   margin-bottom:4px}
+/* WHY SHADOW CANNOT SETTLE IT: kept, because it is the reason the founder is
+   being asked -- and floored at two lines, because the decider writes this to
+   a 2000-character budget. The text is never edited; hover carries all of it. */
+.shwright .shivctx{display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;
+  -webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;
+  line-height:1.5;margin-bottom:9px}
 .shwright .shivev{margin:11px 0 3px;padding-left:0;border-left:0;
   display:flex;gap:16px}
 .shwright .shivev::before{content:"Evidence";flex:0 0 104px;
