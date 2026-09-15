@@ -450,14 +450,44 @@ console.log("ok 6 controls wired");
     "the new-task ask must not draw on the workspace");
   assert.strictEqual((empty.match(/data-shhomecompose/g) || []).length, 1,
     "an empty workspace still has exactly one composer");
+  /* THE NEW TASK FORM IS THE ONLY THING ASKING (founder, 2026-09-15).
+     With the panel open, the stage underneath drew "What should I take on? /
+     Tell Shadow the outcome you want." plus a second outcome box -- directly
+     below a form whose FIRST field is already "The outcome you want". Two
+     boxes for one sentence, and only one of them creates a task. Open: the
+     panel and nothing else. Closed: byte-identical to what shipped. */
   const newTask = (() => { const c = fresh(); c.S.shadowHomeDark = false;
     c.S.shadowMissions = MISSIONS; c.S.goals = []; c.S.shadowNewOpen = true;
     return c.shadowHomeHtml(); })();
-  assert(/Tell Shadow what outcome you want/.test(newTask),
-    "the delegation placeholder was lost");
-  assert(/Tell Shadow the outcome you want/.test(newTask),
-    "the shask copy was lost");
+  assert(!/What should I take on\?/.test(newTask),
+    "the ask heading still draws behind the New Task form");
+  assert(!/Tell Shadow the outcome you want/.test(newTask),
+    "the ask copy still draws behind the New Task form");
+  assert(!/Tell Shadow what outcome you want/.test(newTask),
+    "the stage composer placeholder still draws behind the New Task form");
+  assert(!/data-shhomecompose/.test(newTask),
+    "the stage composer still draws behind the New Task form");
+  assert(!/data-shsend="1"/.test(newTask),
+    "the stage send arrow still draws behind the New Task form");
+  /* ...and the form itself is untouched and still the way in */
+  assert(/data-shnewpanel="1"/.test(newTask), "the New Task panel was lost");
+  assert(/What should Shadow get done\?/.test(newTask),
+    "the panel's own heading was lost");
+  assert(/data-shnewobj="1"/.test(newTask), "the outcome field was lost");
+  assert(/data-shnewdone="1"/.test(newTask), "the done-when field was lost");
+  assert(/data-shnewcreate="1"/.test(newTask), "Create the task was lost");
+  assert(/data-shnewcancel="1"/.test(newTask), "Cancel was lost");
+
+  /* CLOSED IS EXACTLY AS IT WAS -- the whole of the other half of the rule.
+     Same string, rendered by the same call, for a focused task and for an
+     empty workspace. */
+  assert(/data-shhomecompose/.test(h), "the closed workspace lost its composer");
+  assert(/Say anything/.test(h), "the closed workspace lost its placeholder");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
+  assert(!/What should I take on\?/.test(h),
+    "the ask heading must not draw on a focused workspace either");
+  assert.strictEqual((empty.match(/data-shhomecompose/g) || []).length, 1,
+    "a closed empty workspace still has exactly one composer");
   console.log("ok 14b existing-chat flow removed; delegation composer stays");
 }
 

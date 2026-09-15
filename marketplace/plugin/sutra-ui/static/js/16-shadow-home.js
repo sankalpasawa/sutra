@@ -2459,8 +2459,25 @@ function shadowHomeHtml(){
            how a task is CREATED, and it was drawing under the workspace as
            a second composer below the task. The workspace gets "Say
            anything…" and nothing else; + Delegate opens the New Task panel,
-           where that copy still belongs and is untouched. */""}
-      ${shadowStageHtml(!newOpen)}
+           where that copy still belongs and is untouched.
+
+           ...AND THE PANEL IS THE ONLY ONE ASKING (founder, 2026-09-15, same
+           day, second pass). With the panel OPEN this drew the ask block and
+           a SECOND outcome box directly under a form whose first field is
+           already "The outcome you want" -- two places to type the same
+           sentence, one of which creates nothing. The panel is self-contained
+           (its own heading, data-shnewobj, done-when, kinds, Create/Cancel),
+           so the stage is simply not rendered behind it.
+
+           CLOSED IS BYTE-IDENTICAL: shadowStageHtml(true) is exactly what
+           shadowStageHtml(!newOpen) evaluated to whenever newOpen was false,
+           which is every render that is not the New Task form. Nothing else
+           moves -- no hook renamed, no copy edited, no handler touched, and
+           every composer consumer already guards on absence
+           (shadowSubmitCompose's `if (!el) return`, render's `if (el)`
+           caret restore, and the Enter listener, which needs the element
+           itself). */""}
+      ${newOpen ? "" : shadowStageHtml(true)}
     </section>
   </div>`;
 }
