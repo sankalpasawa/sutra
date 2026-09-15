@@ -757,6 +757,45 @@ class MissionEngine:
         # what the target said on the PREVIOUS iteration, which is the whole
         # point: the next instruction is composed from it
         last_response = None
+        # ...AND THE PREVIOUS ITERATION MAY BELONG TO A PREVIOUS PROCESS.
+        #
+        # THE MEASURED FAILURE (founder dogfood, 2026-09-15, mission
+        # m-80893d3f3d18). This loop is re-entered on every resume, and every
+        # re-entry started here with nothing. The delegate's transcript held
+        # 188 assistant messages, but the decider's FIRST turn after each
+        # re-adoption was composed with an empty "what the target said back",
+        # so Shadow spent the turn saying "No output from you yet -- keep
+        # going". Across sixteen restart/re-adopt cycles that pattern burned
+        # the budget and the mission died `failed` on max turns with the work
+        # already well advanced. All four empty-response nudges landed within
+        # fifteen seconds of a re-adoption; none landed anywhere else.
+        #
+        # The weakness was already named in _is_template_echo's docstring
+        # above ("a resumed loop starts with last_response = None ... that is
+        # a separate weakness and is NOT addressed here"). This addresses it.
+        #
+        # NOTHING NEW IS READ. response_reader is the reader the loop already
+        # consults at the END of every iteration, and worker_response behind
+        # it reads the DURABLE transcript (read_session), not the in-memory
+        # stream -- which is exactly why it survives the restart that cleared
+        # everything else. Seeding asks it one turn earlier.
+        #
+        # STRICTLY A SEED. The per-turn assignment below is untouched, so a
+        # loop that runs continuously behaves as it always did: the first
+        # iteration overwrites this with its own reading. A caller that
+        # injects no response_reader (every existing test, the flag path) is
+        # byte-identical -- the branch is not entered.
+        #
+        # FAILS TO None, NEVER TO A RUN. An unreadable store, a reader that
+        # raises, a mission with no transcript yet: all leave the historical
+        # value, which is the behaviour that shipped.
+        if self.response_reader is not None:
+            try:
+                seed_m = self.store.load(mid)
+                if seed_m is not None:
+                    last_response = self.response_reader(seed_m) or None
+            except Exception:       # noqa: BLE001 -- a seed must never fail a run
+                last_response = None
         while True:
             if not providers.shadow_enabled():
                 return self.store.transition(mid, "stopped",
