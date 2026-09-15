@@ -70,4 +70,16 @@ __pycache__/
 **/.enforcement/proto*-warnings.log
 **/.enforcement/placement/touch-log.jsonl
 **/.enforcement/placement/touch-errors.log
+**/.enforcement/permission-gate.jsonl
+
+# ...and the extension this list predicted, with the collision it warned
+# about. completion-protocol.jsonl exists TWICE: the repo-root copy is one
+# of the 8 tracked files named above, while the sutra-ui copy is per-run
+# telemetry the plugin hook appends to. So this one rule is PATH-SPECIFIC,
+# not `**/` -- the wildcard would name the tracked ledger too. (An ignore
+# rule cannot untrack what is already in the index, so nothing breaks today;
+# it would bite the day the root copy is removed and re-added, silently.)
+# permission-gate.jsonl has no tracked twin anywhere, so it takes the
+# ordinary `**/` form above.
+marketplace/plugin/sutra-ui/.enforcement/completion-protocol.jsonl
 **/.sutra/creation-guard.jsonl
