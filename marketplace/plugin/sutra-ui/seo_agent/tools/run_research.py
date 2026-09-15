@@ -270,6 +270,24 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     company = sh.company()
     notes = []
 
+    # ---- A NEW TOPIC STARTS FRESH ------------------------------------------------------------------
+    # Every step below saves its result under this run and reuses it on the next call. That is right
+    # for the way back in from the length question (same topic, the paid work is already done), and it
+    # was wrong for everything else. On 2026-09-15 a person was told "white collar vs blue collar" was
+    # not ours, said "keep the topic, aim it at hiring teams", and the agent called this again with a
+    # new title and angle in the SAME run. Every step -- world, seeds, keywords, the SERP, the pages,
+    # the topic gate -- came back from the first call's files in under a second, so the new angle was
+    # never researched, and the agent reported the replayed verdict as if Google had been re-read.
+    # So the topic and angle a run was researched for are recorded, and a call that asks about a
+    # different one redoes every step.
+    if not resuming:
+        before = _c.load_work(ctx, "input") or {}
+        if before and (str(before.get("topic") or ""), str(before.get("angle") or "")) != (topic, angle):
+            redo = True
+            say("New topic, so the research starts fresh",
+                "Was: %s. Now: %s" % (str(before.get("topic") or "")[:80], topic[:80]))
+        _c.save_work(ctx, "input", {"topic": topic, "angle": angle})
+
     # ---- the credit pre-flight, before a single step starts ------------------------------------
     # Skipped on the way back from the length question. Reading the balance is itself a DataForSEO
     # call, the rule in _preflight is that it is read ONCE per run, and the run that asked the

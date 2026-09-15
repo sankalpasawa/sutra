@@ -259,6 +259,44 @@ ok("the angle was replaced and the old one kept", rs["angle"] != rs["angle_befor
 ok("the spine is set", bool(rs.get("spine")))
 ok("the persona is picked once and carried", rs["persona"]["name"] == "Founder / CEO")
 ok("cost was added up from the responses", rs["cost_usd"] > 0)
+
+# ---- 2026-09-15: "keep the topic, aim it at hiring teams" was replayed, not researched ----------
+# The agent called run_research again with a new title and angle in the SAME run, and every step
+# came back from the first call's files in under a second, topic gate included.
+print("\na new topic in the same run starts fresh")
+# ITS OWN RUN, so the end-to-end checks below still see the run they set up untouched.
+run_retopic = store.new_run(chat, "retopic")
+ctx_retopic = ctx_for(run_retopic)
+research(ctx_retopic, topic="Operator education (a buyer's guide)", angle="what changes after")
+events.clear()
+research(ctx_retopic, topic="Hiring operators: how screening should differ", angle="for hiring teams")
+labels = " | ".join(str(e.get("label") or "") for e in events)
+ok("a different topic in the same run redoes the steps, and says so",
+   "New topic, so the research starts fresh" in labels, labels[:400])
+ok("the run records the topic it was researched for",
+   (store.load_artifact(chat, run_retopic, "_work/input.json") or {}).get("topic")
+   == "Hiring operators: how screening should differ")
+events.clear()
+research(ctx_retopic, topic="Hiring operators: how screening should differ", angle="for hiring teams")
+labels = " | ".join(str(e.get("label") or "") for e in events)
+ok("the same topic asked again reuses the work already paid for",
+   "New topic" not in labels and "kept from last time" in labels, labels[:400])
+
+print("\nthe topic gate sees the article, not only page one")
+_seen = {}
+def _capture(prompt, system=None, retries=1):
+    if '"relevant"' in prompt:
+        _seen["p"] = prompt
+        return {"relevant": True, "why": "ours"}
+    return _real_json(prompt, system, retries)
+llm.json_call = _capture
+topic_gate.run("Hiring blue-collar workers", "for hiring teams",
+               {"who_ranks_text": "x", "ai_overview_text": ""}, {"gaps_to_own": [], "common_h2s": []},
+               sh.company())
+llm.json_call = _real_json
+ok("the relevance judge is shown the working title and the angle",
+   "Hiring blue-collar workers" in _seen.get("p", "") and "for hiring teams" in _seen.get("p", ""),
+   _seen.get("p", "")[:200])
 ev_cards = [c for c in cards if c["tag"] == "evidence"]
 own_cards = [c for c in cards if c["tag"] == "ownpage"]
 ok("evidence cards exist with verbatim, source and tag", ev_cards and all(c["verbatim"] and c["source_urls"] for c in ev_cards))
