@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.9 (2026-09-15)
+
+- **Closing Sutra no longer throws away an article's progress.** If the app was quit while the SEO Writer was mid-step, sending a message afterwards started the article over from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 2 checks.
+
 ## 2.278.8 (2026-09-15)
 
 - **The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged transcripts; this covers the ones that change every second. A driven chat's title is now read from its new lines only (a 57 MB chat cost 0.22 s per refresh before), the Activity panel opens only agents that are actually running (113 files, 2 live: 550 ms to 2 ms) and waits for one answer before asking again, and a driven chat refreshes the Chats list at most every 5 s instead of on every write. Tests: 8 new checks.

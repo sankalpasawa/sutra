@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.8 (2026-09-15, HEAD)
+## v2.278.9 (2026-09-15, HEAD)
+
+**SEO Writer: closing Sutra no longer throws away a run's saved work.** Quitting the app while an
+article was mid-step marks that run stopped at the next start (`store.reconcile_stale_runs`,
+`by="restart"`), and the chat says "Send a message to continue". The message used to start a NEW run
+with an empty artifacts folder, so every step the old run had saved (the research caches, the
+interviews in `_work/curate-partial.json`, the scored cards) was stranded in the old folder and done
+again, DataForSEO spend included. `agents_api.api_send` now carries that same run on when its last
+stop was the restart sweep, so its tools pick up from what is on disk. A Stop the person pressed still
+starts fresh. The conversation needs no repair: `loop.step` saves an assistant tool call only together
+with its results, so a quit mid-step leaves `messages.json` ending on a complete turn. The newest run
+is now chosen by `started_at`, because run folders are named by time of day. Tests: agents api +2.
+
+## v2.278.8 (2026-09-15)
 
 **The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged
 transcripts; this release covers the ones that change every second. Measured on the founder's Mac
