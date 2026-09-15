@@ -2,9 +2,10 @@
    column and a viewer that opens on the charter (holding BUILD-PLAN.md; design
    canvas 6e5e3f8b, pages "Bare screen" and "States").
 
-   Ships behind flags.org2 in ~/.sutra-ui/settings.json: OPT-IN, absent means
-   OFF, until plan step 98 flips the default. The earlier Org screens keep every
-   id and stay reachable under "Old Org" in the rail; nothing here changes them.
+   ON by default since 2.278.0 (plan step 98, founder 2026-09-15); `flags.org2:
+   false` in ~/.sutra-ui/settings.json is the opt-out. The earlier Org screens
+   keep every id and stay reachable under "Old Org" in the rail; nothing here
+   changes them.
 
    Reuse (BUILD-PLAN section 1): dirData() from 03-org.js for the tree data,
    loadOrg() for the four registry reads, mdHtml() + /api/fs/read for a
@@ -27,8 +28,8 @@ const O2_KINDS = [["organisation", "Organisations"], ["department", "Departments
 const O2_STATES = [["active", "Active"], ["no-charter", "No charter"], ["one-line", "One-line charter"]];
 
 function org2FlagOn(){
-  return !!(typeof SETTINGS !== "undefined" && SETTINGS && SETTINGS.flags
-            && SETTINGS.flags[O2_FLAG] === true);
+  if (typeof SETTINGS === "undefined" || !SETTINGS || !SETTINGS.flags) return true;
+  return SETTINGS.flags[O2_FLAG] !== false;            /* opt-out: only an explicit false hides it */
 }
 function o2S(){
   if (!S.o2) S.o2 = { sel:null, view:"charter", doc:null, app:null, other:null, page:null, q:"", lq:"",
@@ -67,7 +68,7 @@ function o2EnsureRegistered(){
   TITLES.org2 = ["Org", ""];
 }
 
-/* ── data ─────────────────────────────────────────────────────────────────── */
+/* ── data (rows come from ORG_ALL; the department read lists CURRENT placements only) ── */
 /* THE WHOLE TREE, from the D76 root. loadOrg() narrows DOMAINS to the role's
    organisation (scopeOrgForRole), which is right for Old Org's studio and
    wrong here: the canvas shows the root with the machine and every
@@ -450,7 +451,10 @@ function o2OpenSheet(kind){
   if (!n) return;
   o2UnmountEditor();
   st.menu = false; st.panel = null;
-  st.sheet = { kind, name: kind === "rename" ? n.name : "", target: "", error: null, busy: false };
+  const c = st.dept[n.ref] && st.dept[n.ref].charter;
+  st.sheet = { kind, name: kind === "rename" ? n.name : (kind === "charter" ? (c ? c.title : n.name + " Charter") : ""),
+               purpose: kind === "charter" && c ? String(c.purpose || "") : "", charterId: kind === "charter" && c ? c.id : null,
+               target: "", error: null, busy: false };
   o2Render();
 }
 function o2MoveTargets(n, d){
@@ -467,6 +471,13 @@ async function o2SendRequest(){
   let kind, args;
   if (sh.kind === "rename"){ kind = "org.rename"; args = { ref: n.ref, name }; if (!name || name === n.name){ sh.error = !name ? "A name is needed" : "That is the current name"; o2Render(); return; } }
   else if (sh.kind === "move"){ kind = "org.move"; args = { ref: n.ref, target: sh.target, base: (S.draft && S.draft.base) || null }; if (!sh.target){ sh.error = "Choose where it goes"; o2Render(); return; } }
+  else if (sh.kind === "charter"){
+    const purpose = String(sh.purpose || "").trim();
+    const c = st.dept[n.ref] && st.dept[n.ref].charter;
+    kind = "org.charter"; args = { ref: n.ref, charter_id: sh.charterId || null, title: name, purpose };
+    if (!purpose){ sh.error = "A purpose is needed"; o2Render(); return; }
+    if (c && c.id === sh.charterId && String(c.purpose || "").trim() === purpose && (name === c.title || !name)){ sh.error = "Nothing changed"; o2Render(); return; }
+  }
   else { kind = "org.create"; args = { parent: n.ref, name }; if (!name){ sh.error = "A name is needed"; o2Render(); return; } }
   sh.busy = true; sh.error = null; o2Render();
   try {
@@ -482,9 +493,12 @@ async function o2SendRequest(){
 }
 function o2SheetHtml(n, d){
   const st = o2S(), sh = st.sheet;
-  const title = sh.kind === "rename" ? "Rename" : sh.kind === "move" ? "Move" : "New sub-department";
+  const title = sh.kind === "rename" ? "Rename" : sh.kind === "move" ? "Move" : sh.kind === "charter" ? (sh.charterId ? "Edit charter" : "Write the charter") : "New sub-department";
   let fields;
-  if (sh.kind === "move"){
+  if (sh.kind === "charter"){
+    fields = `<label for="o2sname">Title</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="60" autocomplete="off">
+      <label for="o2spurpose">Purpose</label><textarea id="o2spurpose" data-o2spurpose rows="6" maxlength="4000">${o2Esc(sh.purpose || "")}</textarea>`;
+  } else if (sh.kind === "move"){
     const opts = o2MoveTargets(n, d).map(t => `<option value="${o2Esc(t.ref)}"${sh.target === t.ref ? " selected" : ""}>${o2Esc(t.label)}</option>`).join("");
     fields = `<label for="o2starget">Under</label><select id="o2starget" data-o2starget><option value="">Choose…</option>${opts}</select>${o2MovePreviewHtml(n, d)}`;
   } else {
@@ -562,7 +576,8 @@ function o2SkelTree(){
 function o2MenuHtml(n, d){
   const item = (act, label) => `<button type="button" role="menuitem" data-o2act="${act}">${label}</button>`;
   const kind = n ? o2Kind(n, d) : "dept";
-  let acts = "";
+  const st = o2S(), dept = n ? st.dept[n.ref] : null;
+  let acts = item("editcharter", dept && dept.charter ? "Edit charter…" : "Write the charter…");
   if (kind !== "root") acts += item("rename", "Rename…");
   if (kind !== "root" && kind !== "machine") acts += item("move", "Move…");
   acts += item("create", "New sub-department…");
@@ -659,7 +674,7 @@ function o2CharterBody(n, d, dept, c){
   const purpose = String((c && c.purpose) || "").trim();
   const oneLine = !!c && purpose.length > 0 && purpose.length < 60 && purpose.indexOf(". ") === -1;
   if (!c){
-    return `<div class="o2vb"><div class="o2empty">${O2_SHIELD}<h1>No charter yet</h1></div>${o2FacetsHtml(n, d, dept)}</div>`;
+    return `<div class="o2vb"><div class="o2empty">${O2_SHIELD}<h1>No charter yet</h1><button type="button" class="btn" data-o2act="editcharter">Write the charter</button></div>${o2FacetsHtml(n, d, dept)}</div>`;
   }
   return `<div class="o2vb">
     <div class="o2mono">charter · ${o2Esc(kind)} · ${o2Esc(status)}${oneLine ? ' <span class="pill p-warn">one line</span>' : ""}</div>
@@ -891,6 +906,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (act === "reload"){ if (st.doc) o2OpenDoc(st.doc.path, st.doc.title); return; }
     if (act === "openapp"){ if (st.app && typeof modOpen === "function") modOpen(st.app); return; }
     if (act === "rename" || act === "move" || act === "create"){ o2OpenSheet(act); return; }
+    if (act === "editcharter"){ o2OpenSheet("charter"); return; }
     if (act === "sheetclose"){ st.sheet = null; o2Render(); return; }
     if (act === "request"){ o2SendRequest(); return; }
     if (act === "healthretry"){ if (st.sel){ delete st.health[st.sel]; o2LoadHealth(st.sel, true); o2Render(); } return; }
@@ -905,6 +921,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (el.dataset.o2q !== undefined){ o2S().q = String(el.value || ""); o2SearchSoon(); o2Render(); return; }
     if (el.dataset.o2lq !== undefined){ o2S().lq = String(el.value || ""); o2Render(); return; }
     if (el.dataset.o2sname !== undefined){ const sh = o2S().sheet; if (sh){ sh.name = String(el.value || ""); sh.error = null; } return; }
+    if (el.dataset.o2spurpose !== undefined){ const sh = o2S().sheet; if (sh){ sh.purpose = String(el.value || ""); sh.error = null; } return; }
   });
   document.addEventListener("change", (ev) => {
     if (!S.o2 || S.screen !== "org2") return;

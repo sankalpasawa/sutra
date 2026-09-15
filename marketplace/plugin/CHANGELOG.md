@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.0 (2026-09-15)
+
+- **The new Org tab is on by default.** The rail shows **Org** above **Old Org** unless `~/.sutra-ui/settings.json` says `flags.org2: false`. Old Org keeps every screen, id and test.
+- **Edit a charter, by succession.** The pencil gains **Edit charter…** (and an empty charter view offers **Write the charter**). The sheet files a proposal; approval mints a new charter body that supersedes the old one, carries its status, artifacts, links, goals, metrics, milestones and todos, and re-points the work filed under it. The old body stays on disk, listed under Other charters. Nothing is edited in place (founder ruling D-O3). Filed work now lists current placements only, so a re-pointed item shows once.
+
 ## 2.277.2 (2026-09-15)
 
 - **New Org screen: a changed registry says so.** Each department read carries the registry's history length; when it differs from the one the tree was loaded with, one line, "The registry changed", offers Refresh, which re-reads the tree and what is open.

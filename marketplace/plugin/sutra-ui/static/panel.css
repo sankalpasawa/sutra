@@ -3575,7 +3575,9 @@
 .o2sheet label{display:block;font:600 9px/1.8 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
 .o2sheet input,.o2sheet select{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;
   padding:6px 9px;color:var(--ink);font:400 13px/1.4 var(--sans);outline:none}
-.o2sheet input:focus,.o2sheet select:focus{border-color:var(--acc)}
+.o2sheet input:focus,.o2sheet select:focus,.o2sheet textarea:focus{border-color:var(--acc)}
+.o2sheet textarea{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;
+  padding:6px 9px;color:var(--ink);font:400 13px/1.5 var(--sans);outline:none;resize:vertical;min-height:120px}
 .o2sheet .o2acts2{display:flex;gap:8px;margin-top:18px;align-items:center}
 .o2sheet .o2err{color:var(--warn);font:400 12px/1.4 var(--sans)}
 .o2sheet .o2prev{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:8px}

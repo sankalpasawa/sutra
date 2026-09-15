@@ -93,8 +93,8 @@ function fresh(opts){
 const sleep = () => new Promise(r => setTimeout(r, 0));
 
 /* ── registration and the flag ── */
-test("flag off: nothing registers, the loader is inert", () => {
-  const c = fresh({ SETTINGS: { flags: {} } });
+test("flag off (flags.org2: false): nothing registers, the loader is inert", () => {
+  const c = fresh({ SETTINGS: { flags: { org2: false } } });
   assert.strictEqual(c.org2FlagOn(), false);
   c.o2EnsureRegistered();
   assert.strictEqual(c.SCREENS.org2, undefined);
@@ -102,9 +102,10 @@ test("flag off: nothing registers, the loader is inert", () => {
   c.loadOrg2(false);
   assert.strictEqual(c.S.o2, undefined, "the loader must not touch state with the flag off");
 });
-test("flag absent means off (opt-in until plan step 98)", () => {
-  const c = fresh({ SETTINGS: null });
-  assert.strictEqual(c.org2FlagOn(), false);
+test("flag absent means ON (plan step 98, 2.278.0): only an explicit false hides the screen", () => {
+  assert.strictEqual(fresh({ SETTINGS: null }).org2FlagOn(), true, "no settings yet");
+  assert.strictEqual(fresh({ SETTINGS: { flags: {} } }).org2FlagOn(), true, "no flag");
+  assert.strictEqual(fresh({ SETTINGS: { flags: { org2: "no" } } }).org2FlagOn(), true, "a non-false value does not hide it");
 });
 test("flag on: SCREENS.org2 and TITLES.org2 register together", () => {
   const c = fresh();
@@ -212,6 +213,35 @@ test("no charter: one quiet line, the facets still show", () => {
   const html = c.o2ViewerHtml(d.byRef.get("r4"), d, dept, null);
   assert.ok(html.indexOf("No charter yet") !== -1 && html.indexOf("<b>Address</b>") !== -1);
   assert.ok(html.indexOf("Filed under this charter") === -1);
+  assert.strictEqual((html.match(/data-o2act="editcharter"/g) || []).length, 1, "one action: Write the charter");
+});
+test("edit charter: the sheet is prefilled, refuses no change, files org.charter by succession", async () => {
+  const c = fresh(); c.loadProposals = () => {};
+  c.o2Select("r4"); c.o2S().dept.r4 = DEPT_EXP;
+  c.o2OpenSheet("charter");
+  const sh = c.o2S().sheet;
+  assert.strictEqual(sh.name, "Experience Charter"); assert.strictEqual(sh.charterId, "C-1");
+  assert.ok(/^Own the operator/.test(sh.purpose));
+  const d = c.o2Data();
+  let html = c.o2SheetHtml(d.byRef.get("r4"), d);
+  assert.ok(/<h1>Edit charter<\/h1>/.test(html) && /data-o2spurpose/.test(html) && /value="Experience Charter"/.test(html));
+  await c.o2SendRequest();
+  assert.strictEqual(c.calls.apiPost.length, 0); assert.strictEqual(sh.error, "Nothing changed");
+  sh.purpose = "Own the operator's experience of Sutra Desktop, end to end.";
+  await c.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body)),
+    { kind: "org.charter", args: { ref: "r4", charter_id: "C-1", title: "Experience Charter", purpose: "Own the operator's experience of Sutra Desktop, end to end." } });
+  /* no charter yet: the sheet writes one, title defaulted from the name, no charter_id */
+  const c2 = fresh(); c2.loadProposals = () => {};
+  c2.o2Select("r4"); c2.o2S().dept.r4 = Object.assign({}, DEPT_EXP, { charter: null });
+  c2.o2OpenSheet("charter");
+  assert.ok(/<h1>Write the charter<\/h1>/.test(c2.o2SheetHtml(c2.o2Data().byRef.get("r4"), c2.o2Data())));
+  await c2.o2SendRequest();
+  assert.strictEqual(c2.o2S().sheet.error, "A purpose is needed");
+  c2.o2S().sheet.purpose = "  Everything the operator sees.  ";
+  await c2.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c2.calls.apiPost[0].body)),
+    { kind: "org.charter", args: { ref: "r4", charter_id: null, title: "Experience Charter", purpose: "Everything the operator sees." } });
 });
 test("the department read failing: one line and one action, never blank", () => {
   const c = fresh(); const d = c.o2Data();
@@ -431,12 +461,13 @@ test("search: server hits join the name match", async () => {
   assert.ok(/class="o2row o2k-machine dim"/.test(html));
 });
 test("the pencil menu: Rename, Move, New sub-department above the three views; the root and the machine lose what they cannot do", () => {
-  const c = fresh(); const d = c.o2Data();
+  const c = fresh(); const d = c.o2Data(); c.o2S().dept.r4 = DEPT_EXP;
   let html = c.o2MenuHtml(d.byRef.get("r4"), d);
-  const order = ["Rename…", "Move…", "New sub-department…", "Changes", "Approvals", "Health"].map(l => html.indexOf(">" + l + "<"));
+  const order = ["Edit charter…", "Rename…", "Move…", "New sub-department…", "Changes", "Approvals", "Health"].map(l => html.indexOf(">" + l + "<"));
   assert.ok(order.every(i => i !== -1) && order.every((v, i, a) => i === 0 || v > a[i - 1]), order.join(","));
   html = c.o2MenuHtml(d.byRef.get("r0"), d);
   assert.ok(html.indexOf("Rename") === -1 && html.indexOf("Move") === -1 && html.indexOf("New sub-department") !== -1);
+  assert.ok(html.indexOf("Write the charter…") !== -1, "no charter read yet: the item offers to write one");
   html = c.o2MenuHtml(d.byRef.get("r1"), d);
   assert.ok(html.indexOf("Rename") !== -1 && html.indexOf("Move…") === -1);
 });

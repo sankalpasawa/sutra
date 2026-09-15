@@ -2,7 +2,16 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.277.2 (2026-09-15, HEAD)
+## v2.278.0 (2026-09-15, HEAD)
+
+**The new Org tab is on by default** (`flags.org2: false` is the opt-out; Old Org unchanged). **Edit a
+charter, by succession**: the pencil's Edit charter… (or Write the charter on an empty view) files an
+`org.charter` proposal; approval mints a successor body with `supersedes` set, carries the sidecar's status,
+artifacts, links, goals, metrics, milestones and todos, marks the old sidecar superseded and re-points filed
+work; Filed work lists current placements only. Founder ruling D-O3 (2026-09-15). Tests: `test_org2.js` 57,
+`test_org2_api.py` 15.
+
+## v2.277.2 (2026-09-15)
 
 **New Org screen: a changed registry says so** ("The registry changed" + Refresh when a department read
 reports another history length than the tree was loaded with). **DeepSeek review folds** (ADVISORY, 25

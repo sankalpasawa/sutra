@@ -198,6 +198,15 @@ def test_request_files_a_proposal_and_refuses_bad_shapes():
         assert out["summary"] == "New department New under A"
         out = M.request(M.RequestBody(kind="org.move", args={"ref": a1, "target": root}))
         assert out["summary"] == "Move A1 under Co"
+        out = M.request(M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "Everything under A."}))
+        assert out["summary"] == "Write the charter of A"
+        other = E.mint_charter_stub(a1, "A1 Charter", "A1 work.", [], [], "T-local")
+        for body, code in ((M.RequestBody(kind="org.charter", args={"ref": a}), 400),
+                           (M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "x", "charter_id": other}), 400),
+                           (M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "x", "charter_id": "C-0000000000000000"}), 404)):
+            with pytest.raises(HTTPException) as ei:
+                M.request(body)
+            assert ei.value.status_code == code
         for body, code in ((M.RequestBody(kind="org.delete", args={"ref": a}), 400),
                            (M.RequestBody(kind="org.rename", args={"ref": a}), 400),
                            (M.RequestBody(kind="org.rename", args={"ref": a, "name": " desktop "}), 400),   # a sibling's name
@@ -208,7 +217,48 @@ def test_request_files_a_proposal_and_refuses_bad_shapes():
             with pytest.raises(HTTPException) as ei:
                 M.request(body)
             assert ei.value.status_code == code, body.kind
-        assert len(proposals.pending()) == 3, "refusals file nothing"
+        assert len(proposals.pending()) == 4, "refusals file nothing"
+
+
+def test_apply_charter_writes_then_amends_by_succession():
+    """D-O3: an edit mints a successor body; the old one stays, superseded;
+    filed work follows the amended charter; the department read shows the new one."""
+    with tempfile.TemporaryDirectory() as tmp:
+        M, E = _fresh(Path(tmp))
+        sys.modules.pop("org2_apply", None)
+        sys.modules.pop("org_apply", None)
+        import org2_apply
+        root, desk, a, a1 = _tree(E)
+        assert M.department(a)["charter"] is None
+        with pytest.raises(ValueError):
+            org2_apply.apply_request("org.charter", {"ref": a, "purpose": "  "})
+        out = org2_apply.apply_request("org.charter", {"ref": a, "purpose": "Everything under A."})
+        first = out["charter_id"]
+        assert out["supersedes"] is None and first.startswith("C-")
+        dep = M.department(a)
+        assert dep["charter"]["id"] == first and dep["charter"]["title"] == "A Charter" and dep["charter"]["purpose"] == "Everything under A."
+        # work filed under the first charter
+        E.write_placement({"kind": "task", "id": "task-1"}, a, first, "matched", 0.9, {"domains": [], "charters": []}, "T-local")
+        assert [p["charter_id"] for p in M._filed(a)] == [first]
+        with pytest.raises(ValueError, match="nothing changed"):
+            org2_apply.apply_request("org.charter", {"ref": a, "charter_id": first, "title": "A Charter", "purpose": "Everything under A."})
+        out = org2_apply.apply_request("org.charter", {"ref": a, "charter_id": first, "title": "A, the organisation",
+                                                       "purpose": "Everything under A, and its books."})
+        second = out["charter_id"]
+        assert second != first and out["supersedes"] == first and out["repointed"] == 1
+        assert E.superseded_ids().get(first) == second, "supersession is derived from the new body"
+        assert E.load_charter(first)["purpose"] == "Everything under A.", "the old body is untouched"
+        assert E.load_sidecar(first).get("lifecycle") == "superseded"
+        dep = M.department(a)
+        assert dep["charter"]["id"] == second and dep["charter"]["title"] == "A, the organisation"
+        assert [c["id"] for c in dep["charters"]] == [first], "the old charter lists under Other charters"
+        assert [p["charter_id"] for p in M._filed(a)] == [second], "filed work follows the amendment"
+        with pytest.raises(ValueError, match="already amended"):
+            org2_apply.apply_request("org.charter", {"ref": a, "charter_id": first, "purpose": "again"})
+        with pytest.raises(ValueError, match="another department"):
+            org2_apply.apply_request("org.charter", {"ref": a1, "charter_id": second, "purpose": "steal"})
+        events = [r.get("event") for r in E._read_jsonl(E.CHARTER_INDEX)]
+        assert events.count("charter_written") == 1 and events.count("charter_amended") == 1
 
 
 def test_apply_request_rename_create_move_registry_only():

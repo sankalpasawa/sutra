@@ -66,6 +66,7 @@ KINDS = (
     "org.rename",
     "org.move",
     "org.create",
+    "org.charter",      # write or amend a charter by succession (D-O3, 2026-09-15)
 )
 
 

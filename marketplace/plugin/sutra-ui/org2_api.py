@@ -39,7 +39,7 @@ ONE_LINE_MAX = 60        # a charter purpose shorter than this, with no second s
 DESKTOP_NAME = "Desktop"  # project_import.DESKTOP_NAME: the machine node under the root
 KINDS = ("root", "machine", "organisation", "department")
 STATES = ("active", "no-charter", "one-line")
-REQUEST_KINDS = ("org.rename", "org.move", "org.create")   # org2_apply.KINDS; pinned here so the route needs no import
+REQUEST_KINDS = ("org.rename", "org.move", "org.create", "org.charter")   # org2_apply.KINDS; pinned here so the route needs no import
 PAGE_EXT = (".html", ".htm")
 
 _SEP = re.compile(r"[-_]+")
@@ -140,9 +140,21 @@ def _charters(ref: str):
     return standing, others
 
 
+def _placements_now():
+    """CURRENT placement rows only. all_placements() is the append-only log, so
+    after a charter amendment or a re-home the same work would list twice
+    (the superseded row and its successor); the engine's current index keeps
+    one row per work item."""
+    fn = getattr(E, "_current_placements", None)
+    try:
+        return list(fn()) if callable(fn) else E.all_placements()
+    except Exception:
+        return E.all_placements()
+
+
 def _filed(ref: str):
     rows = []
-    for p in E.all_placements():
+    for p in _placements_now():
         if p.get("domain_ref") != ref:
             continue
         wr = p.get("work_ref") or {}
@@ -362,7 +374,8 @@ def _request_check(kind: str, args: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="unknown request %r; one of: %s" % (kind, ", ".join(REQUEST_KINDS)))
     domains = E.load_domains()
     live = E.live_refs(domains)
-    need = {"org.rename": ("ref", "name"), "org.move": ("ref", "target"), "org.create": ("parent", "name")}[kind]
+    need = {"org.rename": ("ref", "name"), "org.move": ("ref", "target"), "org.create": ("parent", "name"),
+            "org.charter": ("ref", "purpose")}[kind]
     for k in need:
         if not str(args.get(k) or "").strip():
             raise HTTPException(status_code=400, detail="%s needs %s" % (kind, k))
@@ -374,6 +387,12 @@ def _request_check(kind: str, args: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="a department cannot move under itself")
         if live[args["ref"]].get("parent_ref") == args["target"]:
             raise HTTPException(status_code=400, detail="it is already there")
+    if kind == "org.charter" and args.get("charter_id"):
+        v = E.charter_view(str(args["charter_id"]))
+        if not v:
+            raise HTTPException(status_code=404, detail="no charter %s" % args["charter_id"])
+        if v.get("domain_ref") != args["ref"]:
+            raise HTTPException(status_code=400, detail="that charter belongs to another department")
     if kind in ("org.rename", "org.create"):
         # the same sibling-name rule the applier enforces, so the requester hears
         # it now rather than the approver later (DeepSeek review P1-7)
@@ -401,6 +420,8 @@ def request(body: RequestBody):
         summary = "Rename %s to %s" % (name_of(args["ref"]), " ".join(str(args["name"]).split()))
     elif body.kind == "org.move":
         summary = "Move %s under %s" % (name_of(args["ref"]), name_of(args["target"]))
+    elif body.kind == "org.charter":
+        summary = ("Edit the charter of %s" if args.get("charter_id") else "Write the charter of %s") % name_of(args["ref"])
     else:
         summary = "New department %s under %s" % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
     try:
@@ -457,7 +478,7 @@ def charter(cid: str):
     succ = [(domains.get(s) or {}).get("name") for s in (dept.get("successor_refs") or [])]
     filed = [{"id": (p.get("work_ref") or {}).get("id"), "label": _label((p.get("work_ref") or {}).get("id")),
               "ts_ms": p.get("ts_ms") or 0}
-             for p in E.all_placements() if p.get("charter_id") == view.get("id")]
+             for p in _placements_now() if p.get("charter_id") == view.get("id")]
     filed.sort(key=lambda r: -(r["ts_ms"] or 0))
     return {
         "charter": _charter_row(view),
