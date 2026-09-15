@@ -2446,10 +2446,59 @@ def api_library():
 
 @router.get("/library/{item_id}")
 def api_library_item(item_id: str):
+    """One article, with the sections the screen draws a pencil on and whether an edit here
+    would reach the team. Both come from seo_agent/library_edit, which owns the section split
+    and the member rule."""
     if not _ok_id(item_id):
         return _bad("bad id")
     it = store.library_get(item_id)
-    return it or _bad("not found", 404)
+    if not it:
+        return _bad("not found", 404)
+    from seo_agent import library_edit
+    it["sections"] = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "text": s["text"]}
+                      for s in library_edit.sections(it.get("draft") or "")]
+    it["version"] = int(it.get("version") or 0)
+    it["team"] = library_edit.team_status()
+    return it
+
+
+@router.post("/library/{item_id}/ai-section")
+def api_library_ai_section(item_id: str, body: dict = Body(...)):
+    """Rewrite ONE section of a saved article with the model, and show it before anything is kept.
+
+    Nothing is written. The reply carries the proposed section, a diff against what is there, and
+    the whole article with that section swapped in, so the screen can put it in the buffer when the
+    person presses "Use this" and save it through the ordinary save route. `draft` is the buffer as
+    it is on screen (a person may have typed over another section first); absent, the saved one.
+    """
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    section_id = str(body.get("section_id") or "").strip()
+    instruction = (body.get("instruction") or "").strip()
+    if not re.match(r"^s\d{1,3}$", section_id) or not instruction:
+        return _bad("section_id and instruction are needed")
+    draft = body.get("draft") if isinstance(body.get("draft"), str) else None
+    _sync_claude_bin()
+    try:
+        return library_edit.propose(item_id, draft, section_id, instruction)
+    except Exception as e:  # noqa: BLE001 -- BlockDrift, InventedFigure, ValueError all read the same to a person
+        return _bad(str(e)[:400])
+
+
+@router.post("/library/{item_id}/revert")
+def api_library_revert(item_id: str):
+    """Undo the last save. The version before comes back, and the undone one becomes the version
+    before, so pressing it twice is a no-op pair. Goes to the team like any save."""
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    meta = library_edit.revert(item_id)
+    return meta or _bad("There is no earlier version of this article to go back to.", 404)
 
 
 @router.get("/library/{item_id}/artifact/{name}")
@@ -2474,10 +2523,15 @@ def api_library_artifact(item_id: str, name: str):
 
 @router.post("/library/{item_id}/save")
 def api_library_save_edit(item_id: str, body: dict = Body(...)):
-    """Save an edited article back over itself. The person's version is the truth from then on.
+    """Save an edited article back over itself, here and for the team.
 
     A saved article is a document, not a transcript: fixing a sentence should not need a live
     run. Title and body only; status has its own route and the rest is provenance.
+
+    `base_version` is the version the person opened. When a teammate has saved since, the reply
+    is 200 with {"ok": false, "conflict": {...who, when, their version...}} and nothing is written;
+    the screen offers "load theirs" or "overwrite", and overwrite comes back with `force`. Without
+    a base_version the save is last-writer-wins, exactly as it was before versions existed.
     """
     if not _ok_id(item_id):
         return _bad("bad id")
@@ -2488,7 +2542,21 @@ def api_library_save_edit(item_id: str, body: dict = Body(...)):
     if not isinstance(draft, str) or not draft.strip():
         return _bad("an empty article is not a save")
     title = (body.get("title") or it.get("title") or "").strip()[:160]
-    return store.library_update(item_id, draft, title) or _bad("could not save", 500)
+    base = body.get("base_version")
+    try:
+        base = int(base) if base is not None and base != "" else None
+    except (TypeError, ValueError):
+        return _bad("base_version must be a number")
+    from seo_agent import library_edit
+    try:
+        meta = library_edit.save(item_id, draft, title, base_version=base,
+                                 force=bool(body.get("force")))
+    except library_edit.Conflict as c:
+        return {"ok": False, "conflict": c.current}
+    if not meta:
+        return _bad("could not save", 500)
+    meta["ok"] = True
+    return meta
 
 
 @router.post("/library/{item_id}/status")

@@ -940,6 +940,18 @@ def save_to_library(chat_id, run_id, title=None):
         "idea_id": idea_id})
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
 
+    # THE ARTICLE GOES TO THE TEAM. Until 2026-09-16 nothing pushed a `library` row: the table,
+    # the trigger and the mirror that lands a teammate's article all existed, and no article ever
+    # left the Mac it was written on. Only when a workspace is connected (a push with none
+    # configured would leave a queue file that drains the day one is), and never fatal: the local
+    # save above is the save, and the outbox retries a dropped network on its own.
+    try:
+        from .workspace import sync as _ws_sync
+        if _ws_sync.configured():
+            _ws_sync.push("library", item, store.library_get(item))
+    except Exception:   # noqa: BLE001 — no workspace package, no network: the article is saved
+        pass
+
     # Tick the idea this run came FROM, and only that. `idea_id` was written into the run's state
     # by the send that started it, before the model read anything, so this is provenance and not a
     # judgement: either the run began at an idea or it did not.

@@ -2875,6 +2875,141 @@ test("the arrival animation is short, and its cleanup timer outlasts it", () => 
   assert.ok(enter <= 1000, "and it must not linger");
 });
 
+/* ── the Library, edited by the team, one section at a time (2026-09-16) ──────
+   Anyone on the team opens a saved article and sees a pencil on every section. The pencil
+   opens an editor with two ways in (type over it, or ask the model), both land in a buffer,
+   and Save is the one thing that writes: here, and to the team through Supabase. */
+const SEC = JSON.parse(fs.readFileSync(path.join(__dirname, "tests", "fixtures", "agents-sections.json"), "utf8"));
+
+function libPanel(text, extra){
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = Object.assign({ run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+                            libId: "lib7", title: "Cost per hire", data: { text } }, extra || {});
+  return a;
+}
+
+test("agSections splits exactly like library_edit.sections (ids, headings, bytes)", () => {
+  const got = A.agSections(SEC.md);
+  assert.strictEqual(got.length, SEC.sections.length, "section count");
+  got.forEach((s, i) => {
+    assert.strictEqual(s.id, SEC.sections[i].id);
+    assert.strictEqual(s.heading, SEC.sections[i].heading, "heading of " + s.id);
+    assert.strictEqual(s.level, SEC.sections[i].level, "level of " + s.id);
+    assert.strictEqual(s.text, SEC.sections[i].text, "text of " + s.id + " differs from Python");
+  });
+  assert.strictEqual(got[0].heading, "Opening", "text before the first heading is its own section");
+  assert.ok(got.every(s => !/\n###? /.test("\n" + s.text.split("\n").slice(1).join("\n").replace(/\n### /g, "\n"))), "no H1/H2 inside a section");
+});
+test("agSpliceSection replaces one section byte for byte like Python's splice", () => {
+  const out = A.agSpliceSection(SEC.md, "s2", "## Why the standard checklist breaks\n\nRewritten body, 4,700 users.\n");
+  assert.strictEqual(out, SEC.spliced);
+  const untouched = A.agSections(out);
+  A.agSections(SEC.md).forEach((s, i) => { if (s.id !== "s2") assert.strictEqual(untouched[i].text, s.text, s.id + " moved"); });
+  assert.strictEqual(A.agSpliceSection(SEC.md, "s99", "x"), SEC.md, "an unknown id changes nothing");
+});
+test("a Library article is drawn by sections, a pencil on each, and never the per-block editor", () => {
+  const a = libPanel(SEC.md);
+  const html = A.agPanelHtml(a);
+  const secs = A.agSections(SEC.md);
+  secs.forEach(s => {
+    assert.ok(html.indexOf('data-sec="' + s.id + '"') !== -1, "section " + s.id + " drawn");
+    assert.ok(html.indexOf('data-ag="libsec" data-arg="' + s.id + '"') !== -1, "a pencil on " + s.id);
+  });
+  assert.ok((html.match(/ag-pencil/g) || []).length === secs.length, "one pencil per section, no more");
+  assert.ok(/aria-label="Edit Why the standard checklist breaks"/.test(html), "the pencil names its section");
+  assert.ok(!/data-ag="artedit"/.test(html), "the run's per-block editor is not offered on a Library article");
+  assert.ok(/5 sections/.test(html), "the count line: " + (html.match(/\d+ sections?/) || [""])[0]);
+  assert.ok(/data-ag="libsavebuf" data-arg="lib7" disabled/.test(html), "Save is there and disabled while nothing changed");
+  assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "the whole-article editor is still a way in");
+  assert.ok(!/data-ag="librevert"/.test(html), "no Undo until the server says there is a version before");
+});
+test("the pencil opens the text editor on that section only, with its own words in it", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: k => k === "data-arg" ? "s2" : "" });
+  assert.ok(a.libSec && a.libSec.id === "s2" && a.libSec.mode === "text");
+  const html = A.agPanelHtml(a);
+  assert.ok(/class="ag-sec editing" data-sec="s2"/.test(html), "s2 is the open one");
+  assert.ok((html.match(/ag-secbox/g) || []).length === 1, "one editor open");
+  assert.ok(/data-aglibsec[^>]*>## Why the standard checklist breaks/.test(html.replace(/&gt;/g, ">")), "the textarea holds the section");
+  assert.ok(/data-ag="libsecdone" data-arg="s2"/.test(html) && /data-ag="libseccancel"/.test(html), "Done and Cancel");
+  assert.ok(/data-ag="libsecmode" data-arg="ai"/.test(html), "and the way over to the AI");
+  assert.ok((html.match(/ag-pencil/g) || []).length === 4, "the open section has no pencil, the other four do");
+});
+test("Done puts the typed section in the buffer, marks it unsaved, and touches no other section", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  a.libSec.text = "## Why the standard checklist breaks\n\nHe typed this.";
+  A.agAction("libsecdone", { getAttribute: () => "s2" });
+  assert.strictEqual(a.libSec, null, "the editor closes");
+  assert.ok(a.libBuf && a.libBuf.dirty, "the buffer is dirty");
+  const before = A.agSections(SEC.md), after = A.agSections(a.libBuf.draft);
+  assert.strictEqual(after.length, before.length);
+  before.forEach((s, i) => { if (s.id !== "s2") assert.strictEqual(after[i].text, s.text, s.id + " moved"); });
+  assert.ok(/He typed this\./.test(after[2].text));
+  assert.strictEqual(a.panel.data.text, SEC.md, "the saved article is untouched until Save");
+  const html = A.agPanelHtml(a);
+  assert.ok(/unsaved changes/.test(html), "and the screen says so");
+  assert.ok(/data-ag="libsavebuf" data-arg="lib7" >Save/.test(html.replace(/\s+>/g, " >")), "Save is live now");
+  assert.ok(/data-ag="libdiscard"/.test(html), "with a way to throw it away");
+  A.agAction("libdiscard", { getAttribute: () => "" });
+  assert.strictEqual(a.libBuf.draft, SEC.md, "discard puts the saved words back");
+  assert.strictEqual(a.libBuf.dirty, false);
+});
+test("a section cannot be emptied from the section editor", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s4" });
+  a.libSec.text = "   ";
+  A.agAction("libsecdone", { getAttribute: () => "s4" });
+  assert.ok(a.libSec && /cannot be emptied/.test(a.libSec.error), "told why: " + (a.libSec && a.libSec.error));
+  assert.ok(!a.libBuf || !a.libBuf.dirty, "nothing went into the buffer");
+});
+test("the AI mode asks for an instruction, and a proposal is shown as a diff with Use this / Discard", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  A.agAction("libsecmode", { getAttribute: () => "ai" });
+  let html = A.agPanelHtml(a);
+  assert.ok(/data-aglibinstr/.test(html), "the instruction box");
+  assert.ok(/data-ag="libsecai" data-arg="s2"/.test(html), "the rewrite button");
+  assert.ok(!/data-ag="libsecuse"/.test(html), "nothing to use yet");
+  a.libSec.proposal = { section_id: "s2", proposed: "## Why the standard checklist breaks\n\nBetter.\n",
+                        diff: [{ type: "same", text: "## Why the standard checklist breaks" }, { type: "remove", text: "Body with 4,700 users and $12,000." },
+                               { type: "add", text: "Better." }, { type: "context", count: 7 }] };
+  html = A.agPanelHtml(a);
+  assert.ok(/class="ag-diff"/.test(html), "the diff is drawn");
+  assert.ok(/class="del">- Body with 4,700 users and \$12,000\.</.test(html), "what goes");
+  assert.ok(/class="add">\+ Better\.</.test(html), "what comes");
+  assert.ok(/7 unchanged lines/.test(html), "a folded run says how many lines it stands for");
+  assert.ok(!/\[object Object\]/.test(html), "the list shape renders as lines, not as objects");
+  assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(html) && /data-ag="libsecdrop"/.test(html), "Use this and Discard");
+  A.agAction("libsecuse", { getAttribute: () => "s2" });
+  assert.strictEqual(a.libSec, null);
+  assert.ok(a.libBuf.dirty && /Better\./.test(A.agSections(a.libBuf.draft)[2].text), "the proposal went into the buffer");
+  assert.strictEqual(a.panel.data.text, SEC.md, "and nothing was saved");
+});
+test("the conflict box names who saved and offers their version or an overwrite", () => {
+  const a = libPanel(SEC.md);
+  a.libBuf = { draft: SEC.md + "x", title: "Cost per hire", base_version: 3, dirty: true };
+  a.libConflict = { version: 4, edited_by: "Priya", edited_at: new Date().toISOString(), title: "Cost per hire", draft: "theirs" };
+  const html = A.agPanelHtml(a);
+  assert.ok(/Updated by Priya just now/.test(html), "who and when: " + (html.match(/Updated by[^<]*/) || [""])[0]);
+  assert.ok(/data-ag="libreload" data-arg="lib7"/.test(html), "load theirs");
+  assert.ok(/data-ag="liboverwrite" data-arg="lib7"/.test(html), "or overwrite");
+  assert.ok(/role="alert"/.test(html));
+});
+test("the meta line says the version, who saved it, and whether the team gets it", () => {
+  const a = libPanel(SEC.md);
+  a.libMeta = { version: 3, edited_by: "Devansh", edited_at: new Date(Date.now() - 120000).toISOString(),
+                team: { configured: true, member: true, why: "" }, has_previous: true };
+  let html = A.agPanelHtml(a);
+  assert.ok(/version 3/.test(html) && /saved by Devansh 2m ago/.test(html), html.match(/<p class="ag-sub"[^<]*/)[0]);
+  assert.ok(/shared with the team/.test(html));
+  assert.ok(/data-ag="librevert" data-arg="lib7"/.test(html), "Undo last save is offered when there is a version before");
+  a.libMeta.team = { configured: false, member: false, why: "No team workspace is connected, so this stays on this Mac." };
+  html = A.agPanelHtml(a);
+  assert.ok(/on this Mac only/.test(html) && /No team workspace is connected/.test(html), "the server's own sentence explains the local-only state");
+});
+
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
 async function atest(name, fn){
   try { await fn(); pass++; console.log("ok   - " + name); }
@@ -3827,6 +3962,109 @@ async function atest(name, fn){
       await A.agAction("guideback", arg(""));
       assert.ok(/ag-guide/.test(doc.els.agScroll.innerHTML), "and back is the guide itself");
     } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  /* ── the Library's team edit, through the real actions and a fake server ─── */
+  await atest("opening a Library article reads it fresh and starts a clean buffer at its version", async () => {
+    const S = A.S; S.ag = null; const a = A.agS();
+    const prev = A.apiGet;
+    A.apiGet = async () => ({ id: "lib7", run_id: "r1", title: "Cost per hire", draft: SEC.md, words: 40, status: "ready",
+                              version: 2, edited_by: "Priya", edited_at: "2026-09-16T10:00:00Z", previous_draft: "older",
+                              team: { configured: true, member: true, why: "" } });
+    await A.agAction("libopen", { getAttribute: () => "lib7" });
+    A.apiGet = prev;
+    assert.strictEqual(a.panel.libId, "lib7");
+    /* field by field: an object made inside the vm has another Object prototype, so deepStrictEqual refuses it */
+    assert.strictEqual(a.libBuf.draft, SEC.md);
+    assert.strictEqual(a.libBuf.title, "Cost per hire");
+    assert.strictEqual(a.libBuf.base_version, 2, "the buffer starts at the version read");
+    assert.strictEqual(a.libBuf.dirty, false);
+    assert.strictEqual(a.libMeta.edited_by, "Priya");
+    assert.strictEqual(a.libMeta.has_previous, true);
+    assert.strictEqual(a.libConflict, null);
+  });
+
+  await atest("Save posts the buffer with the version it was opened at, and the reply becomes the new base", async () => {
+    const a = libPanel(SEC.md);
+    a.libBuf = { draft: SEC.md + "\n\nAdded.\n", title: "Cost per hire", base_version: 2, dirty: true };
+    let body = null;
+    const prevP = A.apiPost, prevG = A.apiGet;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { ok: true, id: "lib7", title: "Cost per hire", words: 41, status: "ready",
+                                                                  version: 3, edited_by: "Devansh", edited_at: "2026-09-16T10:05:00Z",
+                                                                  team: { configured: true, member: true, synced: true, why: "" } }; };
+    A.apiGet = async () => ([{ id: "lib7" }]);
+    await A.agAction("libsavebuf", { getAttribute: () => "lib7" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.ok(/\/library\/lib7\/save$/.test(body.path), body.path);
+    assert.strictEqual(body.b.base_version, 2, "the version he opened goes with the save");
+    assert.strictEqual(body.b.force, false);
+    assert.strictEqual(body.b.draft, SEC.md + "\n\nAdded.\n");
+    assert.strictEqual(a.libBuf.base_version, 3, "the next save is checked against the new version");
+    assert.strictEqual(a.libBuf.dirty, false);
+    assert.strictEqual(a.panel.data.text, SEC.md + "\n\nAdded.\n", "the panel shows the saved words");
+    assert.strictEqual(a.libMeta.version, 3);
+    assert.strictEqual(a.libMeta.edited_by, "Devansh");
+  });
+
+  await atest("a save a teammate beat to it writes nothing on screen and puts the conflict box up", async () => {
+    const a = libPanel(SEC.md);
+    a.libBuf = { draft: "mine", title: "Cost per hire", base_version: 2, dirty: true };
+    const prevP = A.apiPost, prevG = A.apiGet;
+    let gets = 0;
+    A.apiPost = async () => ({ ok: false, conflict: { version: 3, edited_by: "Priya", edited_at: new Date().toISOString(), draft: "theirs" } });
+    A.apiGet = async () => { gets++; return []; };
+    await A.agAction("libsavebuf", { getAttribute: () => "lib7" });
+    assert.ok(a.libConflict && a.libConflict.edited_by === "Priya", "the conflict is on the state");
+    assert.strictEqual(a.libBuf.draft, "mine", "his words are still in the buffer");
+    assert.strictEqual(a.libBuf.dirty, true);
+    assert.strictEqual(a.panel.data.text, SEC.md, "the panel did not pretend it saved");
+    assert.strictEqual(gets, 0, "and the Library list was not refreshed for a save that did not happen");
+    assert.ok(/Updated by Priya/.test(A.agPanelHtml(a)));
+    /* overwrite: the same words go again, with force */
+    let body = null;
+    A.apiPost = async (p, b) => { body = b; return { ok: true, title: "Cost per hire", words: 1, version: 4, edited_by: "Devansh", team: { synced: true } }; };
+    A.apiGet = async () => ([]);
+    await A.agAction("liboverwrite", { getAttribute: () => "lib7" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.strictEqual(body.force, true, "overwrite says so");
+    assert.strictEqual(body.draft, "mine");
+    assert.strictEqual(a.libConflict, null, "the box goes once it is settled");
+    assert.strictEqual(a.libBuf.base_version, 4);
+  });
+
+  await atest("Rewrite with AI sends the buffer, the section and the instruction, and shows the proposal without saving", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libsec", { getAttribute: () => "s2" });
+    A.agAction("libsecmode", { getAttribute: () => "ai" });
+    a.libSec.instruction = "make it shorter";
+    let body = null;
+    const prevP = A.apiPost;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { section_id: "s2", proposed: "## Why the standard checklist breaks\n\nShort.\n",
+                                                                  diff: [{ type: "add", text: "Short." }], checks: [{ name: "no_invented_figures", status: "pass" }] }; };
+    await A.agAction("libsecai", { getAttribute: () => "s2" });
+    A.apiPost = prevP;
+    assert.ok(/\/library\/lib7\/ai-section$/.test(body.path), body.path);
+    assert.strictEqual(body.b.section_id, "s2");
+    assert.strictEqual(body.b.instruction, "make it shorter");
+    assert.strictEqual(body.b.draft, SEC.md, "the buffer as it is on screen");
+    assert.ok(a.libSec.proposal && /Short\./.test(a.libSec.proposal.proposed));
+    assert.strictEqual(a.libSec.busy, false);
+    assert.ok(!a.libBuf || !a.libBuf.dirty, "a proposal is not a change until Use this");
+    assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(A.agPanelHtml(a)));
+  });
+
+  await atest("a refused rewrite (an invented figure) lands as the server's sentence beside the button", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libsec", { getAttribute: () => "s2" });
+    A.agAction("libsecmode", { getAttribute: () => "ai" });
+    a.libSec.instruction = "add a stat";
+    const prevP = A.apiPost;
+    A.apiPost = async () => { const e = new Error("The rewrite brought in a figure that the article and its research never had: 51%. (/api/x -> 400)"); e.status = 400; throw e; };
+    await A.agAction("libsecai", { getAttribute: () => "s2" });
+    A.apiPost = prevP;
+    assert.ok(/never had: 51%\.$/.test(a.libSec.error), "the debug tail is cut: " + a.libSec.error);
+    assert.strictEqual(a.libSec.proposal, null);
+    assert.ok(/never had: 51%/.test(A.agPanelHtml(a)), "and it is on screen");
   });
 
   console.log("\n" + "-".repeat(60));

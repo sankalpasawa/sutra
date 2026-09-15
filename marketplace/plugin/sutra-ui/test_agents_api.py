@@ -396,6 +396,97 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(len(r.json()["title"]), 160, "a title is trimmed, never rejected")
         store.library_delete(item)
 
+    # ---- the Library, edited by the team one section at a time (2026-09-16) -----------------
+
+    MD = ("# Cost per hire\n\nIntro with 4,700 hires.\n\n## What it costs\n\nBody one.\n\n"
+          "### Sub\n\nunder the sub\n\n## What to do\n\nBody two.\n")
+
+    def test_18_an_open_article_carries_its_sections_version_and_team_state(self):
+        item = store.library_save("c18", "r18", "Cost per hire", self.MD)
+        it = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual([s["id"] for s in it["sections"]], ["s0", "s1", "s2"])
+        self.assertEqual([s["heading"] for s in it["sections"]], ["Cost per hire", "What it costs", "What to do"])
+        self.assertEqual("".join(s["text"] for s in it["sections"]).replace("\n", ""), self.MD.replace("\n", ""),
+                         "the sections are the whole article and nothing else")
+        self.assertEqual(it["version"], 0, "a fresh article is at version 0")
+        self.assertFalse(it["team"]["configured"], "no workspace in the test data dir")
+        self.assertIn("stays on this Mac", it["team"]["why"])
+        store.library_delete(item)
+
+    def test_19_ai_section_rewrites_one_section_shows_it_and_writes_nothing(self):
+        item = store.library_save("c19", "r19", "Cost per hire", self.MD)
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nBody one, tighter, still 4,700 hires.\n\n### Sub\n\nunder the sub"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "tighten"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        j = r.json()
+        self.assertEqual(j["section_id"], "s1")
+        self.assertIn("tighter", j["proposed"])
+        self.assertTrue(any(d["type"] == "add" for d in j["diff"]), "a diff a person can read")
+        self.assertEqual(j["checks"][0]["status"], "pass")
+        self.assertIn("Body two.", j["draft"], "the whole article comes back with the one section swapped")
+        self.assertEqual(store.library_get(item)["draft"], self.MD, "and NOTHING was saved")
+        # the guards: a new figure is refused, and so is a reply that grows a new section
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nNow 51% cheaper.\n"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "add a stat"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("never had: 51", r.json()["detail"])
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nok\n\n## Sneaked in\n\nx\n"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "x"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("new heading", r.json()["detail"])
+        # a bad id, an empty instruction, a missing article
+        self.assertEqual(self.client.post(BASE + "/library/%s/ai-section" % item,
+                                          json={"section_id": "s9", "instruction": "x"}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/library/%s/ai-section" % item,
+                                          json={"section_id": "s1", "instruction": ""}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/library/nope/ai-section",
+                                          json={"section_id": "s1", "instruction": "x"}, headers=HDR).status_code, 404)
+        store.library_delete(item)
+
+    def test_19b_save_counts_versions_names_the_editor_keeps_the_previous_and_refuses_a_stale_save(self):
+        item = store.library_save("c19b", "r19b", "Cost per hire", self.MD)
+        v1 = self.MD.replace("Body one.", "Body one, edited.")
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": v1, "base_version": 0}, headers=HDR).json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["version"], 1)
+        self.assertTrue(r["edited_by"], "somebody is named")
+        self.assertTrue(r["edited_at"])
+        self.assertEqual(r["previous"]["version"], 0)
+        self.assertFalse(r["team"]["configured"], "no workspace: the save is local and says so")
+        self.assertIn("stays on this Mac", r["team"]["why"])
+        back = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual(back["previous_draft"], self.MD, "the version before is kept")
+        # a save from the version before is refused, with who and when, and writes nothing
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": self.MD, "base_version": 0}, headers=HDR).json()
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["conflict"]["version"], 1)
+        self.assertTrue(r["conflict"]["edited_by"])
+        self.assertEqual(store.library_get(item)["draft"], v1, "the newer version stands")
+        # force writes over it
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": self.MD, "base_version": 0, "force": True}, headers=HDR).json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["version"], 2)
+        # no base_version: last save wins, as before versions existed
+        r = self.client.post(BASE + "/library/%s/save" % item, json={"draft": v1}, headers=HDR).json()
+        self.assertTrue(r["ok"] and r["version"] == 3)
+        self.assertEqual(self.client.post(BASE + "/library/%s/save" % item,
+                                          json={"draft": v1, "base_version": "abc"}, headers=HDR).status_code, 400)
+        # undo: the version before comes back, and undo is itself undoable
+        r = self.client.post(BASE + "/library/%s/revert" % item, headers=HDR).json()
+        self.assertEqual(r["version"], 4)
+        self.assertEqual(store.library_get(item)["draft"], self.MD)
+        self.assertEqual(store.library_get(item)["previous_draft"], v1)
+        r = self.client.post(BASE + "/library/%s/revert" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v1)
+        self.assertEqual(self.client.post(BASE + "/library/nope/revert", headers=HDR).status_code, 404)
+        store.library_delete(item)
+
     # ---- settings ---------------------------------------------------------------------
 
     def test_20_connections_never_echo_secrets_and_refuse_api_keys(self):
