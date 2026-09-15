@@ -109,6 +109,7 @@ def _chat_default_choice():
 
 llm.set_hooks(deepseek_key=providers.deepseek_api_key, default_choice=_chat_default_choice)
 _sync_codex_bin()
+llm.load_slot_settings()        # the saved "model calls at once" numbers, if the person set them
 
 
 def _model_info():
@@ -147,7 +148,16 @@ def _guarded(chat_id, run_id, fn):
     """A crash inside the loop lands in the run's own log, never silently in a thread."""
     def wrapped():
         try:
-            fn()
+            # A run in flight gets its own share of the model-call gate (llm._Gate), so three
+            # articles at once each keep one article's speed, up to the app-wide ceiling. The two
+            # hooks are how a usage-limit pause reaches this chat: one status row, and the Stop.
+            with llm.run_slot(chat_id, run_id,
+                              on_note=lambda m: store.emit(chat_id, run_id, "note", label=m),
+                              should_stop=lambda: (store.get_state(chat_id, run_id) or {}).get("status")
+                              in ("stopped", "failed")):
+                fn()
+        except llm.Stopped:
+            pass                # the person pressed Stop; loop.stop has already written the state
         except Exception as e:  # noqa: BLE001 -- the whole point is to catch everything
             store.emit(chat_id, run_id, "step_failed", label="Run",
                        reason=str(e)[:400], detail=traceback.format_exc()[-1500:],
@@ -1228,6 +1238,42 @@ def api_save_model(body: dict = Body(...)):
         _sync_codex_bin()
     store.save_model_choice(pid, model)
     return _model_info()
+
+
+SLOTS_PER_RUN_RANGE = (1, 12)    # model calls at once for one running article
+SLOTS_MAX_RANGE = (1, 24)        # model calls at once across every chat
+
+
+@router.get("/slots")
+def api_slots():
+    """How many model calls run at once: per running article, and across the whole app."""
+    return llm.slot_settings()
+
+
+@router.post("/slots")
+def api_save_slots(body: dict = Body(...)):
+    """Save the two numbers. An empty or missing value puts that number back on its env
+    variable or default. The ceiling is never allowed below the per-run share."""
+    def num(k, lo, hi):
+        v = body.get(k)
+        if v in (None, "", 0, "0"):
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("%s must be a whole number" % k)
+        if not lo <= n <= hi:
+            raise ValueError("%s must be between %d and %d" % (k, lo, hi))
+        return n
+    try:
+        per_run = num("per_run", *SLOTS_PER_RUN_RANGE)
+        cap = num("max", *SLOTS_MAX_RANGE)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if per_run and cap and cap < per_run:
+        return JSONResponse({"error": "max cannot be below per_run"}, status_code=400)
+    store.save_slot_settings(per_run=per_run, max=cap)
+    return llm.load_slot_settings()
 
 
 @router.post("/connections")
@@ -2769,6 +2815,7 @@ def api_health():
             "companies": n_companies,
             "model_provider": llm.provider(),
             "model": _model_info(),
+            "slots": llm.slot_settings(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()
                                and (c.get("dataforseo_password") or "").strip()),

@@ -8,7 +8,7 @@ same bounded thread pool. All of that lives here so no builder drifts from the o
 import os
 import re
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 
 from .. import llm
 from .. import store
@@ -301,7 +301,7 @@ def parallel(fn, items, say=None, label="", every=5):
     items = list(items)
     if not items:
         return []
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         futs = {ex.submit(fn, it): i for i, it in enumerate(items)}
         for n, fut in enumerate(as_completed(futs), 1):
             i = futs[fut]

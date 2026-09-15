@@ -13,7 +13,6 @@ keeps going).
 Reads: the article context, the winners lists, the AI Overview text, the cards.
 Writes (via the tool): _work/gap-check.json {items, queries}.
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
@@ -63,7 +62,7 @@ def judge(items, meta, cards, say=None):
     if not items:
         return []
     dossier = evidence.dossier_text(cards)
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         verdicts = list(ex.map(lambda it: _judge_one(it, meta, dossier), items))
     if say:
         counts = {}

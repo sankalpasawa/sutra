@@ -36,7 +36,6 @@ came from:
   than it was designed to be. It is recorded in `research_failures` so write_body warns the writer
   not to pad, exactly as the original did for a marker that came back empty.
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from ..research import evidence
@@ -328,7 +327,7 @@ def run(shaped, say=lambda *a: None, ctx=None):
             return e, []
 
     if markers:
-        with ThreadPoolExecutor(max_workers=MARKER_WORKERS) as ex:
+        with llm.pool(MARKER_WORKERS) as ex:
             results = [f.result() for f in [ex.submit(_one, si, t, d) for si, t, d in markers]]
     else:
         results = []

@@ -11,7 +11,6 @@ the same page in every section, and `sources()` hands the harvest the mapping. T
 
 Reads: the curate.run() result. Returns {"md", "sections", "sources", "words"}.
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
@@ -95,7 +94,7 @@ def build(curated, article, say=None):
                                 SECTION=s["title"], INFO=info), timeout=llm.LONG_TIMEOUT) or ""
         return {"title": s["title"], "md": md.strip(), "sources": used}
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with llm.pool(3) as pool:
         written = list(pool.map(one, secs))
     body = "\n\n".join(w["md"] for w in written if w["md"])
     words = len(body.split())
@@ -203,7 +202,7 @@ def harvest(doc, pages=None, say=None):
                 return cards, dropped, recovered, unsourced
         return [], 0, 0, 0
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with llm.pool(3) as pool:
         results = list(pool.map(one, sections))
     cards = [c for rows, _d, _r, _u in results for c in rows]
     dropped = sum(r[1] for r in results)

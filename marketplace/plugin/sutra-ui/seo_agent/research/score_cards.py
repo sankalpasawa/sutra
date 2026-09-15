@@ -11,7 +11,6 @@ blueprint indistinguishable from a good one. The FLAG fires at SCORE_FLAG_PCT ei
 Reads: cards + the article context + the persona. Returns (kept_cards, report).
 """
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
@@ -41,7 +40,7 @@ def run(cards, topic, angle, persona, spine_ctx, brand_oneliner):
     batches = [cards[i:i + _c.SCORE_BATCH] for i in range(0, len(cards), _c.SCORE_BATCH)]
     scores = {}
     # ex.map re-raises the first batch exception when iterated, so a failed batch aborts the step.
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         for res in ex.map(lambda b: _score_batch(b, ctx), batches):
             scores.update(res)
 

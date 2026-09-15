@@ -9,7 +9,6 @@ Writes (via the tool): _work/metrics.json, _work/verdicts.json, _work/keywords.j
 """
 import json
 import math
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from ..tools import dfs
@@ -100,7 +99,7 @@ def score_and_judge(rows, topic, angle, world, hygiene, company, say=None):
         say("Scoring %s" % _plural(len(cands), "keyword"),
             "%s of about %d, each scored for relevance, distinctness and brand fit"
             % (_plural(len(batches), "batch", "batches"), _c.SCORE_BATCH_KW))
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         results = list(ex.map(lambda b: _score_batch(b, topic, angle, world, hygiene, tok), batches))
     verdicts = [rows_ for _ok, rows_ in results]
     scored_rows = [row for ok, rows_ in results if ok for row in rows_]

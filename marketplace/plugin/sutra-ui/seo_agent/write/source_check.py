@@ -38,7 +38,6 @@ the 60 to 90 claims the article carries, one page read and one judge call each.
 """
 import difflib
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from ..checks import digit_guard
@@ -395,7 +394,7 @@ def check_one(claim, card, pages):
 
 def check_all(claims, idx, pages):
     todo = [c for c in claims if c["kind"] == "check"]
-    with ThreadPoolExecutor(max_workers=max(1, llm.PARALLEL)) as ex:
+    with llm.pool() as ex:
         list(ex.map(lambda c: check_one(c, idx[c["card_id"]], pages), todo))
     return todo
 
@@ -430,7 +429,7 @@ def hunt(claims, idx, pages, cap=HUNT_CAP):
         return []
     route_name, route_note = enrich.route()
     quiet = lambda *a, **k: None  # noqa: E731 — the chat gets one line from this step, not one per search
-    with ThreadPoolExecutor(max_workers=max(1, llm.PARALLEL)) as ex:
+    with llm.pool() as ex:
         plans = list(ex.map(lambda c: _plan_queries(idx[c["card_id"]], c["clean"]), picked))
     every = [q for qs in plans for q in qs]
     exclude = {u for c in picked for u in (idx[c["card_id"]].get("source_urls") or []) if u}
@@ -468,7 +467,7 @@ def hunt(claims, idx, pages, cap=HUNT_CAP):
             ("%d pages read, none supports it" % e["pages_read"] if e["pages_read"] else "no candidate page would load")
         return e
 
-    with ThreadPoolExecutor(max_workers=max(1, llm.PARALLEL)) as ex:
+    with llm.pool() as ex:
         log = list(ex.map(finish, range(len(picked))))
     for e in log:
         if not e["new_url"]:
