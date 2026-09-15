@@ -49,6 +49,7 @@ def test_department_read_shape_and_names():
         assert out["filed"] == [] and out["filed_n"] == 0 and out["docs"] == []
         assert out["status"] == "active" and out["successors"] == []
         assert "/" not in "".join(out["address"]), "names, never paths"
+        assert out["index_lines"] == len(E._read_jsonl(E.DOMAIN_INDEX)) and out["index_lines"] >= 4, "S52: history length rides the read"
 
 
 def test_node_kinds_root_machine_organisation_department():
@@ -199,6 +200,8 @@ def test_request_files_a_proposal_and_refuses_bad_shapes():
         assert out["summary"] == "Move A1 under Co"
         for body, code in ((M.RequestBody(kind="org.delete", args={"ref": a}), 400),
                            (M.RequestBody(kind="org.rename", args={"ref": a}), 400),
+                           (M.RequestBody(kind="org.rename", args={"ref": a, "name": " desktop "}), 400),   # a sibling's name
+                           (M.RequestBody(kind="org.create", args={"parent": root, "name": "A"}), 400),      # a child's name
                            (M.RequestBody(kind="org.rename", args={"ref": "dref-none", "name": "X"}), 404),
                            (M.RequestBody(kind="org.move", args={"ref": a, "target": a1}), 400),
                            (M.RequestBody(kind="org.move", args={"ref": a1, "target": a}), 400)):
@@ -222,6 +225,8 @@ def test_apply_request_rename_create_move_registry_only():
             org2_apply.apply_request("org.rename", {"ref": a, "name": "Alpha"})
         with pytest.raises(ValueError):
             org2_apply.apply_request("org.rename", {"ref": a, "name": ""})
+        with pytest.raises(ValueError, match="already has a department named"):
+            org2_apply.apply_request("org.rename", {"ref": a, "name": "DESKTOP"})   # a live sibling's name
         out = org2_apply.apply_request("org.create", {"parent": a, "name": "A2"})
         assert out["created"] is True and E.load_domains()[out["ref"]]["parent_ref"] == a
         with pytest.raises(ValueError):

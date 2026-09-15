@@ -53,6 +53,16 @@ def _live(ref, domains, what="department"):
     return d
 
 
+def _no_live_sibling_named(ref, parent_ref, name, domains):
+    """ValueError when another live child of `parent_ref` already carries
+    `name` (case-insensitive). Shared by rename and create."""
+    want = name.lower()
+    for r, x in E.live_refs(domains).items():
+        if r != ref and x.get("parent_ref") == parent_ref and (x.get("name") or "").lower() == want:
+            parent = (domains.get(parent_ref) or {}).get("name") or "the root"
+            raise ValueError("%s already has a department named %s" % (parent, name))
+
+
 def apply_request(kind, args):
     """Apply one approved request. Raises ValueError (nothing written) when the
     request no longer fits the tree; org_apply.ApplyRefused rides through for
@@ -64,6 +74,9 @@ def apply_request(kind, args):
         name = _name(args.get("name"))
         if name == d.get("name"):
             raise ValueError("%s already has that name" % name)
+        # restructure("rename") does not look at siblings (DeepSeek review P1-7);
+        # two live siblings with one name would defeat mint_domain's dedupe.
+        _no_live_sibling_named(args["ref"], d.get("parent_ref"), name, domains)
         E.restructure("rename", args["ref"], name=name)
         return {"applied": True, "ref": args["ref"], "name_before": d.get("name"), "name_after": name}
     if kind == "org.move":
@@ -73,10 +86,7 @@ def apply_request(kind, args):
         domains = E.load_domains()
         parent = _live(args.get("parent"), domains, "parent")
         name = _name(args.get("name"))
-        live = E.live_refs(domains)
-        for r, x in live.items():
-            if x.get("parent_ref") == args["parent"] and (x.get("name") or "").lower() == name.lower():
-                raise ValueError("%s already has a department named %s" % (parent.get("name"), name))
+        _no_live_sibling_named(None, args["parent"], name, domains)
         ref, created = E.mint_domain(args["parent"], name, [name], parent.get("tenant_id") or "T-local",
                                      origin="operator-request")
         return {"applied": True, "ref": ref, "created": bool(created), "parent": args["parent"], "name": name}

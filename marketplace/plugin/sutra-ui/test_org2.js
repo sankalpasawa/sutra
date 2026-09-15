@@ -609,6 +609,27 @@ test("an app page is asked for first: a 200 gets the frame, anything else says s
   assert.ok(/<iframe class="o2frame"/.test(c.o2AppHtml(m)));
   assert.strictEqual(seen.length, 2, "one probe per open, not per paint");
 });
+test("stale registry: a department read at another history length shows one line; Refresh reloads and clears it", async () => {
+  let lines = 7, loads = 0;
+  const c = fresh({ META: { domain_index_lines: 7 },
+                    apiGet: (p) => Promise.resolve(Object.assign({}, DEPT_EXP, { index_lines: lines })),
+                    loadOrg: () => { loads++; return Promise.resolve(); } });
+  c.o2EnsureRegistered();
+  await c.loadOrg2(false);
+  c.o2Select("r4"); await sleep();
+  assert.ok(!c.o2S().stale && !/The registry changed/.test(c.SCREENS.org2()), "same length: quiet");
+  lines = 9;
+  c.o2Select("r5"); await sleep();
+  assert.strictEqual(c.o2S().stale, true);
+  const html = c.SCREENS.org2();
+  assert.ok(/The registry changed/.test(html) && /data-o2act="retry"/.test(html));
+  assert.strictEqual((html.match(/The registry changed/g) || []).length, 1, "one line");
+  c.META.domain_index_lines = 9;
+  await c.loadOrg2(true);
+  assert.strictEqual(loads, 2);
+  assert.strictEqual(c.o2S().stale, false);
+  assert.deepStrictEqual(Object.keys(c.o2S().dept).length, 0, "a refresh drops the cached reads");
+});
 test("panel.css carries a scoped .o2 block with tokens only", () => {
   const start = css.indexOf("/* ── Org (org2");
   assert.ok(start !== -1, "block present");

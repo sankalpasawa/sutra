@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.277.2 (2026-09-15)
+
+- **New Org screen: a changed registry says so.** Each department read carries the registry's history length; when it differs from the one the tree was loaded with, one line, "The registry changed", offers Refresh, which re-reads the tree and what is open.
+- **Review folds (DeepSeek, ADVISORY, 25 items, 5 folded).** A rename or a new sub-department is refused, at request time and again at approval, when a live sibling already carries the name. A save that fails after the document was left shows "Not saved" once instead of vanishing. A stale filter answer no longer clears the newer request's in-flight flag. The kind backfill reports rows actually written. A merge with no successor leaves the children's kind alone.
+
 ## 2.277.1 (2026-09-15)
 
 - **The new Org screen starts at the root.** It had been reading the role-scoped slice Old Org's studio uses (on the live registry: 43 of 76 departments, topped by the inner "Sutra"), so the machine and the other organisations were missing and the address facet began mid-tree. It now builds from the whole registry the app already fetches and opens on the rooted tree.

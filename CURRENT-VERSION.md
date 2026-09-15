@@ -2,7 +2,15 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.277.1 (2026-09-15, HEAD)
+## v2.277.2 (2026-09-15, HEAD)
+
+**New Org screen: a changed registry says so** ("The registry changed" + Refresh when a department read
+reports another history length than the tree was loaded with). **DeepSeek review folds** (ADVISORY, 25
+items, 5 folded): sibling-name refusal for rename and new sub-department at request and at approval,
+"Not saved" once when a save fails after the document was left, stale filter answers never clear the newer
+flag, the kind backfill counts real writes, a successor-less merge leaves children's kind alone.
+
+## v2.277.1 (2026-09-15)
 
 **The new Org screen starts at the root.** It builds its tree from the whole registry the app already
 fetches (ORG_ALL), not the role-scoped slice Old Org's studio uses, so the machine and every organisation

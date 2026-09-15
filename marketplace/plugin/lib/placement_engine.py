@@ -422,14 +422,16 @@ def backfill_node_kind(dry_run=False):
         todo = [r for r, d in domains.items() if d.get("node_kind") not in NODE_KINDS]
         if dry_run or not todo:
             return {"missing": len(todo), "written": 0}
+        written = 0
         for r in todo:
             d = _load_domain(r)
             if d is None:
                 continue
             d["node_kind"] = node_kind_for(d.get("parent_ref"), d.get("origin"), domains)
             _save_domain(d, emit=False)
-        _append_jsonl(DOMAIN_INDEX, {"event": "node_kind_backfilled", "count": len(todo), "ts_ms": _now_ms()})
-        return {"missing": len(todo), "written": len(todo)}
+            written += 1
+        _append_jsonl(DOMAIN_INDEX, {"event": "node_kind_backfilled", "count": written, "ts_ms": _now_ms()})
+        return {"missing": len(todo), "written": written}
 
 
 def mint_domain(parent_ref, name, evidence, tenant_id, origin="system-minted", node_kind=None):
@@ -1579,7 +1581,7 @@ def _dispose_onto(ref, successor, reason, tenant_id, domains):
     for cref, cd in sorted(domains.items()):
         if cd.get("parent_ref") == ref:
             cd["parent_ref"] = successor
-            if cd.get("node_kind") in NODE_KINDS:   # S94: a child re-homed under the root changes kind
+            if successor and cd.get("node_kind") in NODE_KINDS:   # S94: a child re-homed under the root changes kind
                 cd["node_kind"] = node_kind_for(successor, cd.get("origin"), domains)
             _save_domain(cd)
             disposition["children"].append({"ref": cref, "to": successor})

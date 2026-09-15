@@ -219,6 +219,10 @@ def department(ref: str):
         "ts_minted_ms": d.get("ts_minted_ms"),
         "retired_at_ms": d.get("retired_at_ms"),
         "retire_reason_code": d.get("retire_reason_code"),
+        # plan S52: the registry's history length at this read. The screen keeps
+        # the value it loaded the tree with (META.domain_index_lines); a later
+        # read that differs means another session changed the tree since.
+        "index_lines": len(E._read_jsonl(E.DOMAIN_INDEX)),
     }
 
 
@@ -370,6 +374,16 @@ def _request_check(kind: str, args: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="a department cannot move under itself")
         if live[args["ref"]].get("parent_ref") == args["target"]:
             raise HTTPException(status_code=400, detail="it is already there")
+    if kind in ("org.rename", "org.create"):
+        # the same sibling-name rule the applier enforces, so the requester hears
+        # it now rather than the approver later (DeepSeek review P1-7)
+        me = args.get("ref") if kind == "org.rename" else None
+        parent = live[args["ref"]].get("parent_ref") if kind == "org.rename" else args["parent"]
+        want = " ".join(str(args["name"]).split()).lower()
+        for r, x in live.items():
+            if r != me and x.get("parent_ref") == parent and (x.get("name") or "").lower() == want:
+                raise HTTPException(status_code=400, detail="%s already has a department named %s"
+                                    % ((live.get(parent) or {}).get("name") or "the root", " ".join(str(args["name"]).split())))
     return live
 
 

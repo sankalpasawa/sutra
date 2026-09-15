@@ -147,7 +147,8 @@ async function loadOrg2(force){
   st.loading = true; st.error = null; o2Render();
   try {
     if (typeof loadOrg === "function") await loadOrg();
-    st.loaded = true;
+    st.loaded = true; st.stale = false;
+    if (force){ st.dept = {}; st.deptErr = {}; st.health = {}; }   /* a refresh re-reads what is open */
     if (!st.sel){ const d = o2Data(); st.sel = d.root ? d.root.ref : null; }
   } catch (e) {
     st.error = (e && e.message) || String(e);
@@ -163,8 +164,13 @@ async function o2LoadDept(ref, force){
   if (st.busy[ref]) return;                             /* one read in flight per department */
   st.busy[ref] = true;
   try {
-    st.dept[ref] = await apiGet("/api/org2/department/" + encodeURIComponent(ref));
+    const r = await apiGet("/api/org2/department/" + encodeURIComponent(ref));
+    st.dept[ref] = r;
     delete st.deptErr[ref];
+    /* plan S52: the tree on screen was loaded at one history length; a
+       department read reporting another means the registry moved under us. */
+    if (typeof META !== "undefined" && META && typeof META.domain_index_lines === "number"
+        && typeof r.index_lines === "number" && r.index_lines !== META.domain_index_lines) st.stale = true;
   } catch (e) {
     st.deptErr[ref] = (e && e.message) || String(e);
   }
@@ -210,11 +216,12 @@ async function o2ApplyFilter(){
   if (!f.kind.length && !f.state.length){ f.refs = null; f.busy = false; o2Render(); return; }
   f.busy = true; o2Render();
   const key = f.kind.join(",") + "|" + f.state.join(",");
+  const same = () => f.kind.join(",") + "|" + f.state.join(",") === key;
   try {
     const r = await apiGet("/api/org2/filter?kind=" + encodeURIComponent(f.kind.join(",")) + "&state=" + encodeURIComponent(f.state.join(",")));
-    if (f.kind.join(",") + "|" + f.state.join(",") === key) f.refs = new Set(r.refs || []);
-  } catch (e) { f.refs = null; }
-  f.busy = false;
+    if (same()) f.refs = new Set(r.refs || []);
+  } catch (e) { if (same()) f.refs = null; }
+  if (same()) f.busy = false;                          /* a stale answer never clears the newer request's flag */
   o2Render();
 }
 function o2FilterOn(){ const f = o2S().filter; return !!(f.kind.length || f.state.length); }
@@ -355,6 +362,9 @@ async function o2MountEditor(el){
         doc.text = text; doc.bytes = r.bytes; doc.conflict = false;
       } catch (e) {
         if (e && e.status === 409) doc.conflict = true;
+        /* a save that fails after the operator has left the document (the
+           unmount flush) would otherwise vanish with the viewer: say so once */
+        if (st.doc !== doc) st.flash = "Not saved: " + (doc.title || path.split("/").pop());
         o2Render();
         throw e;
       }
@@ -830,6 +840,7 @@ function o2ScreenHtml(){
   const dept = n ? st.dept[n.ref] : null, err = n ? st.deptErr[n.ref] : null;
   let banner = st.error
     ? `<div class="o2line warn"><span>Sutra is not reachable</span><button type="button" class="btn" data-o2act="retry">Retry</button></div>` : "";
+  if (st.stale && !st.error) banner += `<div class="o2line acc"><span>The registry changed</span><button type="button" class="btn" data-o2act="retry">Refresh</button></div>`;
   if (st.flash) banner += `<div class="o2line acc"><span>${o2Esc(st.flash)}</span><button type="button" class="o2ib o2x" data-o2act="flashclose" aria-label="Dismiss">${O2_X}</button></div>`;
   const left = `<div class="o2left">${o2SearchHtml()}${(st.loading && !d.root) ? o2SkelTree() : o2TreeHtml()}</div>`;
   let content;
