@@ -146,6 +146,43 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(r.status_code, 409)
         store.patch_state(cid, rid, status="stopped")
 
+    def test_12b_a_message_after_a_restart_carries_the_stopped_run_on(self):
+        """Quitting Sutra mid-step stops the run (reconcile_stale_runs). The next message must
+        continue THAT run, so its saved steps are reused, not start an empty one."""
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        rid = store.new_run(cid, "mid-research")
+        store.patch_state(cid, rid, status="running", current_step="run_research", word_target=2200)
+        store.save_artifact(cid, rid, "_work/curate-partial.json", {"team": [{"role": "r"}]})
+        store.save_messages(cid, [{"role": "user", "content": "write it"}])
+        store.reconcile_stale_runs()
+        self.assertEqual(store.get_state(cid, rid)["status"], "stopped")
+        llm.call = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Carry on"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["run_id"], rid, "the same run, not a new one")
+        self.assertTrue(r.json().get("continued"))
+        _settle(self.client, cid, rid, ("done",))
+        self.assertEqual(len(store.list_runs(cid)), 1, "no second run was made")
+        self.assertIsNotNone(store.load_artifact(cid, rid, "_work/curate-partial.json"),
+                             "the saved interviews are still where the tools look for them")
+        self.assertEqual(store.get_state(cid, rid).get("word_target"), 2200, "the run's own state is kept")
+        self.assertEqual(store.get_messages(cid)[-2]["content"], "Carry on")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertTrue(any(e["type"] == "resumed" and "Sutra was closed" in (e.get("note") or "") for e in ev))
+
+    def test_12c_a_run_the_person_stopped_still_starts_fresh(self):
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        rid = store.new_run(cid, "stopped by hand")
+        store.patch_state(cid, rid, status="running")
+        from seo_agent import loop
+        loop.stop(cid, rid)
+        llm.call = ScriptedModel([{"text": "New one.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "something else"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotEqual(r.json()["run_id"], rid, "a Stop the person pressed is not undone")
+        self.assertFalse(r.json().get("continued"))
+        _settle(self.client, cid, r.json()["run_id"], ("done",))
+
     def test_13_answer_on_a_run_that_is_not_waiting_is_409(self):
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
         rid = store.new_run(cid, "x")

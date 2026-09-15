@@ -276,6 +276,29 @@ def api_send(chat_id: str, body: dict = Body(...)):
                                           lambda: loop.resume(chat_id, run_id, answer)))
         return {"run_id": run_id, "answered": True, "state": store.get_state(chat_id, run_id)}
 
+    # A RUN THAT SUTRA'S OWN QUIT STOPPED IS CARRIED ON, NOT STARTED OVER (2026-09-15). At start-up
+    # store.reconcile_stale_runs marks every run that was mid-step as "stopped" (by="restart"), and
+    # the chat tells the person "Send a message to continue". A message used to make a NEW run, with
+    # an empty artifacts folder, so every step the old run had saved (the research caches, the
+    # interviews in curate-partial, the scored cards) was stranded in the old run's folder and bought
+    # again: an hour of work and the DataForSEO spend, lost to closing the app. Nobody chose to stop
+    # that run, so the message continues it and its tools pick up from what is on disk. The
+    # conversation needs nothing mended: loop.step saves an assistant tool call only together with
+    # its results, so a quit mid-step leaves messages.json ending on a complete turn. A Stop the
+    # person pressed (by="user") still starts fresh, as before.
+    # The newest run by when it started. list_runs sorts by folder name, and a run folder is named
+    # r-HHMMSS-..., the time of day with no date, so its last row is not always the newest run.
+    last = max(runs, key=lambda r: str(r.get("started_at") or "")) if runs else None
+    if last and last.get("status") == "stopped" and _stopped_by_restart(chat_id, last["run_id"]):
+        run_id = last["run_id"]
+        store.emit(chat_id, run_id, "resumed", by="user", answer=text[:200],
+                   note="carrying on after Sutra was closed, from the steps already saved")
+        _sync_claude_bin()
+        _spawn(chat_id + run_id, _guarded(chat_id, run_id,
+                                          lambda: loop.start(chat_id, run_id, text)))
+        return {"run_id": run_id, "answered": False, "continued": True,
+                "state": store.get_state(chat_id, run_id)}
+
     run_id = store.new_run(chat_id, text[:60])
     store.patch_state(chat_id, run_id, request=text)
     # The chip on the Asset ideas tab carries the idea's id as DATA, not as words in the message.
@@ -300,6 +323,15 @@ def api_send(chat_id: str, body: dict = Body(...)):
     _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                       lambda: loop.start(chat_id, run_id, text)))
     return {"run_id": run_id, "answered": False, "state": store.get_state(chat_id, run_id)}
+
+
+def _stopped_by_restart(chat_id, run_id):
+    """Was this run's latest stop the start-up sweep (store.reconcile_stale_runs), not a person?"""
+    try:
+        stops = [e for e in store.get_events(chat_id, run_id) if e.get("type") == "stopped"]
+    except Exception:  # noqa: BLE001 -- an unreadable log is not proof of a restart: start fresh
+        return False
+    return bool(stops) and stops[-1].get("by") == "restart"
 
 
 def _named_open_idea(text):
