@@ -629,6 +629,42 @@ function shadowCheckRowsHtml(m){
    function up (shadowCheckRowsHtml, the founder_confirm list), and a
    satisfied check should not look like a different species from a check
    waiting on you. Only .shcheckev is new. */
+/* ── A CONCLUSION IS NOT AN AUDIT LOG (founder, 2026-09-15) ──────────────
+   `completion.outcome` is not a summary and was never built to be one: the
+   server slices it off the head and tail of the evidence blob, so it lands
+   mid-json as often as on a sentence -- the release mission's ends, quite
+   literally, "nothing in the release path pointed at the…". Printed whole it
+   put file permissions, a grep invocation and a markdown table on the
+   founder's primary completion surface.
+
+   SO THE CARD REFUSES EVIDENCE. A sentence carrying a fence, a permission
+   string, a shell invocation, a path:line reference or an enumerated
+   evidence header is not the conclusion; it is the working. If a real
+   sentence survives it is shown, and if none does the block draws NOTHING --
+   because the conclusion is already on the card in the two places that were
+   built to carry it: the headline ("1 of 1 checks passed") and the criteria
+   rows with who satisfied each one.
+
+   NOTHING IS LOST OR EDITED. completion.outcome is untouched on the record,
+   still returned, still copied in full by Copy result (shadowCompletionText
+   is not changed), and the whole working is behind Open the chat. This is a
+   SEPARATE filter from the timeline's on purpose -- the worker rows keep
+   their existing behaviour exactly. */
+const SH_EVIDENCE = [
+  /```/,                                   /* a fence, inline or not */
+  /(^|\s)[-d][rwx-]{9}/,                   /* a permission string */
+  /`\s*(grep|ls|cat|find|git|npm|node|sed|awk|rm|mv|cp|chmod|curl)\b/i,
+  /\S+\.\w+:\d+/,                          /* path:line evidence */
+  /^\s*\(\d+\)\s/,                         /* "(1) Path and references" */
+];
+function shadowResultEvidence(sentence){
+  const t = String(sentence || "");
+  return SH_EVIDENCE.some(re => re.test(t));
+}
+function shadowResultGist(text){
+  return shadowSayGist(shadowSayClean(text), shadowResultEvidence);
+}
+
 function shadowCompletionHtml(m){
   const c = m && m.completion;
   if (!c) return "";
@@ -645,6 +681,8 @@ function shadowCompletionHtml(m){
     </div>`;
   }).join("");
   const turns = (c.turns_used || 0) + " of " + (c.max_turns || 0) + " turns";
+  /* one sentence, and only if it is a conclusion rather than the working */
+  const work = shadowResultGist(c.outcome);
   const S_ = (typeof S !== "undefined") ? S : {};
   /* the copy action's own feedback, and it is per-record: a flag holding
      another mission's id must leave THIS button reading "Copy result". */
@@ -664,10 +702,13 @@ function shadowCompletionHtml(m){
         title="Copy this result as text">${copied
           ? (copied.ok ? "Copied" : "Copy failed") : "Copy result"}</button>
     </div>
-    <div class="shconfirmsub">${esc(c.objective || "")}${c.objective
-      ? " — " : ""}${esc(turns)} used. These are the criteria Shadow
-      checked, and what satisfied each one.</div>
-    ${c.outcome ? `<div class="shdonework">${esc(c.outcome)}</div>` : ""}
+    ${/* THE OBJECTIVE IS ALREADY THE TITLE of this pane and the head of the
+         card above it; restating all 443 characters of it here made the
+         conclusion the third thing on the card. What is left is the one
+         fact this line adds. The criteria speak for themselves below. */""}
+    <div class="shconfirmsub">${esc(turns)} used.</div>
+    ${work ? `<div class="shdonework" title="${escAttr(c.outcome || "")}"
+      >${esc(work)}</div>` : ""}
     <div class="shchecks">${rows}</div>
   </div>`;
 }
@@ -962,6 +1003,65 @@ function shadowIvValue(mid, f){
    Anything else draws NOTHING -- a stale or moved index makes confirm_check
    raise, the server catches and ledgers it, and the answer still lands. A
    card must not promise a sign-off the server will decline to write. */
+/* ── THE FOUNDER SHOULD SEE THE DECISION, NOT THE NARRATION ──────────────
+   (founder, 2026-09-15, from the README sign-off on the live dogfood.)
+
+   THE SAME PROPOSITION ARRIVED THREE TIMES. The decider writes a question,
+   a field label and a done_when check, and for a founder_confirm they are
+   routinely one sentence in three costumes:
+
+     question  "Does the new Shadow task-pane README section meet the bar --
+                clear overview, setup/test instructions, and a short
+                troubleshooting section?"
+     label     "README has a clear overview, setup/test instructions, and a
+                short troubleshooting section."
+     signs off "README includes a clear overview, setup/test instructions,
+                and a short troubleshooting section."
+
+   Printing all three does not make the decision clearer; it makes the card
+   a wall and the founder scan for the difference between them, of which
+   there is none. So a line that adds nothing is not drawn.
+
+   THE TEST IS DIRECTIONAL AND DELIBERATELY CONSERVATIVE. It asks "is this
+   line WHOLLY CONTAINED in what is already on screen" -- overlap over the
+   CANDIDATE's own tokens, not over the shorter of the two. A short question
+   can therefore never swallow a longer label that adds something: "Was this
+   a smoke test?" against "This was a smoke test and the round-trip is
+   satisfactory -- close it out." scores 0.4 and the label stays. Only near
+   duplicates cross 0.8.
+
+   PRESENTATION ONLY: nothing is edited, merged or rewritten. Every string
+   the decider wrote is still in the record, still sent, still validated,
+   and still reachable -- a suppressed line rides on the title of the line
+   that already says it. */
+const SH_SAID_STOP = new Set(("a an the is are was were be been being do does "
+  + "did and or but if of to in on for with that this it its as at by from "
+  + "has have had not no so i you we they there here them their our your "
+  + "into over under than then when which who whom what while also just "
+  + "can could should would may might must will shall about").split(" "));
+
+function shadowSaidWords(text){
+  return new Set(String(text || "").toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length > 1 && !SH_SAID_STOP.has(w)));
+}
+
+/* `said` is everything already on the card. Returns true when `line` adds
+   nothing to it. An empty or near-empty line is never "redundant" -- there
+   is nothing to compare, and hiding it would hide a real gap. */
+const SH_SAID_SAME = 0.8;
+function shadowAlreadySaid(line, said){
+  const a = shadowSaidWords(line);
+  if (a.size < 3) return false;
+  const b = new Set();
+  for (const s of [].concat(said || []))
+    for (const w of shadowSaidWords(s)) b.add(w);
+  if (!b.size) return false;
+  let hit = 0;
+  for (const w of a) if (b.has(w)) hit++;
+  return hit / a.size >= SH_SAID_SAME;
+}
+
 function shadowIvSignsIndex(m, f){
   const t = m && m.intervention && m.intervention.confirms_check;
   if (!t || typeof t !== "object") return -1;
@@ -991,10 +1091,85 @@ function shadowIvSignsHtml(m, f){
   </div>`;
 }
 
-function shadowIvFieldHtml(mid, f, signs){
+/* A LABEL IS A NAME, NOT A BRIEF (founder, 2026-09-15). The decider may
+   spend 200 characters on one (LABEL_MAX), and it does: the smoke-test ask
+   carried a 112-character sentence -- "If not a smoke test: the actual
+   objective -- what should change, in which surface, and what state counts
+   as done." -- set in bold above an empty box. That is an INSTRUCTION, and
+   an instruction belongs inside the box it instructs.
+
+   So a long label on a field the founder TYPES into becomes the
+   placeholder, and the prominent label steps aside. It is the same string,
+   unedited, still the field's accessible name via aria-label, and the
+   schema, the key, the validation and the payload are all untouched. A
+   label on a chip field (boolean / choice / ranking) is never moved -- it
+   has no box to move into. A required field keeps its label, because the
+   REQUIRED marker must stay attached to something the eye lands on. */
+const SH_LABEL_LONG = 80;
+
+/* ── THE ASK IS THE CHECKLIST, SO THE CHECKLIST STEPS ASIDE ──────────────
+   (founder, 2026-09-15, from the README sign-off on the live dogfood.)
+
+   THE BRIEF SAID IT AND THEN THE ASK SAID IT AGAIN:
+
+     DONE WHEN      "README includes a clear overview, setup/test
+                     instructions, and a short troubleshooting section."
+     YES SIGNS OFF  "README includes a clear overview, setup/test
+                     instructions, and a short troubleshooting section."
+
+   two blocks apart, the same string, because the intervention IS the
+   founder confirmation for the one check left.
+
+   WHY THE EXISTING GUARD DID NOT FIRE, and why it must not be widened:
+   shadowMissionNeedsFounder() is `state === "paused"` plus a founder pause
+   reason, and it is right about that -- it describes the PAUSED sign-off
+   flow, where shadowCheckRowsHtml replaces the row with the checklist
+   itself. This mission arrives the other way: `blocked`, block_reason
+   "needs_founder", carrying an intervention. Loosening that predicate
+   would change what the pause flow means. So this is a SECOND, narrower
+   reason to stand the row down, and it earns it by proving coverage.
+
+   THE PROOF IS PER CHECK, NOT A COUNT. Every UNMET check must be named by
+   some boolean field of THIS intervention, through shadowIvSignsIndex --
+   the same predicate the sign-off row already uses, which refuses any
+   check that is not founder_confirm. So:
+
+     one unmet founder_confirm, and the ask signs it      -> row hidden
+     two unmet, the ask signs one                          -> row stays
+     an unmet machine-tier check (the verifier's, never
+       the founder's)                                      -> row stays
+     an ordinary ask that confirms nothing                 -> row stays
+     no intervention on the card at all                    -> row stays
+
+   PRESENTATION ONLY: nothing about done_when, met, the tiers, confirms_check
+   or the evaluation of any check changed. The criterion is still on screen,
+   once, where the founder is being asked to sign it. */
+function shadowAskCoversChecks(m){
+  const iv = m && m.intervention;
+  if (!iv || !Array.isArray(iv.fields) || !iv.fields.length) return false;
+  const checks = (m.done_when || []);
+  const unmet = [];
+  checks.forEach((c, i) => { if (c && !c.met) unmet.push(i); });
+  if (!unmet.length) return false;      /* nothing outstanding to stand in for */
+  const signed = new Set();
+  for (const f of iv.fields){
+    const i = shadowIvSignsIndex(m, f);
+    if (i !== -1) signed.add(i);
+  }
+  return unmet.every(i => signed.has(i));
+}
+
+function shadowIvFieldHtml(mid, f, signs, said){
   const d = shadowIvDraft(mid);
   const v = shadowIvValue(mid, f);
   const err = d.errors[f.key];
+  const typed = f.type === "long_text" || SH_IV_INPUT[f.type] !== undefined;
+  const longAsk = typed && !f.required
+    && String(f.label || "").length > SH_LABEL_LONG;
+  /* the label is the same sentence as the question or the check it signs
+     off. The control keeps the name for a screen reader; the eye is spared
+     reading it a third time. */
+  const echoed = !longAsk && shadowAlreadySaid(f.label, said);
   const hook = `data-shivmid="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"`;
   const opt = (o, on, extra) => `<button class="shkind${on ? " on" : ""}"
     type="button" ${hook} data-shivopt="${escAttr(o.value)}"
@@ -1022,7 +1197,9 @@ function shadowIvFieldHtml(mid, f, signs){
       break;
     case "long_text":
       body = `<textarea rows="4" ${hook} data-shivtext="1"
-        placeholder="${escAttr(f.help || "")}">${esc(v == null ? "" : v)}</textarea>`;
+        ${longAsk ? `aria-label="${escAttr(f.label)}"` : ""}
+        placeholder="${escAttr(f.help || (longAsk ? f.label : ""))}"
+        >${esc(v == null ? "" : v)}</textarea>`;
       break;
     default: {
       const kind = SH_IV_INPUT[f.type];
@@ -1032,13 +1209,15 @@ function shadowIvFieldHtml(mid, f, signs){
         break;
       }
       body = `<input type="${escAttr(kind)}" ${hook} data-shivtext="1"
+        ${longAsk ? `aria-label="${escAttr(f.label)}"` : ""}
         value="${escAttr(v == null ? "" : String(v))}"
-        placeholder="${escAttr(f.help || "")}">`;
+        placeholder="${escAttr(f.help || (longAsk ? f.label : ""))}">`;
     }
   }
-  return `<div class="shivfield">
-    <label class="shnewlabel">${esc(f.label)}${
-      f.required ? ' <span class="shivreq">required</span>' : ""}</label>
+  return `<div class="shivfield"${echoed
+    ? ` role="group" aria-label="${escAttr(f.label)}"` : ""}>
+    ${longAsk || echoed ? "" : `<label class="shnewlabel">${esc(f.label)}${
+      f.required ? ' <span class="shivreq">required</span>' : ""}</label>`}
     ${f.help && f.type !== "long_text" && SH_IV_INPUT[f.type] === undefined
       ? `<p class="shnewsub">${esc(f.help)}</p>` : ""}
     ${body}
@@ -1051,15 +1230,46 @@ function shadowInterventionHtml(m){
   const iv = m && m.intervention;
   if (!iv || !Array.isArray(iv.fields) || !iv.fields.length) return "";
   const d = shadowIvDraft(m.id);
+  /* EVERYTHING THE CARD ALREADY SAYS, in the order the founder reads it:
+     the question, and the done_when checks any boolean here signs off. A
+     field label that adds nothing to this is not drawn again. */
+  const said = [iv.question].concat(iv.fields.map(f => {
+    const i = shadowIvSignsIndex(m, f);
+    return i === -1 ? "" : String(((m.done_when || [])[i] || {}).check || "");
+  })).filter(Boolean);
+  /* ── CONTEXT IS SECONDARY, AND ON A SIGN-OFF IT IS NOT DRAWN AT ALL ────
+     (founder, 2026-09-15.)
+
+     `context` is the decider answering "why can't you settle this yourself"
+     -- Shadow's reasoning about its own limits. That is narration, and the
+     founder is deciding, not auditing. On a founder_confirm it is never the
+     thing that decides the answer: the QUESTION asks it and the SIGN-OFF
+     CRITERION defines the bar, and those two are primary. So a card that
+     carries confirms_check draws no context paragraph at all.
+
+     Everywhere else it is drawn, floored at ONE line -- and skipped when it
+     merely restates what is already above it.
+
+     THE TEXT IS NEVER LOST. intervention.context is untouched in the
+     record, still returned by the API, still exactly what the decider
+     wrote; when the paragraph is not drawn it rides on the question's own
+     title, so hovering the question shows Shadow's reasoning in full. No
+     prompt, cap or stored field changed. */
+  const signing = !!(iv.confirms_check
+    || iv.fields.some(f => shadowIvSignsIndex(m, f) !== -1));
+  const ctx = String(iv.context || "").trim();
+  const showCtx = !!ctx && !signing && !shadowAlreadySaid(ctx, said);
   return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}">
-    <div class="shivq">${esc(iv.question || "")}</div>
-    ${iv.context ? `<p class="shnewsub">${esc(iv.context)}</p>` : ""}
+    <div class="shivq"${ctx && !showCtx
+      ? ` title="${escAttr(ctx)}"` : ""}>${esc(iv.question || "")}</div>
+    ${showCtx ? `<p class="shnewsub shivctx"
+      title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
     ${(iv.evidence || []).length ? `<div class="shivev">${
       iv.evidence.map(e => `<div class="shivevrow">${
         e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
       }<span>${esc(e.text || "")}</span></div>`).join("")}</div>` : ""}
-    ${iv.fields.map(f => shadowIvFieldHtml(m.id, f, shadowIvSignsHtml(m, f)))
-      .join("")}
+    ${iv.fields.map(f => shadowIvFieldHtml(m.id, f,
+      shadowIvSignsHtml(m, f), said)).join("")}
     <div class="shnewacts">
       <button class="btn pri" type="button"
         data-shivsend="${escAttr(m.id)}"${d.busy ? " disabled" : ""}
@@ -1205,7 +1415,7 @@ function shadowBudgetBarHtml(m){
     ><i class="${shadowBudgetSev(pct)}" style="width:${pct}%"></i></span>`;
 }
 
-/* ── WHAT THE AGENT JUST DID ─────────────────────────────────────────────
+/* ── WHAT THE WORKER AGENT JUST DID ──────────────────────────────────────
    THE RHS IS SHADOW REPORTING, NOT THE WORKER CHAT. This is the one block
    that speaks for the delegate, and it is deliberately ONE message: the
    agent's latest say, not the transcript. The whole transcript is still one
@@ -1287,9 +1497,64 @@ function shadowSayClean(text){
     if (SH_CONTROL_HEAD.test(line)) continue;
     /* the parenthetical that trails a PLACEMENT line */
     if (/^\(.*(domain_ref|confidence)\s*=/.test(line)) continue;
+    /* A TABLE IS A DIAGNOSTIC, NOT A SENTENCE (founder, 2026-09-15). The
+       delegate reports in markdown, and a stop notice arrives as a heading
+       over a `| Field | Value received | Problem |` grid. Joined into one
+       line that grid is unreadable -- and it carries no terminal
+       punctuation, which is exactly how it fused onto the heading above it
+       and got chopped mid-row on the founder's screen. Rows go; the prose
+       around them stays; the whole table is still in the worker chat,
+       untouched, behind Open the chat. */
+    if (/^\|/.test(line)) continue;
+    /* A HEADING IS A COMPLETE THOUGHT. Keep the words, drop the hashes, and
+       CLOSE IT: the heading is usually the one sentence the founder wants
+       ("Stopped -- objective is not actionable"), and without a terminator
+       shadowSayGist cannot see where it ends. Nothing is added but the full
+       stop -- every word is the worker's own. */
+    const head = line.match(/^#{1,6}\s+(.*)$/);
+    if (head){
+      const said = head[1].trim();
+      if (said) out.push(/[.!?:;]$/.test(said) ? said : said + ".");
+      continue;
+    }
     out.push(line);
   }
-  return out.join(" ").replace(/\s+/g, " ").trim();
+  /* inline emphasis markers, for the same reason the hashes go: the words
+     are the worker's, the asterisks are markdown furniture, and a preview
+     that reads "**Count: 7 numbered checks**" is showing the founder the
+     syntax instead of the sentence. Backticks stay -- a path or a command
+     in a preview is clearer fenced than bare. */
+  return out.join(" ")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\s+/g, " ").trim();
+}
+
+/* The openers a delegate puts above its actual report. A sentence counts as
+   one ONLY when almost nothing is left after the phrase -- so "What I did."
+   is an announcement and is skipped, while "What I did: updated the README
+   with setup instructions" carries its own news and is kept whole. The
+   three-word floor is measured with shadowSaidWords, so stopwords cannot
+   pad a heading into looking substantive. */
+const SH_SAY_FILLER = [
+  /^what i (did|found|changed|ran|tested|checked|built|fixed)\b/i,
+  /^here'?s (what i (did|found|changed)|the (summary|result))\b/i,
+  /^(done|completed|finished|all done|that'?s it|no changes)\b/i,
+  /^(summary|results?|outcome|status|update|notes?|next steps?)\b/i,
+  /^(what'?s left|tl;?dr|changes|files changed|conclusion)\b/i,
+  /^i (completed|finished|have (completed|finished)|did) (the|this|it|that)\b/i,
+];
+function shadowSayFiller(sentence){
+  const s = String(sentence || "").trim();
+  if (!s) return true;
+  for (const re of SH_SAY_FILLER){
+    const hit = s.match(re);
+    if (!hit) continue;
+    const rest = s.slice(hit[0].length)
+      .replace(/^[\s:\u2014\u2013\-,.]+/, "").replace(/[.!?\s]+$/, "");
+    if (shadowSaidWords(rest).size < 3) return true;
+  }
+  return false;
 }
 
 /* A REPORT IS ONE LINE (founder, 2026-09-15). Even once the control plane is
@@ -1299,12 +1564,48 @@ function shadowSayClean(text){
    in range so the line never ends mid-word. Everything else is in the chat. */
 const SH_SAY_MAX = 160;
 const SH_SAY_SENTENCES = 1;
-function shadowSayGist(text){
+/* `drop` is an OPTIONAL second predicate, used by the completion card to
+   refuse evidence. Called with one argument this function behaves exactly as
+   it did, which is what keeps the worker timeline byte-identical. */
+function shadowSayGist(text, drop){
   const t = String(text || "").trim().replace(/\s+/g, " ");
   if (!t) return "";
-  /* keep the delimiter with the sentence it ends */
-  const parts = t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [t];
-  let gist = parts.slice(0, SH_SAY_SENTENCES).join("").trim();
+  /* SPLIT ON A REAL BOUNDARY, AND NEVER DROP TEXT (fixed 2026-09-15).
+     The old matcher required a run of .!? followed by whitespace or end,
+     and simply MATCHED NOTHING at a position where that failed -- so a
+     sentence containing a filename was silently skipped and the pane showed
+     its tail: "Updated marketplace/plugin/sutra-ui/README.md with setup and
+     testing instructions." previewed as "md with setup and testing
+     instructions." A split on whitespace PRECEDED by sentence punctuation
+     has no such hole: every character survives, and the dot inside
+     README.md is not a boundary because no space follows it. */
+  const parts = t.split(/(?<=[.!?])\s+/).filter(x => x.trim());
+  if (!parts.length) return "";
+  /* SKIP THE ANNOUNCEMENT, KEEP THE NEWS (founder, 2026-09-15). The live
+     pane read "WORKER AGENT · TURN 1 / What I did." -- real worker text,
+     and worth nothing: the delegate writes a `## What I did` heading and
+     then says what it did underneath. The heading survives cleaning (it is
+     the worker's own words, and on a stop notice it is exactly the sentence
+     the founder wants), so the axis is not heading-ness, it is whether the
+     sentence CARRIES anything.
+
+     NOTHING IS GENERATED. The next real sentence is selected from the same
+     turn; if every sentence is an announcement, the block draws nothing
+     rather than announcing an announcement. */
+  let first = 0;
+  while (first < parts.length
+         && (shadowSayFiller(parts[first])
+             || (typeof drop === "function" && drop(parts[first])))) first++;
+  if (first >= parts.length) return "";
+  let gist = parts.slice(first, first + SH_SAY_SENTENCES).join(" ").trim();
+  /* THE SAFETY NET FOR STRUCTURE THAT GOT THIS FAR. shadowSayClean drops
+     table rows, so on the path we know about this never fires -- but a
+     "sentence" containing a pipe is a grid whatever produced it, and the
+     founder must never again read half a row. Cut AT the structure rather
+     than through it, and say nothing if that leaves nothing. */
+  const bar = gist.indexOf("|");
+  if (bar !== -1) gist = gist.slice(0, bar).trim();
+  if (!gist) return "";
   /* an ellipsis only where the line was actually CUT. A first sentence that
      ended on its own full stop is a whole sentence, and "open. ..." reads as
      a stutter -- the rest of the turn is behind Open the chat, which the
@@ -1319,26 +1620,137 @@ function shadowSayGist(text){
 }
 
 /* THE TURN HAD NOTHING FOR YOU IN IT. A delegate turn that was entirely
-   control plane is not the same as no turn at all, and an empty block under
-   a heading reads as a bug. These say what the record says -- the mission's
-   own state -- and claim nothing beyond it. */
-const SH_NO_SAY = {
-  running: "Working on it.",
-  queued:  "Queued, not started yet.",
-  paused:  "Paused.",
-  blocked: "Stopped, waiting on you.",
-};
+   control plane is not the same as no turn at all -- but the preview line is
+   a QUOTE OF THE WORKER, so when the worker said nothing a human can read,
+   this draws no line at all (founder, 2026-09-15).
 
+   IT USED TO SUBSTITUTE A PHRASE. A state-derived stand-in ("Working on it.")
+   sat here and read, on screen, exactly like something the worker had said --
+   the one thing this block must never do. A fabricated sentence in a quote
+   slot is worse than a heading with nothing under it, so the fallback table
+   is gone and nothing is invented in its place. The turn number in the
+   heading still carries the fact that a turn happened, and the whole turn --
+   control plane included -- is behind Open the chat, unabridged. */
+/* ONE ROW OF THE TIMELINE. The worker's own words for one turn, or nothing. */
+function shadowAgentRowHtml(n, say){
+  return `<div class="shagent">
+    <div class="shagenthead">Worker agent${
+      n > 0 ? " \u00b7 turn " + esc(String(n)) : ""}</div>
+    ${say ? `<div class="shagentsay" title="${escAttr(say)}">${esc(say)}</div>` : ""}
+  </div>`;
+}
+
+/* kept for the single-latest-turn read: the card, and any caller that wants
+   just the newest thing the delegate said. */
 function shadowAgentTurnHtml(m){
   const raw = shadowAgentSay(m);
   if (!raw) return "";
-  const say = shadowSayGist(shadowSayClean(raw))
-    || SH_NO_SAY[m && m.state] || "Working on it.";
-  const n = Number(m && m.turns_used);
-  return `<div class="shagent">
-    <div class="shagenthead">The agent${n > 0 ? " \u00b7 turn " + esc(String(n)) : ""}</div>
-    <div class="shagentsay">${esc(say)}</div>
-  </div>`;
+  const say = shadowSayGist(shadowSayClean(raw));
+  if (!say) return "";
+  return shadowAgentRowHtml(Number(m && m.turns_used), say);
+}
+
+/* ── THE RIGHT PANE IS A TIMELINE OF THE DELEGATION ──────────────────────
+   (founder, 2026-09-15.) It showed one row -- the newest worker turn -- so
+   turn 2 ERASED turn 1 and the founder lost the history of a delegation
+   that had actually happened. A delegation is a sequence: the worker works,
+   Shadow reaches a boundary, the founder answers, the worker carries on.
+   That sequence is the product, and it has to persist.
+
+   WHAT A TURN IS, and it is the backend's own definition, not a second one:
+   session_reader counts `turns` as the number of USER messages, so turn N
+   opens at the Nth message Shadow injects and owns every assistant message
+   until the next one. m.turns_used agrees with that count, which is why the
+   numbering here matches the brief's TURN row exactly.
+
+   WHICH SENTENCE REPRESENTS A TURN: the LAST assistant message in it that
+   survives cleaning. A turn often ends with several messages -- a plan, a
+   tool narration, then the report -- and the report is the last of them. If
+   the last is all control plane the one before it is tried, so a turn is
+   never dropped merely because it signed off with scaffolding.
+
+   NO CAP ON WHICH TURNS ARE SHOWN. Every turn that said something readable
+   gets a row, in order. Each row is one line, so ten turns is ten lines --
+   a timeline, not a transcript, and the whole conversation is still behind
+   Open the chat.
+
+   EVERY SOURCE IS ALREADY HERE: the same throttled transcript reader, the
+   same cleaning rules, and founder_response as the server stamped it. No
+   endpoint, no field, no summary is invented. */
+function shadowTimelineEvents(m){
+  const out = [];
+  const sid = m && m.target_session;
+  const msgs = (sid && typeof shadowTaskTranscript === "function")
+    ? shadowTaskTranscript(sid, SH_TERMINAL.indexOf(m.state) === -1)
+    : null;
+  if (Array.isArray(msgs)){
+    /* group by turn: a user message opens one, assistants fill it */
+    const turns = [];
+    let cur = null;
+    for (const t of msgs){
+      if (!t) continue;
+      if (t.role === "user"){ cur = { n: turns.length + 1, says: [] };
+        turns.push(cur); continue; }
+      if (t.role !== "assistant") continue;
+      /* an assistant turn before any injected instruction still counts as
+         turn 1 -- the delegate spoke, and the founder should see it */
+      if (!cur){ cur = { n: 1, says: [] }; turns.push(cur); }
+      cur.says.push(t);
+    }
+    /* THE NUMBERS ARE ANCHORED TO THE RECORD, NOT TO WHAT WE HOLD. The
+       transcript in hand can be shorter than the mission -- a partial read,
+       or a session whose head has been trimmed -- and numbering it 1..n
+       would relabel history: the founder would read "turn 1" for something
+       the brief calls turn 9. So the LAST transcript turn is turns_used and
+       the rest count back from it. When the transcript is complete the
+       offset is zero and nothing moves: the six-turn release mission
+       numbers 1..6 against turns_used 6, exactly as it always did. */
+    const used = Number(m && m.turns_used) || 0;
+    const base = Math.max(0, used - turns.length);
+    for (const t of turns){
+      for (let i = t.says.length - 1; i >= 0; i--){
+        const say = shadowSayGist(shadowSayClean(t.says[i].text));
+        if (say){
+          out.push({ kind: "worker", n: base + t.n, say: say,
+                     ts: Date.parse(t.says[i].ts || "") });
+          break;
+        }
+      }
+    }
+  }
+  /* the newest worker turn, for a mission whose session is gone but whose
+     result the server kept */
+  if (!out.length && m && m.result_excerpt){
+    const say = shadowSayGist(shadowSayClean(m.result_excerpt));
+    if (say) out.push({ kind: "worker", n: Number(m.turns_used) || 0,
+                        say: say, ts: NaN });
+  }
+  /* WHAT THE FOUNDER ANSWERED, placed where it actually happened.
+     ONLY THE MOST RECENT ONE EXISTS: the server assigns founder_response
+     rather than appending to it, so an earlier answer on a mission that was
+     asked twice is not on the record in any structured form. It is not
+     reconstructed from Shadow's instruction prose -- that prose is the
+     decider's own wording, with no marker to key on, and guessing at it
+     would be inventing history. */
+  const fr = m && m.founder_response;
+  if (fr && typeof fr === "object")
+    out.push({ kind: "answered", ts: Date.parse(fr.answered_at || "") });
+  /* chronological. A stable sort keeps transcript order wherever a stamp is
+     missing (Codex transcripts carry no per-message ts), so an unstampable
+     answer settles at the end rather than jumping the queue. */
+  return out.map((e, i) => Object.assign({ i: i }, e)).sort((a, b) => {
+    const at = isNaN(a.ts) ? null : a.ts, bt = isNaN(b.ts) ? null : b.ts;
+    if (at !== null && bt !== null && at !== bt) return at - bt;
+    return a.i - b.i;
+  });
+}
+
+function shadowTimelineHtml(m){
+  const events = shadowTimelineEvents(m);
+  if (!events.length) return "";
+  return `<div class="shtimeline">${events.map(e => e.kind === "answered"
+    ? shadowStoryHtml(m)
+    : shadowAgentRowHtml(e.n, e.say)).join("")}</div>`;
 }
 
 /* ── THE STORY: what happened either side of the founder's answer ─────────
@@ -1460,6 +1872,10 @@ function shadowTaskCardHtml(m){
      so in this state the checklist REPLACES it rather than sitting beside it
      -- the same criteria printed twice is not a compact card. */
   const awaiting = shadowMissionNeedsFounder(m);
+  /* the SECOND reason the flat row stands down: the ask below this card is
+     the founder confirmation for every check still outstanding, so printing
+     the criteria here prints them twice. See shadowAskCoversChecks. */
+  const askedOff = shadowAskCoversChecks(m);
   /* and the state after that one: the task FINISHED. The flat "done when"
      row is the same criteria without the verdicts, so the summary replaces
      it for exactly the reason the sign-off list does -- the same criteria
@@ -1484,7 +1900,7 @@ function shadowTaskCardHtml(m){
     </div>
     <div class="shcard2row"><span class="shcard2k">where it runs</span>
       <span class="shcard2v">${acts}</span></div>
-    ${awaiting || finished ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
+    ${awaiting || finished || askedOff ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
         : "you say so — no check was set, so Shadow will ask"}</span></div>`}
@@ -1908,9 +2324,10 @@ function shadowHomeHtml(){
       </header>
       ${newOpen ? shadowDelegatePanelHtml()
                 : (sel ? shadowTaskCardHtml(sel) : "")}
-      ${newOpen || !sel ? "" : shadowAgentTurnHtml(sel)}
+      ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
       ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
-      ${newOpen || !sel ? "" : shadowStoryHtml(sel)}
+      ${/* the founder's answer is INSIDE the timeline now, at the point it
+           happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
       ${shadowStageHtml(!newOpen && !!sel)}

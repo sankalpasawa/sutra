@@ -117,7 +117,13 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   const ctx = fresh();
   const h = ctx.shadowCompletionHtml(DONE);
   assert(/3 of 3 checks passed/.test(h), "the headline leads");
-  assert(/get the EMI check green/.test(h), "the objective is named");
+  /* THE OBJECTIVE LEFT THIS LINE (founder, 2026-09-15). It is already the
+     pane title and the head of the card above, and restating it in full
+     made the conclusion the third thing on the completion card. It is
+     untouched on the record and still first in the copied text. */
+  assert(!/get the EMI check green/.test(h),
+    "the objective must not be restated a third time on the card");
+  assert(/5 of 20 turns/.test(h), "the one fact this line adds stays");
   assert(/5 of 20 turns/.test(h), "the budget it spent is shown");
   SUMMARY.checks.forEach(k =>
     assert(h.indexOf(k.check) !== -1, "check missing: " + k.check));
@@ -748,7 +754,7 @@ const DONE_WORK = Object.assign({}, DONE, {
   /* and the block is genuinely ADDITIVE: strip it back out of the rendered
      card and what is left is exactly what rendered before */
   const stripped = ctx.shadowCompletionHtml(DONE_WORK)
-    .replace(/<div class="shdonework">[^<]*<\/div>/, "");
+    .replace(/<div class="shdonework"[\s\S]*?<\/div>/, "");
   assert.strictEqual(stripped, before,
     "the account is the only thing that was added");
   console.log("ok 19 a summary with no account renders as it always did");

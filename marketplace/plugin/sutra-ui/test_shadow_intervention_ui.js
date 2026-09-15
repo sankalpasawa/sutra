@@ -293,12 +293,37 @@ function targeted(over, checks){
   assert(form(plain).indexOf(CHECK) === -1, "and no check text in the form");
   assert(/Which region\?/.test(plain) && /data-shivsend=/.test(plain),
     "the form itself is untouched");
-  /* byte-for-byte: the ONLY difference the feature may make is inserting
-     that one div. Strip it from the targeted card and the two must match. */
-  const stripped = card(ctx, targeted())
-    .replace(/<div class="shivsigns">[\s\S]*?<\/div>/, "");
-  assert.strictEqual(stripped, plain,
-    "a targeted card must differ from an untargeted one by the row alone");
+  /* THE FORM IS BYTE-FOR-BYTE THE SAME. Every field, hook, value and the
+     submit button are identical with or without the marker -- that is the
+     invariant this test has always existed to hold, and it still holds.
+
+     WHAT LEGITIMATELY CHANGED (founder, 2026-09-15): a card that signs off
+     a check now draws NO context paragraph, because on a sign-off the
+     question asks it and the criterion defines the bar, and the decider's
+     "why I can't settle this myself" is narration beside them. So the two
+     cards also differ by that paragraph, deliberately. The text is not
+     lost -- it rides on the question's title. */
+  const bare = (h) => form(h)
+    .replace(/<div class="shivsigns">[\s\S]*?<\/div>/, "")
+    .replace(/<p class="shnewsub shivctx"[\s\S]*?<\/p>/, "")
+    .replace(/ title="[^"]*"/g, "");
+  assert.strictEqual(bare(card(ctx, targeted())), bare(plain),
+    "the FORM must be identical with or without the marker");
+  /* THE BRIEF legitimately differs too (founder, 2026-09-15): when the ask
+     signs off every unmet check, the flat done-when row stands aside rather
+     than printing the criterion a second time. */
+  assert(!/shcard2k">done when</.test(card(ctx, targeted())),
+    "the ask covers the only unmet check, so the flat row stands aside");
+  assert(/shcard2k">done when</.test(plain),
+    "an ask that confirms nothing leaves the checklist alone");
+  /* ...and the sign-off card is the calm one */
+  const signed = card(ctx, targeted());
+  assert(!/shivctx/.test(signed),
+    "a sign-off card must not draw Shadow's reasoning as a paragraph");
+  assert(/shivctx/.test(plain),
+    "an ordinary ask still shows its context, clamped to one line");
+  assert(/class="shivq" title="/.test(signed),
+    "the context must stay reachable on the question's title");
   console.log("ok 13 a non-confirms_check intervention renders byte-identical"
     + " to pre-change output");
 }
