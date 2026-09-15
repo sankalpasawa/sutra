@@ -1940,9 +1940,35 @@ test("the tab's shelf has a heading and exactly ONE agent, with nothing invented
   /* one plain line is allowed to say more is coming; a drawn placeholder is not */
   /* The empty shelf is a PROMISE, not a footnote apologising for itself (owner, 2026-09-10:
      "one dark crazy line... saying we are bringing more, fasten your seatbelt"). */
-  assert.ok(/ag-more/.test(html) && /Fasten your seatbelt/.test(html),
+  assert.ok(/class="ag-promise"/.test(html) && /Fasten your seatbelt/.test(html),
     "one designed line, not a paragraph of explanation");
   assert.ok(!/they are real rather than before/.test(html), "the old footnote is gone");
+});
+
+/* THE GAP UNDER A RUNNING STEP (owner, 2026-09-15). The shelf's promise banner used to be
+   class="ag-more", the same name as the small "N earlier …" button inside a step's sub-list.
+   Its rule sat later in agents.css with margin:46px 0 10px, so every live step with more than
+   AG_MAX_SUBS rows showed a blank block between its subtitle and the list. The banner now has
+   its own class; this pins both halves so the names cannot drift back together. */
+test("the 'N earlier' button and the shelf's promise banner do not share a class", () => {
+  const subs = [];
+  for (let i = 0; i < 30; i++) subs.push({ label: "Read page " + i, note: "ok", ms: 400 });
+  const html = A.agSubsHtml(subs, "s1", false);
+  const shown = (html.match(/class="trow ok"/g) || []).length;
+  assert.ok(shown > 0 && shown < 30, "a closed list is capped, got " + shown);
+  assert.ok(new RegExp('<button class="ag-more"[^>]*>' + (30 - shown) + ' earlier …</button>').test(html),
+    "the earlier button names the hidden count");
+  assert.ok(!/ag-promise/.test(html), "the step list never carries the banner's class");
+  const a = mktBlank(); a.health = MKT_LIVED;
+  assert.ok(!/class="ag-more"/.test(A.agMarketHtml(a)), "and the shelf never carries the button's class");
+  /* every .ag-more rule in the stylesheet is the small button: no display:flex, no big margin */
+  const rules = CSS.match(/^[^\n{]*\.ag-more[^{\n]*\{[^}]*\}/gm) || [];
+  assert.ok(rules.length >= 2, "the button is styled");
+  rules.forEach(r => {
+    assert.ok(!/display:flex/.test(r) && !/margin:\s*\d{2,}px/.test(r) && !/gap:/.test(r),
+      "a banner-sized rule is on the button's class: " + r);
+  });
+  assert.ok(/\.ag-promise\{[^}]*margin:46px 0 10px/.test(CSS), "the banner keeps its own big margin");
 });
 
 /* ONE PERSON, SEVERAL COMPANIES (owner, 2026-09-11: "in the Agent Marketplace tab when I open I

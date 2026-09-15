@@ -1028,8 +1028,10 @@ function agMarketHtml(a){
          and they will appear here when they are real" — accurate, and it read like a footnote
          explaining an empty shelf. The owner asked for the opposite: "one dark crazy line,
          decorated or designed, saying we are bringing more, fasten your seatbelt". So the empty
-         shelf stops being an absence being excused and becomes the promise. (2026-09-10) -->
-    <div class="ag-more" role="note">
+         shelf stops being an absence being excused and becomes the promise. (2026-09-10)
+         Its class is its own: .ag-more is the small "N earlier …" button inside a step, and
+         sharing the name gave that button this banner's 46px margin. (2.278.5) -->
+    <div class="ag-promise" role="note">
       <span class="r"></span>
       <p><em>More are coming.</em><br>Fasten your seatbelt.</p>
       <span class="r"></span>

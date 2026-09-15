@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.5 (2026-09-15)
+
+- **No empty gap under the running step.** While an agent worked, the live step showed a blank block about three lines tall between its subtitle and the "N earlier …" list. The list now sits right under the subtitle. The text, order and behaviour are unchanged; only the spacing is fixed. It was a shared style name between that line and the "More are coming" banner on the Agents shelf.
+
 ## 2.278.4 (2026-09-15)
 
 - **You can switch or add a Claude account again.** Setup, then AI providers, then Claude Code, now shows who is signed in with a Switch account (or Sign in) button, which runs Claude's own browser sign-in. It went missing when the usage screen was rebuilt.
