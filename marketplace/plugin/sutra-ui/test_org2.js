@@ -513,6 +513,17 @@ test("the request kinds are proposal kinds and the applier routes them to org2_a
   assert.ok(!/import org2_apply|from org2_apply/.test(fs.readFileSync(path.join(__dirname, "org2_api.py"), "utf8")), "the read module never imports the applier");
 });
 /* ── slice C: stored node kind, keyboard, Recent, unsaved chip, app probe ── */
+test("the tree is the whole registry from the D76 root, not the role's scoped slice", () => {
+  const c = fresh({ DOMAINS: [CO, HOLD, EXP, ORG, SOS] });     /* what scopeOrgForRole leaves in DOMAINS */
+  assert.strictEqual(c.o2Data().root.ref, "r2", "without ORG_ALL the scoped slice is all there is");
+  c.ORG_ALL = { domains: TREE.concat([{ ref: "s1", path: "D9", name: "Stray", parent_ref: null, status: "active", ts_minted_ms: 99 }]), charters: [], placements: [] };
+  const d = c.o2Data();
+  assert.strictEqual(d.root.ref, "r0", "the rooted tree wins over a childless stray root");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify((d.kids.get("r0") || []).map(x => x.name))), ["Desktop", "Asawa Inc."], "root children in path order, retired hidden");
+  assert.ok(!d.byRef.has("r9"), "retired rows never enter the tree");
+  const html = c.o2TreeHtml();
+  assert.ok(html.indexOf(">Sutra<") !== -1 && html.indexOf(">Desktop<") !== -1, "the home shows the root and its level");
+});
 test("node kind: the engine's stored field wins over the interim rule", () => {
   const rows = TREE.map(x => Object.assign({}, x));
   rows[1].node_kind = "organisation";          /* Desktop renamed and re-kinded by the engine */

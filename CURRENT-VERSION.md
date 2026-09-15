@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.277.0 (2026-09-15, HEAD)
+## v2.277.1 (2026-09-15, HEAD)
+
+**The new Org screen starts at the root.** It builds its tree from the whole registry the app already
+fetches (ORG_ALL), not the role-scoped slice Old Org's studio uses, so the machine and every organisation
+show under the D76 root and the address facet reads from it.
+
+## v2.277.0 (2026-09-15)
 
 **The registry stores each department's kind** (`node_kind`: root, machine, organisation, department; set
 at mint, re-set on a move to or from under the root; `backfill_node_kind` fills older rows once on the

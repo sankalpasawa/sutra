@@ -68,10 +68,33 @@ function o2EnsureRegistered(){
 }
 
 /* ── data ─────────────────────────────────────────────────────────────────── */
+/* THE WHOLE TREE, from the D76 root. loadOrg() narrows DOMAINS to the role's
+   organisation (scopeOrgForRole), which is right for Old Org's studio and
+   wrong here: the canvas shows the root with the machine and every
+   organisation under it, and the address facet must read from that root.
+   ORG_ALL keeps the unscoped rows; this builds the same shape dirData() does
+   (live rows, children by path order) and picks the rooted tree the way
+   org2_api._root_ref does: the largest live subtree among parent-less rows. */
+function o2Rows(){
+  if (typeof ORG_ALL !== "undefined" && ORG_ALL && Array.isArray(ORG_ALL.domains) && ORG_ALL.domains.length) return ORG_ALL.domains;
+  return (typeof DOMAINS !== "undefined" && Array.isArray(DOMAINS)) ? DOMAINS : [];
+}
 function o2Data(){
-  if (typeof DOMAINS === "undefined" || !DOMAINS || !DOMAINS.length || typeof dirData !== "function")
-    return { live: [], byRef: new Map(), kids: new Map(), root: null };
-  return dirData();
+  const rows = o2Rows();
+  if (!rows.length) return { live: [], byRef: new Map(), kids: new Map(), root: null };
+  const live = rows.filter(d => d && (d.status || "active") !== "retired");
+  const byRef = new Map(live.map(d => [d.ref, d]));
+  const kids = new Map();
+  live.forEach(d => {
+    const pr = d.parent_ref;
+    if (pr && byRef.has(pr)){ if (!kids.has(pr)) kids.set(pr, []); kids.get(pr).push(d); }
+  });
+  kids.forEach(v => v.sort((a, b) => String(a.path || "").localeCompare(String(b.path || ""), undefined, { numeric: true })));
+  const tops = live.filter(d => !d.parent_ref || !byRef.has(d.parent_ref));
+  const size = (ref) => { let n = 0; const stack = [ref], seen = new Set(); while (stack.length){ const r = stack.pop(); if (seen.has(r)) continue; seen.add(r); n++; (kids.get(r) || []).forEach(k => stack.push(k.ref)); } return n; };
+  let root = null, best = -1;
+  tops.forEach(t => { const s = size(t.ref); if (s > best){ best = s; root = t; } });
+  return { live, byRef, kids, root };
 }
 /* Node kind: the engine's stored `node_kind` (plan S94) when the row carries
    one; otherwise the interim rule (S27) for rows not yet backfilled: the root

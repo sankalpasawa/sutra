@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.277.1 (2026-09-15)
+
+- **The new Org screen starts at the root.** It had been reading the role-scoped slice Old Org's studio uses (on the live registry: 43 of 76 departments, topped by the inner "Sutra"), so the machine and the other organisations were missing and the address facet began mid-tree. It now builds from the whole registry the app already fetches and opens on the rooted tree.
+
 ## 2.277.0 (2026-09-15)
 
 - **The registry stores each department's kind.** Every department row now carries `node_kind` (root, machine, organisation, department), set when it is minted and re-set when it moves to or from under the root; rows from before the field get it once, on the app's startup import (`backfill_node_kind`, one history line for the batch). The new Org screen reads the stored kind and falls back to its old rule only for a row not yet filled. Design rationale: a kind derived from a name broke the day the instance was renamed.
