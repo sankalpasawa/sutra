@@ -395,8 +395,12 @@ function usageResetText(at){
   if (d <= 0) return "resetting now";
   if (d < 3600000) return "in " + Math.max(1, Math.round(d / 60000)) + " min";
   if (d < 86400000){
-    const h = Math.floor(d / 3600000);
-    const m = Math.round((d - h * 3600000) / 60000);
+    let h = Math.floor(d / 3600000);
+    let m = Math.round((d - h * 3600000) / 60000);
+    /* Anything from 59.5 minutes up rounds to 60, so the last half-minute of
+       every hour read "in 4 hr 60 min". Carry the sixtieth minute into the
+       hour instead of printing it. */
+    if (m === 60){ h += 1; m = 0; }
     return m ? "in " + h + " hr " + m + " min" : "in " + h + " hr";
   }
   const dt = new Date(ms);
