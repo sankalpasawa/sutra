@@ -31,7 +31,7 @@ Writes: the SAME plan shape, sources verified; the card fixes (corrected source_
   7. Nothing here removes an H3 or a section any more, because nothing here removes a card.
 """
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 
 from .. import llm
 from . import _common as C
@@ -127,7 +127,7 @@ def _worthy_ids(cards):
         r = llm.json_call(C.prompt("verify-worthy", cards=block), timeout=C.LONG_CALL_TIMEOUT) or {}
         return {C.nid(x) for x in (r.get("verify") or [])}
 
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         futs = {ex.submit(_one, b): b for b in batches}
         for f in as_completed(futs):
             try:
@@ -190,7 +190,7 @@ def _hunt_many(cards, route_name, say, what):
         return {}
     say("Hunting a replacement source for %s" % C.sh.plural(len(cards), what),
         "planning the search from the claim itself, then reading the pages that come back")
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         plans = list(ex.map(_plan_queries, cards))
 
     every = [q for qs in plans for q in qs]
@@ -214,7 +214,7 @@ def _hunt_many(cards, route_name, say, what):
         return hit, quote, qs, True
 
     out = {}
-    with ThreadPoolExecutor(max_workers=HUNT_WORKERS) as ex:
+    with llm.pool(HUNT_WORKERS) as ex:
         results = list(ex.map(finish, range(len(cards))))
     for card, res in zip(cards, results):
         out[C.nid(card["card_id"])] = res
@@ -267,7 +267,7 @@ def run(plan, idx, say=lambda *a: None):
 
     if todo:
         say("Reading each claimed source page", "%d pages" % len(todo))
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with llm.pool(8) as ex:
         for f in as_completed([ex.submit(_check, c) for c in todo]):
             c, verdict, wrong, unloadable = f.result()
             if verdict == "ok":

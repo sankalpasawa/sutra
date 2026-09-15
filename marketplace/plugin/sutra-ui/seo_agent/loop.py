@@ -552,6 +552,11 @@ def step(chat_id, run_id):
             store.save_messages(chat_id, messages)
             return store.get_state(chat_id, run_id)
 
+        # A Stop pressed while a tool was running, or while a call waited out a usage limit,
+        # has already written "stopped". The run must not carry on past it.
+        if (store.get_state(chat_id, run_id) or {}).get("status") in ("stopped", "failed"):
+            return store.get_state(chat_id, run_id)
+
         t_model = time.time()
         try:
             reply = llm.call(_system_prompt(), messages, registry.for_model(),
@@ -561,6 +566,11 @@ def step(chat_id, run_id):
             store.emit(chat_id, run_id, "model_turn", ms=int((time.time() - t_model) * 1000),
                        tool_calls=len(reply.get("tool_calls") or []),
                        provider=llm.provider())
+        except llm.Stopped:
+            # The person pressed Stop during a usage-limit pause. loop.stop already wrote the
+            # state and the "stopped" row; this is not a failure and must not be logged as one.
+            # Nothing was appended since the last save, so the conversation is whole.
+            return store.get_state(chat_id, run_id)
         except llm.NoKey as e:
             store.emit(chat_id, run_id, "step_failed", label="Model", reason=str(e), recovering=False)
             store.patch_state(chat_id, run_id, status="failed", error=str(e))
@@ -733,6 +743,11 @@ def step(chat_id, run_id):
                     store.patch_state(chat_id, run_id,
                                       credits_spent=s.get("credits_spent", 0) + registry.cost(name))
                 results.append({"type": "tool_result", "tool_use_id": call_id, "content": out})
+            except llm.Stopped:
+                # Stop pressed while this tool waited out a usage limit. Close the tool call so
+                # the saved turn is whole; the check at the top of the loop then returns.
+                results.append({"type": "tool_result", "tool_use_id": call_id,
+                                "content": {"error": "Stopped by the user before this finished."}})
             except Exception as e:
                 ms = int((time.time() - t0) * 1000)
                 detail = traceback.format_exc(limit=3)

@@ -1349,6 +1349,21 @@ function agModelPickHtml(h, disabled){
   return `<select class="ag-model" data-agmodel aria-label="Model the agent runs on" title="Model the agent runs on"${disabled ? " disabled" : ""}>${opts}</select>`;
 }
 
+/* HOW MANY MODEL CALLS RUN AT ONCE, across every chat. Each running article gets its own share
+   (3 by default); this is the ceiling they add up to. Higher is faster with several chats open,
+   and reaches the account's usage limit sooner in wall-clock time. */
+const AG_SLOT_CHOICES = [3, 6, 9, 12];
+function agSlotsHtml(h){
+  const s = (h && h.slots) || {};
+  const cur = Number(s.max) || 9;
+  const per = Number(s.per_run) || 3;
+  const choices = AG_SLOT_CHOICES.includes(cur) ? AG_SLOT_CHOICES : AG_SLOT_CHOICES.concat([cur]).sort((x, y) => x - y);
+  const opts = choices.map(n => `<option value="${n}"${n === cur ? " selected" : ""}>${n} at once</option>`).join("");
+  return `<div class="row" style="margin-top:8px"><label class="ag-note" style="display:flex;gap:8px;align-items:center">Model calls across all chats
+      <select class="ag-model" data-agslots aria-label="Model calls at once across all chats">${opts}</select></label>
+    <div class="rd" style="margin-top:4px">Each chat that is writing gets up to ${per} calls at once; this is the most they can add up to. More is faster with several chats open, and reaches your usage limit sooner. If the limit is hit, a run pauses and carries on after the reset.</div></div>`;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
   const running = live && live.status === "running";
@@ -2762,7 +2777,8 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
     <div class="ag-row"><div class="ri"><div class="rn">${prov ? agEsc(AG_PROVIDER_LABEL[prov] || prov) : "No model available"}
         <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov === "codex-cli" ? "your OpenAI sign-in" : prov === "deepseek" ? "your DeepSeek balance" : prov ? "connected" : "not signed in"}</span></div>
       <div class="rd">${prov ? "The same providers and sign-ins Sutra's chat uses. Pick one here or next to the message box." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div>
-      ${prov ? `<div class="row" style="margin-top:8px">${agModelPickHtml(h, false)}</div>` : ""}</div></div>
+      ${prov ? `<div class="row" style="margin-top:8px">${agModelPickHtml(h, false)}</div>` : ""}
+      ${prov ? agSlotsHtml(h) : ""}</div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
     <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
       <div class="rd">Real search numbers: how many people search, how hard it is to rank, and who ranks now. Research needs it. Under $1 an article.</div>
@@ -4698,6 +4714,12 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
         .then(m => { a.health = Object.assign({}, a.health, { model: m, model_provider: m.running }); })
         .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not switch model: " + ((e && e.message) || e) }); })
         .then(() => agApi("/health").then(h => { a.health = h; }).catch(() => {}))
+        .then(() => agDraw(true));
+    }
+    else if (t.matches("[data-agslots]")){
+      agPostApi("/slots", { max: Number(t.value) })
+        .then(s => { a.health = Object.assign({}, a.health, { slots: s }); })
+        .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not save that: " + ((e && e.message) || e) }); })
         .then(() => agDraw(true));
     }
   });

@@ -464,6 +464,26 @@ def save_model_choice(provider, model=""):
     return model_choice()
 
 
+def slot_settings():
+    """{"per_run": n|None, "max": n|None}: how many model calls may run at once, per running
+    article and across the whole app. The person's, like the model choice. None means "not
+    set here", and llm.py then reads SEO_AGENT_PARALLEL / SEO_AGENT_PARALLEL_MAX or its defaults.
+    """
+    c = read_json(os.path.join(root_dir(), "slots.json"), {}) or {}
+
+    def num(v):
+        try:
+            return int(v) or None
+        except (TypeError, ValueError):
+            return None
+    return {"per_run": num(c.get("per_run")), "max": num(c.get("max"))}
+
+
+def save_slot_settings(per_run=None, max=None):  # noqa: A002 -- the key is called max on disk
+    write_json(os.path.join(root_dir(), "slots.json"), {"per_run": per_run, "max": max})
+    return slot_settings()
+
+
 def _person_connections_file():
     return os.path.join(root_dir(), "connections.json")
 

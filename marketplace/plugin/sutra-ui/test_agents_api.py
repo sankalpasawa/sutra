@@ -88,6 +88,26 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(self.client.get(BASE + "/runs/.hidden/r-1").status_code, 400)
         self.assertEqual(self.client.get(BASE + "/chats/c-nope").status_code, 404)
 
+    def test_03b_the_slots_setting_round_trips_and_reaches_the_gate(self):
+        """How many model calls run at once: per running article, and the app-wide ceiling.
+        Unset, the env variables (or the defaults 3 and 9) rule; a save wins over them and is
+        applied to the live gate at once; an empty save puts the env back."""
+        j = self.client.get(BASE + "/slots").json()
+        self.assertEqual((j["per_run"], j["max"]), llm._Gate().limits())
+        self.assertIn(j["source"], ("default", "env"))
+        r = self.client.post(BASE + "/slots", json={"max": 6}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["per_run"], r.json()["max"], r.json()["source"]), (llm.PARALLEL, 6, "setting"))
+        self.assertEqual(llm._GATE.limits(), (llm.PARALLEL, 6))
+        self.assertEqual(self.client.get(BASE + "/health").json()["slots"]["max"], 6)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"per_run": 3, "max": 2}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"max": "lots"}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"max": 99}, headers=HDR).status_code, 400)
+        r = self.client.post(BASE + "/slots", json={}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(r.json()["source"], ("default", "env"))
+        self.assertEqual(llm._GATE.limits(), llm._Gate().limits())
+
     # ---- the run -----------------------------------------------------------------------
 
     def test_10_a_message_starts_a_run_and_a_question_stops_it(self):
@@ -182,6 +202,26 @@ class TestAgentsApi(unittest.TestCase):
         self.assertNotEqual(r.json()["run_id"], rid, "a Stop the person pressed is not undone")
         self.assertFalse(r.json().get("continued"))
         _settle(self.client, cid, r.json()["run_id"], ("done",))
+
+    def test_12_stop_pressed_during_a_usage_limit_pause_leaves_the_run_stopped_not_failed(self):
+        """llm.call raises llm.Stopped when the person presses Stop while a call is waiting out a
+        usage limit. The run must end as "stopped" (loop.stop wrote that), with no step_failed row
+        and no "failed" state written over it by the loop or by _guarded."""
+        from seo_agent import loop
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+
+        def stopped_mid_wait(system, messages, tools=None, model=None, **kw):
+            rid = store.list_runs(cid)[-1]["run_id"]
+            loop.stop(cid, rid)
+            raise llm.Stopped("Stopped while waiting for the usage limit to reset.")
+        llm.call = stopped_mid_wait
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "write it"}, headers=HDR)
+        rid = r.json()["run_id"]
+        s = _settle(self.client, cid, rid, ("stopped", "failed"))
+        self.assertEqual(s["status"], "stopped")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertFalse([e for e in ev if e["type"] == "step_failed"], ev)
+        self.assertTrue([e for e in ev if e["type"] == "stopped" and e.get("by") == "user"], ev)
 
     def test_12d_a_message_after_a_failed_model_call_carries_the_failed_run_on(self):
         """A usage limit fails the model call and the run. The next message must continue THAT run
