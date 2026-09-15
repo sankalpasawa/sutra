@@ -62,7 +62,9 @@ const LIVE = M({ id: "m-live", state: "running", turns_used: 3,
   start_requested_at: "2026-09-14T12:37:21Z" });
 
 const pill = (h) => (h.match(/shtpill-[a-z]*"?\s*>([^<]*)</) || [])[1];
-const turn = (h) => (h.match(/turn ([^<]*)</) || [])[1];
+/* the row is `TURN | 10 of 12` now -- the key says "turn", so the value no
+   longer repeats it. Read the value span. */
+const turn = (h) => (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">([^<]*)</) || [])[1];
 
 function ctxWith(rows, selId){
   const ctx = fresh();
@@ -161,6 +163,92 @@ function ctxWith(rows, selId){
   assert.strictEqual(at(1), "1 of 20");
   assert.strictEqual(at(7), "7 of 20");
   console.log("ok 8 the turn counter follows the mission record");
+}
+
+/* ── 9-11: THE LIST IS THREE SECTIONS ("Shadow Design - Final", founder
+   2026-09-15). A SECTION IS NOT A STATUS: the heading says whose move it
+   is, the pill says what the task is doing, and the raw engine words are
+   never a heading. ─────────────────────────────────────────────────────── */
+
+/* the headings, in the order they are drawn */
+const heads = (h) => (h.match(/class="shwsec[^"]*"\s*>([^<]*)</g) || [])
+  .map(x => (x.match(/>([^<]*)</) || [])[1]);
+/* every row, as [section heading, pill] pairs */
+function grouped(list){
+  const out = [];
+  let head = null;
+  const re = /class="shwsec[^"]*"\s*>([^<]*)<|shtpill-[a-z]*"?\s*>([^<]*)</g;
+  let m;
+  while ((m = re.exec(list))){
+    if (m[1] !== undefined) head = m[1];
+    else out.push([head, m[2]]);
+  }
+  return out;
+}
+
+/* 9. each status lands under the heading the design asks for */
+{
+  const rows = [
+    M({ id: "m-block",  state: "blocked" }),
+    M({ id: "m-fconf",  state: "paused", pause_reason: "founder_confirm" }),
+    M({ id: "m-floor",  state: "paused", pause_reason: "floor_confirm" }),
+    M({ id: "m-run",    state: "running" }),
+    M({ id: "m-done",   state: "done" }),
+    M({ id: "m-stop",   state: "stopped", ended_by: "founder" }),
+  ];
+  const ctx = ctxWith(rows, "m-block");
+  const list = ctx.shadowTaskListHtml();
+
+  assert.deepStrictEqual(heads(list),
+    ["WAITING ON YOU", "RUNNING", "DONE TODAY"],
+    "the three headings, all caps, in order");
+
+  const g = grouped(list);
+  const under = (h) => g.filter(x => x[0] === h).map(x => x[1]);
+  assert.deepStrictEqual(under("WAITING ON YOU"),
+    ["NEEDS YOU", "NEEDS YOU", "NEEDS YOU"],
+    "blocked and BOTH founder pauses read NEEDS YOU under WAITING ON YOU");
+  assert.deepStrictEqual(under("RUNNING"), ["RUNNING"],
+    "a running task is a RUNNING pill under the RUNNING heading");
+  assert.deepStrictEqual(under("DONE TODAY"), ["DONE", "STOPPED"],
+    "DONE and STOPPED are the two conclusions under DONE TODAY");
+
+  /* the raw engine vocabulary is never a heading */
+  assert(!/class="shwsec[^"]*"\s*>(blocked|paused|queued|brief_confirm)</
+    .test(list), "a raw backend state leaked into a section heading");
+  console.log("ok 9 three sections: WAITING ON YOU / RUNNING / DONE TODAY");
+}
+
+/* 10. FAILED is not dressed as a conclusion it did not reach */
+{
+  const ctx = ctxWith([M({ id: "m-fail", state: "failed" })], "m-fail");
+  const list = ctx.shadowTaskListHtml();
+  const g = grouped(list);
+  assert.strictEqual(g.length, 1, "the failed row is still in the list");
+  assert.strictEqual(g[0][1], "FAILED", "and still wears its FAILED pill");
+  assert.notStrictEqual(g[0][0], "DONE TODAY",
+    "a failure must not be filed under DONE TODAY");
+  assert(!/>DONE</.test(list) && !/>STOPPED</.test(list),
+    "a failure must never read as DONE or STOPPED");
+  /* Retry is the founder's move, so the row waits on them */
+  assert.strictEqual(g[0][0], "WAITING ON YOU",
+    "a failure with Retry pending waits on the founder");
+  console.log("ok 10 FAILED is neither DONE nor STOPPED");
+}
+
+/* 11. an empty section draws nothing, and the row is untouched -- same
+   selector hook, same delete hook, same three spans */
+{
+  const ctx = ctxWith([M({ id: "m-run", state: "running" })], "m-run");
+  const list = ctx.shadowTaskListHtml();
+  assert.deepStrictEqual(heads(list), ["RUNNING"],
+    "headings with no rows under them must not be drawn");
+  assert(/data-shtask="m-run"/.test(list), "the row selector hook was lost");
+  assert(/data-shtaskdel="m-run"/.test(list), "the DELETE hook was lost");
+  assert(/shtaskdot/.test(list) && /shtaskname/.test(list)
+      && /shtpill/.test(list), "the row lost one of its three spans");
+  assert(/class="shtaskrow on"/.test(list), "the selected row lost its tint");
+  console.log("ok 11 empty sections vanish; the row and its hooks are intact");
 }
 
 console.log("\nall shadow task-status tests passed");

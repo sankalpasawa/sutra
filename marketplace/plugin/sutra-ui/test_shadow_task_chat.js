@@ -75,88 +75,90 @@ const card = (ctx, m) => ctx.shadowTaskCardHtml(Object.assign({}, BASE, m));
   const ctx = fresh(true);
   const h = card(ctx, { state: "brief_confirm", target_session: null });
   assert(!/gwchat/.test(h), "no session: there is no conversation to show");
-  assert(/acts in/.test(h) && /a new chat/.test(h),
+  assert(/where it runs/.test(h) && /a new chat/.test(h),
     "no session: the existing brief row is untouched");
   assert.strictEqual(ctx.fetched.length, 0, "no session: nothing is fetched");
   console.log("ok 1 no session -> the brief, unchanged");
 }
 
-/* 2. COLLAPSED BY DEFAULT, and the way in is offered (founder, 2026-09-14).
+/* ── 2-7: THE CARD IS NOT A CHAT, AND HAS NO DOOR OF ITS OWN ─────────────
+   (founder, 2026-09-15.) The inline "Show worker chat" toggle and the
+   transcript it revealed are gone from the card: "Open the chat" in the RHS
+   header is the single entry point to the delegate's conversation.
 
-   The detail pane is Shadow's control room; the transcript is the longest
-   block on it and pushed the checks and the budget off the top. It is not
-   removed -- it is shut, and the toggle says so. Nothing is fetched for a
-   block that is not drawn. */
+   NOTHING UNDERNEATH WAS REMOVED. shadowTaskChatHtml still renders that
+   conversation through the same Assignment machinery, the data-shtaskchat
+   handler still exists, and the throttled transcript READER is still live --
+   it feeds the one-line agent block instead of an inline chat. So the fetch
+   discipline these tests were written for still matters, and it is asserted
+   on the pane, which is what reads now. */
+
+/* the whole right pane, the way the app renders it */
+function pane(ctx, m){
+  ctx.S.shadowHomeDark = false;
+  ctx.S.goals = [];
+  ctx.S.shadowMissions = [Object.assign({}, BASE, m)];
+  ctx.S.shadowTaskSel = BASE.id;
+  return ctx.shadowHomeHtml();
+}
+
+/* 2. no toggle, no transcript, and the brief is untouched */
 {
   const ctx = fresh(true);
   ctx.S.goalTranscript = { "sid-1": [{ role: "assistant", text: "working on it" }] };
   const h = card(ctx, { state: "brief_confirm", target_session: "sid-1" });
-  assert(!/gwchat/.test(h), "the transcript must be collapsed by default");
-  assert(!/working on it/.test(h), "no conversation text on the shut card");
-  assert(/data-shtaskchat="m-x"/.test(h), "the way back in must be offered");
-  assert(/Show worker chat/.test(h), "the toggle must say what it opens");
-  assert(/aria-expanded="false"/.test(h), "a shut toggle must say it is shut");
-  assert.strictEqual(ctx.fetched.length, 0,
-    "a collapsed chat must not be polled");
+  assert(!/gwchat/.test(h), "the card must not render the transcript");
+  assert(!/working on it/.test(h), "no conversation text on the card");
+  assert(!/data-shtaskchat/.test(h), "the inline door must be gone");
+  assert(!/worker chat/i.test(h), "the toggle label must be gone");
+  assert.strictEqual(ctx.fetched.length, 0, "the card must fetch nothing");
   /* the control room itself is untouched */
-  assert(/acts in/.test(h) && /budget/.test(h),
-    "the brief rows must survive the collapse");
-  console.log("ok 2 collapsed by default, and the toggle is there");
+  assert(/where it runs/.test(h) && />turn</.test(h),
+    "the brief rows must survive");
+  console.log("ok 2 the card carries no worker-chat door and no transcript");
 }
 
-/* 2b. REVEALED IN PLACE: the same block, through the same machinery. */
+/* 2b. ONE DOOR, in the header, and it is the real session */
+{
+  const ctx = fresh(true);
+  const h = pane(ctx, { state: "running", target_session: "sid-1" });
+  assert.deepStrictEqual((h.match(/data-shtakeover="[^"]*"/g) || []),
+    ['data-shtakeover="sid-1"'],
+    "exactly one way into the worker chat, carrying the real session id");
+  assert(/Open the chat/.test(h), "and it is labelled");
+  assert(!/data-shtaskchat/.test(h), "no second door anywhere in the pane");
+  console.log("ok 2b Open the chat is the only entry to the worker chat");
+}
+
+/* 2c. THE CONVERSATION RENDERER IS INTACT -- nothing was ripped out, it is
+   simply not drawn on this card any more. */
 {
   const ctx = fresh(true);
   ctx.S.goalTranscript = { "sid-1": [{ role: "assistant", text: "working on it" }] };
-  ctx.S.shadowTaskChatOpen = "m-x";
-  const h = card(ctx, { state: "brief_confirm", target_session: "sid-1" });
-  assert(/gwchat/.test(h), "the delegate chat block must render when opened");
-  assert(/working on it/.test(h), "the conversation itself must be visible");
-  assert(/its own chat/.test(h), "the chat must be named");
-  assert(/Hide worker chat/.test(h), "an open toggle must offer the way back");
-  assert(/aria-expanded="true"/.test(h), "an open toggle must say it is open");
-  console.log("ok 2b opened -> the same conversation, in place");
+  const block = ctx.shadowTaskChatHtml(
+    Object.assign({}, BASE, { state: "running", target_session: "sid-1" }));
+  assert(/gwchat/.test(block) && /working on it/.test(block),
+    "shadowTaskChatHtml must still render the delegate conversation");
+  assert.strictEqual(typeof ctx.shadowTaskTranscript, "function",
+    "the transcript reader must still exist");
+  console.log("ok 2c the transcript machinery is untouched, just not drawn");
 }
 
-/* 2c. the open state is PER TASK: it must not follow the founder to the
-   next selection, which is why it holds a mission id and not a boolean. */
+/* 4. nothing held yet -> exactly one fetch, and no report to draw */
 {
   const ctx = fresh(true);
-  ctx.S.goalTranscript = { "sid-1": [{ role: "assistant", text: "working on it" }] };
-  ctx.S.shadowTaskChatOpen = "m-other";
-  const h = card(ctx, { state: "running", target_session: "sid-1" });
-  assert(!/gwchat/.test(h), "another task's open state leaked onto this card");
-  console.log("ok 2c the reveal belongs to one task, not to the pane");
-}
-
-/* 3. it can be opened BEFORE the state moves -- the chat is published ~13s
-   before the row leaves brief_confirm, and that window is still reachable */
-{
-  const ctx = fresh(true);
-  ctx.S.goalTranscript = { "sid-2": [{ role: "assistant", text: "hello" }] };
-  ctx.S.shadowTaskChatOpen = "m-x";
-  const h = card(ctx, { state: "brief_confirm", target_session: "sid-2" });
-  assert(/gwchat/.test(h) && /hello/.test(h),
-    "brief_confirm with a session must still be able to show the chat");
-  console.log("ok 3 the chat is reachable while the row is still brief_confirm");
-}
-
-/* 4. nothing held yet -> exactly one fetch, and the pane says so */
-{
-  const ctx = fresh(true);
-  ctx.S.shadowTaskChatOpen = "m-x";
-  const h = card(ctx, { state: "running", target_session: "sid-3" });
+  const h = pane(ctx, { state: "running", target_session: "sid-3" });
   assert.deepStrictEqual(ctx.fetched, ["sid-3"], "one fetch for one session");
-  assert(/Reading the chat/.test(h), "an unfetched chat says it is reading");
-  console.log("ok 4 one fetch, honest placeholder");
+  assert(!/class="shagent"/.test(h),
+    "nothing fetched yet -> no agent line, rather than a placeholder");
+  console.log("ok 4 one fetch, and nothing claimed before it lands");
 }
 
 /* 5. RENDER STORM GUARD: render() runs many times a second */
 {
   const ctx = fresh(true);
   ctx.S.goalTranscript = { "sid-4": [] };
-  ctx.S.shadowTaskChatOpen = "m-x";
-  for (let i = 0; i < 25; i++) card(ctx, { state: "running", target_session: "sid-4" });
+  for (let i = 0; i < 25; i++) pane(ctx, { state: "running", target_session: "sid-4" });
   /* ONE refresh for a live mission (the held copy is a second old at best),
      then silence for the rest of the throttle window -- 25 renders must not
      be 25 GETs, which is the storm this guard exists for. */
@@ -169,8 +171,7 @@ const card = (ctx, m) => ctx.shadowTaskCardHtml(Object.assign({}, BASE, m));
 {
   const ctx = fresh(true);
   ctx.S.openPanes = ["sid-5"];
-  ctx.S.shadowTaskChatOpen = "m-x";
-  card(ctx, { state: "running", target_session: "sid-5" });
+  pane(ctx, { state: "running", target_session: "sid-5" });
   assert.strictEqual(ctx.fetched.length, 0,
     "an open pane must not be fetched a second time");
   console.log("ok 6 open pane is left to its own reader");
@@ -181,12 +182,11 @@ const card = (ctx, m) => ctx.shadowTaskCardHtml(Object.assign({}, BASE, m));
   const ctx = fresh(false);
   let h = null;
   assert.doesNotThrow(() => {
-    h = card(ctx, { state: "running", target_session: "sid-6" });
+    h = pane(ctx, { state: "running", target_session: "sid-6" });
   }, "a context without the goal module must not throw");
   assert(!/gwchat/.test(h), "without the module there is nothing to draw");
-  assert(!/data-shtaskchat/.test(h),
-    "no toggle when there is nothing behind it");
-  assert(/acts in/.test(h), "the brief still renders");
+  assert(!/data-shtaskchat/.test(h), "and no door to it either");
+  assert(/where it runs/.test(h), "the brief still renders");
   console.log("ok 7 degrades to the brief, never throws");
 }
 

@@ -174,7 +174,15 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   assert(/data-shdone="m-done"/.test(card), "the block has its own hook");
   assert(!/done when/.test(card),
     "the criteria without verdicts do not print twice");
-  assert(/data-shtakeover="sess-1"/.test(card),
+  /* "Open the chat" moved to the RHS header ("Shadow Design - Final",
+     founder 2026-09-15) -- same hook, same session, same handler. Asserted
+     where it now lives, so the way into the WORKER chat stays pinned. */
+  assert(!/data-shtakeover/.test(card),
+    "the worker-chat door belongs to the header now, not the card");
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [DONE];
+  ctx.S.shadowTaskSel = "m-done";
+  assert(/data-shtakeover="sess-1"/.test(ctx.shadowHomeHtml()),
     "Open the chat still reaches the work");
   /* a task that has NOT finished is untouched */
   const live = Object.assign({}, DONE, { state: "running" });

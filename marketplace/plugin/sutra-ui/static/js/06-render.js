@@ -1947,7 +1947,12 @@ function render(){
       /* the pane carries a saved inline flex-basis that beats any class;
          the render rebuilds it fresh each pass, so setting inline here is
          authoritative for THIS paint only (learned live 2026-08-26) */
-      if (wide && bp.style) bp.style.flex = "0 0 720px";
+      /* 720px WAS THE OLD TWO-COLUMN SHADOW HOME (.shcols), which nothing
+         renders any more. The workspace is a task list PLUS a full detail
+         pane, so a fixed 720px left the Shadow surface as a narrow card in
+         an empty row. It takes the row the way Agents and the Goal
+         workspace already do, through the same line, three below. */
+      if (wide && bp.style) bp.style.flex = "1 1 100%";
       /* Agents (2.239.0) carries three columns of its own -- agent, conversation,
          review panel -- so it takes the row the way a session pane would. Measured
          at 385px beside an open chat before this: the composer was four words wide.

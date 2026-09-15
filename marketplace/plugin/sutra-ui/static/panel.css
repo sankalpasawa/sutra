@@ -2151,7 +2151,12 @@
 .nysub{ color:var(--faint,#8a8681); font-size:12.5px; margin:2px 2px 12px; }
 
 /* finish-list: two-column shadow home + deep-link focus highlight */
-.pane.shwide{ flex: 0 0 720px; max-width: 720px; }
+/* THE SHADOW SCREEN TAKES THE ROW (founder, 2026-09-15). The 720px here
+   sized the old two-column Shadow home (.shcols below, no longer rendered);
+   against the workspace it stranded the detail pane in an empty row. Same
+   shape as .pane.agwide / .pane.gwwide, which claim the row for the same
+   reason -- a multi-column surface inside the pane. */
+.pane.shwide{ flex:1 1 100%; max-width:none; min-width:min(100%,900px); }
 .shcols{ display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
 .shchatcol{ flex:1.2 1 300px; min-width:260px; display:flex;
   flex-direction:column; }
@@ -3082,6 +3087,18 @@
 .shwlabel{font:600 9.5px/1 var(--sans);letter-spacing:.1em;
   text-transform:uppercase;color:var(--faint);margin:4px 2px 0}
 .shtasks{display:flex;flex-direction:column;gap:1px;min-height:0}
+/* SECTION != STATUS: the heading says whose move it is, the pill on the row
+   says what the task is doing. Same caps/tracking family as .shwlabel, with
+   the rhythm the design asks for -- air above a new section, close to the
+   rows it owns. */
+.shwsec{font:600 9.5px/1 var(--sans);letter-spacing:.15em;
+  text-transform:uppercase;color:var(--faint);padding:0 9px;
+  margin:18px 0 8px}
+.shtasks > .shwsec:first-child{margin-top:4px}
+/* the section that wants something carries the accent; the other two are
+   quiet, because they are not asking. */
+.shwsec-wait{color:var(--acc)}
+.shwsec-run,.shwsec-done{color:var(--faint)}
 /* A ROW, not a card: the list is an inventory and has to stay dense. */
 .shtask{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
   background:none;border:0;border-radius:8px;padding:8px 9px;cursor:pointer;
@@ -3117,17 +3134,19 @@
 
 /* status pills -- compact, bordered, never filled */
 .shtpill{font:600 8.5px/1 var(--mono);letter-spacing:.06em;padding:3px 6px;
-  border-radius:5px;border:1px solid var(--line);color:var(--faint);
+  border-radius:999px;border:1px solid var(--line);color:var(--faint);
   white-space:nowrap;flex:none}
 .shtpill-running{border-color:var(--ok-line);color:var(--ok)}
 .shtpill-ready{border-color:var(--acc);color:var(--acc)}
 .shtpill-blocked{border-color:var(--warn-line);color:var(--warn)}
 .shtpill-failed{border-color:var(--block-line);color:var(--block)}
 .shtpill-done{border-color:var(--ok-line);color:var(--ok);opacity:.75}
+.shtpill-stopped{border-color:var(--block-line);color:var(--block)}
 .shtaskdot.d-running{background:var(--ok)}
 .shtaskdot.d-ready{background:var(--acc)}
 .shtaskdot.d-blocked{background:var(--warn)}
 .shtaskdot.d-failed{background:var(--block)}
+.shtaskdot.d-stopped{background:var(--block)}
 
 /* ── right: the task in focus ───────────────────────────────────────────── */
 .shwright{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;
@@ -3315,10 +3334,10 @@
 .shwleft .shfootopen .shmem{font-size:11px;padding:4px 6px}
 
 /* ── task list: a work queue, not cards ─────────────────────────────────── */
-.shwleft .shtasks{gap:0}
-.shtask{padding:7px 9px;gap:8px;font-size:12.5px;line-height:1.3}
+.shwleft .shtasks{gap:3px}
+.shtask{padding:8px 9px;gap:9px;font-size:12.5px;line-height:1.3}
 .shtaskdot{width:6px;height:6px}
-.shtpill{font-size:8px;padding:2px 5px;border-radius:4px;letter-spacing:.05em}
+.shtpill{font-size:8px;padding:2px 6px;border-radius:999px;letter-spacing:.05em}
 /* the selected row is a tint, never a box */
 .shtask.on{background:var(--acc-bg);box-shadow:none}
 
@@ -3344,6 +3363,111 @@
 .shconfirmsub{font-size:11px}
 .shcheck{font-size:12px;padding:3px 0;gap:7px}
 .shcheck .shcheckdo{padding:3px 8px;font-size:11px}
+.shwright .shchattoggle{width:auto;border:0;padding:7px 0 0;margin-top:9px;
+  font-size:12px;color:var(--muted);text-align:left}
+.shwright .shchattoggle:hover{color:var(--acc)}
+
+/* ══ THE RIGHT PANE IS SHADOW REPORTING ═══════════════════════════════════
+   ("Shadow Design - Final", founder 2026-09-15.)
+
+   Not a dashboard and not a second worker chat: an editorial column that
+   reads top to bottom -- who -> what the task is -> what the agent just did
+   -> what Shadow needs from you -> what happened around your answer -> what
+   it wants to remember -> say anything. The full delegate conversation is
+   behind "Open the chat" in the header, and nothing here replaces it.
+   PRESENTATION ONLY: every hook, handler and endpoint under these rules is
+   the one that was already there. */
+
+/* ── header: seal, title, then the state and the way into the worker chat */
+.shwhead{gap:11px;padding-bottom:13px;margin-bottom:16px;
+  border-bottom:1px solid var(--line-soft)}
+.shwseal{display:flex;align-items:center;justify-content:center;
+  width:27px;height:27px;border:1px solid var(--line);border-radius:50%;
+  font-size:13px;line-height:1}
+.shwtitle{font-size:21px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
+.shwheadacts{margin-left:auto;display:flex;align-items:center;gap:9px;
+  flex:none}
+.shwheadacts .btn{padding:6px 12px;font-size:12px;border-radius:8px}
+
+/* ── the briefing card: calm, white, and the keys are a mono index column */
+.shwright .shcard2{background:var(--card);border-color:var(--line-soft);
+  border-radius:12px;padding:17px 19px}
+.shwright .shcard2head{gap:10px;margin-bottom:13px}
+.shwright .shcard2obj{font-size:14.5px;font-weight:700}
+.shwright .shcard2row{gap:16px;padding:5px 0;font-size:13px;
+  align-items:baseline}
+.shwright .shcard2k{flex:0 0 104px;font:600 9.5px/1.5 var(--mono);
+  letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+.shwright .shcard2v{color:var(--ink);line-height:1.5}
+.shwright .shcard2stamp .shcard2k{font-size:9.5px;flex-basis:104px}
+
+/* ── what the agent just did: ONE report, not the transcript */
+.shagent{margin-top:12px;padding:11px 15px;background:var(--bubble);
+  border-left:3px solid var(--line);border-radius:0 10px 10px 0}
+.shagenthead{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.shagentsay{font-size:13px;line-height:1.55;color:var(--ink);
+  white-space:pre-wrap}
+
+/* ── the ask: Shadow's decision boundary, as its own card */
+.shwright .shiv{margin-top:14px;padding:16px 19px;background:var(--acc-bg);
+  border:1px solid var(--line-soft);border-left:4px solid var(--acc);
+  border-radius:0 12px 12px 0}
+.shwright .shivq{font-size:15px;font-weight:700;line-height:1.35;
+  margin-bottom:4px}
+.shwright .shivev{margin:11px 0 3px;padding-left:0;border-left:0;
+  display:flex;gap:16px}
+.shwright .shivev::before{content:"Evidence";flex:0 0 104px;
+  font:600 9.5px/1.7 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint)}
+.shwright .shivevrow{font-size:13px;color:var(--ink)}
+/* the answer chips read as the decision they are: the affirmative is solid,
+   everything beside it is a quiet outline. The LABELS are the server's and
+   the values are unchanged -- this is weight, not wording. */
+.shwright .shiv .shnewkinds{gap:9px;margin-top:9px}
+.shwright .shiv .shkind{padding:8px 17px;border-radius:9px;font-size:12.5px;
+  font-weight:600;background:var(--card)}
+.shwright .shiv .shkind.on{background:var(--ink);border-color:var(--ink);
+  color:var(--bg)}
+.shwright .shiv .shnewacts{margin-top:13px}
+
+/* ── the story either side of your answer */
+.shstory{margin-top:14px;display:flex;flex-direction:column;gap:11px}
+.shstoryrow{padding:11px 15px;background:var(--bubble);border-radius:10px}
+.shstoryhead{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.shstoryq{font-size:13px;font-weight:600;color:var(--ink)}
+.shstorylist{margin:6px 0 0;padding-left:17px;font-size:12.5px;
+  line-height:1.5;color:var(--muted)}
+.shstorysay{font-size:12.5px;line-height:1.55;color:var(--muted)}
+
+/* ── what Shadow wants to remember: one capsule, the existing confirm */
+.shremember{display:flex;align-items:center;gap:11px;margin-top:10px;
+  padding:7px 7px 7px 17px;background:var(--acc-bg);
+  border:1px solid var(--warn-line);border-radius:999px}
+.shrememberk{flex:none;font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--acc)}
+.shremembertext{flex:1;min-width:0;font-size:13px;color:var(--ink)}
+.shwright .shrememberok{flex:none;border-radius:999px;padding:7px 15px;
+  font-size:12px}
+
+/* ── say anything: the SHADOW<->FOUNDER channel, never the worker chat */
+/* the composer is the FOOT of the pane, not whatever follows the content:
+   .shwright is a flex column stretched to the row, so auto margin puts Say
+   anything at the bottom and the empty space above it, where the reference
+   puts it. Same one-line trick .shwfoot uses in the left column. */
+.shstage-calm{gap:0;margin-top:auto;padding:16px 0 0;border:0;background:none}
+.shstage-calm .shcompwrap{position:relative}
+.shstage-calm .shcompose{min-height:92px;padding:15px 58px 15px 17px;
+  border:1px solid var(--line-soft);border-radius:11px;background:var(--card);
+  font-size:13.5px;line-height:1.5}
+.shstage-calm .shcompose::placeholder{color:var(--faint)}
+
+/* ── the Shadow<->founder turns already in the thread */
+.shwright .shmsg{padding:13px 17px;border-radius:10px;font-size:13px;
+  line-height:1.55;margin:10px 0 0}
+.shwright .shmine{background:var(--bubble);border:0}
+.shwright .shshadow{background:var(--card);border:1px solid var(--line-soft)}
 
 /* ── the existing-chat stage, inside the workspace ───────────────────────
    KEPT IN FULL -- the scope picker, the composer and the recent-chat chips

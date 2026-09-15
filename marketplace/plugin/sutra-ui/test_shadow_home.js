@@ -377,7 +377,9 @@ console.log("ok 6 controls wired");
   /* + Delegate is visible, prominent and in the left column */
   assert(/data-shdelegate="1"/.test(h), "+ Delegate is not rendered");
   assert(/\+ Delegate</.test(h), "+ Delegate is not labelled");
-  assert(/Shadow is working on/i.test(h), "section label missing");
+  /* the one generic label was replaced by the design's three section
+     headings ("Shadow Design - Final", founder 2026-09-15) */
+  assert(/class="shwsec/.test(h), "the list lost its section headings");
   /* the composer and the foot nav are always here */
   assert(/data-shhomecompose/.test(h), "Shadow composer was lost");
   /* THE FOOTER IS ONE DOOR NOW (v7 design of record). Watching, Memory,
@@ -417,7 +419,12 @@ console.log("ok 6 controls wired");
   assert(!/Recent conversations/.test(h), "recent-chat chips survived");
   assert(!/data-shchat=/.test(h), "chat chips survived");
   assert(!/data-shexisting/.test(h), "the existing-chat door survived");
-  assert(!/Say anything/.test(h), "the old workspace composer survived");
+  /* shadowWorkComposerHtml is pinned dead by data-shexisting / data-shchat /
+     data-shscopepick above. The phrase it used to carry is NOT the guard any
+     more: "Say anything…" is the reference design's placeholder for the
+     Shadow<->founder composer (/api/shadow/chat), a different surface. */
+  assert(!/shadowWorkComposerHtml|Work in an existing chat instead/.test(h),
+    "the old workspace composer survived");
   assert(!/Work in an existing chat/.test(h), "the door label survived");
   ctx.S.shadowExistingOpen = true;          /* nothing can set this now */
   assert(!/data-shscopepick/.test(ctx.shadowHomeHtml()),
@@ -426,9 +433,19 @@ console.log("ok 6 controls wired");
   /* ...and the DELEGATION composer renders, unconditionally */
   assert(/data-shhomecompose/.test(h), "the delegation composer was lost");
   assert(/data-shscope=/.test(h), "the composer lost its scope attribute");
-  assert(/Tell Shadow what outcome you want/.test(h),
+  /* WITH A TASK IN FOCUS the composer is the reference's calm box: the same
+     surface and the same hooks, asserted above, asking for anything rather
+     than teaching how to delegate. It is the SHADOW<->FOUNDER channel
+     (/api/shadow/chat) either way -- never the worker chat. */
+  assert(/Say anything/.test(h), "the calm composer placeholder was lost");
+  assert(!/Tell Shadow the outcome you want/.test(h),
+    "the teaching copy belongs to the un-focused pane, not the task pane");
+  /* WITH NOTHING IN FOCUS the full delegation brief is unchanged */
+  const empty = (() => { const c = fresh(); c.S.shadowHomeDark = false;
+    c.S.shadowMissions = []; c.S.goals = []; return c.shadowHomeHtml(); })();
+  assert(/Tell Shadow what outcome you want/.test(empty),
     "the delegation placeholder was lost");
-  assert(/Tell Shadow the outcome you want/.test(h),
+  assert(/Tell Shadow the outcome you want/.test(empty),
     "the shask copy was lost");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
   console.log("ok 14b existing-chat flow removed; delegation composer stays");
@@ -861,13 +878,18 @@ console.log("ok 6 controls wired");
   ctx.S.shadowTaskSel = "m-k";
   const h = ctx.shadowHomeHtml();
   assert(/fix the EMI rounding/.test(h), "objective missing");
-  assert(/acts in/.test(h) && /a new chat/.test(h),
+  assert(/where it runs/.test(h) && /a new chat/.test(h),
     "must say it runs in a new chat Shadow starts");
   assert(/done when/.test(h) && /a tested PR is open/.test(h), "done-when missing");
   assert(/data-shstart="m-k"/.test(h), "Start the task missing");
   assert(/Start the task</.test(h), "Start is not labelled as the design asks");
   assert(/or keep telling me/.test(h), "the keep-talking affordance is missing");
-  assert(/destructive git operations/.test(h), "floors not surfaced");
+  /* THE FLOORS LINE IS NOT ON THE BRIEF (founder, 2026-09-15). What Shadow
+     may not do on its own is safety configuration and lives in Shadow
+     Settings; the floors themselves and every check are untouched. */
+  assert(!/destructive git operations/.test(h),
+    "floors are configuration, not a row under every task");
+  assert(!/floors it can/.test(h), "the floors line must not be drawn here");
   /* a failed task offers the EXISTING retry, not a new mechanism */
   ctx.S.shadowMissions = [{ id: "m-f", objective: "nope", state: "failed",
     template: "fix", target_mode: "new", turns_used: 20, max_turns: 20 }];
@@ -1917,8 +1939,6 @@ const SET = { engage: ["outcome first"],
 
   const running = card({ id: "b", state: "running" });
   assert(!has(running, "start"), "running: Start must be gone");
-  assert(has(running, "stop"), "running: Stop is the legal exit");
-  assert(!has(running, "resume"), "running: Resume is not legal");
   assert(!has(running, "retry"), "running: Retry would clone a live mission");
 
   const queued = card({ id: "c", state: "queued" });
@@ -1927,19 +1947,36 @@ const SET = { engage: ["outcome first"],
 
   const paused = card({ id: "d", state: "paused" });
   assert(!has(paused, "start"), "paused: Start must be gone");
-  assert(has(paused, "resume") && has(paused, "stop"),
-    "paused: its two legal exits");
 
   const blocked = card({ id: "e", state: "blocked", block_reason: "nope" });
   assert(!has(blocked, "start"), "NEEDS YOU: Start must be gone");
-  assert(has(blocked, "resume") && has(blocked, "stop"),
-    "NEEDS YOU: blocked's two legal exits are the founder's, and it had "
-    + "neither");
 
   const done = card({ id: "f", state: "done" });
   assert(!has(done, "start"), "done: Start must be gone");
-  assert(!has(done, "stop") && !has(done, "resume"),
-    "done is terminal: nothing to stop or resume");
+
+  /* STOP AND RESUME ARE NOT ON THIS CARD (founder, 2026-09-15): the detail
+     pane reports and asks, it is not a worker control panel. Asserted in
+     every state so neither can drift back. */
+  for (const [name, h] of [["running", running], ["paused", paused],
+                           ["blocked", blocked], ["done", done]]){
+    assert(!has(h, "stop"), name + ": the Stop button must not be on the card");
+    assert(!has(h, "resume"), name + ": the Resume button must not be on the card");
+  }
+
+  /* ...AND THE ACTIONS THEMSELVES ARE UNCHANGED. Every state still offers
+     exactly what mission_engine.TRANSITIONS accepts, on the plane that owns
+     mission actions -- same data-shact hooks, same shadowMissionAct. */
+  const row = (m) => ctx.shadowPlaneHtml([], [Object.assign(
+    { objective: "o", template: "fix", turns_used: 1, max_turns: 20 }, m)],
+    "working");
+  const pRunning = row({ id: "b", state: "running" });
+  assert(has(pRunning, "stop"), "running: Stop is still the legal exit");
+  assert(!has(pRunning, "resume"), "running: Resume is still not legal");
+  const pPaused = row({ id: "d", state: "paused" });
+  assert(has(pPaused, "resume") && has(pPaused, "stop"),
+    "paused: its two legal exits are still offered");
+  const pQueued = row({ id: "c", state: "queued" });
+  assert(has(pQueued, "drop"), "queued: Drop is still offered");
 
   const failed = card({ id: "g", state: "failed" });
   assert(!has(failed, "start"), "failed: Start must be gone");
@@ -1983,34 +2020,30 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(ago(null), "", "missing stamp renders nothing");
   assert.strictEqual(ago("not a date"), "", "garbage stamp renders nothing");
 
-  /* ON THE CARD: visible, and driven by the record */
+  /* NOT ON THE CARD ANY MORE (founder, 2026-09-15). The row came off the
+     founder-facing brief; nothing underneath it moved. */
   const live = card({ updated_at: iso(Date.now() - 2 * MIN) });
-  assert(/shcard2stamp/.test(live), "the card lost its last-updated row");
-  assert(/last updated/.test(live), "the row lost its label");
-  assert.strictEqual(stamp(live), "2m ago", "the card must print the age");
+  assert(!/shcard2stamp/.test(live) && !/last updated/.test(live),
+    "LAST UPDATED must not be rendered on the Shadow RHS card");
+  assert(!/shcard2stamp/.test(card({ created_at: iso(Date.now() - HOUR) })),
+    "and not via the created_at fallback either");
 
-  /* THE REGRESSION: an old record must NOT read as fresh */
-  const stale = card({ updated_at: iso(Date.now() - 6 * HOUR) });
-  assert.strictEqual(stamp(stale), "6h ago",
-    "the stamp is pinned to the render clock, not the mission record");
-
-  /* the exact instant stays reachable, for when the relative word is not
-     enough -- and it goes through the attribute escaper */
-  assert(new RegExp('title="' + iso(Date.parse("2026-09-14T08:30:00Z"))
-    + '"').test(card({ updated_at: "2026-09-14T08:30:00Z" })),
-    "the precise timestamp must survive on hover");
-
-  /* a record that predates the field still has created_at; one with neither
-     draws no row at all rather than an empty one */
-  assert.strictEqual(stamp(card({ created_at: iso(Date.now() - HOUR) })),
-    "1h ago", "created_at is the fallback when updated_at is absent");
-  const bare = card({});
-  assert(!/shcard2stamp/.test(bare) && !/last updated/.test(bare),
-    "with no usable stamp the card must say nothing, not 'last updated —'");
+  /* THE RECORD AND THE HELPERS ARE UNTOUCHED: updated_at still arrives, and
+     the formatter still formats it -- the story block's "You answered"
+     stamp is the same shadowStampAgo. Only the card stopped drawing a row. */
+  const row = ctx.shadowTaskUpdatedHtml(
+    { updated_at: iso(Date.now() - 2 * MIN) });
+  assert(/2m ago/.test(row), "the freshness helper must still format a stamp");
+  assert(/title="/.test(row), "the precise timestamp must survive on hover");
+  assert.strictEqual(ctx.shadowTaskUpdatedHtml({}), "",
+    "with no usable stamp the helper still says nothing");
 
   /* it is a row on the card, not a replacement for one: the facts beside it
      are untouched */
-  assert(/turn 1 of 20/.test(live), "the budget row must survive");
+  /* the row is `TURN | 1 of 20` now: the key carries the word, the value
+     carries the count, and the meter beside it is unchanged. */
+  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">1 of 20/.test(live),
+    "the budget row must survive");
   assert(/shtpill-/.test(live), "the state pill must survive");
   console.log("ok 33 the task card stamps how fresh the record it drew is");
 }
@@ -2032,6 +2065,11 @@ const SET = { engage: ["outcome first"],
     const w = bar(h).match(/width:(\d+)%/); return w ? Number(w[1]) : null; };
   const sev = (h) => {
     const s = bar(h).match(/<i class="(p-[a-z]+)"/); return s ? s[1] : null; };
+  /* THE METER IS NO LONGER DRAWN ON THE CARD (founder, 2026-09-15), so the
+     renderer is exercised directly. It, its arithmetic and its thresholds
+     are unchanged -- only the call site on the brief went away. */
+  const meter = (m) => ctx.shadowBudgetBarHtml(Object.assign(
+    { turns_used: 1, max_turns: 20 }, m));
 
   /* the arithmetic, on its own */
   const pct = ctx.shadowBudgetPct;
@@ -2093,48 +2131,56 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(s(pct({ turns_used: 30, max_turns: 20 })), "p-block",
     "turns_used past max_turns is critical, not wrapped or negative");
 
-  /* ON THE CARD: the length agrees with the numbers beside it */
+  /* THE CARD PRINTS THE COUNT AND NOTHING ELSE. The bar came off the brief;
+     the numbers it was drawn from are exactly the ones still printed. */
   const live = card({ turns_used: 5, max_turns: 20 });
-  assert(bar(live), "the budget row lost its bar");
-  assert.strictEqual(width(live), 25, "the fill must match 5 of 20");
-  assert.strictEqual(sev(live), "p-ok", "a quarter spent is not a warning");
-  assert(/turn 5 of 20/.test(live),
-    "the bar is beside the count, never instead of it");
-  assert(/class="ubar shcard2bar"/.test(live),
+  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">5 of 20/.test(live),
+    "the TURN row must still print the count, straight from the record");
+  assert.strictEqual(bar(live), "", "the card must draw no track");
+  assert(!/ubar|shcard2bar/.test(live), "and no meter markup of any kind");
+  assert(!/turns left/.test(live), "nor the meter's words");
+
+  /* THE METER ITSELF IS UNCHANGED: same length, same palette, same words. */
+  assert.strictEqual(width(meter({ turns_used: 5, max_turns: 20 })), 25,
+    "the fill must match 5 of 20");
+  assert.strictEqual(sev(meter({ turns_used: 5, max_turns: 20 })), "p-ok",
+    "a quarter spent is not a warning");
+  assert(/class="ubar shcard2bar"/.test(meter({ turns_used: 5, max_turns: 20 })),
     "the track must be the panel's existing .ubar, not a new one");
 
   /* the colour changes where the thresholds say, driven by the record */
-  assert.strictEqual(sev(card({ turns_used: 15, max_turns: 20 })), "p-warn",
+  assert.strictEqual(sev(meter({ turns_used: 15, max_turns: 20 })), "p-warn",
     "15 of 20 is 75% -- the founder should see it coming");
-  assert.strictEqual(sev(card({ turns_used: 19, max_turns: 20 })), "p-block",
+  assert.strictEqual(sev(meter({ turns_used: 19, max_turns: 20 })), "p-block",
     "one turn left must not still read as fine");
-  const over = card({ turns_used: 23, max_turns: 20 });
-  assert.strictEqual(width(over), 100, "an overrun clamps on the card too");
+  const over = meter({ turns_used: 23, max_turns: 20 });
+  assert.strictEqual(width(over), 100, "an overrun clamps too");
   assert.strictEqual(sev(over), "p-block", "and reads as spent");
 
   /* the arithmetic the bar saves you stays reachable for hover and for a
      screen reader -- a length is readable by neither */
-  assert(/aria-label="5 of 20 turns used, 15 turns left"/.test(live),
+  const m5 = meter({ turns_used: 5, max_turns: 20 });
+  assert(/aria-label="5 of 20 turns used, 15 turns left"/.test(m5),
     "the meter must say what it means in words");
-  assert(/title="15 turns left"/.test(live), "and on hover");
-  assert(/title="1 turn left"/.test(card({ turns_used: 19, max_turns: 20 })),
+  assert(/title="15 turns left"/.test(m5), "and on hover");
+  assert(/title="1 turn left"/.test(meter({ turns_used: 19, max_turns: 20 })),
     "one is singular -- '1 turns left' is the tell of a generated string");
-  assert(/role="img"/.test(bar(live)),
+  assert(/role="img"/.test(bar(m5)),
     "a bare span is announced as nothing at all");
 
   /* NO CEILING, NO BAR: the row keeps the text it has always had */
+  assert.strictEqual(meter({ turns_used: 4, max_turns: 0 }), "",
+    "with no stated ceiling the meter draws no track, not a full one");
   const unbounded = card({ turns_used: 4, max_turns: 0 });
-  assert.strictEqual(bar(unbounded), "",
-    "with no stated ceiling the card must draw no track, not a full one");
-  assert(/turn 4 of 0/.test(unbounded),
+  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">4 of 0/.test(unbounded),
     "and the budget row itself is untouched");
 
   /* it is an addition to a row, not a replacement for the card: the facts
      around it survive */
   assert(/shtpill-/.test(live), "the state pill must survive");
   assert(/done when/.test(live), "the done-when row must survive");
-  assert(/acts in/.test(live), "the acts-in row must survive");
-  console.log("ok 34 the task card draws its turn budget as a length");
+  assert(/where it runs/.test(live), "the acts-in row must survive");
+  console.log("ok 34 the TURN row is the count; the meter itself is unchanged");
 }
 
 console.log("test_shadow_home.js: all green");

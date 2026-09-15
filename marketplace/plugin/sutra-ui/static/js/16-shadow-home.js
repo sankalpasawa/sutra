@@ -96,14 +96,16 @@ function shadowPlaneHtml(watching, missions, tab){
 /* S86/S87: the memory section. Unconfirmed rows are visibly inert; one tap
    confirms; revoke is the undo (archive-never-delete: revoked stays listed,
    struck through). */
+const SH_PREC = { d_ledger: "ledger", session: "this session",
+  project: "project", taste: "taste", history: "history", floor: "floor" };
+
 function shadowMemoryHtml(rows){
   const items = (rows || []).map(r => {
     const dead = !!r.revoked_at;
     const inert = !r.confirmed && !dead;
     return `<div class="shmem ${dead ? "shmem-dead" : ""}" data-shmem="${escAttr(r.id)}">
-      <span class="shprec">${esc(({ d_ledger: "ledger", session: "this session",
-        project: "project", taste: "taste", history: "history",
-        floor: "floor" })[r.precedence] || r.precedence || "")}</span>
+      <span class="shprec">${esc(SH_PREC[r.precedence]
+        || r.precedence || "")}</span>
       <span class="shmemtext">${esc(r.text || "")}</span>
       ${inert ? `<span class="shinert">unconfirmed \u00b7 inert</span>
         <button class="btn pri" type="button" data-shconfirm="${escAttr(r.id)}">Confirm</button>` : ""}
@@ -220,7 +222,7 @@ const SH_TASK = {
   blocked:       { label: "NEEDS YOU", cls: "blocked" },
   done:          { label: "DONE",     cls: "done"    },
   failed:        { label: "FAILED",   cls: "failed"  },
-  stopped:       { label: "STOPPED",  cls: ""        },
+  stopped:       { label: "STOPPED",  cls: "stopped" },
   draft:         { label: "DRAFT",    cls: ""        },
 };
 function shadowTaskFace(state){
@@ -433,6 +435,54 @@ function shadowTaskIsLive(m){
     || (typeof shadowMissionStarting === "function" && shadowMissionStarting(m))));
 }
 
+/* ── THE LIST IS THREE SECTIONS (founder design "Shadow Design - Final",
+   2026-09-15) ───────────────────────────────────────────────────────────
+   A SECTION IS NOT A STATUS. The header answers "whose move is it" --
+   yours, Shadow's, or nobody's -- and the pill on the row still answers
+   "what is this task doing", from shadowTaskFaceFor and nothing else. That
+   is why the founder never meets `blocked`, `paused`, `queued` or
+   `brief_confirm` as a heading: WAITING ON YOU is a heading, NEEDS YOU is
+   a pill, and they are different sentences about the same row.
+
+   PRESENTATION ONLY. Nothing new is read, no face is recomputed, and
+   shadowTasks() still decides membership of the list -- this decides only
+   the ORDER of the rows and the heading each one is drawn under.
+
+   Keyed on the FACE LABEL, not on m.state, because the face is already the
+   one place that resolves the two states that are not their own whole face
+   (a founder pause reads NEEDS YOU; an accepted start reads QUEUED).
+   Reading m.state here would be the second status system the list must
+   not grow.
+
+   FAILED SITS UNDER WAITING ON YOU, NOT DONE TODAY. It is terminal to the
+   engine but not to the founder -- Retry is still pending on them, which is
+   exactly why shadowTaskIsActive keeps it in the list at all (rule 3). The
+   design has no FAILED under DONE TODAY, and calling a failure DONE or
+   STOPPED would be a lie about what happened; its own FAILED pill is
+   untouched, and so is every failure behaviour behind it. */
+const SH_SECTIONS = [
+  ["wait", "WAITING ON YOU"],
+  ["run",  "RUNNING"],
+  ["done", "DONE TODAY"],
+];
+const SH_TASK_SECTION = {
+  "NEEDS YOU": "wait",   // blocked, and the two founder pauses
+  "READY":     "wait",   // the founder's click is the next thing to happen
+  "DRAFT":     "wait",
+  "FAILED":    "wait",   // Retry is the founder's move
+  "RUNNING":   "run",
+  "QUEUED":    "run",
+  "PAUSED":    "run",
+  "DONE":      "done",
+  "STOPPED":   "done",
+};
+/* an unmapped label is a state that is not terminal -- shadowTaskIsActive
+   admits every terminal one by name -- so it belongs with the work in
+   flight, never in a conclusion it has not reached. */
+function shadowTaskSection(m){
+  return SH_TASK_SECTION[shadowTaskFaceFor(m).label] || "run";
+}
+
 function shadowTaskListHtml(){
   const rows = shadowTasks();
   const sel = shadowSelectedTask();
@@ -447,7 +497,10 @@ function shadowTaskListHtml(){
      [data-shtask] is untouched, so the whole-row-is-the-control behaviour and
      its test are unaffected; the remove control is a DIFFERENT hook, checked
      first in the handler, so the two can never be confused for each other. */
-  return rows.map(m => {
+  /* the row itself is BYTE-IDENTICAL to what it was -- same wrapper, same
+     selector button, same three spans, same delete control and the same
+     two hooks. Only where it is emitted changed. */
+  const rowHtml = (m) => {
     const f = shadowTaskFaceFor(m);
     const on = sel && m.id === sel.id;
     return `<div class="shtaskrow${on ? " on" : ""}">
@@ -463,6 +516,13 @@ function shadowTaskListHtml(){
                                      : "Delete this task"}"
         aria-label="Delete task">\u00d7</button>
     </div>`;
+  };
+  /* a section with nothing in it draws nothing -- not an empty heading */
+  return SH_SECTIONS.map(([key, head]) => {
+    const mine = rows.filter(m => shadowTaskSection(m) === key);
+    if (!mine.length) return "";
+    return `<div class="shwsec shwsec-${key}">${head}</div>`
+      + mine.map(rowHtml).join("");
   }).join("");
 }
 
@@ -797,8 +857,25 @@ function shadowTaskTranscript(sid, live){
   const held = (S_.goalTranscript || {})[sid];
   const open = !!(S_.openPanes && S_.openPanes.indexOf(sid) !== -1);
   const now = (typeof Date !== "undefined") ? Date.now() : 0;
-  const due = (held === undefined) || (live && now - (shTranscriptAt[sid] || 0)
-                                       > SH_TRANSCRIPT_MS);
+  /* THE UNKNOWN BRANCH HAD NO THROTTLE (2026-09-15). `held === undefined`
+     made a read due on EVERY render until the answer landed -- and
+     loadGoalTranscript has no in-flight guard of its own, so the first load
+     fired one request per painted frame. That was survivable while the only
+     caller was a chat the founder had opened on purpose; the agent-turn
+     block reads for the selected mission automatically, which would have
+     made it the loadShadowHome burst all over again (see the perf fold
+     below).
+
+     So the stamp now gates BOTH branches: the very first ask goes out
+     immediately, and nothing else does until the window is up -- which also
+     retries a request that was dropped. A terminal mission whose transcript
+     is already held is still never re-read. Strictly fewer reads than
+     before, and no new state: the same shTranscriptAt, the same
+     SH_TRANSCRIPT_MS. */
+  const asked = shTranscriptAt[sid];
+  const waited = now - (asked || 0) > SH_TRANSCRIPT_MS;
+  const due = (held === undefined) ? (asked === undefined || waited)
+                                   : (live && waited);
   if (due && !open && typeof loadGoalTranscript === "function"){
     shTranscriptAt[sid] = now;
     loadGoalTranscript(sid);
@@ -1128,11 +1205,221 @@ function shadowBudgetBarHtml(m){
     ><i class="${shadowBudgetSev(pct)}" style="width:${pct}%"></i></span>`;
 }
 
+/* ── WHAT THE AGENT JUST DID ─────────────────────────────────────────────
+   THE RHS IS SHADOW REPORTING, NOT THE WORKER CHAT. This is the one block
+   that speaks for the delegate, and it is deliberately ONE message: the
+   agent's latest say, not the transcript. The whole transcript is still one
+   click away behind "Show worker chat", and the real session is behind
+   "Open the chat" in the header -- those two surfaces are unchanged and
+   this does not replace either.
+
+   EVERY SOURCE HERE IS ALREADY ON THE RECORD OR ALREADY FETCHED. No field
+   is invented, no endpoint is added:
+
+     1. the live transcript, through shadowTaskTranscript -- the SAME
+        throttled reader the worker-chat block already uses, at the same
+        SH_TRANSCRIPT_MS, for the ONE mission in focus. `role: "assistant"`
+        is the delegate's own turn (goalTurnsToMessages), and the last one
+        is what it just reported.
+     2. result_excerpt, for a finished mission whose session may be gone.
+
+   Neither present -> nothing drawn. A block that says "no summary" is
+   furniture, and this pane is meant to be calm. */
+function shadowAgentSay(m){
+  const sid = m && m.target_session;
+  if (sid && typeof shadowTaskTranscript === "function"){
+    const live = SH_TERMINAL.indexOf(m.state) === -1;
+    const msgs = shadowTaskTranscript(sid, live);
+    if (Array.isArray(msgs)){
+      for (let i = msgs.length - 1; i >= 0; i--){
+        const t = msgs[i];
+        if (t && t.role === "assistant" && String(t.text || "").trim())
+          return String(t.text).trim();
+      }
+    }
+  }
+  const ex = m && m.result_excerpt;
+  return (ex && String(ex).trim()) || "";
+}
+
+/* ── THE CONTROL PLANE IS NOT THE REPORT (founder, 2026-09-15) ───────────
+   WHAT WENT WRONG. The delegate is itself a governed session, so its turn
+   opens with the same machinery this repo makes every session emit -- a
+   PLACEMENT line, an input-routing block (TYPE / HOME / ROUTE / FIT /
+   ACTION), a depth block (TASK / DEPTH / EFFORT / COST / IMPACT), and a
+   TRIAGE / trace tail. Taking "the last assistant message" verbatim put all
+   of that on the founder's screen: a turn that had nothing to say for a
+   human filled the pane with its own scaffolding.
+
+   That material is addressed to the orchestration layer, not to the
+   founder. It is stripped HERE, at the presentation boundary, and nowhere
+   else: the delegate still emits it, the transcript still stores it, the
+   session still shows it, and "Open the chat" still opens the whole thing
+   unabridged. Nothing about generation, storage or the worker prompt moved.
+
+   The list is exactly the vocabulary this repo's own governance emits, so a
+   line is dropped only when it is a LABEL AT THE HEAD OF A LINE followed by
+   a colon -- prose that merely mentions the word is untouched. */
+const SH_CONTROL_HEAD = new RegExp(
+  "^[\\s>*#\\-]*(" + [
+    "PLACEMENT", "INPUT ROUTING", "GROUNDING", "DOMAIN_REF", "CYNEFIN",
+    "TYPE", "HOME", "ROUTE", "FIT", "ACTION", "OBJECTIVE",
+    "TASK", "DEPTH", "EFFORT", "COST", "IMPACT",
+    "TRIAGE", "ESTIMATE", "ACTUAL", "TRACE", "OS TRACE", "BLUEPRINT",
+  ].join("|") + ")\\s*[:\u00b7]", "i");
+/* rules, box art and the fence markers around a code block: furniture, and
+   never the sentence the founder is looking for */
+const SH_RULE_LINE = /^[\s]*[=\-_~*\u2500-\u257F\u2014\u2013]{3,}[\s]*$/;
+
+function shadowSayClean(text){
+  let t = String(text || "");
+  /* the mission tag the delegate's own turns carry -- the workspace already
+     strips it for display, and this is the same strip for the same reason */
+  if (typeof goalStripTag === "function") t = goalStripTag(t);
+  const out = [];
+  let fenced = false;
+  for (const raw of t.split(/\r?\n/)){
+    const line = raw.trim();
+    if (/^```/.test(line)){ fenced = !fenced; continue; }
+    if (fenced) continue;                       /* code is not a summary */
+    if (!line) continue;
+    if (SH_RULE_LINE.test(line)) continue;
+    if (SH_CONTROL_HEAD.test(line)) continue;
+    /* the parenthetical that trails a PLACEMENT line */
+    if (/^\(.*(domain_ref|confidence)\s*=/.test(line)) continue;
+    out.push(line);
+  }
+  return out.join(" ").replace(/\s+/g, " ").trim();
+}
+
+/* A REPORT IS ONE LINE (founder, 2026-09-15). Even once the control plane is
+   gone a turn can be thousands of characters of tool narration, and three
+   sentences of it was still a paragraph where the founder wanted a glance.
+   ONE sentence, and a hard cap that cuts on a sentence end when there is one
+   in range so the line never ends mid-word. Everything else is in the chat. */
+const SH_SAY_MAX = 160;
+const SH_SAY_SENTENCES = 1;
+function shadowSayGist(text){
+  const t = String(text || "").trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  /* keep the delimiter with the sentence it ends */
+  const parts = t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [t];
+  let gist = parts.slice(0, SH_SAY_SENTENCES).join("").trim();
+  /* an ellipsis only where the line was actually CUT. A first sentence that
+     ended on its own full stop is a whole sentence, and "open. ..." reads as
+     a stutter -- the rest of the turn is behind Open the chat, which the
+     header already says. */
+  const cut_mid = gist.length < t.length && !/[.!?]$/.test(gist);
+  if (gist.length <= SH_SAY_MAX) return gist + (cut_mid ? " \u2026" : "");
+  const cut = gist.slice(0, SH_SAY_MAX);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "),
+                        cut.lastIndexOf("! "));
+  return (stop > SH_SAY_MAX * 0.5 ? cut.slice(0, stop + 1)
+                                  : cut.replace(/\s\S*$/, "")) + " \u2026";
+}
+
+/* THE TURN HAD NOTHING FOR YOU IN IT. A delegate turn that was entirely
+   control plane is not the same as no turn at all, and an empty block under
+   a heading reads as a bug. These say what the record says -- the mission's
+   own state -- and claim nothing beyond it. */
+const SH_NO_SAY = {
+  running: "Working on it.",
+  queued:  "Queued, not started yet.",
+  paused:  "Paused.",
+  blocked: "Stopped, waiting on you.",
+};
+
+function shadowAgentTurnHtml(m){
+  const raw = shadowAgentSay(m);
+  if (!raw) return "";
+  const say = shadowSayGist(shadowSayClean(raw))
+    || SH_NO_SAY[m && m.state] || "Working on it.";
+  const n = Number(m && m.turns_used);
+  return `<div class="shagent">
+    <div class="shagenthead">The agent${n > 0 ? " \u00b7 turn " + esc(String(n)) : ""}</div>
+    <div class="shagentsay">${esc(say)}</div>
+  </div>`;
+}
+
+/* ── THE STORY: what happened either side of the founder's answer ─────────
+   Two facts the record has carried all along and the panel never drew:
+
+     founder_response  what YOU answered, and what it signed off. Stamped by
+                       the server when the intervention was resolved, so
+                       "what happened after I answered" stops being a thing
+                       the founder has to reconstruct from the chat.
+     last_instruction  Shadow's own last word TO the delegate -- the turn it
+                       sent after reading the answer. This is Shadow talking,
+                       which is exactly what this pane is for.
+
+   Both are read-only reads of fields already delivered by
+   /api/shadow/missions. Nothing is written, nothing is derived from state,
+   and a mission without them draws nothing. */
+function shadowStoryHtml(m){
+  if (!m) return "";
+  const fr = m.founder_response;
+  const answered = (fr && typeof fr === "object") ? `<div class="shstoryrow">
+    <div class="shstoryhead">You answered${fr.answered_at
+      ? " \u00b7 " + esc(shadowStampAgo(fr.answered_at)) : ""}</div>
+    ${fr.question ? `<div class="shstoryq">${esc(fr.question)}</div>` : ""}
+    ${Array.isArray(fr.summary) && fr.summary.length
+      ? `<ul class="shstorylist">${fr.summary.map(x => `<li>${
+          esc(String((x && x.label) || (x && x.key) || ""))}${
+          x && x.value !== undefined && x.value !== null
+            ? ` <b>${esc(String(x.value))}</b>` : ""}</li>`).join("")}</ul>`
+      : ""}
+  </div>` : "";
+  /* THE "SHADOW -> THE AGENT" ROW IS GONE (founder, 2026-09-15).
+     last_instruction is the turn Shadow injects INTO the delegate session --
+     worker instruction and context ("You are a delegate session working for
+     the founder via Shadow. Objective: ... Work step by step"), addressed to
+     the agent and not to the founder. It belongs to the worker chat, which
+     still carries it in full behind "Open the chat".
+
+     PRESENTATION ONLY, and deliberately narrow: the field is untouched on
+     the record, still delivered by /api/shadow/missions, still what Shadow
+     sends and still what the delegate receives. Only this pane stopped
+     drawing it. What the FOUNDER did -- founder_response -- stays, because
+     that half of the story is theirs. */
+  if (!answered) return "";
+  return `<div class="shstory">${answered}</div>`;
+}
+
+/* ── WHAT SHADOW WANTS TO REMEMBER ───────────────────────────────────────
+   The SAME instructions the memory list holds (S.shadowMemory, loaded by
+   loadShadowHome) and the SAME confirm hook it has always used --
+   data-shconfirm -> shadowInstructionAct(id, "confirm"). Nothing about
+   storage, precedence or the confirm/revoke lifecycle changed; the
+   UNCONFIRMED ones simply surface here, in the Shadow<->founder flow where
+   the decision actually belongs, instead of only behind the footer door.
+
+   Confirmed and revoked rows are NOT drawn here -- they are not asking for
+   anything, and the full list (with Revoke) is unchanged. */
+function shadowPendingMemoryHtml(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const rows = (S_.shadowMemory || [])
+    .filter(r => r && !r.confirmed && !r.revoked_at);
+  if (!rows.length) return "";
+  return rows.map(r => `<div class="shremember" data-shmem="${escAttr(r.id)}">
+    <span class="shrememberk">${esc(
+      (r.scope === "chat" && r.scope_id) ? shadowChatLabel(r.scope_id)
+        : (SH_PREC[r.precedence] || r.precedence || "shadow"))}</span>
+    <span class="shremembertext">I\u2019ll remember: ${esc(r.text || "")}</span>
+    <button class="btn pri shrememberok" type="button"
+      data-shconfirm="${escAttr(r.id)}">Confirm</button>
+  </div>`).join("");
+}
+
 function shadowTaskCardHtml(m){
   if (!m) return "";
   const S_ = (typeof S !== "undefined") ? S : {};
   const f = shadowTaskFaceFor(m);
-  /* THE WORKER CHAT IS COLLAPSED BY DEFAULT (founder, 2026-09-14).
+  /* HISTORICAL (founder, 2026-09-14), kept because it explains why the
+     transcript was never the point of this card. The collapsed toggle it
+     describes was itself removed on 2026-09-15 -- "Open the chat" in the
+     header is the one door now -- but the reasoning below is why:
+
+     THE WORKER CHAT IS COLLAPSED BY DEFAULT (founder, 2026-09-14).
 
      This pane is Shadow's control room: the state, the budget, what it is
      still waiting on, and the checks only the founder can sign off. Those
@@ -1159,9 +1446,6 @@ function shadowTaskCardHtml(m){
      opens nothing. That is the same pair shadowTaskChatHtml itself tests,
      kept in one place. "Open the chat" in the actions row is unchanged and
      still leaves for the real session. */
-  const chatReady = !!(m.target_session
-    && typeof goalTranscriptHtml === "function");
-  const chatOpen = chatReady && S_.shadowTaskChatOpen === m.id;
   /* NOT `m.state === "brief_confirm"`. A start that has already been accepted
      leaves the record in brief_confirm while it provisions, and offering
      Start there is the button that would not go away -- see
@@ -1198,43 +1482,58 @@ function shadowTaskCardHtml(m){
       <span class="shcard2obj">${esc(m.objective || "")}</span>
       <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
     </div>
-    <div class="shcard2row"><span class="shcard2k">acts in</span>
+    <div class="shcard2row"><span class="shcard2k">where it runs</span>
       <span class="shcard2v">${acts}</span></div>
     ${awaiting || finished ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
         : "you say so — no check was set, so Shadow will ask"}</span></div>`}
-    <div class="shcard2row"><span class="shcard2k">budget</span>
-      <span class="shcard2v">turn ${esc(String(m.turns_used || 0))} of ${
-        esc(String(m.max_turns || 0))}${shadowBudgetBarHtml(m)}</span></div>
-    ${shadowTaskUpdatedHtml(m)}
-    ${m.block_reason ? `<div class="shcard2row"><span class="shcard2k">stopped on</span>
-      <span class="shcard2v">${esc(typeof goalBlockerCopy === "function"
-        ? goalBlockerCopy(m.block_reason) : m.block_reason)}</span></div>` : ""}
+    ${/* THE TURN ROW IS THE COUNT, WITHOUT THE TRACK (founder, 2026-09-15).
+         The meter came off the brief; the numbers it was drawn from are
+         exactly the ones still printed here. shadowBudgetPct / SevbarHtml,
+         the thresholds and turn counting itself are all untouched. */""}
+    <div class="shcard2row"><span class="shcard2k">turn</span>
+      <span class="shcard2v">${esc(String(m.turns_used || 0))} of ${
+        esc(String(m.max_turns || 0))}</span></div>
+    ${/* LAST UPDATED IS NOT DRAWN (founder, 2026-09-15). Presentation only:
+         updated_at is still on the record, still returned by the API, and
+         still what the freshness helpers below read -- the row simply does
+         not belong on a founder-facing brief. */""}
+    ${/* STOPPED ON IS NOT DRAWN (founder, 2026-09-15). "needs founder" is
+         what the NEEDS YOU pill above already says, in the founder's own
+         words; the raw blocker restated it in the engine's. block_reason is
+         untouched on the record, still returned, and still what
+         goalBlockerCopy reads for the Goal workspace. */""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
     ${finished ? shadowCompletionHtml(m) : ""}
-    ${shadowInterventionHtml(m)}
-    ${chatReady ? `<button class="shchattoggle${chatOpen ? " on" : ""}"
-      type="button" data-shtaskchat="${escAttr(m.id)}"
-      aria-expanded="${chatOpen ? "true" : "false"}">${
-      chatOpen ? "\u2304 Hide worker chat" : "\u203a Show worker chat"}</button>` : ""}
-    ${chatOpen ? shadowTaskChatHtml(m) : ""}
+    ${/* NO SECOND DOOR TO THE WORKER CHAT (founder, 2026-09-15). "Open the
+         chat" in the header is the single entry point now, so the inline
+         toggle and the transcript it revealed are gone from this card. The
+         session, the transcript, shadowTaskChatHtml and the data-shtaskchat
+         handler are all untouched -- this pane simply stopped offering a
+         second way in, which is what kept it a report rather than a chat. */""}
     <div class="shcard2acts">
       ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id)}">Start the task</button>
         <span class="shcard2hint">…or keep telling me</span>` : ""}
-      ${["running", "paused", "blocked"].includes(m.state) ? `<button class="btn"
-        type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
-      ${["paused", "blocked"].includes(m.state) ? `<button class="btn" type="button"
-        data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
+      ${/* STOP AND RESUME ARE NOT DRAWN HERE (founder, 2026-09-15). This pane
+           is where Shadow reports and asks, not a worker control panel. The
+           BUTTONS are gone from this card and nothing else is: the actions,
+           their data-shact hooks, shadowMissionAct, the endpoint and every
+           transition behind them are untouched, and the same two buttons on
+           the same two hooks still render in shadowPlaneHtml. Answering an
+           intervention still resumes the same delegate, exactly as before. */""}
       ${m.state === "queued" ? `<button class="btn" type="button"
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
       ${["failed", "stopped"].includes(m.state) ? `<button class="btn"
         type="button" data-shact="retry" data-shmid="${escAttr(m.id)}">Retry</button>` : ""}
-      ${m.target_session ? `<button class="btn" type="button"
-        data-shtakeover="${escAttr(m.target_session)}">Open the chat</button>` : ""}
     </div>
-    ${shadowFloorsLine()}
+    ${/* THE FLOORS LINE IS NOT DRAWN (founder, 2026-09-15). What Shadow may
+         not do on its own is safety CONFIGURATION, and it belongs in Shadow
+         Settings, which still renders it; repeating it under every task made
+         the brief a safety sheet. shadowFloorsLine, the floors themselves and
+         every floor check are untouched -- a floor still blocks, still pauses
+         on floor_confirm, and still reads NEEDS YOU. */""}
   </div>`;
 }
 
@@ -1383,21 +1682,22 @@ function shadowMastHtml(){
    dropdown list has always used, shown inline instead of behind a toggle.
    "+N more" opens the existing list rather than inventing a second one. */
 const SH_CHIP_CAP = 4;
-function shadowStageHtml(){
+function shadowStageHtml(compact){
   const S_ = (typeof S !== "undefined") ? S : {};
-  return `<section class="shstage">
-    <div class="shstagetop">
+  return `<section class="shstage${compact ? " shstage-calm" : ""}">
+    ${compact ? "" : `<div class="shstagetop">
       <div class="shask">
         <div class="shasklabel">What should I take on?</div>
         <div class="shasktitle">Tell Shadow the outcome you want.</div>
         <div class="shasksub">Be specific or high level — Shadow will
           figure out the steps.</div>
       </div>
-    </div>
+    </div>`}
     <div class="shcompwrap">
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
-        placeholder="Tell Shadow what outcome you want…"></textarea>
+        placeholder="${compact ? "Say anything…"
+          : "Tell Shadow what outcome you want…"}"></textarea>
       <button class="shsend" type="button" data-shsend="1"
         title="Hand it over (or press Enter)" aria-label="Hand it over">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1584,7 +1884,6 @@ function shadowHomeHtml(){
     <aside class="shwleft">
       <button class="shdelegate${newOpen ? " on" : ""}" type="button"
         data-shdelegate="1">+ Delegate</button>
-      <div class="shwlabel">Shadow is working on</div>
       <div class="shtasks">${shadowTaskListHtml()}</div>
       <div class="shwfoot">${shadowNavHtml()}</div>
     </aside>
@@ -1593,13 +1892,28 @@ function shadowHomeHtml(){
         <span class="shwseal" aria-hidden="true">S</span>
         <h2 class="shwtitle">${newOpen ? "New task"
           : esc((sel && sel.objective) || "Shadow")}</h2>
-        ${!newOpen && face ? `<span class="shtpill shtpill-${esc(face.cls)}"
-          >${esc(face.label)}</span>` : ""}
+        <div class="shwheadacts">
+          ${!newOpen && face ? `<span class="shtpill shtpill-${esc(face.cls)}"
+            >${esc(face.label)}</span>` : ""}
+          ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
+               Same data-shtakeover hook and same target_session it has
+               always carried -- it simply sits where the reference puts
+               it, so the split between "Shadow's report" (this pane) and
+               "the delegate's actual chat" (that button) is the first
+               thing the header says. */""}
+          ${!newOpen && sel && sel.target_session ? `<button class="btn"
+            type="button" data-shtakeover="${escAttr(sel.target_session)}"
+            >Open the chat</button>` : ""}
+        </div>
       </header>
       ${newOpen ? shadowDelegatePanelHtml()
                 : (sel ? shadowTaskCardHtml(sel) : "")}
+      ${newOpen || !sel ? "" : shadowAgentTurnHtml(sel)}
+      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
+      ${newOpen || !sel ? "" : shadowStoryHtml(sel)}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
-      ${shadowStageHtml()}
+      ${newOpen ? "" : shadowPendingMemoryHtml()}
+      ${shadowStageHtml(!newOpen && !!sel)}
     </section>
   </div>`;
 }

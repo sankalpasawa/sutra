@@ -60,14 +60,20 @@ function mission(fields, over){
   }, over || {});
 }
 
-const card = (ctx, m) => ctx.shadowTaskCardHtml(m);
+/* THE ASK IS A SIBLING OF THE CARD NOW ("Shadow Design - Final", founder
+   2026-09-15): shadowHomeHtml emits shadowInterventionHtml directly into the
+   RHS spine instead of shadowTaskCardHtml nesting it. The renderer, its
+   hooks, its draft store and its POST are unchanged, so this helper simply
+   composes the pane the way the pane does. */
+const card = (ctx, m) =>
+  ctx.shadowTaskCardHtml(m) + ctx.shadowInterventionHtml(m);
 
 /* 1. NOTHING MOVED for a mission with no intervention */
 {
   const ctx = fresh();
   const h = card(ctx, mission(null));
   assert(!/shiv/.test(h), "a mission with no intervention must gain nothing");
-  assert(/budget/.test(h) && /done when/.test(h), "the brief still renders");
+  assert(/>turn</.test(h) && /done when/.test(h), "the brief still renders");
   console.log("ok 1 no intervention -> the card is unchanged");
 }
 
