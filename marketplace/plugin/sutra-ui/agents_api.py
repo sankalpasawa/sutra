@@ -2518,9 +2518,12 @@ def _plain_methods(line):
 
 
 def _assets_payload():
+    """Every row on the sheet, dropped and written ones included: the screen filters, this does
+    not. There is no `next` here any more; the card that offered "the idea to write next" is gone
+    from the tab (2026-09-16), and the model's own view of the top open idea comes from
+    build_assets.status() through /health, which is untouched."""
     from seo_agent.assets import _common as acm
     rows = acm.ideas()
-    nxt = acm.next_open(rows)
     # Which methods contributed comes from the merge's own record, not from counting the `method`
     # field on the rows. Counting rows cannot tell a method that RAN AND FOUND NOTHING from one
     # that never ran at all, and those are different facts a person needs: one means the method is
@@ -2546,9 +2549,6 @@ def _assets_payload():
         "methods": states,
         "methods_line": _plain_methods(m.get("line") or ""),
         "methods_blocked": sorted([k for k, v in states.items() if v != "ran"]),
-        "next": ({"id": nxt["id"], "title": nxt.get("title", ""), "angle": nxt.get("angle", ""),
-                  "format": nxt.get("format", ""), "method": nxt.get("method") or [],
-                  "linkability": nxt.get("linkability") or {}} if nxt else None),
         "rows": [{k: r.get(k) for k in
                   ("id", "title", "angle", "format", "method", "brand_fit", "linkability",
                    "beatability", "effort", "rank", "status", "reuse", "built")} for r in rows],
@@ -2572,6 +2572,10 @@ def api_asset(idea_id: str):
 @router.post("/assets/{idea_id}/status")
 def api_asset_status(idea_id: str, body: dict = Body(...)):
     """Drop an idea, or put a dropped one back. The only status a person sets by hand.
+
+    Kept as an API even though the Asset ideas tab no longer has a button for it (the "Not this
+    one" button went with the next-idea card, 2026-09-16): the sheet's status is still data a
+    client may set, and the route is the one guarded way to do it.
 
     `done` is deliberately NOT settable here. An idea is ticked from provenance, when a run that
     started from it reaches the Library, and nowhere else. Letting the screen set it would put a

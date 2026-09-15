@@ -1340,6 +1340,38 @@ class TestAgentsApi(unittest.TestCase):
         finally:
             store.save_knowledge("brand/company.json", rec)
 
+    def test_29d_the_assets_route_lists_dropped_rows_and_picks_nothing(self):
+        """The Asset ideas tab lists every row, dropped ones included, and the screen does the
+        filtering. The route used to also carry `next`, the top open idea, for the card that
+        offered "the idea to write next"; that card is gone (2026-09-16) and so is the field.
+        The owner's real sheet had its five top-ranked rows dropped and out of sight."""
+        from seo_agent.assets import _common as acm
+        rows = [{"id": "a1001", "title": "Dropped one", "angle": "", "format": "News article",
+                 "method": ["competitor-study"], "rank": 1, "status": "dropped",
+                 "reuse": {"verdict": "build from parts"}, "linkability": {"score": None, "of": 4}},
+                {"id": "a1006", "title": "Open one", "angle": "", "format": "Guide",
+                 "method": ["trends"], "rank": 6, "status": "open",
+                 "reuse": {"verdict": "no"}, "linkability": {"score": 3, "of": 4}},
+                {"id": "a1007", "title": "Written one", "angle": "", "format": "Guide",
+                 "method": ["trends"], "rank": 7, "status": "done",
+                 "reuse": {"verdict": "no"}, "linkability": {"score": 4, "of": 4}}]
+        acm.save_ideas(rows, push=False)
+        try:
+            j = self.client.get(BASE + "/assets").json()
+            self.assertTrue(j["built"])
+            self.assertEqual(j["total"], 3)
+            self.assertEqual([r["id"] for r in j["rows"]], ["a1001", "a1006", "a1007"],
+                             "every row comes back, whatever its status")
+            self.assertEqual({r["id"]: r["status"] for r in j["rows"]},
+                             {"a1001": "dropped", "a1006": "open", "a1007": "done"},
+                             "and each keeps the status the screen shows as a pill")
+            self.assertEqual(j["counts"]["dropped"], 1)
+            self.assertNotIn("next", j, "the route no longer picks an idea for anyone")
+            # the sheet itself is untouched: reading it is not rewriting it
+            self.assertEqual(acm.by_id("a1001")["status"], "dropped")
+        finally:
+            os.remove(acm.path("ideas.json"))
+
     def test_30_the_panel_ships_the_agents_module_and_stylesheet(self):
         html = self.client.get("/").text
         self.assertIn("/static/js/17-agents.js", html)

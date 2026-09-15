@@ -1343,50 +1343,109 @@ test("an artifact_ready in the middle of a run does not become the end of the tr
   assert.ok(research && !research.waiting, "the research stage is NOT marked as waiting for him");
 });
 
-/* ── the Asset ideas tab: what "Next up" is offering ──────────────────────── */
-/* "okay next up, oh this is the next topic, all of that's not clear" (owner, 2026-09-09). Two
-   uppercase words over a title read as a section label, not an offer: it said neither WHICH idea
-   this is nor what pressing either button would do. */
+/* ── the Asset ideas tab: one table, every row, a Write this button on each ─ */
+/* The card that picked "the idea to write next" is gone (owner, 2026-09-16). The person picks
+   the row. Dropped rows are listed with the rest, with their pill, instead of hidden behind the
+   "To write" filter that used to be the default. The fixture mirrors the owner's real sheet, where
+   the five top-ranked rows had been dropped and were nowhere to be seen. */
 const ASSETS = {
-  built: true, total: 1892, counts: { open: 214, done: 6, dropped: 3 },
+  built: true, total: 1892, counts: { open: 1886, done: 1, dropped: 5 },
   methods_line: "All three methods contributed.",
-  next: { id: "a-17", title: "The hiring-assessment benchmark report",
-          angle: "Nobody has published the pass rates by role.",
-          format: "Original research", method: ["competitors", "trends"],
-          linkability: { score: 3, of: 4 } },
-  rows: [{ id: "a-17", title: "The hiring-assessment benchmark report", angle: "Pass rates by role.",
+  rows: [{ id: "a1001", title: "The Real Cost of Recruitment in 2026", angle: "Refreshes the 2022 figure.",
+           status: "dropped", format: "News article", method: ["competitor-study"],
+           linkability: { score: null, of: 4 }, reuse: { verdict: "build from parts" } },
+         { id: "a1006", title: "The hiring-assessment benchmark report", angle: "Pass rates by role.",
            status: "open", format: "Original research", method: ["competitors"],
-           linkability: { score: 3, of: 4 }, reuse: { verdict: "no" } }],
+           linkability: { score: 3, of: 4 }, reuse: { verdict: "no" } },
+         { id: "a1007", title: "What a first-round interview is for", angle: "Written already.",
+           status: "done", format: "Guide", method: ["trends"],
+           linkability: { score: 4, of: 4 }, reuse: { verdict: "no" } }],
 };
-test("the next idea says which idea it is, not just Next up", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("the next-idea card is gone from the Asset ideas tab, and so is its drop button", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;
   const html = A.agAssetsHtml(ASSETS, a);
-  assert.ok(/The idea to write next/.test(html), "it is named as an idea, not labelled Next up");
-  assert.ok(!/>Next up</.test(html), "and the bare label is gone");
-  assert.ok(/top of the 214 still to write/.test(html), "and it says where this one came from");
-  assert.ok(/The hiring-assessment benchmark report/.test(html), "the idea itself");
+  assert.ok(!/ag-nextidea/.test(html), "no card");
+  assert.ok(!/The idea to write next|Write this one|Not this one|Nothing left to write/.test(html),
+            "none of its words either");
+  assert.ok(!/data-ag="ideadrop"/.test(html), "and nothing drops a row from this screen");
+  assert.ok(SRC.indexOf('case "ideadrop"') === -1, "the handler went with it");
+  const css = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+  assert.ok(!/\.ag-nextidea/.test(css), "and so did its CSS");
 });
-test("the next idea's evidence is labelled, not one dot-separated run", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("dropped ideas are listed with the rest by default, each with its status pill", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;   /* nobody has touched a filter */
   const html = A.agAssetsHtml(ASSETS, a);
-  const card = html.slice(html.indexOf("ag-nextidea"), html.indexOf("ag-editrow", html.indexOf("ag-nextidea")));
-  assert.ok(/<dt>Shape<\/dt><dd>Original research<\/dd>/.test(card), "the shape is under its own label");
-  assert.ok(/<dt>Found by<\/dt>/.test(card) && /the competitor study and what your audience argues about/.test(card),
-            "and so is where it came from, in words: " + card.slice(-260));
-  assert.ok(/<dt>Would anyone cite it<\/dt><dd>3 out of 4<\/dd>/.test(card),
-            "and the score is attached to the question it answers");
+  assert.ok(/The Real Cost of Recruitment in 2026/.test(html), "the dropped row is on the table");
+  assert.ok(/<span class="pill p-mut">dropped<\/span>/.test(html), "and says it was dropped");
+  assert.ok(/The hiring-assessment benchmark report/.test(html) && /What a first-round interview is for/.test(html),
+            "next to the open and the written ones");
+  assert.ok(/<span class="pill p-ok">written<\/span>/.test(html), "which keeps its own pill");
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 3, "three rows, none hidden");
+  assert.ok(/1,892 ideas, 1 written, 5 dropped\./.test(html), "and the lead counts the dropped ones: " + html.slice(html.indexOf("<p class=\"lead\">"), html.indexOf("<p class=\"lead\">") + 120));
+  assert.ok(/data-ag="assetfilter" data-arg="all" aria-pressed="true"/.test(html), "All is the filter that is on");
 });
-test("the next idea says what each of its two buttons does", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("the filters still narrow the list, dropped rows included", () => {
+  const a = agReset(); a.assetOffset = 0;
+  a.assetFilter = "dropped";
+  let html = A.agAssetsHtml(ASSETS, a);
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 1, "only the dropped row");
+  assert.ok(/a1001/.test(html) && !/a1006/.test(html));
+  a.assetFilter = "open";
+  html = A.agAssetsHtml(ASSETS, a);
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 1, "only the open row");
+  assert.ok(/a1006/.test(html) && !/a1001/.test(html));
+  a.assetFilter = "done";
+  html = A.agAssetsHtml(ASSETS, a);
+  assert.ok(/a1007/.test(html) && !/a1006/.test(html), "only the written row");
+});
+test("every row, dropped or not, has a Write this button carrying the id and the one prompt", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;
   const html = A.agAssetsHtml(ASSETS, a);
-  assert.ok(/starts the research on it/.test(html), "what Write this one does");
-  assert.ok(/drops it off the sheet and the next-ranked idea moves up/.test(html), "and what Not this one does");
-  assert.ok(/data-ag="ideawrite"/.test(html) && /data-ag="ideadrop"/.test(html), "both still act");
+  assert.strictEqual((html.match(/data-ag="ideawrite"/g) || []).length, 3, "one per row");
+  assert.ok(/<th>Write<\/th>/.test(html), "in its own column");
+  assert.ok(/data-ag="ideawrite" data-arg="a1006"\s+data-text="Write this asset idea: The hiring-assessment benchmark report"/.test(html),
+            "the open row's button names its id and types the prompt this install's chats already use");
+  assert.ok(/data-ag="ideawrite" data-arg="a1001"\s+data-text="Write this asset idea: The Real Cost of Recruitment in 2026"/.test(html),
+            "and the dropped row gets the same button");
+  assert.ok(/aria-label="Write this: The hiring-assessment benchmark report"/.test(html),
+            "a screen reader hears which idea the button is for");
+  assert.ok(/<td class="act"><button class="btn" type="button" data-ag="ideawrite"/.test(html), "a real button, so Tab reaches it");
+  assert.strictEqual(A.agIdeaPrompt({ id: "a1006", title: "X" }), "Write this asset idea: X");
+  assert.strictEqual(A.agIdeaPrompt({ id: "a1006" }), "Write this asset idea: a1006", "a row with no title still names itself");
 });
-test("nothing left to write draws no next-idea card at all", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
-  const html = A.agAssetsHtml(Object.assign({}, ASSETS, { next: null }), a);
-  assert.ok(!/ag-nextidea/.test(html) && /Nothing left to write/.test(html));
+test("Write this opens a NEW chat with the prompt typed and the id beside it, and sends nothing", () => {
+  const a = agReset();
+  a.chatId = "c-old"; a.chat = { chat: { id: "c-old" }, runs: [{ run_id: "r1", status: "waiting", waiting_on: { kind: "approval" } }] };
+  a.draft = "half a sentence"; a.chipIdea = null; a.view = "assets"; a.picked = "t1";
+  const el = { getAttribute: k => ({ "data-arg": "a1006", "data-text": "Write this asset idea: The hiring-assessment benchmark report" })[k] || null };
+  const posts = [];
+  const oldPost = A.apiPost; A.apiPost = async (...args) => { posts.push(args); return {}; };
+  /* the arm has no await in it, so like the other agAction tests here this reads the state
+     straight after the call */
+  try { A.agAction("ideawrite", el); } finally { A.apiPost = oldPost; }
+  assert.strictEqual(a.view, "chat", "it lands on the chat");
+  assert.strictEqual(a.chatId, null, "a NEW chat, not the one that was open");
+  assert.strictEqual(a.chat, null);
+  assert.strictEqual(a.picked, null);
+  assert.strictEqual(a.draft, "Write this asset idea: The hiring-assessment benchmark report", "the prompt is in the box");
+  assert.strictEqual(a.chipIdea, "a1006", "the id rides beside it, for agSend to post");
+  assert.strictEqual(a.focusComposer, true, "and the caret is in the box, ready for Send");
+  assert.strictEqual(posts.length, 0, "nothing was sent");
+  /* the same reset "new" does, read from the source, so the two cannot drift apart */
+  const arm = SRC.slice(SRC.indexOf('case "ideawrite": {'), SRC.indexOf("case \"assetfilter\":"));
+  assert.ok(/a\.chatId = null; a\.chat = null; a\.panel = null; a\.picked = null; a\.guideDive = null;/.test(arm));
+  assert.ok(!/agSend\(|agPostApi\(/.test(arm), "the arm never sends");
+});
+test("the /assets route no longer carries a next idea, so nothing on screen can want one", () => {
+  const PY = fs.readFileSync(path.join(__dirname, "agents_api.py"), "utf8");
+  const fn = PY.slice(PY.indexOf("def _assets_payload():"), PY.indexOf("@router.get(\"/assets\")"));
+  assert.ok(fn.length > 100, "found the payload builder");
+  assert.ok(!/"next":/.test(fn) && !/next_open/.test(fn), "no next in the payload");
+  const tab = SRC.slice(SRC.indexOf("function agAssetsHtml("), SRC.indexOf("function agIdeaPrompt("));
+  assert.ok(tab.length > 500 && !/\.next\b/.test(tab), "and the tab does not read one");
+  /* the hero's starter chip still reads health.assets.next, which comes from build_assets.status()
+     and was never this route's field; that stays */
+  assert.ok(/health\.assets/.test(SRC.slice(SRC.indexOf("function agHeroHtml("), SRC.indexOf("function agMktFact("))));
 });
 
 /* ── the CSS the layout leans on ───────────────────────────────────────────── */
@@ -1413,13 +1472,13 @@ test("the catalogue table's borders are the darker line, and it closes", () => {
             "and the head sits on the darker rule, not --line-soft");
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(tbl), "still no hardcoded colour");
 });
-test("every class the reworked next-idea card uses is actually styled", () => {
-  [".ag-nextidea .nl", ".ag-nextidea .nl .nq", ".ag-nextidea .nf", ".ag-nextidea .nf dt",
-   ".ag-nextidea .nf dd", ".ag-nextidea .nh"].forEach(c => {
-    assert.ok(CSS.indexOf(c) !== -1, c + " has no rule in agents.css");
-  });
-  const card = CSS.slice(CSS.indexOf(".ag-nextidea{"), CSS.indexOf(".ag-idea{"));
-  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(card), "no hardcoded colour on the card");
+test("the Write this column is styled so the button never wraps or shrinks on a narrow column", () => {
+  const act = CSS.slice(CSS.indexOf(".ag-ideas td.act{"), CSS.indexOf("}", CSS.indexOf(".ag-ideas td.act{")));
+  assert.ok(act.length > 10, ".ag-ideas td.act has a rule in agents.css");
+  assert.ok(/white-space:nowrap/.test(act) && /width:1%/.test(act), "nowrap, and only as wide as the button");
+  assert.ok(/\.ag-ideas td:first-child\{[^}]*min-width/.test(CSS), "the title cell is the one that folds, but not to nothing");
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(CSS.slice(CSS.indexOf(".ag-ideas td.act{"), CSS.indexOf(".ag-idea{"))),
+            "no hardcoded colour in the block");
 });
 test("opening the panel no longer changes the document's HEIGHT under the reader", () => {
   assert.ok(CSS.indexOf(".ag.haspanel .ag-file .fd{display:none}") === -1,

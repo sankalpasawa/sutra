@@ -2199,10 +2199,15 @@ function agDrawMap(){
   }
 }
 
-/* What is worth writing about, and what has been written. The one row a person acts on is the
-   next open idea, so it sits at the top as a chip that WRITES THE MESSAGE. The chip carries the
-   idea's id in a data attribute, never in the prose, so nothing downstream has to read an id out
-   of a sentence and decide to look it up. */
+/* What is worth writing about, and what has been written. One table, every idea on the sheet,
+   and a "Write this" button on every row that WRITES THE MESSAGE into a fresh chat. The button
+   carries the idea's id in a data attribute, never in the prose, so nothing downstream has to
+   read an id out of a sentence and decide to look it up.
+
+   The card that used to sit above the table and pick "the idea to write next" is gone (owner,
+   2026-09-16): the person picks the row, the sheet does not pick for them. With it went the only
+   place a row could be dropped from, so the table now lists dropped rows by default too, each
+   with its status pill, rather than hiding them behind the "To write" filter. */
 function agAssetsHtml(as, a){
   if (!as) return `<div class="ag-view"><h2>Asset ideas</h2><p class="lead">Reading…</p></div>`;
   const c = as.counts || {};
@@ -2216,10 +2221,12 @@ function agAssetsHtml(as, a){
         <span class="ag-sub">It runs in the chat, so you can watch it and answer as it goes.</span>
       </div></div></div></div>`;
 
-  const nx = as.next;
   const blocked = as.methods_blocked || [];
   const rows = as.rows || [];
-  const filt = (a && a.assetFilter) || "open";
+  /* "all" by default. The default used to be "open", which hid every dropped and written row
+     unless somebody found the filter; a dropped idea that nobody can see is an idea nobody can
+     bring back. Every row shows, and its pill says where it stands. */
+  const filt = (a && a.assetFilter) || "all";
   const matching = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
   // Paged, and not optionally. The owner's own run produced 1,892 ideas; drawn in one go that is
   // 41,000 DOM nodes and a page 165,000 pixels tall, which is not a list anybody can use. Found by
@@ -2227,57 +2234,51 @@ function agAssetsHtml(as, a){
   // there is one idiom on this screen and not two.
   const off = Math.min((a && a.assetOffset) || 0, Math.max(0, matching.length - 1));
   const shown = matching.slice(off, off + AG_IDEA_LIMIT);
-  /* "Next up" told him nothing about WHERE this idea came from ("okay next up, oh this is the
-     next topic, all of that's not clear" -- owner, 2026-09-09). It is the top-ranked idea of the
-     ones still open, so the card says exactly that and how many are behind it. */
-  const open1 = c.open || 0;
   return `<div class="ag-view wide"><h2>Asset ideas</h2>
-    <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
+    <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}${c.dropped ? `, ${agEsc(agNum(c.dropped))} dropped` : ""}.
       ${as.methods_line ? agEsc(as.methods_line)
         : blocked.length ? `${3 - blocked.length} of 3 methods contributed; ${agEsc(blocked.map(agMethodName).join(" and "))} did not.`
-        : "All three methods contributed."}</p>
-
-    ${nx ? `<div class="ag-nextidea">
-      <div class="nl">The idea to write next${open1 ? `<span class="nq">top of the ${agEsc(agNum(open1))} still to write</span>` : ""}</div>
-      <div class="nt">${agEsc(nx.title)}</div>
-      <div class="nd">${agEsc(nx.angle || "")}</div>
-      <dl class="nf">
-        ${nx.format ? `<div><dt>Shape</dt><dd>${agEsc(nx.format)}</dd></div>` : ""}
-        ${(nx.method || []).length ? `<div><dt>Found by</dt><dd>${agEsc((nx.method || []).map(agMethodName).join(" and "))}</dd></div>` : ""}
-        ${nx.linkability && nx.linkability.score ? `<div><dt>Would anyone cite it</dt><dd>${agEsc(nx.linkability.score)} out of ${agEsc(nx.linkability.of || 4)}</dd></div>` : ""}
-      </dl>
-      <div class="ag-editrow">
-        <button class="btn pri" type="button" data-ag="ideawrite" data-arg="${agEsc(nx.id)}"
-          data-text="${agEsc("Write this asset idea: " + nx.title)}">Write this one</button>
-        <button class="btn" type="button" data-ag="ideadrop" data-arg="${agEsc(nx.id)}">Not this one</button>
-      </div>
-      <p class="nh"><b>Write this one</b> opens the chat and starts the research on it.
-        <b>Not this one</b> drops it off the sheet and the next-ranked idea moves up here.</p>
-      <div class="nw">This can still be turned down later. The topic gate reads the live search
-        results, and if they argue for a different intent than this idea assumes, it stops rather
-        than write the wrong article.</div>
-    </div>` : `<div class="ag-row"><div class="ri"><div class="rn">Nothing left to write</div>
-        <div class="rd">Every idea on the sheet is written or dropped. Ask for the ideas to be rebuilt when you want more.</div></div></div>`}
+        : "All three methods contributed."}
+      Press <b>Write this</b> on a row to start a new chat with that idea typed in; you press Send.</p>
 
     <div class="ag-editrow" style="margin:14px 0 8px">
-      ${[["open", "To write"], ["done", "Written"], ["dropped", "Dropped"], ["all", "All"]].map(f =>
-        `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
+      ${[["all", "All"], ["open", "To write"], ["done", "Written"], ["dropped", "Dropped"]].map(f =>
+        `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}" aria-pressed="${filt === f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
     </div>
 
     ${matching.length > AG_IDEA_LIMIT ? `<div class="ag-pager" style="margin:0 0 8px">
       <span>${agEsc(agNum(off + 1))}–${agEsc(agNum(Math.min(matching.length, off + shown.length)))} of ${agEsc(agNum(matching.length))}</span>
       <button class="btn" type="button" data-ag="ideaprev" ${off <= 0 ? "disabled" : ""}>Previous</button>
       <button class="btn" type="button" data-ag="ideanext" ${off + shown.length >= matching.length ? "disabled" : ""}>Next</button></div>` : ""}
-    ${shown.length ? `<table class="ag-pages"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th></tr></thead><tbody>${shown.map(r => `<tr>
+    ${shown.length ? `<table class="ag-pages ag-ideas"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th><th>Write</th></tr></thead><tbody>${shown.map(r => `<tr>
       <td><button class="ag-pagelink" type="button" data-ag="ideaopen" data-arg="${agEsc(r.id)}">${agEsc(r.title || r.id)}</button>
         <div class="h">${agEsc((r.angle || "").slice(0, 110))}</div>
-        ${r.status === "done" ? `<span class="pill p-ok">written</span>` : r.status === "dropped" ? `<span class="pill p-mut">dropped</span>` : ""}</td>
+        ${agIdeaPill(r.status)}</td>
       <td class="m">${agEsc(r.format || "")}</td>
       <td class="m">${agEsc((r.method || []).map(agMethodName).join(", "))}</td>
       <td class="m">${r.linkability && r.linkability.score != null ? agEsc(r.linkability.score) + "/" + agEsc(r.linkability.of || 4) : "—"}</td>
-      <td class="m">${agEsc((r.reuse && r.reuse.verdict) || "—")}</td></tr>`).join("")}</tbody></table>`
+      <td class="m">${agEsc((r.reuse && r.reuse.verdict) || "—")}</td>
+      <td class="act"><button class="btn" type="button" data-ag="ideawrite" data-arg="${agEsc(r.id)}"
+          data-text="${agEsc(agIdeaPrompt(r))}" aria-label="${agEsc("Write this: " + (r.title || r.id))}">Write this</button></td></tr>`).join("")}</tbody></table>`
       : `<div class="ag-row"><div class="ri"><div class="rd">Nothing in this list.</div></div></div>`}
   </div>`;
+}
+
+/* The message the button types. ONE format, the one every "Write this asset idea" chat on this
+   install already has as its title, so the sheet, the chat list and the run's request all read
+   the same. The id is not in the words: it rides beside them as a.chipIdea (see agAction
+   "ideawrite" and agSend), and the server writes it onto the run's state. */
+function agIdeaPrompt(r){
+  return "Write this asset idea: " + (r && (r.title || r.id) || "");
+}
+
+/* Where a row stands, as a pill. Open rows get none: on a sheet where nearly every row is still
+   to write, a pill on each would say nothing. The rest are the statuses _common.STATUSES names. */
+function agIdeaPill(status){
+  if (status === "done") return `<span class="pill p-ok">written</span>`;
+  if (status === "dropped") return `<span class="pill p-mut">dropped</span>`;
+  if (status === "building") return `<span class="pill p-acc">being written</span>`;
+  return "";
 }
 
 /* The method names as a person would say them, never as the folder is called. */
@@ -3957,18 +3958,16 @@ async function agAction(act, el){
     }
     case "changes": a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
 
-    /* The chip that writes the message. It fills the composer with WORDS, and separately parks the
-       idea's ID on the state. The id then travels beside the message on send, never inside it, so
-       nothing downstream has to read an id out of prose. See agSend. */
+    /* "Write this" on a row of the sheet. It opens a NEW chat (the same reset as "new", so a run
+       waiting in whatever chat was open cannot swallow this as its answer), fills the composer
+       with WORDS, and separately parks the idea's ID on the state. Nothing is sent: the person
+       reads the message and presses Send. The id then travels beside the message on send, never
+       inside it, so nothing downstream has to read an id out of prose. See agSend. */
     case "ideawrite": {
+      a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.guideDive = null;
       a.draft = el.getAttribute("data-text") || "";
       a.chipIdea = arg;
-      a.view = "chat"; a.panel = null; a.focusComposer = true;
-      agDraw(true); break;
-    }
-    case "ideadrop": {
-      try { a.assets = await agPostApi(`/assets/${encodeURIComponent(arg)}/status`, { status: "dropped" }); }
-      catch (e) { agToast("Could not drop it: " + (e && e.message || e)); }
+      a.view = "chat"; a.focusComposer = true;
       agDraw(true); break;
     }
     case "assetfilter": a.assetFilter = arg; a.assetOffset = 0; agDraw(true); break;
