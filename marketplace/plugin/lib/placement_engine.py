@@ -254,7 +254,9 @@ def _read_json_cached(path, copy_out=True):
     copying every non-match was the remaining cost. Such a caller must not
     mutate what it gets and must copy before returning it."""
     st = os.stat(path)                                   # OSError propagates
-    key = (st.st_mtime_ns, st.st_size)
+    # inode too (DeepSeek review 2.278.1 P1-2): a file swapped in by rename
+    # with copied timestamps and an equal size is a different inode.
+    key = (st.st_mtime_ns, st.st_size, st.st_ino)
     hit = _JSON_CACHE.get(path)
     if hit is not None and hit[0] == key:
         return copy.deepcopy(hit[1]) if copy_out else hit[1]

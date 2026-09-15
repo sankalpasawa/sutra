@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.2 (2026-09-15)
+
+- **Review folds for the speed release (DeepSeek, CHANGES-REQUIRED, 22 items, 4 folded).** The incremental transcript read now treats only true appends as appends: the file must have grown, kept its inode, and the last 64 bytes before the old offset must still read the same, otherwise it re-parses from zero; a complete last record without its newline shows provisionally; the memo keeps 16 files, least-recently-read leaving first. The registry memo's key gains the inode, so a file swapped in by rename with copied timestamps is never a hit.
+
 ## 2.278.1 (2026-09-15)
 
 - **The app stays responsive while a chat is being written.** An open chat pane re-reads its transcript on every write; the whole file was parsed each time, so a long live session (58 MB on the founder's machine) cost seconds of CPU per second for as long as it ran. The transcript is now read from where the last read stopped and the messages appended; a rewritten or shrunk file is parsed from zero. Same output, a fraction of the work.

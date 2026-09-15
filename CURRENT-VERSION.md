@@ -2,7 +2,14 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.1 (2026-09-15, HEAD)
+## v2.278.2 (2026-09-15, HEAD)
+
+**Review folds for the speed release.** The transcript memo appends only when the file grew, kept its inode
+and the 64 bytes before the old offset still match; otherwise it re-parses. A complete last record without
+a newline shows provisionally. The memo holds 16 files, least-recently-read first out. The registry memo
+key includes the inode.
+
+## v2.278.1 (2026-09-15)
 
 **Speed.** An open chat pane re-reads its transcript incrementally (from the last offset) instead of parsing
 the whole file on every write, which is what held the backend at 100% CPU while a long session ran. Registry

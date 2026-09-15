@@ -854,7 +854,8 @@ def _result_text(content) -> str:
 # in later records than the calls they answer, so the attach pass runs over
 # ALL messages every time, from the cached results map.
 _PARSE_CACHE: Dict[str, Dict] = {}
-_PARSE_CACHE_MAX = 64
+_PARSE_CACHE_MAX = 16          # long sessions parse to megabytes; least-recently-read leaves first
+_PARSE_ANCHOR = 64             # bytes before the offset that must still read the same for an append
 
 
 def _parse_records(raw: bytes, state: Dict) -> None:
@@ -913,27 +914,50 @@ def _parse_transcript_incremental(f) -> Dict:
     fresh dict every call (the caller serialises it; the memo is never handed out)."""
     path = str(f)
     st = os.stat(path)
-    state = _PARSE_CACHE.get(path)
-    grown = (state is not None and st.st_size >= state["size"]
-             and st.st_mtime_ns >= state["mtime_ns"])
-    if state is None or not grown:
-        state = {"size": 0, "mtime_ns": 0, "offset": 0, "tail": b"", "cwd": "", "branch": "",
-                 "messages": [], "results": {}}
-    if st.st_size > state["offset"] or state["size"] == 0:
+    state = _PARSE_CACHE.pop(path, None)                 # popped: re-inserted below as most recent
+    fresh = {"size": 0, "mtime_ns": 0, "ino": st.st_ino, "offset": 0, "tail": b"", "anchor": b"",
+             "cwd": "", "branch": "", "messages": [], "results": {}}
+    if state is None:
+        state = fresh
+    elif (st.st_size, st.st_mtime_ns, st.st_ino) == (state["size"], state["mtime_ns"], state["ino"]):
+        pass                                             # unchanged: answer from the memo
+    elif st.st_size > state["size"] and st.st_mtime_ns >= state["mtime_ns"] and st.st_ino == state["ino"]:
+        # GROWN -- but only an APPEND if the bytes just before the old offset
+        # still read the same (DeepSeek review 2.278.1 P1-7: a truncate-and-
+        # rewrite to a larger size would otherwise resume mid-garbage).
+        with open(path, "rb") as fh:
+            fh.seek(max(0, state["offset"] - len(state["anchor"])))
+            if fh.read(len(state["anchor"])) != state["anchor"]:
+                state = fresh
+    else:
+        state = fresh                                    # shrunk, same-size rewrite, or a new inode
+    if st.st_size > state["offset"]:
         with open(path, "rb") as fh:
             fh.seek(state["offset"])
             raw = fh.read()
         _parse_records(raw, state)
         state["offset"] += len(raw)
-    state["size"], state["mtime_ns"] = st.st_size, st.st_mtime_ns
-    if len(_PARSE_CACHE) >= _PARSE_CACHE_MAX and path not in _PARSE_CACHE:
-        _PARSE_CACHE.clear()
+        whole = state["anchor"] + raw
+        state["anchor"] = whole[-_PARSE_ANCHOR:]
+    state["size"], state["mtime_ns"], state["ino"] = st.st_size, st.st_mtime_ns, st.st_ino
+    while len(_PARSE_CACHE) >= _PARSE_CACHE_MAX:
+        _PARSE_CACHE.pop(next(iter(_PARSE_CACHE)))       # dicts keep insertion order: oldest first
     _PARSE_CACHE[path] = state
     messages = [dict(m, calls=[dict(c) for c in m.get("calls", ())]) if m.get("role") == "assistant" else dict(m)
                 for m in state["messages"]]
+    results = state["results"]
+    if state["tail"]:
+        # A last record with no newline yet: the full parser would read it, so
+        # show it PROVISIONALLY when it already parses as JSON (the writer may
+        # have finished without a newline); a truncated one waits (P2-15).
+        tmp = {"tail": b"", "cwd": state["cwd"], "branch": state["branch"], "messages": [], "results": dict(results)}
+        _parse_records(state["tail"] + b"\n", tmp)
+        if tmp["messages"] or tmp["results"] != results:
+            messages.extend(tmp["messages"])
+            results = tmp["results"]
     for m in messages:
         for c in m.get("calls", ()):
-            r = state["results"].get(c.get("id"))
+            r = results.get(c.get("id"))
             if r:
                 c["output"] = r["output"]
                 c["is_error"] = r["is_error"]

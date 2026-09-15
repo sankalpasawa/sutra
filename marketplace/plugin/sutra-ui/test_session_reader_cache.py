@@ -100,6 +100,58 @@ def test_rewrite_or_shrink_reparses_from_zero():
         assert [m["text"] for m in b["messages"]] == ["othr"]
 
 
+def test_rewrite_to_a_larger_or_equal_size_is_not_an_append():
+    """DeepSeek review 2.278.1 P1-7 / P2-12: a truncate-and-rewrite that ends up
+    larger (or the same size) than the memo's snapshot must re-parse from zero."""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "s.jsonl"
+        p.write_text(_rec("user", "first") + _rec("user", "second"), encoding="utf-8")
+        sr._PARSE_CACHE.clear()
+        sr._parse_transcript_incremental(p)
+        # larger rewrite, different content from byte zero
+        p.write_text(_rec("user", "rewritten completely") + _rec("user", "with more bytes than before") + _rec("user", "x"), encoding="utf-8")
+        _bump(p)
+        a = sr._parse_transcript_incremental(p)
+        assert [m["text"] for m in a["messages"]] == ["rewritten completely", "with more bytes than before", "x"]
+        assert a == sr._parse_transcript(p)
+        # same-size rewrite with a newer mtime
+        body = _rec("user", "AAAA")
+        p.write_text(body, encoding="utf-8"); _bump(p); sr._parse_transcript_incremental(p)
+        p.write_text(_rec("user", "BBBB"), encoding="utf-8"); _bump(p)
+        b = sr._parse_transcript_incremental(p)
+        assert [m["text"] for m in b["messages"]] == ["BBBB"]
+
+
+def test_complete_last_record_without_newline_shows_provisionally():
+    """The full parser reads a last line that lacks its newline; the memo shows it
+    too, without committing it, so the next byte cannot double it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "s.jsonl"
+        p.write_text(_rec("user", "one") + _rec("user", "two").rstrip("\n"), encoding="utf-8")
+        sr._PARSE_CACHE.clear()
+        a = sr._parse_transcript_incremental(p)
+        assert [m["text"] for m in a["messages"]] == ["one", "two"]
+        assert a == sr._parse_transcript(p)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write("\n" + _rec("user", "three"))
+        _bump(p)
+        b = sr._parse_transcript_incremental(p)
+        assert [m["text"] for m in b["messages"]] == ["one", "two", "three"], "no duplicate of the provisional record"
+
+
+def test_memo_is_bounded_and_least_recent_leaves_first():
+    with tempfile.TemporaryDirectory() as tmp:
+        sr._PARSE_CACHE.clear()
+        paths = []
+        for i in range(sr._PARSE_CACHE_MAX + 3):
+            p = Path(tmp) / ("s%d.jsonl" % i)
+            p.write_text(_rec("user", "m%d" % i), encoding="utf-8")
+            sr._parse_transcript_incremental(p)
+            paths.append(str(p))
+        assert len(sr._PARSE_CACHE) == sr._PARSE_CACHE_MAX
+        assert paths[0] not in sr._PARSE_CACHE and paths[-1] in sr._PARSE_CACHE
+
+
 def test_read_session_uses_the_memo_and_returns_fresh_dicts(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         proj = Path(tmp) / "proj"
