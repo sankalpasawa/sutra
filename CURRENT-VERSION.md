@@ -2,7 +2,19 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.6 (2026-09-15, HEAD)
+## v2.278.7 (2026-09-15, HEAD)
+
+**The desktop app no longer burns CPU while idle.** Measured on the founder's Mac with four Shadow
+runtimes writing: backend at 58-85% CPU, five worker threads flat out, nobody touching the app. Two
+readers in `sutra-ui/session_reader.py` re-read every file on every call: `list_sessions(2000)` opened
+and title-scanned all 1,500 transcripts (3.7 s through the API) and the panel asks for it on every
+write to a Shadow-driven chat; `list_agents` fully re-parsed all 113 agents of the open pane every
+1.5 s (0.7 s). Both now memoise per file on (mtime_ns, size) -- `_stat_memo` on the three provider
+metadata readers, `_agent_summary` and a stat-keyed `_parent_tasks` -- so an unchanged file is never
+opened again and a rename still lands on the next call: 0.19 s and 0.04 s warm. Rows are handed out
+as copies so app.py's decoration never leaks into the memo. `test_session_list_memo.py` pins all of it.
+
+## v2.278.6 (2026-09-15)
 
 **SEO Writer: one bad moment at DataForSEO no longer throws the research away.** Three research runs
 died within ten minutes on "DataForSEO task failed (40101): Internal SE Server Error." The research

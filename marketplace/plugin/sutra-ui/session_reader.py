@@ -11,6 +11,7 @@ import os
 import re
 import time
 import shutil
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -82,6 +83,56 @@ def _strip_injected(text: str) -> str:
     return rest if sep and rest else t
 
 
+# ------------------------------------------------------- per-file stat memo --
+# A rail refresh used to re-open and re-parse every transcript it listed, on
+# every call. Measured on the founder's disk 2026-09-15: list_sessions(2000)
+# = 5.4 s for 1494 rows, and the panel asks for it on every write to a chat
+# Shadow is driving -- four headless runtimes were writing, five worker
+# threads sat at 100%, and the app "felt slow" with nobody touching it.
+#
+# A transcript whose (mtime_ns, size) has not moved titles the same, so the
+# three per-provider readers memoise on exactly that. STAT-KEYED, NOT TIMED:
+# a rename appended in Claude moves the size and shows on the next call, and
+# an unchanged file is never opened again. Rows are handed out as COPIES --
+# app.py decorates every row (sutra_id, shadow_driving, department) and a
+# decorated memo would leak one call's answers into the next.
+_META_CACHE: Dict[tuple, Optional[dict]] = {}
+_META_CACHE_MAX = 4096         # ~1 KB a row; the founder's 1.5k rows fit with room
+_MISS = object()
+# ONE lock for the three memos below. /api/sessions and the agents fold are
+# sync endpoints, so FastAPI runs them on a threadpool and two refreshes can
+# be inside these functions at once; a check-then-pop on a shared dict races
+# into KeyError (codex review, 2.278.7). Lookups and inserts take the lock;
+# the file read itself does not, so a cold 4 s list never blocks a warm one.
+_CACHE_LOCK = threading.Lock()
+
+
+def _stat_memo(fn):
+    """Memoise a `(path, *args) -> dict | None` reader on the path's stat."""
+    def wrapped(f, *args):
+        try:
+            st = os.stat(f)
+        except OSError:
+            return fn(f, *args)
+        extra = tuple(tuple(sorted(a.items())) if isinstance(a, dict) else a for a in args)
+        key = (fn.__name__, str(f), st.st_mtime_ns, st.st_size, extra)
+        with _CACHE_LOCK:
+            hit = _META_CACHE.pop(key, _MISS)        # re-inserted as most recent
+            if hit is not _MISS:
+                _META_CACHE[key] = hit
+        if hit is _MISS:
+            hit = fn(f, *args)
+            with _CACHE_LOCK:
+                while len(_META_CACHE) >= _META_CACHE_MAX:
+                    _META_CACHE.pop(next(iter(_META_CACHE)))  # insertion order: oldest first
+                _META_CACHE[key] = hit
+        return dict(hit) if hit is not None else None
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+@_stat_memo
 def _claude_session_meta(f: Path) -> dict:
     """One Claude transcript -> the sidebar's session dict. See list_sessions
     for the title-precedence and cost notes; unchanged, just extracted so the
@@ -222,6 +273,7 @@ def _gemini_header_id(f: Path) -> Optional[str]:
     return sid if isinstance(sid, str) and sid else None
 
 
+@_stat_memo
 def _gemini_session_meta(f: Path, project_cwd: Dict[str, str]) -> Optional[dict]:
     """One DeepSeek transcript -> the same session dict shape _claude_session_meta
     returns, or None when the CLI created the file but no real prompt was ever
@@ -381,6 +433,7 @@ _REPLAY_PREAMBLE = "You are taking over an in-progress working session"
 _CODEX_TITLE_SCAN = 40
 
 
+@_stat_memo
 def _codex_session_meta(f: Path) -> Optional[dict]:
     """One codex rollout, in the same shape the other two providers return.
 
@@ -1172,6 +1225,17 @@ def _parent_tasks(parent_sid: str) -> List[dict]:
     matches = list(PROJECTS.glob("*/" + parent_sid + ".jsonl"))
     if not matches:
         return []
+    # Memoised on the parent's stat: the agents fold asks every 1.5 s while any
+    # agent is live, and the parent (16 MB on the founder's machine) only has
+    # to be re-scanned when it has actually grown.
+    try:
+        st = matches[0].stat()
+    except OSError:
+        return []
+    with _CACHE_LOCK:
+        hit = _TASKS_CACHE.get(parent_sid)
+    if hit is not None and hit[0] == (str(matches[0]), st.st_mtime_ns, st.st_size):
+        return [dict(t) for t in hit[1]]
     tasks = []
     try:
         with matches[0].open(encoding="utf-8", errors="replace") as fh:
@@ -1198,7 +1262,11 @@ def _parent_tasks(parent_sid: str) -> List[dict]:
                             })
     except OSError:
         return []
-    return tasks
+    with _CACHE_LOCK:
+        while len(_TASKS_CACHE) >= _TASKS_CACHE_MAX:
+            _TASKS_CACHE.pop(next(iter(_TASKS_CACHE)))
+        _TASKS_CACHE[parent_sid] = ((str(matches[0]), st.st_mtime_ns, st.st_size), tasks)
+    return [dict(t) for t in tasks]
 
 
 def _agent_title_fallback(text: str) -> str:
@@ -1216,6 +1284,45 @@ def _agent_title_fallback(text: str) -> str:
         if not ln.lower().startswith(("you are ", "you're ", "repo:", "repo :", "you will ")):
             return ln[:72]
     return (lines[0][:72] if lines else "subagent")
+
+
+_TASKS_CACHE: Dict[str, tuple] = {}     # parent_sid -> ((path, mtime_ns, size), tasks)
+_TASKS_CACHE_MAX = 256
+_AGENT_CACHE: Dict[str, Dict] = {}      # agent path -> its parsed summary, stat-keyed
+_AGENT_CACHE_MAX = 4096
+
+
+def _agent_summary(f: Path, st) -> Dict:
+    """What list_agents derives from ONE agent transcript, memoised on its stat.
+
+    The fold re-lists on every subagent write (every 1.5 s during a fan-out) and
+    used to re-parse all of them each time -- 113 agents, 0.9 s, on the
+    founder's open pane. An agent whose file has not moved parses the same, so
+    only the one that grew is read. `running` is NOT here: it follows the clock.
+    """
+    key = str(f)
+    with _CACHE_LOCK:
+        hit = _AGENT_CACHE.get(key)
+    if hit is not None and hit["mtime_ns"] == st.st_mtime_ns and hit["size"] == st.st_size:
+        return hit
+    msgs = _parse_transcript(f)["messages"]
+    tools: List[str] = []
+    for m in msgs:
+        for tn in (m.get("tools") or []):
+            if tn and tn not in tools:
+                tools.append(tn)
+    hit = {
+        "mtime_ns": st.st_mtime_ns, "size": st.st_size,
+        "first_user": next((m["text"] for m in msgs if m["role"] == "user"), ""),
+        "tools": tools[:8],
+        "steps": sum(1 for m in msgs if m["role"] == "assistant"),
+        "turns": sum(1 for m in msgs if m["role"] == "user"),
+    }
+    with _CACHE_LOCK:
+        while len(_AGENT_CACHE) >= _AGENT_CACHE_MAX:
+            _AGENT_CACHE.pop(next(iter(_AGENT_CACHE)))
+        _AGENT_CACHE[key] = hit
+    return hit
 
 
 def list_agents(parent_sid: str) -> List[dict]:
@@ -1243,8 +1350,8 @@ def list_agents(parent_sid: str) -> List[dict]:
             st = f.stat()
         except OSError:
             continue
-        msgs = _parse_transcript(f)["messages"]
-        first_user = next((m["text"] for m in msgs if m["role"] == "user"), "")
+        summary = _agent_summary(f, st)
+        first_user = summary["first_user"]
         key = _norm120(first_user)
         match = None
         for t in tasks:
@@ -1254,19 +1361,14 @@ def list_agents(parent_sid: str) -> List[dict]:
                 break
         title = (match["description"] if (match and match["description"])
                  else _agent_title_fallback(first_user)) or f.stem
-        tools = []
-        for m in msgs:
-            for tn in (m.get("tools") or []):
-                if tn and tn not in tools:
-                    tools.append(tn)
         out.append({
             "id": f.stem,                 # agent-<hex>: no slashes, URL-safe path param
             "title": title[:80],
             "agent_type": (match or {}).get("subagent_type", ""),
             "label": (first_user.strip().replace("\n", " ") or f.stem)[:200],
-            "steps": sum(1 for m in msgs if m["role"] == "assistant"),
-            "tools": tools[:8],
-            "turns": sum(1 for m in msgs if m["role"] == "user"),
+            "steps": summary["steps"],
+            "tools": list(summary["tools"]),
+            "turns": summary["turns"],
             "mtime": int(st.st_mtime),
             "running": liveness(st.st_mtime) == "active",
         })

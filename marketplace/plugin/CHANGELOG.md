@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.7 (2026-09-15)
+
+- **The app no longer burns CPU while idle.** With four Shadow runtimes writing, the backend sat at 60-85% CPU and the app felt slow: every refresh of the Chats list re-read all 1,500 transcripts (3.7 s), and the open pane re-parsed all 113 of its agents every 1.5 s (0.7 s). Both now remember what they read per file and only re-read a file that has changed: 0.19 s and 0.04 s. A rename in Claude still shows on the next refresh. Tests: 4 new checks.
+
 ## 2.278.6 (2026-09-15)
 
 - **SEO Writer research survives a bad moment at DataForSEO.** One failed search out of about 48 used to stop the whole research step and throw away what the research team had found, so "Try again" paid for every search twice. Temporary DataForSEO errors are now waited out and retried, a search that still fails is skipped and counted, and the interviews are saved as they go, so a retry picks up where it stopped. A real refusal (bad login, no credits) is still reported at once, and research with no searches at all still stops. Tests: 31 checks.
