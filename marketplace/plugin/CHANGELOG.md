@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.6 (2026-09-15)
+
+- **Say anything to Shadow while a task is running.** With a task in focus the composer now reaches that task instead of the general chief-of-staff chat, so an aside typed mid-flight is read by the agent deciding the work on its next turn. A finished task refuses the aside rather than implying it had been re-steered. Nothing is sent into the worker session -- you talk to Shadow, Shadow drives the worker.
+- **The timeline says when.** Asides landed at the end of the conversation however early they were sent, because one worker message without a timestamp sent every one of them to the bottom. Each worker turn now carries a clock and sorts by when it opened, so an aside sits where it actually belongs.
+
 ## 2.278.5 (2026-09-15)
 
 - **No empty gap under the running step.** While an agent worked, the live step showed a blank block about three lines tall between its subtitle and the "N earlier …" list. The list now sits right under the subtitle. The text, order and behaviour are unchanged; only the spacing is fixed. It was a shared style name between that line and the "More are coming" banner on the Agents shelf.

@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.5 (2026-09-15, HEAD)
+## v2.278.6 (2026-09-15, HEAD)
+
+**Say anything to Shadow, and a timeline that says when.** The composer posted to
+`/api/shadow/chat` -- the chief-of-staff conversation, which holds no mission and cannot act on one --
+so an aside typed while a task ran reached something that could reply about the work and nothing that
+could change it. With a task in focus it now posts to that task through the mission action endpoint
+every other Shadow control already uses: a new `say` verb appends to `founder_says[]` and refuses a
+terminal mission (409, nothing written). The decider reads unseen asides on its next turn and decides
+for itself what they mean. Nothing is sent into the delegate session; `done_when` evaluation,
+`confirms_check`, intervention semantics and Delete are untouched. The timeline also places asides
+correctly: the sort's fallback to original index defeated it whenever a worker message carried no
+parseable stamp, so the worker spine now always carries a clock and a turn sorts by the boundary that
+opened it. Tests: `test_shadow_founder_says.py` +11, `test_shadow_rhs.js` and `test_shadow_home.js`
+extended.
+
+## v2.278.5 (2026-09-15)
 
 **No empty gap under the running step.** In an agent chat (the SEO Writer's included), a live step
 with more than eight finished rows drew a blank block, about three lines tall, between its subtitle and
