@@ -5,6 +5,7 @@ log read, and an SSE live-tail. Reads only — never writes a governance file.
 Run: python3 -m uvicorn app:app --host 127.0.0.1 --port 7000
 """
 import asyncio
+import threading
 import time
 import fcntl
 import json
@@ -1896,17 +1897,28 @@ async def _import_projects_as_departments():
     # move. Anything that seeds a registry and then asserts its shape sets this.
     if os.environ.get("SUTRA_SKIP_PROJECT_IMPORT"):
         return
-    try:
-        result = pi.sync()
-    except Exception as exc:                              # noqa: BLE001
-        print("[app] project import skipped: %s" % exc, file=sys.stderr)
-        return
-    if result["created"]:
-        print("[app] departments created from your projects: %s"
-              % ", ".join(result["created"]), file=sys.stderr)
-    else:
-        print("[app] departments already current (%d linked, %d skipped)"
-              % (result["linked"], result["skipped"]), file=sys.stderr)
+
+    # OFF THE EVENT LOOP (speed unit, 2026-09-15). sync() reads transcripts to
+    # find each project's folder and spawns one `git` per project; run inline
+    # here it held the loop -- and with it every panel request -- until it was
+    # done, and startup handlers run before uvicorn accepts a connection at all.
+    # A daemon thread lets the panel answer immediately; the tree gains the new
+    # departments on its next read, exactly the way a project started yesterday
+    # already appears on the next launch. The engine's own locks cover the
+    # concurrent mint against any read.
+    def _run():
+        try:
+            result = pi.sync()
+        except Exception as exc:                          # noqa: BLE001
+            print("[app] project import skipped: %s" % exc, file=sys.stderr)
+            return
+        if result["created"]:
+            print("[app] departments created from your projects: %s"
+                  % ", ".join(result["created"]), file=sys.stderr)
+        else:
+            print("[app] departments already current (%d linked, %d skipped)"
+                  % (result["linked"], result["skipped"]), file=sys.stderr)
+    threading.Thread(target=_run, name="project-import", daemon=True).start()
 
 
 @app.on_event("startup")

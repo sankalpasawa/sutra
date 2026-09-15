@@ -53,6 +53,7 @@ Peer-review folds (deepseek consult 2026-07-29, CHANGES-REQUIRED):
     averaged in with them.
 """
 
+import copy
 import fcntl
 import hashlib
 import json
@@ -229,6 +230,41 @@ def _lock(name):
 
 
 # ---------------------------------------------------------------- domains ---
+
+# ------------------------------------------------------------ read cache ----
+# STAT-VALIDATED, never trusted blind (sutra-ui speed unit, 2026-09-15). Every
+# hit re-stats its file and re-parses on any change of (mtime_ns, size); a
+# vanished file drops out. So no writer has to know the cache exists: every
+# writer here goes through json.dump onto the same path, which moves mtime.
+# Charter bodies are content-addressed and immutable, placements are
+# append-only, sidecars change rarely -- the parse was the cost, not the stat.
+# Measured on the live registry: all_placements 94 ms -> a few ms of stats;
+# the charter-heavy Org reads (filter, health, /org/charters) 0.5-1.1 s ->
+# well under 100 ms. Callers get a DEEP COPY: several engine paths mutate the
+# dict they were handed before saving it, and a shared object would let a
+# half-applied change leak into the next reader while the file is unchanged.
+_JSON_CACHE = {}            # path -> ((mtime_ns, size), parsed)
+_JSON_CACHE_MAX = 50000
+
+
+def _read_json_cached(path, copy_out=True):
+    """json.load(path) with a stat-validated memo. Raises like open()/json.load().
+    `copy_out=False` hands back the cached object itself: for a caller that only
+    READS one key to decide whether it wants the record at all (charters_for),
+    copying every non-match was the remaining cost. Such a caller must not
+    mutate what it gets and must copy before returning it."""
+    st = os.stat(path)                                   # OSError propagates
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _JSON_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return copy.deepcopy(hit[1]) if copy_out else hit[1]
+    with open(path, "r", encoding="utf-8") as fh:
+        obj = json.load(fh)
+    if len(_JSON_CACHE) >= _JSON_CACHE_MAX:
+        _JSON_CACHE.clear()
+    _JSON_CACHE[path] = (key, obj)
+    return copy.deepcopy(obj) if copy_out else obj
+
 
 def load_domains():
     """ref -> domain dict. Reads the per-domain files (the authority)."""
@@ -545,13 +581,12 @@ def charters_for(domain_ref, tenant_id=None):
         if not _is_body_file(fn):
             continue
         try:
-            with open(os.path.join(CHARTERS, fn), "r", encoding="utf-8") as fh:
-                c = json.load(fh)
-            if c.get("domain_ref") != domain_ref:
+            c = _read_json_cached(os.path.join(CHARTERS, fn), copy_out=False)
+            if not isinstance(c, dict) or c.get("domain_ref") != domain_ref:
                 continue
             if tenant_id and c.get("tenant_id") != tenant_id:
                 continue
-            out.append(c)
+            out.append(copy.deepcopy(c))                 # only the matches are copied out
         except (ValueError, OSError):
             continue
     return out
@@ -651,8 +686,7 @@ def load_charter(charter_id):
     if not charter_id:
         return None
     try:
-        with open(os.path.join(CHARTERS, charter_id + ".json"), "r", encoding="utf-8") as fh:
-            c = json.load(fh)
+        c = _read_json_cached(os.path.join(CHARTERS, charter_id + ".json"))
         return c if isinstance(c, dict) else None
     except (ValueError, OSError):
         return None
@@ -702,8 +736,7 @@ def load_sidecar(charter_id):
     reports `ts_ms: None` — UNKNOWN, never a fabricated now()."""
     base = _sidecar_default()
     try:
-        with open(_sidecar_path(charter_id), "r", encoding="utf-8") as fh:
-            sc = json.load(fh)
+        sc = _read_json_cached(_sidecar_path(charter_id))
         if isinstance(sc, dict):
             base.update(sc)
             return base
@@ -850,8 +883,9 @@ def all_placements(tenant_id=None):
         if not (fn.startswith("PL-") and fn.endswith(".json")):
             continue
         try:
-            with open(os.path.join(PLACEMENTS, fn), "r", encoding="utf-8") as fh:
-                p = json.load(fh)
+            p = _read_json_cached(os.path.join(PLACEMENTS, fn))
+            if not isinstance(p, dict):
+                continue
             if tenant_id and p.get("tenant_id") != tenant_id:
                 continue
             out.append(p)

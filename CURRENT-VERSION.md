@@ -2,7 +2,14 @@
 
 **status**: active · **updated**: 2026-09-15
 
-## v2.278.0 (2026-09-15, HEAD)
+## v2.278.1 (2026-09-15, HEAD)
+
+**Speed.** An open chat pane re-reads its transcript incrementally (from the last offset) instead of parsing
+the whole file on every write, which is what held the backend at 100% CPU while a long session ran. Registry
+reads memoise placements, charter bodies and sidecars per file with stat validation; the Org screen's filter,
+Health and search scan charters once per request. The startup project import runs in a background thread.
+
+## v2.278.0 (2026-09-15)
 
 **The new Org tab is on by default** (`flags.org2: false` is the opt-out; Old Org unchanged). **Edit a
 charter, by succession**: the pencil's Edit charter… (or Write the charter on an empty view) files an

@@ -265,6 +265,28 @@ def _standing(ref: str):
         return None
 
 
+def _standing_map() -> Dict[str, Optional[Dict[str, Any]]]:
+    """{domain_ref: standing charter view or None} for EVERY department in one
+    pass over the charter files (speed unit, 2026-09-15). filter and health
+    used to call _standing() per row, and each call re-walked all ~180 charter
+    bodies: 76 rows x 180 files. One walk, grouped by domain_ref, then the
+    same standing rule as _charters(): first active, non-superseded standing
+    charter, else the first active one."""
+    sup = E.superseded_ids() if hasattr(E, "superseded_ids") else {}
+    by_dom: Dict[str, List[Dict[str, Any]]] = {}
+    for fn in E.charter_body_files():
+        v = E.charter_view(fn[:-len(".json")])
+        if v and v.get("domain_ref"):
+            by_dom.setdefault(v["domain_ref"], []).append(v)
+    out: Dict[str, Optional[Dict[str, Any]]] = {}
+    for ref, views in by_dom.items():
+        views.sort(key=lambda v: v.get("id") or "")
+        active = [v for v in views if v.get("status", "active") != "retired" and v.get("id") not in sup]
+        standing = next((v for v in active if v.get("kind", "standing") == "standing"), None)
+        out[ref] = standing if standing is not None else (active[0] if active else None)
+    return out
+
+
 @router.get("/filter")
 def filter_departments(kind: str = "", state: str = "", where: str = ""):
     """The live departments that match every given axis (plan S76): `kind` and
@@ -283,12 +305,13 @@ def filter_departments(kind: str = "", state: str = "", where: str = ""):
     if where and not pool:
         raise HTTPException(status_code=404, detail="no department %s" % where)
     out = []
+    smap = _standing_map() if states else {}
     for r in pool:
         d = live[r]
         if kinds and _kind(r, d, live, root_ref) not in kinds:
             continue
         if states:
-            standing = _standing(r)
+            standing = smap.get(r)
             ok = ("active" in states and d.get("status", "active") == "active") \
                 or ("no-charter" in states and standing is None) \
                 or ("one-line" in states and _one_line(standing))
@@ -318,14 +341,12 @@ def search(q: str = ""):
         r = p.get("domain_ref")
         if r in live and r not in hits and needle in _label((p.get("work_ref") or {}).get("id")).lower():
             hits[r] = True
-    for r in live:
-        if r in hits:
-            continue
-        for c in E.charters_for(r):
-            v = E.charter_view(c)
-            if v and (needle in str(v.get("title") or "").lower() or needle in str(v.get("purpose") or "").lower()):
-                hits[r] = True
-                break
+    for fn in E.charter_body_files():                     # one pass over the charters, not one per department
+        v = E.charter_view(fn[:-len(".json")])
+        r = v.get("domain_ref") if v else None
+        if r in live and r not in hits and (needle in str(v.get("title") or "").lower()
+                                            or needle in str(v.get("purpose") or "").lower()):
+            hits[r] = True
     refs = list(hits.keys())[:SEARCH_MAX]
     return {"refs": refs, "n": len(refs)}
 
@@ -342,8 +363,9 @@ def health(ref: str):
     refs = _subtree(ref, live)
     inside = set(refs)
     unowned, one_line = [], []
+    smap = _standing_map()
     for r in refs:
-        standing = _standing(r)
+        standing = smap.get(r)
         if standing is None:
             unowned.append({"ref": r, "name": live[r].get("name")})
         elif _one_line(standing):

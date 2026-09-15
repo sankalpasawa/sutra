@@ -838,6 +838,108 @@ def _result_text(content) -> str:
     return ""
 
 
+# ------------------------------------------------------ incremental parse ----
+# THE OPEN PANE RE-READS ITS TRANSCRIPT ON EVERY WRITE (09-tail.js
+# applySessionChange -> GET /api/sessions/<id>, throttled to one per second),
+# and a live Claude session writes several times a second. Parsing the whole
+# file each time made the cost scale with the transcript's LENGTH instead of
+# with what changed: a 58 MB session cost seconds per read, back to back, for
+# as long as it was being written -- the "app at 100% CPU for half an hour"
+# the founder saw (speed unit, 2026-09-15). This memo keeps, per file, the
+# parsed messages plus the byte offset they were parsed up to; a grown file
+# is read from that offset only, and the messages are appended. Any other
+# change (shrunk, rewritten in place, mtime moved without growth) re-parses
+# from zero, so a rewrite is never mis-read as an append. A partial trailing
+# line (the writer mid-record) is left for the next read. Tool outputs arrive
+# in later records than the calls they answer, so the attach pass runs over
+# ALL messages every time, from the cached results map.
+_PARSE_CACHE: Dict[str, Dict] = {}
+_PARSE_CACHE_MAX = 64
+
+
+def _parse_records(raw: bytes, state: Dict) -> None:
+    """Fold the complete lines of `raw` into state (messages, results, cwd,
+    branch). Mutates state; leaves state["tail"] holding an incomplete last line."""
+    buf = state.get("tail", b"") + raw
+    lines = buf.split(b"\n")
+    state["tail"] = lines.pop()                 # b"" when raw ended on a newline
+    messages, results = state["messages"], state["results"]
+    for rawline in lines:
+        try:
+            d = json.loads(rawline.decode("utf-8", "replace"))
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        state["cwd"] = state["cwd"] or d.get("cwd", "")
+        state["branch"] = state["branch"] or d.get("gitBranch", "")
+        t = d.get("type")
+        if t not in ("user", "assistant"):
+            continue
+        msg = d.get("message", {})
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if t == "user":
+            if isinstance(content, list):
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        results[b.get("tool_use_id")] = {
+                            "output": _result_text(b.get("content")),
+                            "is_error": bool(b.get("is_error"))}
+            if _is_tool_result(content):
+                continue
+            if d.get("isMeta") and d.get("sourceToolUseID"):
+                continue
+            text = _text_of(content).strip()
+            if text and not text.startswith("<"):
+                messages.append({"role": "user", "text": text, "ts": d.get("timestamp", "")})
+        else:
+            text = _text_of(content).strip()
+            calls = []
+            if isinstance(content, list):
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_use":
+                        calls.append({"id": b.get("id"), "name": b.get("name", ""),
+                                      "input": _tool_input_summary(b.get("name"), b.get("input"))})
+            if text or calls:
+                messages.append({"role": "assistant", "text": text,
+                                 "tools": [c["name"] for c in calls],
+                                 "calls": calls, "ts": d.get("timestamp", "")})
+
+
+def _parse_transcript_incremental(f) -> Dict:
+    """_parse_transcript with the per-file memo described above. Returns a
+    fresh dict every call (the caller serialises it; the memo is never handed out)."""
+    path = str(f)
+    st = os.stat(path)
+    state = _PARSE_CACHE.get(path)
+    grown = (state is not None and st.st_size >= state["size"]
+             and st.st_mtime_ns >= state["mtime_ns"])
+    if state is None or not grown:
+        state = {"size": 0, "mtime_ns": 0, "offset": 0, "tail": b"", "cwd": "", "branch": "",
+                 "messages": [], "results": {}}
+    if st.st_size > state["offset"] or state["size"] == 0:
+        with open(path, "rb") as fh:
+            fh.seek(state["offset"])
+            raw = fh.read()
+        _parse_records(raw, state)
+        state["offset"] += len(raw)
+    state["size"], state["mtime_ns"] = st.st_size, st.st_mtime_ns
+    if len(_PARSE_CACHE) >= _PARSE_CACHE_MAX and path not in _PARSE_CACHE:
+        _PARSE_CACHE.clear()
+    _PARSE_CACHE[path] = state
+    messages = [dict(m, calls=[dict(c) for c in m.get("calls", ())]) if m.get("role") == "assistant" else dict(m)
+                for m in state["messages"]]
+    for m in messages:
+        for c in m.get("calls", ()):
+            r = state["results"].get(c.get("id"))
+            if r:
+                c["output"] = r["output"]
+                c["is_error"] = r["is_error"]
+    return {"cwd": state["cwd"], "branch": state["branch"], "messages": messages}
+
+
 def _parse_transcript(f) -> Dict:
     """Parse ONE transcript file into chat-renderable messages. Read-only.
 
@@ -996,7 +1098,9 @@ def read_session(session_id: str) -> Optional[Dict]:
     if matches:
         # Single source of truth: read_session and read_agent parse identically,
         # so an agent turn and a session turn can never disagree about one record.
-        return {"id": session_id, **_parse_transcript(matches[0])}
+        # The incremental memo folds the SAME record rules (_parse_records is
+        # the line body of _parse_transcript) and only changes what is re-read.
+        return {"id": session_id, **_parse_transcript_incremental(matches[0])}
     f = _gemini_resolve_path(session_id)
     if f is not None:
         return {"id": session_id, **_gemini_transcript(f, _gemini_project_cwd_map())}

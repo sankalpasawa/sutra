@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-15
+## 2.278.1 (2026-09-15)
+
+- **The app stays responsive while a chat is being written.** An open chat pane re-reads its transcript on every write; the whole file was parsed each time, so a long live session (58 MB on the founder's machine) cost seconds of CPU per second for as long as it ran. The transcript is now read from where the last read stopped and the messages appended; a rewritten or shrunk file is parsed from zero. Same output, a fraction of the work.
+- **Registry reads stop re-parsing files that did not change.** Placements, charter bodies and sidecars are memoised per file and re-validated by stat on every read, so no writer needs to know. The Org screen's filter, Health and search scan the charters once per request instead of once per department. Measured: department read 190 to 77 ms, Health 1071 to 570 ms before the per-request scan, /org/charters 885 to 454 ms.
+- **The startup project import runs in a background thread**, so the panel answers immediately after a start; new departments appear on the next tree read.
+
 ## 2.278.0 (2026-09-15)
 
 - **The new Org tab is on by default.** The rail shows **Org** above **Old Org** unless `~/.sutra-ui/settings.json` says `flags.org2: false`. Old Org keeps every screen, id and test.
