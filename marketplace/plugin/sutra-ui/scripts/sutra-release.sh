@@ -30,7 +30,7 @@ CURRENT_MD="$ROOT/CURRENT-VERSION.md"
 
 die(){ printf 'sutra-release: %s\n' "$*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1 || die "need '$1' on PATH"; }
-have jq; have git; have gh
+have jq; have git
 
 base_version(){ jq -r '.version' "$PLUGIN_JSON"; }
 market_version(){ jq -r '.plugins[] | select(.name=="core") | .version' "$MARKET_JSON"; }
