@@ -2526,6 +2526,8 @@ function shadowHomeHtml(){
       return goalProposalHtml(t.goalProposal);
     if (t.mission && typeof missionCardHtml === "function")
       return missionCardHtml(t.mission);
+    /* v4 C6: Shadow's words as prose, the founder's verbatim */
+    if (typeof shadowMsgHtml === "function") return shadowMsgHtml(t);
     return `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
       ${esc(t.text || "")}</div>`;
