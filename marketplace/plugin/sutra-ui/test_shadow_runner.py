@@ -204,10 +204,17 @@ class TestMountedEngine(unittest.TestCase):
         self.assertEqual(final["state"], "done",
                          "the mounted engine must drive the chat to done: %s"
                          % final)
-        # 4. the feed carries the completion; the badge counts
-        items = self._get("/api/shadow/feed")["items"]
+        # 4. the feed carries the completion -- in the file. Now never
+        # serves a finished task's card (relevance rule, 2026-09-16): the
+        # done row is an update, and a done task is not waiting on anyone.
+        import shadow_feed
+        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle if line.strip()]
         self.assertTrue(any(m2["id"] in (it.get("dedupe_key") or "")
-                            for it in items), "completion feed item")
+                            for it in rows), "completion feed item")
+        items = self._get("/api/shadow/feed")["items"]
+        self.assertFalse(any(m2["id"] in (it.get("dedupe_key") or "")
+                             for it in items), "a done task is not on Now")
         ws.close()
 
 

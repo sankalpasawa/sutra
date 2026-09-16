@@ -2487,26 +2487,21 @@ async def _shadow_shutdown():
         pass
 
 
-def _shadow_alert_count():
-    """New rescue/stall/needs-decision feed items -- the dot pill number."""
+def _shadow_feed_items():
+    """The rows Now may show: the feed filtered by the relevance rule
+    (shadow_feed.live_items, 2026-09-16). One reader for the endpoint and
+    the dot, so the number on the dot is the number of cards on Now."""
     import shadow_feed
-    count = 0
+    import mission_engine as _me
     try:
-        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    it = json.loads(line)
-                except ValueError:
-                    continue
-                iid = it.get("item_id") or ""
-                if it.get("state") == "new" and (
-                        it.get("kind") == "needs_decision"
-                        or iid.startswith("rescue-")
-                        or iid.startswith("stall-")):
-                    count += 1
+        return shadow_feed.live_items(_me.MissionStore())
     except OSError:
-        pass
-    return count
+        return []
+
+
+def _shadow_alert_count():
+    """New needs-you feed items -- the dot pill number."""
+    return sum(1 for it in _shadow_feed_items() if it.get("state") == "new")
 
 
 def _home_lock():
@@ -4525,6 +4520,10 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # session and the chat, so removing it first would strand both
             # with nothing left to find them by.
             removed = store.delete(mid)
+            # The task's cards go with it (2026-09-16): a deleted task must
+            # not keep asking for the founder on Now.
+            import shadow_feed
+            shadow_feed.retire(mission_id=mid)
             # ...and the slot goes with it. The runner's wrapper cannot do
             # this one: it reloads the mission to decide, and the record it
             # would read is exactly what was just removed.
@@ -4557,20 +4556,10 @@ async def api_shadow_feed():
     off state costs zero client logic."""
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
-    import shadow_feed
-    items = []
-    try:
-        with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    it = json.loads(line)
-                except ValueError:
-                    continue
-                if it.get("state") not in ("expired", "handled"):
-                    items.append(it)
-    except OSError:
-        pass
-    return {"items": items[-50:], "ts": time.time()}
+    # Only what still waits on the founder (the relevance rule in
+    # shadow_feed.live_items): a card for a deleted, finished or resumed
+    # task is expired on the way out, never served.
+    return {"items": _shadow_feed_items()[-50:], "ts": time.time()}
 
 
 def _validated_say(sid, mission_id, msg, dedupe_key=None):

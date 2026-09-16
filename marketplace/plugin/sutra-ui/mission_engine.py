@@ -2827,7 +2827,9 @@ def approve_held_say(store, mid, approval_id):
 
 def emit_mission_feed(mission, kind, why_now):
     """S57: mission events that need the founder become feed items. Dedupe
-    key = mission + state + version, so an amend re-surfaces exactly once."""
+    key = mission + state + version, so an amend re-surfaces exactly once.
+    ONE CARD PER TASK (2026-09-16): an accepted row retires the task's
+    earlier open rows, so Now shows the latest state, not the history."""
     import shadow_feed
     item = {
         "item_id": "f-%s-%s-v%d" % (mission["id"], mission["state"],
@@ -2843,4 +2845,8 @@ def emit_mission_feed(mission, kind, why_now):
                                      mission["version"]),
         "state": "new",
     }
-    return shadow_feed.emit(item)
+    ok, problems = shadow_feed.emit(item)
+    if ok:
+        shadow_feed.retire(mission_id=mission["id"],
+                           keep_item_id=item["item_id"], producer="shadow")
+    return ok, problems

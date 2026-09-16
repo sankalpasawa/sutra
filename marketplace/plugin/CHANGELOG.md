@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.1 (2026-09-16)
+
+- **Now shows only what waits on you.** A card lives while its task exists and needs an answer (a brief to confirm, a question, a held say, a paused task to resume); a failed task keeps its card for a day; finished, deleted or resumed tasks lose theirs on the next read, and one task carries one card. Before this the feed only grew (23 cards, 8 for deleted tasks). Tests: 8 new feed checks; 2 lanes moved to the new contract.
+
 ## 2.282.0 (2026-09-16)
 
 - **Runtime MVP-1: native steps write the turn's four markers** (input-routed, depth-registered, flow-classified, flow-type-resolved) plus a per-turn facts file, behind the per-box flag `~/.sutra-runtime-markers` (`on|shadow|off`, absent = off); a runtime-written depth body never authorizes an Edit/Write, and a Stop-side shadow diff feeds the fleet flip gate. UserPromptSubmit and Stop host caps 20 s / 165 s (post-phase steps change the cap model to max(parallel) + sum(post)), spec-check 14, selftest native counts.

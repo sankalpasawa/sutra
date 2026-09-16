@@ -47,9 +47,11 @@ class TestFeedLatency(unittest.TestCase):
             samples = []
             for i in range(20):
                 t0 = time.monotonic()
+                # a needs-you row about nothing Shadow owns: the relevance
+                # rule (2026-09-16) keeps it, an info row it never serves
                 ok, problems = shadow_feed.emit({
-                    "item_id": "lat-%d" % i, "producer": "shadow",
-                    "kind": "info", "title": "latency probe %d" % i,
+                    "item_id": "lat-%d" % i, "producer": "probe",
+                    "kind": "needs_decision", "title": "latency probe %d" % i,
                     "deep_link": "sutra://x", "dedupe_key": "lat-%d" % i,
                     "state": "new"})
                 self.assertTrue(ok, problems)

@@ -2,7 +2,18 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.282.0 (2026-09-16, HEAD)
+## v2.282.1 (2026-09-16, HEAD)
+
+**Now shows only what waits on you** (founder: "a lot of tasks in my Now, but they are not
+relevant"). The needs-you feed gains a relevance rule (`shadow_feed.live_items`): a card lives while
+its task exists and needs an answer (a brief to confirm, a question, a held say, a paused task to
+resume); a failed task keeps its card for a day from the row's new `ts`; finished, deleted or resumed
+tasks lose theirs on the next read, and the mission emitter keeps one card per task. Delete retires
+a task's cards; the dot counts the same rows Now shows. Codex + DeepSeek reviewed. Tests: 8 new feed
+checks, 2 lanes moved to the new contract, full verify 152 python lanes + JS suites green (the 3
+upstream-red lanes unchanged).
+
+## v2.282.0 (2026-09-16)
 
 **Runtime MVP-1: the turn's markers are computed, not narrated.** Two native steps behind the
 per-box flag `~/.sutra-runtime-markers` (`on` | `shadow` | `off`, absent = off): `ups.markers_write`
