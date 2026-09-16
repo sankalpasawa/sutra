@@ -2251,6 +2251,80 @@ function shadowDelegatePanelHtml(){
   </div>`;
 }
 
+/* ── v4: STARTING A TASK IS A CONVERSATION (SHADOW-V3 v3.4, ADR-043) ──────
+   + Delegate opens an EMPTY task chat: one line from the founder, Enter, and
+   the task's own Shadow chat answers with a draft card (objective, kind,
+   done when; READY). Keep talking and the card follows; Start is the
+   founder's. No form, no kind chips, no done-when field.
+
+   THE FORM IS NOT DELETED. shadowDelegatePanelHtml and shadowCreateTask are
+   untouched and still the way in when `flags.shadow_form` is true in the
+   founder's settings -- opt-in, off by default. */
+function shadowFormOn(){
+  return typeof SETTINGS !== "undefined" && !!SETTINGS && !!SETTINGS.flags
+    && SETTINGS.flags.shadow_form === true;
+}
+
+function shadowNewChat(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (!S_.shadowNewChat)
+    S_.shadowNewChat = { mission: null, thread: [], busy: false, err: null, text: "" };
+  return S_.shadowNewChat;
+}
+
+function shadowNewTaskChatHtml(){
+  const c = shadowNewChat();
+  const rows = c.thread.map(t => (typeof shadowMsgHtml === "function")
+    ? shadowMsgHtml(t)
+    : `<div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">${esc(t.text || "")}</div>`
+  ).join("");
+  return `<div class="shnewchat" data-shnewchat="1">
+    ${rows ? `<div class="shthread">${rows}</div>` : ""}
+    ${c.mission ? shadowTaskCardHtml(c.mission) : ""}
+    <div class="shwcomp"><div class="shcompwrap">
+      <textarea class="shcompose" data-shnewtalk="1" rows="2"
+        placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
+      <button class="btn shsend" type="button" data-shnewsend="1"
+        aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
+    </div></div>
+    ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
+  </div>`;
+}
+
+/* One line to the task's Shadow chat. The first line opens the draft
+   (POST /api/shadow/tasks); every later line talks to that task
+   (POST /api/shadow/tasks/{id}/chat). The reply is Shadow's prose; the
+   draft card is the server's record, never a local guess. */
+async function shadowNewTalk(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  const c = shadowNewChat();
+  const text = String(c.text || "").trim();
+  if (!text || c.busy) return null;
+  c.thread.push({ who: "founder", ts: Date.now(), text });
+  c.text = ""; c.busy = true; c.err = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  try {
+    r = c.mission
+      ? await shadowPost("/api/shadow/tasks/" + encodeURIComponent(c.mission.id) + "/chat",
+                         { message: text })
+      : await shadowPost("/api/shadow/tasks", { message: text });
+  } catch (e){ r = null; }
+  let body = null;
+  try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
+  c.busy = false;
+  if (!body){
+    c.err = r ? "Shadow could not take that (" + r.status + ")."
+              : "Could not reach Shadow.";
+  } else {
+    if (body.mission) c.mission = body.mission;
+    if (body.reply) c.thread.push({ who: "shadow", ts: Date.now(), text: body.reply });
+    if (typeof loadShadowHome === "function") loadShadowHome(true);
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return body;
+}
+
 function shadowGoalsBy(state){
   const S_ = (typeof S !== "undefined") ? S : {};
   return (S_.goals || []).filter(g => g && g.state === state);
@@ -2411,7 +2485,7 @@ function shadowNavHtml(){
           v.1a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2.06 2.06 0 1 1 2.92 2.92
           l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.55 1.03h.18a2.06 2.06 0 0 1 0 4.12
           h-.18a1.7 1.7 0 0 0-1.55 1.03z"/></svg>
-      <span>Shadow Settings</span></button>
+      <span>What Shadow knows</span></button>
   </nav>`;
 }
 
@@ -2582,7 +2656,8 @@ function shadowHomeHtml(){
             >Open the chat</button>` : ""}
         </div>
       </header>
-      ${newOpen ? shadowDelegatePanelHtml()
+      ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
+                                  : shadowNewTaskChatHtml())
                 : (sel ? shadowTaskCardHtml(sel) : "")}
       ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
       ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
@@ -2864,6 +2939,49 @@ function shadowSetRuleHtml(scope, glob, r){
     <button class="rx" type="button" data-shrevoke="${escAttr((r && r.id) || "")}"
       title="Revoke this" aria-label="Revoke this">\u00d7</button>
   </div>`;
+}
+
+/* HOW SHADOW BEHAVES (v4 C7, ADR-043): the founder's own words, one text,
+   first on the sheet. Saved on change (the blur after an edit), through
+   POST /api/shadow/settings/behaves, into the same limits store the numbers
+   below use; it binds the next Shadow boot. The draft is kept on S across
+   the background re-renders, like every other typed field here. */
+function shadowSetBehavesHtml(d){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const text = (S_.shadowBehavesDraft != null) ? S_.shadowBehavesDraft
+                                                : ((d && d.behaves) || "");
+  const note = S_.shadowBehavesBusy ? "saving"
+    : (S_.shadowBehavesErr ? S_.shadowBehavesErr
+    : (S_.shadowBehavesSaved ? "saved" : ""));
+  const max = Number(d && d.behaves_max) || 4000;
+  return `<div class="ssbehaves">
+    <textarea class="ssbehaves-text" rows="5" data-shbehaves="1" maxlength="${max}"
+      placeholder="In your own words: when to check in, what to ask before doing, what to leave alone.">${esc(text)}</textarea>
+    <div class="ssnote ssbehaves-note">${esc(note)}</div>
+  </div>`;
+}
+
+async function shadowBehavesSave(text){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  S.shadowBehavesBusy = true; S.shadowBehavesErr = null; S.shadowBehavesSaved = false;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  try {
+    r = await shadowPost("/api/shadow/settings/behaves",
+                         { behaves: String(text == null ? "" : text) });
+  } catch (e){ r = null; }
+  let body = null;
+  try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
+  S.shadowBehavesBusy = false;
+  if (body && body.behaves !== undefined){
+    if (S.shadowSettings) S.shadowSettings.behaves = body.behaves;
+    S.shadowBehavesDraft = null;
+    S.shadowBehavesSaved = true;
+  } else {
+    S.shadowBehavesErr = "That did not stick — try again.";
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return body;
 }
 
 function shadowSetMemoryHtml(d){
@@ -3432,7 +3550,7 @@ function shadowSettingsHtml(){
     <button class="ssback" type="button" data-shscreen="shadow"
       title="Back to Shadow" aria-label="Back to Shadow">\u2190</button>
     <span class="ssmark" aria-hidden="true"><b>S</b></span>
-    <h2 class="sstitle">Shadow</h2>
+    <h2 class="sstitle">What Shadow knows</h2>
   </header>`;
   if (!d) return `<div class="shset">${head}
     <div class="ssbody"><div class="sswrap">
@@ -3442,6 +3560,7 @@ function shadowSettingsHtml(){
       </div></div></div></div>`;
   return `<div class="shset">${head}
     <div class="ssbody"><div class="sswrap">
+      ${shadowSettingsSecHtml("How Shadow behaves", shadowSetBehavesHtml(d))}
       ${shadowSettingsSecHtml("Autonomy", shadowSetAutonomyHtml(d))}
       ${shadowSettingsSecHtml("Memory", shadowSetMemoryHtml(d))}
       ${shadowSettingsSecHtml("Tasks", shadowSetTasksHtml(d))}
@@ -3472,8 +3591,8 @@ if (typeof SCREENS !== "undefined"){
   };
 }
 if (typeof TITLES !== "undefined"){
-  TITLES.shadowsettings = ["Shadow settings",
-    "the rules it lives by \u00b7 what it remembers"];
+  TITLES.shadowsettings = ["What Shadow knows",
+    "how it behaves \u00b7 the rules it lives by \u00b7 what it remembers"];
 }
 
 /* The existing Watching experience, on its own screen so Home never renders
@@ -3743,10 +3862,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof S !== "undefined"){
         S.shadowNewOpen = !S.shadowNewOpen;
         S.shadowNewErr = null;
+        /* v4: opening starts an empty task chat; closing forgets nothing on
+           the server (a draft already opened stays in the list as READY) */
+        if (S.shadowNewOpen) shadowNewChat();
       }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
+    if (d.shnewsend){ shadowNewTalk(); return; }
     if (d.shnewcancel){
       if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null; }
       if (typeof scheduleRender === "function") scheduleRender();
@@ -3957,7 +4080,17 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shofferadd !== undefined) return shadowOfferAdd();
     if (d.shivsend) return shadowSendIntervention(d.shivsend);
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
-    if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
+    if (d.shstart){
+      /* v4: Start on the draft the task chat just wrote closes that chat and
+         puts the task in focus; the start itself is the existing action */
+      const c = (typeof S !== "undefined") ? S.shadowNewChat : null;
+      if (c && c.mission && c.mission.id === d.shstart){
+        S.shadowNewOpen = false;
+        S.shadowTaskSel = d.shstart;
+        S.shadowNewChat = null;
+      }
+      return shadowMissionAct(d.shstart, "start_now");
+    }
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
     if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
     if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
@@ -4014,6 +4147,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault && ev.preventDefault();
       shadowSubmitCompose(ev.target);
     }
+    /* v4: Enter in the task chat sends the line; Shift+Enter is a newline */
+    if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
+        && ev.target.dataset.shnewtalk){
+      ev.preventDefault && ev.preventDefault();
+      shadowNewChat().text = ev.target.value;
+      shadowNewTalk();
+      return;
+    }
     /* the offer box submits on Enter and abandons on Escape -- the two keys
        every one-field inline input in this app already answers to */
     const od = (ev.target && ev.target.dataset) || {};
@@ -4032,8 +4173,21 @@ if (typeof document !== "undefined" && document.addEventListener){
      the session stream causes. Stored, NEVER re-rendered on keystroke: a
      render per character would fight the caret, which is the bug the
      composer's own text store exists to avoid. */
+  /* v4: "How Shadow behaves" saves on change, which is the blur after an
+     edit -- no Save button, no keystroke writes */
+  document.addEventListener("change", (ev) => {
+    const d = (ev.target && ev.target.dataset) || {};
+    if (d.shbehaves) shadowBehavesSave(ev.target.value);
+  });
   document.addEventListener("input", (ev) => {
     const t = ev.target, d = (t && t.dataset) || {};
+    /* v4: the task chat line and the behaves text, kept across the
+       background re-renders like every typed field here */
+    if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
+    if (d.shbehaves){
+      if (typeof S !== "undefined"){ S.shadowBehavesDraft = t.value; S.shadowBehavesSaved = false; }
+      return;
+    }
     /* the intervention form's typed fields, on the SAME listener the
        delegate panel already uses -- one input handler, not a second one */
     if (d.shivtext && d.shivmid && d.shivkey){

@@ -403,7 +403,7 @@ console.log("ok 6 controls wired");
      the settings test below pins that they are still reachable. */
   assert(/data-shscreen="shadowsettings"/.test(h),
     "the way into Shadow Settings was lost");
-  assert(/Shadow Settings</.test(h), "the settings door is not labelled");
+  assert(/What Shadow knows</.test(h), "the settings door is not labelled");
   assert(!/data-shwatching/.test(h) && !/data-shmemopen/.test(h)
       && !/data-shgoals/.test(h) && !/data-shchats/.test(h),
     "the workspace footer must be one door, not the old five-link index");
@@ -474,6 +474,8 @@ console.log("ok 6 controls wired");
      panel and nothing else. Closed: byte-identical to what shipped. */
   const newTask = (() => { const c = fresh(); c.S.shadowHomeDark = false;
     c.S.shadowMissions = MISSIONS; c.S.goals = []; c.S.shadowNewOpen = true;
+    /* v4: the form is the opt-in path (flags.shadow_form) */
+    c.SETTINGS = { flags: { shadow_form: true } };
     return c.shadowHomeHtml(); })();
   assert(!/What should I take on\?/.test(newTask),
     "the ask heading still draws behind the New Task form");
@@ -759,6 +761,9 @@ console.log("ok 6 controls wired");
   ctx.S.shadowHomeDark = false;
   ctx.S.shadowMissions = MISSIONS;
   assert(!/data-shnewpanel/.test(ctx.shadowHomeHtml()), "panel open by default");
+  /* v4: the form is the opt-in path (flags.shadow_form); the default is the
+     task chat, pinned by test_shadow_v4_taskchat.js */
+  ctx.SETTINGS = { flags: { shadow_form: true } };
   ctx.S.shadowNewOpen = true;
   const h = ctx.shadowHomeHtml();
   assert(/data-shnewpanel="1"/.test(h), "panel did not open");
@@ -2609,7 +2614,7 @@ const SET = { engage: ["outcome first"],
     const ctx = fresh();
     const nav = ctx.shadowNavHtml();
     assert(/data-shscreen="shadowsettings"/.test(nav), "the door carries the hook");
-    assert(/<svg/.test(nav) && /<span>Shadow Settings<\/span>/.test(nav),
+    assert(/<svg/.test(nav) && /<span>What Shadow knows<\/span>/.test(nav),
       "and it wraps children that will be the click target");
   }
 
