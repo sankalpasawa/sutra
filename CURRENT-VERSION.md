@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.282.3 (2026-09-16, HEAD)
+## v2.282.4 (2026-09-17, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.282.3 (2026-09-16)
 
 **You can talk to a running task, and what you say governs it.** Three changes, one surface. (1) A
 second door on the task header opens a floating panel wired to that task's own Shadow chat

@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.4 (2026-09-17)
+
+- Released from v2.282.3-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release prep for v2.282.4-desktop
+  - Release: automate macOS desktop deployment
+- Changed: 3 file(s), +918/-0
+
 ## 2.282.3 (2026-09-16)
 
 - **You can talk to a running task, and what you say governs it.** A second door on the task header, under "Open the chat", opens a floating panel that talks to that task's own Shadow chat (the existing `TaskChat.talk` route, which has no tools and so can only answer). It overlaps the brief rather than reflowing it, its history is read from that chat's own transcript so a reload and a restart both redraw it, and it neither spends a worker turn nor interrupts one. A terminal task refuses, and a `mission` fence now amends a draft only -- after Start it would have let a casual question re-scope live work.
