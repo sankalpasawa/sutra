@@ -34,6 +34,32 @@ def load_context():
         return None
 
 
+def offers_context():
+    """The kinds the founder currently offers, for the mission fence.
+
+    SHADOW.md cannot carry this list. It is a file on disk, the offers are a
+    setting, and a persona that hardcoded four names would go on proposing a
+    kind the founder retired -- the app would refuse the block and Shadow
+    would have no idea why. So the persona points at DELEGATE OFFERS and this
+    supplies it, rebuilt at every boot exactly as standing instructions are.
+
+    Failure yields the built-ins rather than "": a boot context with no kinds
+    at all would leave Shadow unable to propose anything, which is a worse
+    answer than a slightly stale one.
+    """
+    try:
+        import mission_engine
+        kinds = mission_engine.offered_kinds()
+        budgets = mission_engine.turn_budgets()
+    except Exception:                      # noqa: BLE001 -- see docstring
+        import shadow_protocol
+        kinds, budgets = list(shadow_protocol._BUILTIN_KINDS), {}
+    rows = ["- %s (%s turns)" % (k, budgets[k]) if k in budgets else "- %s" % k
+            for k in kinds]
+    return ("\n\nDELEGATE OFFERS (the only kinds a mission block may name; "
+            "the founder sets these in Shadow Settings):\n" + "\n".join(rows))
+
+
 def standing_context():
     """U3 "applied thereafter" + grounded undo: founder-confirmed standing
     instructions and recent actions, rebuilt fresh at every boot. Failure
@@ -90,7 +116,7 @@ class ShadowSession:
         context = load_context()
         if context is None:
             return None
-        context = context + standing_context()
+        context = context + offers_context() + standing_context()
         args = build_args()
         # Narrow contract (codex fold): the caller supplies argv, but the
         # session refuses one that cannot speak the persistent protocol --

@@ -11,6 +11,7 @@ import fcntl
 import json
 import os
 import pty
+import re
 import shutil
 import signal
 import struct
@@ -1529,7 +1530,7 @@ def _gemini_home_uninitialised():
 SHADOW_PROVIDERS = frozenset({"claude"})
 
 
-def _shadow_args(session_id=None, extra_settings=None):
+def _shadow_args(session_id=None, extra_settings=None, permission_mode=None):
     """Claude's argv for Shadow and its runtimes.
 
     `session_id` is the ONE addition (2026-09-11): passed through to
@@ -1579,8 +1580,14 @@ def _shadow_args(session_id=None, extra_settings=None):
     # hand-edited settings.json is still clamped at the point of USE.
     # load_settings() always returns permission_mode (it is one of the three
     # contract keys), so there is no missing-key path.
+    # `permission_mode` is the mode a WORKER was spawned with, handed back on
+    # re-adoption so a restart cannot silently re-permission it (founder,
+    # 2026-09-16). It is still clamped HERE, at the point of use, exactly as
+    # the stored setting is: a stamp taken while unsafe modes were allowed
+    # must not survive them being turned off. None -- every other caller --
+    # reads the live setting, byte-identical to before.
     perm_mode = providers.effective_permission_mode(
-        providers.load_settings()["permission_mode"])
+        permission_mode or providers.load_settings()["permission_mode"])
     return build_agent_args(prov["bin_path"], "", perm_mode,
                             session_id=session_id, stream_input=True,
                             extra_settings=extra_settings)
@@ -1638,7 +1645,7 @@ def _shadow_workdir_for_delegates():
     return settings.get("workdir") or WORKDIR
 
 
-def _worker_args(session_id=None):
+def _worker_args(session_id=None, permission_mode=None):
     """argv for a Shadow-created WORKER chat -- the actor, not the supervisor.
 
     THE ONLY BUILDER THAT INHERITS PROJECT PERMISSIONS, and the split is the
@@ -1660,10 +1667,70 @@ def _worker_args(session_id=None):
     CLI resolves that project's settings natively -- there is nothing to
     inherit and nothing to inject.
     """
+    # THE AUTONOMY CEILING BINDS THE WORKER, AND ONLY THE WORKER. It is
+    # applied here rather than inside _shadow_args because that builder also
+    # makes the supervisor's and the decider's argv, and those two are not
+    # acting on the founder's problem -- capping them would change what
+    # Shadow can THINK based on how much it may DO, which is not the setting
+    # the founder chose. test_shadow_permission_inherit pins that equivalence
+    # for _shadow_args and stays true.
+    #
+    # IT ALSO RE-CLAMPS A REMEMBERED MODE, which is the re-adoption case. A
+    # mission stamped `acceptEdits` at L3 and resumed after the founder drops
+    # to L2 comes back read-only: the LOWER of what it was given and what is
+    # allowed now wins. That does not contradict "the worker keeps the
+    # permissions it was given" (the rule that stopped an unrelated global
+    # change from downgrading a live delegate) -- a deliberate autonomy change
+    # is exactly the thing that SHOULD bind it, and the clamp is one-way, so
+    # this can never hand back more than it was stamped with either.
+    mode = _autonomy_ceiling(providers.effective_permission_mode(
+        permission_mode or providers.load_settings()["permission_mode"]))
     return _shadow_args(
         session_id=session_id,
+        permission_mode=mode,
         extra_settings=project_permissions_for(
             _shadow_workdir_for_delegates()))
+
+
+def _autonomy_ceiling(mode):
+    """Lower `mode` to what the current autonomy level allows. NEVER RAISES IT.
+
+    A CEILING, NOT A SOURCE, and that distinction is the whole reason this is
+    a separate function instead of a branch inside the resolver below. There
+    is still exactly ONE place a permission mode comes from --
+    providers.effective_permission_mode over the founder's own setting -- and
+    Shadow is still not a separate trust domain. This only ever narrows the
+    answer that call already gave.
+
+    The one-way property is what makes it safe, and it is asserted directly
+    (test_shadow_autonomy: for every mode x every level, the result is never
+    wider than the unclamped answer) rather than left to be read off this
+    docstring. `plan` is the floor of PERMISSION_MODES, so clamping to it can
+    never widen anything, whatever the founder's setting happens to be.
+
+    NEVER RAISES: mission_engine.autonomy() degrades to L3 on an unreadable
+    store, and L3 returns `mode` untouched -- i.e. a broken settings file
+    leaves the historical behaviour in place rather than silently freezing
+    every worker into read-only.
+    """
+    if _mission_engine.worker_may_write():
+        return mode
+    return providers.DEFAULT_PERMISSION_MODE       # "plan"
+
+
+def worker_permission_mode():
+    """The mode a worker spawned RIGHT NOW would run under.
+
+    One resolver, so the value stamped on the mission and the value baked
+    into argv can never disagree -- which is the whole point of stamping it.
+
+    The autonomy ceiling is applied HERE rather than at the argv builder so
+    the STAMP records what the worker actually got. A mission stamped
+    `acceptEdits` while the founder was at L2 would be a lie the re-adoption
+    path then replayed.
+    """
+    return _autonomy_ceiling(providers.effective_permission_mode(
+        providers.load_settings()["permission_mode"]))
 
 
 def _shadow_workdir():
@@ -1700,20 +1767,133 @@ def _scoped_instructions(scope_id):
         return ""
 
 
+#: The worker's own assertion that a check is satisfied. The manifest has
+#: asked for these lines since delegation shipped -- "state DONE-CHECK lines
+#: when checks pass" -- and NOTHING HAS EVER PARSED THEM. That is the whole
+#: of the verify-tier bug: `verifier` was None on every production path
+#: (start_mission_async defaults it, both resume paths passed a literal
+#: None), so evaluate_done_when's verify arm returned False unconditionally
+#: and a `verify` check could not pass no matter what the worker did or said.
+#: Measured on m-5c2fca3f824b: three of its four checks were verify-tier and
+#: were therefore unsatisfiable by construction.
+_DONE_CHECK_RE = re.compile(r"^\s*DONE-CHECK\s*[:\-]\s*(.+?)\s*$",
+                            re.MULTILINE | re.IGNORECASE)
+
+#: How much of a long check the worker must quote for the assertion to count.
+#: Checks run to a sentence or more and a worker that retypes one will trim
+#: it; requiring the whole string would fail honest assertions, and matching
+#: on a handful of characters would let an unrelated line satisfy a check.
+_DONE_CHECK_MIN_QUOTE = 40
+
+
+def _norm_claim(text):
+    """Whitespace-collapsed, case-folded. Punctuation is KEPT: it is part of
+    what makes a quoted check distinctive."""
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _shadow_verifier(check_text, evidence=""):
+    """Did the WORKER assert this check, by name, in its own output?
+
+    DETERMINISTIC, AND DELIBERATELY NOT A JUDGE. No model is asked whether
+    the work is good -- that would make Shadow the grader of its own delegate
+    and would let prose auto-complete a mission. The only question here is
+    whether the worker emitted the DONE-CHECK line the manifest asks for,
+    quoting the check it is claiming. That is a fact about the transcript.
+
+    THE EVIDENCE ALREADY EXCLUDES SHADOW'S OWN TURNS (shadow_egress tags
+    every say, and evidence assembly drops them), so an instruction that
+    happens to contain the check's wording cannot satisfy that check. This is
+    the same property `contains_artifact` relies on.
+
+    Returns False for anything it cannot establish -- no evidence, no line,
+    a line that quotes too little to be distinctive.
+    """
+    want = _norm_claim(check_text)
+    if not want or not evidence:
+        return False
+    for claimed in _DONE_CHECK_RE.findall(str(evidence)):
+        got = _norm_claim(claimed)
+        if not got:
+            continue
+        # A SHORT CHECK MUST MATCH EXACTLY. Containment is only safe once the
+        # string is long enough to be distinctive: "tests pass" appearing
+        # inside some other DONE-CHECK line is not an assertion ABOUT this
+        # check, and precedence here is worth being explicit about.
+        if len(want) < _DONE_CHECK_MIN_QUOTE:
+            if got == want:
+                return True
+            continue
+        if want in got or (got in want
+                           and len(got) >= _DONE_CHECK_MIN_QUOTE):
+            return True
+    return False
+
+
+#: WHAT EVERY WORKER IS TOLD, on top of its own brief.
+#:
+#: Appended rather than folded into the default, because the default is only
+#: reached when a mission carries no manifest of its own -- and almost none
+#: do: the create route composes one at mission creation, so a rule written
+#: only into the default would reach nobody who started a task from the UI.
+#:
+#: TWO RULES, AND THE SECOND IS THE ONE THAT WAS MISSING (founder,
+#: 2026-09-16). Measured on m-5c2fca3f824b: the worker made 277 Bash calls,
+#: 44 Edits, 16 Reads and 9 Writes across backend, frontend and tests in a
+#: single session, and spawned no subagent at all. Nothing had ever told it
+#: it could. The rule below is a DECISION RULE, not encouragement: a worker
+#: that splits a three-file change pays more in re-established context than
+#: it saves, so the trigger is stated in terms of files, layers and
+#: dependency -- not size or ambition.
+_WORKER_AGREEMENT = """
+
+WORKING AGREEMENT
+
+Claiming a check. When a completion check is genuinely satisfied, say so on a
+line of its own:
+
+    DONE-CHECK: <the check's text, quoted closely enough to identify it>
+
+That line is the ONLY thing that marks a `verify` check met. Shadow does not
+infer it from prose, so a check you do not claim this way stays outstanding --
+and a check you claim without having done the work is a false report, which is
+worse than an outstanding one.
+
+Using subagents. You have Claude Code subagents (the Task tool). Decide per
+task whether they help; most tasks do not need them.
+
+  SPLIT when two or more parts touch different files or layers AND neither
+  needs the other's result to begin -- a feature's backend and frontend, an
+  implementation and the tests that cover it, or an investigation that would
+  otherwise block your main thread.
+
+  DO NOT SPLIT a change of a few files, anything genuinely sequential,
+  anything where the second part depends on decisions made in the first, or
+  work whose context you are already holding. A subagent starts cold; briefing
+  it can cost more than doing the work.
+
+  YOU REMAIN THE INTEGRATOR. Give a subagent one bounded piece with a stated
+  interface, never the whole objective. You review what comes back, resolve
+  disagreements between them, and you alone run the full test suite and report
+  the result. A subagent's claim is not evidence until you have checked it."""
+
+
 def _delegate_manifest(mission):
     """ONE manifest composer (was three copies). Scoped rules are folded
     in AT SPAWN TIME, never baked into the mission record -- a revoked
     rule must not re-fire on retry."""
     base = mission.get("manifest") or (
         "You are a delegate session working for the founder via Shadow. "
-        "Objective: %s. Work step by step; state DONE-CHECK lines when "
-        "checks pass." % mission["objective"])
+        "Objective: %s. Work step by step." % mission["objective"])
     # TAGGED like a say: the manifest is Shadow's own instruction, and it
     # carries the objective, so an untagged manifest turn let a
     # transcript-based check satisfy itself from the briefing that asked
-    # for it. The tag is what keeps it out of the evidence.
-    return "%s %s%s" % (shadow_egress.say_tag(mission["id"]), base,
-                        _scoped_instructions(mission.get("target_session")))
+    # for it. The tag is what keeps it out of the evidence -- which is also
+    # what stops the DONE-CHECK line in the agreement below, a placeholder,
+    # from ever reading as a claim about a real check.
+    return "%s %s%s%s" % (shadow_egress.say_tag(mission["id"]), base,
+                          _WORKER_AGREEMENT,
+                          _scoped_instructions(mission.get("target_session")))
 
 
 #: How a Shadow-started chat names itself in the ordinary Chats rail. ONE
@@ -1866,13 +2046,37 @@ def _publish_delegate_chat(mission):
     return publish
 
 
-async def _default_delegate_spawner(mission):
-    """Registered with the runner so PROMOTED queued missions (whose
-    originating request is long gone) can still get a delegate."""
+async def _delegate_spawn(mission):
+    """Spawn ONE worker for `mission`, and record what it was spawned with.
+
+    THE ONE SPAWNER (was four identical copies: the default provisioner, the
+    goal attempt, start_now and retry). They had already drifted to the same
+    five arguments; folding them means the stamp below cannot be added to
+    three of the four and forgotten in the last.
+
+    THE STAMP is the mission's memory of its worker's permissions. Written
+    BEFORE the spawn, because a spawn that dies still leaves a worker session
+    on disk that a later boot may re-adopt, and best-effort because losing
+    the stamp costs the re-adopted mode, never the spawn.
+    """
+    try:
+        store = _mission_engine.MissionStore()
+        m = store.load(mission["id"])
+        if m is not None and not m.get("worker_permission_mode"):
+            m["worker_permission_mode"] = worker_permission_mode()
+            store.save(m)
+    except Exception:                   # noqa: BLE001 -- never fail a spawn
+        pass
     return await shadow_runner.spawn_delegate_session(
         _worker_args, _shadow_workdir_for_delegates(),
         _delegate_manifest(mission), register_runtime,
         publish=_publish_delegate_chat(mission))
+
+
+async def _default_delegate_spawner(mission):
+    """Registered with the runner so PROMOTED queued missions (whose
+    originating request is long gone) can still get a delegate."""
+    return await _delegate_spawn(mission)
 
 
 @app.on_event("startup")
@@ -1966,6 +2170,47 @@ async def _mend_runs_left_running():
 @app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
+        # ONE RECOVERER PER HOME (founder, 2026-09-16). Everything below
+        # rewrites a store another live backend may be driving right now, and
+        # two of these steps are destructive in ways the per-mission loop
+        # lease never sees: _clear_stale_start_requests erases a start the
+        # other process has in flight, and the boot queue sweep at the bottom
+        # of this block can spawn a SECOND real delegate for one mission
+        # (provision_target returns early on target_session BEFORE it awaits
+        # the spawner, and the spawner waits out a whole first turn). So the
+        # claim gates the whole block, that sweep included. See
+        # shadow_home_lock for why the founder-triggered drains and _launch
+        # are deliberately NOT gated.
+        #
+        # (Naming the sweep in prose rather than by symbol is deliberate:
+        # test_shadow_run_limit's test_67 reads this function's SOURCE and
+        # asserts the restart sweep precedes the queue drain in it.)
+        import shadow_home_lock          # local, like every ledger caller here
+        import shadow_ledger
+        _owned, _holder = shadow_home_lock.claim_recovery()
+        try:
+            # one row per process, whichever way this goes: it makes "five app
+            # boots in eight seconds" visible AS five boots rather than as an
+            # inference over pids. pid and build are stamped by append itself.
+            shadow_ledger.append("actions", {
+                "mission_id": None, "kind": "boot",
+                "summary": "shadow boot: recovery %s"
+                           % ("owned" if _owned
+                              else "deferred to pid %s"
+                                   % ((_holder or {}).get("pid") or "?"))})
+        except Exception:
+            pass
+        if not _owned:
+            # NOT permanent. This is the only caller of the block and it runs
+            # once, so a bare return would strand every app_restart mission
+            # paused for the life of this process -- and the instance that won
+            # the lease is frequently the one that then dies (a crashloop, or
+            # the self-updater launching its replacement over the top of it).
+            try:
+                shadow_home_lock.start_rearm(_shadow_recover)
+            except Exception:
+                pass
+            return
         try:
             shadow_runner.recover_on_boot()
         except Exception:
@@ -1999,7 +2244,12 @@ async def _shadow_recover():
             # whatever DEFAULT_DECIDER holds at launch time
             await shadow_runner.resume_after_restart(
                 _ensure_target_runtime, _validated_say,
-                ensure_delegate_async=_ensure_delegate_runtime)
+                ensure_delegate_async=_ensure_delegate_runtime,
+                # THE RESUMED LOOP GETS THE SAME EVALUATOR AS A FRESH ONE.
+                # Both resume paths passed a literal None, so a mission that
+                # had survived a restart could never satisfy a verify check
+                # again even once one was wired.
+                verifier=_shadow_verifier)
         except Exception:
             pass
         try:
@@ -2055,6 +2305,13 @@ def _shadow_alert_count():
     return count
 
 
+def _home_lock():
+    """The recovery-lease module, imported at call time like every ledger
+    caller in this file."""
+    import shadow_home_lock
+    return shadow_home_lock
+
+
 @app.get("/api/shadow/status")
 async def api_shadow_status():
     """The dot reads this: watching (green) / not (grey). Never 500s -- a
@@ -2070,6 +2327,24 @@ async def api_shadow_status():
             "permission_mode": providers.effective_permission_mode(
                 providers.load_settings()["permission_mode"]),
             "active_missions": shadow_runner.active_mission_count(),
+            # WHO IS RECOVERING THIS HOME. Without it, a backend that stood
+            # down at boot looks identical to a healthy one: the founder's
+            # symptom is "my tasks are frozen and the app looks fine", and the
+            # only evidence is a ledger row nobody reads.
+            "recovery_owned": _home_lock().holds_recovery(),
+            "recovery_holder_pid": (_home_lock().recovery_holder()
+                                    or {}).get("pid"),
+            # THE APPS PRESENCE IS HIDDEN FOR. hidden_apps() never raises, so
+            # this cannot be the thing that makes a status read fail -- and
+            # the docstring's promise above ("never 500s") still holds.
+            #
+            # THE OVERLAY DOES NOT READ THIS ONE. bootShadowOverlay already
+            # awaits /api/shadow/settings beside this route and takes the
+            # whole presence block from there, so a second copy would be two
+            # sources for one answer. It is reported here because status is
+            # the Shadow read that answers with nothing else attached, and a
+            # caller holding only this route would otherwise have to guess.
+            "presence_hidden_apps": shadow_presence.hidden_apps(),
             "alerts": _shadow_alert_count()}
 
 
@@ -2200,6 +2475,7 @@ import shadow_intervention as _shadow_intervention
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
 import shadow_precedence
+import shadow_presence
 import shadow_runner
 import shadow_protocol
 
@@ -2315,11 +2591,34 @@ async def api_shadow_settings():
             "external client repositories",
             "irreversible external sends",
         ],
-        # The task limits this build actually runs at. `running_at_once` is
-        # now WRITABLE (POST /api/shadow/settings/tasks) and this read is the
-        # same resolver admission uses, so the page states the cap the engine
-        # keeps rather than one that is merely plausible. The turn budget
-        # stays read-only: it is chosen by the KIND of work, not by taste.
+        # HOW FAR SHADOW MAY GO, and what that actually resolves to right
+        # now. `worker_mode` is the point of the block: it is the mode a
+        # worker spawned this second would really get, ceiling and all, so
+        # the page can state the consequence rather than leave the founder to
+        # infer it from a level name. It comes from the SAME resolver the
+        # spawn uses, so the sentence on screen and the argv cannot drift.
+        "autonomy": {
+            "level": _mission_engine.autonomy(),
+            "levels": list(_mission_engine.AUTONOMY_LEVELS),
+            "confirm_top_tier": _mission_engine.confirm_top_tier(),
+            "worker_may_write": _mission_engine.worker_may_write(),
+            "worker_mode": worker_permission_mode(),
+        },
+        # The task limits this build actually runs at. BOTH are writable now
+        # and both reads go through the same resolver the engine itself uses
+        # -- max_running() is what admission enforces, turn_budgets() is what
+        # MissionStore.create stamps onto a new mission -- so this page states
+        # the limits actually kept rather than ones that are merely plausible.
+        #
+        # THE BUDGET WAS READ-ONLY UNTIL NOW, and the reasoning that kept it
+        # so is worth keeping straight rather than deleting: it is chosen by
+        # the KIND of work, and that is still true. What changed is only that
+        # the founder may now override the default the kind supplies. It stays
+        # PER-KIND for that reason -- `turn_budget_set` names the kinds that
+        # carry an override, which is the only honest way to draw `auto`,
+        # because setting a budget to exactly its default is a real choice and
+        # comparing values would misread it as untouched. `watch` is absent
+        # from `turn_budget_kinds`: its budget is never consumed.
         #
         # `running_now` rides along because the founder needs it to read the
         # cap honestly -- lowering the cap below what is in flight queues the
@@ -2331,8 +2630,69 @@ async def api_shadow_settings():
             "running_at_once_max": _mission_engine.RUNNING_CEILING,
             "running_now": _run_n,
             "queued_now": _queued_n,
-            "turn_budget": {k: v["max_turns"]
-                            for k, v in _mission_engine.TEMPLATES.items()},
+            "turn_budget": _mission_engine.turn_budgets(),
+            "turn_budget_min": _mission_engine.MIN_TURNS,
+            "turn_budget_max": _mission_engine.TURNS_CEILING,
+            "turn_budget_set": _mission_engine.turn_budget_overrides(),
+            "turn_budget_kinds": list(
+                _mission_engine.settable_budget_kinds()),
+            # WHAT SHADOW ACTUALLY OFFERS, which is now the founder's list
+            # rather than four names compiled into the page. The client draws
+            # the Delegate form AND the Settings chips off this one field, so
+            # the two can no longer drift; `turn_budget` above covers the
+            # whole catalogue so every chip can state its own budget.
+            "offers": _mission_engine.offered_kinds(),
+            "offers_min": _mission_engine.MIN_OFFERS,
+            "offers_max": _mission_engine.MAX_OFFERS,
+        },
+        # HOW SHADOW SHOWS UP. It rides THIS payload rather than getting an
+        # endpoint of its own because the overlay's boot already has to await
+        # an answer before it may mount, and a dedicated presence GET would
+        # make that two round-trips to learn one boolean.
+        #
+        # This is the STANDING choice only. The card's own "hide" control is
+        # a dismissal that lives in the browser for one page load, and the
+        # two are deliberately not the same state -- the card is visible when
+        # both agree. There is nothing to report here about the session flag
+        # because the server has never known it and does not start now.
+        # HIDDEN_APPS is the narrower choice beside it: `corner_card` answers
+        # "does the dot exist at all", this answers "not while I am in THIS
+        # app". Both live in presence.json and both survive a restart; they
+        # are separate keys because they are separate questions, and a
+        # founder who hid the dot inside one app has not asked for it to go
+        # everywhere. The client reads the hide list from HERE -- the copy on
+        # /api/shadow/status exists for a reader that has only the status
+        # route, and the overlay is not one of them.
+        # NUDGES_PER_HOUR is the third presence key and the only one that is a
+        # number: the rate the unsolicited pill is held to. It ships with its
+        # own bounds for the reason `running_at_once` does -- the stepper draws
+        # its ends from the server that clamps it, so the two cannot disagree
+        # about where the edges are. The browser keeps NO default of its own:
+        # if this field is missing the pill stays silent rather than falling
+        # back to a number nobody set.
+        # QUIET_HOURS is the fourth presence key and the only one with a clock
+        # behind it: the other three answer "would Shadow show up at all", this
+        # answers "not at this hour". `null` means not set, and it is null
+        # rather than an empty object because "cleared" and "never set" are one
+        # state on disk (shadow_presence.QUIET_HOURS_DEFAULT) and must stay one
+        # state on the wire.
+        #
+        # QUIET_NOW RIDES ALONG BUT IS NOT THE GATE. It is what the settings
+        # row STATES ("quiet now"), computed server-side so the page does not
+        # have to re-derive it to draw itself. What actually gates a nudge is
+        # the client's own live evaluation of the WINDOW -- this GET is not
+        # polled and the overlay is pinned no-poll, so a boolean fetched at
+        # boot is wrong an hour later, precisely at the boundary the setting
+        # exists to honour. Reporting it anyway is what makes the server's
+        # reading visible and therefore checkable against the client's.
+        "presence": {
+            "corner_card": shadow_presence.corner_card(),
+            "hidden_apps": shadow_presence.hidden_apps(),
+            "nudges_per_hour": shadow_presence.nudges_per_hour(),
+            "nudges_per_hour_min": shadow_presence.MIN_NUDGES_PER_HOUR,
+            "nudges_per_hour_max": shadow_presence.MAX_NUDGES_PER_HOUR,
+            "quiet_hours": shadow_presence.quiet_hours(),
+            "quiet_now": shadow_presence.quiet_now(),
         },
     }
 
@@ -2403,6 +2763,390 @@ async def api_shadow_settings_tasks(request: Request):
             "starting": starting,
             # honest about the one thing a lower cap cannot do
             "over_cap": max(0, running_now - value)}
+
+
+@app.post("/api/shadow/settings/budget")
+async def api_shadow_settings_budget(request: Request):
+    """Write "Budget per task" -- one kind's turn budget.
+
+    WHY A SIBLING ROUTE AND NOT A SECOND FIELD ON /settings/tasks. That route
+    earns its shape by being one route, one field, and two tests hold it to
+    that (test_shadow_run_limit test_34 and test_35). Adding `turn_budget` to
+    it would make both of them false and would reopen exactly the ambiguity
+    its docstring closes -- what may a write move? Two single-field routes
+    keep the answer a constant per route, and cost one decorator.
+
+    WHAT MOVED, EXACTLY. The budget is still chosen by the KIND of work; that
+    reasoning was right and survives. What is new is that the founder may
+    override the number a kind supplies. So the body names a kind, and one
+    write moves one kind -- a map body would need partial-failure semantics
+    for a gesture that is always a single click.
+
+    RESET IS `turns: null`, NOT A SENTINEL NUMBER. The store deletes the key,
+    so "auto" is the ABSENCE of a setting rather than a magic value every
+    reader would have to special-case, and a future change to a template
+    default still reaches every kind the founder never touched.
+
+    NO DRAIN, DELIBERATELY. The cap route schedules one because raising a cap
+    promotes queued missions. A budget change promotes nothing and stops
+    nothing: max_turns is stamped at create(), so this binds the NEXT task and
+    leaves everything in flight on the number it started with. _free_slots and
+    _drain_queue_in_background are not called here, and that is not an
+    omission.
+
+    IT REPORTS THE WHOLE MAP BACK. The settings page draws five things off
+    these numbers (the row and four Delegate-offer chips), so returning the
+    full effective map lets the client repaint from the server's answer rather
+    than patching one key and trusting the rest -- the same rule the cap
+    route's response follows.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    kind = body.get("kind")
+    if not kind:
+        raise HTTPException(400, "kind required")
+    if "turns" not in body:
+        raise HTTPException(400, "turns required (null resets to auto)")
+    turns = body["turns"]
+    try:
+        value = _mission_engine.set_turn_budget(kind, turns)
+    except ValueError as exc:
+        # unknown kind, a kind with no budget to set (watch), or junk turns --
+        # the store raises for all three and its message names which
+        raise HTTPException(400, str(exc))
+    overrides = _mission_engine.turn_budget_overrides()
+    auto = kind not in overrides
+    # templates(), not TEMPLATES: a founder-minted kind has a default too, and
+    # indexing the built-ins would KeyError into a 500 the moment a budget was
+    # set on a kind this install added rather than shipped with
+    default = (_mission_engine.templates().get(kind) or {}).get("max_turns", 0)
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": ("turn budget for %s reset to auto (%d)" % (kind, value))
+                   if auto else
+                   ("turn budget for %s set to %d (auto is %d)"
+                    % (kind, value, default))})
+    return {"kind": kind,
+            "turns": value,
+            # `auto` is read off the store, never inferred by comparing the
+            # value to the default: setting a budget to exactly its default is
+            # a real choice, and comparing would redraw it as untouched and
+            # take the reset control away
+            "auto": auto,
+            "default": default,
+            "min": _mission_engine.MIN_TURNS,
+            "max": _mission_engine.TURNS_CEILING,
+            "turn_budget": _mission_engine.turn_budgets(),
+            "turn_budget_set": overrides}
+
+
+@app.post("/api/shadow/settings/autonomy")
+async def api_shadow_settings_autonomy(request: Request):
+    """Write "Autonomy" -- the level, the top-tier switch, or both.
+
+    WHY BOTH FIELDS SHARE ONE ROUTE, when tasks and budget each got their
+    own. The rule those two follow is "one route, one thing a write can
+    move", and the thing this route moves is autonomy. The switch is not a
+    second setting, it is a qualifier on the top LEVEL -- it has no meaning
+    except in terms of L3, and the response has to restate both whichever one
+    was sent, because changing either one changes what the other means on
+    screen. Splitting them would mean two routes that must be read together
+    to know the state, which is the ambiguity the one-field rule exists to
+    prevent, not an instance of it.
+
+    EITHER KEY MAY BE ABSENT; sending neither is the error. That keeps a
+    toggle click from having to restate the level and risk stamping a stale
+    one back over a change made in another tab.
+
+    NOTHING RUNNING IS TOUCHED, and this route deliberately schedules no
+    drain. Lowering autonomy does not kill a worker mid-turn (see
+    mission_engine.set_autonomy); it binds the next turn, because autonomy()
+    is read live at the top of every say. Raising it promotes nothing either
+    -- a task held at L0 or L1 is PAUSED, and a paused task is resumed by the
+    founder, not by a settings write. So the response says what is held
+    rather than pretending to release it.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    if "level" not in body and "confirm_top_tier" not in body:
+        raise HTTPException(400, "level or confirm_top_tier required")
+    try:
+        if "level" in body:
+            _mission_engine.set_autonomy(body["level"])
+        if "confirm_top_tier" in body:
+            _mission_engine.set_confirm_top_tier(body["confirm_top_tier"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    level = _mission_engine.autonomy()
+    top = _mission_engine.confirm_top_tier()
+    # what is sitting in the waiting room BECAUSE of autonomy. The founder
+    # has to resume these by hand, so the number is the honest counterpart to
+    # "nothing running is touched" above.
+    try:
+        store = _mission_engine.MissionStore()
+        held = len([m for m in store.list(states=("paused",))
+                    if m.get("pause_reason") in ("autonomy_hold",
+                                                 "autonomy_suggest",
+                                                 "autonomy_top_tier")])
+    except Exception:                     # noqa: BLE001 -- a count, never a reason to fail
+        held = 0
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "autonomy set to %s (confirm_top_tier=%s, worker mode %s, "
+                   "%d held)" % (level, top, worker_permission_mode(), held)})
+    return {"level": level,
+            "levels": list(_mission_engine.AUTONOMY_LEVELS),
+            "confirm_top_tier": top,
+            "worker_may_write": _mission_engine.worker_may_write(),
+            "worker_mode": worker_permission_mode(),
+            "held": held}
+
+
+@app.post("/api/shadow/settings/offers")
+async def api_shadow_settings_offers(request: Request):
+    """Write "Delegate offers" -- the kinds of work Shadow offers to start.
+
+    A THIRD SINGLE-PURPOSE ROUTE, for the reason the budget route gives: the
+    cap route earns its shape by being one route, one field, and folding a
+    third setting into it would reopen the ambiguity its docstring closes.
+
+    THE BODY IS A VERB, NOT A LIST. `{"add": "review"}` or
+    `{"remove": "watch"}` -- never `{"offers": [...]}`. Two reasons, both
+    real. A whole-list write makes two quick clicks a lost update: the second
+    POST carries a list built before the first one landed and silently undoes
+    it. And the ledger row can say what the founder MEANT ("added review")
+    rather than printing a before-and-after the reader has to diff.
+
+    EXACTLY ONE VERB PER WRITE. Both together is refused rather than ordered,
+    because there is no ordering a caller could rely on and no gesture in the
+    UI that produces one.
+
+    REMOVING UN-OFFERS; IT NEVER UN-DEFINES. mission_engine.remove_offer
+    keeps the kind's definition so a finished mission of that kind can still
+    be retried -- see the section header there. This route is a door for
+    "start something NEW", which is why it refuses a retired kind while
+    clone_for_retry happily rebuilds one.
+
+    NO DRAIN, DELIBERATELY, and for a simpler reason than the budget route's:
+    changing what is on offer starts nothing, stops nothing, and touches no
+    mission record. Every task already created keeps the template it was
+    created with.
+
+    IT REPORTS THE WHOLE LIST BACK, plus the budget map, because the client
+    repaints both the chips and the Delegate form from this answer rather
+    than patching one key and trusting the rest.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    has_add, has_remove = "add" in body, "remove" in body
+    if has_add and has_remove:
+        raise HTTPException(400, "one of add or remove, not both")
+    if not (has_add or has_remove):
+        raise HTTPException(400, "add or remove required")
+    try:
+        if has_add:
+            offers = _mission_engine.add_offer(body["add"])
+            what = "added %s" % _mission_engine.clean_offer_name(body["add"])
+        else:
+            offers = _mission_engine.remove_offer(body["remove"])
+            what = "removed %s" % _mission_engine.clean_offer_name(
+                body["remove"])
+    except ValueError as exc:
+        # a junk name, the ceiling, or the last-offer floor -- the store
+        # raises for all three and its message names which
+        raise HTTPException(400, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "delegate offers: %s (now %s)" % (what, ", ".join(offers))})
+    return {"offers": offers,
+            "min": _mission_engine.MIN_OFFERS,
+            "max": _mission_engine.MAX_OFFERS,
+            "turn_budget": _mission_engine.turn_budgets(),
+            "turn_budget_kinds": list(
+                _mission_engine.settable_budget_kinds())}
+
+
+@app.post("/api/shadow/settings/presence")
+async def api_shadow_settings_presence(request: Request):
+    """Write one standing Presence choice: "Corner card on every screen", or
+    "Nudges per hour".
+
+    A FOURTH SINGLE-PURPOSE ROUTE, for the reason the budget and offers
+    routes give: the cap route earns its shape by being one route, one field,
+    and folding a fourth setting into it would reopen the ambiguity its
+    docstring closes.
+
+    ONE WRITE STILL MOVES ONE FIELD. Two settings reach the founder through
+    this route, and the body must name EXACTLY ONE of them -- both is a 400,
+    neither is a 400. That is the offers route's shape (`{"add"}` or
+    `{"remove"}`, never both), and it keeps the guarantee the single-field
+    rule was protecting: what a write can move is a constant per request, so
+    the answer the client repaints from is never a partial one. They share a
+    route rather than splitting because they are the same question asked at
+    two grains -- how Shadow shows up when nothing has happened -- and both
+    land in the same presence.json.
+
+    THE CARD SWITCH IS THE STANDING CHOICE, NOT A DISMISSAL. The card's own
+    hide control is a browser-lifetime flag meaning "not right now"; this is
+    the founder saying whether the card exists at all. Keeping them separate
+    is what lets a dismissal expire at reload while this survives a restart --
+    one state per meaning, rather than one flag asked to carry two.
+
+    THE RATE IS THE MAXIMUM THE PILL IS HELD TO, and the server is the clamp:
+    a number past an end stops at the end, junk is refused rather than guessed,
+    and 0 is a real answer meaning "never unasked". The stored value comes back
+    with its bounds so the stepper draws the ends the server will actually
+    enforce.
+
+    NOTHING IS STARTED OR STOPPED BY EITHER, so there is no drain here and no
+    counts to report back: presence is a view preference, and no mission
+    record reads it. The answer is the stored value, which is what the control
+    repaints from -- never the optimistic one the client sent.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    named = [k for k in ("corner_card", "nudges_per_hour") if k in body]
+    if len(named) != 1:
+        raise HTTPException(400, "name exactly one of corner_card, "
+                                 "nudges_per_hour")
+    try:
+        if named[0] == "nudges_per_hour":
+            rate = shadow_presence.set_nudges_per_hour(body["nudges_per_hour"])
+        else:
+            value = shadow_presence.set_corner_card(body["corner_card"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if named[0] == "nudges_per_hour":
+        _shadow_ledger_safe({
+            "kind": "setting", "mission_id": None,
+            "summary": "nudges per hour set to %d%s"
+                       % (rate, " (never unasked)" if rate == 0 else "")})
+        return {"nudges_per_hour": rate,
+                "min": shadow_presence.MIN_NUDGES_PER_HOUR,
+                "max": shadow_presence.MAX_NUDGES_PER_HOUR}
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "corner card on every screen set to %s"
+                   % ("on" if value else "off")})
+    return {"corner_card": value}
+
+
+@app.post("/api/shadow/settings/quiet-hours")
+async def api_shadow_settings_quiet_hours(request: Request):
+    """Write "Quiet hours" -- the window Shadow will not speak unasked inside.
+
+    ITS OWN ROUTE, not a third field on /settings/presence. That route's
+    docstring earns its shape by holding fields that are the same question at
+    two grains -- "how does Shadow show up when nothing has happened" -- and
+    answers a request by naming exactly one of them. This is a different
+    question: not whether Shadow shows up, but WHEN. It also carries a
+    different body shape (an object or null, rather than a scalar) and a
+    different clear semantic, and folding a third spelling into that route's
+    exactly-one-of rule is how a route stops being readable.
+
+    NULL CLEARS, ABSENT IS A MISTAKE, and the two must not be one request.
+    `{"quiet_hours": null}` is the founder pressing clear and is a 200; a body
+    with no quiet_hours key at all is a client bug and is a 400. Treating
+    absence as a clear would let a malformed request silently delete a
+    setting, which is the one failure a settings route must not have.
+
+    THE CLAMP IS HERE, not in the control. <input type="time"> can only emit
+    HH:MM, but a hand-written POST is not an input element -- so the store
+    refuses junk, refuses a half window, and refuses start == end, and this
+    route hands the store's own words back as the 400.
+
+    NOTHING IS STARTED OR STOPPED BY IT, so there is no drain and no counts to
+    report: quiet hours is a view preference and no mission record reads it.
+    The answer is the STORED window plus the server's reading of whether it is
+    quiet at this moment -- never the optimistic value the client sent.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    if not isinstance(body, dict) or "quiet_hours" not in body:
+        raise HTTPException(400, "quiet_hours required (null to clear it)")
+    try:
+        window = shadow_presence.set_quiet_hours(body["quiet_hours"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "quiet hours cleared" if window is None
+                   else "quiet hours set to %s-%s"
+                        % (window["start"], window["end"])})
+    return {"quiet_hours": window,
+            "quiet_now": shadow_presence.quiet_now()}
+
+
+@app.post("/api/shadow/settings/presence/app")
+async def api_shadow_settings_presence_app(request: Request):
+    """Write "Hide for this app" -- Presence, per app.
+
+    A FIFTH SINGLE-PURPOSE ROUTE, and specifically NOT a second field on
+    /settings/presence beside corner_card. That route earns its shape the way
+    /settings/tasks does, by being one route one field, and the two settings
+    are not even the same shape: corner_card is a standing boolean, this is
+    membership in a set. Folding them would mean a body whose legal keys
+    depend on each other, which is the ambiguity the whole family of routes
+    exists to avoid.
+
+    THE BODY IS A VERB, NOT A LIST -- `{"hide": "photo-gallery"}` or
+    `{"show": "photo-gallery"}`, never `{"hidden_apps": [...]}`. Exactly the
+    reasoning /settings/offers gives for the same shape of store: a
+    whole-list write makes two quick clicks a lost update, because the second
+    POST carries a list built before the first landed and silently undoes it.
+    And the ledger row can say what the founder MEANT ("hid photo-gallery")
+    rather than printing a before-and-after the reader has to diff.
+
+    EXACTLY ONE VERB PER WRITE, refused rather than ordered when both are
+    sent: there is no ordering a caller could rely on and no gesture in the
+    UI that produces one.
+
+    THE ID IS NOT CHECKED AGAINST THE APPS REGISTRY, deliberately. Three
+    reasons, and the third is the one that decides it. The Apps surface is
+    flag-gated (modules_api.FLAG) and this setting is not, so an existence
+    check would make the founder's Presence choice fail for a reason that has
+    nothing to do with Presence. An app can be deleted after the hide is
+    stored, so the list has to tolerate an id with no app behind it whatever
+    this route does. And a stored id that matches nothing is INERT -- it is
+    only ever asked "are you the open app", and the answer is no forever. The
+    shape IS checked, in the store, against the same pattern modules_api
+    validates with, so a junk id is still refused here rather than written.
+
+    NOTHING IS STARTED OR STOPPED BY IT. Like corner_card, this is a view
+    preference: no mission record reads it, so there is no drain and no
+    counts to report. It reports the WHOLE list back because the client
+    repaints the row from this answer rather than patching one id and
+    trusting the rest.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    has_hide, has_show = "hide" in body, "show" in body
+    if has_hide and has_show:
+        raise HTTPException(400, "one of hide or show, not both")
+    if not (has_hide or has_show):
+        raise HTTPException(400, "hide or show required")
+    app_id = body["hide"] if has_hide else body["show"]
+    try:
+        hidden_apps = shadow_presence.set_app_hidden(app_id, has_hide)
+        # cleaned AFTER the store accepted it, so the ledger row and the
+        # answer both name the id that was actually written
+        named = shadow_presence.clean_app_id(app_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "presence: %s %s (now hidden for %s)"
+                   % ("hid" if has_hide else "showed", named,
+                      ", ".join(hidden_apps) if hidden_apps else "no apps")})
+    return {"app_id": named,
+            "hidden": has_hide,
+            "hidden_apps": hidden_apps}
 
 
 def _free_slots(store=None, cap=None):
@@ -2595,9 +3339,19 @@ async def api_shadow_mission_create(request: Request):
         raise HTTPException(403, "the shadow flag is off")
     body = await request.json()
     objective = (body.get("objective") or "").strip()
-    template = body.get("template") or "fix"
+    # THE FOUNDER'S LIST, AT DECISION TIME. The default is the first kind on
+    # offer rather than the constant "fix", because the founder may have
+    # retired it and a default pointing at a kind they removed is exactly the
+    # failure the offered/catalogue split exists to prevent.
+    template = body.get("template") or _mission_engine.default_offer()
     if not objective:
         raise HTTPException(400, "objective required")
+    # THIS DOOR MEANS "START SOMETHING NEW", so it refuses a kind that is no
+    # longer offered. Retry is the other door and deliberately does not: it
+    # rebuilds work already done, and gating it here would make every past
+    # task of a retired kind un-retryable (mission_engine, delegate offers).
+    if template not in _mission_engine.offered_kinds():
+        raise HTTPException(400, "%r is not a kind Shadow offers" % (template,))
     store = _mission_engine.MissionStore()
     try:
         m = store.create(objective, template,
@@ -2858,7 +3612,7 @@ async def _ensure_target_runtime(session_id):
         register_runtime)
 
 
-async def _ensure_delegate_runtime(session_id):
+async def _ensure_delegate_runtime(session_id, permission_mode=None):
     """Re-enter a DELEGATE's session after a restart, when its worker is gone.
 
     Same primitive as _ensure_target_runtime and the same measured
@@ -2877,7 +3631,9 @@ async def _ensure_delegate_runtime(session_id):
     Raises NoLiveRuntime, which the caller records as a left-paused reason.
     """
     return await shadow_runner.ensure_runtime(
-        session_id, lambda sid: _worker_args(session_id=sid),
+        session_id,
+        lambda sid: _worker_args(session_id=sid,
+                                 permission_mode=permission_mode),
         register_runtime)
 
 
@@ -2886,15 +3642,13 @@ def _start_goal_attempt(mission):
     path, so admission, the cap, FIFO and the runner behave identically to
     every other mission."""
     async def _spawner(m):
-        return await shadow_runner.spawn_delegate_session(
-            _worker_args, _shadow_workdir_for_delegates(),
-            _delegate_manifest(m), register_runtime,
-            publish=_publish_delegate_chat(m))
+        return await _delegate_spawn(m)
     # a goal attempt lands in the SAME task list as a delegated task, so it
     # gets the same honest face while it provisions
     _mark_start_requested(_mission_engine.MissionStore(), mission["id"])
     return shadow_runner.start_mission_async(
-        mission["id"], _validated_say, provisioner=_spawner)
+        mission["id"], _validated_say, provisioner=_spawner,
+        verifier=_shadow_verifier)
 
 
 @app.get("/api/shadow/goals")
@@ -2974,7 +3728,7 @@ async def api_shadow_goal_act(gid: str, request: Request):
             # spending an attempt on a mission that can never say anything.
             await _ensure_target_runtime(_g.get("target_session"))
             m = _goal_lifecycle.start_first_attempt(
-                gid, template=body.get("template") or "fix")
+                gid, template=body.get("template") or None)
             started = _start_goal_attempt(m)
             return {"goal": _goal_detail(store, store.load(gid)),
                     "mission_id": m["id"], "started": started}
@@ -2982,7 +3736,7 @@ async def api_shadow_goal_act(gid: str, request: Request):
             await _ensure_target_runtime(_g.get("target_session"))
             m = _goal_lifecycle.resume_goal(
                 gid, extra_turns=int(body.get("extra_turns") or 0),
-                template=body.get("template") or "fix")
+                template=body.get("template") or None)
             started = _start_goal_attempt(m)
             return {"goal": _goal_detail(store, store.load(gid)),
                     "mission_id": m["id"], "started": started}
@@ -3014,7 +3768,7 @@ async def api_shadow_goal_act(gid: str, request: Request):
             # evaluate_done_when only ever ran inside the loop, and that
             # loop returned when it paused. settle_confirmation is the
             # loop's own evaluate-and-decide step, with no turn spent.
-            shadow_runner.settle_confirmation(mid)
+            shadow_runner.settle_confirmation(mid, _shadow_verifier)
             return _goal_detail(store, store.load(gid))
     except HTTPException:
         raise
@@ -3104,10 +3858,7 @@ async def api_shadow_mission_act(mid: str, request: Request):
             return m
         if action == "start_now":
             async def _spawner(mission):
-                return await shadow_runner.spawn_delegate_session(
-                    _worker_args, _shadow_workdir_for_delegates(),
-                    _delegate_manifest(mission), register_runtime,
-                    publish=_publish_delegate_chat(mission))
+                return await _delegate_spawn(mission)
             # BEFORE the launch, not after: the answer is instant and the
             # founder's next read of the list must already see that the start
             # was taken. Stamping after would re-open the very window the
@@ -3116,19 +3867,18 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # second-flight fix: never hold the request open across a
             # minutes-long provision -- background task, instant answer
             return shadow_runner.start_mission_async(
-                mid, _validated_say, provisioner=_spawner)
+                mid, _validated_say, provisioner=_spawner,
+                verifier=_shadow_verifier)
         if action == "retry":
             clone = _mission_engine.clone_for_retry(store, mid)
 
             async def _respawner(mission):
-                return await shadow_runner.spawn_delegate_session(
-                    _worker_args, _shadow_workdir_for_delegates(),
-                    _delegate_manifest(mission), register_runtime,
-                    publish=_publish_delegate_chat(mission))
+                return await _delegate_spawn(mission)
             # the CLONE is the mission that starts, so it carries the stamp
             _mark_start_requested(store, clone["id"])
             return shadow_runner.start_mission_async(
-                clone["id"], _validated_say, provisioner=_respawner)
+                clone["id"], _validated_say, provisioner=_respawner,
+                verifier=_shadow_verifier)
         if action == "confirm_check":
             m = store.confirm_check(mid, int(body.get("index") or 0))
             # the goal's progress must not keep showing a check the founder
@@ -3137,7 +3887,7 @@ async def api_shadow_mission_act(mid: str, request: Request):
             _goal_hook_safe("record_founder_confirmation", m)
             # the SAME settle the goal arm runs -- both entry points end a
             # confirmation the same way or one of them is a dead end again
-            settled = shadow_runner.settle_confirmation(mid)
+            settled = shadow_runner.settle_confirmation(mid, _shadow_verifier)
             return settled or store.load(mid)
         if action == "resume":
             # THE CAP IS A CAP ON RUNNING WORK, however the work got there.
@@ -3172,8 +3922,22 @@ async def api_shadow_mission_act(mid: str, request: Request):
                     "at_capacity": True,
                     "running_now": running_n,
                     "running_at_once": cap})
+            # THE TOP-TIER YES IS SPENT HERE, AND ONLY HERE. Resuming a
+            # mission held at `autonomy_top_tier` IS the founder authorising
+            # the tier, so record it on the mission before it goes back to
+            # running -- otherwise the loop composes its next say, asks
+            # again, and the founder is in a confirm loop they cannot leave.
+            #
+            # ONLY that reason is spent. An L1 hold is deliberately NOT
+            # stamped: L1 means "ask every turn", so its yes covers one turn
+            # and the next say asks again, which is the setting working.
+            prior = store.load(mid)
+            if prior is not None \
+                    and prior.get("pause_reason") == "autonomy_top_tier":
+                prior["top_tier_confirmed"] = True
+                store.save(prior)
             m = store.transition(mid, "running", "explicit resume (home)")
-            shadow_runner._launch(mid, _validated_say, None)
+            shadow_runner._launch(mid, _validated_say, _shadow_verifier)
             return m
         if action == "say":
             # FREE-FORM FOUNDER INPUT, UNPROMPTED. "Actually, prioritise
@@ -3306,9 +4070,28 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 "summary": "founder answered %s (%d field%s)"
                            % (iv.get("id"), len(clean),
                               "" if len(clean) == 1 else "s")})
+            # AN ANSWER THAT FINISHES THE TASK MUST NOT COST A TURN
+            # (founder, 2026-09-16). The answer above can close the LAST
+            # outstanding check -- that is what `confirms_check` is for --
+            # and the mission would still be relaunched, spend a decider
+            # call and a say to learn something already true, and only then
+            # evaluate. On m-6b177e1cbdf0 that relaunch is precisely the say
+            # that found no live runtime, eleven seconds after the founder
+            # had signed off.
+            #
+            # settle_confirmation IS the loop's own evaluate-and-decide step
+            # with no turn spent, and it is what both confirm_check arms
+            # already call. It completes ONLY when evaluate_done_when says
+            # every check is met, on the same evidence with the same
+            # verifier; anything short of that returns the record untouched
+            # and the two lines below run exactly as they always have.
+            settled = shadow_runner.settle_confirmation(mid, _shadow_verifier)
+            if settled is not None \
+                    and settled["state"] in _mission_engine.TERMINAL:
+                return settled
             # the EXISTING continuation, byte-for-byte the resume path above
             m = store.transition(mid, "running", "founder answered Shadow")
-            shadow_runner._launch(mid, _validated_say, None)
+            shadow_runner._launch(mid, _validated_say, _shadow_verifier)
             return m
         if action == "delete":
             # THE FOUNDER REMOVES A TASK FROM THE LIST. Not a state and not a

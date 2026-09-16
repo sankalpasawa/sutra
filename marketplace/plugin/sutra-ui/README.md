@@ -371,7 +371,7 @@ is enforced locally.
 
 ### Shadow tests
 
-49 lanes, all at this directory's root: 38 `test_shadow_*.py` and 11
+60 lanes, all at this directory's root: 48 `test_shadow_*.py` and 12
 `test_shadow_*.js`. Another ~45 non-Shadow-named files touch Shadow too, most
 of them `test_mission_engine.py`, `test_mission_scheduler.py` and the
 `test_goal_*` pair that wraps missions.
@@ -481,6 +481,8 @@ evidence you installed something wrong.
 | `test_shadow_floor_choke.py` | the floors hold on the direct say path |
 | `test_shadow_journeys.py` | the designed journeys, end to end |
 | `test_shadow_run_limit.py` | "Running at once" end to end — the store clamps and never raises, admission re-reads the cap per decision, the route drains on a raise and refuses to kill on a lower, **every** way a slot frees advances the queue (finish, stop, take over, delete, abandon a goal), and no door reaches `running` past the cap |
+| `test_shadow_turn_budget.py` | "Budget per task" end to end — the store clamps in the STORE (not the stepper) and never raises, `create()` stamps the configured number, the snapshot means a change binds new tasks only, a retry takes the current setting while a goal continuation deliberately does not, and `watch` is refused at the route and ignored even when hand-edited into the file |
+| `test_shadow_nudge_rate.py` | "Nudges per hour" end to end — the store clamps, refuses junk (a boolean included) and never raises, `0` is a stored value meaning *never unasked* rather than an absent one, the other `presence.json` keys survive a rate write, and a **subprocess** reads back what the route wrote, which is the restart claim asserted rather than clicked |
 | `test_shadow_home.js` · `test_shadow_rhs.js` | the two screens, against the real shipped modules |
 
 One lane is **opt-in and deliberately outside the gate**:
@@ -623,9 +625,20 @@ owning persistence; neither learns about the other. A blocked mission is
 deliberately **not** terminal — it means "Shadow cannot continue autonomously
 right now", never "the chat is dead".
 
-Templates cap the turn budget up front: `feature` 30, `fix` 20, `research` 15
-(read-only), `watch` 0 (never says anything). At most five missions run at once;
-the rest queue FIFO.
+Templates set the turn budget up front, and those numbers are now **defaults,
+not ceilings**: `feature` 30, `fix` 20, `research` 15 (read-only), `watch` 0
+(never says anything). **Budget per task** on the Shadow settings page
+overrides them per kind, anywhere in 1–100 turns, and the clamp is the
+server's — a hand-written POST cannot reach 0 or 500 either.
+
+The budget is stamped onto a task when it is created, so a change binds the
+**next** task and never re-budgets one already running. `watch` is stated but
+not settable: it never speaks, so it never spends a turn. One exception worth
+knowing: a goal's *continuation* attempt carries the previous attempt's
+ceiling forward rather than re-reading the setting, because a goal's budget is
+cumulative across its attempts — `extra_turns` is what moves that one.
+
+At most five missions run at once; the rest queue FIFO.
 
 ### Done when
 

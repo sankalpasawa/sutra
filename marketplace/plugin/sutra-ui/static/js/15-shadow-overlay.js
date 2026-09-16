@@ -47,19 +47,72 @@ function snapCorner(x, y, w, h, margin){
            bottom: y < h / 2 ? null : m };
 }
 
-/* S67: at most 3 UNSOLICITED pills per hour; nudges are exempt. history is
+/* S67: at most N UNSOLICITED pills per hour; nudges are exempt. history is
    a list of epoch-ms; returns [allowed, prunedHistory].
 
-   The 3 is NAMED now, and read from the name here, so the settings page can
-   state the rate this function actually enforces instead of printing a
-   number beside it that nothing checks. Same value, same behaviour -- the
-   literal moved, nothing else. */
-const SH_PILLS_PER_HOUR = 3;
+   N IS THE FOUNDER'S, AND THERE IS NO SECOND COPY OF IT. This was the
+   constant SH_PILLS_PER_HOUR = 3, and the constant is GONE rather than kept
+   as a fallback: a fallback is exactly how a setting goes quietly back to 3
+   the moment a read fails, which is the defect this change exists to remove.
+   The rate lives in presence.json, arrives on the settings GET, and is seeded
+   onto S.shadowNudgeRate by applyShadowPresence.
 
-function pillAllowed(history, now){
+   AN UNKNOWN RATE SUPPRESSES. If no number has arrived -- boot still in
+   flight, settings unreachable, Shadow flagged off -- this returns false and
+   the pill stays silent. The alternative readings are both worse: falling
+   back to a number nobody set is the lie, and allowing everything would make
+   a failed read the loudest Shadow ever gets. Silence is recoverable; the
+   next successful settings read restores the founder's rate. NOTE this is the
+   opposite default from corner_card, on purpose -- an unreadable setting must
+   cost an INTERRUPTION, never the founder's only way to reach Shadow.
+
+   ZERO IS A REAL RATE and falls out of the arithmetic: no history is ever
+   short enough, so nothing unsolicited is ever allowed. */
+function shadowNudgeRate(){
+  if (typeof S === "undefined") return null;
+  const n = S.shadowNudgeRate;
+  return (typeof n === "number" && isFinite(n) && n >= 0) ? n : null;
+}
+
+function pillAllowed(history, now, limit){
   const hour = 3600 * 1000;
   const recent = (history || []).filter(t => now - t < hour);
-  return [recent.length < SH_PILLS_PER_HOUR, recent];
+  const max = (limit === undefined || limit === null)
+    ? shadowNudgeRate() : limit;
+  if (max === null) return [false, recent];        /* rate unknown: silence */
+  return [recent.length < max, recent];
+}
+
+/* THE ROLLING HOUR SURVIVES THE RELOAD, and has to, or the maximum is not one.
+   S._pillHistory was memory-only, so "at most 1 an hour" really meant "at most
+   1 per page load" and any reload refunded the budget -- a founder who set the
+   rate to 1 and worked across five reloads could be interrupted five times
+   inside the hour they had capped.
+
+   PER BROWSER, THROUGH THE HELPERS THAT ARE ALREADY THERE (lsGet/lsSet,
+   01-state.js). The SETTING is server-side because it is the founder's choice
+   and must follow them across a restart; the COUNTER is local because it is a
+   fact about one browser's last hour, and no other client's interruptions
+   should spend this one's budget. Both guarded on typeof: a vm test or a
+   partial shell degrades to in-memory rather than throwing.
+
+   Junk is dropped rather than trusted -- a hand-edited or half-written value
+   costs the hour's memory, never the enforcement. */
+const LS_SH_PILLS = "sutra.shadow.pills";
+
+function shadowPillHistory(){
+  if (typeof S === "undefined") return [];
+  if (!S._pillHistory){
+    const raw = (typeof lsGet === "function") ? lsGet(LS_SH_PILLS, []) : [];
+    S._pillHistory = Array.isArray(raw)
+      ? raw.filter(t => typeof t === "number" && isFinite(t)) : [];
+  }
+  return S._pillHistory;
+}
+
+function saveShadowPillHistory(history){
+  if (typeof S !== "undefined") S._pillHistory = history;
+  if (typeof lsSet === "function") lsSet(LS_SH_PILLS, history);
 }
 
 /* S71: chips come from Shadow as text; a chip renders ONLY as verb+object
@@ -113,17 +166,63 @@ if (typeof S !== "undefined"){
     } catch (e){ S.shadowThread = seed; }   /* frozen S: keep the array */
   }
   if (S.shadowQuiet === undefined) S.shadowQuiet = false;
-  if (!S._pillHistory) S._pillHistory = [];
+  shadowPillHistory();     /* seeded from the browser, not reset by the reload */
+}
+
+/* ---- quiet: the switch and the clock, resolved in ONE place ---------------
+
+   THE RULE IS WRITTEN TWICE, here and in shadow_presence.window_active, and
+   test_quiet_hours_cases.json is the single table both lanes run so the two
+   cannot drift. The duplication is deliberate and the alternative is worse:
+   the settings GET is not polled and this overlay is pinned no-poll (see the
+   boot note), so a quiet_now fetched at boot would still read "not quiet" an
+   hour into the window -- wrong at exactly the boundary the setting exists to
+   honour. The server's quiet_now is what the settings row STATES; this is
+   what GATES, and it reads the clock at the moment of the gate.
+
+   INCLUSIVE START, EXCLUSIVE END, AND IT WRAPS MIDNIGHT. "21:00 to 08:00" is
+   the two arcs either side of midnight; a naive start<=t<end would make that
+   window empty, so the setting would store fine and simply never fire. */
+function shadowQuietWindowNow(window, at){
+  const w = (window === undefined)
+    ? (typeof S !== "undefined" ? S.shadowQuietHours : null) : window;
+  if (!w || typeof w !== "object") return false;
+  const mins = (hhmm) => {
+    const m = /^([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(String(hhmm || ""));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const start = mins(w.start), end = mins(w.end);
+  if (start === null || end === null) return false;
+  if (start === end) return false;      /* the store refuses it; be inert here */
+  const now = at || new Date();
+  const t = now.getHours() * 60 + now.getMinutes();
+  return start < end ? (t >= start && t < end) : (t >= start || t < end);
+}
+
+/* THE ONE QUIET ANSWER every gate asks. The manual switch and the clock are
+   two ways to reach one state, not two states -- a founder who pressed Quiet
+   and a founder inside their quiet hours both asked for the same thing, and a
+   red ring pulsing under either of them is the incoherent option. */
+function shadowQuietNow(){
+  if (typeof S === "undefined") return false;
+  return !!(S.shadowQuiet || shadowQuietWindowNow());
 }
 
 /* one place decides what the dot shows: state class, alert pill, badge */
 function applyDotState(dot, status){
   const st = dotState(status);
-  const al = status && status.alerts;
+  const quiet = shadowQuietNow();
+  /* QUIET STANDS THE ALARM DOWN, IT DOES NOT HIDE THE NEWS. The red ring and
+     the "N need you" phrasing are the unsolicited half -- they are what taps
+     the founder on the shoulder, and they are what quiet hours exist to stop.
+     The dot, its state colour and the badge COUNT all stay: suppressing those
+     would not be quiet, it would be concealment, and the founder who looks
+     during their quiet hours must still find out what is waiting. */
+  const al = (status && status.alerts) && !quiet;
   const nb = status && status.active_missions;
   dot.className = "shdot " + st.cls + (al ? " shdot-alert" : "");
   /* mock v5: the face is ALWAYS the S-mark; counts ride a separate badge */
-  const n = al || nb || 0;
+  const n = (status && status.alerts) || nb || 0;
   if (typeof dot.innerHTML === "string")
     dot.innerHTML = "S" + (n ? `<span class="shbadge">${n}</span>` : "");
   else dot.textContent = "S" + (n || "");
@@ -131,12 +230,127 @@ function applyDotState(dot, status){
     al ? st.label + " \u00b7 " + al + " need you" : st.label);
 }
 
+/* ---- presence: the founder's standing choice ------------------------------
+
+   TWO FLAGS, TWO MEANINGS, and keeping them apart is the whole point:
+
+     S.shadowCardEvery    the durable setting ("Corner card on every screen").
+                          Lives on disk in presence.json, arrives on the
+                          settings GET, survives reload and restart.
+     S.shadowHideSession  the card's own hide control. Browser lifetime, means
+                          "not right now", and is forgotten at reload.
+
+   The card is visible when BOTH agree. Asking one flag to carry both meanings
+   is what made the settings switch a lie before this: it flipped the session
+   flag, so the choice died with the page. */
+
+function shadowCornerCardOn(){
+  return !(typeof S !== "undefined" && S.shadowCardEvery === false);
+}
+
+/* THE THIRD FLAG, and the narrowest: "Hide for this app".
+
+   S.shadowHiddenApps is the durable per-app list, off presence.json via the
+   same settings GET. It is asked one question -- is the app I am looking at
+   in it -- and the app I am looking at is S.modSel, the open app id the Apps
+   screen already owns (18-modules.js). There is no second notion of "current
+   app" invented here.
+
+   NO APP OPEN MEANS NOT HIDDEN. S.modSel is null everywhere outside an open
+   app, and null is not in any list, so the dot is untouched on every other
+   screen -- which is the whole difference between this and corner_card. */
+function shadowPresenceHiddenHere(){
+  if (typeof S === "undefined") return false;
+  const id = S.modSel;
+  if (!id) return false;
+  return (S.shadowHiddenApps || []).indexOf(id) !== -1;
+}
+
+/* seed the durable flags from a settings payload. Only a real value moves
+   either -- a failed or flag-gated read must leave the defaults (shown, and
+   hidden nowhere) standing rather than latch the card off because an answer
+   was missing. */
+function applyShadowPresence(settings){
+  if (typeof S === "undefined") return;
+  const p = (settings && settings.presence) || {};
+  if (typeof p.corner_card === "boolean") S.shadowCardEvery = p.corner_card;
+  if (Array.isArray(p.hidden_apps)) S.shadowHiddenApps = p.hidden_apps.slice();
+  /* the rate the pill is held to. ONLY a real number moves it, and there is
+     nothing to fall back to if none arrives -- pillAllowed suppresses on an
+     unknown rate rather than inventing one (see its header). */
+  if (typeof p.nudges_per_hour === "number" && isFinite(p.nudges_per_hour))
+    S.shadowNudgeRate = p.nudges_per_hour;
+  /* THE QUIET WINDOW, not a quiet boolean. The payload carries quiet_now too
+     and this deliberately ignores it: a boolean seeded here would be stale by
+     the next hour, so what is kept is the window and the clock is read at the
+     gate (shadowQuietWindowNow). quiet_now is for the settings row to STATE.
+
+     AN EXPLICIT null MOVES IT -- that is how a clear arrives, and an absent
+     key is a read that failed rather than a window that was removed. The two
+     must not be the same, or a flag-gated GET would silently un-quiet a
+     founder who had set hours. */
+  if (p.quiet_hours === null) S.shadowQuietHours = null;
+  else if (p.quiet_hours && typeof p.quiet_hours === "object")
+    S.shadowQuietHours = { start: p.quiet_hours.start,
+                           end: p.quiet_hours.end };
+}
+
+/* THE ONE PLACE the dot is reconciled with the state, whatever moved.
+
+   Every reason to hide is a guard inside mountShadowOverlay, so "should it
+   be there" is asked in exactly one place; this answers the other half,
+   "make the DOM agree", which mountShadowOverlay cannot do because it only
+   ever adds. Before this existed each caller removed the dot itself and only
+   one of them remembered the gutter. */
+function syncShadowPresence(){
+  if (typeof document === "undefined" || typeof S === "undefined") return;
+  const dot = document.querySelector && document.querySelector(".shdot");
+  if (shadowCornerCardOn() && !S.shadowHideSession
+      && !shadowPresenceHiddenHere()){
+    mountShadowOverlay();                 /* already a no-op when one exists */
+    return;
+  }
+  S.shadowCardOpen = false;
+  renderShadowCard();
+  if (dot && dot.remove) dot.remove();
+  /* and give the gutter back. mountShadowOverlay reserves 72px at the foot of
+     every scrollable pane while the dot exists (visual audit r5); nothing
+     released it before, so hiding the card left a blank strip behind it. */
+  try { document.body.classList.remove("sh-fab-on"); } catch (_e){}
+}
+
+/* THE ONE PLACE the card appears or disappears as the setting moves. Turning
+   it ON also clears the session dismissal, because "on every screen" that
+   leaves the card hidden is not on. */
+function applyCornerCardPref(on){
+  if (typeof S === "undefined") return;
+  S.shadowCardEvery = !!on;
+  /* turning it on also clears the session dismissal: "on every screen" that
+     leaves the card hidden is not on. It does NOT clear a per-app hide --
+     that is a different, narrower choice the founder made deliberately, and
+     un-making it from this switch would be silent. */
+  if (on) S.shadowHideSession = false;
+  syncShadowPresence();
+}
+
+/* "Hide for this app", applied. Called with the list already written, and
+   also every time the OPEN APP changes -- the dot has to go and come back as
+   the founder moves between apps, which is the visible difference between
+   this setting and the corner-card one. */
+function applyAppPresence(hiddenApps){
+  if (typeof S === "undefined") return;
+  if (Array.isArray(hiddenApps)) S.shadowHiddenApps = hiddenApps.slice();
+  syncShadowPresence();
+}
+
 /* ---- mounting (only after a 200 from status) ----------------------------- */
 let _shadowStatus;
 
 function mountShadowOverlay(){
   if (typeof document === "undefined" || typeof S === "undefined") return;
+  if (!shadowCornerCardOn()) return;               /* the standing choice */
   if (S.shadowHideSession) return;                 /* S73 hide-for-session */
+  if (shadowPresenceHiddenHere()) return;          /* hidden for THIS app */
   if (document.querySelector && document.querySelector(".shdot")) return;
   const dot = document.createElement("div");
   const st = dotState(_shadowStatus);
@@ -218,13 +432,29 @@ async function shadowSendAndRefresh(text){
   renderShadowCard();
 }
 
+/* THE SAVED CHOICE IS APPLIED BEFORE THE CARD CAN EVER APPEAR.
+
+   Status and settings are awaited TOGETHER and the mount happens after both,
+   so a founder who turned the card off does not watch it flash in and vanish
+   on every reload. Sequencing the two reads would produce exactly that flash;
+   mounting on status alone and correcting afterwards would too.
+
+   THE TWO LEGS FAIL DIFFERENTLY, on purpose. Status is the gate -- no answer
+   means mount nothing, and a network failure must still reach the retry
+   below, so its rejection is left to propagate. Settings is an ANNOTATION on
+   that decision: an unreadable settings read costs the default (shown), never
+   the dot, so it swallows its own failure. Presence rides the settings
+   payload rather than a route of its own precisely so this stays two reads
+   and not three. */
 function bootShadowOverlay(){
   if (typeof fetch === "undefined") return;
-  fetch("/api/shadow/status").then(r => {
-    if (!r.ok) return null;                        /* dark: mount NOTHING */
-    return r.json();
-  }).then(status => {
-    if (!status) return;
+  Promise.all([
+    fetch("/api/shadow/status").then(r => r.ok ? r.json() : null),
+    fetch("/api/shadow/settings").then(r => r.ok ? r.json() : null)
+      .catch(() => null),
+  ]).then(([status, settings]) => {
+    applyShadowPresence(settings);
+    if (!status) return;                           /* dark: mount NOTHING */
     _shadowStatus = status;
     mountShadowOverlay();
   }).catch(() => {
@@ -503,13 +733,25 @@ async function sendToShadow(text){
 /* S67: the pill -- one line, auto-hide, rate-limited unless a nudge */
 function showPill(text, opts){
   if (typeof document === "undefined" || typeof S === "undefined") return null;
-  if (S.shadowQuiet) return null;                  /* S73 quiet switch */
+  /* S73 quiet switch, now ALSO the clock: shadowQuietNow folds the founder's
+     manual Quiet and their quiet hours into one answer. This is the same gate
+     it has always been, asked a better question -- not a second gate beside
+     it, which would be two places to be quiet and one of them eventually
+     wrong.
+
+     IT STAYS AHEAD OF THE isNudge BRANCH, which is load-bearing: opts.nudge
+     buys a pill past the RATE LIMIT, never past quiet. "Urgent" is a claim
+     about the news; quiet hours are a claim about the founder, and the
+     founder's is the one that wins at 3am. */
+  if (shadowQuietNow()) return null;
   const isNudge = opts && opts.nudge;
   if (!isNudge){
-    const [ok, pruned] = pillAllowed(S._pillHistory, Date.now());
-    S._pillHistory = pruned;
-    if (!ok) return null;
-    S._pillHistory.push(Date.now());
+    /* the pruned history is saved WHETHER OR NOT the pill is allowed, so an
+       hour that has rolled over is forgotten on the first suppressed attempt
+       rather than only when one gets through */
+    const [ok, pruned] = pillAllowed(shadowPillHistory(), Date.now());
+    if (!ok){ saveShadowPillHistory(pruned); return null; }
+    saveShadowPillHistory(pruned.concat([Date.now()]));
   }
   const el = document.createElement("div");
   el.className = "shpill";

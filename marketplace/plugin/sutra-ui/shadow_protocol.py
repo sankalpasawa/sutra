@@ -167,11 +167,48 @@ def tier_for(check, proposed=None):
     return FALLBACK_TIER
 
 
-def parse_reply(text):
+def offered_kinds():
+    """The kinds a mission block may name: the founder's Delegate offers.
+
+    THIS USED TO BE THE TUPLE ("feature", "fix", "research", "watch"), typed
+    inline at the membership test below and duplicated in three other files.
+    It is now one read of the setting the founder actually edits, taken at
+    parse time so a kind added or removed in Settings binds the very next
+    reply rather than the next restart.
+
+    NEVER RAISES, and that is load-bearing rather than defensive: this sits
+    on the path of every Shadow reply, and a corrupt settings file must cost
+    the founder their custom kinds, never an exception thrown into the middle
+    of a conversation. The fallback is what an unconfigured install offers.
+
+    Imported lazily. mission_engine pulls in providers, the ledger and the
+    intervention validator; shadow_protocol is deliberately a two-import
+    module and is loaded by things that have no business starting an engine.
+    """
+    try:
+        import mission_engine
+        kinds = mission_engine.offered_kinds()
+    except Exception:                      # noqa: BLE001 -- see docstring
+        return list(_BUILTIN_KINDS)
+    return list(kinds) or list(_BUILTIN_KINDS)
+
+
+#: What an install with no offers file accepts. The ONLY place these four
+#: names still appear in this module, and only as the degraded answer.
+_BUILTIN_KINDS = ("fix", "feature", "research", "watch")
+
+
+def parse_reply(text, kinds=None):
     """Returns (display_text, {mission?, goal?, chips?, remember?, module?}).
     Malformed json in a block drops THAT block (kept in display so nothing
-    is lost) and never raises."""
+    is lost) and never raises.
+
+    `kinds` overrides which mission templates are acceptable; None asks the
+    founder's Delegate offers. Resolved ONCE per reply rather than per block,
+    so a reply carrying several fences cannot see the list change mid-parse.
+    """
     out = {}
+    allowed = list(kinds) if kinds is not None else offered_kinds()
 
     def _eat(match):
         kind, body = match.group(1), match.group(2)
@@ -183,8 +220,7 @@ def parse_reply(text):
         # shape stays VISIBLE in the reply -- an invalid instruction must
         # never become an invisible side effect.
         if kind == "mission" and isinstance(val, dict) \
-                and val.get("objective") and val.get("template") in \
-                ("feature", "fix", "research", "watch"):
+                and val.get("objective") and val.get("template") in allowed:
             out["mission"] = val
         elif kind == "goal" and isinstance(val, dict) \
                 and str(val.get("outcome") or "").strip():

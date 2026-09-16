@@ -13,6 +13,7 @@ False -- the flag going dark mid-mission stops the loop at the next check.
 import fcntl
 import json
 import os
+import re
 import time
 import uuid
 
@@ -92,6 +93,58 @@ TRANSITIONS = {
 # _complete stays the only writer of a `done` mission and is reachable only
 # from evaluate_done_when.
 DECISION_ACTIONS = ("continue", "ask_founder")
+
+#: SHADOW'S OWN MACHINERY BROKE -- the work did not (founder, 2026-09-16).
+#:
+#: These reasons name a fault in the SUPERVISOR: the decider subprocess died
+#: without answering, or answered with something `validate_decision` cannot
+#: read. Measured twice on 2026-09-15 (m-07cbb61906cc, m-5c2fca3f824b): both
+#: missions were transitioned `failed` one second after a re-adoption, and on
+#: the second one the worker went on to finish successfully 96 seconds LATER
+#: and had its result thrown away. Nothing about the delegate, the objective
+#: or the checks was consulted -- `evaluate_done_when` is 130 lines further
+#: down the loop and the undecided branch returns before reaching it.
+#:
+#: So an infra fault takes the RECOVERABLE exit rather than the terminal one.
+#: `blocked` already means exactly this and already exists: non-terminal, the
+#: delegate is deliberately kept alive, the UI reads it as NEEDS YOU, and
+#: Resume works. It is what _out_of_road already did for a GOAL attempt --
+#: this only stops a standalone mission being the one case that dies of its
+#: supervisor's illness.
+#:
+#: THE SECOND AND THIRD FAULTS OF THE SAME CLASS (founder, 2026-09-16):
+#:
+#:   no_live_runtime    the say never left the engine. By the sayer's own
+#:                      contract a NAMED precondition means nothing was sent
+#:                      and nothing was spent -- the opposite of a verdict on
+#:                      the work. Measured on m-6b177e1cbdf0 ("Budget per
+#:                      task", 2026-09-15): the founder answered Shadow's
+#:                      question and CONFIRMED check #2 at 20:50:50Z, the
+#:                      loop relaunched, its first say found no runtime for
+#:                      the delegate, and the mission was `failed` at
+#:                      20:51:01Z -- eleven seconds after the founder had
+#:                      signed off, with the work already on disk.
+#:   shadow_eval_failed the evidence reader or the evaluator itself raised.
+#:                      "I could not tell whether the work is done" is not
+#:                      "the work failed"; it is the one question a founder
+#:                      can settle in a second.
+#:
+#: A GOAL attempt already blocked on all three. This is the standalone half.
+#: `shadow_crashed` (the runner's own last-resort handler in
+#: shadow_runner._launch) is the fourth. It never reaches _out_of_road -- it
+#: blocks directly -- but it is listed so the supervisor's faults are one
+#: list and a reader looking for "is this Shadow's fault" finds them all.
+INFRA_BLOCK_REASONS = frozenset({
+    "shadow_undecided",
+    "no_live_runtime",
+    "shadow_eval_failed",
+    "shadow_crashed",
+})
+
+#: Stamped beside block_reason so a reader can tell the two apart without
+#: parsing prose. "shadow_infra" = the supervisor broke; absent = the ordinary
+#: out-of-road reasons (budget, ping-pong, stalled turn, refused say).
+INFRA_FAILURE_CLASS = "shadow_infra"
 
 #: how much of the target's latest output the decider is shown. Bounded on
 #: purpose: the whole transcript is neither necessary nor affordable, and
@@ -235,6 +288,11 @@ def validate_decision(raw):
     return out
 
 
+#: The BUILT-IN kinds, not the whole catalogue. templates() below merges
+#: these with every kind the founder has ever minted, and offered_kinds()
+#: says which of them Shadow currently presents. This constant stays exported
+#: because it is what an unconfigured install offers and what several tests
+#: build their fixtures around.
 TEMPLATES = {
     "feature": {"max_turns": 30, "invariants": ()},
     "fix": {"max_turns": 20, "invariants": ()},
@@ -333,6 +391,543 @@ def set_max_running(n):
     return v
 
 
+#: The band a turn budget is clamped into, and it is clamped HERE -- in the
+#: store, under the route -- not in the stepper. The stepper stopping at the
+#: ends is a courtesy to the founder; this is the part a hand-written POST
+#: cannot get around.
+#:
+#: ONE, NOT ZERO, is the floor. A zero budget on a kind that actually runs is
+#: not a small budget: run_mission's `turns_used >= max_turns` is true before
+#: the first turn, so the mission dies immediately as `budget_exhausted`. That
+#: is a broken task wearing a setting's clothes, and Shadow already has
+#: stop/pause for "do not run this". `watch` keeps its 0 because it never
+#: reaches the budget check at all (never_say returns first, :1015 before
+#: :1018) -- which is also why `watch` is not settable, below.
+#:
+#: A HUNDRED is the ceiling: ~3.3x the largest template default, and at the
+#: minutes-per-turn this actually runs at, already hours of autonomous work.
+#: Past that the founder wants a different mission, not a bigger budget.
+MIN_TURNS = 1
+TURNS_CEILING = 100
+
+#: Which kinds have a budget worth setting. DERIVED FROM THE INVARIANT, not a
+#: hardcoded "everything but watch": the honest rule is "a kind that never
+#: speaks never spends a turn", and never_say is the thing that makes that
+#: true. run_mission returns on the never_say check (:1015) BEFORE it compares
+#: the budget (:1018), so a number stored for such a kind could never bind --
+#: and a control that looks kept but is never read is worse than one that says
+#: it cannot be set. Deriving it means a future never_say template is excluded
+#: automatically rather than by someone remembering to update a list.
+SETTABLE_BUDGET_KINDS = tuple(
+    k for k, v in TEMPLATES.items() if "never_say" not in v["invariants"])
+
+
+def settable_budget_kinds():
+    """The same rule, over the whole CATALOGUE rather than the built-ins.
+
+    A founder-minted kind has no invariants (DEFAULT_OFFER_INVARIANTS), so it
+    speaks, so it spends turns, so its budget is settable -- and the rule that
+    decides this is still "a kind that never speaks never spends a turn",
+    unchanged. SETTABLE_BUDGET_KINDS stays exported as the built-in answer;
+    this is the one the budget paths actually ask.
+    """
+    return tuple(k for k, v in templates().items()
+                 if "never_say" not in v["invariants"])
+
+
+def clamp_turns(n):
+    """Coerce anything to a legal turn budget, or raise ValueError.
+
+    Same asymmetry as clamp_running, for the same reasons: a NON-NUMBER is
+    refused, because storing 20 when the founder typed "twenty" is worse than
+    saying no; an out-of-band NUMBER clamps, because a stepper held past the
+    ceiling should stop at the ceiling rather than error.
+    """
+    try:
+        v = int(n)
+    except (TypeError, ValueError):
+        raise ValueError("turns must be a whole number")
+    return max(MIN_TURNS, min(TURNS_CEILING, v))
+
+
+def _read_budget_overrides():
+    """The founder's per-kind budgets, as stored. Absent kinds are auto.
+
+    SPARSE BY CONSTRUCTION. A kind the founder never touched has no key, so
+    an unconfigured install is byte-identical to what shipped before this
+    setting existed, and "reset to auto" is a DELETE rather than a second
+    sentinel value that every reader would have to know about.
+    """
+    raw = _read_limits().get("turn_budget")
+    return raw if isinstance(raw, dict) else {}
+
+
+def turn_budget(kind):
+    """The budget a NEW mission of this kind is created with: the founder's
+    setting, else the template default.
+
+    NEVER RAISES, for the same reason max_running never raises -- this sits on
+    the create path, and a corrupt limits file, an unreadable home or the
+    shadow_home pytest refusal must degrade to the template rather than take
+    down a task the founder just asked for.
+    """
+    default = (templates().get(kind) or {}).get("max_turns", 0)
+    if kind not in settable_budget_kinds():
+        return default            # watch: 0, and not negotiable
+    try:
+        raw = _read_budget_overrides().get(kind)
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return default
+    if raw is None:
+        return default
+    try:
+        return clamp_turns(raw)
+    except ValueError:
+        return default                    # a hand-edited junk value
+
+
+def turn_budgets():
+    """Every kind's effective budget -- what the settings page states.
+
+    Over the CATALOGUE, not the built-ins: a chip for a founder-minted kind
+    has to be able to state its budget too, and a retired kind still needs
+    one for the retry path to quote.
+    """
+    return {k: turn_budget(k) for k in templates()}
+
+
+def turn_budget_overrides():
+    """Just the kinds the founder has actually set. This is what tells the UI
+    `auto` from `not auto`; it must never be inferred by comparing the
+    effective value against the template, because setting a budget to exactly
+    the default is a real choice and would read as auto."""
+    try:
+        settable = settable_budget_kinds()
+        return sorted(k for k in _read_budget_overrides() if k in settable)
+    except Exception:                     # noqa: BLE001
+        return []
+
+
+def set_turn_budget(kind, n):
+    """Persist one kind's budget. `n is None` clears it back to auto.
+
+    Returns the budget in force for that kind afterwards -- the stored value,
+    or the template default after a reset -- so the caller never has to guess
+    what a reset landed on.
+
+    DELIBERATELY DOES NOT TOUCH LIVE MISSIONS. max_turns is snapshotted onto
+    the mission record at create(), and every reader downstream (the run loop,
+    the decider prompt, the restart sweep, clone_for_retry) reads the record.
+    So this binds the NEXT task and leaves work already underway on the budget
+    it was started with -- which is the only honest reading of a budget: the
+    number a worker was given when it began.
+    """
+    if kind not in settable_budget_kinds():
+        raise ValueError("no settable turn budget for %r" % (kind,))
+    import json_store
+    cur = _read_limits()
+    # read-modify-write, like set_max_running: two settings share this file
+    budgets = dict(cur.get("turn_budget") or {})
+    if n is None:
+        budgets.pop(kind, None)
+    else:
+        budgets[kind] = clamp_turns(n)
+    if budgets:
+        cur["turn_budget"] = budgets
+    else:
+        cur.pop("turn_budget", None)      # empty dict would be noise on disk
+    json_store.write_json(limits_path(), cur)
+    return turn_budget(kind)
+
+
+# ----------------------------------------------------- autonomy --------
+# HOW FAR SHADOW MAY GO ON ITS OWN. Four levels, and each is a real
+# difference in what the engine does, not a label:
+#
+#   L0 Watch    Shadow never speaks. The same silence the `watch` template's
+#               never_say invariant gives ONE mission, applied to all of them.
+#   L1 Suggest  Shadow composes each instruction and HOLDS it for a founder
+#               yes, exactly the way a floor-tripping say is held.
+#   L2 Draft    Shadow speaks freely; its WORKER is capped at `plan`, so work
+#               is read, planned and written up, but never applied.
+#   L3 Act      Shadow speaks freely and the worker runs at the founder's own
+#               permission mode. What this build has always done.
+#
+# THE DEFAULT IS L3 ON PURPOSE. It is what shipped before this setting
+# existed -- the client hardcoded `SH_LEVEL_NOW = "L3"` and drew the selector
+# inert -- so an unconfigured install behaves exactly as it did. Defaulting to
+# L0 would have been "safer" and would have silently stopped every existing
+# founder's Shadow on update: that is not safety, it is a regression wearing
+# safety's clothes.
+#
+# THE LEVEL IS A CEILING, NEVER A SOURCE. L2's `plan` cap NARROWS whatever
+# providers.effective_permission_mode already resolved to, and can never widen
+# it. That is what keeps "Shadow is not a separate trust domain"
+# (app._shadow_args) true: there is still exactly one place a permission mode
+# comes from, and this only ever lowers it. See app._autonomy_ceiling.
+#
+# IT IS READ LIVE, NOT STAMPED, and that is the one place it deliberately
+# differs from the turn budget. max_turns is snapshotted at create() because a
+# budget is "the number a worker was given when it began". A founder dropping
+# to L0 is saying STOP, and a stop that waited for the next task would be the
+# setting failing in the only direction that actually matters.
+AUTONOMY_LEVELS = ("L0", "L1", "L2", "L3")
+DEFAULT_AUTONOMY = "L3"
+
+#: What the top-tier switch defaults to. OFF, and this one was got WRONG
+#: first: it shipped as True because the reference mock draws the switch on,
+#: and eleven existing lanes went red saying so (test_shadow_waiter,
+#: test_shadow_run_limit, test_shadow_drives and eight others all watched a
+#: mission that used to speak stop at `autonomy_top_tier` instead).
+#:
+#: They were right and the default was wrong. It is the SAME rule that makes
+#: DEFAULT_AUTONOMY L3: an update must not change what an existing install
+#: does. A founder who has Shadow running tasks today would have updated into
+#: every one of them stopping to ask a question that did not exist before --
+#: and "it asks first now" is not a safe default when the thing it breaks is
+#: the automation the founder was relying on.
+#:
+#: The mock draws it on because the mock draws a STATE, not a default. The
+#: switch is one click away and the settings page says exactly what it does.
+DEFAULT_CONFIRM_TOP = False
+
+#: The levels whose worker may not write. Spelled as a list rather than as
+#: "anything below L3" so a future level lands in one place instead of in an
+#: inequality someone has to re-derive.
+READ_ONLY_LEVELS = ("L0", "L1", "L2")
+
+
+def clamp_autonomy(v):
+    """Coerce to a legal level, or raise ValueError.
+
+    RAISES ON ANYTHING UNKNOWN, and never clamps -- the asymmetry with
+    clamp_running is deliberate. A cap is a point on a number line, so an
+    out-of-band NUMBER has an obvious nearest legal answer. A level is an
+    enum: there is no "nearest" level to "L7" or to "act", and inventing one
+    would be granting a permission the founder never chose. Refusing is the
+    only honest answer, and here it is the safe one in both directions.
+    """
+    if v in AUTONOMY_LEVELS:
+        return v
+    raise ValueError("autonomy must be one of %s" % ", ".join(AUTONOMY_LEVELS))
+
+
+def autonomy():
+    """The level the engine ACTUALLY runs at: the founder's setting, else L3.
+
+    NEVER RAISES, for the same reason max_running never raises: this sits on
+    the say path and on every spawn, and a corrupt limits file, an unreadable
+    home or the shadow_home pytest refusal must degrade to the default rather
+    than take down a mission that was otherwise fine.
+    """
+    try:
+        raw = _read_limits().get("autonomy")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return DEFAULT_AUTONOMY
+    if raw is None:
+        return DEFAULT_AUTONOMY
+    try:
+        return clamp_autonomy(raw)
+    except ValueError:
+        return DEFAULT_AUTONOMY           # a hand-edited junk value
+
+
+def set_autonomy(level):
+    """Persist the level. Returns what was stored.
+
+    DELIBERATELY DOES NOT STOP RUNNING WORKERS, for the same reason
+    set_max_running does not: killing a worker mid-turn abandons a real turn
+    budget. What it DOES do -- and where it differs from the budget -- is bind
+    the very NEXT TURN of every running mission, because autonomy() is read
+    live at the top of each say rather than snapshotted at create().
+    """
+    v = clamp_autonomy(level)
+    import json_store
+    cur = _read_limits()
+    cur["autonomy"] = v
+    json_store.write_json(limits_path(), cur)
+    return v
+
+
+def confirm_top_tier():
+    """Whether L3 must ask before its first write-capable say.
+
+    NEVER RAISES, and degrades to the DEFAULT rather than to False: a settings
+    file that cannot be read must not silently drop a confirmation the founder
+    asked for.
+    """
+    try:
+        raw = _read_limits().get("confirm_top_tier")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return DEFAULT_CONFIRM_TOP
+    return DEFAULT_CONFIRM_TOP if raw is None else bool(raw)
+
+
+def set_confirm_top_tier(on):
+    """Persist the top-tier switch. Returns what was stored."""
+    v = bool(on)
+    import json_store
+    cur = _read_limits()
+    cur["confirm_top_tier"] = v
+    json_store.write_json(limits_path(), cur)
+    return v
+
+
+def worker_may_write(level=None):
+    """True when a worker spawned at this level may change anything.
+
+    The ONE place the L2/L3 line is drawn, so the ceiling in app.py and the
+    sentence the settings page prints can never disagree about where it is.
+    """
+    return (level or autonomy()) not in READ_ONLY_LEVELS
+
+
+# ------------------------------------------------- delegate offers ------
+# THE KINDS SHADOW OFFERS, AND THE KINDS A MISSION MAY BE, ARE TWO LISTS.
+#
+# offered_kinds() is the founder's choice: what the Delegate form presents,
+# what the Settings chips state, what Shadow is allowed to name in a mission
+# fence. templates() is the CATALOGUE: every kind a mission may legally be,
+# which is the built-ins plus every kind the founder has ever minted. The
+# catalogue only ever grows.
+#
+# THAT ASYMMETRY IS THE WHOLE DESIGN, and it exists for one concrete
+# failure. clone_for_retry re-creates a finished mission with its ORIGINAL
+# template, and create() raises on a template it does not know. If removing
+# a kind deleted its definition, then removing "research" would break Retry
+# on every research task the founder had ever run -- work already done,
+# made un-retryable by a settings click. So a removal UN-OFFERS and never
+# UN-DEFINES: the name leaves `offered`, its definition stays under
+# `custom`, and re-adding it later restores the budget it always had.
+#
+# WHY A SEPARATE FILE from task-limits.json. Same home, same json_store, but
+# its own inode: a hand-edit that corrupts the offer list must cost the
+# default offers and nothing else. Two settings degrading together because
+# they happened to share a file is one failure wearing two faces.
+
+#: What a newly minted kind is worth. Settings says AUTO on the budget row --
+#: the budget is set by the kind of work, not by taste -- so "+ add" asks for
+#: a name and nothing else. Matches `fix`, the middle of the built-in band.
+#: The founder can still retune it afterwards through set_turn_budget, which
+#: is the control that already exists for exactly that.
+DEFAULT_OFFER_TURNS = 20
+
+#: No invariants on a minted kind. read_only and never_say are enforced where
+#: the action happens (see the TEMPLATES note above); a founder typing a name
+#: into a chip row is not declaring a capability boundary, and inventing one
+#: on their behalf would be the wrong kind of guess.
+DEFAULT_OFFER_INVARIANTS = ()
+
+#: The band. ONE offer is the floor for the same reason one running task is:
+#: zero offers is a "nothing may be delegated" switch wearing a settings
+#: row's clothes, and Shadow already has stop/pause for that. The ceiling is
+#: a legibility bound rather than an engine one -- the chips wrap inside one
+#: settings row, and a founder with thirty kinds has a taxonomy problem no
+#: cap can fix.
+MIN_OFFERS = 1
+MAX_OFFERS = 12
+
+#: What an UNCONFIGURED install offers, in order. Not `list(TEMPLATES)`:
+#: offered_kinds() is ordered, default_offer() takes the first, and TEMPLATES
+#: happens to start at `feature` while the shipped Delegate form has always
+#: opened on `fix`. Deriving the fallback from dict order would have moved
+#: the default kind for every install that never touched this setting --
+#: a behaviour change smuggled in as a refactor. The membership is still
+#: TEMPLATES', asserted by a test, so a fifth built-in cannot go unoffered.
+BUILTIN_OFFERS = ("fix", "feature", "research", "watch")
+
+#: A kind name becomes a mission's `template` field, rides the SHADOW.md
+#: fence, and is rendered into a data- attribute. Slug-shaped for all three.
+_OFFER_NAME = re.compile(r"^[a-z][a-z0-9-]{1,23}$")
+
+
+def offers_path():
+    """The one file the founder's delegate offers live in.
+
+    Beside task-limits.json under the SAME resolver (shadow_ledger
+    .shadow_home), so a test that redirects the shadow home redirects this
+    too and can never write an offer list into the live install.
+    """
+    return os.path.join(os.path.realpath(shadow_ledger.shadow_home()),
+                        "delegate-offers.json")
+
+
+def _read_offers():
+    import json_store
+    return json_store.read_json(offers_path(), {})
+
+
+def clean_offer_name(name):
+    """Coerce anything to a legal kind name, or raise ValueError.
+
+    Raises rather than sanitising, for the same reason clamp_running raises
+    on "five": a settings write that quietly stores `codereview` when the
+    founder typed `Code Review!` has invented a name they will not recognise
+    on the chip. Case and surrounding space ARE forgiven -- those are typing,
+    not meaning.
+    """
+    s = str(name or "").strip().lower()
+    if not s:
+        raise ValueError("a delegate offer needs a name")
+    if not _OFFER_NAME.match(s):
+        raise ValueError(
+            "%r is not a usable kind name -- 2 to 24 characters, lowercase "
+            "letters, digits and hyphens, starting with a letter"
+            % (str(name or "").strip(),))
+    return s
+
+
+def _custom_kinds():
+    """The founder-minted kind DEFINITIONS, offered or not. Never raises.
+
+    Every field is re-validated on the way out rather than trusted: this file
+    is hand-editable, and a junk budget must cost the default for that kind
+    rather than a TypeError on the create path.
+    """
+    try:
+        raw = _read_offers().get("custom")
+    except Exception:                     # noqa: BLE001 -- see templates()
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            continue
+        try:
+            key = clean_offer_name(name)
+        except ValueError:
+            continue                      # a hand-edited junk name
+        try:
+            turns = int(spec.get("max_turns", DEFAULT_OFFER_TURNS))
+        except (TypeError, ValueError):
+            turns = DEFAULT_OFFER_TURNS
+        inv = spec.get("invariants")
+        out[key] = {
+            "max_turns": max(MIN_TURNS, min(TURNS_CEILING, turns)),
+            "invariants": tuple(inv) if isinstance(inv, (list, tuple))
+            else DEFAULT_OFFER_INVARIANTS,
+        }
+    return out
+
+
+def templates():
+    """The CATALOGUE: every kind a mission may legally be.
+
+    NEVER RAISES, and never smaller than TEMPLATES. This is what create()
+    validates against and what retry depends on, so a corrupt offers file
+    must cost the custom kinds and nothing else -- a mission of a built-in
+    kind has to stay creatable whatever is on disk.
+
+    A BUILT-IN ALWAYS WINS A NAME COLLISION. A hand-edited custom "watch"
+    can change what Settings shows; it can never change what the engine does
+    with the four kinds that ship, and in particular cannot strip never_say
+    off `watch` by redefining it.
+    """
+    out = dict(_custom_kinds())
+    out.update(TEMPLATES)
+    return out
+
+
+def offered_kinds():
+    """The kinds Shadow ACTUALLY offers: the founder's list, else the
+    built-ins.
+
+    NEVER RAISES. This is read at decision time on every path that presents
+    or validates a kind -- the fence parser, the settings read, the delegate
+    route -- and a corrupt settings file must degrade to the shipped four
+    rather than leave the founder unable to delegate anything at all.
+
+    ORDER IS THE FOUNDER'S, not sorted. The first offer is what the Delegate
+    form opens on, so the list is a preference and re-sorting it would
+    silently move that.
+    """
+    try:
+        raw = _read_offers().get("offered")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return list(BUILTIN_OFFERS)
+    if not isinstance(raw, list):
+        return list(BUILTIN_OFFERS)
+    known = templates()
+    out = []
+    for name in raw:
+        try:
+            key = clean_offer_name(name)
+        except ValueError:
+            continue                      # a hand-edited junk entry
+        if key in known and key not in out:
+            out.append(key)
+    # An empty list is not a legal state (MIN_OFFERS is 1) and can only
+    # arrive by hand-edit. Nothing offered would mean nothing can be
+    # delegated, so it reads as unconfigured rather than as a mute Shadow.
+    return out or list(BUILTIN_OFFERS)
+
+
+def default_offer():
+    """The kind a delegation falls back to when nobody named one.
+
+    Never "fix" by constant: the founder may have retired it, and a default
+    pointing at a kind they removed is the bug this whole split exists to
+    avoid. offered_kinds() never returns empty, so this never IndexErrors.
+    """
+    return offered_kinds()[0]
+
+
+def add_offer(name):
+    """Offer a kind. Returns the offered list as stored.
+
+    THREE CASES, ONE DOOR. Already offered is a NO-OP returning the same
+    list, so a double-click cannot duplicate a chip. A name that is known but
+    not offered -- a built-in the founder removed, or a custom kind they
+    retired -- is re-offered with the budget it ALWAYS had, never reset to
+    the default. Anything else mints a new custom kind.
+    """
+    key = clean_offer_name(name)
+    import json_store
+    cur = _read_offers()
+    offered = offered_kinds()
+    if key in offered:
+        return offered
+    if len(offered) >= MAX_OFFERS:
+        raise ValueError("at most %d delegate offers" % MAX_OFFERS)
+    if key not in templates():
+        custom = cur.get("custom")
+        if not isinstance(custom, dict):
+            custom = {}
+        custom[key] = {"max_turns": DEFAULT_OFFER_TURNS,
+                       "invariants": list(DEFAULT_OFFER_INVARIANTS)}
+        cur["custom"] = custom
+    cur["offered"] = offered + [key]
+    json_store.write_json(offers_path(), cur)
+    return list(cur["offered"])
+
+
+def remove_offer(name):
+    """Stop offering a kind. Returns the offered list as stored.
+
+    DOES NOT DELETE THE DEFINITION -- see the section header. A custom kind's
+    entry stays under `custom` so clone_for_retry can still rebuild a mission
+    that used it, and so re-adding it later restores its budget.
+
+    REFUSES THE LAST ONE. With nothing offered the founder could not delegate
+    at all, and a settings row must not be able to turn the feature off by
+    attrition.
+    """
+    key = clean_offer_name(name)
+    offered = offered_kinds()
+    if key not in offered:
+        return offered                    # already gone: nothing to say
+    if len(offered) <= MIN_OFFERS:
+        raise ValueError(
+            "at least %d delegate offer -- Shadow needs something to offer"
+            % MIN_OFFERS)
+    import json_store
+    cur = _read_offers()
+    cur["offered"] = [k for k in offered if k != key]
+    json_store.write_json(offers_path(), cur)
+    return list(cur["offered"])
+
+
 def _home():
     # one resolver for every Shadow store, with the pytest refusal that keeps
     # a test from writing mission files into the live home (shadow_ledger)
@@ -355,7 +950,15 @@ class MissionStore:
         or None means standalone, so every existing caller -- including
         clone_for_retry -- is unchanged by construction.
         """
-        if template not in TEMPLATES:
+        # THE CATALOGUE, NOT THE OFFERED LIST. A kind the founder has stopped
+        # offering must still be CREATABLE, because clone_for_retry rebuilds a
+        # finished mission with its original template -- gating create() on
+        # what is currently offered would make every past task of a retired
+        # kind un-retryable. Refusing a kind the founder no longer offers is
+        # the JOB OF THE DOORS (the fence parser, the delegate route), where
+        # the intent is "start something new" rather than "run this again".
+        known = templates()
+        if template not in known:
             raise ValueError("unknown template %r" % (template,))
         if target_mode not in ("existing", "new"):
             raise ValueError("target_mode must be existing|new")
@@ -370,9 +973,17 @@ class MissionStore:
             "state": "draft",
             "done_when": done_when or [],
             "turns_used": 0,
-            "max_turns": TEMPLATES[template]["max_turns"],
+            # THE BUDGET IS RESOLVED HERE AND NOWHERE ELSE ON THIS PATH.
+            # turn_budget() prefers the founder's setting and falls back to
+            # the template, and because the answer is SNAPSHOTTED onto the
+            # record, every downstream reader (run_mission's budget check,
+            # the decider prompt, the restart sweep, clone_for_retry) keeps
+            # reading the mission rather than the setting. That is what makes
+            # a budget change bind new tasks only, with no re-budgeting of
+            # work already in flight and no property indirection.
+            "max_turns": turn_budget(template),
             "version": 1,
-            "invariants": list(TEMPLATES[template]["invariants"]),
+            "invariants": list(known[template]["invariants"]),
             "created_at": _now(),
             # monotonic tiebreak: created_at is second-granularity and the
             # store lists by filename (random hex) -- FIFO needs a real clock
@@ -573,7 +1184,15 @@ def _now():
 
 def clone_for_retry(store, mid):
     """Failed/stopped/done -> a FRESH mission with the same brief (retry
-    one-tap). Always a new target: a dead delegate is never reused."""
+    one-tap). Always a new target: a dead delegate is never reused.
+
+    THE BUDGET IS FRESH TOO, and deliberately so: this routes through
+    create(), so a retry is stamped with the budget in force NOW rather than
+    the one its parent ran on. That is the right reading of a retry -- it is
+    a new task with an old brief -- and it is the reason a founder who raises
+    the budget after watching a task run out of road gets the bigger number
+    on the retry without having to edit anything.
+    """
     src = store.load(mid)
     if not src or src.get("state") not in TERMINAL:
         raise ValueError("retry is only for finished missions")
@@ -585,7 +1204,8 @@ def clone_for_retry(store, mid):
     checks = [{k: v for k, v in c.items()
                if k not in ("met", "confirmed_by", "confirmed_at")}
               for c in src.get("done_when") or []]
-    clone = store.create(src["objective"], src.get("template") or "fix",
+    clone = store.create(src["objective"],
+                         src.get("template") or default_offer(),
                          target_mode="new", target_session=None,
                          done_when=checks, manifest=src.get("manifest"))
     src = store.load(mid)
@@ -595,6 +1215,26 @@ def clone_for_retry(store, mid):
                             "retry of %s" % mid)
 
 
+def _call_verifier(verifier, check_text, evidence):
+    """Ask a verifier about one check, with or without the evidence.
+
+    TWO SHAPES, ONE CALLER. A production verifier needs the evidence to
+    decide anything (it reads what the worker actually said); every verifier
+    written before this one -- and every test that injects a lambda -- takes
+    the check alone. Preferring the two-argument call and falling back keeps
+    both working without a flag day.
+
+    The fallback is narrowed to a TypeError raised by the call itself: a
+    TypeError from INSIDE a two-arg verifier must surface as the failure it
+    is, not be retried as a one-arg call and silently answered wrong.
+    """
+    try:
+        return bool(verifier(check_text, evidence))
+    except TypeError:
+        pass
+    return bool(verifier(check_text))
+
+
 def evaluate_done_when(mission, transcript_text, verifier=None):
     """Tiered evaluation. founder_confirm NEVER auto-passes: it is met only
     when its `met` flag was set by an explicit founder action."""
@@ -602,7 +1242,8 @@ def evaluate_done_when(mission, transcript_text, verifier=None):
     for check in mission.get("done_when", []):
         tier = check.get("tier")
         if tier == "verify":
-            met = bool(verifier(check["check"])) if verifier else False
+            met = (_call_verifier(verifier, check["check"], transcript_text)
+                   if verifier else False)
         elif tier == "contains_artifact":
             met = check["check"] in (transcript_text or "")
         elif tier == "founder_confirm":
@@ -668,6 +1309,24 @@ def artifact_context(transcript, needle, window=ARTIFACT_CONTEXT):
             out = out[:cut]
         out += "…"
     return out.strip()
+
+
+def confirmation_is_due(results):
+    """Is the ONLY thing left the founder's signature?
+
+    Lifted verbatim out of the loop's confirmation branch so the infra exit
+    below can ask the same question instead of growing a second answer to
+    it. Every clause is the loop's, including the one the loop's own comment
+    exists to protect: with NO machine-checkable check at all there is
+    nothing to have passed, so an all-founder_confirm mission is NOT due --
+    it is still being driven.
+    """
+    results = results or []
+    pending_confirm = [r for r in results
+                       if r["tier"] == "founder_confirm" and not r["met"]]
+    machine = [r for r in results if r["tier"] != "founder_confirm"]
+    others_met = bool(machine) and all(r["met"] for r in machine)
+    return bool(results and pending_confirm and others_met)
 
 
 def completion_summary(mission, results, transcript="", outcome=""):
@@ -970,6 +1629,25 @@ class MissionEngine:
             if "never_say" in m.get("invariants", ()):
                 # watch missions observe; they do not speak (S46 invariant)
                 return m
+            if autonomy() == "L0":
+                # L0 WATCH: the same rule as the line above, one level up --
+                # that makes ONE mission silent, this makes all of them.
+                #
+                # IT PAUSES RATHER THAN RETURNING, which is where it parts
+                # company with never_say. A `watch` mission is SUPPOSED to sit
+                # in `running` and observe forever; silence is its finished
+                # state. A feature task held at L0 is not finished, it is
+                # waiting for the founder to allow it, and a row reading
+                # `running` while nothing will ever be said is the same lie
+                # the inert selector used to tell. Pausing also frees the slot
+                # (shadow_runner._launch), so a queue cannot stall behind
+                # tasks that are forbidden to speak.
+                m = self.store.transition(
+                    mid, "paused",
+                    "autonomy is L0 Watch -- Shadow is watching, not acting")
+                m["pause_reason"] = "autonomy_hold"
+                self.store.save(m)
+                return m
             if m["turns_used"] >= m["max_turns"]:
                 return self._out_of_road(
                     m, "failed", "budget_exhausted",
@@ -1106,6 +1784,23 @@ class MissionEngine:
                     m["pending_floor_say"] = say_text[:1000]
                     self.store.save(m)
                     return m
+                # AUTONOMY COMES AFTER THE FLOOR, AND THAT ORDER IS THE
+                # PRECEDENCE RULE ITSELF (SHADOW.md section 3: floors are rank
+                # 1, above this session's founder words). A say can trip both
+                # -- "push --force to the client repo" at L1 is a floor AND a
+                # held suggestion -- and the founder must be told the floor,
+                # because that is the fact that does not change no matter what
+                # they pick in Settings. Reporting "waiting for your yes" for
+                # something that is permanently confirm-first would teach them
+                # that raising autonomy would clear it. It would not.
+                #
+                # NOTHING BELOW CAN REACH THE FLOOR CHECK, either: it returns.
+                # So no autonomy level, L3 included, can route around it --
+                # which is the property test_shadow_autonomy pins directly
+                # rather than leaving to inspection of this comment.
+                hold = self._autonomy_hold(m, say_text)
+                if hold is not None:
+                    return hold
                 # THE LAST LOOK BEFORE SPEAKING, and the takeover window it
                 # closes (founder, 2026-09-14: "clicked Take Over on a
                 # running task at turn 3, the task went FAILED").
@@ -1146,23 +1841,48 @@ class MissionEngine:
                 ok = await self.sayer(m, say_text)
                 # A STRING is a named, retryable precondition -- the say was
                 # never delivered, so nothing about the attempt is spent. It
-                # goes down _out_of_road, which blocks a goal attempt (the
-                # founder is asked, the chat is kept, Resume works) and leaves
-                # a standalone mission terminal exactly as before. False stays
-                # what it always was: the say itself was turned down.
+                # goes down _out_of_road, which now reads it as the INFRA
+                # fault it always was (INFRA_BLOCK_REASONS): the work is
+                # evaluated first, and the mission completes, waits for the
+                # founder's signature, or parks as NEEDS YOU -- for a goal
+                # attempt and a standalone mission alike. It never `failed`
+                # again; that was the "Budget per task" post-mortem.
+                # False stays what it always was: the say itself was turned
+                # down, which IS a refusal and still fails.
                 # non-empty: an EMPTY string is falsy and means nothing, so it
                 # stays a plain refusal rather than becoming a nameless blocker
                 # (store.block rightly refuses a reasonless block)
                 if isinstance(ok, str) and ok:
+                    # infra=True on the SHAPE, not on the id: any named
+                    # precondition means the say never left, whatever it is
+                    # called, so a blocker id added later cannot quietly go
+                    # back to failing missions whose work is fine.
                     return self._out_of_road(
                         m, "failed", ok,
-                        "say not delivered (%s) -- nothing was sent" % ok)
+                        "say not delivered (%s) -- nothing was sent" % ok,
+                        infra=True)
                 if not ok:
                     return self.store.transition(mid, "failed", "say refused")
                 last_say = say_text
                 # remembered on the record, so a resumed attempt and the ledger
                 # both know what Shadow last asked for
                 m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
+                # THE TURN THAT IS HAPPENING RIGHT NOW (founder, 2026-09-16).
+                #
+                # turns_used counts turns that FINISHED -- it is incremented
+                # after the boundary arrives, which is correct for a budget
+                # and wrong for a display. Between this say and that boundary
+                # the worker IS on a turn that no field named, so the card
+                # read "TURN 3 of 30" while turn 4 was the one being worked,
+                # and a restart in that window lost the fact entirely.
+                #
+                # `turn_open` is that missing fact and nothing more: the
+                # number of the turn currently in flight, written before the
+                # wait and cleared when the wait resolves. It never feeds the
+                # budget (turns_used is still the only thing max_turns is
+                # compared against) and it never feeds evaluation. It is
+                # durable on purpose -- surviving the restart is the point.
+                m["turn_open"] = m["turns_used"] + 1
                 self.store.save(m)
                 arrived = await self.waiter(m)
                 if arrived is False:
@@ -1185,6 +1905,9 @@ class MissionEngine:
             if m["state"] in TERMINAL or m["state"] in ("paused", "blocked"):
                 return m          # something terminal happened mid-turn
             m["turns_used"] += 1
+            # the in-flight turn just became a finished one; exactly one field
+            # describes it at a time
+            m["turn_open"] = None
             self.store.save(m)
             shadow_ledger.append("actions", {
                 "mission_id": mid, "kind": "say",
@@ -1192,7 +1915,20 @@ class MissionEngine:
                 # a briefed turn 0 is the SPAWN's say, counted here
                 "summary": (("(brief already delivered at spawn) "
                              if briefed else "") + say_text)[:200]})
-            transcript = self.reader(m)
+            # AN EVALUATION THAT CANNOT ANSWER IS NOT A FAILED MISSION
+            # (founder, 2026-09-16). The reader and the verifier are Shadow's
+            # machinery, and either can raise on a turn the WORKER finished
+            # perfectly well -- an unreadable transcript, a verifier with a
+            # bug. That exception used to leave run_mission entirely and land
+            # in _launch's crash handler, which wrote `failed`. It now takes
+            # the same infra exit every other supervisor fault takes, so the
+            # work is evaluated (or the founder asked) instead of buried.
+            try:
+                transcript = self.reader(m)
+            except Exception as exc:      # noqa: BLE001 -- parked, not hidden
+                return self._out_of_road(
+                    m, "failed", "shadow_eval_failed",
+                    "evidence unreadable: %s" % str(exc)[:160])
             # TWO READERS, TWO JOBS, AND THEY MUST NOT BE THE SAME STRING.
             # `transcript` is the EVIDENCE and is untouched: evaluate_done_when
             # below still receives the full evidence_text, so every
@@ -1210,7 +1946,13 @@ class MissionEngine:
                     shaped = ""
                 if shaped:
                     last_response = shaped
-            done, results = evaluate_done_when(m, transcript, self.verifier)
+            try:
+                done, results = evaluate_done_when(m, transcript,
+                                                   self.verifier)
+            except Exception as exc:      # noqa: BLE001 -- parked, not hidden
+                return self._out_of_road(
+                    m, "failed", "shadow_eval_failed",
+                    "evaluation raised: %s" % str(exc)[:160])
             if self.on_evaluated is not None:
                 # progress bookkeeping NEVER decides a mission's fate
                 try:
@@ -1225,9 +1967,6 @@ class MissionEngine:
                 return fresh
             if done:
                 return self._complete(mid, results, transcript)
-            pending_confirm = [r for r in results
-                               if r["tier"] == "founder_confirm"
-                               and not r["met"]]
             # A CONFIRMATION PAUSE MUST BE EARNED, NOT INHERITED FROM AN
             # EMPTY SET (live, missions m-b7d534be84d7 / m-0213b89e5feb /
             # m-d817efbe3aa1 -- three of three).
@@ -1254,14 +1993,11 @@ class MissionEngine:
             #
             # This cannot complete a mission: `done` still comes only from
             # evaluate_done_when above, and _complete is still its one writer.
-            machine = [r for r in results if r["tier"] != "founder_confirm"]
-            others_met = bool(machine) and all(r["met"] for r in machine)
-            if results and pending_confirm and others_met:
-                m = self.store.transition(
-                    mid, "paused", "awaiting founder confirmation")
-                m["pause_reason"] = "founder_confirm"
-                self.store.save(m)
-                return m
+            # the rule itself now lives in confirmation_is_due() -- same
+            # clauses, same order, one copy, so the infra exit cannot drift
+            # from the loop
+            if confirmation_is_due(results):
+                return self._await_confirmation(mid)
 
     def _complete(self, mid, results, transcript):
         """The ONE writer of a `done` mission.
@@ -1307,6 +2043,135 @@ class MissionEngine:
                                       mm["result_excerpt"]))[:200]})
         return mm
 
+    def _await_confirmation(self, mid):
+        """The machine work passed; only the founder's signature is left.
+
+        Lifted verbatim out of the loop (transition, stamp, save, return) so
+        the infra exit can reach the SAME waiting room rather than inventing
+        a second one. The founder reads this as NEEDS YOU, `settle` turns
+        their Yes into `done`, and nothing here can satisfy a check.
+        """
+        m = self.store.transition(mid, "paused",
+                                  "awaiting founder confirmation")
+        m["pause_reason"] = "founder_confirm"
+        self.store.save(m)
+        return m
+
+    def _autonomy_hold(self, m, say_text):
+        """Hold this say for the founder, or None to let it go.
+
+        TWO HOLDS, ONE SHAPE. L1 Suggest holds EVERY say: the founder wanted
+        to see each instruction before it lands, so every turn asks. L3 Act
+        with the top-tier switch on holds the FIRST say of the mission and
+        then never again -- the founder is authorising the tier, not
+        proof-reading the work, and asking every turn would make L3
+        indistinguishable from L1, which would make the four levels three.
+        L2 never holds here: its restraint is the worker's `plan` ceiling, so
+        the instruction itself is safe to send.
+
+        ONCE PER MISSION IS RECORDED ON THE MISSION (`top_tier_confirmed`),
+        not in memory, because the app restarts and a resumed loop must not
+        re-ask something the founder already answered.
+
+        THE PENDING SAY IS STORED THE WAY A FLOORED ONE IS, and carries the
+        same known limitation: resuming re-enters run_mission, which composes
+        a FRESH instruction from whatever the worker has said since. So the
+        founder is approving the tier or the turn, not signing a specific
+        string. That is already true of `pending_floor_say` (which has no
+        consumer either); fixing it means a one-use approval bound to a hash
+        of the text, and it is deliberately not invented here for autonomy
+        alone -- one approval mechanism, added once, for both.
+        """
+        level = autonomy()
+        if level == "L1":
+            held = self.store.transition(
+                m["id"], "paused",
+                "autonomy is L1 Suggest -- waiting for your yes")
+            held["pause_reason"] = "autonomy_suggest"
+            held["pending_autonomy_say"] = say_text[:1000]
+            self.store.save(held)
+            return held
+        if level == "L3" and confirm_top_tier() \
+                and not m.get("top_tier_confirmed"):
+            held = self.store.transition(
+                m["id"], "paused",
+                "autonomy is L3 Act -- confirm before the top tier")
+            held["pause_reason"] = "autonomy_top_tier"
+            held["pending_autonomy_say"] = say_text[:1000]
+            self.store.save(held)
+            return held
+        return None
+
+    def _infra_exit(self, m, block_reason, note):
+        """SHADOW BROKE. ASK THE WORK FIRST, THEN PARK -- NEVER FAIL.
+
+        The one funnel for every fault in the supervisor (INFRA_BLOCK_REASONS
+        names them). It exists because the two live post-mortems were the
+        same sentence twice: a fault in Shadow decided a mission's fate
+        WITHOUT ONCE CONSULTING THE WORK.
+
+          m-5c2fca3f824b  decider unreadable -> failed; the worker finished
+                          successfully 96s later and the result was dropped.
+          m-6b177e1cbdf0  founder confirmed a check, the next say found no
+                          runtime -> failed 11s after the sign-off.
+
+        So this asks, in order:
+
+          1. is the mission already settled?   -> hand back what is on disk.
+             A `done` mission is NEVER re-decided by a later Shadow fault:
+             the completion is the worker's, not the supervisor's, and
+             nothing here may overwrite it.
+          2. is the work already done?         -> _complete it (DONE).
+          3. is only the signature left?       -> _await_confirmation
+                                                  (NEEDS YOU -> DONE on Yes).
+          4. otherwise                         -> blocked (NEEDS YOU).
+
+        NO SECOND EVALUATOR AND NO WEAKER BAR. Steps 2 and 3 are the loop's
+        own evaluate_done_when, its own evidence reader, its own verifier and
+        its own confirmation rule -- the same code the loop runs one screen
+        further down and could not reach, because the fault returned first.
+        A check Shadow could not verify a second ago is still unmet here.
+
+        AND IF THE EVALUATION ITSELF CANNOT ANSWER -- an unreadable
+        transcript, a verifier that raises -- that is not a verdict either:
+        the answer is unknown, so the mission parks at step 4 and the founder
+        is asked. Never `failed`.
+        """
+        mid = m["id"]
+        fresh = self.store.load(mid) or m
+        # 1. the founder (or a finished turn) already settled this
+        if fresh["state"] in TERMINAL or fresh["state"] in ("paused",
+                                                            "blocked"):
+            return fresh
+        transcript, results, done = "", None, False
+        try:
+            transcript = self.reader(fresh) if self.reader is not None else ""
+            done, results = evaluate_done_when(fresh, transcript,
+                                               self.verifier)
+        except Exception:         # noqa: BLE001 -- unknown, never a verdict
+            transcript, results, done = "", None, False
+        if done:
+            # 2. THE WORKER'S RESULT WINS. The supervisor's illness cannot
+            # take a finished outcome away from the founder.
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "decision",
+                "summary": "%s, but the work was already done -- completing "
+                           "instead of failing" % block_reason})
+            return self._complete(mid, results, transcript)
+        if confirmation_is_due(results):
+            # 3. everything machine-checkable passed: this is a signature,
+            # not a failure
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "decision",
+                "summary": "%s, machine checks all passed -- awaiting "
+                           "founder confirmation" % block_reason})
+            return self._await_confirmation(mid)
+        # 4. genuinely unresolved: park it where Resume works
+        blocked = self.store.block(mid, block_reason, note)
+        blocked["failure_class"] = INFRA_FAILURE_CLASS
+        self.store.save(blocked)
+        return blocked
+
     def settle(self, mid):
         """Decide a founder_confirm pause, WITHOUT spending a turn.
 
@@ -1334,9 +2199,28 @@ class MissionEngine:
         m = self.store.load(mid)
         if m is None:
             raise ValueError("no mission %s" % mid)
-        if m["state"] != "paused" \
-                or m.get("pause_reason") != "founder_confirm":
-            return m            # not a confirmation pause -- untouched
+        # THE OTHER WAITING ROOM (founder, 2026-09-16). A founder_confirm
+        # check is reached two ways, not one: the loop PAUSES on it, and
+        # Shadow's own `ask_founder` BLOCKS on it -- and an intervention that
+        # declares `confirms_check` is answered in exactly that blocked
+        # state. Settling only the pause meant the blocked half went back
+        # through the loop to learn something already true: another decider
+        # call, another say into the worker chat, another turn spent, and on
+        # m-6b177e1cbdf0 that relaunch is the say that died of
+        # no_live_runtime. A mission whose last check the founder just
+        # signed must not have to take a turn to notice.
+        #
+        # THE BAR IS UNTOUCHED. `done` still comes only from
+        # evaluate_done_when below, on the same evidence with the same
+        # verifier, and `not done` still returns the record exactly as it
+        # was -- a blocked mission stays blocked, with its block_reason, and
+        # the founder's answer resumes it as before.
+        settleable = (
+            (m["state"] == "paused"
+             and m.get("pause_reason") == "founder_confirm")
+            or m["state"] == "blocked")
+        if not settleable:
+            return m            # not a confirmation wait -- untouched
         transcript = self.reader(m) if self.reader is not None else ""
         done, results = evaluate_done_when(m, transcript, self.verifier)
         if self.on_evaluated is not None:
@@ -1355,7 +2239,8 @@ class MissionEngine:
                               "founder confirmation settles the attempt")
         return self._complete(mid, results, transcript)
 
-    def _out_of_road(self, m, terminal_state, block_reason, note):
+    def _out_of_road(self, m, terminal_state, block_reason, note,
+                     infra=False):
         """The one place that decides how an attempt ends when the machine
         runs out of road (budget spent, or the chat repeating itself).
 
@@ -1373,6 +2258,21 @@ class MissionEngine:
         The ledger note is identical either way, so the audit trail reads
         the same for both.
         """
+        # A FAULT IN SHADOW IS NEVER A VERDICT ON THE WORK. Checked BEFORE
+        # goal_id, because it holds for a standalone mission too -- that is
+        # the whole of the change. _infra_exit decides where such a fault
+        # lands (done / needs-you / blocked) and is the only thing that runs
+        # instead of the two lines below. Everything else about this method is
+        # untouched: budget, ping-pong and stalled turns keep their historical
+        # terminal states for a standalone mission and their block for a goal.
+        #
+        # TWO WAYS IN, ONE EXIT. `infra=True` is for a caller that knows the
+        # SHAPE is a supervisor fault whatever it is called -- the say-
+        # precondition arm, whose blocker ids come from session_runtime and
+        # may grow. INFRA_BLOCK_REASONS is for the faults the engine names
+        # itself. Neither can reach a terminal state.
+        if infra or block_reason in INFRA_BLOCK_REASONS:
+            return self._infra_exit(m, block_reason, note)
         if m.get("goal_id"):
             return self.store.block(m["id"], block_reason, note)
         return self.store.transition(m["id"], terminal_state, note)
@@ -1634,7 +2534,14 @@ class MissionScheduler:
         decision. More than one => the UI must ask "Yes to which"."""
         out = []
         for m in self.store.list(states=("paused",)):
-            if m.get("pause_reason") in ("founder_confirm", "floor_confirm"):
+            # autonomy_suggest / autonomy_top_tier are founder decisions in
+            # exactly the sense this list means: the mission is stopped and
+            # only a yes moves it. autonomy_hold (L0) is NOT here -- nothing
+            # the founder can say in a disambiguation prompt releases it,
+            # because the answer is a settings change, not a yes.
+            if m.get("pause_reason") in ("founder_confirm", "floor_confirm",
+                                         "autonomy_suggest",
+                                         "autonomy_top_tier"):
                 out.append({"mission_id": m["id"],
                             "objective": m["objective"][:120],
                             "reason": m["pause_reason"],

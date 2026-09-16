@@ -66,6 +66,12 @@ def _new_attempt(goal_id, template, extra_turns, manifest):
         raise ValueError(
             "goal %s already has a live attempt (%s) -- end it before "
             "starting another" % (goal_id, g["current_mission_id"]))
+    # RESOLVED HERE, NOT IN A DEFAULT ARGUMENT. `template="fix"` in the
+    # signature would bind at import and could name a kind the founder has
+    # since retired; asking at call time means an attempt always starts on a
+    # kind Shadow actually offers.
+    if template is None:
+        template = mission_engine.default_offer()
     ms = mission_engine.MissionStore()
     prev = None
     if g["attempts"]:
@@ -82,6 +88,16 @@ def _new_attempt(goal_id, template, extra_turns, manifest):
                   manifest=manifest,
                   goal_id=g["id"])
     if prev:
+        # THE ONE PLACE THE FOUNDER'S BUDGET SETTING DOES NOT REACH, and it is
+        # intentional. A goal's FIRST attempt is stamped by create() and so
+        # honours mission_engine.turn_budget(). A CONTINUATION carries the
+        # running total forward instead -- turns_used and the ceiling both --
+        # because a goal's budget is cumulative across its attempts and
+        # "extend adds, never resets" (test_goal_lifecycle test_14). Re-reading
+        # the setting here would silently reset a goal that had already spent
+        # three attempts' worth of road. A founder who raises the setting and
+        # then resumes a goal will not see the new number; `extra_turns` is
+        # the control that moves a goal's ceiling.
         m = ms.load(m["id"])
         m["turns_used"] = int(prev.get("turns_used") or 0)
         m["max_turns"] = int(prev.get("max_turns") or 0) + int(extra_turns)
@@ -103,7 +119,7 @@ def _new_attempt(goal_id, template, extra_turns, manifest):
     return m
 
 
-def start_first_attempt(goal_id, template="fix", extra_turns=0,
+def start_first_attempt(goal_id, template=None, extra_turns=0,
                         manifest=None):
     """The first attempt at a `draft` goal. Returns the mission, awaiting
     the founder's Start (brief_confirm) exactly like any other mission."""
@@ -114,7 +130,7 @@ def start_first_attempt(goal_id, template="fix", extra_turns=0,
     return _new_attempt(goal_id, template, extra_turns, manifest)
 
 
-def resume_goal(goal_id, extra_turns=0, template="fix", manifest=None):
+def resume_goal(goal_id, extra_turns=0, template=None, manifest=None):
     """Resume a BLOCKED goal in the SAME chat as a fresh attempt.
 
     A new mission, not a revived one: the blocked attempt stays on the
