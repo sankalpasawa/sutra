@@ -220,6 +220,7 @@ function agS(){
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
     compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
+    libFilter: "all",             /* "all" | "off" -- which rows the Library list shows */
     /* the open Library article: the buffer being edited (draft, title, the version it was opened
        at, dirty), the one section editor that is open, who last saved it, and a teammate's newer
        save that blocked ours */
@@ -1634,15 +1635,22 @@ function agChecksHtml(checks){
 /* Before and after. The server's make_diff sends a LIST of {type, text} rows with a folded
    {type: "context", count} standing in for a long unchanged run; an older shape was one unified
    string, and both still render. (The list was drawn as "[object Object]" until 2026-09-16.) */
+/* Each changed line carries its own order as --i, a CSS custom property, so a line-by-line
+   landing animation (the Library section rewrite, agents.css ".ag-secbox .ag-diff") can stagger
+   off it. Unchanged text keeps no index -- it never animates, only what changed does. Any other
+   diff view (the chat's own block edit) simply never applies that animation, so this costs it
+   nothing. */
 function agDiffHtml(diff){
   if (!diff || (Array.isArray(diff) && !diff.length)) return "";
+  let i = 0;
+  const ord = () => ` style="--i:${i++}"`;
   if (Array.isArray(diff)){
-    return `<pre class="ag-diff">${diff.map(r => r.type === "context" ? `<span class="fold">… ${agEsc(agNum(r.count))} unchanged line${r.count === 1 ? "" : "s"}</span>`
-      : r.type === "add" ? `<span class="add">+ ${agEsc(r.text)}</span>`
-      : r.type === "remove" ? `<span class="del">- ${agEsc(r.text)}</span>` : `  ${agEsc(r.text)}`).join("\n")}</pre>`;
+    return `<pre class="ag-diff">${diff.map(r => r.type === "context" ? `<span class="fold"${ord()}>… ${agEsc(agNum(r.count))} unchanged line${r.count === 1 ? "" : "s"}</span>`
+      : r.type === "add" ? `<span class="add"${ord()}>+ ${agEsc(r.text)}</span>`
+      : r.type === "remove" ? `<span class="del"${ord()}>- ${agEsc(r.text)}</span>` : `  ${agEsc(r.text)}`).join("\n")}</pre>`;
   }
-  return `<pre class="ag-diff">${String(diff).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${agEsc(l)}</span>`
-    : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
+  return `<pre class="ag-diff">${String(diff).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add"${ord()}>${agEsc(l)}</span>`
+    : l.startsWith("-") && !l.startsWith("---") ? `<span class="del"${ord()}>${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
 }
 
 /* The links the pass laid in, with the match score each one earned. */
@@ -1857,7 +1865,15 @@ function agLibArticleHtml(p, a){
     ${agLibConflictHtml(a.libConflict, p.libId)}
     <div class="ag-doc">${secs.map(s => {
       const editing = ed && ed.id === s.id;
-      return `<div class="ag-sec ${editing ? "editing" : ""}" data-sec="${agEsc(s.id)}">${agMd(s.text)}
+      /* AI is mid-rewrite of exactly this section: the sweep, the dim and the left accent line
+         (agents.css .ag-artsec.rewriting) are all gated on this one class, never on ed.busy
+         directly, so only the section actually being rewritten ever animates. */
+      const rewriting = editing && ed.mode === "ai" && ed.busy;
+      /* The one section a reader should see as a callout, not just another heading -- decided
+         once, from the heading text the wrap step itself writes ("## TL;DR", write/assemble.py). */
+      const tldr = /^tl\s*;?\s*dr$/i.test(String(s.heading || "").trim());
+      return `<div class="ag-artsec${editing ? " editing" : ""}${rewriting ? " rewriting" : ""}${tldr ? " tldr" : ""}" data-sec="${agEsc(s.id)}">${agMd(s.text)}
+        ${rewriting ? `<span class="rewritelbl" role="status">Rewriting…</span>` : ""}
         ${editing ? "" : `<button class="ib ag-editbtn ag-pencil" type="button" data-ag="libsec" data-arg="${agEsc(s.id)}" aria-label="Edit ${agEsc(s.heading)}" title="Edit this section, by hand or with AI">${AG_ICON.pencil}</button>`}
         ${editing ? agLibSecEditorHtml(s, ed, p.libId) : ""}</div>`;
     }).join("")}</div>`;
@@ -1953,8 +1969,13 @@ function agPanelHtml(a){
       ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
       <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
   } else body = `<pre class="ag-detail">${agEsc(JSON.stringify(p.data, null, 2))}</pre>`;
-  return `<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
-      <button class="ib" type="button" data-ag="closepanel" aria-label="Close the panel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+  /* A Library article takes the whole Library area (agents.css .ag.liblarge, set in agDraw from
+     this same p.libId), so the small X in the corner is no longer enough of a way back -- it
+     reads as "close", not "this returns you to the list". A named button says exactly that. Both
+     buttons run the same closepanel handler; there is only one way this panel ever shuts. */
+  const backBar = p.libId ? `<div class="ag-back"><button class="btn ag-backbtn" type="button" data-ag="closepanel">${AG_ICON.left}<span>Back to Library</span></button></div>` : "";
+  return `${backBar}<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
+      <button class="ib" type="button" data-ag="closepanel" aria-label="${p.libId ? "Back to the Library" : "Close the panel"}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="ag-pb">${body}</div>
     ${footer ? `<div class="ag-pf">${footer}</div>` : ""}`;
 }
@@ -2475,16 +2496,64 @@ function agMileStripHtml(id, miles, writing){
    comes from the server too, from the same list the Prompts tab names the format rules by, so the
    two screens cannot end up calling one shape by two names. A row whose run never got as far as
    the router simply has no format, and shows none rather than guessing one. */
+/* format_label is the plain name the server already resolved (the prompt store's own title for
+   one of the 8 archetypes, agents_api.py api_library) -- the one source of truth, so the format
+   is never decided twice. This is only the FALLBACK for a row whose format_label has not landed
+   yet (an old row, or one saved before the engine change that adds it): tidy the raw
+   format_archetype into words rather than show its slug or its free-text sentence as-is. */
+function agTidyLabel(s){
+  s = String(s || "").trim();
+  if (!s) return "";
+  return s.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
+/* WHAT SHAPE THIS ARTICLE WAS WRITTEN TO, on the Library row. The archetype is decided once, at
+   the route step, and the server reads it back off the run that made the article; the plain name
+   comes from the server too, from the same list the Prompts tab names the format rules by, so the
+   two screens cannot end up calling one shape by two names. A row whose run never got as far as
+   the router simply has no format, and shows none rather than guessing one. */
 function agLibFormat(it){
-  const label = (it && (it.format_label || it.format)) || "";
+  const label = (it && it.format_label) || agTidyLabel(it && it.format_archetype);
   return label ? `<span title="The format this article was written to">${agEsc(label)}</span>` : "";
 }
 
-function agLibraryHtml(items){
-  const list = items || [];
+/* What the top ranking pages themselves run, so the article's own word count reads against
+   something. measured_band is written once, at the checkpoint (the decisions file, spec item 0);
+   an old row has none, and this shows nothing rather than a guess. */
+function agLibBand(it){
+  const b = it && it.measured_band;
+  if (!b || b.min == null || b.max == null) return "";
+  return `<span title="What the top ranking pages run">top pages ${agEsc(agNum(b.min))} to ${agEsc(agNum(b.max))}</span>`;
+}
+
+/* On topic is the default and gets no pill -- the same "warn, tag, keep going" the chat line
+   already follows (spec item 3). Off topic is the one state worth flagging on the row, in the
+   same quiet amber the rest of the screen already uses for a soft warning (.p-warn). The reason
+   is on the pill's title, the same way agLibFormat and agMileStripHtml already put their own
+   explanation on a title rather than a second line. */
+function agLibTopicPill(it){
+  const t = it && it.topic_scope;
+  if (!t || t.state !== "off") return "";
+  return `<span class="pill p-warn" title="${agEsc(t.why || "Flagged off topic")}">Off topic</span>`;
+}
+
+function agLibraryHtml(items, a){
+  const all = items || [];
+  const filter = (a && a.libFilter) === "off" ? "off" : "all";
+  const offCount = all.filter(it => it && it.topic_scope && it.topic_scope.state === "off").length;
+  const list = filter === "off" ? all.filter(it => it && it.topic_scope && it.topic_scope.state === "off") : all;
   const bin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
+  /* The filter is a tab pair, not a dropdown: two states only, and the count on each says what
+     picking it gets you before you click. Off topic disables itself at zero rather than showing
+     an empty list a person did not ask for. */
+  const tabs = all.length ? `<div class="ag-libtabs" role="tablist" aria-label="Filter the Library">
+      <button class="btn ${filter === "all" ? "on" : ""}" type="button" role="tab" aria-selected="${filter === "all"}" data-ag="libfilter" data-arg="all">All <span class="ag-libtabn">${agEsc(agNum(all.length))}</span></button>
+      <button class="btn ${filter === "off" ? "on" : ""}" type="button" role="tab" aria-selected="${filter === "off"}" data-ag="libfilter" data-arg="off" ${offCount ? "" : "disabled"}>Off topic <span class="ag-libtabn">${agEsc(agNum(offCount))}</span></button>
+    </div>` : "";
   return `<div class="ag-view"><h2>Library</h2>
     <p class="lead">Every article, from the moment it starts. You can read one while it is still being written. Nothing is published until you publish it.</p>
+    ${tabs}
     ${list.length ? list.map(it => {
       const status = it.status || "draft";
       const writing = status === "writing";
@@ -2496,13 +2565,14 @@ function agLibraryHtml(items){
          on the row (`request`), so use that: it is the only thing that identifies the article
          before it has a title, and the row renames itself the moment there is one. */
       const name = (writing && it.request) || it.title;
-      return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span></div>
-        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${it.primary_keyword ? `<span>${agEsc(it.primary_keyword)}</span>` : ""}${agLibFormat(it)}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
+      return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span>${agLibTopicPill(it)}</div>
+        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${agLibFormat(it)}${agLibBand(it)}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
         ${agMileStripHtml(it.id, miles, writing)}</div>
         <div class="ra">${writing ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
           <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${status === "ready" ? "draft" : "ready"}">${status === "ready" ? "Back to draft" : "Mark ready"}</button>`}
           <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article">${bin}</button></div></div>`;
     }).join("")
+      : all.length ? `<div class="ag-row"><div class="ri"><div class="rn">No off-topic articles</div><div class="rd">Nothing here has been flagged off topic.</div></div></div>`
       : `<div class="ag-row"><div class="ri"><div class="rn">Nothing here yet</div><div class="rd">Ask for an article and its row appears here straight away, filling in as each piece is made.</div></div></div>`}
   </div>`;
 }
@@ -3042,6 +3112,7 @@ function agEnterScreen(root, enter){
   root.innerHTML = market ? AG_SHELL_MARKET : AG_SHELL_AGENT;
   root.classList.toggle("ismarket", market);
   root.classList.remove("haspanel");
+  root.classList.remove("liblarge");
   root.classList.toggle("ag-enter", !!enter);
   if (enter && typeof setTimeout === "function")
     setTimeout(() => { const r = agRoot(); if (r) r.classList.remove("ag-enter"); }, AG_ENTER_MS);
@@ -3129,6 +3200,10 @@ function agDraw(force){
   const panelFlips = root.classList.contains("haspanel") !== !!a.panel;
   const anchor = (panelFlips && a.view !== "chat" && scroll) ? agScrollAnchor(scroll) : null;
   root.classList.toggle("haspanel", !!a.panel);
+  /* A Library article takes the whole area (agents.css .ag.liblarge): the side nav and the list
+     both hide, the panel goes to 100%. Every other panel (a run's own draft, a brand file, a
+     prompt) keeps the 46% side-by-side review it always had -- only p.libId opts in. */
+  root.classList.toggle("liblarge", !!(a.panel && a.panel.libId));
   agSetHtml("agSide", agSideHtml(a));
   const nearBottom = scroll ? (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60) : true;
   if (a.view === "chat"){
@@ -3169,7 +3244,7 @@ function agDraw(force){
       : a.view === "assets" ? agAssetsHtml(a.assets, a)
       : a.view === "memory" ? agMemoryHtml(a.memory, a.memForm)
       : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
-      : a.view === "library" ? agLibraryHtml(a.library)
+      : a.view === "library" ? agLibraryHtml(a.library, a)
       : a.view === "tools" ? agToolsHtml(a.tools)
       : agConnectionsHtml(a.conns, a.health, a.connForm, a.ws, a.wsForm);
     const searching = document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-agpageq]");
@@ -4402,6 +4477,7 @@ async function agAction(act, el){
       catch (e) { agToast("Could not open: " + (e.message || e)); }
       agDraw(); break;
     }
+    case "libfilter": a.libFilter = arg === "off" ? "off" : "all"; agDraw(); break;
     /* ── one section of a Library article ──────────────────────────────────── */
     case "libsec": {
       a.libSec = { id: arg, mode: "text", text: null, instruction: "", busy: false, error: "", proposal: null };

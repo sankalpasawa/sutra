@@ -439,6 +439,18 @@
 /* ── review panel ─────────────────────────────────────────────────────────── */
 .ag-panel{display:none;flex:none;width:0;border-left:1px solid var(--line-soft);flex-direction:column;min-height:0;background:var(--surface)}
 .ag.haspanel .ag-panel{display:flex;width:46%;min-width:360px;max-width:620px}
+/* A LIBRARY ARTICLE TAKES THE WHOLE AREA. Every other panel (a run's own draft, a brand file, a
+   prompt) still gets the 46% side-by-side review above; only a p.libId panel opts into this, by
+   agDraw toggling .liblarge onto .ag itself (17-agents.js). The side nav and the list both hide
+   rather than just shrink: this is a reader, not a squeezed sidebar. .liblarge implies
+   .haspanel is already true (a panel is what triggers it), so this must come AFTER the rule
+   above in the file to win at equal specificity. */
+.ag.liblarge .ag-side{display:none}
+.ag.liblarge .ag-main{display:none}
+.ag.liblarge .ag-panel{width:100%;max-width:none;min-width:0;border-left:0}
+.ag-back{padding:10px 14px 0}
+.ag-backbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;font-size:11.5px}
+.ag-backbtn svg{flex:none;width:11px;height:11px}
 .ag-ph{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--line-soft)}
 .ag-ph .pt{min-width:0;flex:1}
 .ag-ph h3{font-family:var(--serif);font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em;color:var(--ink);line-height:1.25}
@@ -514,12 +526,39 @@
 .ag-check.bad{background:var(--block-bg);color:var(--block)}
 .ag-check.warn{background:var(--warn-bg);color:var(--warn)}
 
-/* article */
-.ag-doc{font-size:13px;line-height:1.65;color:var(--ink)}
+/* article — read like a document: the app's own serif reading font (--serif, the same token
+   every h1/h2/h3 in this app already uses), a measure of about 65-75 characters, real distinct
+   heading sizes and a comfortable line height. One set of rules on .ag-doc itself, shared by the
+   run's own draft (.ag-blk, one paragraph editable at a time) and a saved Library article
+   (.ag-artsec, one section editable at a time), so the two views never drift into two different
+   readable-document standards. */
+.ag-doc{font-family:var(--serif);font-size:15px;line-height:1.7;color:var(--ink);
+  max-width:72ch;margin:0 auto}
+.ag-doc .md-h{margin:22px 0 8px;font-weight:650;line-height:1.3;letter-spacing:-.01em}
+.ag-doc .md-h:first-child{margin-top:0}
+.ag-doc h1.md-h{font-size:1.7em}
+.ag-doc h2.md-h{font-size:1.35em}
+.ag-doc h3.md-h{font-size:1.15em}
+.ag-doc h4.md-h,.ag-doc h5.md-h,.ag-doc h6.md-h{font-size:1.02em}
+.ag-doc .md-p{margin:0 0 14px}
+.ag-doc .md-l{margin:0 0 14px;padding-left:22px;line-height:1.65}
+.ag-doc .md-l li{margin:4px 0}
+.ag-doc .md-q{margin:0 0 14px;padding:3px 0 3px 14px;border-left:2px solid var(--line);color:var(--muted)}
+.ag-doc .md-hr{border:0;border-top:1px solid var(--line-soft);margin:20px 0}
+.ag-doc .md-code{background:var(--acc-bg);border:1px solid var(--line-soft);border-radius:4px;
+  padding:1px 5px;font-family:var(--mono);font-size:.82em}
+.ag-doc .md-pre{background:var(--code-bg,rgba(0,0,0,.22));border:1px solid var(--line-soft);
+  border-radius:7px;padding:10px 12px;margin:0 0 14px;overflow-x:auto}
+.ag-doc .md-pre code{font-family:var(--mono);font-size:.82em}
+.ag-doc .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
+/* a wide table scrolls inside its own box; the reader itself never scrolls sideways */
+.ag-doc .md-tw{overflow-x:auto;margin:0 0 14px}
+.ag-doc .md-t{border-collapse:collapse;font-family:var(--sans);font-size:.78em;min-width:100%}
+.ag-doc .md-t th,.ag-doc .md-t td{border:1px solid var(--line-soft);padding:6px 10px;text-align:left;vertical-align:top}
+.ag-doc .md-t th{background:var(--acc-bg);font-weight:650}
+
 .ag-blk{position:relative;padding:2px 0;border-radius:6px}
 .ag-blk:hover{background:var(--acc-bg)}
-.ag-blk .md-h{margin:14px 0 6px}
-.ag-blk .md-p{margin:0 0 9px}
 .ag-blk .ib.ag-editbtn{position:absolute;right:-30px;top:2px;opacity:0;color:var(--faint)}
 .ag-blk:hover .ib.ag-editbtn,.ag-blk .ib.ag-editbtn:focus-visible{opacity:1}
 .ag-blk.editing{background:var(--acc-bg);padding:8px 10px}
@@ -533,16 +572,46 @@
   padding:8px 10px;white-space:pre-wrap;max-height:240px;overflow:auto}
 .ag-diff .add{color:var(--ok)} .ag-diff .del{color:var(--block);text-decoration:line-through;opacity:.8}
 .ag-diff .fold{color:var(--faint);font-style:italic}
-.ag-doc .md-t{font-size:12px} .ag-doc .md-tw{margin:0 0 9px}
-.ag-blk .md-l{margin:0 0 9px;padding-left:20px}
 
-/* a Library article, by sections: the same hover, the same pencil, one section at a time */
-.ag-sec{position:relative;padding:2px 0 4px;border-radius:6px}
-.ag-sec:hover{background:var(--acc-bg)}
-.ag-sec .md-h{margin:14px 0 6px} .ag-sec .md-p{margin:0 0 9px} .ag-sec .md-l{margin:0 0 9px;padding-left:20px}
-.ag-sec .ib.ag-pencil{position:absolute;right:-30px;top:8px;opacity:0;color:var(--faint)}
-.ag-sec:hover .ib.ag-pencil,.ag-sec .ib.ag-pencil:focus-visible{opacity:1}
-.ag-sec.editing{background:var(--acc-bg);padding:8px 10px}
+/* A LIBRARY ARTICLE, BY SECTIONS: the same hover, the same pencil, one section at a time.
+   NAMED .ag-artsec, deliberately not .ag-sec: the side nav's own micro-label a little above in
+   this file (.ag-sec: 9.5px, uppercase, --faint) shares that exact class name with the sidebar
+   section header ("Recent", 17-agents.js), and a saved article inheriting it by pure class
+   collision is the actual bug in the screenshot -- an article rendered 9.5px, uppercase, grey.
+   Never give a reading section this name again. */
+.ag-artsec{position:relative;padding:2px 0 4px;border-radius:6px}
+.ag-artsec:hover{background:var(--acc-bg)}
+.ag-artsec .ib.ag-pencil{position:absolute;right:-30px;top:8px;opacity:0;color:var(--faint)}
+.ag-artsec:hover .ib.ag-pencil,.ag-artsec .ib.ag-pencil:focus-visible{opacity:1}
+.ag-artsec.editing{background:var(--acc-bg);padding:8px 10px}
+/* the TL;DR is the one section that should read as a callout, not just another heading */
+.ag-artsec.tldr{background:var(--acc-bg);border-left:2px solid var(--acc);
+  padding:10px 14px;border-radius:0 8px 8px 0}
+.ag-artsec.tldr .md-h{margin-top:0}
+/* ── the AI-rewrite animation (spec item 6) ──────────────────────────────────────────────────
+   Gated in TWO ways: .rewriting only lands on the one section actually being rewritten
+   (17-agents.js, `rewriting`), and everything but the label is further gated on
+   prefers-reduced-motion so a reduced-motion viewer gets only the word "Rewriting…" -- no sweep,
+   no dimming, no line-by-line landing. */
+.ag-artsec .rewritelbl{position:absolute;top:6px;right:8px;font:600 10px/1 var(--sans);
+  color:var(--acc);background:var(--card);padding:4px 9px;border-radius:999px;
+  border:1px solid var(--line-soft);z-index:1}
+@media (prefers-reduced-motion:no-preference){
+  .ag-artsec.rewriting{border-left:2px solid var(--acc);background:var(--acc-bg);overflow:hidden}
+  /* a soft gradient sweep, the theme's own accent at low opacity, left to right, looping */
+  .ag-artsec.rewriting::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(90deg,transparent,var(--acc) 50%,transparent);
+    opacity:.16;background-size:250% 100%;background-position:-100% 0;
+    animation:agRewriteSweep 2s ease-in-out infinite}
+  /* the old text dims slightly while the rewrite is in flight */
+  .ag-artsec.rewriting > .md-h,.ag-artsec.rewriting > .md-p,.ag-artsec.rewriting > .md-l,
+  .ag-artsec.rewriting > .md-tw,.ag-artsec.rewriting > .md-q{opacity:.55;transition:opacity .3s ease}
+  /* the new text (the proposed diff, agDiffHtml) fades in line by line as it lands, each line's
+     own order carried on --i (17-agents.js agDiffHtml) */
+  .ag-secbox .ag-diff span{animation:agLineIn .35s ease both;animation-delay:calc(var(--i,0) * 45ms)}
+}
+@keyframes agRewriteSweep{0%{background-position:-100% 0}100%{background-position:200% 0}}
+@keyframes agLineIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 .ag-secbox .ag-tabs .btn.on{border-color:var(--acc);color:var(--acc);font-weight:600}
 .ag-secbox textarea.tall{min-height:180px;max-height:50vh;font:12.5px/1.6 var(--mono);white-space:pre-wrap}
 .ag-conflict{margin:0 0 12px;border-left:2px solid var(--warn,var(--block));background:var(--warn-bg,var(--block-bg));
@@ -572,6 +641,14 @@
 .ag .ag-sechead h3.sec{margin:0;padding:0;border-bottom:0;flex:1;min-width:0}
 .ag-secctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .ag-secctl .btn{padding:4px 9px;font-size:10.5px}
+/* the Library's own All / Off topic filter, the same tab shape agLibSecEditorHtml's
+   "Edit the text / Edit with AI" pair already uses (.ag-tabs), so a filter and a mode switch on
+   this screen never look like two different controls */
+.ag-libtabs{display:flex;gap:6px;margin:0 0 14px}
+.ag-libtabs .btn{padding:5px 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px}
+.ag-libtabs .btn.on{border-color:var(--acc);color:var(--acc);font-weight:600;background:var(--acc-bg)}
+.ag-libtabs .btn:disabled{opacity:.45;cursor:default}
+.ag-libtabn{font:600 10px/1 var(--mono);opacity:.75}
 .ag-row{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
   background:var(--inset);margin-bottom:7px}
 /* A row that is asking for something, rather than reporting something. The one place it is used
