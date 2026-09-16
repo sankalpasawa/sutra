@@ -209,6 +209,83 @@ class TestUntargetedIsUnchanged(Base):
         self.assertEqual(self.store.load(mid)["state"], "blocked")
 
 
+# =========== the LIVE sequence: a NO is an answer, not an ending ==========
+class TestAFounderNoDrivesTheWorkerAgain(Base):
+    """MEASURED ON A LIVE MISSION (m-2a260bc5b6d3, 2026-09-16).
+
+    Shadow asked "Sign off: does `failure-test.md` containing exactly
+    `ALPHA` meet the objective?". The founder answered NO, and the panel then
+    showed NEEDS YOU with their own answer rendered as `False` -- which read
+    as a dead end with no way to continue the worker.
+
+    IT WAS NOT ONE. That mission's ledger runs:
+
+        blocked       ask_founder: "check #0 is founder_confirm, which only
+                      your sign-off can close"
+        intervention  founder answered iv-a4ff9811e52e {file_ok: false}
+        running       "founder answered Shadow"
+        decision      continue: "they reviewed and did NOT accept
+                      `failure-test.md` as it stands ..."
+
+    The NO retired the question, put the mission back to `running`, and
+    Shadow composed the next worker instruction out of the refusal. What the
+    founder was actually looking at was the NEXT hold -- a different
+    pause_reason that happens to render with the same NEEDS YOU face.
+
+    WHY THIS EXISTS WHEN test_02 AND test_11 ALREADY DO. test_02 pins that a
+    NO writes no `met`; test_11 pins that an answer resumes and relaunches --
+    but test_11 only ever sends `True`, on both of the request shapes it
+    loops over. The half that LOOKED broken in production was the half with
+    no test. This is that half, asserted as one sequence, on the existing
+    harness and the existing verbs. No new state, no new semantics.
+    """
+
+    def test_13_a_targeted_NO_retires_the_question_and_resumes(self):
+        mid, iv = self.blocked_with(request(index=0))
+        self.assertEqual(self.store.load(mid)["state"], "blocked",
+                         "the founder is being asked")
+        self.launched = []
+        r = self.act(mid, "intervene", intervention_id=iv["id"],
+                     values={"tests_pass": False, "pixels": "ok"})
+        self.assertEqual(r.status_code, 200, r.text)
+        m = self.store.load(mid)
+        # 1. the question is RETIRED -- nobody is asked the same thing twice
+        self.assertIsNone(m.get("intervention"))
+        # 2. the mission is DRIVING again. This is the assertion the live
+        #    scenario needed and did not have.
+        self.assertEqual(m["state"], "running",
+                         "a NO is an answer, never an ending")
+        # 3. ...and the loop is relaunched, which is what lets Shadow read
+        #    the refusal and compose the worker's next instruction from it
+        self.assertEqual(self.launched, [mid],
+                         "Shadow must get the turn that answers the NO")
+        # 4. the NO is on the record AS a no
+        self.assertIs(m["founder_response"]["values"]["tests_pass"], False)
+        self.assertEqual(m["founder_response"]["intervention_id"], iv["id"])
+
+    def test_14_a_NO_leaves_the_targeted_check_exactly_as_it_was(self):
+        """Not met -- and not forged into a failure either. confirm_check is
+        still the only writer of this tier, and a NO simply does not call
+        it, so the check stays open and stays the founder's."""
+        mid, iv = self.blocked_with(request(index=0))
+        before = dict(self.checks(mid)[0])
+        self.act(mid, "intervene", intervention_id=iv["id"],
+                 values={"tests_pass": False, "pixels": "ok"})
+        after = self.checks(mid)[0]
+        self.assertEqual(after, before, "a NO must not touch the check")
+        self.assertFalse(after.get("met"))
+        self.assertIsNone(after.get("confirmed_by"))
+        self.assertEqual(after["tier"], "founder_confirm")
+
+    def test_15_the_delegate_survives_so_there_is_a_worker_to_drive(self):
+        """Mirrors test_11's guarantee for the path it never exercised:
+        relaunching is worth nothing if the worker session was released."""
+        mid, iv = self.blocked_with(request(index=0))
+        self.act(mid, "intervene", intervention_id=iv["id"],
+                 values={"tests_pass": False, "pixels": "ok"})
+        self.assertEqual(self.store.load(mid)["target_session"], "sess-keep")
+
+
 # ============================================ 3: stale + malformed ========
 class TestTargetsFailSafely(Base):
 

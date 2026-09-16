@@ -715,16 +715,33 @@ def make_bindings(validated_say):
         includes the EOF path -- so a worker that exits unblocks this wait
         through the queue, exactly as it always did.
 
-        The return contract is unchanged: True = this turn ended, False =
-        stop waiting. mission_engine treats False as a failed turn and is
-        untouched. Every bound is an injectable keyword with a production
-        default, the same seam check_stalls uses, so tests drive a fake
-        clock instead of sleeping.
+        The return contract: True = this turn ended, False = stop waiting
+        (mission_engine treats it as a failed turn, exactly as before), and
+        a STRING names a precondition that stopped the wait from happening
+        at all -- the sayer's own contract, at the other end of the turn.
+        Every bound is an injectable keyword with a production default, the
+        same seam check_stalls uses, so tests drive a fake clock instead of
+        sleeping.
         """
         sid = mission["target_session"]
         q = _BOUNDARIES.get(sid)
         if q is None:
-            return False
+            # NOT A STALL: THERE WAS NOTHING TO WAIT ON (founder,
+            # 2026-09-16). No queue means no observer is attached to this
+            # session -- _forget_session drops all three per-session maps
+            # when a runtime is reaped, so a reap-and-reattach race leaves
+            # the loop waiting on a boundary nobody is pushing. Returning
+            # False said "the worker went quiet", which the engine read as
+            # the worker's failure and spent a mission on; it had not waited
+            # a single second, and the worker may have been finishing
+            # normally the whole time.
+            #
+            # A STRING IS A NAMED PRECONDITION, the same contract the sayer
+            # above already uses for NoLiveRuntime: the wait never happened,
+            # so nothing about the attempt is spent and the engine parks it
+            # as Shadow's own fault (mission_engine.run_mission's
+            # isinstance(arrived, str) arm). True/False are untouched.
+            return "no_boundary_queue"
         deadline = clock() + max_turn_secs
         while True:
             try:

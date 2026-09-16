@@ -178,13 +178,28 @@ class TestWaiterEdges(Base):
         self.assertIn(SID, shadow_runner._LAST_FRAME_TS,
                       "the clock was seeded rather than treated as fresh")
 
-    def test_07_no_queue_returns_false_without_waiting(self):
-        """Unchanged behaviour, and it must not touch the clock at all."""
+    def test_07_no_queue_names_a_precondition_without_waiting(self):
+        """NO QUEUE IS NOT A STALL (founder, 2026-09-16). It must still not
+        touch the clock -- nothing is waited on -- but what it RETURNS is a
+        named precondition rather than False.
+
+        A missing queue means no observer is attached to this session, which
+        is a fault in Shadow's own plumbing: _forget_session drops all three
+        per-session maps when a runtime is reaped, so a reap-and-reattach
+        race leaves the loop waiting on a boundary nobody is pushing. False
+        said "the worker went quiet" and the engine spent a mission on it,
+        without waiting a single second and without once reading the work.
+        A string takes the infra exit instead -- evaluate first, then park as
+        NEEDS YOU -- exactly as the sayer's NoLiveRuntime already does at the
+        other end of the turn.
+        """
         c = self.clock(step=1.0)
 
         async def go():
             return await _waiter()(self.mission, clock=c, poll_secs=0.01)
-        self.assertFalse(run(go()))
+        got = run(go())
+        self.assertEqual(got, "no_boundary_queue")
+        self.assertIsNot(got, False, "a precondition is not a stall")
         self.assertEqual(c.state["n"], 0, "no queue means no wait")
 
     def test_08_process_death_unblocks_through_the_eof_boundary(self):

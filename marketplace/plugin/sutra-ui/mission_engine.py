@@ -1329,6 +1329,53 @@ def confirmation_is_due(results):
     return bool(results and pending_confirm and others_met)
 
 
+def confirmation_reachable(results, turns_used):
+    """Is the founder's SIGNATURE the only thing still standing between this
+    attempt and `done`, at the point where the machine has run out of road?
+
+    THE GAP THIS CLOSES (founder, 2026-09-16; measured on m-cd009367d41a,
+    and reproduced against the engine on three shapes). `confirmation_is_due`
+    deliberately requires a machine-checkable check to exist and to have
+    passed -- with no machine check at all there is nothing to have passed,
+    so an all-`founder_confirm` mission is NOT due and the loop keeps driving.
+    That rule is right INSIDE the loop and is untouched: it is what stops a
+    mission pausing on its first evaluation having verified nothing and
+    driven nothing (m-b7d534be84d7).
+
+    It is wrong at the END of the road. All-`founder_confirm` is the DEFAULT
+    shape, not an edge case -- shadow_protocol.tier_for demotes every check
+    that is not a short literal marker -- and such a mission has NO exit to
+    `done` inside the loop at all. So it drove until the budget was spent and
+    took the budget exit: `failed`, with the worker's finished work never
+    shown to the founder and the one party who could sign it off never asked.
+    Four of five checks passing on m-cd009367d41a ended exactly that way.
+
+    THE RULE: once the attempt has actually been DRIVEN (turns_used >= 1) and
+    every check still outstanding is one only the founder can satisfy, the
+    honest ending is "it needs you", never "it failed". Nothing here can
+    satisfy a check, `met` is untouched, and `_complete` is still reachable
+    only from evaluate_done_when.
+
+    TURN-GATED ON PURPOSE. turns_used == 0 means nothing was driven, so this
+    is False and the historical ending stands -- the same first-evaluation
+    safety confirmation_is_due exists to protect, stated once more at the
+    other end of the loop.
+
+    Strictly WIDER than confirmation_is_due at turns_used >= 1: a mission
+    whose machine checks all passed has only founder_confirm outstanding and
+    satisfies both. That is why the ending path asks this one.
+    """
+    if (turns_used or 0) < 1:
+        return False
+    results = results or []
+    unmet = [r for r in results if not r["met"]]
+    if not results or not unmet:
+        # no checks at all -> there is no bar and nothing to sign; every check
+        # met -> `done` is evaluate_done_when's word, not this function's
+        return False
+    return all(r["tier"] == "founder_confirm" for r in unmet)
+
+
 def completion_summary(mission, results, transcript="", outcome=""):
     """WHAT WAS DONE, AND WHY SHADOW CALLS IT DONE.
 
@@ -1862,7 +1909,18 @@ class MissionEngine:
                         "say not delivered (%s) -- nothing was sent" % ok,
                         infra=True)
                 if not ok:
-                    return self.store.transition(mid, "failed", "say refused")
+                    # A REFUSAL IS A VERDICT ON THE SAY, NOT ON THE WORK
+                    # (founder, 2026-09-16). False means the sayer itself
+                    # turned the turn down -- which IS a refusal and still
+                    # fails -- but it says nothing about a worker that may
+                    # have finished everything on the previous turn. This was
+                    # the last ending that bypassed the funnel entirely, so
+                    # it never evaluated, never asked the founder, and (for a
+                    # goal attempt) died without the escalation V5 exists to
+                    # guarantee. The transition it takes when the work really
+                    # is unfinished is the same one, with the same note.
+                    return self._out_of_road(m, "failed", "say_refused",
+                                             "say refused")
                 last_say = say_text
                 # remembered on the record, so a resumed attempt and the ledger
                 # both know what Shadow last asked for
@@ -1885,6 +1943,23 @@ class MissionEngine:
                 m["turn_open"] = m["turns_used"] + 1
                 self.store.save(m)
                 arrived = await self.waiter(m)
+                if isinstance(arrived, str) and arrived:
+                    # A NAMED PRECONDITION FROM THE WAITER, read exactly as
+                    # the sayer's is a few lines above: the turn boundary
+                    # could not be OBSERVED, which is a fault in Shadow's own
+                    # plumbing and not a reading of the worker. The live case
+                    # is a boundary queue that _forget_session dropped
+                    # (a reap-and-reattach race): the wait then returned
+                    # False without waiting a single second, and a worker
+                    # that was finishing normally was `failed` with its
+                    # result never evaluated. infra=True on the SHAPE, for
+                    # the same reason it is on the say arm -- any named
+                    # precondition means the wait never happened, whatever a
+                    # later one is called.
+                    return self._out_of_road(
+                        m, "failed", arrived,
+                        "turn boundary not observable (%s)" % arrived,
+                        infra=True)
                 if arrived is False:
                     # A STALLED TURN IS OUT OF ROAD, NOT A VERDICT. The wait
                     # ending without a boundary says the worker stopped
@@ -2102,6 +2177,73 @@ class MissionEngine:
             return held
         return None
 
+    def _work_says(self, m):
+        """The loop's own evaluation, asked from an ENDING path.
+
+        Lifted verbatim out of _infra_exit so the ordinary endings below can
+        ask the same question with the same evidence reader, the same
+        verifier and the same evaluator -- one copy, so the two exits cannot
+        drift into two different bars.
+
+        NEVER RAISES AND NEVER A VERDICT. An unreadable transcript or a
+        verifier with a bug answers "unknown" (False, None), which every
+        caller treats as "do not complete", never as "the work failed".
+        """
+        try:
+            transcript = self.reader(m) if self.reader is not None else ""
+            done, results = evaluate_done_when(m, transcript, self.verifier)
+        except Exception:         # noqa: BLE001 -- unknown, never a verdict
+            return "", None, False
+        return transcript, results, done
+
+    def _work_first(self, m, block_reason):
+        """ASK THE WORK BEFORE DECLARING AN ORDINARY ENDING.
+
+        The discipline _infra_exit already applies to a fault in the
+        SUPERVISOR, applied to the four endings that are decided by the
+        machine running out of road -- budget spent, ping-pong, a stalled
+        turn, a refused say. Those exits wrote a terminal state WITHOUT ONCE
+        CONSULTING THE WORK, which is the same sentence the supervisor
+        post-mortems were, one exit over.
+
+        Returns the settled mission, or None to mean "no reason to stop the
+        historical ending":
+
+          1. already settled       -> hand back what is on disk. A `done`
+                                      mission is NEVER re-decided; the
+                                      completion is the worker's.
+          2. the work is done      -> _complete it (DONE).
+          3. only the signature is
+             left, and the attempt
+             was actually driven   -> _await_confirmation (NEEDS YOU).
+          4. otherwise             -> None: budget, ping-pong, stall and
+                                      refusal keep the exact terminal state
+                                      and note they have always had.
+
+        NO SECOND EVALUATOR AND NO WEAKER BAR. Step 2 is evaluate_done_when
+        on the same evidence with the same verifier, and step 3 satisfies
+        nothing -- it hands the founder a check only they can sign.
+        """
+        mid = m["id"]
+        fresh = self.store.load(mid) or m
+        if fresh["state"] in TERMINAL or fresh["state"] in ("paused",
+                                                            "blocked"):
+            return fresh
+        transcript, results, done = self._work_says(fresh)
+        if done:
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "decision",
+                "summary": "%s, but the work was already done -- completing "
+                           "instead of ending it" % block_reason})
+            return self._complete(mid, results, transcript)
+        if confirmation_reachable(results, fresh.get("turns_used")):
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "decision",
+                "summary": "%s, and only your sign-off is outstanding -- "
+                           "awaiting founder confirmation" % block_reason})
+            return self._await_confirmation(mid)
+        return None
+
     def _infra_exit(self, m, block_reason, note):
         """SHADOW BROKE. ASK THE WORK FIRST, THEN PARK -- NEVER FAIL.
 
@@ -2143,13 +2285,7 @@ class MissionEngine:
         if fresh["state"] in TERMINAL or fresh["state"] in ("paused",
                                                             "blocked"):
             return fresh
-        transcript, results, done = "", None, False
-        try:
-            transcript = self.reader(fresh) if self.reader is not None else ""
-            done, results = evaluate_done_when(fresh, transcript,
-                                               self.verifier)
-        except Exception:         # noqa: BLE001 -- unknown, never a verdict
-            transcript, results, done = "", None, False
+        transcript, results, done = self._work_says(fresh)
         if done:
             # 2. THE WORKER'S RESULT WINS. The supervisor's illness cannot
             # take a finished outcome away from the founder.
@@ -2251,9 +2387,13 @@ class MissionEngine:
         left alive and no new chat is created.
 
         A STANDALONE mission (no goal_id) keeps the historical terminal
-        state exactly -- failed on budget, stopped on ping-pong, delegate
-        reaped, feed post-mortem. That is what keeps every shipped path,
-        and every existing test, behaving as before.
+        state -- failed on budget, stopped on ping-pong, delegate reaped,
+        feed post-mortem -- WHENEVER THE WORK IS GENUINELY UNFINISHED. That
+        is what keeps every shipped path, and every existing test, behaving
+        as before. `_work_first` below is what decides whether it is: a
+        mission whose checks are met completes, and one whose only
+        outstanding checks are the founder's to sign waits for that
+        signature. Neither is an ending the machine is entitled to call.
 
         The ledger note is identical either way, so the audit trail reads
         the same for both.
@@ -2273,6 +2413,24 @@ class MissionEngine:
         # itself. Neither can reach a terminal state.
         if infra or block_reason in INFRA_BLOCK_REASONS:
             return self._infra_exit(m, block_reason, note)
+        # ...AND NEITHER IS RUNNING OUT OF ROAD, UNTIL THE WORK HAS BEEN
+        # ASKED (founder, 2026-09-16). The four ordinary endings below are
+        # decided by the MACHINE -- the budget is spent, the chat repeated
+        # itself, the turn stalled, the say was turned down -- and none of
+        # them is a reading of whether the outcome was reached. Each one
+        # wrote a terminal state with `evaluate_done_when` sitting one screen
+        # away, unasked.
+        #
+        # _work_first asks it, and returns None for everything it cannot
+        # settle -- so budget, ping-pong, stall and refusal keep the exact
+        # terminal state, the exact note and the exact block_reason they have
+        # always had whenever the work is genuinely unfinished. What changes
+        # is the two cases where the ending was a lie: the work was done, or
+        # the only thing outstanding was a signature nobody had been asked
+        # for.
+        settled = self._work_first(m, block_reason)
+        if settled is not None:
+            return settled
         if m.get("goal_id"):
             return self.store.block(m["id"], block_reason, note)
         return self.store.transition(m["id"], terminal_state, note)

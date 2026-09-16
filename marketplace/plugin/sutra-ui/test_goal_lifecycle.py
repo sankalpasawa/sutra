@@ -330,7 +330,17 @@ class TestVerifyingAndDone(Base):
         g2 = self.goal(session="01a082", checks=(("contains_artifact", "N"),))
         m2 = goal_lifecycle.start_first_attempt(g2["id"])
         goal2, out2 = self.run_attempt(m2, say_ok=False)
-        self.assertEqual(out2["state"], "failed", "the ATTEMPT still fails")
+        # THE ATTEMPT BLOCKS RATHER THAN FAILING (2026-09-16). A refused say
+        # used to be the ONE ending that bypassed _out_of_road entirely --
+        # it transitioned straight to `failed` -- so a goal attempt died on
+        # it while every other out-of-road exit blocked and asked. It now
+        # takes the same funnel as budget, ping-pong and a stalled turn, so
+        # V5's rule holds on every exit: an attempt of a goal blocks, the
+        # target chat stays alive, and the founder is asked. The property
+        # this test exists for is the line below it, and that is unchanged.
+        self.assertEqual(out2["state"], "blocked",
+                         "an attempt is escalated, never quietly killed")
+        self.assertEqual(out2["block_reason"], "say_refused")
         self.assertEqual(goal2["state"], "blocked",
                          "a goal cannot die without the founder being asked")
 
