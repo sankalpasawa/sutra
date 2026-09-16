@@ -57,9 +57,13 @@ class TestShadowFlag(unittest.TestCase):
         import subprocess
         # escaped dot: the SETTINGS KEY is the contraband, not calls to
         # the shadow_enabled() accessor (which are the sanctioned path)
+        # from THIS folder, whatever the caller's cwd: run from the holding
+        # root the same grep walked the outer repo and named a script there
+        import os
         out = subprocess.run(
             ["git", "grep", "-nE", r"shadow\.enabled", "--", "*.py"],
-            capture_output=True, text=True).stdout
+            capture_output=True, text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))).stdout
         # test fixtures legitimately WRITE the key into settings files;
         # the lint hunts production READS outside the accessor's home
         offenders = [l for l in out.splitlines()

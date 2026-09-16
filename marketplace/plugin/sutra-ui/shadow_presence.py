@@ -4,7 +4,7 @@ WHAT PRESENCE IS: the corner dot (`.shdot`) and its card, mounted by
 mountShadowOverlay() in static/js/15-shadow-overlay.js. Until now the only
 two ways to hide it were memory-only flags on the client (S.shadowHideSession
 and S.shadowQuiet) -- a reload brought the dot straight back -- and the
-global `shadow.enabled` kill switch, which is all-or-nothing and takes the
+global shadow-enabled kill switch (the providers accessor), which is all-or-nothing and takes the
 engine down with the widget.
 
 THIS IS THE THIRD STORE UNDER THE SHADOW HOME, not a second settings store.
