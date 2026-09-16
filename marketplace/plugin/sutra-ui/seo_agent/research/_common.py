@@ -8,7 +8,7 @@ the same names and the same numbers here.
 import os
 import re
 
-from .. import store
+from .. import llm, store
 from ..tools import _shared as sh
 
 # ---- 10-dataforseo/scripts/config.py -------------------------------------------------------------
@@ -117,6 +117,7 @@ def save_work(ctx, name, data):
 def cached(ctx, name, redo, produce):
     """Reuse _work/<name>.json unless redo; else run produce(), save it, return it.
     Returns (data, reused)."""
+    llm.check_stop()          # a stopped run starts no new research step, cached or not
     if not redo:
         got = load_work(ctx, name)
         if got is not None:

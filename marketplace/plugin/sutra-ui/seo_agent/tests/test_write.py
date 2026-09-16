@@ -133,23 +133,36 @@ llm.json_call = _saved_json
 # AND A TIMEOUT IS RETRIED. _TRANSIENT has listed "timed out" since it was written, but the CLI's
 # timeout came back as a plain RuntimeError, which the retry clause never caught: the one transient
 # failure that most deserves another go got a single attempt and killed the step.
-_saved_sleeps, _saved_run = llm.CLI_RETRY_SLEEPS, llm.subprocess.run
+#
+# The process is now held by _run_process (2026-09-16, the Stop fix), so the call goes through
+# subprocess.Popen + .communicate(), not subprocess.run: mock Popen, not run, or this proves nothing.
+_saved_sleeps, _saved_popen = llm.CLI_RETRY_SLEEPS, llm.subprocess.Popen
 llm.CLI_RETRY_SLEEPS = (0,)
 _tries = {"n": 0}
 
 
-def _timeout_then_answer(cmd, **kw):
-    _tries["n"] += 1
-    if _tries["n"] == 1:
-        raise llm.subprocess.TimeoutExpired(cmd, kw.get("timeout") or 1)
-    class R:
-        returncode = 0
-        stdout = json.dumps({"is_error": False, "result": "pong"})
-        stderr = ""
-    return R()
+class _FakeProc:
+    """Stands in for the Popen handle _run_process holds. communicate() with no arguments is
+    the drain call _run_process makes after a kill (see its `except TimeoutExpired` clause) —
+    it does not count as an attempt and never raises."""
+    def __init__(self, cmd):
+        self._cmd = cmd
+        self.returncode = 0
+        self.pid = 999999999   # never a real pid, so _kill_group's killpg falls back to .kill()
+
+    def communicate(self, prompt=None, timeout=None):
+        if prompt is None and timeout is None:
+            return "", ""
+        _tries["n"] += 1
+        if _tries["n"] == 1:
+            raise llm.subprocess.TimeoutExpired(self._cmd, timeout or 1)
+        return json.dumps({"is_error": False, "result": "pong"}), ""
+
+    def kill(self):
+        pass
 
 
-llm.subprocess.run = _timeout_then_answer
+llm.subprocess.Popen = lambda cmd, **kw: _FakeProc(cmd)
 try:
     # _claude_cli, not llm.call: this suite runs with SEO_AGENT_NO_CLI=1, so the router refuses
     # before it ever reaches the CLI. The retry being proved is the CLI caller's own.
@@ -160,7 +173,7 @@ except Exception as e:      # noqa: BLE001
     ok("a CLI call that times out is tried again instead of losing the step", False, repr(e))
 ok("and the timeout message still reads as transient, which is what carries the retry",
    llm._transient("The Claude CLI timed out: no answer within 300 seconds."))
-llm.CLI_RETRY_SLEEPS, llm.subprocess.run = _saved_sleeps, _saved_run
+llm.CLI_RETRY_SLEEPS, llm.subprocess.Popen = _saved_sleeps, _saved_popen
 
 _fixture.stub_write_network()
 

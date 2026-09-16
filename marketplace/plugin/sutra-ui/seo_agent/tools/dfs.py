@@ -20,7 +20,7 @@ import time
 
 import httpx
 
-from .. import store
+from .. import llm, store
 
 BASE = "https://api.dataforseo.com/v3"
 TIMEOUT = 120.0              # their live endpoints genuinely take a minute under load
@@ -101,6 +101,7 @@ def _send(method, path, payload=None):
     A temporary answer that is still temporary after the last wait is RETURNED, not raised here, so
     the caller's normal check (the top-level 20000 below, or _items() for a task) raises it with the
     message DataForSEO gave, exactly as before this retry existed."""
+    llm.check_stop()          # a stopped run starts no new paid call, whatever the caller
     auth = _auth()
     if auth is None:
         raise NoCredentials(

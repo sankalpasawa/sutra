@@ -190,18 +190,33 @@ class TestAgentsApi(unittest.TestCase):
         ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
         self.assertTrue(any(e["type"] == "resumed" and "Sutra was closed" in (e.get("note") or "") for e in ev))
 
-    def test_12c_a_run_the_person_stopped_still_starts_fresh(self):
+    def test_12c_a_message_after_a_person_stop_carries_the_stopped_run_on(self):
+        """Found live in chat c-f1a6e19c: Stop was pressed at 06:27:08 in run r-115458, research
+        finished and saved anyway a minute later, and the next message opened a brand-new, empty
+        run r-115816 -- stranding everything r-115458 had already bought and saved. A message
+        after a Stop the person pressed now continues THAT run, exactly like the restart sweep
+        (test_12b) and a failed call (test_12d) already do. "New chat" is still how to start over."""
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
         rid = store.new_run(cid, "stopped by hand")
-        store.patch_state(cid, rid, status="running")
+        store.patch_state(cid, rid, status="running", current_step="run_research", word_target=2200)
+        store.save_artifact(cid, rid, "_work/curate-partial.json", {"team": [{"role": "r"}]})
+        store.save_messages(cid, [{"role": "user", "content": "write it"}])
         from seo_agent import loop
         loop.stop(cid, rid)
-        llm.call = ScriptedModel([{"text": "New one.", "tool_calls": [], "raw": None}])
-        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "something else"}, headers=HDR)
+        self.assertEqual(store.get_state(cid, rid)["status"], "stopped")
+        llm.call = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Carry on"}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertNotEqual(r.json()["run_id"], rid, "a Stop the person pressed is not undone")
-        self.assertFalse(r.json().get("continued"))
-        _settle(self.client, cid, r.json()["run_id"], ("done",))
+        self.assertEqual(r.json()["run_id"], rid, "the same run, not a new one")
+        self.assertTrue(r.json().get("continued"))
+        _settle(self.client, cid, rid, ("done",))
+        self.assertEqual(len(store.list_runs(cid)), 1, "no second run was made")
+        self.assertIsNotNone(store.load_artifact(cid, rid, "_work/curate-partial.json"),
+                             "the saved work is still where the tools look for it")
+        self.assertEqual(store.get_state(cid, rid).get("word_target"), 2200, "the run's own state is kept")
+        self.assertEqual(store.get_messages(cid)[-2]["content"], "Carry on")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertTrue(any(e["type"] == "resumed" and "you stopped it" in (e.get("note") or "") for e in ev))
 
     def test_12_stop_pressed_during_a_usage_limit_pause_leaves_the_run_stopped_not_failed(self):
         """llm.call raises llm.Stopped when the person presses Stop while a call is waiting out a
@@ -271,9 +286,9 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(seen[2]["content"][0]["tool_use_id"], "call-x", "the open call got a result")
         self.assertEqual(seen[3]["content"], "Carry on")
 
-    def test_12f_a_person_stop_after_a_failure_still_starts_fresh(self):
-        """Only the newest run counts: an older failed run does not pull a message back into it
-        when the person's own Stop is the latest word."""
+    def test_12f_a_person_stop_after_a_failure_still_carries_on_the_newest_run(self):
+        """Only the newest run counts: an older failed run must not be the one a message after a
+        person's Stop lands in -- the newest run (the one actually stopped) is."""
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
         old = store.new_run(cid, "failed first")
         store.patch_state(cid, old, status="failed", started_at="2026-09-15T10:00:00Z")
@@ -281,12 +296,13 @@ class TestAgentsApi(unittest.TestCase):
         store.patch_state(cid, rid, status="running", started_at="2026-09-15T11:00:00Z")
         from seo_agent import loop
         loop.stop(cid, rid)
-        llm.call = ScriptedModel([{"text": "New one.", "tool_calls": [], "raw": None}])
+        llm.call = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
         r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "something else"}, headers=HDR)
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertNotIn(r.json()["run_id"], (old, rid))
-        self.assertFalse(r.json().get("continued"))
-        _settle(self.client, cid, r.json()["run_id"], ("done",))
+        self.assertEqual(r.json()["run_id"], rid, "the newest (stopped) run, never the older failed one")
+        self.assertTrue(r.json().get("continued"))
+        _settle(self.client, cid, rid, ("done",))
+        self.assertEqual(len(store.list_runs(cid)), 2, "no third run was made")
 
     def test_13_answer_on_a_run_that_is_not_waiting_is_409(self):
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]

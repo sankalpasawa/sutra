@@ -12,6 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import _common as _c
+from .. import llm
 from ..tools import _browser
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -42,6 +43,7 @@ _BROWSER_HOSTS = set()    # hosts that answered a plain request with a bot chall
 
 def fetch(url, tries=TRIES):
     """Read one page. Raises RuntimeError after `tries` failed attempts (caller decides to skip)."""
+    llm.check_stop()          # a stopped run reads no new page, whatever the caller
     last = None
     for attempt in range(tries):
         try:

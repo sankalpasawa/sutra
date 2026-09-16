@@ -24,7 +24,7 @@ def ok(label, cond, extra=""):
 SAVED_ENV = {k: os.environ.get(k) for k in
              ("SEO_AGENT_NO_CLI", "SEO_AGENT_CLAUDE_BIN", "SEO_AGENT_MODEL", "CLAUDECODE",
               "ANTHROPIC_API_KEY", "CLAUDE_CODE_SESSION_ID")}
-REAL_RUN = subprocess.run
+REAL_POPEN = subprocess.Popen
 
 def env(**kw):
     for k in SAVED_ENV:
@@ -33,14 +33,48 @@ def env(**kw):
         os.environ[k] = v
 
 # --- a canned CLI -----------------------------------------------------------------------
+#
+# The process is now held by _run_process (2026-09-16, the Stop fix): llm.py calls
+# subprocess.Popen(cmd, ...) once, then reads the answer with .communicate(prompt, timeout=...),
+# not one subprocess.run(cmd, input=..., timeout=...) call. as_popen() lets every fixture below
+# stay written the old way -- run(cmd, **kw) -> CompletedProcess -- by deferring that call to
+# communicate(), where the prompt and the timeout actually arrive.
 CAPTURED = {}
 def canned(reply):
-    """subprocess.run that records what it was asked and answers with `reply` as JSON."""
+    """subprocess.run-shaped: records what it was asked and answers with `reply` as JSON."""
     def run(cmd, **kw):
         CAPTURED.clear()
         CAPTURED.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"), timeout=kw.get("timeout"))
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(reply), stderr="")
     return run
+
+
+class _PopenShim:
+    """Stands in for the Popen handle _run_process holds. cmd/env arrive at construction time
+    (as the real Popen call carries them); the prompt and the timeout only arrive at
+    .communicate(), exactly as _run_process calls it -- so the wrapped run_fn is not called
+    until communicate() is, with every argument the old subprocess.run(...) call used to carry.
+    """
+    def __init__(self, run_fn, cmd, **popen_kw):
+        self._run_fn = run_fn
+        self._cmd = cmd
+        self._env = popen_kw.get("env")
+        self.pid = 999999999   # never a real pid; nothing here calls kill() in these tests
+        self.returncode = 0
+
+    def communicate(self, prompt=None, timeout=None):
+        cp = self._run_fn(self._cmd, input=prompt, timeout=timeout, env=self._env)
+        self.returncode = cp.returncode
+        return cp.stdout, cp.stderr
+
+    def kill(self):
+        pass
+
+
+def as_popen(run_fn):
+    """An old subprocess.run(cmd, **kw)->CompletedProcess fixture, wrapped as a Popen(cmd, **kw)
+    constructor so it still works against _run_process."""
+    return lambda cmd, **kw: _PopenShim(run_fn, cmd, **kw)
 
 
 print("\nprovider order")
@@ -61,11 +95,11 @@ store.save_connections({})
 print("\na tool-calling turn through the CLI")
 env(SEO_AGENT_CLAUDE_BIN=sys.executable, CLAUDECODE="1", ANTHROPIC_API_KEY="sk-should-not-leak",
     CLAUDE_CODE_SESSION_ID="abc")
-llm.subprocess.run = canned({
+llm.subprocess.Popen = as_popen(canned({
     "is_error": False, "result": "ignored when structured_output is present",
     "structured_output": {"text": "Reading the site.",
                           "tool_calls": [{"name": "log_step", "input": {"message": "Reading"}},
-                                         {"name": "fake_tool", "input": {"a": 1}}]}})
+                                         {"name": "fake_tool", "input": {"a": 1}}]}}))
 TOOLS = [{"name": "log_step", "description": "Say one line.",
           "input_schema": {"type": "object", "properties": {"message": {"type": "string"}}}},
          {"name": "fake_tool", "description": "Does the thing.",
@@ -123,13 +157,13 @@ llm.call("s", big, TOOLS)
 ok("capped near 20000 chars", 20000 <= len(CAPTURED["input"]) < 21000, len(CAPTURED["input"]))
 
 print("\ntext() and json_call() through the CLI")
-llm.subprocess.run = canned({"is_error": False, "result": "", "structured_output": {"text": "pong"}})
+llm.subprocess.Popen = as_popen(canned({"is_error": False, "result": "", "structured_output": {"text": "pong"}}))
 ok("text() reads the text field", llm.text("Say pong") == "pong")
 schema = json.loads(CAPTURED["cmd"][CAPTURED["cmd"].index("--json-schema") + 1])
 ok("a text-only call uses the text-only schema", list(schema["properties"]) == ["text"])
 ok("no tools section without tools", "## Tools you can call" not in CAPTURED["cmd"][CAPTURED["cmd"].index("--system-prompt") + 1])
-llm.subprocess.run = canned({"is_error": False, "result": "",
-                             "structured_output": {"text": "```json\n{\"topics\": [1, 2]}\n```"}})
+llm.subprocess.Popen = as_popen(canned({"is_error": False, "result": "",
+                             "structured_output": {"text": "```json\n{\"topics\": [1, 2]}\n```"}}))
 ok("json_call() tolerates fences", llm.json_call("give me json") == {"topics": [1, 2]})
 
 print("\n--model only when asked")
@@ -140,7 +174,7 @@ ok("--model is passed from SEO_AGENT_MODEL", "--model" in c and c[c.index("--mod
 env(SEO_AGENT_CLAUDE_BIN=sys.executable)
 
 print("\nnot logged in")
-llm.subprocess.run = canned({"is_error": True, "result": "Not logged in · Please run /login"})
+llm.subprocess.Popen = as_popen(canned({"is_error": True, "result": "Not logged in · Please run /login"}))
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("raises NoKey", False, "no raise")
@@ -148,7 +182,7 @@ except llm.NoKey as e:
     ok("raises NoKey", True)
     ok("says how to fix it", "sign in" in str(e) and "claude" in str(e), str(e))
 llm.CLI_RETRY_SLEEPS = ()   # a transient error would otherwise sleep 60s here; one attempt is the test
-llm.subprocess.run = canned({"is_error": True, "result": "Rate limit reached"})
+llm.subprocess.Popen = as_popen(canned({"is_error": True, "result": "Rate limit reached"}))
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("other CLI errors surface as ModelError, never as a sign-in problem", False, "no raise")
@@ -166,13 +200,13 @@ def _flaky(*a, **kw):
     _calls["n"] += 1
     return (_bad if _calls["n"] == 1 else _real_canned)(*a, **kw)
 llm.CLI_RETRY_SLEEPS = (0,)
-llm.subprocess.run = _flaky
+llm.subprocess.Popen = as_popen(_flaky)
 r = llm.call("s", [{"role": "user", "content": "hi"}])
 ok("a 529 on the first try is retried once and the answer comes back", r["text"] == "pong" and _calls["n"] == 2,
    "text=%r calls=%d" % (r["text"], _calls["n"]))
 _calls["n"] = 0
 llm.CLI_RETRY_SLEEPS = ()
-llm.subprocess.run = _flaky
+llm.subprocess.Popen = as_popen(_flaky)
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("with no retries left the 529 is raised as ModelError", False, "no raise")
@@ -184,7 +218,7 @@ _calls["n"] = 0
 def _perm_count(*a, **kw):
     _calls["n"] += 1
     return _perm(*a, **kw)
-llm.subprocess.run = _perm_count
+llm.subprocess.Popen = as_popen(_perm_count)
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
 except llm.ModelError:
@@ -192,7 +226,7 @@ except llm.ModelError:
 ok("a non-transient error is NOT retried", _calls["n"] == 1, "calls=%d" % _calls["n"])
 
 print("\nno structured output")
-llm.subprocess.run = canned({"is_error": False, "result": "plain words"})
+llm.subprocess.Popen = as_popen(canned({"is_error": False, "result": "plain words"}))
 r = llm.call("s", [{"role": "user", "content": "hi"}])
 ok("falls back to the plain result", r["text"] == "plain words" and r["tool_calls"] == [])
 
@@ -210,14 +244,14 @@ for label, out in (("a notice line before the result", "A new version is availab
                    ("an event line before the result", json.dumps({"type": "system"}) + "\n" + json.dumps(GOOD)),
                    ("a line after the result", json.dumps(GOOD) + "\nbye"),
                    ("the whole event list", json.dumps([{"type": "system"}, GOOD]))):
-    llm.subprocess.run = printed(out)
+    llm.subprocess.Popen = as_popen(printed(out))
     try:
         r = llm.call("s", [{"role": "user", "content": "start on nuplay ai"}], TOOLS)
         ok(label + " still reads the reply",
            r["text"] == "Which website?" and r["tool_calls"] and r["tool_calls"][0]["name"] == "ask_user", r)
     except Exception as e:
         ok(label + " still reads the reply", False, e)
-llm.subprocess.run = printed("no json at all")
+llm.subprocess.Popen = as_popen(printed("no json at all"))
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("real garbage still fails loudly", False, "no raise")
@@ -234,7 +268,7 @@ llm.set_hooks(default_choice=lambda: ("codex", "gpt-5.5"))
 ok("nothing picked follows the Sutra chat's default", llm.chosen() == ("codex", "gpt-5.5"), llm.chosen())
 store.save_model_choice("claude", "opus")
 ok("a pick beats the chat default", llm.chosen() == ("claude", "opus"), llm.chosen())
-llm.subprocess.run = canned({"is_error": False, "result": "", "structured_output": {"text": "pong"}})
+llm.subprocess.Popen = as_popen(canned({"is_error": False, "result": "", "structured_output": {"text": "pong"}}))
 llm.call("s", [{"role": "user", "content": "hi"}])
 c = CAPTURED["cmd"]
 ok("the picked Claude model is passed", "--model" in c and c[c.index("--model") + 1] == "opus", c)
@@ -256,9 +290,9 @@ def codex_run(reply, stderr=""):
                 fh.write(reply)
         return subprocess.CompletedProcess(cmd, 0 if reply is not None else 1, stdout="", stderr=stderr)
     return run
-llm.subprocess.run = codex_run(json.dumps({"text": "Which website?", "tool_calls": [
+llm.subprocess.Popen = as_popen(codex_run(json.dumps({"text": "Which website?", "tool_calls": [
     {"name": "ask_user", "input": json.dumps({"question": "What's the website?"})},
-    {"name": "log_step", "input": "not json"}]}))
+    {"name": "log_step", "input": "not json"}]})))
 r = llm.call("You are the SEO writer.", MESSAGES, TOOLS)
 c = CODEX["cmd"]
 ok("codex runs as exec, read-only, ephemeral, reading the prompt from stdin",
@@ -274,22 +308,22 @@ ok("the API key never reaches codex", "ANTHROPIC_API_KEY" not in (CODEX["env"] o
 ok("a tool input sent as a JSON string comes back as an object",
    r["tool_calls"][0]["name"] == "ask_user" and r["tool_calls"][0]["input"] == {"question": "What's the website?"}, r)
 ok("an unreadable tool input becomes {} rather than a crash", r["tool_calls"][1]["input"] == {}, r)
-llm.subprocess.run = codex_run(json.dumps({"text": "plain"}))
+llm.subprocess.Popen = as_popen(codex_run(json.dumps({"text": "plain"})))
 ok("text() works through Codex", llm.text("hi") == "plain")
-llm.subprocess.run = codex_run(None, stderr="Error: Not logged in. Run codex login")
+llm.subprocess.Popen = as_popen(codex_run(None, stderr="Error: Not logged in. Run codex login"))
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("a signed-out Codex says so", False, "no raise")
 except llm.NoKey as e:
     ok("a signed-out Codex says so", "Codex" in str(e), e)
-llm.subprocess.run = codex_run(None, stderr="User: start on nuplay ai\n\nAssistant:\nERROR: You've hit your usage limit. Try again at Sep 26th.\n")
+llm.subprocess.Popen = as_popen(codex_run(None, stderr="User: start on nuplay ai\n\nAssistant:\nERROR: You've hit your usage limit. Try again at Sep 26th.\n"))
 try:
     llm.call("s", [{"role": "user", "content": "hi"}])
     ok("Codex's own complaint is shown, not the echoed prompt", False, "no raise")
 except llm.ModelError as e:
     ok("Codex's own complaint is shown, not the echoed prompt",
        "usage limit" in str(e) and "User:" not in str(e), e)
-llm.subprocess.run = canned({"is_error": False, "result": "", "structured_output": {"text": "searched"}})
+llm.subprocess.Popen = as_popen(canned({"is_error": False, "result": "", "structured_output": {"text": "searched"}}))
 r = llm.call("s", [{"role": "user", "content": "find pages"}], web=True)
 ok("a web search stays on Claude while Codex is picked",
    CAPTURED.get("cmd", [None])[0] == sys.executable and "WebSearch" in CAPTURED["cmd"] and r["text"] == "searched")
@@ -349,7 +383,7 @@ store.save_model_choice("", "")
 llm.set_hooks()
 
 # --- restore -----------------------------------------------------------------------------
-llm.subprocess.run = REAL_RUN
+llm.subprocess.Popen = REAL_POPEN
 for k, v in SAVED_ENV.items():
     if v is None:
         os.environ.pop(k, None)
