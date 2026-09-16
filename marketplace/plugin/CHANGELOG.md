@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.5 (2026-09-17)
+
+- Released from v2.282.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - fix: fail release when DMG stapling fails
+- Changed: 1 file(s), +3/-1
+
 ## 2.282.4 (2026-09-17)
 
 - Released from v2.282.3-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
