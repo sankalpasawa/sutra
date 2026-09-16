@@ -39,6 +39,32 @@ GEMINI_PROJECTS_FILE = GEMINI_ROOT / "projects.json"
 CODEX_ROOT = Path(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"))
 
 
+#: The CLI's `--resume` handshake, verbatim. A CLOSED VOCABULARY on purpose:
+#: these are strings the tool emits, not things a person can type, so an
+#: exact set is both sufficient and safe. A prefix or keyword rule here would
+#: eventually eat a worker that legitimately wrote "no response requested"
+#: about something else.
+_RESUME_PROMPTS = frozenset({
+    "continue from where you left off.",
+    "continue from where you left off",
+})
+
+#: What the model answers such a prompt with when it has nothing to add. Only
+#: ever dropped when it directly follows one of the prompts above AND the
+#: record carries no tool call -- see the guard at the use site.
+_RESUME_REPLIES = frozenset({
+    "no response requested.",
+    "no response requested",
+})
+
+
+def _norm_injected(text) -> str:
+    """Whitespace-collapsed and case-folded, for matching the fixed strings
+    above. Nothing else in this module normalises text, so it is defined
+    here rather than borrowed."""
+    return " ".join(str(text or "").split()).casefold()
+
+
 def _text_of(content) -> str:
     """Extract human-readable text from a message.content (str or block list)."""
     if isinstance(content, str):
@@ -1099,6 +1125,22 @@ def _parse_transcript(f) -> Dict:
     """
     messages, cwd, branch = [], "", ""
     results = {}   # tool_use_id -> {output, is_error}
+    # THE CLI'S OWN RESUME HANDSHAKE IS NOT CONVERSATION (founder,
+    # 2026-09-16). `claude --resume` injects a user turn and the model
+    # answers it; neither was typed by anyone and neither is work. Shadow
+    # re-adopts a worker on every restart, so a mission that survived five
+    # boots showed five of these -- rendered as WORKER AGENT turns, counted
+    # as turns, and pushed into the evidence the decider reads.
+    #
+    # NOT COVERED BY THE isMeta+sourceToolUseID RULE BELOW, and deliberately
+    # so: that pair identifies context a TOOL injected. These carry
+    # isMeta=True with sourceToolUseID=None (verified on session
+    # 3dcbbf14, records at 19:15:06.870Z and 19:15:13.089Z), which is the
+    # same shape as rows a reader DOES want -- an "[Image: ...]" placeholder
+    # reads that way too. So this matches on the exact injected text instead
+    # of on the flag alone, which is why it is a closed vocabulary and not a
+    # prefix rule.
+    pending_resume_noop = False
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
@@ -1156,7 +1198,13 @@ def _parse_transcript(f) -> Dict:
                 if d.get("isMeta") and d.get("sourceToolUseID"):
                     continue
                 text = _text_of(content).strip()
+                if d.get("isMeta") and _norm_injected(text) in _RESUME_PROMPTS:
+                    # ...and ARM the reply guard: the model's answer to a
+                    # prompt nobody sent is not a turn either.
+                    pending_resume_noop = True
+                    continue
                 if text and not text.startswith("<"):
+                    pending_resume_noop = False
                     messages.append({"role": "user", "text": text, "ts": d.get("timestamp", "")})
             else:  # assistant
                 text = _text_of(content).strip()
@@ -1166,6 +1214,14 @@ def _parse_transcript(f) -> Dict:
                         if isinstance(b, dict) and b.get("type") == "tool_use":
                             calls.append({"id": b.get("id"), "name": b.get("name", ""),
                                           "input": _tool_input_summary(b.get("name"), b.get("input"))})
+                # ONLY the reply to an injection we just dropped, only when
+                # it did nothing. An assistant record with ANY tool call did
+                # work and is kept whatever it said; so is any other wording.
+                if (pending_resume_noop and not calls
+                        and _norm_injected(text) in _RESUME_REPLIES):
+                    pending_resume_noop = False
+                    continue
+                pending_resume_noop = False
                 if text or calls:
                     messages.append({"role": "assistant", "text": text,
                                      "tools": [c["name"] for c in calls],   # back-compat
