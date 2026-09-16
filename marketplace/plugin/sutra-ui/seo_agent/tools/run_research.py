@@ -31,10 +31,12 @@ is a card with a quote and a source. Code counts, the model judges: the filters,
 checks, the caps and the completeness boxes are all code.
 """
 from .. import store
+from ..prompts import store as pstore
 from ..research import _common as _c
 from ..research import (assemble, cannibalisation, curate, dossier, evidence, expand, gap_check,
                         keywords, ownpage, persona, render, seeds, serp, spine, topic_gate, winners,
                         world)
+from ..write import _common as write_common
 from . import _shared as sh
 from . import dfs
 
@@ -45,6 +47,19 @@ def _plural(n, word, many=None):
 
 def _cost(*steps):
     return round(sum(float((s or {}).get("cost") or 0.0) for s in steps), 4)
+
+
+def _format_pick(text):
+    """A person's format_choice, as either the archetype slug or one of its 8 plain names ("Listicle"),
+    normalised to the slug. None when it names neither."""
+    s = str(text or "").strip()
+    if s in write_common.ARCHETYPES:
+        return s
+    low = s.lower()
+    for a in write_common.ARCHETYPES:
+        if pstore.format_title(a).lower() == low:
+            return a
+    return None
 
 
 def _compat(research):
@@ -99,18 +114,30 @@ def _ask_block(keyword, band, suggested):
     return question, why
 
 
-def _record_question(ctx, topic, angle_given, placeholder_numbers, demo, demo_note, keyword,
-                     band, suggested):
-    """File the question, and the run's inputs with it, then hand loop.py what to put on screen."""
+def _record_question(ctx, topic, angle_given, placeholder_numbers, demo, demo_note, keyword, volume,
+                     band, suggested, arch, arch_why, topic_on, topic_why):
+    """File the question, and the run's inputs with it, then hand loop.py what to put on screen.
+
+    This is the run's one checkpoint (2026-09-16): the length question, the format the winning
+    pages imply (with a one-line reason and the 8 plain names to pick a different one from), and
+    the on/off-topic verdict, all in one stop. The question/why text still asks only about length —
+    it is the one thing this run cannot go ahead without — the rest is shown for the person to read
+    and, for the format, to override.
+    """
     _c.save_work(ctx, ASK_FILE, {
         "asked_at": store.now(),
         "topic": topic, "angle": angle_given, "placeholder_numbers": bool(placeholder_numbers),
         "demo": bool(demo), "demo_note": demo_note,
-        "keyword": keyword, "band_measured": band or None, "suggested": suggested,
+        "keyword": keyword, "volume": volume, "band_measured": band or None, "suggested": suggested,
+        "format": arch, "format_why": arch_why,
+        "topic_on": bool(topic_on), "topic_why": topic_why,
         "answer": None, "answered_at": None, "answer_source": None,
     })
     question, why = _ask_block(keyword, band, suggested)
-    return {"question": question, "why": why, "suggested": suggested, "band": band or {}}
+    return {"question": question, "why": why, "suggested": suggested, "band": band or {},
+            "format": arch, "format_label": pstore.format_title(arch), "format_why": arch_why,
+            "format_options": [pstore.format_title(a) for a in sorted(write_common.ARCHETYPES)],
+            "topic": {"state": "on" if topic_on else "off", "why": topic_why or ""}}
 
 
 def _record_answer(ctx, asked, words, source):
@@ -244,13 +271,18 @@ def _preflight(ctx, redo, placeholder_numbers, say):
                        "placeholder_numbers set to true)." % (bal, MIN_CREDITS))}, False, "")
 
 
-def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_target=None, **_ignored):
+def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_target=None,
+       format_choice=None, **_ignored):
     """One topic, researched. Called twice per article: once by the model with the topic, and once
-    by loop._resume_words with the length the person answered and nothing else.
+    by loop._resume_words with the checkpoint's answer and nothing else.
 
-    word_target is the person's answer, in words. It is never the model's to set and it is not in
-    the tool schema the model sees: the length of an article is a decision for the person paying
-    for it, and a tool argument would let the model quietly decide it instead.
+    word_target is a word count in the person's own words: given upfront (the model may read one
+    off the person's first message and pass it here, see registry.py) it is prefilled and never
+    asked about again; given on the way back from the checkpoint, it is their answer to the one
+    length question. Either way it is the person's number, never the model's to invent.
+
+    format_choice is the person overriding the checkpoint's routed format with one of the 8 plain
+    names or archetype slugs; None (the ordinary case) keeps the router's pick.
     """
     topic = (topic or "").strip()
     angle = (angle or "").strip()
@@ -387,25 +419,34 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
         say("You already rank #%s for this keyword" % cann["hit"]["rank"],
             "%s. Building anyway; the new article has to beat that page" % cann["hit"]["url"])
 
-    # ---- 1b. the topic gate --------------------------------------------------------------------
+    # ---- 1b. the topic gate — NEVER BLOCKS (2026-09-16). It used to stop the run and refuse to
+    # write; now it only warns. One line in the chat, the verdict travels in decisions.json and
+    # reaches the Library row, and the run carries on exactly as it would for an on-topic article:
+    # no change of angle, no special handling. --------------------------------------------------
     gate, _ = step("topic-gate", lambda: topic_gate.run(topic, angle, snap, win, company))
-    if not gate.get("relevant"):
-        say("Not our topic", gate.get("why") or "no reason given")
-        store.save_artifact(chat_id, run_id, "research.json", _compat({
-            "topic": topic, "angle": angle, "angle_before": angle, "world": w,
-            "keywords": final, "serp": _serp_block(extract, snap), "winners": _win_block(win),
-            "verdict": [], "build_spec": {}, "cannibalisation": cann.get("hit"),
-            "persona": None, "topic_gate": gate, "cost_usd": _cost(pool, met, sp),
-            "outcome": "not our topic", "demo_data": demo, "generated_at": store.now()}))
-        return {"summary": "This topic is not ours to write: %s" % (gate.get("why") or "no reason given"),
-                "error": "not our topic: %s" % (gate.get("why") or "no reason given"), "artifact": "research.json"}
     angle_before = angle
-    if gate.get("angle"):
-        angle = gate["angle"]
-    say("Ours to write" if gate.get("why") else "Topic passed the gate",
-        (gate.get("why") or "")[:160])
-    if gate.get("angle_changed"):
-        say("Angle rewritten from the real search results", angle[:200])
+    if gate.get("relevant"):
+        if gate.get("angle"):
+            angle = gate["angle"]
+        say("Ours to write" if gate.get("why") else "Topic passed the gate",
+            (gate.get("why") or "")[:160])
+        if gate.get("angle_changed"):
+            say("Angle rewritten from the real search results", angle[:200])
+    else:
+        say("Off topic, writing it anyway", gate.get("why") or "no reason given")
+        notes.append("the topic gate judged this off the brand's scope (%s); the article was "
+                     "written anyway, and the verdict is on the decisions file and the Library row"
+                     % (gate.get("why") or "no reason given"))
+
+    # ---- THE FORMAT PICK, decided once, right after the winners study and the topic gate --------
+    # Moved here from the write phase's own "route" step (write/fmt_router.py, deleted 2026-09-16):
+    # one AI call, made once, and never re-made while writing. On a resumed run the earlier answer
+    # (filed on the ask-words row below) is reused rather than asking the model again.
+    if asked.get("format") in write_common.ARCHETYPES:
+        arch, arch_why = asked["format"], asked.get("format_why", "")
+    else:
+        arch, arch_why = winners.route_format(win.get("format", ""), topic, angle, win.get("md", ""))
+    say("Format: %s" % pstore.format_title(arch), arch_why or "decided from the pages that win")
 
     # ---- 7. the verdict and the build spec (after the gate, so the angle it anchors on is the
     # settled one; found live 2026-09-04: with no angle given, the brief said "Anchors missing"
@@ -441,13 +482,15 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
                      "article is written to the measured average of %s words" % "{:,}".format(words_chosen))
     if words_chosen is None:
         ask = _record_question(ctx, topic, angle_before, placeholder_numbers, demo, demo_note,
-                               primary["keyword"], measured_band, suggested)
-        say("Asking how long the article should be",
+                               primary["keyword"], primary.get("volume"), measured_band, suggested,
+                               arch, arch_why, gate.get("relevant", True), gate.get("why", ""))
+        say("Asking how long the article should be, and confirming the format",
             "The pages that rank run %s; suggesting %s words"
             % (("%s to %s" % ("{:,}".format(measured_band["min"]), "{:,}".format(measured_band["max"])))
                if measured_band.get("min") and measured_band.get("max") else "an unmeasured length",
                "{:,}".format(suggested)))
-        return {"summary": "Waiting on one answer: how long this article should be.",
+        return {"summary": "Waiting on one answer: how long this article should be, and whether the "
+                           "format is right.",
                 "ask_words": ask}
     if not asked.get("asked_at"):
         # The number arrived with the call and no question was ever put (a scripted run, a rerun
@@ -455,8 +498,9 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
         # the file always says which of the two happened.
         asked = dict(asked, topic=topic, angle=angle_before, asked_at=None,
                      placeholder_numbers=bool(placeholder_numbers), demo=bool(demo),
-                     demo_note=demo_note, keyword=primary["keyword"],
-                     band_measured=measured_band or None, suggested=suggested)
+                     demo_note=demo_note, keyword=primary["keyword"], volume=primary.get("volume"),
+                     band_measured=measured_band or None, suggested=suggested,
+                     format=arch, format_why=arch_why)
     if asked.get("answer") != words_chosen:
         asked = _record_answer(ctx, asked, words_chosen,
                                "the person" if words_chosen != suggested else "the person, who kept the suggestion")
@@ -467,6 +511,33 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     say("Writing to %s words" % "{:,}".format(words_chosen),
         "Your number, not the measured band. Every step from here reads it: the plan's word budget, "
         "each section's length, the blend and the final rewrite")
+
+    # ---- THE DECISIONS FILE, written once, here, and nowhere else -----------------------------
+    # format, length and the topic verdict, all settled by this point. Every later step (the plan,
+    # the write phase) reads this file through write/_common.decisions() and never re-decides any
+    # of the three. format_choice, when given, is the person overriding the routed pick on the
+    # ask-words reply; anything else keeps the router's archetype.
+    picked_format = _format_pick(format_choice)
+    format_final, format_source = (picked_format, "user") if picked_format else (arch, "serp")
+    existing_decisions = store.load_artifact(chat_id, run_id, "decisions.json")
+    # WRITTEN ONCE. A topic already researched can be asked about again in the same run (a fresh
+    # angle mid-conversation, a rerun that already knows the answer) and every step above this line
+    # replays from cache in under a second — but the decisions this file records were made the
+    # first time, and a second pass over the same ground must not restamp them with a new
+    # decided_at or silently redo a person's pick. Only a genuinely new run (no file yet) writes one;
+    # an existing one wins, so the fields carried into research.json below stay in step with it.
+    if existing_decisions is None:
+        word_source = "measured" if (asked.get("answer_source") or "").startswith("the suggestion;") else "user"
+        existing_decisions = {
+            "format": format_final, "format_source": format_source,
+            "word_target": words_chosen, "word_source": word_source,
+            "measured_band": measured_band or {},
+            "topic": {"state": "on" if gate.get("relevant", True) else "off", "why": gate.get("why") or ""},
+            "decided_at": store.now(),
+        }
+        write_common.save_decisions(ctx, existing_decisions)
+    else:
+        format_final = existing_decisions.get("format") or format_final
 
     # ---- 2a. the spine ---------------------------------------------------------------------------
     spn, _ = step("spine", lambda: {"spine": spine.run(topic, angle, w, win, company)})
@@ -605,9 +676,11 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
         "winners": _win_block(win),
         "verdict": brief["verdict"], "build_spec": build_spec, "completeness": brief["completeness"],
         "word_target": words_chosen,
+        # a display copy of the checkpoint's pick, for the research doc; decisions.json is the source
+        "format_archetype": format_final,
         "cannibalisation": cann.get("hit"),
-        "topic_gate": {"relevant": True, "why": gate.get("why", ""), "angle_changed": bool(gate.get("angle_changed")),
-                       "why_changed": gate.get("why_changed", "")},
+        "topic_gate": {"relevant": bool(gate.get("relevant", True)), "why": gate.get("why", ""),
+                       "angle_changed": bool(gate.get("angle_changed")), "why_changed": gate.get("why_changed", "")},
         "persona": per,
         "evidence": {"pages": ev["pages"], "skipped": ev.get("skipped") or [], "cards": len(ev["cards"]),
                      "dropped_verbatims": ev.get("dropped_verbatims", 0),

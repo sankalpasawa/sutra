@@ -231,7 +231,12 @@ RS["serp"].update({"paa_on": RESEARCH["serp"]["paa_on"], "paa_off": RESEARCH["se
                    "related_on": RESEARCH["serp"]["related_on"], "related_off": RESEARCH["serp"]["related_off"],
                    "who_ranks": RESEARCH["serp"]["who_ranks"]})
 RS["keywords"]["primary"] = dict(RESEARCH["keywords"]["primary"])
-out = gather.run(BP, RS, CARDS, lambda *a: None)
+_gc = store.new_chat("picture gather"); _gr = store.new_run(_gc, "gather")
+_g_ctx = {"chat_id": _gc, "run_id": _gr, "step_id": "s0", "emit": lambda **kw: None}
+store.save_artifact(_gc, _gr, "decisions.json", {
+    "format": "how-to-guide", "format_source": "serp", "word_target": 1600, "word_source": "user",
+    "measured_band": {}, "topic": {"state": "on", "why": ""}, "decided_at": store.now()})
+out = gather.run(_g_ctx, BP, RS, CARDS, lambda *a: None)
 pic = out.get("search_picture") or ""
 ok("gather returns the picture with its other outputs", bool(pic.strip()), list(out))
 ok("gather made exactly one model call, the vetting one", len(GCALLS) == 1, GCALLS)

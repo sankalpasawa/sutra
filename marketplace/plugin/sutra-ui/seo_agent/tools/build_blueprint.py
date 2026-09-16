@@ -17,6 +17,7 @@ No paid calls here. The persona comes from the research and is never re-picked.
 from .. import store
 from ..research import _common as _c
 from ..research import attach, cluster, faq_order, keyword_set, name_clusters, orphan, score_cards
+from ..write import _common as wc
 from . import _shared as sh
 
 # 13-research-structure/scripts/render.py, unchanged
@@ -126,7 +127,6 @@ def run(ctx, redo=False, **_ignored):
         "faq": faq,
         "orphan_keywords": orphans,
         "persona": persona,
-        "format_archetype": (research.get("winners") or {}).get("format") or "",
         "word_band": (research.get("build_spec") or {}).get("word_band"),
         "angle_filter": {"kept": rep["kept_count"], "dropped": rep["dropped_count"],
                          "dropped_pct": rep["dropped_pct_of_cards"], "flag": bool(rep.get("FLAG"))},
@@ -135,6 +135,14 @@ def run(ctx, redo=False, **_ignored):
         "title": topic, "primary_keyword": kset["primary"], "secondary_keywords": kset["secondaries"],
         "generated_at": store.now(),
     }
+    # format_archetype is a DISPLAY COPY, not a source. The write phase never reads it off the
+    # blueprint any more (see write/gather.py); this is here only so an old reader of blueprint.json
+    # still finds a value, and it is decisions.json's own value, not a fresh guess from the winners
+    # study (that guess was retired 2026-09-16 with the write-phase "route" step).
+    try:
+        blueprint["format_archetype"] = wc.decisions(ctx).get("format") or ""
+    except ValueError as e:
+        return {"summary": "Could not decide the article's format.", "error": str(e)}
     store.save_artifact(chat_id, run_id, "blueprint.json", blueprint)
     linked = sum(len(s["internal_links"]) for s in sections)
     say("Blueprint ready", "%s, %s, %s" % (sh.plural(len(sections), "section"), sh.plural(linked, "internal link"),

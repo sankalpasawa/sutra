@@ -411,3 +411,93 @@ def save_work(ctx, step, data):
 
 def deep(obj):
     return json.loads(json.dumps(obj))
+
+
+# ---- the decisions file: format, length, topic — decided once, at the run_research checkpoint ----
+# artifacts/decisions.json, not a work file: every step that needs a format or a word count reads it
+# through decisions() below, and nothing downstream re-decides either value. Only the checkpoint (in
+# tools/run_research.py) calls save_decisions(); everyone else calls decisions() and gets it read-only.
+
+DECISIONS_ARTIFACT = "decisions.json"
+_DECISIONS_CACHE = {}          # (chat_id, run_id) -> the row, so a run's many steps read the disk once
+
+
+def _as_int(v):
+    try:
+        if isinstance(v, bool):
+            return None
+        return int(v)
+    except (TypeError, ValueError):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+
+
+def _word_target_fallback(band):
+    """The midpoint of a measured band — the same number suggested_words() would have offered."""
+    lo, hi = _as_int((band or {}).get("min")), _as_int((band or {}).get("max"))
+    if lo and hi:
+        return (lo + hi) // 2
+    return lo or hi or 0
+
+
+def _fallback_decisions(ctx):
+    """A run with no decisions.json (older than the checkpoint, or stopped before it wrote one):
+    built ONCE from what that run already decided, so it keeps working rather than losing its
+    format or its length.
+
+    format: the blueprint's archetype when it is already one of the 8; otherwise routed the same
+    way the checkpoint would have, from the winners study. word_target: the research's own settled
+    answer when there is one, else the midpoint of the measured band. topic: the topic gate's
+    verdict, on by default (the gate itself fails open).
+    """
+    research = store.load_artifact(ctx["chat_id"], ctx["run_id"], "research.json") or {}
+    blueprint = store.load_artifact(ctx["chat_id"], ctx["run_id"], "blueprint.json") or {}
+    build_spec = research.get("build_spec") or {}
+    band = build_spec.get("word_band") or {}
+    measured = build_spec.get("word_band_measured") or {}
+    if not measured and band and band.get("min") != band.get("max"):
+        measured = band
+    word_target = _as_int(research.get("word_target")) or _word_target_fallback(band) or 0
+
+    arch = str(blueprint.get("format_archetype") or "").strip()
+    if arch not in ARCHETYPES:
+        from ..research import winners as _winners      # lazy: research/ does not import write/ back
+        w = research.get("winners") or {}
+        arch, _why = _winners.route_format(w.get("format", ""), research.get("topic", ""),
+                                           research.get("angle", ""), w.get("md", ""))
+
+    gate = research.get("topic_gate") or {}
+    return {
+        "format": arch, "format_source": "serp",
+        "word_target": word_target, "word_source": "measured",
+        "measured_band": {"min": _as_int(measured.get("min")), "max": _as_int(measured.get("max"))}
+                        if measured.get("min") and measured.get("max") else {},
+        "topic": {"state": "on" if gate.get("relevant", True) else "off",
+                  "why": str(gate.get("why") or "")},
+        "decided_at": store.now(),
+    }
+
+
+def decisions(ctx):
+    """The run's one decisions file, read once per process and cached. Missing -> built once from
+    what the run already decided (see _fallback_decisions), written, and returned, so an old or
+    resumed run keeps working."""
+    key = (ctx.get("chat_id"), ctx.get("run_id"))
+    if key in _DECISIONS_CACHE:
+        return _DECISIONS_CACHE[key]
+    got = store.load_artifact(ctx["chat_id"], ctx["run_id"], DECISIONS_ARTIFACT)
+    if not isinstance(got, dict) or not got.get("format"):
+        got = _fallback_decisions(ctx)
+        store.save_artifact(ctx["chat_id"], ctx["run_id"], DECISIONS_ARTIFACT, got)
+    _DECISIONS_CACHE[key] = got
+    return got
+
+
+def save_decisions(ctx, data):
+    """Write the decisions file. Only the run_research checkpoint calls this on an ordinary run; a
+    deliberate change rewrites it and says so in the chat, never a later step in silence."""
+    store.save_artifact(ctx["chat_id"], ctx["run_id"], DECISIONS_ARTIFACT, data)
+    _DECISIONS_CACHE[(ctx.get("chat_id"), ctx.get("run_id"))] = data
+    return data

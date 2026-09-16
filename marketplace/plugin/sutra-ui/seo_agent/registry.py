@@ -293,6 +293,11 @@ WORK_TOOLS = [
                 "Run on placeholder figures when the DataForSEO balance is too low to measure "
                 "anything. ONLY when the person has asked for it in so many words. Never set it "
                 "to get past a refusal on your own judgement."},
+            "word_target": {"type": "integer", "description":
+                "A word count the person stated in their own message, e.g. 'write me a 1,200 "
+                "word article' or 'keep it around 800 words'. Leave this out if they gave no "
+                "number: the run will ask once, after it has measured how long the pages that "
+                "already rank run, and never ask twice. Never invent a number yourself."},
         }, "required": ["topic"]},
         "plain": {
             "does": "Researches one topic: real keyword numbers, who ranks, what they cover, the gap, evidence with sources, and which of your pages belong in it.",

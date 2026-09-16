@@ -19,7 +19,7 @@ from seo_agent.tests import _fixture
 _fixture.setup()
 from seo_agent import llm, store
 from seo_agent.tools import _index, _shared as sh, dfs, voyage
-from seo_agent.write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, fmt_router,
+from seo_agent.write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence,
                              freeze, gather, headings, plan_select, readable, section_keywords, sentence_pass, shape,
                              slop_pass, wrapper, write_body)
 from seo_agent.editing import links_pass
@@ -63,14 +63,38 @@ BP, RS, CARDS = _fixture.write_inputs()
 IDX = C.card_index(CARDS)
 CTX = C.context(BP, RS)
 
+# decisions.json is the one place format and length enter the write phase now (2026-09-16); gather
+# reads it through write/_common.decisions() and never falls back to the blueprint or the research
+# brief while it exists. RUN_CTX plants one that deliberately differs from BP/RS's own numbers, so a
+# reader that quietly went back to the old chain would be caught here, not three steps downstream.
+_c0 = store.new_chat("write unit"); _r0 = store.new_run(_c0, "unit")
+RUN_CTX = {"chat_id": _c0, "run_id": _r0, "step_id": "s0", "emit": lambda **kw: None}
+store.save_artifact(_c0, _r0, "decisions.json", {
+    "format": "how-to-guide", "format_source": "serp", "word_target": 1600, "word_source": "user",
+    "measured_band": {"min": 1400, "max": 1800}, "topic": {"state": "on", "why": ""},
+    "decided_at": store.now()})
+
 # ======================================================================================
 print("\nplanner: gather + select + freeze")
-inputs = gather.run(BP, RS, CARDS, say)
+inputs = gather.run(RUN_CTX, BP, RS, CARDS, say)
 ok("keyword set drops in_body", "in_body" not in inputs["group_a"]["keyword_set"])
-ok("word band comes from the build spec", inputs["group_a"]["word_band"] == {"min": 1400, "max": 1800})
+ok("word band comes from the decisions file, not the stale research/blueprint band",
+   inputs["group_a"]["word_band"] == {"min": 1600, "max": 1600}, inputs["group_a"]["word_band"])
 ok("table stakes capped and kept", 0 < len(inputs["group_a"]["table_stakes"]) <= C.MAX_TABLE_STAKES)
 ok("intent and Google's answer lifted", inputs["group_a"]["search_intent"] == "informational" and "4,700" in inputs["group_a"]["ai_overview"])
 ok("evidence ids resolved to cards", inputs["group_b"]["sections_menu"][0]["evidence"][0]["card_id"] == 1)
+
+# a second run whose decisions file names a format the blueprint disagrees with: the file wins
+_c1 = store.new_chat("write unit 2"); _r1 = store.new_run(_c1, "unit2")
+_stale_ctx = {"chat_id": _c1, "run_id": _r1, "step_id": "s1x", "emit": lambda **kw: None}
+store.save_artifact(_c1, _r1, "decisions.json", {
+    "format": "listicle", "format_source": "user", "word_target": 900, "word_source": "user",
+    "measured_band": {}, "topic": {"state": "off", "why": "outside brand scope"},
+    "decided_at": store.now()})
+stale_inputs = gather.run(_stale_ctx, BP, RS, CARDS, say)
+ok("format archetype comes from the decisions file, ignoring a differing blueprint value",
+   stale_inputs["group_a"]["format_archetype"] == "listicle", stale_inputs["group_a"]["format_archetype"])
+shutil.rmtree(store.chat_dir(_c1), ignore_errors=True)
 
 sel = plan_select.run(inputs, CTX, say)
 plan = sel["plan"]
@@ -177,21 +201,12 @@ llm.CLI_RETRY_SLEEPS, llm.subprocess.Popen = _saved_sleeps, _saved_popen
 
 _fixture.stub_write_network()
 
-# ======================================================================================
-print("\narchitect: routing")
-route = fmt_router.run(inputs, RS, say)
-ok("a known archetype is kept, not re-routed", route == {"archetype": "how-to-guide", "routed": False})
-no_arch = copy.deepcopy(inputs); no_arch["group_a"]["format_archetype"] = ""
-OVERRIDES.append((lambda p: '"archetype": "<one of the 8 labels>"' in p, {"archetype": "listicle", "why": "n items"}))
-ok("a missing archetype is routed", fmt_router.run(no_arch, RS, say) == {"archetype": "listicle", "routed": True})
-OVERRIDES[:] = [(lambda p: '"archetype": "<one of the 8 labels>"' in p, {"archetype": "poem", "why": ""})]
-try:
-    fmt_router.run(no_arch, RS, say)
-    ok("an unknown archetype raises", False, "no raise")
-except ValueError as e:
-    ok("an unknown archetype raises", "poem" in str(e))
-OVERRIDES.clear()
+# The format router now runs once, at the run_research checkpoint (research/winners.route_format),
+# never inside the write phase — see tests/test_research.py for the checkpoint itself, and the
+# "format archetype comes from the decisions file" checks above for the fallback that stands in for
+# it on an old or resumed run.
 
+# ======================================================================================
 print("\narchitect: the budget maths")
 m = shape.budget_maths({"min": 1400, "max": 1800})
 ok("budget = midpoint x (1 - 0.10) = 1440", m["budget"] == 1440, m)
@@ -552,12 +567,16 @@ ctx2 = {"chat_id": c2, "run_id": r2, "step_id": "s2", "emit": lambda **kw: None}
 out_f = write_article.run(ctx2)
 ok("every section dies -> a hard freeze flag -> the tool returns an error", out_f.get("error") and "frozen" in out_f["error"], out_f)
 ok("nothing was written", store.load_artifact(c2, r2, "draft.md") is None and store.load_artifact(c2, r2, "write-report.json") is not None)
+print("\na run with no decisions file and no valid blueprint archetype falls back, and a bad reply is a clean error")
 c3 = store.new_chat("write route"); r3 = store.new_run(c3, "bad format")
 bp3, rs3, cards3 = _fixture.write_inputs(); bp3["format_archetype"] = ""
 store.save_artifact(c3, r3, "blueprint.json", bp3); store.save_artifact(c3, r3, "research.json", rs3); store.save_artifact(c3, r3, "cards.json", cards3)
 OVERRIDES.append((lambda p: '"archetype": "<one of the 8 labels>"' in p, {"archetype": "sonnet"}))
 out_r = write_article.run({"chat_id": c3, "run_id": r3, "step_id": "s3", "emit": lambda **kw: None})
-ok("an unknown archetype from the router is a clean error", out_r.get("error") and "sonnet" in out_r["error"], out_r)
+ok("an unknown archetype from the fallback router is a clean error, not a crash",
+   out_r.get("error") and "sonnet" in out_r["error"], out_r)
+ok("and nothing was cached as this run's decisions, so a retry can still succeed",
+   store.load_artifact(c3, r3, "decisions.json") is None, store.load_artifact(c3, r3, "decisions.json"))
 OVERRIDES.clear()
 
 print("\nevery prompt the model saw was fully filled")
