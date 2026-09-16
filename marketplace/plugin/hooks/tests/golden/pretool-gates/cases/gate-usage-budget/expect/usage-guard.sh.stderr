@@ -1,0 +1,10 @@
++-- USAGE-GUARD (HARD BLOCK) --------------------------------------+
+| test          99%  resets <TS>  <- BLOCKING
+| Utilization 99% >= 80% block threshold
+| ALL tool use is blocked (founder direction <TS>).
+| Founder: reply "continue" to override until the window resets.
+| On "continue", Claude runs the line below EXACTLY -- this path,
+| bare: no pipes, no redirection, nothing chained. Anything else
+| misses the guard's deadlock exemption and is blocked too:
+|   bash <PLUGIN>/bin/sutra-usage continue
++------------------------------------------------------------------+

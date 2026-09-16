@@ -1,0 +1,1177 @@
+#!/bin/sh
+# sutra-turn - the one program the host calls per hook event.
+#
+# WHY. Claude Code fires 88 separate command registrations across 6 events for
+# this plugin. Each one pays process start-up, re-reads the same stdin, and can
+# only be understood by reading its own file. sutra-turn is registered once per
+# event instead: it walks runtime/pipeline.json, runs each step, records what
+# the step did in an append-only ledger, and produces ONE combined emission.
+#
+# WAVE 0 BEHAVIOUR. Every step is still `shim:hooks/<file>` - the legacy bash.
+# So this program must be behaviour-identical to the fleet it replaces, and
+# bin/sutra-charcap proves that against a recorded corpus.
+#
+# CONTRACT
+#   sutra-turn run --event <SessionStart|UserPromptExpansion|UserPromptSubmit
+#                          |PreToolUse|PostToolUse|PermissionRequest|Stop>
+#         hook JSON on stdin; combined emission on stdout; exit 2 to block.
+#   sutra-turn --selftest    every shimmed script present and executable
+#   sutra-turn --version     version + contract_version
+#
+# STEP 0, BEFORE ANYTHING ELSE
+#   SUTRA_RUNTIME_DISABLED=1 or ~/.sutra-runtime-disabled  -> legacy path,
+#         ledger row kind=killswitch.
+#   jq missing or failing its probe                        -> legacy path,
+#         one fixed line on stdout, ledger row kind=jq_failed.
+#   The legacy path runs every registration of the event from
+#   hooks/hooks.json.step3 - the PRE-COLLAPSE snapshot - in order, with the
+#   same stdin, streams passing straight through: what the host itself would
+#   have done before this program existed. It reads hooks.json only when no
+#   .step3 snapshot is installed, and it refuses any registration that is
+#   itself sutra-turn or sutra-canary (ledger row kind=legacy_skip).
+#
+# TURN IDENTITY. One prompt turn is ONE ledger file. The key is derived, never
+#   allocated: sha256(session_id + prompt_id) when the host gives a prompt id;
+#   otherwise UserPromptSubmit computes sha256(session_id + sha256(prompt key))
+#   and publishes it to .sutra/turn/<session>/current, which every later event
+#   of that turn reads unmodified. No counter, so no read-modify-write race
+#   between this program, bin/sutra-canary and parallel PreToolUse calls.
+#
+# CONCURRENCY. The host runs "all matching hooks in parallel to completion"
+#   (Claude Code hooks guide), so the event's wall clock is the SLOWEST step,
+#   never the sum. This program does the same: every selected step is spawned at
+#   once, each with its own stdin copy and its own timeout watchdog; the parent
+#   waits for all of them and only THEN walks the results in REGISTRATION order
+#   to write the ledger and merge the emission. Running them serially made a
+#   24-step Stop event outlive the harness watchdog (exit 142) and truncated the
+#   ledger mid-walk.
+#
+# NO POST-DENY SKIP. The host does not stop dispatching because one hook denied;
+#   every registered hook still runs and the most restrictive decision wins. So
+#   `class` here affects EMISSION only, never execution: a step is never skipped
+#   because an earlier step exited 2.
+#
+# MATCHERS. ONE rule, used by the runtime path and the legacy path alike:
+#   omitted / empty / "*" matches every tool; otherwise the tool name must match
+#   the matcher as an ANCHORED POSIX ERE, i.e. ^(matcher)$. So "Edit|Write" does
+#   not match MultiEdit, "mcp__.*" matches every MCP tool, "Edit" matches only
+#   Edit. pipeline.json may declare "matcher_semantics"; a value this program
+#   does not implement is refused with a degraded line instead of guessed at.
+#
+# STDERR. Every step's stderr reaches fd 2, in registration order, exactly as it
+#   did under the legacy host; the blocking step's stderr is printed last.
+#
+# EMISSION (s1 of bin/sutra-charcap, which diffs it against the recorded fleet)
+#   - stdout that is not a single JSON object is collected in registration
+#     order and passes through unchanged when no step emitted an object; when
+#     one did, it is folded into that object (see STDOUT IS THE HOST'S INPUT);
+#   - every step's JSON object is merged into AT MOST ONE object, in
+#     registration order, under the host's "most restrictive wins" rule:
+#     permissionDecision deny > ask > allow (reasons joined with " | "),
+#     decision.behavior deny > allow with updatedPermissions concatenated and
+#     de-duplicated - emitted back where it arrived, and always UNDER
+#     hookSpecificOutput on PermissionRequest (hooks/permission-gate.sh's own
+#     shape, and the only one the host reads there),
+#     continue=false + stopReason from the first step that set them,
+#     systemMessage joined, additionalContext joined by two newlines and emitted
+#     on EVERY event (the host ignores it where it is unsupported). A field that
+#     cannot be merged is recorded as a ledger row kind=dropped_json.
+#   - PreToolUse, Stop and UserPromptSubmit (the three events the host honours
+#     exit 2 on): the FIRST step in registration order that exits 2
+#     owns the block - its stderr is printed last and the exit code is 2. Every
+#     other step still ran.
+#
+# STDOUT IS THE HOST'S INPUT, fd 2 IS THE OPERATOR'S. The host parses a hook's
+#   stdout as JSON only when the WHOLE stream is one object; anything else is
+#   plain text. So printing plain text and then a merged object put BOTH beyond
+#   the host's reach - a permissionDecision deny, a Stop decision, an
+#   additionalContext block were all silently lost the moment one step printed a
+#   nudge. Two rules follow, and they are the contract:
+#     1. When there is a merged object, plain stdout is FOLDED INTO it, never
+#        printed beside it: on SessionStart / UserPromptSubmit /
+#        UserPromptExpansion into hookSpecificOutput.additionalContext (where the
+#        host would have put a plain-stdout hook's text anyway), on every other
+#        event into systemMessage (which is how the host shows plain stdout
+#        there). With no merged object the plain text is printed unchanged.
+#     2. Every `sutra runtime degraded:` notice of this program goes to fd 2.
+#        ONE exception, pinned by the plan and by PLAN.md s7: `jq unavailable`
+#        is printed to stdout with printf, because it is the one notice the
+#        MODEL must be told about and the runtime has no jq to build an object
+#        with. That path emits no object of ours, so it cannot corrupt one.
+#
+# LEDGER emit row. Its `passthrough` field is the PARITY view - every non
+#   additionalContext stdout, in registration order - which is what the recorded
+#   corpus (bin/sutra-charcap expected_emit) is built from. What reaches fd 1 is
+#   that same material re-shaped: ONE JSON object whenever any step emitted one
+#   (the plain text folded into it), otherwise the plain text alone.
+#
+# LEDGER. runtime/ledger.sh owns the format. Two files per turn: the canonical
+# .sutra/turn/<session>/<turn_id>.jsonl and the flat parity view
+# .sutra/turn/<session>.jsonl. The last row is the stage digest: sha256 of the
+# ordered "<step_id>:<exit>" list.
+#
+# TIMEOUTS. Per step, from pipeline.json. macOS has no timeout(1); runtime/
+# shim.sh polls a background watcher. A timed-out step records dur_ms and exit
+# 124 and is skipped.
+#
+# POSIX sh + jq only. No bashisms, no GNU coreutils, no python.
+#
+# LAYER=L0
+# SCOPE=fleet
+# TARGET_PATH=sutra/marketplace/plugin/bin/sutra-turn
+
+set -u
+
+SUTRA_TURN_VERSION="1.0.0"
+
+# ------------------------------------------------------------------ paths --
+_self="$0"
+case "$_self" in /*) ;; *) _self="$PWD/$_self" ;; esac
+_bin_dir="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$_bin_dir/.." 2>/dev/null && pwd -P)}"
+RUNTIME_DIR="$PLUGIN_ROOT/runtime"
+HOOKS_DIR="$PLUGIN_ROOT/hooks"
+PIPELINE="$RUNTIME_DIR/pipeline.json"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+# shellcheck source=runtime/ledger.sh
+. "$RUNTIME_DIR/ledger.sh" 2>/dev/null || {
+  printf 'sutra-turn: cannot load runtime/ledger.sh\n' >&2; exit 0; }
+# shellcheck source=runtime/shim.sh
+. "$RUNTIME_DIR/shim.sh" 2>/dev/null || {
+  printf 'sutra-turn: cannot load runtime/shim.sh\n' >&2; exit 0; }
+
+# TEMP DIR. Owned or nothing. `mkdir -p` on the SHARED temp root used to be the
+# fallback when the per-run subdir could not be created (TMPDIR is a regular
+# file, read-only, full, or the name already taken) - and the exit trap then
+# did `rm -rf` on $TMPDIR itself, deleting every other process's temp state.
+# So: plain `mkdir` (never -p, so an existing directory is not adopted), a
+# second name if the first collides, and cleanup that removes ONLY what this
+# process created. With no private directory at all the runtime says so and
+# takes the legacy path with mktemp'd files.
+TMPROOT=""
+TMPOWNED=0
+TMPFILES=""
+for _tmpcand in "${TMPDIR:-/tmp}/sutra-turn-$$" \
+                "${TMPDIR:-/tmp}/sutra-turn-$$-$(sutra_now_ms)"; do
+  if mkdir "$_tmpcand" 2>/dev/null; then
+    TMPROOT="$_tmpcand"; TMPOWNED=1; break
+  fi
+done
+unset _tmpcand
+
+CLEANED=0
+# Every step this process spawned, so a signal can take them down with it
+# instead of orphaning a hook that is still writing into a deleted directory.
+CHILDPIDS=""
+
+cleanup() {
+  [ "$CLEANED" = "1" ] && return 0
+  CLEANED=1
+  if [ "$TMPOWNED" = "1" ] && [ -n "$TMPROOT" ]; then
+    rm -rf "$TMPROOT" 2>/dev/null || true
+  fi
+  # files this process made by name, when it had no directory of its own.
+  # Newline-separated, read line by line, so a TMPDIR with a space in it does
+  # not turn one path into two rm arguments.
+  if [ -n "$TMPFILES" ]; then
+    printf '%s\n' "$TMPFILES" | while IFS= read -r _cl_f; do
+      [ -n "$_cl_f" ] && rm -f "$_cl_f" 2>/dev/null
+    done
+  fi
+  return 0
+}
+
+kill_children() {
+  [ -n "$CHILDPIDS" ] || return 0
+  for _kc_p in $CHILDPIDS; do
+    kill -TERM "$_kc_p" 2>/dev/null || true
+  done
+  return 0
+}
+
+# A SIGNAL MUST END THE PROCESS, NOT RESUME IT. `trap cleanup EXIT HUP INT TERM
+# ALRM QUIT` with a handler that ends in `return 0` is a POSIX trap that RESUMES
+# the script at the interrupted line: a harness that capped the hook with
+# `kill -ALRM`, or a terminal QUIT, deleted TMPROOT and then walked on reading
+# files that no longer existed - a falsely clean turn, digest and all. Each
+# signal now kills the spawned steps, cleans up and EXITS 128+n; the EXIT trap
+# is cleanup alone (CLEANED makes the second call a no-op).
+# ALRM and QUIT as well as the usual three, for exactly the harnesses above.
+trap 'cleanup' EXIT
+trap 'kill_children; cleanup; exit 129' HUP
+trap 'kill_children; cleanup; exit 130' INT
+trap 'kill_children; cleanup; exit 143' TERM
+trap 'kill_children; cleanup; exit 142' ALRM
+trap 'kill_children; cleanup; exit 131' QUIT
+
+# sutra_tmpfile <name>: sets SUTRA_TMPFILE to a path this process may write -
+# inside TMPROOT when we own one, a mktemp'd file otherwise. It sets a variable
+# rather than printing, because `$(sutra_tmpfile ...)` would record the file in
+# a SUBSHELL's TMPFILES and the exit trap would never see it.
+SUTRA_TMPFILE=""
+sutra_tmpfile() {
+  if [ "$TMPOWNED" = "1" ]; then SUTRA_TMPFILE="$TMPROOT/$1"; return 0; fi
+  SUTRA_TMPFILE="$(mktemp "${TMPDIR:-/tmp}/sutra-turn-XXXXXX" 2>/dev/null)"
+  [ -n "$SUTRA_TMPFILE" ] || SUTRA_TMPFILE="$(mktemp /tmp/sutra-turn-XXXXXX 2>/dev/null)"
+  [ -n "$SUTRA_TMPFILE" ] || return 1
+  TMPFILES="$TMPFILES
+$SUTRA_TMPFILE"
+  return 0
+}
+
+# ---------------------------------------------------------------- helpers --
+jq_ok() {
+  command -v jq >/dev/null 2>&1 || return 1
+  printf '{"probe":1}' | jq -e '.probe == 1' >/dev/null 2>&1
+}
+
+# sutra_safe_sid <raw> -> the session id reduced to a safe PATH COMPONENT.
+# The host's session_id reaches the filesystem three times (ledger directory,
+# flat parity file, `current` pointer), so a value like "../../escape" would
+# write outside .sutra altogether. One rule, shared verbatim with
+# bin/sutra-canary, applied BEFORE any path is built - including before the
+# turn_id derivation, so the two programs hash the same bytes.
+sutra_safe_sid() {
+  _ssid="$(printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9._:@+-')"
+  [ -n "$_ssid" ] || _ssid="nosession"
+  printf '%s' "$_ssid"
+}
+
+# json_str <file> <key> -> string value, jq when available, sed when not.
+json_str() {
+  if jq_ok; then
+    jq -r --arg k "$2" '.[$k] // empty' "$1" 2>/dev/null
+  else
+    sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1
+  fi
+}
+
+# family_of <step_id> -> the corpus family this step belongs to, from the
+# event-prefixed id (ups./ss./upe./pre./post./perm./stop.).
+family_of() {
+  case "$1" in
+    ups.*)  printf 'ups' ;;
+    ss.*)   printf 'session' ;;
+    upe.*)  printf 'upe' ;;
+    pre.*)  printf 'pretool' ;;
+    post.*) printf 'posttool' ;;
+    perm.*) printf 'permission' ;;
+    stop.*) printf 'stop' ;;
+    *)      printf 'other' ;;
+  esac
+}
+
+# matcher_matches <matcher> <tool_name>   [SEMANTICS: anchored-ere]
+#   omitted / empty / "*" -> every tool
+#   anything else         -> the WHOLE tool name must match ^(matcher)$
+# One rule, no special case for a plain alternation: the registry writes
+# "Edit|Write|MultiEdit|NotebookEdit" when it means those four names and
+# "mcp__.*" when it means every MCP tool, and an anchored ERE reads both
+# correctly. "Edit|Write" therefore does NOT match MultiEdit.
+SUTRA_MATCHER_SEMANTICS="anchored-ere"
+matcher_matches() {
+  _mm="$1"; _mt="${2:-}"
+  [ -z "$_mm" ] && return 0
+  [ "$_mm" = "*" ] && return 0
+  [ -z "$_mt" ] && return 1
+  printf '%s' "$_mt" | grep -Eq "^($_mm)\$"
+}
+
+# --------------------------------------------------------------- turn id --
+# turn_prompt_key <stdin_file> -> a single-line, multi-line-safe key derived
+# from the prompt text. jq base64-encodes it; the jq-less path falls back to
+# the same sed scrape sutra-canary uses, so both programs agree byte for byte
+# on the machine they are running on.
+turn_prompt_key() {
+  if jq_ok; then
+    jq -r '(.prompt // "") | @base64' "$1" 2>/dev/null
+  else
+    sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1
+  fi
+}
+
+# turn_current_path <session_id> -> the per-session "current turn" pointer.
+# It carries no ".jsonl" suffix, so neither bin/sutra-charcap nor
+# runtime/tests/test-canary.sh (both glob *.jsonl) can see it.
+turn_current_path() { printf '%s/.sutra/turn/%s/current' "$PROJECT_DIR" "$1"; }
+
+# turn_current_write <session_id> <turn_id>: publish the turn key for every
+# later event of this prompt. Written to a pid-private temp then mv -f'd, so
+# two writers (sutra-turn and sutra-canary) racing on the same prompt cannot
+# interleave - and since both compute the SAME value from stdin alone, writer
+# order is irrelevant.
+turn_current_write() {
+  _tcw_p="$(turn_current_path "$1")"
+  mkdir -p "$PROJECT_DIR/.sutra/turn/$1" 2>/dev/null || return 0
+  printf '%s\n' "$2" > "$_tcw_p.$$" 2>/dev/null || return 0
+  mv -f "$_tcw_p.$$" "$_tcw_p" 2>/dev/null || rm -f "$_tcw_p.$$" 2>/dev/null
+}
+
+# turn_current_read <session_id> -> the published turn key, or nothing.
+turn_current_read() {
+  _tcr_v="$(cat "$(turn_current_path "$1")" 2>/dev/null)"
+  case "$_tcr_v" in ''|*[!A-Za-z0-9]*) return 0 ;; esac
+  printf '%s' "$_tcr_v"
+}
+
+# ------------------------------------------------------------ legacy path --
+# legacy_registrations <event> -> "<matcher>\t<command>" per registration, in
+# registry order. The registry of record for the LEGACY path is
+# hooks/hooks.json.step3 - the pre-runtime snapshot landed beside the collapsed
+# hooks.json. Reading the live hooks.json here would find nothing but this very
+# program, so a kill-switched fleet would run no hooks at all.
+# jq when it works; an awk walk when it does not, because the jq-missing path
+# is precisely the one that cannot use jq.
+legacy_registry() {
+  if [ -f "$HOOKS_DIR/hooks.json.step3" ]; then
+    printf '%s' "$HOOKS_DIR/hooks.json.step3"
+  else
+    printf '%s' "$HOOKS_DIR/hooks.json"
+  fi
+}
+
+legacy_registrations() {
+  _lg_reg="$(legacy_registry)"
+  [ -f "$_lg_reg" ] || return 0
+  if jq_ok; then
+    jq -r --arg ev "$1" '
+      (.hooks[$ev] // [])[]
+      | ((.matcher // "*") | if . == "" then "*" else . end) as $m
+      | (.hooks // [])[]
+      | select((.type // "command") == "command")
+      | "\($m)\t\(.command)"' "$_lg_reg" 2>/dev/null
+    return 0
+  fi
+  # A STRUCTURAL scan, not a line-shape guess. The previous version matched the
+  # line that opens an event array and took the FIRST quoted token on it, so a
+  # compact snapshot ({"hooks":{"PreToolUse":[ ... all on one line, exactly what
+  # `jq -c` writes) named the event "hooks" and every registration was dropped -
+  # a kill-switched fleet running zero governance, silently. This walks the JSON
+  # character by character instead: strings are consumed as strings, { [ ] }
+  # move a depth counter, and the event is the KEY token that opens an array.
+  # Line-oriented only in that a JSON string can never contain a raw newline, so
+  # per-line scanning with carried state is safe for any layout.
+  awk -v EV="$1" '
+    function unesc(s,   out, i, c, d) {
+      if (index(s, "\\") == 0) return s
+      out = ""; i = 1
+      while (i <= length(s)) {
+        c = substr(s, i, 1)
+        if (c == "\\") {
+          d = substr(s, i + 1, 1)
+          if      (d == "n") out = out "\n"
+          else if (d == "t") out = out "\t"
+          else               out = out d
+          i += 2
+        } else { out = out c; i++ }
+      }
+      return out
+    }
+    BEGIN { depth = 0; evdepth = -1; cur = ""; pend = ""; lastkey = ""; m = "*" }
+    {
+      line = $0; n = length(line); i = 1
+      while (i <= n) {
+        c = substr(line, i, 1)
+        if (c == "\"") {
+          i++; s = ""
+          while (i <= n) {
+            ch = substr(line, i, 1)
+            if (ch == "\\") { s = s substr(line, i, 2); i += 2; continue }
+            if (ch == "\"") { i++; break }
+            s = s ch; i++
+          }
+          j = i
+          while (j <= n && (substr(line, j, 1) == " " || substr(line, j, 1) == "\t")) j++
+          if (j <= n && substr(line, j, 1) == ":") {
+            lastkey = s
+            if (s ~ /^(SessionStart|UserPromptExpansion|UserPromptSubmit|PreToolUse|PostToolUse|PermissionRequest|Stop|SubagentStop)$/) pend = s
+            i = j + 1
+            continue
+          }
+          if (lastkey == "matcher") m = unesc(s)
+          else if (lastkey == "command" && cur == EV) printf "%s\t%s\n", m, unesc(s)
+          lastkey = ""; pend = ""
+          continue
+        }
+        if (c == "[") {
+          if (pend != "") { cur = pend; evdepth = depth; pend = ""; m = "*" }
+          depth++; i++; continue
+        }
+        if (c == "{") {
+          if (cur != "" && depth == evdepth + 1) m = "*"
+          pend = ""; depth++; i++; continue
+        }
+        if (c == "]" || c == "}") {
+          depth--
+          if (cur != "" && depth <= evdepth) { cur = ""; evdepth = -1 }
+          i++; continue
+        }
+        i++
+      }
+    }
+  ' "$_lg_reg" 2>/dev/null
+}
+
+# legacy_degraded_registry: the packaging fault that would otherwise be silent.
+# Say it once, on stdout, and record it - never block the host for it.
+legacy_degraded_registry() {
+  [ "${LEGACY_DEGRADED:-0}" -eq 0 ] || return 0
+  LEGACY_DEGRADED=1
+  printf 'sutra runtime degraded: legacy registry missing\n' >&2
+  sutra_ledger_note legacy_registry_missing "$1"
+}
+
+# legacy_expand <string> -> the string with every literal ${CLAUDE_PLUGIN_ROOT}
+# replaced by this install's plugin root, using SHELL PARAMETER SUBSTITUTION.
+# It used to be `sed -e "s|\${CLAUDE_PLUGIN_ROOT}|$PLUGIN_ROOT|g"`, which is not
+# a substitution but a sed PROGRAM built out of the root: a root containing '&'
+# pasted the matched text back in, one containing '|' ended the s/// command and
+# one containing '\' ate the next character. The replacement below is literal
+# for every byte a path can hold.
+_LEGACY_TOKEN='${CLAUDE_PLUGIN_ROOT}'
+legacy_expand() {
+  _lx_in="$1"; _lx_out=""
+  while :; do
+    case "$_lx_in" in
+      *"$_LEGACY_TOKEN"*)
+        _lx_out="$_lx_out${_lx_in%%"$_LEGACY_TOKEN"*}$PLUGIN_ROOT"
+        _lx_in="${_lx_in#*"$_LEGACY_TOKEN"}"
+        ;;
+      *) _lx_out="$_lx_out$_lx_in"; break ;;
+    esac
+  done
+  printf '%s' "$_lx_out"
+}
+
+# legacy_run <event> <stdin_file> <tool_name> -> the host's own behaviour:
+# every matching registration, in order, streams passed straight through.
+# Exit 2 if any registration exited 2 (the host blocks on the first deny).
+#
+# SAFETY NET. With no hooks.json.step3 snapshot the fallback reads the collapsed
+# hooks.json, whose every entry IS this program - so it runs NOTHING. Silence
+# there means a kill-switched fleet with zero governance and no way to notice.
+#
+# READ vs RUNNABLE vs MATCHED vs RAN. Four different numbers, and only the first
+# two are a packaging fault:
+#   read      registrations the registry yielded for this event
+#   runnable  of those, the ones that are not this runtime itself
+#   matched   of those, the ones whose matcher matched THIS tool
+#   ran       of those, the ones that were actually executed (an unexecutable
+#             one is kind=legacy_not_executable, counted apart)
+# A PostToolUse registration matched to Edit says nothing about a Bash call, so
+# "matched == 0" is an ordinary no-match turn, not a missing registry. It used
+# to print the degraded line and write a legacy_registry_missing row on every
+# such turn (kill-switch and no-temp-dir paths alike). The degraded line is now
+# reserved for a registry that is absent, empty, or wholly self-referential; a
+# plain no-match is recorded as kind=no_match and says nothing on either stream.
+# The no_match note is keyed on MATCHED, not on RAN, so a hook that lost its
+# x-bit can never be reported as "the matcher did not match".
+legacy_run() {
+  _lr_ev="$1"; _lr_in="$2"; _lr_tool="${3:-}"; _lr_rc=0
+  _lr_ran=0; _lr_read=0; _lr_runnable=0; _lr_matched=0; _lr_notexec=0
+  LEGACY_DEGRADED=0
+  _lr_reg="$(legacy_registry)"
+  if [ ! -f "$_lr_reg" ]; then
+    legacy_degraded_registry \
+      "no legacy registry at $_lr_reg; $_lr_ev ran no legacy hook"
+    return 0
+  fi
+  sutra_tmpfile legacy.tsv || return 0
+  _lr_tsv="$SUTRA_TMPFILE"
+  [ -n "$_lr_tsv" ] || return 0
+  legacy_registrations "$_lr_ev" > "$_lr_tsv" 2>/dev/null || return 0
+  while IFS='	' read -r _lr_m _lr_cmd; do
+    [ -n "${_lr_cmd:-}" ] || continue
+    _lr_read=$((_lr_read + 1))
+    _lr_cmd="$(legacy_expand "$_lr_cmd")"
+    # A registration is an argv vector, and it must NOT be split blindly on
+    # spaces: a plugin root with a space in it (TMPDIR='/tmp/with space', a
+    # macOS "Application Support" install) turned "<root>/hooks/x.sh" into two
+    # words, argv[0] was not executable, the hook was dropped with no row and no
+    # line - and the whole kill-switch path then ran ZERO hooks, printed nothing
+    # and exited 0. Three shapes, resolved by testing for an executable FILE:
+    #   1. the WHOLE string is the script          (spaces and all)
+    #   2. "<wrapper> <script>"                    (LAST word is the script)
+    #   3. "<script> <flags...>"                   (FIRST word is the script)
+    # Split first, so the self-check below sees every word; the argv vector is
+    # then built with `set --` and run as "$@". Never eval.
+    _lr_oldifs="$IFS"; IFS=' '; set -f
+    # shellcheck disable=SC2086
+    set -- $_lr_cmd
+    set +f; IFS="$_lr_oldifs"
+    [ $# -gt 0 ] || continue
+    # NEVER re-enter the runtime from its own fallback. After the hooks.json
+    # collapse every live registration IS this program; running one here would
+    # recurse (or, with the kill-switch set, loop). Refuse and say so - but only
+    # for a registration that would otherwise have run on THIS tool, so the
+    # legacy_skip rows stay one-per-refusal as before.
+    _lr_self=0
+    case "${_lr_cmd##*/}" in sutra-turn|sutra-canary) _lr_self=1 ;; esac
+    for _lr_a in "$@"; do
+      case "${_lr_a##*/}" in sutra-turn|sutra-canary) _lr_self=1 ;; esac
+    done
+    [ "$_lr_self" -eq 0 ] && _lr_runnable=$((_lr_runnable + 1))
+    matcher_matches "$_lr_m" "$_lr_tool" || continue
+    _lr_matched=$((_lr_matched + 1))
+    if [ "$_lr_self" -eq 1 ]; then
+      sutra_ledger_note legacy_skip "$_lr_cmd"
+      continue
+    fi
+    _lr_exe=""
+    if [ -x "$_lr_cmd" ]; then
+      _lr_exe="$_lr_cmd"
+      set -- "$_lr_cmd"
+    else
+      _lr_last=""
+      for _lr_a in "$@"; do _lr_last="$_lr_a"; done
+      if   [ -x "$_lr_last" ]; then _lr_exe="$_lr_last"
+      elif [ -x "$1" ];        then _lr_exe="$1"
+      fi
+    fi
+    # A REGISTRATION THAT CANNOT BE RUN IS A FAULT, NOT A NO-OP. `[ -x "$1" ] ||
+    # continue` dropped it with no ledger row and no stderr, and the turn was
+    # then recorded kind=no_match with a note claiming the matcher had not
+    # matched - a plugin that lost an x-bit ran no governance at all and the
+    # ledger asserted a clean turn. Counted apart from `ran`, so the no_match
+    # note is written only when the matcher genuinely did not match.
+    if [ -z "$_lr_exe" ]; then
+      _lr_notexec=$((_lr_notexec + 1))
+      sutra_ledger_note legacy_not_executable "$_lr_cmd"
+      printf 'sutra runtime degraded: legacy hook not executable %s\n' "$_lr_cmd" >&2
+      continue
+    fi
+    "$@" < "$_lr_in"
+    _lr_one=$?
+    _lr_ran=$((_lr_ran + 1))
+    [ "$_lr_one" -eq 2 ] && _lr_rc=2
+  done < "$_lr_tsv"
+  if [ "$_lr_read" -eq 0 ] || [ "$_lr_runnable" -eq 0 ]; then
+    legacy_degraded_registry \
+      "legacy registry yielded no runnable registration for $_lr_ev"
+  elif [ "$_lr_matched" -eq 0 ]; then
+    sutra_ledger_note no_match \
+      "$_lr_read registrations for $_lr_ev; none matched tool ${_lr_tool:-<none>}"
+  fi
+  [ "${LEGACY_DEGRADED:-0}" -eq 1 ] && return 0
+  return "$_lr_rc"
+}
+
+# ---------------------------------------------------------------- selftest --
+# shims=<n> is the number of SHIM STEPS in the pipeline; ok/fail count UNIQUE
+# shim scripts (92 steps collapse onto 87 scripts). EXECUTION step 49 greps
+# shims= out of this one line, so its shape is part of the contract.
+#
+# The counting itself belongs to runtime/selftest.sh - the file the tests point
+# at directly. This wrapper sources it and re-prints its summary; the inline
+# body below is only the fallback for an install where selftest.sh is absent.
+do_selftest() {
+  if [ -f "$RUNTIME_DIR/selftest.sh" ]; then
+    # shellcheck source=runtime/selftest.sh
+    . "$RUNTIME_DIR/selftest.sh" 2>/dev/null || true
+  fi
+  if command -v sutra_selftest_run >/dev/null 2>&1; then
+    sutra_tmpfile selftest.txt || return 1
+    _st_f="$SUTRA_TMPFILE"
+    [ -n "$_st_f" ] || return 1
+    sutra_selftest_run "$PLUGIN_ROOT" "$PIPELINE" > "$_st_f" 2>&1
+    _st_rc=$?
+    # detail lines (MISSING / NOT-EXEC / MISSING-DEP / BAD-SPEC ...) first
+    grep -v '^ok=[0-9][0-9]* fail=[0-9][0-9]*$' "$_st_f" 2>/dev/null || true
+    _st_sum="$(grep '^ok=[0-9][0-9]* fail=[0-9][0-9]*$' "$_st_f" 2>/dev/null | tail -1)"
+    _st_ok="${_st_sum%% *}"; _st_ok="${_st_ok#ok=}"
+    _st_fail="${_st_sum#* }"; _st_fail="${_st_fail#fail=}"
+    case "$_st_ok"   in ''|*[!0-9]*) _st_ok=0 ;; esac
+    case "$_st_fail" in ''|*[!0-9]*) _st_fail=1 ;; esac
+    _st_shims=0
+    if jq_ok && [ -f "$PIPELINE" ]; then
+      _st_shims="$(jq '[.events[][] | select((.impl // "") | startswith("shim:"))] | length' "$PIPELINE" 2>/dev/null)"
+      case "$_st_shims" in ''|*[!0-9]*) _st_shims=0 ;; esac
+    fi
+    printf 'sutra-turn --selftest: ok=%s fail=%s shims=%s\n' "$_st_ok" "$_st_fail" "$_st_shims"
+    return "$_st_rc"
+  fi
+  do_selftest_inline
+}
+
+do_selftest_inline() {
+  _st_ok=0; _st_fail=0; _st_shims=0
+  if ! jq_ok; then
+    printf 'sutra-turn --selftest: jq unavailable; ok=0 fail=1\n'
+    return 1
+  fi
+  if [ ! -f "$PIPELINE" ]; then
+    printf 'sutra-turn --selftest: missing %s; ok=0 fail=1\n' "$PIPELINE"
+    return 1
+  fi
+  if ! jq -e . "$PIPELINE" >/dev/null 2>&1; then
+    printf 'sutra-turn --selftest: %s is not valid JSON; ok=0 fail=1\n' "$PIPELINE"
+    return 1
+  fi
+  _st_shims="$(jq '[.events[][] | select((.impl // "") | startswith("shim:"))] | length' "$PIPELINE" 2>/dev/null)"
+  sutra_tmpfile scripts.txt || return 1
+  _st_l="$SUTRA_TMPFILE"
+  [ -n "$_st_l" ] || return 1
+  jq -r '[.events[][]? | (.impl // "") | select(startswith("shim:")) | sub("^shim:";"")]
+         | unique | .[]' "$PIPELINE" 2>/dev/null \
+    > "$_st_l"
+  while IFS= read -r _st_s; do
+    [ -n "$_st_s" ] || continue
+    if [ -f "$PLUGIN_ROOT/$_st_s" ] && [ -x "$PLUGIN_ROOT/$_st_s" ]; then
+      _st_ok=$((_st_ok + 1))
+    else
+      _st_fail=$((_st_fail + 1))
+      if [ ! -f "$PLUGIN_ROOT/$_st_s" ]; then
+        printf 'MISSING  %s\n' "$_st_s"
+      else
+        printf 'NOT-EXEC %s\n' "$_st_s"
+      fi
+    fi
+  done < "$_st_l"
+  printf 'sutra-turn --selftest: ok=%s fail=%s shims=%s\n' "$_st_ok" "$_st_fail" "$_st_shims"
+  [ "$_st_fail" -eq 0 ]
+}
+
+# -------------------------------------------------------------------- run --
+do_run() {
+  EVENT="$1"
+
+  # No private temp directory (TMPDIR is a file, read-only or full). Say so once
+  # and run the legacy hooks - never adopt the shared temp root, which the exit
+  # trap would then delete.
+  if [ "$TMPOWNED" != "1" ]; then
+    STDIN_FILE=""
+    sutra_tmpfile stdin.json && STDIN_FILE="$SUTRA_TMPFILE"
+    if [ -n "$STDIN_FILE" ]; then
+      cat > "$STDIN_FILE" 2>/dev/null || : > "$STDIN_FILE"
+    else
+      cat > /dev/null 2>/dev/null || true
+      STDIN_FILE=/dev/null
+    fi
+    printf 'sutra runtime degraded: no temp dir\n' >&2
+    SESSION_ID="$(sutra_safe_sid "$(json_str "$STDIN_FILE" session_id)")"
+    TOOL_NAME="$(json_str "$STDIN_FILE" tool_name)"
+    sutra_ledger_init "$PROJECT_DIR" "$SESSION_ID" "notmpdir" "$EVENT"
+    sutra_ledger_note no_tmpdir \
+      "no writable private temp dir under ${TMPDIR:-/tmp}; legacy hooks executed for $EVENT"
+    legacy_run "$EVENT" "$STDIN_FILE" "$TOOL_NAME"
+    exit $?
+  fi
+
+  cat > "$TMPROOT/stdin.json" 2>/dev/null || : > "$TMPROOT/stdin.json"
+  [ -f "$TMPROOT/stdin.json" ] || : > "$TMPROOT/stdin.json"
+
+  # SESSION_ID is a PATH COMPONENT (ledger dir, flat file, current pointer), and
+  # it arrives from the host's JSON. "../../escape" used to write outside
+  # .sutra entirely. Sanitised ONCE here, by the same rule bin/sutra-canary
+  # applies, so the two programs agree on every path they share.
+  SESSION_ID="$(json_str "$TMPROOT/stdin.json" session_id)"
+  [ -n "$SESSION_ID" ] || SESSION_ID="${CLAUDE_CODE_SESSION_ID:-}"
+  SESSION_ID="$(sutra_safe_sid "$SESSION_ID")"
+  TOOL_NAME="$(json_str "$TMPROOT/stdin.json" tool_name)"
+  PROMPT_ID="$(json_str "$TMPROOT/stdin.json" prompt_id)"
+
+  # turn_id. One prompt turn = ONE ledger file, because the overhead tool reads
+  # work_ms as "first UserPromptSubmit row -> Stop stage_digest" and cannot do
+  # that across files. A shared counter cannot deliver that: it is a read-modify-
+  # write that two writers (this program and bin/sutra-canary) and any number of
+  # parallel PreToolUse calls race on - measured, 8 parallel calls produced 5
+  # turn files, 3 of them holding two merged turns.
+  #
+  # So the key is DERIVED, never allocated:
+  #   prompt_id present  -> sha256(session_id + prompt_id)                [host]
+  #   UserPromptSubmit   -> sha256(session_id + sha256(prompt key)), and the
+  #                         value is published to .sutra/turn/<sid>/current
+  #   any later event    -> whatever `current` says
+  #   no `current` yet   -> a per-process orphan key + a kind=orphan_turn row
+  # Claude Code supplies no prompt_id on UserPromptSubmit, so the middle branch
+  # is the common path. Both writers compute the same bytes, so mv -f racing on
+  # `current` is harmless.
+  ORPHAN=0
+  if [ -n "$PROMPT_ID" ]; then
+    TURN_ID="$(sutra_sha256_string "$SESSION_ID$PROMPT_ID")"
+    turn_current_write "$SESSION_ID" "$TURN_ID"
+  elif [ "$EVENT" = "UserPromptSubmit" ]; then
+    _pkey="$(turn_prompt_key "$TMPROOT/stdin.json")"
+    TURN_ID="$(sutra_sha256_string "$SESSION_ID$(sutra_sha256_string "$_pkey")")"
+    turn_current_write "$SESSION_ID" "$TURN_ID"
+  else
+    TURN_ID="$(turn_current_read "$SESSION_ID")"
+    if [ -z "$TURN_ID" ]; then
+      ORPHAN=1
+      TURN_ID="$(sutra_sha256_string "$SESSION_ID$EVENT$TOOL_NAME$$$(sutra_now_ms)")"
+    fi
+  fi
+  [ -n "$TURN_ID" ] || TURN_ID="unknown"
+
+  sutra_ledger_init "$PROJECT_DIR" "$SESSION_ID" "$TURN_ID" "$EVENT"
+  [ "$ORPHAN" -eq 1 ] && sutra_ledger_note orphan_turn \
+    "no current turn key for session $SESSION_ID; $EVENT ran outside a prompt turn"
+
+  # -- step 0: kill-switch, then the jq probe ------------------------------
+  if [ "${SUTRA_RUNTIME_DISABLED:-}" = "1" ] || [ -f "${HOME:-/nonexistent}/.sutra-runtime-disabled" ]; then
+    sutra_ledger_note killswitch "runtime disabled; legacy hooks executed for $EVENT"
+    legacy_run "$EVENT" "$TMPROOT/stdin.json" "$TOOL_NAME"
+    exit $?
+  fi
+  if ! jq_ok; then
+    printf 'sutra runtime degraded: jq unavailable\n'
+    sutra_ledger_note jq_failed "jq unavailable; legacy hooks executed for $EVENT"
+    legacy_run "$EVENT" "$TMPROOT/stdin.json" "$TOOL_NAME"
+    exit $?
+  fi
+
+  if [ ! -f "$PIPELINE" ]; then
+    printf 'sutra runtime degraded: pipeline.json unavailable\n' >&2
+    sutra_ledger_note pipeline_missing "no $PIPELINE; legacy hooks executed for $EVENT"
+    legacy_run "$EVENT" "$TMPROOT/stdin.json" "$TOOL_NAME"
+    exit $?
+  fi
+
+  # -- unknown event -------------------------------------------------------
+  # `run --event Bogus` (or an event this pipeline has no entry for, e.g.
+  # SubagentStop before it is specified) used to select zero steps, emit
+  # nothing and exit 0 - a mis-registration indistinguishable from a clean
+  # turn. Say it instead; still exit 0, because an unknown event must not
+  # block the host.
+  #
+  # AND RUN THE LEGACY REGISTRATIONS. This was the one degraded path with no
+  # fallback: if the host really is firing an event the pipeline has not
+  # specified, the registry may still carry hooks for it, and dropping them is
+  # the same silent loss of governance every other degraded path exists to
+  # avoid. legacy_run is a no-op (plus its own row) when the registry has
+  # nothing for the event, so the quiet case stays quiet.
+  if ! jq -e --arg ev "$EVENT" '(.events // {}) | has($ev)' "$PIPELINE" >/dev/null 2>&1; then
+    printf 'sutra runtime degraded: no pipeline entry for event %s\n' "$EVENT" >&2
+    sutra_ledger_note unknown_event \
+      "pipeline.json declares no steps for event $EVENT; legacy registrations executed"
+    legacy_run "$EVENT" "$TMPROOT/stdin.json" "$TOOL_NAME"
+    sutra_ledger_digest >/dev/null
+    exit 0
+  fi
+
+  # -- matcher semantics ---------------------------------------------------
+  # A pipeline may pin the rule it was generated under. Implement it or refuse
+  # it; never guess, because a mis-read matcher silently drops a governance gate.
+  PSEM="$(jq -r '.matcher_semantics // empty' "$PIPELINE" 2>/dev/null)"
+  if [ -n "$PSEM" ] && [ "$PSEM" != "$SUTRA_MATCHER_SEMANTICS" ]; then
+    printf 'sutra runtime degraded: unsupported matcher_semantics %s\n' "$PSEM" >&2
+    sutra_ledger_note matcher_semantics_unsupported \
+      "pipeline.json asks for $PSEM; this runtime implements $SUTRA_MATCHER_SEMANTICS"
+    legacy_run "$EVENT" "$TMPROOT/stdin.json" "$TOOL_NAME"
+    exit $?
+  fi
+
+  # -- step selection ------------------------------------------------------
+  # id \t matcher \t class \t impl \t timeout_ms \t wrapper
+  jq -r --arg ev "$EVENT" '
+    (.events[$ev] // [])[]
+    | [ (.id // "unknown"),
+        ((.matcher // "*") | if . == "" then "*" else . end),
+        (.class // "B"),
+        (.impl // ""),
+        ((.timeout_ms // 5000) | tostring),
+        (.wrapper // "") ]
+    | @tsv' "$PIPELINE" 2>/dev/null > "$TMPROOT/steps.tsv"
+
+  # -- pass 1: SPAWN every selected step at once ---------------------------
+  # The host dispatches all matching hooks in parallel; so do we. Each step gets
+  # its own stdin redirect from the same file, its own output files and its own
+  # watchdog (seq as the watchdog's tag, so two steps sharing one script cannot
+  # collide on the timeout flag). Nothing is inspected here - ordering belongs
+  # to pass 2.
+  SEQ=0
+  : > "$TMPROOT/order.tsv" 2>/dev/null || true
+  while IFS='	' read -r S_ID S_MATCH S_CLASS S_IMPL S_TMO S_WRAP; do
+    [ -n "${S_ID:-}" ] || continue
+    matcher_matches "$S_MATCH" "$TOOL_NAME" || continue
+
+    S_SCRIPT="${S_IMPL#shim:}"
+    # class and timeout_ms travel with the step: pass 2 has to name the budget a
+    # killed step blew and decide whether the emission says so out loud.
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$SEQ" "$S_ID" "$S_IMPL" "$S_SCRIPT" "$S_CLASS" "$S_TMO" >> "$TMPROOT/order.tsv"
+
+    case "$S_IMPL" in
+      shim:*) ;;
+      *) SEQ=$((SEQ + 1)); continue ;;
+    esac
+
+    S_HOOK="$PLUGIN_ROOT/$S_SCRIPT"
+    S_WRAPFULL=""
+    [ -n "${S_WRAP:-}" ] && S_WRAPFULL="$PLUGIN_ROOT/$S_WRAP"
+
+    ( sutra_shim_run "$S_HOOK" "$TMPROOT/stdin.json" "$TMPROOT/$SEQ.out" \
+        "$TMPROOT/$SEQ.err" "$S_TMO" "$S_WRAPFULL" "$SEQ" > "$TMPROOT/$SEQ.rc" 2>/dev/null ) &
+    CHILDPIDS="$CHILDPIDS $!"
+
+    SEQ=$((SEQ + 1))
+  done < "$TMPROOT/steps.tsv"
+  wait
+
+  # -- pass 2: WALK the results in REGISTRATION order ----------------------
+  AC=""; PASS=""; PLAIN=""; BLOCKED=0; BERR=""
+  # Under the legacy host EVERY hook's stderr reached the terminal, not only a
+  # blocking one - advisory nudges (structure-first, depth reminders, placement
+  # warnings) live there. Collect them here and flush them at emission time;
+  # raw bytes, appended with cat, so trailing newlines survive the parity diff.
+  ERRACC="$TMPROOT/all.err"
+  : > "$ERRACC" 2>/dev/null || true
+  JSONACC="$TMPROOT/json.acc"
+  : > "$JSONACC" 2>/dev/null || true
+
+  while IFS='	' read -r S_SEQ S_ID S_IMPL S_SCRIPT S_CLASS S_TMO; do
+    [ -n "${S_ID:-}" ] || continue
+    S_CLASS="${S_CLASS:-B}"
+    case "${S_TMO:-}" in ''|*[!0-9]*) S_TMO=0 ;; esac
+    S_FAMILY="$(family_of "$S_ID")"
+
+    case "$S_IMPL" in
+      shim:*) ;;
+      *) sutra_ledger_skip "$S_SEQ" "$S_ID" "$S_SCRIPT" "unsupported-impl"; continue ;;
+    esac
+
+    S_OUT="$TMPROOT/$S_SEQ.out"; S_ERR="$TMPROOT/$S_SEQ.err"
+    # "<exit> <dur_ms>", written by the step's own subshell. A missing file means
+    # the subshell itself died - reported as 127, never as a silent success.
+    # printf writes "<exit> <dur>" with NO trailing newline, so `read` reports
+    # EOF (non-zero) even though it assigned both fields: validate the values,
+    # never the exit code.
+    S_RC=""; S_DUR=""
+    [ -f "$TMPROOT/$S_SEQ.rc" ] && read -r S_RC S_DUR < "$TMPROOT/$S_SEQ.rc" 2>/dev/null
+    case "${S_RC:-}"  in ''|*[!0-9]*) S_RC=127 ;; esac
+    case "${S_DUR:-}" in ''|*[!0-9]*) S_DUR=0 ;; esac
+
+    sutra_ledger_step "$S_SEQ" "$S_ID" "$S_FAMILY" "$S_IMPL" "$S_SCRIPT" \
+      "$S_RC" "$S_DUR" "$S_OUT" "$S_ERR"
+
+    # stderr routing, BEFORE the timed-out continue so a step killed at 124
+    # still surrenders whatever it managed to say.
+    if [ "$S_RC" = "2" ] && [ "$BLOCKED" -eq 0 ]; then
+      BLOCKED=2
+      BERR="$(cat "$S_ERR" 2>/dev/null)"
+    else
+      [ -s "$S_ERR" ] && cat "$S_ERR" >> "$ERRACC" 2>/dev/null
+    fi
+
+    # A KILLED STEP IS NEVER SILENT. The ledger row alone reaches nobody in the
+    # moment: the governance gate that was supposed to run simply did not, and
+    # the turn looked clean. Name the step and the budget it blew on fd 2 (in
+    # registration order, with every other advisory), and for a class B step -
+    # one whose output the host acts on - also synthesise a systemMessage so the
+    # transcript itself carries the loss.
+    if [ "$S_RC" = "124" ]; then
+      printf 'sutra runtime degraded: step %s exceeded %sms\n' "$S_ID" "$S_TMO" \
+        >> "$ERRACC" 2>/dev/null
+      if [ "$S_CLASS" = "B" ]; then
+        jq -nc --arg s "$S_ID" --arg c "$S_CLASS" \
+          --arg m "sutra runtime degraded: step $S_ID exceeded ${S_TMO}ms" \
+          '{step:$s,class:$c,obj:{systemMessage:$m}}' >> "$JSONACC" 2>/dev/null
+      fi
+      continue
+    fi
+
+    S_OTXT="$(cat "$S_OUT" 2>/dev/null)"
+    [ -n "$S_OTXT" ] || continue
+
+    # A step's stdout is EITHER one JSON object (merged below) or plain text
+    # (passed through verbatim). Two objects concatenated are not JSON, so they
+    # stay plain text rather than being silently mangled.
+    S_OBJ="$(printf '%s' "$S_OTXT" \
+      | jq -cs 'if (length == 1 and (.[0] | type) == "object") then .[0] else empty end' 2>/dev/null)"
+
+    if [ -n "$S_OBJ" ]; then
+      jq -nc --arg s "$S_ID" --arg c "$S_CLASS" --argjson o "$S_OBJ" \
+        '{step:$s,class:$c,obj:$o}' >> "$JSONACC" 2>/dev/null
+      S_ONE="$(printf '%s' "$S_OBJ" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)"
+    else
+      S_ONE=""
+      if [ -z "$PLAIN" ]; then PLAIN="$S_OTXT"; else PLAIN="$PLAIN
+$S_OTXT"; fi
+    fi
+
+    # PARITY accumulators - the shape bin/sutra-charcap's expected_emit builds:
+    # additionalContext-carrying stdout to AC, everything else to PASS.
+    if [ -n "$S_ONE" ]; then
+      if [ -z "$AC" ]; then AC="$S_ONE"; else AC="$AC
+
+$S_ONE"; fi
+    else
+      if [ -z "$PASS" ]; then PASS="$S_OTXT"; else PASS="$PASS
+$S_OTXT"; fi
+    fi
+  done < "$TMPROOT/order.tsv"
+
+  # -- merge every JSON object into at most one -----------------------------
+  #
+  # EVERY KEY A REGISTERED HOOK CAN PRINT ON STDOUT, enumerated from the shipped
+  # scripts rather than from the host's docs - a key with no rule below is a
+  # SILENT LOSS, which is exactly how PermissionRequest auto-allow was dead for
+  # a release (hooks/permission-gate.sh puts its decision UNDER
+  # hookSpecificOutput; the merger only understood a TOP-LEVEL decision, so
+  # sutra-turn printed zero bytes and every MCP tool call prompted again).
+  # Golden parity cannot catch this: it projects per-step ledger stdout, never
+  # the event's emitted aggregate. Keep this list in step with the hooks.
+  #
+  #   TOP LEVEL
+  #     decision (string)      hooks/atom-cards-stop-check.sh, flow-stop-check.sh,
+  #                            writing-style-gate.sh, per-turn-hard-gate.sh
+  #                            ("block"), context-budget-check.sh ("BLOCK"/"ALLOW")
+  #     reason                 the same five
+  #     suppressOutput         hooks/context-budget-check.sh
+  #     systemMessage          synthesised here for a class B step that timed out
+  #     continue, stopReason   host contract keys; no shipped emitter yet
+  #     decision (object)      no shipped emitter; kept so a host-shaped object
+  #                            at top level still round-trips
+  #   UNDER hookSpecificOutput
+  #     hookEventName          every emitter (re-stamped from the event)
+  #     additionalContext      hooks/per-turn-discipline-prompt.sh,
+  #                            hooks/placement-resolve.sh
+  #     permissionDecision     hooks/bash-summary-pretool.sh ("ask")
+  #     permissionDecisionReason  the same
+  #     decision {behavior,updatedPermissions,updatedInput,message}
+  #                            hooks/permission-gate.sh (PermissionRequest)
+  #     updatedMCPToolOutput   hooks/posttool-mcp-compress.sh (PostToolUse)
+  #     updatedInput           host contract key; no shipped emitter yet
+  #
+  # MERGE RULES - most restrictive wins, nothing silently discarded:
+  #   additionalContext        joined by two blank-line-separated newlines
+  #   permissionDecision       deny > ask > allow; reasons joined with " | "
+  #   decision.behavior        deny > allow (same rank table)
+  #   decision.updatedPermissions  concatenated, de-duplicated, order preserved
+  #   decision.updatedInput / hookSpecificOutput.updatedInput /
+  #   updatedMCPToolOutput     last writer wins; a disagreement between two
+  #                            steps is a ledger row kind=merge_conflict
+  #   decision.message         joined with " | "
+  #   continue/stopReason      first setter wins;  systemMessage joined
+  #   decision (string)        deny/block > ask > allow > any other non-null
+  # The merged decision OBJECT is emitted where it arrived - and always under
+  # hookSpecificOutput on PermissionRequest, which is the only shape the host
+  # reads there. Anything still unmergeable is a ledger row kind=dropped_json,
+  # and on a class B step (one whose output can block) also one fixed stderr
+  # line, so a future shape gap can never be silent again.
+  MERGED=""
+  if [ -s "$JSONACC" ]; then
+    jq -s --arg ev "$EVENT" '
+      def rank($v): if $v == null then -1
+        else ({"deny":3,"block":3,"ask":2,"allow":1,"approve":1}[($v|tostring|ascii_downcase)] // 0) end;
+      def lastwins($cur; $new; $sid; $field):
+        if $cur != null and $cur != $new
+          then .notes += [{step:$sid,field:$field,
+                           note:"two steps disagreed; last writer wins"}]
+          else . end;
+      def mergedec($d; $sid):
+        reduce ($d | to_entries[]) as $x (.;
+          if   $x.key == "behavior" then
+            (if rank($x.value) > rank(.dbeh) then .dbeh = $x.value else . end)
+          elif $x.key == "updatedPermissions" then .drules += ($x.value // [])
+          elif $x.key == "message" then
+            (if (($x.value|tostring)|length) > 0 then .dmsg += [$x.value|tostring] else . end)
+          elif $x.key == "updatedInput" then
+            (lastwins(.dui; $x.value; $sid; "decision.updatedInput") | .dui = $x.value)
+          else .drop += [{step:$sid,field:("decision." + $x.key)}] end);
+      . as $in
+      | ($in | map({key:(.step|tostring), value:(.class // "A")}) | from_entries) as $classmap
+      | reduce $in[] as $e (
+        {ac:[],pd:null,pdr:[],ui:null,umo:null,
+         dbeh:null,drules:[],dmsg:[],dui:null,dloc:null,
+         cont:null,stop:null,sys:[],supp:false,dec:null,decr:[],drop:[],notes:[]};
+        $e.step as $sid
+        | reduce (($e.obj // {}) | to_entries[]) as $kv (.;
+            if $kv.key == "hookSpecificOutput" and ($kv.value|type) == "object" then
+              reduce ($kv.value | to_entries[]) as $h (.;
+                if   $h.key == "hookEventName" then .
+                elif $h.key == "additionalContext" then
+                  (if (($h.value|tostring)|length) > 0 then .ac += [$h.value|tostring] else . end)
+                elif $h.key == "permissionDecision" then
+                  (if rank($h.value) > rank(.pd) then .pd = $h.value else . end)
+                elif $h.key == "permissionDecisionReason" then
+                  (if (($h.value|tostring)|length) > 0 then .pdr += [$h.value|tostring] else . end)
+                elif $h.key == "updatedInput" then
+                  (lastwins(.ui; $h.value; $sid; "hookSpecificOutput.updatedInput")
+                   | .ui = $h.value)
+                elif $h.key == "updatedMCPToolOutput" then
+                  (lastwins(.umo; $h.value; $sid; "hookSpecificOutput.updatedMCPToolOutput")
+                   | .umo = $h.value)
+                elif $h.key == "decision" and ($h.value|type) == "object" then
+                  (.dloc = "hso" | mergedec($h.value; $sid))
+                else .drop += [{step:$sid,field:("hookSpecificOutput." + $h.key)}] end)
+            elif $kv.key == "continue" then
+              (if $kv.value == false and .cont == null then .cont = false else . end)
+            elif $kv.key == "stopReason" then
+              (if .stop == null then .stop = ($kv.value|tostring) else . end)
+            elif $kv.key == "systemMessage" then .sys += [$kv.value|tostring]
+            elif $kv.key == "suppressOutput" then
+              (if $kv.value == true then .supp = true else . end)
+            elif $kv.key == "reason" then .decr += [$kv.value|tostring]
+            elif $kv.key == "decision" then
+              (if ($kv.value|type) == "string" then
+                 (if rank($kv.value) > rank(.dec) then .dec = $kv.value else . end)
+               elif ($kv.value|type) == "object" then
+                 ((if .dloc == null then .dloc = "top" else . end) | mergedec($kv.value; $sid))
+               else .drop += [{step:$sid,field:"decision"}] end)
+            else .drop += [{step:$sid,field:$kv.key}] end)
+      )
+      | . as $m
+      | ( ($m.dloc == "hso") or ($ev == "PermissionRequest") ) as $dhso
+      | ( (if $m.dbeh != null then {behavior:$m.dbeh} else {} end)
+        + (if ($m.drules|length) > 0 then
+             {updatedPermissions:($m.drules
+               | reduce .[] as $r ([]; if any(.[]; . == $r) then . else . + [$r] end))}
+           else {} end)
+        + (if $m.dui != null then {updatedInput:$m.dui} else {} end)
+        + (if ($m.dmsg|length) > 0 then {message:($m.dmsg|join(" | "))} else {} end)
+        ) as $decobj
+      | ( (if ($m.ac|length) > 0 then {additionalContext:($m.ac|join("\n\n"))} else {} end)
+        + (if $m.pd != null then
+             {permissionDecision:$m.pd, permissionDecisionReason:($m.pdr|join(" | "))}
+           else {} end)
+        + (if $m.ui  != null then {updatedInput:$m.ui} else {} end)
+        + (if $m.umo != null then {updatedMCPToolOutput:$m.umo} else {} end)
+        + (if ($decobj|length) > 0 and $dhso then {decision:$decobj} else {} end)
+        ) as $hso
+      | ( (if ($hso|length) > 0 then {hookSpecificOutput:({hookEventName:$ev} + $hso)} else {} end)
+        + (if ($decobj|length) > 0 and ($dhso|not) then {decision:$decobj} else {} end)
+        + (if $m.dec  != null then {decision:$m.dec} else {} end)
+        + (if ($m.decr|length) > 0 then {reason:($m.decr|join(" | "))} else {} end)
+        + (if $m.cont != null then {continue:false} else {} end)
+        + (if $m.stop != null then {stopReason:$m.stop} else {} end)
+        + (if ($m.sys|length) > 0 then {systemMessage:($m.sys|join("\n"))} else {} end)
+        + (if $m.supp then {suppressOutput:true} else {} end) ) as $out
+      | {merged:$out,
+         dropped:($m.drop | map(. + {class:($classmap[.step] // "A")})),
+         notes:$m.notes}' "$JSONACC" > "$TMPROOT/merge.json" 2>/dev/null
+
+    MERGED="$(jq -c 'if (.merged | length) > 0 then .merged else empty end' \
+      "$TMPROOT/merge.json" 2>/dev/null)"
+    jq -r '.dropped[]? | "\(.step)\t\(.field)\t\(.class)"' "$TMPROOT/merge.json" 2>/dev/null \
+      > "$TMPROOT/dropped.tsv"
+    while IFS='	' read -r D_STEP D_FIELD D_CLASS; do
+      [ -n "${D_FIELD:-}" ] || continue
+      sutra_ledger_note dropped_json "field $D_FIELD has no merge rule; not emitted" "$D_STEP"
+      # A class B step is one the host acts on. Losing a field of ITS object is
+      # a governance loss, so say so on fd 2 as well - the ledger alone is not
+      # read in the moment.
+      if [ "${D_CLASS:-A}" = "B" ]; then
+        printf 'sutra runtime degraded: step %s emitted %s with no merge rule\n' \
+          "$D_STEP" "$D_FIELD" >> "$ERRACC" 2>/dev/null
+      fi
+    done < "$TMPROOT/dropped.tsv"
+    jq -r '.notes[]? | "\(.step)\t\(.field)\t\(.note)"' "$TMPROOT/merge.json" 2>/dev/null \
+      > "$TMPROOT/notes.tsv"
+    while IFS='	' read -r N_STEP N_FIELD N_NOTE; do
+      [ -n "${N_FIELD:-}" ] || continue
+      sutra_ledger_note merge_conflict "field $N_FIELD: $N_NOTE" "$N_STEP"
+    done < "$TMPROOT/notes.tsv"
+  fi
+
+  sutra_ledger_emit "$AC" "$PASS" "$BLOCKED" "$BERR"
+  sutra_ledger_digest >/dev/null
+
+  # -- emission ------------------------------------------------------------
+  # fd 2 first: every advisory step's stderr in registration order, then the
+  # blocking step's stderr last, on EVERY event - a block on PreToolUse must not
+  # swallow the advisories that ran before it.
+  [ -s "$ERRACC" ] && cat "$ERRACC" >&2
+  [ -n "$BERR" ] && printf '%s\n' "$BERR" >&2
+
+  # ONE OBJECT OR NO OBJECT - never text and then an object. The host reads a
+  # hook's stdout as JSON only when the WHOLE stream is one object, so
+  # "PLAIN-NUDGE\n{...deny...}" reached it as a plain string and the deny was
+  # lost, silently, on every event where one step printed a nudge and another
+  # emitted a directive (two PreToolUse Bash steps in the shipped registry do
+  # exactly that). The plain text is therefore FOLDED INTO the object, in the
+  # field the host would have shown it in anyway: additionalContext on the
+  # context events, systemMessage everywhere else. If the fold itself fails,
+  # both are printed as before - degraded, but nothing is thrown away.
+  if [ -n "$MERGED" ] && [ -n "$PLAIN" ]; then
+    _fold="$(printf '%s' "$MERGED" | jq -c --arg ev "$EVENT" --arg p "$PLAIN" '
+      if ($ev == "UserPromptSubmit" or $ev == "SessionStart"
+          or $ev == "UserPromptExpansion") then
+        .hookSpecificOutput = ((.hookSpecificOutput // {hookEventName:$ev})
+          | .additionalContext =
+              (if ((.additionalContext // "") | length) == 0 then $p
+               else (.additionalContext + "\n" + $p) end))
+      else
+        .systemMessage =
+          (if ((.systemMessage // "") | length) == 0 then $p
+           else (.systemMessage + "\n" + $p) end)
+      end' 2>/dev/null)"
+    if [ -n "$_fold" ]; then
+      MERGED="$_fold"; PLAIN=""
+    else
+      sutra_ledger_note fold_failed \
+        "could not fold plain stdout into the merged object for $EVENT; both emitted"
+    fi
+  fi
+
+  [ -n "$PLAIN" ]  && printf '%s\n' "$PLAIN"
+  [ -n "$MERGED" ] && printf '%s\n' "$MERGED"
+
+  # EXIT 2 IS HONOURED WHERE THE HOST HONOURS IT. PreToolUse and Stop block on
+  # it, and so does UserPromptSubmit (the prompt is not processed and the step's
+  # stderr is shown to the user) - a UPS gate that exited 2 used to be
+  # downgraded to a clean turn here. PostToolUse, SessionStart and
+  # PermissionRequest are left alone: the host does not honour exit 2 there, so
+  # propagating it would be this program inventing a block of its own.
+  case "$EVENT" in
+    PreToolUse|Stop|UserPromptSubmit)
+      [ "$BLOCKED" -eq 2 ] && exit 2
+      ;;
+  esac
+  exit 0
+}
+
+# -------------------------------------------------------------------- cli --
+usage() {
+  cat <<'USAGE'
+sutra-turn - one program per hook event.
+
+  sutra-turn run --event <SessionStart|UserPromptExpansion|UserPromptSubmit
+                         |PreToolUse|PostToolUse|PermissionRequest|Stop>
+  sutra-turn --selftest
+  sutra-turn --version
+USAGE
+}
+
+[ $# -gt 0 ] || { usage >&2; exit 1; }
+
+case "$1" in
+  --version|-V)
+    _cv=""
+    jq_ok && [ -f "$PIPELINE" ] && _cv="$(jq -r '.contract_version // empty' "$PIPELINE" 2>/dev/null)"
+    printf 'sutra-turn %s (contract_version %s)\n' "$SUTRA_TURN_VERSION" "${_cv:-unknown}"
+    exit 0
+    ;;
+  --selftest)
+    do_selftest
+    exit $?
+    ;;
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  run)
+    shift
+    EV=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        # `shift 2` with only one argument left shifts NOTHING in POSIX sh (the
+        # shell reports an error and the loop spins on the same "--event"
+        # forever). Check the count before shifting, and refuse the incomplete
+        # option by name instead of hanging the host's hook call.
+        --event)
+          [ $# -ge 2 ] || { printf 'sutra-turn: --event needs a value\n' >&2; exit 1; }
+          EV=$2; shift 2 ;;
+        --event=*) EV="${1#--event=}"; shift ;;
+        *) shift ;;
+      esac
+    done
+    [ -n "$EV" ] || { printf 'sutra-turn: run needs --event <E>\n' >&2; exit 1; }
+    do_run "$EV"
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

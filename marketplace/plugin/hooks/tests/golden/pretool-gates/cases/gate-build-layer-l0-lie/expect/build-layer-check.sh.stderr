@@ -1,0 +1,37 @@
+
+BLOCKED — D38 plugin-first violation (exit 2)
+
+  Target:   holding/hooks/new-check.sh
+  Category: D38_HOLDING_IMPL
+  Detail:   LAYER=L0 forbidden on holding/{hooks,scripts,skills,commands,bin}/ — file should be at sutra/marketplace/plugin/<surface>/ or sutra/hooks/
+
+  Rule:
+    Implementation surfaces default to plugin L0. holding/{hooks,scripts,
+    skills,commands,bin}/** requires explicit L1 or L2 justification.
+
+  Required marker fields at .claude/build-layer-registered (multi-line KV):
+    LAYER=L0|L1|L2
+    SCOPE=fleet|cohort:<name>|single-instance:<name>
+    TARGET_PATH=<abs path>
+    WHY_NOT_L0_KIND=staging|instance-only       (L1/L2 only)
+    WHY_NOT_L0_REASON=<non-empty>               (L1/L2 only)
+    PROMOTE_TO=<plugin path>                    (L1 only, non-NONE)
+    PROMOTE_BY=<YYYY-MM-DD>                     (L1 only, non-NONE)
+    OWNER=<durable role>                        (L1 only, non-NONE)
+    ACCEPTANCE=<non-empty>                      (L1 only, non-NONE)
+    TS=<unix>
+
+  Quick fixes:
+    - If this is universal/generic, write to:
+        sutra/marketplace/plugin/<surface>/        (Claude Code marketplace surfaces)
+        sutra/hooks/                                (git/runtime universals)
+    - If L1 staging: declare PROMOTE_TO + PROMOTE_BY + OWNER + ACCEPTANCE.
+    - If L2 instance-only: declare WHY_NOT_L0_KIND=instance-only + non-empty WHY_NOT_L0_REASON.
+
+  Override (one tool call, audit-logged):
+    BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<specific-reason>' <tool>
+
+  Spec:  sutra/layer2-operating-system/PROTOCOLS.md §PROTO-021 D38 Amendment
+  D38:   holding/FOUNDER-DIRECTIONS.md §D38
+  Codex: .enforcement/codex-reviews/d38-codex-consult-<TS>.md
+

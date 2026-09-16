@@ -1,0 +1,3 @@
+BLOCKED — DISPATCH GATE (HARD): no dispatch record — run: sutra-dispatch resolve ... && sutra-atom open ... && sutra-dispatch bind
+  Fix path: sutra-dispatch resolve ... && sutra-atom open ... && sutra-dispatch bind
+  Mode file: .claude/dispatch-mode (hard|warn). Kill-switch: touch ~/.dispatch-gate-disabled (founder revoke only)

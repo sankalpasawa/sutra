@@ -1,0 +1,4 @@
+{
+  "decision": "block",
+  "reason": "PER-TURN HARD GATE FIRED (D63).\n\nThis turn's response is missing required governance block(s): Input-Routing Depth.\n\nPer D63 the full per-turn stack is HARD every turn (like Input Routing / the H-Sutra header), including no-tool turns. Redo this response with:\n  - Input Routing block (INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION)\n  - Depth block (TASK / DEPTH X/5 / EFFORT / COST / IMPACT)\n  - BLUEPRINT block (Doing / Steps / Output looks like / Verified by / Scale / Stops-if) -- listed only when this turn edited or wrote a governed file\nas literal text near the top, per the /core:start CLAUDE.md contract. Then continue.\n\nIf intentional: PER_TURN_HARD_ACK=1 PER_TURN_HARD_ACK_REASON='<why>' (or PER_TURN_HARD_DISABLED=1 / touch ~/.per-turn-hard-disabled)."
+}

@@ -1,0 +1,2 @@
+5007b05dbc4153a77698eefea32d1dd12dc0809446d131dde6f86ce6eb5c71a8  .claude/blueprint-registered
+5007b05dbc4153a77698eefea32d1dd12dc0809446d131dde6f86ce6eb5c71a8  .claude/sessions/<UUID>/blueprint-registered

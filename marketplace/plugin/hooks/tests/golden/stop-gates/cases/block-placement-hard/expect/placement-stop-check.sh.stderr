@@ -1,0 +1,16 @@
+
+PLACEMENT layer FIRED (ADR-028).
+
+This turn carries no placement — the work has no address.
+Emit the PLACEMENT block as literal text, then write
+.claude/placement-registered via the Write tool:
+
+  PLACEMENT: D0 > D3 <name> > D3.D2 <name> | "<charter title>"
+
+Expand to the full ancestor tree ONLY if a Domain or Charter was minted.
+Never block on a missing domain — mint under the deepest matching
+ancestor and continue. The system decides the taxonomy, not the operator.
+
+If intentional (one-shot): echo reason > .claude/placement-ack
+(or PLACEMENT_DISABLED=1 / touch .claude/placement-disabled)
+

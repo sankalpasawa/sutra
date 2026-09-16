@@ -1,0 +1,14 @@
+{
+  "family": "ups",
+  "event": "UserPromptSubmit",
+  "scripts": [
+    { "id": "reset-turn-markers.sh", "path": "hooks/reset-turn-markers.sh", "args": [] },
+    { "id": "loopguard-turn-reset.sh", "path": "hooks/loopguard-turn-reset.sh", "args": [] },
+    { "id": "codex-directive-detect.sh", "path": "hooks/codex-directive-detect.sh", "args": [] },
+    { "id": "feedback-routing-rule.sh", "path": "hooks/feedback-routing-rule.sh", "args": [] },
+    { "id": "feedback-auto-correction.sh", "path": "hooks/feedback-auto-correction.sh", "args": [] },
+    { "id": "per-turn-discipline-prompt.sh", "path": "hooks/per-turn-discipline-prompt.sh", "args": [] },
+    { "id": "capture-prompt.sh", "path": "hooks/capture-prompt.sh", "args": [] },
+    { "id": "placement-resolve.sh", "path": "hooks/placement-resolve.sh", "args": [] }
+  ]
+}

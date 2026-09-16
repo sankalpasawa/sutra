@@ -1,0 +1,4 @@
+CLAUDE_PROJECT_DIR=@PROJ@
+CLAUDE_PLUGIN_ROOT=@PLUGIN@
+CLAUDE_CODE_SESSION_ID=11111111-2222-3333-4444-555555555555
+CLAUDE_TRANSCRIPT=read holding/a.md holding/b.md holding/c.md sutra/d.md sutra/e.md holding/f.md holding/g.md sutra/h.md holding/i.md sutra/j.md holding/k.md sutra/l.md

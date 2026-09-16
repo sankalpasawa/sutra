@@ -1,0 +1,1 @@
+Sutra telemetry is ON by default (<VERSION>): anonymous metric rows push once daily to sankalpasawa/sutra-data. No identity fields without explicit consent (/core:start --telemetry on). Opt out: SUTRA_TELEMETRY=0 or telemetry_optin=false. Details: ~/.sutra/PRIVACY.md

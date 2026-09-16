@@ -1,0 +1,22 @@
+{
+  "_comment": "RED FIXTURE. A two-registration hooks dir whose bad-mode.sh is mode 0644. validate-hook-paths.sh --fixture <this dir> MUST exit non-zero, and runtime/selftest.sh pointed at ../pipeline.json MUST report fail>0. If either goes green, the exec-bit assert is decoration.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/good-mode.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bad-mode.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

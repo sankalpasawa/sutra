@@ -1,0 +1,6 @@
+# NO-MATCH (s2c): no registration of family permission runs for this case.
+tool_name: <none>
+event: PermissionRequest
+matcher_semantics: anchored-ere
+rejected-by:
+  permission-gate.sh	matcher=Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task

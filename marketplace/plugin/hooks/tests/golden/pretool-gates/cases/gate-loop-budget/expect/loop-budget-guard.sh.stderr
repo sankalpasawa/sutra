@@ -1,0 +1,2 @@
+BLOCKED: loop-budget-guard — tool-call budget (250) exceeded for this session (261 calls).
+  Likely a runaway. Override once: LOOP_GUARD_ACK=1 <retry> · raise: SUTRA_TOOL_BUDGET=<n> · disable: LOOP_BUDGET_GUARD_DISABLED=1

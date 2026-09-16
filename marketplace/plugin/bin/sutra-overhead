@@ -1,0 +1,201 @@
+#!/bin/sh
+# sutra-overhead — governance-overhead meter for the Sutra runtime (W0a, step 11).
+#
+# Two verbs, both POSIX sh + jq only:
+#
+#   sutra-overhead emit    [--turn-id <id>] [--ledger <file>] [--project-dir <dir>] [--quiet]
+#   sutra-overhead report  [--project-dir <dir>] [--json]
+#   sutra-overhead --version
+#
+# emit   reads one turn ledger (jsonl rows written by sutra-turn, see
+#        "$CLAUDE_PROJECT_DIR/.sutra/turn/<session_id>/<turn_id>.jsonl") and
+#        APPENDS exactly one task_end row to
+#        "$CLAUDE_PROJECT_DIR/.sutra/estimation.jsonl":
+#
+#          {"turn_id":…,"governance_ms":N,"work_ms":N,"steps_run":N,"degrades":N,"ts":N}
+#
+#        governance_ms = sum of dur_ms over the turn's step rows.
+#        work_ms       = wall-clock from the first UserPromptSubmit row to the
+#                        Stop row, minus governance_ms, floored at 0. Needs a
+#                        timestamp on the ledger rows (.ts / .ts_ms, seconds or
+#                        milliseconds) and an event marker (.event /
+#                        .hook_event_name); when either is absent work_ms is 0.
+#        steps_run     = step rows (the stage_digest row is not a step).
+#        degrades      = rows whose kind is killswitch / jq_failed / degraded /
+#                        legacy, plus step rows that timed out (exit 124).
+#        ts            = epoch seconds at emit time.
+#
+# report prints the p50 of governance_ms over the task_end rows and the
+#        denominator (how many rows that p50 was computed over). This is the
+#        meter of record for the overhead KR — PLAN.md s12 methodology.
+#
+# This is telemetry: it never blocks a turn. Missing jq, missing ledger and
+# missing log all exit 0 with a fixed line on stdout.
+#
+# Build layer: L0 (ships in the plugin).
+set -u
+
+SUTRA_OVERHEAD_VERSION="1.0.0"
+
+_die_soft() { printf '%s\n' "$1"; exit 0; }
+
+# ── jq probe ────────────────────────────────────────────────────────────────
+_have_jq() {
+  command -v jq >/dev/null 2>&1 || return 1
+  printf '{}' | jq -e . >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# ── paths ───────────────────────────────────────────────────────────────────
+_project_dir() {
+  if [ -n "${1:-}" ]; then printf '%s' "$1"; return 0; fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then printf '%s' "$CLAUDE_PROJECT_DIR"; return 0; fi
+  git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+
+_log_path() {
+  # $1 = project dir
+  if [ -n "${SUTRA_OVERHEAD_LOG:-}" ]; then printf '%s' "$SUTRA_OVERHEAD_LOG"; return 0; fi
+  printf '%s/.sutra/estimation.jsonl' "$1"
+}
+
+# ── emit ────────────────────────────────────────────────────────────────────
+cmd_emit() {
+  PROJ=""; TURN_ID=""; LEDGER=""; QUIET=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --turn-id)     TURN_ID="${2:-}"; shift 2 ;;
+      --ledger)      LEDGER="${2:-}";  shift 2 ;;
+      --project-dir) PROJ="${2:-}";    shift 2 ;;
+      --quiet)       QUIET=1;          shift ;;
+      *) printf 'sutra-overhead: unknown option %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
+
+  PROJ="$(_project_dir "$PROJ")"
+  _have_jq || _die_soft "sutra-overhead degraded: jq unavailable"
+
+  TURNDIR="$PROJ/.sutra/turn"
+  if [ -z "$LEDGER" ]; then
+    if [ -n "$TURN_ID" ]; then
+      LEDGER="$(ls -t "$TURNDIR"/*/"$TURN_ID".jsonl 2>/dev/null | head -1)"
+    else
+      LEDGER="$(ls -t "$TURNDIR"/*/*.jsonl 2>/dev/null | head -1)"
+    fi
+  fi
+  [ -n "$LEDGER" ] && [ -s "$LEDGER" ] \
+    || _die_soft "sutra-overhead: no ledger rows under $TURNDIR"
+
+  NOW="$(date +%s)"
+  ROW="$(jq -s -c \
+          --arg tid "$TURN_ID" \
+          --argjson now "$NOW" '
+    # ts is written as a STRING by runtime/ledger.sh (a bare epoch would be
+    # rewritten to <TS> by the charcap normaliser and the row would stop being
+    # valid JSON), and as a number by older/scripted ledgers. Accept both.
+    def tsms: (if type == "string" then (tonumber? // null) else . end)
+              | if type == "number"
+                then (if . >= 100000000000 then . else . * 1000 end)
+                else null end;
+    def evt: (.event // .hook_event_name // .hook_event // "");
+    . as $rows
+    | ($rows | map(select(((.kind // "step") == "step")
+                          and has("step_id")
+                          and (has("stage_digest") | not)))) as $steps
+    | ($steps | map(.dur_ms // 0) | add // 0)                               as $gov
+    | ($steps | map(select((.exit // 0) == 124)) | length)                  as $to
+    | (($rows | map(select(((.kind // "") | test("killswitch|jq_failed|degrade|legacy")))) | length)
+       + $to)                                                              as $deg
+    | ($rows | map(select(evt == "UserPromptSubmit"))
+             | map((.ts // .ts_ms // empty) | tsms) | map(select(. != null)) | min) as $t0
+    | ($rows | map(select(evt == "Stop"))
+             | map((.ts // .ts_ms // empty) | tsms) | map(select(. != null)) | max) as $t1
+    | (if ($t0 != null and $t1 != null) then (($t1 - $t0) - $gov) else 0 end) as $w
+    | { turn_id:       (if $tid == "" then (($rows | map(.turn_id // empty) | first) // "unknown") else $tid end),
+        governance_ms: ($gov | floor),
+        work_ms:       (if $w > 0 then ($w | floor) else 0 end),
+        steps_run:     ($steps | length),
+        degrades:      $deg,
+        timeouts:      $to,
+        ts:            $now }
+  ' "$LEDGER" 2>/dev/null)"
+
+  [ -n "$ROW" ] || _die_soft "sutra-overhead: ledger unparseable ($LEDGER)"
+
+  OUT="$(_log_path "$PROJ")"
+  mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
+  printf '%s\n' "$ROW" >> "$OUT" || _die_soft "sutra-overhead: cannot append to $OUT"
+  [ "$QUIET" -eq 1 ] || printf '%s\n' "$ROW"
+}
+
+# ── report ──────────────────────────────────────────────────────────────────
+cmd_report() {
+  PROJ=""; AS_JSON=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --project-dir) PROJ="${2:-}"; shift 2 ;;
+      --json)        AS_JSON=1;     shift ;;
+      *) printf 'sutra-overhead: unknown option %s\n' "$1" >&2; exit 2 ;;
+    esac
+  done
+
+  PROJ="$(_project_dir "$PROJ")"
+  _have_jq || _die_soft "sutra-overhead degraded: jq unavailable"
+  LOG="$(_log_path "$PROJ")"
+
+  if [ ! -s "$LOG" ]; then
+    if [ "$AS_JSON" -eq 1 ]; then
+      printf '{"p50_governance_ms":null,"denominator":0,"timeouts":0,"source":"%s"}\n' "$LOG"
+    else
+      printf 'p50 governance_ms: n/a\ndenominator: 0 turns\ntimeouts: 0 steps\nsource: %s\n' "$LOG"
+    fi
+    exit 0
+  fi
+
+  SUMMARY="$(jq -s -c '
+    def p50:
+      if length == 0 then null
+      else sort as $s
+        | (length / 2 | floor) as $m
+        | (if (length % 2) == 1 then $s[$m] else (($s[$m-1] + $s[$m]) / 2) end)
+      end;
+    . as $rows
+    | ($rows | map(.timeouts // 0) | add // 0) as $to
+    | $rows
+    | map(select(.governance_ms != null) | .governance_ms)
+    | { p50_governance_ms: (p50 | if . == null then null else (. | floor) end),
+        denominator: length,
+        timeouts: $to }
+  ' "$LOG" 2>/dev/null)"
+
+  [ -n "$SUMMARY" ] || _die_soft "sutra-overhead: log unparseable ($LOG)"
+
+  if [ "$AS_JSON" -eq 1 ]; then
+    printf '%s\n' "$SUMMARY" | jq -c --arg src "$LOG" '. + {source:$src}'
+    exit 0
+  fi
+
+  P50="$(printf '%s' "$SUMMARY" | jq -r '.p50_governance_ms // "n/a"')"
+  DEN="$(printf '%s' "$SUMMARY" | jq -r '.denominator')"
+  # timeouts is not a rounding of governance_ms, it is the count of steps the
+  # runtime KILLED - governance that did not run. A p50 that looks healthy
+  # because half the gates were cut off is the failure this line exists to show.
+  TMO="$(printf '%s' "$SUMMARY" | jq -r '.timeouts // 0')"
+  printf 'p50 governance_ms: %s\ndenominator: %s turns\ntimeouts: %s steps\nsource: %s\n' \
+    "$P50" "$DEN" "$TMO" "$LOG"
+}
+
+case "${1:-}" in
+  emit)       shift; cmd_emit "$@" ;;
+  report)     shift; cmd_report "$@" ;;
+  --version)  printf 'sutra-overhead %s\n' "$SUTRA_OVERHEAD_VERSION" ;;
+  -h|--help|"")
+    cat <<'USAGE'
+usage:
+  sutra-overhead emit   [--turn-id <id>] [--ledger <file>] [--project-dir <dir>] [--quiet]
+  sutra-overhead report [--project-dir <dir>] [--json]
+  sutra-overhead --version
+USAGE
+    ;;
+  *) printf 'sutra-overhead: unknown verb %s\n' "$1" >&2; exit 2 ;;
+esac

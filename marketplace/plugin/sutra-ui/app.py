@@ -1878,6 +1878,84 @@ task whether they help; most tasks do not need them.
   the result. A subagent's claim is not evidence until you have checked it."""
 
 
+#: The floors Shadow cannot be talked out of (SHADOW.md section 2). ONE
+#: writer: the settings page reads it and the brief quotes it.
+SHADOW_FLOORS = (
+    "destructive git operations",
+    "external client repositories",
+    "irreversible external sends",
+)
+
+
+def _rules_in_scope(target_session=None):
+    """The founder-confirmed rule lines a brief must carry: global rules,
+    plus the rules of the chat the task runs in. Best-effort, never raises."""
+    lines = []
+    try:
+        import shadow_ledger
+        rows = shadow_ledger.read_latest("instructions")
+        block = shadow_precedence.replay_context(rows, scope="global")
+        lines += [ln for ln in block.split("\n") if ln.startswith("[")]
+        if target_session:
+            block = shadow_precedence.replay_context(
+                rows, scope="chat", scope_id=target_session)
+            lines += [ln for ln in block.split("\n") if ln.startswith("[")]
+    except Exception:                   # noqa: BLE001
+        pass
+    return lines
+
+
+def _brief_facts(mission):
+    """What the task's Shadow chat needs to write a brief and cannot know
+    on its own: where the worker runs, the rules in scope, the floors."""
+    return {
+        "repo": _shadow_workdir_for_delegates(),
+        "why_now": mission.get("why_now") or "",
+        "rules": _rules_in_scope(mission.get("target_session")),
+        "floors": list(SHADOW_FLOORS),
+    }
+
+
+async def _compose_brief(mission):
+    """Shadow v4 (C2, ADR-043): the task's OWN Shadow chat writes the
+    worker's opening brief at Start, once, onto the record.
+
+    Falls back to the template in _delegate_manifest on any failure -- a
+    chat that will not boot, a reply without a fence -- and says so in the
+    ledger. A task never fails for want of a composed brief. Returns the
+    mission as it now reads.
+    """
+    store = _mission_engine.MissionStore()
+    try:
+        chat = await _ensure_task_chat(mission)
+        text = await chat.brief(mission, _brief_facts(mission))
+    except Exception as exc:            # noqa: BLE001 -- template, audibly
+        _shadow_ledger_safe({
+            "kind": "brief", "mission_id": mission["id"],
+            "summary": "brief fallback to the template: %s" % str(exc)[:140]})
+        return mission
+    if not text:
+        _shadow_ledger_safe({
+            "kind": "brief", "mission_id": mission["id"],
+            "summary": "brief fallback to the template: no brief fence"})
+        return mission
+    try:
+        m = store.load(mission["id"])
+        if m is None:
+            return mission
+        # ONTO THE RECORD, NOT THROUGH amend(): amend bumps the version and
+        # re-asks for a yes; the founder already pressed Start.
+        m["manifest"] = text
+        m["brief_by"] = "task_chat"
+        store.save(m)
+        _shadow_ledger_safe({
+            "kind": "brief", "mission_id": mission["id"],
+            "summary": "brief written by the task chat (%d chars)" % len(text)})
+        return m
+    except Exception:                   # noqa: BLE001
+        return mission
+
+
 def _delegate_manifest(mission):
     """ONE manifest composer (was three copies). Scoped rules are folded
     in AT SPAWN TIME, never baked into the mission record -- a revoked
@@ -2148,6 +2226,11 @@ async def _delegate_spawn(mission):
             store.save(m)
     except Exception:                   # noqa: BLE001 -- never fail a spawn
         pass
+    # Shadow v4 (C2): the task's Shadow chat writes the brief when the
+    # record has none; a record that already carries one (Retry, a founder
+    # or Now-chat manifest) is sent as it is.
+    if not mission.get("manifest"):
+        mission = await _compose_brief(mission)
     return await shadow_runner.spawn_delegate_session(
         _worker_args, _shadow_workdir_for_delegates(),
         _delegate_manifest(mission), register_runtime,
@@ -2683,11 +2766,7 @@ async def api_shadow_settings():
             "off": sorted(_shadow_unwatched()),
             "alerts": _shadow_alert_count(),
         },
-        "floors": [
-            "destructive git operations",
-            "external client repositories",
-            "irreversible external sends",
-        ],
+        "floors": list(SHADOW_FLOORS),
         # HOW FAR SHADOW MAY GO, and what that actually resolves to right
         # now. `worker_mode` is the point of the block: it is the mode a
         # worker spawned this second would really get, ceiling and all, so
@@ -3488,6 +3567,103 @@ async def api_shadow_mission_create(request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return store.load(m["id"])
+
+
+def _apply_task_fence(mid, blocks, scope_id=None):
+    """A `mission` fence from a task's OWN Shadow chat amends THAT draft:
+    objective, done_when, kind, and where it runs. Never a second task.
+    Returns the record as it now reads. Best-effort on a terminal task."""
+    store = _mission_engine.MissionStore()
+    spec = (blocks or {}).get("mission")
+    if isinstance(spec, dict):
+        fields = {}
+        if str(spec.get("objective") or "").strip():
+            fields["objective"] = str(spec["objective"]).strip()
+        if isinstance(spec.get("done_when"), list):
+            fields["done_when"] = spec["done_when"]
+        try:
+            if fields:
+                store.amend(mid, **fields)
+            m = store.load(mid)
+            if m is not None:
+                kind = spec.get("template")
+                if kind in _mission_engine.offered_kinds():
+                    m["template"] = kind
+                if spec.get("target_mode") == "existing":
+                    m["target_mode"] = "existing"
+                    m["target_session"] = (spec.get("target_session")
+                                           or scope_id or m.get("target_session"))
+                store.save(m)
+        except ValueError:
+            pass                        # terminal or unknown: reply stands
+    return store.load(mid)
+
+
+@app.post("/api/shadow/tasks")
+async def api_shadow_task_open(request: Request):
+    """Shadow v4 (J1): one line from the founder opens a task.
+
+    The line becomes a DRAFT (brief_confirm, the objective verbatim), the
+    task's own Shadow chat boots and answers it, and a `mission` fence in
+    that answer sharpens the draft. Nothing starts: Start is the founder's.
+    A Shadow chat that will not boot leaves the verbatim draft standing and
+    an empty reply, never a lost line.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message required")
+    scope_id = (body.get("scope_id") or "").strip() or None
+    store = _mission_engine.MissionStore()
+    try:
+        m = store.create(message, _mission_engine.default_offer(),
+                         target_mode="new")
+        store.transition(m["id"], "brief_confirm", "drafted in the task chat")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    mission = store.load(m["id"])
+    reply, blocks = "", {}
+    try:
+        chat = await _ensure_task_chat(mission)
+        reply, blocks = await chat.talk(message)
+    except Exception as exc:            # noqa: BLE001 -- the draft stands
+        _shadow_ledger_safe({
+            "kind": "spawn", "mission_id": mission["id"],
+            "summary": "task chat unavailable at open: %s" % str(exc)[:140]})
+    out = {"mission": _apply_task_fence(mission["id"], blocks, scope_id),
+           "reply": reply}
+    if "chips" in blocks:
+        out["chips"] = blocks["chips"]
+    return out
+
+
+@app.post("/api/shadow/tasks/{mid}/chat")
+async def api_shadow_task_chat(mid: str, request: Request):
+    """Talk to ONE task's Shadow chat. Before Start the draft card follows
+    the conversation; after Start the words reach the chat that steers the
+    worker (it may amend its next instruction). Never the working chat."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message required")
+    store = _mission_engine.MissionStore()
+    mission = store.load(mid)
+    if mission is None:
+        raise HTTPException(404, "no task %s" % mid)
+    try:
+        chat = await _ensure_task_chat(mission)
+        reply, blocks = await chat.talk(message)
+    except Exception as exc:            # noqa: BLE001
+        raise HTTPException(503, "this task's Shadow chat is not available: %s"
+                            % str(exc)[:140])
+    out = {"mission": _apply_task_fence(mid, blocks), "reply": reply}
+    if "chips" in blocks:
+        out["chips"] = blocks["chips"]
+    return out
 
 
 @app.get("/api/shadow/missions")

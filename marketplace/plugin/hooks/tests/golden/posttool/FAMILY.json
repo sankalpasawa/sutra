@@ -1,0 +1,22 @@
+{
+  "family": "posttool",
+  "event": "PostToolUse",
+  "scripts": [
+    { "id": "posttool-counter.sh", "path": "hooks/posttool-counter.sh", "args": [] },
+    { "id": "dispatcher-posttool.sh", "path": "hooks/dispatcher-posttool.sh", "args": [] },
+    { "id": "auto-coverage.sh", "path": "hooks/auto-coverage.sh", "args": [] },
+    { "id": "cascade-check.sh", "path": "hooks/cascade-check.sh", "args": [] },
+    { "id": "estimation-enforcement.sh", "path": "hooks/estimation-enforcement.sh", "args": [] },
+    { "id": "artifact-check.sh", "path": "hooks/artifact-check.sh", "args": [] },
+    { "id": "process-fix-check.sh", "path": "hooks/process-fix-check.sh", "args": [] },
+    { "id": "context-scope-audit.sh", "path": "hooks/context-scope-audit.sh", "args": [] },
+    { "id": "placement-touch.sh", "path": "hooks/placement-touch.sh", "args": [] },
+    { "id": "md-standard-gate.sh", "path": "hooks/md-standard-gate.sh", "args": [] },
+    { "id": "completion-protocol-check.sh", "path": "hooks/completion-protocol-check.sh", "args": [] },
+    { "id": "posttool-mcp-compress.sh", "path": "hooks/posttool-mcp-compress.sh", "args": [] },
+    { "id": "agent-completion-check.sh", "path": "hooks/agent-completion-check.sh", "args": [] },
+    { "id": "onboarding-self-check.sh", "path": "hooks/onboarding-self-check.sh", "args": [] },
+    { "id": "narration-not-artifact.sh", "path": "hooks/narration-not-artifact.sh", "args": [] },
+    { "id": "codex-consult-marker.sh", "path": "hooks/codex-consult-marker.sh", "args": [] }
+  ]
+}

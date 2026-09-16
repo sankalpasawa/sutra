@@ -1,0 +1,6 @@
+
+FLOW-GATE (HARD): dispatching work (Task) requires classify first.
+  Run core:flow to classify the input + resolve a workflow type,
+  then re-attempt the dispatch.
+  Override: FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>
+

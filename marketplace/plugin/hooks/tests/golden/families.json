@@ -1,0 +1,745 @@
+{
+  "spec_version": "1.0.0",
+  "generated_by": "sutra-charcap 1.7.2 derive-families",
+  "source": "hooks/hooks.json.step3",
+  "recorded_on": "Darwin",
+  "families": {
+    "ups": {
+      "event": "UserPromptSubmit",
+      "scripts": [
+        {
+          "id": "reset-turn-markers.sh",
+          "path": "hooks/reset-turn-markers.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "loopguard-turn-reset.sh",
+          "path": "hooks/loopguard-turn-reset.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loopguard-turn-reset.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "codex-directive-detect.sh",
+          "path": "hooks/codex-directive-detect.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "feedback-routing-rule.sh",
+          "path": "hooks/feedback-routing-rule.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-routing-rule.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "feedback-auto-correction.sh",
+          "path": "hooks/feedback-auto-correction.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-correction.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "per-turn-discipline-prompt.sh",
+          "path": "hooks/per-turn-discipline-prompt.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-discipline-prompt.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "capture-prompt.sh",
+          "path": "hooks/capture-prompt.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        },
+        {
+          "id": "placement-resolve.sh",
+          "path": "hooks/placement-resolve.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-resolve.sh",
+          "matcher": "*",
+          "event": "UserPromptSubmit"
+        }
+      ]
+    },
+    "session": {
+      "event": "SessionStart",
+      "scripts": [
+        {
+          "id": "sessionstart-auto-update.sh",
+          "path": "hooks/sessionstart-auto-update.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-update.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "findings-banner.sh",
+          "path": "hooks/findings-banner.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/findings-banner.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "registry-shrink-banner.sh",
+          "path": "hooks/registry-shrink-banner.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/registry-shrink-banner.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "update-banner.sh",
+          "path": "hooks/update-banner.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "sessionstart-auto-activate.sh",
+          "path": "hooks/sessionstart-auto-activate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-activate.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "session-logger.sh",
+          "path": "hooks/session-logger.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "sessionstart-privacy-notice.sh",
+          "path": "hooks/sessionstart-privacy-notice.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "codex-directive-sweep.sh",
+          "path": "hooks/codex-directive-sweep.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "inbox-display.sh",
+          "path": "hooks/inbox-display.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "session-start-rotate.sh",
+          "path": "hooks/session-start-rotate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "csm-sessionstart-banner.sh",
+          "path": "hooks/csm-sessionstart-banner.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "session-token-snapshot.sh",
+          "path": "hooks/session-token-snapshot.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-token-snapshot.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        },
+        {
+          "id": "governance-live-banner.sh",
+          "path": "hooks/governance-live-banner.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/governance-live-banner.sh",
+          "matcher": "*",
+          "event": "SessionStart"
+        }
+      ]
+    },
+    "pretool-gates": {
+      "event": "PreToolUse",
+      "scripts": [
+        {
+          "id": "usage-guard.sh",
+          "path": "hooks/usage-guard.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/usage-guard.sh",
+          "matcher": "*",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "loop-budget-guard.sh",
+          "path": "hooks/loop-budget-guard.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loop-budget-guard.sh",
+          "matcher": "*",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "depth-marker-pretool.sh",
+          "path": "hooks/depth-marker-pretool.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/depth-marker-pretool.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "operationalization-check.sh",
+          "path": "hooks/operationalization-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/operationalization-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "blueprint-check.sh",
+          "path": "hooks/blueprint-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "flow-gate.sh",
+          "path": "hooks/flow-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "codex-consult-gate.sh",
+          "path": "hooks/codex-consult-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-gate.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "placement-gate.sh",
+          "path": "hooks/placement-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "creation-guard.sh",
+          "path": "hooks/creation-guard.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/creation-guard.sh",
+          "matcher": "Edit|Write",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "feedback-channel-guard.sh",
+          "path": "hooks/feedback-channel-guard.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-channel-guard.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "rtk-auto-rewrite.sh",
+          "path": "hooks/rtk-auto-rewrite.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/rtk-auto-rewrite.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "codex-directive-gate.sh",
+          "path": "hooks/codex-directive-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "bash-summary-pretool.sh",
+          "path": "hooks/bash-summary-pretool.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bash-summary-pretool.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "structural-move-check.sh",
+          "path": "hooks/structural-move-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structural-move-check.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "pytest-isolation-guard.sh",
+          "path": "hooks/pytest-isolation-guard.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pytest-isolation-guard.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "placement-gate.sh",
+          "path": "hooks/placement-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
+          "matcher": "Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "keys-in-env-vars.sh",
+          "path": "hooks/keys-in-env-vars.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/keys-in-env-vars.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "enforce-boundaries.sh",
+          "path": "hooks/enforce-boundaries.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/enforce-boundaries.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "codex-directive-gate.sh",
+          "path": "hooks/codex-directive-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "build-layer-check.sh",
+          "path": "hooks/build-layer-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/build-layer-check.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "input-classification-gate.sh",
+          "path": "hooks/input-classification-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/input-classification-gate.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "flow-gate.sh",
+          "path": "hooks/flow-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
+          "matcher": "Task",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "atom-floor.sh",
+          "path": "hooks/atom-floor.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-floor.sh",
+          "matcher": "Edit|Write|Bash",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "dispatch-gate.sh",
+          "path": "hooks/dispatch-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh",
+          "matcher": "Edit|Write|Bash|Task",
+          "event": "PreToolUse"
+        }
+      ]
+    },
+    "pretool-other": {
+      "event": "PreToolUse",
+      "scripts": [
+        {
+          "id": "feedback-auto-override.sh",
+          "path": "hooks/feedback-auto-override.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
+          "matcher": "*",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "structure-first-reminder.sh",
+          "path": "hooks/structure-first-reminder.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structure-first-reminder.sh",
+          "matcher": "*",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "self-assess-before-foundational.sh",
+          "path": "hooks/self-assess-before-foundational.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/self-assess-before-foundational.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "csm-classification-pretooluse.sh",
+          "path": "hooks/csm-classification-pretooluse.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-classification-pretooluse.sh",
+          "matcher": "Write|Edit|MultiEdit",
+          "event": "PreToolUse"
+        },
+        {
+          "id": "subagent-dispatch-brief.sh",
+          "path": "hooks/subagent-dispatch-brief.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-dispatch-brief.sh",
+          "matcher": "Task",
+          "event": "PreToolUse"
+        }
+      ]
+    },
+    "posttool": {
+      "event": "PostToolUse",
+      "scripts": [
+        {
+          "id": "posttool-counter.sh",
+          "path": "hooks/posttool-counter.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-counter.sh",
+          "matcher": "*",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "dispatcher-posttool.sh",
+          "path": "hooks/dispatcher-posttool.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatcher-posttool.sh",
+          "matcher": "*",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "auto-coverage.sh",
+          "path": "hooks/auto-coverage.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-coverage.sh",
+          "matcher": "*",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "cascade-check.sh",
+          "path": "hooks/cascade-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cascade-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "estimation-enforcement.sh",
+          "path": "hooks/estimation-enforcement.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-enforcement.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "artifact-check.sh",
+          "path": "hooks/artifact-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/artifact-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "process-fix-check.sh",
+          "path": "hooks/process-fix-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/process-fix-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "context-scope-audit.sh",
+          "path": "hooks/context-scope-audit.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "placement-touch.sh",
+          "path": "hooks/placement-touch.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-touch.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "md-standard-gate.sh",
+          "path": "hooks/md-standard-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/md-standard-gate.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "completion-protocol-check.sh",
+          "path": "hooks/completion-protocol-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/completion-protocol-check.sh",
+          "matcher": "Task",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "posttool-mcp-compress.sh",
+          "path": "hooks/posttool-mcp-compress.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-mcp-compress.sh",
+          "matcher": "mcp__.*",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "agent-completion-check.sh",
+          "path": "hooks/agent-completion-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/agent-completion-check.sh",
+          "matcher": "Bash|Edit|Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "onboarding-self-check.sh",
+          "path": "hooks/onboarding-self-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/onboarding-self-check.sh",
+          "matcher": "Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "narration-not-artifact.sh",
+          "path": "hooks/narration-not-artifact.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/narration-not-artifact.sh",
+          "matcher": "Write",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "codex-consult-marker.sh",
+          "path": "hooks/codex-consult-marker.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-marker.sh",
+          "matcher": "Bash",
+          "event": "PostToolUse"
+        },
+        {
+          "id": "context-scope-audit.sh",
+          "path": "hooks/context-scope-audit.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
+          "matcher": "Read",
+          "event": "PostToolUse"
+        }
+      ]
+    },
+    "permission": {
+      "event": "PermissionRequest",
+      "scripts": [
+        {
+          "id": "permission-gate.sh",
+          "path": "hooks/permission-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/permission-gate.sh",
+          "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task",
+          "event": "PermissionRequest"
+        }
+      ]
+    },
+    "stop-gates": {
+      "event": "Stop",
+      "scripts": [
+        {
+          "id": "flow-stop-check.sh",
+          "path": "hooks/flow-stop-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-stop-check.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "per-turn-hard-gate.sh",
+          "path": "hooks/per-turn-hard-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-hard-gate.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "writing-style-gate.sh",
+          "path": "hooks/writing-style-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/writing-style-gate.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "placement-stop-check.sh",
+          "path": "hooks/placement-stop-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-stop-check.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "atom-cards-stop-check.sh",
+          "path": "hooks/atom-cards-stop-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-cards-stop-check.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "creation-stop-check.sh",
+          "path": "hooks/creation-stop-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/creation-stop-check.sh",
+          "matcher": "*",
+          "event": "Stop"
+        }
+      ]
+    },
+    "stop-collect": {
+      "event": "Stop",
+      "scripts": [
+        {
+          "id": "phase-exit-audit.sh",
+          "path": "hooks/phase-exit-audit.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/phase-exit-audit.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "estimation-stop.sh",
+          "path": "hooks/estimation-stop.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-stop.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "flush-telemetry.sh",
+          "path": "hooks/flush-telemetry.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flush-telemetry.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "estimation-collector.sh",
+          "path": "hooks/estimation-collector.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-collector.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "session-logger.sh",
+          "path": "hooks/session-logger.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "log-triage.sh",
+          "path": "hooks/log-triage.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-triage.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "log-skill-feedback.sh",
+          "path": "hooks/log-skill-feedback.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-feedback.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "measurement-logger.sh",
+          "path": "hooks/measurement-logger.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/measurement-logger.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "compliance-tracker.sh",
+          "path": "hooks/compliance-tracker.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compliance-tracker.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "feedback-auto-abandonment.sh",
+          "path": "hooks/feedback-auto-abandonment.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-abandonment.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "policy-only-sensor.sh",
+          "path": "hooks/policy-only-sensor.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/policy-only-sensor.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "context-budget-check.sh",
+          "path": "hooks/context-budget-check.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-check.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "output-behavior-lint.sh",
+          "path": "hooks/output-behavior-lint.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/output-behavior-lint.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "csm-cap118-lint.sh",
+          "path": "hooks/csm-cap118-lint.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-cap118-lint.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "placement-lint.sh",
+          "path": "hooks/placement-lint.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-lint.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "workflow-floor.sh",
+          "path": "hooks/workflow-floor.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/workflow-floor.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "coverage-gate.sh",
+          "path": "hooks/coverage-gate.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/coverage-gate.sh",
+          "matcher": "*",
+          "event": "Stop"
+        },
+        {
+          "id": "domains-site-refresh.sh",
+          "path": "hooks/domains-site-refresh.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/domains-site-refresh.sh",
+          "matcher": "*",
+          "event": "Stop"
+        }
+      ]
+    },
+    "lib": {
+      "event": "mixed",
+      "scripts": [
+        {
+          "id": "override-audit.sh",
+          "path": "hooks/lib/override-audit.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cascade-check.sh",
+          "matcher": "Edit|Write",
+          "event": "PostToolUse",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/cascade-check.sh"
+        },
+        {
+          "id": "sutra-paths.sh",
+          "path": "hooks/lib/sutra-paths.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh",
+          "matcher": "Edit|Write|Bash|Task",
+          "event": "PreToolUse",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
+        },
+        {
+          "id": "sutra-stderr-capture.sh",
+          "path": "hooks/lib/sutra-stderr-capture.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-update.sh",
+          "matcher": "*",
+          "event": "SessionStart",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-update.sh"
+        },
+        {
+          "id": "touches-match.sh",
+          "path": "hooks/lib/touches-match.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh",
+          "matcher": "Edit|Write|Bash|Task",
+          "event": "PreToolUse",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
+        },
+        {
+          "id": "wdp-ledger.sh",
+          "path": "hooks/lib/wdp-ledger.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh",
+          "matcher": "Edit|Write|Bash|Task",
+          "event": "PreToolUse",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
+        },
+        {
+          "id": "wf-evidence.sh",
+          "path": "hooks/lib/wf-evidence.sh",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh",
+          "matcher": "Edit|Write|Bash|Task",
+          "event": "PreToolUse",
+          "exercised_via": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
+        }
+      ]
+    }
+  }
+}

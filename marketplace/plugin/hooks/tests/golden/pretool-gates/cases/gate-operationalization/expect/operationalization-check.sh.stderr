@@ -1,0 +1,17 @@
+
+BLOCKED — Operationalization section missing (D30a, Sutra plugin)
+  File:   os/charters/NEW-DISCIPLINE.md
+
+  Required: inline '## Operationalization' section with 6 subsections:
+    1. Measurement mechanism
+    2. Adoption mechanism
+    3. Monitoring / escalation
+    4. Iteration trigger
+    5. DRI
+    6. Decommission criteria
+
+  Template: sutra/os/charters/OPERATIONALIZATION.md
+  Override (one call): OPS_ACK=1 OPS_ACK_REASON='<why>' <tool>
+  Disable (per-instance): remove 'operationalization-check: true'
+    from os/SUTRA-CONFIG.md enabled_hooks block.
+

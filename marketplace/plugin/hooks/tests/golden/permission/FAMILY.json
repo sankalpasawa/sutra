@@ -1,0 +1,7 @@
+{
+  "family": "permission",
+  "event": "PermissionRequest",
+  "scripts": [
+    { "id": "permission-gate.sh", "path": "hooks/permission-gate.sh", "args": [] }
+  ]
+}

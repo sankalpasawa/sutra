@@ -1,0 +1,18 @@
+
+[Sutra defaults · D40 <VERSION>] Subagent dispatch reminder (sourced from sutra-defaults.json):
+  When invoking the Task tool, prefix the dispatched prompt with this exact line:
+    §Sutra discipline (mandatory)
+  Followed by the 5 numbered blocks:
+    1. Input Routing
+    2. Depth + Estimation
+    3. Build-Layer marker (if D38 path)
+    4. Operationalization 6-section ops block
+    5. Codex review per layer
+  End the dispatched prompt with the 4-line footer (each on its own line):
+    TRIAGE: <values>
+    ESTIMATE: <values>
+    ACTUAL: <values>
+    OS TRACE: <one line>
+  See <PLUGIN>/SUTRA-DEFAULTS.md
+  Kill-switch: touch ~/.subagent-brief-disabled
+
