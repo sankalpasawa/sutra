@@ -624,7 +624,11 @@ function missionCardHtml(m){
   return `<div class="shmission" data-shmission="${escAttr(m.id || "")}">
     <span class="shstate shstate-${esc(face)}">${esc(face)}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
-    <span class="shturns">${m.turns_used || 0}/${m.max_turns || "?"}</span>
+    ${/* the turn being worked, through the shared reader -- same guard and
+         same fallback as the chat strip (06-render.js), because this file
+         loads before 16-shadow-home.js defines it */""}
+    <span class="shturns">${typeof shadowTurnNow === "function"
+      ? shadowTurnNow(m) : (m.turns_used || 0)}/${m.max_turns || "?"}</span>
     ${(m.done_when && m.done_when[0]) ? `<span class="shdone">done when:
       ${esc(m.done_when[0].check || "")}</span>` : ""}
     ${startable ? `<button class="btn pri" type="button"

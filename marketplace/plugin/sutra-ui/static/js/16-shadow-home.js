@@ -545,7 +545,50 @@ function shadowTaskSection(m){
   return SH_TASK_SECTION[shadowTaskFaceFor(m).label] || "run";
 }
 
+/* WHEN A TASK WAS LAUNCHED, from the record the server already sends.
+
+   `created_ns` is time.time_ns() stamped by MissionStore.create, and it is
+   already the canonical launch clock on the server side -- resume_after_restart
+   sorts the restart sweep by it, precisely because `created_at` is
+   second-granularity and MissionStore.list() walks the directory by FILENAME
+   (m-<random hex>.json), which is no order at all. Nothing new is stamped here.
+
+   Falls back to `created_at` -- the same moment, one decimal place coarser --
+   rescaled to nanoseconds so the two are comparable, and to 0 for a record
+   carrying neither. 0 sorts last, which is the honest place for a task whose
+   launch time is unknown. */
+function shadowTaskLaunchedAt(m){
+  const ns = m && m.created_ns;
+  if (typeof ns === "number" && isFinite(ns)) return ns;
+  const ms = (m && m.created_at) ? Date.parse(m.created_at) : NaN;
+  return isFinite(ms) ? ms * 1e6 : 0;
+}
+
 function shadowTaskListHtml(){
+  /* NEWEST LAUNCHED FIRST (founder, 2026-09-16). The list under + Delegate
+     was drawn in whatever order the server handed it over, which is
+     MissionStore.list()'s filename walk -- random hex, so the newest task a
+     founder just created could land anywhere.
+
+     SORTED HERE AND NOWHERE ELSE. shadowTasks() is also what
+     shadowSelectedTask() ranks its fallback from (`rows.find(...)` and
+     `rows[rows.length - 1]`), so sorting there would quietly change WHICH
+     task the right pane opens on. This is the rendering path and only the
+     rendering path.
+
+     The id breaks a tie, so two tasks stamped in the same nanosecond -- or
+     two carrying no timestamp at all -- still draw in one fixed order rather
+     than whatever the walk happened to yield.
+
+     SORTED INSIDE EACH SECTION, NOT ACROSS THE LIST (founder, 2026-09-16).
+     The section order is fixed -- WAITING ON YOU, then RUNNING, then DONE
+     TODAY -- and recency decides only the rows within one of them. An
+     earlier pass sorted `rows` once and let SH_SECTIONS filter the result,
+     which renders identically (a filter keeps relative order, and the
+     headings come from SH_SECTIONS either way) but reads as a global sort.
+     Doing it per section is the same work in the place the rule describes,
+     so nothing has to be reasoned about to see that a timestamp can never
+     move a row between sections. */
   const rows = shadowTasks();
   const sel = shadowSelectedTask();
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -581,7 +624,10 @@ function shadowTaskListHtml(){
   };
   /* a section with nothing in it draws nothing -- not an empty heading */
   return SH_SECTIONS.map(([key, head]) => {
-    const mine = rows.filter(m => shadowTaskSection(m) === key);
+    /* membership first, then recency INSIDE this section only */
+    const mine = rows.filter(m => shadowTaskSection(m) === key)
+      .sort((a, b) => (shadowTaskLaunchedAt(b) - shadowTaskLaunchedAt(a))
+        || String((a && a.id) || "").localeCompare(String((b && b.id) || "")));
     if (!mine.length) return "";
     return `<div class="shwsec shwsec-${key}">${head}</div>`
       + mine.map(rowHtml).join("");

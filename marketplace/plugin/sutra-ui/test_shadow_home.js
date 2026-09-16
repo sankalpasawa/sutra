@@ -3695,4 +3695,301 @@ const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m
   console.log("ok 37g Stop is reachable from the workspace screen itself");
 }
 
+/* ── 38. THE TASK LIST IS ORDERED NEWEST LAUNCHED FIRST ───────────────────
+   The list under + Delegate was drawn in server order, and the server's order
+   is MissionStore.list() walking the directory by FILENAME -- m-<random hex>
+   -- so a task the founder had just created could appear anywhere.
+
+   `created_ns` is the launch clock the record already carries (time.time_ns()
+   in MissionStore.create, and what resume_after_restart already sorts by).
+   Nothing new is stamped. */
+const ORDER_IDS = (h) => [...h.matchAll(/data-shtask="([^"]+)"/g)].map(m => m[1]);
+function listWith(missions){
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = missions;
+  return { ctx, html: ctx.shadowTaskListHtml() };
+}
+
+/* 38a. two or more instances: newest first, oldest last */
+{
+  const { html } = listWith([
+    { id: "m-old", objective: "oldest", state: "running", created_ns: 1000 },
+    { id: "m-new", objective: "newest", state: "running", created_ns: 3000 },
+    { id: "m-mid", objective: "middle", state: "running", created_ns: 2000 },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-new", "m-mid", "m-old"],
+    "the list must read newest launched first, oldest last");
+  console.log("ok 38a newest launched first, oldest last");
+}
+
+/* 38b. the order does not depend on the order the server sent */
+{
+  const rows = [
+    { id: "m-a", objective: "a", state: "running", created_ns: 5 },
+    { id: "m-b", objective: "b", state: "running", created_ns: 9 },
+  ];
+  const forward = listWith(rows).html;
+  const reversed = listWith(rows.slice().reverse()).html;
+  assert.deepStrictEqual(ORDER_IDS(forward), ["m-b", "m-a"]);
+  assert.deepStrictEqual(ORDER_IDS(reversed), ORDER_IDS(forward),
+    "the rendered order must come from the timestamp, not the payload order");
+  console.log("ok 38b the payload's own order does not leak through");
+}
+
+/* 38c. created_at is the fallback -- the same moment, one decimal coarser */
+{
+  const { html } = listWith([
+    { id: "m-older", objective: "older", state: "running",
+      created_at: "2026-09-15T10:00:00Z" },
+    { id: "m-newer", objective: "newer", state: "running",
+      created_at: "2026-09-16T10:00:00Z" },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-newer", "m-older"],
+    "created_at must order them when created_ns is absent");
+  console.log("ok 38c created_at is the fallback");
+}
+
+/* 38d. created_ns and created_at are compared on the SAME SCALE -- one is
+   nanoseconds, the other an ISO string, and a record of each kind must still
+   sort against the other correctly rather than by which field it happens to
+   carry. */
+{
+  const { html } = listWith([
+    { id: "m-ns", objective: "ns", state: "running",
+      created_ns: Date.parse("2026-09-16T12:00:00Z") * 1e6 },
+    { id: "m-iso", objective: "iso", state: "running",
+      created_at: "2026-09-16T09:00:00Z" },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-ns", "m-iso"],
+    "a ns stamp and an ISO stamp must be comparable");
+  console.log("ok 38d the two stamps share one scale");
+}
+
+/* 38e. MISSING TIMESTAMPS ARE DETERMINISTIC, NOT A CRASH. Unknown sorts last
+   -- the honest place for a task whose launch time we cannot state -- and the
+   id breaks the tie so the order is fixed rather than whatever the directory
+   walk yielded. */
+{
+  const { html } = listWith([
+    { id: "m-zzz", objective: "no stamp z", state: "running" },
+    { id: "m-real", objective: "stamped", state: "running", created_ns: 7 },
+    { id: "m-aaa", objective: "no stamp a", state: "running",
+      created_at: "not-a-date" },
+    { id: "m-null", objective: "null stamp", state: "running",
+      created_ns: null, created_at: null },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html),
+    ["m-real", "m-aaa", "m-null", "m-zzz"],
+    "unknown launch times sort last, in a fixed order by id");
+  console.log("ok 38e missing timestamps are deterministic, not a crash");
+}
+
+/* 38f. FILTERING AND SECTIONS ARE UNTOUCHED. Ordering changed; membership,
+   visibility and the heading order did not. */
+{
+  const { html } = listWith([
+    { id: "m-run", objective: "running one", state: "running", created_ns: 1 },
+    { id: "m-wait", objective: "needs you", state: "blocked", created_ns: 2,
+      block_reason: "needs_founder" },
+    { id: "m-gone", objective: "old done", state: "done", created_ns: 3,
+      retried_to: "m-x" },
+  ]);
+  assert(/WAITING ON YOU[\s\S]*RUNNING/.test(html),
+    "the section headings keep their order");
+  assert(ORDER_IDS(html).includes("m-wait") && ORDER_IDS(html).includes("m-run"),
+    "active tasks are still listed");
+  assert(!ORDER_IDS(html).includes("m-gone"),
+    "a retried done task is still filtered out -- visibility is unchanged");
+  console.log("ok 38f sections and filtering are unchanged");
+}
+
+/* 38g. THE SELECTED TASK IS NOT AFFECTED. shadowSelectedTask ranks its
+   fallback off shadowTasks() (`rows.find(...)`, `rows[rows.length - 1]`), so
+   the sort deliberately lives in the rendering path only. */
+{
+  const rows = [
+    { id: "m-block", objective: "blocked", state: "blocked", created_ns: 1,
+      block_reason: "needs_founder" },
+    { id: "m-newest", objective: "newest", state: "running", created_ns: 99 },
+  ];
+  const { ctx, html } = listWith(rows);
+  /* THE SECTION STILL OUTRANKS RECENCY, and that is the existing design:
+     SH_SECTIONS draws WAITING ON YOU, then RUNNING, then DONE TODAY, and this
+     change orders rows WITHIN a section. A blocked task stamped first still
+     precedes a running task stamped later, because it is in the section drawn
+     first -- untouched by this slice. */
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-block", "m-newest"],
+    "sections are drawn in their own order; recency sorts inside one");
+  assert.strictEqual(ctx.shadowSelectedTask().id, "m-block",
+    "and selection still prefers the task that needs the founder");
+  console.log("ok 38g sections outrank recency; selection is unchanged");
+}
+
+/* 38h. …and WITHIN one section, recency is what decides. */
+{
+  const { html } = listWith([
+    { id: "m-r1", objective: "older running", state: "running", created_ns: 1 },
+    { id: "m-r2", objective: "newer running", state: "running", created_ns: 2 },
+    { id: "m-w1", objective: "older waiting", state: "blocked", created_ns: 3,
+      block_reason: "needs_founder" },
+    { id: "m-w2", objective: "newer waiting", state: "blocked", created_ns: 4,
+      block_reason: "needs_founder" },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-w2", "m-w1", "m-r2", "m-r1"],
+    "newest first inside each section, sections in their own order");
+  console.log("ok 38h newest first within every section");
+}
+
+/* 38i. A TIMESTAMP CAN NEVER MOVE A ROW BETWEEN SECTIONS. The sort runs
+   INSIDE each section's filtered set, so membership is decided first and
+   recency only ever decides the order within one heading. Stamped so that a
+   global sort would interleave them: the DONE row is the newest of all. */
+{
+  const { html } = listWith([
+    { id: "m-done", objective: "finished", state: "done", created_ns: 900 },
+    { id: "m-run", objective: "working", state: "running", created_ns: 500 },
+    { id: "m-wait", objective: "asking", state: "blocked", created_ns: 100,
+      block_reason: "needs_founder" },
+  ]);
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-wait", "m-run", "m-done"],
+    "the newest row must NOT jump to the top of the list -- it is in the "
+    + "last section, and sections outrank recency");
+  const at = (id) => html.indexOf('data-shtask="' + id + '"');
+  assert(html.indexOf("WAITING ON YOU") < at("m-wait")
+    && at("m-wait") < html.indexOf("RUNNING")
+    && html.indexOf("RUNNING") < at("m-run")
+    && at("m-run") < html.indexOf("DONE TODAY")
+    && html.indexOf("DONE TODAY") < at("m-done"),
+    "each row must sit under its own heading");
+  console.log("ok 38i recency never moves a row between sections");
+}
+
+/* 38j. a DONE row stays in DONE TODAY, newest first among its own. */
+{
+  const { html } = listWith([
+    { id: "m-d1", objective: "older done", state: "done", created_ns: 1 },
+    { id: "m-d2", objective: "newer done", state: "done", created_ns: 2 },
+  ]);
+  assert(/DONE TODAY/.test(html), "the DONE TODAY heading is drawn");
+  assert(!/WAITING ON YOU|shwsec-run/.test(html),
+    "an empty section draws nothing, exactly as before");
+  assert.deepStrictEqual(ORDER_IDS(html), ["m-d2", "m-d1"],
+    "newest first inside DONE TODAY too");
+  console.log("ok 38j done rows stay in DONE TODAY, newest first");
+}
+
+/* ── 39. EVERY SURFACE NAMES THE SAME TURN ────────────────────────────────
+   The workspace card has read the in-flight turn through shadowTurnNow since
+   `turn_open` landed. The overlay card and the chat strip read `turns_used`
+   raw, so while turn 1 was being worked they said "turn 0". All three now go
+   through the one reader.
+
+   This harness loads BOTH the overlay module and the home module, so it is
+   where missionCardHtml meets the real shadowTurnNow -- the half
+   test_shadow_overlay.js cannot cover, since it mounts the overlay alone
+   (and pins the fallback there instead). The chat strip is pinned in
+   test_panel.js 33b-1e/1f, which loads every module panel.html lists. */
+const TURN_M = (over) => Object.assign({ id: "m-turn", objective: "ship it",
+  state: "running", turns_used: 1, max_turns: 12, target_session: "sid-t" },
+  over);
+const OVERLAY_TURNS = (h) => (h.match(/shturns">([^<]*)</) || [])[1];
+/* the card's row reads `turn | N of MAX`; take the N */
+const CARD_TURN = (h) =>
+  (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">(\d+) of /) || [])[1];
+
+/* 39a. an open turn is the turn being worked, on both surfaces */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const m = TURN_M({ turns_used: 1, turn_open: 2 });
+  assert.strictEqual(ctx.shadowTurnNow(m), 2, "the reader names the open turn");
+  assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "2/12",
+    "the overlay card must show the turn in flight");
+  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "2",
+    "the workspace card must agree");
+  console.log("ok 39a overlay and card both name the open turn");
+}
+
+/* 39b. no open turn: both fall back to the completed count, unchanged */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  for (const over of [{}, { turn_open: null }, { turn_open: 0 }]){
+    const m = TURN_M(over);
+    assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/12",
+      "overlay fallback: " + JSON.stringify(over));
+    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "1",
+      "card fallback: " + JSON.stringify(over));
+  }
+  console.log("ok 39b both fall back to the finished count");
+}
+
+/* 39c. the count never moves BACKWARDS. turn_open is cleared with the same
+   save that increments turns_used, so a reader that preferred it blindly
+   would flicker down for one paint. shadowTurnNow takes the max. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const m = TURN_M({ turns_used: 5, turn_open: 3 });
+  assert.strictEqual(ctx.shadowTurnNow(m), 5);
+  assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "5/12");
+  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "5");
+  console.log("ok 39c a stale lower value never moves the count back");
+}
+
+/* 39d. THE BUDGET METER IS DELIBERATELY NOT CHANGED. max_turns is compared
+   against turns_used in the engine, and a meter disagreeing with the thing
+   that ends the mission would be the worse of the two bugs. */
+{
+  const ctx = fresh();
+  const m = TURN_M({ turns_used: 6, turn_open: 7, max_turns: 12 });
+  assert.strictEqual(ctx.shadowBudgetPct(m), 50,
+    "the meter still measures FINISHED turns against the budget");
+  assert.strictEqual(ctx.shadowTurnNow(m), 7,
+    "…while the label names the turn being worked");
+  const bar = ctx.shadowBudgetBarHtml(m);
+  assert(/6 of 12 turns used/.test(bar),
+    "the meter's own words are unchanged: " + bar);
+  console.log("ok 39d the budget meter still counts finished turns");
+}
+
+/* 39e. THE FOUNDER'S SEQUENCE, STEP BY STEP. One record walked through the
+   states the engine actually writes, asserted on both surfaces at once. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const steps = [
+    ["before the first turn", { turns_used: 0, turn_open: null }, "0"],
+    ["turn 1 begins",         { turns_used: 0, turn_open: 1 },    "1"],
+    ["turn 1 completes",      { turns_used: 1, turn_open: null }, "1"],
+    ["turn 2 begins",         { turns_used: 1, turn_open: 2 },    "2"],
+    ["turn 2 completes",      { turns_used: 2, turn_open: null }, "2"],
+    ["turn 3 begins",         { turns_used: 2, turn_open: 3 },    "3"],
+  ];
+  for (const [what, fields, want] of steps){
+    const m = TURN_M(Object.assign({ max_turns: 25 }, fields));
+    assert.strictEqual(String(ctx.shadowTurnNow(m)), want, what);
+    assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), want + "/25",
+      "overlay at: " + what);
+    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), want,
+      "card at: " + what);
+  }
+  console.log("ok 39e the whole turn sequence reads correctly on both");
+}
+
+/* 39f. the budget is the mission's own, not a constant */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  for (const max of [25, 30, 12, 1]){
+    const m = TURN_M({ turns_used: 0, turn_open: 1, max_turns: max });
+    assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/" + max,
+      "overlay must use the mission's max_turns (" + max + ")");
+    assert(new RegExp("1 of " + max).test(ctx.shadowTaskCardHtml(m)),
+      "card must use the mission's max_turns (" + max + ")");
+  }
+  console.log("ok 39f the displayed budget is the mission's own max_turns");
+}
+
 console.log("test_shadow_home.js: all green");

@@ -537,5 +537,63 @@ class TestChatStoreDelete(unittest.TestCase):
         self.assertFalse(chat_store.delete("0" * 32), "unknown id must be False")
 
 
+class TheDrivenChatRowCarriesTheTurnInFlight(Base):
+    """THE STRIP SAID "turn 0 / 25" FOR THE WHOLE OF TURN 1 (founder,
+    2026-09-16).
+
+    `turns_used` counts turns that FINISHED -- mission_engine increments it
+    after the boundary arrives -- so a status line reading it is one behind
+    for the entire time a turn is being worked. The engine has stamped
+    `turn_open` for exactly that span since 2026-09-16, and the workspace
+    task card has read it through shadowTurnNow ever since; this row simply
+    never carried the field, so the one surface a founder watches while a
+    chat is driven could not show it.
+
+    These pin the ROW, which is the half that lives on this side. The UI
+    readers are pinned in test_panel.js (the chat strip), test_shadow_home.js
+    (the card and the overlay together) and test_shadow_overlay.js (the
+    fallback when the reader is not loaded).
+    """
+
+    def _driven(self, **fields):
+        m = self.create(target_mode="existing", target_session="sess-strip")
+        rec = self.store.load(m["id"])
+        rec.update(fields)
+        self.store.save(rec)
+        self.store.transition(m["id"], "running", "t")
+        return m["id"]
+
+    def test_the_row_carries_turn_open_while_a_turn_is_open(self):
+        self._driven(turns_used=3, max_turns=12, turn_open=4)
+        row = app_module._shadow_task_row("sess-strip")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["turn_open"], 4)
+        self.assertEqual(row["turns_used"], 3,
+                         "turns_used is the budget counter and is untouched")
+        self.assertEqual(row["max_turns"], 12)
+
+    def test_turn_open_is_None_when_no_turn_is_in_flight(self):
+        self._driven(turns_used=3, max_turns=12)
+        row = app_module._shadow_task_row("sess-strip")
+        self.assertIn("turn_open", row,
+                      "the key must always be present so the reader can "
+                      "fall back rather than guess")
+        self.assertIsNone(row["turn_open"])
+
+    def test_the_row_is_otherwise_unchanged(self):
+        self._driven(turns_used=1, max_turns=9, turn_open=2)
+        row = app_module._shadow_task_row("sess-strip")
+        self.assertEqual(
+            sorted(row), ["done_when", "max_turns", "mission_id", "objective",
+                          "state", "turn_open", "turns_used"],
+            "one field was added; none was replaced or removed")
+
+    def test_a_terminal_mission_reports_no_row_at_all(self):
+        mid = self._driven(turns_used=2, max_turns=9, turn_open=3)
+        self.store.transition(mid, "done", "done_when met")
+        self.assertIsNone(app_module._shadow_task_row("sess-strip"),
+                          "a finished mission drives nothing")
+
+
 if __name__ == "__main__":
     unittest.main()

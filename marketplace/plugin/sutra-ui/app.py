@@ -801,6 +801,25 @@ def _shadow_task_row(session_id):
             "objective": m.get("objective") or "",
             "state": m.get("state"),
             "turns_used": m.get("turns_used") or 0,
+            # THE TURN THE WORKER IS ON RIGHT NOW (founder, 2026-09-16).
+            #
+            # `turns_used` counts turns that FINISHED -- the engine increments
+            # it after the boundary arrives -- so the strip read "turn 0 / 25"
+            # for the whole of turn 1, "turn 1 / 25" for the whole of turn 2,
+            # and so on: one behind, for the entire time a turn was actually
+            # being worked. The engine has stamped `turn_open` for exactly
+            # that span since 2026-09-16 (mission_engine.run_mission, written
+            # after the say is delivered and cleared with the increment), and
+            # the workspace task card has read it through shadowTurnNow ever
+            # since. This row simply never carried it, so the one surface the
+            # founder watches while a chat is being driven could not.
+            #
+            # `turns_used` is UNTOUCHED and still first: it is the budget
+            # counter, max_turns is compared against it in the engine, and
+            # nothing here may become a second one. This adds a field; it
+            # replaces none. None when no turn is in flight, which is what
+            # lets the reader fall back.
+            "turn_open": m.get("turn_open"),
             "max_turns": m.get("max_turns") or 0,
             "done_when": [c.get("check") for c in (m.get("done_when") or [])
                           if c.get("check")],

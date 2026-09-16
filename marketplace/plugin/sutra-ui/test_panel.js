@@ -3800,6 +3800,41 @@ test("33b-1b. the strip carries turn progress and done-when when the server sent
     "the driving task is not named: " + text.slice(0, 300));
 });
 
+/* 33b-1e. THE TURN BEING WORKED, NOT THE LAST ONE FINISHED (founder,
+   2026-09-16). The strip read `turns_used`, which the engine increments only
+   after a turn's boundary arrives -- so it said "turn 0 / 25" for the whole
+   of turn 1, "turn 1 / 25" for the whole of turn 2, and so on. `turn_open`
+   is the engine's stamp for exactly that span and the row now carries it.
+
+   The fixture in 33b-1b directly above carries NO turn_open and still reads
+   "turn 3 / 12": that is the backward-compatibility half, and it is why this
+   is a display correction rather than a semantic one. */
+test("33b-1e. an open turn is shown as the turn being worked", () => {
+  const h = sandbox.sessionPane({ id: "sid-shdrv1c", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-9", objective: "ship it", state: "running",
+                   turns_used: 3, turn_open: 4, max_turns: 12,
+                   done_when: [] } });
+  const text = h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  assert.ok(/turn 4 \/ 12/.test(text),
+    "the strip must name the turn in flight: " + text.slice(0, 300));
+  assert.ok(!/turn 3 \/ 12/.test(text), "…and not the last one finished");
+});
+
+test("33b-1f. no open turn falls back to the completed count", () => {
+  const mk = (task) => sandbox.sessionPane({ id: "sid-shdrv1d", title: "t",
+    real: true, cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: task }).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  const base = { mission_id: "m-9", objective: "ship it", state: "running",
+                 turns_used: 3, max_turns: 12, done_when: [] };
+  assert.ok(/turn 3 \/ 12/.test(mk(Object.assign({}, base,
+    { turn_open: null }))), "null turn_open reads as the finished count");
+  assert.ok(/turn 3 \/ 12/.test(mk(base)),
+    "a row from before the field existed is unchanged");
+  assert.ok(/turn 3 \/ 12/.test(mk(Object.assign({}, base,
+    { turn_open: 2 }))), "a stale lower value never moves the count back");
+});
+
 /* 33b-1b2. THE FOUNDER'S MISREADING (2026-09-11), as a standing guard.
    Two chats Shadow drives rendered an identical strip, so a chat still
    running its OWN task looked like a chat some other task had taken over.

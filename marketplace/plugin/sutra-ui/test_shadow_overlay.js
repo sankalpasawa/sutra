@@ -713,3 +713,28 @@ assert(!/setInterval/.test(src), "the bounded re-read must not become a poller")
 
 console.log("test_shadow_overlay.js: all green");
 }
+
+/* THE FALLBACK HALF OF THE TURN DISPLAY (founder, 2026-09-16).
+
+   missionCardHtml reads the turn through shadowTurnNow, which lives in
+   16-shadow-home.js -- and THIS harness loads the overlay module alone, by
+   design ("real module under vm, minimal stubs"). So it is exactly the
+   context the `typeof shadowTurnNow === "function"` guard exists for, and
+   what it proves here is that a partial shell still renders the historical
+   number instead of throwing. The reader's own half is pinned in
+   test_shadow_home.js, where both modules are loaded. */
+{
+  const ctx = fresh();
+  assert.strictEqual(typeof ctx.shadowTurnNow, "undefined",
+    "precondition: this harness does not load the reader");
+  const card = ctx.missionCardHtml({ id: "m-1", objective: "o",
+    state: "running", turns_used: 3, turn_open: 4, max_turns: 12 });
+  const turns = (card.match(/shturns">([^<]*)</) || [])[1];
+  assert.strictEqual(turns, "3/12",
+    "without the reader the card falls back to the completed count");
+  const bare = ctx.missionCardHtml({ id: "m-2", objective: "o",
+    state: "running", turns_used: 1, max_turns: 9 });
+  assert.strictEqual((bare.match(/shturns">([^<]*)</) || [])[1], "1/9",
+    "a record with no turn_open is unchanged");
+  console.log("ok turn display falls back when the reader is not loaded");
+}

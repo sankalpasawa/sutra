@@ -989,8 +989,24 @@ function sessionPane(s){
     ? ` · <span class="shdrivename" title="${escAttr(shObj)}">${
         esc(shObj.length > 44 ? shObj.slice(0, 43).trim() + "\u2026" : shObj)
       }</span>` : "";
+  /* THE TURN BEING WORKED, NOT THE LAST ONE FINISHED (founder, 2026-09-16).
+     This read `turns_used`, which the engine increments only AFTER a turn's
+     boundary arrives -- so the strip said "turn 0 / 25" for the whole of
+     turn 1. shadowTurnNow is the existing reader (16-shadow-home.js): it
+     prefers `turn_open` and falls back to `turns_used`, so a record without
+     the field renders exactly as it did.
+
+     GUARDED ON THE FUNCTION, not on the field. panel.html loads this file
+     (06) before 16-shadow-home.js, and although the call happens at render
+     time -- by which point every module is loaded -- a test harness that
+     mounts this file alone would not have the reader. The fallback is the
+     historical expression, byte for byte. */
+  const shTurn = shTask
+    ? (typeof shadowTurnNow === "function" ? shadowTurnNow(shTask)
+                                           : (shTask.turns_used || 0))
+    : 0;
   const shTurns = shTask && shTask.max_turns
-    ? ` · turn ${esc(String(shTask.turns_used || 0))} / ${esc(String(shTask.max_turns))}`
+    ? ` · turn ${esc(String(shTurn))} / ${esc(String(shTask.max_turns))}`
     : "";
   const shDone = shTask && (shTask.done_when || []).length
     ? ` · done when ${esc(shTask.done_when.join(" · "))}` : "";
