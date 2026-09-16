@@ -3711,11 +3711,90 @@ async def api_shadow_task_open(request: Request):
     return out
 
 
+def _record_founder_talk(mid, text):
+    """ONE MEMORY OF THE FOUNDER (founder, 2026-09-16, step 2).
+
+    THE SPLIT THIS CLOSES. The founder had two doors and Shadow had two
+    memories of them. "Give instruction to Shadow" appends to the mission's
+    `founder_says`, which `_decision_context` hands the decider and the
+    `seen` flag stops repeating. "Talk to Shadow" lived only in the task
+    chat's own transcript -- which the LIVE chat can see, because decide()
+    and talk() are two prompts on one session, but the one-shot fallback
+    decider cannot see at all, and which nothing marks as consumed. So a
+    constraint the founder mentioned conversationally reached the worker
+    only by luck, and could steer every later turn forever.
+
+    THE WHOLE FIX IS THE SAME LIST. A talked line is appended to
+    `founder_says` exactly as a typed one is, tagged `via` so Shadow can
+    tell a deliberate instruction from a passing remark. Everything else
+    already exists and is already tested: the record is durable and atomic,
+    `seen` is the consumption cursor, append order is the chronology, and
+    both the task chat and the one-shot fallback read the same context. No
+    new field, no new store, no queue, no cursor of its own.
+
+    IT IS NOT AN INSTRUCTION, AND THIS DOES NOT MAKE IT ONE. `founder_says`
+    has never been a message to the worker: it is INPUT TO A DECISION, and
+    the decider composes the instruction itself (mission_engine._instruction
+    -> validate_decision -> the one validated say path). What changed is
+    that Shadow can now see everything the founder said; what did not change
+    is who decides, and that nothing here can reach the worker on its own.
+
+    ONLY THE FOUNDER'S OWN WORDS. Shadow's reply is never recorded -- it is
+    returned to the founder and stays in the chat -- so Shadow can never read
+    its own answer back as something it was told. Nothing from the worker
+    reaches this list either; it has exactly two writers, both founder-typed.
+
+    NOT WHILE DRAFTING: before Start the conversation IS the drafting of the
+    task and lands on the objective through the `mission` fence. Recording it
+    as well would replay the whole drafting exchange into the first decision.
+
+    BEST-EFFORT BY CONSTRUCTION. A store failure here must cost the record of
+    one line and nothing else: the founder already has Shadow's answer, and a
+    Shadow-side fault must never become a worker fault.
+    """
+    try:
+        store = _mission_engine.MissionStore()
+        m = store.load(mid)
+        if m is None or m["state"] in _mission_engine.TERMINAL:
+            return
+        says = list(m.get("founder_says") or [])
+        says.append({"text": str(text)[:_SAY_MAX],
+                     "at": _mission_engine._now(),
+                     "at_turn": m.get("turns_used") or 0,
+                     "via": "talk",
+                     "seen": False})
+        m["founder_says"] = says
+        store.save(m)
+    except Exception as exc:            # noqa: BLE001 -- audible, never fatal
+        _shadow_ledger_safe({
+            "kind": "say", "mission_id": mid,
+            "summary": "founder talk NOT recorded: %s" % str(exc)[:140]})
+
+
 @app.post("/api/shadow/tasks/{mid}/chat")
 async def api_shadow_task_chat(mid: str, request: Request):
     """Talk to ONE task's Shadow chat. Before Start the draft card follows
     the conversation; after Start the words reach the chat that steers the
-    worker (it may amend its next instruction). Never the working chat."""
+    worker (it may amend its next instruction). Never the working chat.
+
+    TWO GUARDS, BOTH ABOUT WHEN THE CONVERSATION IS ALLOWED TO CHANGE THINGS
+    (founder, 2026-09-16, step 1 of the Shadow conversation UX). The route is
+    otherwise untouched: same chat, same `talk`, same reply.
+
+    A TERMINAL TASK IS NOT LISTENING. Shadow has left the loop, and a `talk`
+    here would --resume a finished task's Shadow session to answer as though
+    the work were live. Refused with the same 409 shape `say` already uses
+    (api_shadow_mission_act), so the pane can say the same thing.
+
+    THE `mission` FENCE AMENDS A DRAFT, AND ONLY A DRAFT. _apply_task_fence
+    was written for the drafting conversation -- "amends THAT draft" -- and
+    reaches MissionStore.amend, which refuses a terminal mission but NOT a
+    running one: it would bump the version and rewrite the objective and the
+    done_when of a task the worker is already executing. Before Start that is
+    the feature; after Start it would make a casual question re-scope live
+    work. So the fence is applied while the task is still a draft and the
+    record is returned untouched once it has started. Nothing about
+    _apply_task_fence, amend, the decider or founder_says moved."""
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     body = await request.json()
@@ -3726,13 +3805,23 @@ async def api_shadow_task_chat(mid: str, request: Request):
     mission = store.load(mid)
     if mission is None:
         raise HTTPException(404, "no task %s" % mid)
+    if mission["state"] in _mission_engine.TERMINAL:
+        raise HTTPException(409, {
+            "detail": "this task has finished -- Shadow is no longer "
+                      "working on it",
+            "state": mission["state"]})
+    drafting = mission["state"] in ("draft", "brief_confirm")
     try:
         chat = await _ensure_task_chat(mission)
         reply, blocks = await chat.talk(message)
     except Exception as exc:            # noqa: BLE001
         raise HTTPException(503, "this task's Shadow chat is not available: %s"
                             % str(exc)[:140])
-    out = {"mission": _apply_task_fence(mid, blocks), "reply": reply}
+    if not drafting:
+        _record_founder_talk(mid, message)
+    out = {"mission": (_apply_task_fence(mid, blocks) if drafting
+                       else store.load(mid)),
+           "reply": reply}
     if "chips" in blocks:
         out["chips"] = blocks["chips"]
     return out

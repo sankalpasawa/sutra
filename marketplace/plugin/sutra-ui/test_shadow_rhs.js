@@ -1305,7 +1305,12 @@ function stream(msgs, says, turns){
     "the new-task ask must not draw under an active task");
   assert(!/Tell Shadow the outcome you want/.test(h),
     "nor its subtitle");
-  assert(/placeholder="Say anything…"/.test(h),
+  /* the label moved to "Give instruction to Shadow" (founder,
+     2026-09-16): the box is now named for what it DOES -- it deposits
+     a steering line on the record -- beside the new Talk to Shadow
+     panel, which converses. The composer, its hook and its path are
+     unchanged, which is what the count below still pins. */
+  assert(/placeholder="Give instruction to Shadow…"/.test(h),
     "the active task keeps exactly one composer");
   assert.strictEqual((h.match(/data-shhomecompose/g) || []).length, 1,
     "exactly one composer on the page");
@@ -1342,7 +1347,7 @@ function stream(msgs, says, turns){
   const closed = ctx3.shadowHomeHtml();
   assert.strictEqual((closed.match(/data-shhomecompose/g) || []).length, 1,
     "closing the form must restore exactly one composer");
-  assert(/placeholder="Say anything…"/.test(closed),
+  assert(/placeholder="Give instruction to Shadow…"/.test(closed),
     "and it is the calm one, unchanged");
   console.log("ok 8p one composer on the workspace; none behind New Task");
 }
@@ -1376,7 +1381,7 @@ function stream(msgs, says, turns){
   const ctx = fresh();
   const h = pane(ctx, M());
   assert(/class="shstage shstage-calm"/.test(h), "the calm composer is missing");
-  assert(/placeholder="Say anything…"/.test(h),
+  assert(/placeholder="Give instruction to Shadow…"/.test(h),
     "the reference's placeholder is missing");
   /* the SAME surface and the SAME hooks it always had -- nothing new is wired */
   assert(/data-shhomecompose="1"/.test(h), "the composer hook changed");

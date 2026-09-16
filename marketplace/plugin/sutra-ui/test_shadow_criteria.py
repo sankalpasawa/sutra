@@ -147,7 +147,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "outcome": "Ship it.", "checks": "- (none)", "turns_used": 1,
             "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
-            "founder_says": "(none)",
+            "founder_says": "(none)", "standing": "(none)",
             "criteria_ask": shadow_runner._CRITERIA_ASK}
         self.assertIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
         self.assertIn('"done_when"', rendered)
@@ -157,7 +157,8 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "outcome": "Ship it.", "checks": "- #0 [ ] (founder_confirm) x",
             "turns_used": 1, "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
-            "founder_says": "(none)", "criteria_ask": ""}
+            "founder_says": "(none)", "standing": "(none)",
+            "criteria_ask": ""}
         self.assertNotIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
 
     def test_a_decision_may_carry_the_checks_shadow_wrote(self):

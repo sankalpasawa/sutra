@@ -2023,6 +2023,157 @@ async function shadowSayToShadow(mid, text, el){
   return doc;
 }
 
+/* -- TALK TO SHADOW: the founder's conversation with THIS task -----------
+   (founder, 2026-09-16, step 1 of the Shadow conversation UX.)
+
+   THE GAP. "Give instruction to Shadow" (shadowSayToShadow, above) is a
+   STEERING DEPOSIT: it appends to the mission's `founder_says` and the
+   decider reads it on its next turn. Nothing answers. So a founder who
+   simply wants to ask "what are you doing?" had nowhere to ask it once the
+   task had started -- the one surface that answers, the task's own Shadow
+   chat, is opened by + Delegate and closed again by Start.
+
+   NOTHING NEW IS BUILT. Every piece here already existed and is reused as
+   it stands:
+
+     the conversation   shadow_task_chat.TaskChat.talk, through the route
+                        POST /api/shadow/tasks/{id}/chat, which returns
+                        Shadow's prose directly. That chat has no tools by
+                        construction, so it can answer and nothing else.
+     the history        the Shadow chat's OWN transcript, read through the
+                        same throttled shadowTaskTranscript the worker-chat
+                        block uses, keyed by the mission's
+                        `task_chat_session`. That is what survives a reload
+                        and a restart: nothing is stored in the browser.
+     the rendering      shadowMsgHtml (15-shadow-overlay.js), the same
+                        founder/Shadow bubble the drafting chat draws.
+
+   IT IS NOT AN INSTRUCTION, AND THIS STEP DOES NOT MAKE IT ONE. A line sent
+   here does not touch `founder_says`, does not reach the worker, does not
+   spend a turn and does not enter the decider's context. Whether a casual
+   line should ever become work is step 2, and deliberately not here. */
+
+/* The prompts this conversation is NOT: the boot, the brief ask and the
+   steering turn all travel down the SAME session, so the transcript holds
+   them beside the founder's own lines. They are matched on the opening
+   words their one writer emits -- shadow_task_chat.BOOT_PREFIX,
+   shadow_task_chat.BRIEF_ASK and shadow_runner._DECIDE_PROMPT -- and a
+   dropped prompt takes every reply that follows it, to the next founder
+   line. Presentation only: the transcript is untouched, and the whole
+   conversation is still in the chat this session was published as. */
+const SH_TALK_SKIP = [
+  /^\[Shadow boot\]/,
+  /^Write the opening brief for this task's worker chat\./,
+  /^You are Shadow, driving one target chat toward an outcome\./,
+];
+
+function shadowTalk(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (!S_.shadowTalk)
+    S_.shadowTalk = { mid: null, live: [], text: "", busy: false, err: null };
+  return S_.shadowTalk;
+}
+
+/* THE CONVERSATION AS THE RECORD HAS IT. Read-only, off the same endpoint
+   and the same throttle the worker chat uses; a mission whose Shadow chat
+   has not booted yet simply has nothing to show. */
+function shadowTalkTurns(m){
+  const sid = m && m.task_chat_session;
+  if (!sid || typeof shadowTaskTranscript !== "function") return [];
+  const msgs = shadowTaskTranscript(sid, true);
+  if (!Array.isArray(msgs)) return [];
+  const out = [];
+  let skip = false;
+  for (const t of msgs){
+    if (!t) continue;
+    const text = String(t.text || "").trim();
+    if (t.role === "user"){
+      skip = !text || SH_TALK_SKIP.some(re => re.test(text));
+      if (!skip) out.push({ who: "founder", text: text });
+      continue;
+    }
+    /* every reply to a dropped prompt is dropped with it -- one prompt can
+       answer across several messages, so this does NOT reset per message */
+    if (t.role !== "assistant" || skip || !text) continue;
+    out.push({ who: "shadow", text: text });
+  }
+  return out;
+}
+
+/* WHAT IS DRAWN: the record, plus anything sent in this sitting that the
+   transcript has not caught up with yet. The moment a live line appears in
+   the transcript it stops being drawn twice, so a reload loses nothing and
+   duplicates nothing. */
+function shadowTalkThread(m){
+  const T = shadowTalk();
+  const past = shadowTalkTurns(m);
+  const seen = {};
+  for (const t of past) seen[t.who + ":" + t.text] = 1;
+  return past.concat(
+    (T.live || []).filter(t => !seen[t.who + ":" + t.text]));
+}
+
+/* The panel. FLOATING, and anchored to the header's own action column, so
+   opening it moves nothing: it is absolutely positioned inside
+   .shwheadacts and overlaps the brief below (panel.css .shtalk). */
+function shadowTalkHtml(m){
+  const T = shadowTalk();
+  if (!m || !m.id || T.mid !== m.id) return "";
+  const rows = shadowTalkThread(m).map(t =>
+    (typeof shadowMsgHtml === "function") ? shadowMsgHtml(t)
+      : `<div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}"
+        >${esc(t.text || "")}</div>`).join("");
+  return `<div class="shtalk" data-shtalkpanel="1">
+    <div class="shtalkhead">
+      <span class="shtalkwho">Shadow · this task</span>
+      <button class="shtalkx" type="button" data-shtalkclose="1"
+        aria-label="Close">×</button>
+    </div>
+    <div class="shthread shtalkthread">${rows || `<div class="shtalkzero"
+      >Ask Shadow about this task. It answers here, and the worker keeps
+      working.</div>`}</div>
+    ${T.err ? `<div class="shnewerr">${esc(T.err)}</div>` : ""}
+    <div class="shcompwrap shtalkcomp">
+      <textarea class="shcompose" data-shtalkbox="${escAttr(m.id)}" rows="2"
+        placeholder="Ask Shadow about this task…"${
+          T.busy ? " disabled" : ""}>${esc(T.text || "")}</textarea>
+      <button class="btn shsend" type="button"
+        data-shtalksend="${escAttr(m.id)}" aria-label="Send"${
+          T.busy ? " disabled" : ""}>↑</button>
+    </div>
+  </div>`;
+}
+
+/* One line to this task's Shadow. The reply is Shadow's own prose, returned
+   by the route; nothing here writes to the mission record. */
+async function shadowTalkSend(mid){
+  const T = shadowTalk();
+  const text = String(T.text || "").trim();
+  if (!mid || !text || T.busy) return null;
+  T.live.push({ who: "founder", text: text });
+  T.text = ""; T.busy = true; T.err = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null, body = null;
+  try {
+    r = await shadowPost(
+      "/api/shadow/tasks/" + encodeURIComponent(mid) + "/chat",
+      { message: text });
+    body = (r && r.ok) ? await r.json() : null;
+  } catch (e){ body = null; }
+  T.busy = false;
+  if (!body){
+    /* 409 is the one refusal with a reason worth words, the same way the
+       instruction composer reads its own 409 */
+    T.err = (r && r.status === 409)
+      ? "That task has finished — Shadow is no longer on it."
+      : "Shadow could not answer" + (r ? " (" + r.status + ")" : "") + ".";
+  } else if (body.reply){
+    T.live.push({ who: "shadow", text: String(body.reply) });
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return body;
+}
+
 function shadowTimelineEvents(m){
   const out = [];
   const sid = m && m.target_session;
@@ -2766,7 +2917,7 @@ function shadowStageHtml(compact){
     <div class="shcompwrap">
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
-        placeholder="${compact ? "Say anything…"
+        placeholder="${compact ? "Give instruction to Shadow…"
           : "Tell Shadow what outcome you want…"}"></textarea>
       <button class="shsend" type="button" data-shsend="1"
         title="Hand it over (or press Enter)" aria-label="Hand it over">
@@ -2973,9 +3124,22 @@ function shadowHomeHtml(){
                it, so the split between "Shadow's report" (this pane) and
                "the delegate's actual chat" (that button) is the first
                thing the header says. */""}
-          ${!newOpen && sel && sel.target_session ? `<button class="btn"
-            type="button" data-shtakeover="${escAttr(sel.target_session)}"
-            >Open the chat</button>` : ""}
+          ${/* TWO DOORS, STACKED. "Open the chat" is the WORKER's
+               conversation and is unchanged -- same hook, same
+               target_session. "Talk to Shadow" is the founder's own
+               conversation with this task's Shadow (shadowTalkHtml), and it
+               is offered only while the task can still answer: a terminal
+               mission's Shadow has left the loop, and the route refuses it
+               too. */""}
+          ${!newOpen && sel && sel.target_session ? `<div class="shwheadcol">
+            <button class="btn"
+              type="button" data-shtakeover="${escAttr(sel.target_session)}"
+              >Open the chat</button>
+            ${SH_TERMINAL.indexOf(sel.state) === -1 ? `<button class="btn"
+              type="button" data-shtalk="${escAttr(sel.id)}"
+              >Talk to Shadow</button>` : ""}
+          </div>` : ""}
+          ${newOpen ? "" : shadowTalkHtml(sel)}
         </div>
       </header>
       ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
@@ -4192,6 +4356,25 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (d.shnewsend){ shadowNewTalk(); return; }
+    /* Talk to Shadow: the founder's conversation with THIS task. Opening and
+       closing is local state only -- no request, nothing paused, and the
+       worker is not told. Re-opening reads the record again, so the history
+       comes back from the transcript rather than from the browser. */
+    if (d.shtalk){
+      const T = shadowTalk();
+      const same = T.mid === d.shtalk;
+      T.mid = same ? null : d.shtalk;
+      if (!same){ T.live = []; T.text = ""; T.err = null; }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shtalkclose){
+      const T = shadowTalk();
+      T.mid = null; T.err = null;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shtalksend){ shadowTalkSend(d.shtalksend); return; }
     if (d.shformdoor){
       if (typeof S !== "undefined") S.shadowFormWant = true;
       if (typeof scheduleRender === "function") scheduleRender();
@@ -4494,6 +4677,15 @@ if (typeof document !== "undefined" && document.addEventListener){
       shadowNewTalk();
       return;
     }
+    /* step 1: Enter in the Talk to Shadow box sends the line, Shift+Enter is
+       a newline -- the same pair the drafting task chat answers to */
+    if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
+        && ev.target.dataset.shtalkbox){
+      ev.preventDefault && ev.preventDefault();
+      shadowTalk().text = ev.target.value;
+      shadowTalkSend(ev.target.dataset.shtalkbox);
+      return;
+    }
     /* the offer box submits on Enter and abandons on Escape -- the two keys
        every one-field inline input in this app already answers to */
     const od = (ev.target && ev.target.dataset) || {};
@@ -4523,6 +4715,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* v4: the task chat line and the behaves text, kept across the
        background re-renders like every typed field here */
     if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
+    if (d.shtalkbox){ shadowTalk().text = t.value; return; }
     if (d.shbehaves){
       if (typeof S !== "undefined"){ S.shadowBehavesDraft = t.value; S.shadowBehavesSaved = false; }
       return;

@@ -1664,17 +1664,46 @@ WHAT THE TARGET CHAT SAID BACK (most recent output)
 WHAT THE FOUNDER TOLD YOU (their answer to your last question, if any)
 %(founder_response)s
 
-WHAT THE FOUNDER SAID UNPROMPTED (asides since your last turn, newest last)
+ACTIVE FOUNDER INSTRUCTIONS (standing constraints on this task)
+%(standing)s
+These govern the task until the founder changes them, and they outlive the
+turn that created them. They are YOUR restatement of what the founder asked
+for, not their wording.
+
+WHAT THE FOUNDER HAS SAID SINCE YOUR LAST DECISION (newest last)
 %(founder_says)s
-These were volunteered, not answers -- nothing was asked. Treat them as the
-founder steering the work: they may change what you instruct next, narrow it,
-or call for a stop. They confirm no check and resolve no question.
+Two channels, and the tag says which. [instruction] is the founder typing an
+instruction at you deliberately. [conversation] is the founder talking to you
+in this task's chat -- a question, a thought, an aside -- which you have
+already answered there, and which may have nothing to do with the work.
+
+NEITHER IS A MESSAGE FOR THE WORKER, and you decide which parts are. Read
+them for what they CHANGE about the work and carry only that into your
+instruction, in your own words. Do not forward the founder's wording, do not
+answer a question here, and do not instruct at all when nothing they said
+changes what the worker should do next -- an idle remark is not a reason to
+send a turn. They confirm no check and resolve no question.
+
+KEEPING THE ACTIVE SET RIGHT. `standing` is OPTIONAL and REPLACES the whole
+set when you send it, so send the instructions that STILL govern the task,
+all of them, restated in your own words. Leave the key out to keep the set
+exactly as it is; send [] only when nothing governs the task any more.
+An [instruction] the founder typed is durable unless it plainly applies to
+one turn only. A [conversation] line is durable only when the founder clearly
+means it to outlive this turn -- "from now on", "don't ... during this task"
+-- and a question is never an instruction. Where two conflict the newer
+founder intent wins and the older one does not survive into the set.
+
+Creating or changing the set is not itself a reason to send the worker a
+turn, and an active instruction is a constraint on what you instruct, not
+something to forward.
 
 Decide. Reply with ONE fenced json block and nothing else:
 
 ```json
 {"action": "continue", "instruction": "<what to send into the chat next>",
- "reason": "<one short line: why this, now>"}
+ "reason": "<one short line: why this, now>",
+ "standing": ["<every instruction that still governs this task>"]}
 ```
 
 %(criteria_ask)s
@@ -1771,18 +1800,49 @@ def _first_decision(text):
     return None
 
 
+def _standing_text(standing):
+    """What currently governs the task, as lines the decider can read.
+
+    Shadow's OWN restatement of the founder's constraints, never the
+    founder's raw words -- so this block can be read as "the rules", while
+    the block below is read as "what was said". "(none)" for a task nobody
+    has constrained, which is every task until Shadow writes a set.
+    """
+    lines = ["- %s" % str(t).strip()
+             for t in (standing or []) if str(t).strip()]
+    return "\n".join(lines) or "(none)"
+
+
 def _founder_says_text(says):
-    """The founder's unprompted asides, as lines the decider can read.
+    """Everything the founder has said, as lines the decider can read.
 
     Same shape and same reasoning as _founder_answer_text below: its own
     labelled section of the prompt, never folded into last_response, so what
     the FOUNDER volunteered can never be read as the target chat's output.
     "(none)" for every mission nobody has said anything to, which is every
     mission that existed before this.
+
+    THE CHANNEL IS PART OF THE LINE (founder, 2026-09-16, step 2). The
+    founder has two doors -- an instruction typed at Shadow, and a remark in
+    the task's own chat -- and they do not mean the same thing. An
+    instruction was composed to change the work; a conversational line may be
+    a question, a thought, or nothing to do with the work at all. Shadow
+    cannot judge relevance without knowing which it is reading, and the
+    founder must never be asked to classify their own sentence, so the tag is
+    derived from WHICH ROUTE WROTE THE ROW and nothing else.
+
+    `via` ABSENT MEANS INSTRUCTION, which is every row written before this
+    existed: the say endpoint was the only writer, so an untagged aside is a
+    typed instruction by construction and reads as one.
     """
     rows = [s for s in (says or []) if isinstance(s, dict)]
-    lines = ["- %s" % str(s.get("text") or "").strip()
-             for s in rows if str(s.get("text") or "").strip()]
+    lines = []
+    for s in rows:
+        text = str(s.get("text") or "").strip()
+        if not text:
+            continue
+        via = "conversation" if s.get("via") == "talk" else "instruction"
+        lines.append("- [%s] %s" % (via, text))
     return "\n".join(lines) or "(none)"
 
 
@@ -1818,6 +1878,7 @@ def render_decide_prompt(context):
     drift.
     """
     return _DECIDE_PROMPT % {
+        "standing": _standing_text(context.get("standing")),
         "outcome": context.get("outcome") or "(none)",
         # THE INDEX IS PART OF THE PROMPT (founder, 2026-09-15). A check
         # rendered without one cannot be CITED: `confirms_check.index`

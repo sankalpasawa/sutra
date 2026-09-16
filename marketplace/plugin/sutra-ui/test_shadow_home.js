@@ -453,7 +453,10 @@ console.log("ok 6 controls wired");
      surface and the same hooks, asserted above, asking for anything rather
      than teaching how to delegate. It is the SHADOW<->FOUNDER channel
      (/api/shadow/chat) either way -- never the worker chat. */
-  assert(/Say anything/.test(h), "the calm composer placeholder was lost");
+  /* renamed 2026-09-16 -- same surface, same hooks, same path; the
+     name now says what it does, now that Talk to Shadow converses */
+  assert(/Give instruction to Shadow/.test(h),
+    "the calm composer placeholder was lost");
   assert(!/Tell Shadow the outcome you want/.test(h),
     "the teaching copy belongs to the un-focused pane, not the task pane");
   /* THE ASK BLOCK BELONGS TO NEW TASK (founder, 2026-09-15). "What should I
@@ -500,7 +503,8 @@ console.log("ok 6 controls wired");
      Same string, rendered by the same call, for a focused task and for an
      empty workspace. */
   assert(/data-shhomecompose/.test(h), "the closed workspace lost its composer");
-  assert(/Say anything/.test(h), "the closed workspace lost its placeholder");
+  assert(/Give instruction to Shadow/.test(h),
+    "the closed workspace lost its placeholder");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
   assert(!/What should I take on\?/.test(h),
     "the ask heading must not draw on a focused workspace either");

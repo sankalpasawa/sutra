@@ -3556,8 +3556,38 @@
   font-size:13px;line-height:1}
 .shwtitle{font-size:21px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
 .shwheadacts{margin-left:auto;display:flex;align-items:center;gap:9px;
-  flex:none}
+  flex:none;position:relative}
 .shwheadacts .btn{padding:6px 12px;font-size:12px;border-radius:8px}
+/* the two doors, stacked: the worker's chat, then the founder's own
+   conversation with this task's Shadow. A column so the second sits UNDER
+   the first rather than widening a header that already ends at the pane. */
+.shwheadcol{display:flex;flex-direction:column;align-items:stretch;gap:6px}
+
+/* -- Talk to Shadow: a floating conversation, anchored to those buttons ---
+   ABSOLUTE ON PURPOSE. The panel must overlap the brief below it, never
+   push it: opening a conversation is not a layout change, and a founder
+   reading the card should not have it jump. position:relative on
+   .shwheadacts above is the anchor and changes nothing else -- the row is
+   still the same flex row it was.
+   The bubbles, the composer and the send button are the existing
+   .shmsg / .shthread / .shcompose / .shsend, so this adds a container and
+   no new message styling. */
+.shtalk{position:absolute;top:calc(100% + 8px);right:0;z-index:40;
+  width:min(380px,78vw);max-height:min(460px,60vh);
+  display:flex;flex-direction:column;gap:8px;
+  padding:12px 13px;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;box-shadow:0 14px 38px rgba(0,0,0,.18)}
+.shtalkhead{display:flex;align-items:center;gap:8px}
+.shtalkwho{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint)}
+.shtalkx{margin-left:auto;width:22px;height:22px;flex:none;line-height:1;
+  background:none;border:0;border-radius:6px;color:var(--faint);
+  font-size:15px;cursor:pointer}
+.shtalkx:hover{background:var(--bubble);color:var(--ink)}
+.shtalkthread{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:2px}
+.shtalkzero{font-size:12px;line-height:1.5;color:var(--faint)}
+.shwright .shtalk .shmsg{padding:9px 12px;font-size:12.5px;margin:6px 0 0}
+.shtalkcomp{flex:none}
 
 /* ── the briefing card: calm, white, and the keys are a mono index column */
 .shwright .shcard2{background:var(--card);border-color:var(--line-soft);

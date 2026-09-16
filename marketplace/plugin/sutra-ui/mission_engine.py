@@ -216,6 +216,48 @@ DECIDER_TIERS = ("founder_confirm", "verify")
 MAX_DECIDER_CHECKS = 6
 
 
+#: How many standing instructions one task may carry, and how long each may
+#: be. Small on purpose: this is the set of constraints that governs a task,
+#: not a transcript of everything the founder ever said -- that is
+#: `founder_says`, which is never trimmed.
+MAX_STANDING = 8
+STANDING_MAX_CHARS = 300
+
+
+def validate_standing(raw):
+    """The active instruction set a decider wrote, or None for "not sent".
+
+    THREE OUTCOMES, AND THE DIFFERENCE MATTERS:
+
+      None  the key was absent or unusable -> KEEP the set that is already on
+            the record. A one-shot fallback decider, an older model, or a
+            malformed reply must never be able to silently drop the
+            constraints the founder is relying on.
+      []    the key was an empty list -> CLEAR the set. That is the founder
+            relaxing everything, and it has to be expressible.
+      [..]  the new active set, replacing the old one whole. Supersession is
+            therefore just "Shadow sends the set that still applies": there
+            is no edit language to get wrong, and two contradictory rules
+            cannot both survive because only one list exists.
+
+    Lenient per row for the same reason validate_done_when is: one bad entry
+    must not cost the instruction that came with it.
+    """
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for row in raw:
+        text = str(row if isinstance(row, str) else
+                   (row.get("text") if isinstance(row, dict) else "") or "")
+        text = " ".join(text.split())
+        if not text or text in out:
+            continue
+        out.append(text[:STANDING_MAX_CHARS])
+        if len(out) >= MAX_STANDING:
+            break
+    return out
+
+
 def validate_done_when(raw):
     """The checks a decider wrote, or [] if they are not usable.
 
@@ -241,6 +283,16 @@ def validate_done_when(raw):
         if len(out) >= MAX_DECIDER_CHECKS:
             break
     return out
+
+
+def _carry_standing(out, raw):
+    """ADDITIVE, exactly like `done_when` and `intervention`: a decision MAY
+    carry the active instruction set. Absent or unusable leaves `out`
+    byte-identical to what validate_decision returned before, so every
+    existing decision and every test of one is unaffected."""
+    standing = validate_standing(raw.get("standing"))
+    if standing is not None:
+        out["standing"] = standing
 
 
 def validate_decision(raw):
@@ -274,8 +326,13 @@ def validate_decision(raw):
         checks = validate_done_when(raw.get("done_when"))
         if checks:
             out["done_when"] = checks
+        _carry_standing(out, raw)
         return out
     out = {"action": action, "reason": reason, "instruction": ""}
+    # ...and on THIS shape too: the founder can change what governs the task
+    # on a turn Shadow ends by asking them something, and that set must not
+    # be lost because the action was not `continue`.
+    _carry_standing(out, raw)
     # ADDITIVE, AND ONLY HERE. An ask_founder MAY carry a typed request
     # (shadow_intervention.validate_request). When it does not -- or when the
     # payload is malformed -- `out` is byte-identical to what this function
@@ -1793,6 +1850,7 @@ class MissionEngine:
             else:
                 say_text, decision = await self._instruction(m, last_response)
             self._adopt_criteria(m, decision)
+            self._adopt_standing(m, decision)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated
@@ -2539,7 +2597,63 @@ class MissionEngine:
                                  if not s.get("seen")]}
                if any(not s.get("seen")
                       for s in (m.get("founder_says") or [])) else {}),
+            # WHAT CURRENTLY GOVERNS THE TASK. Unlike founder_says this is
+            # NOT consumed: a standing instruction is standing precisely
+            # because it survives the turn that created it, so it is sent on
+            # every decision until Shadow replaces the set. It is Shadow's
+            # own restatement, kept apart from the founder's raw words above
+            # for the same reason those are kept apart from last_response.
+            **({"standing": [str(r.get("text") or "").strip()
+                             for r in (m.get("standing_instructions") or [])
+                             if isinstance(r, dict)
+                             and str(r.get("text") or "").strip()]}
+               if (m.get("standing_instructions") or []) else {}),
         }
+
+    def _adopt_standing(self, m, decision):
+        """Write the ACTIVE instruction set Shadow composed, onto the task.
+
+        WHY A FIELD OF ITS OWN, and it is the only thing step 2.5 adds to the
+        record. `founder_says` is an append-only log of the founder's RAW
+        words with a per-row consumption flag: it answers "what has the
+        founder said", and it must keep answering that, so nothing in it may
+        be rewritten when an instruction is superseded. `done_when` is the
+        completion contract the verifier reads. The precedence ledger
+        (shadow_precedence) is global/chat-scoped, gated on an explicit
+        founder Confirm, and is injected into the WORKER'S manifest at spawn
+        -- it never reaches a decision. None of the three can hold "what
+        currently governs THIS task", so one small named field does.
+
+        THE LINES ARE SHADOW'S, NOT THE FOUNDER'S. Shadow restates each
+        constraint in its own words when it composes the set, which is what
+        keeps a raw chat line from ever becoming a worker instruction by
+        being stored.
+
+        ABSENT MEANS KEEP. Only a decision that actually carried the key
+        writes here, so a fallback decider, a malformed reply or an older
+        model cannot drop the constraints the founder is relying on. An empty
+        list is a deliberate clear and is honoured.
+
+        NOTHING ELSE MOVES: no state, no turn, no budget, no check. Writing
+        the set cannot send a turn -- only the instruction the same decision
+        carried can, through the path it always took.
+        """
+        if decision is None or "standing" not in decision:
+            return False
+        was = [str(r.get("text") or "")
+               for r in (m.get("standing_instructions") or [])
+               if isinstance(r, dict)]
+        now = list(decision["standing"])
+        if was == now:
+            return False              # nothing changed; no write, no row
+        stamp = _now()
+        m["standing_instructions"] = [{"text": t, "at": stamp} for t in now]
+        self.store.save(m)
+        shadow_ledger.append("actions", {
+            "mission_id": m["id"], "kind": "decision",
+            "summary": ("standing instructions now %d: %s"
+                        % (len(now), " | ".join(now)))[:200]})
+        return True
 
     def _adopt_criteria(self, m, decision):
         """Write the checks Shadow composed, onto an empty set only.
@@ -2617,14 +2731,33 @@ class MissionEngine:
         try:
             ctx = self._decision_context(m, last_response)
             raw = await self.decider(ctx)
-            # CONSUMED, and persisted by the save this turn already does
-            # (m is the same dict the caller writes back after composing the
-            # instruction). Marking AFTER the decider returns is deliberate:
-            # if the turn dies before that save the asides stay unseen and go
+            # CONSUMED, AND THE MARK IS WRITTEN HERE (fixed 2026-09-16,
+            # step 2). It used to rely on "the save this turn already does" --
+            # but the loop RE-LOADS the record from disk before the sayer
+            # (`m = self.store.load(mid)`, a few lines below the call to this
+            # function), so the mutation landed on a dict that was then
+            # thrown away. The mark never reached the file, every aside stayed
+            # unseen for the life of the mission, and one sentence the founder
+            # said once steered every later turn -- the exact repetition the
+            # `seen` flag exists to stop. Pre-dates the talk channel; it made
+            # the typed one repeat too.
+            #
+            # Marking AFTER the decider returns is still deliberate: a turn
+            # that dies before this leaves the asides unseen and they go
             # again next turn, which is the safe direction to fail.
+            #
+            # THE WRITE IS GUARDED FOR THE SAME REASON. A founder line that
+            # landed while the decider was thinking makes this a stale write;
+            # refusing it costs one repeat of an aside on the next turn, and
+            # must never cost the turn itself. Nothing else about the record
+            # is being written here.
             if ctx.get("founder_says"):
                 for said in (m.get("founder_says") or []):
                     said["seen"] = True
+                try:
+                    self.store.save(m)
+                except Exception:   # noqa: BLE001 -- re-read, never fail
+                    pass
         except Exception as exc:      # noqa: BLE001 -- reported, not hidden
             return None, {"action": "undecided",
                           "reason": "decider failed: %s" % str(exc)[:160]}

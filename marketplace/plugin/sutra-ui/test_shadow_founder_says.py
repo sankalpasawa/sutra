@@ -181,12 +181,43 @@ class SayReachesTheDecider(SayBase):
                          "a seen aside must not repeat every turn")
 
     def test_prompt_renders_the_asides_as_their_own_section(self):
+        """TAGGED BY CHANNEL since step 2 (2026-09-16). An untagged row is a
+        typed instruction by construction -- the say endpoint was the only
+        writer before `via` existed -- so every historical aside still reads
+        as the instruction it was."""
         text = shadow_runner._founder_says_text(
             [{"text": "prioritise release safety"}, {"text": "don't touch x"}])
-        self.assertEqual(text, "- prioritise release safety\n- don't touch x")
+        self.assertEqual(
+            text,
+            "- [instruction] prioritise release safety\n"
+            "- [instruction] don't touch x")
         self.assertEqual(shadow_runner._founder_says_text(None), "(none)",
                          "a mission nobody has spoken to says (none)")
         self.assertEqual(shadow_runner._founder_says_text([]), "(none)")
+
+    def test_the_two_channels_are_distinguishable_in_the_prompt(self):
+        """Shadow cannot judge relevance without knowing which door a line
+        came through: an instruction was composed to change the work, a
+        conversational remark may be about nothing at all."""
+        text = shadow_runner._founder_says_text([
+            {"text": "Do not modify the API.", "via": "say"},
+            {"text": "I think JSON is better than CSV.", "via": "talk"}])
+        self.assertEqual(
+            text,
+            "- [instruction] Do not modify the API.\n"
+            "- [conversation] I think JSON is better than CSV.")
+
+    def test_the_prompt_tells_shadow_to_decide_rather_than_forward(self):
+        """The whole point of step 2: casual conversation must not become a
+        worker instruction by arriving."""
+        prompt = shadow_runner.render_decide_prompt({
+            "outcome": "x", "checks": [], "turns_used": 1, "max_turns": 9,
+            "founder_says": [{"text": "maybe JSON", "via": "talk"}]})
+        self.assertIn("[conversation]", prompt)
+        self.assertIn("[instruction]", prompt)
+        self.assertIn("NEITHER IS A MESSAGE FOR THE WORKER", prompt)
+        self.assertIn("Do not forward the founder's wording", prompt)
+        self.assertIn("do not instruct at all when nothing they said", prompt)
 
 
 class DeleteIsUntouched(SayBase):
