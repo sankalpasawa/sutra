@@ -197,6 +197,21 @@ def mark_handled(item_id):
     return changed > 0
 
 
+def mark_seen(item_id):
+    """The founder OPENED a card (founder 2026-09-16: "once I click on
+    something and it takes me there, but I have not approved it, it should
+    not go away"). seen = the dot stops counting it; the card stays on Now,
+    drawn lighter, until the task moves on and the relevance rule retires
+    it. Only a `new` row becomes seen: handled and expired rows stay as
+    they are. Returns True when a row actually changed."""
+    def decide(row):
+        if row.get("item_id") == item_id and row.get("state") == "new":
+            return "seen"
+        return None
+    _rows, changed = _rewrite(decide)
+    return changed > 0
+
+
 def retire(mission_id=None, session_id=None, keep_item_id=None,
            producer=None):
     """Expire every open row about a mission (or a session's rescue rows)

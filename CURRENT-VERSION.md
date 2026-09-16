@@ -2,7 +2,16 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.282.1 (2026-09-16, HEAD)
+## v2.282.2 (2026-09-16, HEAD)
+
+**A card you opened stays on Now until you answer it** (founder: "once I click on something and it
+takes me there, but I have not approved it, it should not go away"). `POST /api/shadow/feed/handle`
+now calls `shadow_feed.mark_seen` (state `seen`, new in use) instead of `mark_handled`; the client
+keeps its cached list and re-states the row; `.nycard.seen` draws lighter; the dot counts only `new`
+rows; the 2.282.1 relevance rule is the only automatic retirement. Codex consult folded. Tests:
+test_shadow_feed.py 15, test_shadow_now.js and test_shadow_journeys.py on the new contract.
+
+## v2.282.1 (2026-09-16)
 
 **Now shows only what waits on you** (founder: "a lot of tasks in my Now, but they are not
 relevant"). The needs-you feed gains a relevance rule (`shadow_feed.live_items`): a card lives while

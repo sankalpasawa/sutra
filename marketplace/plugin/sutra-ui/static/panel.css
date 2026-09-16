@@ -2143,7 +2143,9 @@
   pointer-events:none; }
 .nyfeed{ display:flex; flex-direction:column; gap:10px; max-width:560px; }
 .nycard{ border:1px solid var(--line); border-radius:10px; padding:10px 12px;
-  background:var(--card); cursor:pointer; }
+  background:var(--card); cursor:pointer; transition:opacity .16s; }
+/* opened but not answered (founder 2026-09-16): the card stays, lighter */
+.nycard.seen{ opacity:.72; }
 .nyhead{ display:flex; gap:8px; font-size:10px; color:var(--faint);
   text-transform:uppercase; letter-spacing:.04em; }
 .nytitle{ font-size:13px; margin:4px 0; }

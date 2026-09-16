@@ -120,18 +120,27 @@ const ITEMS = [{
   console.log("ok 4b nudge duration");
 }
 
-/* observations pass: opening a card retires it */
+/* founder 2026-09-16: opening a card marks it SEEN and keeps it on Now
+   until the task moves on (the relevance rule retires it). The dot stops
+   counting it; the cached list is kept so the card does not blink away. */
 {
   const ctx = fresh();
   const posts = [];
+  ctx.S.needsYou = [{ item_id: "item-9", state: "new", kind: "needs_decision" }];
   ctx.shadowPost = (path, body) => { posts.push({ path, body });
     return Promise.resolve({ ok: true }); };
   ctx.shadowRouteDeepLink = () => true;
   ctx.openNeedsYouItem("sutra://shadow/home", "item-9");
   assert.strictEqual(posts[0].path, "/api/shadow/feed/handle");
   assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[0].body)),
-    { item_id: "item-9" }, "open retires the card");
-  console.log("ok 5 retire on open");
+    { item_id: "item-9" }, "open marks the card seen");
+  assert.ok(Array.isArray(ctx.S.needsYou) && ctx.S.needsYou.length === 1,
+    "the card stays in the cached list");
+  assert.strictEqual(ctx.S.needsYou[0].state, "seen",
+    "and is drawn as seen until the next poll");
+  const html = ctx.needsYouHtml(ctx.S.needsYou);
+  assert.ok(/class="nycard seen"/.test(html), "the seen look is a class");
+  console.log("ok 5 seen on open, the card stays");
 }
 
 console.log("test_shadow_now.js: all green");

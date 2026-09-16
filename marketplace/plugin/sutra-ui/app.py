@@ -2490,7 +2490,8 @@ async def _shadow_shutdown():
 def _shadow_feed_items():
     """The rows Now may show: the feed filtered by the relevance rule
     (shadow_feed.live_items, 2026-09-16). One reader for the endpoint and
-    the dot, so the number on the dot is the number of cards on Now."""
+    the dot. The dot counts only the `new` rows among them: a card the
+    founder has opened (`seen`) stays on Now but no longer counts."""
     import shadow_feed
     import mission_engine as _me
     try:
@@ -4537,8 +4538,11 @@ async def api_shadow_mission_act(mid: str, request: Request):
 
 @app.post("/api/shadow/feed/handle")
 async def api_shadow_feed_handle(request: Request):
-    """Opening a card retires it (observations pass 2026-08-26): the pill
-    must stop counting things the founder has already looked at."""
+    """Opening a card marks it SEEN (founder 2026-09-16): the dot stops
+    counting what the founder has already looked at (observations pass
+    2026-08-26), but the card stays on Now until the task moves on -- an
+    opened question is still unanswered. The relevance rule
+    (shadow_feed.live_items) is what retires it; nothing here does."""
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     import shadow_feed
@@ -4546,7 +4550,8 @@ async def api_shadow_feed_handle(request: Request):
     iid = (body.get("item_id") or "").strip()
     if not iid:
         raise HTTPException(400, "item_id required")
-    return {"handled": shadow_feed.mark_handled(iid), "item_id": iid}
+    return {"seen": shadow_feed.mark_seen(iid), "handled": False,
+            "item_id": iid}
 
 
 @app.get("/api/shadow/feed")

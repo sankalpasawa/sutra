@@ -192,7 +192,10 @@ class TestJourneySims(unittest.TestCase):
         self.assertIn("ledger torn", ctx)
 
     def test_feed_retirement_on_open(self):
-        """Observations pass: opening retires; idempotent; emit survives."""
+        """Observations pass: handling retires; idempotent; emit survives.
+        Since 2026-09-16 OPENING a card is mark_seen (the card stays on Now
+        until its task moves on -- test_shadow_feed test_15); mark_handled
+        is the resolve path this test still covers."""
         ok, _ = shadow_feed.emit({
             "item_id": "ret-1", "producer": "shadow",
             "kind": "needs_decision", "title": "retire me",

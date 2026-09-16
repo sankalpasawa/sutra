@@ -78,13 +78,21 @@ body{background:#ECEAE6;padding:26px 18px 60px}
 .nyline .btn{flex:none}
 .nav li.went>button{animation:went .5s var(--ease) both}
 @keyframes went{0%{background:var(--acc-bg)}100%{background:transparent}}
-@media (prefers-reduced-motion:reduce){*{animation-duration:1ms !important;transition-duration:1ms !important}.nyline.leaving{transform:none}}
+/* opened but not answered (founder 2026-09-16): the card stays, lighter, until the task moves on */
+.nycard{transition:opacity .16s}
+.nycard.seen{animation:none;opacity:.72}   /* animation:none, or the entrance's fill-mode pins opacity at 1 */
+/* the typed line GOES: a ghost of the text glides from the box to where its card lands (founder
+   2026-09-16: "it smoothly goes"), then the real card takes over. One motion, 260 ms. */
+.nyghost{position:absolute;left:0;top:0;pointer-events:none;font-size:15px;line-height:1.45;color:var(--ink);padding:18px;white-space:pre-wrap;transition:transform .26s var(--ease),opacity .26s var(--ease),font-size .26s var(--ease);z-index:5}
+.nyline.landing{animation:none;opacity:0}
+.nyline.landed{transition:opacity .16s;opacity:.72}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms !important;transition-duration:1ms !important}.nyline.leaving{transform:none}.nyghost{display:none}.nyline.landing{opacity:.72}}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<p class="cap"><b>Now, v11.</b> Type in the box and press Enter. One line = one task; a line with &ldquo; and &rdquo; splits into two. Start a line with &ldquo;fail&rdquo; to see the failure. Click a card&rsquo;s action to retire it.</p>
+<p class="cap"><b>Now, v11.</b> Type in the box and press Enter. One line = one task; a line with &ldquo; and &rdquo; splits into two. Start a line with &ldquo;fail&rdquo; to see the failure. A card&rsquo;s action takes you there; the card stays, lighter, until you answer it.</p>
 <div class="app" id="app0" style="height:600px">
   <nav class="rail" aria-label="Sutra">
     <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
@@ -125,12 +133,23 @@ body{background:#ECEAE6;padding:26px 18px 60px}
   var q=function(s,r){return (r||document).querySelector(s)}, qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
-  // opening a needs-you card retires it; the badge follows
-  function badge(){var n=qa('#nyfeed .nycard').length;var b=q('#badge0');if(!n){if(b)b.remove();}else if(b)b.textContent=n;}
-  qa('[data-nyopen]').forEach(function(b){b.addEventListener('click',function(){var c=b.closest('.nycard');c.style.transition='opacity .2s';c.style.opacity='0';setTimeout(function(){c.remove();badge();},200);});});
-  // the box: Enter = start. The line becomes a card at once; the box empties and keeps focus.
-  var nc=q('#nycomp'), list=q('#nystart');
-  function line(text){var el=document.createElement('div');el.className='nyline reading';el.innerHTML='<span class="nyltext">'+esc(text)+'</span>';list.appendChild(el);return el;}
+  // opening a needs-you card takes you there and marks it SEEN: it stays on Now, lighter,
+  // until the task is approved or answered; the badge counts only the unseen ones
+  function badge(){var n=qa('#nyfeed .nycard:not(.seen)').length;var b=q('#badge0');if(!n){if(b)b.remove();}else if(b)b.textContent=n;}
+  qa('[data-nyopen]').forEach(function(b){b.addEventListener('click',function(){b.closest('.nycard').classList.add('seen');badge();});});
+  // the box: Enter = start. The line GOES: a ghost of the text glides from the box to where its
+  // card lands (260 ms), the card takes over; the box empties and keeps focus.
+  var nc=q('#nycomp'), list=q('#nystart'), app=q('#app0');
+  function glide(text,el){
+    if(reduced){el.classList.remove('landing');return;}
+    var a=nc.getBoundingClientRect(), r=app.getBoundingClientRect(), b=el.getBoundingClientRect();
+    var g=document.createElement('div'); g.className='nyghost'; g.textContent=text; g.style.width=a.width+'px';
+    g.style.transform='translate('+(a.left-r.left)+'px,'+(a.top-r.top)+'px)'; app.appendChild(g);
+    void g.offsetWidth;
+    g.style.transform='translate('+(b.left-r.left-2)+'px,'+(b.top-r.top-6)+'px)'; g.style.fontSize='14px'; g.style.opacity='.72';
+    setTimeout(function(){g.remove();el.classList.remove('landing');},270);
+  }
+  function line(text,quiet){var el=document.createElement('div');el.className='nyline reading'+(quiet?'':' landing');el.innerHTML='<span class="nyltext">'+esc(text)+'</span>';list.appendChild(el);if(!quiet)glide(text,el);return el;}
   function state(el,word,cls){var s=q('.nystate',el);if(!s){s=document.createElement('span');s.className='nystate';el.appendChild(s);}s.textContent=word;if(cls)s.className='nystate '+cls;}
   function running(el){el.classList.remove('reading');el.classList.add('running');var s=q('.nystate',el);if(s)s.remove();var p=document.createElement('span');p.className='shtpill shtpill-running';p.textContent='RUNNING';el.appendChild(p);}
   function leave(el){el.classList.add('leaving');var f=q('#navfocus');f.classList.remove('went');void f.offsetWidth;f.classList.add('went');setTimeout(function(){el.remove();},reduced?20:280);}
@@ -143,7 +162,7 @@ body{background:#ECEAE6;padding:26px 18px 60px}
       if(/^fail\b/i.test(text)){fail(el,text);return;}
       var parts=text.split(/\s+and\s+|;\s*/).map(function(p){return p.trim();}).filter(Boolean);
       var cards=[el];
-      if(parts.length>1){q('.nyltext',el).textContent=parts[0];var s=q('.nystate',el);if(s)s.remove();for(var i=1;i<parts.length;i++){var e2=line(parts[i]);e2.classList.remove('reading');cards.push(e2);}el.classList.remove('reading');}
+      if(parts.length>1){q('.nyltext',el).textContent=parts[0];var s=q('.nystate',el);if(s)s.remove();for(var i=1;i<parts.length;i++){var e2=line(parts[i],true);e2.classList.remove('reading');cards.push(e2);}el.classList.remove('reading');}
       cards.forEach(function(c,i){setTimeout(function(){running(c);},i*60);});
       setTimeout(function(){cards.forEach(function(c,i){setTimeout(function(){leave(c);},i*60);});},1100);
     },3200);   // the mock's stand-in for Shadow's round trip

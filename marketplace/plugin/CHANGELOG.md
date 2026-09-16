@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.2 (2026-09-16)
+
+- **A card you opened stays on Now until you answer it.** Opening a needs-you card marks it seen (the dot stops counting it, the card draws lighter) instead of retiring it; it leaves Now only when its task is approved, answered or deleted. Tests: 1 new feed check, the Now suite moved to the new contract.
+
 ## 2.282.1 (2026-09-16)
 
 - **Now shows only what waits on you.** A card lives while its task exists and needs an answer (a brief to confirm, a question, a held say, a paused task to resume); a failed task keeps its card for a day; finished, deleted or resumed tasks lose theirs on the next read, and one task carries one card. Before this the feed only grew (23 cards, 8 for deleted tasks). Tests: 8 new feed checks; 2 lanes moved to the new contract.

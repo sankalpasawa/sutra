@@ -267,6 +267,24 @@ class TestFeedRelevance(unittest.TestCase):
         # delete retires every producer's card: the task is gone
         self.assertEqual(shadow_feed.retire(mission_id="m-1"), 2)
 
+    def test_15_opening_a_card_marks_it_seen_not_handled(self):
+        # founder 2026-09-16: a card clicked but not answered stays on Now.
+        # seen = the dot stops counting it; handled = it is gone.
+        store = _Store([_mission("m-1", "blocked")])
+        shadow_feed.emit(_item(item_id="f-1", mission_id="m-1",
+                               dedupe_key="m-1:blocked:v1"))
+        self.assertTrue(shadow_feed.mark_seen("f-1"))
+        self.assertFalse(shadow_feed.mark_seen("f-1"))      # idempotent
+        rows = _rows()
+        self.assertEqual(rows[0]["state"], "seen")
+        live = shadow_feed.live_items(store)
+        self.assertEqual([it["item_id"] for it in live], ["f-1"])
+        self.assertEqual(live[0]["state"], "seen")
+        # a handled row is never un-handled by a later open
+        self.assertTrue(shadow_feed.mark_handled("f-1"))
+        self.assertFalse(shadow_feed.mark_seen("f-1"))
+        self.assertEqual(_rows()[0]["state"], "handled")
+
     def test_12_mission_of_reads_field_then_link_then_id(self):
         self.assertEqual(shadow_feed.mission_of({"mission_id": "m-a"}), "m-a")
         self.assertEqual(shadow_feed.mission_of(

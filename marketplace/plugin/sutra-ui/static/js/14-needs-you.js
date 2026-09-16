@@ -49,8 +49,11 @@ function needsYouHtml(items){
   const rows = items.map(it => {
     const prod = String(it.producer || "");
     const act = nyAction(it);
+    /* seen = opened, not answered: the card stays, drawn lighter (founder
+       2026-09-16); the state is a class so the look is css, not words */
     return `
-    <div class="nycard" data-deeplink="${escAttr(it.deep_link || "")}"
+    <div class="nycard${it.state === "seen" ? " seen" : ""}"
+         data-deeplink="${escAttr(it.deep_link || "")}"
          data-itemid="${escAttr(it.item_id || "")}">
       <div class="nyhead">
         <span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>
@@ -68,13 +71,18 @@ function needsYouHtml(items){
    home lands in P6; until then the link records intent and moves to Focus --
    navigation, never mutation. */
 function openNeedsYouItem(link, itemId){
-  /* opening retires the card (fire-and-forget); the feed reloads lazily */
+  /* opening marks the card SEEN, never handled (founder 2026-09-16: "once
+     I click on something and it takes me there, but I have not approved
+     it, it should not go away"). The card stays on Now until its task
+     moves on; the cached list is kept and re-stated so the card does not
+     blink away before the next poll. Fire-and-forget. */
   if (itemId && typeof shadowPost === "function"){
     try {
-      shadowPost("/api/shadow/feed/handle", { item_id: itemId })
-        .then(() => { if (typeof S !== "undefined") S.needsYou = undefined; })
-        .catch(() => {});
+      shadowPost("/api/shadow/feed/handle", { item_id: itemId }).catch(() => {});
     } catch (e) {}
+    if (typeof S !== "undefined" && Array.isArray(S.needsYou))
+      for (const it of S.needsYou)
+        if (it && it.item_id === itemId && it.state === "new") it.state = "seen";
   }
   if (typeof S !== "undefined") S.pendingDeepLink = link || null;
   if (typeof shadowRouteDeepLink === "function")
