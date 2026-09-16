@@ -175,6 +175,11 @@ async def main():
         ok = not fails
         red += 0 if ok else 1
         print("%-18s %-6s %s" % (seed["id"], "PASS" if ok else "FAIL", "; ".join(fails)))
+        if not ok:
+            # what Shadow actually said, so a red row is diagnosable
+            said = (out.get("display") or out.get("brief")
+                    or json.dumps(out.get("decision")) or out.get("raw") or "")
+            print("    said: " + " ".join(str(said).split())[:400])
         if os.environ.get("SHADOW_EVAL_JSON"):
             print(json.dumps({"id": seed["id"], "ok": ok, "fails": fails,
                               "out": {k: v for k, v in out.items() if k != "raw"}}))
