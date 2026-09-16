@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
 import time
 import weakref
@@ -838,6 +839,10 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
                              "provision on promote failed: %s"
                              % str(exc2)[:200])
             return None
+    # the spawn above takes minutes; a founder stop inside that window must
+    # not leave the worker it created running (_ended_during_provision)
+    if _ended_during_provision(store, promoted["id"]):
+        return None
     _goal_hook("on_attempt_start", promoted)
     _launch(promoted["id"], validated_say, verifier)
     return promoted
@@ -1352,6 +1357,163 @@ def founder_takeover(session_id):
     # unless Shadow had attached one, so every founder turn can call it.
     reap_attached(session_id)
     return hit
+
+
+def _kill_orphan_delegate(pid, session_id):
+    """Kill a delegate THIS PROCESS HAS NO HANDLE ON, by its recorded pid.
+
+    release_delegate is the one reaper and needs a runtime object: it holds
+    the pipes, and `rt.kill_group()` is what actually ends the worker. After
+    a restart there is no such object -- DELEGATES is empty while the worker
+    itself is very much alive, because `_spawn_process` makes it a group
+    leader and it outlives the app that started it. A founder who presses
+    Stop on that mission has to be able to end it anyway.
+
+    SAME KILL, DIFFERENT HANDLE. proc_group.kill_group signals the process
+    GROUP rather than the direct child, because `claude` spawns helpers that
+    hold the stdout pipe; this is that call with the pid the mission record
+    has carried since S53 instead of a live `Popen`.
+
+    ARGV-GUARDED, because a pid is not an identity. delegate_alive() already
+    answers "is that delegate still running", and it answers it by asking
+    whether the live pid's command line still mentions this session -- so a
+    recycled number reads as dead and is never signalled. It fails CLOSED
+    (unknown -> "alive"), which is the wrong direction for a killer, so the
+    session id is REQUIRED here: without one there is no way to tell our
+    worker from whatever inherited its number, and nothing is signalled.
+
+    Returns True only when a signal was actually delivered.
+    """
+    if not pid or not session_id:
+        return False
+    if not delegate_alive(pid, session_id):
+        return False                    # already gone, or not ours
+    try:
+        os.killpg(os.getpgid(int(pid)), signal.SIGTERM)
+        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            return True
+        except (ProcessLookupError, PermissionError, OSError, ValueError):
+            return False
+    except (TypeError, ValueError):
+        return False
+
+
+def _ended_during_provision(store, mid):
+    """Did the founder end this mission while its worker was being spawned?
+
+    A DELEGATE SPAWN TAKES MINUTES (the second-flight fix exists because of
+    it: `spawn_delegate_session` sends the manifest and waits out the whole
+    first agentic turn -- 44s measured on m-e14f6acc41aa). Stop pressed
+    inside that window wrote `stopped` correctly, and then the spawn
+    finished and handed a LIVE worker to a mission that had already ended.
+    Nothing afterwards would reap it: `start_mission` refuses a terminal
+    mission, so no loop is launched, and no loop means the runner's own
+    terminal branch -- the only thing that calls release_delegate on that
+    path -- never runs. The founder's Stop had been obeyed on disk and
+    ignored by the process table.
+
+    THE SAME RELOAD THE LOOP ALREADY DOES BEFORE ANY TERMINAL DECISION,
+    applied at the other end: after the spawner returns, ask the record
+    again. Terminal -> reap what was just created and report it. Returns
+    True when the caller must not launch.
+    """
+    m = store.load(mid)
+    if m is None or m["state"] not in mission_engine.TERMINAL:
+        return False
+    sid = (m or {}).get("target_session")
+    reaped = release_delegate(sid) is not None
+    if not reaped:
+        reaped = _kill_orphan_delegate(m.get("delegate_pid"), sid)
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": "stop",
+        "summary": "mission ended (%s) while its delegate was spawning -- "
+                   "worker %s, nothing launched"
+                   % (m["state"], "reaped" if reaped else "not found")})
+    return True
+
+
+def founder_force_stop(mid, note="founder stop"):
+    """THE FOUNDER'S STOP, CARRIED ALL THE WAY TO THE WORKER.
+
+    WHAT IT WAS (measured live, 2026-09-16: a mission started against a
+    worker that hangs mid-turn, Stop pressed from the task row):
+
+        t+0s   POST stop -> state `stopped`, ended_by `founder`, slot freed
+        t+10s  the worker process is STILL ALIVE and still mid-turn
+
+    `founder_stop` writes state and nothing else -- it lives in
+    mission_engine, which owns no processes. The worker died only when the
+    LOOP next reached a checkpoint and returned a terminal record, which the
+    runner's own wrapper then reaped: up to STALL_SECS (240s) of silence, or
+    MAX_TURN_SECS (3600s) for a worker that keeps emitting. Until then a
+    mission the founder had ended still had a claude process appending to
+    its transcript, and a paused or queued mission -- no loop at all -- had
+    nothing that would ever reap it.
+
+    So the founder action and the process teardown happen in ONE place, here,
+    in the module that owns the processes. Every step is an existing
+    primitive; nothing new is invented:
+
+      1. already terminal      -> hand it back untouched. IDEMPOTENT, and it
+                                  is also what keeps a mission that finished
+                                  a second ago DONE: a stop never overwrites
+                                  a completion.
+      2. founder_stop          -> `stopped` + ended_by="founder", the one
+                                  writer of that stamp, so an explicit stop
+                                  stays distinguishable from a worker failure
+                                  (`failed`) and from a supervisor fault
+                                  (`blocked` + failure_class).
+      3. cancel the loop task  -> before the kill, so the loop cannot observe
+                                  a dying worker and write a verdict about
+                                  it. CancelledError is not an Exception, so
+                                  the wrapper's handler does not fire; its
+                                  `finally` still clears RUNNING and the
+                                  lease.
+      4. release_delegate      -> THE reaper: kill_group, unregister, clear,
+                                  forget the session. A no-op for a chat
+                                  Shadow merely ATTACHED to, which is what
+                                  keeps the founder's own conversation (and
+                                  every continuation in it) untouched.
+      5. orphan fallback       -> _kill_orphan_delegate, for the delegate
+                                  this process has no handle on.
+      6. release the lease     -> so no later boot waits on a pid probe.
+
+    WHAT IT DOES NOT DO. It does not touch ATTACHED runtimes, it does not
+    promote the queue (the caller already drains it, and doing it here would
+    be a second promotion path), and it is never reached by a machine ending
+    -- ping-pong, budget and a stalled turn keep their own exits, with no
+    `ended_by` and no kill of their own.
+    """
+    store = mission_engine.MissionStore()
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    if m["state"] in mission_engine.TERMINAL:
+        return m                        # 1. idempotent; a completion stands
+    sid = m.get("target_session")
+    pid = m.get("delegate_pid")
+    m = mission_engine.MissionEngine(store, None, None, None).founder_stop(
+        mid, note)                      # 2.
+    _STARTING.discard(mid)
+    task = RUNNING.pop(mid, None)       # 3.
+    if task is not None and not task.done():
+        task.cancel()
+    reaped = release_delegate(sid) is not None      # 4.
+    killed = False
+    if not reaped:
+        killed = _kill_orphan_delegate(pid, sid)    # 5.
+    _release_loop(store, mid)                       # 6.
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": "stop",
+        "summary": "founder force stop: loop cancelled=%s, delegate %s"
+                   % (task is not None,
+                      "reaped" if reaped else
+                      ("killed by pid %s" % pid) if killed else
+                      "none to stop")})
+    return store.load(mid)
 
 
 async def ensure_runtime(session_id, build_args, register):
@@ -2128,6 +2290,9 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                         decider=DEFAULT_DECIDER["fn"])
                     await eng.provision_target(mid, prov)
                     remember_delegate_pid(store, mid)
+                # ...and the founder may have ended it while that ran
+                if _ended_during_provision(store, mid):
+                    return
                 start_mission(mid, validated_say, verifier)
             finally:
                 _STARTING.discard(mid)

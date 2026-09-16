@@ -3837,9 +3837,22 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # founder_stop, not a bare transition (slice 3 finding): it is
             # what stamps `ended_by`, without which a goal reads a founder
             # decision as machine trouble and blocks instead of stopping
-            m = _mission_engine.MissionEngine(
-                store, None, None, None).founder_stop(
-                    mid, "founder stop (home)")
+            #
+            # ...AND THE WORKER STOPS WITH IT (founder, 2026-09-16). This
+            # called MissionEngine.founder_stop directly, which writes state
+            # and nothing else -- mission_engine owns no processes. Measured
+            # live: Stop on a running task returned `stopped` in the same
+            # second and the delegate was still alive ten seconds later,
+            # still mid-turn, because the only thing that reaps a delegate is
+            # the runner's terminal branch and the loop was parked in a
+            # boundary wait (up to MAX_TURN_SECS). A queued or paused mission
+            # has no loop at all, so nothing would ever have reaped it.
+            #
+            # founder_force_stop IS that same founder_stop plus the teardown,
+            # in the module that owns the processes: cancel the loop, reap
+            # the delegate (or kill the orphan by pid), drop the lease. Same
+            # action, same button, same state, same `ended_by`.
+            m = shadow_runner.founder_force_stop(mid, "founder stop (home)")
             _sync_goal_after_founder_end(m)
             # THE SLOT IS FREE THE MOMENT THE STOP IS WRITTEN, and the queue
             # must not wait for the loop to notice. The runner's wrapper

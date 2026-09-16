@@ -2165,13 +2165,47 @@ function shadowTaskCardHtml(m){
       ${startable ? `<button class="btn pri" type="button"
         data-shstart="${escAttr(m.id)}">Start the task</button>
         <span class="shcard2hint">…or keep telling me</span>` : ""}
-      ${/* STOP AND RESUME ARE NOT DRAWN HERE (founder, 2026-09-15). This pane
-           is where Shadow reports and asks, not a worker control panel. The
-           BUTTONS are gone from this card and nothing else is: the actions,
-           their data-shact hooks, shadowMissionAct, the endpoint and every
-           transition behind them are untouched, and the same two buttons on
-           the same two hooks still render in shadowPlaneHtml. Answering an
-           intervention still resumes the same delegate, exactly as before. */""}
+      ${/* STOP COMES BACK TO THIS CARD, BECAUSE ITS REPLACEMENT WAS ON
+           ANOTHER SCREEN (founder, 2026-09-16).
+
+           The note this replaces removed Stop and Resume on 2026-09-15 --
+           "this pane is where Shadow reports and asks, not a worker control
+           panel" -- on the stated understanding that "the same two buttons
+           on the same two hooks still render in shadowPlaneHtml". They do.
+           shadowPlaneHtml is rendered by SCREENS.shadowwatching, which is
+           the WATCHING screen, and only under its Working tab. It is not
+           this screen. SCREENS.shadow renders shadowTaskListHtml on the left
+           and this card on the right, so on the surface the founder actually
+           works from, a running task offered its state pill, "Open the chat"
+           and nothing else.
+
+           MEASURED BY RENDERING IT (2026-09-16), one mission per state
+           through SCREENS.shadow, counting data-shact hooks in the output:
+
+             running  pill RUNNING    actions []      <- no way to stop it
+             paused   pill NEEDS YOU  actions []
+             blocked  pill NEEDS YOU  actions []
+             queued   pill QUEUED     actions [drop]
+
+           A previous pass had already found half of this: it unpinned the
+           Watching screen's tab so the Working rows could be reached at all,
+           and its note says plainly that until then "there was no reachable
+           way to STOP a running task, only the row's x which deletes it".
+           Making the other screen reachable did not put the control where
+           the work is.
+
+           NOTHING NEW IS INVENTED. Same `data-shact="stop"` hook, same
+           shadowMissionAct, same endpoint, same founder_force_stop behind
+           it, and the same state condition shadowPlaneHtml has always used.
+           It sits beside Drop and Retry, which never left this card.
+
+           RESUME IS STILL NOT DRAWN HERE, deliberately: a NEEDS YOU task is
+           answered by its intervention form (shadowInterventionHtml) or from
+           the Watching screen, and ending work the founder no longer wants
+           is the ask this slice covers. */""}
+      ${["running", "paused", "blocked"].includes(m.state) ? `<button
+        class="btn" type="button" data-shact="stop"
+        data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
       ${m.state === "queued" ? `<button class="btn" type="button"
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
       ${["failed", "stopped"].includes(m.state) ? `<button class="btn"

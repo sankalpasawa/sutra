@@ -457,8 +457,27 @@ def abandon(goal_id, note="founder abandoned the goal"):
         ms = mission_engine.MissionStore()
         m = ms.load(mid)
         if m and m["state"] not in mission_engine.TERMINAL:
-            mission_engine.MissionEngine(ms, None, None, None).founder_stop(
-                mid)
+            # THE ATTEMPT'S WORKER STOPS TOO (founder, 2026-09-16).
+            # Abandoning a goal is the same explicit founder action one level
+            # up, so it takes the same exit as the task row's Stop:
+            # shadow_runner.founder_force_stop is founder_stop plus the
+            # process teardown. Imported HERE rather than at module scope
+            # because shadow_runner imports this module (lazily, in
+            # _goal_hook) and a top-level import would close the cycle; the
+            # fallback is the historical line, so a context without the
+            # runner -- a unit test, the flag path -- behaves exactly as it
+            # did.
+            try:
+                import shadow_runner
+                shadow_runner.founder_force_stop(mid, note)
+            except Exception:       # noqa: BLE001 -- state first, always
+                # only if the stop did not already land: founder_stop on an
+                # already-stopped mission is an illegal edge and would raise
+                # out of abandon()
+                if (ms.load(mid) or {}).get("state") \
+                        not in mission_engine.TERMINAL:
+                    mission_engine.MissionEngine(
+                        ms, None, None, None).founder_stop(mid)
     g = gs.transition(goal_id, "stopped", note)
     if g.get("current_mission_id") == mid and mid:
         g = gs.release_mission(goal_id, "stopped", note)

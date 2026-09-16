@@ -3032,12 +3032,31 @@ const SET = { engage: ["outcome first"],
   const done = card({ id: "f", state: "done" });
   assert(!has(done, "start"), "done: Start must be gone");
 
-  /* STOP AND RESUME ARE NOT ON THIS CARD (founder, 2026-09-15): the detail
-     pane reports and asks, it is not a worker control panel. Asserted in
-     every state so neither can drift back. */
+  /* STOP IS ON THIS CARD; RESUME IS STILL NOT (founder, 2026-09-16).
+
+     This block asserted that NEITHER was, from 2026-09-15: "the detail pane
+     reports and asks, it is not a worker control panel", on the stated
+     understanding that both still rendered on the plane. They did -- and the
+     plane is shadowPlaneHtml, which SCREENS.shadowwatching renders on the
+     WATCHING screen. SCREENS.shadow, the workspace, renders this card, so a
+     founder looking at a running task had a RUNNING pill, "Open the chat"
+     and no way to stop the worker. Rendering each state through
+     SCREENS.shadow showed actions=[] for running, paused and blocked.
+
+     So the assertion that pinned the absence is the thing that changes, and
+     only for Stop: ending work the founder no longer wants is the one
+     control that has to be where the work is. Resume stays off the card --
+     a NEEDS YOU task is answered by its intervention form, and the plane
+     still offers it -- so the second assertion below is untouched. */
+  for (const [name, h] of [["running", running], ["paused", paused],
+                           ["blocked", blocked]]){
+    assert(has(h, "stop"), name + ": Stop must be on the card the workspace "
+      + "renders -- the plane is a different screen");
+  }
+  assert(!has(done, "stop"),
+    "done: a completed task must never be offered Stop");
   for (const [name, h] of [["running", running], ["paused", paused],
                            ["blocked", blocked], ["done", done]]){
-    assert(!has(h, "stop"), name + ": the Stop button must not be on the card");
     assert(!has(h, "resume"), name + ": the Resume button must not be on the card");
   }
 
@@ -3551,6 +3570,129 @@ const SET = { engage: ["outcome first"],
   assert(/class="shkind on" type="button"\s+data-shnewkind="research"/
     .test(panel), "…and the form must show that as the selected one");
   console.log("ok 22g6 a draft cannot sit on a kind that is no longer offered");
+}
+
+/* ── 37. STOP IS ON THE SCREEN THE FOUNDER IS ON ───────────────────────────
+   THE REPORT (founder, 2026-09-16): "a RUNNING mission shows only RUNNING and
+   Open the chat -- no Stop".
+
+   IT WAS TRUE, AND SOURCE-READING WOULD HAVE MISSED IT. The Stop button
+   existed the whole time, in shadowPlaneHtml, on the same data-shact hook --
+   but shadowPlaneHtml is rendered by SCREENS.shadowwatching (the Watching
+   screen, Working tab). SCREENS.shadow -- the workspace -- renders
+   shadowTaskListHtml and shadowTaskCardHtml, and the card had had Stop and
+   Resume removed on the stated understanding that the plane still drew them.
+   It did; on another screen.
+
+   Rendering one mission per state through SCREENS.shadow and counting
+   data-shact hooks gave, before the fix:
+
+       running  pill RUNNING    actions []
+       paused   pill NEEDS YOU  actions []
+       blocked  pill NEEDS YOU  actions []
+       queued   pill QUEUED     actions [drop]
+
+   So these assert the RENDERED SCREEN, not the card helper in isolation:
+   calling shadowTaskCardHtml directly would have passed throughout the bug.
+*/
+const STOPPABLE = { id: "m-stop", objective: "a long job", turns_used: 3,
+  max_turns: 20, target_session: "sid-stop" };
+function screenFor(over){
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [Object.assign({}, STOPPABLE, over)];
+  ctx.S.shadowWatching = [];
+  ctx.S.shadowTaskSel = "m-stop";
+  return ctx.SCREENS.shadow();
+}
+const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m-stop/;
+
+/* 23a. the state the report was filed about */
+{
+  const h = screenFor({ state: "running" });
+  assert(stopBtn.test(h), "a RUNNING task must offer Stop on the workspace");
+  assert(/>Stop</.test(h), "…and it must be labelled Stop");
+  assert(/data-shtakeover=/.test(h), "Open the chat is untouched");
+  console.log("ok 37a RUNNING offers Stop");
+}
+
+/* 23b + 23c. the two states that read NEEDS YOU. Existing semantics say Stop
+   is available in both (shadowPlaneHtml has always drawn it for
+   running/paused/blocked, and TRANSITIONS allows stopped from each). */
+{
+  const paused = screenFor({ state: "paused", pause_reason: "founder_confirm" });
+  assert(stopBtn.test(paused), "a NEEDS YOU (paused) task must offer Stop");
+  const blocked = screenFor({ state: "blocked", block_reason: "needs_founder" });
+  assert(stopBtn.test(blocked), "a NEEDS YOU (blocked) task must offer Stop");
+  console.log("ok 37b/c paused and blocked offer Stop");
+}
+
+/* 23d. QUEUED keeps Drop and does NOT gain Stop: nothing is running to stop,
+   and Drop is the existing exit for a task still waiting for a slot. */
+{
+  const h = screenFor({ state: "queued" });
+  assert(/data-shact="drop"/.test(h), "a QUEUED task keeps Drop");
+  assert(!/data-shact="stop"/.test(h), "…and is not offered Stop");
+  console.log("ok 37d QUEUED keeps Drop, not Stop");
+}
+
+/* 23e. DONE IS NEVER OFFERED A STOP. The backend refuses it -- founder_force_stop
+   returns a terminal mission untouched -- and the UI must not ask a question
+   whose answer is "no". Retry is the existing offer for failed/stopped. */
+{
+  const done = screenFor({ state: "done" });
+  assert(!/data-shact="stop"/.test(done),
+    "a completed task must never be offered Stop");
+  assert(!/data-shact="retry"/.test(done), "nor Retry -- it succeeded");
+  for (const st of ["failed", "stopped"]){
+    const h = screenFor({ state: st });
+    assert(!/data-shact="stop"/.test(h), st + " is already ended");
+    assert(/data-shact="retry"/.test(h), st + " keeps Retry");
+  }
+  console.log("ok 37e terminal states are not offered Stop");
+}
+
+/* 23f. the click sends the EXISTING action to the EXISTING endpoint. No second
+   force-stop route: `stop` is what founder_force_stop is wired behind. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [Object.assign({}, STOPPABLE, { state: "running" })];
+  ctx.S.shadowTaskSel = "m-stop";
+  ctx.fetch = () => Promise.resolve({ ok: true });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ id: "m-stop", state: "stopped",
+                                    ended_by: "founder" }) }); };
+  ctx.loadShadowHome = () => {};
+  assert(typeof ctx.listeners.click === "function", "the click handler is wired");
+  await ctx.listeners.click({ target: { dataset:
+    { shact: "stop", shmid: "m-stop" } } });
+  assert.strictEqual(posts.length, 1, "exactly one action is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/missions/m-stop/act",
+    "the existing mission-action endpoint");
+  assert.strictEqual(posts[0].body.action, "stop",
+    "the existing action -- never a second force-stop route");
+  console.log("ok 37f clicking Stop sends the existing stop action");
+})().catch(e => { console.error("FAIL 37f:", e.message); process.exit(1); });
+
+/* 23g. THE ASSERTION THAT WOULD HAVE CAUGHT IT. The control must be reachable
+   from the workspace itself -- the bug was that it lived only on another
+   screen, so every card-level test passed while the founder had no button. */
+{
+  const h = screenFor({ state: "running" });
+  const card = (() => {
+    const ctx = fresh();
+    ctx.S.shadowHomeDark = false;
+    return ctx.shadowTaskCardHtml(
+      Object.assign({}, STOPPABLE, { state: "running" }));
+  })();
+  assert(/data-shact="stop"/.test(card), "the card draws it…");
+  assert(/data-shact="stop"/.test(h),
+    "…and the SCREEN that renders the card must show it -- asserting the " +
+    "helper alone is what let this ship");
+  console.log("ok 37g Stop is reachable from the workspace screen itself");
 }
 
 console.log("test_shadow_home.js: all green");

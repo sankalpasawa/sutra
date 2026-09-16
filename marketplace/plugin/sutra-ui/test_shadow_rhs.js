@@ -1389,14 +1389,30 @@ function stream(msgs, says, turns){
 /* ── 11. THE ACTIONS THE PANE MUST NEVER LOSE ────────────────────────── */
 {
   const ctx = fresh();
-  /* STOP AND RESUME ARE NOT BUTTONS ON THIS CARD (founder, 2026-09-15) --
-     this pane reports and asks; it is not a worker control panel. The
-     ACTIONS are untouched: same data-shact hooks, same shadowMissionAct,
-     same endpoint, and shadowPlaneHtml still draws both. */
+  /* STOP IS A BUTTON ON THIS CARD AGAIN; RESUME IS NOT (founder,
+     2026-09-16).
+
+     The note this replaces removed both on 2026-09-15 -- "this pane reports
+     and asks; it is not a worker control panel" -- and reassured that
+     "shadowPlaneHtml still draws both". It does, on the WATCHING screen:
+     SCREENS.shadowwatching renders shadowPlaneHtml, SCREENS.shadow renders
+     this pane. Rendering one mission per state through SCREENS.shadow gave
+     actions=[] for running, paused and blocked -- a founder watching a live
+     worker had no way to stop it without changing screens, and the report
+     ("only RUNNING and Open the chat") is exactly that.
+
+     Only Stop moves. Resume stays off this pane: a NEEDS YOU task is
+     answered by its intervention form, and the plane still offers Resume --
+     both assertions below are unchanged. */
   const stop = pane(ctx, M({ state: "running" }));
-  assert(!/data-shact="stop"/.test(stop), "the Stop button must be gone");
+  assert(/data-shact="stop"/.test(stop),
+    "a running task must offer Stop on the pane the workspace renders");
   const blocked = pane(fresh(), M({ state: "blocked" }));
+  assert(/data-shact="stop"/.test(blocked), "…and so must a blocked one");
   assert(!/data-shact="resume"/.test(blocked), "the Resume button must be gone");
+  const finished = pane(fresh(), M({ state: "done" }));
+  assert(!/data-shact="stop"/.test(finished),
+    "a completed task must never be offered Stop");
   /* ...and the actions themselves still exist, on their own surface */
   const plane = fresh().shadowPlaneHtml([], [M({ state: "running" })], "working");
   assert(/data-shact="stop" data-shmid="m-1"/.test(plane),
