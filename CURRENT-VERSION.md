@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.280.3 (2026-09-16, HEAD)
+## v2.280.4 (2026-09-16, HEAD)
+
+**The app is quick again: clicks land, screens switch.** Founder, 2026-09-16: "very slow to use,
+moving around; the buttons are not getting clicked." Measured on the live app with 1,537 sessions:
+`render()` fired once a second on an idle Now screen and each one blocked the main thread for
+410-580 ms, so a press inside that window waited and a press whose button was rebuilt between
+mousedown and mouseup never became a click. Three causes, three fixes in the renderer: (1) the rail's
+workspace label rebuilt a Set over every session for every row (n^2: 2.36 M `rowWorkspace` calls
+per render, 35% of all CPU) -- decided once per render now; (2) `loadNeedsYou` scheduled a full
+repaint on every unchanged 2 s poll -- repaints only when the items changed; (3) `loadRepo` was
+re-entered by every repaint during a 4.1 s `/api/repo` read -- in-flight guard, newest read wins,
+a folder change mid-read re-reads. After (same data): 4 renders per 15 s at 25-144 ms, click cost
+43-170 ms (was 450-2,066 ms). Tests: 55a-c in test_panel.js (392 green). Codex + DeepSeek reviewed;
+codex P2 (forced-read race) folded, DeepSeek P1 rejected with evidence (55c failed before the fix).
+
+## v2.280.3 (2026-09-16)
 
 **The Setup screens are cleaned up.** Founder, 2026-09-16, a list of problems read off the app.
 Every Setup screen now has the same shape: title, one line under it, then rows or cards with aligned

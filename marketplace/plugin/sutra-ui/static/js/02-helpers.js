@@ -1582,10 +1582,27 @@ function rowWorkspace(s){
 /* The workspace label earns its pixels only when it DIFFERENTIATES: with every
    listed session in one workspace it repeats the same word down the rail and
    says nothing (founder 2026-08-24). */
-function workspaceLabel(s, sessions){
+/* Does the list span more than one workspace? Decided ONCE per render and
+   passed down. It used to be recomputed inside workspaceLabel for every row --
+   a Set over every session, per session -- which is n^2: measured 2.36 M
+   rowWorkspace calls per render on the founder's 1,537 sessions, 35% of all
+   renderer CPU, ~350 ms of every 450 ms repaint (2026-09-16). Stops at the
+   second distinct workspace, so even the one call is usually a few rows. */
+function workspacesDiffer(sessions){
+  let first = null;
+  for (const x of (sessions || [])){
+    if (!x || !x.real) continue;
+    const w = rowWorkspace(x);
+    if (!w) continue;
+    if (first === null) first = w;
+    else if (w !== first) return true;
+  }
+  return false;
+}
+function workspaceLabel(s, sessions, differ){
   if (!s.real) return "";
-  const ws = new Set((sessions || []).filter(x => x && x.real).map(rowWorkspace).filter(Boolean));
-  return ws.size > 1 ? rowWorkspace(s) : "";
+  if (differ === undefined) differ = workspacesDiffer(sessions);
+  return differ ? rowWorkspace(s) : "";
 }
 
 /* ── unchanged-HTML skip, shared (r9) ────────────────────────────────────────
@@ -1749,12 +1766,13 @@ function renderRail(){
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
     const g = {};
     S.sessions.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
+    const wsDiffer = workspacesDiffer(S.sessions);   /* once per render, see workspaceLabel */
     html = order.filter(k=>g[k]).map(k=>`
       <div class="rgrp">${k}</div>
       <ul class="rlist">${pinFirst(g[k]).map(s=>{
         const ds = deptsOf(s);
         const held = s.turns.some(t=>t.mode==="floor");
-        const ws = s.real ? workspaceLabel(s, S.sessions) : "";
+        const ws = s.real ? workspaceLabel(s, S.sessions, wsDiffer) : "";
         const trailTxt = s.real ? ws : (ds.length?ds.join(" → "):"—");
         const trail = (trailTxt ? `<span>${esc(trailTxt)}</span>` : "")
           + (held?'<span style="color:var(--warn)">held</span>':"");

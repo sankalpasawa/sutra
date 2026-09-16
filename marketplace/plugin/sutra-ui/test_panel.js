@@ -254,6 +254,10 @@ const EPILOGUE = `
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
   gvChipHtml, routingChart, turnBlock, gvHasCapture, pushPane, MAX_PANES,
   rowMeta, rowWorkspace, workspaceLabel,
+  /* the renderer's idle cost (55a-c): the two loaders whose completion used to
+     schedule a wholesale repaint on an idle screen, exported so the tests drive
+     the SHIPPED functions with a stubbed fetch/apiGet */
+  loadNeedsYou, loadRepo,
   /* the empty-chat rule: New chat reuses a chat nobody typed in rather than
      minting a second one. chatUntouched is the whole safety argument, so it is
      pinned on its own -- a predicate that says "empty" about a chat with a
@@ -7195,3 +7199,105 @@ test("54c. Agents still opens ALONE — the rule the fix must not undo", () => {
   assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML),
     "leaving Agents brings the pane back exactly as it was");
 });
+
+/* ── 55 · the renderer's idle cost (founder 2026-09-16: "very slow to use,
+   moving around; the buttons are not getting clicked") ─────────────────────
+   Measured on the live app with 1,537 sessions: render() fired once a second on
+   an idle Now screen and each one blocked the main thread for 410-580 ms. A
+   press that lands inside such a task waits; a press whose button is replaced
+   by the rebuild between mousedown and mouseup never becomes a click. Three
+   causes, one pin each. */
+
+test("55a. the rail's workspace label is decided ONCE per render, not once per row per session", () => {
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  const many = [];
+  for (let i = 0; i < 300; i++)
+    many.push({ id: "w55-" + i, real: true, turns: [], updated_ms: Date.now() - i,
+                cwd: i % 2 ? "/u/asawa-holding" : "/u/other-repo", loadState: "unread" });
+  T.S.sessions = many; T.S.sgroup = "recent";
+  const orig = sandbox.rowWorkspace; let calls = 0;
+  sandbox.rowWorkspace = function(){ calls++; return orig.apply(this, arguments); };
+  try { sandbox.renderRail(); }
+  finally { sandbox.rowWorkspace = orig; T.S.sessions = prevSessions; T.S.sgroup = prevGroup; }
+  /* linear: at most one call per row inside workspacesDiffer plus one per row
+     for the label (deepseek P3: the old 3n bound let a 300x regression through) */
+  assert.ok(calls <= 2 * many.length,
+    `rowWorkspace ran ${calls} times for ${many.length} rows -- quadratic `
+    + `(2.36 M calls per render on the founder's 1,537 sessions, 35% of all CPU)`);
+});
+
+/* 55c drives loadRepo with controllable deferreds (codex P3): dedupe while in
+   flight, a fresh read once settled, the forced-overlap race where the OLDER
+   answer lands last, and the folder change mid-read. Runs after 55b (which
+   stubs scheduleRender with a counter) has restored it. */
+ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 250)).then(async () => {
+  const prevApi = sandbox.apiGet, prevSched = sandbox.scheduleRender;
+  const prevRepo = T.S.repo, prevCwd = T.S.cwd;
+  const pending = [];
+  sandbox.apiGet = (p) => new Promise((res, rej) => pending.push({ p, res, rej }));
+  sandbox.scheduleRender = () => {};
+  T.S.repo = {}; T.S.cwd = Object.assign({}, T.S.cwd || {}, { r55: "/u/asawa-holding" });
+  const settle = () => new Promise(r => setTimeout(r, 5));
+  try {
+    T.loadRepo("r55", false); T.loadRepo("r55", false); T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 1,
+      "55c. measured: /api/repo took 4.1 s on the founder's checkout and every repaint "
+      + "inside that window launched another git subprocess and another repaint");
+    pending[0].res({ available: true, branch: "main" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "main", "55c. the one answer lands");
+    T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 1, "55c. settled + cached: no read");
+    delete T.S.repo.r55; T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 2, "55c. settled + cleared: a fresh read goes out");
+    /* forced overlap: a turn ended while the plain read is still out */
+    T.loadRepo("r55", true);
+    assert.strictEqual(pending.length, 3, "55c. force still reads while one is in flight");
+    pending[2].res({ available: true, branch: "fresh" }); await settle();
+    pending[1].res({ available: true, branch: "stale" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "fresh",
+      "55c. the older answer landing last must not overwrite the forced refresh (codex P2)");
+    /* folder changed mid-read: the answer for the old folder is dropped and re-read */
+    delete T.S.repo.r55; T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 4);
+    T.S.cwd.r55 = "/u/other-repo";
+    pending[3].res({ available: true, branch: "old-folder" }); await settle();
+    assert.strictEqual(pending.length, 5, "55c. a folder change mid-read re-issues the read");
+    assert.ok(/other-repo/.test(pending[4].p), "55c. ...for the NEW folder");
+    assert.strictEqual(T.S.repo.r55, undefined, "55c. the old folder's bar is never shown");
+    pending[4].res({ available: true, branch: "new-folder" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "new-folder");
+    console.log("ok   - 55c. loadRepo: dedupe in flight, newest read wins, folder change re-reads");
+  } finally {
+    sandbox.apiGet = prevApi; sandbox.scheduleRender = prevSched;
+    T.S.repo = prevRepo; T.S.cwd = prevCwd;
+  }
+}));
+
+/* async: the feed answers through a stubbed fetch. Delayed past the earlier
+   async checks so their own scheduleRender calls are not counted here. */
+ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 60)).then(async () => {
+  const feed = { items: [{ item_id: "n1", state: "new", kind: "needs_decision" }] };
+  const prevFetch = sandbox.fetch, prevSched = sandbox.scheduleRender;
+  const prevNY = T.S.needsYou, prevBusy = T.S._needsYouBusy, prevKey = T.S._needsYouKey;
+  let scheduled = 0;
+  sandbox.scheduleRender = () => { scheduled++; };
+  sandbox.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve(JSON.parse(JSON.stringify(feed))) });
+  /* a fresh key too (codex P3): the check must not depend on what an earlier
+     test left in S, and must leave nothing behind for a later one */
+  T.S.needsYou = undefined; T.S._needsYouBusy = false; T.S._needsYouKey = undefined;
+  const settle = () => new Promise(r => setTimeout(r, 5));
+  try {
+    for (let i = 0; i < 3; i++){ T.loadNeedsYou(); await settle(); }
+    assert.strictEqual(scheduled, 1,
+      "55b. an unchanged feed must not schedule a repaint (measured: one wholesale "
+      + "#panes rebuild every 2 s on an idle Now screen)");
+    feed.items.push({ item_id: "n2", state: "new", kind: "needs_decision" });
+    T.loadNeedsYou(); await settle();
+    assert.strictEqual(scheduled, 2, "55b. a changed feed still repaints");
+    console.log("ok   - 55b. loadNeedsYou repaints only when the feed changed");
+  } finally {
+    sandbox.fetch = prevFetch; sandbox.scheduleRender = prevSched;
+    T.S.needsYou = prevNY; T.S._needsYouBusy = prevBusy; T.S._needsYouKey = prevKey;
+  }
+}));
