@@ -254,6 +254,10 @@ const EPILOGUE = `
   turnControlClick, agentsFold, streamBodyHtml, drainStep, _MAX_STEP, _reduceMotion,
   gvChipHtml, routingChart, turnBlock, gvHasCapture, pushPane, MAX_PANES,
   rowMeta, rowWorkspace, workspaceLabel,
+  /* the renderer's idle cost (55a-c): the two loaders whose completion used to
+     schedule a wholesale repaint on an idle screen, exported so the tests drive
+     the SHIPPED functions with a stubbed fetch/apiGet */
+  loadNeedsYou, loadRepo,
   /* the empty-chat rule: New chat reuses a chat nobody typed in rather than
      minting a second one. chatUntouched is the whole safety argument, so it is
      pinned on its own -- a predicate that says "empty" about a chat with a
@@ -307,7 +311,7 @@ const EPILOGUE = `
      driven without a DOM. */
   settingsOverviewHtml, settingsValueOf, SETTINGS_SECTIONS,
   providerListHtml, providerPageHtml, providerSwitchesHtml, providerSettingValue,
-  provState, providerDefaultModel, providerVersion, providerUsageLine,
+  provState, providerDefaultModel, providerVersion, providerUsageLine, PROVIDER_BLURB,
   accessSectionHtml, accessOptions, accessNativeMap, accessNativeFor,
   accessIdForNative, accessLabelFor,
   usageSectionHtml, updatesSectionHtml, workspaceSectionHtml, advancedSectionHtml,
@@ -1271,11 +1275,11 @@ test("21i. the app is a three-column grid with the rail on the left", () => {
   const app = h.match(/\n\s*\.app\{[\s\S]*?\}/);
   assert.ok(app, ".app rule must exist");
   assert.ok(/display:grid/.test(app[0]), ".app must be display:grid");
-  /* The rail track became var(--railw,224px) in 2.259.0, when the sidebar got a drag edge.
-     224px is still the default INSIDE the var, so a browser with nothing stored lays out
-     exactly as before; the assertion keeps that default pinned rather than dropping it. */
-  assert.ok(/grid-template-columns:\s*var\(--railw,\s*224px\)\s+1fr\s+var\(--termw/.test(app[0]),
-    ".app must lay out rail | panes | terminal, with 224px still the rail default");
+  /* The rail track became var(--railw,224px) in 2.259.0, when the sidebar got a drag edge,
+     and its default became 72px on 2026-09-16 when the sidebar became one icon lane. The
+     assertion keeps that default pinned rather than dropping it. */
+  assert.ok(/grid-template-columns:\s*var\(--railw,\s*72px\)\s+1fr\s+var\(--termw/.test(app[0]),
+    ".app must lay out rail | panes | terminal, with 72px the rail default");
   assert.ok(/position:relative/.test(app[0]),
     ".app is the positioning context for the drag edge; without it the edge resolves against the page");
   const rail = h.match(/\n\s*\.rail\{[\s\S]*?\}/);
@@ -4185,17 +4189,21 @@ test("45d3. a sign-in the SERVER is running is adopted after a reload", () => {
 test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
   sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
   try {
-    const out = codexRender({ state:"chatgpt", billing:"covered by your ChatGPT plan" });
-    /* REWORDED 2026-09-08. The old sentence was "signing in here does NOT make
-       Codex selectable" -- true when nothing could install the CLI, and
-       misleading once Sutra provisions it: a sign-in on a machine that has the
-       runtime DOES make the row selectable, on the same paint. The claim that
-       still needs making is that a credential is only HALF of it. */
-    assert.ok(/credential\s*<i>and<\/i>\s*its command-line tool/.test(
-                out.replace(/\s+/g, " ")),
-      "the block must still say a credential alone is not enough");
+    const out = codexRender({ state:"chatgpt", billing:"covered by your ChatGPT plan",
+                              billing_detail:"Codex runs against your ChatGPT plan." });
+    /* CUT 2026-09-16 (owner: drop the "OpenAI Codex sign-in ... which OpenAI
+       account Codex bills to ..." explainer). The block is the state, the
+       billing label and the actions. The longer billing sentence survives
+       behind a Details disclosure, not on the page. */
+    assert.ok(!/Which OpenAI account Codex bills/.test(out), "the explainer is back");
+    assert.ok(!/OpenAI Codex sign-in/.test(out), "the block heading is back");
     assert.ok(!/does <b>not<\/b> make Codex selectable/.test(out),
       "the superseded absolute claim is back");
+    const i = out.indexOf("Codex runs against your ChatGPT plan.");
+    assert.ok(i > 0, "the billing detail must still be reachable");
+    const before = out.slice(0, i);
+    assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+      "the billing detail is on the page rather than behind Details");
     /* The row directly above prints `reason` verbatim -- both protocols, the
        version pin, the install path. Repeating it here put the same paragraph
        on screen twice. The block must say the one thing the row does not, and
@@ -4834,9 +4842,14 @@ test("46a. not signed in offers the field inline, and says what it costs", () =>
   assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out), "field + Save");
   assert.ok(!/value=/.test(out),
     "the input is UNCONTROLLED -- a value bound to state would keep a key in S");
-  assert.ok(/no plan to\s+inherit/.test(out), "says why a key is needed at all");
-  assert.ok(/checked\s+with DeepSeek before anything is saved/.test(out),
-    "and that it is validated before it is stored");
+  /* CUT 2026-09-16 (owner: "one short line that DeepSeek needs an API key, the
+     key field, and Save. Optionally one small link to platform.deepseek.com.
+     Nothing more"). */
+  assert.ok(!/no plan to\s+inherit/.test(out), "the billing explainer is back");
+  assert.ok(!/login\s+keychain/.test(out), "the keychain explainer is back");
+  assert.ok(/platform\.deepseek\.com/.test(out), "the one link is missing");
+  const words = out.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().split(" ").length;
+  assert.ok(words < 30, "the block is prose again: " + words + " words");
 });
 
 test("46b. signed in shows the mask and nothing else, plus Remove", () => {
@@ -5233,6 +5246,84 @@ test("W3-1c. THE BUG: a remembered section must not survive re-opening Settings"
   });
 });
 
+/* ── 2026-09-16: the owner's Setup clean-up ─────────────────────────────── */
+
+test("W3-0a. Gemini CLI is nowhere in the client", () => {
+  /* The catalogue dropped it (providers.py); the client's own tables and copy
+     must not keep a ghost of it. Source-level, because a blurb keyed on an id
+     the server never sends would never render and never be caught otherwise. */
+  assert.ok(!("gemini" in T.PROVIDER_BLURB), "PROVIDER_BLURB still carries a gemini entry");
+  const chat = fs.readFileSync(path.join(__dirname, "static", "js", "05-chat.js"), "utf8");
+  const screens = fs.readFileSync(path.join(__dirname, "static", "js", "04-screens.js"), "utf8");
+  assert.ok(!/gemini/i.test(chat), "05-chat.js still mentions Gemini");
+  assert.ok(!/gemini/i.test(screens), "04-screens.js still mentions Gemini");
+});
+
+test("W3-0b. the provider list has no Make default and no footer; the page has Make default", () => {
+  w3Settings(() => {
+    T.PROVIDERS.push({ id:"deepseek2", name:"Other", runnable:true, installed:true, configured:true });
+    const list = T.providerListHtml(T.SETTINGS);
+    assert.ok(!/Make default/.test(list), "Make default is back on the list rows");
+    assert.ok(!/data-prov="/.test(list), "a list row still posts the default directly");
+    assert.ok(!/is ready to use on this Mac/.test(list), "the 'Only X is ready' footer is back");
+    /* the not-ready rows keep their one action, and it opens the page */
+    assert.ok(/data-provpage="codex"[^>]*>Sign in</.test(list.replace(/\s+/g, " ")),
+      "the Sign in verb on the Codex row is gone");
+    /* and the page carries the action the list gave up */
+    const page = T.providerPageHtml("deepseek2", T.SETTINGS);
+    assert.ok(/data-prov="deepseek2"/.test(page) && /Make default/.test(page),
+      "the provider page lost Make default");
+  });
+});
+
+test("W3-0c. status pills use three tones: green ready, amber needs attention, muted not installed", () => {
+  assert.strictEqual(T.provState({ runnable:true }).pill, "p-ok");
+  assert.strictEqual(T.provState({ installed:true, configured:false }).pill, "p-warn");
+  assert.strictEqual(T.provState({ installed:false }).pill, "p-mut");
+  assert.strictEqual(T.provState({ installed:false }).badge, "not installed");
+});
+
+test("W3-0d. a key-based provider with no key says so in one line, on the card and the page", () => {
+  const prev = T.PROVIDERS;
+  try {
+    T.PROVIDERS = [{ id:"deepseek", name:"DeepSeek", usage_kind:"balance" },
+                   { id:"codex", name:"OpenAI Codex", usage_kind:"tokens" }];
+    const card = T.usageAllCardHtml({ id:"deepseek", name:"DeepSeek", state:"signed_out",
+      error:"no API key. DeepSeek has no subscription to inherit -- every request is billed "
+          + "against a key -- and all three places it can come from were checked: env, env, keychain." });
+    assert.ok(card.includes("No API key. Add one to use DeepSeek."), "the short line is missing");
+    assert.ok(!/What Sutra found/.test(card), "the old disclosure label is back");
+    const i = card.indexOf("subscription to inherit");
+    assert.ok(i > 0, "the server's detail must still be reachable");
+    assert.ok(card.slice(0, i).lastIndexOf("<details") > card.slice(0, i).lastIndexOf("</details>"),
+      "the env-var paragraph is on the card");
+    /* a sign-in provider keeps the sign-in wording */
+    const codex = T.usageAllCardHtml({ id:"codex", name:"OpenAI Codex", state:"signed_out" });
+    assert.ok(codex.includes("Not signed in."), "codex lost its own line");
+    w3With({ usageAll: { providers: [{ id:"deepseek", state:"signed_out", windows: [] }] } }, () => {
+      assert.strictEqual(T.providerUsageLine("deepseek"), "No API key. Add one to use DeepSeek.");
+    });
+  } finally { T.PROVIDERS = prev; }
+});
+
+test("W3-0e. the Updates screen is rows in panels, with no paragraph under a row", () => {
+  w3Settings(() => {
+    w3With({ upd: { desktop: { managed:true, installed:"2.279.1", latest:"2.279.1", update_available:false,
+                               note:"Checked in the background by the app itself." },
+                    plugin: { managed:false, reason:"a source checkout has no plugin to replace" } },
+             updError: null, updBusy: null, updMsg: null, shellUpd: null, provTools: W3_TOOLS }, () => {
+      T.S.setSection = "updates";
+      const out = T.SCREENS.settings();
+      assert.ok(!/Checked in the background/.test(out), "a component note is on the page");
+      assert.ok(!/not managed here/.test(out), "the old 'not managed here' pill is back");
+      assert.ok(/updates on its own/.test(out), "an unmanaged component does not say it updates on its own");
+      assert.ok((out.match(/class="sxpanel"/g) || []).length >= 2, "the two panels are missing");
+      assert.ok((out.match(/class="sxkv sxurow"/g) || []).length >= 5, "the rows do not share one shape");
+      assert.ok(!/<h3 class="sec">/.test(out), "the old chsec headings are back");
+    });
+  });
+});
+
 test("W3-1d. the section is NEVER persisted, so a reload cannot restore it", () => {
   w3Settings(() => {
     T.S.setSection = "provider:claude";
@@ -5547,10 +5638,42 @@ test("W3-4a. the tools list renders versions, an Update button, and the too-old 
     const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("DeepSeek"));
     assert.ok(/up to date/.test(codex), "a current tool is not said to be current");
     assert.ok(!/data-toolupdate="codex"/.test(codex), "a current tool was offered a dead Update button");
-    /* not installed, not managed here: says so, and names the real command */
+    /* not installed: says so, and NEVER the command line (owner, 2026-09-16) */
     const ds = out.slice(out.indexOf("DeepSeek"));
     assert.ok(/not installed/.test(ds), "an absent tool is not said to be absent");
-    assert.ok(/npm i -g deepseek-cli/.test(ds), "an unmanaged tool does not name its own update path");
+    assert.ok(!/npm i -g deepseek-cli/.test(out), "a command line is back on the screen");
+    assert.ok(!/does not manage/.test(out), "the 'Sutra does not manage this one' line is back");
+  });
+});
+
+test("W3-4g. an update Sutra cannot run says 'Updates on its own', never the command", () => {
+  const tools = [
+    /* Homebrew's codex: an update exists, Sutra will not touch the install */
+    { id:"codex", name:"OpenAI Codex", installed_version:"0.150.0", latest_version:"0.153.2",
+      update_available:true, too_old:false, managed_by_sutra:false, install_kind:"homebrew",
+      update_action:"manual", can_update:false, update_command:"brew upgrade codex" },
+    /* Claude Code's own installer: Sutra can run `claude update` for them */
+    { id:"claude", name:"Claude Code", installed_version:"2.1.247", latest_version:"2.1.273",
+      update_available:true, too_old:false, managed_by_sutra:false, install_kind:"claude-self",
+      update_action:"claude-update", can_update:true, update_command:"claude update" },
+    /* a chat is running on it: the button stays, disabled, with the reason */
+    { id:"deepseek", name:"DeepSeek", installed_version:"1.3.0", latest_version:"1.3.2",
+      update_available:true, too_old:false, managed_by_sutra:true, install_kind:"sutra",
+      update_action:"sutra-npm", can_update:false, busy:true, update_command:"npm install" },
+  ];
+  w3With({ provTools: tools, provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("Claude Code"));
+    assert.ok(/Updates on its own/.test(codex), "a manual-only tool does not say so");
+    assert.ok(!/data-toolupdate="codex"/.test(codex), "a manual-only tool was offered a dead Update");
+    assert.ok(!/brew upgrade/.test(out) && !/npm install/.test(out) && !/claude update/.test(out),
+      "a command line reached the screen");
+    const claude = out.slice(out.indexOf("Claude Code"), out.indexOf("DeepSeek"));
+    assert.ok(/data-toolupdate="claude"/.test(claude), "a tool Sutra can update lost its button");
+    assert.ok(!/Updates on its own/.test(claude), "and is not told it updates on its own");
+    const ds = out.slice(out.indexOf("DeepSeek"));
+    assert.ok(/data-toolupdate="deepseek"[^>]*disabled/.test(ds), "a busy tool's button is not disabled");
+    assert.ok(/Close its chat first/.test(ds), "and does not say why");
   });
 });
 
@@ -6292,9 +6415,9 @@ test("50e. Claude and DeepSeek usage rendering is untouched", () => {
 test("50f. a provider with no usage concept still reports none", () => {
   const prev = T.PROVIDERS;
   try {
-    T.PROVIDERS = [{ id:"gemini", name:"Gemini CLI", usage_kind:"none" }];
-    assert.strictEqual(T.providerUsage("gemini", "s1"), null);
-    assert.strictEqual(T.usageKindOf("gemini"), "none");
+    T.PROVIDERS = [{ id:"pi", name:"Pi CLI", usage_kind:"none" }];
+    assert.strictEqual(T.providerUsage("pi", "s1"), null);
+    assert.strictEqual(T.usageKindOf("pi"), "none");
   } finally { T.PROVIDERS = prev; }
 });
 
@@ -6868,7 +6991,7 @@ test("53f. the other providers' lists are not touched by a Codex answer", () => 
       T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
       assert.deepStrictEqual(T.MODELS_BY_PROVIDER.claude.map(m => m.id),
         ["", "opus"], "Claude's list changed shape");
-      assert.ok(!("gemini" in T.MODELS_BY_PROVIDER),
+      assert.ok(!("pi" in T.MODELS_BY_PROVIDER) && !("gemini" in T.MODELS_BY_PROVIDER),
         "a provider with no models gained a picker");
     });
 });
@@ -7076,3 +7199,105 @@ test("54c. Agents still opens ALONE — the rule the fix must not undo", () => {
   assert.ok(/data-sess="s-dust"/.test(m.panes.innerHTML),
     "leaving Agents brings the pane back exactly as it was");
 });
+
+/* ── 55 · the renderer's idle cost (founder 2026-09-16: "very slow to use,
+   moving around; the buttons are not getting clicked") ─────────────────────
+   Measured on the live app with 1,537 sessions: render() fired once a second on
+   an idle Now screen and each one blocked the main thread for 410-580 ms. A
+   press that lands inside such a task waits; a press whose button is replaced
+   by the rebuild between mousedown and mouseup never becomes a click. Three
+   causes, one pin each. */
+
+test("55a. the rail's workspace label is decided ONCE per render, not once per row per session", () => {
+  const prevSessions = T.S.sessions, prevGroup = T.S.sgroup;
+  const many = [];
+  for (let i = 0; i < 300; i++)
+    many.push({ id: "w55-" + i, real: true, turns: [], updated_ms: Date.now() - i,
+                cwd: i % 2 ? "/u/asawa-holding" : "/u/other-repo", loadState: "unread" });
+  T.S.sessions = many; T.S.sgroup = "recent";
+  const orig = sandbox.rowWorkspace; let calls = 0;
+  sandbox.rowWorkspace = function(){ calls++; return orig.apply(this, arguments); };
+  try { sandbox.renderRail(); }
+  finally { sandbox.rowWorkspace = orig; T.S.sessions = prevSessions; T.S.sgroup = prevGroup; }
+  /* linear: at most one call per row inside workspacesDiffer plus one per row
+     for the label (deepseek P3: the old 3n bound let a 300x regression through) */
+  assert.ok(calls <= 2 * many.length,
+    `rowWorkspace ran ${calls} times for ${many.length} rows -- quadratic `
+    + `(2.36 M calls per render on the founder's 1,537 sessions, 35% of all CPU)`);
+});
+
+/* 55c drives loadRepo with controllable deferreds (codex P3): dedupe while in
+   flight, a fresh read once settled, the forced-overlap race where the OLDER
+   answer lands last, and the folder change mid-read. Runs after 55b (which
+   stubs scheduleRender with a counter) has restored it. */
+ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 250)).then(async () => {
+  const prevApi = sandbox.apiGet, prevSched = sandbox.scheduleRender;
+  const prevRepo = T.S.repo, prevCwd = T.S.cwd;
+  const pending = [];
+  sandbox.apiGet = (p) => new Promise((res, rej) => pending.push({ p, res, rej }));
+  sandbox.scheduleRender = () => {};
+  T.S.repo = {}; T.S.cwd = Object.assign({}, T.S.cwd || {}, { r55: "/u/asawa-holding" });
+  const settle = () => new Promise(r => setTimeout(r, 5));
+  try {
+    T.loadRepo("r55", false); T.loadRepo("r55", false); T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 1,
+      "55c. measured: /api/repo took 4.1 s on the founder's checkout and every repaint "
+      + "inside that window launched another git subprocess and another repaint");
+    pending[0].res({ available: true, branch: "main" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "main", "55c. the one answer lands");
+    T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 1, "55c. settled + cached: no read");
+    delete T.S.repo.r55; T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 2, "55c. settled + cleared: a fresh read goes out");
+    /* forced overlap: a turn ended while the plain read is still out */
+    T.loadRepo("r55", true);
+    assert.strictEqual(pending.length, 3, "55c. force still reads while one is in flight");
+    pending[2].res({ available: true, branch: "fresh" }); await settle();
+    pending[1].res({ available: true, branch: "stale" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "fresh",
+      "55c. the older answer landing last must not overwrite the forced refresh (codex P2)");
+    /* folder changed mid-read: the answer for the old folder is dropped and re-read */
+    delete T.S.repo.r55; T.loadRepo("r55", false);
+    assert.strictEqual(pending.length, 4);
+    T.S.cwd.r55 = "/u/other-repo";
+    pending[3].res({ available: true, branch: "old-folder" }); await settle();
+    assert.strictEqual(pending.length, 5, "55c. a folder change mid-read re-issues the read");
+    assert.ok(/other-repo/.test(pending[4].p), "55c. ...for the NEW folder");
+    assert.strictEqual(T.S.repo.r55, undefined, "55c. the old folder's bar is never shown");
+    pending[4].res({ available: true, branch: "new-folder" }); await settle();
+    assert.strictEqual(T.S.repo.r55.branch, "new-folder");
+    console.log("ok   - 55c. loadRepo: dedupe in flight, newest read wins, folder change re-reads");
+  } finally {
+    sandbox.apiGet = prevApi; sandbox.scheduleRender = prevSched;
+    T.S.repo = prevRepo; T.S.cwd = prevCwd;
+  }
+}));
+
+/* async: the feed answers through a stubbed fetch. Delayed past the earlier
+   async checks so their own scheduleRender calls are not counted here. */
+ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 60)).then(async () => {
+  const feed = { items: [{ item_id: "n1", state: "new", kind: "needs_decision" }] };
+  const prevFetch = sandbox.fetch, prevSched = sandbox.scheduleRender;
+  const prevNY = T.S.needsYou, prevBusy = T.S._needsYouBusy, prevKey = T.S._needsYouKey;
+  let scheduled = 0;
+  sandbox.scheduleRender = () => { scheduled++; };
+  sandbox.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve(JSON.parse(JSON.stringify(feed))) });
+  /* a fresh key too (codex P3): the check must not depend on what an earlier
+     test left in S, and must leave nothing behind for a later one */
+  T.S.needsYou = undefined; T.S._needsYouBusy = false; T.S._needsYouKey = undefined;
+  const settle = () => new Promise(r => setTimeout(r, 5));
+  try {
+    for (let i = 0; i < 3; i++){ T.loadNeedsYou(); await settle(); }
+    assert.strictEqual(scheduled, 1,
+      "55b. an unchanged feed must not schedule a repaint (measured: one wholesale "
+      + "#panes rebuild every 2 s on an idle Now screen)");
+    feed.items.push({ item_id: "n2", state: "new", kind: "needs_decision" });
+    T.loadNeedsYou(); await settle();
+    assert.strictEqual(scheduled, 2, "55b. a changed feed still repaints");
+    console.log("ok   - 55b. loadNeedsYou repaints only when the feed changed");
+  } finally {
+    sandbox.fetch = prevFetch; sandbox.scheduleRender = prevSched;
+    T.S.needsYou = prevNY; T.S._needsYouBusy = prevBusy; T.S._needsYouKey = prevKey;
+  }
+}));

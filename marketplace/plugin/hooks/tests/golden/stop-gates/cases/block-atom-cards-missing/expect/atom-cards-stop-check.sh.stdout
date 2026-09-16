@@ -1,0 +1,4 @@
+{
+  "decision": "block",
+  "reason": "ATOM CARDS floor: atom(s) transitioned this turn but the response does not show the card(s) to the user: ATOM OPEN; VERIFY FAILED; Re-emit the card blocks (verbatim, from the sutra-atom output) in your visible response text, then stop again."
+}

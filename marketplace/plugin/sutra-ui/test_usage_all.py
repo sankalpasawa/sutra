@@ -108,7 +108,7 @@ class TheShape(Scenario):
 
     def test_every_provider_gets_exactly_one_row(self):
         rows = self.run_with()
-        self.assertEqual(sorted(rows), ["claude", "codex", "deepseek", "gemini"])
+        self.assertEqual(sorted(rows), ["claude", "codex", "deepseek"])
 
     def test_every_row_has_every_key_present(self):
         """Present-and-null, never absent: the client reads row.plan on every
@@ -185,8 +185,17 @@ class TheHappyPath(Scenario):
         self.assertEqual(row["balance"]["amount"], "1.87")
         self.assertEqual(row["balance"]["currency"], "USD")
 
-    def test_gemini_is_unsupported_not_an_error(self):
-        row = self.run_with()["gemini"]
+    def test_a_catalogued_provider_with_no_reader_is_unsupported_not_an_error(self):
+        """The fallback arm. No shipped provider lands on it (Gemini CLI, the
+        one that did, left the catalogue 2026-09-16), so a stand-in entry is
+        appended to the catalogue for the duration of the read."""
+        import providers
+        extra = {"id": "fakecli", "name": "Fake CLI", "bin": "fakecli",
+                 "config_dir": "~/.fakecli", "default": False, "models": (),
+                 "model_flag": None, "usage_kind": "none", "turn_options": (),
+                 "permission_modes": ()}
+        self.patch("providers._CATALOG", new=tuple(providers._CATALOG) + (extra,))
+        row = self.run_with()["fakecli"]
         self.assertEqual(row["state"], "unsupported")
         self.assertEqual(row["windows"], [])
 
@@ -296,7 +305,7 @@ class TheCache(Scenario):
                         return_value={"signed_in": False, "reason": "none"}), \
              mock.patch("codex_models.plan_cached", return_value=None):
             out = usage.all_providers(refresh=False)
-        self.assertEqual(len(out["providers"]), 4)
+        self.assertEqual(len(out["providers"]), 3)
 
 
 class TheOldRoutesAreUntouched(unittest.TestCase):

@@ -64,13 +64,14 @@ function grabConst(src, name) {
 }
 
 /* ── the fixtures ──────────────────────────────────────────────────────────
-   The provider table is the server's own verdict on what can run: `gemini` is
-   catalogued and NOT runnable, which is why it must never become a tab. */
+   The provider table is the server's own verdict on what can run: `pi` is a
+   stand-in for a catalogued-but-NOT-runnable provider, which is why it must
+   never become a tab. */
 const TABLE = [
   { id: "claude", name: "Claude", runnable: true, usage_kind: "window-percent" },
   { id: "codex", name: "Codex", runnable: true, usage_kind: "tokens" },
   { id: "deepseek", name: "DeepSeek", runnable: true, usage_kind: "balance" },
-  { id: "gemini", name: "Gemini", runnable: false, reason: "no adapter in this build" },
+  { id: "pi", name: "Pi CLI", runnable: false, reason: "no adapter in this build" },
 ];
 /* SPEC B, shaped as the server will send it. Claude's efforts differ per model
    here on purpose: the thinking row must be the SELECTED model's, not a union. */
@@ -264,7 +265,7 @@ test("2a. provider tabs offer only what can actually run", () => {
   const h = menu(b, "A");
   deq(attrs(h, "mdltab"), ["A:claude", "A:codex", "A:deepseek"],
       "a provider that cannot start was offered, or one that can was dropped —");
-  assert(!/Gemini/.test(h), "a catalogued-but-unrunnable provider became a tab: " + h);
+  assert(!/Pi CLI/.test(h), "a catalogued-but-unrunnable provider became a tab: " + h);
 });
 
 test("2b. the chat's own provider is the tab that opens selected", () => {

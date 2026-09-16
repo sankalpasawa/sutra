@@ -1,0 +1,2 @@
+d99ba508b8e583d4dbd60defd29b8d2f5993f06bed295c6208b61c45332dc8d2  .claude/sessions/<UUID>/creation-guard-seen
+7b541adadaa46caf97c51f7167489f9d2f5a4771c87601dfdb68425e9022cdfc  .sutra/creation-guard.jsonl

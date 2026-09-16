@@ -317,7 +317,7 @@ function clampTermW(px){
   const planeVisible = !!(app && !navCollapsed && app.classList.contains("threecol")
                           && !app.classList.contains("noplane"));
   const chrome = navCollapsed ? 46 + 9
-               : 224 + (planeVisible ? 240 : 0) + 27 /* 3 grid gaps */;
+               : 72 + (planeVisible ? 240 : 0) + 27 /* rail lane (RAIL_DEF) + 3 grid gaps */;
   const avail = vw - chrome - 320;
   const ceil = Math.max(TERM_MIN, Math.min(Math.round(vw * TERM_MAX_FRAC), avail));
   return Math.min(ceil, want);
@@ -431,8 +431,12 @@ function termToggle(on){
   S.termOpen = on === undefined ? !S.termOpen : !!on;
   termPaneEl.hidden = !S.termOpen;
   applyTermW(S.termW || TERM_DEFAULT);   /* collapses the track to 0px when closed */
-  termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
-  termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
+  /* 2.279.2: the foot's terminal button is gone; the toggle is reached from
+     Settings > Tools > Terminal, so the button is optional here. */
+  if (termBtnEl){
+    termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
+    termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
+  }
   /* Only mount the PTY when the terminal tab is the visible one -- opening the pane
      on the Preview tab must not silently spawn a shell. */
   if (S.termOpen && S.sideTab !== "preview") termMount(false);
@@ -521,7 +525,7 @@ document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementB
 document.getElementById("prevUrl").onkeydown = e=>{
   if (e.key === "Enter"){ e.preventDefault(); previewOpen(e.target.value); } };
 
-termBtnEl.onclick = ()=>termToggle();
+if (termBtnEl) termBtnEl.onclick = ()=>termToggle();
 document.getElementById("termClose").onclick = ()=>termToggle(false);
 document.getElementById("termReload").onclick = ()=>termMount(true);
 
@@ -619,8 +623,12 @@ if (typeof setInterval !== "undefined" && typeof document !== "undefined"
    and it has to be right on the first painted frame rather than after a round trip. */
 /* 420 read as 'stretchy'; the rail is a lane you nudge, not a panel you pull across the
    window (owner, 2026-09-10: "there should be a fixed length till which I can drag"). */
-const RAIL_MIN = 176, RAIL_MAX = 300, RAIL_DEF = 224;
-const RAIL_SHUT_AT = 132;      /* dragged narrower than this, it closes instead of getting silly */
+/* 2026-09-16: the rail is ONE 72px icon lane (founder: "you do not need to create the
+   sidebar"). There is nothing left to resize, so the three widths coincide; a stored
+   224 falls outside the range and reads as 72. The drag edge keeps its click (toggle)
+   and its leftward drag (collapse). */
+const RAIL_MIN = 72, RAIL_MAX = 72, RAIL_DEF = 72;
+const RAIL_SHUT_AT = 40;       /* dragged narrower than this, it closes instead of getting silly */
 
 function railW(){
   let w = RAIL_DEF;
@@ -747,18 +755,33 @@ function railToggleNow(){
 
 /* One click hides the whole sidebar and the panes take the freed column.
    The toggle lives in the masthead so it stays reachable when the rail is gone. */
+/* 2.279.2: the masthead toggle is gone (the rail is permanent); the drag edge's
+   click and railShow are the remaining ways to hide and restore it. */
 const railToggle = document.getElementById("railToggle");
 const railShow = document.getElementById("railShow");
-if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
-railToggle.onclick = railToggleNow;
+if (railShow) railShow.onclick = railToggleNow;
+if (railToggle) railToggle.onclick = railToggleNow;
 railDragInit();
 
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
    carry data-screen and ride the existing screen delegation unchanged. */
 document.querySelector(".rail").addEventListener("click", e=>{
+  /* 2.280.2: stamp the event before anything else. Opening the flyout re-renders
+     the rail, which DETACHES the clicked button; by the time this same click
+     reaches the document-level closer, closest(".rail") on it is null and the
+     flyout would close in the instant it opened (founder: "the submenus have
+     gone"). The stamp is what says "this click was the rail's own". */
+  e.railHandled = true;
   /* 2.226.0 (codex P1): accordion child rows sit INSIDE the rail and carry
      data-screen; they must reach the #app screen delegation untouched. */
-  if (e.target.closest("[data-screen]")) return;
+  if (e.target.closest("[data-screen]")){
+    /* 2.279.2 (founder, 2026-09-16: "when I click on it, it doesn't go away"):
+       picking a flyout row closes the flyout. Deferred one tick so the #app
+       delegation reads the click before the rail repaints. */
+    if (e.target.closest("#railnav .sub") && S.ui.railOpen)
+      setTimeout(railFlyoutClose, 0);
+    return;
+  }
   const destBtn = e.target.closest("[data-dest]");
   if (!destBtn) return;
   const d = destBtn.dataset.dest;
@@ -770,6 +793,29 @@ document.querySelector(".rail").addEventListener("click", e=>{
   }
   goDest(d);
 }, true);
+
+/* The flyout (Focus, Old Org) is a popover, so it closes the way popovers do:
+   on a pick (above), on a click anywhere outside the rail, and on Escape. */
+function railFlyoutClose(){
+  if (!S.ui.railOpen) return;
+  S.ui.railOpen = null;
+  saveLayout(); render();
+}
+/* Named so test_nav.js can drive it: the harness's document.addEventListener is
+   a stub, so the listener itself is never reachable from a test. Returns true
+   when it closed the flyout. */
+function railOutsideClick(e){
+  if (!S.ui.railOpen) return false;
+  if (e.railHandled) return false;                 /* the rail's own click (2.280.2) */
+  const t = e.target;
+  if (t && typeof t.closest === "function" && t.closest(".rail")) return false;
+  railFlyoutClose();
+  return true;
+}
+document.addEventListener("click", railOutsideClick);
+document.addEventListener("keydown", e=>{
+  if (e.key === "Escape") railFlyoutClose();
+});
 
 /* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")
    deleted <div id="tenantMenu"> from the markup but left this block behind, so

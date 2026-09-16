@@ -1,0 +1,23 @@
+{
+  "family": "stop-collect",
+  "event": "Stop",
+  "scripts": [
+    { "id": "phase-exit-audit.sh", "path": "hooks/phase-exit-audit.sh", "args": [] },
+    { "id": "estimation-stop.sh", "path": "hooks/estimation-stop.sh", "args": [] },
+    { "id": "flush-telemetry.sh", "path": "hooks/flush-telemetry.sh", "args": [] },
+    { "id": "estimation-collector.sh", "path": "hooks/estimation-collector.sh", "args": [] },
+    { "id": "session-logger.sh", "path": "hooks/session-logger.sh", "args": [] },
+    { "id": "log-triage.sh", "path": "hooks/log-triage.sh", "args": [] },
+    { "id": "log-skill-feedback.sh", "path": "hooks/log-skill-feedback.sh", "args": [] },
+    { "id": "measurement-logger.sh", "path": "hooks/measurement-logger.sh", "args": [] },
+    { "id": "compliance-tracker.sh", "path": "hooks/compliance-tracker.sh", "args": [] },
+    { "id": "feedback-auto-abandonment.sh", "path": "hooks/feedback-auto-abandonment.sh", "args": [] },
+    { "id": "policy-only-sensor.sh", "path": "hooks/policy-only-sensor.sh", "args": [] },
+    { "id": "output-behavior-lint.sh", "path": "hooks/output-behavior-lint.sh", "args": [] },
+    { "id": "csm-cap118-lint.sh", "path": "hooks/csm-cap118-lint.sh", "args": [] },
+    { "id": "placement-lint.sh", "path": "hooks/placement-lint.sh", "args": [] },
+    { "id": "workflow-floor.sh", "path": "hooks/workflow-floor.sh", "args": [] },
+    { "id": "coverage-gate.sh", "path": "hooks/coverage-gate.sh", "args": [] },
+    { "id": "domains-site-refresh.sh", "path": "hooks/domains-site-refresh.sh", "args": [] }
+  ]
+}

@@ -2,7 +2,85 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.278.12 (2026-09-16, HEAD)
+## v2.280.4 (2026-09-16, HEAD)
+
+**The app is quick again: clicks land, screens switch.** Founder, 2026-09-16: "very slow to use,
+moving around; the buttons are not getting clicked." Measured on the live app with 1,537 sessions:
+`render()` fired once a second on an idle Now screen and each one blocked the main thread for
+410-580 ms, so a press inside that window waited and a press whose button was rebuilt between
+mousedown and mouseup never became a click. Three causes, three fixes in the renderer: (1) the rail's
+workspace label rebuilt a Set over every session for every row (n^2: 2.36 M `rowWorkspace` calls
+per render, 35% of all CPU) -- decided once per render now; (2) `loadNeedsYou` scheduled a full
+repaint on every unchanged 2 s poll -- repaints only when the items changed; (3) `loadRepo` was
+re-entered by every repaint during a 4.1 s `/api/repo` read -- in-flight guard, newest read wins,
+a folder change mid-read re-reads. After (same data): 4 renders per 15 s at 25-144 ms, click cost
+43-170 ms (was 450-2,066 ms). Tests: 55a-c in test_panel.js (392 green). Codex + DeepSeek reviewed;
+codex P2 (forced-read race) folded, DeepSeek P1 rejected with evidence (55c failed before the fix).
+
+## v2.280.3 (2026-09-16)
+
+**The Setup screens are cleaned up.** Founder, 2026-09-16, a list of problems read off the app.
+Every Setup screen now has the same shape: title, one line under it, then rows or cards with aligned
+labels and values and one action on the right; no paragraph runs past two lines. Updates: the
+"Sutra does not manage this one. Update it with <command>" lines are gone; a tool Sutra cannot update
+says "Updates on its own". Usage limits: thin bars in the three theme tones, plain plan pill. AI
+providers: sans rounded status pills in three tones, "Make default" moved off the list rows onto the
+provider page, Gemini CLI removed from the catalogue and every screen. DeepSeek and Codex pages: the
+explainer paragraphs are cut or sit behind Details. Connectors: a state word and one action per row,
+one Re-check on the screen head. Routines and Automation notes are one line each. Files: providers.py,
+usage.py, 04-screens.js, 05-chat.js, 12-connectors.js, panel.css and 12 test files. Tests: 32 of 33
+node suites green (test_goal_control.js fails on main too), 825 pytest passed level with main,
+SEO engine 59 checks, manifest 14 of 14.
+
+## v2.280.2 (2026-09-16)
+
+**The Focus and Old Org submenus are back.** Founder, 2026-09-16: "the submenus have gone".
+2.280.1's document-level closer (`railOutsideClick`) tested `e.target.closest(".rail")`, but the
+click that opens a flyout re-renders the rail (`setHtmlIfChanged` on #railnav) and detaches its own
+target, so the same click reached the closer looking like an outside click and shut the flyout as
+it opened. Fix: the rail's capture handler stamps `e.railHandled = true` first thing and the closer
+returns on it. `railOutsideClick` is a named function so test_nav.js can drive it (the harness
+stubs `document.addEventListener`). Tests: 1 new nav check; nav + panel suites green.
+
+## v2.280.1 (2026-09-16)
+
+**The rail settles down.** Founder, 2026-09-16, four asks on the new rail: (1) the Focus flyout
+"doesn't go away" -> it closes on a pick (deferred one tick past the #app screen delegation), on a
+click outside the rail and on Escape (`railFlyoutClose` in 09-tail.js); (2) the terminal button
+left the foot, `termBtnEl` is null-guarded, Settings > Tools > Terminal still opens it; (3) the
+top bar with the hide toggle is gone, `railToggle` is optional, the drag edge and `railShow` keep
+the hide/restore path; (4) the foot's mark is the company's first letter, black on gold like the
+old logo mark, over "CEO of <company>" (paintRole paints the letter; paintAvatar keeps the Claude
+account as the hover title only). Built in a clone of main because the checkout was on the Shadow
+session's shadow-v4 lane. Tests: nav + panel suites green. Tagged v2.279.2-desktop on the
+pre-merge commit a6aa7b97, then renumbered 2.280.1 on the merge with origin/main (2.280.0, the
+runtime program); the desktop build to install is v2.280.1-desktop.
+## v2.280.0 (2026-09-16)
+
+**The per-turn pipeline runs as one program (W0a of the Sutra runtime, D73, ADR-040).**
+`hooks/hooks.json` collapses from 92 registrations to 7 (`bin/sutra-turn run --event <E>`
+per event with steps, plus `bin/sutra-canary`); the 92-entry registry ships verbatim as
+`hooks/hooks.json.step3` behind the kill-switch (`~/.sutra-runtime-disabled` or
+`SUTRA_RUNTIME_DISABLED=1`). `runtime/pipeline.json` is the spec (6 events, 92 steps,
+87 scripts), `runtime/spec-check.sh` enforces it, `bin/sutra-charcap` plus
+`hooks/tests/golden` (9 families, 259 cases) prove every hook's stdout, stderr and exit
+byte for byte on both runners; `tests/run-all.sh --set runtime` and the release gate
+workflow guard every push. Nothing changes in day-to-day use. Founder gates open:
+`/reload-plugins` (EXECUTION row 15) and the downgrade drill (row 16). Details:
+`marketplace/plugin/CHANGELOG.md` 2.280.0.
+
+## v2.279.1 (2026-09-16)
+
+**One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
+icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each
+destination is an icon with its name under it, hover only highlights, the rail and the active row
+carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and
+Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot.
+Codex P2 folded (mobile rail scroll rule re-applied after the desktop overflow rule). Tests: nav
+75, panel 389, agents 251, 0 failed. Real-app capture registered on atom a-6fe5c2b0-02. Tagged
+v2.279.0-desktop on the pre-merge commit a80f9333, then renumbered 2.279.1 on the merge with
+origin/main (2.278.9-2.278.12); the desktop build to install is v2.279.1-desktop.
+## v2.278.12 (2026-09-16)
 
 **Shadow's four settings become real controls, a Shadow-side fault stops killing live work, and the
 release build finally tests the Shadow screens.** (1) Autonomy ships as four levels

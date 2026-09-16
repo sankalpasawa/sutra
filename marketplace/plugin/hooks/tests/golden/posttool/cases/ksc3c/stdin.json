@@ -1,0 +1,15 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/webhook.py",
+    "old_string": "a",
+    "new_string": "b"
+  },
+  "tool_response": {
+    "success": true
+  }
+}

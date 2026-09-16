@@ -1,0 +1,28 @@
+
+BLOCKED — structural move on HARD path requires authorization (PROTO-025)
+
+  Command:        rm -rf holding/departments/pm
+  HARD path hit:  holding/departments/
+
+  This hook closes the gap that allowed the <TS> unauthorized
+  archive of holding/evolution/. PROTO-021 fires on Edit|Write only;
+  PROTO-025 extends the same authorization model to Bash mv/rm/etc.
+
+  HARD paths protected:
+    holding/hooks/**
+    holding/departments/**
+    holding/evolution/**
+    holding/FOUNDER-DIRECTIONS.md
+    sutra/marketplace/plugin/**
+    sutra/os/charters/**
+
+  Authorization (any one):
+    1) Emit BUILD-LAYER block + write .claude/build-layer-registered
+       marker (same as PROTO-021 Edit/Write pattern).
+    2) One-off override:
+         BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <cmd>
+
+  Logged to .enforcement/build-layer-ledger.jsonl.
+  Spec:   sutra/layer2-operating-system/PROTOCOLS.md §PROTO-025
+  Design: holding/research/<TS>-structural-move-protocol-design.md
+

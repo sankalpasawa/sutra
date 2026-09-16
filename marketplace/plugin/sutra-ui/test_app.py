@@ -1100,7 +1100,8 @@ class TestApp(unittest.TestCase):
         # red on the branch. The INTENT is unchanged -- the catalogue is a
         # fixed, ordered list and the endpoint must return exactly it -- so the
         # list is kept exact rather than loosened to a subset check.
-        self.assertEqual(ids, ["claude", "codex", "gemini", "deepseek"],
+        # gemini left the catalogue 2026-09-16: no adapter, so nothing to list.
+        self.assertEqual(ids, ["claude", "codex", "deepseek"],
                          "the catalogue is fixed and ordered by precedence")
 
         for p in body["providers"]:
@@ -1240,7 +1241,7 @@ class TestApp(unittest.TestCase):
         status, err = _post("/api/providers/active", {"id": "not-a-provider"})
         self.assertEqual(status, 400)
         self.assertIn("unknown provider", err["detail"])
-        for known in ("claude", "codex", "gemini"):
+        for known in ("claude", "codex", "deepseek"):
             self.assertIn(known, err["detail"])
 
     def test_40_setting_a_runnable_provider_persists_and_is_readable_back(self):

@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"⚠️ Recursive delete (unsafe path). rm -rf on a path outside the safe-path allowlist (dist/build/node_modules/.cache/etc)."}}

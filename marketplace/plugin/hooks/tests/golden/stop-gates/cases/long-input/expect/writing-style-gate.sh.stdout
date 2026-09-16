@@ -1,0 +1,4 @@
+{
+  "decision": "block",
+  "reason": "WRITING-STYLE GATE (core:writing-style, HARD).\nBlocked checks:\n  - WS-3 BUDGET: \"prose 90 lines > 60\"\nFix: outcome first, cut the phrase or glyph, move detail to a file (M7), add Impact + Effort columns.\nRules: skills/writing-style/SKILL.md sections 3-5.\nOverride (audited): write .claude/sessions/<sid>/writing-style-ack with a REASON= line.\nRevoke phrases (whole line): normal mode | stop anti-glaze | long form | stop writing-style."
+}

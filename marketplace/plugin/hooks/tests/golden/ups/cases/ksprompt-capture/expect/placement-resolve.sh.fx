@@ -1,0 +1,2 @@
+8d888f2484f91ba4cdf5c07aa419bd3bae54b46086314a5ebb49752efc91e1e8  .claude/placement-registered
+8d888f2484f91ba4cdf5c07aa419bd3bae54b46086314a5ebb49752efc91e1e8  .claude/sessions/<UUID>/placement-registered

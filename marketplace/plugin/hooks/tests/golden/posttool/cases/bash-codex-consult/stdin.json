@@ -1,0 +1,16 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "codex exec --model gpt-5.4 \"review this diff\"",
+    "description": "peer review"
+  },
+  "tool_response": {
+    "stdout": "PASS",
+    "stderr": "",
+    "interrupted": false
+  }
+}

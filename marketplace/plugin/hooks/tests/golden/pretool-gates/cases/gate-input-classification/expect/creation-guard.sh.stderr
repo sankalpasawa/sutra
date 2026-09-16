@@ -1,0 +1,6 @@
+CREATION GUARD (WARN): new plan 'holding/plans/unrouted.md' is missing: placement domain charter
+  Complete creation (D74): a new thing brings its domain, charter and placement with it.
+    domain    -> is there a department dir with CHARTER.md/README.md above it, or a rule in .claude/creation-guard-rules.json?
+    charter   -> which charter does it answer to (placement marker CHARTER_ID or a CHARTER.md up the tree)?
+    placement -> emit the PLACEMENT line and write .claude/sessions/<sid>/placement-registered first.
+  Mode file: .claude/creation-guard-mode (hard|warn). Kill-switch: touch ~/.creation-guard-disabled (founder revoke only, audited).

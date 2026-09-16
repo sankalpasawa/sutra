@@ -1,0 +1,5 @@
+
+PLACEMENT (warn): no placement marker for this turn — work has no address.
+  Emit the PLACEMENT block + write .claude/placement-registered.
+  Enforcement is WARN in this repo; it promotes to HARD after 50 compliant turns.
+

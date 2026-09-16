@@ -1,0 +1,13 @@
+sessionstart-auto-update.sh
+findings-banner.sh
+registry-shrink-banner.sh
+update-banner.sh
+sessionstart-auto-activate.sh
+session-logger.sh
+sessionstart-privacy-notice.sh
+codex-directive-sweep.sh
+inbox-display.sh
+session-start-rotate.sh
+csm-sessionstart-banner.sh
+session-token-snapshot.sh
+governance-live-banner.sh

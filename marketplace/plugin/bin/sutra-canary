@@ -1,0 +1,183 @@
+#!/bin/sh
+# sutra-canary - the runtime's heartbeat registration.
+#
+# WHY. sutra-turn is one program standing in for ~88 hook registrations. If it
+# is silently not running (kill-switch, bad install, a host that dropped the
+# registration) the turn still looks normal: nothing is emitted, nothing is
+# blocked, and the absence is invisible. The canary is a second, independent
+# registration whose ONLY job is to leave a dated footprint in the same ledger
+# directory. A turn with canary rows and no sutra-turn rows is a runtime that
+# is registered but not running; a turn with neither is a plugin that is not
+# installed at all.
+#
+# CONTRACT.
+#   - takes NO arguments; hooks.json registers it bare as
+#     ${CLAUDE_PLUGIN_ROOT}/bin/sutra-canary
+#   - reads the hook JSON on stdin
+#   - appends exactly one row, kind=canary, carrying ts and event, to
+#     $CLAUDE_PROJECT_DIR/.sutra/turn/<session_id>/<turn_id>.jsonl
+#   - turn_id is computed by the SAME rule as sutra-turn, and by the same
+#     derivation - never by an allocation the two programs would race on:
+#       prompt_id present -> sha256(session_id + prompt_id)
+#       UserPromptSubmit  -> sha256(session_id + sha256(prompt key)), also
+#                            published to .sutra/turn/<session>/current
+#       any later event   -> whatever `current` says
+#       no `current` yet  -> a per-process key, and the row carries "orphan":1
+#     A shared counter would put the canary's row in a DIFFERENT file from the
+#     sutra-turn rows of the same prompt, which is precisely the correlation
+#     the heartbeat exists to provide.
+#   - emits nothing on stdout or stderr, exits 0 ALWAYS, and finishes well
+#     under 200 ms
+#
+# SPEED. This runs on every registered event, so it never pays for a second
+# process it can avoid: one jq call reads all four fields, openssl (a C binary)
+# is preferred over shasum (a perl script) for the digest, and the row is
+# printed with printf after the two free-text fields are reduced to a safe
+# character class - so the row is valid JSON without a second jq.
+#
+# FAIL-OPEN. Every failure path (no jq, no digest tool, unwritable project
+# dir) still exits 0 with no output. A heartbeat that can break a turn is
+# worse than no heartbeat.
+#
+# POSIX sh. No bashisms, no GNU coreutils, no python.
+#
+# LAYER=L0
+# SCOPE=fleet
+# TARGET_PATH=sutra/marketplace/plugin/bin/sutra-canary
+
+set -u
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${PWD:-.}}"
+TMPF="${TMPDIR:-/tmp}/sutra-canary-$$-in.json"
+SHAF="${TMPDIR:-/tmp}/sutra-canary-$$-sha"
+
+cleanup() { rm -f "$TMPF" "$TMPF.fields" "$SHAF" 2>/dev/null || true; }
+
+# Drain stdin. The host always supplies it; a closed stdin yields an empty
+# file and every field below falls back to its default.
+cat > "$TMPF" 2>/dev/null || : > "$TMPF"
+
+# --------------------------------------------------------------- digest ----
+# sha256 of a string, without a trailing newline, so the value matches
+# sutra-turn's sutra_sha256_string byte for byte.
+canary_sha() {
+  printf '%s' "$1" > "$SHAF" 2>/dev/null || { printf ''; return 0; }
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$SHAF" 2>/dev/null | sed -e 's/^.*= *//'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$SHAF" 2>/dev/null | sed -e 's/[[:space:]].*$//'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$SHAF" 2>/dev/null | sed -e 's/[[:space:]].*$//'
+  else
+    printf ''
+  fi
+}
+
+# --------------------------------------------------------------- fields ----
+# ONE LINE PER FIELD, never a tab-separated row. Tab is an IFS *whitespace*
+# character, so `IFS=<tab> read a b c d` collapses "sid<tab><tab>Stop<tab>"
+# into two fields and silently shifts hook_event_name into prompt_id - which
+# reads as "the host gave us a prompt id", takes the wrong turn_id branch, and
+# makes every turn in a session collide on one ledger file. Line-oriented
+# reads keep empty fields empty.
+FIELDS="$TMPF.fields"
+: > "$FIELDS" 2>/dev/null || true
+if command -v jq >/dev/null 2>&1; then
+  jq -r '(.session_id//""),(.prompt_id//""),(.hook_event_name//""),(.tool_name//""),((.prompt//"")|@base64)' \
+    "$TMPF" > "$FIELDS" 2>/dev/null || : > "$FIELDS"
+fi
+if [ ! -s "$FIELDS" ]; then
+  # jq-less fallback: first scalar string value for each key, one per line.
+  #
+  # printf, not a bare sed, because the host's hook JSON arrives WITHOUT a
+  # trailing newline and BSD sed prints an incomplete last line back
+  # incomplete - so four bare scrapes concatenate into "s2p2Stop" on one line
+  # and every field but the first is lost. The command substitution strips
+  # whatever sed did or did not emit; printf puts back exactly one newline.
+  canary_scrape() {
+    _cs_v="$(sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMPF" 2>/dev/null | head -1)"
+    printf '%s\n' "$_cs_v"
+  }
+  {
+    canary_scrape session_id
+    canary_scrape prompt_id
+    canary_scrape hook_event_name
+    canary_scrape tool_name
+    canary_scrape prompt
+  } > "$FIELDS" 2>/dev/null || true
+fi
+
+SESSION_ID=''; PROMPT_ID=''; EVENT=''; TOOL_NAME=''; PROMPT_KEY=''
+{
+  read -r SESSION_ID || SESSION_ID=''
+  read -r PROMPT_ID  || PROMPT_ID=''
+  read -r EVENT      || EVENT=''
+  read -r TOOL_NAME  || TOOL_NAME=''
+  read -r PROMPT_KEY || PROMPT_KEY=''
+} < "$FIELDS" 2>/dev/null
+[ -n "$SESSION_ID" ] || SESSION_ID="${CLAUDE_CODE_SESSION_ID:-}"
+# SANITISE ONCE, BEFORE ANY PATH IS BUILT. session_id is host-supplied and is
+# used as a path component for the ledger directory AND for the `current`
+# pointer; "../../escape" would write outside .sutra. bin/sutra-turn applies
+# this identical rule at the same point, so both programs agree on where the
+# pointer and the rows live - and hash the same bytes into turn_id.
+SESSION_ID="$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._:@+-')"
+[ -n "$SESSION_ID" ] || SESSION_ID="nosession"
+
+# -------------------------------------------------------------- turn_id ----
+# Derived, never allocated - see the CONTRACT block above. `current` has no
+# .jsonl suffix, so it is invisible to every reader that globs the ledger.
+CUR_DIR="$PROJECT_DIR/.sutra/turn/$SESSION_ID"
+CUR="$CUR_DIR/current"
+ORPHAN=0
+if [ -n "$PROMPT_ID" ] || [ "$EVENT" = "UserPromptSubmit" ]; then
+  if [ -n "$PROMPT_ID" ]; then
+    TURN_ID="$(canary_sha "$SESSION_ID$PROMPT_ID")"
+  else
+    TURN_ID="$(canary_sha "$SESSION_ID$(canary_sha "$PROMPT_KEY")")"
+  fi
+  mkdir -p "$CUR_DIR" 2>/dev/null || true
+  if printf '%s\n' "$TURN_ID" > "$CUR.$$" 2>/dev/null; then
+    mv -f "$CUR.$$" "$CUR" 2>/dev/null || rm -f "$CUR.$$" 2>/dev/null || true
+  fi
+else
+  TURN_ID="$(cat "$CUR" 2>/dev/null)"
+  case "$TURN_ID" in ''|*[!A-Za-z0-9]*) TURN_ID='' ;; esac
+  if [ -z "$TURN_ID" ]; then
+    ORPHAN=1
+    _now="$(date +%s 2>/dev/null)"
+    case "$_now" in ''|*[!0-9]*) _now=0 ;; esac
+    TURN_ID="$(canary_sha "$SESSION_ID$EVENT$TOOL_NAME$$$_now")"
+  fi
+fi
+[ -n "$TURN_ID" ] || TURN_ID="unknown"
+
+# ------------------------------------------------------------------ row ----
+# Both free-text fields are reduced to a conservative character class, so the
+# printf'd row is valid JSON with no quoting work and no second jq process.
+SAFE_EVENT="$(printf '%s' "$EVENT" | tr -cd 'A-Za-z0-9._:@+-')"
+SAFE_SID="$SESSION_ID"   # already sanitised above, before CUR_DIR was built
+SAFE_TURN="$(printf '%s' "$TURN_ID" | tr -cd 'A-Za-z0-9._:@+-')"
+TS="$(date +%s 2>/dev/null)"
+case "$TS" in ''|*[!0-9]*) TS=0 ;; esac
+
+# An orphan turn is a FIELD on the one row, never a second row: the heartbeat's
+# whole value is "exactly one row per registration per turn", and a reader
+# counting rows must not have to know about a special case.
+ORPHAN_FIELD=''
+[ "$ORPHAN" -eq 1 ] && ORPHAN_FIELD=',"orphan":1'
+
+LEDGER_DIR="$PROJECT_DIR/.sutra/turn/$SAFE_SID"
+mkdir -p "$LEDGER_DIR" 2>/dev/null || true
+# ts is a QUOTED STRING, exactly as runtime/ledger.sh writes it. The canary
+# appends into the same canonical turn file, and bin/sutra-charcap normalises a
+# recorded turn with `sed -E 's%[0-9]{13}%<TS>%g; s%[0-9]{10}%<TS>%g'` - a bare
+# 10-digit epoch therefore becomes `"ts":<TS>`, which is not JSON, and one
+# canary row made the whole normalised file unparseable. Small integers stay
+# unquoted (the `orphan` flag below); the epoch does not.
+printf '{"kind":"canary","turn_id":"%s","event":"%s","session_id":"%s","ts":"%s"%s}\n' \
+  "$SAFE_TURN" "$SAFE_EVENT" "$SAFE_SID" "$TS" "$ORPHAN_FIELD" \
+  >> "$LEDGER_DIR/$SAFE_TURN.jsonl" 2>/dev/null || true
+
+cleanup
+exit 0

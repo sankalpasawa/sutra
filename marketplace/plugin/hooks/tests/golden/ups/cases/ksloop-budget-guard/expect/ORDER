@@ -1,0 +1,8 @@
+reset-turn-markers.sh
+loopguard-turn-reset.sh
+codex-directive-detect.sh
+feedback-routing-rule.sh
+feedback-auto-correction.sh
+per-turn-discipline-prompt.sh
+capture-prompt.sh
+placement-resolve.sh

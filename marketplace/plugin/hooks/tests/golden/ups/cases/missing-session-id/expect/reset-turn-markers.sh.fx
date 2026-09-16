@@ -1,0 +1,2 @@
+afa815f0104e672488d7da27954baaf1d26f17c7cea794fbdbffd22fab382307  .claude/sessions/pid-<PID>/.last-reset-ts
+9881e0995fa3d167d216ce4b98c2273ee6268a379c311760dac51bc2bc11addc  .enforcement/marker-resets.jsonl

@@ -1,0 +1,25 @@
+sutra-feedback-channel-guard: BLOCKED
+
+This command would create or modify a public artifact in a Sutra-owned
+repository (matched by literal repo string, by `git remote` inside a
+sutra checkout, or by mutating `gh api` against issues/pulls).
+
+The Sutra feedback channel is not direct `gh` calls — it is the sanctioned
+binary at `sutra feedback --public` (or `/core:feedback --public`), which
+scrubs the body and asks for explicit user confirmation.
+
+If the sanctioned binary failed for you, that is an INFRA bug to fix, not
+a signal to fall back to direct gh. Capture content locally at
+~/.sutra/feedback/pending/<timestamp>.md and report the binary failure.
+
+This guard is advisory against accidental fallback. Adversarial obfuscation
+(variable indirection, command substitution, base64+eval, hub, curl) is
+not in scope — it is also outside the LLM "help the user finish" path.
+
+Bypass (for legitimate plugin maintenance — code commits, automation, etc.):
+  SUTRA_FEEDBACK_GUARD_DISABLED=1 <your command>
+  touch ~/.sutra-feedback-guard-disabled
+
+Background: incident <TS> (sankalpasawa/sutra#15, since closed).
+Codex review <TS>: hardened to add repo-context (git remote) detection
+and mutating `gh api` detection.

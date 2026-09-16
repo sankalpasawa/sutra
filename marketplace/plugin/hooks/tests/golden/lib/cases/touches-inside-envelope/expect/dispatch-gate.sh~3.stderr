@@ -1,0 +1,3 @@
+BLOCKED — ATOM FLOOR (HARD): no open Work-Atom for session <UUID> — open one first: sutra-atom open --goal '<observable outcome>' --verify-template <file-exists|grep-count|named-test> --verify-arg <...>
+  Fix path: sutra-dispatch resolve ... && sutra-atom open ... && sutra-dispatch bind
+  Mode file: .claude/dispatch-mode (hard|warn). Kill-switch: touch ~/.dispatch-gate-disabled (founder revoke only)

@@ -1,0 +1,6 @@
+FLOW-GATE (HARD): construct work requires classify + resolve first.
+  File: holding/departments/brand-new/README.md
+  Missing markers: classify resolve
+  Run core:flow to classify the input + resolve a workflow type,
+  then re-attempt the Edit/Write.
+  Override: FLOW_ACK=1 FLOW_ACK_REASON='<why>' <tool>

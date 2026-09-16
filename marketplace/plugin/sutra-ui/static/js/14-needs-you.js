@@ -105,8 +105,21 @@ function loadNeedsYou(){
     S._needsYouBusy = false;
     /* survey fold: 403 = feature dark (null); any OTHER failure keeps the
        last known items instead of masquerading as an empty feed */
+    /* Repaint only when the answer CHANGED. This poll answers every ~2 s on
+       an idle Now screen (the 4 s ticker plus SCREENS.now's own re-poll), and
+       every answer scheduled a wholesale #panes rebuild -- measured 2026-09-16
+       at 410-580 ms each, once a second, on a screen where nothing had
+       happened. A press that lands inside such a rebuild is queued; a press
+       whose button is replaced between mousedown and mouseup never becomes a
+       click. The comparison is on the serialised items, so a status flip or a
+       new item still repaints; the same feed twice does not. */
+    const before = S._needsYouKey;
     if (doc === "err"){ S.needsYou = S.needsYou || []; }
     else S.needsYou = doc ? (doc.items || []) : null;
+    let key;
+    try { key = JSON.stringify(S.needsYou); } catch (e) { key = String(Date.now()); }
+    S._needsYouKey = key;
+    const changed = before === undefined || key !== before;
     if (doc && typeof shadowDotAlerts === "function"){
       const alerts = (doc.items || []).filter(it => it.state === "new"
         && (it.kind === "needs_decision"
@@ -114,7 +127,7 @@ function loadNeedsYou(){
             || String(it.item_id || "").indexOf("stall-") === 0)).length;
       shadowDotAlerts(alerts);
     }
-    if (typeof scheduleRender === "function") scheduleRender();
+    if (changed && typeof scheduleRender === "function") scheduleRender();
   }).catch(() => { S._needsYouBusy = false;
     S.needsYou = S.needsYou || []; });
 }

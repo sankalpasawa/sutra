@@ -1,0 +1,5 @@
+BLOCKED: emit Input Routing block before Edit/Write (CLAUDE.md Mandatory Blocks).
+Required: INPUT / TYPE / EXISTING HOME / ROUTE / FIT CHECK / ACTION lines.
+Then write marker via Bash (Write tool is itself blocked by this hook):
+  printf "TS=%s TASK=<slug>\n" "$(date +%s)" > .claude/input-routed
+Override (one call): INPUT_ROUTING_ACK=1 INPUT_ROUTING_ACK_REASON='<why>' <tool>

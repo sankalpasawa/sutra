@@ -1,0 +1,1739 @@
+#!/usr/bin/env bash
+# sutra-charcap - characterisation harness for the Sutra hook fleet.
+#
+# WHY. The runtime rewrite (holding/plans/sutra-runtime/PLAN.md, EXECUTION step
+# 7) replaces the registered bash hooks with one program. "Replaces" is only
+# provable if the OLD behaviour is recorded first - stdout, stderr, exit AND the
+# files each hook touched - and then replayed against the NEW runtime. This tool
+# records that corpus and re-plays it, against either runner.
+#
+# CONTRACT
+#   record  --family F | --all [--proj-root DIR] [--jobs N]
+#         Runs, for every case, the family's scripts THAT CASE'S tool_name
+#         matches (s2b), in a FRESH temporary project root per run (the case's
+#         fs/ is copied in, CLAUDE_PROJECT_DIR points at it, CLAUDE_PLUGIN_ROOT
+#         points at the plugin under test).
+#         Captures stdout, stderr, exit and the file-effect list, normalises,
+#         writes expect/. A case that selects NO registration gets expect/
+#         NO-MATCH instead of an empty ORDER (s2c); a case whose every step
+#         exited 127 is REFUSED and fails the command (s5). --jobs N (default 4)
+#         records N cases at a time, each in its own fresh root, writing only
+#         into its own expect/ - so the corpus is byte-identical to --jobs 1 (s6).
+#   verify  --family F | --all --runner legacy [--jobs N]
+#         Re-runs the same way and diffs. Exit 0 iff every byte matches after
+#         normalisation; a unified diff is printed per mismatch.
+#   verify  --family F | --all --runner sutra-turn
+#         Runs "$CLAUDE_PLUGIN_ROOT/bin/sutra-turn run --event <E>" ONCE per case
+#         in the same fresh root - <E> is THE CASE'S event (s8), so no family is
+#         skipped - PROJECTS its ledger onto the case's ORDER and compares
+#         (a) the projected per-step rows (exit, stdout, stderr, registry order)
+#         with expect/ and (b) - only when the family owns its event alone - its
+#         combined emit with the deterministic merge. A NO-MATCH case (s2c) must
+#         run zero steps of the family and emit nothing.
+#   shadow  --family F --days N
+#         Records BOTH runners under "$CLAUDE_PROJECT_DIR/.sutra/shadow/<family>/"
+#         and appends one row per case to diffs.jsonl.
+#   derive-families [--out FILE]
+#         Regenerates golden/families.json from hooks/hooks.json (see s3).
+#   families
+#         Lists families, event, script count, case count.
+#
+# s1. DETERMINISTIC MERGE (the emit contract sutra-turn must reproduce)
+#   - additionalContext strings, in registration order, joined by two newlines
+#   - the FIRST step that exits 2 wins: its stderr is the block text
+#   - every other stdout is passed through, in registration order
+#
+# s2. CASE LAYOUT
+#   golden/families.json                      family -> {event, ordered scripts}
+#   golden/README.md                          this layout, long form
+#   golden/<family>/cases/<case>/stdin.json   realistic hook input
+#   golden/<family>/cases/<case>/env          KEY=VAL lines (CLAUDE_CODE_SESSION_ID)
+#   golden/<family>/cases/<case>/fs/          materialised into the fresh root
+#   golden/<family>/cases/<case>/expect/ORDER the scripts THIS case runs (s2b)
+#   golden/<family>/cases/<case>/expect/<script>.stdout|.stderr|.exit|.fx
+#   CLAUDE_PROJECT_DIR and CLAUDE_PLUGIN_ROOT are supplied here, at run time;
+#   a case must not pin them in env.
+#   Legacy compatibility: if fs/proj exists it is used as the project-root
+#   payload and fs/home as the HOME payload; otherwise fs/ IS the project root.
+#
+# s2b. MATCHER-AWARE RECORDING (what a case records is what the host would run)
+#   A registration carries a matcher; the host runs it only when the matcher
+#   matches the event's tool_name. Recording the whole family for every case
+#   would record runs that never happen in production AND would make the
+#   sutra-turn comparator diff a full-event ledger against a family-wide list.
+#   So record/verify run, for each case, only the family's registrations whose
+#   matcher matches THAT case's .tool_name, and expect/ORDER is that per-case
+#   list (one slug per line, registration order).
+#   THE MATCHER RULE IS THE HOST'S, READ FROM runtime/pipeline.json
+#   (.matcher_semantics, "anchored-ere"; any other value aborts rather than
+#   guesses). ONE rule, no special case for a plain alternation:
+#     omitted / empty / "*" / null -> matches every tool, tool_name or not
+#     anything else                -> the WHOLE tool_name must match ^(matcher)$
+#                                     as a POSIX ERE
+#   So "Edit|Write" does NOT match MultiEdit, and the permission registration
+#   "Bash|...|mcp__.*|..." DOES match mcp__claude_ai_Gmail__send_message. The
+#   recorder, the legacy verifier and the sutra-turn projection all call the one
+#   matcher_matches() below, so a case can never be recorded with a step set the
+#   host and sutra-turn would not produce.
+#   A case whose stdin carries no tool_name (UserPromptSubmit, SessionStart,
+#   Stop, a malformed payload) matches only the "*" form: an anchored ERE has no
+#   name to test.
+#
+# s2c. NO-MATCH IS AN EXPECTATION, NOT AN ABSENCE
+#   When no registration of the family runs for a case, "nothing ran" and
+#   "nothing was recorded" must not look alike. Such a case gets NO expect/ORDER
+#   and instead expect/NO-MATCH, which names the case's tool_name, its event and
+#   every registration that rejected it (matcher, or event for a mixed family).
+#   Both runners then hold it to that: legacy re-derives the file and diffs it;
+#   --runner sutra-turn requires the runner to execute ZERO steps of this family
+#   and, when the whole event selected nothing, to emit nothing at all.
+#
+# s8. SUTRA-TURN PROJECTION (per case, not per family)
+#   The corpus is family-scoped; sutra-turn is event-scoped. PreToolUse is split
+#   into pretool-gates + pretool-other and Stop into stop-gates + stop-collect,
+#   so one runner ledger covers TWO families - and the lib family is mixed-event
+#   by construction (one caller per helper). The comparator therefore dispatches
+#   PER CASE: it takes the case's own hook_event_name (stdin, then the optional
+#   case EVENT file, then the family's event), runs sutra-turn once for that
+#   event in the fresh root, and PROJECTS the ledger onto THAT CASE's ORDER -
+#   keeping only the rows whose script belongs to this family-and-case, in
+#   registry order. No family is skipped; lib is compared like every other.
+#   Consequences, all deliberate:
+#     - the combined emit (s1) is compared only when the family's expect/ IS the
+#       whole event (ups, session, posttool, permission). For a split event, and
+#       for the mixed lib family - whose rows are a handful of the registrations
+#       of three events - expect/ is a strict subset of the emit and any
+#       comparison would be a false FAIL; golden/README.md s8 records this. The
+#       per-step rows are what carry those families' parity claim.
+#     - a step in ORDER that the runner did not execute is a FAIL. There is no
+#       post-deny skip in the runtime (bin/sutra-turn "NO POST-DENY SKIP":
+#       `class` gates EMISSION, never execution), so the old "not executed after
+#       a deny" note class is retired; a missing row, or a ledger "skip" row, is
+#       a diff.
+#     - a registration that fills SEVERAL slots of one family (the four lib
+#       helpers exercised through hooks/dispatch-gate.sh) is run once by the
+#       host and once by sutra-turn, while legacy re-runs it once per slot. The
+#       single ledger row is compared against the FIRST slot of the group; the
+#       repeat slots keep their legacy recordings and are reported as duplicate
+#       slots, not as missing rows.
+#
+# s3. FAMILY DERIVATION (from hooks/hooks.json, registration order preserved)
+#   ups            UserPromptSubmit
+#   session        SessionStart
+#   pretool-gates  PreToolUse scripts with an exit-2 / deny path
+#   pretool-other  the remaining PreToolUse
+#   posttool       PostToolUse
+#   permission     PermissionRequest
+#   stop-gates     Stop scripts that can emit a block decision or exit 2
+#   stop-collect   the remaining Stop
+#   lib            hooks/lib helpers, one caller each
+#
+# s4. NORMALISATION (applied before anything is written to expect/)
+#   fresh project root -> <PROJ>      plugin root      -> <PLUGIN>
+#   sandbox / work root -> <SB>       fresh HOME       -> <HOME>
+#   ISO timestamps      -> <TS>       13-digit epoch ms-> <TS>
+#   10-digit epochs     -> <TS>       uuids            -> <UUID>
+#   pid-tagged numbers  -> <PID>      host / user      -> <HOST> / <USER>
+#   x.y.z versions      -> <VERSION>  (a release bump must not break the corpus)
+#   ORDER INSIDE THE VOLATILE BLOCK IS PART OF THE CONTRACT (s13):
+#     uuid BEFORE the digit rules      - a uuid tail is 12 hex, an all-digit
+#                                        tail would be eaten by the epoch rule
+#     dotted date BEFORE the version   - 2026.09.15 is a date, not a version;
+#                                        the version rule would claim it first
+#     version rule emitted TWICE       - the rule consumes its trailing guard,
+#                                        so with /g only the first of two
+#                                        space-separated versions normalises
+#   The identity rules are WORD-BOUND and also emitted twice (s13): an unguarded
+#   s%<id -un>%<USER>%g binds the corpus to the machine that recorded it - the
+#   founder's "asawa" is a substring of the "sankalpasawa/sutra-data" literal a
+#   hook prints, and every other machine (a CI runner is "runner") then replays
+#   the literal raw and fails. record REFUSES a recording that still carries an
+#   adjacency (s12), so the binding cannot be frozen into expect/ again.
+#   Ids that content-address a wall-clock stamp are volatile by construction and
+#   are collapsed BEFORE the digit rules can chew them up:
+#     dref-<16hex> / PL-<16hex>  lib/placement_engine.py hashes _now_ms()  -> <MINT>
+#     "turn_id":"<12hex>"        lib/h-sutra-classify-and-write.sh:83, sha256(ts|prompt)
+#     "marker_age_sec": N        structural-move-check.sh:174, now - marker mtime
+#   .fx hashes the NORMALISED bytes of each file, so a fixture that embeds a
+#   timestamp still yields a stable digest, AND normalises the path column with
+#   the same rules - a hook that writes under .claude/sessions/pid-<n>/ puts a
+#   volatile token in the path, not only in the bytes.
+#   Every path rule also carries a FLATTENED twin (slashes -> dashes), because
+#   a hook that derives Claude Code's ~/.claude/projects/<flattened-root> dir
+#   embeds the run root in that mangled form.
+#
+# s4b. CUT PATHS (the "green where recorded, red from a fresh copy" class)
+#   A hook that logs a FIXED-WIDTH slice of its stdin (reset-turn-markers.sh:41
+#   head -c 200, :104 head -c 300) can cut a path in half. The half that
+#   survives is a PREFIX of a run root, and WHICH prefix depends on how long the
+#   work dir is named - s10 keeps the slice the same number of characters, not
+#   the same characters. A long base leaves "/private/tmp/claude-501/-" where a
+#   short one leaves the whole base plus "/run/c53120bae9f9". The whole-path
+#   rules above cannot see either. So any prefix of a run root collapses to
+#   <CUTPATH>, in both forms a cut can leave (raw when the cut fell inside the
+#   base, <SB>/run/<key><pad> when the base survived), each guarded by a
+#   following NON-path character or end of line so a whole path - which
+#   continues with a path character - keeps its own <PROJ>/<SB>/<PLUGIN> token.
+#   A cut inside the first 10 characters of a path, the flattened twin of a cut
+#   path, and a cut landing exactly on the work dir's last character are NOT
+#   covered; pin those in the case's fs/ if a hook ever produces one.
+#
+# s5. HERMETICITY. Every run is "env -i" with a private HOME, a private project
+# root, TZ=UTC, LC_ALL=C, and a PATH whose first entry is a stub dir holding
+# no-op "claude" and "gh" shims, so a hook that would reach the network stays
+# offline and deterministic.
+#   The env vector is built ONE LINE = ONE ARGUMENT (run_in_env), never by word
+#   splitting a file: a case whose value contains a space (stop-gates/
+#   block-context-budget pins CLAUDE_TRANSCRIPT="read holding/a.md ...") used to
+#   split into "env -i CLAUDE_TRANSCRIPT=read holding/a.md ..." - env then exec'd
+#   "holding/a.md", every step recorded exit=127 with empty output, and the
+#   family passed vacuously under legacy while failing under sutra-turn. record
+#   therefore also REFUSES a case whose every step exited 127 unless
+#   golden/<family>/KNOWN-DEFECTS.md names the case with a reason.
+#   REFUSES means the bytes do not survive: the freshly written expect/ files are
+#   REMOVED and replaced by expect/REFUSED-ALL-127, so a caller who ignores
+#   record's non-zero exit still cannot verify green against a recording the
+#   harness never really produced (verify then says "no recording"). A case named
+#   in KNOWN-DEFECTS.md keeps its recording - and the entry must be deleted once
+#   the defect is fixed, or the guard stays disarmed for that case.
+#
+# s9. EXCLUSIVE WORK DIR. The work dir holds the fresh roots, keyed by
+# <family>/<case> and by nothing else (s.setup_case), so TWO charcap processes
+# sharing one work dir run the same case in the same directory and delete each
+# other's tree mid-run - which surfaces as invented FAILs (a gate that reads a
+# fixture file that a sibling just removed reports a different exit, a .jsonl a
+# sibling truncated hashes differently). The default work dir is therefore
+# PRIVATE to the process (mktemp -d, removed on exit). SUTRA_CHARCAP_WORK still
+# overrides it, and a supplied dir is locked for the run: a second process that
+# asks for the same one dies instead of inventing results. Parity numbers are
+# only valid from a run that held an exclusive work dir.
+#
+# s11. THE WALL CAP IS PER INVOCATION SHAPE, AND A 142 IS NEVER GOLDEN.
+#   The cap is a perl alarm around ONE process, and the runners start different
+#   ones: a legacy step is one hook; one "sutra-turn run --event E" is that
+#   event's whole pipeline (24 hooks for PreToolUse). A single flat cap is wrong
+#   by construction - a cold-cache --jobs 8 pass killed six Stop cases at 20s and
+#   the truncated ledgers surfaced as "no ledger row" FAILs that blamed parity.
+#   So: SUTRA_CHARCAP_TIMEOUT (default 20s) caps a legacy step,
+#   SUTRA_CHARCAP_TURN_TIMEOUT (default 6x that) caps a runner invocation, and
+#   exit 142 (SIGALRM) is reported AS the wall cap - one line naming the cap and
+#   the knobs, not a page of derived diffs. record REFUSES a case in which any
+#   step hit the cap (same purge as s5): a killed step records a truncation, so
+#   freezing it would make every later verify depend on machine load.
+#
+#   s11b PER-STEP BUDGET PARITY (1.7.0). One flat cap was also wrong AGAINST THE
+#   RUNTIME. --runner sutra-turn enforces each registration's own timeout_ms
+#   (3000-15000 ms in runtime/pipeline.json, scaled by SUTRA_STEP_TIMEOUT_SCALE
+#   in runtime/shim.sh), while the legacy leg gave every step the same 20s. A
+#   step that outlives its registered budget therefore recorded exit 0 on the
+#   legacy leg - an expectation the runtime can NEVER reach - so the resulting
+#   124 diff was partly a harness artifact rather than a parity defect. The
+#   legacy leg now reads the registration's OWN timeout from
+#   hooks/hooks.json.step3 (else hooks/hooks.json; seconds x1000, 8000 ms when
+#   absent) and applies the SAME integer-percent SUTRA_STEP_TIMEOUT_SCALE clamp
+#   (>= 100, so the knob can only lengthen) that runtime/shim.sh applies. Both
+#   legs then face the same wall under the same harness setting, and a timeout
+#   on either side is a real recorded result rather than a harness artifact.
+#   perl's alarm has second granularity, so the scaled budget is rounded UP to
+#   whole seconds - the legacy leg is never given LESS than the runtime's ms
+#   budget. SUTRA_CHARCAP_TIMEOUT stays as the OUTER cap, itself scaled by the
+#   same percent: it bounds a pathological registration (the 150s one) so a
+#   single hung hook cannot hold the corpus for ten minutes.
+#
+# REQUIRES bash 3.2 (macOS system bash), jq, perl (alarm-based wall cap - macOS
+# has no timeout(1)), BSD sed, shasum. No GNU coreutils. No python.
+#
+# LAYER=L0
+# SCOPE=fleet
+# TARGET_PATH=sutra/marketplace/plugin/bin/sutra-charcap
+
+set -uo pipefail
+
+CHARCAP_VERSION="1.7.2"
+
+# ------------------------------------------------------------------ locations --
+_self="$0"
+case "$_self" in /*) ;; *) _self="$PWD/$_self" ;; esac
+BIN_DIR="$(cd "$(dirname "$_self")" && pwd -P)"
+PLUGIN_DEFAULT="$(cd "$BIN_DIR/.." && pwd -P)"
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_DEFAULT}"
+case "$PLUGIN_ROOT" in /*) ;; *) PLUGIN_ROOT="$(cd "$PLUGIN_ROOT" && pwd -P)" ;; esac
+HOOKS_DIR="$PLUGIN_ROOT/hooks"
+
+GOLDEN="${SUTRA_CHARCAP_GOLDEN:-$PLUGIN_DEFAULT/hooks/tests/golden}"
+# s9: private by default, one per process, removed on exit. A caller that wants
+# to keep the roots for inspection sets SUTRA_CHARCAP_WORK (and then owns the
+# exclusivity: the dir is locked for the run, see work_lock).
+if [ -n "${SUTRA_CHARCAP_WORK:-}" ]; then
+  WORK="${SUTRA_CHARCAP_WORK%/}"; WORK_OWNED=0
+else
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/sutra-charcap.XXXXXXXX" 2>/dev/null)" \
+    || { printf 'sutra-charcap: cannot create a private work dir\n' >&2; exit 1; }
+  WORK_OWNED=1
+fi
+CASE_TIMEOUT="${SUTRA_CHARCAP_TIMEOUT:-20}"
+case "$CASE_TIMEOUT" in ''|*[!0-9]*) CASE_TIMEOUT=20 ;; esac
+# s11 WALL CAP PER INVOCATION SHAPE. The cap is per PROCESS, and the two runners
+# start very different processes: a legacy step is ONE hook, while one
+# "sutra-turn run --event E" executes that event's WHOLE pipeline (24 hooks for
+# PreToolUse). One flat cap is therefore wrong by construction - under --jobs 8
+# on a cold cache the runner invocation of a 6-gate Stop event exceeded 20s,
+# perl's alarm killed it with 142, and the truncated ledger surfaced as
+# "no ledger row" FAILs that name the wrong thing. The runner gets its own cap
+# (6x, overridable) and a 142 is reported AS the wall cap, not as a parity diff.
+TURN_TIMEOUT="${SUTRA_CHARCAP_TURN_TIMEOUT:-$((CASE_TIMEOUT * 6))}"
+case "$TURN_TIMEOUT" in ''|*[!0-9]*) TURN_TIMEOUT=$((CASE_TIMEOUT * 6)) ;; esac
+RUN_TIMEOUT="$CASE_TIMEOUT"
+SB_ROOT="${SUTRA_CHARCAP_SB:-$WORK}"; SB_ROOT="${SB_ROOT%/}"
+TAB="$(printf '\t')"
+# s10: every fresh root is padded to exactly this many characters, so a
+# recorded byte count or fixed-width truncation of a hook's stdin does not move
+# when the corpus is replayed from a different work dir. 160 clears a macOS
+# /var/folders TMPDIR and a deep sandbox path; raise it only if charcap says so.
+RUN_ROOT_LEN="${SUTRA_CHARCAP_ROOTLEN:-160}"
+case "$RUN_ROOT_LEN" in ''|*[!0-9]*) RUN_ROOT_LEN=160 ;; esac
+
+REAL_HOME="${HOME:-/nonexistent}"
+
+die()  { printf 'sutra-charcap: %s\n' "$*" >&2; exit 1; }
+note() { [ -n "${SUTRA_CHARCAP_QUIET:-}" ] || printf '%s\n' "$*" >&2; }
+
+command -v jq     >/dev/null 2>&1 || die "jq not found (required)"
+command -v perl   >/dev/null 2>&1 || die "perl not found (required for the wall cap)"
+command -v shasum >/dev/null 2>&1 || die "shasum not found (required for .fx)"
+JQ_BIN="$(command -v jq)"; JQ_DIR="$(dirname "$JQ_BIN")"
+
+# s9: exclusivity + cleanup. WORK_LOCK is a directory, so the claim is atomic on
+# every filesystem this runs on; the pid inside lets a stale lock be reclaimed.
+WORK_LOCK=""
+work_lock() {  # <dir>
+  mkdir -p "$1" 2>/dev/null || die "cannot create work dir $1"
+  if ! mkdir "$1/.charcap-lock" 2>/dev/null; then
+    _wl_p="$(cat "$1/.charcap-lock/pid" 2>/dev/null)"
+    if [ -n "$_wl_p" ] && kill -0 "$_wl_p" 2>/dev/null; then
+      die "work dir $1 is in use by charcap pid $_wl_p - a shared work dir makes two runs delete each other's fresh roots and invents FAILs. Give this run its own dir (unset SUTRA_CHARCAP_WORK for a private one)."
+    fi
+    note "WARN: reclaiming a stale work-dir lock in $1 (pid ${_wl_p:-unknown})"
+    rm -rf "$1/.charcap-lock" 2>/dev/null
+    mkdir "$1/.charcap-lock" 2>/dev/null || die "cannot lock work dir $1"
+  fi
+  printf '%s\n' "$$" > "$1/.charcap-lock/pid" 2>/dev/null
+  WORK_LOCK="$1/.charcap-lock"
+}
+charcap_cleanup() {
+  [ -z "$WORK_LOCK" ] || rm -rf "$WORK_LOCK" 2>/dev/null
+  if [ "${WORK_OWNED:-0}" = "1" ] && [ -n "${WORK:-}" ]; then
+    case "$WORK" in /*/*) rm -rf "$WORK" 2>/dev/null ;; esac
+  fi
+}
+trap 'charcap_cleanup' EXIT
+trap 'charcap_cleanup; exit 130' INT
+trap 'charcap_cleanup; exit 143' TERM
+
+# -------------------------------------------------------------------- helpers --
+# sed_escape <literal> -> safe as an ERE pattern with % as the s/// delimiter.
+# % is the delimiter, NOT |: several normalisation patterns need | as the ERE
+# alternation operator, and BSD sed has no way to escape a delimiter inside a
+# bracket-free alternation. % does not occur in any sandbox path.
+sed_escape() { printf '%s' "$1" | sed -e 's/[][\.*^$(){}?+|/%]/\\&/g'; }
+
+json_esc() { printf '%s' "$1" | jq -Rs .; }
+
+sha_of() { shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'; }
+
+FAMILIES_JSON="$GOLDEN/families.json"
+
+# s2b. The matcher rule is the HOST's, declared by the runtime spec. Read it;
+# never guess: a mis-read matcher records a step set production never runs (or
+# drops one it does), and both directions are invisible in a green corpus.
+PIPELINE_JSON="$PLUGIN_ROOT/runtime/pipeline.json"
+MATCHER_SEMANTICS="anchored-ere"
+if [ -f "$PIPELINE_JSON" ]; then
+  _psem="$(jq -r '.matcher_semantics // empty' "$PIPELINE_JSON" 2>/dev/null)"
+  [ -z "$_psem" ] || MATCHER_SEMANTICS="$_psem"
+fi
+[ "$MATCHER_SEMANTICS" = "anchored-ere" ] || \
+  die "runtime/pipeline.json declares matcher_semantics=$MATCHER_SEMANTICS; this tool implements anchored-ere only (s2b)"
+
+# families -> one family id per line, in families.json order (else alphabetical).
+families() {
+  if [ -f "$FAMILIES_JSON" ]; then
+    jq -r '.families | keys_unsorted[]' "$FAMILIES_JSON"
+  else
+    ( cd "$GOLDEN" 2>/dev/null || exit 0
+      for d in */; do
+        [ -f "${d}FAMILY.json" ] || [ -f "${d}family.json" ] || continue
+        printf '%s\n' "${d%/}"
+      done ) | sort
+  fi
+}
+
+_family_file() {  # <family> -> path of the per-family descriptor, or empty
+  if   [ -f "$GOLDEN/$1/FAMILY.json" ]; then printf '%s' "$GOLDEN/$1/FAMILY.json"
+  elif [ -f "$GOLDEN/$1/family.json" ]; then printf '%s' "$GOLDEN/$1/family.json"
+  fi
+}
+
+# family_commands <family> -> one shell command per line, registration order.
+# Accepts families.json (.families.F.scripts[] as {command}|{path}|string) and
+# the per-family descriptor with the same shapes.
+family_commands() {
+  _fc_src=""
+  if [ -f "$FAMILIES_JSON" ] && jq -e --arg f "$1" '.families | has($f)' "$FAMILIES_JSON" >/dev/null 2>&1; then
+    jq -r --arg f "$1" '.families[$f].scripts[]
+      | if type=="string" then . else (.command // .path // .id) end' "$FAMILIES_JSON"
+    return 0
+  fi
+  _fc_src="$(_family_file "$1")"
+  [ -n "$_fc_src" ] || return 1
+  jq -r '.scripts[] | if type=="string" then . else (.command // .path // .id) end' "$_fc_src"
+}
+
+family_event() {  # <family>
+  if [ -f "$FAMILIES_JSON" ] && jq -e --arg f "$1" '.families | has($f)' "$FAMILIES_JSON" >/dev/null 2>&1; then
+    jq -r --arg f "$1" '.families[$f].event' "$FAMILIES_JSON"; return 0
+  fi
+  _fe_src="$(_family_file "$1")"
+  [ -n "$_fe_src" ] && jq -r '.event' "$_fe_src"
+}
+
+family_cases() {  # <family>
+  ( cd "$GOLDEN/$1/cases" 2>/dev/null || exit 0
+    for d in */; do [ -f "${d}stdin.json" ] && printf '%s\n' "${d%/}"; done ) | sort
+}
+
+# The effective hook file of a command: the last .sh token, plugin-relative.
+eff_file() {  # <command>
+  printf '%s' "$1" | tr ' ' '\n' | grep '\.sh$' | tail -1 \
+    | sed -e 's|\${CLAUDE_PLUGIN_ROOT}/hooks/||' -e 's|^hooks/||'
+}
+
+# family_rows <family> -> "<command><TAB><matcher><TAB><event>" per registration,
+# in registration order. The per-row event is empty for a single-event family
+# and carries the registration's own event for the mixed lib family (s8).
+family_rows() {
+  _fr_q='.scripts[] | if type=="string" then "\(.)\t*\t"
+         else "\((.command // .path // .id))\t\((.matcher // "*"))\t\((.event // ""))" end'
+  if [ -f "$FAMILIES_JSON" ] && jq -e --arg f "$1" '.families | has($f)' "$FAMILIES_JSON" >/dev/null 2>&1; then
+    jq -r --arg f "$1" ".families[\$f] | $_fr_q" "$FAMILIES_JSON"
+    return 0
+  fi
+  _fr_src="$(_family_file "$1")"
+  [ -n "$_fr_src" ] || return 1
+  jq -r "$_fr_q" "$_fr_src"
+}
+
+# s2b. matcher_matches <matcher> <tool_name> -> 0 when the host would run this
+# registration for that tool. [SEMANTICS: anchored-ere, read from pipeline.json]
+#   omitted / empty / "*" / null  -> every tool, tool_name or not
+#   anything else                 -> the WHOLE tool name must match ^(matcher)$
+# ONE rule - the same one bin/sutra-turn applies - so "Edit|Write" does NOT
+# match MultiEdit and "mcp__.*" DOES match mcp__claude_ai_Gmail__send_message.
+# A missing tool_name (UserPromptSubmit, SessionStart, Stop, malformed input)
+# matches only the "*" form: an anchored ERE has no name to test.
+matcher_matches() {
+  _mm_m="$1"; _mm_t="${2:-}"
+  case "$_mm_m" in ''|'*'|null) return 0 ;; esac
+  [ -n "$_mm_t" ] || return 1
+  printf '%s' "$_mm_t" | grep -Eq "^($_mm_m)\$"
+}
+
+case_tool() {  # <family> <case> -> the case's tool_name, or empty
+  jq -r 'if type=="object" then (.tool_name // "") else "" end' \
+     "$GOLDEN/$1/cases/$2/stdin.json" 2>/dev/null | head -1
+}
+
+# is_hook_event <name> -> 0 for one of the seven dispatchable hook events.
+is_hook_event() {
+  case "$1" in
+    SessionStart|UserPromptExpansion|UserPromptSubmit|PreToolUse|PostToolUse|PermissionRequest|Stop) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# s8. case_event <family> <case> -> the hook event this case is dispatched under.
+#   1. stdin.json .hook_event_name (jq, then a raw scrape so a MALFORMED payload
+#      that still carries the field is read the same way sutra-turn reads it)
+#   2. the case's optional EVENT file - the event is host metadata, not payload,
+#      so a deliberately unparseable fixture can still name it
+#   3. the family's event, when the family owns one
+# Empty when none of the three applies: that case cannot be dispatched and the
+# sutra-turn runner reports it rather than silently skipping it.
+case_event() {
+  _ce_d="$GOLDEN/$1/cases/$2"
+  _ce_e="$(jq -r 'if type=="object" then (.hook_event_name // "") else "" end' \
+             "$_ce_d/stdin.json" 2>/dev/null | head -1)"
+  if [ -z "$_ce_e" ]; then
+    _ce_e="$(sed -n 's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\([A-Za-z]*\)".*/\1/p' \
+               "$_ce_d/stdin.json" 2>/dev/null | head -1)"
+  fi
+  if [ -z "$_ce_e" ] && [ -f "$_ce_d/EVENT" ]; then
+    _ce_e="$(tr -d ' \011\015\012' < "$_ce_d/EVENT" 2>/dev/null)"
+  fi
+  if [ -z "$_ce_e" ]; then
+    _ce_e="$(family_event "$1")"
+    is_hook_event "$_ce_e" || _ce_e=""
+  fi
+  is_hook_event "$_ce_e" || _ce_e=""
+  printf '%s' "$_ce_e"
+}
+
+# case_scripts <family> <case> -> "<slug><TAB><eff-file><TAB><command>" for the
+# registrations THIS case runs (s2b), registration order. The slug is the
+# effective script's basename and is allocated over the WHOLE family - a repeat
+# gets ~N - so a script keeps the same expect/ name whichever case records it.
+case_scripts() {
+  _cs_tool="$(case_tool "$1" "$2")"
+  _cs_ev="$(case_event "$1" "$2")"
+  is_hook_event "$(family_event "$1")" && _cs_mixed=0 || _cs_mixed=1
+  _cs_seen=""
+  family_rows "$1" | while IFS="$TAB" read -r _cs_cmd _cs_m _cs_rev; do
+    [ -n "$_cs_cmd" ] || continue
+    _cs_f="$(eff_file "$_cs_cmd")"; _cs_b="$(basename "$_cs_f")"
+    _cs_n=0; _cs_s="$_cs_b"
+    while :; do
+      case " ${_cs_seen:-} " in *" $_cs_s "*) _cs_n=$((_cs_n+1)); _cs_s="$_cs_b~$_cs_n" ;; *) break ;; esac
+    done
+    _cs_seen="${_cs_seen:-} $_cs_s"
+    # A mixed family (lib) holds registrations of SEVERAL events; the host runs
+    # only the ones registered for the event being dispatched, so the case's
+    # event selects before the matcher does.
+    if [ "$_cs_mixed" = "1" ]; then
+      [ -n "$_cs_rev" ] || continue
+      [ "$_cs_rev" = "$_cs_ev" ] || continue
+    fi
+    matcher_matches "$_cs_m" "$_cs_tool" || continue
+    printf '%s\t%s\t%s\n' "$_cs_s" "$_cs_f" "$_cs_cmd"
+  done
+}
+
+# s2c. no_match_text <family> <case>: what expect/NO-MATCH holds when no
+# registration of the family runs for this case. Derived from families.json and
+# the case's stdin alone, so record and verify compute the same bytes.
+no_match_text() {
+  _nm_tool="$(case_tool "$1" "$2")"
+  _nm_ev="$(case_event "$1" "$2")"
+  is_hook_event "$(family_event "$1")" && _nm_mixed=0 || _nm_mixed=1
+  printf '# NO-MATCH (s2c): no registration of family %s runs for this case.\n' "$1"
+  printf 'tool_name: %s\n' "${_nm_tool:-<none>}"
+  printf 'event: %s\n' "${_nm_ev:-<unknown>}"
+  printf 'matcher_semantics: %s\n' "$MATCHER_SEMANTICS"
+  printf 'rejected-by:\n'
+  family_rows "$1" | while IFS="$TAB" read -r _nm_cmd _nm_m _nm_rev; do
+    [ -n "$_nm_cmd" ] || continue
+    _nm_f="$(eff_file "$_nm_cmd")"
+    if [ "$_nm_mixed" = "1" ] && [ "$_nm_rev" != "$_nm_ev" ]; then
+      printf '  %s\tevent=%s\n' "$_nm_f" "${_nm_rev:-<none>}"
+      continue
+    fi
+    printf '  %s\tmatcher=%s\n' "$_nm_f" "${_nm_m:-<none>}"
+  done
+}
+
+# s8. emit_comparable <family> <case-event> -> 0 only when this family's expect/
+# is the WHOLE of what the runner runs for that event, which is the only case in
+# which the combined emit (s1) can be diffed. Two ways to be a subset, both
+# disqualifying:
+#   - another family is registered for the same event (PreToolUse is split into
+#     pretool-gates + pretool-other, Stop into stop-gates + stop-collect);
+#   - the family does not own the event at all (lib is mixed: its rows are a
+#     handful of the registrations of PreToolUse, PostToolUse and SessionStart).
+# Comparing a subset against the whole event's emit is a false FAIL, not a
+# finding - the per-step rows are what carry lib's parity claim.
+emit_comparable() {
+  [ -f "$FAMILIES_JSON" ] || return 1
+  _es_f="$(family_event "$1")"
+  [ -n "$_es_f" ] && [ "$_es_f" = "$2" ] || return 1
+  _es_n="$(jq -r --arg e "$2" '[.families[] | select(.event==$e)] | length' "$FAMILIES_JSON" 2>/dev/null)"
+  [ "${_es_n:-1}" -eq 1 ]
+}
+
+# ----------------------------------------------------------------- normaliser --
+build_norm_sed() {  # <outfile> <proj> <home>
+  _ns_out="$1"; _ns_proj="$2"; _ns_home="$3"
+  : > "$_ns_out"
+  # Path rules first, longest literal first, so a nested root is never
+  # half-replaced by its parent.
+  printf '%s\n' \
+    "$_ns_proj|<PROJ>" \
+    "$_ns_home|<HOME>" \
+    "$PLUGIN_ROOT|<PLUGIN>" \
+    "$GOLDEN|<GOLDEN>" \
+    "$SB_ROOT|<SB>" \
+    "$WORK|<SB>" \
+    "$REAL_HOME|<REALHOME>" \
+  | awk -F'|' 'length($1)>0 { print length($1)"\t"$0 }' | sort -rn -k1,1 | cut -f2- \
+  | while IFS='|' read -r _p _t; do
+      printf 's%%%s%%%s%%g\n' "$(sed_escape "$_p")" "$_t" >> "$_ns_out"
+      # Claude Code names its per-project dir after the root with every slash
+      # turned into a dash (~/.claude/projects/-var-folders-..-proj). A hook that
+      # reads or creates that dir leaks the run root in the flattened form, which
+      # the literal rule above cannot see - so emit the flattened twin as well.
+      printf 's%%%s%%%s%%g\n' "$(sed_escape "$(printf '%s' "$_p" | tr '/' '-')")" "$_t" >> "$_ns_out"
+      # macOS resolves /tmp through /private/tmp; record the stripped twin too.
+      case "$_p" in
+        /private/*)
+          printf 's%%%s%%%s%%g\n' "$(sed_escape "${_p#/private}")" "$_t" >> "$_ns_out"
+          printf 's%%%s%%%s%%g\n' "$(sed_escape "$(printf '%s' "${_p#/private}" | tr '/' '-')")" "$_t" >> "$_ns_out" ;;
+      esac
+    done
+  # s4b CUT PATHS. A hook that records a FIXED-WIDTH slice of its stdin
+  # (reset-turn-markers.sh:41 head -c 200, :104 head -c 300) can cut a path in
+  # half. The surviving half is a PREFIX of a run root, and which half survives
+  # depends on how long the work dir happens to be - so s10's length invariance
+  # cannot save it: the slice is the same NUMBER of characters in every
+  # environment, but a long base leaves "/private/tmp/claude-501/-" where a
+  # short one leaves the whole base plus "/run/c53120bae9f9". The literal rules
+  # above only see WHOLE paths, so both halves would be recorded raw and every
+  # replay from a differently-named work dir would diff. Collapse any prefix of
+  # a run root to ONE token instead, in both of the forms a cut can leave:
+  #   - raw, when the cut fell inside the base     -> one nested-prefix rule/root
+  #   - token+tail, when the base survived the cut -> <SB>/run/<key><pad>
+  # Both are guarded by a following NON-path character (or end of line), so a
+  # whole path - which continues with a path character - can never match one of
+  # these rules; whole paths keep their own <PROJ> / <SB> / <PLUGIN> tokens.
+  # The rules sit AFTER the literal rules for that reason, and run longest
+  # first. A cut inside the first CUT_MINLEN characters of a path is left raw
+  # (a rule that short would rewrite ordinary text); 10 clears "/private/t".
+  # NOT covered, deliberately: the flattened twin of a cut path, and a cut that
+  # lands exactly on the last character of the work dir itself.
+  CUT_MINLEN=10
+  # ONE rule per root, not one per cut length: the prefix is expressed as nested
+  # optionals (a(b(c)?)?), which POSIX leftmost-longest matching extends as far
+  # as the text agrees with the root. The guard is the character BEFORE the
+  # match, not after: a trailing guard would be capture group 100-odd and sed
+  # backreferences stop at \9. A whole path cannot be hit because the literal
+  # rules above have already replaced it with its token.
+  for _ns_cut in "$PROJ_ROOT_BASE" "$WORK" "$GOLDEN" "$PLUGIN_ROOT" "$REAL_HOME"; do
+    [ -n "$_ns_cut" ] || continue
+    awk -v s="$_ns_cut" -v min="$CUT_MINLEN" 'BEGIN{
+      n = length(s); if (n < min + 1) exit 0
+      re = ""; tail = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1); gsub(/[][\\.*^$(){}?+|\/%]/, "\\\\&", c)
+        if (i <= min) { re = re c } else { re = re "(" c; tail = tail ")?" }
+      }
+      printf "s%%([^A-Za-z0-9_./-])%s%s%%\\1<CUTPATH>%%g\n", re, tail
+      printf "s%%^%s%s%%<CUTPATH>%%\n", re, tail
+    }' >> "$_ns_out"
+  done
+  cat >> "$_ns_out" <<'SEDEOF'
+s%<SB>/run/[0-9a-f]{0,16}p*(/[a-z]{0,5})?([^A-Za-z0-9_./-])%<CUTPATH>\2%g
+s%<SB>/run/[0-9a-f]{0,16}p*(/[a-z]{0,5})?$%<CUTPATH>%
+s%<SB>/r(u(n)?)?([^A-Za-z0-9_./-])%<CUTPATH>\3%g
+s%<SB>/r(u(n)?)?$%<CUTPATH>%
+SEDEOF
+  # Volatile-token rules. ORDER IS THE CONTRACT (s13), three pairs of it:
+  #   - UUID before the digit rules: a uuid tail is 12 hex chars and an
+  #     all-digit tail would otherwise be eaten by the epoch rule.
+  #   - ISO before the bare-date rule, since ISO starts with a bare date.
+  #   - the DOTTED DATE (2026.09.15) before the version rule: both are
+  #     digits.digits.digits, and whichever runs first wins. A dotted date is a
+  #     date in every hook that prints one, so it takes <TS>; a version that
+  #     happens to look like yyyy.mm.dd is not a shape this fleet ships.
+  # The version rule is emitted TWICE on purpose: it consumes the character
+  # after the version as its trailing guard, so under /g the second of two
+  # space-separated versions on one line would be left raw ("x 1.2.3 4.5.6 y").
+  # Its left guard excludes only [0-9A-Za-z._/] - a HYPHEN is a guard, because a
+  # hyphen-joined version is still a version (sutra-core-2.278.0). Its trailing
+  # guard accepts a dot followed by a non-digit or end of line, so a version
+  # that ends a sentence ("plugin v2.278.0.") normalises while a 4-part literal
+  # (1.2.3.4) and an IPv4 address (10.0.0.1, 10.0.0.1:8080) stay raw.
+  cat >> "$_ns_out" <<'SEDEOF'
+s%[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}%<UUID>%g
+s%dref-[0-9a-fA-F]{16}%dref-<MINT>%g
+s%PL-[0-9a-fA-F]{16}%PL-<MINT>%g
+s%("turn_id"[[:space:]]*:[[:space:]]*")[0-9a-fA-F]{12}%\1<TURNID>%g
+s%[0-9]{4}\.[0-9]{2}\.[0-9]{2}%<TS>%g
+s%(^|[^0-9A-Za-z._/])v?[0-9]+\.[0-9]+\.[0-9]+([^0-9.]|\.([^0-9]|$)|$)%\1<VERSION>\2%g
+s%(^|[^0-9A-Za-z._/])v?[0-9]+\.[0-9]+\.[0-9]+([^0-9.]|\.([^0-9]|$)|$)%\1<VERSION>\2%g
+s%[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?([.,][0-9]{1,6})?(Z|[+-][0-9]{2}:?[0-9]{2})?%<TS>%g
+s%[0-9]{4}-[0-9]{2}-[0-9]{2}%<TS>%g
+s%<TS>[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?([.,][0-9]{1,6})?(Z|[+-][0-9]{2}:?[0-9]{2})?%<TS>%g
+s%[0-9]{2}:[0-9]{2}:[0-9]{2}%<TS>%g
+s%[0-9]{13}%<TS>%g
+s%[0-9]{10}%<TS>%g
+s%([Pp][Ii][Dd][^0-9]{0,3})[0-9]{1,7}%\1<PID>%g
+s%(elapsed|took|duration)([=: ])[0-9]{1,9}%\1\2<MS>%g
+s%("(ms|marker_age_sec|age_sec|elapsed_sec|elapsed_ms|duration_sec|duration_ms)"[[:space:]]*:[[:space:]]*)[0-9]{1,10}%\1<MS>%g
+s%[0-9]{1,9}ms%<MS>%g
+SEDEOF
+  # s13 IDENTITY RULES ARE WORD-BOUND. An unguarded s%asawa%<USER>%g binds the
+  # corpus to the machine that recorded it: "asawa" is a substring of the
+  # "sankalpasawa/sutra-data" literal that sessionstart-privacy-notice.sh
+  # prints, so the recording froze "sankalp<USER>/sutra-data" and every machine
+  # whose id -un is not "asawa" (a CI runner is "runner") replayed the literal
+  # raw - 22 FAILs in the session family, on the gate's own runners. Guard both
+  # sides with a non-word character ('-' counts as part of a name, so it is a
+  # word character here, not a guard), and emit each rule TWICE for the same
+  # reason as the version rule: the first pass eats the separator. The guards
+  # sit OUTSIDE the literal, so a host name that itself contains '.' or '-'
+  # (Rameshs-MacBook-Air.local) is still matched whole. record refuses any
+  # recording that still carries a <USER>/<HOST> adjacency (s12).
+  _h="$(hostname 2>/dev/null || echo localhost)"
+  _u="$(id -un 2>/dev/null || echo user)"
+  for _ns_id in "$_h|<HOST>" "$_u|<USER>"; do
+    _ns_lit="${_ns_id%|*}"; _ns_tok="${_ns_id##*|}"
+    [ -n "$_ns_lit" ] || continue
+    printf 's%%(^|[^0-9A-Za-z_-])%s([^0-9A-Za-z_-]|$)%%\\1%s\\2%%g\n' \
+      "$(sed_escape "$_ns_lit")" "$_ns_tok" >> "$_ns_out"
+    printf 's%%(^|[^0-9A-Za-z_-])%s([^0-9A-Za-z_-]|$)%%\\1%s\\2%%g\n' \
+      "$(sed_escape "$_ns_lit")" "$_ns_tok" >> "$_ns_out"
+  done
+  # A broken rule must be loud: a silent fallback to raw bytes would record
+  # volatile content and make every later verify fail for the wrong reason.
+  if ! printf 'probe\n' | sed -E -f "$_ns_out" >/dev/null 2>&1; then
+    die "normalisation script rejected by sed: $_ns_out"
+  fi
+  return 0
+}
+
+norm_file() {  # <file> <sedscript> - normalise in place
+  if sed -E -f "$2" "$1" > "$1.nrm" 2>/dev/null; then mv "$1.nrm" "$1"
+  else rm -f "$1.nrm"; note "WARN: normalisation failed for $1"; fi
+}
+
+# ------------------------------------------------------------- file effects --
+# snap <root> <sedscript> <outfile>: "<sha of normalised bytes>  <relpath>",
+# sorted by path, .git excluded (the fixture repo is scaffolding, not effect).
+snap() {
+  _sn_root="$1"; _sn_sed="$2"; _sn_out="$3"
+  : > "$_sn_out"
+  _sn_tmp="$_sn_out.one"; _sn_p="$_sn_out.paths"; _sn_s="$_sn_out.shas"
+  ( cd "$_sn_root" 2>/dev/null || exit 0
+    find . -type f -not -path './.git/*' -print 2>/dev/null | LC_ALL=C sort ) \
+  | sed -e 's%^\./%%' > "$_sn_p"
+  : > "$_sn_s"
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
+    _abs="$_sn_root/$_rel"
+    sed -E -f "$_sn_sed" "$_abs" > "$_sn_tmp" 2>/dev/null || cp "$_abs" "$_sn_tmp" 2>/dev/null
+    sha_of "$_sn_tmp" >> "$_sn_s"
+  done < "$_sn_p"
+  # The PATH column is volatile too - a hook that writes under
+  # .claude/sessions/pid-<n>/ puts the pid in the name, not in the bytes. Run the
+  # same rules over the path list in ONE pass (per-path sed would be O(files)
+  # processes per snapshot) and re-join, so the rules can never touch a digest.
+  sed -E -f "$_sn_sed" "$_sn_p" > "$_sn_p.n" 2>/dev/null || cp "$_sn_p" "$_sn_p.n"
+  awk 'NR==FNR { s[FNR]=$0; next } { printf "%s  %s\n", s[FNR], $0 }' "$_sn_s" "$_sn_p.n" > "$_sn_out"
+  rm -f "$_sn_tmp" "$_sn_p" "$_sn_p.n" "$_sn_s"
+  return 0
+}
+
+# fx_diff <before> <after> <out>: created/changed lines, then "deleted  <path>".
+fx_diff() {
+  LC_ALL=C sort "$1" > "$1.s"; LC_ALL=C sort "$2" > "$2.s"
+  { LC_ALL=C comm -13 "$1.s" "$2.s"
+    awk 'NR==FNR { seen[substr($0, index($0,"  ")+2)]=1; next }
+         { p=substr($0, index($0,"  ")+2); if (!(p in seen)) print "deleted  " p }' \
+        "$2" "$1"
+  } | LC_ALL=C sort -k2 > "$3"
+  rm -f "$1.s" "$2.s"
+}
+
+# ------------------------------------------------------------------ case run --
+expand_tokens() {
+  sed -e "s|@PROJ@|$RUN_PROJ|g" -e "s|@HOME@|$RUN_HOME|g" \
+      -e "s|@PLUGIN@|$PLUGIN_ROOT|g" -e "s|@HOOKS@|$HOOKS_DIR|g" \
+      -e "s|<PROJ>|$RUN_PROJ|g" -e "s|<HOME>|$RUN_HOME|g" \
+      -e "s|<PLUGIN>|$PLUGIN_ROOT|g"
+}
+
+# setup_case <family> <case> <tag>: a FRESH project root, seeded from fs/.
+# The <tag> (record|verify|turn|shadow) is DELIBERATELY not part of the path.
+# A hook that hashes or echoes its own root (placement ids, the flattened
+# ~/.claude/projects/<root> dir) would otherwise produce a different byte for
+# `record` than for `verify` and every such recording would be unverifiable.
+# Same root name in every mode == the two runs differ only in when they ran.
+# setup_case rm -rf's the root first, so reuse is still a fresh tree.
+setup_case() {
+  sc_fam="$1"; sc_case="$2"; sc_tag="$3"; : "$sc_tag"
+  # s7: hold the identity group, then clear the global arbiter dirs of THIS
+  # case's session id. Released by the caller (case_lock_drop) when the case ends.
+  case_lock_take "$(case_ident "$sc_fam" "$sc_case")"
+  sc_sid="$(case_sid "$sc_fam" "$sc_case")"
+  if [ -n "$sc_sid" ]; then
+    for sc_l in /tmp/h-sutra-arbiter-"$(printf '%s' "$sc_sid" | cut -c1-8)"*; do
+      [ -d "$sc_l" ] && rm -rf "$sc_l" 2>/dev/null
+    done
+  fi
+  RUN_CDIR="$GOLDEN/$sc_fam/cases/$sc_case"
+  # s10 PATH-LENGTH INVARIANCE. Hooks record the BYTE COUNT of their stdin
+  # (reset-turn-markers.sh:40 "stdin_bytes") and fixed-width truncations of it
+  # (:41 head -c 200, :104 head -c 300), and that stdin embeds
+  # CLAUDE_PROJECT_DIR. A run root whose STRING LENGTH depends on where the
+  # work dir happens to live therefore changes recorded bytes that no
+  # normalisation rule can undo - a count is not a path, and a truncation drops
+  # a different number of trailing characters. That is the whole "it verifies
+  # green where it was recorded and red from a fresh copy" class.
+  # So the run root is padded to a CONSTANT length in every environment:
+  #   <base>/run/<16 hex of family|case><p...>   (RUN_ROOT_LEN chars total)
+  # and proj/home/stub are equal-length children of it. The family and case are
+  # hashed rather than spelled so their own name lengths cannot leak either.
+  sc_key="$(printf '%s|%s' "$sc_fam" "$sc_case" | shasum -a 256 | awk '{print substr($1,1,16)}')"
+  sc_stem="$PROJ_ROOT_BASE/run"
+  sc_pad=$(( RUN_ROOT_LEN - ${#sc_stem} - 1 - 16 ))
+  if [ "$sc_pad" -lt 0 ]; then
+    die "work dir path is too long for a length-invariant run root: $sc_stem needs <= $((RUN_ROOT_LEN - 17)) chars (raise SUTRA_CHARCAP_ROOTLEN, or pass a shorter --proj-root). A variable-length root silently changes every recorded byte count."
+  fi
+  sc_padstr=""
+  [ "$sc_pad" -eq 0 ] || sc_padstr="$(printf '%*s' "$sc_pad" '' | tr ' ' 'p')"
+  RUN_ROOT="$sc_stem/$sc_key$sc_padstr"
+  RUN_PROJ="$RUN_ROOT/proj"; RUN_HOME="$RUN_ROOT/home"; RUN_STUB="$RUN_ROOT/stub"
+  rm -rf "$RUN_ROOT"
+  mkdir -p "$RUN_PROJ" "$RUN_HOME" "$RUN_STUB" "$RUN_ROOT/tmp" || die "cannot create $RUN_ROOT"
+
+  if [ -d "$RUN_CDIR/fs/proj" ] || [ -d "$RUN_CDIR/fs/home" ]; then
+    [ -d "$RUN_CDIR/fs/proj" ] && cp -R "$RUN_CDIR/fs/proj/." "$RUN_PROJ/" 2>/dev/null
+    [ -d "$RUN_CDIR/fs/home" ] && cp -R "$RUN_CDIR/fs/home/." "$RUN_HOME/" 2>/dev/null
+  elif [ -d "$RUN_CDIR/fs" ]; then
+    cp -R "$RUN_CDIR/fs/." "$RUN_PROJ/" 2>/dev/null
+  fi
+  mkdir -p "$RUN_PROJ/.claude" "$RUN_PROJ/.sutra" "$RUN_PROJ/.enforcement" "$RUN_HOME/.sutra" 2>/dev/null
+
+  for _s in claude gh; do printf '#!/bin/sh\nexit 1\n' > "$RUN_STUB/$_s"; chmod 0755 "$RUN_STUB/$_s"; done
+
+  # A real repo with a frozen identity, so `git rev-parse --show-toplevel`
+  # resolves inside the sandbox instead of walking up to the developer's repo.
+  ( cd "$RUN_PROJ" \
+    && git -c init.defaultBranch=main init -q . >/dev/null 2>&1 \
+    && git -c user.name=charcap -c user.email=charcap@example.invalid add -A >/dev/null 2>&1 \
+    && GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z' \
+       git -c user.name=charcap -c user.email=charcap@example.invalid \
+           commit -q --allow-empty -m charcap-fixture >/dev/null 2>&1 ) || true
+
+  RUN_SED="$RUN_ROOT/normalise.sed"
+  build_norm_sed "$RUN_SED" "$RUN_PROJ" "$RUN_HOME"
+
+  RUN_STDIN="$RUN_ROOT/stdin.json"
+  expand_tokens < "$RUN_CDIR/stdin.json" > "$RUN_STDIN"
+
+  RUN_ENV="$RUN_ROOT/env.list"
+  { printf 'HOME=%s\n' "$RUN_HOME"
+    printf 'PATH=%s\n' "$RUN_STUB:$JQ_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
+    printf 'TMPDIR=%s\n' "$RUN_ROOT/tmp"
+    printf 'TZ=UTC\nLC_ALL=C\nLANG=C\nTERM=dumb\n'
+    printf 'SUTRA_CHARCAP=1\n'
+    # The case's own KEY=VAL lines. CLAUDE_PROJECT_DIR / CLAUDE_PLUGIN_ROOT are
+    # supplied by the tool, so a case cannot pin them.
+    if [ -f "$RUN_CDIR/env" ]; then
+      expand_tokens < "$RUN_CDIR/env" | grep '=' | grep -v '^[[:space:]]*#' \
+        | grep -v '^CLAUDE_PROJECT_DIR=' | grep -v '^CLAUDE_PLUGIN_ROOT='
+    fi
+    printf 'CLAUDE_PROJECT_DIR=%s\n' "$RUN_PROJ"
+    printf 'CLAUDE_PLUGIN_ROOT=%s\n' "$PLUGIN_ROOT"
+  } > "$RUN_ENV"
+}
+
+# s5. run_in_env <shell-command>: exec the command under the case's env vector,
+# built ONE LINE = ONE ARGUMENT. `env -i $(cat file | tr '\n' ' ')` word-splits
+# a value that contains a space - CLAUDE_TRANSCRIPT="read holding/a.md ..." then
+# makes env exec "holding/a.md" and every step records 127 with empty output, a
+# vacuous green under legacy and a "no ledger" FAIL under sutra-turn. Positional
+# parameters keep each KEY=VAL whole. The caller supplies the redirections.
+run_in_env() {
+  _rie_cmd="$1"
+  set --
+  while IFS= read -r _rie_l; do
+    case "$_rie_l" in ''|'#'*) continue ;; esac
+    set -- "$@" "$_rie_l"
+  done < "$RUN_ENV"
+  # Harness pass-through (s5 exception): the one knob the runtime's step
+  # watchdog reads. env -i strips it otherwise, so a gate that raises the
+  # per-step cap for an oversubscribed --jobs run would raise nothing.
+  [ -n "${SUTRA_STEP_TIMEOUT_SCALE:-}" ] && set -- "$@" "SUTRA_STEP_TIMEOUT_SCALE=$SUTRA_STEP_TIMEOUT_SCALE"
+  env -i "$@" \
+    perl -e '$t=shift; alarm $t; exec @ARGV; exit 127;' "${RUN_TIMEOUT:-$CASE_TIMEOUT}" \
+    /bin/sh -c "$_rie_cmd"
+}
+
+# s11b. step_wall_s <registration-command> -> the wall, in whole seconds, that
+# the legacy leg gives THIS step. Mirrors runtime/shim.sh exactly: budget_ms
+# from the registration (seconds x1000; 8000 when the registration carries no
+# timeout), scaled by SUTRA_STEP_TIMEOUT_SCALE (integer percent, clamped >= 100
+# so the knob can only ever lengthen a budget), rounded UP to whole seconds
+# (perl's alarm has second granularity, and rounding up keeps the legacy leg
+# from being given LESS than the runtime got), then bounded by the outer
+# SUTRA_CHARCAP_TIMEOUT cap scaled by the same percent. The lookup key is the
+# RAW command string, exactly as hooks.json spells it - the same key
+# families.json carries - so it is looked up BEFORE the ${CLAUDE_PLUGIN_ROOT}
+# expansion, which differs per environment.
+STEP_TO_MAP=""
+step_to_map() {  # -> path of the "<command><TAB><seconds>" map, built once
+  if [ -n "$STEP_TO_MAP" ] && [ -f "$STEP_TO_MAP" ]; then
+    printf '%s' "$STEP_TO_MAP"; return 0
+  fi
+  STEP_TO_MAP="$WORK/step-timeouts.tsv"
+  if [ ! -f "$STEP_TO_MAP" ]; then
+    # hooks.json.step3 is the FULL per-hook registry (the one families.json was
+    # derived from); hooks.json is the collapsed 8-entry form after step 12.
+    _stm_src="$HOOKS_DIR/hooks.json.step3"
+    [ -f "$_stm_src" ] || _stm_src="$HOOKS_DIR/hooks.json"
+    _stm_tmp="$(mktemp "$WORK/step-to.XXXXXX" 2>/dev/null)" || _stm_tmp="$STEP_TO_MAP"
+    if [ -f "$_stm_src" ]; then
+      jq -r '.hooks | to_entries[] | .value[] | .hooks[]
+             | "\(.command // .path // .id)\t\(.timeout // "")"' "$_stm_src" 2>/dev/null \
+        | sort -u > "$_stm_tmp" 2>/dev/null || : > "$_stm_tmp"
+    else
+      : > "$_stm_tmp"
+    fi
+    # Atomic publish: --jobs N children build this concurrently and must never
+    # read a half-written map - a short read would silently become the 8000 ms
+    # default and quietly undo the parity this function exists for.
+    if [ "$_stm_tmp" != "$STEP_TO_MAP" ]; then
+      mv -f "$_stm_tmp" "$STEP_TO_MAP" 2>/dev/null || rm -f "$_stm_tmp" 2>/dev/null
+    fi
+  fi
+  printf '%s' "$STEP_TO_MAP"
+}
+
+step_wall_s() {  # <registration-command> -> whole seconds
+  _sw_sec="$(awk -F'\t' -v c="$1" '$1==c {print $2; exit}' "$(step_to_map)" 2>/dev/null)"
+  case "${_sw_sec:-}" in
+    ''|*[!0-9]*) _sw_ms=8000 ;;
+    *)           _sw_ms=$((_sw_sec * 1000)) ;;
+  esac
+  _sw_scale="${SUTRA_STEP_TIMEOUT_SCALE:-100}"
+  case "$_sw_scale" in ''|*[!0-9]*) _sw_scale=100 ;; esac
+  [ "$_sw_scale" -lt 100 ] && _sw_scale=100
+  _sw_ms=$(( _sw_ms * _sw_scale / 100 ))
+  _sw_s=$(( (_sw_ms + 999) / 1000 ))
+  [ "$_sw_s" -lt 1 ] && _sw_s=1
+  _sw_cap=$(( CASE_TIMEOUT * _sw_scale / 100 ))
+  [ "$_sw_cap" -lt "$CASE_TIMEOUT" ] && _sw_cap="$CASE_TIMEOUT"
+  [ "$_sw_s" -gt "$_sw_cap" ] && _sw_s="$_sw_cap"
+  printf '%s' "$_sw_s"
+}
+
+# run_cmd <command> <outfile> <errfile> -> prints the exit code
+run_cmd() {
+  rc_cmd="$(printf '%s' "$1" | sed -e "s|\${CLAUDE_PLUGIN_ROOT}|$PLUGIN_ROOT|g" -e "s|@HOOKS@|$HOOKS_DIR|g")"
+  case "$rc_cmd" in
+    /*) ;;
+    *)  rc_cmd="$HOOKS_DIR/$rc_cmd" ;;
+  esac
+  # s11b: this step's OWN registered budget, not the flat case cap.
+  rc_wall="$(step_wall_s "$1")"
+  ( cd "$RUN_PROJ" 2>/dev/null || cd /
+    RUN_TIMEOUT="$rc_wall" run_in_env "$rc_cmd" < "$RUN_STDIN" > "$2" 2> "$3" )
+  printf '%s' "$?"
+}
+
+# ----------------------------------------------------------------- parallel --
+# s6. CONCURRENCY. --jobs N (default 4) runs N CASES at a time. bash 3.2 has no
+# `wait -n`, so the throttle is a batch barrier: launch at most N children, then
+# wait for that batch. Every child owns a distinct fresh root
+# ($PROJ_ROOT_BASE/<tag>/<family>/<case>, with its own HOME, TMPDIR, stub PATH
+# and git fixture) and writes only into its OWN case's expect/ dir, so nothing
+# is shared between children and the result is byte-identical to --jobs 1 for
+# any N. Diagnostics are buffered per case and replayed in case order after the
+# barrier, so even the stderr transcript does not depend on N.
+PAR_RUNNING=0
+par_launch() {  # <fn> <args...>
+  if [ "$JOBS" -le 1 ]; then
+    "$@"
+  else
+    # The child MUST NOT inherit the EXIT trap: bash runs it when the subshell
+    # ends and the private work dir (s9) would be deleted under the siblings.
+    ( trap - EXIT INT TERM; "$@" ) &
+    PAR_RUNNING=$((PAR_RUNNING + 1))
+    if [ "$PAR_RUNNING" -ge "$JOBS" ]; then wait; PAR_RUNNING=0; fi
+  fi
+}
+par_drain() { [ "$JOBS" -le 1 ] || { wait; PAR_RUNNING=0; }; }
+
+# s7. GLOBAL-STATE SERIALISATION. A hook may key state OUTSIDE the hermetic root:
+# lib/h-sutra-classify-and-write.sh:96 claims
+# /tmp/h-sutra-arbiter-<sid>-<epoch-sec>-<sha(prompt)> and silently drops its row
+# when that dir already exists. Cases cloned from one another (the ks* kill-switch
+# variants) carry the SAME session id and the SAME prompt, so under --jobs N the
+# clones collide on one global name and only the winner writes the row - which
+# clone wins is a coin flip, so record and verify disagree on a .fx digest.
+# Two measures, both needed, and neither hides a byte:
+#   - cases sharing the (session-id, prompt) identity run ONE AT A TIME (cases
+#     with different identities still run concurrently, so --jobs still pays);
+#   - each case clears the arbiter dirs of its OWN session id before it runs,
+#     so the row is always written rather than dropped by a sibling's leftover.
+# Empty when the case carries no prompt: the hazard is keyed on sha(prompt), so a
+# promptless event has no identity group and must NOT be serialised (that would
+# collapse a whole family onto one lock and throw --jobs away).
+case_ident() {  # <family> <case> -> 16-hex identity of (session id, prompt)
+  _ci_d="$GOLDEN/$1/cases/$2"
+  _ci_pr="$(jq -r 'if type=="object" then ((.prompt // "")|tostring) else "" end' \
+             "$_ci_d/stdin.json" 2>/dev/null)"
+  [ -n "$_ci_pr" ] || return 0
+  _ci_sid="$(case_sid "$1" "$2")"
+  printf '%s|%s' "$_ci_sid" "$_ci_pr" | shasum -a 256 | awk '{print substr($1,1,16)}'
+}
+
+case_sid() {  # <family> <case> -> the case's CLAUDE_CODE_SESSION_ID, or empty
+  grep '^CLAUDE_CODE_SESSION_ID=' "$GOLDEN/$1/cases/$2/env" 2>/dev/null \
+    | tail -1 | cut -d= -f2- | tr -dc 'A-Za-z0-9._-'
+}
+
+CASE_LOCK=""
+case_lock_take() {  # <key>: wait for the identity group, steal after 30s
+  CASE_LOCK=""
+  [ -n "${1:-}" ] || return 0
+  CASE_LOCK="$PROJ_ROOT_BASE/.locks/$1"
+  mkdir -p "$PROJ_ROOT_BASE/.locks" 2>/dev/null
+  _cl_n=0
+  while ! mkdir "$CASE_LOCK" 2>/dev/null; do
+    _cl_n=$((_cl_n+1))
+    if [ "$_cl_n" -gt 300 ]; then rm -rf "$CASE_LOCK" 2>/dev/null; _cl_n=0; continue; fi
+    perl -e 'select(undef,undef,undef,0.1)'
+  done
+  return 0
+}
+case_lock_drop() { [ -z "$CASE_LOCK" ] || rm -rf "$CASE_LOCK" 2>/dev/null; CASE_LOCK=""; return 0; }
+
+# ------------------------------------------------------------------- record --
+# known_defect <family> <case> -> 0 when golden/<family>/KNOWN-DEFECTS.md names
+# the case IN THE FIRST COLUMN OF ITS DEFECT TABLE ("| <case> | ..."), the only
+# way an all-127 recording is allowed to be written.
+# The column, not the whole file: a KNOWN-DEFECTS.md that records the HISTORY of
+# a defect ("block-context-budget used to record all-127 before the env fix")
+# would otherwise keep the guard disarmed for a case that is now healthy - the
+# exact way this whitelist was found still open after the round-2 env fix.
+known_defect() {
+  _kd_f="$GOLDEN/$1/KNOWN-DEFECTS.md"
+  [ -f "$_kd_f" ] || return 1
+  grep -Eq "^\|[[:space:]]*$2[[:space:]]*\|" "$_kd_f" 2>/dev/null
+}
+
+record_one_case() {  # <family> <case>
+  roc_fam="$1"; roc_case="$2"
+  setup_case "$roc_fam" "$roc_case" record
+  mkdir -p "$RUN_CDIR/expect"
+  rm -f "$RUN_CDIR/expect"/*.stdout "$RUN_CDIR/expect"/*.stderr \
+        "$RUN_CDIR/expect"/*.exit  "$RUN_CDIR/expect"/*.fx \
+        "$RUN_CDIR/expect/ORDER" "$RUN_CDIR/expect/NO-MATCH" \
+        "$RUN_CDIR/expect/REFUSED-ALL-127" "$RUN_CDIR/expect/REFUSED-TIMEOUT" \
+        "$RUN_CDIR/expect/REFUSED-NORMALISE" 2>/dev/null
+  case_scripts "$roc_fam" "$roc_case" > "$RUN_ROOT/scripts.tsv"
+  # s2c: zero selected registrations is an EXPECTATION, written out in full, not
+  # an empty ORDER that cannot be told apart from a case nobody recorded.
+  if [ ! -s "$RUN_ROOT/scripts.tsv" ]; then
+    no_match_text "$roc_fam" "$roc_case" > "$RUN_CDIR/expect/NO-MATCH"
+    case_lock_drop
+    return 0
+  fi
+  cut -f1 "$RUN_ROOT/scripts.tsv" > "$RUN_CDIR/expect/ORDER"
+  roc_i=0; roc_127=0; roc_142=0; roc_142=0
+  while IFS="$TAB" read -r sl _roc_eff roc_cmd; do
+    [ -n "$roc_cmd" ] || continue
+    o="$RUN_ROOT/$roc_i.out"; e="$RUN_ROOT/$roc_i.err"
+    snap "$RUN_PROJ" "$RUN_SED" "$RUN_ROOT/$roc_i.before"
+    rc="$(run_cmd "$roc_cmd" "$o" "$e")"
+    snap "$RUN_PROJ" "$RUN_SED" "$RUN_ROOT/$roc_i.after"
+    norm_file "$o" "$RUN_SED"; norm_file "$e" "$RUN_SED"
+    fx_diff "$RUN_ROOT/$roc_i.before" "$RUN_ROOT/$roc_i.after" "$RUN_CDIR/expect/$sl.fx"
+    cp "$o" "$RUN_CDIR/expect/$sl.stdout"
+    cp "$e" "$RUN_CDIR/expect/$sl.stderr"
+    printf '%s\n' "$rc" > "$RUN_CDIR/expect/$sl.exit"
+    [ "$rc" = "127" ] && roc_127=$((roc_127+1))
+    [ "$rc" = "142" ] && roc_142=$((roc_142+1))
+    roc_i=$((roc_i+1))
+  done < "$RUN_ROOT/scripts.tsv"
+  # s11 WALL-CAP GUARD. 142 is SIGALRM: the step was killed by the harness, so
+  # its stdout/stderr/.fx are a truncation of a run that never finished. Freezing
+  # that as golden makes every later verify depend on machine load. Refuse it the
+  # same way an all-127 recording is refused.
+  if [ "${roc_142:-0}" -gt 0 ] && ! known_defect "$roc_fam" "$roc_case"; then
+    mkdir -p "$PROJ_ROOT_BASE/.rec-abort/$roc_fam" 2>/dev/null
+    printf '%s step(s) hit their registered per-step wall (SIGALRM; outer cap %ss)\n' \
+      "$roc_142" "$CASE_TIMEOUT" \
+      > "$PROJ_ROOT_BASE/.rec-abort/$roc_fam/$roc_case" 2>/dev/null
+    rm -f "$RUN_CDIR/expect"/*.stdout "$RUN_CDIR/expect"/*.stderr \
+          "$RUN_CDIR/expect"/*.exit  "$RUN_CDIR/expect"/*.fx \
+          "$RUN_CDIR/expect/ORDER" 2>/dev/null
+    { printf '# REFUSED (s11): %s step(s) exited 142 (SIGALRM) on their own\n' "$roc_142"
+      printf '# registered per-step wall (s11b; outer cap %ss).\n' "$CASE_TIMEOUT"
+      printf 'A killed step records a truncation, not behaviour. Raise\n'
+      printf 'SUTRA_STEP_TIMEOUT_SCALE (it lengthens BOTH legs) or\n'
+      printf 'SUTRA_CHARCAP_TIMEOUT (the outer cap), lower --jobs, and re-record.\n'
+    } > "$RUN_CDIR/expect/REFUSED-TIMEOUT"
+    note "REFUSED $roc_fam/$roc_case: $roc_142 step(s) hit their registered per-step wall (outer cap ${CASE_TIMEOUT}s) - the recording was discarded (s11)."
+    case_lock_drop
+    return 0
+  fi
+  # s5 ALL-127 GUARD. Every step exiting 127 with empty output means the harness
+  # never ran the hook (a broken env vector, a missing interpreter) - a corpus
+  # that records it is green for the wrong reason under legacy and cannot pass
+  # under sutra-turn. Refuse it unless KNOWN-DEFECTS.md names the case.
+  if [ "$roc_i" -gt 0 ] && [ "$roc_127" -eq "$roc_i" ]; then
+    if known_defect "$roc_fam" "$roc_case"; then
+      note "WARN: $roc_fam/$roc_case recorded all-127 (allowed by $roc_fam/KNOWN-DEFECTS.md)"
+    else
+      mkdir -p "$PROJ_ROOT_BASE/.rec-abort/$roc_fam" 2>/dev/null
+      printf 'all %s step(s) exited 127 with no output\n' "$roc_i" \
+        > "$PROJ_ROOT_BASE/.rec-abort/$roc_fam/$roc_case" 2>/dev/null
+      # REFUSED means the bytes do not survive: drop what was just written, so a
+      # caller who ignores the non-zero exit cannot verify green against it.
+      rm -f "$RUN_CDIR/expect"/*.stdout "$RUN_CDIR/expect"/*.stderr \
+            "$RUN_CDIR/expect"/*.exit  "$RUN_CDIR/expect"/*.fx \
+            "$RUN_CDIR/expect/ORDER" 2>/dev/null
+      { printf '# REFUSED (s5): all %s step(s) of this case exited 127 with no output.\n' "$roc_i"
+        printf 'The harness did not run the hooks (a broken env vector, a missing\n'
+        printf 'interpreter). No recording was kept: fix the harness and re-record, or\n'
+        printf 'name the case in golden/%s/KNOWN-DEFECTS.md with a reason.\n' "$roc_fam"
+      } > "$RUN_CDIR/expect/REFUSED-ALL-127"
+      note "REFUSED $roc_fam/$roc_case: all $roc_i step(s) exited 127 - the harness did not run the hooks (see s5); the recording was discarded. Fix the harness, or name the case in golden/$roc_fam/KNOWN-DEFECTS.md with a reason."
+    fi
+  fi
+  # s12 NORMALISATION GUARD. Two ways a recording can be green here and red on
+  # every other machine, both invisible until a release or a CI runner proves
+  # it, and both cheap to assert AT RECORD TIME:
+  #   identity  a <USER>/<HOST> token GLUED to a word character means the rule
+  #             matched inside a longer word ("sankalp<USER>/sutra-data"), so the
+  #             bytes are the recording machine's name, not a token.
+  #   version   a raw x.y.z that the version rule should have taken means the
+  #             next release bump rewrites this file and the corpus goes red for
+  #             a reason that has nothing to do with the runtime.
+  # The assertion - not the regex - is what keeps the corpus portable: a rule
+  # with a new hole fails HERE, while the person who opened it is still looking.
+  roc_bad=""
+  for roc_f in "$RUN_CDIR/expect"/*.stdout "$RUN_CDIR/expect"/*.stderr "$RUN_CDIR/expect"/*.fx; do
+    [ -f "$roc_f" ] || continue
+    if grep -Eq '[0-9A-Za-z_](<USER>|<HOST>)|(<USER>|<HOST>)[0-9A-Za-z_]' "$roc_f" 2>/dev/null; then
+      roc_bad="$roc_bad $(basename "$roc_f"):identity-adjacent"
+    fi
+    if grep -Eq '(^|[^0-9A-Za-z._/])v?[0-9]+\.[0-9]+\.[0-9]+([^0-9.]|\.([^0-9]|$)|$)' "$roc_f" 2>/dev/null; then
+      roc_bad="$roc_bad $(basename "$roc_f"):raw-version"
+    fi
+  done
+  if [ -n "$roc_bad" ]; then
+    if known_defect "$roc_fam" "$roc_case"; then
+      note "WARN: $roc_fam/$roc_case normalisation assertion tripped ($roc_bad) - allowed by $roc_fam/KNOWN-DEFECTS.md"
+    else
+      mkdir -p "$PROJ_ROOT_BASE/.rec-abort/$roc_fam" 2>/dev/null
+      printf 'normalisation assertion (s12):%s\n' "$roc_bad" \
+        > "$PROJ_ROOT_BASE/.rec-abort/$roc_fam/$roc_case" 2>/dev/null
+      rm -f "$RUN_CDIR/expect"/*.stdout "$RUN_CDIR/expect"/*.stderr \
+            "$RUN_CDIR/expect"/*.exit  "$RUN_CDIR/expect"/*.fx \
+            "$RUN_CDIR/expect/ORDER" 2>/dev/null
+      { printf '# REFUSED (s12): the normalised bytes are not portable.\n'
+        printf '# offending file(s):%s\n' "$roc_bad"
+        printf 'identity-adjacent: a <USER>/<HOST> token sits next to a word\n'
+        printf 'character, so the identity rule matched inside a longer word and\n'
+        printf 'the recording is bound to this machine name.\n'
+        printf 'raw-version: an x.y.z the version rule did not take, so the next\n'
+        printf 'release bump rewrites this expectation.\n'
+        printf 'Fix build_norm_sed (s13) and re-record, or name the case in\n'
+        printf 'golden/%s/KNOWN-DEFECTS.md with a reason.\n' "$roc_fam"
+      } > "$RUN_CDIR/expect/REFUSED-NORMALISE"
+      note "REFUSED $roc_fam/$roc_case: normalisation assertion (s12) tripped ->$roc_bad; the recording was discarded."
+    fi
+  fi
+  case_lock_drop
+}
+
+do_record_family() {
+  rf="$1"
+  family_commands "$rf" >/dev/null 2>&1 || die "unknown family: $rf"
+  rm -rf "$PROJ_ROOT_BASE/.rec-abort/$rf" 2>/dev/null
+  note "record: family=$rf jobs=$JOBS"
+  ncase=0
+  for c in $(family_cases "$rf"); do
+    par_launch record_one_case "$rf" "$c"
+    ncase=$((ncase+1))
+  done
+  par_drain
+  nmatchless=0
+  for c in $(family_cases "$rf"); do
+    [ -f "$GOLDEN/$rf/cases/$c/expect/NO-MATCH" ] && nmatchless=$((nmatchless+1))
+  done
+  note "record: family=$rf cases=$ncase no-match=$nmatchless scripts=$(family_commands "$rf" | grep -c .)"
+  if [ -d "$PROJ_ROOT_BASE/.rec-abort/$rf" ]; then
+    note "record: family=$rf ABORTED - $(ls "$PROJ_ROOT_BASE/.rec-abort/$rf" | tr '\n' ' ')"
+    return 1
+  fi
+  return 0
+}
+
+# ------------------------------------------------------------------- verify --
+cmp_or_diff() {  # <expect> <got> <label> -> 0 ok, 1 mismatch (prints a diff)
+  if [ ! -f "$1" ]; then printf 'FAIL %s: no recording (run record first)\n' "$3" >&2; return 1; fi
+  if cmp -s "$1" "$2"; then return 0; fi
+  printf 'FAIL %s\n' "$3" >&2
+  diff -u "$1" "$2" 2>/dev/null | sed -n '1,20p' >&2
+  return 1
+}
+
+# verify_legacy_case <family> <case> <aggdir>: runs one case and writes
+# <aggdir>/<case>.{fails,checks,err}. All diagnostics go to the .err buffer so
+# the transcript is replayed in case order, independent of --jobs.
+verify_legacy_case() {
+  vlc_fam="$1"; vlc_case="$2"; vlc_agg="$3"
+  vlc_f=0; vlc_k=0
+  : > "$vlc_agg/$vlc_case.err"
+  exec 9>&2 2>>"$vlc_agg/$vlc_case.err"
+  setup_case "$vlc_fam" "$vlc_case" verify
+  case_scripts "$vlc_fam" "$vlc_case" > "$RUN_ROOT/scripts.tsv"
+  # s2c. Zero selected registrations is an expectation of its own: it must have
+  # been recorded as NO-MATCH, and the recomputed text must still say the same.
+  if [ ! -s "$RUN_ROOT/scripts.tsv" ]; then
+    vlc_k=$((vlc_k+1))
+    if [ ! -f "$RUN_CDIR/expect/NO-MATCH" ]; then
+      printf 'FAIL %s/%s: no registration matches, but expect/NO-MATCH is absent (re-record this family)\n' \
+        "$vlc_fam" "$vlc_case" >&2
+      vlc_f=$((vlc_f+1))
+    else
+      no_match_text "$vlc_fam" "$vlc_case" > "$RUN_ROOT/no-match.now"
+      cmp_or_diff "$RUN_CDIR/expect/NO-MATCH" "$RUN_ROOT/no-match.now" \
+        "$vlc_fam/$vlc_case NO-MATCH" || vlc_f=$((vlc_f+1))
+    fi
+    if [ -f "$RUN_CDIR/expect/ORDER" ]; then
+      printf 'FAIL %s/%s: expect/ORDER survives next to a NO-MATCH case (re-record this family)\n' \
+        "$vlc_fam" "$vlc_case" >&2
+      vlc_f=$((vlc_f+1))
+    fi
+    exec 2>&9 9>&-
+    case_lock_drop
+    printf '%s\n' "$vlc_f" > "$vlc_agg/$vlc_case.fails"
+    printf '%s\n' "$vlc_k" > "$vlc_agg/$vlc_case.checks"
+    return 0
+  fi
+  if [ -f "$RUN_CDIR/expect/NO-MATCH" ]; then
+    printf 'FAIL %s/%s: expect/NO-MATCH survives although %s registration(s) now match (re-record this family)\n' \
+      "$vlc_fam" "$vlc_case" "$(grep -c . "$RUN_ROOT/scripts.tsv")" >&2
+    vlc_f=$((vlc_f+1)); vlc_k=$((vlc_k+1))
+  fi
+  # A recorded ORDER that no longer matches the matcher-derived one means the
+  # registry moved under the corpus: say so instead of diffing shifted slugs.
+  cut -f1 "$RUN_ROOT/scripts.tsv" > "$RUN_ROOT/order.now"
+  if [ -f "$RUN_CDIR/expect/ORDER" ] && ! cmp -s "$RUN_CDIR/expect/ORDER" "$RUN_ROOT/order.now"; then
+    printf 'FAIL %s/%s: expect/ORDER is stale (re-record this family)\n' "$vlc_fam" "$vlc_case" >&2
+    diff -u "$RUN_CDIR/expect/ORDER" "$RUN_ROOT/order.now" 2>/dev/null | sed -n '1,20p' >&2
+    vlc_f=$((vlc_f+1))
+  fi
+  i=0
+  while IFS="$TAB" read -r sl _vlc_eff cmd; do
+    [ -n "$cmd" ] || continue
+    o="$RUN_ROOT/$i.out"; e="$RUN_ROOT/$i.err"
+    snap "$RUN_PROJ" "$RUN_SED" "$RUN_ROOT/$i.before"
+    rc="$(run_cmd "$cmd" "$o" "$e")"
+    snap "$RUN_PROJ" "$RUN_SED" "$RUN_ROOT/$i.after"
+    norm_file "$o" "$RUN_SED"; norm_file "$e" "$RUN_SED"
+    fx_diff "$RUN_ROOT/$i.before" "$RUN_ROOT/$i.after" "$RUN_ROOT/$i.fx"
+    cmp_or_diff "$RUN_CDIR/expect/$sl.stdout" "$o"              "$vlc_fam/$vlc_case $sl.stdout" || vlc_f=$((vlc_f+1))
+    cmp_or_diff "$RUN_CDIR/expect/$sl.stderr" "$e"              "$vlc_fam/$vlc_case $sl.stderr" || vlc_f=$((vlc_f+1))
+    cmp_or_diff "$RUN_CDIR/expect/$sl.fx"     "$RUN_ROOT/$i.fx" "$vlc_fam/$vlc_case $sl.fx"     || vlc_f=$((vlc_f+1))
+    vlc_k=$((vlc_k+3))
+    xf="$RUN_CDIR/expect/$sl.exit"; vlc_k=$((vlc_k+1))
+    if [ ! -f "$xf" ] || [ "$(cat "$xf" 2>/dev/null)" != "$rc" ]; then
+      printf 'FAIL %s/%s %s.exit: expected %s got %s\n' "$vlc_fam" "$vlc_case" "$sl" \
+        "$(cat "$xf" 2>/dev/null || echo '<none>')" "$rc" >&2
+      vlc_f=$((vlc_f+1))
+    fi
+    i=$((i+1))
+  done < "$RUN_ROOT/scripts.tsv"
+  exec 2>&9 9>&-
+  case_lock_drop
+  printf '%s\n' "$vlc_f" > "$vlc_agg/$vlc_case.fails"
+  printf '%s\n' "$vlc_k" > "$vlc_agg/$vlc_case.checks"
+}
+
+# collect_agg <aggdir> <family> -> echoes "<fails> <checks>" and replays the
+# per-case diagnostics on stderr, in case order.
+collect_agg() {
+  ca_agg="$1"; ca_fam="$2"; ca_f=0; ca_k=0
+  for ca_c in $(family_cases "$ca_fam"); do
+    [ -s "$ca_agg/$ca_c.err" ] && cat "$ca_agg/$ca_c.err" >&2
+    ca_f=$((ca_f + $(cat "$ca_agg/$ca_c.fails" 2>/dev/null || echo 0)))
+    ca_k=$((ca_k + $(cat "$ca_agg/$ca_c.checks" 2>/dev/null || echo 0)))
+  done
+  printf '%s %s\n' "$ca_f" "$ca_k"
+}
+
+do_verify_legacy() {
+  vf="$1"
+  agg="$PROJ_ROOT_BASE/.agg/verify-legacy/$vf"; rm -rf "$agg"; mkdir -p "$agg"
+  for c in $(family_cases "$vf"); do
+    par_launch verify_legacy_case "$vf" "$c" "$agg"
+  done
+  par_drain
+  set -- $(collect_agg "$agg" "$vf")
+  fails="$1"; checks="$2"
+  note "verify(legacy): family=$vf jobs=$JOBS checks=$checks failed=$fails"
+  [ "$fails" -eq 0 ]
+}
+
+# expected_emit <family> <case> -> the deterministic merge implied by expect/ (s1).
+# Driven by expect/ORDER, so it merges exactly the steps this case runs (s2b).
+expected_emit() {
+  ef="$1"; ed="$GOLDEN/$ef/cases/$2/expect"
+  ac=""; pass=""; blocked=0; berr=""
+  if [ ! -f "$ed/ORDER" ]; then
+    jq -n '{additionalContext:"", passthrough:"", blocked:0, blocked_stderr:""}'
+    return 0
+  fi
+  while IFS= read -r sl; do
+    [ -n "$sl" ] || continue
+    [ -f "$ed/$sl.exit" ] || continue
+    rc="$(cat "$ed/$sl.exit")"
+    out="$(cat "$ed/$sl.stdout" 2>/dev/null)"
+    err="$(cat "$ed/$sl.stderr" 2>/dev/null)"
+    if [ "$rc" = "2" ] && [ "$blocked" -eq 0 ]; then blocked=2; berr="$err"; fi
+    [ -n "$out" ] || continue
+    one="$(printf '%s' "$out" | jq -r 'if type=="object" then (.hookSpecificOutput.additionalContext // empty) else empty end' 2>/dev/null)"
+    if [ -n "$one" ]; then
+      if [ -z "$ac" ]; then ac="$one"; else ac="$ac
+
+$one"; fi
+    else
+      if [ -z "$pass" ]; then pass="$out"; else pass="$pass
+$out"; fi
+    fi
+  done < "$ed/ORDER"
+  jq -n --arg ac "$ac" --arg pass "$pass" --arg berr "$berr" --argjson blocked "$blocked" \
+    '{additionalContext:$ac, passthrough:$pass, blocked:$blocked, blocked_stderr:$berr}'
+}
+
+# Ledger contract consumed here (bin/sutra-turn writes it, EXECUTION steps 6/8):
+#   $CLAUDE_PROJECT_DIR/.sutra/turn/<session>.jsonl, one JSON object per line
+#   step : {"kind":"step","event":E,"seq":N,"script":"<hooks-relative file>",
+#           "exit":N, and EITHER "stdout"/"stderr" (raw) OR
+#           "stdout_sha256"/"stderr_sha256"}
+#   emit : {"kind":"emit","event":E,"additionalContext":..,"passthrough":..,
+#           "blocked":0|2,"blocked_stderr":..}
+# Raw strings are preferred: charcap can normalise those. A sha-only row is
+# compared against the sha of the already-normalised expect/ bytes, which only
+# matches when the step's output carries no volatile token.
+verify_turn_case() {  # <family> <case> <event> <turn> <aggdir>
+  tf="$1"; c="$2"; ev="$3"; turn="$4"; vtc_agg="$5"; fails=0
+  : > "$vtc_agg/$c.err"
+  exec 9>&2 2>>"$vtc_agg/$c.err"
+  # One-iteration loop, so the "no ledger" early exit below can stay a
+  # `continue` (it used to sit inside the per-case for-loop).
+  for _once in 1; do
+    setup_case "$tf" "$c" turn
+    o="$RUN_ROOT/turn.out"; e="$RUN_ROOT/turn.err"
+    # s11: one runner invocation is a whole event's pipeline, not one hook.
+    ( cd "$RUN_PROJ" 2>/dev/null || cd /
+      RUN_TIMEOUT="$TURN_TIMEOUT" run_in_env "$turn run --event $ev" < "$RUN_STDIN" > "$o" 2> "$e" )
+    trc=$?
+    norm_file "$o" "$RUN_SED"; norm_file "$e" "$RUN_SED"
+    # s11: 142 is SIGALRM - the HARNESS's wall cap, not a parity difference. Say
+    # so once, instead of letting the truncated ledger produce a page of
+    # "no ledger row" diffs that name the wrong culprit.
+    if [ "$trc" = "142" ]; then
+      printf 'FAIL %s/%s: sutra-turn hit the charcap wall cap (%ss, SIGALRM) - the ledger is truncated, so this is a harness timeout, not a parity diff. Raise SUTRA_CHARCAP_TURN_TIMEOUT or lower --jobs.\n' \
+        "$tf" "$c" "$TURN_TIMEOUT" >&2
+      fails=$((fails+1)); continue
+    fi
+
+    case_scripts "$tf" "$c" > "$RUN_ROOT/scripts.tsv"
+    vtc_nomatch=0
+    [ -s "$RUN_ROOT/scripts.tsv" ] || vtc_nomatch=1
+
+    led="$(ls "$RUN_PROJ/.sutra/turn/"*.jsonl 2>/dev/null | head -1)"
+    if [ -z "$led" ]; then
+      # s2c: a NO-MATCH case is allowed to leave no ledger at all - as long as
+      # the runner also emitted nothing.
+      if [ "$vtc_nomatch" = "1" ]; then
+        if [ -s "$o" ]; then
+          printf 'FAIL %s/%s (NO-MATCH): sutra-turn ran no step but emitted stdout\n' "$tf" "$c" >&2
+          sed -n '1,10p' "$o" >&2; fails=$((fails+1))
+        fi
+        continue
+      fi
+      printf 'FAIL %s/%s: sutra-turn wrote no ledger under <PROJ>/.sutra/turn/\n' "$tf" "$c" >&2
+      fails=$((fails+1)); continue
+    fi
+    sed -E -f "$RUN_SED" "$led" > "$RUN_ROOT/ledger.norm" 2>/dev/null || cp "$led" "$RUN_ROOT/ledger.norm"
+
+    # s8 PROJECTION. The ledger is event-scoped; expect/ is family-and-case
+    # scoped. Keep the ledger rows whose script belongs to THIS case's ORDER,
+    # in ledger order, and diff those - never the whole event against a family.
+    jq -c 'select(.kind=="step" or .kind=="skip")' "$RUN_ROOT/ledger.norm" 2>/dev/null > "$RUN_ROOT/rows.all"
+    cut -f2 "$RUN_ROOT/scripts.tsv" | sed -e 's|^hooks/||' | LC_ALL=C sort -u > "$RUN_ROOT/want.files"
+    : > "$RUN_ROOT/rows.proj"
+    while IFS= read -r vtc_row; do
+      [ -n "$vtc_row" ] || continue
+      vtc_rs="$(printf '%s' "$vtc_row" | jq -r '.script // ""' | sed -e 's|^hooks/||')"
+      [ -n "$vtc_rs" ] || continue
+      if LC_ALL=C grep -qxF "$vtc_rs" "$RUN_ROOT/want.files" 2>/dev/null; then
+        printf '%s\n' "$vtc_row" >> "$RUN_ROOT/rows.proj"
+      fi
+    done < "$RUN_ROOT/rows.all"
+    nproj="$(awk 'END{print NR+0}' "$RUN_ROOT/rows.proj")"
+
+    # s2c. NO-MATCH is held to the runner too: NONE of the family's
+    # registrations may appear in the ledger, and when the whole event selected
+    # nothing the runner must emit nothing at all.
+    if [ "$vtc_nomatch" = "1" ]; then
+      family_rows "$tf" | while IFS="$TAB" read -r _nm_c _nm_mm _nm_e; do
+        [ -n "$_nm_c" ] || continue
+        eff_file "$_nm_c" | sed -e 's|^hooks/||'
+      done | LC_ALL=C sort -u > "$RUN_ROOT/fam.files"
+      vtc_ran=0
+      while IFS= read -r vtc_row; do
+        [ -n "$vtc_row" ] || continue
+        vtc_rs="$(printf '%s' "$vtc_row" | jq -r '.script // ""' | sed -e 's|^hooks/||')"
+        [ -n "$vtc_rs" ] || continue
+        if LC_ALL=C grep -qxF "$vtc_rs" "$RUN_ROOT/fam.files" 2>/dev/null; then
+          printf 'FAIL %s/%s (NO-MATCH): sutra-turn ran %s, which no matcher of this family selects\n' \
+            "$tf" "$c" "$vtc_rs" >&2
+          vtc_ran=$((vtc_ran+1)); fails=$((fails+1))
+        fi
+      done < "$RUN_ROOT/rows.all"
+      nsteps="$(jq -s 'map(select(.kind=="step")) | length' "$RUN_ROOT/rows.all" 2>/dev/null || echo 0)"
+      if [ "${nsteps:-0}" -eq 0 ] && [ -s "$o" ]; then
+        printf 'FAIL %s/%s (NO-MATCH): sutra-turn ran no step but emitted stdout\n' "$tf" "$c" >&2
+        sed -n '1,10p' "$o" >&2; fails=$((fails+1))
+      fi
+      [ "$trc" = "0" ] || [ "$trc" = "2" ] || { printf 'FAIL %s/%s sutra-turn exit=%s\n' "$tf" "$c" "$trc" >&2; fails=$((fails+1)); }
+      continue
+    fi
+
+    p=1; dups=0; seen_files=""
+    while IFS="$TAB" read -r sl want_file cmd; do
+      [ -n "$sl" ] || continue
+      want_file="$(printf '%s' "$want_file" | sed -e 's|^hooks/||')"
+      # s8: several slots of one family can be the SAME registration (the lib
+      # helpers exercised through one caller). The host - and sutra-turn - run
+      # that registration once; the ledger row is compared against the first
+      # slot, and the repeat slots keep their legacy recordings.
+      case " $seen_files " in *" $want_file "*) dups=$((dups+1)); continue ;; esac
+      seen_files="$seen_files $want_file"
+      row=""; q="$p"
+      while [ "$q" -le "$nproj" ]; do
+        cand="$(sed -n "${q}p" "$RUN_ROOT/rows.proj")"
+        cs="$(printf '%s' "$cand" | jq -r '.script // ""' | sed -e 's|^hooks/||')"
+        if [ "$cs" = "$want_file" ]; then row="$cand"; p=$((q+1)); break; fi
+        printf 'FAIL %s/%s: ledger row %s arrives before %s (registry order broken)\n' \
+          "$tf" "$c" "$cs" "$want_file" >&2
+        fails=$((fails+1)); q=$((q+1)); p="$q"
+      done
+      if [ -z "$row" ]; then
+        printf 'FAIL %s/%s step %s: no ledger row (the runtime has no post-deny skip - a missing row is a diff)\n' \
+          "$tf" "$c" "$sl" >&2
+        fails=$((fails+1)); continue
+      fi
+      if [ "$(printf '%s' "$row" | jq -r '.kind // ""')" = "skip" ]; then
+        printf 'FAIL %s/%s step %s: ledger row is a skip (%s)\n' "$tf" "$c" "$sl" \
+          "$(printf '%s' "$row" | jq -r '.reason // .note // "no reason"')" >&2
+        fails=$((fails+1)); continue
+      fi
+      g_rc="$(printf '%s' "$row" | jq -r '.exit // ""')"
+      e_rc="$(cat "$RUN_CDIR/expect/$sl.exit" 2>/dev/null)"
+      [ "$g_rc" = "$e_rc" ] || { printf 'FAIL %s/%s %s.exit (sutra-turn): %s != %s\n' "$tf" "$c" "$sl" "$g_rc" "$e_rc" >&2; fails=$((fails+1)); }
+      for stream in stdout stderr; do
+        exp="$RUN_CDIR/expect/$sl.$stream"
+        # A row that carries the raw stream is compared as bytes; a row that
+        # carries only a digest is compared against the sha of the (already
+        # normalised) expect/ bytes. has($k) decides - no in-band sentinel, so
+        # this file stays free of the NUL byte the old " ABSENT" marker needed.
+        if printf '%s' "$row" | jq -e --arg k "$stream" 'has($k)' >/dev/null 2>&1; then
+          printf '%s' "$(printf '%s' "$row" | jq -r --arg k "$stream" '.[$k]')" > "$RUN_ROOT/g.$stream"
+          # expect/ files end with the process's own trailing newline; compare
+          # the trimmed forms so a JSON round-trip does not create a false diff.
+          if [ "$(cat "$RUN_ROOT/g.$stream")" != "$(cat "$exp" 2>/dev/null)" ]; then
+            printf 'FAIL %s/%s %s.%s (sutra-turn)\n' "$tf" "$c" "$sl" "$stream" >&2
+            diff -u "$exp" "$RUN_ROOT/g.$stream" 2>/dev/null | sed -n '1,20p' >&2
+            fails=$((fails+1))
+          fi
+        else
+          g_sha="$(printf '%s' "$row" | jq -r --arg k "${stream}_sha256" '.[$k] // ""')"
+          e_sha="$(sha_of "$exp")"
+          if [ -z "$g_sha" ] || [ "$g_sha" != "$e_sha" ]; then
+            printf 'FAIL %s/%s %s.%s sha (sutra-turn): %s != %s\n' "$tf" "$c" "$sl" "$stream" "${g_sha:-<none>}" "$e_sha" >&2
+            fails=$((fails+1))
+          fi
+        fi
+      done
+    done < "$RUN_ROOT/scripts.tsv"
+    [ "$dups" -eq 0 ] || printf 'note %s/%s: %s duplicate slot(s) of an already-compared registration (s8)\n' \
+      "$tf" "$c" "$dups" >&2
+
+    # s8: the emit is the WHOLE event's merge. Compare it only when this
+    # family's expect/ IS that whole event (emit_comparable); for a split event,
+    # and for the mixed lib family, expect/ is a strict subset and any
+    # comparison would be a false FAIL.
+    if ! emit_comparable "$tf" "$ev"; then
+      :
+    else
+      got_emit="$(jq -c 'select(.kind=="emit") | {additionalContext,passthrough,blocked,blocked_stderr}' "$RUN_ROOT/ledger.norm" 2>/dev/null | head -1)"
+      if [ -z "$got_emit" ]; then
+        got_emit="$(jq -c '{additionalContext:(.hookSpecificOutput.additionalContext // ""), passthrough:"", blocked:0, blocked_stderr:""}' "$o" 2>/dev/null | head -1)"
+      fi
+      want_emit="$(expected_emit "$tf" "$c" | jq -cS .)"
+      got_emit="$(printf '%s' "$got_emit" | jq -cS . 2>/dev/null)"
+      if [ "$got_emit" != "$want_emit" ]; then
+        printf 'FAIL %s/%s combined emit\n  want %s\n  got  %s\n' "$tf" "$c" "$want_emit" "${got_emit:-<none>}" >&2
+        fails=$((fails+1))
+      fi
+    fi
+    [ "$trc" = "0" ] || [ "$trc" = "2" ] || { printf 'FAIL %s/%s sutra-turn exit=%s\n' "$tf" "$c" "$trc" >&2; fails=$((fails+1)); }
+  done
+  exec 2>&9 9>&-
+  case_lock_drop
+  printf '%s\n' "$fails" > "$vtc_agg/$c.fails"
+  printf '1\n' > "$vtc_agg/$c.checks"
+}
+
+do_verify_turn() {
+  tf="$1"
+  turn="$PLUGIN_ROOT/bin/sutra-turn"
+  if [ ! -x "$turn" ]; then
+    printf 'sutra-charcap: %s not installed/executable; --runner sutra-turn cannot run\n' "$turn" >&2
+    return 3
+  fi
+  # s8: DISPATCH PER CASE. The event is the CASE's, not the family's - that is
+  # the only correct behaviour for the mixed lib family and is identical to the
+  # family event for every single-event family. No family is skipped.
+  agg="$PROJ_ROOT_BASE/.agg/verify-turn/$tf"; rm -rf "$agg"; mkdir -p "$agg"
+  ncase=0
+  for c in $(family_cases "$tf"); do
+    ev="$(case_event "$tf" "$c")"
+    if ! is_hook_event "$ev"; then
+      printf 'FAIL %s/%s: no dispatchable hook event (stdin has no hook_event_name, no cases/%s/EVENT file, family event=%s)\n' \
+        "$tf" "$c" "$c" "$(family_event "$tf")" > "$agg/$c.err"
+      printf '1\n' > "$agg/$c.fails"; printf '1\n' > "$agg/$c.checks"
+      ncase=$((ncase+1)); continue
+    fi
+    par_launch verify_turn_case "$tf" "$c" "$ev" "$turn" "$agg"
+    ncase=$((ncase+1))
+  done
+  par_drain
+  set -- $(collect_agg "$agg" "$tf")
+  fails="$1"
+  note "verify(sutra-turn): family=$tf jobs=$JOBS cases=$ncase failed=$fails"
+  [ "$fails" -eq 0 ]
+}
+
+# ------------------------------------------------------------------- shadow --
+do_shadow() {
+  sf="$1"; sdays="$2"
+  outroot="${CLAUDE_PROJECT_DIR:-$PWD}/.sutra/shadow/$sf"
+  mkdir -p "$outroot" || die "cannot create $outroot"
+  turn="$PLUGIN_ROOT/bin/sutra-turn"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  n=0
+  for c in $(family_cases "$sf"); do
+    ev="$(case_event "$sf" "$c")"      # s8: the case's event, not the family's
+    setup_case "$sf" "$c" shadow
+    mkdir -p "$outroot/$c"
+    : > "$outroot/$c/legacy.txt"
+    case_scripts "$sf" "$c" > "$RUN_ROOT/scripts.tsv"
+    i=0
+    while IFS="$TAB" read -r sl _sh_eff cmd; do
+      [ -n "$cmd" ] || continue
+      o="$RUN_ROOT/s$i.out"; e="$RUN_ROOT/s$i.err"
+      rc="$(run_cmd "$cmd" "$o" "$e")"
+      norm_file "$o" "$RUN_SED"; norm_file "$e" "$RUN_SED"
+      { printf '=== %s exit=%s\n--- stdout\n' "$sl" "$rc"; cat "$o"
+        printf '\n--- stderr\n'; cat "$e"; printf '\n'; } >> "$outroot/$c/legacy.txt"
+      i=$((i+1))
+    done < "$RUN_ROOT/scripts.tsv"
+    if [ -x "$turn" ] && is_hook_event "$ev"; then
+      ( cd "$RUN_PROJ" 2>/dev/null || cd /
+        RUN_TIMEOUT="$TURN_TIMEOUT" run_in_env "$turn run --event $ev" < "$RUN_STDIN" ) \
+        > "$outroot/$c/sutra-turn.txt" 2>&1
+      norm_file "$outroot/$c/sutra-turn.txt" "$RUN_SED"
+      status=recorded
+    else
+      : > "$outroot/$c/sutra-turn.txt"; status=runner-absent
+    fi
+    if cmp -s "$outroot/$c/legacy.txt" "$outroot/$c/sutra-turn.txt"; then verdict=same; else verdict=differs; fi
+    jq -nc --arg ts "$ts" --arg fam "$sf" --arg case "$c" --arg st "$status" \
+           --arg v "$verdict" --argjson days "$sdays" \
+      '{ts:$ts,family:$fam,case:$case,runner_b:$st,verdict:$v,window_days:$days}' \
+      >> "$outroot/diffs.jsonl"
+    case_lock_drop
+    n=$((n+1))
+  done
+  note "shadow: family=$sf cases=$n window_days=$sdays out=$outroot"
+}
+
+# ---------------------------------------------------------- derive-families --
+# s3 in code. Every registration in hooks.json lands in exactly one family;
+# the lib family is derived separately (one caller per hooks/lib helper).
+BLOCK_RE='exit[[:space:]]+2|"deny"|permissionDecision|"decision"[[:space:]]*:[[:space:]]*"block"|decision.*block'
+
+is_blocky() {  # <effective plugin-relative file>
+  f="$HOOKS_DIR/${1#hooks/}"
+  [ -f "$f" ] || return 1
+  grep -Eq "$BLOCK_RE" "$f"
+}
+
+do_derive_families() {
+  out="${1:-$FAMILIES_JSON}"
+  # s14 THE MAP IS DERIVED FROM THE FULL REGISTRY, NEVER FROM THE COLLAPSED ONE.
+  # The families map says what the LEGACY runner runs - one row per registered
+  # hook script. After the runtime lands, hooks/hooks.json is the COLLAPSED
+  # registry (one bin/sutra-turn row per event plus bare bin/sutra-canary) and
+  # hooks/hooks.json.step3 is the snapshot of the full one. Deriving from the
+  # collapsed file would silently rewrite a 98-row map into a handful of runtime
+  # rows and delete the corpus's whole contract, so: prefer .step3 when it
+  # exists, record in "source" which file was actually read, and REFUSE when the
+  # chosen registry names no hooks/ script at all.
+  hj="$HOOKS_DIR/hooks.json.step3"
+  [ -f "$hj" ] || hj="$HOOKS_DIR/hooks.json"
+  [ -f "$hj" ] || die "no hooks.json (or hooks.json.step3) at $HOOKS_DIR"
+  hj_src="hooks/$(basename "$hj")"
+  reg="${TMPDIR:-/tmp}/charcap-reg.$$"
+  jq -r '.hooks | to_entries[] | .key as $e | .value[] | (.matcher // "*") as $m
+         | .hooks[] | "\($e)\t\($m)\t\(.command)"' "$hj" > "$reg"
+  df_n="$(grep -c . "$reg" 2>/dev/null)"; df_n="${df_n:-0}"
+  df_h="$(grep -c '/hooks/' "$reg" 2>/dev/null)"; df_h="${df_h:-0}"
+  if [ "$df_n" -gt 0 ] && [ "$df_h" -eq 0 ]; then
+    rm -f "$reg"
+    die "$hj_src is the collapsed runtime registry ($df_n rows, none of them a hooks/ script) - derive-families needs the full registry (hooks/hooks.json.step3)"
+  fi
+
+  tmpd="${TMPDIR:-/tmp}/charcap-fam.$$"; mkdir -p "$tmpd"
+  for f in ups session pretool-gates pretool-other posttool permission stop-gates stop-collect lib; do : > "$tmpd/$f"; done
+
+  while IFS="$(printf '\t')" read -r ev matcher cmd; do
+    [ -n "$ev" ] || continue
+    file="$(eff_file "$cmd")"
+    case "$ev" in
+      UserPromptSubmit)  fam=ups ;;
+      SessionStart)      fam=session ;;
+      PostToolUse)       fam=posttool ;;
+      PermissionRequest) fam=permission ;;
+      PreToolUse)        if is_blocky "$file"; then fam=pretool-gates; else fam=pretool-other; fi ;;
+      Stop)              if is_blocky "$file"; then fam=stop-gates;    else fam=stop-collect;  fi ;;
+      *)                 continue ;;
+    esac
+    jq -nc --arg id "$(basename "$file")" --arg path "hooks/$file" \
+           --arg command "$cmd" --arg matcher "$matcher" --arg event "$ev" \
+      '{id:$id,path:$path,command:$command,matcher:$matcher,event:$event}' >> "$tmpd/$fam"
+  done < "$reg"
+
+  # lib: one caller per helper, the first registration whose script sources it.
+  for helper in "$HOOKS_DIR"/lib/*.sh; do
+    [ -f "$helper" ] || continue
+    hb="$(basename "$helper")"; picked=""
+    while IFS="$(printf '\t')" read -r ev matcher cmd; do
+      [ -n "$ev" ] || continue
+      case "$cmd" in *"lib/$hb"*) picked="$ev	$matcher	$cmd"; break ;; esac
+      file="$HOOKS_DIR/$(eff_file "$cmd")"
+      [ -f "$file" ] || continue
+      if grep -q "$hb" "$file"; then picked="$ev	$matcher	$cmd"; break; fi
+    done < "$reg"
+    [ -n "$picked" ] || continue
+    p_ev="${picked%%	*}"; p_rest="${picked#*	}"
+    p_matcher="${p_rest%%	*}"; p_cmd="${p_rest#*	}"
+    jq -nc --arg id "$hb" --arg path "hooks/lib/$hb" --arg command "$p_cmd" \
+           --arg matcher "$p_matcher" --arg event "$p_ev" \
+      '{id:$id,path:$path,command:$command,matcher:$matcher,event:$event,exercised_via:$command}' >> "$tmpd/lib"
+  done
+
+  { printf '{\n  "spec_version": "1.0.0",\n'
+    printf '  "generated_by": "sutra-charcap %s derive-families",\n' "$CHARCAP_VERSION"
+    printf '  "source": "%s",\n' "$hj_src"
+    # Informational only - nothing reads it. It says on which KIND of box the map
+    # (and the corpus recorded next to it) came from, which is the question a
+    # reader asks when a replay diverges (BSD vs GNU tools). Deliberately coarse:
+    # this file ships with the plugin, so no user or host name goes in it. Parity
+    # must NOT depend on it: the normaliser's identity rules are word-bound
+    # precisely so the recording identity cannot leak into expect/ (s13).
+    printf '  "recorded_on": "%s",\n' "$(uname -s 2>/dev/null || echo unknown)"
+    printf '  "families": {\n'
+    first=1
+    for f in ups session pretool-gates pretool-other posttool permission stop-gates stop-collect lib; do
+      case "$f" in
+        ups) ev=UserPromptSubmit ;; session) ev=SessionStart ;;
+        pretool-gates|pretool-other) ev=PreToolUse ;; posttool) ev=PostToolUse ;;
+        permission) ev=PermissionRequest ;; stop-gates|stop-collect) ev=Stop ;;
+        lib) ev=mixed ;;
+      esac
+      [ "$first" -eq 1 ] || printf ',\n'; first=0
+      printf '    "%s": {"event": "%s", "scripts": ' "$f" "$ev"
+      jq -sc . "$tmpd/$f"
+      printf '}'
+    done
+    printf '\n  }\n}\n'
+  } | jq . > "$out.tmp" && mv "$out.tmp" "$out"
+  rm -rf "$tmpd" "$reg"
+  note "derive-families: wrote $out"
+  jq -r '.families | to_entries[] | "  \(.key)\t\(.value.event)\t\(.value.scripts|length)"' "$out" >&2
+}
+
+# --------------------------------------------------------------------- main --
+usage() {
+  cat <<EOF
+sutra-charcap $CHARCAP_VERSION
+  sutra-charcap record  --family <F> | --all [--proj-root <DIR>] [--jobs <N>]
+  sutra-charcap verify  --family <F> | --all [--runner legacy|sutra-turn] [--jobs <N>]
+  sutra-charcap shadow  --family <F> --days <N>
+  --jobs <N>   cases recorded/verified concurrently (default 4, each in its
+               own fresh root; output is identical to --jobs 1)
+  SUTRA_CHARCAP_TIMEOUT (20s) caps one legacy step;
+  SUTRA_CHARCAP_TURN_TIMEOUT (6x that) caps one sutra-turn invocation, which
+  runs a whole event's pipeline rather than one hook (s11).
+  The work dir is private per process (mktemp -d, removed on exit).
+  SUTRA_CHARCAP_WORK overrides it and is locked for the run: parity numbers
+  are only valid from a run that held an exclusive work dir (s9).
+  sutra-charcap derive-families [--out <FILE>]
+  sutra-charcap families
+EOF
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+FAM=""; ALL=0; RUNNER=legacy; DAYS=7; OUTF=""; PROJ_ROOT_BASE=""
+JOBS="${SUTRA_CHARCAP_JOBS:-4}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --family)    FAM="${2:-}"; shift 2 ;;
+    --all)       ALL=1; shift ;;
+    --runner)    RUNNER="${2:-legacy}"; shift 2 ;;
+    --jobs)      JOBS="${2:-4}"; shift 2 ;;
+    --days)      DAYS="${2:-7}"; shift 2 ;;
+    --out)       OUTF="${2:-}"; shift 2 ;;
+    --proj-root) PROJ_ROOT_BASE="${2:-}"; shift 2 ;;
+    -h|--help)   usage; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+case "$JOBS" in ''|*[!0-9]*) die "--jobs must be a positive integer (got '$JOBS')" ;; esac
+[ "$JOBS" -ge 1 ] || die "--jobs must be >= 1"
+PROJ_ROOT_BASE="${PROJ_ROOT_BASE:-$WORK}"; PROJ_ROOT_BASE="${PROJ_ROOT_BASE%/}"
+mkdir -p "$PROJ_ROOT_BASE" 2>/dev/null || die "cannot create --proj-root $PROJ_ROOT_BASE"
+work_lock "$PROJ_ROOT_BASE"
+
+[ -d "$HOOKS_DIR" ] || die "no hooks dir at $HOOKS_DIR (set CLAUDE_PLUGIN_ROOT)"
+
+case "$cmd" in
+  derive-families)
+    mkdir -p "$GOLDEN" 2>/dev/null
+    do_derive_families "${OUTF:-$FAMILIES_JSON}"
+    ;;
+  families)
+    [ -d "$GOLDEN" ] || die "no golden corpus at $GOLDEN"
+    for f in $(families); do
+      printf '%-14s event=%-18s scripts=%-3s cases=%s\n' "$f" "$(family_event "$f")" \
+        "$(family_commands "$f" | grep -c .)" "$(family_cases "$f" | grep -c .)"
+    done
+    ;;
+  record)
+    [ -d "$GOLDEN" ] || die "no golden corpus at $GOLDEN"
+    # A refused recording (s5 all-127 guard) must fail the command, not leave a
+    # corpus that is green for the wrong reason.
+    rc=0
+    if [ "$ALL" = "1" ]; then for f in $(families); do do_record_family "$f" || rc=1; done
+    else [ -n "$FAM" ] || { usage; exit 1; }; do_record_family "$FAM" || rc=1; fi
+    exit "$rc" ;;
+  verify)
+    [ -d "$GOLDEN" ] || die "no golden corpus at $GOLDEN"
+    rc=0
+    case "$RUNNER" in
+      legacy)
+        if [ "$ALL" = "1" ]; then for f in $(families); do do_verify_legacy "$f" || rc=1; done
+        else [ -n "$FAM" ] || { usage; exit 1; }; do_verify_legacy "$FAM" || rc=1; fi ;;
+      sutra-turn)
+        if [ "$ALL" = "1" ]; then for f in $(families); do do_verify_turn "$f" || rc=$?; done
+        else [ -n "$FAM" ] || { usage; exit 1; }; do_verify_turn "$FAM" || rc=$?; fi ;;
+      *) die "unknown runner: $RUNNER (legacy|sutra-turn)" ;;
+    esac
+    exit "$rc" ;;
+  shadow)
+    [ -n "$FAM" ] || { usage; exit 1; }
+    do_shadow "$FAM" "$DAYS" ;;
+  ""|-h|--help) usage; [ -n "$cmd" ] ;;
+  *) usage; exit 1 ;;
+esac

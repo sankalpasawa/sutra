@@ -1,0 +1,2 @@
+DISPATCH GATE (WARN): no dispatch record — run: sutra-dispatch resolve ... && sutra-atom open ... && sutra-dispatch bind
+  Enforcement is WARN in this repo. Promote: echo hard > .claude/dispatch-mode

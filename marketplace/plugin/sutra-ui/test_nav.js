@@ -779,24 +779,24 @@ test("hotfix: the terminal clamp reserves the plane and a 320px detail floor", (
   T.S.ui.dest = "settings";
   els["app"]._cls.add("threecol"); els["app"]._cls.delete("noplane");
   sandbox.innerWidth = 1400;
-  /* chrome 224+240+27=491; avail = 1400-491-320 = 589 — a 72% ask (1008) must
-     come back at 589, leaving the detail its floor. */
+  /* chrome 72+240+27=339 (the 72px rail lane, 2026-09-16); avail = 1400-339-320 = 741 —
+     a 72% ask (1008) must come back at 741, leaving the detail its floor. */
   const clamped = vm.runInContext("clampTermW(1008)", sandbox);
-  assert.strictEqual(clamped, 589, "got " + clamped);
+  assert.strictEqual(clamped, 741, "got " + clamped);
   /* on Now (no plane) the same ask keeps 240 more */
   els["app"]._cls.add("noplane");
-  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 829);
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 981);
   els["app"]._cls.delete("noplane");
 });
 
 /* §v3.4 — the lane collapse and the functional Act-as */
 test("v3.4: the collapse rules exist and OUTRANK the threecol grid", () => {
   const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
-  /* The rail track is var(--railw,224px) since 2.259.0, when the sidebar became draggable
-     (owner: "click on the centre and slide left to collapse it like I have it in VS Code").
-     224px stays the DEFAULT inside the var, so a browser with nothing stored, or one that
-     refuses localStorage, lays out exactly as it did before. */
-  const three = css.indexOf(".app.threecol{grid-template-columns:var(--railw,224px) 240px");
+  /* The rail track is var(--railw,72px): the var arrived in 2.259.0 with the drag edge, and
+     the default inside it became 72px on 2026-09-16 when the sidebar became one icon lane
+     (founder: "you do not need to create the sidebar"). A browser with nothing stored, or
+     one that refuses localStorage, lays out at 72px. */
+  const three = css.indexOf(".app.threecol{grid-template-columns:var(--railw,72px) 240px");
   /* The collapsed grid leads with the PLANE's 240px now, not minmax(0,1fr): collapsing hides
      the nav and keeps the Chats list (2026-09-10). See the assertions further down. */
   const col = css.indexOf(".app.threecol.railcol{grid-template-columns:240px minmax(0,1fr)");
@@ -825,11 +825,13 @@ test("v3.4: the collapse rules exist and OUTRANK the threecol grid", () => {
     " — a 4-track grid with the rail hidden IS the overlap bug");
   assert(/\.app\.threecol\.railcol\.noplane\{grid-template-columns:minmax\(0,1fr\) var\(--termw/.test(css),
     "a plane-less destination collapses to 2 tracks, or it keeps an empty 240px gutter");
-  /* Every rail track carries the same fallback. One that hardcoded 224px would ignore a drag
-     on that layout only, which is the kind of bug you find by resizing on a settings screen. */
-  const tracks = css.match(/grid-template-columns:[^;}]*224px[^;}]*/g) || [];
-  tracks.forEach(t => assert(t.indexOf("var(--railw,224px)") !== -1,
-    "a rail track still hardcodes 224px and would not answer the drag: " + t));
+  /* Every rail track carries the same fallback. One that hardcoded 72px would drift from the
+     others the day the lane changes width again. */
+  /* Only the rail-bearing grids: they all end in the terminal track. (.tsc-story has its
+     own 72px column and is not a rail.) */
+  const tracks = css.match(/grid-template-columns:[^;}]*72px[^;}]*--termw[^;}]*/g) || [];
+  tracks.forEach(t => assert(t.indexOf("var(--railw,72px)") !== -1,
+    "a rail track still hardcodes 72px: " + t));
   assert(tracks.length >= 3, "expected the three rail-bearing grids, saw " + tracks.length);
 });
 
@@ -1155,9 +1157,27 @@ test("inline: the terminal clamp treats Focus/Org as no-plane (codex P1)", () =>
   els["app"]._cls.add("threecol");
   sandbox.innerWidth = 1400;
   T.goDest("org"); T.renderRail();
-  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 829, "org: 240px handed back");
+  /* 1400 - (72 rail + 27 gaps) - 320 floor = 981 with the 72px lane (2026-09-16) */
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 981, "org: 240px handed back");
   T.goDest("settings"); T.renderRail();
-  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 589, "settings: plane reserved");
+  assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 741, "settings: plane reserved");
+  T.goDest("now");
+});
+test("2.280.2: the click that opens the flyout does not close it (the re-render detached its target)", () => {
+  /* Opening Focus re-renders the rail, so by the time the SAME click reaches the
+     document-level closer its target is detached and closest(".rail") is null.
+     Without the rail's stamp the flyout closed in the instant it opened
+     (founder, 2026-09-16: "the submenus have gone"). */
+  T.S.ui = T.loadLayout();
+  T.goDest("focus"); T.renderRail();
+  assert.strictEqual(T.S.ui.railOpen, "focus", "entering Focus opens its flyout");
+  const outside = vm.runInContext("railOutsideClick", sandbox);
+  const detached = { closest: () => null };
+  assert.strictEqual(outside({ railHandled: true, target: detached }), false,
+    "the rail's own click must not close what it just opened");
+  assert.strictEqual(T.S.ui.railOpen, "focus");
+  assert.strictEqual(outside({ target: detached }), true, "a click elsewhere still closes it");
+  assert.strictEqual(T.S.ui.railOpen, null);
   T.goDest("now");
 });
 test("inline: entering Org renders its rows inside the rail with the plane's markup", () => {

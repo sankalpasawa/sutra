@@ -212,18 +212,25 @@ const MED_MEMBERSHIP = {
   unknown:   ["off", "Status unknown"],
 };
 
+/* The state word for one connector, as Claude's last check reported it. Two
+   or three words, never a sentence (owner, 2026-09-16: the rows said too much).
+   The attribution -- that this is the CHECK's reading, not a fact about the
+   connector -- is carried by the tile's "last check reported" label once, not
+   repeated on every row. */
 const MED_OBSERVED = {
-  connected:        "connected",
-  degraded:         "connected, but its tools did not answer",
-  needs_auth:       "not authenticated",
-  pending_approval: "waiting for approval",
-  not_configured:   "not configured",
-  probe_failed:     "unreachable",
-  unknown:          "something it did not recognise",
+  connected:        "Connected",
+  degraded:         "Connected, tools not answering",
+  needs_auth:       "Needs sign in",
+  pending_approval: "Waiting for approval",
+  not_configured:   "Not set up",
+  probe_failed:     "Unreachable",
+  unknown:          "Unknown",
 };
 
 /* Availability is about the CHECK, not the connector. Every one of these
-   means "we do not know", and none of them may render as "not connected". */
+   means "we do not know", and none of them may render as "not connected".
+   The first string is what the tile shows; the second is the reason, kept in
+   the tile's tooltip rather than as a paragraph. */
 const MED_UNAVAILABLE = {
   not_checked: ["Not checked yet.",
     "Checking runs `claude mcp list`, which contacts each of your connectors."],
@@ -235,12 +242,6 @@ const MED_UNAVAILABLE = {
   unreadable: ["Status unknown.",
     "The Claude CLI listed no claude.ai connectors. It prints exactly the same thing when you are offline, when you are signed out, and when you genuinely have none — so Sutra will not guess which."],
 };
-
-function medWhen(ts){
-  if (!ts) return "";
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
-}
 
 /* Founder direction 2026-08-24, non-negotiable: EVERY connector type gets its
    own tile. One tile listing four services was the shape that got called weird
@@ -261,61 +262,57 @@ const MED_GLYPH_FALLBACK =
   '<path d="M8.5 8.5a3.5 3.5 0 1 0 0 7M15.5 8.5a3.5 3.5 0 1 1 0 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
 
 /* What the tile says under the name. Membership, not health -- health is the
-   quoted observation below it. */
+   observation on the row below it. */
 const MED_SUBTITLE = {
   added:     "Connected inside Claude",
   not_added: "Not connected in Claude",
   unknown:   "Sutra could not check",
 };
 
+/* CUT TO STATE + ONE ACTION (owner, 2026-09-16: "the rows say too much").
+   What a tile shows now: the name, one line of membership under it, one state
+   word per connector as the last check reported it, the account when Claude
+   reported one, and "Manage in Claude". What it no longer shows on the page:
+   the raw status string, the ownership caveat, the checked-at clock, the two
+   hedges about an account nobody reported, and a Re-check per tile -- the probe
+   is one CLI run for every tile, so Re-check is one button on the screen head
+   (SCREENS.connectors), not five. */
 function mediatedTile(t, svc){
   const ok = t.availability === "ok";
-  const [cls, label] = MED_MEMBERSHIP[svc.membership] || ["off", "Status unknown"];
+  const [cls] = MED_MEMBERSHIP[svc.membership] || ["off", "Status unknown"];
   const glyph = MED_GLYPH[svc.key] || MED_GLYPH_FALLBACK;
   const attn = svc.membership === "added" &&
                ["needs_auth", "probe_failed", "not_configured"].indexOf(svc.observation) !== -1;
 
   /* One line per real connector, never collapsed: two accounts can share a
      host, and folding them together would hide a broken connection behind a
-     healthy one. */
+     healthy one. The label is drawn only when there is more than one, because
+     that is the only time it tells them apart. */
   const rows = (svc.connectors || []).map(c => {
-    const said = MED_OBSERVED[c.observation] || "something it did not recognise";
+    const said = MED_OBSERVED[c.observation] || "Unknown";
     return `<li><span class="dot ${cls}"></span>
-      <span class="muted">Claude's last check reported it ${esc(said)}</span>
-      ${c.raw_status ? `<code>${esc(c.raw_status)}</code>` : ""}
-      ${(svc.connectors.length > 1) ? `<span class="tag">${esc(c.label)}</span>` : ""}
+      ${(svc.connectors.length > 1) ? `<b>${esc(c.label)}</b>` : ""}
+      <span class="muted">${esc(said)}</span>
     </li>`;
   }).join("");
 
   let body;
   if (!ok){
     const [head, why] = MED_UNAVAILABLE[t.availability] || MED_UNAVAILABLE.cli_error;
-    body = `<div class="note w tileblocked"><b>${esc(head)}</b> ${esc(why)}
-      ${t.availability_detail ? `<br><code>${esc(t.availability_detail)}</code>` : ""}</div>`;
+    body = `<ul class="connlist"><li class="muted tileempty" title="${esc(why)}${
+      t.availability_detail ? " " + esc(t.availability_detail) : ""}">${esc(head)}</li></ul>`;
   } else if (svc.membership === "not_added"){
-    body = `<ul class="connlist"><li class="muted tileempty">
-      ${esc(label)} — add it in Claude and it will appear here.</li></ul>`;
+    body = `<ul class="connlist"><li class="muted tileempty">Not connected.</li></ul>`;
   } else {
-    body = `<ul class="connlist">${rows}</ul>`;
+    body = `<ul class="connlist medrows">
+      <li class="medattr muted">Claude's last check reported:</li>${rows}</ul>`;
   }
 
-  /* Only where a connection actually exists. Next to "not connected" it would
-     read as a hedge about something that is not there. */
-  /* Three states, deliberately distinct. A blanket "not visible to Sutra" was
-     accurate but hid the difference between "the connector told us", "we asked
-     and it could not tell" and "we have no way to ask this one yet". */
-  let acct = "";
-  if (ok && svc.membership === "added"){
-    if (svc.account){
-      acct = `<p class="mediatedacct"><span class="muted">Account</span>
-                <b>${esc(svc.account)}</b></p>`;
-    } else if (svc.account_resolvable){
-      acct = `<p class="mediatedacct muted">Account: Claude did not report one.</p>`;
-    } else {
-      acct = `<p class="mediatedacct muted">Account: Sutra cannot ask this
-                connector who it is.</p>`;
-    }
-  }
+  /* Only an account Claude actually reported. The two "no account" hedges are
+     gone: a row that says nothing claims nothing. */
+  const acct = ok && svc.membership === "added" && svc.account
+    ? `<p class="mediatedacct"><span class="muted">Account</span>
+         <b>${esc(svc.account)}</b></p>` : "";
 
   return `<div class="ptile mediated ${attn ? "attn" : ""}">
     <div class="ptilehead">
@@ -329,15 +326,8 @@ function mediatedTile(t, svc){
     </div>
     ${body}
     ${acct}
-    <p class="tilecaveat">Claude owns this connection. No token and no account
-      reaches Sutra, and a Sutra turn cannot use it.</p>
-    ${t.checked_at ? `<p class="medfoot muted">Checked ${esc(medWhen(t.checked_at))}${
-        t.stale ? " · may be out of date" : ""}</p>` : ""}
+    ${t.stale ? `<p class="medfoot muted">May be out of date.</p>` : ""}
     <div class="medactions">
-      <button class="btn" type="button" data-connrecheck="${esc(svc.key)}"
-        ${S.conn.mediatedBusy ? "disabled" : ""}
-        title="Runs one live probe through the Claude CLI — it refreshes every Claude connection, not just this one">
-        ${S.conn.mediatedBusy ? "Checking…" : (t.checked_at ? "Re-check" : "Check now")}</button>
       <a class="btn" href="${esc(t.manage_url || "https://claude.ai/customize/connectors")}"
          target="_blank" rel="noreferrer">Manage in Claude</a>
     </div>
@@ -349,6 +339,17 @@ function mediatedTile(t, svc){
 function mediatedTiles(t){
   if (!t) return "";
   return (t.services || []).map(svc => mediatedTile(t, svc)).join("");
+}
+
+/* THE ONE RE-CHECK, for the whole screen. The probe runs `claude mcp list`
+   once and refreshes every Claude tile, so one button says so better than five
+   copies of it. Drawn only when there is a mediated snapshot to refresh. */
+function mediatedRecheckHtml(t){
+  if (!t) return "";
+  return `<button class="btn" type="button" data-connrecheck="all"
+      ${S.conn.mediatedBusy ? "disabled" : ""}
+      title="Runs one live check through the Claude CLI. It refreshes every Claude connection.">
+      ${S.conn.mediatedBusy ? "Checking…" : (t.checked_at ? "Re-check Claude connections" : "Check Claude connections")}</button>`;
 }
 
 async function loadMediated(refresh){
@@ -374,13 +375,14 @@ function providerTile(p){
   const connected = p.connectors || [];
   const attention = p.needs_attention > 0;
 
+  /* Per row: who, its state, one action. The operator's own label for the
+     account rides in the title rather than as a third word on the line. */
   const rows = connected.length
     ? connected.map(c => {
         const [cls, label] = CONN_STATUS[c.status] || ["off", c.status];
         return `<li>
           <span class="dot ${cls}"></span>
-          <b>${esc(c.account.username || c.account.id)}</b>
-          ${c.label?`<span class="tag">${esc(c.label)}</span>`:""}
+          <b title="${esc(c.label||"")}">${esc(c.account.username || c.account.id)}</b>
           <span class="muted">${esc(label)}</span>
           <span class="sp"></span>
           <button class="btn" type="button" data-connopen="${esc(c.id)}"
@@ -410,7 +412,6 @@ function providerTile(p){
       ${connected.length?`<span class="ct ${attention?"w":""}">${connected.length}</span>`:""}
     </div>
     <ul class="connlist">${rows}</ul>
-    ${p.caveat?`<p class="tilecaveat">${esc(p.caveat)}</p>`:""}
     ${action}
   </div>`;
 }
@@ -531,8 +532,9 @@ function connEvents(){
 SCREENS.connectors = () => {
   const s = S.conn;
   /* the pane header already names this screen — one owner for the title
-     (visual audit r4); the subtitle sentence stays. */
-  const head = `<div class="sc-head"><p>${esc(TITLES.connectors[1])}</p></div>`;
+     (visual audit r4). One line under it, and the screen's one Re-check. */
+  const head = `<div class="sc-head connhead"><p>${esc(TITLES.connectors[1])}</p>${
+    mediatedRecheckHtml(s.mediated)}</div>`;
 
   if (s.err){
     const structured = /PANEL_INTERNAL_ERROR/.test(s.err);

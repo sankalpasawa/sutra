@@ -1,0 +1,2 @@
+BLOCKED: PROTO-004 — API-key-shaped string in non-env file: src/config.py
+  Put secrets in .env / env vars only. Override: PROTO004_ACK=1 PROTO004_ACK_REASON='<why>'

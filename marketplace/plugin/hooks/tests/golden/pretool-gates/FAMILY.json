@@ -1,0 +1,24 @@
+{
+  "family": "pretool-gates",
+  "event": "PreToolUse",
+  "scripts": [
+    { "id": "usage-guard.sh", "path": "hooks/usage-guard.sh", "args": [] },
+    { "id": "loop-budget-guard.sh", "path": "hooks/loop-budget-guard.sh", "args": [] },
+    { "id": "depth-marker-pretool.sh", "path": "hooks/depth-marker-pretool.sh", "args": [] },
+    { "id": "operationalization-check.sh", "path": "hooks/operationalization-check.sh", "args": [] },
+    { "id": "blueprint-check.sh", "path": "hooks/blueprint-check.sh", "args": [] },
+    { "id": "flow-gate.sh", "path": "hooks/flow-gate.sh", "args": [] },
+    { "id": "codex-consult-gate.sh", "path": "hooks/codex-consult-gate.sh", "args": [] },
+    { "id": "placement-gate.sh", "path": "hooks/placement-gate.sh", "args": [] },
+    { "id": "feedback-channel-guard.sh", "path": "hooks/feedback-channel-guard.sh", "args": [] },
+    { "id": "rtk-auto-rewrite.sh", "path": "hooks/rtk-auto-rewrite.sh", "args": [] },
+    { "id": "codex-directive-gate.sh", "path": "hooks/codex-directive-gate.sh", "args": [] },
+    { "id": "structural-move-check.sh", "path": "hooks/structural-move-check.sh", "args": [] },
+    { "id": "keys-in-env-vars.sh", "path": "hooks/keys-in-env-vars.sh", "args": [] },
+    { "id": "enforce-boundaries.sh", "path": "hooks/enforce-boundaries.sh", "args": [] },
+    { "id": "build-layer-check.sh", "path": "hooks/build-layer-check.sh", "args": [] },
+    { "id": "input-classification-gate.sh", "path": "hooks/input-classification-gate.sh", "args": [] },
+    { "id": "atom-floor.sh", "path": "hooks/atom-floor.sh", "args": [] },
+    { "id": "dispatch-gate.sh", "path": "hooks/dispatch-gate.sh", "args": [] }
+  ]
+}

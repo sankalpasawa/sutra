@@ -401,13 +401,40 @@ async function loadAgentTranscript(sid, aid){
   } catch (e){ S.agentTurns[key] = []; }
   scheduleRender();
 }
+/* Sessions whose /api/repo read is still in flight. render() calls loadRepo for
+   every open pane, and the "already set" guard below only holds AFTER the
+   answer lands -- so every repaint during the read started another one, and
+   each answer scheduled another repaint. Measured 2026-09-16: /api/repo took
+   4.1 s on the founder's checkout (git status on a large tree) and the idle
+   Now screen was repainting once a second, so the read ran five times over
+   and fed the very cadence that re-entered it. A separate set rather than a
+   sentinel in S.repo, because repoBarHtml draws "no repository" for any
+   falsy entry and must stay blank while the answer is pending.
+
+   A forced read (a turn just ended) still goes out while a plain one is in
+   flight, so two answers can be pending for one session. Only the NEWEST
+   read may write (per-session generation; codex P2, 2026-09-16), and an
+   answer for a folder the session has since left is dropped and the read
+   re-issued -- setSessCwd clears S.repo[sid] expecting the next repaint to
+   re-read, and the in-flight guard would otherwise have handed it the old
+   folder's bar. */
+const _repoInflight = new Set();
+const _repoGen = {};
 async function loadRepo(sid, force){
   if (!sid) return;
   if (S.repo[sid] !== undefined && !force) return;
+  if (_repoInflight.has(sid) && !force) return;
   const cwd = sessCwd(sid);
   if (!cwd){ S.repo[sid] = {available:false, reason:"no working directory"}; scheduleRender(); return; }
-  try { S.repo[sid] = await apiGet("/api/repo?cwd=" + encodeURIComponent(cwd)); }
-  catch (e){ S.repo[sid] = {available:false, reason:e.message}; }
+  const gen = _repoGen[sid] = (_repoGen[sid] || 0) + 1;
+  _repoInflight.add(sid);
+  let r;
+  try { r = await apiGet("/api/repo?cwd=" + encodeURIComponent(cwd)); }
+  catch (e){ r = {available:false, reason:e.message}; }
+  finally { if (_repoGen[sid] === gen) _repoInflight.delete(sid); }
+  if (_repoGen[sid] !== gen) return;                 /* a newer read owns the answer */
+  if (sessCwd(sid) !== cwd){ loadRepo(sid, true); return; }   /* folder changed mid-read */
+  S.repo[sid] = r;
   scheduleRender();
 }
 /* Pull requests are a NETWORK call through gh, so unlike the repo read they are

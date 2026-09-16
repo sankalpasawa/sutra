@@ -1,0 +1,1 @@
+1cd77a69947c48a7d84584dde88fffbd00f3418453f0de6f2b35bde0e3083386  .enforcement/permission-gate.jsonl
