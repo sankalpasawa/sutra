@@ -741,6 +741,7 @@ function agReset(){
   a.libEdit = null; a.knowledge = null;
   a.refresh = null; a.refreshSeen = null; a.refreshPollErr = null; a.compForm = null; a.coForm = null;
   a.cta = null; a.ctaForm = null; a.detailOpen = {}; a.panel = null;
+  a.libTabs = null; a.libTabs2 = null;
   return a;
 }
 
@@ -1214,8 +1215,8 @@ test("a milestone that exists is clickable; one that does not is greyed and not 
   const html = A.agLibraryHtml([{ id: "run-c1-r1", title: "Writing…", status: "writing", words: 0,
                                   created_at: "2026-09-09T09:00:00Z", milestones: LIB_MILES() }]);
   const strip = html.slice(html.indexOf('class="ag-miles"'), html.indexOf("</div>", html.indexOf('class="ag-miles"')));
-  assert.ok(/<button class="ag-mile done" type="button" data-ag="libmile" data-arg="run-c1-r1" data-name="research"/.test(strip),
-            "the made one is a button carrying the row and the key: " + strip.slice(0, 200));
+  assert.ok(/<button class="ag-mile done" type="button" data-ag="libtabsopen" data-arg="run-c1-r1" data-name="research"/.test(strip),
+            "the made one is a button carrying the row and the key, and opens the tab overlay: " + strip.slice(0, 200));
   assert.ok(/data-name="picture"/.test(strip) && /The search picture/.test(strip),
             "the search picture is one of them, in plain words");
   assert.ok(/<span class="ag-mile cur"[^>]*title="being made now"><i aria-hidden="true"><\/i>Planned<\/span>/.test(strip),
@@ -3133,7 +3134,9 @@ test("the meta line says the version, who saved it, and whether the team gets it
   let html = A.agPanelHtml(a);
   assert.ok(/version 3/.test(html) && /saved by Devansh 2m ago/.test(html), html.match(/<p class="ag-sub"[^<]*/)[0]);
   assert.ok(/shared with the team/.test(html));
-  assert.ok(/data-ag="librevert" data-arg="lib7"/.test(html), "Undo last save is offered when there is a version before");
+  assert.ok(!/data-ag="librevert"/.test(html), "the old footer Undo is gone -- Undo/Redo now live in the top bar");
+  assert.ok(/data-ag="libundo" data-arg="lib7" disabled/.test(html), "Undo, disabled: no history flag was given");
+  assert.ok(/data-ag="libredo" data-arg="lib7" disabled/.test(html), "Redo, disabled the same way");
   a.libMeta.team = { configured: false, member: false, why: "No team workspace is connected, so this stays on this Mac." };
   html = A.agPanelHtml(a);
   assert.ok(/on this Mac only/.test(html) && /No team workspace is connected/.test(html), "the server's own sentence explains the local-only state");
@@ -3395,35 +3398,42 @@ async function atest(name, fn){
     assert.ok(/disk is full/.test(A.agLibEditHtml(a.panel, a.libEdit)), "on screen, beside the button");
   });
 
-  await atest("clicking a milestone opens THAT part in the panel, read-only, named for a person", async () => {
+  await atest("clicking a milestone dot opens the tab overlay on the matching tab, reading /tabs and the article once", async () => {
     const a = agReset(); const seen = [];
     const prev = A.apiGet;
-    A.apiGet = async (p) => { seen.push(p); return { key: "plan", label: "Planned", note: "the headings and the evidence",
-                                                    file: "blueprint.json", data: { h1: "Cost per hire", sections: [{ id: "s1", h2: "What it costs", job: "explain" }] } }; };
-    await A.agAction("libmile", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "plan", "data-label": "Planned" })[k] || "" });
+    A.apiGet = async (p) => {
+      seen.push(p);
+      if (/\/tabs$/.test(p)) return { search_picture: null, research: null,
+        architect: { format: "How-to", spine: "The spine", target_words: 1800, n_sections: 2, n_sub_headings: 3,
+                     sections: [{ headline: "What it costs", job: "explain the cost", word_target: 400, n_facts: 3, h3s: ["A", "B"], why: "because" }],
+                     left_out: null },
+        edits: null };
+      return { id: "run-c1-r1", title: "Cost per hire", words: 1840, draft: "# Cost per hire\n\nBody." };
+    };
+    /* the milestone key is "plan"; it opens the ARCHITECT tab (AG_MILE_TAB), the coarser dot for the same idea */
+    await A.agAction("libtabsopen", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "plan", "data-label": "Architect" })[k] || "" });
     A.apiGet = prev;
-    assert.ok(/\/library\/run-c1-r1\/artifact\/plan$/.test(seen[0]), "it asks for that row's own file: " + seen[0]);
-    assert.strictEqual(a.panel.view, "blueprint", "the plan opens in the plan view, not a new one");
-    assert.strictEqual(a.panel.title, "Planned", "titled the way the strip named it");
-    assert.strictEqual(a.panel.subtitle, "the headings and the evidence", "and says what it is");
-    assert.strictEqual(a.panel.run_id, null, "no run is answering, so there is no run on the panel");
-    assert.strictEqual(a.panel.readOnly, true);
-    const html = A.agPanelHtml(a);
-    assert.ok(/Cost per hire/.test(html), "the plan is on screen");
-    assert.ok(!/data-ag="bpedit"/.test(html) && !/data-ag="bpmove"/.test(html),
-              "with no control that would post an edit to a run that is not there");
-    assert.ok(!/data-ag="approvert"/.test(html), "and nothing to approve: the run is not waiting on this");
+    assert.ok(seen.some(p => /\/library\/run-c1-r1\/tabs$/.test(p)), "it asks for the row's assembled tabs: " + seen.join(", "));
+    assert.ok(seen.some(p => /\/library\/run-c1-r1$/.test(p)), "and for the article itself, for the Draft tab: " + seen.join(", "));
+    assert.ok(a.libTabs && a.libTabs.on, "the overlay is open");
+    assert.strictEqual(a.libTabs.itemId, "run-c1-r1");
+    assert.strictEqual(a.libTabs.active, "architect", "plan maps to the Architect tab");
+    assert.strictEqual(a.libTabs.loading, false);
+    assert.strictEqual(a.panel, null, "the old panel is untouched -- this opens a separate overlay, not agPanelHtml");
+    const html = A.agLibTabsHtml(a);
+    assert.ok(/What it costs/.test(html), "the section is on screen");
+    assert.ok(/data-ag="libtabsswitch" data-arg="draft"/.test(html), "the Draft tab is offered too, from the same fetch");
   });
 
-  await atest("a milestone the server cannot serve yet says so, instead of sitting on Reading…", async () => {
+  await atest("a tab the server cannot read yet says so, instead of sitting on Reading…", async () => {
     const a = agReset();
     const prev = A.apiGet;
     A.apiGet = async () => { throw new Error("that part of this article has not been written yet"); };
-    await A.agAction("libmile", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "draft" })[k] || "" });
+    await A.agAction("libtabsopen", { getAttribute: k => ({ "data-arg": "run-c1-r1", "data-name": "draft" })[k] || "" });
     A.apiGet = prev;
-    assert.strictEqual(a.panel.loading, false, "it stops reading");
-    assert.ok(/has not been written yet/.test(a.panel.error), "and passes the server's words on: " + a.panel.error);
-    assert.ok(/has not been written yet/.test(A.agPanelHtml(a)), "on screen, in the panel");
+    assert.strictEqual(a.libTabs.loading, false, "it stops reading");
+    assert.ok(/has not been written yet/.test(a.libTabs.error), "and passes the server's words on: " + a.libTabs.error);
+    assert.ok(/has not been written yet/.test(A.agLibTabsHtml(a)), "on screen, in the overlay");
   });
 
   await atest("the Library refreshes itself ONLY while it is in front of him and something is moving", async () => {

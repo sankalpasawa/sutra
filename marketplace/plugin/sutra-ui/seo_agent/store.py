@@ -581,6 +581,17 @@ MILESTONES = [
 
 MILESTONE_FILES = {m["key"]: m["file"] for m in MILESTONES}
 
+# Files a Library tab may open beyond the five milestones (2026-09-16): the Research tab links to
+# the dossier and the field notes, the Edits tab links to the source check. These are NOT
+# milestones -- the card's strip still shows only the five above -- they are extra documents a tab
+# opens as a second overlay. Same route, same containment check, one bigger allow-list.
+EXTRA_ARTIFACT_FILES = {
+    "dossier": {"file": "dossier.md", "label": "The research dossier"},
+    "source-check": {"file": "source-check.md", "label": "Source check"},
+    "voices": {"file": "voices-from-the-field.md", "label": "Voices from the field"},
+}
+EXTRA_ARTIFACT_BY_FILE = {v["file"]: v for v in EXTRA_ARTIFACT_FILES.values()}
+
 
 def library_item_id(chat_id, run_id):
     """The id of the row for this run. Decided in ONE place, and derived only from the run.
@@ -845,6 +856,7 @@ def library_update(item_id, draft_md, title=None, actor="", actor_id=""):
         _write_text(os.path.join(d, PREVIOUS_FILE), old)
     _write_text(path, draft_md)
     _stamp_edit(meta, draft_md, title, actor, actor_id, old)
+    _record_version(item_id, meta, draft_md)
     write_json(os.path.join(d, "meta.json"), meta)
     return meta
 
@@ -854,6 +866,10 @@ def library_revert(item_id, actor="", actor_id=""):
     previous body, so an undo can itself be undone. Counts as an edit (new version, new author).
 
     None when there is no article, or nothing to go back to.
+
+    Kept exactly as it was (2026-09-09): a plain two-way swap against previous.md, unrelated to the
+    numbered version history below. `library_undo` / `library_redo` are what the Open view's new
+    Undo/Redo buttons call; this one route stays for whatever else still calls it.
     """
     d = os.path.join(library_dir(), item_id)
     meta = read_json(os.path.join(d, "meta.json"))
@@ -868,6 +884,190 @@ def library_revert(item_id, actor="", actor_id=""):
     _write_text(os.path.join(d, "draft.md"), previous)
     _stamp_edit(meta, previous, title, actor, actor_id, current)
     write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
+
+# ---- numbered versions, with undo/redo (2026-09-16) -------------------------------------------
+#
+# "Every save makes a version. Keep the last 20." `meta["versions"]` is the navigable timeline: an
+# ordered list (oldest first, capped at 20) of every EDIT's body, one file each at
+# versions/v<version>.md, keyed by the meta["version"] it was saved as. `meta["history_cursor"]`
+# is the version number the article on screen corresponds to right now.
+#
+# THE TIMELINE ONLY GROWS ON A GENUINE EDIT (library_update -- a hand edit or an AI section
+# applied). Undo and redo never append to it: they just move history_cursor to the adjacent entry
+# and write that entry's body back over draft.md. This is deliberate and is what makes "the index
+# of the cursor" a reliable answer for the Undo/Redo buttons' enabled state: if a restore appended
+# a new entry every time (as an ordinary edit does), walking back three times and forward three
+# times would leave the cursor's entry buried under three redundant copies, and "is there anything
+# after the cursor" would answer wrongly. A restore still counts as a save in every OTHER sense --
+# `meta["version"]` still bumps, previous.md still updates, and it still reaches the team through
+# the ordinary push (library_edit.undo/redo) -- it just does not lengthen this list.
+#
+# A FRESH edit made while the cursor sits behind the tip drops every entry after it -- the redo
+# tail -- before appending the new one, exactly like any other editor: the future you could have
+# redone to is gone once you type something new.
+MAX_VERSIONS = 20
+VERSIONS_SUBDIR = "versions"
+
+
+def _versions_dir(item_id):
+    return os.path.join(library_dir(), item_id, VERSIONS_SUBDIR)
+
+
+def _version_file(item_id, version):
+    return os.path.join(_versions_dir(item_id), "v%d.md" % int(version))
+
+
+def _version_index(versions, version):
+    return next((i for i, v in enumerate(versions) if v.get("version") == version), None)
+
+
+def _record_version(item_id, meta, body):
+    """Append `body` (the state meta["version"] now points at) to the kept timeline, dropping the
+    redo tail first if the cursor was not already at the tip. Mutates and returns `meta`; the
+    caller still owns writing meta.json."""
+    versions = [dict(v) for v in (meta.get("versions") or [])]
+    idx = _version_index(versions, meta.get("history_cursor"))
+    if idx is not None:
+        versions = versions[:idx + 1]               # drop the redo tail
+    versions.append({"version": meta["version"], "title": meta.get("title") or "",
+                     "edited_by": meta.get("edited_by") or "", "edited_at": meta.get("edited_at") or ""})
+    _write_text(_version_file(item_id, meta["version"]), body)
+    while len(versions) > MAX_VERSIONS:
+        old = versions.pop(0)
+        try:
+            os.remove(_version_file(item_id, old["version"]))
+        except OSError:
+            pass
+    meta["versions"] = versions
+    meta["history_cursor"] = meta["version"]         # a restore moves this again, to the older entry
+    return meta
+
+
+def library_history_flags(meta):
+    """{"can_undo", "can_redo"} for the buttons: whether an earlier / later entry exists either
+    side of where the cursor sits right now."""
+    versions = (meta or {}).get("versions") or []
+    idx = _version_index(versions, (meta or {}).get("history_cursor"))
+    if idx is None:
+        return {"can_undo": False, "can_redo": False}
+    return {"can_undo": idx > 0, "can_redo": idx < len(versions) - 1}
+
+
+def _restore_step(item_id, actor, actor_id, direction):
+    """Shared body of library_undo/library_redo: move the cursor one entry `direction` (-1 or +1)
+    in the EXISTING timeline and write that entry's body back as a new save. None when there is
+    nowhere to go."""
+    d = os.path.join(library_dir(), item_id)
+    meta = read_json(os.path.join(d, "meta.json"))
+    if not meta:
+        return None
+    versions = meta.get("versions") or []
+    idx = _version_index(versions, meta.get("history_cursor"))
+    if idx is None:
+        return None
+    j = idx + direction
+    if j < 0 or j >= len(versions):
+        return None
+    target = versions[j]
+    body = _read_text(_version_file(item_id, target["version"]))
+    if body is None:
+        return None
+    current = _read_text(os.path.join(d, "draft.md")) or ""
+    _write_text(os.path.join(d, PREVIOUS_FILE), current)
+    _write_text(os.path.join(d, "draft.md"), body)
+    _stamp_edit(meta, body, target.get("title"), actor, actor_id, current)
+    meta["history_cursor"] = target["version"]       # the timeline itself is untouched by a restore
+    write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
+
+def library_undo(item_id, actor="", actor_id=""):
+    """Step the article back one kept version. None when this is already the oldest one kept."""
+    return _restore_step(item_id, actor, actor_id, -1)
+
+
+def library_redo(item_id, actor="", actor_id=""):
+    """Step the article forward one kept version. None when there is nothing to redo -- either
+    nothing was undone, or a fresh edit since has dropped the redo tail."""
+    return _restore_step(item_id, actor, actor_id, +1)
+
+
+# THE THREE DECISION FIELDS, BACKFILLED ONCE (2026-09-16). `format_label`, `measured_band` and
+# `topic_scope` were added to meta.json by the same save that already writes `words` and
+# `format_archetype` (see loop.save_to_library on feat/run-decisions), so any row saved before that
+# landed has none of the three. The Library tabs need them, so a row missing any of them is filled
+# in HERE, deterministically, from the run that made it, and written back so it only ever happens
+# once per row.
+#
+# NEVER an AI call. decisions.json's own fallback builder (write/_common._fallback_decisions) can
+# route an unmapped page-format through the model; this backfill does not import it or call it. A
+# format only fills in when it is already one of the 8 archetypes on disk (decisions.json,
+# blueprint.json or research.json) -- otherwise format_label stays "", which is honest, not guessed.
+_DECISION_FIELDS = ("format_label", "measured_band", "topic_scope")
+
+
+def _derive_decision_fields(meta):
+    """{"format_label", "measured_band", "topic_scope"} for one row, read from its own run.
+
+    None when the run's artifacts folder is gone -- an old row whose chat was deleted -- so the
+    caller can leave the row exactly as it is rather than writing three blank fields over it.
+    """
+    chat_id, run_id = meta.get("chat_id"), meta.get("run_id")
+    if not chat_id or not run_id:
+        return None
+    if not os.path.isdir(os.path.join(run_dir(chat_id, run_id), "artifacts")):
+        return None
+    dec = load_artifact(chat_id, run_id, "decisions.json") or {}
+    bp = load_artifact(chat_id, run_id, "blueprint.json") or {}
+    rs = load_artifact(chat_id, run_id, "research.json") or {}
+
+    fmt = (dec.get("format") or bp.get("format_archetype") or rs.get("format_archetype")
+           or (rs.get("build_spec") or {}).get("format") or "").strip()
+    label = ""
+    if fmt:
+        from .prompts import store as pstore      # lazy: store.py stays free of the heavier tree
+        from .write import _common as wc
+        if fmt in wc.ARCHETYPES:
+            label = pstore.format_title(fmt)
+
+    measured = dec.get("measured_band") or {}
+    if not measured:
+        build_spec = rs.get("build_spec") or {}
+        measured = build_spec.get("word_band_measured") or {}
+        band = build_spec.get("word_band") or {}
+        if not measured and band and band.get("min") != band.get("max"):
+            measured = band
+    measured_band = ({"min": measured.get("min"), "max": measured.get("max")}
+                     if measured.get("min") and measured.get("max") else {})
+
+    topic_scope = dec.get("topic") or {}
+    if not topic_scope:
+        gate = rs.get("topic_gate")
+        if isinstance(gate, dict) and gate:
+            topic_scope = {"state": "on" if gate.get("relevant", True) else "off",
+                           "why": str(gate.get("why") or "")}
+
+    return {"format_label": label, "measured_band": measured_band, "topic_scope": topic_scope}
+
+
+def _backfill_decision_fields(item_id, meta):
+    """Fill in whichever of the three decision fields this row is missing, once, and save it.
+
+    Only ever writes when at least one field is absent -- a row that already carries all three
+    (every row saved since 2026-09-16, and any row this has already touched) costs nothing beyond
+    the three dict lookups below.
+    """
+    missing = [k for k in _DECISION_FIELDS if k not in meta]
+    if not missing:
+        return meta
+    derived = _derive_decision_fields(meta)
+    if derived is None:
+        return meta
+    for k in missing:
+        meta[k] = derived[k]
+    write_json(os.path.join(library_dir(), item_id, "meta.json"), meta)
     return meta
 
 
@@ -886,6 +1086,7 @@ def library_list():
             if m:
                 m.setdefault("status", "draft")
                 m["milestones"] = milestones(m.get("chat_id"), m.get("run_id"))
+                m = _backfill_decision_fields(name, m)
                 out.append(m)
     return sorted(out, key=lambda m: m.get("created_at", ""), reverse=True)
 
@@ -895,6 +1096,7 @@ def library_get(item_id):
     meta = read_json(os.path.join(d, "meta.json"))
     if not meta:
         return None
+    meta = _backfill_decision_fields(item_id, meta)
     try:
         with open(os.path.join(d, "draft.md"), encoding="utf-8") as f:
             meta["draft"] = f.read()
@@ -908,19 +1110,23 @@ def library_get(item_id):
         meta["previous_draft"] = previous
     meta.setdefault("status", "draft")
     meta["milestones"] = milestones(meta.get("chat_id"), meta.get("run_id"))
+    meta["history"] = library_history_flags(meta)
     return meta
 
 
 def library_artifact(item_id, name):
-    """One milestone's file, read out of the RUN, for the panel to show. None when there is none.
+    """One milestone's file, or one of the three extra documents a tab links to, read out of the
+    RUN. None when there is none.
 
-    `name` is a milestone key ("plan") or the file it stands for ("blueprint.json"); the key is
-    what the screen should send, the filename is accepted because the strip already carries it.
+    `name` is a milestone key ("plan"), an extra-file key ("dossier"), or the file either one
+    stands for ("blueprint.json", "dossier.md"); the key is what the screen should send, the
+    filename is accepted because the strip (or the tab) already carries it.
 
     This is a file-serving path, so it is gated twice, in this order:
       1. containment — the resolved real path must sit inside this run's own artifacts folder, so
          a name like "../../../etc/passwd" gets nothing even if it slipped past the route's regex;
-      2. an allow-list — only the five milestone files are servable. The run folder holds keys,
+      2. an allow-list — only the five milestone files, plus the three extra documents (the
+         dossier, the source check and the field notes), are servable. The run folder holds keys,
          state and every work file, and none of that is this route's business.
     Order matters: containment is checked first so that it is the rule doing the work, rather than
     the allow-list quietly hiding a traversal hole.
@@ -928,20 +1134,27 @@ def library_artifact(item_id, name):
     meta = read_json(os.path.join(library_dir(), item_id, "meta.json"))
     if not meta or not meta.get("chat_id") or not meta.get("run_id"):
         return None
-    fname = MILESTONE_FILES.get(name, name)
+    fname = MILESTONE_FILES.get(name) or EXTRA_ARTIFACT_FILES.get(name, {}).get("file") or name
     arts = os.path.realpath(os.path.join(run_dir(meta["chat_id"], meta["run_id"]), "artifacts"))
     p = os.path.realpath(os.path.join(arts, fname))
     if p != arts and not p.startswith(arts + os.sep):
         return None
-    if os.path.basename(p) not in set(MILESTONE_FILES.values()):
+    allowed = set(MILESTONE_FILES.values()) | set(EXTRA_ARTIFACT_BY_FILE)
+    base = os.path.basename(p)
+    if base not in allowed:
         return None
     st = _stat(p)
     if not st or not st.st_size:
         return None
-    spec = next(m for m in MILESTONES if m["file"] == os.path.basename(p))
-    row = {"key": spec["key"], "label": spec["label"], "note": spec["note"],
-           "file": spec["file"], "bytes": st.st_size, "at": _at(st)}
-    if spec["file"].endswith(".json"):
+    spec = next((m for m in MILESTONES if m["file"] == base), None)
+    if spec:
+        row = {"key": spec["key"], "label": spec["label"], "note": spec["note"],
+               "file": spec["file"], "bytes": st.st_size, "at": _at(st)}
+    else:
+        extra = EXTRA_ARTIFACT_BY_FILE[base]
+        row = {"key": base, "label": extra["label"], "note": "",
+               "file": base, "bytes": st.st_size, "at": _at(st)}
+    if base.endswith(".json"):
         row["data"] = read_json(p)
     else:
         with open(p, encoding="utf-8") as f:

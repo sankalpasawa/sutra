@@ -351,6 +351,26 @@ def revert(item_id, client=None):
     return dict(meta, team=_push(item_id, team_status(client), who, client))
 
 
+def undo(item_id, client=None):
+    """Step the Open view back one kept version, for the team too. None when this is already the
+    oldest version kept (20 at most -- see store.MAX_VERSIONS)."""
+    who, who_id = actor(client), actor_id(client)
+    meta = store.library_undo(item_id, actor=who, actor_id=who_id)
+    if not meta:
+        return None
+    return dict(meta, team=_push(item_id, team_status(client), who, client))
+
+
+def redo(item_id, client=None):
+    """Step forward one kept version, for the team too. None when there is nothing to redo: either
+    nothing was undone, or a fresh edit since dropped the redo tail."""
+    who, who_id = actor(client), actor_id(client)
+    meta = store.library_redo(item_id, actor=who, actor_id=who_id)
+    if not meta:
+        return None
+    return dict(meta, team=_push(item_id, team_status(client), who, client))
+
+
 def _push(item_id, team, who, client):
     """The row to the team, queued on disk first. Never raises: the local save already stands."""
     if not team["member"]:

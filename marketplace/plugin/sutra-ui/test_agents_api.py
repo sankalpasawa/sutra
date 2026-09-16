@@ -413,6 +413,26 @@ class TestAgentsApi(unittest.TestCase):
         self.assertIn("stays on this Mac", it["team"]["why"])
         store.library_delete(item)
 
+    def test_18b_the_three_extra_documents_open_through_the_artifact_route(self):
+        chat_id = store.new_chat("c18b")
+        run_id = store.new_run(chat_id, "extras")
+        store.save_artifact(chat_id, run_id, "dossier.md", "# Dossier\n\nfull text\n")
+        store.save_artifact(chat_id, run_id, "source-check.md", "# Source check\n\nfull text\n")
+        store.save_artifact(chat_id, run_id, "voices-from-the-field.md", "# Voices\n\nfull text\n")
+        store.save_artifact(chat_id, run_id, "cards.json", {"x": 1})
+        item = store.library_item_id(chat_id, run_id)
+        store.library_finish(item, "With extras", "# With extras\n\nbody\n",
+                             chat_id=chat_id, run_id=run_id)
+        for key in ("dossier", "source-check", "voices"):
+            r = self.client.get(BASE + "/library/%s/artifact/%s" % (item, key))
+            self.assertEqual(r.status_code, 200, key)
+            self.assertIn("full text", r.json()["text"])
+        r = self.client.get(BASE + "/library/%s/artifact/cards.json" % item)
+        self.assertEqual(r.status_code, 404, "still not on the allow-list")
+        it = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual(len(it["milestones"]), 5, "the extra documents are not a sixth milestone")
+        store.library_delete(item)
+
     def test_19_ai_section_rewrites_one_section_shows_it_and_writes_nothing(self):
         item = store.library_save("c19", "r19", "Cost per hire", self.MD)
         llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nBody one, tighter, still 4,700 hires.\n\n### Sub\n\nunder the sub"
@@ -485,6 +505,47 @@ class TestAgentsApi(unittest.TestCase):
         r = self.client.post(BASE + "/library/%s/revert" % item, headers=HDR).json()
         self.assertEqual(store.library_get(item)["draft"], v1)
         self.assertEqual(self.client.post(BASE + "/library/nope/revert", headers=HDR).status_code, 404)
+        store.library_delete(item)
+
+    def test_19c_undo_and_redo_step_through_every_kept_version(self):
+        # library_save's own body (self.MD) is version 0 and is NOT itself a kept, undoable
+        # version -- only what /save writes afterwards is, exactly like store.library_update.
+        item = store.library_save("c19c", "r19c", "Cost per hire", self.MD)
+        v1 = self.MD.replace("Body one.", "Body one, v1.")
+        v2 = self.MD.replace("Body one.", "Body one, v2.")
+        v3 = self.MD.replace("Body one.", "Body one, v3.")
+        for draft in (v1, v2, v3):
+            r = self.client.post(BASE + "/library/%s/save" % item, json={"draft": draft}, headers=HDR)
+            self.assertTrue(r.json()["ok"])
+        one = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual(one["history"], {"can_undo": True, "can_redo": False})
+
+        r = self.client.post(BASE + "/library/%s/undo" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v2)
+        self.assertIn("team", r, "undo goes through the same team push as any other save")
+        r = self.client.post(BASE + "/library/%s/undo" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v1)
+        self.assertEqual(self.client.post(BASE + "/library/%s/undo" % item, headers=HDR).status_code, 404,
+                         "nothing before the first kept version")
+
+        r = self.client.post(BASE + "/library/%s/redo" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v2)
+        r = self.client.post(BASE + "/library/%s/redo" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v3)
+        self.assertEqual(self.client.post(BASE + "/library/%s/redo" % item, headers=HDR).status_code, 404,
+                         "nothing after the tip")
+
+        # a fresh edit after undoing drops the redo tail
+        self.client.post(BASE + "/library/%s/undo" % item, headers=HDR)  # back to v2
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": "# Cost per hire\n\nbranched\n"}, headers=HDR).json()
+        self.assertTrue(r["ok"])
+        two = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertFalse(two["history"]["can_redo"], "the redo tail is gone after a fresh edit")
+        self.assertEqual(self.client.post(BASE + "/library/%s/redo" % item, headers=HDR).status_code, 404)
+
+        self.assertEqual(self.client.post(BASE + "/library/nope/undo", headers=HDR).status_code, 404)
+        self.assertEqual(self.client.post(BASE + "/library/nope/redo", headers=HDR).status_code, 404)
         store.library_delete(item)
 
     # ---- settings ---------------------------------------------------------------------
