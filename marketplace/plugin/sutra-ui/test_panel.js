@@ -307,7 +307,7 @@ const EPILOGUE = `
      driven without a DOM. */
   settingsOverviewHtml, settingsValueOf, SETTINGS_SECTIONS,
   providerListHtml, providerPageHtml, providerSwitchesHtml, providerSettingValue,
-  provState, providerDefaultModel, providerVersion, providerUsageLine,
+  provState, providerDefaultModel, providerVersion, providerUsageLine, PROVIDER_BLURB,
   accessSectionHtml, accessOptions, accessNativeMap, accessNativeFor,
   accessIdForNative, accessLabelFor,
   usageSectionHtml, updatesSectionHtml, workspaceSectionHtml, advancedSectionHtml,
@@ -4185,17 +4185,21 @@ test("45d3. a sign-in the SERVER is running is adopted after a reload", () => {
 test("45e. it says Codex cannot be selected, and does NOT restate the row's reason", () => {
   sandbox.sutra = { codexLogin: () => Promise.resolve({ ok:true }) };
   try {
-    const out = codexRender({ state:"chatgpt", billing:"covered by your ChatGPT plan" });
-    /* REWORDED 2026-09-08. The old sentence was "signing in here does NOT make
-       Codex selectable" -- true when nothing could install the CLI, and
-       misleading once Sutra provisions it: a sign-in on a machine that has the
-       runtime DOES make the row selectable, on the same paint. The claim that
-       still needs making is that a credential is only HALF of it. */
-    assert.ok(/credential\s*<i>and<\/i>\s*its command-line tool/.test(
-                out.replace(/\s+/g, " ")),
-      "the block must still say a credential alone is not enough");
+    const out = codexRender({ state:"chatgpt", billing:"covered by your ChatGPT plan",
+                              billing_detail:"Codex runs against your ChatGPT plan." });
+    /* CUT 2026-09-16 (owner: drop the "OpenAI Codex sign-in ... which OpenAI
+       account Codex bills to ..." explainer). The block is the state, the
+       billing label and the actions. The longer billing sentence survives
+       behind a Details disclosure, not on the page. */
+    assert.ok(!/Which OpenAI account Codex bills/.test(out), "the explainer is back");
+    assert.ok(!/OpenAI Codex sign-in/.test(out), "the block heading is back");
     assert.ok(!/does <b>not<\/b> make Codex selectable/.test(out),
       "the superseded absolute claim is back");
+    const i = out.indexOf("Codex runs against your ChatGPT plan.");
+    assert.ok(i > 0, "the billing detail must still be reachable");
+    const before = out.slice(0, i);
+    assert.ok(before.lastIndexOf("<details") > before.lastIndexOf("</details>"),
+      "the billing detail is on the page rather than behind Details");
     /* The row directly above prints `reason` verbatim -- both protocols, the
        version pin, the install path. Repeating it here put the same paragraph
        on screen twice. The block must say the one thing the row does not, and
@@ -4834,9 +4838,14 @@ test("46a. not signed in offers the field inline, and says what it costs", () =>
   assert.ok(/data-deepseek-key/.test(out) && /data-deepseek="save"/.test(out), "field + Save");
   assert.ok(!/value=/.test(out),
     "the input is UNCONTROLLED -- a value bound to state would keep a key in S");
-  assert.ok(/no plan to\s+inherit/.test(out), "says why a key is needed at all");
-  assert.ok(/checked\s+with DeepSeek before anything is saved/.test(out),
-    "and that it is validated before it is stored");
+  /* CUT 2026-09-16 (owner: "one short line that DeepSeek needs an API key, the
+     key field, and Save. Optionally one small link to platform.deepseek.com.
+     Nothing more"). */
+  assert.ok(!/no plan to\s+inherit/.test(out), "the billing explainer is back");
+  assert.ok(!/login\s+keychain/.test(out), "the keychain explainer is back");
+  assert.ok(/platform\.deepseek\.com/.test(out), "the one link is missing");
+  const words = out.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().split(" ").length;
+  assert.ok(words < 30, "the block is prose again: " + words + " words");
 });
 
 test("46b. signed in shows the mask and nothing else, plus Remove", () => {
@@ -5233,6 +5242,84 @@ test("W3-1c. THE BUG: a remembered section must not survive re-opening Settings"
   });
 });
 
+/* ── 2026-09-16: the owner's Setup clean-up ─────────────────────────────── */
+
+test("W3-0a. Gemini CLI is nowhere in the client", () => {
+  /* The catalogue dropped it (providers.py); the client's own tables and copy
+     must not keep a ghost of it. Source-level, because a blurb keyed on an id
+     the server never sends would never render and never be caught otherwise. */
+  assert.ok(!("gemini" in T.PROVIDER_BLURB), "PROVIDER_BLURB still carries a gemini entry");
+  const chat = fs.readFileSync(path.join(__dirname, "static", "js", "05-chat.js"), "utf8");
+  const screens = fs.readFileSync(path.join(__dirname, "static", "js", "04-screens.js"), "utf8");
+  assert.ok(!/gemini/i.test(chat), "05-chat.js still mentions Gemini");
+  assert.ok(!/gemini/i.test(screens), "04-screens.js still mentions Gemini");
+});
+
+test("W3-0b. the provider list has no Make default and no footer; the page has Make default", () => {
+  w3Settings(() => {
+    T.PROVIDERS.push({ id:"deepseek2", name:"Other", runnable:true, installed:true, configured:true });
+    const list = T.providerListHtml(T.SETTINGS);
+    assert.ok(!/Make default/.test(list), "Make default is back on the list rows");
+    assert.ok(!/data-prov="/.test(list), "a list row still posts the default directly");
+    assert.ok(!/is ready to use on this Mac/.test(list), "the 'Only X is ready' footer is back");
+    /* the not-ready rows keep their one action, and it opens the page */
+    assert.ok(/data-provpage="codex"[^>]*>Sign in</.test(list.replace(/\s+/g, " ")),
+      "the Sign in verb on the Codex row is gone");
+    /* and the page carries the action the list gave up */
+    const page = T.providerPageHtml("deepseek2", T.SETTINGS);
+    assert.ok(/data-prov="deepseek2"/.test(page) && /Make default/.test(page),
+      "the provider page lost Make default");
+  });
+});
+
+test("W3-0c. status pills use three tones: green ready, amber needs attention, muted not installed", () => {
+  assert.strictEqual(T.provState({ runnable:true }).pill, "p-ok");
+  assert.strictEqual(T.provState({ installed:true, configured:false }).pill, "p-warn");
+  assert.strictEqual(T.provState({ installed:false }).pill, "p-mut");
+  assert.strictEqual(T.provState({ installed:false }).badge, "not installed");
+});
+
+test("W3-0d. a key-based provider with no key says so in one line, on the card and the page", () => {
+  const prev = T.PROVIDERS;
+  try {
+    T.PROVIDERS = [{ id:"deepseek", name:"DeepSeek", usage_kind:"balance" },
+                   { id:"codex", name:"OpenAI Codex", usage_kind:"tokens" }];
+    const card = T.usageAllCardHtml({ id:"deepseek", name:"DeepSeek", state:"signed_out",
+      error:"no API key. DeepSeek has no subscription to inherit -- every request is billed "
+          + "against a key -- and all three places it can come from were checked: env, env, keychain." });
+    assert.ok(card.includes("No API key. Add one to use DeepSeek."), "the short line is missing");
+    assert.ok(!/What Sutra found/.test(card), "the old disclosure label is back");
+    const i = card.indexOf("subscription to inherit");
+    assert.ok(i > 0, "the server's detail must still be reachable");
+    assert.ok(card.slice(0, i).lastIndexOf("<details") > card.slice(0, i).lastIndexOf("</details>"),
+      "the env-var paragraph is on the card");
+    /* a sign-in provider keeps the sign-in wording */
+    const codex = T.usageAllCardHtml({ id:"codex", name:"OpenAI Codex", state:"signed_out" });
+    assert.ok(codex.includes("Not signed in."), "codex lost its own line");
+    w3With({ usageAll: { providers: [{ id:"deepseek", state:"signed_out", windows: [] }] } }, () => {
+      assert.strictEqual(T.providerUsageLine("deepseek"), "No API key. Add one to use DeepSeek.");
+    });
+  } finally { T.PROVIDERS = prev; }
+});
+
+test("W3-0e. the Updates screen is rows in panels, with no paragraph under a row", () => {
+  w3Settings(() => {
+    w3With({ upd: { desktop: { managed:true, installed:"2.279.1", latest:"2.279.1", update_available:false,
+                               note:"Checked in the background by the app itself." },
+                    plugin: { managed:false, reason:"a source checkout has no plugin to replace" } },
+             updError: null, updBusy: null, updMsg: null, shellUpd: null, provTools: W3_TOOLS }, () => {
+      T.S.setSection = "updates";
+      const out = T.SCREENS.settings();
+      assert.ok(!/Checked in the background/.test(out), "a component note is on the page");
+      assert.ok(!/not managed here/.test(out), "the old 'not managed here' pill is back");
+      assert.ok(/updates on its own/.test(out), "an unmanaged component does not say it updates on its own");
+      assert.ok((out.match(/class="sxpanel"/g) || []).length >= 2, "the two panels are missing");
+      assert.ok((out.match(/class="sxkv sxurow"/g) || []).length >= 5, "the rows do not share one shape");
+      assert.ok(!/<h3 class="sec">/.test(out), "the old chsec headings are back");
+    });
+  });
+});
+
 test("W3-1d. the section is NEVER persisted, so a reload cannot restore it", () => {
   w3Settings(() => {
     T.S.setSection = "provider:claude";
@@ -5547,10 +5634,42 @@ test("W3-4a. the tools list renders versions, an Update button, and the too-old 
     const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("DeepSeek"));
     assert.ok(/up to date/.test(codex), "a current tool is not said to be current");
     assert.ok(!/data-toolupdate="codex"/.test(codex), "a current tool was offered a dead Update button");
-    /* not installed, not managed here: says so, and names the real command */
+    /* not installed: says so, and NEVER the command line (owner, 2026-09-16) */
     const ds = out.slice(out.indexOf("DeepSeek"));
     assert.ok(/not installed/.test(ds), "an absent tool is not said to be absent");
-    assert.ok(/npm i -g deepseek-cli/.test(ds), "an unmanaged tool does not name its own update path");
+    assert.ok(!/npm i -g deepseek-cli/.test(out), "a command line is back on the screen");
+    assert.ok(!/does not manage/.test(out), "the 'Sutra does not manage this one' line is back");
+  });
+});
+
+test("W3-4g. an update Sutra cannot run says 'Updates on its own', never the command", () => {
+  const tools = [
+    /* Homebrew's codex: an update exists, Sutra will not touch the install */
+    { id:"codex", name:"OpenAI Codex", installed_version:"0.150.0", latest_version:"0.153.2",
+      update_available:true, too_old:false, managed_by_sutra:false, install_kind:"homebrew",
+      update_action:"manual", can_update:false, update_command:"brew upgrade codex" },
+    /* Claude Code's own installer: Sutra can run `claude update` for them */
+    { id:"claude", name:"Claude Code", installed_version:"2.1.247", latest_version:"2.1.273",
+      update_available:true, too_old:false, managed_by_sutra:false, install_kind:"claude-self",
+      update_action:"claude-update", can_update:true, update_command:"claude update" },
+    /* a chat is running on it: the button stays, disabled, with the reason */
+    { id:"deepseek", name:"DeepSeek", installed_version:"1.3.0", latest_version:"1.3.2",
+      update_available:true, too_old:false, managed_by_sutra:true, install_kind:"sutra",
+      update_action:"sutra-npm", can_update:false, busy:true, update_command:"npm install" },
+  ];
+  w3With({ provTools: tools, provToolsError: null, toolBusy: null, toolLog: null }, () => {
+    const out = T.toolsListHtml();
+    const codex = out.slice(out.indexOf("OpenAI Codex"), out.indexOf("Claude Code"));
+    assert.ok(/Updates on its own/.test(codex), "a manual-only tool does not say so");
+    assert.ok(!/data-toolupdate="codex"/.test(codex), "a manual-only tool was offered a dead Update");
+    assert.ok(!/brew upgrade/.test(out) && !/npm install/.test(out) && !/claude update/.test(out),
+      "a command line reached the screen");
+    const claude = out.slice(out.indexOf("Claude Code"), out.indexOf("DeepSeek"));
+    assert.ok(/data-toolupdate="claude"/.test(claude), "a tool Sutra can update lost its button");
+    assert.ok(!/Updates on its own/.test(claude), "and is not told it updates on its own");
+    const ds = out.slice(out.indexOf("DeepSeek"));
+    assert.ok(/data-toolupdate="deepseek"[^>]*disabled/.test(ds), "a busy tool's button is not disabled");
+    assert.ok(/Close its chat first/.test(ds), "and does not say why");
   });
 });
 
@@ -6292,9 +6411,9 @@ test("50e. Claude and DeepSeek usage rendering is untouched", () => {
 test("50f. a provider with no usage concept still reports none", () => {
   const prev = T.PROVIDERS;
   try {
-    T.PROVIDERS = [{ id:"gemini", name:"Gemini CLI", usage_kind:"none" }];
-    assert.strictEqual(T.providerUsage("gemini", "s1"), null);
-    assert.strictEqual(T.usageKindOf("gemini"), "none");
+    T.PROVIDERS = [{ id:"pi", name:"Pi CLI", usage_kind:"none" }];
+    assert.strictEqual(T.providerUsage("pi", "s1"), null);
+    assert.strictEqual(T.usageKindOf("pi"), "none");
   } finally { T.PROVIDERS = prev; }
 });
 
@@ -6868,7 +6987,7 @@ test("53f. the other providers' lists are not touched by a Codex answer", () => 
       T.codexApplyState({ state:"chatgpt", models_by_provider:DISCOVERED_MAP });
       assert.deepStrictEqual(T.MODELS_BY_PROVIDER.claude.map(m => m.id),
         ["", "opus"], "Claude's list changed shape");
-      assert.ok(!("gemini" in T.MODELS_BY_PROVIDER),
+      assert.ok(!("pi" in T.MODELS_BY_PROVIDER) && !("gemini" in T.MODELS_BY_PROVIDER),
         "a provider with no models gained a picker");
     });
 });

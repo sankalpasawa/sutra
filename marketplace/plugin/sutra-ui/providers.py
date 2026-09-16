@@ -839,8 +839,8 @@ def _model_selectable(entry):
 
 def models_for(pid):
     """Every model this provider declares, in menu order. () for a provider
-    that has none (gemini) -- which is a real answer, not a gap: their rows
-    render without a picker rather than with someone else's.
+    that has none -- which is a real answer, not a gap: its rows render
+    without a picker rather than with someone else's.
 
     CODEX IS COMPOSED, not static, and it is the only one: its catalogue entry
     carries "CLI default" and codex_config_models() appends whatever the
@@ -1104,8 +1104,9 @@ def all_models_by_provider():
     UNCHANGED FOR EVERY OTHER PROVIDER: models_for() returns spec["models"]
     verbatim for every id except codex. The `if spec.get("models")` guard still
     keys off the STATIC tuple on purpose -- it answers "is this provider
-    supposed to have a picker at all", which must not become true for gemini
-    just because some future discovery returned something.
+    supposed to have a picker at all", which must not become true for a
+    provider with no declared models just because some future discovery
+    returned something.
     """
     return {spec["id"]: list(models_for(spec["id"]))
             for spec in _CATALOG if spec.get("models")}
@@ -1151,14 +1152,14 @@ def permission_modes_for(pid):
     EMPTY AND MISSING ARE TREATED THE SAME HERE, which they are not in
     all_permission_modes_by_provider() below -- that omits an empty declaration
     so the CLIENT applies its own fallback. Both halves therefore answer "all
-    of them" for codex/gemini, which declare (). Returning () here instead
+    of them" for a provider that declares (). Returning () here instead
     would leave this helper disagreeing with the panel about the same provider,
     and two copies of an answer that can differ is how one of them goes stale.
 
-    codex/gemini declare () because the question is unanswerable rather than
-    answered: neither has an adapter, so no pane can run one, and nothing has
-    ever measured which modes they would honour. Guessing Claude's six is safe
-    only because it is unreachable."""
+    A provider declares () when the question is unanswerable rather than
+    answered: no adapter, so no pane can run it, and nothing has ever measured
+    which modes it would honour. Guessing Claude's six is safe only because it
+    is unreachable."""
     for spec in _CATALOG:
         if spec["id"] == pid:
             return spec.get("permission_modes") or PERMISSION_MODES
@@ -1533,9 +1534,8 @@ def provider_settings(pid, raw=None):
     schema, so a caller never has to remember a default or handle a missing
     one -- `provider_settings("claude")["chrome"]` is always a bool.
 
-    {} for a provider with no schema, which is a real answer: gemini and
-    deepseek have no per-provider switches, and their spawn paths ask for
-    nothing.
+    {} for a provider with no schema, which is a real answer: deepseek has no
+    per-provider switches, and its spawn path asks for nothing.
 
     NOT the same thing as what is published. GET /api/settings sends
     stored_provider_settings() -- only the values that differ from a default --
@@ -1777,10 +1777,12 @@ _CATALOG = (
      "usage_kind": "tokens",
      "turn_options": _CODEX_TURN_OPTIONS,
      "permission_modes": _CODEX_PERMISSION_MODES},
-    {"id": "gemini", "name": "Gemini CLI", "bin": "gemini",
-     "config_dir": "~/.gemini", "default": False,
-     "models": (), "model_flag": None, "usage_kind": "none",
-     "turn_options": (), "permission_modes": ()},
+    # Gemini CLI LEFT THE CATALOGUE 2026-09-16 (owner: "Sutra has no adapter
+    # for it, so remove it everywhere it appears"). It had no adapter, no
+    # models, no usage figure and no minimum version, so every screen that
+    # listed it could only say "not installed" or "no adapter". `~/.gemini`
+    # still appears elsewhere in this tree: that is the DeepSeek CLI, which is
+    # a Gemini-CLI fork and keeps its state there. Unrelated to this entry.
     {"id": "deepseek", "name": "DeepSeek", "bin": "deepseek",
      "config_dir": "~/.deepseek", "default": False,
      "models": _DEEPSEEK_MODELS, "model_flag": "-m",
@@ -1813,7 +1815,6 @@ _PROVIDER_ALIAS_EXTRAS = {
     "claude": ("claude code",),
     "codex": ("openai codex",),
     "deepseek": ("deep seek",),
-    "gemini": ("gemini cli",),
 }
 
 
@@ -1824,13 +1825,12 @@ def provider_aliases():
     added to _CATALOG is matchable the moment it exists rather than when
     someone remembers this function.
 
-    EVERY provider is listed, including ones with no adapter. `gemini` is
-    matchable on purpose: "use Gemini" should be RECOGNISED and then refused
-    with the reason it cannot run, which is what the readiness gate already
-    says. Leaving it out would make the same sentence do nothing at all, and
-    silence reads as a bug in the detector rather than an answer about Gemini.
-    Whether a matched provider may actually be selected is decided by
-    `runnable`, never here.
+    EVERY catalogued provider is listed, whether or not it is runnable right
+    now: "use Codex" on a Mac with no Codex sign-in should be RECOGNISED and
+    then refused with the reason, which is what the readiness gate already
+    says. Whether a matched provider may actually be selected is decided by
+    `runnable`, never here. A name that is not in the catalogue at all (Gemini,
+    since 2026-09-16) is simply not matched.
     """
     out = {}
     for spec in _CATALOG:
@@ -2263,9 +2263,9 @@ def _deepseek_no_key_reason(keychain_read=False):
     """The sentence for a machine with no DeepSeek key, naming all three places
     a key can come from and what was found at each.
 
-    Concrete in the style of the gemini row, which names what it searched ("the
-    login shell's PATH and the usual install locations were both searched")
-    rather than only what is missing. "no key is saved on this Mac" was the
+    Concrete in the style of the missing-CLI row, which names what it searched
+    ("the login shell's PATH and the usual install locations were both
+    searched") rather than only what is missing. "no key is saved on this Mac" was the
     first draft and it was the same failure as the string it replaced: true,
     and no help to someone who wants to know WHERE a key would live.
 
@@ -2452,8 +2452,10 @@ def _describe(spec):
         # time on 2026-09-08 for the same reason -- the count became three when
         # the Codex adapter landed, and the codex-specific version pin that
         # used to hang off this string went with it, because codex is now in
-        # ADAPTERS and can no longer reach this arm at all. `gemini` is the
-        # only id left that does.
+        # ADAPTERS and can no longer reach this arm at all. No catalogued
+        # provider reaches it today (Gemini CLI, the last one that did, left
+        # the catalogue 2026-09-16); it stays as the honest answer for any
+        # future entry that ships before its adapter does.
         reason = ("no chat adapter yet -- this panel speaks three protocols, "
                   "Claude's stream-json, Codex's `exec --json` and DeepSeek's "
                   "ACP, and %s exposes none of them, so it cannot answer "
@@ -3456,9 +3458,9 @@ def _warm_latest_versions(pids):
 def tools_report():
     """Every provider that has a CLI to version, in catalogue order.
 
-    gemini is absent: it has no adapter and no declared minimum, so there is
-    nothing true to say about its version and a row of nulls would read as a
-    broken probe rather than as "not supported".
+    Only providers with a declared minimum version are listed: a provider with
+    no minimum has nothing true to say about its version, and a row of nulls
+    would read as a broken probe rather than as "not supported".
     """
     pids = [spec["id"] for spec in _CATALOG if spec["id"] in PROVIDER_MIN_VERSIONS]
     _warm_latest_versions(pids)

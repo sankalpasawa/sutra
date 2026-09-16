@@ -200,19 +200,16 @@ class TestCodexIsSelectable(_Server):
         # IS the "the row became clickable" assertion.
         self.assertIsNone(rows["codex"]["reason"])
 
-    def test_gemini_is_still_refused_at_selection(self):
-        """The offer-a-choice-that-cannot-run guard still guards. Only
-        `runnable` is asserted here: gemini has neither a binary nor a config
-        dir in this temp HOME, so it reaches the generic arm rather than the
-        no-adapter one. The no-adapter SENTENCE is asserted in
-        test_codex_runtime.py, where _describe can be handed a spec that
-        actually reaches it."""
+    def test_gemini_is_not_offered_at_all(self):
+        """Gemini CLI left the catalogue 2026-09-16 (no adapter, so nothing
+        it could ever do here). The settings payload must not list it, so no
+        screen can draw a row for it."""
         with urllib.request.urlopen(
                 "http://127.0.0.1:%d/api/settings" % self.port, timeout=5) as r:
             payload = json.loads(r.read())
         rows = {p["id"]: p for p in payload["providers"]}
-        self.assertFalse(rows["gemini"]["runnable"])
-        self.assertFalse(rows["gemini"]["adapter"])
+        self.assertNotIn("gemini", rows)
+        self.assertEqual(sorted(rows), ["claude", "codex", "deepseek"])
 
     def test_codex_can_be_saved_as_the_default_provider(self):
         """The click path: POST /api/settings {provider: "codex"} is what the
@@ -377,16 +374,16 @@ class TestCodexFailureModes(_Server):
         self.assertEqual(f["type"], "error")
         self.assertEqual(f["code"], "unknown-provider")
 
-    def test_gemini_still_gets_no_adapter_and_names_codex_as_an_option(self):
+    def test_gemini_is_refused_as_an_unknown_provider(self):
         """The `not in ("claude", "codex")` widening must not let a third
-        provider through -- gemini has no adapter and still says so."""
+        provider through. gemini is no longer catalogued at all (2026-09-16),
+        so the refusal is the unknown-provider one, before any readiness or
+        adapter check is reached."""
         from websockets.sync.client import connect
         with connect(self._url("gemini"), open_timeout=10) as ws:
             f = json.loads(ws.recv(timeout=10))
         self.assertEqual(f["type"], "error")
-        # Refused at SELECTION (readiness) rather than reaching the dispatch --
-        # which is the stronger of the two refusals and the intended one.
-        self.assertIn(f["code"], ("provider-missing", "no-adapter"))
+        self.assertEqual(f["code"], "unknown-provider")
 
 
 class TestUntouchedProviders(_Server):

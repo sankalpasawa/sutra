@@ -628,14 +628,28 @@ class ProviderAliases(unittest.TestCase):
                              "%s is not matchable by its display name"
                              % spec["id"])
 
-    def test_a_provider_with_no_adapter_is_still_matchable(self):
-        """gemini must be RECOGNISED and then refused with the reason it
-        cannot run. Leaving it out would make "use Gemini" do nothing at all,
-        and silence reads as a broken detector rather than an answer about
-        Gemini. Whether it may be SELECTED is decided by `runnable`, which is
-        a different question and a different mechanism."""
-        self.assertEqual(providers.provider_aliases().get("gemini"), "gemini")
-        self.assertFalse(providers.provider_by_id("gemini")["adapter"])
+    def test_gemini_is_gone_from_the_catalogue_and_the_aliases(self):
+        """Gemini CLI left the catalogue 2026-09-16 (owner: Sutra has no
+        adapter for it, remove it everywhere). Nothing may list it, match it
+        or describe it: not the provider table, not the alias table, not the
+        tools report, and not the usage report."""
+        import usage
+        self.assertIsNone(providers.provider_by_id("gemini"))
+        self.assertNotIn("gemini", [s["id"] for s in providers._CATALOG])
+        al = providers.provider_aliases()
+        self.assertNotIn("gemini", al)
+        self.assertNotIn("gemini cli", al)
+        self.assertNotIn("gemini", [r["id"] for r in providers.tools_report()])
+        usage._reset_all_for_tests()
+        try:
+            with mock.patch("providers.provider_bin", return_value=None), \
+                 mock.patch("providers.codex_auth", return_value={"state": "logged_out"}), \
+                 mock.patch("providers.deepseek_auth_state",
+                            return_value={"signed_in": False, "reason": "none"}):
+                ids = [r["id"] for r in usage.all_providers()["providers"]]
+        finally:
+            usage._reset_all_for_tests()
+        self.assertEqual(ids, ["claude", "codex", "deepseek"])
 
     def test_no_model_name_is_an_alias(self):
         """"opus" and "sonnet" are entries in Claude's OWN model picker, and

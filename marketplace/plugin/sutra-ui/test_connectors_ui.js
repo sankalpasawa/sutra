@@ -201,13 +201,33 @@ const medTile = (over) => Object.assign({
 }, over || {});
 
 test("mediatedTile escapes hostile text from the CLI", () => {
+  /* Two connectors, because the label is drawn only when there is more than
+     one to tell apart (2026-09-16); with one, the CLI's text never reaches the
+     DOM at all. The account is the other CLI-sourced string on a tile. */
   const sb = mediatedSandbox();
   const evil = '<img src=x onerror=alert(1)>';
   const html = sb.mediatedTiles(medTile({ services: [
     { key: "gmail", name: "Gmail", membership: "added", observation: "unknown",
-      connectors: [{ label: evil, observation: "unknown", raw_status: evil }] }]}));
+      account: evil, account_resolvable: true,
+      connectors: [{ label: evil, observation: "unknown", raw_status: evil },
+                   { label: "second", observation: "unknown", raw_status: evil }] }]}));
   assert(!/<img src=x/.test(html), "raw CLI text reached the DOM unescaped");
   assert(/&lt;img/.test(html), "expected the payload to appear escaped");
+});
+
+test("a row is a state word and nothing else", () => {
+  /* Owner, 2026-09-16: the rows said too much. What is gone from the page:
+     the raw status string, the ownership caveat, the checked-at clock, the
+     account hedges and a Re-check per tile. */
+  const sb = mediatedSandbox();
+  const html = sb.mediatedTiles(medTile());
+  for (const gone of ["Claude owns this connection", "Checked ", "cannot ask this",
+                      "did not report", "add it in Claude", "data-connrecheck"]) {
+    assert(!html.includes(gone), "the tile still says: " + gone);
+  }
+  assert(!/<code>/.test(html), "the raw status string is back on the row");
+  assert(/>Connected</.test(html), "the state word is missing");
+  assert(/Not connected\./.test(html), "a not-added tile has no plain state");
 });
 
 test("mediatedTile escapes the availability detail", () => {
@@ -222,8 +242,9 @@ test("the mediated tile never renders an account", () => {
      tempting wrong answer available. It must not appear on a Google tile. */
   const sb = mediatedSandbox();
   const html = sb.mediatedTiles(medTile());
-  assert(/Account: Sutra cannot ask this|Account: Claude did not report/.test(html),
-    "a connected tile with no resolvable account must say so, not stay silent");
+  assert(!/Account/.test(html),
+    "a connected tile with no reported account must say nothing about one (2026-09-16: "
+    + "the two hedges were cut; a row that says nothing claims nothing)");
   assert(!/@/.test(html.replace(/https?:\/\/[^"'\s]+/g, "")),
     "an email-shaped string appeared on the tile: " + html.slice(0, 300));
 });
@@ -268,7 +289,10 @@ test("the mediated tile emits no connect or disconnect control", () => {
   for (const attr of ["data-connstart", "data-conndis", "data-connopen"]){
     assert(!html.includes(attr), "mediated tile emitted " + attr);
   }
-  assert(html.includes("data-connrecheck"), "no re-check control");
+  /* The re-check moved off the tiles and onto the screen head (2026-09-16):
+     one probe refreshes every tile, so it is one button. */
+  const head = sb.mediatedRecheckHtml(medTile());
+  assert(head.includes("data-connrecheck"), "no re-check control on the screen");
   assert(/href="https:\/\/claude\.ai\/customize\/connectors"/.test(html),
     "no link out to where the connection can actually be managed");
 });
@@ -314,14 +338,17 @@ test("every connector type gets its OWN tile", () => {
   }
 });
 
-test("each tile carries its own controls, not one shared set", () => {
+test("each tile carries its one action, and the screen carries the one re-check", () => {
   const sb = mediatedSandbox();
   const html = sb.mediatedTiles(medTile());
   const tiles  = (html.match(/<div class="ptile mediated/g) || []).length;
   const checks = (html.match(/data-connrecheck=/g) || []).length;
   const manage = (html.match(/Manage in Claude/g) || []).length;
-  assert(checks === tiles, `${tiles} tiles but ${checks} re-check buttons`);
+  assert(checks === 0, `${checks} re-check buttons on the tiles; the screen head has the one`);
   assert(manage === tiles, `${tiles} tiles but ${manage} manage links`);
+  const head = sb.mediatedRecheckHtml(medTile());
+  assert((head.match(/data-connrecheck=/g) || []).length === 1, "the screen needs exactly one re-check");
+  assert(sb.mediatedRecheckHtml(null) === "", "no snapshot, nothing to re-check");
 });
 
 test("a tile whose connector needs attention is marked, and healthy ones are not", () => {
@@ -374,12 +401,13 @@ test("the three account states are distinct", () => {
   const resolved   = mk({ account:"a@b.com", account_resolvable:true });
   const askedNone  = mk({ account:null,      account_resolvable:true });
   const cannotAsk  = mk({ account:null,      account_resolvable:false });
-  assert(/a@b\.com/.test(resolved));
-  assert(/did not report/.test(askedNone),
-    "asked-and-got-nothing must differ from cannot-ask");
-  assert(/cannot ask this/.test(cannotAsk),
-    "cannot-ask must differ from asked-and-got-nothing");
-  assert(!/did not report/.test(cannotAsk), "the two unknowns must not collapse");
+  assert(/a@b\.com/.test(resolved), "a reported account must be shown");
+  /* 2026-09-16: the two unknowns are no longer spelled out on the tile. Both
+     render no account line at all, and neither may borrow the resolved one. */
+  assert(!/Account/.test(askedNone), "asked-and-got-nothing must say nothing about an account");
+  assert(!/Account/.test(cannotAsk), "cannot-ask must say nothing about an account");
+  assert(!/a@b\.com/.test(askedNone) && !/a@b\.com/.test(cannotAsk),
+    "an unknown account must not borrow a resolved one");
 });
 
 test("no account is rendered while the check is unavailable", () => {
