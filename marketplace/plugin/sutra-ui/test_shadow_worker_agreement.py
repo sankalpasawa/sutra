@@ -107,6 +107,124 @@ class TheDoneCheckProtocolIsStated(Base):
                                  "and excess tasks are queued.", out))
 
 
+class TheTurnReportProtocolIsStated(Base):
+    """REPORT. The founder-facing timeline used to show an EXCERPT of the
+    turn -- the first sentence that survived cleaning -- which only
+    accidentally answered the question its heading asks. The worker is now
+    asked for the line itself, in the same "line of its own" shape DONE-CHECK
+    has always used, and 16-shadow-home.shadowSayReport SELECTS it. Nothing
+    summarises: a turn with no REPORT falls back to the old excerpt exactly.
+
+    OUTCOME-FIRST, AND THAT TOOK A SECOND PASS (founder, 2026-09-16). The
+    first wording asked for "what you changed, what you found, or what
+    blocked you" and added "name what changed and what you ran". Measured on
+    mission m-69aee2e5cebc, a worker obeyed it exactly and produced 387
+    characters that opened with a resolved path and an existence check; the
+    display cap cut the line before the clause saying the file had never been
+    written, so the timeline read like progress on a turn where nothing was
+    created. The worker's own PROSE led with the outcome -- only the REPORT
+    did not, which is how we know the fault was in what we asked for.
+
+    So the rules below are ORDERING rules, not topic rules: what leads the
+    sentence is the whole point, and the manifest now says which material is
+    disqualified from leading it. Nothing about selection, cleaning, the cap
+    or the fallback moved for this -- only these words.
+    """
+
+    def test_the_line_and_its_format_are_asked_for(self):
+        out = self.manifest()
+        self.assertIn("REPORT:", out)
+        self.assertIn("line of its own", out)
+
+    def test_it_asks_for_ONE_sentence(self):
+        """The timeline draws one line; a paragraph would be cut by the cap
+        and the founder would read half a thought."""
+        self.assertIn("one sentence", self.manifest().lower())
+
+    def test_the_OUTCOME_leads_the_sentence(self):
+        """The defect this wording exists to fix: a report is what the turn
+        achieved, not the order in which the worker got there."""
+        out = self.manifest()
+        self.assertIn("meaningful outcome", out)
+        self.assertIn("LEAD WITH WHAT IS NOW TRUE", out)
+        self.assertIn("not the route you took", out)
+        # the verbs that make an outcome an outcome
+        for done in ["created", "changed", "fixed", "tested", "verified"]:
+            self.assertIn(done, out, done)
+
+    def test_a_BLOCKER_leads_when_there_is_one(self):
+        """A blocked turn's news is the blocker and what it leaves undone --
+        the exact thing m-69aee2e5cebc buried in clause four."""
+        out = self.manifest()
+        self.assertIn("A BLOCKER LEADS", out)
+        self.assertIn("Never bury the", out)
+        self.assertIn("plan mode blocks", out,
+                      "the worked example is what makes the rule concrete")
+
+    def test_SETUP_AND_TOOLING_are_named_as_disqualified(self):
+        """Naming the material explicitly is the fix: the old wording invited
+        it with "what you found" and "what you ran"."""
+        out = self.manifest()
+        self.assertIn("NOT THE SETUP", out)
+        for banned in ["Paths you resolved", "files you only inspected",
+                       "commands and", "checks you ran", "plans you wrote"]:
+            self.assertIn(banned, out, banned)
+        self.assertIn("not narrate the investigation", out)
+
+    def test_the_old_invitations_are_GONE(self):
+        """Regression on the wording itself. These two phrases are what the
+        worker was obeying when it led with a path and an existence check."""
+        out = self.manifest()
+        self.assertNotIn("what you found", out)
+        self.assertNotIn("what you ran;", out)
+
+    def test_it_is_honest_when_blocked_or_when_nothing_changed(self):
+        out = self.manifest().lower()
+        self.assertIn("nothing changed", out)
+        self.assertIn("blocker", out)
+        self.assertIn("leaves undone", out)
+
+    def test_it_refuses_the_two_ways_of_saying_nothing(self):
+        out = self.manifest()
+        self.assertIn('"Done." says nothing', out)
+        self.assertIn("repeats the objective", out)
+
+    def test_it_asks_for_a_line_that_FITS_the_display(self):
+        """90, NOT 150 (founder, 2026-09-16). The first budget was written
+        against SH_SAY_MAX, the JS cap -- but the founder-visible cut is the
+        one-line clamp on .shagentsay, and a rendered line of that pane holds
+        roughly 90 characters. Measured live: a 147-character report passed
+        the JS untouched and was still cut on screen, at "unavailable in...".
+        So the number the worker is given is now the number the pane can
+        actually show. SH_SAY_MAX and the CSS are unchanged; only this
+        guidance moved."""
+        out = self.manifest()
+        self.assertIn("KEEP IT SHORT", out)
+        self.assertIn("under 90 characters", out)
+        self.assertIn("cut off mid-thought", out)
+
+    def test_it_does_not_disturb_the_DONE_CHECK_PROTOCOL(self):
+        """The two rules travel together and neither replaces the other --
+        stated in the manifest, because a worker reading one may assume it
+        supersedes the other."""
+        out = self.manifest()
+        self.assertIn("DONE-CHECK:", out)
+        self.assertIn("ONLY thing that marks a `verify` check met", out)
+        self.assertIn("does not replace the DONE-CHECK line above", out)
+
+    def test_the_example_line_is_a_placeholder_not_a_report(self):
+        """Belt and braces on the tag, exactly as the DONE-CHECK lane does:
+        the agreement's own specimen must not read as a claim about work."""
+        out = self.manifest()
+        self.assertIn("<one sentence", out)
+
+    def test_it_does_not_ask_the_worker_to_stop_writing_prose(self):
+        """REPORT is an ADDITIONAL line, not a replacement for the turn's
+        ordinary output -- the whole transcript is still the worker chat."""
+        out = self.manifest()
+        self.assertIn("stays in the chat", out)
+
+
 class TheSubagentRuleIsADecisionRule(Base):
 
     def test_the_worker_is_told_subagents_exist(self):

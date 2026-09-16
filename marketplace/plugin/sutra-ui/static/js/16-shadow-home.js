@@ -1755,6 +1755,157 @@ function shadowSayGist(text, drop){
                                   : cut.replace(/\s\S*$/, "")) + " \u2026";
 }
 
+/* ── THE WORKER'S OWN REPORT FOR THE TURN (founder, 2026-09-16) ──────────
+   WHAT THIS CHANGES, AND WHAT IT DOES NOT. Until now the line under a turn
+   was whatever shadowSayGist could salvage from the turn's prose -- the
+   first sentence that survived cleaning. That is an EXCERPT, and an excerpt
+   only accidentally answers the question the heading asks ("what did the
+   worker do this turn?"). The live pane has read "Plan mode is active, so I
+   have not created the file." for a turn whose actual news was that a plan
+   had been written.
+
+   SO THE WORKER IS ASKED TO SAY IT, and this READS what it said. The
+   manifest's WORKING AGREEMENT (app._WORKER_AGREEMENT) now asks for
+
+       REPORT: <one sentence>
+
+   on a line of its own -- the same shape, and for the same reason, as the
+   DONE-CHECK line that has always sat beside it. This function is a
+   SELECTOR, not a summariser: no model is asked, no sentence is composed,
+   and every word it returns is the worker's own. When the worker wrote no
+   REPORT the caller falls back to exactly the behaviour it had before, so
+   every historical mission renders byte-for-byte as it always did.
+
+   IT IS STILL RUN THROUGH THE EXISTING FILTERS. What comes back here is raw
+   worker text, so the caller passes it through shadowSayClean and
+   shadowSayGist exactly as it passes ordinary prose -- a REPORT that is a
+   table row, a control-plane label or a fenced blob cleans to nothing and
+   the fallback takes over. This cannot widen what reaches the founder.
+
+   FENCED LINES ARE NOT THE REPORT, for the same reason shadowSayClean drops
+   them: a REPORT quoted inside a code block is the worker showing the
+   format, not using it.
+
+   THE FIRST VALID ONE WINS. A turn can carry several -- several lines in
+   one message, or one in each of several messages -- so `ok` is an OPTIONAL
+   predicate the caller uses to say what "valid" means to it, the same shape
+   shadowSayGist's `drop` already has. The timeline passes "survives the
+   cleaners"; called with one argument this returns the first report line it
+   finds, which is what any other reader wants. Scanning forward makes the
+   answer depend on the worker's own order rather than on how many messages
+   the turn happened to hold. */
+const SH_REPORT_LINE = /^[\s>*#\-]*REPORT\s*[:·]\s*(.+)$/i;
+
+function shadowSayReport(text, ok){
+  let t = String(text || "");
+  /* the same mission tag strip the rest of this block applies, for the same
+     reason -- the underlying text is never altered */
+  if (typeof goalStripTag === "function") t = goalStripTag(t);
+  let fenced = false;
+  for (const raw of t.split(/\r?\n/)){
+    const line = raw.trim();
+    if (/^```/.test(line)){ fenced = !fenced; continue; }
+    if (fenced) continue;
+    const hit = line.match(SH_REPORT_LINE);
+    if (!hit) continue;
+    /* the emphasis markers go for the same reason they go in shadowSayClean:
+       "**REPORT:** wrote the file" is the syntax, not the sentence */
+    const said = String(hit[1] || "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1").replace(/__([^_]+)__/g, "$1")
+      .replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    if (!said) continue;
+    if (typeof ok === "function" && !ok(said)) continue;
+    return said;
+  }
+  return "";
+}
+
+/* ── A REPORT ENDS ON A FULL STOP, OR IT ENDS WHERE IT ALWAYS DID ───────
+   (founder, 2026-09-16.)
+
+   THE RULE. shadowSayGist takes the first sentence that carries news and,
+   when that sentence is longer than SH_SAY_MAX, cuts it and marks the cut
+   with an ellipsis. For ordinary prose that is right -- the turn's first
+   sentence is the only candidate there is. A REPORT is different: the
+   worker was asked for the turn's outcome, and if its opening sentence
+   overruns, a LATER sentence of the same report is still the worker's own
+   complete thought and may fit whole. Showing that beats showing half of
+   the first one.
+
+   ONLY WHEN SOMETHING WAS ACTUALLY CUT. The existing answer is computed
+   first and returned untouched unless it carries the cut marker, so a
+   report that already fits -- which is nearly all of them -- takes exactly
+   the path it took before, byte for byte. This can only ever replace an
+   ellipsis with a whole sentence; it can never shorten a line that was
+   already complete.
+
+   WHAT COUNTS AS A COMPLETE SENTENCE, and it is deliberately mechanical:
+   it ends in . ! or ? after the same split shadowSayGist uses, it fits the
+   same cap, it carries no pipe (a grid is not a sentence, the same guard
+   as below), and it is not an announcement (shadowSayFiller -- "Done."
+   fits and completes and says nothing). LONGEST WINS, earliest on a tie,
+   so the answer does not depend on how the worker ordered equal-length
+   clauses.
+
+   NOTHING IS COMPOSED. Every character returned is the worker's own, and
+   no punctuation is added -- a sentence that the worker did not finish is
+   not made to look finished. If no whole sentence fits, the existing cut,
+   ellipsis and all, is what the founder sees: honest about being partial
+   beats invented completeness.
+
+   THE FALLBACK FOR A TURN WITH NO REPORT IS NOT ROUTED THROUGH THIS, on
+   purpose -- shadowTimelineEvents still calls shadowSayGist directly for
+   ordinary prose, so every historical turn renders exactly as it did. */
+function shadowSayWhole(text){
+  const t = String(text || "").trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  const parts = t.split(/(?<=[.!?])\s+/).filter(x => x.trim());
+  let best = "";
+  for (const raw of parts){
+    const p = raw.trim();
+    if (!/[.!?]$/.test(p)) continue;        /* the worker never closed it */
+    if (p.length > SH_SAY_MAX) continue;    /* it does not fit either */
+    if (p.indexOf("|") !== -1) continue;    /* a grid is not a sentence */
+    if (shadowSayFiller(p)) continue;       /* an announcement is not news */
+    if (p.length > best.length) best = p;   /* > keeps the earliest tie */
+  }
+  return best;
+}
+
+/* The line the timeline draws for a REPORT: the existing answer, unless it
+   had to be cut and a whole sentence of the same report fits instead. */
+function shadowReportGist(text){
+  const said = shadowSayGist(text);
+  if (!said || !/\s…$/.test(said)) return said;
+  return shadowSayWhole(text) || said;
+}
+
+/* ── A REPORT LINE IS A FIELD, NOT PROSE (founder, 2026-09-16) ───────────
+   THE HOLE THIS CLOSES, found writing the tests. SH_CONTROL_HEAD drops a
+   control-plane LABEL at the head of a line -- but "REPORT: PLACEMENT: D0
+   ..." does not start with PLACEMENT, it starts with REPORT, so the label
+   rode into the founder-facing line behind a prefix the filter had never
+   heard of. The selector above already refuses that report (the extracted
+   text cleans to nothing), and without this the fallback would then serve
+   the very same line back as ordinary prose.
+
+   SO THE FALLBACK NEVER SEES A REPORT LINE. Once shadowSayReport has had
+   its go, a REPORT line has been read as a field and is spent: either it
+   was usable, in which case we are not in the fallback at all, or it was
+   not, in which case it is exactly the material this pane exists to keep
+   off the screen.
+
+   DELIBERATELY NOT IN shadowSayClean. That function is shared with the
+   completion card (shadowResultGist), whose `outcome` is the worker's last
+   message and may legitimately BE the report sentence; teaching the shared
+   cleaner to delete it would change a surface this work is not about. The
+   drop is applied here, by the one caller that needs it, which is the same
+   rule the completion card's own SH_EVIDENCE filter follows. */
+function shadowSayDropReport(text){
+  return String(text || "").split(/\r?\n/)
+    .filter(line => !SH_REPORT_LINE.test(line.trim())).join("\n");
+}
+
 /* THE TURN HAD NOTHING FOR YOU IN IT. A delegate turn that was entirely
    control plane is not the same as no turn at all -- but the preview line is
    a QUOTE OF THE WORKER, so when the worker said nothing a human can read,
@@ -1905,9 +2056,70 @@ function shadowTimelineEvents(m){
        numbers 1..6 against turns_used 6, exactly as it always did. */
     const used = Number(m && m.turns_used) || 0;
     const base = Math.max(0, used - turns.length);
+    /* ── A TURN IN FLIGHT HAS NOT REPORTED YET (founder, 2026-09-16) ────
+       THE LINE IS A REPORT ON A FINISHED TURN, so a turn that is still
+       being worked shows its NUMBER and nothing under it. Previewing the
+       newest sentence of a turn that is still speaking is not a report of
+       it: the worker's last word so far is routinely a tool narration, an
+       intention, or a caveat it is about to resolve, and the founder read
+       it as the outcome. The turn still takes its row -- a turn that is
+       happening is a fact, and the heading is what carries it.
+
+       THE SIGNAL IS THE ENGINE'S OWN, not a clock and not a guess.
+       mission_engine.run_mission stamps `turn_open` with the number of the
+       turn it just sent and clears it when the boundary arrives
+       (mission_engine.py, "THE TURN THAT IS HAPPENING RIGHT NOW"), and
+       /api/shadow/missions has carried the field since the day it existed
+       -- shadowTurnNow above already reads it for the card's TURN row.
+       Nothing new is stored, polled or inferred.
+
+       A TERMINAL MISSION IS NEVER IN FLIGHT. The engine clears `turn_open`
+       on the ordinary boundary, but a mission that ended INSIDE a turn --
+       a stall, a takeover, an out-of-road exit -- returns without reaching
+       that line, so the field can outlive the run. SH_TERMINAL is the
+       existing answer to "can this still change" and is used here for
+       exactly that: a done/failed/stopped mission reports every turn it
+       has, which is what it did before this block existed.
+
+       A MISSION WITH NO `turn_open` BEHAVES EXACTLY AS IT DID. Absent or 0
+       means no turn is open, so every row takes the completed path -- which
+       is every historical record, and every existing fixture. */
+    const live = SH_TERMINAL.indexOf(m && m.state) === -1;
+    const openTurn = live ? (Number(m && m.turn_open) || 0) : 0;
     for (const t of turns){
+      const n = base + t.n;
+      if (openTurn && n === openTurn){
+        /* the turn's own clock, then its newest message's, then nothing --
+           the same ladder the completed row below walks */
+        let at = t.at;
+        for (let i = t.says.length - 1; i >= 0 && isNaN(at); i--)
+          at = Date.parse(t.says[i].ts || "");
+        out.push({ kind: "worker", n: n, say: "", ts: at });
+        continue;
+      }
+      /* ── THE WORKER'S OWN REPORT, WHEN IT WROTE ONE ──────────────────
+         Scanned FORWARD, first valid one wins (shadowSayReport), and put
+         through the same shadowSayClean + shadowSayGist the fallback uses
+         -- so the control-plane filter, the table guard and the one-line
+         cap all apply to it unchanged. A REPORT that cleans to nothing is
+         no REPORT at all and drops through to the walk below, which is the
+         behaviour every record written before the clause existed gets. */
+      const usable = (line) => !!shadowReportGist(shadowSayClean(line));
+      let rep = "", pick = -1;
+      for (let i = 0; i < t.says.length; i++){
+        const line = shadowSayReport(t.says[i].text, usable);
+        if (!line) continue;
+        rep = shadowReportGist(shadowSayClean(line)); pick = i; break;
+      }
+      if (rep){
+        const own = Date.parse(t.says[pick].ts || "");
+        out.push({ kind: "worker", n: n, say: rep,
+                   ts: isNaN(t.at) ? own : t.at });
+        continue;
+      }
       for (let i = t.says.length - 1; i >= 0; i--){
-        const say = shadowSayGist(shadowSayClean(t.says[i].text));
+        const say = shadowSayGist(
+          shadowSayClean(shadowSayDropReport(t.says[i].text)));
         if (say){
           /* A TURN IS A SPAN, AND IT SORTS BY WHEN IT OPENED (founder,
              2026-09-15, mission m-8ef75c0f2f78). The row shows one message
@@ -1924,7 +2136,7 @@ function shadowTimelineEvents(m){
              their own order. The displayed message's stamp is the fallback
              for a turn whose opening instruction carries none. */
           const own = Date.parse(t.says[i].ts || "");
-          out.push({ kind: "worker", n: base + t.n, say: say,
+          out.push({ kind: "worker", n: n, say: say,
                      ts: isNaN(t.at) ? own : t.at });
           break;
         }

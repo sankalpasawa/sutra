@@ -1878,6 +1878,34 @@ infer it from prose, so a check you do not claim this way stays outstanding --
 and a check you claim without having done the work is a false report, which is
 worse than an outstanding one.
 
+Reporting a turn. End each turn with one line of its own:
+
+    REPORT: <one sentence: the meaningful outcome of this turn>
+
+That line is the ONE thing a founder who never opened this chat will see for
+this turn. It must be the OUTCOME, not the route you took to reach it.
+
+  LEAD WITH WHAT IS NOW TRUE that was not true before -- created, changed,
+  fixed, tested, verified. If nothing changed, lead with what prevented it and
+  what that leaves undone.
+
+  A BLOCKER LEADS. "Could not create shadow-test.txt because plan mode blocks
+  edits; the file remains unwritten" is the whole report. Never bury the
+  blocker behind the work you did before hitting it.
+
+  NOT THE SETUP. Paths you resolved, files you only inspected, commands and
+  checks you ran, plans you wrote on the way: none of that is the outcome. Do
+  not narrate the investigation -- all of it is already in this chat.
+
+  NOT THE OBJECTIVE BACK. A line that only repeats the objective is not news
+  unless finishing it IS the news. "Done." says nothing either.
+
+  KEEP IT SHORT. Aim under 90 characters: the founder sees a single line, and
+  a longer one is cut off mid-thought.
+
+This does not replace the DONE-CHECK line above, and it does not replace your
+ordinary output -- everything else you write stays in the chat, unabridged.
+
 Using subagents. You have Claude Code subagents (the Task tool). Decide per
 task whether they help; most tasks do not need them.
 
