@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.3 (2026-09-16)
+
+- **You can talk to a running task, and what you say governs it.** A second door on the task header, under "Open the chat", opens a floating panel that talks to that task's own Shadow chat (the existing `TaskChat.talk` route, which has no tools and so can only answer). It overlaps the brief rather than reflowing it, its history is read from that chat's own transcript so a reload and a restart both redraw it, and it neither spends a worker turn nor interrupts one. A terminal task refuses, and a `mission` fence now amends a draft only -- after Start it would have let a casual question re-scope live work.
+- **One memory of the founder.** A talked line lands in the same `founder_says` the instruction composer writes, tagged by channel, so the decider sees everything the founder said -- whether the task chat is alive or the one-shot fallback is answering. The prompt now says the rule out loud: neither channel is a message for the worker, Shadow decides which parts are, carries only those, in its own words. "Say anything" is renamed "Give instruction to Shadow"; its path is unchanged.
+- **Standing instructions.** A new `standing_instructions` field holds what currently governs a task -- Shadow's own restatement, sent on every later decision and never consumed, so a constraint stated once is respected on every turn. The decider replaces the set whole, so newer founder intent supersedes older without any edit language, and `founder_says` is never rewritten. Absent means keep, so a fallback decider cannot drop the founder's constraints.
+- **The worker writes its own turn report.** The timeline line under each turn is now a worker-authored `REPORT:` line rather than an excerpt, and a turn still in flight shows its number and nothing else.
+- **Fixed:** the `seen` cursor on founder asides was never persisted -- it was written to a record the loop then re-read over -- so one sentence steered every later turn for the life of a mission.
+- **Release gate:** the eight `test_shadow_v4_*.js` suites are wired into the DMG build's Panel step; they landed after the list was written and were gating nothing.
+
+Tests: `test_shadow_v4_talk.js` (9), `test_shadow_v4_unified_input.py` (12), `test_shadow_v4_standing.py` (20), `test_shadow_v4_report.js` (23), plus 9 new checks at the task-chat route.
+
 ## 2.282.2 (2026-09-16)
 
 - **A card you opened stays on Now until you answer it.** Opening a needs-you card marks it seen (the dot stops counting it, the card draws lighter) instead of retiring it; it leaves Now only when its task is approved, answered or deleted. Tests: 1 new feed check, the Now suite moved to the new contract.

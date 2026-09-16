@@ -186,6 +186,14 @@ jobs:
           node test_shadow_rhs.js
           node test_shadow_task_chat.js
           node test_shadow_task_status.js
+          node test_shadow_v4_approve.js
+          node test_shadow_v4_now.js
+          node test_shadow_v4_oversee.js
+          node test_shadow_v4_prose.js
+          node test_shadow_v4_report.js
+          node test_shadow_v4_sheet.js
+          node test_shadow_v4_talk.js
+          node test_shadow_v4_taskchat.js
 
       # The importer and the engine are what the shipped payload runs.
       # A DMG that fails these is not worth uploading.

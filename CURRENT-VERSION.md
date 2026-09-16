@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.282.2 (2026-09-16, HEAD)
+## v2.282.3 (2026-09-16, HEAD)
+
+**You can talk to a running task, and what you say governs it.** Three changes, one surface. (1) A
+second door on the task header opens a floating panel wired to that task's own Shadow chat
+(`TaskChat.talk`, `POST /api/shadow/tasks/{id}/chat`); it has no tools, so it answers and nothing
+else, and its history is the chat's own transcript. (2) A talked line lands in the same
+`founder_says` the instruction composer writes, tagged by channel, so the decider sees both doors --
+and the decide prompt now states the rule: neither channel is a message for the worker, Shadow
+decides which parts are. (3) A new `standing_instructions` field holds what currently governs the
+task, in Shadow's own words, sent on every later decision and never consumed; the decider replaces
+the set whole, so newer founder intent supersedes older and `founder_says` is never rewritten. Also:
+the worker writes its own one-line `REPORT:` per turn, an in-flight turn shows no summary, and the
+`seen` cursor on founder asides is persisted at last (it never was, so one sentence re-steered every
+turn). Release gate: the eight `test_shadow_v4_*.js` suites are wired into the DMG Panel step.
+
+## v2.282.2 (2026-09-16)
 
 **A card you opened stays on Now until you answer it** (founder: "once I click on something and it
 takes me there, but I have not approved it, it should not go away"). `POST /api/shadow/feed/handle`
