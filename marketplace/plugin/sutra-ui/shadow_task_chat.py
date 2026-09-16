@@ -143,10 +143,15 @@ class TaskChat:
 
     @staticmethod
     def _clean_env(env):
-        """NEVER Shadow tools: a task chat can only answer."""
+        """NEVER Shadow tools: a task chat can only answer.
+
+        An explicit "0", not a pop (codex P2, 2026-09-16): the spawn merges
+        the overlay onto os.environ, so a shell that exports
+        SUTRA_MCP_SHADOW=1 would otherwise hand the task chat the tools;
+        sutra_mcp registers them only on the exact string "1"."""
         out = dict(env or {})
-        out.pop("SUTRA_MCP_SHADOW", None)
-        return out or None
+        out["SUTRA_MCP_SHADOW"] = "0"
+        return out
 
     def _adopt(self, sid):
         if not sid or self.session_id == sid:

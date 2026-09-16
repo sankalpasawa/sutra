@@ -149,5 +149,19 @@ const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
     console.log("ok 6 empty and Shift+Enter send nothing");
   }
 
+  /* 7. the form is one click away (nothing removed): the door under the chat
+        box turns the form on for this open; Cancel turns it back off */
+  {
+    const ctx = fresh();
+    ctx.S.shadowNewOpen = true;
+    assert(/data-shformdoor="1"/.test(ctx.shadowNewTaskChatHtml()), "the door is drawn");
+    assert.strictEqual(ctx.shadowFormOn(), false, "chat first");
+    ctx.listeners.click({ target: { dataset: { shformdoor: "1" }, closest: () => null } });
+    assert.strictEqual(ctx.shadowFormOn(), true, "the door opens the form");
+    ctx.listeners.click({ target: { dataset: { shnewcancel: "1" }, closest: () => null } });
+    assert.strictEqual(ctx.shadowFormOn(), false, "Cancel closes it again");
+    console.log("ok 7 the form stays one click away");
+  }
+
   console.log("test_shadow_v4_taskchat: all ok");
 })().catch(e => { console.error(e); process.exit(1); });

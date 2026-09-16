@@ -109,6 +109,14 @@ function shadowPlaneHtml(watching, missions, tab){
               Both edges are legal and already implemented -- TRANSITIONS
               lists blocked -> ("running", "stopped") -- and both actions,
               hooks and endpoints are the existing ones. Nothing new. */""}
+        ${/* v4 (C9, ADR-043): a held say carries a ONE-USE approval; Approve
+              sends exactly that string once. Resume stays (it recomposes),
+              but is no longer the primary on a held say (codex P2). */""}
+        ${m.state === "paused" && m.approval && !m.approval.used && m.pending_say
+          ? `<button class="btn pri" type="button" data-shact="approve"
+            data-shmid="${escAttr(m.id)}"
+            data-shapproval="${escAttr(m.approval.id)}"
+            title="${escAttr(m.pending_say)}">Approve</button>` : ""}
         ${["paused", "blocked"].includes(m.state) ? `<button class="btn"
             type="button"
             data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
@@ -2155,6 +2163,23 @@ function shadowTaskCardHtml(m){
          goalBlockerCopy reads for the Goal workspace. */""}
     ${awaiting ? shadowCheckRowsHtml(m) : ""}
     ${finished ? shadowCompletionHtml(m) : ""}
+    ${/* v4 (C9, ADR-043): A HELD SAY IS SHADOW ASKING, so it belongs on this
+         card like the intervention form does. The founder reads the exact
+         string, and Approve releases that string once through the say path
+         (one-use approval, bound to task, version, turn and hash). Stop and
+         Resume stay off this card, as ruled 2026-09-15. */""}
+    ${m.state === "paused" && m.approval && !m.approval.used && m.pending_say ? `
+    <div class="shapprove" data-shapprove="${escAttr(m.id)}">
+      <div class="shcard2row"><span class="shcard2k">${esc(
+        m.pause_reason === "floor_confirm" ? "floor" : "wants to say")}</span>
+        <span class="shcard2v shapprovesay">${esc(m.pending_say)}</span></div>
+      <div class="shcard2acts">
+        <button class="btn pri" type="button" data-shact="approve"
+          data-shmid="${escAttr(m.id)}"
+          data-shapproval="${escAttr(m.approval.id)}">Approve</button>
+        <span class="shcard2hint">one use, this text only</span>
+      </div>
+    </div>` : ""}
     ${/* NO SECOND DOOR TO THE WORKER CHAT (founder, 2026-09-15). "Open the
          chat" in the header is the single entry point now, so the inline
          toggle and the transcript it revealed are gone from this card. The
@@ -2261,6 +2286,9 @@ function shadowDelegatePanelHtml(){
    untouched and still the way in when `flags.shadow_form` is true in the
    founder's settings -- opt-in, off by default. */
 function shadowFormOn(){
+  /* the chat is the default; the form stays one click away (the door under
+     the chat box) or on for good with flags.shadow_form -- nothing removed */
+  if (typeof S !== "undefined" && S && S.shadowFormWant) return true;
   return typeof SETTINGS !== "undefined" && !!SETTINGS && !!SETTINGS.flags
     && SETTINGS.flags.shadow_form === true;
 }
@@ -2288,6 +2316,8 @@ function shadowNewTaskChatHtml(){
         aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
     </div></div>
     ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
+    <div class="shnewdoor"><button class="btn" type="button"
+      data-shformdoor="1">Use the form instead</button></div>
   </div>`;
 }
 
@@ -3870,8 +3900,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (d.shnewsend){ shadowNewTalk(); return; }
+    if (d.shformdoor){
+      if (typeof S !== "undefined") S.shadowFormWant = true;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
     if (d.shnewcancel){
-      if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null; }
+      if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null;
+                                     S.shadowFormWant = false; }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
@@ -4088,7 +4124,9 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shquietclear !== undefined) return shadowSetQuietHours(null);
     if (d.shofferadd !== undefined) return shadowOfferAdd();
     if (d.shivsend) return shadowSendIntervention(d.shivsend);
-    if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
+    if (d.shact && d.shmid)
+      return shadowMissionAct(d.shmid, d.shact,
+        d.shact === "approve" && d.shapproval ? { approval_id: d.shapproval } : undefined);
     if (d.shstart){
       /* v4: Start on the draft the task chat just wrote closes that chat and
          puts the task in focus; the start itself is the existing action */

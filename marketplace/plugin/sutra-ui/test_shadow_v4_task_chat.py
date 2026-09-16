@@ -123,8 +123,13 @@ class TestBoot(Base):
     def test_02_boot_never_carries_shadow_tools(self):
         c, rt = self.chat(["READY"])
         self.start(c, env={"SUTRA_MCP_SHADOW": "1", "OTHER": "x"})
-        self.assertNotIn("SUTRA_MCP_SHADOW", rt.spawned["env"] or {})
-        self.assertEqual((rt.spawned["env"] or {}).get("OTHER"), "x")
+        # an explicit "0" overrides a shell that exports the flag (codex P2)
+        self.assertEqual(rt.spawned["env"]["SUTRA_MCP_SHADOW"], "0")
+        self.assertEqual(rt.spawned["env"].get("OTHER"), "x")
+        c2, rt2 = self.chat(["READY"])
+        self.start(c2)
+        self.assertEqual(rt2.spawned["env"]["SUTRA_MCP_SHADOW"], "0",
+                         "set even when no overlay was given")
 
     def test_03_boot_registers_publishes_and_ledgers(self):
         seen = []

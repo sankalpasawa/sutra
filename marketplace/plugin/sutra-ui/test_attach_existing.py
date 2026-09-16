@@ -321,8 +321,12 @@ class TestNothingElseMoved(Base):
         # keeps Shadow's own supervisor and decider byte-identical: only the
         # worker builder passes it. The no-session call this test names is
         # still the no-session call.
-        self.assertIn("def _shadow_args(session_id=None, extra_settings=None):",
-                      src)
+        # the signature gained permission_mode in 2.278.12; what this pins is
+        # that session_id stays the first keyword and defaults to None
+        self.assertRegex(
+            src,
+            r"def _shadow_args\(session_id=None, extra_settings=None"
+            r"(, permission_mode=None)?\):")
         self.assertIn('build_agent_args(prov["bin_path"], "", perm_mode,\n'
                       "                            session_id=session_id, "
                       "stream_input=True,\n"
@@ -336,8 +340,12 @@ class TestNothingElseMoved(Base):
         # two processes still take _shadow_args, which is the whole split.
         self.assertIn("_worker_args, _shadow_workdir_for_delegates()", src)
         self.assertNotIn("_shadow_args, _shadow_workdir_for_delegates()", src)
-        self.assertIn("make_decider(_shadow_args, _shadow_workdir())", src,
+        # v4 (2.281.0) hands make_decider more arguments after the workdir
+        # (the task-chat router); what this pins is the first two: Shadow's
+        # own args and Shadow's own workdir, never the worker builder.
+        self.assertIn("make_decider(_shadow_args, _shadow_workdir()", src,
                       "the decider must NOT inherit repo permissions")
+        self.assertNotIn("make_decider(_worker_args", src)
 
 
 # ------------------------------------------------------------------- D7 ---
