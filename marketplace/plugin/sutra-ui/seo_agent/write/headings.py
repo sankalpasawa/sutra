@@ -15,7 +15,6 @@
 Then the keywords block, computed in CODE: only phrases that actually landed in a final heading.
 """
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as C
@@ -226,7 +225,7 @@ def run(st, inputs, ctx, idx, sk_result, planned_h1, say=lambda *a: None):
     pool = [p for p in (ks.get("secondaries") or []) if p]
 
     say("Writing the headings", "%d sections, %d with a researched keyword" % (len(secs), len(found_by_n)))
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         recs = list(ex.map(lambda t: _write_one(t[0] + 1, t[1], ctx, ks, found_by_n.get(t[0] + 1), pool, idx, memory),
                            list(enumerate(secs))))
 

@@ -16,7 +16,7 @@ Writes: the lean tagged plan, plus the audit (tags, drops, placements, stats).
                  survivor sharing the most tag targets).
   4. ASSEMBLE  — the lean plan. The tags are the only authority. Everything dropped is recorded.
 """
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 
 from .. import llm
 from . import _common as C
@@ -149,7 +149,7 @@ def run(inputs, ctx, say=lambda *a: None):
 
     say("Judging every sub-section", "%d sections, one call each" % len(sections))
     tag_log, invalid_log = {}, {}
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         for fut in as_completed([ex.submit(_tag, i) for i in range(len(sections))]):
             i, entries = fut.result()
             got = {}

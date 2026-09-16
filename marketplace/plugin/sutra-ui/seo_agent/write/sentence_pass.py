@@ -11,7 +11,6 @@ One retry, told what it broke. Then the block keeps its ORIGINAL text, loudly lo
 """
 import re
 import statistics
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as C
@@ -217,7 +216,7 @@ def run(w, plan, say=lambda *a: None):
     blocks = blocks_of(w)
     whole_before = "\n\n".join(t for _, t in blocks)
     say("Re-shaping the sentences", "%d blocks, %d words, average sentence %s words" % (len(blocks), words(whole_before), avg_sentence(whole_before)))
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         results = list(ex.map(lambda b: shape_block(reader, b[0], b[1], memory), blocks))
     out = put_back(w, [r[0] for r in results])
     whole_after = "\n\n".join(r[0] for r in results)

@@ -8,7 +8,6 @@ pass, anything still unplaced lands in "Unsorted (review)", and an assert confir
 
 Reads: kept cards + the article context. Returns [{label, card_ids}].
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
@@ -45,7 +44,7 @@ def _two_level(cards, ctx):
         return cl
 
     provisional = []
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         for cl in ex.map(_do, batches):
             provisional += cl
     # The merge step gets the SAME article context as the batch clusterer. Without it the merger saw

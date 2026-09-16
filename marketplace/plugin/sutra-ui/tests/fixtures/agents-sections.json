@@ -1,0 +1,36 @@
+{
+ "md": "Lead-in before any heading, kept as its own section.\n\n# The Month-End Close Checklist\n\nIntro paragraph one.\n\nIntro paragraph two.\n\n\n## Why the standard checklist breaks\n\nBody with 4,700 users and $12,000.\n\n### A sub-heading stays inside\n\nmore under the H3\n\n- a list\n- of items\n\n## Code stays whole\n\n```\nline one\n\nline three\n```\n\n## The last section\n\nLast para, no trailing newline",
+ "sections": [
+  {
+   "id": "s0",
+   "heading": "Opening",
+   "level": 0,
+   "text": "Lead-in before any heading, kept as its own section.\n"
+  },
+  {
+   "id": "s1",
+   "heading": "The Month-End Close Checklist",
+   "level": 1,
+   "text": "# The Month-End Close Checklist\n\nIntro paragraph one.\n\nIntro paragraph two.\n"
+  },
+  {
+   "id": "s2",
+   "heading": "Why the standard checklist breaks",
+   "level": 2,
+   "text": "## Why the standard checklist breaks\n\nBody with 4,700 users and $12,000.\n\n### A sub-heading stays inside\n\nmore under the H3\n\n- a list\n- of items\n"
+  },
+  {
+   "id": "s3",
+   "heading": "Code stays whole",
+   "level": 2,
+   "text": "## Code stays whole\n\n```\nline one\n\nline three\n```\n"
+  },
+  {
+   "id": "s4",
+   "heading": "The last section",
+   "level": 2,
+   "text": "## The last section\n\nLast para, no trailing newline"
+  }
+ ],
+ "spliced": "Lead-in before any heading, kept as its own section.\n\n# The Month-End Close Checklist\n\nIntro paragraph one.\n\nIntro paragraph two.\n\n\n## Why the standard checklist breaks\n\nRewritten body, 4,700 users.\n\n## Code stays whole\n\n```\nline one\n\nline three\n```\n\n## The last section\n\nLast para, no trailing newline"
+}

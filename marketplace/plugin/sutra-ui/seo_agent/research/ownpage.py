@@ -15,7 +15,6 @@ evidence cards are the article's real content.
 Reads: topic, angle, the page index, the catalogue bodies. Writes (via the tool): _work/ownpage.json.
 """
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -107,7 +106,7 @@ def harvest(pages, say=None):
                 return cards
         return []
 
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         results = list(ex.map(_one, pages))
     cards, failed = [], []
     for page, res in zip(pages, results):

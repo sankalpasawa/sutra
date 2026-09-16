@@ -1,8 +1,33 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-15
+**status**: active · **updated**: 2026-09-16
 
-## v2.278.10 (2026-09-15, HEAD)
+## v2.278.11 (2026-09-16, HEAD)
+
+**SEO Writer: sources are checked after the body is written; each article gets its own model-call
+slots; a Write this button on every idea; Library articles are edited by section and shared with
+the team.** Four changes, merged together. (1) The planner's verify step (`write/verify_sources.py`,
+`prompts/write/verify-worthy.md`) is deleted. `write/source_check.py` runs after `write_body`:
+one judge per claim against the page it cites, a replacement hunt capped at 10 claims, then
+correct, soften or remove with code guards (`checks/digit_guard.py`), and one chat row with a
+Details link to `source-check.md`. (2) `seo_agent/llm.py` gains `_Gate`, `run_slot` and `pool()`:
+every run holds 3 model-call slots, the app holds 9, loose calls share 3, all settable from the
+Connections screen ("Model calls across all chats", `/slots`). A usage limit pauses the run until
+the reset plus two minutes with one chat row, and `llm.Stopped` lets Stop end the wait cleanly
+in `loop.step` and `agents_api._guarded`. Every pool that fans model calls out (source check,
+enrich, write_body, the slop and sentence passes, plan_select, the research scorers, the
+dossier, the curate team, the brand helpers) uses `llm.pool()`, so its calls count against the
+run. (3) The Asset ideas tab loses the "idea to write next" card, lists dropped rows by default
+with a status pill, and gives every row a Write this button that opens a new chat with the prompt
+typed; the person presses Send. (4) `seo_agent/library_edit.py`: a saved article is drawn by
+section with a pencil each (edit the text, or ask the model with a diff shown first), carries
+`version`, `edited_by` and `previous.md`, refuses to write over a teammate's newer save
+(`base_version`, `force`), can undo the last save (`/library/{id}/revert`), and every save and
+every finished article from `loop.save_to_library` is pushed to the Supabase workspace when one
+is connected. Tests: source check 62 checks, slots and pause suite, library edit suite, agents
+api 58, all 39 seo_agent suites green.
+
+## v2.278.10 (2026-09-15)
 
 **SEO Writer: a run that failed on a model error carries on from its saved steps.** When a model
 call errors (the Claude usage limit, a CLI that fell over) `loop.step` marks the run `failed`. A

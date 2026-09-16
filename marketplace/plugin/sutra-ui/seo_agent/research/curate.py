@@ -351,7 +351,7 @@ def run(topic, angle, spine_ctx, company, own_domain="", max_pages=MAX_PAGES, sa
         return _converse(r, topic, article, company, pages, budget, say=say,
                          turns=prior.get(r["role"]), on_turn=on_turn)
 
-    with ThreadPoolExecutor(max_workers=len(team)) as pool:
+    with llm.pool(len(team)) as pool:
         results = list(pool.map(converse, team))
     turns = [t for rows in results for t in rows]
     worked = budget["searched"] - budget["failed"]

@@ -15,7 +15,10 @@ constants and their comments. Where the original has a rule enforced in code, en
                   JSON when the name ends .json, else text. `store.knowledge_dir()`, `store.write_json`,
                   `store.now()`, `store.load_artifact(chat, run, name)`, `store.save_artifact(chat, run, name, data)`.
 - `llm.py`        `llm.json_call(prompt, system=..., retries=1)` -> dict/list; `llm.text(prompt, system=...)` -> str.
-                  Claude CLI only. Up to `llm.PARALLEL` (3) calls may run at once: use ThreadPoolExecutor(max_workers=llm.PARALLEL).
+                  Claude CLI only. Each running article gets `llm.PARALLEL` (3) calls at once, the app at most
+                  `llm.PARALLEL_MAX` (9). To fan calls out use `with llm.pool() as ex:` (never a bare
+                  ThreadPoolExecutor: its threads would not count as this run's). A usage-limit reply pauses
+                  the call and retries it after the reset; it never fails the run.
 - `tools/_shared.py` `sh.reporter(ctx, tool)` -> `say(label, note)` emits a substep (ALWAYS emit progress: a silent
                   minute reads as a hang). `sh.load_prompt("area/name")` reads prompts/area/name.md. `sh.fill(tpl, **kw)`
                   fills `{{KEY}}` (keys are upper-cased). `sh.company()` -> the company record dict.

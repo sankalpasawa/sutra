@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-15
+**status**: active · **updated**: 2026-09-16
+## 2.278.11 (2026-09-16)
+
+- **Four SEO Writer changes in one release.** Sources are now checked after the article is written, claim by claim against the page each one cites: a claim the page does not support gets a replacement source (up to 10 hunts), is softened, or is removed, and one line in the chat links to the full report. Each running article gets its own share of model calls (3 at once, 9 across the app; the number is a setting under Connections), so three articles at once each keep one article's speed, and a run that hits your Claude usage limit waits for the reset and carries on instead of failing. The Asset ideas tab shows every idea, dropped ones too, with a Write this button on each row that opens a new chat with the message typed for you. A saved Library article can be edited section by section, by hand or with AI (you see the change before it is kept), keeps a version and an undo, refuses to overwrite a teammate's newer save, and reaches your team's workspace when one is connected. Tests: 39 suites, all green.
+
 ## 2.278.10 (2026-09-15)
 
 - **An article that failed on a model error no longer starts over.** If the SEO Writer stopped because Claude's usage limit ran out (or a model call failed some other way), sending a message afterwards started the article from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 3 checks.
