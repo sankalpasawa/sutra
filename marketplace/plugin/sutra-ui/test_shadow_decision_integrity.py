@@ -163,8 +163,18 @@ class TestTemplateEchoCannotPingPong(unittest.TestCase):
                          "the placeholder was said into the delegate chat")
         self.assertNotEqual(out["state"], "stopped",
                             "it must not ping-pong itself to death")
-        self.assertEqual(out["state"], "failed",
-                         "an undecidable turn ends honestly")
+        # ENDS HONESTLY, AND RECOVERABLY (founder, 2026-09-16). The reason is
+        # unchanged and still recorded; what changed is where it lands. An
+        # undecidable turn is a fault in SHADOW, so it can no longer write the
+        # same terminal state as work that genuinely failed -- `blocked` keeps
+        # the delegate alive and the founder can Resume. See
+        # mission_engine.INFRA_BLOCK_REASONS.
+        self.assertEqual(out["state"], "blocked",
+                         "an undecidable turn must not kill a live mission")
+        self.assertEqual(out.get("failure_class"), "shadow_infra",
+                         "and it must be labelled as Shadow's fault, not the "
+                         "worker's")
+        self.assertEqual(out.get("block_reason"), "shadow_undecided")
         notes = [json.loads(l)["note"] for l
                  in open(shadow_ledger._path("missions"), encoding="utf-8")
                  if mid in l]

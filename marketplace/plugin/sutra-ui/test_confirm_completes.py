@@ -287,11 +287,18 @@ class TestOneCompletionPath(Base):
                          "exactly one place performs the done transition")
         i = src.index("def _complete")
         self.assertIn('"done", "done_when met', src[i:i + 700])
-        # and both callers reach THAT
+        # and EVERY caller reaches THAT. Three of them now: the loop, the
+        # confirmation settle, and the infra exit -- which completes a
+        # mission whose work was already done when Shadow's own machinery
+        # broke (mission_engine._infra_exit). One writer, three doors.
         self.assertIn("return self._complete(mid, results, transcript)", src)
-        j = src.index("def settle")
-        self.assertIn("self._complete(mid, results, transcript)",
-                      src[j:j + 2500])
+        settle_body = src[src.index("def settle"):
+                          src.index("def _out_of_road")]
+        self.assertIn("self._complete(mid, results, transcript)", settle_body)
+        infra_body = src[src.index("def _infra_exit"):src.index("def settle")]
+        self.assertIn("self._complete(mid, results, transcript)", infra_body)
+        self.assertIn("if done:", infra_body,
+                      "and it completes ONLY on a real evaluation")
 
     def test_15_settle_uses_the_existing_evaluator(self):
         src = Path(__file__).with_name("mission_engine.py").read_text()
@@ -320,13 +327,20 @@ class TestBothEntryPoints(Base):
     """Whichever button the founder pressed, the same thing happens."""
 
     def test_17_both_arms_call_the_same_settle(self):
+        """...AND BOTH HAND IT THE VERIFIER (2026-09-16). settle_confirmation
+        was the one evaluate-and-decide path that ran without one, so a
+        `verify` check the loop could see satisfied read as unmet here and a
+        founder's Yes settled nothing -- this function's own dead end, one
+        layer down. The assertion now pins the call WITH its verifier,
+        because a settle that cannot evaluate is not the same settle."""
         src = Path(__file__).with_name("app.py").read_text()
+        call = "shadow_runner.settle_confirmation(mid, _shadow_verifier)"
         goal_arm = src[src.index('if action == "confirm":'):]
         goal_arm = goal_arm[:goal_arm.index("except HTTPException")]
-        self.assertIn("shadow_runner.settle_confirmation(mid)", goal_arm)
+        self.assertIn(call, goal_arm)
         mission_arm = src[src.index('if action == "confirm_check":'):]
         mission_arm = mission_arm[:mission_arm.index('if action == "resume"')]
-        self.assertIn("shadow_runner.settle_confirmation(mid)", mission_arm)
+        self.assertIn(call, mission_arm)
 
     def test_18_the_helper_reaches_the_engines_settle(self):
         src = Path(__file__).with_name("shadow_runner.py").read_text()
