@@ -115,15 +115,22 @@ class TestSourceKeepsBothProtections(unittest.TestCase):
     def setUp(self):
         with open(os.path.join(HERE, "session_runtime.py")) as handle:
             self.src = handle.read()
+        # the spawn moved again, to proc_group.py (2.273.1): the guard follows
+        # the code it protects, so the test reads both files
+        with open(os.path.join(HERE, "proc_group.py")) as handle:
+            self.spawn_src = handle.read()
 
     def test_subprocess_raises_the_stream_limit(self):
-        # Generous window: the rationale comment on this call is long, and an
-        # earlier version of this test sliced it off and failed on its own
-        # documentation. Bound it at the closing paren instead of a guess.
-        start = self.src.index("await asyncio.create_subprocess_exec")
-        spawn = self.src[start:self.src.index("start_new_session=True", start)]
-        self.assertRegex(spawn, r"limit\s*=\s*\d",
+        # Bound at the call's own argument list rather than a guessed window:
+        # the rationale comment above the call is long and an earlier version
+        # of this test sliced it off and failed on its own documentation.
+        start = self.spawn_src.index("await asyncio.create_subprocess_exec")
+        spawn = self.spawn_src[start:self.spawn_src.index(")", start)]
+        self.assertRegex(spawn, r"limit\s*=\s*(\d|STREAM_LIMIT)",
                          "the chat subprocess is back on asyncio's 64 KiB default")
+        if "STREAM_LIMIT" in spawn:
+            self.assertRegex(self.spawn_src, r"STREAM_LIMIT\s*=\s*\d",
+                             "STREAM_LIMIT must be a number, not the default")
 
     def test_readline_is_inside_a_guard(self):
         loop = self.src[self.src.index("eof = False"):][:2600]

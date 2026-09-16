@@ -47,4 +47,9 @@ vm.runInContext(escSrc, ctx);
 
 const record = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 ctx.S.shadowMissions = [record];
-process.stdout.write(ctx.shadowTaskCardHtml(record));
+/* the intervention form moved out of the card into the workspace pane
+   (2.278.x: shadowHomeHtml draws shadowInterventionHtml(sel) after the card),
+   so the shipped renderer of the form is rendered here beside the card */
+process.stdout.write(ctx.shadowTaskCardHtml(record)
+  + (typeof ctx.shadowInterventionHtml === "function"
+      ? ctx.shadowInterventionHtml(record) : ""));

@@ -2533,6 +2533,16 @@ async def api_shadow_status():
             "alerts": _shadow_alert_count()}
 
 
+#: What the Now box says before the founder's line (v4, V4-3). ONE writer:
+#: the route reads it, the eval runner sends the same words.
+SHADOW_INTAKE_PREFIX = (
+    "[Intake] The founder typed this in the box that opens tasks (Now: "
+    "\"What do you have in mind?\"). Treat it as work to delegate, not as a "
+    "question to answer: one mission block per distinct ask, target_mode "
+    "\"new\", the founder's words as each objective, one short line of reply. "
+    "If it is genuinely not work, say so in one line and emit no block.\n\n")
+
+
 @app.post("/api/shadow/chat")
 async def api_shadow_chat(request: Request):
     if not providers.shadow_enabled():
@@ -2547,6 +2557,10 @@ async def api_shadow_chat(request: Request):
     # v10: the tab the founder is typing in. Scope rides the TURN, not the
     # process -- one Shadow session serves every tab.
     scope_id = (body.get("scope_id") or "").strip() or None
+    # Shadow v4 (V4-3): the Now box is Shadow's intake. A line typed there
+    # is one or more tasks to open, never a question to answer -- the same
+    # words in the corner card are a conversation. The box says so.
+    intake = bool(body.get("intake"))
     async with _SHADOW_LOCK:
         sess = _SHADOW["session"]
         if sess is None or not sess.alive:
@@ -2578,6 +2592,8 @@ async def api_shadow_chat(request: Request):
             sess.scope_stamp = None
             pre = ("[Context] Back to general talk -- no single chat is "
                    "in focus.\n\n")
+        if intake:
+            pre += SHADOW_INTAKE_PREFIX
         await sess.rt.send_user_frame(pre + msg)
         (sess.session_id, _t, got_result,
          err, _e) = await sess.rt.demux_turn(collect, sess.session_id)

@@ -150,6 +150,36 @@ class TestChatRouteCreatesOneDraftPerFence(unittest.TestCase):
         self.assertNotIn("missions", doc)
         self.assertNotIn("mission", doc)
 
+    def test_13_the_now_box_line_is_sent_as_intake(self):
+        """V4-3: the box opens tasks. The route prefixes the founder's line
+        with the intake words when the client says the line came from the
+        box; a corner-card message carries no prefix."""
+        sent = []
+
+        class Rt:
+            async def send_user_frame(self, text):
+                sent.append(text)
+
+            async def demux_turn(self, collect, sid):
+                await collect({"type": "token", "text": "One task.\n"
+                               + _fence("Top 10 fruits")})
+                return (sid or "shadow-sess", 0.0, True, None, None)
+
+        class Sess:
+            alive = True
+            session_id = "shadow-sess"
+            rt = Rt()
+
+        app_module._SHADOW["session"] = Sess()
+        self.client.post("/api/shadow/chat",
+                         json={"message": "top 10 fruits", "intake": True},
+                         headers=HDR)
+        self.assertTrue(sent[-1].startswith(app_module.SHADOW_INTAKE_PREFIX))
+        self.assertTrue(sent[-1].endswith("top 10 fruits"))
+        self.client.post("/api/shadow/chat", json={"message": "hello"},
+                         headers=HDR)
+        self.assertNotIn("[Intake]", sent[-1], "the corner card is a conversation")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

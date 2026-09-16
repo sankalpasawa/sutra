@@ -177,8 +177,11 @@ class TaskChat:
         context = shadow_session.load_context()
         if context is None:
             raise RuntimeError("the shadow flag is off")
-        context = (context + shadow_session.standing_context()
-                   + task_context(mission))
+        # the same boot the Now chat gets (persona, DELEGATE OFFERS, standing
+        # context) plus this task's own block
+        offers = getattr(shadow_session, "offers_context", None)
+        context = (context + (offers() if callable(offers) else "")
+                   + shadow_session.standing_context() + task_context(mission))
         self._register, self._publish = register, publish
         rt = self._runtime()
         args = build_args()

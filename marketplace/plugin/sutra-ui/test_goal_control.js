@@ -376,11 +376,13 @@ const NORUNTIME=base({state:"blocked", attempt:1, current_mission_id:null,
   ctx.S.goals=[{id:"g-1",outcome:"the referral workflow is configured",
     state:"blocked",block_reason:"no_live_runtime",checks_label:"0 of 2 checks",
     turn_label:"turn 0/20",attempt:1,unmet:["referral webhook returns 200"]}];
-  const h=ctx.shadowHomeHtml();
-  assert(/available to Shadow right now/.test(h),"the same copy on Home");
-  assert(!/no_live_runtime/.test(h),"no raw id on Home either");
+  /* the deck moved off the workspace onto the goals screen (2.278.12:
+     "THE ASSIGNMENT DECK IS NOT RENDERED HERE"); the same renderer draws it */
+  const h=ctx.shadowDeckHtml();
+  assert(/available to Shadow right now/.test(h),"the same copy on the deck");
+  assert(!/no_live_runtime/.test(h),"no raw id on the deck either");
   assert(/Try again/.test(h)&&!/Extend budget/.test(h),
     "and the same honest controls");
-  ok("Shadow Home shows the same honest blocker");
+  ok("the Shadow deck shows the same honest blocker");
 }
 setTimeout(()=>console.log("test_goal_control.js: all green"),40);

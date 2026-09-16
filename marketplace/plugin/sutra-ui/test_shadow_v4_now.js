@@ -71,7 +71,9 @@ const D = (id, objective) => ({ id, objective, template: "research", state: "bri
     await settle(); await settle();
     assert.strictEqual(calls.length, 1);
     assert(/\/api\/shadow\/chat$/.test(calls[0].url), calls[0].url);
-    assert.deepStrictEqual(calls[0].body, { message: "fix login, research SSO, draft pricing" });
+    assert.deepStrictEqual(calls[0].body,
+      { message: "fix login, research SSO, draft pricing", intake: true },
+      "the box sends its line as intake");
     const h = ctx.SCREENS.now();
     assert(/Three tasks\./.test(h), "Shadow's reply");
     assert.strictEqual((h.match(/data-shstart="m-[abc]"/g) || []).length, 3, "three draft cards");
