@@ -303,7 +303,12 @@ class TestTheRoute(Base):
             mission_engine.set_max_running(mission_engine.MAX_RUNNING)
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.json()["detail"]["at_capacity"])
-        self.assertEqual(self.store.load(held["id"])["state"], "paused")
+        after = self.store.load(held["id"])
+        self.assertEqual(after["state"], "paused")
+        # a refusal consumes nothing (DeepSeek P1, 2026-09-16): the yes is
+        # still there to give, and nothing is approved on the record
+        self.assertFalse(after["approval"]["used"], "the yes was not spent")
+        self.assertIsNone(after.get("approved_say"))
         self.assertEqual(self.launched, [])
         self.assertIsNotNone(other)
 

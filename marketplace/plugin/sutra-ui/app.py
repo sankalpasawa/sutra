@@ -2415,8 +2415,8 @@ async def _shadow_recover():
             # Shadow v4 (ADR-043): the task's OWN Shadow chat decides when it
             # is alive; the one-shot below is the fallback, byte-identical to
             # what ran before v4. Routed per decision by mission_id.
-            _one_shot = shadow_runner.make_decider(
-                _shadow_args, _shadow_workdir(), new_runtime=_shadow_new_runtime)
+            _one_shot = shadow_runner.make_decider(_shadow_args, _shadow_workdir(),
+                                                   new_runtime=_shadow_new_runtime)
 
             async def _routed(context, _fallback=_one_shot):
                 return await shadow_task_chat.route_decision(context, _fallback)
@@ -4224,11 +4224,10 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # its one-use approval id. The engine validates the object and
             # stamps the exact string; the loop sends it once and composes
             # nothing for it. Same cap rule as resume: approving is running.
-            try:
-                m = _mission_engine.approve_held_say(
-                    store, mid, body.get("approval_id"))
-            except ValueError as exc:
-                raise HTTPException(409, str(exc))
+            # THE CAP FIRST, THEN THE YES (DeepSeek P1, 2026-09-16): spending
+            # the one-use approval and then refusing on capacity would leave
+            # approved_say on a paused record, sendable later without a fresh
+            # yes. A refusal must consume nothing.
             running_n = len(store.list(states=("running",)))
             cap = _mission_engine.max_running()
             if running_n >= cap:
@@ -4239,6 +4238,11 @@ async def api_shadow_mission_act(mid: str, request: Request):
                     "at_capacity": True,
                     "running_now": running_n,
                     "running_at_once": cap})
+            try:
+                m = _mission_engine.approve_held_say(
+                    store, mid, body.get("approval_id"))
+            except ValueError as exc:
+                raise HTTPException(409, str(exc))
             if m.get("pause_reason") == "autonomy_top_tier":
                 m["top_tier_confirmed"] = True
                 store.save(m)

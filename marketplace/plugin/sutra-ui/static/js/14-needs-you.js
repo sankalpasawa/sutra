@@ -203,13 +203,19 @@ async function nowStartAll(){
   c.busy = true;
   if (typeof scheduleRender === "function") scheduleRender();
   let n = 0;
+  const total = c.missions.length;
+  const left = [];
   for (const m of c.missions){
-    try { if (await shadowMissionAct(m.id, "start_now")) n++; } catch (e) {}
+    let ok = null;
+    try { ok = await shadowMissionAct(m.id, "start_now"); } catch (e) { ok = null; }
+    if (ok) n++; else left.push(m);
   }
-  c.busy = false; c.missions = []; c.reply = "";
+  /* a draft that did not start stays on the page with its own Start, and the
+     count says so (DeepSeek P2: "Started N" must never overstate) */
+  c.busy = false; c.missions = left; if (!left.length) c.reply = "";
   if (typeof showNudge === "function")
-    showNudge("Started " + n + (n === 1 ? " task" : " tasks")
-              + " — in Focus › Shadow.");
+    showNudge((n === total ? "Started " + n : "Started " + n + " of " + total)
+              + (n === 1 ? " task" : " tasks") + " — in Focus › Shadow.");
   if (typeof scheduleRender === "function") scheduleRender();
   return n;
 }
