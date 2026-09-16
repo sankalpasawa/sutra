@@ -10,7 +10,9 @@ destination is an icon with its name under it, hover only highlights, the rail a
 carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and
 Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot.
 Codex P2 folded (mobile rail scroll rule re-applied after the desktop overflow rule). Tests: nav
-75, panel 389, agents 251, 0 failed. Real-app capture registered on atom a-6fe5c2b0-02.
+75, panel 389, agents 251, 0 failed. Real-app capture registered on atom a-6fe5c2b0-02. Tagged
+v2.279.0-desktop on the pre-merge commit a80f9333, then renumbered 2.279.1 on the merge with
+origin/main (2.278.9-2.278.12); the desktop build to install is v2.279.1-desktop.
 ## v2.278.12 (2026-09-16)
 
 **Shadow's four settings become real controls, a Shadow-side fault stops killing live work, and the
