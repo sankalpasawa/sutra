@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.281.0 (2026-09-16)
+
+- **Shadow runs each task as its own chat, and the Now box starts them.** Type one or many things into the Now box; Shadow splits them into tasks, shows a draft card for each, and Start (or Start all) opens a Shadow chat per task that writes the brief, reads the worker and steers every turn. The Shadow view shows Shadow's words and cards only; the raw chat stays in Chats. "How Shadow behaves" on the What Shadow knows sheet (and a Shadow app in its department) shapes Shadow's voice. When Shadow needs a yes, the exact text sits on the task card with a one-use Approve. The old form stays one click away. Tests: 72 Python checks, 33 JS checks, 5 evals.
+
 ## 2.280.4 (2026-09-16)
 
 - **The app is quick again: clicks land, screens switch.** With 1,500+ sessions the panel repainted everything once a second and each repaint took half a second, so presses were swallowed and navigation lagged. The rail label is now decided once per repaint instead of once per row per session, the Now feed repaints only when it changed, and the repository read is no longer restarted by every repaint. Click cost 450-2,066 ms -> 43-170 ms. Tests: 3 new panel checks.

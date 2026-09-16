@@ -2,7 +2,23 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.280.4 (2026-09-16, HEAD)
+## v2.281.0 (2026-09-16, HEAD)
+
+**Shadow v4: two AIs per task, and the Now box starts them.** Founder ruling 2026-09-16 (ADR-043):
+each task runs on its own Shadow chat (a Sutra chat in the backend, the Shadow design in front) plus
+one worker chat; the one-shot decider is a fallback only. The Now box takes one or many things,
+Shadow splits them into draft cards, Start / Start all opens one Shadow chat per task that writes the
+brief at Start and steers every turn over `--resume`. The Shadow view renders Shadow's prose and the
+fixed cards (mission, chips, remember, brief, approval); the raw transcript stays in Chats. "How
+Shadow behaves" (verbose founder text, 4,000 chars, rank 3 in the precedence: floors, task limits,
+behaves, SHADOW.md) lives first on the What Shadow knows sheet and as a Shadow app in its
+department. A held say carries a one-use approval bound to task, version, turn and hash; Approve
+sits on the task card with the exact text. The delegate form stays one click away. Plan
+`holding/plans/shadow/BUILD-PLAN-V4.md` (20 steps, 11 changes), log `v4/BUILD-LOG.md`, reviews
+folded (codex + DeepSeek per step and on the diff). Tests: 72 Python, 33 JS, 5 evals on the real
+CLI; `verify-shadow-v4.sh` is the one check (names the two lanes red on main before this release).
+
+## v2.280.4 (2026-09-16)
 
 **The app is quick again: clicks land, screens switch.** Founder, 2026-09-16: "very slow to use,
 moving around; the buttons are not getting clicked." Measured on the live app with 1,537 sessions:
