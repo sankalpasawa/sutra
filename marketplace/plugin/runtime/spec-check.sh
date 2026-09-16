@@ -36,7 +36,10 @@
 #      EXECUTION step 37; UserPromptExpansion is declarable again the day a step
 #      exists for it - see check 13); no other key
 #   3  every step has: unique id, matcher, class in A|B|C, impl, timeout_ms > 0,
-#      non-empty replaces[], killswitch_aliases[], on_error in warn|block_passthrough
+#      replaces[] (an array; non-empty for a shim: impl — native: and det: may
+#      carry [], since neither replaces a hooks.json registration; check 14 is
+#      what still requires [] exactly on a native: step), killswitch_aliases[],
+#      on_error in warn|block_passthrough
 #   4  no step declares an llm_slot / llm_slots on a deterministic impl
 #      (impl prefix shim: / native: / det:)
 #   5  context + wall-clock budgets present; per-event sum(timeout_ms) within budget
@@ -84,11 +87,16 @@
 #      that no other check here can see, because the spec and the registry are
 #      each internally consistent. Both sides are DERIVED from the two files;
 #      nothing about a cap is written into this script.
-#      NOTE. The LARGEST step, not the sum, is what the cap must cover:
-#      sutra-turn dispatches an event's steps in parallel (mirroring the host),
-#      so the event's wall is max(step). event_wall_ms may therefore sit ABOVE
-#      the host cap — it is the aggregate ceiling check 5 measures the per-event
-#      timeout SUM against, a different quantity from the per-step cap here.
+#      NOTE. The LARGEST step, not the sum, is what the cap must cover — with
+#      one exception (D4, W1-FAST-PATH MVP-1): a "phase":"post" step is never
+#      spawned in pass 1: pass 2's serial pass runs every post step ONE AT A
+#      TIME, after every parallel (non-post) step of the event has already
+#      finished. So the event's real wall is max(timeout_ms of its non-post
+#      steps) + sum(timeout_ms of its post steps), and $need below is exactly
+#      that. An event with no post step keeps the plain max(step) it always
+#      had. event_wall_ms may therefore sit ABOVE the host cap — it is the
+#      aggregate ceiling check 5 measures the per-event timeout SUM against, a
+#      different quantity from the per-step cap here.
 #  13  NO DEAD EVENT: an event the pipeline declares with ZERO steps must not be
 #      registered in the live collapsed hooks.json, and every
 #      `sutra-turn run --event <E>` registration in it must name an event the
@@ -104,6 +112,17 @@
 #      event it never registered), so the binding is asserted here in both
 #      directions. Declaring the event again is legitimate the day it has a
 #      step; declaring it EMPTY, or registering it unbacked, is not.
+#  14  NATIVE STEP SCRIPTS EXIST (D18, W1-FAST-PATH MVP-1): for every step whose
+#      impl is native:<n>, <dir of this script>/steps/<n>.sh must exist and be
+#      executable, its phase must be exactly "post" (an absent phase would let
+#      pass 1 spawn it in parallel with the marker reset — D4's serial post
+#      pass is the only caller a native step may have; codex P2 2026-09-16),
+#      and its replaces[] must be exactly [] (check 3's
+#      shim: exemption on replaces[] is not a licence for a native step to
+#      claim a hooks.json registration). Checks 8-10 never see a native step —
+#      it appears in no hooks.json entry — so its only assertable fact is a
+#      FILESYSTEM one, checked here directly rather than derived from the two
+#      registries.
 #
 # Dependencies: bash 3.2 (macOS system bash) + jq. No GNU coreutils, no python.
 
@@ -183,8 +202,10 @@ ERRS=$(jq -r -n --slurpfile S "$SPEC" --slurpfile H "$HOOKS" '
         | "step \(.id // "<no id>") has no matcher"),
       ($steps[] | select(.on_error != "warn" and .on_error != "block_passthrough")
         | "step \(.id // "<no id>") has on_error \(.on_error // "<none>"), expected warn or block_passthrough"),
-      ($steps[] | select(((.replaces // null) | type) != "array" or ((.replaces // []) | length) == 0)
-        | "step \(.id // "<no id>") has an empty or missing replaces[]"),
+      ($steps[] | select(((.replaces // null) | type) != "array")
+        | "step \(.id // "<no id>") has no replaces[] (must be an array; [] is allowed for a native: or det: step, see check 14)"),
+      ($steps[] | select(((.impl // "") | startswith("shim:")) and ((.replaces // []) | length) == 0)
+        | "step \(.id // "<no id>") has an empty replaces[] (a shim: step must replace at least one legacy script)"),
       ($steps[] | select(((.killswitch_aliases // null) | type) != "array")
         | "step \(.id // "<no id>") has no killswitch_aliases[]"),
       ($steps[] | select((.impl | isdet) and ((.llm_slot // .llm_slots // false) != false))
@@ -387,12 +408,18 @@ if [ "${COLLAPSED:-no}" = "yes" ]; then
     | (($s.budgets.step_default_ms // 0)) as $DEF
     | $EV[] as $e
     | ((($s.events // {})[$e]) // []) as $st
-    # NEED: the largest budget any single step under this event may consume.
-    # An event that declares no step still inherits step_default_ms the day a
+    # NEED (D4/D18): pass 1 spawns every non-post step of the event in
+    # PARALLEL (max); pass 2 then runs every "phase":"post" step SERIALLY, one
+    # at a time, after the single wait call (sum). The real wall of the event
+    # is max(non-post) + sum(post) — an event with no post step keeps the
+    # plain max(step) it always had, because sum(post) is then 0. An event
+    # that declares no step at all still inherits step_default_ms the day a
     # step is added, so that is its floor — the cap must already cover it.
-    | ([ $st[] | (.timeout_ms // 0) ] | max // 0) as $rawmax
-    | (if ($st | length) == 0 then $DEF else $rawmax end) as $need
-    | ([ $st[] | select((.timeout_ms // 0) == $rawmax) | (.id // "<no id>") ] | .[0] // "<none>") as $slowest
+    | ([ $st[] | select((.phase // "") != "post") | (.timeout_ms // 0) ] | max // 0) as $maxnonpost
+    | ([ $st[] | select((.phase // "") == "post") | (.timeout_ms // 0) ] | add // 0) as $sumpost
+    | ($maxnonpost + $sumpost) as $rawneed
+    | (if ($st | length) == 0 then $DEF else $rawneed end) as $need
+    | ([ $st[] | select((.phase // "") != "post") | select((.timeout_ms // 0) == $maxnonpost) | (.id // "<no id>") ] | .[0] // "<none>") as $slowest
     | ([ ((($h.hooks // {})[$e]) // [])[]
          | (.hooks // [])[]
          | select((.type // "command") == "command")
@@ -401,18 +428,19 @@ if [ "${COLLAPSED:-no}" = "yes" ]; then
          | .timeout ]) as $caps
     | (($s.budgets.event_wall_ms // {})[$e]) as $wall
     | ((($need + 999) / 1000 | floor) + 5) as $want
+    | ("max non-post \($maxnonpost)ms (step \($slowest)) + post total \($sumpost)ms") as $breakdown
     | [
         (if ($caps | length) == 0
            then "event \($e): the collapsed hooks.json has no `sutra-turn run --event \($e)` registration to carry a host timeout"
          elif (($caps[0] | type) != "number")
            then "event \($e): the sutra-turn registration carries no numeric timeout — the host cap must be declared explicitly, not inherited from the host default"
          elif (($caps[0] * 1000) < $need)
-           then "event \($e): hooks.json timeout \($caps[0])s (\($caps[0] * 1000)ms) is BELOW the largest step budget \($need)ms (step \($slowest)) — the host would SIGKILL sutra-turn mid-step and lose the whole event; register at least \($want)s"
+           then "event \($e): hooks.json timeout \($caps[0])s (\($caps[0] * 1000)ms) is BELOW the largest step budget \($need)ms (\($breakdown)) — the host would SIGKILL sutra-turn mid-step and lose the whole event; register at least \($want)s"
          else empty end),
         (if ($wall | type) != "number"
            then "event \($e): budgets.event_wall_ms.\($e) missing"
          elif ($wall < $need)
-           then "event \($e): budgets.event_wall_ms \($wall)ms is BELOW the largest step budget \($need)ms (step \($slowest))"
+           then "event \($e): budgets.event_wall_ms \($wall)ms is BELOW the largest step budget \($need)ms (\($breakdown))"
          else empty end)
       ] | .[]') || fail "jq evaluation failed on the host-cap check"
 fi
@@ -465,6 +493,60 @@ fi
 if [ -n "$DEAD_ERRS" ]; then
   printf '%s\n' "$DEAD_ERRS" >&2
   printf 'spec-check: FAIL — %s declares or %s registers an event with no steps\n' "$SPEC" "$LIVE_HOOKS" >&2
+  exit 3
+fi
+
+# ---- check 14: native step scripts exist -----------------------------------
+# A native:<n> impl is not a registration replay - checks 8-10 never see it,
+# because it appears in no hooks.json entry. Its only assertable fact is a
+# FILESYSTEM one: does <dir of this script>/steps/<n>.sh exist and carry the
+# exec bit, does it keep phase absent-or-"post" (pass 1 never spawns it - D4's
+# serial post pass after `wait` is the only caller), and does it still carry
+# replaces: [] exactly (check 3's shim: exemption is not a licence for a
+# native step to claim a hooks.json registration a shim step would otherwise
+# own). One row per native: step, read with jq, judged in bash because
+# existence and the exec bit are filesystem facts, not JSON facts.
+NATIVE_ROWS=$(jq -r '
+  [ (.events // {}) | to_entries[] | .key as $e | .value[]
+    | select((.impl // "") | startswith("native:"))
+    | { event: $e, id: (.id // "<no id>"),
+        n: ((.impl) | sub("^native:"; "")),
+        phase: (.phase // ""),
+        replaces: (.replaces // null) } ]
+  | .[]
+  | [ .event, .id, .n, .phase, (.replaces | tojson) ] | @tsv
+' "$SPEC" 2>/dev/null) || fail "jq evaluation failed on the native-step check"
+
+NATIVE_ERRS=""
+if [ -n "$NATIVE_ROWS" ]; then
+  while IFS='	' read -r N_EVENT N_ID N_NUM N_PHASE N_REPL; do
+    [ -n "${N_ID:-}" ] || continue
+    N_SCRIPT="$_SELF_DIR/steps/$N_NUM.sh"
+    if [ ! -f "$N_SCRIPT" ]; then
+      NATIVE_ERRS="${NATIVE_ERRS}event $N_EVENT: step $N_ID (native:$N_NUM) has no script at $N_SCRIPT
+"
+    elif [ ! -x "$N_SCRIPT" ]; then
+      NATIVE_ERRS="${NATIVE_ERRS}event $N_EVENT: step $N_ID (native:$N_NUM) script $N_SCRIPT is not executable
+"
+    fi
+    case "$N_PHASE" in
+      post) ;;
+      *)
+        NATIVE_ERRS="${NATIVE_ERRS}event $N_EVENT: step $N_ID (native:$N_NUM) has phase \"$N_PHASE\", expected \"post\" (a native step runs only in the serial post pass; an absent phase would spawn it in pass 1 and race the marker reset)
+" ;;
+    esac
+    if [ "$N_REPL" != "[]" ]; then
+      NATIVE_ERRS="${NATIVE_ERRS}event $N_EVENT: step $N_ID (native:$N_NUM) has replaces $N_REPL, expected exactly []
+"
+    fi
+  done <<NATIVE_EOF
+$NATIVE_ROWS
+NATIVE_EOF
+fi
+
+if [ -n "$NATIVE_ERRS" ]; then
+  printf '%s' "$NATIVE_ERRS" >&2
+  printf 'spec-check: FAIL — a native: step in %s fails check 14\n' "$SPEC" >&2
   exit 3
 fi
 

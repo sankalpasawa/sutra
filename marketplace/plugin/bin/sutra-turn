@@ -763,7 +763,7 @@ do_run() {
   fi
 
   # -- step selection ------------------------------------------------------
-  # id \t matcher \t class \t impl \t timeout_ms \t wrapper
+  # id \t matcher \t class \t impl \t timeout_ms \t wrapper \t phase
   jq -r --arg ev "$EVENT" '
     (.events[$ev] // [])[]
     | [ (.id // "unknown"),
@@ -771,8 +771,16 @@ do_run() {
         (.class // "B"),
         (.impl // ""),
         ((.timeout_ms // 5000) | tostring),
-        (.wrapper // "") ]
+        ((.wrapper // "") | if . == "" then "-" else . end),
+        ((.phase // "")   | if . == "" then "-" else . end) ]
     | @tsv' "$PIPELINE" 2>/dev/null > "$TMPROOT/steps.tsv"
+  # "-" STANDS FOR AN EMPTY wrapper / phase. `read` with IFS=<tab> treats a run
+  # of tabs as ONE delimiter (tab is IFS whitespace), so an empty column in the
+  # middle of the line is swallowed and every later column shifts left: an
+  # unwrapped native step's "post" arrived in S_WRAP, sutra-turn tried to run
+  # it through a wrapper named <plugin>/post (exit 127), and the deferral
+  # never fired. matcher already uses "*" for the same reason; wrapper and
+  # phase use "-" and are mapped back to "" right after the read.
 
   # -- pass 1: SPAWN every selected step at once ---------------------------
   # The host dispatches all matching hooks in parallel; so do we. Each step gets
@@ -780,34 +788,78 @@ do_run() {
   # watchdog (seq as the watchdog's tag, so two steps sharing one script cannot
   # collide on the timeout flag). Nothing is inspected here - ordering belongs
   # to pass 2.
+  #
+  # PHASE (D4). A step with "phase":"post" is a native step that WRITES SESSION
+  # STATE for this turn - it must run only after every parallel step of this
+  # event has finished (in particular after ups.reset-turn-markers's wipe), or
+  # its own writes race the wipe and are silently lost. It is never spawned
+  # here: its registration line is appended to order.tsv exactly like every
+  # other step (pass 2 still walks it, in registration order, unchanged), and a
+  # SECOND copy of that same line goes to post.tsv, which the serial pass below
+  # reads after the `wait`.
   SEQ=0
   : > "$TMPROOT/order.tsv" 2>/dev/null || true
-  while IFS='	' read -r S_ID S_MATCH S_CLASS S_IMPL S_TMO S_WRAP; do
+  : > "$TMPROOT/post.tsv" 2>/dev/null || true
+  while IFS='	' read -r S_ID S_MATCH S_CLASS S_IMPL S_TMO S_WRAP S_PHASE; do
     [ -n "${S_ID:-}" ] || continue
+    [ "${S_WRAP:-}" = "-" ] && S_WRAP=""
+    [ "${S_PHASE:-}" = "-" ] && S_PHASE=""
     matcher_matches "$S_MATCH" "$TOOL_NAME" || continue
 
-    S_SCRIPT="${S_IMPL#shim:}"
+    # native:<n> maps to runtime/steps/<n>.sh, spawned through sutra_shim_run
+    # exactly like a shim (own stdin copy, own watchdog, own rc file) - D3.
+    case "$S_IMPL" in
+      shim:*)   S_SCRIPT="${S_IMPL#shim:}" ;;
+      native:*) S_SCRIPT="runtime/steps/${S_IMPL#native:}.sh" ;;
+      *)        S_SCRIPT="$S_IMPL" ;;
+    esac
     # class and timeout_ms travel with the step: pass 2 has to name the budget a
     # killed step blew and decide whether the emission says so out loud.
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$SEQ" "$S_ID" "$S_IMPL" "$S_SCRIPT" "$S_CLASS" "$S_TMO" >> "$TMPROOT/order.tsv"
 
     case "$S_IMPL" in
-      shim:*) ;;
+      shim:*|native:*) ;;
       *) SEQ=$((SEQ + 1)); continue ;;
     esac
+
+    if [ "${S_PHASE:-}" = "post" ]; then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$SEQ" "$S_ID" "$S_IMPL" "$S_SCRIPT" "$S_CLASS" "$S_TMO" >> "$TMPROOT/post.tsv"
+      SEQ=$((SEQ + 1))
+      continue
+    fi
 
     S_HOOK="$PLUGIN_ROOT/$S_SCRIPT"
     S_WRAPFULL=""
     [ -n "${S_WRAP:-}" ] && S_WRAPFULL="$PLUGIN_ROOT/$S_WRAP"
 
-    ( sutra_shim_run "$S_HOOK" "$TMPROOT/stdin.json" "$TMPROOT/$SEQ.out" \
+    ( export SUTRA_STEP_ID="$S_ID" SUTRA_TURN_ID="$TURN_ID" SUTRA_EVENT="$EVENT"
+      sutra_shim_run "$S_HOOK" "$TMPROOT/stdin.json" "$TMPROOT/$SEQ.out" \
         "$TMPROOT/$SEQ.err" "$S_TMO" "$S_WRAPFULL" "$SEQ" > "$TMPROOT/$SEQ.rc" 2>/dev/null ) &
     CHILDPIDS="$CHILDPIDS $!"
 
     SEQ=$((SEQ + 1))
   done < "$TMPROOT/steps.tsv"
   wait
+
+  # -- phase=post: run SERIALLY, in registration order, each waited for before
+  # the next starts (D4). Same subshell shape as pass 1 - own stdin copy
+  # already on disk, own watchdog, own rc file - so it writes $SEQ.out / .err /
+  # .rc exactly as pass 1 does, and pass 2 below reads a deferred step's result
+  # from those same files with no special case at all.
+  if [ -s "$TMPROOT/post.tsv" ]; then
+    while IFS='	' read -r P_SEQ P_ID P_IMPL P_SCRIPT P_CLASS P_TMO; do
+      [ -n "${P_ID:-}" ] || continue
+      P_HOOK="$PLUGIN_ROOT/$P_SCRIPT"
+      ( export SUTRA_STEP_ID="$P_ID" SUTRA_TURN_ID="$TURN_ID" SUTRA_EVENT="$EVENT"
+        sutra_shim_run "$P_HOOK" "$TMPROOT/stdin.json" "$TMPROOT/$P_SEQ.out" \
+          "$TMPROOT/$P_SEQ.err" "$P_TMO" "" "$P_SEQ" > "$TMPROOT/$P_SEQ.rc" 2>/dev/null ) &
+      P_PID=$!
+      CHILDPIDS="$CHILDPIDS $P_PID"
+      wait "$P_PID"
+    done < "$TMPROOT/post.tsv"
+  fi
 
   # -- pass 2: WALK the results in REGISTRATION order ----------------------
   AC=""; PASS=""; PLAIN=""; BLOCKED=0; BERR=""
@@ -827,7 +879,7 @@ do_run() {
     S_FAMILY="$(family_of "$S_ID")"
 
     case "$S_IMPL" in
-      shim:*) ;;
+      shim:*|native:*) ;;
       *) sutra_ledger_skip "$S_SEQ" "$S_ID" "$S_SCRIPT" "unsupported-impl"; continue ;;
     esac
 

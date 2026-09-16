@@ -1,1 +1,5 @@
 .claude/
+# The golden corpus fixtures ARE the recorded fleet's project state (sutra-project.json,
+# pre-seeded session markers). The rule above kept all 250 of them out of git at the W0a
+# landing, so parity was red from every fresh checkout (2026-09-16). They must ship.
+!hooks/tests/golden/**/.claude/

@@ -40,9 +40,23 @@ if [ -f "$_MARKER_LIB" ]; then
   command -v sutra_sid_from_stdin >/dev/null 2>&1 && { sutra_sid_from_stdin "$_STDIN_PAYLOAD" || true; }
 fi
 
+# 2026-09-16 (D16, W1-FAST-PATH MVP-1, consent boundary): a depth marker the
+# RUNTIME wrote (native:markers_write, body carries a bare SOURCE=runtime
+# line) proves only that a turn was classified deterministically - never that
+# the model looked at THIS mutation and chose to make it. Treated as ABSENT
+# for this gate; the normal missing-marker flow below still runs (warn or
+# block per profile), so a company-profile Edit/Write is still blocked on a
+# runtime-only body, exactly as it would be blocked on no body at all.
 _depth_marker_present() {
   if command -v sutra_marker_read >/dev/null 2>&1; then
-    sutra_marker_read depth-registered >/dev/null 2>&1; return $?
+    _dmp_body="$(sutra_marker_read depth-registered 2>/dev/null)"
+    _dmp_rc=$?
+    [ "$_dmp_rc" -eq 0 ] || return "$_dmp_rc"
+    if printf '%s\n' "$_dmp_body" | grep -qxF 'SOURCE=runtime'; then
+      echo "runtime-written depth marker does not authorize a mutation; emit the Depth block (SUTRA_BYPASS=1 overrides)" >&2
+      return 1
+    fi
+    return 0
   fi
   # lib missing: legacy global (fail-open on infrastructure, not on discipline)
   [ -f "$MARKER" ]

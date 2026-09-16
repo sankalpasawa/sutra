@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.0 (2026-09-16)
+
+- **Runtime MVP-1: native steps write the turn's four markers** (input-routed, depth-registered, flow-classified, flow-type-resolved) plus a per-turn facts file, behind the per-box flag `~/.sutra-runtime-markers` (`on|shadow|off`, absent = off); a runtime-written depth body never authorizes an Edit/Write, and a Stop-side shadow diff feeds the fleet flip gate. Post-phase steps: caps 20 s / 165 s, spec-check 14, selftest native counts.
+- **Golden corpus ships complete**: the 250 fixture `.claude/` trees the plugin `.gitignore` excluded since W0a are tracked now (parity was red from every fresh checkout); `test-charcap-parity.sh` fails on an incomplete corpus.
+
 ## 2.281.2 (2026-09-16)
 
 - **Ten fixes to the Library from a first real pass over 2.281.1.** One fixed size for all five

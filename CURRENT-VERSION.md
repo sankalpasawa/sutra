@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.281.2 (2026-09-16, HEAD)
+## v2.282.0 (2026-09-16, HEAD)
+
+**Runtime MVP-1: the turn's markers are computed, not narrated.** Two native steps behind the
+per-box flag `~/.sutra-runtime-markers` (`on` | `shadow` | `off`, absent = off): `ups.markers_write`
+runs after every parallel UserPromptSubmit step and writes input-routed, depth-registered,
+flow-classified and flow-type-resolved from classify.sh, workflow-type-match.sh and flow-factors.sh,
+plus one facts file per turn; `stop.markers_diff` compares the model's header, FLOW line and Depth
+against those facts and feeds the fleet flip gate. A runtime-written depth body never authorizes an
+Edit/Write (the depth gate treats `SOURCE=runtime` as absent). Post-phase steps change the host-cap
+model to max(parallel) + sum(post): caps 20 s / 165 s, spec-check 14, selftest counts native steps.
+
+**Golden corpus ships complete.** The plugin `.gitignore` rule `.claude/` had kept all 250 fixture
+trees out of git since W0a, so parity was red from every fresh checkout (CI included); they are
+tracked now, and `test-charcap-parity.sh` fails with one line on an incomplete corpus.
+
+## v2.281.2 (2026-09-16)
 
 **Ten fixes to the new Library, from a first real pass over 2.281.1.** The five-tab overlay is one
 fixed size now (Architect and Edits used to shrink to their own short content). Open is a layer over

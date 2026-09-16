@@ -21,7 +21,10 @@
 # make the number meaningless as an install check. Both numbers are DERIVED
 # from the files at run time (jq over the spec and over the registry snapshot)
 # and are deliberately not quoted as constants here - a number written into
-# this comment is stale the next time a registration lands.
+# this comment is stale the next time a registration lands. native: steps are
+# counted SEPARATELY (native_ok=/native_fail=, W1-FAST-PATH MVP-1, D19): they
+# are never a hooks.json.step3 registration, so folding them into ok=/fail=
+# would make STEP3-COUNT (below) compare apples to oranges.
 #
 # hooks.json.step3 - THE FILE THE KILL-SWITCH DEPENDS ON. Once hooks.json is
 # collapsed onto sutra-turn, the ONLY surviving description of what the legacy
@@ -97,8 +100,13 @@ sutra_selftest_run() {
     printf 'BAD-STEP3 %s\n' "$_ss_step3"
     _ss_fail=$((_ss_fail + 1))
   else
+    # STEP3-COUNT compares against shim: steps ONLY (D19): the two native:
+    # steps (W1-FAST-PATH MVP-1) are not registrations at all - they never
+    # appeared in hooks.json.step3 and never will - so counting them here
+    # would make this drift-detector go red by exactly the native step count
+    # on every install, forever.
     _ss_regs="$(jq '[.hooks[]?[]?.hooks[]?] | length' "$_ss_step3" 2>/dev/null)"
-    _ss_steps="$(jq '[.events[]?[]?] | length' "$_ss_spec" 2>/dev/null)"
+    _ss_steps="$(jq '[.events[]?[]? | select((.impl // "") | startswith("shim:"))] | length' "$_ss_spec" 2>/dev/null)"
     case "${_ss_regs:-x}${_ss_steps:-x}" in
       *x*) printf 'STEP3-COUNT unreadable (registrations=%s steps=%s)\n' \
              "${_ss_regs:-?}" "${_ss_steps:-?}"
@@ -139,6 +147,38 @@ sutra_selftest_run() {
     fi
   done < "$_ss_list"
   rm -f "$_ss_list" 2>/dev/null || true
+
+  # --- native: steps (D19, W1-FAST-PATH MVP-1) -------------------------------
+  # One line per UNIQUE native: impl, same shape as the shim loop above but
+  # counted apart: a native step is never a hooks.json registration (D18 check
+  # 14 owns the phase/replaces asserts), so its only install fact here is
+  # "does runtime/steps/<n>.sh exist and carry the exec bit".
+  _ss_native_ok=0
+  _ss_native_fail=0
+  _ss_nlist="${TMPDIR:-/tmp}/sutra-selftest-$$-native"
+  jq -r '[.events[][]? | .impl // ""
+          | select(startswith("native:")) | sub("^native:";"")]
+         | unique | .[]' "$_ss_spec" 2>/dev/null > "$_ss_nlist"
+
+  if [ -s "$_ss_nlist" ]; then
+    while IFS= read -r _ss_n; do
+      [ -n "$_ss_n" ] || continue
+      _ss_nscript="runtime/steps/$_ss_n.sh"
+      if [ ! -f "$_ss_root/$_ss_nscript" ]; then
+        printf 'MISSING-NATIVE %s\n' "$_ss_nscript"
+        _ss_native_fail=$((_ss_native_fail + 1))
+        _ss_fail=$((_ss_fail + 1))
+      elif [ ! -x "$_ss_root/$_ss_nscript" ]; then
+        printf 'NOT-EXEC-NATIVE %s\n' "$_ss_nscript"
+        _ss_native_fail=$((_ss_native_fail + 1))
+        _ss_fail=$((_ss_fail + 1))
+      else
+        _ss_native_ok=$((_ss_native_ok + 1))
+      fi
+    done < "$_ss_nlist"
+  fi
+  rm -f "$_ss_nlist" 2>/dev/null || true
+  printf 'native_ok=%s native_fail=%s\n' "$_ss_native_ok" "$_ss_native_fail"
 
   printf 'ok=%s fail=%s\n' "$_ss_ok" "$_ss_fail"
   [ "$_ss_fail" -eq 0 ]

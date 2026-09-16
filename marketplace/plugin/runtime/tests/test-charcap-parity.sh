@@ -108,6 +108,31 @@ if [ -n "$CORPUS_OS" ] && [ "$CORPUS_OS" != "$HOST_OS" ]; then
   exit 0
 fi
 
+# CORPUS COMPLETE? A case whose recorded expectations name .claude/ paths (the
+# reset's deletions, the discipline prompt's marker writes) was recorded against
+# a fixture project that carried a .claude/ tree - so that tree must ship beside
+# it. It did not, from W0a (2.280.0) to 2.281.2: the plugin's .gitignore rule
+# `.claude/` kept all 250 fixture trees out of git, every fresh checkout replayed
+# the hooks against an empty project, and the parity leg was red everywhere but
+# the recording box. That is a corpus fault, not a runner diff, and it is named
+# as such here instead of surfacing as hundreds of unrelated FAIL lines.
+corpus_missing=""
+for _cc in "$GOLDEN"/*/cases/*/; do
+  [ -d "$_cc" ] || continue
+  # A "deleted" line is the only proof a .claude/ path PRE-EXISTED in the fixture
+  # (a "created" or hashed line can come from a hook writing into an empty
+  # project, and three such cases ship no tree by design).
+  if grep -q '^deleted  \.claude/' "$_cc"expect/*.fx 2>/dev/null \
+     && [ -z "$(find "$_cc" -type d -name .claude 2>/dev/null | head -1)" ]; then
+    corpus_missing="$corpus_missing $(basename "$(dirname "$(dirname "$_cc")")")/$(basename "$_cc")"
+  fi
+done
+if [ -n "$corpus_missing" ]; then
+  fail "corpus incomplete: these cases expect .claude/ effects but ship no .claude fixture tree (a .gitignore rule ate them?):$corpus_missing"
+  echo "failed=$failed"
+  exit 1
+fi
+
 if [ ! -x "$CHARCAP" ]; then
   fail "sutra-charcap missing or not executable at $CHARCAP"
   echo "failed=$failed"

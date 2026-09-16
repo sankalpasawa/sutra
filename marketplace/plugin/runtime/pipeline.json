@@ -337,6 +337,21 @@
           "hooks/placement-resolve.sh"
         ],
         "on_error": "warn"
+      },
+      {
+        "id": "ups.markers_write",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:markers_write",
+        "phase": "post",
+        "timeout_ms": 2500,
+        "killswitch_aliases": [
+          ".sutra-runtime-markers-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-markers",
+        "notes": "MVP-1: writes input-routed, depth-registered, flow-classified, flow-type-resolved from computed facts when the per-box flag is on; emits nothing"
       }
     ],
     "PreToolUse": [
@@ -1289,6 +1304,21 @@
           "hooks/domains-site-refresh.sh"
         ],
         "on_error": "warn"
+      },
+      {
+        "id": "stop.markers_diff",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:markers_diff",
+        "phase": "post",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".sutra-runtime-markers-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-markers",
+        "notes": "MVP-1b: shadow compare of the model's header/FLOW/Depth against the runtime facts; emits nothing"
       }
     ]
   },

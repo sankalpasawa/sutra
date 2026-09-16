@@ -58,8 +58,18 @@ is "one runtime registration per declared event, plus the canary" \
 # carry SubagentStop. spec-check resolves the registry from ITS OWN directory,
 # so the copy has to be a whole little plugin.
 mk9() {  # mk9 <dir>
-  mkdir -p "$1/runtime" "$1/hooks"
+  mkdir -p "$1/runtime" "$1/hooks" "$1/runtime/steps"
   cp "$runtime/spec-check.sh" "$1/runtime/spec-check.sh"
+  # check 14 resolves a native step's script relative to the spec-check.sh
+  # BEING RUN, not the real plugin - so every fixture built here needs its own
+  # copy of the two native scripts (once the step lane has landed them; a
+  # fixture built before that still exercises checks 1-13 correctly, and only
+  # the two control asserts that expect a clean exit 0 depend on this copy
+  # existing and carrying the exec bit).
+  if [ -d "$runtime/steps" ]; then
+    cp "$runtime/steps"/*.sh "$1/runtime/steps/" 2>/dev/null || true
+    chmod 0755 "$1/runtime/steps"/*.sh 2>/dev/null || true
+  fi
   jq '.hooks.SubagentStop = [{"matcher":"*","hooks":[
         {"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-probe.sh"}]}]' \
     "$plugin/hooks/hooks.json.step3" > "$1/hooks/hooks.json.step3"
@@ -126,8 +136,11 @@ has "and it names the key" "non-canonical key" "$tmp/bogus.log"
 # every step folded under it. A step budget larger than that timeout is not a
 # slow hook being killed any more - the host SIGKILLs sutra-turn itself and the
 # whole event disappears (no step rows, no emit, no stage_digest). Stop is the
-# worst case: stop.domains-site-refresh alone is 150000 ms, and the collapsed
-# file shipped a 25 s cap.
+# worst case: stop.domains-site-refresh alone is 150000 ms, and D4 adds the
+# serial phase=post pass on top of that - stop.markers_diff (5000 ms) runs
+# AFTER every parallel step finishes, so the real need is
+# max(non-post) + sum(post) = 150000 + 5000 = 155000 ms, not 150000 alone.
+# The collapsed file shipped a 25 s cap either way.
 pcap="$tmp/pcap"; mk9 "$pcap"
 jq '.hooks.Stop = [{"hooks":[{"type":"command",
       "command":"${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event Stop","timeout":25}]}]' \
@@ -135,8 +148,10 @@ jq '.hooks.Stop = [{"hooks":[{"type":"command",
 bash "$pcap/runtime/spec-check.sh" "$pcap/runtime/pipeline.json" > "$tmp/cap.log" 2>&1
 is "a host timeout below the largest step budget is rejected" "$?" 3
 has "and it names the event and the cap" "event Stop: hooks.json timeout 25s" "$tmp/cap.log"
-has "and it names the step budget it cannot cover" "BELOW the largest step budget 150000ms" "$tmp/cap.log"
-has "and it says what to register instead" "register at least 155s" "$tmp/cap.log"
+has "and it names the step budget it cannot cover" "BELOW the largest step budget 155000ms" "$tmp/cap.log"
+has "and it breaks the budget into max(non-post) + sum(post)" \
+  "max non-post 150000ms (step stop.domains-site-refresh) + post total 5000ms" "$tmp/cap.log"
+has "and it says what to register instead" "register at least 160s" "$tmp/cap.log"
 
 # a collapsed registration with NO timeout at all leans on the host default,
 # which is invisible in the file and wrong for Stop either way.
@@ -228,6 +243,33 @@ is "every registered runtime event is declared with steps" \
 bash "$runtime/spec-check.sh" "$runtime/pipeline.json" "$plugin/hooks/hooks.json.step3" \
   > "$tmp/cap-ok.log" 2>&1
 is "the shipped hooks.json covers every step budget" "$?" 0
+
+# ------------------------------------------ check 14: native step scripts --
+# A native:<n> impl appears in no hooks.json entry, so checks 8-10 never see
+# it - its only assertable fact is a filesystem one. Two fixtures ship beside
+# this test: spec-native-missing.json (ups.markers_write's impl renamed to a
+# native: target with no runtime/steps/*.sh at all) and
+# spec-native-badphase.json (same rename, plus phase forced to "pre"). Both
+# also fail the script-existence arm - deliberately, so the assert holds
+# whether or not the step lane has landed runtime/steps/*.sh yet - and the
+# "has" checks below target only the ONE line each fixture exists to prove.
+bash "$runtime/spec-check.sh" "$here/spec-native-missing.json" \
+  > "$tmp/native-missing.log" 2>&1
+is "a native: step with no script on disk is rejected" "$?" 3
+has "and it names the missing script" "has no script at" "$tmp/native-missing.log"
+
+bash "$runtime/spec-check.sh" "$here/spec-native-badphase.json" \
+  > "$tmp/native-badphase.log" 2>&1
+is "a native: step with phase != post is rejected" "$?" 3
+has "and it names the bad phase" \
+  'has phase "pre", expected "post"' "$tmp/native-badphase.log"
+
+# The positive case for check 14 is the "the shipped pipeline passes" control
+# at the very top of this file - that run already walks every check,
+# including 14, against the real runtime/pipeline.json and its real
+# runtime/steps/*.sh. It depends on the step lane having landed
+# markers_write.sh and markers_diff.sh at 0755; true once MVP-1 is fully
+# landed, not necessarily true mid-build.
 
 # the red fixture that ships with the runtime still fails
 bash "$runtime/spec-check.sh" "$here/spec-missing.json" > "$tmp/red.log" 2>&1

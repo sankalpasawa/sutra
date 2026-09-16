@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event UserPromptSubmit",
-            "timeout": 15
+            "timeout": 20
           },
           {
             "type": "command",
@@ -70,7 +70,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event Stop",
-            "timeout": 155
+            "timeout": 165
           }
         ]
       }
