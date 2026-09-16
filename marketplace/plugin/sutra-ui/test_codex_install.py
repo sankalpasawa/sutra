@@ -909,7 +909,7 @@ class TestCodexModelDiscovery(_Base):
         """models_for() grew one id-keyed branch. Claude and DeepSeek must come
         back byte-identical to their catalogue tuples."""
         self._home(**{"config.toml": 'model = "gpt-5.6-terra"\n'})
-        for pid in ("claude", "deepseek", "gemini"):
+        for pid in ("claude", "deepseek"):
             spec = next(s for s in providers._CATALOG if s["id"] == pid)
             self.assertEqual(providers.models_for(pid), spec["models"], pid)
 

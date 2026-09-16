@@ -439,6 +439,14 @@ const USAGE_STATE_LINE = {
   unsupported:   "This one publishes no usage figure.",
   error:         "Its usage could not be read just now."
 };
+/* A key-based provider is not "signed in" or "signed out"; it has a key or it
+   does not. Saying so in its own words is the whole line (owner, 2026-09-16:
+   "No API key. Add one to use DeepSeek."). */
+function usageStateLine(p, state){
+  if (state === "signed_out" && usageKindOf(p.id) === "balance")
+    return "No API key. Add one to use " + (p.name || providerLabel(p.id) || "it") + ".";
+  return USAGE_STATE_LINE[state] || "No usage to report.";
+}
 function usageAllCardHtml(p){
   p = p || {};
   const state = String(p.state || (p.windows ? "ok" : "error"));
@@ -449,7 +457,7 @@ function usageAllCardHtml(p){
   let body;
   if (state === "ok" && windows.length) body = windows.map(usageAllBarHtml).join("");
   else if (state === "ok") body = `<p class="uanote">Signed in, with no metered window right now.</p>`;
-  else body = `<p class="uanote">${esc(USAGE_STATE_LINE[state] || "No usage to report.")}</p>`;
+  else body = `<p class="uanote">${esc(usageStateLine(p, state))}</p>`;
   /* Sutra's extra, which bb has none of: a pay-as-you-go balance. Drawn for any
      provider that reports one, not just DeepSeek, and coloured by the same
      low-balance rule the DeepSeek screen uses. */
@@ -463,17 +471,19 @@ function usageAllCardHtml(p){
               : String(bal))}</span>
       </div></div>`;
   const stale = (p.stale || p.source === "stale-cache")
-    ? `<div class="uastale">Cached figure — the endpoint could not be reached just now.</div>` : "";
+    ? `<div class="uastale">Cached figure. The endpoint could not be reached just now.</div>` : "";
+  /* The server's full diagnosis stays reachable, one click away and labelled
+     as detail -- never on the card (owner, 2026-09-16). */
   return `<section class="uacard" data-uaprov="${esc(p.id || "")}">
       <div class="uahead">
         <span class="uaic" aria-hidden="true">${esc(initial)}</span>
         <span class="uaname">${esc(name)}</span>
         ${p.account ? `<span class="uaacct" title="${esc(p.account)}">${esc(p.account)}</span>` : ""}
-        ${p.plan ? `<span class="pill p-mut uaplan">${esc(p.plan)}</span>` : ""}
+        ${p.plan ? `<span class="uaplan">${esc(p.plan)}</span>` : ""}
       </div>
       ${stale}
       <div class="uabody">${body}${balRow}</div>
-      ${detail ? `<details class="uadet"><summary class="why">What Sutra found</summary>
+      ${detail ? `<details class="uadet sxdet"><summary class="why">Details</summary>
         <p class="why" style="margin:6px 0 0">${esc(detail)}</p></details>` : ""}
     </section>`;
 }
@@ -484,9 +494,8 @@ function usageAllCardHtml(p){
 function usageExtraHtml(){
   const x = S.usage && S.usage.extra_usage;
   if (!x) return "";
-  if (!x.enabled) return `<p class="uanote" style="margin-top:11px">Extra usage
-    (pay-as-you-go) is <b>off</b>, so there are no daily, weekly or monthly
-    credit figures for this account.</p>`;
+  if (!x.enabled) return `<p class="sxhint" style="margin-top:11px">Extra usage
+    (pay as you go) is <b>off</b> for this account.</p>`;
   return `<div class="uaextra">
       <div class="uaxhead">Extra usage (pay-as-you-go)</div>
       <div class="kv"><b>Used</b><span>${esc(String(x.used_credits ?? "—"))} ${esc(x.currency||"")}</span></div>
@@ -507,8 +516,8 @@ function usageAllHtml(){
     <p>Sutra found no AI tool on this Mac whose usage it could read.</p></div>`;
   return `<div class="ualist">${all.providers.map(usageAllCardHtml).join("")}</div>
     ${usageExtraHtml()}
-    <p class="why" style="margin-top:11px">Read locally from each tool's own
-      account, once a minute at most. Nothing here is a price.</p>`;
+    <p class="sxhint" style="margin-top:11px">Read from each tool's own account, at most
+      once a minute. Nothing here is a price.</p>`;
 }
 
 /* ── the repository bar ──────────────────────────────────────────────────────
@@ -1097,9 +1106,8 @@ SCREENS.automation = () => {
       ${source("Dispatch ledger", led)}
       ${source("Atom ledger", atoms)}
       ${source("Gate verdicts", gate)}
-      ${led.too_large?`<div class="note w"><b>Ledger too large to read.</b>
-        It is past the size this screen will walk, so no rows are shown rather than
-        a partial tail presented as the whole.</div>`:""}
+      ${led.too_large?`<div class="note w"><b>Ledger too large to read,</b> so no rows are
+        shown.</div>`:""}
       ${dispatched ? `
         ${tally(led.kinds) ? `<p style="margin:9px 0 4px">${tally(led.kinds)}</p>` : ""}
         ${tally(gate.verdicts) ? `<p style="margin:4px 0 9px">${tally(gate.verdicts)}</p>` : ""}
@@ -1109,11 +1117,9 @@ SCREENS.automation = () => {
         ${rows(gate.recent, [["Verdict",r=>r.verdict],["Reason",r=>r.reason],
                              ["Tool",r=>r.tool],["Target",r=>r.target],
                              ["When",r=>r.ts?nbDate(fmt(r.ts*1000)):""]])}`
-      : `<div class="zero"><h4>Nothing dispatched here</h4>
-          <p>No dispatch, atom or gate rows under <code>${esc(a.root||"")}</code>.
-             These files are written by the gate hooks in whatever project the agent
-             runs in — this is the configured workdir, which may simply not be that
-             project. Nothing is inferred from their absence.</p></div>`}
+      : `<div class="zero zsm"><h4>Nothing dispatched here</h4>
+          <p>No dispatch, atom or gate rows under <code>${esc(a.root||"")}</code>. The gate
+             hooks write them in whatever project the agent runs in.</p></div>`}
     </section>
 
     <section class="chsec"><h2 class="chh">Cron / scheduler</h2>
@@ -1125,8 +1131,10 @@ SCREENS.automation = () => {
       <div class="kv"><b>Triggers</b><span>${sch.triggers_dir_exists
         ? `<b>${(sch.triggers||[]).length}</b> in <code>${esc(sch.triggers_dir||"")}</code>`
         : `<span style="color:var(--faint)">no trigger store at</span> <code>${esc(sch.triggers_dir||"")}</code>`}</span></div>
-      <div class="note"><b>There is no cron here, and that is the finding.</b>
-        ${esc(sch.note||"")}</div>
+      ${/* ONE LINE (owner, 2026-09-16). The server's `note` says the same in
+            four clauses and stays available on the API. */""}
+      <div class="note"><b>No scheduler is running here.</b> Nothing is scheduled, so
+        nothing has run.</div>
     </section>`;
 };
 
@@ -1190,8 +1198,7 @@ function rtCreateForm(){
   return `<section class="chsec" style="margin-bottom:14px">
     <h2 class="chh">New routine <span class="pill p-mut">Local</span></h2>
     <p style="margin:0 0 10px;color:var(--muted);font-size:11.5px;max-width:70ch">
-      Runs on this Mac, on a schedule, with nobody watching. It is not a cloud
-      routine and does not run while the Mac is off.</p>
+      Runs on this Mac, on a schedule. It does not run while the Mac is off.</p>
     ${S.rtError?`<div class="note b" style="white-space:pre-wrap">${esc(S.rtError)}</div>`:""}
     <div class="rform">
       ${row("id","Name",
@@ -1221,8 +1228,7 @@ function rtCreateForm(){
         `<select id="rf-permission_mode" data-rtf="permission_mode">${
           (st.permission_modes||["dontAsk"]).map(m=>`<option value="${esc(m)}"
             ${f.permission_mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select>`,
-        "A routine runs unattended, so the modes that write files without asking " +
-        "are not offered here at all.")}
+        "Modes that write files without asking are not offered for unattended runs.")}
       ${row("max_budget_usd","Budget",
         `<div class="rinline"><span class="sep">$</span>
           <input id="rf-max_budget_usd" data-rtf="max_budget_usd" style="width:96px"

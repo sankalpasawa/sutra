@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.280.4 (2026-09-16)
+
+- **The app is quick again: clicks land, screens switch.** With 1,500+ sessions the panel repainted everything once a second and each repaint took half a second, so presses were swallowed and navigation lagged. The rail label is now decided once per repaint instead of once per row per session, the Now feed repaints only when it changed, and the repository read is no longer restarted by every repaint. Click cost 450-2,066 ms -> 43-170 ms. Tests: 3 new panel checks.
+
+## 2.280.3 (2026-09-16)
+
+- **The Setup screens are cleaned up.** Every Setup screen has the same shape: a title, one line under it, then rows with aligned labels and one action on the right. The Updates rows line up and the "Sutra does not manage this one" command lines are gone. Usage bars use the theme colours. Gemini CLI is no longer offered anywhere. Provider status pills are calmer, and "Make default" lives on the provider's own page instead of the list. The DeepSeek and Codex explainers sit behind Details. Connector rows show one state word and one action. Routine and Automation notes are one line each. Tests: node, pytest, SEO engine and manifest suites green, level with main.
+
 ## 2.280.2 (2026-09-16)
 
 - **The Focus and Old Org submenus are back.** 2.280.1's click-outside closer also caught the click that opened the flyout (opening re-renders the rail and detaches the clicked row), so the flyout closed as it opened. The rail now stamps its own clicks and the closer ignores them. Tests: 1 new nav check.

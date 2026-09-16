@@ -989,7 +989,7 @@
   /* display:block is LOAD-BEARING on both of these. .oi is a plain block and
      these are spans, so without it they flow inline and their margin-top does
      nothing -- the status line and the detail line ran together as one
-     sentence ("Not installed on this Mac binary 'gemini' not on PATH..."),
+     sentence ("Not installed on this Mac binary 'codex' not on PATH..."),
      reported from a screenshot 2026-09-03. .on escaped it only because it sets
      display:flex for its pills. */
   .opt .od{display:block;font-size:11px;color:var(--muted);margin-top:3px}
@@ -4161,6 +4161,67 @@
 .sxmore{background:none;border:0;padding:0;font:inherit;font-size:11.5px;color:var(--acc);
   cursor:pointer;text-decoration:underline}
 .sxmore:hover{color:var(--ink)}
+
+/* ══════════════ Setup: one row shape, calm pills, aligned actions ═════════
+   Owner, 2026-09-16: "every Setup screen follows the SAME structure: title, one
+   short line under it, then rows or cards with aligned labels and values, with
+   actions on the right." This block is that rule in CSS. It touches only the
+   Setup screens (.sx*, .uacard) and the Connectors tiles. */
+
+/* pills on these screens: sans, rounded, three tones from the theme. The
+   panel-wide .pill is a tiny mono tag; on a settings row it read as a code
+   fragment, and "not installed" wore the same amber as "needs sign in". */
+.sxpopen .pill,.sxstate .pill,.sxkv .pill,.sxsign .pill,.uacard .pill,[data-pmode-set] .pill{
+  font:600 10px/1.5 var(--sans);letter-spacing:.01em;padding:1px 8px;border-radius:999px}
+.sxpopen .pill.p-mut,.sxstate .pill.p-mut,.sxkv .pill.p-mut,[data-pmode-set] .pill.p-mut{
+  background:var(--inset);color:var(--muted);border:1px solid var(--line-soft)}
+.sxstate.p-mut{background:var(--card);border-color:var(--line-soft)}
+
+/* the Updates rows: label · version + state · one action on the right */
+.sxurow{align-items:center;flex-wrap:wrap}
+.sxurow .sxk{align-self:center}
+.sxuver{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sxuver code{font-size:12px}
+.sxurow .sxact{flex:none;margin-left:auto;display:inline-flex;align-items:center}
+.sxurow .sxhint{display:block;margin-top:5px}
+.sxhint.sxwarn{color:var(--warn)}
+.sxown{white-space:nowrap;margin:0}
+.sxurow .sxdet{margin-top:6px}
+.sxacts{margin:10px 0 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sxacts .btn{margin:0}
+/* narrow pane: the label sits above its value, the action under both */
+@container (max-width:520px){
+  .sxurow{flex-direction:column;align-items:stretch;gap:6px}
+  .sxurow .sxk{min-width:0;align-self:flex-start}
+  .sxurow .sxact{margin-left:0}
+}
+
+/* the sign-in panels (Codex, DeepSeek): the same card as every other panel,
+   with its own padding because it holds prose and a field rather than rows */
+.sxsign{padding:12px 14px;font-size:12.5px}
+.sxsign .wdrow{margin-top:8px}
+.sxsign .sxdet{margin-top:8px}
+.sxsign .why{font-size:11.5px}
+.sxsign a{color:var(--acc)}
+
+/* the Usage cards: the same panel as the rest of Setup, thin calm bars */
+.uacard{border-color:var(--line-soft);border-radius:12px;padding:13px 14px}
+.uaplan{margin-left:auto;font:600 10.5px/1.6 var(--sans);color:var(--muted);
+  background:var(--inset);border:1px solid var(--line-soft);border-radius:999px;padding:1px 9px}
+.uacard .ulabel{font-size:12.5px}
+.uacard .ureset{font-size:11px}
+.uacard .upct{background:transparent;border:0;padding:0;font-size:12px}
+.uacard .upct.p-mut{color:var(--faint)}
+.uacard .ubar{height:5px;border:0;background:var(--line-soft)}
+.uacard .ubar i.p-mut{background:var(--line)}
+.uacard .uanote{font-size:12px;color:var(--muted)}
+.uacard .sxdet summary{font-size:12px;color:var(--faint)}
+
+/* Connectors: one line under the title with the screen's one Re-check */
+.connhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.connhead p{margin:0;flex:1;min-width:0}
+.ptile .connlist li.medattr{padding:0 0 2px;font-size:10.5px;color:var(--faint)}
+.ptile .ct.via{white-space:nowrap}
 
 /* ── founder intervention form (Focus › Shadow task card) ─────────────────
    Only the containers are new. Every control inside reuses the delegate

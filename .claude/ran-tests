@@ -1,3 +1,3 @@
-ts=1789474280
+ts=1789545164
 exit=0
-cmd=marketplace/plugin/sutra-ui/run-tests.sh test_session_reader_incremental_meta.py test_activity.py test_session_list_memo.py test_session_reader_cache.py
+cmd=bash -c cd /Users/asawa/Claude/asawa-holding/.tmp/renderer-fix/sutra/marketplace/plugin/sutra-ui && node test_panel.js >/dev/null

@@ -358,8 +358,9 @@ def snapshot():
 #   not_installed there is no CLI here; offer to install it
 #   signed_out    there is a CLI and no credential; offer to sign in
 #   unsupported   this provider has no usage fact to report, ever. Not an error
-#                 and not a gap -- gemini has no adapter, so there is nothing
-#                 metered to show.
+#                 and not a gap -- a catalogued provider with no usage reader
+#                 here has nothing metered to show. No provider lands on it
+#                 today; it is the fallback for one added before its reader.
 #   error         we asked and could not find out. `error` says what happened.
 #
 # NEVER 5xx AND NEVER A NUMBER WE DO NOT HAVE. Every arm below is wrapped, and

@@ -830,13 +830,14 @@ class ReadinessGoverns(_Server):
         with connect(self._url(sutra_id, provider), open_timeout=20) as ws:
             return json.loads(ws.recv(timeout=20))
 
-    def test_I_a_provider_with_no_adapter_is_refused(self):
-        """gemini is catalogued and has no chat adapter, so it is not runnable
-        and cannot be a chat-local target."""
+    def test_I_a_provider_that_left_the_catalogue_is_refused_as_unknown(self):
+        """gemini was catalogued with no chat adapter and is now not
+        catalogued at all (2026-09-16), so it is refused the way any unknown
+        id is, before readiness is even consulted."""
         a = self._chat_on("claude", CLAUDE_SRC)
         f = self._first_frame(a, "gemini")
         self.assertEqual(f.get("type"), "error", f)
-        self.assertEqual(f.get("code"), "provider-missing", f)
+        self.assertEqual(f.get("code"), "unknown-provider", f)
 
     def test_I_an_unknown_provider_is_refused(self):
         a = self._chat_on("claude", CLAUDE_SRC)
@@ -850,7 +851,7 @@ class ReadinessGoverns(_Server):
         later plan() would answer NOT_NEEDED against a session that does not
         exist."""
         a = self._chat_on("claude", CLAUDE_SRC)
-        self._first_frame(a, "gemini")
+        self._first_frame(a, "not-a-provider")
         self.assertEqual(self._hist(a), [("claude", CLAUDE_SRC)])
 
     def test_a_recorded_provider_that_stopped_being_runnable_falls_back(self):
@@ -860,9 +861,9 @@ class ReadinessGoverns(_Server):
         choice already uses."""
         cs = self._cs()
         rec = cs.create(cwd=self.work)
-        # gemini is never runnable here, so this stands in for "codex was
-        # signed out after the segment was written" without needing to break
-        # the codex stub for the whole class.
+        # gemini is no longer catalogued at all (2026-09-16), so a segment
+        # naming it stands in for "the provider this chat ran on is gone"
+        # without needing to break the codex stub for the whole class.
         rec.setdefault("provider_history", []).append(
             {"provider": "gemini", "native_id": "g-1", "from_turn": 0})
         cs.save(rec)

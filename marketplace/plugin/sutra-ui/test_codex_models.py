@@ -452,7 +452,7 @@ class OtherProvidersAreUntouched(_Base):
     def test_claude_and_deepseek_catalogues_are_unchanged(self):
         self.serve(_VISIBLE)
         codex_models.refresh_if_stale("chatgpt")
-        for pid in ("claude", "deepseek", "gemini"):
+        for pid in ("claude", "deepseek"):
             spec = next(s for s in providers._CATALOG if s["id"] == pid)
             self.assertEqual(providers.models_for(pid), spec["models"], pid)
 

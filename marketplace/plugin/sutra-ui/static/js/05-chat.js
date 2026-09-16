@@ -173,14 +173,12 @@ function rtCard(r){
       r.cwd_exists?"":` <span class="pill p-block">missing</span>`}</span></div>
     <div class="kv"><b>Runs as</b><span><code>${esc(r.permission_mode)}</code>${
       r.model?` · <code>${esc(r.model)}</code>`:""}</span></div>
-    ${!r.enabled?`<div class="note"><b>Paused.</b> It will not fire on its own.
-      Run now still works, so pausing does not cost you the ability to test it.</div>`:""}
-    ${r.enabled&&!r.loaded?`<div class="note b"><b>Saved as active, but launchd has not
-      loaded it — it will not fire.</b> Use Re-check after fixing, or delete and
-      recreate it.</div>`:""}
+    ${!r.enabled?`<div class="note"><b>Paused.</b> It will not fire on its own; Run now
+      still works.</div>`:""}
+    ${r.enabled&&!r.loaded?`<div class="note b"><b>Saved as active, but not loaded, so it
+      will not fire.</b> Re-check after fixing, or delete and recreate it.</div>`:""}
     ${r.never_fired_on_schedule?`<div class="note w"><b>Never fired on schedule.</b>
-      Every run so far was started by hand. Run now ignores the schedule, so a green
-      run proves the routine works, not that the schedule does.</div>`:""}
+      Every run so far was started by hand.</div>`:""}
     <p style="margin:9px 0 0">
       <button class="btn" type="button" data-rtrun="${esc(r.id)}" ${S.rtBusy?"disabled":""}
         >${S.rtBusy==="/"+r.id+"/run"?"Starting…":"Run now"}</button>
@@ -214,9 +212,10 @@ SCREENS.routines = () => {
   const st = S.rt, list = st.routines || [];
 
   /* The sharp edge of LOCAL scheduling, stated at the top rather than discovered
-     after a missed morning. */
+     after a missed morning. ONE LINE (owner, 2026-09-16): the server's longer
+     `note` says the same thing in four clauses, so it is not repeated here. */
   const caveat = `<div class="note"><b>These run on this Mac, not in the cloud.</b>
-    ${esc(st.note||"")}</div>`;
+    It must be awake and signed in; runs missed while asleep are combined into one on wake.</div>`;
   const orphan = (st.orphans||[]).length ? `<div class="note w">
     <b>${st.orphans.length} scheduled job${st.orphans.length===1?"":"s"} with no routine
     behind ${st.orphans.length===1?"it":"them"}.</b> Left over from a deleted routine or an
@@ -227,10 +226,7 @@ SCREENS.routines = () => {
 
   if (!list.length && !S.rtForm) return `${caveat}${orphan}${banner}${proposalsHtml()}
     <div class="zero"><h4>No routines yet</h4>
-      <p>A routine is a prompt this Mac runs on a schedule — a morning brief, a nightly
-         check, a weekly summary — without you opening anything.</p>
-      <p style="color:var(--faint)">Stored in <code>${esc(st.store)}</code>, scheduled with
-         a launchd user agent. Nothing runs until you create one.</p>
+      <p>A routine is a prompt this Mac runs on a schedule, like a morning brief.</p>
       <p><button class="btn" type="button" data-rtnew>New routine</button></p></div>`;
 
   return `${caveat}${orphan}${banner}${proposalsHtml()}
@@ -273,42 +269,55 @@ function diffHtml(text){
    that phones GitHub every time it opens is a different thing from one with a
    button. S.upd stays null until asked. The banner's poll is a different route
    (/api/updates/staged) precisely because that one touches nothing remote. */
+/* ONE ROW SHAPE FOR THE WHOLE SCREEN (owner, 2026-09-16: the button and the
+   headings were misaligned, and the rows carried command lines). Every row on
+   Updates -- Sutra's two components and each AI tool -- is drawn by this one
+   helper: a label, the version, one state pill, and at most one action on the
+   right. The panel and the row classes are the ones every other Setup screen
+   already uses, so the columns line up down the page. */
+function sxUpdRow(label, version, pill, action, extra){
+  return `<div class="sxkv sxurow"><span class="sxk">${esc(label)}</span>
+    <span class="sxv"><span class="sxuver">${version ? `<code>${esc(version)}</code>` : ""}${
+      pill || ""}</span>${extra || ""}</span>
+    ${action ? `<span class="sxact">${action}</span>` : ""}</div>`;
+}
+
 function updatesHtml(){
   const u = S.upd;
   const busy = S.updBusy;
+  const checkBtn = (label) => `<button class="btn" type="button" data-upd="check"
+      ${busy?"disabled":""}>${busy==="check"?"Checking…":label}</button>`;
 
+  /* Nothing is read until asked: the check reaches GitHub. */
   if (!u && !S.updError) return `
-    <section class="chsec"><h3 class="sec">Updates</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin-bottom:9px">
-        The desktop app and the Claude Code plugin update by different routes.
-        Nothing is checked until you ask — this reaches GitHub.</p>
-      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
-        ${busy==="check"?"Checking…":"Check for updates"}</button>
+    <section class="sxsec"><h3 class="sxsech">Sutra</h3>
+      <div class="sxpanel">
+        ${sxUpdRow("Desktop app", "", `<span class="pill p-mut">not checked yet</span>`)}
+        ${sxUpdRow("Plugin", "", `<span class="pill p-mut">not checked yet</span>`)}
+      </div>
+      <p class="sxacts">${checkBtn("Check for updates")}</p>
     </section>`;
 
   if (S.updError) return `
-    <section class="chsec"><h3 class="sec">Updates</h3>
+    <section class="sxsec"><h3 class="sxsech">Sutra</h3>
       <div class="note b"><b>Could not check.</b> ${esc(S.updError)}</div>
-      <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
-        ${busy==="check"?"Checking…":"Try again"}</button>
+      <p class="sxacts">${checkBtn("Try again")}</p>
     </section>`;
 
   /* One row per component. `managed:false` is a real answer, not an error --
-     a source checkout has no .app to replace, and that is worth saying. */
+     a source checkout has no .app to replace. It reads "updates on its own",
+     and the reason stays reachable in the row's tooltip rather than as a line
+     of prose. */
   const row = (c, label, installBtn) => {
-    if (!c.managed) return `<div class="kv"><b>${esc(label)}</b>
-      <span><span class="pill p-mut">not managed here</span> ${esc(c.reason||"")}</span></div>`;
+    if (!c.managed) return sxUpdRow(label, c.installed || "",
+      `<span class="pill p-mut" title="${esc(c.reason||"")}">updates on its own</span>`);
     const cur = c.installed || "unknown";
     const state = c.error
-      ? `<span class="pill p-warn">check failed</span> <span class="why">${esc(c.error)}</span>`
+      ? `<span class="pill p-warn" title="${esc(c.error)}">check failed</span>`
       : c.update_available
         ? `<span class="pill p-acc">${esc(c.latest)} available</span>`
         : `<span class="pill p-ok">up to date</span>`;
-    return `<div class="kv"><b>${esc(label)}</b><span>
-      <code>${esc(cur)}</code> ${state}
-      ${c.update_available && !c.error ? installBtn : ""}
-    </span></div>
-    <div class="kv"><b></b><span class="why">${esc(c.note||"")}</span></div>`;
+    return sxUpdRow(label, cur, state, c.update_available && !c.error ? installBtn : "");
   };
 
   const d = u.desktop || {}, p = u.plugin || {};
@@ -321,58 +330,49 @@ function updatesHtml(){
      backend only knows where IT runs -- and the shell attaches to whatever
      Sutra already serves the pinned port (a CLI or source-checkout uvicorn),
      with auto-update then off because the shell holds no token for a backend
-     it did not start. Echoing the backend's "not managed here" told a
+     it did not start. Echoing the backend's "updates on its own" would tell a
      Sutra.app user their installed app had no updater at all, which is false.
-     Say what is actually happening and the one action that brings updates
-     back. `window.sutra` is the shell-presence signal (preload puts it there;
-     a page cannot conjure it), and this deliberately does NOT claim the user
-     is in an installed .app -- a dev shell launched from a checkout lands
-     here too, and the copy stays true for both. */
+     `window.sutra` is the shell-presence signal (preload puts it there; a page
+     cannot conjure it), and this deliberately does NOT claim the user is in an
+     installed .app -- a dev shell launched from a checkout lands here too. */
   const desktopRow = () => {
     if (d.managed || !window.sutra) return row(d, "Desktop app", dBtn);
     /* Attach mode on a sidecar-capable shell (new DMG): the app updates
        ITSELF; render the shell's state through the same row markup. Feature-
-       detected — an old DMG has no updateState and keeps the honesty message
-       below, and capable:false (dev shell) keeps it too. */
+       detected -- an old DMG has no updateState and gets the plain row below,
+       and capable:false (dev shell) gets it too. */
     const sh = S.shellUpd;
     if (sh && sh.ok && sh.capable) {
-      if (sh.staged) return `<div class="kv"><b>Desktop app</b><span>
-        <code>${esc(sh.installed || "?")}</code>
-        <span class="pill p-acc">${esc(sh.staged_version || "update")} downloaded</span>
-        <button class="btn" type="button" data-upd="shell-apply"
-          ${busy?"disabled":""}>${busy==="shell-apply"?"Restarting…":"Restart to apply"}</button></span></div>
-        <div class="kv"><b></b><span class="why">Staged by the app itself — the server
-        serving this window is not involved, and does not need to be.</span></div>`;
+      if (sh.staged) return sxUpdRow("Desktop app", sh.installed || "?",
+        `<span class="pill p-acc">${esc(sh.staged_version || "update")} downloaded</span>`,
+        `<button class="btn" type="button" data-upd="shell-apply"
+          ${busy?"disabled":""}>${busy==="shell-apply"?"Restarting…":"Restart to apply"}</button>`);
       const c = { managed: true, installed: sh.installed, latest: sh.latest,
-                  update_available: !!sh.update_available, error: sh.error,
-                  note: "Updated by the desktop app itself (this window is attached to a " +
-                        "separate Sutra server; updates no longer depend on it)." };
+                  update_available: !!sh.update_available, error: sh.error };
       const shBtn = `<button class="btn" type="button" data-upd="shell-stage"
           ${busy?"disabled":""}>${busy==="shell-stage"?"Downloading…":"Download & install"}</button>`;
       return row(c, "Desktop app", shBtn);
     }
-    return `<div class="kv"><b>Desktop app</b>
-      <span><span class="pill p-warn">desktop updates unavailable</span>
-      This window is using a Sutra server that is not running from inside an
-      installed .app — a CLI or source checkout is serving ${esc(location.host)}.
-      If you launched this from an installed Sutra.app, quit that server and
-      reopen Sutra to re-enable automatic updates.</span></div>`;
+    return sxUpdRow("Desktop app", d.installed || "",
+      `<span class="pill p-warn">desktop updates unavailable</span>`, "",
+      `<span class="sxhint">This window is attached to a Sutra server outside the installed
+        app. Quit that server and reopen Sutra to bring updates back.</span>`);
   };
 
   return `
-    <section class="chsec"><h3 class="sec">Updates</h3>
-      ${S.updMsg?`<div class="note"><b>${esc(S.updMsg)}</b></div>`:""}
-      ${desktopRow()}
-      ${row(p, "Plugin", pBtn)}
-      <p style="margin-top:9px">
-        <button class="btn" type="button" data-upd="check" ${busy?"disabled":""}>
-          ${busy==="check"?"Checking…":"Re-check"}</button>
+    <section class="sxsec"><h3 class="sxsech">Sutra</h3>
+      ${S.updMsg?`<div class="note" style="margin-bottom:9px"><b>${esc(S.updMsg)}</b></div>`:""}
+      <div class="sxpanel">
+        ${desktopRow()}
+        ${row(p, "Plugin", pBtn)}
+      </div>
+      <p class="sxacts">
+        ${checkBtn("Re-check")}
         ${d.release_url?`<a class="btn" href="${esc(d.release_url)}" target="_blank"
            rel="noreferrer">Release notes</a>`:""}
       </p>
-      ${d.update_available?`<div class="note"><b>Installing the desktop update quits Sutra.</b>
-        The download is checksum-verified and Gatekeeper-checked before anything is replaced;
-        the swap happens once the app exits, and it reopens itself.</div>`:""}
+      ${d.update_available?`<p class="sxhint">Installing the desktop update quits Sutra, then
+        reopens it.</p>`:""}
     </section>`;
 }
 
@@ -523,19 +523,15 @@ function codexInstallHtml(busy){
   return `
       <div class="note b" style="margin:8px 0 0">
         <div><b>The Codex CLI is not on this Mac yet</b></div>
-        <p class="why" style="margin:4px 0 8px">Sutra talks to Codex by running
-          its command-line tool, and that is not here — which is why the row
-          above can’t be picked and why there is nothing to sign in to yet.
-          Sutra can fetch it into its own folder: nothing else on your Mac
-          changes, your own tools are left alone, and you won’t be asked for a
-          password.</p>
+        <p class="why" style="margin:4px 0 8px">Sutra can install it into its own
+          folder; your own tools are left alone and you won’t be asked for a password.</p>
         <p style="margin:0">
           <button class="btn" type="button" data-codex="install"
             ${busy ? 'aria-busy="true" disabled' : ""}>${
             busy === "install" ? "Installing…" : "Install it"}</button>
           <span class="why">${busy === "install"
-            ? "Fetching it and checking that it runs — about a minute."
-            : "Takes about a minute. Needs Node.js on this Mac."}</span></p>
+            ? "Fetching it and checking that it runs, about a minute."
+            : "About a minute. Needs Node.js."}</span></p>
         ${blocked}
       </div>`;
 }
@@ -655,9 +651,8 @@ function codexAuthHtml(){
        rather than after. It cannot offer to save it either: codex prints a
        stub, never the key. */
     if (!saved && canRemember) extra = `<p class="why" style="margin:6px 0 0">
-      This key is <b>not saved in Sutra</b>, so switching to ChatGPT would lose it —
-      you would need the key itself to come back. To have Sutra remember it,
-      paste it again with <b>Add API key</b>.</p>`;
+      This key is <b>not saved in Sutra</b>, so switching to ChatGPT would lose it.
+      Paste it again with <b>Add API key</b> to keep a copy.</p>`;
   } else if (a.state === "chatgpt") {
     head = `<b>Signed in with ChatGPT</b>
       <span class="why">· ${esc(a.billing || "covered by your ChatGPT plan")}</span>`;
@@ -668,7 +663,7 @@ function codexAuthHtml(){
   } else {
     head = `<b>Not signed in</b>`;
     actions = `${btn("login", "Sign in with ChatGPT")}
-       <span class="why">runs against your ChatGPT plan's own Codex limits</span>${
+       <span class="why">uses your ChatGPT plan's own Codex limits</span>${
        restoreBtn ? `<div style="margin-top:6px">${restoreBtn}
        <span class="why">billed to your OpenAI API account</span></div>` : ""}${
        canKey ? `<div style="margin-top:6px">${btn("apikey", saved ? "Add a different key" : "Add API key")}
@@ -688,19 +683,10 @@ function codexAuthHtml(){
         ${busy ? "disabled" : ""}>Use this key</button>
       <button class="btn" type="button" data-codex="apikey:cancel">Cancel</button>
     </div>
-    <p class="why" style="margin:6px 0 0">Sutra checks the key with OpenAI first and
-      only signs in if it works — codex itself accepts any text, so a typo would
-      otherwise become a live credential you meet later as a stream of 401s.
-      ${canRemember
-      ? `The key then goes straight to the codex CLI, and Sutra keeps a copy in your
-         Mac's login keychain so you can switch back to it later without typing it
-         again. It is never written to settings, never sent to the Sutra server, and
-         never shown again — only the last few characters. Codex stores one
-         credential, so this replaces whatever it holds now.`
-      : `The key then goes straight to the codex CLI and Sutra keeps no copy of it —
-         ${esc(st.store_reason || "there is no credential store on this machine")}
-         So if you switch to ChatGPT later, you will need this key again to come back.
-         Codex stores one credential, so this replaces whatever it holds now.`}</p>` : "";
+    <p class="why" style="margin:6px 0 0">Sutra checks the key with OpenAI first, so a
+      typo is refused here instead of becoming 401s later. ${canRemember
+      ? `It then goes to Codex, with a copy in your login keychain so you can switch back to it later.`
+      : `It then goes to Codex and Sutra keeps no copy, so you will need it again to switch back.`}</p>` : "";
 
   /* Saved BUT the live credential is something else. The saved key is not a
      claim about what codex is using -- `codex login status` is the only
@@ -718,9 +704,13 @@ function codexAuthHtml(){
      there is no billing story to tell, and telling one would be the exact
      mistake those states exist to avoid. Falls back to nothing on an older
      backend that does not send the field. */
+  /* BEHIND A DISCLOSURE, not on the page (owner, 2026-09-16: cut the sign-in
+     explainer). The one-line `billing` label above already says which account
+     pays; this is the longer version for whoever wants it. */
   const billingNote = a && a.billing_detail
       && (a.state === "chatgpt" || a.state === "api_key")
-    ? `<p class="why" style="margin:6px 0 0">${esc(a.billing_detail)}</p>` : "";
+    ? `<details class="sxdet"><summary class="why">Details</summary>
+       <p class="why" style="margin:6px 0 0">${esc(a.billing_detail)}</p></details>` : "";
 
   const savedNote = saved && a && a.state !== "api_key"
     ? `<p class="why" style="margin:6px 0 0">Sutra is holding a copy of
@@ -729,23 +719,15 @@ function codexAuthHtml(){
        Codex is not using it right now.</p>` : "";
 
   return `
-    <div class="note" style="margin-top:9px">
-      <div><b>OpenAI Codex sign-in</b></div>
-      <p class="why" style="margin:4px 0 8px">Which OpenAI account Codex bills
-        to. A <b>ChatGPT sign-in</b> runs against that plan and its own Codex
-        usage limits; an <b>API key</b> runs against your OpenAI API account and
-        is not covered by a ChatGPT subscription. Codex needs a credential
-        <i>and</i> its command-line tool before the row above can be picked.</p>
+    <div class="sxpanel sxsign">
       <div>${head}</div>
-      ${billingNote}
       ${actions ? `<p style="margin:8px 0 0">${actions}${waiting}${msg}</p>` : msg}
       ${extra}
       ${savedNote}
       ${keyForm}
-      ${!canKey ? `<p class="why" style="margin:8px 0 0">Signing in with ChatGPT and
-        signing out work from this page. Signing in with an <b>API key</b> does not —
-        use the desktop app, or run <code>codex login --with-api-key</code> in a
-        terminal.</p>` : ""}
+      ${!canKey ? `<p class="why" style="margin:8px 0 0">To sign in with an API key, use
+        the desktop app or run <code>codex login --with-api-key</code> in a terminal.</p>` : ""}
+      ${billingNote}
     </div>`;
 }
 
@@ -828,16 +810,13 @@ function deepseekAuthHtml(){
   const cliBlock = () => `
       <div class="note b" style="margin:8px 0 0">
         <div><b>The DeepSeek CLI is not on this Mac yet</b></div>
-        <p class="why" style="margin:4px 0 8px">Your key is saved, but Sutra
-          talks to DeepSeek by running its command-line tool and that is not
-          here — which is why the row above still can’t be picked. Sutra can
-          fetch it into its own folder: nothing else on your Mac changes and
-          you won’t be asked for a password.</p>
+        <p class="why" style="margin:4px 0 8px">Your key is saved. Sutra can install the
+          CLI into its own folder; you won’t be asked for a password.</p>
         <p style="margin:0">
           <button class="btn" type="button" data-deepseek="install"
             ${busy ? 'aria-busy="true" disabled' : ""}>${
             busy === "install" ? "Installing…" : "Install it"}</button>
-          <span class="why">Takes about a minute. Needs Node.js on this Mac.</span></p>
+          <span class="why">About a minute. Needs Node.js.</span></p>
       </div>`;
 
   /* The step BEFORE the key field on a CLI-run server. Shared by the
@@ -851,9 +830,9 @@ function deepseekAuthHtml(){
      type="text" for that reason: masking it would only make the paste harder
      to check. */
   const pairBlock = () => `
-      <p class="why" style="margin:4px 0 8px">Saving a key from a browser needs
-        this server's <b>sign-in code</b>. It printed one when it started — look
-        in the terminal you launched it from. It works once.</p>
+      <p class="why" style="margin:4px 0 8px">Saving a key from a browser needs this
+        server's <b>sign-in code</b>, printed in the terminal you launched it from. It
+        works once.</p>
       <div class="wdrow">
         <input type="text" class="wdin" data-deepseek-code spellcheck="false"
                autocapitalize="characters" autocorrect="off" autocomplete="off"
@@ -862,98 +841,88 @@ function deepseekAuthHtml(){
         <button class="btn" type="button" data-deepseek="pair"
           ${busy ? 'aria-busy="true" disabled' : ""}>${
           busy === "pair" ? "Checking…" : "Unlock"}</button>
-      </div>
-      <p class="why" style="margin:6px 0 0">Or set ${vars} before starting the
-        server.</p>`;
+      </div>`;
+
+  /* THE ONE PLACE THE ENV VARS ARE NAMED, behind a disclosure. They are the only
+     route on a machine with no keychain and on a locked browser page, so they
+     stay reachable; they are not the first thing anyone reads. */
+  const envDetails = () => `
+      <details class="sxdet"><summary class="why">Details</summary>
+        <p class="why" style="margin:6px 0 0">Or set ${vars} before starting the
+          server.</p></details>`;
+
+  /* CUT TO ONE LINE PER STATE (owner, 2026-09-16: "one short line that DeepSeek
+     needs an API key, the key field, and Save. Nothing more"). */
+  const block = inner => `<div class="sxpanel sxsign">${inner}</div>`;
 
   /* AN ENV VAR WINS: the field is disabled and NAMES the variable. Letting
      someone type into a box whose value would be shadowed is the "save a key
      that silently has no effect" failure -- they would see "Saved", and the old
      key would keep answering. */
   if (a.state === "env"){
-    return `
-    <div class="note" style="margin-top:9px">
+    return block(`
       <div><b>DeepSeek key: <code>${esc(a.env_var)}</code></b>
         <span class="pill p-ok">in use</span></div>
-      <p class="why" style="margin:4px 0 0">Set in this server's environment
-        ${a.mask ? `(<code>${esc(a.mask)}</code>)` : ""}, which wins over anything
-        saved in the app. Signing in here is switched off rather than hidden, so
-        you can see why: a key saved now would never be used.${
-        a.stored_mask ? ` There <b>is</b> a saved key underneath
-        (<code>${esc(a.stored_mask)}</code>) — unset <code>${esc(a.env_var)}</code>
-        and restart the server and it takes over.` : ""}</p>
+      <p class="why" style="margin:4px 0 0">Set in the server's environment${
+        a.mask ? ` (<code>${esc(a.mask)}</code>)` : ""}, so a key saved here would never be used.${
+        a.stored_mask ? ` A saved key (<code>${esc(a.stored_mask)}</code>)
+        takes over once <code>${esc(a.env_var)}</code> is unset.` : ""}</p>
       <div class="wdrow" style="margin-top:8px">
         <input type="password" class="wdin" disabled
                aria-label="DeepSeek API key" placeholder="sk-…">
         <button class="btn" type="button" disabled>Save</button>
-      </div>
-    </div>`;
+      </div>`);
   }
 
   /* SIGNED IN via the keychain. Mask + when + Remove. */
   if (a.state === "stored"){
-    return `
-    <div class="note" style="margin-top:9px">
+    return block(`
       <div><b>DeepSeek key <code>${esc(a.mask)}</code></b>
         <span class="pill p-ok">saved on this Mac</span></div>
       <p class="why" style="margin:4px 0 0">In your login keychain${
-        a.saved_at ? `, saved ${esc(agRelTime(a.saved_at))}` : ""}. Sutra keeps
-        only the four characters above, and nothing needs restarting.</p>
+        a.saved_at ? `, saved ${esc(agRelTime(a.saved_at))}` : ""}; nothing needs restarting.</p>
       ${canWrite ? `<p style="margin:8px 0 0">
         <button class="btn" type="button" data-deepseek="remove"
           ${busy ? 'aria-busy="true" disabled' : ""}>${
-          busy === "remove" ? "Removing…" : "Remove"}</button>
-        <span class="why">DeepSeek stops being selectable above.</span></p>`
+          busy === "remove" ? "Removing…" : "Remove"}</button></p>`
       : sess.available ? `<div style="margin-top:8px"><b>Unlock this page to
           remove it</b>${pairBlock()}</div>`
       : `<p class="why" style="margin:8px 0 0">To remove it from a browser,
           restart the server and use the sign-in code it prints.</p>`}
       ${canWrite && !dsRow.installed ? cliBlock() : ""}
-      ${msg}
-    </div>`;
+      ${msg}`);
   }
 
   /* NOT SIGNED IN. Two ways this can be un-actionable, and each says which. */
   if (!a.store_available){
-    return `
-    <div class="note b" style="margin-top:9px">
-      <div><b>DeepSeek needs an API key, and this machine cannot save one</b></div>
-      <p class="why" style="margin:4px 0 0">${esc(a.store_reason || "")}
-        Set ${vars} before starting the server.</p>
-    </div>`;
+    return block(`
+      <div><b>DeepSeek needs an API key, and this machine cannot save one.</b></div>
+      ${reasonHtml(a.store_reason || "", 140)}
+      ${envDetails()}`);
   }
   /* A BROWSER THAT HAS NOT PAIRED YET. The code field comes first and the key
      field only exists after it, so there is never a moment where a key can be
      typed into a page that has no way to deliver it. */
   if (!canWrite && sess.available){
-    return `
-    <div class="note" style="margin-top:9px">
-      <div><b>DeepSeek needs an API key, and this page needs unlocking first</b></div>
+    return block(`
+      <div><b>DeepSeek needs an API key. Unlock this page first.</b></div>
       ${pairBlock()}
-      ${msg}
-    </div>`;
+      ${envDetails()}
+      ${msg}`);
   }
   /* No bridge and no code to paste -- a desktop-started backend seen through a
-     browser, or a code already spent. Says WHICH, because "use the app" is the
-     wrong instruction for the second one. */
+     browser, or a code already spent. The server's reason says which; first
+     sentence on screen, the rest behind More. */
   if (!canWrite){
-    return `
-    <div class="note" style="margin-top:9px">
-      <div><b>DeepSeek needs an API key</b></div>
-      <p class="why" style="margin:4px 0 0">${esc(sess.reason
-        || "This page cannot save one.")} Or set ${vars} before starting the
-        server.</p>
-      ${msg}
-    </div>`;
+    return block(`
+      <div><b>DeepSeek needs an API key.</b></div>
+      ${reasonHtml(sess.reason || "This page cannot save one. Add it in the Sutra desktop app.", 110)}
+      ${envDetails()}
+      ${msg}`);
   }
-  return `
-    <div class="note" style="margin-top:9px">
-      <div><b>DeepSeek needs an API key</b></div>
-      <p class="why" style="margin:4px 0 8px">Every DeepSeek message is billed
-        against a key — there is no plan to inherit. Paste one and it is checked
-        with DeepSeek before anything is saved, then kept in your login
-        keychain.</p>
-      <div class="wdrow">
+  return block(`
+      <div><b>DeepSeek needs an API key.</b></div>
+      <div class="wdrow" style="margin-top:8px">
         <input type="password" class="wdin" data-deepseek-key spellcheck="false"
                autocapitalize="off" autocorrect="off" autocomplete="off"
                ${busy ? "disabled" : ""}
@@ -964,12 +933,10 @@ function deepseekAuthHtml(){
       </div>
       <p class="why" style="margin:6px 0 0">${
         busy === "save"
-          ? "Asking DeepSeek whether the key works. Nothing is saved until it says yes."
-          : `Get one at <code>platform.deepseek.com</code>. Sutra sends it to
-             DeepSeek and to nowhere else, and it never reaches this page again —
-             once saved, all this screen can see is the last four characters.`}</p>
-      ${msg}
-    </div>`;
+          ? "Checking the key with DeepSeek. Nothing is saved until it says yes."
+          : `Get one at <a href="https://platform.deepseek.com" target="_blank"
+               rel="noreferrer">platform.deepseek.com</a>.`}</p>
+      ${msg}`);
 }
 
 /* ══════════════════════ Settings ══════════════════════════════════════════
@@ -1005,7 +972,7 @@ const SETTINGS_SECTIONS = [
   { id:"workspace", title:"Workspace and folder",
     desc:"The folder your AI works in." },
   { id:"advanced",  title:"Advanced",
-    desc:"Which chats are listed, saved values Sutra could not use, and the technical detail." }
+    desc:"Which chats are listed, refused values, and the raw settings." }
 ];
 
 /* ── the four access options (SPEC A) ──────────────────────────────────────
@@ -1048,8 +1015,7 @@ function accessLabelFor(pid, native){
 const PROVIDER_BLURB = {
   claude:   "Anthropic's Claude Code, run as a command-line tool on this Mac.",
   codex:    "OpenAI's Codex, run as a command-line tool on this Mac.",
-  deepseek: "DeepSeek, billed per message against an API key you supply.",
-  gemini:   "Google's Gemini command-line tool."
+  deepseek: "DeepSeek, billed per message against an API key you supply."
 };
 function providerBlurb(p){
   if (!p) return "";
@@ -1064,10 +1030,14 @@ function providerBlurb(p){
 function provState(p){
   if (!p) return { key:"unknown", pill:"p-mut", badge:"unknown",
                    line:"Sutra could not read this one." };
+  /* THREE TONES, from the theme (owner, 2026-09-16): green for ready, amber
+     for anything that needs the operator's attention, muted for not installed.
+     Claude Desktop-without-Claude Code stays amber: the wrong app is installed,
+     and that needs attention rather than a shrug. */
   if (p.runnable) return { key:"ready", pill:"p-ok", badge:"ready", line:"Ready to use" };
   if (p.desktop_only) return { key:"not_installed", pill:"p-warn", badge:"not installed",
-    line:"Claude Desktop is installed, but this needs Claude Code — a different app" };
-  if (!p.installed) return { key:"not_installed", pill:"p-warn", badge:"not installed",
+    line:"Claude Desktop is installed, but this needs Claude Code, a different app" };
+  if (!p.installed) return { key:"not_installed", pill:"p-mut", badge:"not installed",
     line:"Not installed on this Mac" };
   if (!p.configured) return { key:"signin", pill:"p-warn", badge:"needs sign in",
     line:"Installed, but not signed in yet" };
@@ -1147,7 +1117,7 @@ function providerUsageLine(pid){
     ? all.providers.find(x => x && x.id === pid) : null;
   if (!row) return "Open Usage limits to read it.";
   const state = String(row.state || "ok");
-  if (state !== "ok") return USAGE_STATE_LINE[state] || "No usage to report.";
+  if (state !== "ok") return usageStateLine(row, state);
   const w = (row.windows || []).find(x => x && Number.isFinite(Number(x.percent)));
   if (!w) return (row.balance !== undefined && row.balance !== null)
     ? "Pay as you go — see Usage limits for the balance."
@@ -1236,8 +1206,7 @@ function settingsOverviewHtml(st){
     </button>`;
   return `${settingsBanner()}
     <div class="sxov">${SETTINGS_SECTIONS.map(card).join("")}</div>
-    <p class="why" style="margin-top:12px">Everything here is saved on this Mac, in
-      Sutra's own settings file. Nothing is sent anywhere.</p>`;
+    <p class="sxhint" style="margin-top:12px">Saved on this Mac. Nothing is sent anywhere.</p>`;
 }
 
 function settingsBackHtml(label, target){
@@ -1252,10 +1221,10 @@ function settingsHeadHtml(title, sub, backLabel, backTarget){
 }
 
 /* ── AI providers: the list ─────────────────────────────────────────────────
-   A row per provider: name, state, the one thing to do about it, "Make
-   default", and the row itself opens that provider's page. The radio group is
-   gone -- selection is now one explicit button, so a row that cannot be
-   selected is still fully clickable and still leads somewhere useful. */
+   A row per provider: name, state, and the one thing to do about it. The row
+   itself opens that provider's page, and "Make default" lives THERE (owner,
+   2026-09-16), not on the list -- so every row carries at most one action and
+   the column of actions on the right stays aligned. */
 /* What this provider needs from the operator, in two words, as the button that
    takes them to the page where they do it. */
 function setupVerb(p){
@@ -1269,7 +1238,6 @@ function providerListHtml(st){
   const active = st.provider;
   const provRow = p => {
     const s = provState(p);
-    const busy = S.setBusy === "prov:" + p.id;
     return `<div class="sxprow${active===p.id?" on":""}">
       <button class="sxpopen" type="button" data-provpage="${esc(p.id)}">
         <span class="oi">
@@ -1281,33 +1249,25 @@ function providerListHtml(st){
         <svg class="sxcc" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      ${active===p.id ? ""
-        /* NOT READY -> SAY WHAT TO DO, AND OPEN THE PLACE THAT DOES IT (owner,
+      ${/* NOT READY -> SAY WHAT TO DO, AND OPEN THE PLACE THAT DOES IT (owner,
            2026-09-14: "where does one add their deepseek account? it's not at
-           all clear"). A disabled "Make default" is the least useful thing a
-           row can show somebody whose provider needs a key: it names an action
-           they cannot take and hides the one they can. */
-        : !p.runnable ? `<button class="btn pri sxdef" type="button"
-            data-provpage="${esc(p.id)}">${esc(setupVerb(p))}</button>`
-        : `<button class="btn sxdef" type="button"
-          data-prov="${esc(p.id)}" ${busy?'aria-busy="true"':""}
-          >${busy?"Saving…":"Make default"}</button>`}
+           all clear"). A ready provider gets no button here: opening the row
+           is where "Make default" lives. */
+        !p.runnable ? `<button class="btn pri sxdef" type="button"
+            data-provpage="${esc(p.id)}">${esc(setupVerb(p))}</button>` : ""}
     </div>`;
   };
   return `
     <h3 class="sxsech">Default provider</h3>
-    <p style="margin-bottom:11px">Which AI answers your messages. New chats start with
-      the default, and your next message in any open chat moves to it too — nothing
-      already written changes.</p>
+    <p class="sxhint" style="margin:0 0 11px">New chats start with the default. Open a
+      provider to set it up or make it the default.</p>
     <div class="sxplist" role="group" aria-label="Default provider">${
       (PROVIDERS || []).map(provRow).join("")}</div>
     ${(st.provider_ignored||[]).length?`<div class="note b" style="margin-top:11px">
       <b>Your saved choice could not be used.</b>
       ${st.provider_ignored.map(i=>`<div>You picked <b>${esc(providerLabel(i.id))}</b>,
         but it is not ready to use right now.</div>`).join("")}
-      <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}
-    ${(PROVIDERS || []).filter(p=>p.runnable).length<2?`<p class="why" style="margin-top:11px">
-      Only ${esc(providerLabel(active))} is ready to use on this Mac right now.</p>`:""}`;
+      <div class="swhint">Using ${esc(providerLabel(active))} instead.</div></div>`:""}`;
 }
 
 /* ── one provider's own page ──────────────────────────────────────────────── */
@@ -1411,9 +1371,9 @@ function accessSectionHtml(st){
       <code>${esc(st.unsafe_modes_env||"SUTRA_UI_ALLOW_UNSAFE_PERM_MODES")}=1</code>. The gate is
       out of band on purpose: this endpoint is unauthenticated, so anything that could reach
       the port could otherwise widen the agent's authority.</p></details></div>`:""}
-    <p style="margin-bottom:11px">This applies to
-      <b>${esc(providerLabel(active))}</b>, the default provider. A chat can be given
-      its own setting from the chat itself.</p>
+    <p class="sxhint" style="margin:0 0 11px">Applies to
+      <b>${esc(providerLabel(active))}</b>, the default provider. A chat can override it
+      from its own toolbar.</p>
     <div role="radiogroup" aria-label="Access">${opts.map(row).join("")}</div>
     ${!running_covered && running ? `<div class="note" style="margin-top:11px">
       <b>You are on an older setting.</b> Sessions start as
@@ -1465,48 +1425,54 @@ function toolsListHtml(){
   if (!tools) return `<p class="why" style="margin:0">Reading the AI tools…</p>`;
   if (!tools.length) return `<p class="why" style="margin:0">Sutra found no AI tool
     to report on this Mac.</p>`;
-  return tools.map(t => {
+  return `<div class="sxpanel">${tools.map(t => {
     const id = String(t.id || "");
     const busy = S.toolBusy === id;
     const log = S.toolLog && S.toolLog.id === id ? S.toolLog : null;
+    /* CAN SUTRA PRESS THE BUTTON FOR THEM? The server answers with
+       `update_action` ("manual" means it will not touch this install: Homebrew's,
+       or a `claude` that did not come from Claude Code's own installer). An older
+       server sends neither field, and then the button is offered as before and
+       the server's refusal is the answer. */
+    const manual = t.update_action === "manual" || (t.can_update === false && !t.busy);
     const state = t.update_available
       ? `<span class="pill p-acc">${esc(t.latest_version || "update")} available</span>`
       : t.installed_version ? `<span class="pill p-ok">up to date</span>`
       : `<span class="pill p-mut">not installed</span>`;
-    /* TOO OLD IS A WARNING, NEVER A REFUSAL (SPEC F). It names the feature and
-       the version, because "too old" on its own tells nobody what to do. */
-    const old = t.too_old ? `<div class="note w" style="margin:6px 0 0">${
-      esc(t.note || ((t.name || id) + " " + (t.installed_version || "on this Mac")
-          + " is older than " + (t.minimum || "the version Sutra was built against")
-          + ". Some things will not work until you update it."))}</div>` : "";
-    return `<div class="sxtool">
-      <div class="kv"><b>${esc(t.name || id)}</b><span>
-        <code>${esc(t.installed_version || "not installed")}</code> ${state}
-        ${t.update_available ? `<button class="btn" type="button" data-toolupdate="${esc(id)}"
-            ${S.toolBusy?"disabled":""}>${busy?"Updating…":"Update"}</button>` : ""}
-      </span></div>
-      ${old}
-      ${t.update_command && !t.managed_by_sutra ? `<p class="why" style="margin:6px 0 0">
-        Sutra does not manage this one. Update it with
-        <code>${esc(t.update_command)}</code>.</p>` : ""}
-      ${log ? `<details class="sxdet" open><summary class="why">${
+    /* One action, or one short word about why there is none. Never the command
+       line: a person who wants it has the tool's own docs. */
+    const action = !t.update_available ? ""
+      : manual ? `<span class="sxhint sxown">Updates on its own</span>`
+      : `<button class="btn" type="button" data-toolupdate="${esc(id)}"
+          ${S.toolBusy || t.busy ? "disabled" : ""} ${t.busy ? 'title="Close its chat first"' : ""}>${
+          busy ? "Updating…" : "Update"}</button>`;
+    /* TOO OLD IS A WARNING, NEVER A REFUSAL (SPEC F). It names the version,
+       because "too old" on its own tells nobody what to do. ONE LINE: the
+       server's own note is used when it is short enough to be one; its long
+       form (measured at ~170 characters) is replaced by the same fact in
+       fewer words. */
+    const short = t.note && String(t.note).length <= 100 ? String(t.note) : null;
+    const old = t.too_old ? `<span class="sxhint sxwarn">${
+      esc(short || ((t.installed_version ? "Version " + t.installed_version + " is older than "
+                                         : "Older than ")
+          + (t.minimum || "the version Sutra was built against")
+          + ". Some things will not work until you update it."))}</span>` : "";
+    const logHtml = log ? `<details class="sxdet" open><summary class="why">${
           log.ok === false ? "The update failed" : "Update log"}</summary>
         <pre class="sxlog">${esc(String(log.log || "").slice(0, 8000))}</pre>
         ${log.version_after ? `<p class="why" style="margin:6px 0 0">Now on
           <code>${esc(log.version_after)}</code>${log.version_before
           ? ` (was <code>${esc(log.version_before)}</code>)` : ""}.</p>` : ""}
-      </details>` : ""}
-    </div>`;
-  }).join("");
+      </details>` : "";
+    return sxUpdRow(t.name || id, t.installed_version || "", state, action, old + logHtml);
+  }).join("")}</div>`;
 }
 function updatesSectionHtml(){
   return `
     ${settingsHeadHtml("Updates", "Sutra itself, and the AI tools it runs.", "Setup")}
     ${settingsBanner()}
     ${updatesHtml()}
-    <section class="chsec"><h3 class="sec">AI tools</h3>
-      <p class="why" style="margin:0 0 9px">The command-line tools Sutra runs to
-        answer your messages. Each one updates on its own schedule.</p>
+    <section class="sxsec"><h3 class="sxsech">AI tools</h3>
       ${toolsListHtml()}
     </section>`;
 }
@@ -1646,7 +1612,7 @@ const TITLES = {
   /* v3.3 (PLAN-25 S4): Now is a deliberate placeholder — the destination
      exists so the shell is complete; its surface is designed later. */
   now:["Now","placeholder — surface not designed yet"],
-  connectors:["Connectors","External accounts · credentials in the OS keychain, never in this window"],
+  connectors:["Connectors","Accounts Sutra can act on, and the ones Claude holds."],
   teamsutra:["Help","~/.sutra-ui/teamsutra/t-*.json"],departments:["Departments","domains/*.json"],charters:["Charters","charters/C-<sha>.json"],
   placements:["Placements","CURRENT.jsonl"],
   reorg:["Reorg plans","plans/*.json"],history:["History","domains/INDEX.jsonl"],

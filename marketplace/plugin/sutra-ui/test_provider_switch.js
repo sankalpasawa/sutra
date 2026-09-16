@@ -947,10 +947,10 @@ test("a governed pane still states a pending Settings change", () => {
 });
 
 test("a refused provider request speaks even on a pane that never spawned", () => {
-  UI.box.S.chatProviderNote = { C: "Gemini CLI is not ready to use — no chat adapter yet." };
+  UI.box.S.chatProviderNote = { C: "OpenAI Codex is not ready to use — not signed in yet." };
   try {
     const html = UI.fns.providerSwitcherHtml("C");
-    assert(/Gemini CLI is not ready/.test(html),
+    assert(/OpenAI Codex is not ready/.test(html),
            "the refusal was swallowed on an unspawned pane: " + JSON.stringify(html));
     assert(/provnote/.test(html), "no style hook for the note");
   } finally { UI.box.S.chatProviderNote = {}; }
@@ -1207,13 +1207,15 @@ function grabVarLike(src, name) {
 
 const ALIASES_E2E = { "claude": "claude", "claude code": "claude",
                       "codex": "codex", "openai codex": "codex",
-                      "gemini": "gemini", "deepseek": "deepseek" };
+                      "deepseek": "deepseek" };
 const READY = ["claude", "codex", "deepseek"];
 
 /* One turn, as submitTurn would run it: detect, then (if it switched) let the
-   next socket carry the request. Returns the URL that socket would open. */
-function turn(chatId, text) {
-  const want = E2E.__E.detectProviderIntent(text, ALIASES_E2E, READY);
+   next socket carry the request. Returns the URL that socket would open.
+   `ready` defaults to the full list; a test hands in a shorter one to play a
+   provider that is catalogued but cannot run right now. */
+function turn(chatId, text, ready) {
+  const want = E2E.__E.detectProviderIntent(text, ALIASES_E2E, ready || READY);
   if (want && want.ready) E2E.S.chatProvider[chatId] = want.target;
   const url = E2E.__E.claudeWsUrl(chatId);
   delete E2E.S.chatProvider[chatId];   /* claudeChannel spends it on creation */
@@ -1252,9 +1254,17 @@ test("E2E: a bare mention in Chat A changes nothing", () => {
 });
 
 test("E2E: a provider that is not ready never reaches the url", () => {
-  const u = turn("A", "use Gemini");
+  /* codex is catalogued but left out of the ready list here, so this is the
+     recognised-then-refused case. */
+  const u = turn("A", "use Codex", ["claude", "deepseek"]);
   assert(!u.includes("provider="),
          "an unrunnable provider was proposed to the server: " + u);
+});
+
+test("E2E: a name that is not a provider never reaches the url", () => {
+  const u = turn("A", "use Gemini");
+  assert(!u.includes("provider="),
+         "an uncatalogued name was proposed to the server: " + u);
 });
 
 /* ── 9. the REAL first-turn ordering, on a brand-new chat ─────────────────

@@ -68,10 +68,9 @@ vm.runInContext([
 const ALIASES = {
   "claude": "claude", "claude code": "claude",
   "codex": "codex", "openai codex": "codex",
-  "gemini": "gemini", "gemini cli": "gemini",
   "deepseek": "deepseek", "deep seek": "deepseek",
 };
-/* gemini is catalogued but has no chat adapter, so it is never runnable. */
+/* Gemini CLI left the catalogue 2026-09-16, so it is in neither table. */
 const RUNNABLE = ["claude", "codex", "deepseek"];
 
 const detect = (t) => ctx.detectProviderIntent(t, ALIASES, RUNNABLE);
@@ -201,11 +200,17 @@ test("a negated provider does not make a second one ambiguous", () => {
   assert(r.target === "codex", "expected codex, got " + JSON.stringify(r));
 });
 
-test("a provider with no adapter is recognised but NOT ready", () => {
+test("a name that is not in the catalogue is not a provider request", () => {
+  /* Gemini CLI is no longer catalogued (2026-09-16), so the sentence that
+     used to be recognised-then-refused is now an ordinary sentence. */
   const r = detect("use Gemini");
-  assert(r, "gemini was not recognised at all -- the operator gets silence");
-  assert(r.target === "gemini", JSON.stringify(r));
-  assert(r.ready === false, "gemini must never be selectable: " + JSON.stringify(r));
+  assert(!r, "an uncatalogued name was read as a provider request: " + JSON.stringify(r));
+});
+
+test("a catalogued provider that is not ready is recognised but NOT ready", () => {
+  const r = ctx.detectProviderIntent("use Codex", ALIASES, ["claude"]);
+  assert(r && r.target === "codex", JSON.stringify(r));
+  assert(r.ready === false, "an unready provider must not be selectable: " + JSON.stringify(r));
 });
 
 test("readiness comes from the caller's list, not from this function", () => {
