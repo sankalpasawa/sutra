@@ -361,7 +361,10 @@ class TestAdmission(Base):
         i = src.index("def start_mission_async")
         j = src.find("\ndef ", i)
         body = src[i:j if j > 0 else len(src)]
-        self.assertIn("mission_engine.MAX_RUNNING", body)
+        # the cap is now a READ, not a constant (the founder sets it in
+        # Shadow settings -> Tasks); the guard this test exists for is that
+        # admission still consults it here, before any spawn
+        self.assertIn("mission_engine.max_running()", body)
         self.assertNotIn("ensure_runtime", body,
                          "admission/queueing logic gained nothing")
 

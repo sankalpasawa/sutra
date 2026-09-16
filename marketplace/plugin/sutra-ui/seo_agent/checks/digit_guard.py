@@ -108,6 +108,14 @@ def _corpus(ctx):
         got = artifact(ctx, name)
         if got is not None:
             parts.append(_dump(got))
+    # A figure the source check CORRECTED to what the cited page states is evidence too: the page's
+    # own sentence is saved with the correction (write/source_check.py), and it is the one place a
+    # legitimate figure can come from that is in no card.
+    sc = artifact(ctx, "source-check.json")
+    if isinstance(sc, dict):
+        for x in sc.get("corrections") or []:
+            if isinstance(x, dict):
+                parts.append(str(x.get("evidence") or ""))
     parts.append(_brand_text(ctx))
     return "\n".join(parts)
 

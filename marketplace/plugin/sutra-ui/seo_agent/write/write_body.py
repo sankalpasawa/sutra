@@ -17,7 +17,7 @@
 The writer brief (brand/writer-brief.md) is the ONE brand file the body writer reads.
 """
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 
 from .. import llm
 from . import _common as C
@@ -231,7 +231,7 @@ def run(st, idx, ctx, say=lambda *a: None):
 
     say("Writing every section", "%d sections, %d at a time" % (len(sections), llm.PARALLEL))
     results = {}
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         futs = {ex.submit(_write, s): i for i, s in enumerate(sections)}
         for f in as_completed(futs):
             i = futs[f]

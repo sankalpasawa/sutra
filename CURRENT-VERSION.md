@@ -2,7 +2,7 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.279.0 (2026-09-16, HEAD)
+## v2.279.1 (2026-09-16, HEAD)
 
 **One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
 icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each
@@ -11,6 +11,88 @@ carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in t
 Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot.
 Codex P2 folded (mobile rail scroll rule re-applied after the desktop overflow rule). Tests: nav
 75, panel 389, agents 251, 0 failed. Real-app capture registered on atom a-6fe5c2b0-02.
+## v2.278.12 (2026-09-16)
+
+**Shadow's four settings become real controls, a Shadow-side fault stops killing live work, and the
+release build finally tests the Shadow screens.** (1) Autonomy ships as four levels
+(`AUTONOMY_LEVELS`, `clamp_autonomy`) read fresh per turn: L0 Watch pauses running tasks, L1 Suggest
+holds every composed instruction for a founder yes, L2 Draft runs the worker read-only, L3 Act runs
+it at the founder's own permission level. `confirm_top_tier` adds one confirmation on a task's first
+instruction at L3 only. A level never lowers the three floors, and a task a level paused resumes
+only when the founder resumes it. (2) Budget per task (`turn_budget`, `turn_budgets`) is clamped in
+the STORE and stamped by `create()`, so a change binds the next task; a goal's continuation
+deliberately carries the previous attempt's ceiling forward (`goal_lifecycle._new_attempt`) because
+a goal's budget is cumulative. `watch` is refused at the route. (3) Delegate offers
+(`offered_kinds`, `default_offer`) reach Shadow through `shadow_session.offers_context()` at boot
+instead of being hardcoded in SHADOW.md; a mission fence naming a retired kind is refused.
+(4) Presence gains a third store under the Shadow home, `shadow_presence.py` (`presence.json`,
+sibling of `task-limits.json` and `delegate-offers.json`): `corner_card`, per-app `hidden_apps`,
+`quiet_hours` and `nudges_per_hour`, each with its own route, durable across reload and restart.
+(5) `INFRA_BLOCK_REASONS` / `_infra_exit`: a say that never left, an undecidable turn and a lost
+runtime now park a mission `blocked` with `failure_class=shadow_infra` rather than `failed` —
+regression suite for live mission m-6b177e1cbdf0, whose work was on disk when the task read FAILED.
+(6) `shadow_home_lock.py`: one recoverer per Shadow home, closing the two boot-time damage paths the
+per-mission `loop_pid` lease cannot reach (`_clear_stale_start_requests` erasing another app's start
+stamp, and boot `drain_queue` double-spawning a delegate through `provision_target`'s pre-await
+check). (7) Release gate 2 closed: the DMG workflow's "Panel tests" step ran three suites and no
+`test_shadow_*.js` at all; all 11 run now. Wiring it surfaced two long-red suites —
+`test_shadow_overlay.js` pinned a 4-step re-read ladder the product replaced with a 16-step
+geometric one (now asserted as a shape, not literals), and `test_shadow_briefing.js` tested the
+one-spine Shadow Home deleted on 2026-09-11 by `43aba037`/`d47b2067` and is retired. Tests: 399
+Python checks across 16 suites; 11 Shadow JS suites green; Panel step simulated under `bash -e`,
+exit 0. No product behaviour changed by (7).
+
+## v2.278.11 (2026-09-16)
+
+**SEO Writer: sources are checked after the body is written; each article gets its own model-call
+slots; a Write this button on every idea; Library articles are edited by section and shared with
+the team.** Four changes, merged together. (1) The planner's verify step (`write/verify_sources.py`,
+`prompts/write/verify-worthy.md`) is deleted. `write/source_check.py` runs after `write_body`:
+one judge per claim against the page it cites, a replacement hunt capped at 10 claims, then
+correct, soften or remove with code guards (`checks/digit_guard.py`), and one chat row with a
+Details link to `source-check.md`. (2) `seo_agent/llm.py` gains `_Gate`, `run_slot` and `pool()`:
+every run holds 3 model-call slots, the app holds 9, loose calls share 3, all settable from the
+Connections screen ("Model calls across all chats", `/slots`). A usage limit pauses the run until
+the reset plus two minutes with one chat row, and `llm.Stopped` lets Stop end the wait cleanly
+in `loop.step` and `agents_api._guarded`. Every pool that fans model calls out (source check,
+enrich, write_body, the slop and sentence passes, plan_select, the research scorers, the
+dossier, the curate team, the brand helpers) uses `llm.pool()`, so its calls count against the
+run. (3) The Asset ideas tab loses the "idea to write next" card, lists dropped rows by default
+with a status pill, and gives every row a Write this button that opens a new chat with the prompt
+typed; the person presses Send. (4) `seo_agent/library_edit.py`: a saved article is drawn by
+section with a pencil each (edit the text, or ask the model with a diff shown first), carries
+`version`, `edited_by` and `previous.md`, refuses to write over a teammate's newer save
+(`base_version`, `force`), can undo the last save (`/library/{id}/revert`), and every save and
+every finished article from `loop.save_to_library` is pushed to the Supabase workspace when one
+is connected. Tests: source check 62 checks, slots and pause suite, library edit suite, agents
+api 58, all 39 seo_agent suites green.
+
+## v2.278.10 (2026-09-15)
+
+**SEO Writer: a run that failed on a model error carries on from its saved steps.** When a model
+call errors (the Claude usage limit, a CLI that fell over) `loop.step` marks the run `failed`. A
+message then made a NEW run with an empty artifacts folder, the same loss 2.278.9 fixed for a quit:
+three articles lost their research caches and a finished article plan to one "session limit" reply.
+`agents_api.api_send` now continues the newest run when its status is `failed`, as well as when it
+was stopped by the restart sweep. The test is the status alone: every path that fails a run emits
+`step_failed` with `recovering=False`, and a tool error never fails a run. A failed model call
+appends nothing, so `messages.json` ends on the previous turn's tool results; a new
+`_close_open_tool_calls` still gives any tool call left without a result an error result, so the
+continued run starts from a valid turn on every provider. The stale `error` is cleared. A Stop the
+person pressed still starts fresh. Tests: agents api +3.
+
+## v2.278.9 (2026-09-15)
+
+**SEO Writer: closing Sutra no longer throws away a run's saved work.** Quitting the app while an
+article was mid-step marks that run stopped at the next start (`store.reconcile_stale_runs`,
+`by="restart"`), and the chat says "Send a message to continue". The message used to start a NEW run
+with an empty artifacts folder, so every step the old run had saved (the research caches, the
+interviews in `_work/curate-partial.json`, the scored cards) was stranded in the old folder and done
+again, DataForSEO spend included. `agents_api.api_send` now carries that same run on when its last
+stop was the restart sweep, so its tools pick up from what is on disk. A Stop the person pressed still
+starts fresh. The conversation needs no repair: `loop.step` saves an assistant tool call only together
+with its results, so a quit mid-step leaves `messages.json` ending on a complete turn. The newest run
+is now chosen by `started_at`, because run folders are named by time of day. Tests: agents api +2.
 
 ## v2.278.8 (2026-09-15)
 

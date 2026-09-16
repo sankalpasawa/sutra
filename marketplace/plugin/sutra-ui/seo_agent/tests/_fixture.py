@@ -739,10 +739,18 @@ def stub_write_json(p):
     if '"placements": [{"orphan"' in p:
         n = len(_re.findall(r"^\[index \d+\] .+\| tags:", _between(p, "THE ORPHANS"), _re.M))
         return {"placements": [{"orphan": j, "into": 0} for j in range(n)]}
-    if '{"verify": [' in p:
-        return {"verify": []}
     if '"supports": true|false' in p:
         return {"supports": True, "quote": "", "note": ""}
+    if '"action": "correct" | "soften" | "remove"' in p:
+        # The source-check fix, at its plainest: every listed sentence is removed, nothing else moves.
+        listed = [m.group(1) for m in _re.finditer(r'^- paragraph \d+: "(.+)"$', _between(p, "THE SENTENCES TO FIX"), _re.M)]
+        paras = []
+        for m in _re.finditer(r"PARAGRAPH (\d+):\n(.*?)(?=\n\nPARAGRAPH \d+:\n|\n\nTHE SENTENCES TO FIX)", p, _re.S):
+            text = m.group(2)
+            for s in listed:
+                text = text.replace(s, "")
+            paras.append({"n": int(m.group(1)), "text": _re.sub(r"\s{2,}", " ", text).strip()})
+        return {"paragraphs": paras, "sentences": [{"sentence": s, "action": "remove", "why": "stub"} for s in listed]}
     if '"archetype": "<one of the 8 labels>"' in p:
         return {"archetype": "how-to-guide", "why": "steps a reader works through"}
     if "You are finding the OPTIONS of a comparison article" in p:

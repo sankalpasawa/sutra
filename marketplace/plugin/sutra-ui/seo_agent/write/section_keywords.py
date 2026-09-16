@@ -12,7 +12,6 @@ THE HUNT IS PAID, so it runs only when DataForSEO is connected and the balance i
 MIN_DFS_BALANCE. Otherwise every hunt is skipped and the report says so; the headings step then writes
 headings without a researched section keyword, which is a valid outcome.
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from ..tools import dfs
@@ -137,7 +136,7 @@ def run(st, inputs, ctx, idx, say=lambda *a: None):
     if hunt_ns and usable:
         say("Looking up real search phrases", "%d sections, %s" % (len(hunt_ns), note))
         company = C.sh.company()
-        with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+        with llm.pool() as ex:
             records = list(ex.map(lambda n: _hunt_one(n, secs[n - 1], ctx, primary, idx, company), hunt_ns))
     elif hunt_ns:
         say("Keyword lookups skipped", note)

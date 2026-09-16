@@ -8,7 +8,6 @@ Clean text passes through untouched. The ruleset is prompts/write/slop-rules.md,
 The counts (em dashes, tier-1 words, "not just", "let's", "in conclusion") are taken before and after.
 """
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as C
@@ -90,7 +89,7 @@ def run(w, say=lambda *a: None):
     before_all = counts("\n\n".join(t for _, t in blocks))
     say("Removing the tells of machine writing", "%d blocks; %d em dashes, %d flagged words before"
         % (len(blocks), before_all["em_dashes"], before_all["tier1_words"]))
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         results = list(ex.map(lambda b: clean_block(rules_text, b[0], b[1], memory), blocks))
     out = put_back(w, [r[0] for r in results])
     after_all = counts("\n\n".join(r[0] for r in results))

@@ -62,6 +62,7 @@ class Base(unittest.TestCase):
 
         self.launched = []
         self.adopted = []
+        self.adopted_modes = []
         self.reattached = []
         self.transcripts = set()
 
@@ -95,8 +96,13 @@ class Base(unittest.TestCase):
         self.transcripts.add(sid)
         return m
 
-    async def _adopt_ok(self, sid):
+    async def _adopt_ok(self, sid, permission_mode=None):
+        """Re-adoption now hands back the mode the worker was SPAWNED with
+        (founder, 2026-09-16), so the contract is (sid, permission_mode).
+        Recorded here as well as `adopted`, because the whole point of the
+        second argument is that it survives the restart."""
         self.adopted.append(sid)
+        self.adopted_modes.append(permission_mode)
         return object()
 
     async def _reattach_ok(self, sid):
@@ -270,7 +276,7 @@ class TestFenceStillHolds(Base):
         self._dead()
         m = self._paused_delegate(sid="d-boom")
 
-        async def _boom(sid):
+        async def _boom(sid, permission_mode=None):
             raise RuntimeError("resume refused")
         out = run(shadow_runner.resume_after_restart(
             self._reattach_ok, lambda *a, **k: True,

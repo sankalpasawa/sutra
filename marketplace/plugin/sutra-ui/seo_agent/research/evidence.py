@@ -130,7 +130,7 @@ def gather(keywords, company, own_domain="", exclude=(), max_pages=_c.EVIDENCE_M
     if say:
         say("Pulling the facts out of %s" % _plural(len(pages), "page"),
             "One card per distinct fact, quoted word for word; anything not in the page is thrown out")
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         harvested = list(ex.map(lambda pk: _harvest_page(pk[0], pk[1]), pages))
     cards, dropped, report = [], 0, []
     for (page, kw), (cs, d) in zip(pages, harvested):

@@ -20,6 +20,7 @@ import session_reader
 import session_runtime
 import shadow_egress
 import shadow_feed
+import shadow_home_lock
 import shadow_ledger
 
 #: mission_id -> asyncio.Task (running loops)
@@ -149,6 +150,93 @@ def remember_delegate_pid(store, mid):
         store.save(m)
     except Exception:                   # noqa: BLE001 -- never fail a start
         pass
+def _app_process_alive(pid):
+    """Is THAT app process still running? Liveness only -- no argv check.
+
+    Narrower than delegate_alive on purpose. This is only ever asked about a
+    pid THIS codebase wrote while running as the app, so the recycled-number
+    case delegate_alive guards against is not reachable in the same way: a
+    lease is claimed and released inside one process lifetime, and an app
+    killed mid-mission leaves a pid that is simply gone.
+
+    FAILS OPEN (returns False, "not alive") on a garbage stamp, because the
+    cost of the two answers is not symmetric: a wrong "alive" strands a
+    mission nothing is driving, a wrong "dead" costs a duplicate loop that
+    the in-process RUNNING guard already prevents in the common case.
+    """
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False                    # provably gone
+    except (PermissionError, OSError):
+        return True                     # exists, not ours to signal
+    except (TypeError, ValueError):
+        return False                    # not a pid at all
+    return True
+
+
+def loop_held_elsewhere(store, mid):
+    """Is another LIVE app process already driving this mission?
+
+    THE DUPLICATE THIS CLOSES (founder dogfood, 2026-09-15, m-5c2fca3f824b).
+    `RUNNING` is the only thing that stopped two loops on one mission, and it
+    is a module global -- per PROCESS. Five app boots in eight seconds each
+    re-adopted the same mission and each launched its own loop: four decider
+    subprocesses ran CONCURRENTLY against one mission file (transcripts
+    a0fad862, c1c5ada7, 8992a0cc, 2cf2a11d, overlapping 19:15:06-19:15:20),
+    every one of them entitled to say into the same worker session and to
+    decide its terminal state.
+
+    So the lease goes where every other cross-restart fact about this mission
+    already lives: the mission record. No new store, no new entity -- the
+    same place delegate_pid was put, for the same reason.
+
+    Never raises: an unreadable store answers "no" and the caller proceeds,
+    which is the historical behaviour.
+    """
+    try:
+        m = store.load(mid)
+        if m is None:
+            return False
+        pid = m.get("loop_pid")
+        if not pid or int(pid) == os.getpid():
+            return False                # nobody, or us -- RUNNING decides
+        return _app_process_alive(pid)
+    except Exception:                   # noqa: BLE001 -- never block a launch
+        return False
+
+
+def _claim_loop(store, mid):
+    """Stamp THIS process as the mission's driver. Best-effort, like
+    remember_delegate_pid: losing the stamp costs the cross-process guard,
+    never the launch."""
+    try:
+        m = store.load(mid)
+        if m is None:
+            return
+        m["loop_pid"] = os.getpid()
+        store.save(m)
+    except Exception:                   # noqa: BLE001
+        pass
+
+
+def _release_loop(store, mid):
+    """Drop the lease when the loop ends, so the next boot is free to take
+    it without waiting on a pid probe. Only ever clears OUR OWN stamp: a
+    lease another live process took while we were finishing is not ours to
+    remove."""
+    try:
+        m = store.load(mid)
+        if m is None or m.get("loop_pid") != os.getpid():
+            return
+        m["loop_pid"] = None
+        store.save(m)
+    except Exception:                   # noqa: BLE001
+        pass
+
+
 #: session_id -> rolling window of STREAMED text (what the app actually saw;
 #: transcript files lag or, for fakes, never exist -- the stream is the truth)
 _RECENT_TEXT = {}
@@ -720,7 +808,11 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
             and not promoted.get("target_session"):
         # a promoted queued mission may still need its delegate
         # (codex P1 fold: queued rows spawn nothing until here)
-        eng2 = mission_engine.MissionEngine(store, None, None, None)
+        # the decider rides along so provision_target can decide the bar
+        # before the spawner briefs the worker (see _criteria_before_first_
+        # contact). None -- the flag path, a test -- keeps the old behaviour.
+        eng2 = mission_engine.MissionEngine(store, None, None, None,
+                                            decider=DEFAULT_DECIDER["fn"])
         try:
             await eng2.provision_target(promoted["id"], prov)
             remember_delegate_pid(store, promoted["id"])
@@ -734,10 +826,44 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
     return promoted
 
 
+async def drain_queue(validated_say, verifier=None, store=None):
+    """Fill every free execution slot from the FIFO queue. Returns the ids
+    promoted, oldest first.
+
+    THE RAISE-THE-CAP PATH. A mission finishing frees exactly one slot, so
+    the terminal/blocked funnel calls _promote_after_slot_freed once and that
+    is right. Raising "Running at once" from 2 to 5 frees THREE at once, and
+    a single promotion would leave two tasks sitting queued behind a limit
+    that no longer exists -- the founder would have to wait for unrelated
+    work to end before their own setting took effect.
+
+    Bounded by construction: _promote_after_slot_freed returns None the
+    moment the queue is empty or the cap is full again, and the loop also
+    carries a hard ceiling in case a promotion fails in a way that leaves the
+    row queued (a spawner that throws transitions it to `failed`, but a
+    future path that does not must still not spin here).
+    """
+    store = store or mission_engine.MissionStore()
+    promoted = []
+    for _ in range(mission_engine.RUNNING_CEILING + 1):
+        m = await _promote_after_slot_freed(store, None, validated_say,
+                                            verifier)
+        if m is None:
+            break
+        promoted.append(m["id"])
+    return promoted
+
+
 def _launch(mid, validated_say, verifier):
     if mid in RUNNING and not RUNNING[mid].done():
         return
     store = mission_engine.MissionStore()
+    # ...AND THE SAME QUESTION ACROSS PROCESSES. RUNNING answers it inside
+    # this one; the lease answers it for the app instance that has not
+    # finished dying yet. Checked before anything is constructed so a refused
+    # launch costs nothing.
+    if loop_held_elsewhere(store, mid):
+        return
     sayer, waiter, reader = make_bindings(validated_say)
     engine = mission_engine.MissionEngine(
         store, sayer, waiter, reader, verifier,
@@ -757,13 +883,33 @@ def _launch(mid, validated_say, verifier):
         try:
             m = await engine.run_mission(mid)
         except Exception as exc:
+            # A CRASHED LOOP IS THE SUPERVISOR FAILING, NOT THE WORK
+            # (founder, 2026-09-16). This handler catches whatever the engine
+            # could not name -- a store that would not write, a binding that
+            # raised -- and it wrote `failed`, which is a verdict on the
+            # delegate's work that nothing here is entitled to make. It takes
+            # the same recoverable exit as every other infra fault now:
+            # blocked, labelled, delegate alive, Resume works.
+            #
+            # FALLS BACK TO THE HISTORICAL LINE. `running -> blocked` is the
+            # only legal edge into blocked, so a crash from any other state
+            # (and a `done` mission, whose completion must never be
+            # overwritten) drops through to exactly what this did before.
+            m = None
             try:
-                m = store.transition(mid, "failed",
-                                     "runner crashed: %s" % exc)
+                m = store.block(mid, "shadow_crashed",
+                                "runner crashed: %s" % exc)
+                m["failure_class"] = mission_engine.INFRA_FAILURE_CLASS
+                store.save(m)
             except Exception:
-                m = store.load(mid)
+                try:
+                    m = store.transition(mid, "failed",
+                                         "runner crashed: %s" % exc)
+                except Exception:
+                    m = store.load(mid)
         finally:
             RUNNING.pop(mid, None)
+            _release_loop(store, mid)
         if m and m["state"] in mission_engine.TERMINAL:
             # DELEGATES only, and that is the invariant: a delegate is
             # Shadow's own hands and dies with its mission, while an ATTACHED
@@ -810,6 +956,25 @@ def _launch(mid, validated_say, verifier):
         elif m and m.get("pause_reason"):
             mission_engine.emit_mission_feed(
                 m, "needs_decision", m.get("pause_reason"))
+            # A PAUSE FREES THE SLOT TOO, and this branch was the last exit
+            # from the loop that did not say so.
+            #
+            # The accounting is not a judgement call: MissionScheduler
+            # counts states=("running",), and `paused` is not one -- so the
+            # moment this branch is reached the cap has room the queue
+            # cannot see. It is the same argument the blocked branch above
+            # makes, and every pause that lands here is a mission the loop
+            # has genuinely stopped driving: awaiting founder confirmation,
+            # held at a floor, or handed to the founder mid-turn.
+            #
+            # MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16).
+            # It matters most for the SHIPPED completion path: the New Task
+            # form writes founder_confirm checks, a mission whose checks are
+            # all founder_confirm pauses here for sign-off, and with nothing
+            # promoting, a queued task could wait behind a colleague that
+            # had stopped working and was waiting on a human.
+            await _promote_after_slot_freed(store, mid, validated_say,
+                                            verifier)
         # ONE funnel for every way an attempt can end -- terminal, blocked
         # or paused all land here, so the goal can never be left claiming
         # work that stopped.
@@ -819,6 +984,7 @@ def _launch(mid, validated_say, verifier):
             "summary": "runner finished (%s)"
                        % (m["state"] if m else "unknown")})
 
+    _claim_loop(store, mid)
     RUNNING[mid] = asyncio.get_event_loop().create_task(run())
 
 
@@ -906,7 +1072,20 @@ def recover_on_boot():
     FENCES, DOES NOT FIX. The orphan process is not killed here: this process
     has no handle on it, and matching it by argv would be a guess. The founder
     Stops or Resumes the mission, and either path releases the fence.
+
+    AND ONLY THE RECOVERING PROCESS RUNS IT (founder, 2026-09-16). Everything
+    below rewrites missions another live app may be driving right now; a
+    second backend on this home must stand down rather than pause work it
+    cannot see. See shadow_home_lock for why this is a separate invariant from
+    the per-mission loop_pid lease below.
     """
+    owned, holder = shadow_home_lock.claim_recovery()
+    if not owned:
+        shadow_ledger.append("missions", {
+            "mission_id": None, "state": "boot",
+            "note": "boot recovery skipped: pid %s holds this shadow home"
+                    % ((holder or {}).get("pid") or "?")})
+        return
     store = mission_engine.MissionStore()
     for m in store.list(states=("running",)):
         if m["id"] in RUNNING:
@@ -940,7 +1119,7 @@ def _left_paused(mid, why):
 
 
 async def resume_after_restart(ensure_runtime_async, validated_say,
-                               ensure_delegate_async=None):
+                               ensure_delegate_async=None, verifier=None):
     """Undo the pause the APP itself applied, where that is safe.
 
     recover_on_boot() pauses honestly; this is the other half, so a restart
@@ -967,12 +1146,31 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
     No feed items here: emit_mission_feed dedupes on mission+state+version,
     so an app_restart item could collide with an earlier pause (codex P2);
     the ledger note is the record.
+
+    AND ONLY THE RECOVERING PROCESS RE-ADOPTS. Re-entry to a session is
+    `claude --resume <sid>`, which starts a second process on one transcript;
+    the whole point of the fence below is that this is safe only when the
+    first writer is provably gone. A second backend asking that question about
+    a worker the FIRST backend is currently driving would get "dead" for a
+    session that is very much alive, because the pid it probes belongs to a
+    delegate the live app owns. So it does not get to ask.
     """
+    owned, holder = shadow_home_lock.claim_recovery()
+    if not owned:
+        shadow_ledger.append("missions", {
+            "mission_id": None, "state": "boot",
+            "note": "restart re-adoption skipped: pid %s holds this shadow "
+                    "home" % ((holder or {}).get("pid") or "?")})
+        return {"resumed": [], "left": []}
     store = mission_engine.MissionStore()
     running = store.list(states=("running",))
     running_sids = {m.get("target_session") for m in running
                     if m.get("target_session")}
     running_n = len(running)
+    # the founder's cap, read ONCE for the whole sweep: this loop counts
+    # admissions as it goes, and a mid-sweep settings change that moved the
+    # bar under it would make the count and the limit disagree
+    cap = mission_engine.max_running()
     resumed, left = [], []
     paused = sorted(store.list(states=("paused",)),
                     key=lambda m: m.get("created_ns", 0))
@@ -1028,8 +1226,8 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                                   % sid)
                 left.append(mid)
                 continue
-            if running_n >= mission_engine.MAX_RUNNING:
-                _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+            if running_n >= cap:
+                _left_paused(mid, "cap %d reached" % cap)
                 left.append(mid)
                 continue
             if not session_reader.read_session(sid):
@@ -1037,7 +1235,17 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                 left.append(mid)
                 continue
             try:
-                await ensure_delegate_async(sid)
+                # THE WORKER KEEPS THE PERMISSIONS IT WAS GIVEN (founder,
+                # 2026-09-16). _worker_args rebuilds argv from the CURRENT
+                # global settings, so a worker spawned under `acceptEdits`
+                # came back on whatever the founder had selected since --
+                # `plan`, i.e. read-only -- and silently stopped being able
+                # to do the work it was mid-way through. The mode it was
+                # spawned with is stamped on the mission; this hands it back.
+                # None (a mission from before the stamp existed) resolves to
+                # the historical behaviour inside the callee.
+                await ensure_delegate_async(
+                    sid, m.get("worker_permission_mode"))
             except Exception as exc:  # noqa: BLE001 -- recorded, not hidden
                 _left_paused(mid, "could not re-adopt %s: %s"
                                   % (sid, str(exc)[:160]))
@@ -1045,7 +1253,7 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                 continue
             store.transition(mid, "running",
                              "re-adopted after restart (worker was gone)")
-            _launch(mid, validated_say, None)
+            _launch(mid, validated_say, verifier)
             running_sids.add(sid)
             running_n += 1
             resumed.append(mid)
@@ -1055,8 +1263,8 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                               % sid)
             left.append(mid)
             continue
-        if running_n >= mission_engine.MAX_RUNNING:
-            _left_paused(mid, "cap %d reached" % mission_engine.MAX_RUNNING)
+        if running_n >= cap:
+            _left_paused(mid, "cap %d reached" % cap)
             left.append(mid)
             continue
         if not session_reader.read_session(sid):
@@ -1071,7 +1279,7 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
             left.append(mid)
             continue
         store.transition(mid, "running", "resumed after restart")
-        _launch(mid, validated_say, None)
+        _launch(mid, validated_say, verifier)
         running_sids.add(sid)
         running_n += 1
         resumed.append(mid)
@@ -1104,6 +1312,11 @@ def shutdown():
     if t is not None:
         t.cancel()
         _STALL_TASK["task"] = None
+    # and the recovery lease, so a clean restart does not race the kernel's
+    # cleanup for its own successor. The kernel releases it on death anyway;
+    # this only shrinks the window, exactly like the delegate reaping above.
+    shadow_home_lock.stop_rearm()
+    shadow_home_lock.release_recovery()
 
 
 def founder_takeover(session_id):
@@ -1203,6 +1416,45 @@ async def ensure_runtime(session_id, build_args, register):
     return rt
 
 
+#: ASKED ONLY OF A MISSION THAT HAS NO CHECKS (founder, 2026-09-15). The
+#: founder may leave "Done when" empty -- the outcome is still required, but
+#: what would COUNT as done is Shadow's to write when they did not say. It is
+#: rendered into the prompt only in that case, so every mission that already
+#: carries criteria sends a byte-identical prompt and cannot be invited to
+#: rewrite the founder's own words.
+#:
+#: Shadow answers it ONCE. After the first turn writes them the mission has
+#: checks, this section disappears, and the normal loop resumes.
+_CRITERIA_ASK = """
+THIS MISSION HAS NO COMPLETION CHECKS, AND YOU MUST WRITE THEM
+The founder gave an outcome but did not say what would count as done, which
+leaves it to you. With THIS decision only, add a `done_when` key: two to four
+checks that, taken together, mean the outcome above is genuinely achieved.
+
+```json
+{"action": "continue", "instruction": "<what to send into the chat next>",
+ "reason": "<one short line: why this, now>",
+ "done_when": [{"tier": "founder_confirm", "check": "<a state, not a task>"}]}
+```
+
+  * Write a STATE that is true when the work is done ("the EMI check passes"),
+    never an instruction to perform ("run the EMI check").
+  * `tier` is `founder_confirm` -- the founder signs it off -- unless a
+    deterministic verifier could settle it, which is `verify`.
+  * Derive them from the OUTCOME above and what the chat has said so far.
+    Do not invent scope the founder did not ask for, and keep the set small:
+    every check is something a human will have to look at.
+  * DO NOT ASK THE FOUNDER FOR THEM. An empty "Done when" is not a gap in
+    the brief and it is not a question for you to raise: the founder named
+    the outcome, which is theirs, and left what would count as done to you,
+    which is yours. An `ask_founder` whose reason is that the criteria are
+    missing is the one answer this section exists to prevent -- you have the
+    outcome and the chat, and that is enough to write them.
+  * Omit the key only if you truly cannot tell yet, and then CONTINUE
+    anyway; you will be asked again next turn. Never stop for it.
+"""
+
+
 _DECIDE_PROMPT = """You are Shadow, driving one target chat toward an outcome.
 
 You do NOT do the work. A separate Claude session -- with its own context,
@@ -1246,6 +1498,7 @@ Decide. Reply with ONE fenced json block and nothing else:
  "reason": "<one short line: why this, now>"}
 ```
 
+%(criteria_ask)s
 or, if you genuinely cannot make progress and the founder is needed:
 
 ```json
@@ -1424,6 +1677,12 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
             "founder_response": _founder_answer_text(
                 context.get("founder_response")),
             "founder_says": _founder_says_text(context.get("founder_says")),
+            # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
+            # it does not, and _decision_context already carries them. Empty
+            # -> Shadow is asked to write them; otherwise this renders to the
+            # empty string and the prompt is exactly what it was before.
+            "criteria_ask": ("" if (context.get("checks") or [])
+                             else _CRITERIA_ASK),
         }
         # THE SAME RUNTIME FACTORY THE CHAT PANES USE, injected the way
         # build_args, register and publish already are -- this module must not
@@ -1460,8 +1719,15 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     return decide
 
 
-def settle_confirmation(mid):
+def settle_confirmation(mid, verifier=None):
     """A founder confirmed a check -- decide the attempt, with no turn.
+
+    `verifier` is the SAME callable the loop is launched with. It was the
+    one evaluate-and-decide path that never received one, so a `verify`
+    check the loop could see satisfied read as unmet here and the founder's
+    Yes settled nothing -- the dead end this function exists to close,
+    reopened one layer down. Default None keeps every existing caller and
+    test byte-identical.
 
     THE ONE thing missing from both confirmation entry points (live, goal
     g-e59b36c8ae53): confirm_check wrote `met` and the goal read 2 of 2,
@@ -1480,7 +1746,7 @@ def settle_confirmation(mid):
     store = mission_engine.MissionStore()
     engine = mission_engine.MissionEngine(
         store, None, None,
-        lambda m: evidence_text(m.get("target_session")),
+        lambda m: evidence_text(m.get("target_session")), verifier,
         on_evaluated=lambda mission, results, done: _goal_hook(
             "record_evaluation", mission, results, done),
         # the SAME completion the loop writes: a mission the founder's own
@@ -1661,11 +1927,25 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
                                  publish=None):
     """S53 in production: a NEW claude session Shadow delegates into.
 
-    Headless twin of a pane: its own SessionRuntime, spawned in PLAN mode
-    (v1 safety: real turns, visible work, no unsupervised writes -- acting
-    delegates need an explicit founder grant), registered in the same
+    Headless twin of a pane: its own SessionRuntime, registered in the same
     registry the say chain uses, observer attached, first turn = the
     enriched manifest. The transcript lands in ~/.claude/projects.
+
+    IT IS NOT SPAWNED IN PLAN MODE, whatever this docstring said until
+    2026-09-16. It claimed "spawned in PLAN mode (v1 safety: real turns,
+    visible work, no unsupervised writes -- acting delegates need an explicit
+    founder grant)", and that stopped being true when the permission-inherit
+    change landed: `build_args` is app._worker_args, whose mode comes from
+    providers.effective_permission_mode(load_settings()["permission_mode"])
+    -- the founder's own setting, clamped, not a literal "plan". A founder in
+    acceptEdits gets a delegate that edits. The docstring was describing a
+    safety property the code had stopped providing, which is worse than
+    describing none: it is the sentence someone would have cited when asking
+    whether a worker could write.
+
+    What DOES cap a worker is the autonomy level, and only downward: L0/L1/L2
+    clamp it to `plan` through app._autonomy_ceiling, L3 leaves the founder's
+    mode alone. See mission_engine's autonomy section.
 
     `publish` is an INJECTED (sid) -> sutra_id|None hook, supplied the same
     way `build_args` and `register` are and for the same reason: this module
@@ -1817,15 +2097,18 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                 # cap BEFORE any spawn (codex P1): a full scheduler must
                 # queue cheaply, never leak a live delegate for a queued row
                 if len(store.list(states=("running",))) \
-                        >= mission_engine.MAX_RUNNING:
+                        >= mission_engine.max_running():
                     mission_engine.MissionScheduler(store).start(mid)
                     return
                 prov = provisioner or DEFAULT_PROVISIONER["fn"]
                 m = store.load(mid)
                 if prov and m and m.get("target_mode") == "new" \
                         and not m.get("target_session"):
-                    eng = mission_engine.MissionEngine(store, None, None,
-                                                       None)
+                    eng = mission_engine.MissionEngine(
+                        store, None, None, None,
+                        # same reason as the promote path: the criteria are
+                        # decided before the spawner says the first word
+                        decider=DEFAULT_DECIDER["fn"])
                     await eng.provision_target(mid, prov)
                     remember_delegate_pid(store, mid)
                 start_mission(mid, validated_say, verifier)

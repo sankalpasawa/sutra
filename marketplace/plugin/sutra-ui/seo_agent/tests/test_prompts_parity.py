@@ -205,6 +205,8 @@ ADAPTED = {
     "plan-queries.md": "the enrich search station, adapted to Sutra's browser search",
     "search-urls.md": "the enrich search station, adapted to Sutra's browser search",
     "source-queries.md": "the replacement-source hunt, adapted to Sutra's browser search",
+    "source-judge.md": "the source check's judge: it now reads the claim as the article states it, with "
+                       "citation markers stripped, and asks for the page's own figure when it differs (2026-09-16)",
 }
 
 # His prompts with no copy in Sutra, and why. A prompt of his that is on neither this list nor
@@ -213,6 +215,8 @@ NOT_PORTED = {
     "extract-cards.md": "his research phase reads a STORM dossier; Sutra's research phase does not",
     "extract-winners.md": "lives in Sutra as prompts/research/extract-winners.md, not a write prompt",
     "extract-word-band.md": "his word band comes from a research-phase file Sutra does not produce",
+    "verify-worthy.md": "the planner's verify step is gone (2026-09-16); the after-body source check picks "
+                        "what to check in code (write/source_check.classify), so nothing asks a model",
 }
 
 # Sutra's own standing-rules block. His workflow has no such feature, so it is his-side absent by

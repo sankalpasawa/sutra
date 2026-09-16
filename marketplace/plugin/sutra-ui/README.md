@@ -307,15 +307,202 @@ knowable at install time — so those views are empty unless you point
 
 ## Tests
 
+Python lanes go through `run-tests.sh`. It picks an interpreter that actually
+has the app's dependencies — system `python3` on macOS is 3.9 with no `fastapi`,
+and lanes that fail on it fail with `ModuleNotFoundError` and
+`asyncio.Event() needs a running loop`, which read like product defects and
+have been misread as exactly that.
+
 ```bash
-.venv/bin/python -m unittest test_app      # 59 tests — API, tenant scoping, safety invariants
-node test_panel.js                         # 32 assertions — panel logic, no browser needed
+./run-tests.sh                             # every Python lane
+./run-tests.sh test_shadow_criteria.py     # one lane
+./run-tests.sh --which                     # which interpreter it resolved
+```
+
+**Run it from this directory.** `run-tests.sh` resolves its own location to find
+the lane files, but it never `cd`s there — each lane inherits *your* working
+directory. Lanes that walk the tree therefore change verdict with where you
+stood: `test_shadow_flag.py` passes here and fails from the repo root, where its
+"is the accessor the only read path" grep escapes into the whole monorepo and
+returns 48 offenders. That is a real cwd bug in the runner, not a flaky test —
+until it is fixed, `cd` first and the results are stable.
+
+**One process per file is not incidental.** Under a single pytest process the
+Shadow lanes leak an asyncio event loop into one another: `pytest -k shadow`
+reports dozens of `RuntimeError: Event loop is closed` and `There is no current
+event loop` failures in lanes that pass cleanly on their own. Reach for pytest
+to run *one* file, or to get `conftest.py`'s collection rules — not to sweep a
+subsystem.
+
+**pytest is not installed by `install.sh` and is not in `requirements.txt`.** It
+has to be added deliberately:
+
+```bash
+.venv/bin/pip install pytest
+.venv/bin/python -m pytest -q test_shadow_criteria.py
+```
+
+That matters more than one broken command, because `conftest.py` applies **only**
+under pytest. It repoints the registry home and the SEO agent's data dir at temp
+dirs *before collection*, after a whole-directory run emptied the operator's live
+registry twice on 2026-09-11. So on an install that never added pytest, that
+guard is not merely unused — it is unreachable, and every lane is relying on the
+temp home it binds itself in `setUp()`. `test_shadow_home_guard.py` pins both
+layers, but pytest is still the safer invocation for anything you did not write,
+and installing it is what makes that choice available.
+
+JS lanes are plain `node` — no runner, no `npm install`, no browser. They load
+the real `static/js/*.js` through `vm`, so they test the shipped module, not a
+copy.
+
+```bash
+node test_panel.js                         # the DOM contract
+node test_shadow_home.js                   # Focus > Shadow
 ```
 
 `test_forbidden_calls.py` is a provable negative: it greps `org_api.py` and
 `reorg_sim.py` for the engine's mutating calls and fails if any appear. It is
 written pytest-style, so `unittest` collects **0** tests from it — run it with
 `pytest`, or call its three functions directly.
+
+`PUBLISH-CHECK.md` is the full release gate. Nothing below runs in CI — the
+GitHub workflows build the DMG and cover `marketplace/native`; every lane here
+is enforced locally.
+
+### Shadow tests
+
+60 lanes, all at this directory's root: 48 `test_shadow_*.py` and 12
+`test_shadow_*.js`. Another ~45 non-Shadow-named files touch Shadow too, most
+of them `test_mission_engine.py`, `test_mission_scheduler.py` and the
+`test_goal_*` pair that wraps missions.
+
+One command, copy-pasteable from the repo root, no install step beyond
+`install.sh`:
+
+```bash
+cd marketplace/plugin/sutra-ui && ./run-tests.sh test_shadow_*.py
+```
+
+The `cd` is part of the command, not a preamble. The glob is expanded by your
+shell against the lane files, so from the repo root it matches nothing and the
+shell refuses with `no matches found` before the script ever starts — and the
+cwd bug above would flip verdicts even if it did. Already in this directory,
+`./run-tests.sh test_shadow_*.py` is the same thing.
+
+```bash
+./run-tests.sh test_shadow_*.py            # the 39 Python lanes, one process each
+
+# the 11 JS lanes — run-tests.sh covers Python only
+for f in test_shadow_*.js; do
+  node "$f" >/dev/null 2>&1 && echo "PASS  $f" || echo "FAIL  $f"
+done
+```
+
+Run the JS sweep to a **summary, not a `break`**: these lanes are independent, so
+stopping at the first red hides the state of every lane after it and leaves you
+reading a raw stack trace instead of a result. To see why one failed, run that
+one on its own — `node test_shadow_overlay.js` — where it prints its `ok` lines
+up to the assertion that went.
+
+#### What a pass looks like
+
+Nothing here runs in CI, so recognising a pass by eye *is* the gate. Both sweeps
+answer in the same shape: one line per lane, and an exit code.
+
+**Python.** `run-tests.sh` prints the lane name padded to 34 columns, then `PASS`
+and the `Ran N tests` it greps back out of unittest's own summary. A contiguous
+stretch of one real run — lanes 4 through 17 of 38, copied unedited, nothing
+dropped from inside it:
+
+```
+test_shadow_completion_summary.py  PASS  Ran 55 tests
+test_shadow_criteria.py            PASS  Ran 38 tests
+test_shadow_decider_window.py      PASS  Ran 16 tests
+test_shadow_decision_integrity.py  PASS  Ran 13 tests
+test_shadow_delegate.py            PASS  Ran 8 tests
+test_shadow_drives.py              PASS  Ran 33 tests
+test_shadow_early_admit.py         PASS  Ran 10 tests
+test_shadow_evidence_prose.py      PASS  Ran 14 tests
+test_shadow_feed.py                PASS  Ran 6 tests
+test_shadow_flag.py                PASS  Ran 6 tests
+test_shadow_floor_choke.py         PASS  Ran 7 tests
+test_shadow_founder_says.py        PASS  Ran 11 tests
+test_shadow_home_api.py            PASS  Ran 3 tests
+test_shadow_home_guard.py          PASS  Ran 4 tests
+```
+
+Green means every line reads `PASS` and the script exits `0`. A red lane prints
+`FAIL`, then the last 18 lines of its output indented four spaces, and the sweep
+keeps going and exits `1` at the end, so one failure never hides the lanes behind
+it. Abridged below; the elapsed time differs every run:
+
+```
+test_shadow_intervention.py        FAIL
+    ERROR: test_the_template_formats_with_a_context_that_has_no_answer (...)
+    The substitution dict must not KeyError on an old-shaped context.
+    ----------------------------------------------------------------------
+    Traceback (most recent call last):
+      File ".../test_shadow_intervention.py", line 562, in test_the_template_...
+        rendered = shadow_runner._DECIDE_PROMPT % {
+    KeyError: 'founder_says'
+    ----------------------------------------------------------------------
+    Ran 61 tests in 0.077s
+    FAILED (errors=1)
+```
+
+**JS.** Each lane prints `ok <n> <description>` per assertion, then a summary in
+one of two wordings — both mean pass:
+
+```
+test_shadow_home.js: all green        # home, overlay, now, completion_ui, floor_needs_you, briefing
+all shadow RHS tests passed           # rhs, live_refresh, task_chat, task_status, intervention_ui
+```
+
+**The summary is not reliably the last line.** The async lanes resolve their `ok`
+lines after it — `test_shadow_home.js` prints its summary at line 47 of 53. So
+the exit code is the signal and the summary is the confirmation; never judge a
+lane by tailing it. That is why the sweep loop above branches on `&&` rather than
+grepping for the wording. A green sweep is 11 `PASS` lines and nothing else.
+
+**The suite is not all-green today** (checked 2026-09-15): 35 of 38 Python lanes
+and 9 of 11 JS lanes pass. `test_shadow_chat_publication.py`,
+`test_shadow_intervention.py`, `test_shadow_signs_e2e.py`,
+`test_shadow_briefing.js` and `test_shadow_overlay.js` are red, and all five are
+red on a clean checkout of `main` too — they are standing breakage, not something
+your working tree did. Re-check that list before trusting it; the point of the
+paragraph is that a first run showing five red lanes is the expected state, not
+evidence you installed something wrong.
+
+| Lane | What it pins |
+|---|---|
+| `test_shadow_flag.py` | the off-state — no process, no context read, no state |
+| `test_shadow_criteria.py` | `done_when` is optional, and Shadow may only write onto an **empty** set |
+| `test_shadow_home_guard.py` | a test can never write the live Shadow home, in two layers |
+| `test_shadow_floor_choke.py` | the floors hold on the direct say path |
+| `test_shadow_journeys.py` | the designed journeys, end to end |
+| `test_shadow_run_limit.py` | "Running at once" end to end — the store clamps and never raises, admission re-reads the cap per decision, the route drains on a raise and refuses to kill on a lower, **every** way a slot frees advances the queue (finish, stop, take over, delete, abandon a goal), and no door reaches `running` past the cap |
+| `test_shadow_turn_budget.py` | "Budget per task" end to end — the store clamps in the STORE (not the stepper) and never raises, `create()` stamps the configured number, the snapshot means a change binds new tasks only, a retry takes the current setting while a goal continuation deliberately does not, and `watch` is refused at the route and ignored even when hand-edited into the file |
+| `test_shadow_nudge_rate.py` | "Nudges per hour" end to end — the store clamps, refuses junk (a boolean included) and never raises, `0` is a stored value meaning *never unasked* rather than an absent one, the other `presence.json` keys survive a rate write, and a **subprocess** reads back what the route wrote, which is the restart claim asserted rather than clicked |
+| `test_shadow_home.js` · `test_shadow_rhs.js` | the two screens, against the real shipped modules |
+
+One lane is **opt-in and deliberately outside the gate**:
+
+```bash
+SUTRA_SHADOW_SMOKE=1 ./run-tests.sh test_shadow_smoke_cycle.py
+```
+
+It runs the **real `claude` binary** against your **real** `~/.sutra-ui/shadow`.
+It costs two Claude turns and leaves a say row and a done row in the live
+actions ledger for a mission that actually drove a chat. Without the variable
+it skips. Everything else about that flow is covered by `test_shadow_runner.py`
+against mocks, which is where you should look first.
+
+The browser lane needs the installed app and is driven over CDP — never run the
+script directly, it says so itself:
+
+```bash
+cd qa-shell && QA_SCRIPTS="$PWD/shadow-check.mjs" QA_BACKEND=repo bash run.sh
+```
 
 ## Layout
 
@@ -366,3 +553,166 @@ and judged on real page text, sources numbered). You look at each before the nex
 | Memory | standing rules the user states; every step that shapes or writes prose receives them. |
 | Data | `~/.sutra-ui/agents/seo/` — chats, runs, artifacts, knowledge (catalogue, page index, brand pack), memory, library. `connections.json` is owner-only. Never inside the bundle. |
 | Design | `design/GAME-PLAN-agents.md` · building the next agent: `design/NEW-AGENT-plan.md` |
+
+---
+
+## Shadow
+
+Shadow is the chief of staff inside the app. It watches every live Claude Code
+session, rescues chats that drop or stall or error, and runs missions you
+delegate. You describe **what you want done**; Shadow drives a separate worker
+session toward it and comes back when it is done or when it genuinely needs you.
+
+The division is the whole idea: the worker's job is to do the task, Shadow's job
+is to make sure the task actually gets done. A worker can produce a great deal
+of activity without making progress, and telling those apart is what Shadow is
+for.
+
+One conversation, two views — the overlay card (`static/js/15-shadow-overlay.js`)
+and Focus > Shadow (`static/js/16-shadow-home.js`), which tabs into
+**Watching / Working / Goals**.
+
+### How you use it
+
+There is no Shadow CLI. You talk to it, in the overlay or in Focus > Shadow, and
+say what you want done.
+
+1. **You describe the outcome.** Shadow proposes a mission back — or you ask for
+   one directly. Either way it lands in `brief_confirm` and does nothing yet.
+2. **Start is your confirm.** Nothing runs until you press it; that press is the
+   confirm *and* the admit. Past five running missions the rest queue FIFO.
+3. **Shadow drives a separate worker session** toward the objective, turn by
+   turn, deciding each turn from what the target actually said. Every turn it
+   injects is tagged `[Shadow · mission <id>]`.
+4. **It comes back through the needs-you feed** — when the work is done, or when
+   it genuinely cannot proceed. A `needs_decision` item is the one that wants you;
+   the rest are `info`.
+5. **You settle what only you can settle.** A `founder_confirm` check is ticked
+   by your explicit action and nothing else — not the transcript, not a verifier,
+   not Shadow.
+
+From a mission card: `take_over`, `stop`, `drop`, `start_now`, `retry`,
+`confirm_check`, `resume`, `say`, `intervene`, `delete`. Taking over hands the
+chat back to you mid-flight; Shadow stops saying and keeps watching.
+
+### On by default
+
+`providers.shadow_enabled()` is the single read path, and it returns true unless
+the settings file carries a literal boolean `false`. An absent file, an absent
+key and a junk value all mean **on**.
+
+```json
+{ "shadow.enabled": false }
+```
+
+in `~/.sutra-ui/settings.json`, then relaunch. With it off there is no Shadow
+process, no context read and no state: the flag is checked at call time, not at
+import time, so turning it dark mid-mission stops the loop at the next check,
+and every `/api/shadow/*` route answers `403` — the overlay then renders no DOM
+at all rather than an empty shell.
+
+### Goal, mission, watch
+
+| | |
+|---|---|
+| **Goal** | the durable commitment that one chat reaches one outcome. Outlives its attempts. |
+| **Mission** | **one attempt** at that outcome, and the only way Shadow acts at all |
+| **Watch** | the observer lane — no saying, it turns error signals into feed items |
+
+`goal_lifecycle.py` is the one place that knows how a goal maps onto its
+attempts, so the mission engine keeps owning execution and the goal store keeps
+owning persistence; neither learns about the other. A blocked mission is
+deliberately **not** terminal — it means "Shadow cannot continue autonomously
+right now", never "the chat is dead".
+
+Templates set the turn budget up front, and those numbers are now **defaults,
+not ceilings**: `feature` 30, `fix` 20, `research` 15 (read-only), `watch` 0
+(never says anything). **Budget per task** on the Shadow settings page
+overrides them per kind, anywhere in 1–100 turns, and the clamp is the
+server's — a hand-written POST cannot reach 0 or 500 either.
+
+The budget is stamped onto a task when it is created, so a change binds the
+**next** task and never re-budgets one already running. `watch` is stated but
+not settable: it never speaks, so it never spends a turn. One exception worth
+knowing: a goal's *continuation* attempt carries the previous attempt's
+ceiling forward rather than re-reading the setting, because a goal's budget is
+cumulative across its attempts — `extra_turns` is what moves that one.
+
+At most five missions run at once; the rest queue FIFO.
+
+### Done when
+
+`done_when` is what will count as done, in three tiers:
+
+| Tier | Met by |
+|---|---|
+| `contains_artifact` | a string that must appear in the chat |
+| `verify` | a real check someone can run |
+| `founder_confirm` | only you — it **never** auto-passes |
+
+An empty check set evaluates to false, which used to mean a mission with no
+criteria could never finish: it ran to `max_turns` and failed as budget
+exhausted. Leaving "Done when" blank was never a refusal to be served, so
+Shadow now writes the criteria itself — **only onto an empty set**, capped at
+six, and only in the `verify` and `founder_confirm` tiers. Your own words can
+never be edited, replaced or appended to; a mission that arrived with criteria
+does not even carry the request in its prompt.
+
+`contains_artifact` is refused to Shadow deliberately: it is a literal substring
+search over the worker's words, so a check describing a *state* could be
+satisfied by uttering the sentence rather than doing the thing.
+
+**Observed, not yet decided (run-limit walkthrough, 2026-09-16).** That refusal
+plus the Delegate form's own tier leaves no path from the UI to a
+`contains_artifact` check: the form writes `founder_confirm`, Shadow may write
+`founder_confirm` or `verify`, and no verifier is wired into the runner today,
+so `verify` cannot pass either. A task created on the Shadow screen therefore
+reaches `done` only when you sign its checks off — otherwise it ends at
+`max_turns` or on ping-pong. The tier still arrives through a Shadow `mission`
+block proposed in chat, which is how it was exercised. Whether that is the
+intended shape, or wants a verifier, is an open product question; nothing has
+been built for it.
+
+### What stands between Shadow and an effect
+
+- **Missions are the only way it acts.** One JSON file holds the mutable state,
+  and every transition is *also* appended to the missions ledger, so the audit
+  trail survives any edit to the store.
+- **The ledger is append-only by construction** — `shadow_ledger.py` exposes no
+  rewrite. Three JSONL files: instructions, missions, actions.
+- **Everything outbound is scrubbed** through `shadow_egress.scrub()`, and every
+  turn Shadow injects is tagged `[Shadow · mission <id>]`. That tag is also a
+  verification boundary: Shadow's own prompt names the outstanding checks
+  verbatim, so without it a transcript check would satisfy itself from Shadow's
+  words on the second turn.
+- **Three floors are confirm-first and cannot be overridden by anything stored**
+  — destructive git ops, external client repos, irreversible external sends.
+  They live in code, above the precedence ranking rather than inside it.
+- **Precedence**: floors > this session's words > project instructions >
+  confirmed standing instructions > taste > history. Instructions land
+  **unconfirmed** and are inert until you confirm them.
+- Pauses are requests, not failures: a target waiting on permission, or you
+  typing in the target chat, pauses rather than pushing through.
+
+### Files
+
+| File | Role |
+|---|---|
+| `mission_engine.py` | the state machine, the store, and the say → boundary → evaluate loop |
+| `shadow_runner.py` | mounts that engine in the app process; the watcher, the decider, delegate spawn |
+| `shadow_session.py` | Shadow's own persistent session; loads `SHADOW.md` at boot |
+| `shadow_protocol.py` | the fenced blocks a reply may carry — `mission`, `goal`, `chips`, `remember`, `module` |
+| `shadow_intervention.py` | one typed question, N typed fields, when a 300-char reason will not do |
+| `shadow_feed.py` | the needs-you feed contract — schema, dedupe, append |
+| `shadow_egress.py` | outbound scrubbing, the say tag, the tool-gating table |
+| `shadow_ledger.py` · `shadow_precedence.py` | append-only memory, and how instructions rank |
+| `goal_store.py` · `goal_lifecycle.py` | the goal layer and its binding to missions |
+| `SHADOW.md` | **not documentation** — the context injected into Shadow's session: persona, doctrine, precedence, the fenced protocol |
+
+Routes are `/api/shadow/{status,chat,instructions,settings,watches,missions,goals,feed}`,
+all `403` when the flag is off. `POST /api/shadow/missions/{mid}/act` carries the
+verbs: `take_over`, `stop`, `drop`, `start_now`, `retry`, `confirm_check`,
+`resume`, `say`, `intervene`, `delete`.
+
+Running the tests: **Shadow tests** under `## Tests` above — the command, and
+**What a pass looks like** for reading the result.

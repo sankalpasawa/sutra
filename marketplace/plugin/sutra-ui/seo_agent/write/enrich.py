@@ -36,7 +36,6 @@ came from:
   than it was designed to be. It is recorded in `research_failures` so write_body warns the writer
   not to pad, exactly as the original did for a marker that came back empty.
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from ..research import evidence
@@ -54,9 +53,9 @@ FIRST_CARD_ID = 9001          # enriched cards are numbered from here, as the or
 
 
 # ---- the one search-and-read path the two hunting stations share -----------------------------------
-# verify_sources imports `route`, `search` and `read_pages` from here rather than growing a second
-# copy. One value decided in one place: whether this run can search at all is decided by `route`, and
-# both stations report the same sentence about it.
+# source_check's replacement hunt imports `route`, `search_many` and `_interleave` from here rather
+# than growing a second copy. One value decided in one place: whether this run can search at all is
+# decided by `route`, and both stations report the same sentence about it.
 
 def route():
     """How this run can search: ("dataforseo" | "model", the sentence the report prints).
@@ -328,7 +327,7 @@ def run(shaped, say=lambda *a: None, ctx=None):
             return e, []
 
     if markers:
-        with ThreadPoolExecutor(max_workers=MARKER_WORKERS) as ex:
+        with llm.pool(MARKER_WORKERS) as ex:
             results = [f.result() for f in [ex.submit(_one, si, t, d) for si, t, d in markers]]
     else:
         results = []

@@ -419,6 +419,17 @@ knowledge pack split in two.
 75. The traffic ceiling says so out loud, on the pull and on every later run that reuses the file.
     Both source files claimed it was loud and the cap had been folded into the same `break` as
     reaching the end of the data, so it returned identically.
+76. The Library is editable by the whole team (2026-09-16, `library_edit.py`). An open article is
+    drawn by sections (H1/H2, the same split in Python and in `agSections`), a pencil on each opens
+    an editor with two ways in: type over the section, or ask the model with the new
+    `edit_article_section` prompt, shown as a diff before "Use this". Save is the one writer: it
+    bumps `meta.version`, stamps who and when, keeps the body before in `previous.md` (Undo last
+    save), and pushes the row to the team's `library` table. A save from a stale version is refused
+    with who and when; the team's row is read too, so a save the poller has not mirrored yet cannot
+    be overwritten. Found on the way: NOTHING had ever pushed a `library` row, so no article had ever
+    left the Mac it was written on; `loop.save_to_library` now pushes when a workspace is connected.
+    No schema change: version, editor and the previous body ride in the existing `meta` jsonb. 59
+    checks in `test_library_edit.py`, 3 route tests, 14 screen tests.
 
 ### Not done, and said so
 
@@ -438,3 +449,34 @@ knowledge pack split in two.
   because it deserves a bound and nobody should discover it by accident.
 - The bundled app has no Playwright; it uses the shell's window. A source checkout without Playwright says plainly that a challenged site needs the app.
 - The wrapper's FAQ and close are not run through the source check, so a number there can be unsupported. The body is checked; the wrapper is the next place to check.
+
+## The source check moves after the body (2026-09-16)
+
+The planner's verify step is deleted (`write/verify_sources.py`, `prompts/write/verify-worthy.md`).
+An overnight experiment on three live runs measured it: 600 to 850 cards checked per article, about
+1,000 model calls, 2.5 to 4 hours, and its "not supported" verdicts right 30% of the time. Two bugs
+did most of the damage. A citation marker like `[11]` inside a card's text was read as the claim's
+number, so the page was rejected for lacking an "11" (426 cards across the three runs were sent to
+the checker only because of a marker). And one failing claim marked its url bad for every other card
+citing it, which flagged cards that were fine (20 of 20 sampled).
+
+**What replaced it: `write/source_check.py`, right after `write_body`, before `blend`.** Measured on
+the same three articles: 59 to 85 claims, 102 to 158 calls, 6 to 8.5 minutes.
+
+| Part | What it does | Where the rule is enforced |
+|---|---|---|
+| Filter | Only the claims the body carries. Markers and `[c<id>]` tags stripped before any number is looked for. Statistics by `checks/digit_guard`'s rules, plus named-source claims. The writer's own sums and comparisons are `derived` and recomputed from the cards in code, never judged against a page. Notes about the research itself are skipped. | code, `classify()` |
+| Check | One page fetch and one judge call per claim (`source-judge.md`, now reads the claim as the article states it). `supported` / `not_supported` / `unreadable`; unreadable (no load, or under 500 characters) is kept. No url-wide spread. Runs `llm.PARALLEL` claims at once. | `check_one()` |
+| Hunt | At most 10 `not_supported` claims, headings first then article order. Same `source-queries.md`, same queued search as enrich, same judge. A hit swaps the url on the card and in the provenance. | `hunt()`, `HUNT_CAP` |
+| Fix | One model call per affected section (`source-fix.md`): correct the figure to what the page states, else soften, else remove with a bridge from the paragraph's own words. Code diffs the paragraph: no new figure (only the page's quoted figure for a correction), no new tag, no added sentence, unlisted sentences kept word for word or joined by a connective. A rejected answer is retried once with the fault named, then the sentence is removed in code. | `validate_block()`, `fix_section()` |
+| Report | `artifacts/source-check.json` and `source-check.md`: counts, every verdict with its reason, every before/after. The chat gets ONE line ("Checked 59 facts: 50 fine, 3 new sources, 1 corrected, 3 softened, 2 removed") with a Details link that opens the report (17-agents.js: a substep carrying `artifact`). | `run()` |
+
+**Compatibility.** Three runs were paused with the old `work-verify.json` and `work-freeze.json` on
+disk. `freeze.run(plan)` no longer takes the police log and writes the same shape as before, so the
+cached freeze is reused as it is; the verify cache is never read. Tested in `test_source_check`
+("resuming a run that was paused with the OLD work-verify.json"). The draft's digit guard now also
+reads `source-check.json`, so a figure the check CORRECTED to the page's own sentence traces to
+evidence rather than failing as invented.
+
+Suites: `test_source_check` (new, 62 checks), `test_write`, `test_stations`, `test_prompts_parity`
+(`verify-worthy.md` recorded as not ported, `source-judge.md` as adapted), `test_agents.js`.

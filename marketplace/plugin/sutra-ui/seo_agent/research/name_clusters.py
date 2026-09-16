@@ -7,7 +7,6 @@ guarantees every member card lands under the H2 or exactly one H3 (local MECE).
 
 Reads: clusters + cards. Returns [{h2, job, card_ids, h3:[{h3, card_ids}]}].
 """
-from concurrent.futures import ThreadPoolExecutor
 
 from .. import llm
 from . import _common as _c
@@ -43,5 +42,5 @@ def run(clusters, cards, topic, angle, spine_ctx):
     ctx = {"asset": topic or _c.NOT_AVAILABLE, "angle": (angle or topic) or _c.NOT_AVAILABLE,
            "about": _c.na(spine_ctx.get("about")), "not_about": _c.na(spine_ctx.get("not_about"))}
     gloss_by_id = {c["id"]: c["gloss"] for c in cards}
-    with ThreadPoolExecutor(max_workers=llm.PARALLEL) as ex:
+    with llm.pool() as ex:
         return list(ex.map(lambda cl: _name_one(cl, gloss_by_id, ctx), clusters))

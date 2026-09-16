@@ -127,7 +127,9 @@ function agPath(url){
 /* Markdown blocks, split EXACTLY like editing/edit_block.py: paragraphs on blank
    lines, fences kept whole, ids p0..pN. The server addresses an edit by this id, so a
    splitter that disagreed by one would rewrite the wrong paragraph. */
-function agBlocks(md){
+/* Alternating [kind, text] pieces, kind "block" or "gap", losing nothing: joining every text
+   gives the document back byte for byte. edit_block.chunks in Python, line for line. */
+function agChunks(md){
   const lines = String(md || "").split(/(?<=\n)/);
   const out = []; let cur = [], kind = null, fence = null;
   for (const line of lines){
@@ -141,7 +143,42 @@ function agBlocks(md){
     cur.push(line);
   }
   if (cur.length) out.push([kind, cur.join("")]);
-  return out.filter(p => p[0] === "block").map(p => p[1]);
+  return out;
+}
+function agBlocks(md){
+  return agChunks(md).filter(p => p[0] === "block").map(p => p[1]);
+}
+
+/* The article's SECTIONS: split at every H1 and H2 block, H3s stay inside, anything before the
+   first heading is a section called "Opening". The Library's pencils address sections by these
+   ids (s0, s1, ...), and seo_agent/library_edit.sections is the same split in Python, so the
+   section a person clicks is the section the server rewrites. tests/fixtures/agents-sections.json
+   is a split the Python side produced, and test_agents.js holds this to it byte for byte. */
+function agSections(md){
+  const ch = agChunks(md);
+  const out = []; let cur = null;
+  ch.forEach((p, i) => {
+    if (p[0] !== "block") return;
+    const first = p[1].replace(/^\s+/, "").split("\n")[0].replace(/\s+$/, "");
+    const m = /^(#{1,2})\s+(.*)$/.exec(first);
+    if (cur === null || m){
+      cur = { id: "s" + out.length, heading: m ? m[2].trim() : "Opening", level: m ? m[1].length : 0, first: i, last: i };
+      out.push(cur);
+    } else cur.last = i;
+  });
+  return out.map(s => ({ id: s.id, heading: s.heading, level: s.level,
+                         text: ch.slice(s.first, s.last + 1).map(p => p[1]).join(""), first: s.first, last: s.last }));
+}
+/* One section replaced, everything else byte for byte. The gap after the section is kept, so the
+   new text should end the way the old one did (a newline); a missing one is added. */
+function agSpliceSection(md, sectionId, text){
+  const ch = agChunks(md);
+  const s = agSections(md).find(x => x.id === sectionId);
+  if (!s) return md;
+  const old = s.text, tail = old.slice(old.replace(/\n+$/, "").length);
+  let body = String(text || "").replace(/\n+$/, "");
+  body += tail || (s.last < ch.length - 1 ? "\n" : "");
+  return ch.map((p, i) => i === s.first ? body : (i > s.first && i <= s.last) ? "" : p[1]).join("");
 }
 
 /* ── state ─────────────────────────────────────────────────────────────────── */
@@ -183,6 +220,10 @@ function agS(){
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, busy: false, error: null,
     compForm: null, coForm: null, memForm: null, connForm: null, libOpen: null, libEdit: null, detailOpen: {},
+    /* the open Library article: the buffer being edited (draft, title, the version it was opened
+       at, dirty), the one section editor that is open, who last saved it, and a teammate's newer
+       save that blocked ours */
+    libBuf: null, libSec: null, libMeta: null, libConflict: null,
     fileEdit: null,
     prompts: null, promptEdit: null,   /* the Prompts tab's payload, and the open editor's draft */
     /* the team workspace. `ws` is GET /workspace exactly as the server sent it -- including the
@@ -241,7 +282,11 @@ function agStepsFromEvents(events, state){
       }
       case "substep_finished": {
         const p = (ev.parent && byId[ev.parent]) || lastStep;
-        if (p) p.subs.push({ label: ev.label || "", note: ev.note || "", ms: ev.ms });
+        /* `artifact` is the file a one-line substep stands for (the source check's report, say):
+           the row then carries a Details link that opens it, so a step that says one sentence
+           in the chat still has its full account one click away. */
+        if (p) p.subs.push({ label: ev.label || "", note: ev.note || "", ms: ev.ms,
+                             artifact: ev.artifact || "", view: ev.view || "" });
         else push({ kind: "note", text: ev.label || "", t: ev.t });
         break;
       }
@@ -515,15 +560,21 @@ function agGlyph(e){
   return "";
 }
 
-function agSubsHtml(subs, stepId, open){
+function agSubsHtml(subs, stepId, open, runId){
   if (!subs || !subs.length) return "";
   const show = open ? subs : subs.slice(-AG_MAX_SUBS);
   const hidden = subs.length - show.length;
+  /* A substep that stands for a file (s.artifact) gets a Details link in place of nothing: the
+     same ag-openlink the "Ready to read" row uses, opening the same artifact panel. One row in the
+     chat, the whole account behind it. */
+  const details = (s) => s.artifact
+    ? `<button class="ag-openlink tdetail" type="button" data-ag="open" data-arg="${agEsc(s.artifact)}" data-view="${agEsc(s.view || "article")}" data-run="${agEsc(runId || "")}">Details</button>`
+    : "";
   return `<div class="ag-subs">
     ${hidden > 0 ? `<button class="ag-more" type="button" data-ag="more" data-arg="${agEsc(stepId)}">${hidden} earlier …</button>` : ""}
     ${show.map(s => `<div class="trow ok"><span class="tstate" aria-hidden="true"></span>
       <span class="tname" title="${agEsc(s.label)}">${agEsc(s.label)}</span>
-      <span class="tsum" title="${agEsc(s.note)}">${agEsc(s.note)}</span>
+      <span class="tsum" title="${agEsc(s.note)}">${agEsc(s.note)}</span>${details(s)}
       ${s.ms ? `<span class="tverdict">${agEsc(agDur(s.ms))}</span>` : ""}</div>`).join("")}
   </div>`;
 }
@@ -561,7 +612,7 @@ function agEntryHtml(e, ctx){
         ${shown && e.lead ? `<div class="ag-body ${e.leadNote ? "" : "md"}">${e.leadNote ? agEsc(e.lead) : agMd(e.lead)}</div>` : ""}
         ${e.state === "bad" && e.reason ? `<div class="ag-body" style="color:var(--block)">${agEsc(e.reason)}</div>` : ""}
         ${e.state === "ok" && e.summary && !n ? `<div class="ag-body">${agEsc(e.summary)}</div>` : ""}
-        ${shown ? agSubsHtml(e.subs, e.id, open) : ""}
+        ${shown ? agSubsHtml(e.subs, e.id, open, ctx.run_id) : ""}
         ${e.state === "ok" && e.summary && n ? `<div class="ag-body" style="margin-top:6px">${agEsc(e.summary)}</div>` : ""}
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.id)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;
@@ -1006,7 +1057,8 @@ function agResetCompany(a){
     cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, compForm: null, coForm: null, memForm: null,
-    connForm: null, libOpen: null, libEdit: null, detailOpen: {}, fileEdit: null,
+    connForm: null, libOpen: null, libEdit: null, libBuf: null, libSec: null, libMeta: null, libConflict: null,
+    detailOpen: {}, fileEdit: null,
     prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
   });
 }
@@ -1349,6 +1401,21 @@ function agModelPickHtml(h, disabled){
   return `<select class="ag-model" data-agmodel aria-label="Model the agent runs on" title="Model the agent runs on"${disabled ? " disabled" : ""}>${opts}</select>`;
 }
 
+/* HOW MANY MODEL CALLS RUN AT ONCE, across every chat. Each running article gets its own share
+   (3 by default); this is the ceiling they add up to. Higher is faster with several chats open,
+   and reaches the account's usage limit sooner in wall-clock time. */
+const AG_SLOT_CHOICES = [3, 6, 9, 12];
+function agSlotsHtml(h){
+  const s = (h && h.slots) || {};
+  const cur = Number(s.max) || 9;
+  const per = Number(s.per_run) || 3;
+  const choices = AG_SLOT_CHOICES.includes(cur) ? AG_SLOT_CHOICES : AG_SLOT_CHOICES.concat([cur]).sort((x, y) => x - y);
+  const opts = choices.map(n => `<option value="${n}"${n === cur ? " selected" : ""}>${n} at once</option>`).join("");
+  return `<div class="row" style="margin-top:8px"><label class="ag-note" style="display:flex;gap:8px;align-items:center">Model calls across all chats
+      <select class="ag-model" data-agslots aria-label="Model calls at once across all chats">${opts}</select></label>
+    <div class="rd" style="margin-top:4px">Each chat that is writing gets up to ${per} calls at once; this is the most they can add up to. More is faster with several chats open, and reaches your usage limit sooner. If the limit is hit, a run pauses and carries on after the reset.</div></div>`;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
   const running = live && live.status === "running";
@@ -1564,8 +1631,16 @@ function agChecksHtml(checks){
   }).join("")}</div>`;
 }
 
+/* Before and after. The server's make_diff sends a LIST of {type, text} rows with a folded
+   {type: "context", count} standing in for a long unchanged run; an older shape was one unified
+   string, and both still render. (The list was drawn as "[object Object]" until 2026-09-16.) */
 function agDiffHtml(diff){
-  if (!diff) return "";
+  if (!diff || (Array.isArray(diff) && !diff.length)) return "";
+  if (Array.isArray(diff)){
+    return `<pre class="ag-diff">${diff.map(r => r.type === "context" ? `<span class="fold">… ${agEsc(agNum(r.count))} unchanged line${r.count === 1 ? "" : "s"}</span>`
+      : r.type === "add" ? `<span class="add">+ ${agEsc(r.text)}</span>`
+      : r.type === "remove" ? `<span class="del">- ${agEsc(r.text)}</span>` : `  ${agEsc(r.text)}`).join("\n")}</pre>`;
+  }
   return `<pre class="ag-diff">${String(diff).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${agEsc(l)}</span>`
     : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${agEsc(l)}</span>` : agEsc(l)).join("\n")}</pre>`;
 }
@@ -1711,6 +1786,83 @@ function agLibEditHtml(p, ed){
     </div></div>`;
 }
 
+/* The buffer the Library panel edits: what is on screen once a section has been changed and not
+   yet saved, else the saved article. One place decides it, so the section view, the whole-article
+   editor and the AI route all start from the same words. */
+function agLibText(p, a){
+  return (a && a.libBuf && typeof a.libBuf.draft === "string") ? a.libBuf.draft : ((p && p.data && p.data.text) || "");
+}
+
+/* The line under the title of an open Library article: version, who saved it last, and whether
+   a save from this Mac reaches the team. The team line is the server's own sentence
+   (library_edit.team_status), never guessed here. */
+function agLibMetaLine(a){
+  const m = (a && a.libMeta) || {};
+  const bits = [];
+  if (m.version) bits.push(`version ${agEsc(agNum(m.version))}`);
+  if (m.edited_by) bits.push(`saved by ${agEsc(m.edited_by)}${m.edited_at ? " " + agEsc(agAgo(m.edited_at)) : ""}`);
+  const team = m.team || null;
+  if (team) bits.push(team.member ? "shared with the team" : `<span title="${agEsc(team.why || "")}">on this Mac only</span>`);
+  return bits.join(" · ");
+}
+
+/* A teammate saved a newer version while this one was open. Nothing was written; the person
+   chooses. "Load their version" reopens the article; "Overwrite with mine" saves again with force. */
+function agLibConflictHtml(c, libId){
+  if (!c) return "";
+  return `<div class="ag-conflict" role="alert">
+    <b>Updated by ${agEsc(c.edited_by || "a teammate")} ${agEsc(agAgo(c.edited_at) || "just now")}.</b>
+    Your changes were not saved over theirs.
+    <div class="row"><button class="btn pri" type="button" data-ag="libreload" data-arg="${agEsc(libId)}">Load their version</button>
+      <button class="btn" type="button" data-ag="liboverwrite" data-arg="${agEsc(libId)}">Overwrite with mine</button></div></div>`;
+}
+
+/* The one open section editor. Two ways in, one way out: type over the text, or ask the model,
+   and either way the result lands in the buffer and nothing is saved until Save. The AI proposal
+   is shown as a diff first and only "Use this" takes it. */
+function agLibSecEditorHtml(s, ed, libId){
+  const mode = ed.mode === "ai" ? "ai" : "text";
+  const tabs = `<div class="row ag-tabs" role="tablist">
+      <button class="btn ${mode === "text" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "text"}" data-ag="libsecmode" data-arg="text">Edit the text</button>
+      <button class="btn ${mode === "ai" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "ai"}" data-ag="libsecmode" data-arg="ai">Edit with AI</button></div>`;
+  if (mode === "text"){
+    return `<div class="ag-editbox ag-secbox">${tabs}
+      <textarea class="tall" data-aglibsec aria-label="This section">${agEsc(ed.text == null ? s.text : ed.text)}</textarea>
+      <div class="row"><button class="btn pri" type="button" data-ag="libsecdone" data-arg="${agEsc(s.id)}">Done</button>
+        <button class="btn" type="button" data-ag="libseccancel">Cancel</button>
+        <span class="sp">Done puts it in the article. Save, below, keeps it.</span></div></div>`;
+  }
+  const pr = ed.proposal;
+  return `<div class="ag-editbox ag-secbox">${tabs}
+    <textarea data-aglibinstr placeholder="What should change in this section? Only this section is rewritten; the rest stays as it is." aria-label="Instruction">${agEsc(ed.instruction || "")}</textarea>
+    <div class="row"><button class="btn pri" type="button" data-ag="libsecai" data-arg="${agEsc(s.id)}" ${ed.busy ? "disabled" : ""}>${ed.busy ? "Rewriting…" : "Rewrite with AI"}</button>
+      <button class="btn" type="button" data-ag="libseccancel">Cancel</button>
+      <span class="sp">${ed.error ? `<span class="ag-err">${agEsc(ed.error)}</span>` : "No new figures. The rest of the article does not move."}</span></div>
+    ${pr ? `${agDiffHtml(pr.diff)}
+      <div class="row"><button class="btn pri" type="button" data-ag="libsecuse" data-arg="${agEsc(s.id)}">Use this</button>
+        <button class="btn" type="button" data-ag="libsecdrop">Discard</button>
+        <span class="sp">Use this puts it in the article. Save, below, keeps it.</span></div>` : ""}</div>`;
+}
+
+/* A saved article, read by sections, a pencil on each. Anyone on the team can open one and change
+   it; Save writes it here and to the team's workspace. The buffer (a.libBuf) is what is drawn once
+   anything changed, so a redraw between keystrokes cannot lose an edit. */
+function agLibArticleHtml(p, a){
+  const text = agLibText(p, a);
+  const secs = agSections(text);
+  if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
+  const ed = a.libSec;
+  const dirty = !!(a.libBuf && a.libBuf.dirty);
+  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words · ${secs.length} section${secs.length === 1 ? "" : "s"}${agLibMetaLine(a) ? " · " + agLibMetaLine(a) : ""}${dirty ? ` · <b>unsaved changes</b>` : ""}</p>
+    ${agLibConflictHtml(a.libConflict, p.libId)}
+    <div class="ag-doc">${secs.map(s => {
+      const editing = ed && ed.id === s.id;
+      return `<div class="ag-sec ${editing ? "editing" : ""}" data-sec="${agEsc(s.id)}">${agMd(s.text)}
+        ${editing ? "" : `<button class="ib ag-editbtn ag-pencil" type="button" data-ag="libsec" data-arg="${agEsc(s.id)}" aria-label="Edit ${agEsc(s.heading)}" title="Edit this section, by hand or with AI">${AG_ICON.pencil}</button>`}
+        ${editing ? agLibSecEditorHtml(s, ed, p.libId) : ""}</div>`;
+    }).join("")}</div>`;
+}
+
 /* One idea, with everything that argues for it. Every field here traces to a step that produced
    it, so a person can tell an idea backed by fifteen competitor pages from one a model liked. */
 function agIdeaHtml(d){
@@ -1783,10 +1935,19 @@ function agPanelHtml(a){
       <button class="btn" type="button" data-ag="changes" data-text="About the plan: ">Ask for changes</button>
       <span class="sp">${p.dirty ? "Reordered · saved on approve" : ""}</span>`;
   } else if (p.view === "article"){
+    /* A Library article is drawn by SECTIONS with a pencil each (agLibArticleHtml); a run's draft
+       keeps the per-block view. The whole-article editor (libedit) is still there for a title
+       change or a big rewrite, and both save through the same route with the same version check. */
     body = (p.libId && a.libEdit) ? agLibEditHtml(p, a.libEdit)
+      : p.libId ? agLibArticleHtml(p, a)
       : agArticleHtml(p.data, a.artEdit, a.lastEdit, !!p.readOnly, { links: p.links, write: p.write });
     if (p.readOnly) footer = a.libEdit ? ""
-      : `${p.libId ? `<button class="btn pri" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit</button>` : ""}<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+      : p.libId ? `<button class="btn pri" type="button" data-ag="libsavebuf" data-arg="${agEsc(p.libId)}" ${(a.libBuf && a.libBuf.dirty && !a.busy) ? "" : "disabled"}>${a.busy ? "Saving…" : "Save"}</button>
+          ${a.libBuf && a.libBuf.dirty ? `<button class="btn" type="button" data-ag="libdiscard">Discard changes</button>` : ""}
+          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
+          ${a.libMeta && a.libMeta.has_previous ? `<button class="btn" type="button" data-ag="librevert" data-arg="${agEsc(p.libId)}" title="Bring back the version before the last save">Undo last save</button>` : ""}
+          <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`
+      : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
       ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
@@ -2174,10 +2335,15 @@ function agDrawMap(){
   }
 }
 
-/* What is worth writing about, and what has been written. The one row a person acts on is the
-   next open idea, so it sits at the top as a chip that WRITES THE MESSAGE. The chip carries the
-   idea's id in a data attribute, never in the prose, so nothing downstream has to read an id out
-   of a sentence and decide to look it up. */
+/* What is worth writing about, and what has been written. One table, every idea on the sheet,
+   and a "Write this" button on every row that WRITES THE MESSAGE into a fresh chat. The button
+   carries the idea's id in a data attribute, never in the prose, so nothing downstream has to
+   read an id out of a sentence and decide to look it up.
+
+   The card that used to sit above the table and pick "the idea to write next" is gone (owner,
+   2026-09-16): the person picks the row, the sheet does not pick for them. With it went the only
+   place a row could be dropped from, so the table now lists dropped rows by default too, each
+   with its status pill, rather than hiding them behind the "To write" filter. */
 function agAssetsHtml(as, a){
   if (!as) return `<div class="ag-view"><h2>Asset ideas</h2><p class="lead">Reading…</p></div>`;
   const c = as.counts || {};
@@ -2191,10 +2357,12 @@ function agAssetsHtml(as, a){
         <span class="ag-sub">It runs in the chat, so you can watch it and answer as it goes.</span>
       </div></div></div></div>`;
 
-  const nx = as.next;
   const blocked = as.methods_blocked || [];
   const rows = as.rows || [];
-  const filt = (a && a.assetFilter) || "open";
+  /* "all" by default. The default used to be "open", which hid every dropped and written row
+     unless somebody found the filter; a dropped idea that nobody can see is an idea nobody can
+     bring back. Every row shows, and its pill says where it stands. */
+  const filt = (a && a.assetFilter) || "all";
   const matching = rows.filter(r => filt === "all" ? true : (r.status || "open") === filt);
   // Paged, and not optionally. The owner's own run produced 1,892 ideas; drawn in one go that is
   // 41,000 DOM nodes and a page 165,000 pixels tall, which is not a list anybody can use. Found by
@@ -2202,57 +2370,51 @@ function agAssetsHtml(as, a){
   // there is one idiom on this screen and not two.
   const off = Math.min((a && a.assetOffset) || 0, Math.max(0, matching.length - 1));
   const shown = matching.slice(off, off + AG_IDEA_LIMIT);
-  /* "Next up" told him nothing about WHERE this idea came from ("okay next up, oh this is the
-     next topic, all of that's not clear" -- owner, 2026-09-09). It is the top-ranked idea of the
-     ones still open, so the card says exactly that and how many are behind it. */
-  const open1 = c.open || 0;
   return `<div class="ag-view wide"><h2>Asset ideas</h2>
-    <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}.
+    <p class="lead">${agEsc(agNum(as.total))} ideas${c.done ? `, ${agEsc(agNum(c.done))} written` : ""}${c.dropped ? `, ${agEsc(agNum(c.dropped))} dropped` : ""}.
       ${as.methods_line ? agEsc(as.methods_line)
         : blocked.length ? `${3 - blocked.length} of 3 methods contributed; ${agEsc(blocked.map(agMethodName).join(" and "))} did not.`
-        : "All three methods contributed."}</p>
-
-    ${nx ? `<div class="ag-nextidea">
-      <div class="nl">The idea to write next${open1 ? `<span class="nq">top of the ${agEsc(agNum(open1))} still to write</span>` : ""}</div>
-      <div class="nt">${agEsc(nx.title)}</div>
-      <div class="nd">${agEsc(nx.angle || "")}</div>
-      <dl class="nf">
-        ${nx.format ? `<div><dt>Shape</dt><dd>${agEsc(nx.format)}</dd></div>` : ""}
-        ${(nx.method || []).length ? `<div><dt>Found by</dt><dd>${agEsc((nx.method || []).map(agMethodName).join(" and "))}</dd></div>` : ""}
-        ${nx.linkability && nx.linkability.score ? `<div><dt>Would anyone cite it</dt><dd>${agEsc(nx.linkability.score)} out of ${agEsc(nx.linkability.of || 4)}</dd></div>` : ""}
-      </dl>
-      <div class="ag-editrow">
-        <button class="btn pri" type="button" data-ag="ideawrite" data-arg="${agEsc(nx.id)}"
-          data-text="${agEsc("Write this asset idea: " + nx.title)}">Write this one</button>
-        <button class="btn" type="button" data-ag="ideadrop" data-arg="${agEsc(nx.id)}">Not this one</button>
-      </div>
-      <p class="nh"><b>Write this one</b> opens the chat and starts the research on it.
-        <b>Not this one</b> drops it off the sheet and the next-ranked idea moves up here.</p>
-      <div class="nw">This can still be turned down later. The topic gate reads the live search
-        results, and if they argue for a different intent than this idea assumes, it stops rather
-        than write the wrong article.</div>
-    </div>` : `<div class="ag-row"><div class="ri"><div class="rn">Nothing left to write</div>
-        <div class="rd">Every idea on the sheet is written or dropped. Ask for the ideas to be rebuilt when you want more.</div></div></div>`}
+        : "All three methods contributed."}
+      Press <b>Write this</b> on a row to start a new chat with that idea typed in; you press Send.</p>
 
     <div class="ag-editrow" style="margin:14px 0 8px">
-      ${[["open", "To write"], ["done", "Written"], ["dropped", "Dropped"], ["all", "All"]].map(f =>
-        `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
+      ${[["all", "All"], ["open", "To write"], ["done", "Written"], ["dropped", "Dropped"]].map(f =>
+        `<button class="btn ${filt === f[0] ? "pri" : ""}" type="button" data-ag="assetfilter" data-arg="${f[0]}" aria-pressed="${filt === f[0]}">${f[1]}${f[0] !== "all" ? ` ${agEsc(agNum(c[f[0]] || 0))}` : ""}</button>`).join("")}
     </div>
 
     ${matching.length > AG_IDEA_LIMIT ? `<div class="ag-pager" style="margin:0 0 8px">
       <span>${agEsc(agNum(off + 1))}–${agEsc(agNum(Math.min(matching.length, off + shown.length)))} of ${agEsc(agNum(matching.length))}</span>
       <button class="btn" type="button" data-ag="ideaprev" ${off <= 0 ? "disabled" : ""}>Previous</button>
       <button class="btn" type="button" data-ag="ideanext" ${off + shown.length >= matching.length ? "disabled" : ""}>Next</button></div>` : ""}
-    ${shown.length ? `<table class="ag-pages"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th></tr></thead><tbody>${shown.map(r => `<tr>
+    ${shown.length ? `<table class="ag-pages ag-ideas"><thead><tr><th>Idea</th><th>Shape</th><th>Found by</th><th>Cite it?</th><th>Have it?</th><th>Write</th></tr></thead><tbody>${shown.map(r => `<tr>
       <td><button class="ag-pagelink" type="button" data-ag="ideaopen" data-arg="${agEsc(r.id)}">${agEsc(r.title || r.id)}</button>
         <div class="h">${agEsc((r.angle || "").slice(0, 110))}</div>
-        ${r.status === "done" ? `<span class="pill p-ok">written</span>` : r.status === "dropped" ? `<span class="pill p-mut">dropped</span>` : ""}</td>
+        ${agIdeaPill(r.status)}</td>
       <td class="m">${agEsc(r.format || "")}</td>
       <td class="m">${agEsc((r.method || []).map(agMethodName).join(", "))}</td>
       <td class="m">${r.linkability && r.linkability.score != null ? agEsc(r.linkability.score) + "/" + agEsc(r.linkability.of || 4) : "—"}</td>
-      <td class="m">${agEsc((r.reuse && r.reuse.verdict) || "—")}</td></tr>`).join("")}</tbody></table>`
+      <td class="m">${agEsc((r.reuse && r.reuse.verdict) || "—")}</td>
+      <td class="act"><button class="btn" type="button" data-ag="ideawrite" data-arg="${agEsc(r.id)}"
+          data-text="${agEsc(agIdeaPrompt(r))}" aria-label="${agEsc("Write this: " + (r.title || r.id))}">Write this</button></td></tr>`).join("")}</tbody></table>`
       : `<div class="ag-row"><div class="ri"><div class="rd">Nothing in this list.</div></div></div>`}
   </div>`;
+}
+
+/* The message the button types. ONE format, the one every "Write this asset idea" chat on this
+   install already has as its title, so the sheet, the chat list and the run's request all read
+   the same. The id is not in the words: it rides beside them as a.chipIdea (see agAction
+   "ideawrite" and agSend), and the server writes it onto the run's state. */
+function agIdeaPrompt(r){
+  return "Write this asset idea: " + (r && (r.title || r.id) || "");
+}
+
+/* Where a row stands, as a pill. Open rows get none: on a sheet where nearly every row is still
+   to write, a pill on each would say nothing. The rest are the statuses _common.STATUSES names. */
+function agIdeaPill(status){
+  if (status === "done") return `<span class="pill p-ok">written</span>`;
+  if (status === "dropped") return `<span class="pill p-mut">dropped</span>`;
+  if (status === "building") return `<span class="pill p-acc">being written</span>`;
+  return "";
 }
 
 /* The method names as a person would say them, never as the folder is called. */
@@ -2762,7 +2924,8 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
     <div class="ag-row"><div class="ri"><div class="rn">${prov ? agEsc(AG_PROVIDER_LABEL[prov] || prov) : "No model available"}
         <span class="ag-status"><i class="dot ${prov ? "ok" : "bad"}"></i>${prov === "claude-cli" ? "billed to your Claude subscription" : prov === "codex-cli" ? "your OpenAI sign-in" : prov === "deepseek" ? "your DeepSeek balance" : prov ? "connected" : "not signed in"}</span></div>
       <div class="rd">${prov ? "The same providers and sign-ins Sutra's chat uses. Pick one here or next to the message box." : "Open a terminal, run <code>claude</code> once and sign in. This screen will notice."}</div>
-      ${prov ? `<div class="row" style="margin-top:8px">${agModelPickHtml(h, false)}</div>` : ""}</div></div>
+      ${prov ? `<div class="row" style="margin-top:8px">${agModelPickHtml(h, false)}</div>` : ""}
+      ${prov ? agSlotsHtml(h) : ""}</div></div>
     <h3 class="sec">DataForSEO · real search numbers</h3>
     <div class="ag-row"><div class="ri"><div class="rn">DataForSEO <span class="ag-status"><i class="dot ${dfs ? "ok" : "warn"}"></i>${dfs ? "connected" : "not connected"}</span></div>
       <div class="rd">Real search numbers: how many people search, how hard it is to rank, and who ranks now. Research needs it. Under $1 an article.</div>
@@ -3351,6 +3514,7 @@ async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
+  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -3386,6 +3550,7 @@ async function agOpenLibMilestone(itemId, key, label){
   a.panel = { run_id: null, name, view: AG_MILE_VIEW[key] || "", data: null, loading: true, error: null,
               title: label || AG_MILE_LABEL[key] || key, subtitle: "", readOnly: true, libMile: key };
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
+  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -3402,6 +3567,63 @@ async function agOpenLibMilestone(itemId, key, label){
     }
   }
   agDraw();
+}
+
+/* Opening a Library article. Always a fresh read, so what he sees is the article as it is now,
+   including a teammate's save the poller mirrored a moment ago. The buffer starts clean at the
+   version read, and that version is what a save is checked against. */
+async function agLibOpen(itemId){
+  const a = agS();
+  const it = await agApi(`/library/${encodeURIComponent(itemId)}`);
+  a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false,
+              readOnly: true, libId: it.id, title: it.title,
+              subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
+  a.libBuf = { draft: it.draft || "", title: it.title || "", base_version: Number(it.version || 0), dirty: false };
+  a.libMeta = { version: Number(it.version || 0), edited_by: it.edited_by || "", edited_at: it.edited_at || "",
+                team: it.team || null, has_previous: typeof it.previous_draft === "string" && it.previous_draft.length > 0 };
+  a.libEdit = null; a.libSec = null; a.libConflict = null;
+  return it;
+}
+
+/* A changed article into the buffer. Nothing is saved: the footer's Save is what keeps it. */
+function agLibTake(a, draft){
+  const base = a.libBuf ? a.libBuf.base_version : 0;
+  const title = a.libBuf ? a.libBuf.title : ((a.panel && a.panel.title) || "");
+  a.libBuf = { draft, title, base_version: base, dirty: true };
+}
+
+function agLibSavedWord(m){
+  const t = (m && m.team) || {};
+  if (t.synced) return "Saved. The team sees it in a moment.";
+  if (t.queued) return "Saved here. It reaches the team when the network is back.";
+  return t.why ? "Saved here. " + t.why : "Saved";
+}
+
+/* THE ONE SAVE. Both editors and the overwrite button come through here. It carries the version
+   the article was opened at; the server refuses to write over a newer one and answers with who
+   and when, which lands in a.libConflict for the person to decide. Returns true (saved), false
+   (a conflict is on screen), or the sentence to show when it failed. */
+async function agLibSave(a, itemId, draft, title, force){
+  a.busy = true; agDraw();
+  try {
+    const body = { draft, title, force: !!force };
+    if (a.libBuf && a.libBuf.base_version != null) body.base_version = a.libBuf.base_version;
+    const m = await agPostApi(`/library/${encodeURIComponent(itemId)}/save`, body);
+    if (m && m.conflict){ a.libConflict = m.conflict; return false; }
+    a.library = await agApi("/library").catch(() => a.library);
+    if (a.panel){
+      a.panel.data = { text: draft };
+      a.panel.title = (m && m.title) || title;
+      a.panel.subtitle = `${agNum(m && m.words)} words · ${(m && m.status) || "draft"} · edited by you`;
+    }
+    a.libBuf = { draft, title: (m && m.title) || title, base_version: Number((m && m.version) || 0), dirty: false };
+    a.libMeta = { version: Number((m && m.version) || 0), edited_by: (m && m.edited_by) || "", edited_at: (m && m.edited_at) || "",
+                  team: (m && m.team) || (a.libMeta && a.libMeta.team) || null, has_previous: true };
+    a.libSec = null; a.libConflict = null;
+    agToast(agLibSavedWord(m));
+    return true;
+  } catch (e) { return agWhy(e); }
+  finally { a.busy = false; }
 }
 
 async function agOpenBrandFile(name, back, label){
@@ -3901,7 +4123,11 @@ async function agAction(act, el){
       else await agOpenArtifact(run, arg, el.getAttribute("data-view") || "article");
       break;
     }
-    case "closepanel": a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null; agDraw(); break;
+    case "closepanel": {
+      if (a.libBuf && a.libBuf.dirty && typeof confirm === "function" && !confirm("Close without saving? The changes to this article are lost.")) break;
+      a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null;
+      a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null; agDraw(); break;
+    }
     case "back": {
       const live = agLiveRun();
       if (live && live.waiting_on && live.waiting_on.artifact === "brand") await agOpenArtifact(live.run_id, "brand", "brand_pack");
@@ -3931,18 +4157,16 @@ async function agAction(act, el){
     }
     case "changes": a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
 
-    /* The chip that writes the message. It fills the composer with WORDS, and separately parks the
-       idea's ID on the state. The id then travels beside the message on send, never inside it, so
-       nothing downstream has to read an id out of prose. See agSend. */
+    /* "Write this" on a row of the sheet. It opens a NEW chat (the same reset as "new", so a run
+       waiting in whatever chat was open cannot swallow this as its answer), fills the composer
+       with WORDS, and separately parks the idea's ID on the state. Nothing is sent: the person
+       reads the message and presses Send. The id then travels beside the message on send, never
+       inside it, so nothing downstream has to read an id out of prose. See agSend. */
     case "ideawrite": {
+      a.chatId = null; a.chat = null; a.panel = null; a.picked = null; a.guideDive = null;
       a.draft = el.getAttribute("data-text") || "";
       a.chipIdea = arg;
-      a.view = "chat"; a.panel = null; a.focusComposer = true;
-      agDraw(true); break;
-    }
-    case "ideadrop": {
-      try { a.assets = await agPostApi(`/assets/${encodeURIComponent(arg)}/status`, { status: "dropped" }); }
-      catch (e) { agToast("Could not drop it: " + (e && e.message || e)); }
+      a.view = "chat"; a.focusComposer = true;
       agDraw(true); break;
     }
     case "assetfilter": a.assetFilter = arg; a.assetOffset = 0; agDraw(true); break;
@@ -4173,13 +4397,73 @@ async function agAction(act, el){
       catch (e) { agToast("Could not change: " + (e.message || e)); }
       agDraw(); break;
     }
-    case "libopen": {
-      try { const it = await agApi(`/library/${encodeURIComponent(arg)}`);
-        a.panel = { run_id: it.run_id, name: "draft.md", view: "article", data: { text: it.draft || "" }, loading: false,
-                    readOnly: true, libId: it.id, title: it.title, subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
-        a.libEdit = null; }
+    case "libopen": case "libreload": {
+      try { await agLibOpen(arg); }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
       agDraw(); break;
+    }
+    /* ── one section of a Library article ──────────────────────────────────── */
+    case "libsec": {
+      a.libSec = { id: arg, mode: "text", text: null, instruction: "", busy: false, error: "", proposal: null };
+      agDraw();
+      setTimeout(() => { const t = document.querySelector("[data-aglibsec]"); if (t) t.focus(); }, 0);
+      break;
+    }
+    case "libsecmode": { if (a.libSec){ a.libSec.mode = arg === "ai" ? "ai" : "text"; a.libSec.error = ""; } agDraw(); break; }
+    case "libseccancel": a.libSec = null; agDraw(); break;
+    case "libsecdone": {
+      const ed = a.libSec; if (!ed || !a.panel) break;
+      const cur = agLibText(a.panel, a);
+      const s = agSections(cur).find(x => x.id === arg); if (!s) { a.libSec = null; agDraw(); break; }
+      const text = ed.text == null ? s.text : String(ed.text);
+      if (!text.trim()){ ed.error = "A section cannot be emptied here. Delete its words in the whole-article editor instead."; agDraw(); break; }
+      agLibTake(a, agSpliceSection(cur, arg, text));
+      a.libSec = null; agDraw(); break;
+    }
+    case "libsecai": {
+      const ed = a.libSec; if (!ed || !a.panel) break;
+      /* the input listener keeps ed.instruction current; the live box is read too in case a
+         keystroke and the click landed in the same tick */
+      const ta = typeof document !== "undefined" ? document.querySelector("[data-aglibinstr]") : null;
+      const instruction = String((ta && ta.value) || ed.instruction || "").trim();
+      if (!instruction){ ed.error = "Say what should change in this section."; agDraw(); break; }
+      ed.instruction = instruction; ed.busy = true; ed.error = ""; ed.proposal = null; agDraw();
+      try {
+        const r = await agPostApi(`/library/${encodeURIComponent(a.panel.libId)}/ai-section`,
+                                  { draft: agLibText(a.panel, a), section_id: arg, instruction });
+        if (a.libSec === ed){ ed.proposal = r; ed.busy = false; }
+      } catch (e) { if (a.libSec === ed){ ed.busy = false; ed.error = agWhy(e); } }
+      agDraw(); break;
+    }
+    case "libsecuse": {
+      const ed = a.libSec; if (!ed || !ed.proposal || !a.panel) break;
+      agLibTake(a, agSpliceSection(agLibText(a.panel, a), arg, ed.proposal.proposed));
+      a.libSec = null; agToast("Section replaced. Save to keep it."); agDraw(); break;
+    }
+    case "libsecdrop": { if (a.libSec){ a.libSec.proposal = null; } agDraw(); break; }
+    case "libsavebuf": {
+      if (!a.libBuf || !a.libBuf.dirty || a.busy) break;
+      await agLibSave(a, arg, a.libBuf.draft, a.libBuf.title, false);
+      agDraw(); break;
+    }
+    case "liboverwrite": {
+      if (!a.libBuf) break;
+      await agLibSave(a, arg, a.libBuf.draft, a.libBuf.title, true);
+      agDraw(); break;
+    }
+    case "libdiscard": {
+      if (a.libBuf && a.panel){ a.libBuf = { draft: (a.panel.data && a.panel.data.text) || "", title: a.panel.title || "",
+                                            base_version: a.libBuf.base_version, dirty: false }; }
+      a.libSec = null; a.libConflict = null; agDraw(); break;
+    }
+    case "librevert": {
+      if (a.busy) break;
+      if (typeof confirm === "function" && !confirm("Bring back the version before the last save? The current one becomes the one you can undo to.")) break;
+      a.busy = true; agDraw();
+      try { const m = await agPostApi(`/library/${encodeURIComponent(arg)}/revert`, {});
+        await agLibOpen(arg); agToast(agLibSavedWord(m)); }
+      catch (e) { agToast("Could not undo: " + agWhy(e)); }
+      a.busy = false; agDraw(); break;
     }
     case "libmile": {
       const key = el.getAttribute("data-name") || "";
@@ -4190,7 +4474,9 @@ async function agAction(act, el){
     }
     case "libedit": {
       const p2 = a.panel; if (!p2) break;
-      a.libEdit = { title: p2.title || "", draft: (p2.data && p2.data.text) || "", busy: false, error: "" };
+      /* starts from the buffer, so a section already changed by hand is not thrown away */
+      a.libEdit = { title: (a.libBuf && a.libBuf.title) || p2.title || "", draft: agLibText(p2, a), busy: false, error: "" };
+      a.libSec = null;
       agDraw();
       setTimeout(() => { const t = document.querySelector("[data-aglibbody]"); if (t) t.focus(); }, 0);
       break;
@@ -4201,16 +4487,10 @@ async function agAction(act, el){
       const title = String(ed.title || "").trim(), draft = String(ed.draft || "");
       if (!draft.trim()){ a.libEdit = { title, draft, busy: false, error: "An empty article is not a save." }; agDraw(); break; }
       a.libEdit = { title, draft, busy: true, error: "" }; agDraw();
-      try {
-        const m = await agPostApi(`/library/${encodeURIComponent(arg)}/save`, { draft, title });
-        a.library = await agApi("/library").catch(() => a.library);
-        if (a.panel){
-          a.panel.data = { text: draft };
-          a.panel.title = (m && m.title) || title;
-          a.panel.subtitle = `${agNum(m && m.words)} words · ${(m && m.status) || "draft"} · edited by you`;
-        }
-        a.libEdit = null; agToast("Saved");
-      } catch (e) { a.libEdit = { title, draft, busy: false, error: String((e && e.message) || e) }; }
+      const saved = await agLibSave(a, arg, draft, title, false);
+      if (saved === true) a.libEdit = null;
+      else if (saved === false) a.libEdit = null;                 /* a teammate's newer version: the conflict box takes over */
+      else a.libEdit = { title, draft, busy: false, error: saved };
       agDraw(); break;
     }
     case "libstatus": {
@@ -4659,6 +4939,8 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     }
     else if (t.matches("[data-aglibtitle]")){ if (a.libEdit) a.libEdit.title = t.value; }
     else if (t.matches("[data-aglibbody]")){ if (a.libEdit) a.libEdit.draft = t.value; }
+    else if (t.matches("[data-aglibsec]")){ if (a.libSec) a.libSec.text = t.value; }
+    else if (t.matches("[data-aglibinstr]")){ if (a.libSec){ a.libSec.instruction = t.value; a.libSec.error = ""; } }
     else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
     else if (t.matches("[data-agprompttext]")){ if (a.promptEdit){ a.promptEdit.text = t.value; a.promptEdit.msg = ""; } }
     else if (t.matches("[data-agdfs]")){
@@ -4698,6 +4980,12 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
         .then(m => { a.health = Object.assign({}, a.health, { model: m, model_provider: m.running }); })
         .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not switch model: " + ((e && e.message) || e) }); })
         .then(() => agApi("/health").then(h => { a.health = h; }).catch(() => {}))
+        .then(() => agDraw(true));
+    }
+    else if (t.matches("[data-agslots]")){
+      agPostApi("/slots", { max: Number(t.value) })
+        .then(s => { a.health = Object.assign({}, a.health, { slots: s }); })
+        .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not save that: " + ((e && e.message) || e) }); })
         .then(() => agDraw(true));
     }
   });

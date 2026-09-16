@@ -1343,50 +1343,109 @@ test("an artifact_ready in the middle of a run does not become the end of the tr
   assert.ok(research && !research.waiting, "the research stage is NOT marked as waiting for him");
 });
 
-/* ── the Asset ideas tab: what "Next up" is offering ──────────────────────── */
-/* "okay next up, oh this is the next topic, all of that's not clear" (owner, 2026-09-09). Two
-   uppercase words over a title read as a section label, not an offer: it said neither WHICH idea
-   this is nor what pressing either button would do. */
+/* ── the Asset ideas tab: one table, every row, a Write this button on each ─ */
+/* The card that picked "the idea to write next" is gone (owner, 2026-09-16). The person picks
+   the row. Dropped rows are listed with the rest, with their pill, instead of hidden behind the
+   "To write" filter that used to be the default. The fixture mirrors the owner's real sheet, where
+   the five top-ranked rows had been dropped and were nowhere to be seen. */
 const ASSETS = {
-  built: true, total: 1892, counts: { open: 214, done: 6, dropped: 3 },
+  built: true, total: 1892, counts: { open: 1886, done: 1, dropped: 5 },
   methods_line: "All three methods contributed.",
-  next: { id: "a-17", title: "The hiring-assessment benchmark report",
-          angle: "Nobody has published the pass rates by role.",
-          format: "Original research", method: ["competitors", "trends"],
-          linkability: { score: 3, of: 4 } },
-  rows: [{ id: "a-17", title: "The hiring-assessment benchmark report", angle: "Pass rates by role.",
+  rows: [{ id: "a1001", title: "The Real Cost of Recruitment in 2026", angle: "Refreshes the 2022 figure.",
+           status: "dropped", format: "News article", method: ["competitor-study"],
+           linkability: { score: null, of: 4 }, reuse: { verdict: "build from parts" } },
+         { id: "a1006", title: "The hiring-assessment benchmark report", angle: "Pass rates by role.",
            status: "open", format: "Original research", method: ["competitors"],
-           linkability: { score: 3, of: 4 }, reuse: { verdict: "no" } }],
+           linkability: { score: 3, of: 4 }, reuse: { verdict: "no" } },
+         { id: "a1007", title: "What a first-round interview is for", angle: "Written already.",
+           status: "done", format: "Guide", method: ["trends"],
+           linkability: { score: 4, of: 4 }, reuse: { verdict: "no" } }],
 };
-test("the next idea says which idea it is, not just Next up", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("the next-idea card is gone from the Asset ideas tab, and so is its drop button", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;
   const html = A.agAssetsHtml(ASSETS, a);
-  assert.ok(/The idea to write next/.test(html), "it is named as an idea, not labelled Next up");
-  assert.ok(!/>Next up</.test(html), "and the bare label is gone");
-  assert.ok(/top of the 214 still to write/.test(html), "and it says where this one came from");
-  assert.ok(/The hiring-assessment benchmark report/.test(html), "the idea itself");
+  assert.ok(!/ag-nextidea/.test(html), "no card");
+  assert.ok(!/The idea to write next|Write this one|Not this one|Nothing left to write/.test(html),
+            "none of its words either");
+  assert.ok(!/data-ag="ideadrop"/.test(html), "and nothing drops a row from this screen");
+  assert.ok(SRC.indexOf('case "ideadrop"') === -1, "the handler went with it");
+  const css = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+  assert.ok(!/\.ag-nextidea/.test(css), "and so did its CSS");
 });
-test("the next idea's evidence is labelled, not one dot-separated run", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("dropped ideas are listed with the rest by default, each with its status pill", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;   /* nobody has touched a filter */
   const html = A.agAssetsHtml(ASSETS, a);
-  const card = html.slice(html.indexOf("ag-nextidea"), html.indexOf("ag-editrow", html.indexOf("ag-nextidea")));
-  assert.ok(/<dt>Shape<\/dt><dd>Original research<\/dd>/.test(card), "the shape is under its own label");
-  assert.ok(/<dt>Found by<\/dt>/.test(card) && /the competitor study and what your audience argues about/.test(card),
-            "and so is where it came from, in words: " + card.slice(-260));
-  assert.ok(/<dt>Would anyone cite it<\/dt><dd>3 out of 4<\/dd>/.test(card),
-            "and the score is attached to the question it answers");
+  assert.ok(/The Real Cost of Recruitment in 2026/.test(html), "the dropped row is on the table");
+  assert.ok(/<span class="pill p-mut">dropped<\/span>/.test(html), "and says it was dropped");
+  assert.ok(/The hiring-assessment benchmark report/.test(html) && /What a first-round interview is for/.test(html),
+            "next to the open and the written ones");
+  assert.ok(/<span class="pill p-ok">written<\/span>/.test(html), "which keeps its own pill");
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 3, "three rows, none hidden");
+  assert.ok(/1,892 ideas, 1 written, 5 dropped\./.test(html), "and the lead counts the dropped ones: " + html.slice(html.indexOf("<p class=\"lead\">"), html.indexOf("<p class=\"lead\">") + 120));
+  assert.ok(/data-ag="assetfilter" data-arg="all" aria-pressed="true"/.test(html), "All is the filter that is on");
 });
-test("the next idea says what each of its two buttons does", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
+test("the filters still narrow the list, dropped rows included", () => {
+  const a = agReset(); a.assetOffset = 0;
+  a.assetFilter = "dropped";
+  let html = A.agAssetsHtml(ASSETS, a);
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 1, "only the dropped row");
+  assert.ok(/a1001/.test(html) && !/a1006/.test(html));
+  a.assetFilter = "open";
+  html = A.agAssetsHtml(ASSETS, a);
+  assert.strictEqual((html.match(/data-ag="ideaopen"/g) || []).length, 1, "only the open row");
+  assert.ok(/a1006/.test(html) && !/a1001/.test(html));
+  a.assetFilter = "done";
+  html = A.agAssetsHtml(ASSETS, a);
+  assert.ok(/a1007/.test(html) && !/a1006/.test(html), "only the written row");
+});
+test("every row, dropped or not, has a Write this button carrying the id and the one prompt", () => {
+  const a = agReset(); a.assetFilter = null; a.assetOffset = 0;
   const html = A.agAssetsHtml(ASSETS, a);
-  assert.ok(/starts the research on it/.test(html), "what Write this one does");
-  assert.ok(/drops it off the sheet and the next-ranked idea moves up/.test(html), "and what Not this one does");
-  assert.ok(/data-ag="ideawrite"/.test(html) && /data-ag="ideadrop"/.test(html), "both still act");
+  assert.strictEqual((html.match(/data-ag="ideawrite"/g) || []).length, 3, "one per row");
+  assert.ok(/<th>Write<\/th>/.test(html), "in its own column");
+  assert.ok(/data-ag="ideawrite" data-arg="a1006"\s+data-text="Write this asset idea: The hiring-assessment benchmark report"/.test(html),
+            "the open row's button names its id and types the prompt this install's chats already use");
+  assert.ok(/data-ag="ideawrite" data-arg="a1001"\s+data-text="Write this asset idea: The Real Cost of Recruitment in 2026"/.test(html),
+            "and the dropped row gets the same button");
+  assert.ok(/aria-label="Write this: The hiring-assessment benchmark report"/.test(html),
+            "a screen reader hears which idea the button is for");
+  assert.ok(/<td class="act"><button class="btn" type="button" data-ag="ideawrite"/.test(html), "a real button, so Tab reaches it");
+  assert.strictEqual(A.agIdeaPrompt({ id: "a1006", title: "X" }), "Write this asset idea: X");
+  assert.strictEqual(A.agIdeaPrompt({ id: "a1006" }), "Write this asset idea: a1006", "a row with no title still names itself");
 });
-test("nothing left to write draws no next-idea card at all", () => {
-  const a = agReset(); a.assetFilter = "open"; a.assetOffset = 0;
-  const html = A.agAssetsHtml(Object.assign({}, ASSETS, { next: null }), a);
-  assert.ok(!/ag-nextidea/.test(html) && /Nothing left to write/.test(html));
+test("Write this opens a NEW chat with the prompt typed and the id beside it, and sends nothing", () => {
+  const a = agReset();
+  a.chatId = "c-old"; a.chat = { chat: { id: "c-old" }, runs: [{ run_id: "r1", status: "waiting", waiting_on: { kind: "approval" } }] };
+  a.draft = "half a sentence"; a.chipIdea = null; a.view = "assets"; a.picked = "t1";
+  const el = { getAttribute: k => ({ "data-arg": "a1006", "data-text": "Write this asset idea: The hiring-assessment benchmark report" })[k] || null };
+  const posts = [];
+  const oldPost = A.apiPost; A.apiPost = async (...args) => { posts.push(args); return {}; };
+  /* the arm has no await in it, so like the other agAction tests here this reads the state
+     straight after the call */
+  try { A.agAction("ideawrite", el); } finally { A.apiPost = oldPost; }
+  assert.strictEqual(a.view, "chat", "it lands on the chat");
+  assert.strictEqual(a.chatId, null, "a NEW chat, not the one that was open");
+  assert.strictEqual(a.chat, null);
+  assert.strictEqual(a.picked, null);
+  assert.strictEqual(a.draft, "Write this asset idea: The hiring-assessment benchmark report", "the prompt is in the box");
+  assert.strictEqual(a.chipIdea, "a1006", "the id rides beside it, for agSend to post");
+  assert.strictEqual(a.focusComposer, true, "and the caret is in the box, ready for Send");
+  assert.strictEqual(posts.length, 0, "nothing was sent");
+  /* the same reset "new" does, read from the source, so the two cannot drift apart */
+  const arm = SRC.slice(SRC.indexOf('case "ideawrite": {'), SRC.indexOf("case \"assetfilter\":"));
+  assert.ok(/a\.chatId = null; a\.chat = null; a\.panel = null; a\.picked = null; a\.guideDive = null;/.test(arm));
+  assert.ok(!/agSend\(|agPostApi\(/.test(arm), "the arm never sends");
+});
+test("the /assets route no longer carries a next idea, so nothing on screen can want one", () => {
+  const PY = fs.readFileSync(path.join(__dirname, "agents_api.py"), "utf8");
+  const fn = PY.slice(PY.indexOf("def _assets_payload():"), PY.indexOf("@router.get(\"/assets\")"));
+  assert.ok(fn.length > 100, "found the payload builder");
+  assert.ok(!/"next":/.test(fn) && !/next_open/.test(fn), "no next in the payload");
+  const tab = SRC.slice(SRC.indexOf("function agAssetsHtml("), SRC.indexOf("function agIdeaPrompt("));
+  assert.ok(tab.length > 500 && !/\.next\b/.test(tab), "and the tab does not read one");
+  /* the hero's starter chip still reads health.assets.next, which comes from build_assets.status()
+     and was never this route's field; that stays */
+  assert.ok(/health\.assets/.test(SRC.slice(SRC.indexOf("function agHeroHtml("), SRC.indexOf("function agMktFact("))));
 });
 
 /* ── the CSS the layout leans on ───────────────────────────────────────────── */
@@ -1413,13 +1472,13 @@ test("the catalogue table's borders are the darker line, and it closes", () => {
             "and the head sits on the darker rule, not --line-soft");
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(tbl), "still no hardcoded colour");
 });
-test("every class the reworked next-idea card uses is actually styled", () => {
-  [".ag-nextidea .nl", ".ag-nextidea .nl .nq", ".ag-nextidea .nf", ".ag-nextidea .nf dt",
-   ".ag-nextidea .nf dd", ".ag-nextidea .nh"].forEach(c => {
-    assert.ok(CSS.indexOf(c) !== -1, c + " has no rule in agents.css");
-  });
-  const card = CSS.slice(CSS.indexOf(".ag-nextidea{"), CSS.indexOf(".ag-idea{"));
-  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(card), "no hardcoded colour on the card");
+test("the Write this column is styled so the button never wraps or shrinks on a narrow column", () => {
+  const act = CSS.slice(CSS.indexOf(".ag-ideas td.act{"), CSS.indexOf("}", CSS.indexOf(".ag-ideas td.act{")));
+  assert.ok(act.length > 10, ".ag-ideas td.act has a rule in agents.css");
+  assert.ok(/white-space:nowrap/.test(act) && /width:1%/.test(act), "nowrap, and only as wide as the button");
+  assert.ok(/\.ag-ideas td:first-child\{[^}]*min-width/.test(CSS), "the title cell is the one that folds, but not to nothing");
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(/.test(CSS.slice(CSS.indexOf(".ag-ideas td.act{"), CSS.indexOf(".ag-idea{"))),
+            "no hardcoded colour in the block");
 });
 test("opening the panel no longer changes the document's HEIGHT under the reader", () => {
   assert.ok(CSS.indexOf(".ag.haspanel .ag-file .fd{display:none}") === -1,
@@ -1950,6 +2009,28 @@ test("the tab's shelf has a heading and exactly ONE agent, with nothing invented
    Its rule sat later in agents.css with margin:46px 0 10px, so every live step with more than
    AG_MAX_SUBS rows showed a blank block between its subtitle and the list. The banner now has
    its own class; this pins both halves so the names cannot drift back together. */
+/* ONE ROW, THE DETAIL A CLICK AWAY (2026-09-16). The source check says one sentence in the chat
+   and writes its full account to source-check.md. The substep carries `artifact`, and the row
+   grows a Details link that opens it; a substep without one is exactly the row it always was. */
+test("a substep that names an artifact gets a Details link; one that does not stays plain", () => {
+  const evs = [
+    { t: 1, type: "step_started", id: "s1", label: "Writing the article", tool: "write_article", stage: "draft" },
+    { t: 2, type: "substep_finished", parent: "s1", label: "Checked 59 facts: 50 fine, 3 new sources, 1 corrected, 3 softened, 2 removed",
+      note: "the verdicts and every before and after are in source-check.md", artifact: "source-check.md", view: "article" },
+    { t: 3, type: "substep_finished", parent: "s1", label: "Written: Costs", note: "300 words" },
+  ];
+  const step = A.agStepsFromEvents(evs, { status: "running" }).find(e => e.id === "s1");
+  assert.strictEqual(step.subs.length, 2, "both substeps are on the step");
+  assert.strictEqual(step.subs[0].artifact, "source-check.md", "the artifact rides on the substep");
+  assert.strictEqual(step.subs[1].artifact, "", "and is empty where the event had none");
+  const html = A.agSubsHtml(step.subs, "s1", true, "r7");
+  assert.strictEqual((html.match(/class="trow ok"/g) || []).length, 2, "one row each, no extra rows");
+  assert.ok(html.indexOf('data-ag="open" data-arg="source-check.md" data-view="article" data-run="r7">Details</button>') !== -1,
+    "the check's row opens its report in the run's own panel");
+  assert.strictEqual((html.match(/>Details</g) || []).length, 1, "the plain substep has no link");
+  assert.ok(html.indexOf("Checked 59 facts") !== -1, "the one line is the row's label");
+});
+
 test("the 'N earlier' button and the shelf's promise banner do not share a class", () => {
   const subs = [];
   for (let i = 0; i < 30; i++) subs.push({ label: "Read page " + i, note: "ok", ms: 400 });
@@ -2792,6 +2873,141 @@ test("the arrival animation is short, and its cleanup timer outlasts it", () => 
   assert.ok(enter > 0, "found AG_ENTER_MS");
   assert.ok(enter >= longest * 1000, "the class would be pulled mid-animation");
   assert.ok(enter <= 1000, "and it must not linger");
+});
+
+/* ── the Library, edited by the team, one section at a time (2026-09-16) ──────
+   Anyone on the team opens a saved article and sees a pencil on every section. The pencil
+   opens an editor with two ways in (type over it, or ask the model), both land in a buffer,
+   and Save is the one thing that writes: here, and to the team through Supabase. */
+const SEC = JSON.parse(fs.readFileSync(path.join(__dirname, "tests", "fixtures", "agents-sections.json"), "utf8"));
+
+function libPanel(text, extra){
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = Object.assign({ run_id: "r1", name: "draft.md", view: "article", loading: false, readOnly: true,
+                            libId: "lib7", title: "Cost per hire", data: { text } }, extra || {});
+  return a;
+}
+
+test("agSections splits exactly like library_edit.sections (ids, headings, bytes)", () => {
+  const got = A.agSections(SEC.md);
+  assert.strictEqual(got.length, SEC.sections.length, "section count");
+  got.forEach((s, i) => {
+    assert.strictEqual(s.id, SEC.sections[i].id);
+    assert.strictEqual(s.heading, SEC.sections[i].heading, "heading of " + s.id);
+    assert.strictEqual(s.level, SEC.sections[i].level, "level of " + s.id);
+    assert.strictEqual(s.text, SEC.sections[i].text, "text of " + s.id + " differs from Python");
+  });
+  assert.strictEqual(got[0].heading, "Opening", "text before the first heading is its own section");
+  assert.ok(got.every(s => !/\n###? /.test("\n" + s.text.split("\n").slice(1).join("\n").replace(/\n### /g, "\n"))), "no H1/H2 inside a section");
+});
+test("agSpliceSection replaces one section byte for byte like Python's splice", () => {
+  const out = A.agSpliceSection(SEC.md, "s2", "## Why the standard checklist breaks\n\nRewritten body, 4,700 users.\n");
+  assert.strictEqual(out, SEC.spliced);
+  const untouched = A.agSections(out);
+  A.agSections(SEC.md).forEach((s, i) => { if (s.id !== "s2") assert.strictEqual(untouched[i].text, s.text, s.id + " moved"); });
+  assert.strictEqual(A.agSpliceSection(SEC.md, "s99", "x"), SEC.md, "an unknown id changes nothing");
+});
+test("a Library article is drawn by sections, a pencil on each, and never the per-block editor", () => {
+  const a = libPanel(SEC.md);
+  const html = A.agPanelHtml(a);
+  const secs = A.agSections(SEC.md);
+  secs.forEach(s => {
+    assert.ok(html.indexOf('data-sec="' + s.id + '"') !== -1, "section " + s.id + " drawn");
+    assert.ok(html.indexOf('data-ag="libsec" data-arg="' + s.id + '"') !== -1, "a pencil on " + s.id);
+  });
+  assert.ok((html.match(/ag-pencil/g) || []).length === secs.length, "one pencil per section, no more");
+  assert.ok(/aria-label="Edit Why the standard checklist breaks"/.test(html), "the pencil names its section");
+  assert.ok(!/data-ag="artedit"/.test(html), "the run's per-block editor is not offered on a Library article");
+  assert.ok(/5 sections/.test(html), "the count line: " + (html.match(/\d+ sections?/) || [""])[0]);
+  assert.ok(/data-ag="libsavebuf" data-arg="lib7" disabled/.test(html), "Save is there and disabled while nothing changed");
+  assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "the whole-article editor is still a way in");
+  assert.ok(!/data-ag="librevert"/.test(html), "no Undo until the server says there is a version before");
+});
+test("the pencil opens the text editor on that section only, with its own words in it", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: k => k === "data-arg" ? "s2" : "" });
+  assert.ok(a.libSec && a.libSec.id === "s2" && a.libSec.mode === "text");
+  const html = A.agPanelHtml(a);
+  assert.ok(/class="ag-sec editing" data-sec="s2"/.test(html), "s2 is the open one");
+  assert.ok((html.match(/ag-secbox/g) || []).length === 1, "one editor open");
+  assert.ok(/data-aglibsec[^>]*>## Why the standard checklist breaks/.test(html.replace(/&gt;/g, ">")), "the textarea holds the section");
+  assert.ok(/data-ag="libsecdone" data-arg="s2"/.test(html) && /data-ag="libseccancel"/.test(html), "Done and Cancel");
+  assert.ok(/data-ag="libsecmode" data-arg="ai"/.test(html), "and the way over to the AI");
+  assert.ok((html.match(/ag-pencil/g) || []).length === 4, "the open section has no pencil, the other four do");
+});
+test("Done puts the typed section in the buffer, marks it unsaved, and touches no other section", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  a.libSec.text = "## Why the standard checklist breaks\n\nHe typed this.";
+  A.agAction("libsecdone", { getAttribute: () => "s2" });
+  assert.strictEqual(a.libSec, null, "the editor closes");
+  assert.ok(a.libBuf && a.libBuf.dirty, "the buffer is dirty");
+  const before = A.agSections(SEC.md), after = A.agSections(a.libBuf.draft);
+  assert.strictEqual(after.length, before.length);
+  before.forEach((s, i) => { if (s.id !== "s2") assert.strictEqual(after[i].text, s.text, s.id + " moved"); });
+  assert.ok(/He typed this\./.test(after[2].text));
+  assert.strictEqual(a.panel.data.text, SEC.md, "the saved article is untouched until Save");
+  const html = A.agPanelHtml(a);
+  assert.ok(/unsaved changes/.test(html), "and the screen says so");
+  assert.ok(/data-ag="libsavebuf" data-arg="lib7" >Save/.test(html.replace(/\s+>/g, " >")), "Save is live now");
+  assert.ok(/data-ag="libdiscard"/.test(html), "with a way to throw it away");
+  A.agAction("libdiscard", { getAttribute: () => "" });
+  assert.strictEqual(a.libBuf.draft, SEC.md, "discard puts the saved words back");
+  assert.strictEqual(a.libBuf.dirty, false);
+});
+test("a section cannot be emptied from the section editor", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s4" });
+  a.libSec.text = "   ";
+  A.agAction("libsecdone", { getAttribute: () => "s4" });
+  assert.ok(a.libSec && /cannot be emptied/.test(a.libSec.error), "told why: " + (a.libSec && a.libSec.error));
+  assert.ok(!a.libBuf || !a.libBuf.dirty, "nothing went into the buffer");
+});
+test("the AI mode asks for an instruction, and a proposal is shown as a diff with Use this / Discard", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  A.agAction("libsecmode", { getAttribute: () => "ai" });
+  let html = A.agPanelHtml(a);
+  assert.ok(/data-aglibinstr/.test(html), "the instruction box");
+  assert.ok(/data-ag="libsecai" data-arg="s2"/.test(html), "the rewrite button");
+  assert.ok(!/data-ag="libsecuse"/.test(html), "nothing to use yet");
+  a.libSec.proposal = { section_id: "s2", proposed: "## Why the standard checklist breaks\n\nBetter.\n",
+                        diff: [{ type: "same", text: "## Why the standard checklist breaks" }, { type: "remove", text: "Body with 4,700 users and $12,000." },
+                               { type: "add", text: "Better." }, { type: "context", count: 7 }] };
+  html = A.agPanelHtml(a);
+  assert.ok(/class="ag-diff"/.test(html), "the diff is drawn");
+  assert.ok(/class="del">- Body with 4,700 users and \$12,000\.</.test(html), "what goes");
+  assert.ok(/class="add">\+ Better\.</.test(html), "what comes");
+  assert.ok(/7 unchanged lines/.test(html), "a folded run says how many lines it stands for");
+  assert.ok(!/\[object Object\]/.test(html), "the list shape renders as lines, not as objects");
+  assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(html) && /data-ag="libsecdrop"/.test(html), "Use this and Discard");
+  A.agAction("libsecuse", { getAttribute: () => "s2" });
+  assert.strictEqual(a.libSec, null);
+  assert.ok(a.libBuf.dirty && /Better\./.test(A.agSections(a.libBuf.draft)[2].text), "the proposal went into the buffer");
+  assert.strictEqual(a.panel.data.text, SEC.md, "and nothing was saved");
+});
+test("the conflict box names who saved and offers their version or an overwrite", () => {
+  const a = libPanel(SEC.md);
+  a.libBuf = { draft: SEC.md + "x", title: "Cost per hire", base_version: 3, dirty: true };
+  a.libConflict = { version: 4, edited_by: "Priya", edited_at: new Date().toISOString(), title: "Cost per hire", draft: "theirs" };
+  const html = A.agPanelHtml(a);
+  assert.ok(/Updated by Priya just now/.test(html), "who and when: " + (html.match(/Updated by[^<]*/) || [""])[0]);
+  assert.ok(/data-ag="libreload" data-arg="lib7"/.test(html), "load theirs");
+  assert.ok(/data-ag="liboverwrite" data-arg="lib7"/.test(html), "or overwrite");
+  assert.ok(/role="alert"/.test(html));
+});
+test("the meta line says the version, who saved it, and whether the team gets it", () => {
+  const a = libPanel(SEC.md);
+  a.libMeta = { version: 3, edited_by: "Devansh", edited_at: new Date(Date.now() - 120000).toISOString(),
+                team: { configured: true, member: true, why: "" }, has_previous: true };
+  let html = A.agPanelHtml(a);
+  assert.ok(/version 3/.test(html) && /saved by Devansh 2m ago/.test(html), html.match(/<p class="ag-sub"[^<]*/)[0]);
+  assert.ok(/shared with the team/.test(html));
+  assert.ok(/data-ag="librevert" data-arg="lib7"/.test(html), "Undo last save is offered when there is a version before");
+  a.libMeta.team = { configured: false, member: false, why: "No team workspace is connected, so this stays on this Mac." };
+  html = A.agPanelHtml(a);
+  assert.ok(/on this Mac only/.test(html) && /No team workspace is connected/.test(html), "the server's own sentence explains the local-only state");
 });
 
 /* the save round-trips, so it runs after the synchronous suite and reports with it */
@@ -3746,6 +3962,109 @@ async function atest(name, fn){
       await A.agAction("guideback", arg(""));
       assert.ok(/ag-guide/.test(doc.els.agScroll.innerHTML), "and back is the guide itself");
     } finally { A.agStopPoll(); A.document = prevDoc; A.apiGet = prevGet; }
+  });
+
+  /* ── the Library's team edit, through the real actions and a fake server ─── */
+  await atest("opening a Library article reads it fresh and starts a clean buffer at its version", async () => {
+    const S = A.S; S.ag = null; const a = A.agS();
+    const prev = A.apiGet;
+    A.apiGet = async () => ({ id: "lib7", run_id: "r1", title: "Cost per hire", draft: SEC.md, words: 40, status: "ready",
+                              version: 2, edited_by: "Priya", edited_at: "2026-09-16T10:00:00Z", previous_draft: "older",
+                              team: { configured: true, member: true, why: "" } });
+    await A.agAction("libopen", { getAttribute: () => "lib7" });
+    A.apiGet = prev;
+    assert.strictEqual(a.panel.libId, "lib7");
+    /* field by field: an object made inside the vm has another Object prototype, so deepStrictEqual refuses it */
+    assert.strictEqual(a.libBuf.draft, SEC.md);
+    assert.strictEqual(a.libBuf.title, "Cost per hire");
+    assert.strictEqual(a.libBuf.base_version, 2, "the buffer starts at the version read");
+    assert.strictEqual(a.libBuf.dirty, false);
+    assert.strictEqual(a.libMeta.edited_by, "Priya");
+    assert.strictEqual(a.libMeta.has_previous, true);
+    assert.strictEqual(a.libConflict, null);
+  });
+
+  await atest("Save posts the buffer with the version it was opened at, and the reply becomes the new base", async () => {
+    const a = libPanel(SEC.md);
+    a.libBuf = { draft: SEC.md + "\n\nAdded.\n", title: "Cost per hire", base_version: 2, dirty: true };
+    let body = null;
+    const prevP = A.apiPost, prevG = A.apiGet;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { ok: true, id: "lib7", title: "Cost per hire", words: 41, status: "ready",
+                                                                  version: 3, edited_by: "Devansh", edited_at: "2026-09-16T10:05:00Z",
+                                                                  team: { configured: true, member: true, synced: true, why: "" } }; };
+    A.apiGet = async () => ([{ id: "lib7" }]);
+    await A.agAction("libsavebuf", { getAttribute: () => "lib7" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.ok(/\/library\/lib7\/save$/.test(body.path), body.path);
+    assert.strictEqual(body.b.base_version, 2, "the version he opened goes with the save");
+    assert.strictEqual(body.b.force, false);
+    assert.strictEqual(body.b.draft, SEC.md + "\n\nAdded.\n");
+    assert.strictEqual(a.libBuf.base_version, 3, "the next save is checked against the new version");
+    assert.strictEqual(a.libBuf.dirty, false);
+    assert.strictEqual(a.panel.data.text, SEC.md + "\n\nAdded.\n", "the panel shows the saved words");
+    assert.strictEqual(a.libMeta.version, 3);
+    assert.strictEqual(a.libMeta.edited_by, "Devansh");
+  });
+
+  await atest("a save a teammate beat to it writes nothing on screen and puts the conflict box up", async () => {
+    const a = libPanel(SEC.md);
+    a.libBuf = { draft: "mine", title: "Cost per hire", base_version: 2, dirty: true };
+    const prevP = A.apiPost, prevG = A.apiGet;
+    let gets = 0;
+    A.apiPost = async () => ({ ok: false, conflict: { version: 3, edited_by: "Priya", edited_at: new Date().toISOString(), draft: "theirs" } });
+    A.apiGet = async () => { gets++; return []; };
+    await A.agAction("libsavebuf", { getAttribute: () => "lib7" });
+    assert.ok(a.libConflict && a.libConflict.edited_by === "Priya", "the conflict is on the state");
+    assert.strictEqual(a.libBuf.draft, "mine", "his words are still in the buffer");
+    assert.strictEqual(a.libBuf.dirty, true);
+    assert.strictEqual(a.panel.data.text, SEC.md, "the panel did not pretend it saved");
+    assert.strictEqual(gets, 0, "and the Library list was not refreshed for a save that did not happen");
+    assert.ok(/Updated by Priya/.test(A.agPanelHtml(a)));
+    /* overwrite: the same words go again, with force */
+    let body = null;
+    A.apiPost = async (p, b) => { body = b; return { ok: true, title: "Cost per hire", words: 1, version: 4, edited_by: "Devansh", team: { synced: true } }; };
+    A.apiGet = async () => ([]);
+    await A.agAction("liboverwrite", { getAttribute: () => "lib7" });
+    A.apiPost = prevP; A.apiGet = prevG;
+    assert.strictEqual(body.force, true, "overwrite says so");
+    assert.strictEqual(body.draft, "mine");
+    assert.strictEqual(a.libConflict, null, "the box goes once it is settled");
+    assert.strictEqual(a.libBuf.base_version, 4);
+  });
+
+  await atest("Rewrite with AI sends the buffer, the section and the instruction, and shows the proposal without saving", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libsec", { getAttribute: () => "s2" });
+    A.agAction("libsecmode", { getAttribute: () => "ai" });
+    a.libSec.instruction = "make it shorter";
+    let body = null;
+    const prevP = A.apiPost;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { section_id: "s2", proposed: "## Why the standard checklist breaks\n\nShort.\n",
+                                                                  diff: [{ type: "add", text: "Short." }], checks: [{ name: "no_invented_figures", status: "pass" }] }; };
+    await A.agAction("libsecai", { getAttribute: () => "s2" });
+    A.apiPost = prevP;
+    assert.ok(/\/library\/lib7\/ai-section$/.test(body.path), body.path);
+    assert.strictEqual(body.b.section_id, "s2");
+    assert.strictEqual(body.b.instruction, "make it shorter");
+    assert.strictEqual(body.b.draft, SEC.md, "the buffer as it is on screen");
+    assert.ok(a.libSec.proposal && /Short\./.test(a.libSec.proposal.proposed));
+    assert.strictEqual(a.libSec.busy, false);
+    assert.ok(!a.libBuf || !a.libBuf.dirty, "a proposal is not a change until Use this");
+    assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(A.agPanelHtml(a)));
+  });
+
+  await atest("a refused rewrite (an invented figure) lands as the server's sentence beside the button", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libsec", { getAttribute: () => "s2" });
+    A.agAction("libsecmode", { getAttribute: () => "ai" });
+    a.libSec.instruction = "add a stat";
+    const prevP = A.apiPost;
+    A.apiPost = async () => { const e = new Error("The rewrite brought in a figure that the article and its research never had: 51%. (/api/x -> 400)"); e.status = 400; throw e; };
+    await A.agAction("libsecai", { getAttribute: () => "s2" });
+    A.apiPost = prevP;
+    assert.ok(/never had: 51%\.$/.test(a.libSec.error), "the debug tail is cut: " + a.libSec.error);
+    assert.strictEqual(a.libSec.proposal, null);
+    assert.ok(/never had: 51%/.test(A.agPanelHtml(a)), "and it is on screen");
   });
 
   console.log("\n" + "-".repeat(60));

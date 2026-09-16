@@ -280,4 +280,83 @@ function nyCtx(){
   console.log("ok 12 Needs-You self-clears and never stacks");
 }
 
+/* 13. DONE WHEN, WRITTEN BY SHADOW, APPEARS WITHOUT A PAGE REFRESH
+   (founder dogfood, 2026-09-15). The founder leaves "Done when" empty,
+   Shadow writes the criteria on its first decision turn, and the card must
+   stop saying "Shadow is writing these" on its own.
+
+   THIS DRIVES THE WHOLE PATH, not a hand-assigned S.shadowMissions: the
+   interval fires, _loadShadowHome does its real fetch, the assignment
+   happens inside the module, and only then is the card asked what it draws.
+   A test that sets the list itself proves the renderer and nothing else --
+   and the renderer was never the part in doubt. */
+(async () => {
+  let missions = [Object.assign({}, RUNNING, {
+    objective: "Improve the README installation section.",
+    turns_used: 1, done_when: [] })];
+  const ctx = ctxFor(
+    ["15-shadow-overlay.js", "16-shadow-home.js", "18-goal-workspace.js"],
+    { fetch: (u) => {
+        const body = u === "/api/shadow/missions" ? { missions }
+          : u === "/api/shadow/watches" ? { watches: [] }
+          : u === "/api/shadow/instructions" ? { instructions: [] }
+          : u === "/api/shadow/goals" ? { goals: [] } : {};
+        return Promise.resolve({ ok: true, json: async () => body });
+      } });
+  ctx.S.screen = "shadow";
+  ctx.S.goals = [];
+  ctx.S.shadowTaskSel = "m-1";
+
+  ctx.SCREENS.shadow();                    // installs the driver
+  await ctx.loadShadowHome(true);          // the founder's first sight of it
+  const before = ctx.shadowHomeHtml();
+  assert(/Shadow is writing these/.test(before),
+    "an empty Done when reads as Shadow's to write");
+  assert(!/lists every step/.test(before), "nothing written yet");
+
+  // SHADOW WRITES THEM, server-side. The founder does NOTHING.
+  missions = [Object.assign({}, missions[0], { turns_used: 2, done_when: [
+    { tier: "founder_confirm",
+      check: "The README install section lists every step." },
+    { tier: "founder_confirm", check: "The steps work on a clean clone." }] })];
+
+  const h = live(ctx)[0];
+  assert(h, "the driver must still be installed");
+  h.fn();                                  // the 4s tick, no user action
+  await new Promise(r => setTimeout(r, 30));
+
+  const after = ctx.shadowHomeHtml();
+  assert(!/Shadow is writing these/.test(after),
+    "the placeholder must go when the criteria land -- no page refresh");
+  assert(/lists every step/.test(after), "Shadow's first check is on screen");
+  assert(/work on a clean clone/.test(after), "and the second");
+  console.log("ok 13 Shadow-written Done when appears with no page refresh");
+})().catch(e => { console.error("FAIL 13:", e.message); process.exit(1); });
+
+/* 14. and the founder's OWN criteria still render, unchanged */
+(async () => {
+  const mine = [{ tier: "founder_confirm", check: "The EMI check passes." }];
+  let missions = [Object.assign({}, RUNNING, { done_when: mine })];
+  const ctx = ctxFor(
+    ["15-shadow-overlay.js", "16-shadow-home.js", "18-goal-workspace.js"],
+    { fetch: (u) => {
+        const body = u === "/api/shadow/missions" ? { missions }
+          : u === "/api/shadow/watches" ? { watches: [] }
+          : u === "/api/shadow/instructions" ? { instructions: [] }
+          : u === "/api/shadow/goals" ? { goals: [] } : {};
+        return Promise.resolve({ ok: true, json: async () => body });
+      } });
+  ctx.S.screen = "shadow";
+  ctx.S.goals = [];
+  ctx.S.shadowTaskSel = "m-1";
+  ctx.SCREENS.shadow();
+  await ctx.loadShadowHome(true);
+  const html = ctx.shadowHomeHtml();
+  assert(/The EMI check passes\./.test(html),
+    "a founder's own criteria render as they always did");
+  assert(!/Shadow is writing these/.test(html),
+    "and the placeholder must never appear beside them");
+  console.log("ok 14 founder-written Done when renders normally");
+})().catch(e => { console.error("FAIL 14:", e.message); process.exit(1); });
+
 console.log("\nall shadow live-refresh tests passed");

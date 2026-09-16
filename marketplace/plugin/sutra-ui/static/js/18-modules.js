@@ -49,6 +49,18 @@ function modS(){ return (typeof S !== "undefined" && S) ? S : null; }
 function modEsc(x){ return (typeof esc === "function") ? esc(x) : String(x == null ? "" : x); }
 function modChip(p){ return (typeof dirChip === "function") ? dirChip(p) : String(p || ""); }
 function modRender(){
+  /* THE OPEN APP MAY HAVE JUST CHANGED, and Shadow's "Hide for this app"
+     reads exactly that (S.modSel). Hooked HERE rather than on modOpenApp and
+     modSelectDept and the back arm separately, because this is the one
+     funnel every one of them already goes through -- and a fourth way to
+     change the selection added later gets the behaviour for free instead of
+     silently leaving a stale dot on screen.
+
+     Safe to call on every redraw: syncShadowPresence only ever makes the DOM
+     agree with the state, and mounting is already a no-op when the dot is
+     there. Guarded by typeof for the same reason every cross-file call in
+     this file is -- the vm test harness loads these modules one at a time. */
+  if (typeof applyAppPresence === "function") applyAppPresence();
   if (typeof scheduleRender === "function") scheduleRender();
   else if (typeof render === "function") render();
 }

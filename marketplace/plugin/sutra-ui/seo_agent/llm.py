@@ -281,30 +281,7 @@ def _transient(text):
 def _claude_cli(system, messages, tools, binary, model, on_retry=None, timeout=None, web=False):
     cmd = _cli_command(binary, system, tools, model, web=web)
     prompt = _cli_prompt(messages)
-    attempts = 1 + len(CLI_RETRY_SLEEPS)
-    for attempt in range(attempts):
-        try:
-            return _claude_cli_once(cmd, prompt, binary, timeout)
-        # RuntimeError, not just ModelError (2026-09-10). _TRANSIENT has listed "timed out" and
-        # "timeout" since the day it was written, but a timeout does not come back as a ModelError:
-        # _claude_cli_once turns subprocess.TimeoutExpired into a plain RuntimeError, which this
-        # clause never caught. So the one transient failure that most deserves another go — the CLI
-        # took too long — was the one that got a single attempt and killed the step. NoKey is not a
-        # RuntimeError, so a sign-in problem still surfaces at once instead of being retried.
-        except RuntimeError as e:
-            if attempt + 1 < attempts and _transient(str(e)):
-                wait = CLI_RETRY_SLEEPS[attempt]
-                if on_retry:
-                    # A silent minute looks like a hang. Say what is happening, in the log.
-                    try:
-                        on_retry("The model was unavailable (%s). Waiting %ds and trying again, "
-                                 "attempt %d of %d." % (str(e).replace("Claude CLI returned an error: ", "")[:90],
-                                                        wait, attempt + 2, attempts))
-                    except Exception:
-                        pass
-                time.sleep(wait)
-                continue
-            raise
+    return _retrying(lambda: _claude_cli_once(cmd, prompt, binary, timeout), on_retry)
 
 
 def _cli_result(out):
@@ -565,12 +542,421 @@ def _openai(system, messages, tools, key, model):
     return {"text": (choice.get("content") or "").strip(), "tool_calls": calls, "raw": None}
 
 
-# ---- the call --------------------------------------------------------------------------
+# ---- the gate: how many model calls run at once ----------------------------------------
+#
+# Every model call passes _GATE. It used to be one fixed semaphore of PARALLEL shared by the
+# whole app, so three articles running at once each got a third of one article's speed. Now
+# each RUN that registers (run_slot) has its own budget of PARALLEL slots, the whole app is
+# capped at PARALLEL_MAX, and calls that belong to no run (a one-off tool, a script, a test)
+# share one fallback budget of PARALLEL. With one run the behaviour is exactly the old one.
+#
+# Measured on an M4 with 16 GB (2026-09-16): 12 tiny `claude -p` calls at once took 3.7 s
+# against 3.0 s for one, about 230 MB each, and none was rate-limited. The CPU is not the
+# limit; the account's usage limit is, and that is what the pause below is for.
 
+import re as _re
 import threading as _threading
-PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "3"))   # concurrent CLI calls; the workflow's shim used 3
-_GATE = _threading.BoundedSemaphore(PARALLEL)
+from concurrent.futures import ThreadPoolExecutor as _Pool
+from contextlib import contextmanager as _contextmanager
+from datetime import datetime as _dt, timedelta as _td
 
+PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "3"))          # slots PER RUN, and the fallback
+PARALLEL_MAX = int(os.environ.get("SEO_AGENT_PARALLEL_MAX", "9"))  # the ceiling for the whole app
+
+_local = _threading.local()      # .run = the key of the run this thread works for, or None
+
+
+class Stopped(RuntimeError):
+    """The run was stopped by the person while a call was waiting out a usage limit."""
+
+
+class _Run:
+    def __init__(self, key, on_note=None, should_stop=None):
+        self.key = key
+        self.on_note = on_note          # on_note(text): one status row in that run's chat
+        self.should_stop = should_stop  # should_stop() -> True once the person pressed Stop
+        self.in_use = 0
+
+
+class _Gate:
+    def __init__(self, per_run=None, cap=None):
+        self._cond = _threading.Condition()
+        self._runs = {}                 # key -> _Run, while the run is alive
+        self._total = 0
+        self._loose = 0                 # calls in flight that belong to no run
+        self._per_run = per_run         # None = follow the module's PARALLEL
+        self._cap = cap                 # None = follow the module's PARALLEL_MAX
+
+    def configure(self, per_run=None, cap=None):
+        """Set the two numbers at runtime (the Sutra setting). None puts one back on the env."""
+        with self._cond:
+            self._per_run = int(per_run) if per_run else None
+            self._cap = int(cap) if cap else None
+            self._cond.notify_all()
+
+    def limits(self):
+        per = self._per_run or PARALLEL
+        cap = self._cap or PARALLEL_MAX
+        return max(1, per), max(1, per, cap)
+
+    def _can(self, run):
+        per, cap = self.limits()
+        if self._total >= cap:
+            return False
+        return (run.in_use if run else self._loose) < per
+
+    def acquire(self):
+        run = self._runs.get(getattr(_local, "run", None))
+        with self._cond:
+            while not self._can(run):
+                self._cond.wait()
+            self._total += 1
+            if run:
+                run.in_use += 1
+            else:
+                self._loose += 1
+        return run
+
+    def release(self, run):
+        with self._cond:
+            self._total -= 1
+            if run:
+                run.in_use -= 1
+            else:
+                self._loose -= 1
+            self._cond.notify_all()
+
+    def register(self, run):
+        with self._cond:
+            self._runs[run.key] = run
+            self._cond.notify_all()
+
+    def unregister(self, run):
+        with self._cond:
+            self._runs.pop(run.key, None)
+            self._cond.notify_all()
+
+    def runs(self):
+        with self._cond:
+            return list(self._runs.values())
+
+    def current(self):
+        return self._runs.get(getattr(_local, "run", None))
+
+    def in_flight(self):
+        with self._cond:
+            return {"total": self._total, "loose": self._loose,
+                    "runs": {k: r.in_use for k, r in self._runs.items()}}
+
+
+_GATE = _Gate()
+
+
+def _bind(key):
+    prev = getattr(_local, "run", None)
+    _local.run = key
+    return prev
+
+
+@_contextmanager
+def run_slot(chat_id=None, run_id=None, on_note=None, should_stop=None):
+    """`with llm.run_slot(chat, run, on_note, should_stop):` around one run's whole life.
+
+    Registers the run with the gate (its own PARALLEL slots) and binds this thread to it, so
+    every call made on this thread, and on any pool made with llm.pool(), counts against the
+    run's budget. The run is unregistered when the block ends, however it ends; a pool thread
+    still finishing a call afterwards simply releases into the counters it took from.
+    """
+    key = "%s/%s" % (chat_id or "", run_id or uuid.uuid4().hex[:8])
+    run = _Run(key, on_note, should_stop)
+    _GATE.register(run)
+    prev = _bind(key)
+    try:
+        yield key
+    finally:
+        _bind(prev)
+        _GATE.unregister(run)
+
+
+def pool(max_workers=None):
+    """A ThreadPoolExecutor whose workers belong to the same run as the thread that made it.
+
+    Use this, not a bare ThreadPoolExecutor, wherever a tool fans model calls out: a plain pool's
+    threads know no run, so their calls would fall into the shared fallback budget and the run
+    would not get its own speed. Defaults to one worker per slot the run has.
+    """
+    key = getattr(_local, "run", None)
+    return _Pool(max_workers=max_workers or _GATE.limits()[0], initializer=_bind, initargs=(key,))
+
+
+def slot_settings():
+    """The two numbers in force and where each came from: {per_run, max, source}."""
+    per, cap = _GATE.limits()
+    saved = store.slot_settings()
+    source = "setting" if (saved.get("per_run") or saved.get("max")) else (
+        "env" if (os.environ.get("SEO_AGENT_PARALLEL") or os.environ.get("SEO_AGENT_PARALLEL_MAX")) else "default")
+    return {"per_run": per, "max": cap, "source": source}
+
+
+def load_slot_settings():
+    """Apply the saved Sutra setting (store.slot_settings) on top of the env. Called at start-up
+    and after every save. A missing file leaves the env and the defaults in charge."""
+    saved = store.slot_settings()
+    _GATE.configure(saved.get("per_run"), saved.get("max"))
+    return slot_settings()
+
+
+# ---- the pause: a usage limit waits instead of failing ---------------------------------
+#
+# On 2026-09-15 three runs died at once on "You've hit your session limit · resets 1am
+# (Asia/Calcutta)". That is not a fault in the run; it is the account's clock. So a call that
+# fails with a usage-limit message reads the reset time out of it, tells each running chat once
+# ("Paused: Claude usage limit reached. Carrying on at 1:02 am."), waits until then plus a
+# margin, and tries the same call again. Every other call arriving meanwhile waits at the door
+# (call() checks the pause before it takes a slot), so nothing burns attempts against a limit
+# that is known to be shut. A Stop from the person ends the wait with Stopped.
+
+LIMIT_MARGIN = 120           # seconds past the stated reset before trying again
+LIMIT_BLIND_WAIT = 900       # when the message names no time: try again after this long
+LIMIT_MAX_WAIT = 6 * 3600    # give up with a clear message once one call has waited this long
+LIMIT_POLL = 2.0             # how often a waiting call looks for a Stop
+
+_LIMIT_KEYS = ("session limit", "usage limit", "hit your limit", "out of extra usage",
+               "quota exceeded", "quota has been exhausted")
+
+# Swappable clock, so a test can run a six-hour pause in milliseconds.
+_now = time.time
+_sleep = time.sleep
+
+_PROVIDER_LABEL = {"claude-cli": "Claude", "codex-cli": "Codex", "deepseek": "DeepSeek",
+                   "anthropic": "Anthropic", "openai": "OpenAI"}
+
+_ISO = _re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2})?")
+_CLOCK = _re.compile(r"(?:resets?|resetting|try again|available again|available|back)\s+"
+                     r"(?:at\s+|around\s+|by\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?![\d:])",
+                     _re.I)
+# A bare "at 9am" / "at 13:00" with no reset word in front, as in "try again on 3 Jan at 9am".
+# Needs the am/pm or the colon, so "at 5 pages" is never read as five o'clock.
+_AT_CLOCK = _re.compile(r"\bat\s+(\d{1,2})(?:(?::(\d{2}))\s*(am|pm|a\.m\.|p\.m\.)?|()\s*(am|pm|a\.m\.|p\.m\.))(?![\d:])", _re.I)
+_RELATIVE = _re.compile(r"\b(?:in|after)\s+(\d+)\s*(second|sec|minute|min|hour|hr)s?\b", _re.I)
+_ZONE = _re.compile(r"\b([A-Z][A-Za-z_]+/[A-Za-z_]+(?:/[A-Za-z_]+)?|UTC|GMT)\b")
+_MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+_MON = (r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t|tember)?"
+        r"|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?")
+_DATE_MD = _re.compile(r"\b" + _MON + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s*(\d{4}))?", _re.I)   # Sep 26th, 2026
+_DATE_DM = _re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+" + _MON + r"\b(?:,?\s*(\d{4}))?", _re.I)   # 26 Sep 2026
+
+
+def _usage_limited(text):
+    """True for an error that says the account is out of usage until some reset. A bare
+    "rate limit" stays a transient retry unless it names a reset time."""
+    t = (text or "").lower()
+    if any(k in t for k in _LIMIT_KEYS):
+        return True
+    return "rate limit" in t and parse_reset(text) is not None
+
+
+def _zone_of(text):
+    m = _ZONE.search(text or "")
+    if not m:
+        return None
+    name = m.group(1)
+    if name in ("UTC", "GMT"):
+        from datetime import timezone
+        return timezone.utc
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 -- an unknown zone name means "read it as local time"
+        return None
+
+
+def parse_reset(text, now=None):
+    """The reset moment named in an error message, as a Unix time. None when it names none.
+
+    Reads "resets 1am (Asia/Calcutta)", "resets 8pm (...)", "resets at 13:00", "try again at
+    3:45 PM UTC", an ISO time, "try again at Sep 26th" (Codex's weekly limit), and "try again
+    in 15 minutes". A clock time is the NEXT occurrence in the named zone (today if still
+    ahead, else tomorrow); a date is the next such date, at the clock time if one is given.
+    """
+    text = text or ""
+    now = _now() if now is None else now
+    m = _ISO.search(text)
+    if m:
+        raw = m.group(0).replace(" ", "T", 1).replace(" ", "")
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            d = _dt.fromisoformat(raw)
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=_zone_of(text) or _dt.fromtimestamp(now).astimezone().tzinfo)
+            return d.timestamp()
+        except ValueError:
+            pass
+    tz = _zone_of(text) or _dt.fromtimestamp(now).astimezone().tzinfo
+    base = _dt.fromtimestamp(now, tz)
+
+    hour = minute = None
+    m = _CLOCK.search(text)
+    parts = (m.group(1), m.group(2), m.group(3)) if m else None
+    if not parts:
+        m = _AT_CLOCK.search(text)
+        if m:
+            parts = (m.group(1), m.group(2), m.group(3) or m.group(5))
+    if parts:
+        hour, minute, ampm = int(parts[0]), int(parts[1] or 0), (parts[2] or "").replace(".", "").lower()
+        if ampm == "pm" and hour < 12:
+            hour += 12
+        elif ampm == "am" and hour == 12:
+            hour = 0
+        if hour > 23 or minute > 59:
+            hour = minute = None
+
+    m = _DATE_MD.search(text)
+    mon, day, year = (m.group(1), m.group(2), m.group(3)) if m else (None, None, None)
+    if not m:
+        m = _DATE_DM.search(text)
+        if m:
+            day, mon, year = m.group(1), m.group(2), m.group(3)
+    if mon:
+        try:
+            when = base.replace(month=_MONTHS.index(mon.lower()[:3]) + 1, day=int(day),
+                                hour=hour or 0, minute=minute or 0, second=0, microsecond=0)
+            if year:
+                when = when.replace(year=int(year))
+            elif when <= base:
+                when = when.replace(year=when.year + 1)
+            return when.timestamp()
+        except ValueError:
+            pass
+
+    if hour is not None:
+        when = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if when <= base:
+            when += _td(days=1)
+        return when.timestamp()
+    m = _RELATIVE.search(text)
+    if m:
+        n, unit = int(m.group(1)), m.group(2).lower()
+        return now + n * (3600 if unit.startswith("h") else 60 if unit.startswith("m") else 1)
+    return None
+
+
+def _clock_words(when, now):
+    """"1:02 am", "1:02 am tomorrow", or "1:02 am on Thu 18 Sep", in the Mac's own time."""
+    w = _dt.fromtimestamp(when).astimezone()
+    n = _dt.fromtimestamp(now).astimezone()
+    words = w.strftime("%I:%M %p").lstrip("0").lower()
+    days = (w.date() - n.date()).days
+    if days == 1:
+        words += " tomorrow"
+    elif days > 1:
+        words += w.strftime(" on %a %d %b")
+    return words
+
+
+class _Pause:
+    """The one account-wide pause. `until` is a Unix time; a value in the past is no pause."""
+
+    def __init__(self):
+        self._lock = _threading.Lock()
+        self.until = 0.0
+        self.message = ""
+        self.seq = 0            # bumps each time a new, later pause begins
+        self._noted = set()     # (run key, seq) pairs already told about this pause
+
+    def begin(self, until, message):
+        with self._lock:
+            if until <= self.until and self.until > _now():
+                return False           # somebody is already waiting for the same or a later reset
+            self.until = until
+            if message != self.message:
+                # A new message is a new row in each chat. The same message again (a blind
+                # 15-minute retry that found the limit still shut) is not: one row, not one every
+                # quarter hour for six hours.
+                self.seq += 1
+                self._noted = set()
+            self.message = message
+            seq = self.seq
+        for run in _GATE.runs():
+            self._tell(run, seq, message)
+        return True
+
+    def _tell(self, run, seq, message):
+        mark = (run.key, seq)
+        with self._lock:
+            if mark in self._noted:
+                return
+            self._noted.add(mark)
+        if run.on_note:
+            try:
+                run.on_note(message)
+            except Exception:  # noqa: BLE001 -- a chat we cannot write to must not break the wait
+                pass
+
+    def active(self):
+        return self.until > _now()
+
+    def wait(self, on_retry=None):
+        """Block until the pause is over. Raises Stopped when this thread's run was stopped."""
+        told_loose = False
+        while True:
+            with self._lock:
+                until, seq, message = self.until, self.seq, self.message
+            now = _now()
+            if now >= until:
+                return
+            run = _GATE.current()
+            if run:
+                self._tell(run, seq, message)       # a run that began during the pause hears about it
+                if run.should_stop and run.should_stop():
+                    raise Stopped("Stopped while waiting for the usage limit to reset.")
+            elif on_retry and not told_loose:
+                told_loose = True
+                try:
+                    on_retry(message)
+                except Exception:  # noqa: BLE001
+                    pass
+            _sleep(max(0.0, min(LIMIT_POLL, until - now)))
+
+    def clear(self):
+        with self._lock:
+            self.until = 0.0
+            self._noted = set()
+
+
+_PAUSE = _Pause()
+
+
+def _pause_for(error_text, waited, on_retry=None):
+    """Begin (or join) the pause the error asks for and wait it out. Returns the seconds this
+    call has now waited in total. Raises ModelError when that would pass LIMIT_MAX_WAIT."""
+    now = _now()
+    label = _PROVIDER_LABEL.get(provider() or "", "The model's")
+    reset = parse_reset(error_text, now)
+    if reset is not None and reset + LIMIT_MARGIN <= now:
+        reset = None                  # a reset already behind us, yet the limit still bites: go blind
+    if reset is None:
+        until = now + LIMIT_BLIND_WAIT
+        words = ("Paused: %s usage limit reached. It did not say when it resets, so trying again "
+                 "every %d minutes." % (label, LIMIT_BLIND_WAIT // 60))
+    else:
+        until = reset + LIMIT_MARGIN
+        words = "Paused: %s usage limit reached. Carrying on at %s." % (label, _clock_words(until, now))
+    if waited + (until - now) > LIMIT_MAX_WAIT:
+        hours = LIMIT_MAX_WAIT // 3600
+        if reset is not None and until - now > LIMIT_MAX_WAIT:
+            raise ModelError("%s usage limit reached, and it does not reset until %s, more than %d hours "
+                             "away. Stopping here. Send a message to carry on once it has reset."
+                             % (label, _clock_words(until, now), hours))
+        raise ModelError("%s usage limit is still in force after %d hours of waiting. Stopping here. "
+                         "Send a message to carry on once it has reset." % (label, hours))
+    _PAUSE.begin(until, words)
+    _PAUSE.wait(on_retry)
+    return waited + (until - now)
+
+
+# ---- the call --------------------------------------------------------------------------
 
 LONG_TIMEOUT = 1200.0        # a whole document in one call (a brand file, a full-article edit)
 
@@ -578,26 +964,46 @@ LONG_TIMEOUT = 1200.0        # a whole document in one call (a brand file, a ful
 def call(system, messages, tools=None, model=None, on_retry=None, timeout=None, web=False):
     """timeout: seconds for this one call. Whole-document calls pass LONG_TIMEOUT; the
     default CLI_TIMEOUT is for a turn or a section. Per call, never a global swap."""
-    with _GATE:
+    if _PAUSE.active():
+        _PAUSE.wait(on_retry)
+    run = _GATE.acquire()
+    try:
         return _call(system, messages, tools, model, on_retry, timeout, web)
+    finally:
+        _GATE.release(run)
 
 
 def _retrying(once, on_retry=None):
-    """Run once(); retry a TRANSIENT RuntimeError after each of CLI_RETRY_SLEEPS. See _claude_cli."""
+    """Run once(). A usage-limit error pauses (see _Pause) and tries the SAME call again; a
+    TRANSIENT error is retried after each of CLI_RETRY_SLEEPS; anything else is raised.
+
+    RuntimeError, not just ModelError (2026-09-10). _TRANSIENT has listed "timed out" and
+    "timeout" since the day it was written, but a timeout does not come back as a ModelError:
+    _claude_cli_once turns subprocess.TimeoutExpired into a plain RuntimeError, which the old
+    clause never caught. NoKey is not a RuntimeError, so a sign-in problem still surfaces at once.
+    """
     attempts = 1 + len(CLI_RETRY_SLEEPS)
-    for attempt in range(attempts):
+    attempt = 0
+    waited = 0.0
+    while True:
         try:
             return once()
         except RuntimeError as e:
-            if attempt + 1 < attempts and _transient(str(e)):
+            why = str(e).replace("Claude CLI returned an error: ", "")
+            if _usage_limited(why):
+                waited = _pause_for(why, waited, on_retry)    # a pause does not spend an attempt
+                continue
+            if attempt + 1 < attempts and _transient(why):
                 wait = CLI_RETRY_SLEEPS[attempt]
                 if on_retry:
+                    # A silent minute looks like a hang. Say what is happening, in the log.
                     try:
                         on_retry("The model was unavailable (%s). Waiting %ds and trying again, "
-                                 "attempt %d of %d." % (str(e)[:90], wait, attempt + 2, attempts))
+                                 "attempt %d of %d." % (why[:90], wait, attempt + 2, attempts))
                     except Exception:
                         pass
                 time.sleep(wait)
+                attempt += 1
                 continue
             raise
 

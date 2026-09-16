@@ -1309,17 +1309,40 @@ function stream(msgs, says, turns){
     "the active task keeps exactly one composer");
   assert.strictEqual((h.match(/data-shhomecompose/g) || []).length, 1,
     "exactly one composer on the page");
-  /* ...and it is untouched where it belongs: the New Task panel */
+  /* ...AND THE FORM ASKS ON ITS OWN (founder, 2026-09-15, second pass).
+     The ask block and the stage composer used to draw UNDER the open New
+     Task panel -- a second outcome box beneath a form whose first field is
+     already "The outcome you want". The panel is self-contained, so the
+     stage is not rendered behind it at all. */
   const ctx2 = fresh();
   ctx2.S.shadowMissions = [M({ state: "running" })];
   ctx2.S.shadowTaskSel = "m-1";
   ctx2.S.shadowNewOpen = true;
   const nt = ctx2.shadowHomeHtml();
-  assert(/What should I take on/.test(nt),
-    "the New Task composer must survive");
-  assert(/Tell Shadow what outcome you want/.test(nt),
-    "with its own placeholder");
-  console.log("ok 8p one composer on the workspace; New Task keeps its own");
+  assert(!/What should I take on/.test(nt),
+    "the ask heading still draws behind the New Task form");
+  assert(!/Tell Shadow the outcome you want/.test(nt),
+    "the ask subtitle still draws behind the New Task form");
+  assert(!/Tell Shadow what outcome you want/.test(nt),
+    "the stage placeholder still draws behind the New Task form");
+  assert.strictEqual((nt.match(/data-shhomecompose/g) || []).length, 0,
+    "no stage composer behind the New Task form");
+  /* the form itself is the one that asks, and is untouched */
+  assert(/data-shnewpanel="1"/.test(nt), "the New Task panel was lost");
+  assert(/What should Shadow get done\?/.test(nt),
+    "the panel's own heading was lost");
+  assert(/data-shnewobj="1"/.test(nt), "the outcome field was lost");
+  /* CLOSED, the workspace is byte-identical -- re-asserted here because this
+     file owns the task-pane view of the same rule */
+  const ctx3 = fresh();
+  ctx3.S.shadowMissions = [M({ state: "running" })];
+  ctx3.S.shadowTaskSel = "m-1";
+  const closed = ctx3.shadowHomeHtml();
+  assert.strictEqual((closed.match(/data-shhomecompose/g) || []).length, 1,
+    "closing the form must restore exactly one composer");
+  assert(/placeholder="Say anything…"/.test(closed),
+    "and it is the calm one, unchanged");
+  console.log("ok 8p one composer on the workspace; none behind New Task");
 }
 
 /* ── 9. MEMORY: the existing confirm, in the founder's flow ───────────── */

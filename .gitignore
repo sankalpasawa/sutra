@@ -45,6 +45,20 @@ __pycache__/
 # stay on disk). Safe because nothing reads them from git: every hook that
 # uses one creates it (mkdir -p / touch / >>) and guards for its absence
 # ([ -f ]), so a fresh clone rebuilds them on the first tool call.
+# Per-session and per-machine local state, same class as the markers below.
+# heartbeats/ is one file per session id written by the session hook;
+# placement-mode and settings.local.json are this machine's own choices;
+# .enforcement/placement/ holds the placement engine's per-run ledgers
+# (compliant-turns, gate-log.jsonl, touch-log.jsonl, touch-errors.log) --
+# the last two were already enumerated individually below, and the whole
+# directory is local state, so the directory rule replaces the guesswork.
+# None is read from git: every hook that uses one creates it and guards for
+# its absence, so a fresh clone rebuilds them on the first tool call.
+.claude/heartbeats/
+.claude/placement-mode
+.claude/settings.local.json
+.enforcement/placement/
+
 .claude/depth-registered
 .claude/flow-classified
 .claude/flow-type-resolved
@@ -70,4 +84,16 @@ __pycache__/
 **/.enforcement/proto*-warnings.log
 **/.enforcement/placement/touch-log.jsonl
 **/.enforcement/placement/touch-errors.log
+**/.enforcement/permission-gate.jsonl
+
+# ...and the extension this list predicted, with the collision it warned
+# about. completion-protocol.jsonl exists TWICE: the repo-root copy is one
+# of the 8 tracked files named above, while the sutra-ui copy is per-run
+# telemetry the plugin hook appends to. So this one rule is PATH-SPECIFIC,
+# not `**/` -- the wildcard would name the tracked ledger too. (An ignore
+# rule cannot untrack what is already in the index, so nothing breaks today;
+# it would bite the day the root copy is removed and re-added, silently.)
+# permission-gate.jsonl has no tracked twin anywhere, so it takes the
+# ordinary `**/` form above.
+marketplace/plugin/sutra-ui/.enforcement/completion-protocol.jsonl
 **/.sutra/creation-guard.jsonl

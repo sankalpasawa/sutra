@@ -35,20 +35,59 @@ against the same base `X.Y.Z`, so a branch may cut `beta.1`, `beta.2` … agains
 
 ### 2. The Shadow suites must be wired into the "Panel tests" step
 
-Today that step runs three suites — `test_panel.js`, `test_nav.js`, `test_charter_filter.js` — out
-of 32 in `sutra-ui/`. All 11 `test_shadow_*.js` suites are invisible to the DMG build, so a
-regression in the rewritten Shadow home ships without failing a single leg.
+Wired 2026-09-16. The step ran three suites — `test_panel.js`, `test_nav.js`,
+`test_charter_filter.js` — and every `test_shadow_*.js` was invisible to the DMG build, so a
+regression in Shadow home, the overlay or the settings screen shipped without failing a single leg.
+All 11 now run in that step, listed one per line.
 
-Add them to the `run:` block of the "Panel tests" step in `.github/workflows/release-dmg.yml`.
-
-Pass condition — this prints `11`:
+Pass condition — these two print the SAME number, and it is `11` today:
 
 ```bash
 grep -c 'node test_shadow_.*\.js' .github/workflows/release-dmg.yml
+ls marketplace/plugin/sutra-ui/test_shadow_*.js | wc -l
 ```
+
+Two numbers, not one, because a single hardcoded count is what went stale here (see the correction
+below). The wiring is an explicit list rather than a glob precisely so the first command can count
+it; the cost is that a NEW suite must be added to the workflow by hand, and the second command is
+what catches you forgetting.
+
+Keep the counted pattern out of the workflow's own comments. A comment containing it inflates the
+first number, and the check then lies in the safe-looking direction.
 
 Then prove the wiring bites: break one assertion in `test_shadow_home.js` on a scratch branch, cut a
 `-beta.N` tag, and confirm the `dmg` leg fails at the Panel step before any DMG is built. Revert.
+
+Corrected 2026-09-16: this check said `11`, and the tree carried 12. The count was stale twice over.
+It was written against `e2ffd5b5`, where only **10** `test_shadow_*.js` were tracked — the eleventh
+was `test_shadow_check_progress.js`, untracked on disk, which check 1 flagged and which has since
+been **deleted** rather than committed. Two real suites landed after: `test_shadow_rhs.js`
+(2026-09-15) and `test_shadow_presence.js` (2026-09-16). Counting files on disk instead of files in
+the tree is what let a deleted file hold a slot in the total.
+
+Wiring this check red-flagged two suites that had been failing unnoticed. Both are resolved as of
+2026-09-16 and all 11 are green:
+
+* `test_shadow_overlay.js` — STALE, corrected. It pinned the literal re-read ladder
+  `[250, 750, 2000, 5000]`; `SH_START_BACKOFF` (`static/js/15-shadow-overlay.js`) is now geometric
+  out to 90s, because the old tail gave up before the slowest measured start finished provisioning.
+  The watcher's stop condition also gained `target_chat` alongside the state. Both changes are
+  deliberate and commented in the product. The suite now asserts the ladder's SHAPE — starts at
+  250ms (ahead of the ~394ms chat publish), only climbs, reaches the slow tail — rather than a list
+  of literals that would go stale on the next re-tune. No product code changed.
+
+* `test_shadow_briefing.js` — RETIRED. It tested "the Briefing", the one-vertical-spine Shadow Home
+  of V5 slice 11. That screen was replaced on purpose on 2026-09-11 by `43aba037` ("Shadow Home
+  reads like a supervisor's desk, not a list of bands") and `d47b2067`; `shadowHomeHtml()` returns
+  the two-column `shwork` workspace and emits no `shbrief`, `shcalm`, `shdeck`, `shasg` or `shmast`
+  anywhere. 122 assertions across 33 sections, 24 of them calling `shadowHomeHtml()` directly, all
+  describing a container that ships nowhere. The suite was red from the day the screen was replaced
+  and nobody retired it with the screen; the checklist inherited it as a known failure instead. The
+  replacement screen is covered by `test_shadow_home.js`, which is green. Recover the file from
+  `git show 989e1123:marketplace/plugin/sutra-ui/test_shadow_briefing.js` if it is ever wanted.
+
+The Panel step runs under `bash -e`, so any one of the 11 going red aborts it before a DMG is built.
+That is the gate doing its job.
 
 ### 3. Both DMGs must be present, stapled, and launch
 

@@ -88,6 +88,26 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(self.client.get(BASE + "/runs/.hidden/r-1").status_code, 400)
         self.assertEqual(self.client.get(BASE + "/chats/c-nope").status_code, 404)
 
+    def test_03b_the_slots_setting_round_trips_and_reaches_the_gate(self):
+        """How many model calls run at once: per running article, and the app-wide ceiling.
+        Unset, the env variables (or the defaults 3 and 9) rule; a save wins over them and is
+        applied to the live gate at once; an empty save puts the env back."""
+        j = self.client.get(BASE + "/slots").json()
+        self.assertEqual((j["per_run"], j["max"]), llm._Gate().limits())
+        self.assertIn(j["source"], ("default", "env"))
+        r = self.client.post(BASE + "/slots", json={"max": 6}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["per_run"], r.json()["max"], r.json()["source"]), (llm.PARALLEL, 6, "setting"))
+        self.assertEqual(llm._GATE.limits(), (llm.PARALLEL, 6))
+        self.assertEqual(self.client.get(BASE + "/health").json()["slots"]["max"], 6)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"per_run": 3, "max": 2}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"max": "lots"}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/slots", json={"max": 99}, headers=HDR).status_code, 400)
+        r = self.client.post(BASE + "/slots", json={}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(r.json()["source"], ("default", "env"))
+        self.assertEqual(llm._GATE.limits(), llm._Gate().limits())
+
     # ---- the run -----------------------------------------------------------------------
 
     def test_10_a_message_starts_a_run_and_a_question_stops_it(self):
@@ -145,6 +165,128 @@ class TestAgentsApi(unittest.TestCase):
         r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "hi"}, headers=HDR)
         self.assertEqual(r.status_code, 409)
         store.patch_state(cid, rid, status="stopped")
+
+    def test_12b_a_message_after_a_restart_carries_the_stopped_run_on(self):
+        """Quitting Sutra mid-step stops the run (reconcile_stale_runs). The next message must
+        continue THAT run, so its saved steps are reused, not start an empty one."""
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        rid = store.new_run(cid, "mid-research")
+        store.patch_state(cid, rid, status="running", current_step="run_research", word_target=2200)
+        store.save_artifact(cid, rid, "_work/curate-partial.json", {"team": [{"role": "r"}]})
+        store.save_messages(cid, [{"role": "user", "content": "write it"}])
+        store.reconcile_stale_runs()
+        self.assertEqual(store.get_state(cid, rid)["status"], "stopped")
+        llm.call = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Carry on"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["run_id"], rid, "the same run, not a new one")
+        self.assertTrue(r.json().get("continued"))
+        _settle(self.client, cid, rid, ("done",))
+        self.assertEqual(len(store.list_runs(cid)), 1, "no second run was made")
+        self.assertIsNotNone(store.load_artifact(cid, rid, "_work/curate-partial.json"),
+                             "the saved interviews are still where the tools look for them")
+        self.assertEqual(store.get_state(cid, rid).get("word_target"), 2200, "the run's own state is kept")
+        self.assertEqual(store.get_messages(cid)[-2]["content"], "Carry on")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertTrue(any(e["type"] == "resumed" and "Sutra was closed" in (e.get("note") or "") for e in ev))
+
+    def test_12c_a_run_the_person_stopped_still_starts_fresh(self):
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        rid = store.new_run(cid, "stopped by hand")
+        store.patch_state(cid, rid, status="running")
+        from seo_agent import loop
+        loop.stop(cid, rid)
+        llm.call = ScriptedModel([{"text": "New one.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "something else"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotEqual(r.json()["run_id"], rid, "a Stop the person pressed is not undone")
+        self.assertFalse(r.json().get("continued"))
+        _settle(self.client, cid, r.json()["run_id"], ("done",))
+
+    def test_12_stop_pressed_during_a_usage_limit_pause_leaves_the_run_stopped_not_failed(self):
+        """llm.call raises llm.Stopped when the person presses Stop while a call is waiting out a
+        usage limit. The run must end as "stopped" (loop.stop wrote that), with no step_failed row
+        and no "failed" state written over it by the loop or by _guarded."""
+        from seo_agent import loop
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+
+        def stopped_mid_wait(system, messages, tools=None, model=None, **kw):
+            rid = store.list_runs(cid)[-1]["run_id"]
+            loop.stop(cid, rid)
+            raise llm.Stopped("Stopped while waiting for the usage limit to reset.")
+        llm.call = stopped_mid_wait
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "write it"}, headers=HDR)
+        rid = r.json()["run_id"]
+        s = _settle(self.client, cid, rid, ("stopped", "failed"))
+        self.assertEqual(s["status"], "stopped")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertFalse([e for e in ev if e["type"] == "step_failed"], ev)
+        self.assertTrue([e for e in ev if e["type"] == "stopped" and e.get("by") == "user"], ev)
+
+    def test_12d_a_message_after_a_failed_model_call_carries_the_failed_run_on(self):
+        """A usage limit fails the model call and the run. The next message must continue THAT run
+        from its saved steps, on a conversation that is still a valid turn."""
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+
+        def limited(system, messages, tools=None, model=None, **kw):
+            raise RuntimeError("Claude CLI returned an error: You've hit your session limit")
+        llm.call = limited
+        rid = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "write it"},
+                               headers=HDR).json()["run_id"]
+        _settle(self.client, cid, rid, ("failed",))
+        store.patch_state(cid, rid, current_step="build_blueprint", word_target=2200)
+        store.save_artifact(cid, rid, "_work/blueprint-cards.json", {"cards": [1, 2]})
+
+        model = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
+        llm.call = model
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Carry on"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["run_id"], rid, "the same run, not a new one")
+        self.assertTrue(r.json().get("continued"))
+        _settle(self.client, cid, rid, ("done",))
+        self.assertEqual(len(store.list_runs(cid)), 1, "no second run was made")
+        self.assertIsNotNone(store.load_artifact(cid, rid, "_work/blueprint-cards.json"),
+                             "the saved work is still where the tools look for it")
+        self.assertEqual(store.get_state(cid, rid).get("word_target"), 2200)
+        self.assertFalse(store.get_state(cid, rid).get("error"), "the old failure is not left on show")
+        self.assertEqual([m["content"] for m in store.get_messages(cid)][:2], ["write it", "Carry on"],
+                         "the failed call left nothing half-written; the message follows it")
+        ev = self.client.get(BASE + "/runs/%s/%s/events" % (cid, rid)).json()["events"]
+        self.assertTrue(any(e["type"] == "resumed" and "failed" in (e.get("note") or "") for e in ev))
+
+    def test_12e_a_continued_run_never_starts_on_a_tool_call_with_no_result(self):
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        rid = store.new_run(cid, "crashed at a pause")
+        store.save_messages(cid, [{"role": "user", "content": "write it"},
+                                  {"role": "assistant", "content": [
+                                      {"type": "tool_use", "id": "call-x", "name": "ask_user",
+                                       "input": {"question": "?"}}]}])
+        store.patch_state(cid, rid, status="failed", error="boom")
+        model = ScriptedModel([{"text": "Carrying on.", "tool_calls": [], "raw": None}])
+        llm.call = model
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "Carry on"}, headers=HDR)
+        self.assertEqual(r.json()["run_id"], rid)
+        _settle(self.client, cid, rid, ("done",))
+        seen = model.calls[0]["messages"]
+        self.assertEqual(seen[2]["content"][0]["tool_use_id"], "call-x", "the open call got a result")
+        self.assertEqual(seen[3]["content"], "Carry on")
+
+    def test_12f_a_person_stop_after_a_failure_still_starts_fresh(self):
+        """Only the newest run counts: an older failed run does not pull a message back into it
+        when the person's own Stop is the latest word."""
+        cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
+        old = store.new_run(cid, "failed first")
+        store.patch_state(cid, old, status="failed", started_at="2026-09-15T10:00:00Z")
+        rid = store.new_run(cid, "then stopped by hand")
+        store.patch_state(cid, rid, status="running", started_at="2026-09-15T11:00:00Z")
+        from seo_agent import loop
+        loop.stop(cid, rid)
+        llm.call = ScriptedModel([{"text": "New one.", "tool_calls": [], "raw": None}])
+        r = self.client.post(BASE + "/chats/%s/send" % cid, json={"text": "something else"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotIn(r.json()["run_id"], (old, rid))
+        self.assertFalse(r.json().get("continued"))
+        _settle(self.client, cid, r.json()["run_id"], ("done",))
 
     def test_13_answer_on_a_run_that_is_not_waiting_is_409(self):
         cid = self.client.post(BASE + "/chats", json={"title": "t"}, headers=HDR).json()["id"]
@@ -252,6 +394,97 @@ class TestAgentsApi(unittest.TestCase):
         r = self.client.post(BASE + "/library/%s/save" % item,
                              json={"title": "T" * 400, "draft": "# x\n\nbody\n"}, headers=HDR)
         self.assertEqual(len(r.json()["title"]), 160, "a title is trimmed, never rejected")
+        store.library_delete(item)
+
+    # ---- the Library, edited by the team one section at a time (2026-09-16) -----------------
+
+    MD = ("# Cost per hire\n\nIntro with 4,700 hires.\n\n## What it costs\n\nBody one.\n\n"
+          "### Sub\n\nunder the sub\n\n## What to do\n\nBody two.\n")
+
+    def test_18_an_open_article_carries_its_sections_version_and_team_state(self):
+        item = store.library_save("c18", "r18", "Cost per hire", self.MD)
+        it = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual([s["id"] for s in it["sections"]], ["s0", "s1", "s2"])
+        self.assertEqual([s["heading"] for s in it["sections"]], ["Cost per hire", "What it costs", "What to do"])
+        self.assertEqual("".join(s["text"] for s in it["sections"]).replace("\n", ""), self.MD.replace("\n", ""),
+                         "the sections are the whole article and nothing else")
+        self.assertEqual(it["version"], 0, "a fresh article is at version 0")
+        self.assertFalse(it["team"]["configured"], "no workspace in the test data dir")
+        self.assertIn("stays on this Mac", it["team"]["why"])
+        store.library_delete(item)
+
+    def test_19_ai_section_rewrites_one_section_shows_it_and_writes_nothing(self):
+        item = store.library_save("c19", "r19", "Cost per hire", self.MD)
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nBody one, tighter, still 4,700 hires.\n\n### Sub\n\nunder the sub"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "tighten"}, headers=HDR)
+        self.assertEqual(r.status_code, 200, r.text)
+        j = r.json()
+        self.assertEqual(j["section_id"], "s1")
+        self.assertIn("tighter", j["proposed"])
+        self.assertTrue(any(d["type"] == "add" for d in j["diff"]), "a diff a person can read")
+        self.assertEqual(j["checks"][0]["status"], "pass")
+        self.assertIn("Body two.", j["draft"], "the whole article comes back with the one section swapped")
+        self.assertEqual(store.library_get(item)["draft"], self.MD, "and NOTHING was saved")
+        # the guards: a new figure is refused, and so is a reply that grows a new section
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nNow 51% cheaper.\n"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "add a stat"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("never had: 51", r.json()["detail"])
+        llm.text = lambda prompt, system=None, **kw: "## What it costs\n\nok\n\n## Sneaked in\n\nx\n"
+        r = self.client.post(BASE + "/library/%s/ai-section" % item,
+                             json={"section_id": "s1", "instruction": "x"}, headers=HDR)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("new heading", r.json()["detail"])
+        # a bad id, an empty instruction, a missing article
+        self.assertEqual(self.client.post(BASE + "/library/%s/ai-section" % item,
+                                          json={"section_id": "s9", "instruction": "x"}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/library/%s/ai-section" % item,
+                                          json={"section_id": "s1", "instruction": ""}, headers=HDR).status_code, 400)
+        self.assertEqual(self.client.post(BASE + "/library/nope/ai-section",
+                                          json={"section_id": "s1", "instruction": "x"}, headers=HDR).status_code, 404)
+        store.library_delete(item)
+
+    def test_19b_save_counts_versions_names_the_editor_keeps_the_previous_and_refuses_a_stale_save(self):
+        item = store.library_save("c19b", "r19b", "Cost per hire", self.MD)
+        v1 = self.MD.replace("Body one.", "Body one, edited.")
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": v1, "base_version": 0}, headers=HDR).json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["version"], 1)
+        self.assertTrue(r["edited_by"], "somebody is named")
+        self.assertTrue(r["edited_at"])
+        self.assertEqual(r["previous"]["version"], 0)
+        self.assertFalse(r["team"]["configured"], "no workspace: the save is local and says so")
+        self.assertIn("stays on this Mac", r["team"]["why"])
+        back = self.client.get(BASE + "/library/%s" % item).json()
+        self.assertEqual(back["previous_draft"], self.MD, "the version before is kept")
+        # a save from the version before is refused, with who and when, and writes nothing
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": self.MD, "base_version": 0}, headers=HDR).json()
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["conflict"]["version"], 1)
+        self.assertTrue(r["conflict"]["edited_by"])
+        self.assertEqual(store.library_get(item)["draft"], v1, "the newer version stands")
+        # force writes over it
+        r = self.client.post(BASE + "/library/%s/save" % item,
+                             json={"draft": self.MD, "base_version": 0, "force": True}, headers=HDR).json()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["version"], 2)
+        # no base_version: last save wins, as before versions existed
+        r = self.client.post(BASE + "/library/%s/save" % item, json={"draft": v1}, headers=HDR).json()
+        self.assertTrue(r["ok"] and r["version"] == 3)
+        self.assertEqual(self.client.post(BASE + "/library/%s/save" % item,
+                                          json={"draft": v1, "base_version": "abc"}, headers=HDR).status_code, 400)
+        # undo: the version before comes back, and undo is itself undoable
+        r = self.client.post(BASE + "/library/%s/revert" % item, headers=HDR).json()
+        self.assertEqual(r["version"], 4)
+        self.assertEqual(store.library_get(item)["draft"], self.MD)
+        self.assertEqual(store.library_get(item)["previous_draft"], v1)
+        r = self.client.post(BASE + "/library/%s/revert" % item, headers=HDR).json()
+        self.assertEqual(store.library_get(item)["draft"], v1)
+        self.assertEqual(self.client.post(BASE + "/library/nope/revert", headers=HDR).status_code, 404)
         store.library_delete(item)
 
     # ---- settings ---------------------------------------------------------------------
@@ -1197,6 +1430,38 @@ class TestAgentsApi(unittest.TestCase):
             self.assertEqual(k["company"]["brand"], "Northwind Bakery")
         finally:
             store.save_knowledge("brand/company.json", rec)
+
+    def test_29d_the_assets_route_lists_dropped_rows_and_picks_nothing(self):
+        """The Asset ideas tab lists every row, dropped ones included, and the screen does the
+        filtering. The route used to also carry `next`, the top open idea, for the card that
+        offered "the idea to write next"; that card is gone (2026-09-16) and so is the field.
+        The owner's real sheet had its five top-ranked rows dropped and out of sight."""
+        from seo_agent.assets import _common as acm
+        rows = [{"id": "a1001", "title": "Dropped one", "angle": "", "format": "News article",
+                 "method": ["competitor-study"], "rank": 1, "status": "dropped",
+                 "reuse": {"verdict": "build from parts"}, "linkability": {"score": None, "of": 4}},
+                {"id": "a1006", "title": "Open one", "angle": "", "format": "Guide",
+                 "method": ["trends"], "rank": 6, "status": "open",
+                 "reuse": {"verdict": "no"}, "linkability": {"score": 3, "of": 4}},
+                {"id": "a1007", "title": "Written one", "angle": "", "format": "Guide",
+                 "method": ["trends"], "rank": 7, "status": "done",
+                 "reuse": {"verdict": "no"}, "linkability": {"score": 4, "of": 4}}]
+        acm.save_ideas(rows, push=False)
+        try:
+            j = self.client.get(BASE + "/assets").json()
+            self.assertTrue(j["built"])
+            self.assertEqual(j["total"], 3)
+            self.assertEqual([r["id"] for r in j["rows"]], ["a1001", "a1006", "a1007"],
+                             "every row comes back, whatever its status")
+            self.assertEqual({r["id"]: r["status"] for r in j["rows"]},
+                             {"a1001": "dropped", "a1006": "open", "a1007": "done"},
+                             "and each keeps the status the screen shows as a pill")
+            self.assertEqual(j["counts"]["dropped"], 1)
+            self.assertNotIn("next", j, "the route no longer picks an idea for anyone")
+            # the sheet itself is untouched: reading it is not rewriting it
+            self.assertEqual(acm.by_id("a1001")["status"], "dropped")
+        finally:
+            os.remove(acm.path("ideas.json"))
 
     def test_30_the_panel_ships_the_agents_module_and_stylesheet(self):
         html = self.client.get("/").text

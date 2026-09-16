@@ -32,8 +32,17 @@ function escAttr(x){
 
 /* S83: ONE plane, two tabs, live counts. Pure. */
 function shadowPlaneHtml(watching, missions, tab){
+  /* `blocked` BELONGS ON THE PLANE THAT OWNS MISSION ACTIONS (2026-09-16).
+     It was left out while it meant only "Shadow asked a question", which the
+     intervention form answers elsewhere. It now also means "a supervisor
+     fault parked a live mission" (mission_engine.INFRA_BLOCK_REASONS), and
+     that park carries no form -- so the one surface that draws Resume and
+     Stop has to show the row, or NEEDS YOU has no way back. The task is
+     live by every other reckoning: SH_LIVE_STATES has listed `blocked`
+     since it existed, and the row reads NEEDS YOU from the same face map. */
   const active = missions.filter(m =>
-    ["running", "queued", "paused", "brief_confirm"].includes(m.state));
+    ["running", "queued", "paused", "blocked",
+     "brief_confirm"].includes(m.state));
   const t = ["working", "goals"].includes(tab) ? tab : "watching";
   /* slice 7: a third tab is the smallest coherent entry to the goal list --
      Watching and Working keep their existing meaning and rendering. */
@@ -66,13 +75,44 @@ function shadowPlaneHtml(watching, missions, tab){
     <div class="shmissionrow${m.id === foc ? " shfocused" : ""}" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
-        ${m.state === "queued" ? `<button class="btn" type="button"
-            data-shact="start_now" data-shmid="${escAttr(m.id)}">Start now</button>
+        ${/* QUEUED IS NOT A DECISION THE FOUNDER CAN CLICK PAST.
+
+              A task is `queued` for exactly one reason -- every slot the run
+              limit allows is in use -- so the Start now button that used to
+              be drawn here could not do anything: admission would read the
+              same full cap and leave the row exactly where it was (and, until
+              MissionScheduler.start was made idempotent, a queued -> queued
+              transition marked the task FAILED instead). A control whose only
+              outcomes are "nothing" and "harm" is not a control.
+
+              The two things that ARE true are said instead: what it is
+              waiting for, and Drop, which the founder can still decide. The
+              action and its handler are untouched and still what starts a
+              brief_confirm task -- this row simply stopped offering it for a
+              state it cannot move. Raise Running at once, or end something,
+              and the queue promotes this row on its own. */""}
+        ${m.state === "queued" ? `<span class="shrowwait">Waiting for a free
+            slot</span>
           <button class="btn" type="button" data-shact="drop"
             data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
-        ${m.state === "paused" ? `<button class="btn" type="button"
+        ${/* A NEEDS YOU TASK MUST HAVE A WAY BACK (founder, 2026-09-16).
+              `blocked` used to arrive here only from Shadow's own
+              ask_founder, which always carries a question -- answering it
+              resumed the task, so the row needed no button. It is now also
+              where a SUPERVISOR FAULT parks a live mission
+              (mission_engine.INFRA_BLOCK_REASONS: an unreadable decision, a
+              say that never left, an evaluation that could not answer), and
+              that park carries no form to answer. Without these two the row
+              would read NEEDS YOU with nothing the founder can press, which
+              is a worse dead end than the FAILED it replaced.
+
+              Both edges are legal and already implemented -- TRANSITIONS
+              lists blocked -> ("running", "stopped") -- and both actions,
+              hooks and endpoints are the existing ones. Nothing new. */""}
+        ${["paused", "blocked"].includes(m.state) ? `<button class="btn"
+            type="button"
             data-shact="resume" data-shmid="${escAttr(m.id)}">Resume</button>` : ""}
-        ${["running", "paused"].includes(m.state) ? `<button class="btn"
+        ${["running", "paused", "blocked"].includes(m.state) ? `<button class="btn"
             type="button" data-shact="stop" data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
       </span>
     </div>`).join("");
@@ -229,6 +269,16 @@ function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
 }
 
+/* The cap the page has already been told about, or 0 when it has not been
+   told yet. One reader, so a card and a settings row can never print two
+   different limits, and a card that renders before /api/shadow/settings
+   lands says less rather than something wrong. */
+function shadowRunLimit(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const n = ((S_.shadowSettings || {}).tasks || {}).running_at_once;
+  return typeof n === "number" && n > 0 ? n : 0;
+}
+
 /* THE STATE IS NOT ALWAYS THE WHOLE FACE. `paused` is one word for two very
    different situations: the app restarted mid-flight (nothing is being asked
    of anyone), and Shadow finished and is WAITING ON THE FOUNDER to sign off
@@ -248,8 +298,20 @@ function shadowTaskFace(state){
    and the founder was told nothing was being asked.
 
    Anything else that pauses -- app_restart, founder_intervened, an ordinary
-   stop -- is NOT a request and stays PAUSED. */
-const SH_FOUNDER_PAUSES = ["founder_confirm", "floor_confirm"];
+   stop -- is NOT a request and stays PAUSED.
+
+   AUTONOMY JOINS ON THE SAME TEST, for the two reasons that ARE a request:
+   autonomy_suggest (L1 composed an instruction and wants a yes) and
+   autonomy_top_tier (L3's once-per-task confirmation). Both are Shadow
+   waiting on the founder with a specific answer in mind, which is the
+   definition this list keeps.
+
+   autonomy_hold (L0) is deliberately ABSENT. Nothing the founder can answer
+   releases it -- the task is stopped because of a SETTING, and the way out
+   is to change the setting, not to say yes. Listing it would put a "needs
+   you" badge on a row whose only honest action is somewhere else. */
+const SH_FOUNDER_PAUSES = ["founder_confirm", "floor_confirm",
+                           "autonomy_suggest", "autonomy_top_tier"];
 function shadowMissionNeedsFounder(m){
   return !!(m && m.state === "paused"
             && SH_FOUNDER_PAUSES.indexOf(m.pause_reason) !== -1);
@@ -680,7 +742,7 @@ function shadowCompletionHtml(m){
       <span class="shcheckby">${esc(how)}</span>
     </div>`;
   }).join("");
-  const turns = (c.turns_used || 0) + " of " + (c.max_turns || 0) + " turns";
+  const turns = shadowTurnNow(c) + " of " + (c.max_turns || 0) + " turns";
   /* one sentence, and only if it is a conclusion rather than the working */
   const work = shadowResultGist(c.outcome);
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -731,7 +793,7 @@ function shadowCompletionText(m){
   if (!c) return "";
   const head = ["Done — " + String(c.headline || "")];
   if (c.objective) head.push(String(c.objective));
-  head.push((c.turns_used || 0) + " of " + (c.max_turns || 0)
+  head.push(shadowTurnNow(c) + " of " + (c.max_turns || 0)
     + " turns used.");
   /* the worker's account rides along, in the pane's own order: under the
      budget line, above the verdicts, with a blank line either side so a
@@ -1390,6 +1452,26 @@ function shadowTaskUpdatedHtml(m){
 
    OVER BUDGET CLAMPS AT 100. A worker one turn past its ceiling is spent,
    not 105% spent, and the fill cannot overflow its own track. */
+/* THE TURN THE WORKER IS ACTUALLY ON (founder, 2026-09-16).
+
+   turns_used counts turns that FINISHED -- the backend increments it after
+   the boundary arrives, which is right for a budget and wrong for a status
+   line. Between Shadow's instruction and the worker's last word the card
+   read "turn 3 of 30" while turn 4 was the one being worked, and across a
+   restart the in-flight turn was not recorded anywhere at all.
+
+   The engine now stamps `turn_open` for exactly that span. This prefers it
+   and falls back to turns_used, so a mission from before the field existed,
+   a finished mission, and an idle one all read exactly as they did. The
+   BUDGET is deliberately NOT changed to use this: max_turns is compared
+   against turns_used in the engine, and a meter that disagreed with the
+   thing that ends the mission would be the worse of the two bugs. */
+function shadowTurnNow(m){
+  const open = Number(m && m.turn_open) || 0;
+  const used = Number(m && m.turns_used) || 0;
+  return open > used ? open : used;
+}
+
 function shadowBudgetPct(m){
   const max = Number(m && m.max_turns);
   if (!(max > 0)) return null;
@@ -2027,14 +2109,41 @@ function shadowTaskCardHtml(m){
     ${awaiting || finished || askedOff ? "" : `<div class="shcard2row"><span class="shcard2k">done when</span>
       <span class="shcard2v">${checks.length
         ? esc(checks.join(" · "))
-        : "you say so — no check was set, so Shadow will ask"}</span></div>`}
+        : "Shadow is writing these — you left it open"}</span></div>`}
     ${/* THE TURN ROW IS THE COUNT, WITHOUT THE TRACK (founder, 2026-09-15).
          The meter came off the brief; the numbers it was drawn from are
          exactly the ones still printed here. shadowBudgetPct / SevbarHtml,
          the thresholds and turn counting itself are all untouched. */""}
     <div class="shcard2row"><span class="shcard2k">turn</span>
-      <span class="shcard2v">${esc(String(m.turns_used || 0))} of ${
+      <span class="shcard2v">${esc(String(shadowTurnNow(m)))} of ${
         esc(String(m.max_turns || 0))}</span></div>
+    ${/* WHY IT IS WAITING, ON THE CARD THE FOUNDER ACTUALLY OPENS.
+
+         The QUEUED pill says the state; it does not say the cause, and the
+         cause is the one thing that makes the state make sense -- a task
+         "queued" for no visible reason reads as a task that failed to
+         start. The reason is never ambiguous: `queued` is written by
+         MissionScheduler.start and by nothing else, and it means one thing
+         -- every slot the run limit allows is in use.
+
+         MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16). This
+         sentence was first put on the Watching plane's row, where
+         shadowPlaneHtml draws the queued row's actions. That plane's
+         "Working" tab is unreachable: SCREENS.shadowwatching passes the
+         literal "watching" to shadowPlaneHtml, so the tab renders as a
+         button that changes nothing. The copy was live, correct, tested --
+         and on a surface the founder cannot open. It belongs here, on the
+         task card, which is where the founder was already looking.
+
+         The number comes from the settings the page has already loaded --
+         no new fetch, and no second opinion about the cap. Absent (the card
+         rendered before the settings landed), the sentence stands without
+         it rather than guessing a number. */""}
+    ${m.state === "queued" ? `<div class="shcard2row"><span class="shcard2k"
+      >waiting for</span><span class="shcard2v">a free slot${
+        shadowRunLimit() ? ` — Running at once is ${esc(String(
+          shadowRunLimit()))}` : ""}. It starts on its own when one
+        frees.</span></div>` : ""}
     ${/* LAST UPDATED IS NOT DRAWN (founder, 2026-09-15). Presentation only:
          updated_at is still on the record, still returned by the API, and
          still what the freshness helpers below read -- the row simply does
@@ -2081,11 +2190,36 @@ function shadowTaskCardHtml(m){
    In the right pane, never a modal. The founder describes an outcome; the
    app posts it to the EXISTING mission endpoint with target_mode "new". The
    term never reaches the UI -- the button IS the intent. */
+/* THE FALLBACK, NOT THE LIST. Delegate offers is a real setting now: the
+   server sends the founder's kinds on every settings read, and
+   shadowOfferKinds() below is what every surface asks. These four are what
+   an unconfigured install offers and what renders in the window before the
+   first settings read lands -- keep them in step with
+   mission_engine.BUILTIN_OFFERS, which is the source of record. */
 const SH_KINDS = ["fix", "feature", "research", "watch"];
+
+/* The kinds Shadow offers, from the server when it has answered.
+
+   ONE READER FOR THREE SURFACES -- the Delegate form's kind buttons, the
+   budget picker, and the Settings chips. They used to share a constant,
+   which is why they could not drift; they share this instead, so they still
+   cannot, and now they follow the founder. */
+function shadowOfferKinds(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const offers = ((S_.shadowSettings || {}).tasks || {}).offers;
+  return (Array.isArray(offers) && offers.length) ? offers : SH_KINDS;
+}
 
 function shadowNewDraft(){
   const S_ = (typeof S !== "undefined") ? S : {};
   if (!S_.shadowNew) S_.shadowNew = { objective: "", done: "", kind: "fix" };
+  /* A DRAFT CANNOT SIT ON A RETIRED KIND. The draft outlives the settings
+     read and outlives a removal, so a founder who removed `watch` while a
+     draft was on it would otherwise post a kind the route now refuses. The
+     coercion belongs here rather than in the panel, because the create path
+     reads the draft too and both must agree. */
+  const kinds = shadowOfferKinds();
+  if (kinds.indexOf(S_.shadowNew.kind) === -1) S_.shadowNew.kind = kinds[0];
   return S_.shadowNew;
 }
 
@@ -2105,7 +2239,7 @@ function shadowDelegatePanelHtml(){
     <textarea id="shnewdone" rows="2" data-shnewdone="1"
       placeholder="the EMI check passes&#10;a tested PR is open">${esc(d.done)}</textarea>
     <label class="shnewlabel">Kind of work</label>
-    <div class="shnewkinds">${SH_KINDS.map(k => `<button
+    <div class="shnewkinds">${shadowOfferKinds().map(k => `<button
       class="shkind${d.kind === k ? " on" : ""}" type="button"
       data-shnewkind="${escAttr(k)}">${esc(k)}</button>`).join("")}</div>
     <div class="shnewacts">
@@ -2459,8 +2593,25 @@ function shadowHomeHtml(){
            how a task is CREATED, and it was drawing under the workspace as
            a second composer below the task. The workspace gets "Say
            anything…" and nothing else; + Delegate opens the New Task panel,
-           where that copy still belongs and is untouched. */""}
-      ${shadowStageHtml(!newOpen)}
+           where that copy still belongs and is untouched.
+
+           ...AND THE PANEL IS THE ONLY ONE ASKING (founder, 2026-09-15, same
+           day, second pass). With the panel OPEN this drew the ask block and
+           a SECOND outcome box directly under a form whose first field is
+           already "The outcome you want" -- two places to type the same
+           sentence, one of which creates nothing. The panel is self-contained
+           (its own heading, data-shnewobj, done-when, kinds, Create/Cancel),
+           so the stage is simply not rendered behind it.
+
+           CLOSED IS BYTE-IDENTICAL: shadowStageHtml(true) is exactly what
+           shadowStageHtml(!newOpen) evaluated to whenever newOpen was false,
+           which is every render that is not the New Task form. Nothing else
+           moves -- no hook renamed, no copy edited, no handler touched, and
+           every composer consumer already guards on absence
+           (shadowSubmitCompose's `if (!el) return`, render's `if (el)`
+           caret restore, and the Enter listener, which needs the element
+           itself). */""}
+      ${newOpen ? "" : shadowStageHtml(true)}
     </section>
   </div>`;
 }
@@ -2537,6 +2688,9 @@ async function _loadShadowHome(lazy){
         .catch(() => null),
     ]);
     if (s) S.shadowSettings = s;
+    /* the durable presence choice rides this payload; seeding it here keeps
+       the settings switch and the overlay reading one value, not two */
+    if (s && typeof applyShadowPresence === "function") applyShadowPresence(s);
     S.shadowHomeErr = !(w && m && i && g);
     if (g) S.goals = g.goals || [];
     if (w) S.shadowWatching = w.watches || [];
@@ -2567,6 +2721,9 @@ async function _loadShadowSettings(){
   try {
     const r = await fetch("/api/shadow/settings");
     S.shadowSettings = r.ok ? await r.json() : null;
+    /* same seeding as the home read: one value behind the switch and the dot */
+    if (S.shadowSettings && typeof applyShadowPresence === "function")
+      applyShadowPresence(S.shadowSettings);
   } catch (e){ S.shadowSettings = null; }
   if (typeof scheduleRender === "function") scheduleRender();
 }
@@ -2601,40 +2758,95 @@ function shadowSettingsSecHtml(head, body){
    "Autonomy"): the four-level selector in one rounded well, the top-tier
    confirm toggle, then the floor pills.
 
-   HONEST ABOUT WHAT SAVES. The floors are real -- the server holds them and
-   they are the one part of autonomy that is enforced (SHADOW.md section 2:
-   never ledger-overridable). The LEVEL and the TOGGLE have no field, no
-   endpoint and no writer anywhere in this build; the mock's own status table
-   marks them "v7 to build". Founder asked for the section to match the
-   reference, so it is drawn exactly as drawn -- L3 selected, the toggle on --
-   and deliberately carries NO action hook: nothing here posts, and nothing
-   pretends to remember a choice it cannot keep. When the store lands, the
-   controls gain a data- attribute and this comment goes. */
+   IT ALL WRITES NOW. This section used to be drawn inert on purpose, with a
+   comment explaining that the level and the toggle "have no field, no
+   endpoint and no writer anywhere in this build" and that nothing here would
+   "pretend to remember a choice it cannot keep". The store landed
+   (mission_engine's autonomy section, /api/shadow/settings/autonomy), so the
+   controls carry their hooks and that comment is gone, exactly as it said it
+   would be.
+
+   THE LEVEL IS READ BACK, NEVER ASSUMED. There was a `SH_LEVEL_NOW = "L3"`
+   constant here standing in for the setting; it is deleted rather than
+   defaulted, because a client-side default is how a page ends up showing L3
+   while the server runs L0. `d.autonomy.level` is the only source, and when
+   the block is missing the section says so instead of guessing.
+
+   WHAT EACH LEVEL DOES IS STATED, not implied by its name. "Draft" does not
+   tell a founder that the worker is capped at plan; the sub-line does, and
+   it quotes `worker_mode` from the server so the sentence on screen is the
+   mode the next spawn will really use.
+
+   THE FLOORS ARE UNCHANGED and still not editable here: they are rank 1 in
+   SHADOW.md's precedence and no level, L3 included, can lower them. The note
+   now says that in terms of the levels, since a founder who has just been
+   given an Act button is exactly the person who needs to know what it does
+   not buy. */
 const SH_LEVELS = [["L0", "Watch"], ["L1", "Suggest"],
                    ["L2", "Draft"], ["L3", "Act"]];
-/* what the build actually runs at. A constant, not a stored preference --
-   naming it here keeps the one place a future setting would be read. */
-const SH_LEVEL_NOW = "L3";
+
+/* What each level actually does, in the founder's terms. Kept beside the
+   names so the two cannot drift apart. */
+const SH_LEVEL_WHAT = {
+  L0: "Shadow watches and never speaks. Running tasks pause.",
+  L1: "Shadow asks before every instruction it sends.",
+  L2: "Shadow works, but its tasks can only read and plan \u2014 nothing is changed.",
+  L3: "Shadow works and its tasks can change things, at your permission level.",
+};
 
 function shadowSetAutonomyHtml(d){
-  const seg = SH_LEVELS.map(([lv, name]) => {
-    const on = lv === SH_LEVEL_NOW;
-    return `<button type="button" role="tab"${on ? ' class="on"' : ""}
-      aria-selected="${on}" aria-disabled="true" tabindex="-1"
-      title="Not configurable yet"><span class="lv">${esc(lv)}</span>${
-      esc(name)}</button>`;
-  }).join("");
+  const a = (d && d.autonomy) || null;
   const floors = (d.floors || []).filter(Boolean);
-  return `<div class="seg" role="tablist" aria-label="Autonomy level">${seg}</div>
-    <div class="srow"><span class="k">Ask me before the very top tier</span>
-      <span class="tog" role="switch" aria-checked="true" aria-disabled="true"
-        title="Not configurable yet"></span></div>
-    <div class="srow">${floors.length
+  const floorRow = `<div class="srow">${floors.length
       ? `<span class="floorbar">${floors.map(f => `<span><span class="lk"
           aria-hidden="true">\ud83d\udd12</span>${esc(f)}</span>`).join("")}</span>`
       : `<span class="ssempty">No floors were reported.</span>`}</div>
-    <p class="ssnote">Floors are confirm-first, always \u2014 Shadow cannot be
-      talked out of them, and they are not editable here.</p>`;
+    <p class="ssnote">Floors are confirm-first at every level, Act included
+      \u2014 Shadow cannot be talked out of them, and they are not editable
+      here.</p>`;
+  /* NO LEVEL RATHER THAN A GUESSED ONE. An older server, or a settings read
+     that failed, must not be drawn as L3: that is the exact lie the inert
+     selector was written to avoid, just arriving by a different road. */
+  if (!a || !a.level)
+    return `<div class="ssempty">The autonomy level was not reported.</div>`
+      + floorRow;
+  const busy = (typeof S !== "undefined" && S.shadowAutonomyBusy) || false;
+  const seg = SH_LEVELS.map(([lv, name]) => {
+    const on = lv === a.level;
+    /* the SELECTED level carries no hook: clicking it would post the value
+       it already has, and a control that spends a round-trip to change
+       nothing reads as broken the moment the network is slow */
+    const hook = (on || busy) ? "" : ` data-shautonomy="${escAttr(lv)}"`;
+    return `<button type="button" role="tab"${on ? ' class="on"' : ""}
+      aria-selected="${on}"${hook}${busy && !on
+        ? ' aria-disabled="true" tabindex="-1" title="Saving\u2026"'
+        : ""}><span class="lv">${esc(lv)}</span>${esc(name)}</button>`;
+  }).join("");
+  const top = !!a.confirm_top_tier;
+  /* THE SWITCH ONLY BITES AT L3, AND SAYS SO. It is still writable at every
+     level -- a founder setting up L1 today may well be arranging what
+     happens when they move to Act later, and refusing the click would lose
+     that -- but drawing it as live while it governs nothing would be the
+     same pretence this section just stopped making. */
+  const topNote = a.level === "L3"
+    ? "Shadow asks once per task before it first acts."
+    : "Applies at Act. Nothing to ask about at " + esc(a.level) + ".";
+  const what = SH_LEVEL_WHAT[a.level] || "";
+  /* the CONSEQUENCE, from the server's own resolver rather than inferred
+     from the level here -- if a ceiling ever changes, this line changes with
+     it instead of quietly becoming wrong */
+  const mode = a.worker_mode
+    ? `<p class="ssnote">Tasks run at <code>${esc(a.worker_mode)}</code>${
+        a.worker_may_write ? "" : " \u2014 read-only"}.</p>`
+    : "";
+  return `<div class="seg" role="tablist" aria-label="Autonomy level">${seg}</div>
+    <p class="ssnote">${esc(what)}</p>${mode}
+    <div class="srow"><span class="k">Ask me before the very top tier</span>
+      <span class="tog${top ? "" : " off"}" role="switch" aria-checked="${top}"${busy
+          ? ' aria-disabled="true" title="Saving\u2026"'
+          : ` data-shtoptier="${top ? "0" : "1"}" tabindex="0"`}></span></div>
+    <p class="ssnote">${topNote}</p>
+    ${floorRow}`;
 }
 
 /* Memory: the confirmed instructions, global first, then per chat. The row
@@ -2668,95 +2880,517 @@ function shadowSetMemoryHtml(d){
    stepper, Budget per task as a value with the AUTO pill, and Delegate
    offers as removable chips with "+ add".
 
-   THE TWO NUMBERS ARE REAL. running_at_once is mission_engine.MAX_RUNNING --
-   the cap MissionScheduler actually enforces before it queues -- and the
-   budget is TEMPLATES[kind].max_turns, which is what a mission is created
-   with and what fails it when spent. Both now ride the settings endpoint
-   that was already being read, so this page states the limits the engine
-   keeps rather than a number that merely looks right.
+   THE TWO NUMBERS ARE REAL. running_at_once is the cap MissionScheduler
+   actually enforces before it queues -- and the budget is what
+   MissionStore.create stamps onto a new mission as max_turns, which is what
+   fails it when spent. Both ride the settings endpoint that was already
+   being read, so this page states the limits the engine keeps rather than a
+   number that merely looks right.
 
-   AUTO IS LITERALLY TRUE HERE: the budget is not a preference, it is chosen
-   by the kind of work. The pill says so, and the row names the kind it is
-   quoting rather than implying one number governs every task.
+   BOTH STEPPERS WRITE NOW. Running at once POSTs /api/shadow/settings/tasks,
+   the budget POSTs /api/shadow/settings/budget -- one route per field, which
+   is why there are two. Each is the same store the engine reads, so - and +
+   move what the engine enforces rather than a display copy of it. The clamp
+   is the SERVER's in both cases (min/max come back from the endpoint); the
+   buttons are only disabled at the ends so a founder is not invited to click
+   into a refusal.
 
-   WHAT DOES NOT WRITE. The stepper's -/+, the chips' x and "+ add" are drawn
-   because the reference draws them, and carry NO action hook: there is no
-   writer for any of the three, and a control that answers a click by doing
-   nothing is worse than one that says it cannot yet. Same rule the Autonomy
-   section follows. */
+   AUTO IS STILL TRUE, JUST NO LONGER THE ONLY TRUTH. The budget is chosen by
+   the kind of work; that was right and has not changed. What is new is that
+   the founder may override the number a kind supplies. So the pill is a
+   STATE, not a label: `auto` while the kind carries no override, `set by you`
+   once it does -- read from the server's turn_budget_set, never inferred by
+   comparing the value to the default, because setting a budget to exactly its
+   default is a real choice and comparing would redraw it as untouched.
+
+   THE ROW PICKS ITS OWN KIND. It used to quote shadowNewDraft().kind -- the
+   kind a draft on a DIFFERENT screen happened to be on. That is harmless for
+   a number you can only read and dangerous for one you can move: a founder
+   would set `fix` believing they had set everything. The picker makes the
+   target explicit, and the Delegate-offers chips below stay the four-kind
+   summary of what the row edits one at a time.
+
+   WATCH IS NOT SETTABLE and the row says why rather than hiding it. Its
+   budget is never consumed -- never_say returns before the budget is ever
+   compared -- so a control there would look kept and never bind. Which kinds
+   are settable comes from the server (turn_budget_kinds), not a list here.
+
+   EVERY CONTROL ON THIS SECTION NOW WRITES. The chips' x and "+ add" were
+   the last two that did not, drawn because the reference drew them and inert
+   because there was nowhere to keep a delegate kind. There is now
+   (mission_engine, delegate offers), so they carry hooks like everything
+   else here. Autonomy still follows the old rule; this section no longer
+   has anything to apply it to.
+
+   WHAT THE SUB-LINES ARE FOR. Lowering the cap does not stop work already
+   underway -- the server says so and refuses to pretend otherwise -- so
+   when more are running than the cap allows, the row says which, rather
+   than leaving the founder to read "3" beside five live tasks and conclude
+   the setting is broken. The budget has the same problem for the same reason
+   and gets the same treatment: max_turns is stamped at create(), so a change
+   binds the next task and never re-budgets one already running. */
 function shadowSetTasksHtml(d){
   const t = (d && d.tasks) || {};
   const run = t.running_at_once;
   const budgets = t.turn_budget || {};
-  /* the kind Delegate opens on is the one whose budget this row quotes --
-     read from the draft's own default, never a second copy of it */
-  const kind = (shadowNewDraft().kind) || SH_KINDS[0];
+  /* the kind this row EDITS. Seeded from the kind Delegate opens on, so the
+     first read is the same number it always quoted, but the founder can
+     point it elsewhere -- and once it can be moved, the target has to be
+     visible rather than inherited from another screen's draft state. */
+  /* THE CURSOR CANNOT OUTLIVE THE KIND IT POINTS AT (observed, 2026-09-16).
+     S.shadowBudgetKind survives a removal, and the picker only draws OFFERED
+     kinds -- so selecting `research`, then removing it, left no pill lit
+     while the steppers still carried data-shbudgetkind="research". The row
+     would have gone on budgeting a kind the founder had just retired, with
+     nothing on screen saying which kind it was editing. Same coercion
+     shadowNewDraft() does for the delegate draft, and for the same reason. */
+  const offered = shadowOfferKinds();
+  const want = (typeof S !== "undefined" && S.shadowBudgetKind)
+    || (shadowNewDraft().kind) || offered[0];
+  const kind = (offered.indexOf(want) > -1) ? want : offered[0];
   const turns = budgets[kind];
-  const dead = ' aria-disabled="true" tabindex="-1" title="Not configurable yet"';
+  const lo = (typeof t.running_at_once_min === "number")
+    ? t.running_at_once_min : 1;
+  const hi = (typeof t.running_at_once_max === "number")
+    ? t.running_at_once_max : 20;
+  const busy = (typeof S !== "undefined" && S.shadowRunLimitBusy) || false;
+  /* an end-stop says so instead of clicking into a no-op; `busy` holds both
+     ends down for the one round-trip, so a double-click cannot send two */
+  const end = (atEnd) => (atEnd || busy)
+    ? ` aria-disabled="true" tabindex="-1" title="${escAttr(
+        busy ? "Saving\u2026" : (atEnd === "lo"
+          ? "At least " + lo + " task runs at a time"
+          : "At most " + hi + " tasks run at once"))}"`
+    : "";
   const stepper = run === undefined
     ? `<span class="ssempty">not reported</span>`
-    : `<span class="step"><button type="button"${dead
-        } aria-label="fewer">\u2212</button><span class="val">${
-        esc(String(run))}</span><button type="button"${dead
-        } aria-label="more">+</button></span>`;
+    : `<span class="step"><button type="button"${end(run <= lo && "lo")
+        } data-shrunlimit="${escAttr(String(Math.max(lo, run - 1)))}"
+        aria-label="fewer">\u2212</button><span class="val">${
+        esc(String(run))}</span><button type="button"${end(run >= hi && "hi")
+        } data-shrunlimit="${escAttr(String(Math.min(hi, run + 1)))}"
+        aria-label="more">+</button></span>`;
+  const over = (typeof t.running_now === "number" && run !== undefined
+                && t.running_now > run) ? t.running_now - run : 0;
+  const note = over
+    ? `<div class="srow ssnote">${esc(String(t.running_now))} are still
+        running \u2014 the new limit holds the next ${esc(String(over))
+        } back, it does not stop work already underway.</div>`
+    : (t.queued_now
+        ? `<div class="srow ssnote">${esc(String(t.queued_now))} waiting for a
+            free slot.</div>`
+        : "");
+  /* THE BUDGET STEPPER. Same three rules the cap stepper keeps -- the button
+     carries its already-clamped DESTINATION so a repeated click cannot
+     compound off one render, the band is the server's, and `busy` holds both
+     ends down for the round-trip. The step is 5, not 1: the band is 1-100, so
+     a founder moving 20 to 60 would otherwise be clicking forty times. */
+  const BSTEP = 5;
+  const blo = (typeof t.turn_budget_min === "number") ? t.turn_budget_min : 1;
+  const bhi = (typeof t.turn_budget_max === "number") ? t.turn_budget_max : 100;
+  /* which kinds may be set at all is the SERVER's answer, not a list here --
+     it derives it from the never_say invariant */
+  const bkinds = t.turn_budget_kinds
+    || shadowOfferKinds().filter(k => budgets[k] !== 0);
+  const bset = t.turn_budget_set || [];
+  const settable = bkinds.indexOf(kind) > -1;
+  const bbusy = (typeof S !== "undefined" && S.shadowBudgetBusy) || false;
+  const bend = (atEnd) => (atEnd || bbusy)
+    ? ` aria-disabled="true" tabindex="-1" title="${escAttr(
+        bbusy ? "Saving…" : (atEnd === "lo"
+          ? "A task gets at least " + blo + " turn"
+          : "At most " + bhi + " turns for one task"))}"`
+    : "";
+  /* the picker: which kind the stepper moves. Memory-only, like the overlay's
+     hide/quiet flags -- it selects a target, it does not store a preference */
+  const picker = `<span class="seg segmini" role="group"
+      aria-label="which kind of task">${shadowOfferKinds().map(k =>
+      `<button type="button" class="segb${k === kind ? " on" : ""}"
+        data-shbudgetkind="${escAttr(k)}"${k === kind
+          ? ' aria-pressed="true"' : ''}>${esc(k)}</button>`).join("")}</span>`;
+  const bstepper = !settable
+    ? `<span><span class="ev">${esc(String(turns))}</span> turns
+        <span class="auto" title="a watch task never speaks, so it never
+          spends a turn — there is no budget to set"
+          >not spent</span></span>`
+    : `<span class="step"><button type="button"${bend(turns <= blo && "lo")
+        } data-shbudgetkind="${escAttr(kind)}" data-shbudget="${escAttr(
+        String(Math.max(blo, turns - BSTEP)))}"
+        aria-label="smaller budget">−</button><span class="val">${
+        esc(String(turns))}</span><button type="button"${
+        bend(turns >= bhi && "hi")} data-shbudgetkind="${escAttr(kind)
+        }" data-shbudget="${escAttr(String(Math.min(bhi, turns + BSTEP)))}"
+        aria-label="bigger budget">+</button></span>
+      <span>turns</span>${bset.indexOf(kind) > -1
+        ? `<button type="button" class="auto set"${bbusy
+            ? ' aria-disabled="true" tabindex="-1"' : ''
+          } data-shbudgetkind="${escAttr(kind)}" data-shbudget="auto"
+          title="you set this — click to go back to auto"
+          >set by you</button>`
+        : `<span class="auto" title="the kind of work chose this"
+            >auto</span>`}`;
   const budget = turns === undefined
     ? `<span class="ssempty">not reported</span>`
-    : `<span><span class="ev">${esc(String(turns))}</span> turns
-        <span class="auto" title="set by the kind of work, not by you"
-          >auto</span></span>`;
+    : `${picker} ${bstepper}`;
+  /* THE LABEL NAMES THE KIND IT WRITES. "Budget per task" was a lie: this
+     control is per KIND, for whichever kind the picker is on, and a label
+     that claims otherwise makes a founder who sets `feature` to 50 read a
+     `fix` task running to 20 as the setting silently failing. It reads the
+     SAME `kind` variable every write-hook on this row carries, so the label
+     cannot drift from what the stepper actually moves. */
+  const blabel = `Budget per task${turns === undefined ? ""
+    : ` <span class="kdim">· ${esc(kind)}</span>`}`;
+  /* EVERY KIND, AT A GLANCE. The stepper edits one kind at a time, so without
+     this the founder can only see the number for whichever kind the picker is
+     on and has to click through all of them to learn what the rest run at.
+     `on` comes from the SERVER's turn_budget_set, never from comparing a
+     value to its default -- setting a budget to exactly its default is a real
+     choice, and comparing would redraw it as untouched and take the reset
+     control away. No new storage and no new key: both fields are already on
+     the wire and already read by this function. */
+  const readout = turns === undefined ? "" :
+    `<div class="srow budall">${shadowOfferKinds().map(k => {
+      const v = budgets[k];
+      const on = bset.indexOf(k) > -1;
+      return `<span class="budk${on ? " on" : ""}" title="${escAttr(on
+          ? "you set this" : "falling through to the template default")}"
+        >${esc(k)} <b>${v === undefined ? "—" : esc(String(v))}</b></span>`;
+    }).join("")}<span class="budlg">accented = you set it</span></div>`;
+  /* the budget's own honesty line, mirroring the cap's above: a new budget
+     cannot reach a task that is already running, because max_turns was
+     stamped onto it when it was created */
+  const bnote = (settable && turns !== undefined
+                 && typeof t.running_now === "number" && t.running_now)
+    ? `<div class="srow ssnote">${esc(String(t.running_now))} already running
+        keep the budget they started with — this sets the next one.</div>`
+    : "";
   return `<div class="srow"><span class="k">Running at once</span>${stepper}</div>
-    <div class="srow"><span class="k">Budget per task</span>${budget}</div>
-    <div class="srow"><span class="k" style="flex:none">Delegate offers</span>
-      <span class="chips">${SH_KINDS.map(k => `<span class="chip"${
-        budgets[k] === undefined ? "" : ` title="${escAttr(
-          budgets[k] + " turns")}"`}>${esc(k)}<span class="cx"${dead
-        } aria-hidden="true">\u00d7</span></span>`).join("")}
-        <button class="chipadd" type="button"${dead}>+ add</button>
-      </span></div>`;
+    ${note}
+    <div class="srow"><span class="k">${blabel}</span>${budget}</div>
+    ${readout}
+    ${bnote}`;
+}
+
+/* DELEGATE OFFERS -- the kinds Shadow may be asked to start.
+
+   ITS OWN SECTION, NOT A THIRD ROW UNDER TASKS (founder, 2026-09-16). It
+   shipped as a row directly beneath "Budget per task", and that row already
+   carries a segmented picker listing every kind -- fix, feature, research,
+   watch, and now whatever the founder has added, because the picker reads
+   the same offers list. Two pill rows of identical names, stacked, one
+   label apart: the founder read the BUDGET PICKER as the offers control and
+   reported the chips as rendering in the wrong place. They were not in the
+   wrong container; they were indistinguishable from the control above them.
+
+   A heading and a section rule are what separate two lists that look alike.
+   The sub-line then says which is which, because "these are the kinds" and
+   "this picks a kind to budget" is exactly the confusion that was reported
+   and a heading alone does not answer it.
+
+   THE CHIPS WRITE NOW, and they are the list the engine actually reads: the
+   same offers the mission fence gates on, the Delegate form presents, and
+   Shadow's boot context names. What used to be four names typed into four
+   files is one setting with one store behind it.
+
+   THE X CARRIES THE NAME, NOT AN INDEX. A removal posts the kind, so a
+   render that landed between the click and the write cannot shift what gets
+   removed -- the same reason the steppers carry their destination value.
+
+   THE FLOOR IS THE SERVER'S. The last chip's x is held down rather than
+   hidden: a founder who has narrowed to one kind should see why they cannot
+   go further, not watch the control vanish. The server refuses it anyway
+   (offers_min), so this is a courtesy, not the guard.
+
+   ADD IS A TWO-STEP GESTURE. "+ add" opens an input rather than posting
+   something; there is no name to send until one is typed. It is memory-only
+   state (S.shadowOfferAdding), like the budget picker's target -- an
+   unsubmitted box is not a preference worth keeping.
+
+   REMOVING NEVER TOUCHES WORK ALREADY DONE. A task keeps the kind it was
+   created with, and Retry still rebuilds a retired kind, because the store
+   un-offers without un-defining. The row does not say so: it would be
+   explaining a bug the founder cannot hit. */
+function shadowSetOffersHtml(t){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const offers = t.offers;
+  if (!Array.isArray(offers) || !offers.length)
+    return [`<span class="ssempty">not reported</span>`, ""];
+  const budgets = t.turn_budget || {};
+  const busy = !!S_.shadowOfferBusy;
+  const floor = (typeof t.offers_min === "number") ? t.offers_min : 1;
+  const ceil = (typeof t.offers_max === "number") ? t.offers_max : 12;
+  const atFloor = offers.length <= floor;
+  const full = offers.length >= ceil;
+  const chips = offers.map(k => {
+    const off = busy || atFloor;
+    const why = busy ? "Saving\u2026"
+      : (atFloor ? "Shadow needs at least " + floor
+                   + " kind of work to offer"
+                 : "Stop offering " + k);
+    /* the x's tag is written unbroken on purpose: the settings assertions
+       match `<button class="cx"` as one string, and a line wrap between the
+       tag and its first attribute would silently fail every one of them */
+    const x = `<button class="cx" type="button"${off
+      ? ' aria-disabled="true" tabindex="-1"'
+      : ` data-shofferdel="${escAttr(k)}"`} title="${escAttr(why)
+      }" aria-label="${escAttr("Remove " + k)}">\u00d7</button>`;
+    return `<span class="chip"${budgets[k] === undefined ? ""
+      : ` title="${escAttr(budgets[k] + " turns")}"`}>${esc(k)}${x}</span>`;
+  }).join("");
+  /* the input replaces the pill while it is open -- two controls for one
+     gesture would leave the founder wondering which one adds */
+  const add = S_.shadowOfferAdding
+    ? `<span class="chipin"><input type="text" data-shoffername="1"
+        value="${escAttr(S_.shadowOfferDraft || "")}" maxlength="24"
+        placeholder="review" aria-label="name the kind of work"
+        autofocus><button type="button" class="go"${busy
+          ? ' aria-disabled="true" tabindex="-1"' : ' data-shofferadd="1"'
+        } aria-label="add">\u2192</button></span>`
+    : `<button class="chipadd" type="button"${(busy || full)
+        ? ` aria-disabled="true" tabindex="-1" title="${escAttr(busy
+            ? "Saving\u2026" : "At most " + ceil + " kinds on offer")}"`
+        : ' data-shofferopen="1"'}>+ add</button>`;
+  const note = S_.shadowOfferErr
+    ? `<div class="srow ssnote">${esc(S_.shadowOfferErr)}</div>` : "";
+  return [`<span class="chips">${chips}${add}</span>`, note];
+}
+
+/* The section body: what these are, then the chips themselves.
+
+   The sub-line leads rather than trails. It is the line that tells the
+   founder this row DECIDES WHICH KINDS EXIST, as against the picker one
+   section up that merely chooses which of them to budget -- and a
+   disambiguation placed under the thing it disambiguates is read second,
+   which is too late. */
+function shadowSetOffersSecHtml(d){
+  const t = (d && d.tasks) || {};
+  const [chips, note] = shadowSetOffersHtml(t);
+  return `<div class="ssnote" style="margin:0 0 10px">The kinds of work you
+      can hand Shadow. Removing one stops it being offered; tasks already
+      created keep the kind they started with.</div>
+    <div class="srow">${chips}</div>
+    ${note}`;
 }
 
 /* PRESENCE, to the design of record's .ssec "Presence", then the
    "Add a control" bar below it.
 
-   TWO OF THESE ARE REAL, and they are the two the overlay has always had:
-   the corner card's hide-for-this-session (S.shadowHideSession, the card's
-   own "hide" control) and quiet (S.shadowQuiet, which gates showNudge at
-   15-shadow-overlay.js). Both are wired here to the SAME flags the card
-   toggles -- one state, two places to reach it, no copy. They are
-   memory-only, exactly as they are today; this does not make them durable
-   and does not pretend to.
+   TWO OF THESE ARE REAL, and they are real in different ways.
 
-   NUDGES PER HOUR is read from SH_PILLS_PER_HOUR, the rate pillAllowed
-   actually enforces. Stated, not settable: there is no writer.
+   CORNER CARD IS NOW DURABLE. It reads and writes S.shadowCardEvery, which
+   is seeded from the settings GET and persisted by
+   POST /api/shadow/settings/presence into presence.json -- so turning it off
+   survives a reload and a restart. It is deliberately NOT the same flag as
+   the card's own "hide" control (S.shadowHideSession, browser lifetime,
+   "not right now"): one state per meaning, and the card is visible when both
+   agree. Before this, the switch flipped the session flag and the founder's
+   choice died with the page.
 
-   QUIET HOURS has nothing behind it -- no field, no clock, no scheduler --
-   so the row renders with the value it truly has, which is none, and
-   without the AUTO pill. AUTO on this row would claim something chose those
-   hours; nothing did. The reference's "9pm to 8am" is mock copy.
+   HIDE FOR THIS APP IS NOW DURABLE, AND IS NO LONGER QUIET. It used to flip
+   S.shadowQuiet -- the nudge mute -- which meant the row's label named one
+   thing and its switch did another, and the other died at reload. It now
+   reads S.shadowHiddenApps and writes POST /api/shadow/settings/presence/app,
+   keyed on S.modSel: the open app id the Apps screen already owns. The dot is
+   suppressed at mount time for that app only (shadowPresenceHiddenHere in
+   15-shadow-overlay.js), so leaving the app brings it straight back.
+
+   WITH NO APP OPEN THE ROW HAS NO SUBJECT and says "no app open" instead of
+   drawing a switch. A switch whose target is null would either do nothing or
+   hide the dot somewhere the founder was not looking; the first is the lie
+   this section exists to refuse, and the second is worse.
+
+   QUIET IS STILL MEMORY-ONLY, and is now reached ONLY from the card's own
+   Quiet button (15-shadow-overlay.js). S.shadowQuiet gates showNudge there.
+   It has no store behind it and no row here pretends otherwise -- which is
+   the point: it is not the same thing as hiding Presence, and the two are
+   independent now.
+
+   NUDGES PER HOUR IS NOW THE FOUNDER'S NUMBER. It was stated-not-settable,
+   read off the JS constant SH_PILLS_PER_HOUR -- and that constant is now
+   DELETED rather than demoted to a fallback, because a fallback is how a
+   setting quietly reverts to 3 the first time a read fails. The rate lives in
+   presence.json beside the corner card, arrives on the same settings GET, and
+   is written by POST /api/shadow/settings/presence. The stepper's band comes
+   from the server that clamps it, and 0 is a real setting -- "never unasked" --
+   not an off state.
+
+   WHAT THE LIMIT ACTUALLY GOVERNS, stated plainly so this row cannot become
+   the next thing that overclaims: the unsolicited pill (showPill in
+   15-shadow-overlay.js, gated by pillAllowed). It is NOT a limit on showNudge,
+   the toast that confirms something the founder just did -- an answer to a
+   click is not an interruption and has never been counted.
+
+   QUIET HOURS NOW HAS ALL THREE -- a field, a clock and a window. It is the
+   fourth key in presence.json, written by POST /api/shadow/settings/quiet-hours,
+   and it is the only Presence setting whose EFFECTIVE value changes without
+   anyone writing it: the window is stored, "is it quiet right now" is derived.
+   The row still prints no hours it was not given -- "not set" when the store
+   says null, and the mock's "9pm to 8am" appears nowhere, because those hours
+   were chosen by a designer and not by this founder.
+
+   WHAT QUIET HOURS ACTUALLY SILENCE, stated as plainly as the rate row above:
+   the unsolicited pill (showPill), through the SAME gate the card's Quiet
+   button has always used -- shadowQuietNow folds the switch and the clock into
+   one answer -- and the corner dot's alert RING. Not the badge count, and not
+   showNudge. Being quiet is Shadow not speaking first; it is not Shadow hiding
+   what is waiting for the founder who looks.
 
    ADD A CONTROL is drawn and inert for the same reason the steppers are:
    there is nowhere for a new control to be kept. */
-function shadowSetPresenceHtml(){
+function shadowSetPresenceHtml(d){
   const S_ = (typeof S !== "undefined") ? S : {};
-  const dead = ' aria-disabled="true" tabindex="-1" title="Not configurable yet"';
-  const card = !S_.shadowHideSession;      /* shown unless hidden this session */
-  const quiet = !!S_.shadowQuiet;
+  /* the STANDING choice, not the session dismissal: this row states what the
+     founder chose, which is what survives the reload that clears the other */
+  const card = S_.shadowCardEvery !== false;
+  /* held down for the one round-trip, exactly as the steppers are: a second
+     click landing mid-write would send a value built off a stale render */
+  const busy = !!S_.shadowCornerBusy;
+  /* WHICH APP "THIS APP" IS: S.modSel, the open app id the Apps screen
+     already owns. No second notion of a current app is invented here, and
+     there is deliberately no fallback -- when no app is open the row has no
+     subject, and it says so rather than hiding the dot for something the
+     founder is not looking at. */
+  const appId = S_.modSel || null;
+  const openApp = (appId && typeof modSelected === "function")
+    ? modSelected(S_) : null;
+  /* THE PAYLOAD FIRST, THE SEEDED FLAG SECOND -- the same precedence the
+     nudges row below uses, and for the same reason. Both are meant to hold
+     one value (applyShadowPresence seeds the flag from this very payload),
+     but only `d` is guaranteed fresh at the moment this renders; preferring
+     the flag would make the switch depend on a seeding that happens to have
+     run, which is a race the row does not need to have. */
+  const presHidden = (d && d.presence && Array.isArray(d.presence.hidden_apps))
+    ? d.presence.hidden_apps : (S_.shadowHiddenApps || []);
+  const hiddenHere = !!appId && presHidden.indexOf(appId) !== -1;
+  const appBusy = !!S_.shadowAppPresenceBusy;
   const tog = (on, attr) => `<span class="tog${on ? "" : " off"}" role="switch"
     aria-checked="${on}" tabindex="0" ${attr}></span>`;
-  const rate = (typeof SH_PILLS_PER_HOUR !== "undefined")
-    ? SH_PILLS_PER_HOUR : null;
+  const held = (on, attr) => `<span class="tog${on ? "" : " off"}" role="switch"
+        aria-checked="${on}"
+        aria-disabled="true" tabindex="-1" title="Saving…" ${attr}></span>`;
+  const togBusy = (on, attr) => busy ? held(on, attr) : tog(on, attr);
+  const togApp = (on, attr) => appBusy ? held(on, attr) : tog(on, attr);
+  /* NUDGES PER HOUR, AND THE BROWSER KEEPS NO COPY OF THE NUMBER. It comes off
+     the settings payload, or off the flag the overlay was seeded with from
+     that same payload -- and when neither has one the row says "not
+     reported", which is the truth and is also exactly the state pillAllowed
+     treats as silence. There is no client-side default to fall back to:
+     SH_PILLS_PER_HOUR is deleted, so this row cannot print a 3 that nothing
+     enforces, which is the defect it shipped with. */
+  const pres = (d && d.presence) || {};
+  const rate = (typeof pres.nudges_per_hour === "number")
+    ? pres.nudges_per_hour
+    : (typeof S_.shadowNudgeRate === "number" ? S_.shadowNudgeRate : null);
+  /* the band is the SERVER's, like the cap stepper's -- these ends only draw
+     the stops, and the server clamps whatever is sent regardless */
+  const nlo = (typeof pres.nudges_per_hour_min === "number")
+    ? pres.nudges_per_hour_min : 0;
+  const nhi = (typeof pres.nudges_per_hour_max === "number")
+    ? pres.nudges_per_hour_max : 10;
+  const nbusy = !!S_.shadowNudgeBusy;
+  const nend = (atEnd) => (atEnd || nbusy)
+    ? ` aria-disabled="true" tabindex="-1" title="${escAttr(nbusy ? "Saving…"
+        : (atEnd === "lo" ? "Shadow will not interrupt you unasked"
+                          : "At most " + nhi + " an hour"))}"`
+    : "";
   return `<div class="srow"><span class="k">Corner card on every screen</span>
-      ${tog(card, 'data-shpresence="card"')}</div>
+      ${togBusy(card, 'data-shpresence="card"')}</div>
     <div class="srow"><span class="k">Quiet hours</span>
-      <span><span class="ev">not set</span></span></div>
+      ${shadowSetQuietHtml(pres)}</div>
     <div class="srow"><span class="k">Nudges per hour</span>${rate === null
       ? `<span class="ssempty">not reported</span>`
-      : `<span class="step"><button type="button"${dead
-          } aria-label="fewer">\u2212</button><span class="val">${
-          esc(String(rate))}</span><button type="button"${dead
-          } aria-label="more">+</button></span>`}</div>
-    <div class="srow"><span class="k">Hide for this app</span>
-      ${tog(quiet, 'data-shpresence="quiet"')}</div>`;
+      : `<span class="step"><button type="button"${nend(rate <= nlo && "lo")
+          } data-shnudges="${escAttr(String(Math.max(nlo, rate - 1)))}"
+          aria-label="fewer">\u2212</button><span class="val">${
+          esc(String(rate))}</span><button type="button"${
+          nend(rate >= nhi && "hi")} data-shnudges="${escAttr(
+          String(Math.min(nhi, rate + 1)))}"
+          aria-label="more">+</button></span>${rate === 0
+          ? `<span class="auto" title="Shadow will still answer you \u2014 it
+              just will not speak first">never unasked</span>` : ""}`}</div>
+    <div class="srow"><span class="k">Hide for this app${
+      openApp ? ` · <span class="ev">${esc(openApp.name
+        || openApp.id)}</span>` : ""}</span>
+      ${appId
+        ? togApp(hiddenHere, 'data-shpresence="app"')
+        : `<span class="ssempty">no app open</span>`}</div>`;
+}
+
+/* QUIET HOURS, the one Presence row with a clock behind it.
+
+   THREE STATES, and the row is only ever in one of them: not set / a window /
+   being edited. The editor REPLACES the value rather than sitting beside it,
+   which is the offers input's pattern (.chipin, shadowOfferAdding) -- two
+   controls for one gesture leaves the founder wondering which one is live.
+
+   NOTHING IS PREFILLED. Opening the editor with no window gives two empty
+   time fields, not "21:00 to 08:00": the mock's hours were never chosen by
+   anyone, and a prefill is a suggestion the founder can save without reading.
+   Save stays shut until both ends carry a time, so the round-trip that would
+   fail on a half window never leaves the browser.
+
+   "QUIET NOW" IS THE SERVER'S READING, not this page's. The row states what
+   the backend answered on the GET; what actually silences a nudge is the
+   overlay's own live evaluation of the window (shadowQuietWindowNow). They
+   agree because they are one machine -- and printing the server's answer is
+   what makes a disagreement visible instead of silent. */
+function shadowSetQuietHtml(pres){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const win = (pres && pres.quiet_hours) || null;
+  const busy = !!S_.shadowQuietBusy;
+  if (S_.shadowQuietEditing){
+    const dr = S_.shadowQuietDraft || {};
+    /* SAVE IS LIVE EVEN WHEN THE FIELDS ARE EMPTY, and the completeness check
+       lives in the writer instead. The input listener stores keystrokes
+       WITHOUT re-rendering (the caret rule this file already follows for the
+       offer name and the new-task fields), so a disabled-until-valid button
+       drawn at render time would never learn that the fields had been filled
+       -- a dead control that looks like a bug in the setting rather than in
+       the button. The writer refuses an incomplete window and says why. */
+    return `<span class="chipin shquietin">
+      <input type="time" data-shquietstart="1" value="${escAttr(dr.start || "")}"
+        aria-label="quiet from"${busy ? " disabled" : ""}>
+      <span class="shquietdash" aria-hidden="true">–</span>
+      <input type="time" data-shquietend="1" value="${escAttr(dr.end || "")}"
+        aria-label="quiet until"${busy ? " disabled" : ""}>
+      <button type="button" class="go"${busy
+        ? ' aria-disabled="true" tabindex="-1" title="Saving…"'
+        : ' data-shquietsave="1"'
+        } aria-label="save quiet hours">→</button>
+      <button type="button" class="cx"${busy
+        ? ' aria-disabled="true" tabindex="-1"'
+        : ' data-shquietcancel="1"'} aria-label="cancel">×</button>
+    </span>${S_.shadowQuietErr
+      ? `<div class="srow ssnote">${esc(S_.shadowQuietErr)}</div>` : ""}`;
+  }
+  if (!win) return `<span><span class="ev" role="button" tabindex="0"
+      data-shquietopen="1" title="Set the hours Shadow stays quiet"
+      >not set</span></span>`;
+  /* the value is the control: clicking the hours opens them for editing, the
+     way the offers pill opens the name field */
+  /* "QUIET NOW" IS EVALUATED AT PAINT, NOT READ OFF THE PAYLOAD. The GET
+     carries a server-computed quiet_now and this deliberately does not trust
+     it: S.shadowSettings is filled by a read that happens on entering the
+     screen and is then HELD, so a boolean taken from it would still read
+     "quiet now" an hour after the window closed -- the same staleness that
+     keeps the overlay's gate on a live clock. The window is the durable fact;
+     whether it is quiet is derived, here and at the gate, from the same
+     function. The payload's copy is kept only as the fallback for a context
+     that has the settings page without the overlay loaded. */
+  const inWindow = (typeof shadowQuietWindowNow === "function")
+    ? shadowQuietWindowNow(win)
+    : !!(pres && pres.quiet_now);
+  const now = inWindow
+    ? `<span class="auto" title="Shadow will not speak first until ${
+        escAttr(win.end)}">quiet now</span>` : "";
+  return `<span><span class="ev" role="button" tabindex="0"
+      data-shquietopen="1" title="Change the hours Shadow stays quiet"
+      >${esc(win.start)} \u2013 ${esc(win.end)}</span>${now}
+    <button type="button" class="cx"${busy
+      ? ' aria-disabled="true" tabindex="-1" title="Saving\u2026"'
+      : ' data-shquietclear="1"'
+      } aria-label="Clear quiet hours" title="Clear quiet hours">\u00d7</button>
+    </span>`;
 }
 
 function shadowSetAddHtml(){
@@ -2809,7 +3443,16 @@ function shadowSettingsHtml(){
       ${shadowSettingsSecHtml("Autonomy", shadowSetAutonomyHtml(d))}
       ${shadowSettingsSecHtml("Memory", shadowSetMemoryHtml(d))}
       ${shadowSettingsSecHtml("Tasks", shadowSetTasksHtml(d))}
-      ${shadowSettingsSecHtml("Presence", shadowSetPresenceHtml())}
+      ${/* NAMED, NOT INFERRED. This section carried no class of its own and
+            the stylesheet reached it with :has(.chips) -- which happened to
+            be correct, and was still the wrong way to write it: the rule
+            silently depends on what the section CONTAINS, so any future row
+            with chips in it inherits the offers treatment. An id and a class
+            say which section this is, in the markup that owns it. */""}
+      <section class="ssec ssoffers" id="shadow-delegate-offers"
+        ><h3 class="ssh">Delegate offers</h3>${
+        shadowSetOffersSecHtml(d)}</section>
+      ${shadowSettingsSecHtml("Presence", shadowSetPresenceHtml(d))}
       <section class="ssec addset"><h3 class="ssh">Add a control</h3>${
         shadowSetAddHtml()}</section>
       ${shadowSettingsSecHtml("Attention", shadowSetAttentionHtml(d))}
@@ -2843,9 +3486,28 @@ if (typeof SCREENS !== "undefined"){
       loadShadowHome();
       return `<div class="zero"><h4>Watching</h4><p>Looking\u2026</p></div>`;
     }
+    /* THE TAB THE FOUNDER PRESSED, not the one this screen was born on.
+       The literal "watching" here made the plane's own Working and Goals
+       tabs render as buttons that change nothing: the click handler sets
+       S.shadowTab and re-renders, and the re-render threw the answer away.
+
+       MEASURED IN THE LIVE APP (run-limit walkthrough, 2026-09-16), and the
+       cost was not cosmetic. shadowPlaneHtml's Working rows carry Stop and
+       Resume -- and the task card deliberately does NOT draw them ("this
+       pane is where Shadow reports and asks, not a worker control panel",
+       founder 2026-09-15), on the stated understanding that "the same two
+       buttons on the same two hooks still render in shadowPlaneHtml". With
+       the tab pinned shut, that understanding was false in effect: there
+       was no reachable way to STOP a running task, only the row's × which
+       deletes it. The design note and this line disagreed; the note is the
+       decision, so this line is what changes.
+
+       Nothing else moves: the same function, the same three tabs, the same
+       data-shtab hooks the QA probes read, and "watching" remains the
+       default for a page that has not been told otherwise. */
     return `<div class="shwatchscreen">${
       shadowPlaneHtml(S_.shadowWatching || [], S_.shadowMissions || [],
-                      "watching")}</div>`;
+                      S_.shadowTab || "watching")}</div>`;
   };
 }
 if (typeof TITLES !== "undefined"){
@@ -3164,30 +3826,27 @@ if (typeof document !== "undefined" && document.addEventListener){
        the home. Confirming the LAST check settles the mission server-side
        (api_shadow_mission_act -> settle_confirmation), so that re-read is
        also what moves the row out of the list. */
-    /* PRESENCE: the SAME two flags the overlay card toggles, reached from
-       settings. Nothing new is stored -- hide re-mounts or removes the dot
-       exactly as the card's own control does, and mountShadowOverlay is
-       already a no-op when a dot exists. */
+    /* PRESENCE. The two rows behave differently now and the difference is
+       the point: QUIET is still the same in-memory flag the card toggles,
+       reached from a second place. CORNER CARD is a stored setting, so it
+       goes through a writer that talks to the server and repaints from the
+       answer -- see shadowSetCornerCard. */
     if (d.shpresence){
-      if (typeof S !== "undefined"){
-        if (d.shpresence === "quiet"){
-          S.shadowQuiet = !S.shadowQuiet;
-        } else if (d.shpresence === "card"){
-          S.shadowHideSession = !S.shadowHideSession;
-          if (S.shadowHideSession){
-            S.shadowCardOpen = false;
-            const dot = typeof document !== "undefined" && document.querySelector
-              && document.querySelector(".shdot");
-            if (dot && dot.remove) dot.remove();
-            if (typeof renderShadowCard === "function") renderShadowCard();
-          } else if (typeof mountShadowOverlay === "function"){
-            mountShadowOverlay();
-          }
-        }
-      }
+      if (d.shpresence === "card") return shadowSetCornerCard();
+      /* "app" is the per-app hide. It is a WRITE, like "card" and unlike the
+         old quiet arm this replaces -- so it returns into the writer rather
+         than flipping a flag and repainting. */
+      if (d.shpresence === "app") return shadowSetAppPresence();
+      if (d.shpresence === "quiet" && typeof S !== "undefined")
+        S.shadowQuiet = !S.shadowQuiet;
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
+    /* NUDGES PER HOUR. A stored setting, so it goes the way the cap stepper
+       and the corner card go: the button carries its already-clamped
+       destination, the writer posts it, and the row repaints from the answer
+       the server stored. */
+    if (d.shnudges !== undefined) return shadowSetNudgeRate(d.shnudges);
     if (d.shcheckmid !== undefined && d.shcheckix !== undefined)
       return shadowMissionAct(d.shcheckmid, "confirm_check",
                               { index: Number(d.shcheckix) });
@@ -3222,6 +3881,78 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
+    /* RUNNING AT ONCE and BUDGET PER TASK. The two settings controls on this
+       page with a store behind them. Each button carries the value it would
+       MOVE TO (already clamped to the server's band when it was drawn), so
+       the handler sends a number rather than a direction -- a repeated click
+       cannot compound into a value nobody asked for while an earlier write is
+       in flight. */
+    if (d.shrunlimit !== undefined) return shadowSetRunLimit(d.shrunlimit);
+    /* AUTONOMY. Same rule as the two steppers: the button carries the value
+       it would MOVE TO, so a repeated click cannot compound, and the toggle
+       carries its DESTINATION ("0"/"1") rather than its current state. */
+    if (d.shautonomy !== undefined)
+      return shadowSetAutonomy({ level: d.shautonomy });
+    if (d.shtoptier !== undefined)
+      return shadowSetAutonomy({ confirm_top_tier: d.shtoptier === "1" });
+    /* "auto" is a RESET, and it has to survive the trip as null rather than
+       becoming Number("auto") -> NaN. The budget branch is tested before the
+       bare kind-picker branch because the stepper buttons carry BOTH. */
+    if (d.shbudget !== undefined)
+      return shadowSetTurnBudget(d.shbudgetkind,
+                                 d.shbudget === "auto" ? null : d.shbudget);
+    if (d.shbudgetkind !== undefined){
+      /* picking a kind only moves what the row POINTS AT -- no write, and
+         deliberately no store: it is a cursor, not a preference */
+      if (typeof S !== "undefined") S.shadowBudgetKind = d.shbudgetkind;
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    /* DELEGATE OFFERS. The x carries the NAME rather than a position, so a
+       re-render landing between the click and the write cannot shift which
+       kind gets removed. */
+    if (d.shofferdel !== undefined) return shadowOfferRemove(d.shofferdel);
+    if (d.shofferopen !== undefined){
+      /* opening the box is not a write: there is no name to send yet */
+      if (typeof S !== "undefined"){
+        S.shadowOfferAdding = true;
+        S.shadowOfferDraft = "";
+        S.shadowOfferErr = null;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    /* QUIET HOURS. Opening and cancelling are not writes -- there is no window
+       to send yet -- so they move local state and repaint, exactly as the
+       offers box does. Save and clear are the two that talk to the server, and
+       clear sends an explicit null rather than an empty object so "cleared"
+       arrives as the one shape the store deletes the key for. */
+    if (d.shquietopen !== undefined){
+      if (typeof S !== "undefined"){
+        const cur = ((S.shadowSettings || {}).presence || {}).quiet_hours || null;
+        S.shadowQuietEditing = true;
+        /* seeded from the STORED window when there is one, so "change" starts
+           from what is in force; empty when there is none, because the mock's
+           hours are not this founder's */
+        S.shadowQuietDraft = cur ? { start: cur.start, end: cur.end }
+                                 : { start: "", end: "" };
+        S.shadowQuietErr = null;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shquietcancel !== undefined){
+      if (typeof S !== "undefined"){
+        S.shadowQuietEditing = false;
+        S.shadowQuietDraft = null;
+        S.shadowQuietErr = null;
+      }
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (d.shquietsave !== undefined) return shadowSetQuietHours();
+    if (d.shquietclear !== undefined) return shadowSetQuietHours(null);
+    if (d.shofferadd !== undefined) return shadowOfferAdd();
     if (d.shivsend) return shadowSendIntervention(d.shivsend);
     if (d.shact && d.shmid) return shadowMissionAct(d.shmid, d.shact);
     if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
@@ -3281,6 +4012,19 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault && ev.preventDefault();
       shadowSubmitCompose(ev.target);
     }
+    /* the offer box submits on Enter and abandons on Escape -- the two keys
+       every one-field inline input in this app already answers to */
+    const od = (ev.target && ev.target.dataset) || {};
+    if (!od.shoffername) return;
+    if (ev.key === "Enter"){
+      ev.preventDefault && ev.preventDefault();
+      shadowOfferAdd();
+    } else if (ev.key === "Escape" && typeof S !== "undefined"){
+      S.shadowOfferAdding = false;
+      S.shadowOfferDraft = "";
+      S.shadowOfferErr = null;
+      if (typeof scheduleRender === "function") scheduleRender();
+    }
   });
   /* The new-task fields keep what is typed across the background re-renders
      the session stream causes. Stored, NEVER re-rendered on keystroke: a
@@ -3292,6 +4036,24 @@ if (typeof document !== "undefined" && document.addEventListener){
        delegate panel already uses -- one input handler, not a second one */
     if (d.shivtext && d.shivmid && d.shivkey){
       shadowIvDraft(d.shivmid).values[d.shivkey] = t.value;
+      return;
+    }
+    /* the offer name, kept across the background re-renders the session
+       stream causes -- same reason the new-task fields are kept, and stored
+       without re-rendering for the same caret reason */
+    if (d.shoffername){
+      if (typeof S !== "undefined") S.shadowOfferDraft = t.value;
+      return;
+    }
+    /* the two ends of the quiet window, kept for the same reason and in the
+       same way: stored without re-rendering, so a background repaint cannot
+       throw away a half-typed time */
+    if (d.shquietstart || d.shquietend){
+      if (typeof S !== "undefined"){
+        S.shadowQuietDraft = S.shadowQuietDraft || { start: "", end: "" };
+        if (d.shquietstart) S.shadowQuietDraft.start = t.value;
+        else S.shadowQuietDraft.end = t.value;
+      }
       return;
     }
     if (!d.shnewobj && !d.shnewdone) return;
@@ -3376,7 +4138,8 @@ async function shadowCreateTask(){
   try {
     r = await shadowPost("/api/shadow/missions", {
       objective: objective,
-      template: SH_KINDS.includes(d.kind) ? d.kind : "fix",
+      template: shadowOfferKinds().includes(d.kind)
+        ? d.kind : shadowOfferKinds()[0],
       target_mode: "new",
       done_when: done_when,
       /* the delegate boots on this: the objective plus what will count. */
@@ -3468,6 +4231,497 @@ async function shadowWatchSet(sid, watch){
   /* force: this read must show the write that just happened, so it never
      coalesces onto a read that was already in the air before the POST. */
   loadShadowHome(true);
+}
+
+/* Write "Corner card on every screen" -- the durable presence choice.
+
+   THE DOT MOVES FIRST, THEN THE SERVER CONFIRMS IT. A visibility toggle that
+   waited for a round-trip before anything happened would read as a dead
+   click, so the card appears or disappears immediately -- and the local flag
+   is REVERTED if the write does not land, because a switch that reads ON over
+   a disk that says OFF is the failure this whole change exists to remove.
+
+   REPAINTS FROM THE ANSWER, like the steppers: the server's stored boolean is
+   folded into S.shadowSettings.presence and re-applied, so the row and the
+   overlay both state what is on disk rather than what was clicked.
+
+   BUSY HOLDS THE SWITCH for the round-trip, for the reason the stepper's does
+   -- two quick clicks would otherwise race and land on whichever write the
+   server happened to finish second. */
+async function shadowSetCornerCard(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowCornerBusy) return;
+  const was = S.shadowCardEvery !== false;
+  const next = !was;
+  S.shadowCornerBusy = true;
+  if (typeof applyCornerCardPref === "function") applyCornerCardPref(next);
+  else S.shadowCardEvery = next;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/presence",
+                               { corner_card: next });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && typeof body.corner_card === "boolean"){
+      if (S.shadowSettings)
+        S.shadowSettings.presence = Object.assign({}, S.shadowSettings.presence,
+          { corner_card: body.corner_card });
+      if (typeof applyCornerCardPref === "function")
+        applyCornerCardPref(body.corner_card);
+      if (typeof showNudge === "function")
+        showNudge(body.corner_card
+          ? "Corner card is on — Shadow is on every screen."
+          : "Corner card is off — Focus › Shadow still has it.");
+    } else {
+      /* put it back: nothing was stored, so nothing may look stored */
+      if (typeof applyCornerCardPref === "function") applyCornerCardPref(was);
+      else S.shadowCardEvery = was;
+      if (typeof showNudge === "function")
+        showNudge("That did not stick — try again");
+    }
+  } catch (e){
+    if (typeof applyCornerCardPref === "function") applyCornerCardPref(was);
+    else S.shadowCardEvery = was;
+    if (typeof showNudge === "function")
+      showNudge("That did not stick — try again");
+  }
+  S.shadowCornerBusy = false;
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+/* Write "Quiet hours" -- a window, or null to clear it.
+
+   NOTHING IS OPTIMISTIC HERE, unlike the corner card. That switch moves the
+   dot immediately because a visibility toggle that waits reads as a dead
+   click; this row is text, the round-trip is one hop, and the hours the
+   founder is about to rely on at 3am must be the hours the DISK holds. So the
+   row repaints from the answer and only from the answer.
+
+   THE FIELDS ARE READ FROM THE DOM, not from the draft. The draft exists to
+   survive a background re-render, but the input listener stores it without
+   re-rendering, so on the save path the elements are the freshest truth --
+   and reading them is also what makes this correct if a repaint happened to
+   land between the last keystroke and the click.
+
+   AN INCOMPLETE WINDOW NEVER LEAVES THE BROWSER. The server refuses it
+   identically (it has to -- a hand-written POST is not an input element), but
+   saying so here costs no round-trip and keeps the editor open on the field
+   the founder still has to fill.
+
+   CLEAR SENDS EXPLICIT null. Not {}, not omitting the key: null is the one
+   shape set_quiet_hours deletes the key for, and an absent key is a 400 by
+   design so a malformed request can never silently erase the setting. */
+async function shadowSetQuietHours(window){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowQuietBusy) return;
+  let payload = null;
+  if (window === undefined){
+    const pick = (sel) => {
+      const el = (typeof document !== "undefined" && document.querySelector)
+        ? document.querySelector(sel) : null;
+      return el ? String(el.value || "") : "";
+    };
+    const dr = S.shadowQuietDraft || {};
+    const start = pick("[data-shquietstart]") || dr.start || "";
+    const end = pick("[data-shquietend]") || dr.end || "";
+    S.shadowQuietDraft = { start, end };
+    if (!start || !end){
+      S.shadowQuietErr = "Set both a start and an end.";
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    if (start === end){
+      S.shadowQuietErr = "Quiet hours need a start and an end that differ.";
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
+    payload = { start, end };
+  }
+  S.shadowQuietBusy = true;
+  S.shadowQuietErr = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/quiet-hours",
+                               { quiet_hours: payload });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && body.quiet_hours !== undefined){
+      if (S.shadowSettings)
+        S.shadowSettings.presence = Object.assign({}, S.shadowSettings.presence,
+          { quiet_hours: body.quiet_hours, quiet_now: !!body.quiet_now });
+      /* the overlay gates off the WINDOW, so it is seeded from the stored one
+         -- one state, reached from the page that just changed it */
+      S.shadowQuietHours = body.quiet_hours;
+      S.shadowQuietEditing = false;
+      S.shadowQuietDraft = null;
+      if (typeof showNudge === "function")
+        showNudge(body.quiet_hours
+          ? "Quiet hours " + body.quiet_hours.start + " to "
+            + body.quiet_hours.end + " — Shadow will not speak first then."
+          : "Quiet hours cleared — Shadow can speak at any hour.");
+    } else {
+      S.shadowQuietErr = (r && r.status === 400)
+        ? "Those hours were refused — check the start and the end."
+        : "That did not stick — try again.";
+    }
+  } catch (e){
+    S.shadowQuietErr = "That did not stick — try again.";
+  }
+  S.shadowQuietBusy = false;
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+/* Write "Nudges per hour".
+
+   THE SERVER IS THE CLAMP, and its answer is what the row repaints from --
+   never the optimistic value. Same rule as the cap stepper, for the same
+   reason: the number is floored and ceilinged on the way in, so painting what
+   was sent and then discovering something else was stored is the failure this
+   avoids. Nothing here is optimistic at all, which is why this writer has no
+   put-it-back arm the way shadowSetCornerCard does.
+
+   BOTH ENDS ARE HELD DOWN for the round-trip. A founder clicking + four times
+   quickly would otherwise send four writes off ONE rendered value and land on
+   2 instead of 5.
+
+   THE FLAG THE PILL READS MOVES TOO. S.shadowNudgeRate is what pillAllowed
+   consults, and it lives on the client for the life of the page, so folding
+   the answer only into S.shadowSettings would leave the setting correct on the
+   settings screen and stale everywhere the limit is actually enforced until
+   the next reload. */
+async function shadowSetNudgeRate(n){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowNudgeBusy) return;
+  S.shadowNudgeBusy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/presence",
+                               { nudges_per_hour: Number(n) });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && typeof body.nudges_per_hour === "number"){
+      S.shadowNudgeRate = body.nudges_per_hour;
+      if (S.shadowSettings)
+        S.shadowSettings.presence = Object.assign({}, S.shadowSettings.presence,
+          { nudges_per_hour: body.nudges_per_hour,
+            nudges_per_hour_min: body.min,
+            nudges_per_hour_max: body.max });
+      if (typeof showNudge === "function")
+        showNudge(body.nudges_per_hour === 0
+          ? "Shadow will not speak first — it still answers when you ask."
+          : "Nudges per hour is " + body.nudges_per_hour + ".");
+    } else if (typeof showNudge === "function"){
+      showNudge("That limit did not stick — try again");
+    }
+  } catch (e){
+    if (typeof showNudge === "function")
+      showNudge("That limit did not stick — try again");
+  }
+  S.shadowNudgeBusy = false;
+  if (typeof loadShadowSettings === "function") loadShadowSettings(true);
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+/* Write "Hide for this app" -- Presence, for the open app only.
+
+   THE SUBJECT IS S.modSel, read at CLICK time rather than carried on the
+   element. The founder can change apps between the render and the click, and
+   an id baked into the markup would then hide the dot for the app they just
+   left. No app open means no subject, and the row does not draw a switch in
+   that state -- this guard is the second half of that, for a synthesised
+   click or a selection that cleared mid-flight.
+
+   OPTIMISTIC, THEN CORRECTED BY THE SERVER, exactly as the corner card is.
+   The dot has to go the instant the switch moves or the control feels
+   broken; if the write then fails, the list is put back to what it was and
+   the founder is told, because nothing was stored and nothing may look
+   stored.
+
+   THE ANSWER IS THE WHOLE LIST. The route returns hidden_apps and this
+   repaints from it rather than patching one id in -- so a hide written from
+   another window (or a stale client) is reconciled by the next write instead
+   of being silently undone by it. */
+async function shadowSetAppPresence(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowAppPresenceBusy) return;
+  const appId = S.modSel;
+  if (!appId) return;                     /* no subject: nothing to write */
+  const was = (S.shadowHiddenApps || []).slice();
+  const next = was.indexOf(appId) === -1;
+  S.shadowAppPresenceBusy = true;
+  if (typeof applyAppPresence === "function")
+    applyAppPresence(next ? was.concat([appId])
+                          : was.filter(x => x !== appId));
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/presence/app",
+                               next ? { hide: appId } : { show: appId });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && Array.isArray(body.hidden_apps)){
+      if (S.shadowSettings)
+        S.shadowSettings.presence = Object.assign({}, S.shadowSettings.presence,
+          { hidden_apps: body.hidden_apps });
+      if (typeof applyAppPresence === "function")
+        applyAppPresence(body.hidden_apps);
+      if (typeof showNudge === "function")
+        showNudge(body.hidden
+          ? "Hidden here — Shadow is still on every other screen."
+          : "Shadow is back on this app.");
+    } else {
+      if (typeof applyAppPresence === "function") applyAppPresence(was);
+      else S.shadowHiddenApps = was;
+      if (typeof showNudge === "function")
+        showNudge("That did not stick — try again");
+    }
+  } catch (e){
+    if (typeof applyAppPresence === "function") applyAppPresence(was);
+    else S.shadowHiddenApps = was;
+    if (typeof showNudge === "function")
+      showNudge("That did not stick — try again");
+  }
+  S.shadowAppPresenceBusy = false;
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+/* Write "Running at once".
+
+   THE SERVER IS THE CLAMP, and the answer is what the row repaints from --
+   never the optimistic value. Two reasons: the server floors/ceilings the
+   number, and raising the cap PROMOTES queued tasks, so the counts beside
+   the stepper change as a result of the write. Painting the requested value
+   and then discovering the server stored something else is the failure this
+   avoids.
+
+   BUSY HOLDS BOTH ENDS DOWN for the round-trip: a founder clicking + four
+   times quickly would otherwise send four writes off ONE rendered value and
+   land on 2 instead of 5. */
+/* AUTONOMY, written the way the two steppers are: one guard so a
+   double-click cannot send two, fold the server's answer into the settings
+   object the page already reads rather than keeping a second copy, then
+   re-read. ONE FUNCTION FOR BOTH FIELDS because the route takes both -- the
+   toggle's meaning depends on the level, so a client that could write one
+   without restating the other would be able to draw a state the server never
+   reported.
+
+   IT RE-READS THE HOME, NOT JUST THE SETTINGS. Dropping to L0 pauses running
+   tasks and the rows have to say so; raising back does NOT un-pause them
+   (the founder resumes by hand), and the list is what tells the truth about
+   which of those two just happened. */
+async function shadowSetAutonomy(patch){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowAutonomyBusy) return;
+  S.shadowAutonomyBusy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/autonomy", patch);
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && S.shadowSettings){
+      S.shadowSettings.autonomy = Object.assign(
+        {}, S.shadowSettings.autonomy, {
+          level: body.level,
+          levels: body.levels,
+          confirm_top_tier: body.confirm_top_tier,
+          worker_may_write: body.worker_may_write,
+          worker_mode: body.worker_mode,
+        });
+    }
+    if (typeof showNudge === "function"){
+      if (!body){
+        showNudge("That did not stick — try again");
+      } else if (patch.level !== undefined){
+        const name = (SH_LEVELS.find(p => p[0] === body.level) || [])[1] || "";
+        /* HELD IS SAID OUT LOUD. Lowering to L0/L1 parks running tasks, and a
+           founder who is not told that reads the still-listed rows as the
+           setting having failed. */
+        showNudge("Autonomy is " + body.level + " " + name
+          + (body.held ? " — " + body.held + " waiting for you." : "."));
+      } else {
+        showNudge(body.confirm_top_tier
+          ? "Shadow will ask once before it first acts."
+          : "Shadow will not ask before it acts.");
+      }
+    }
+  } catch (e) {
+    if (typeof showNudge === "function")
+      showNudge("That did not stick — try again");
+  }
+  S.shadowAutonomyBusy = false;
+  loadShadowSettings(true);
+  loadShadowHome(true);
+}
+
+async function shadowSetRunLimit(n){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowRunLimitBusy) return;
+  S.shadowRunLimitBusy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/tasks",
+                               { running_at_once: Number(n) });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && S.shadowSettings){
+      /* fold the answer into the settings object the page already reads --
+         one state, not a second copy of the cap living beside it */
+      S.shadowSettings.tasks = Object.assign({}, S.shadowSettings.tasks, {
+        running_at_once: body.running_at_once,
+        running_at_once_min: body.min,
+        running_at_once_max: body.max,
+        running_now: body.running_now,
+        queued_now: body.queued_now,
+      });
+    }
+    if (typeof showNudge === "function"){
+      if (!body){
+        showNudge("That limit did not stick — try again");
+      } else if (body.starting){
+        /* STARTING, not started: a promoted task may still have to spawn its
+           worker, which is why the server does not await the drain. The list
+           is what reports arrival. */
+        showNudge("Running at once is " + body.running_at_once
+          + " — starting " + body.starting + " that were waiting.");
+      } else if (body.over_cap){
+        showNudge("Running at once is " + body.running_at_once
+          + " — " + body.over_cap + " already underway keep going.");
+      } else {
+        showNudge("Running at once is " + body.running_at_once + ".");
+      }
+    }
+  } catch (e) {
+    if (typeof showNudge === "function")
+      showNudge("That limit did not stick — try again");
+  }
+  S.shadowRunLimitBusy = false;
+  /* re-read rather than trust the fold: a promotion moves mission rows too,
+     and the home is what draws them */
+  loadShadowSettings(true);
+  loadShadowHome(true);
+}
+
+/* Write "Budget per task" for ONE kind. `turns` of null resets it to auto.
+
+   SAME THREE RULES AS THE CAP WRITER, for the same reasons: the server is the
+   clamp so the row repaints from its ANSWER and never the requested value;
+   `busy` holds both ends down for the round-trip so a fast double-click sends
+   one write, not two; and the answer is folded into the settings object the
+   page already reads rather than kept beside it.
+
+   THE NUDGE SAYS "NEW TASKS ONLY" BECAUSE THAT IS THE ONE THING THE NUMBER
+   ON SCREEN CANNOT SAY. max_turns is stamped onto a mission at create(), so
+   a founder who raises the budget while three tasks are running will see none
+   of them change, and a setting that appears not to have worked is worse than
+   one that explains its own scope.
+
+   AND IT DOES NOT RELOAD THE HOME, unlike the cap writer. That is deliberate,
+   not an omission: raising the cap PROMOTES queued missions, so the home's
+   rows move and have to be re-read. A budget change starts nothing and stops
+   nothing -- no row moves, so there is nothing there to re-read. */
+async function shadowSetTurnBudget(kind, turns){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowBudgetBusy) return;
+  S.shadowBudgetBusy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/budget",
+      { kind: kind, turns: turns === null ? null : Number(turns) });
+    const body = (r && r.ok) ? await r.json() : null;
+    if (body && S.shadowSettings){
+      /* the whole map, not the one key: the row and all four Delegate-offer
+         chips read off turn_budget, so patching one and trusting the rest is
+         how a chip goes stale */
+      S.shadowSettings.tasks = Object.assign({}, S.shadowSettings.tasks, {
+        turn_budget: body.turn_budget,
+        turn_budget_set: body.turn_budget_set,
+        turn_budget_min: body.min,
+        turn_budget_max: body.max,
+      });
+    }
+    if (typeof showNudge === "function"){
+      if (!body){
+        showNudge("That budget did not stick — try again");
+      } else if (body.auto){
+        showNudge("Budget for " + body.kind + " is back to auto ("
+          + body.turns + " turns).");
+      } else {
+        showNudge("Budget for " + body.kind + " is " + body.turns
+          + " turns — new tasks only.");
+      }
+    }
+  } catch (e) {
+    if (typeof showNudge === "function")
+      showNudge("That budget did not stick — try again");
+  }
+  S.shadowBudgetBusy = false;
+  loadShadowSettings(true);
+}
+
+/* Write "Delegate offers" -- add or remove one kind.
+
+   THE SERVER IS THE AUTHORITY, and the chips repaint from its answer rather
+   than from the optimistic list. The same two reasons the cap stepper has:
+   the server validates the name and can refuse it, and an add MINTS a kind
+   with a budget only the server knows. Painting a chip and then discovering
+   it was rejected is the failure this avoids.
+
+   ONE VERB PER WRITE. The route refuses both together, and the UI has no
+   gesture that produces both -- an add and a remove are two clicks.
+
+   A REFUSAL IS SAID, NOT SWALLOWED. The store's message names the reason
+   (the name, the ceiling, the last-offer floor), so it goes on the row where
+   the founder is looking rather than only into a nudge that scrolls away. */
+async function shadowOfferWrite(body, said){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return;
+  if (S.shadowOfferBusy) return;
+  S.shadowOfferBusy = true;
+  S.shadowOfferErr = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await shadowPost("/api/shadow/settings/offers", body);
+    const answer = (r && r.ok) ? await r.json() : null;
+    if (answer && S.shadowSettings){
+      /* offers AND the budget map together: a minted kind arrives with a
+         budget, and a chip that could not state its turns would render bare */
+      S.shadowSettings.tasks = Object.assign({}, S.shadowSettings.tasks, {
+        offers: answer.offers,
+        offers_min: answer.min,
+        offers_max: answer.max,
+        turn_budget: answer.turn_budget,
+        turn_budget_kinds: answer.turn_budget_kinds,
+      });
+    }
+    if (!answer){
+      /* the route answers 400 with the store's own sentence; prefer it to a
+         generic line, because "at least 1 delegate offer" tells the founder
+         what to do and "did not stick" does not */
+      let why = null;
+      try { why = ((await r.json()) || {}).detail; } catch (e) {}
+      S.shadowOfferErr = why || "That did not stick — try again.";
+    } else {
+      S.shadowOfferAdding = false;
+      S.shadowOfferDraft = "";
+      if (typeof showNudge === "function") showNudge(said(answer));
+    }
+  } catch (e) {
+    S.shadowOfferErr = "Could not reach Shadow — try again.";
+  }
+  S.shadowOfferBusy = false;
+  /* re-read rather than trust the fold: the Delegate form reads offers too */
+  loadShadowSettings(true);
+}
+
+function shadowOfferAdd(){
+  if (typeof S === "undefined") return;
+  const name = String(S.shadowOfferDraft || "").trim();
+  if (!name){
+    /* an empty box is not a refusal worth a round-trip */
+    S.shadowOfferErr = "Name the kind of work first.";
+    if (typeof scheduleRender === "function") scheduleRender();
+    return;
+  }
+  return shadowOfferWrite({ add: name },
+    (a) => "Shadow now offers " + a.offers.length + " kinds of work.");
+}
+
+function shadowOfferRemove(name){
+  return shadowOfferWrite({ remove: name },
+    () => "Shadow no longer offers " + name + ". Tasks already created keep "
+      + "the kind they started with.");
 }
 
 async function shadowInstructionAct(id, action){

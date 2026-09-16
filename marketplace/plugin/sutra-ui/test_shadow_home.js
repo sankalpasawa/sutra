@@ -81,12 +81,28 @@ const MISSIONS = [
 {
   const ctx = fresh();
   const g = ctx.shadowPlaneHtml([], MISSIONS, "working");
-  assert(/data-shact="start_now" data-shmid="m-2"/.test(g), "queued: Start now");
+  /* QUEUED OFFERS NO START. The row is waiting on the run limit and nothing
+     else, so admission would refuse the click and leave it exactly where it
+     is -- the row says what it is waiting for, and keeps the one decision
+     that is really the founder's. */
+  assert(!/data-shact="start_now" data-shmid="m-2"/.test(g),
+    "queued: no Start now -- the cap is what holds it, not a missing click");
+  assert(/Waiting for a free\s+slot[\s\S]{0,120}data-shmid="m-2"/.test(g),
+    "queued: says what it is waiting for");
   assert(/data-shact="drop"[\s\S]{0,60}data-shmid="m-2"/.test(g),
     "queued: Drop");
   assert(/data-shact="resume" data-shmid="m-3"/.test(g), "paused: Resume");
   assert(/data-shact="stop" data-shmid="m-1"/.test(g), "running: Stop");
   assert(!/data-shmid="m-4"/.test(g), "done missions leave the plane");
+  /* NEEDS YOU MUST BE ANSWERABLE (2026-09-16). A supervisor fault now parks
+     a live mission at `blocked` with no intervention form attached
+     (mission_engine.INFRA_BLOCK_REASONS), so the row is the only surface
+     that can offer the way back. Both edges are in TRANSITIONS already. */
+  const b = ctx.shadowPlaneHtml([], [{ id: "m-9", state: "blocked",
+    objective: "x", block_reason: "no_live_runtime",
+    failure_class: "shadow_infra" }], "working");
+  assert(/data-shact="resume" data-shmid="m-9"/.test(b), "blocked: Resume");
+  assert(/data-shact="stop" data-shmid="m-9"/.test(b), "blocked: Stop");
   console.log("ok 4 mission actions");
 }
 
@@ -450,14 +466,44 @@ console.log("ok 6 controls wired");
     "the new-task ask must not draw on the workspace");
   assert.strictEqual((empty.match(/data-shhomecompose/g) || []).length, 1,
     "an empty workspace still has exactly one composer");
+  /* THE NEW TASK FORM IS THE ONLY THING ASKING (founder, 2026-09-15).
+     With the panel open, the stage underneath drew "What should I take on? /
+     Tell Shadow the outcome you want." plus a second outcome box -- directly
+     below a form whose FIRST field is already "The outcome you want". Two
+     boxes for one sentence, and only one of them creates a task. Open: the
+     panel and nothing else. Closed: byte-identical to what shipped. */
   const newTask = (() => { const c = fresh(); c.S.shadowHomeDark = false;
     c.S.shadowMissions = MISSIONS; c.S.goals = []; c.S.shadowNewOpen = true;
     return c.shadowHomeHtml(); })();
-  assert(/Tell Shadow what outcome you want/.test(newTask),
-    "the delegation placeholder was lost");
-  assert(/Tell Shadow the outcome you want/.test(newTask),
-    "the shask copy was lost");
+  assert(!/What should I take on\?/.test(newTask),
+    "the ask heading still draws behind the New Task form");
+  assert(!/Tell Shadow the outcome you want/.test(newTask),
+    "the ask copy still draws behind the New Task form");
+  assert(!/Tell Shadow what outcome you want/.test(newTask),
+    "the stage composer placeholder still draws behind the New Task form");
+  assert(!/data-shhomecompose/.test(newTask),
+    "the stage composer still draws behind the New Task form");
+  assert(!/data-shsend="1"/.test(newTask),
+    "the stage send arrow still draws behind the New Task form");
+  /* ...and the form itself is untouched and still the way in */
+  assert(/data-shnewpanel="1"/.test(newTask), "the New Task panel was lost");
+  assert(/What should Shadow get done\?/.test(newTask),
+    "the panel's own heading was lost");
+  assert(/data-shnewobj="1"/.test(newTask), "the outcome field was lost");
+  assert(/data-shnewdone="1"/.test(newTask), "the done-when field was lost");
+  assert(/data-shnewcreate="1"/.test(newTask), "Create the task was lost");
+  assert(/data-shnewcancel="1"/.test(newTask), "Cancel was lost");
+
+  /* CLOSED IS EXACTLY AS IT WAS -- the whole of the other half of the rule.
+     Same string, rendered by the same call, for a focused task and for an
+     empty workspace. */
+  assert(/data-shhomecompose/.test(h), "the closed workspace lost its composer");
+  assert(/Say anything/.test(h), "the closed workspace lost its placeholder");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
+  assert(!/What should I take on\?/.test(h),
+    "the ask heading must not draw on a focused workspace either");
+  assert.strictEqual((empty.match(/data-shhomecompose/g) || []).length, 1,
+    "a closed empty workspace still has exactly one composer");
   console.log("ok 14b existing-chat flow removed; delegation composer stays");
 }
 
@@ -1114,8 +1160,27 @@ const SET = { engage: ["outcome first"],
   per_chat: { "sess-paisa": [{ id: "i-2", text: "Run the EMI check first." }] },
   attention: { watching: ["a", "b"], off: ["c"], alerts: 2 },
   floors: ["the push", "client repos", "external sends"],
+  /* AUTONOMY RIDES THE SAME PAYLOAD, and the level has to be in the fixture
+     because the page has no constant to fall back on any more: a settings
+     answer without `autonomy` makes the section say "not reported", which is
+     what 22d3 asserts. */
+  autonomy: { level: "L3", levels: ["L0", "L1", "L2", "L3"],
+              confirm_top_tier: true, worker_may_write: true,
+              worker_mode: "acceptEdits" },
   tasks: { running_at_once: 5,
-           turn_budget: { feature: 30, fix: 20, research: 15, watch: 0 } } };
+           turn_budget: { feature: 30, fix: 20, research: 15, watch: 0 },
+           turn_budget_min: 1, turn_budget_max: 100,
+           turn_budget_set: [],
+           turn_budget_kinds: ["feature", "fix", "research"],
+           offers: ["fix", "feature", "research", "watch"],
+           offers_min: 1, offers_max: 12 },
+  /* PRESENCE RIDES THE SAME PAYLOAD, and the rate has to be in the fixture
+     because the page no longer has a constant to fall back on: a settings
+     answer without `nudges_per_hour` makes the row say "not reported", which
+     is what 22f5 asserts. */
+  presence: { corner_card: true, hidden_apps: [],
+              nudges_per_hour: 3,
+              nudges_per_hour_min: 0, nudges_per_hour_max: 10 } };
 
 /* 22a. the header the design draws, and the way back */
 {
@@ -1170,10 +1235,10 @@ const SET = { engage: ["outcome first"],
   assert(/data-shwatching="1"/.test(h) && /data-shgoals="1"/.test(h)
       && /data-shchats="1"/.test(h),
     "Watching / Goals / Conversations must stay reachable from Settings");
-  /* Autonomy is drawn to the reference (founder, explicit) even though the
-     level and the top-tier switch have no store. What must hold is that they
-     do not PRETEND: no action hook, so nothing posts and nothing claims to
-     remember a choice it cannot keep. Pinned in 22d. */
+  /* Autonomy is drawn to the reference AND writes: the level and the
+     top-tier switch have a store now, so what must hold is the opposite of
+     what it used to be -- they carry hooks, and the level on screen is the
+     one the server reported. Pinned in 22d. */
   /* every section the design draws is now here, in its order */
   ["Autonomy", "Memory", "Tasks", "Presence", "Add a control", "Attention"]
     .reduce((prev, name) => {
@@ -1188,9 +1253,15 @@ const SET = { engage: ["outcome first"],
   console.log("ok 22b settings: real data only, sections in the design's order");
 }
 
-/* 22d. AUTONOMY, to the reference. Four equal levels in one well with L3
-   filled, the top-tier switch on, then the floor pills -- and not one of the
-   two unbacked controls carries a writer. */
+/* 22d. AUTONOMY, to the reference AND to the store behind it.
+   This case was rewritten on 2026-09-16, not extended, because what it
+   asserted became false. It used to pin the section INERT -- "an unbacked
+   control carries an action hook" was a FAILURE message, and it required
+   >= 5 aria-disabled attributes -- which was right while the level and the
+   switch had no endpoint. They have one now
+   (/api/shadow/settings/autonomy), so the old assertions would have kept the
+   feature out, and the shape of the case is inverted: the controls MUST
+   write, and the level drawn MUST be the one the server reported. */
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
@@ -1203,7 +1274,7 @@ const SET = { engage: ["outcome first"],
       assert(seg.indexOf(nm) > -1, "level name missing: " + nm);
     });
   assert((seg.match(/<button/g) || []).length === 4, "four levels, no more");
-  /* L3 is the selected one, and it is the ONLY selected one */
+  /* the fixture says L3, so L3 is lit -- and it is the ONLY one lit */
   assert((seg.match(/class="on"/g) || []).length === 1, "exactly one level is on");
   const l3 = seg.slice(seg.lastIndexOf("<button"));
   assert(/class="on"/.test(l3) && /aria-selected="true"/.test(l3),
@@ -1218,13 +1289,96 @@ const SET = { engage: ["outcome first"],
     "Autonomy must read levels -> switch -> floors");
   /* the pills carry the lock the reference draws */
   assert((h.match(/class="lk"/g) || []).length === 3, "three locked floor pills");
-  /* NOTHING UNBACKED WRITES. The one invariant that survives drawing them. */
+
+  /* EVERY UNSELECTED LEVEL WRITES. The inversion of the old assertion. */
+  ["L0", "L1", "L2"].forEach(lv =>
+    assert(new RegExp('data-shautonomy="' + lv + '"').test(seg),
+      "level " + lv + " cannot be chosen: no action hook"));
+  /* ...and the SELECTED one does not: posting the value it already holds
+     spends a round-trip to change nothing. */
+  assert(!/data-shautonomy="L3"/.test(seg),
+    "the selected level must not re-post itself");
+  /* the switch carries its DESTINATION, not its state, so a repeated click
+     cannot toggle twice off one render */
+  assert(/data-shtoptier="0"/.test(h),
+    "the top-tier switch must offer to turn OFF while it is on");
+  /* nothing in the section may still claim to be inoperable */
   const auto = h.slice(h.indexOf('class="seg"'), h.indexOf('class="floorbar"'));
-  assert(!/data-sh[a-z]+=/.test(auto),
-    "an unbacked control carries an action hook: " + auto.slice(0, 200));
-  assert((auto.match(/aria-disabled="true"/g) || []).length >= 5,
-    "unbacked controls must say they are not operable");
-  console.log("ok 22d autonomy matches the reference and writes nothing");
+  assert(!/aria-disabled="true"/.test(auto),
+    "a backed control still says it is not operable: " + auto.slice(0, 200));
+  /* scoped to THIS section: other rows on the page may legitimately still be
+     unbacked, and this case is about autonomy */
+  assert(!/Not configurable yet/.test(auto), "the inert tooltip survived");
+  console.log("ok 22d autonomy is drawn from the store and every control writes");
+}
+
+/* 22d2. THE LEVEL ON SCREEN IS THE SERVER'S, not a default. The old code
+   carried `SH_LEVEL_NOW = "L3"`; if anything like it comes back, a founder
+   running L0 would be shown Act. */
+{
+  const ctx = fresh();
+  const set = JSON.parse(JSON.stringify(SET));
+  set.autonomy = { level: "L0", levels: ["L0", "L1", "L2", "L3"],
+                   confirm_top_tier: false, worker_may_write: false,
+                   worker_mode: "plan" };
+  ctx.S.shadowSettings = set;
+  const h = ctx.shadowSettingsHtml();
+  const seg = (h.match(/<div class="seg"[\s\S]*?<\/div>/) || [""])[0];
+  const btns = seg.split("<button").slice(1);
+  assert(btns.length === 4, "four levels, no more");
+  assert(/class="on"/.test(btns[0]) && /L0/.test(btns[0]),
+    "L0 was reported but is not the lit level");
+  assert((seg.match(/class="on"/g) || []).length === 1,
+    "exactly one level is on");
+  assert(!/data-shautonomy="L0"/.test(seg), "the selected level re-posts itself");
+  assert(/data-shautonomy="L3"/.test(seg), "L3 must be choosable from L0");
+  /* the switch follows the server too, and offers the opposite */
+  assert(/class="tog off" role="switch" aria-checked="false"/.test(h),
+    "the switch must render off when the server says off");
+  assert(/data-shtoptier="1"/.test(h),
+    "an off switch must offer to turn ON");
+  /* the CONSEQUENCE is stated, in the server's own word for it */
+  assert(/read-only/.test(h), "L0 must say the worker cannot write");
+  assert(/<code>plan<\/code>/.test(h),
+    "the mode the server reported must be the mode shown");
+  /* and the switch says it does not bite here */
+  assert(/Applies at Act/.test(h),
+    "the top-tier switch must say it does nothing below Act");
+  console.log("ok 22d2 the level, the switch and the mode are read back, never assumed");
+}
+
+/* 22d3. NO AUTONOMY BLOCK -> SAY SO. An older server, or a settings read
+   that failed, must not be drawn as L3 Act: that is the same lie the inert
+   selector was written to avoid, arriving by a different road. */
+{
+  const ctx = fresh();
+  const set = JSON.parse(JSON.stringify(SET));
+  delete set.autonomy;
+  ctx.S.shadowSettings = set;
+  const h = ctx.shadowSettingsHtml();
+  assert(/The autonomy level was not reported/.test(h),
+    "a missing autonomy block must be stated, not defaulted");
+  assert(!/class="seg"/.test(h),
+    "no level may be drawn as selected when none was reported");
+  assert(!/data-shautonomy=/.test(h),
+    "nothing may write a level the page never read");
+  /* the floors are NOT part of the autonomy store and must survive it */
+  assert(/class="floorbar"/.test(h),
+    "the floors must still render when the level is unknown");
+  console.log("ok 22d3 a missing autonomy block says so and still draws the floors");
+}
+
+/* 22d4. THE FLOOR NOTE NAMES ACT. A founder who has just been handed an Act
+   button is exactly the person who needs to know what it does not buy. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  assert(/Floors are confirm-first at every level, Act included/.test(h),
+    "the floor note must say the top level does not clear the floors");
+  assert(/not editable\s+here/.test(h),
+    "the floors must still say they are locked");
+  console.log("ok 22d4 the floors say they outrank every level");
 }
 
 /* 22e. TASKS, to the reference -- and every number on it is one the engine
@@ -1243,23 +1397,74 @@ const SET = { engage: ["outcome first"],
   const step = (sec.match(/<span class="step">[\s\S]*?<\/span>\s*<\/div>/) || [""])[0];
   assert(/\u2212/.test(step) && /\+</.test(step), "the stepper needs - and +");
   assert(/<span class="val">5<\/span>/.test(step),
-    "the stepper must show MAX_RUNNING, got: " + step.slice(0, 160));
-  /* the budget: the real per-kind turn budget, with the AUTO pill */
-  assert(/<span class="ev">20<\/span> turns/.test(sec),
-    "budget must quote TEMPLATES[fix].max_turns");
+    "the stepper must show the cap the engine enforces, got: "
+      + step.slice(0, 160));
+  /* the budget: a stepper on the real per-kind turn budget, and while no
+     kind carries an override the AUTO pill still says so */
+  const bstep = (sec.match(
+    /<span class="step"><button[^]*?data-shbudget=[^]*?<\/span>/) || [""])[0];
+  assert(/<span class="val">20<\/span>/.test(bstep),
+    "the budget stepper must show the kind's real budget, got: "
+      + bstep.slice(0, 200));
   assert(/class="auto"[^>]*>auto</.test(sec), "the AUTO pill is missing");
-  /* the chips: what Delegate offers, each with the x the reference draws */
+  assert(!/set by you/.test(sec),
+    "nothing is overridden in the fixture, so nothing may claim it is");
+  /* the chips: what Delegate offers, each with the x that now REMOVES it.
+     Read off the Delegate panel's OWN render rather than a list retyped
+     here, so the two can never drift -- whatever Delegate offers is what
+     Settings states, and both now read the server's `offers`. */
   const kinds = (ctx.shadowDelegatePanelHtml().match(
-    /data-shnewkind="([a-z]+)"/g) || []).map(m => m.split('"')[1]);
+    /data-shnewkind="([a-z0-9-]+)"/g) || []).map(m => m.split('"')[1]);
+  assert(kinds.length >= 4, "the Delegate panel offered no kinds to compare");
   kinds.forEach(k => assert(
-    new RegExp('class="chip"[^>]*>' + k + '<span class="cx"').test(sec),
+    new RegExp('class="chip"[^>]*>' + k + '<button class="cx"').test(sec),
     "Delegate offer missing its chip or x: " + k));
   assert(/class="chipadd"[\s\S]{0,120}\+ add</.test(sec), "no + add pill");
-  /* NOTHING IN HERE WRITES. Same invariant Autonomy keeps. */
-  assert(!/data-sh[a-z]+=/.test(sec),
-    "an unbacked Tasks control carries an action hook");
-  assert((sec.match(/aria-disabled="true"/g) || []).length >= 7,
-    "the -, +, every x and + add must say they are not operable");
+  /* EVERY CONTROL ON THIS SECTION NOW HAS A STORE BEHIND IT.
+
+     This assertion used to say the opposite. It held that the chip x's and
+     "+ add" must carry NO hook and must announce themselves inoperable,
+     because there was nowhere to keep a delegate kind. There is now, so the
+     old invariant is not weakened here -- it is SPENT. What replaces it is
+     the same rule stated the only way still worth stating: this section may
+     carry no hook that is not backed by a writer, and BACKED is the
+     enumeration of what is.
+
+     ENUMERATED, NEVER PREFIX-MATCHED. A filter like `h.indexOf("shoffer")
+     !== 0` would exempt every future hook whose name happened to start that
+     way, which is the drift this assertion exists to catch. Each new hook
+     costs one line here, on purpose.
+
+     Asserted by ATTRIBUTE rather than by stripping markup: the steppers nest
+     spans, so a non-greedy slice ends early and silently readmits whatever
+     it failed to cut. */
+  assert(/class="seg segmini"/.test(sec),
+    "the budget row must name the kind it edits");
+  const BACKED = ["shrunlimit",                    // the cap stepper
+                  "shbudget", "shbudgetkind",      // the budget stepper
+                  /* The four below belong to Delegate offers (mission
+                     m-8b8e698494ab), not to the turn-budget work. They are
+                     THAT mission's to remove: if Delegate offers stops
+                     writing, these four lines go with it. */
+                  "shofferdel",                    // a chip's x
+                  "shofferopen", "shofferadd",     // "+ add", then submit
+                  "shoffername"];                  // the name box
+  const hooks = (sec.match(/data-sh[a-z]+=/g) || [])
+    .map(m => m.slice(5, -1));
+  const stray = hooks.filter(h => BACKED.indexOf(h) === -1);
+  assert(stray.length === 0,
+    "an unbacked Tasks control carries an action hook: " + stray.join(","));
+  /* one live x per offered kind -- no chip draws a dead one */
+  const xs = sec.match(/<button class="cx"[^>]*>/g) || [];
+  assert(xs.length === kinds.length,
+    "one x per offered kind, got " + xs.length + " for " + kinds.length);
+  xs.forEach(x => assert(/data-shofferdel="/.test(x),
+    "a chip x carries no remove hook: " + x));
+  assert(/class="chipadd"[^>]*data-shofferopen="1"/.test(sec),
+    "+ add must carry its hook now that a kind can be kept");
+  /* the phrase the dead controls wore is gone with them */
+  assert(!/Not configurable yet/.test(sec),
+    "nothing in Tasks may still claim it cannot be configured");
   /* and when the server sends no limits, none are invented */
   const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
   ctx.S.shadowSettings = d2;
@@ -1267,6 +1472,394 @@ const SET = { engage: ["outcome first"],
   assert(/not reported/.test(bare), "a missing limit must be said, not guessed");
   assert(!/class="val">5</.test(bare), "a limit was invented from nowhere");
   console.log("ok 22e tasks: reference layout, engine-enforced numbers");
+}
+
+/* ── "RUNNING AT ONCE" IS A REAL CONTROL ──────────────────────────────────
+   22e1-22e6. The stepper used to be drawn dead beside a number the page could
+   only read. It writes now, and these are the four things that has to mean:
+   the buttons carry the value they move TO, they stop at the server's band,
+   one click sends exactly one write, and what repaints is the SERVER's
+   answer -- never the value that was asked for. */
+
+/* 22e1. the buttons carry a DESTINATION, already clamped when drawn. Sending
+   a direction instead would let a repeated click compound off one render. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks = { running_at_once: 3, running_at_once_min: 1,
+              running_at_once_max: 20, turn_budget: SET.tasks.turn_budget };
+  ctx.S.shadowSettings = d;
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/data-shrunlimit="2"[^>]*aria-label="fewer"/.test(sec)
+      || /aria-label="fewer"[^>]*data-shrunlimit="2"/.test(sec),
+    "minus must target 2, got: " + sec.slice(sec.indexOf("step"), 400));
+  assert(/data-shrunlimit="4"/.test(sec), "plus must target 4");
+  console.log("ok 22e1 the stepper's buttons carry the value they move to");
+}
+
+/* 22e2. the ends stop instead of inviting a click into a refusal -- and the
+   server's band is what decides where the ends are, not a number in here */
+{
+  const ctx = fresh();
+  const at = (n, lo, hi) => {
+    const d = JSON.parse(JSON.stringify(SET));
+    d.tasks = { running_at_once: n, running_at_once_min: lo,
+                running_at_once_max: hi, turn_budget: SET.tasks.turn_budget };
+    ctx.S.shadowSettings = d;
+    const h = ctx.shadowSettingsHtml();
+    return h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  };
+  const lo = at(1, 1, 6);
+  const minus = (lo.match(/<button[^>]*aria-label="fewer"[^>]*>/) || [""])[0];
+  assert(/aria-disabled="true"/.test(minus),
+    "at the floor, minus must say it cannot go lower: " + minus);
+  assert(!/aria-disabled/.test(
+    (lo.match(/<button[^>]*aria-label="more"[^>]*>/) || [""])[0]),
+    "plus is still live at the floor");
+  const hi = at(6, 1, 6);
+  assert(/aria-disabled="true"/.test(
+    (hi.match(/<button[^>]*aria-label="more"[^>]*>/) || [""])[0]),
+    "at the SERVER's ceiling (6, not 20) plus must stop");
+  assert(!/aria-disabled/.test(
+    (hi.match(/<button[^>]*aria-label="fewer"[^>]*>/) || [""])[0]),
+    "minus is still live at the ceiling");
+  console.log("ok 22e2 the stepper stops at the band the server reports");
+}
+
+/* 22e3. one click, one write -- and it is the number, not a nudge */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ running_at_once: 4, min: 1, max: 20,
+        running_now: 1, queued_now: 0, starting: 0, over_cap: 0 }) }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  ctx.showNudge = () => {};
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/tasks",
+    "the write goes to the tasks settings route");
+  assert.strictEqual(posts[0].body.running_at_once, 4,
+    "the value is sent as a NUMBER, not a string or a direction");
+  console.log("ok 22e3 one click sends exactly one numeric write");
+})().catch(e => { console.error("FAIL 22e3:", e.message); process.exit(1); });
+
+/* 22e4. the SERVER's answer is what the row repaints from. The server clamps,
+   and raising the cap promotes queued tasks, so the counts beside the
+   stepper change as a RESULT of the write -- an optimistic paint would show
+   a value the engine never stored. */
+(async () => {
+  const ctx = fresh();
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ running_at_once: 20, min: 1, max: 20,
+      running_now: 20, queued_now: 3, starting: 2, over_cap: 0 }) });
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const nudges = [];
+  ctx.showNudge = (t) => nudges.push(t);
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  /* the founder asked for 999; the server kept 20 */
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "999" } } });
+  assert.strictEqual(ctx.S.shadowSettings.tasks.running_at_once, 20,
+    "the row must show what was STORED, not what was asked for");
+  assert.strictEqual(ctx.S.shadowSettings.tasks.queued_now, 3,
+    "the counts come back with the write");
+  /* STARTING, not started: the server does not await the spawn, so the
+     nudge must not claim an arrival it has not seen */
+  assert(/starting 2 that were waiting/.test(nudges.join(" ")),
+    "a promotion must be said out loud: " + nudges.join(" | "));
+  assert(!/started 2/.test(nudges.join(" ")),
+    "the nudge must not claim work already arrived");
+  /* the rest of the settings object is untouched -- one state, not a copy */
+  assert.deepStrictEqual(ctx.S.shadowSettings.tasks.turn_budget,
+    SET.tasks.turn_budget, "the write clobbered an unrelated limit");
+  console.log("ok 22e4 the stepper repaints from the server's answer");
+})().catch(e => { console.error("FAIL 22e4:", e.message); process.exit(1); });
+
+/* 22e5. lowering below what is in flight is NOT a kill switch, and the page
+   says so rather than leaving the founder to read 1 beside three live tasks
+   and conclude the setting is broken */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks = { running_at_once: 1, running_at_once_min: 1,
+              running_at_once_max: 20, running_now: 3, queued_now: 0,
+              turn_budget: SET.tasks.turn_budget };
+  ctx.S.shadowSettings = d;
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/3 are still\s+running/.test(sec),
+    "the overflow must be stated: " + sec.slice(0, 500));
+  assert(/does not stop work already underway/.test(sec),
+    "and it must say what the lower cap does NOT do");
+  /* no overflow, but a queue -> the waiting count instead */
+  d.tasks.running_at_once = 5; d.tasks.queued_now = 2;
+  const sec2 = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert(/2 waiting for a\s+free slot/.test(sec2),
+    "a queue under the cap must be named: " + sec2.slice(0, 400));
+  /* nothing to say -> nothing said */
+  d.tasks.queued_now = 0; d.tasks.running_now = 1;
+  const sec3 = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert(!/still\s+running|waiting for a/.test(sec3),
+    "a quiet cap must not editorialise");
+  console.log("ok 22e5 the cap row is honest about work already underway");
+}
+
+/* 22e6. a write in flight holds BOTH ends down: four fast clicks off one
+   rendered value would otherwise land on 2 instead of 5 */
+(async () => {
+  const ctx = fresh();
+  let release = null;
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  let sent = 0;
+  ctx.shadowPost = () => { sent++;
+    return new Promise(r => { release = () => r({ ok: true, status: 200,
+      json: () => Promise.resolve({ running_at_once: 4, min: 1, max: 20,
+        running_now: 0, queued_now: 0, starting: 0, over_cap: 0 }) }); }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowHome = () => {}; ctx.loadShadowSettings = () => {};
+  ctx.showNudge = () => {};
+  const first = ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
+  assert.strictEqual(sent, 1, "a second click while one is in flight resent");
+  /* and while it is in flight the stepper says it is saving */
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert((sec.match(/Saving…/g) || []).length === 2,
+    "both ends must say they are saving: " + sec.slice(0, 400));
+  release(); await first;
+  assert(!ctx.S.shadowRunLimitBusy, "the hold must be released");
+  console.log("ok 22e6 a write in flight cannot be double-sent");
+})().catch(e => { console.error("FAIL 22e6:", e.message); process.exit(1); });
+
+/* ── "BUDGET PER TASK" IS A REAL CONTROL ──────────────────────────────────
+   22e7-22e12. The budget row used to be a number beside an AUTO pill that
+   was telling the truth: there was no store behind it. There is one now, and
+   these are the things that has to mean. They deliberately mirror 22e1-22e6
+   one for one -- the same four properties (destination not direction, the
+   server's band, one click one write, repaint from the server) plus the two
+   the budget adds: a reset path, and a kind that cannot be set at all. */
+
+/* 22e7. the buttons carry a DESTINATION, pre-clamped, stepping by 5. A
+   direction would compound off one render; a step of 1 would be forty clicks
+   from 20 to 60. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  /* the fixture's Delegate default is `fix` at 20 */
+  assert(/data-shbudget="15"/.test(sec) && /data-shbudget="25"/.test(sec),
+    "the budget stepper must carry 20±5 as destinations: " + sec.slice(0, 600));
+  assert(/data-shbudgetkind="fix"/.test(sec),
+    "each budget button must name the kind it moves");
+  console.log("ok 22e7 the budget stepper sends a destination, stepping by 5");
+}
+
+/* 22e8. the band is the SERVER's, and both ends stop rather than click into
+   a refusal the server would have to issue */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.turn_budget.fix = 1;            // at the floor
+  ctx.S.shadowSettings = d;
+  let h = ctx.shadowSettingsHtml();
+  let sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/A task gets at least 1 turn/.test(sec),
+    "at the floor the minus must say so: " + sec.slice(0, 600));
+  assert(!/data-shbudget="0"/.test(sec), "the floor was stepped through");
+  d.tasks.turn_budget.fix = 100;          // at the ceiling
+  h = ctx.shadowSettingsHtml();
+  sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/At most 100 turns for one task/.test(sec),
+    "at the ceiling the plus must say so");
+  assert(!/data-shbudget="105"/.test(sec), "the ceiling was stepped through");
+  console.log("ok 22e8 the budget band comes from the server and holds");
+}
+
+/* 22e9. one click -> exactly one write, with a numeric `turns` and the kind */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ kind: "fix", turns: 25, auto: false,
+        default: 20, min: 1, max: 100,
+        turn_budget: { feature: 30, fix: 25, research: 15, watch: 0 },
+        turn_budget_set: ["fix"] }) }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowSettings = () => {}; ctx.showNudge = () => {};
+  await ctx.listeners.click({ target: { dataset: {
+    shbudget: "25", shbudgetkind: "fix" } } });
+  assert.strictEqual(posts.length, 1,
+    "exactly one budget write is sent, got: " + JSON.stringify(posts));
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/budget",
+    "the budget must not ride the cap's route: " + posts[0].url);
+  assert.strictEqual(posts[0].body.turns, 25,
+    "turns must be sent as a NUMBER, not a string or a direction");
+  assert.strictEqual(posts[0].body.kind, "fix", "the kind must ride along");
+  console.log("ok 22e9 one click sends one numeric budget write");
+})().catch(e => { console.error("FAIL 22e9:", e.message); process.exit(1); });
+
+/* 22e10. what repaints is the SERVER's answer -- and it must not clobber the
+   cap sitting beside it in the same object */
+(async () => {
+  const ctx = fresh();
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ kind: "fix", turns: 100, auto: false,
+      default: 20, min: 1, max: 100,
+      turn_budget: { feature: 30, fix: 100, research: 15, watch: 0 },
+      turn_budget_set: ["fix"] }) });
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowSettings = () => {}; ctx.showNudge = () => {};
+  /* the founder asked for 999; the server clamped to 100 */
+  await ctx.listeners.click({ target: { dataset: {
+    shbudget: "999", shbudgetkind: "fix" } } });
+  const t = ctx.S.shadowSettings.tasks;
+  assert.strictEqual(t.turn_budget.fix, 100,
+    "the row must repaint from the server's answer, not the request");
+  assert.strictEqual(t.running_at_once, 5,
+    "a budget write clobbered the cap beside it");
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(/set by you/.test(sec) && !/class="auto"[^>]*>auto</.test(sec),
+    "an overridden kind must read `set by you`, never both pills: "
+      + sec.slice(0, 700));
+  console.log("ok 22e10 the budget repaints from the server and keeps the cap");
+})().catch(e => { console.error("FAIL 22e10:", e.message); process.exit(1); });
+
+/* 22e11. RESET. `auto` has to survive the trip as null -- Number("auto") is
+   NaN, and a NaN budget would be a 400 the founder never asked for. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.turn_budget.fix = 55; d.tasks.turn_budget_set = ["fix"];
+  ctx.S.shadowSettings = d;
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push(body);
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ kind: "fix", turns: 20, auto: true,
+        default: 20, min: 1, max: 100,
+        turn_budget: { feature: 30, fix: 20, research: 15, watch: 0 },
+        turn_budget_set: [] }) }); };
+  ctx.loadShadowSettings = () => {}; ctx.showNudge = () => {};
+  /* the reset control only exists because the kind is overridden */
+  const h0 = ctx.shadowSettingsHtml();
+  assert(/data-shbudget="auto"/.test(
+    h0.slice(h0.indexOf(">Tasks<"), h0.indexOf(">Presence<"))),
+    "an overridden kind must offer a way back to auto");
+  await ctx.listeners.click({ target: { dataset: {
+    shbudget: "auto", shbudgetkind: "fix" } } });
+  assert.strictEqual(posts.length, 1, "the reset did not send");
+  assert.strictEqual(posts[0].turns, null,
+    "reset must send null, got: " + JSON.stringify(posts[0].turns));
+  const sec = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert(/class="auto"[^>]*>auto</.test(sec) && !/set by you/.test(sec),
+    "after a reset the row must be back to auto");
+  console.log("ok 22e11 auto resets, and survives the trip as null");
+})().catch(e => { console.error("FAIL 22e11:", e.message); process.exit(1); });
+
+/* 22e12. WATCH HAS NO CONTROL, and the row says why rather than hiding it.
+   Its budget is never consumed -- never_say returns before the budget is
+   compared -- so a stepper there would look kept and never bind. Which kinds
+   are settable is the SERVER's answer, not a list in the view. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.S.shadowBudgetKind = "watch";
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
+  assert(!/data-shbudget="/.test(sec),
+    "watch must carry no budget hook: " + sec.slice(0, 700));
+  assert(/not spent/.test(sec), "watch must say why it has no budget");
+  assert(/<span class="ev">0<\/span> turns/.test(sec),
+    "watch still states its real budget");
+  /* a write in flight holds the budget stepper down, same as the cap's */
+  ctx.S.shadowBudgetKind = "fix"; ctx.S.shadowBudgetBusy = true;
+  const busy = (() => { const x = ctx.shadowSettingsHtml();
+    return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
+  assert((busy.match(/Saving…/g) || []).length >= 2,
+    "both budget ends must say they are saving: " + busy.slice(0, 700));
+  console.log("ok 22e12 watch is stated, not settable; busy holds both ends");
+}
+
+/* 22e13. THE LABEL NAMES THE KIND IT WRITES. "Budget per task" alone was a
+   lie -- the control is per kind, and a founder who set `feature` to 50 would
+   read a `fix` task running to 20 as the setting silently failing. */
+{
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const labelOf = () => {
+    const h = ctx.shadowSettingsHtml();
+    const sec = h.slice(h.indexOf(">Tasks<"));
+    const i = sec.indexOf("Budget per task");
+    return sec.slice(i, sec.indexOf("</span>", i))
+              .replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  };
+  ["fix", "feature", "research", "watch"].forEach(k => {
+    ctx.S.shadowBudgetKind = k;
+    assert.strictEqual(labelOf(), "Budget per task · " + k,
+      "the label must name the kind the stepper writes, got: " + labelOf());
+  });
+  /* and it must not invent a kind when the server reported no budget */
+  const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
+  ctx.S.shadowSettings = d2;
+  const bare = ctx.shadowSettingsHtml();
+  assert(/Budget per task<\/span>/.test(bare),
+    "with no budget reported the label must stay bare");
+  console.log("ok 22e13 the label tracks the picker, and invents nothing");
+}
+
+/* 22e14. EVERY KIND AT A GLANCE, with set values distinguishable from the
+   template fallbacks they would otherwise be confused with. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.turn_budget = { feature: 50, fix: 20, research: 15, watch: 0 };
+  d.tasks.turn_budget_set = ["feature"];
+  ctx.S.shadowSettings = d;
+  const h = ctx.shadowSettingsHtml();
+  const ro = (h.match(/<div class="srow budall">[\s\S]*?<\/div>/) || [""])[0];
+  assert(ro, "the all-kinds readout is missing");
+  /* every offered kind, with its EFFECTIVE value */
+  [["feature", 50], ["fix", 20], ["research", 15], ["watch", 0]].forEach(
+    ([k, v]) => assert(
+      new RegExp('budk[^"]*"[^>]*>' + k + ' <b>' + v + '</b>').test(ro),
+      "readout missing " + k + " " + v + ": " + ro.slice(0, 400)));
+  /* set is ACCENTED, fallbacks are not -- and exactly one is set here */
+  assert((ro.match(/class="budk on"/g) || []).length === 1,
+    "exactly the one set kind may be accented: " + ro.slice(0, 400));
+  assert(/class="budk on"[^>]*>feature/.test(ro),
+    "the accented kind must be the one in turn_budget_set");
+  /* THE INFERENCE TRAP: a kind set to exactly its own default is still SET.
+     Deriving `set` by comparing value to default would redraw it as auto and
+     silently remove the founder's way back. */
+  d.tasks.turn_budget_set = ["feature", "fix"];   // fix is set, to its own 20
+  const ro2 = (ctx.shadowSettingsHtml()
+    .match(/<div class="srow budall">[\s\S]*?<\/div>/) || [""])[0];
+  assert(/class="budk on"[^>]*>fix <b>20<\/b>/.test(ro2),
+    "a kind set to its own default must still read as set: "
+      + ro2.slice(0, 400));
+  /* the readout states, it does not write */
+  assert(!/data-sh[a-z]+=/.test(ro), "the readout must carry no action hook");
+  console.log("ok 22e14 the readout states every kind, set apart from fallback");
 }
 
 /* 22f. PRESENCE + ADD A CONTROL, to the reference -- and the two rows that
@@ -1281,45 +1874,520 @@ const SET = { engage: ["outcome first"],
                 "Nudges per hour", "Hide for this app"].map(k => sec.indexOf(k));
   assert(rows.every(i => i > -1), "a Presence row is missing: " + rows.join(","));
   assert(rows.slice(1).every((v, i) => v > rows[i]), "Presence rows out of order");
-  /* two switches, and a stepper showing the rate the code enforces */
-  assert((sec.match(/class="tog/g) || []).length === 2, "two toggles");
-  assert(/<span class="val">3<\/span>/.test(sec),
-    "the stepper must show SH_PILLS_PER_HOUR, got: " + sec.slice(0, 200));
+  /* ONE switch with no app open, not two. "Hide for this app" has no subject
+     outside an app, and it says so instead of drawing a switch -- see 22f4.
+     The corner card is the only Presence row that is always operable. */
+  assert((sec.match(/class="tog/g) || []).length === 1,
+    "with no app open the corner card is the only toggle: " + sec.slice(0, 300));
   /* the add bar */
   assert(/class="addbar"/.test(sec), "no add-a-control bar");
   assert(/Tell Shadow what to add/.test(sec), "its placeholder is missing");
   assert(/class="go"/.test(sec) && /class="sp"/.test(sec),
     "the accent dot and go button are missing");
-  /* THE TWO REAL ONES ACT, through the overlay's own flags */
-  assert(/data-shpresence="card"/.test(sec) && /data-shpresence="quiet"/.test(sec),
-    "the two backed toggles must be operable");
+  /* THE CORNER CARD ACTS. "Hide for this app" is asserted in 22f4 and in
+     test_shadow_presence.js, where a write can be awaited.
+
+     WHAT USED TO BE HERE, deliberately recorded rather than deleted: this
+     block asserted that "Hide for this app" flipped S.shadowQuiet -- "the
+     SAME flag the card's quiet control does". That was true and was the
+     defect. The row's label named one thing and its switch did another, and
+     the thing it did died at reload because the flag was memory-only. The
+     row now has a store and a route of its own, so the assertion could not
+     survive; what replaces it is the NEGATIVE claim, which is the one worth
+     keeping: the two are independent in both directions. */
+  assert(/data-shpresence="card"/.test(sec),
+    "the corner-card toggle must be operable");
+  assert(!/data-shpresence="quiet"/.test(sec),
+    "no Presence row may still flip the memory-only quiet flag");
   ctx.scheduleRender = () => {};
-  ctx.S.shadowQuiet = false;
-  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
-  assert.strictEqual(ctx.S.shadowQuiet, true,
-    "Hide for this app must flip the SAME flag the card's quiet control does");
-  ctx.listeners.click({ target: { dataset: { shpresence: "quiet" } } });
-  assert.strictEqual(ctx.S.shadowQuiet, false, "and flip back");
+  /* the corner-card switch is no longer one of the memory-only pair -- it
+     writes to a store, so its claims moved to 22f2 where a write can be
+     awaited. What is asserted HERE is only that it no longer touches the
+     session flag, which is the contract this change replaced: the two mean
+     different things now (standing choice vs "not right now") and conflating
+     them is what made the setting die at reload. */
   ctx.S.shadowHideSession = false;
+  ctx.S.shadowCardEvery = true;
+  ctx.shadowPost = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({ corner_card: false }) });
   ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
-  assert.strictEqual(ctx.S.shadowHideSession, true,
-    "Corner card must flip the SAME flag the card's hide control does");
-  /* and the switch renders the truth afterwards */
-  assert(/class="tog off" role="switch"\s*\n?\s*aria-checked="false"[\s\S]{0,80}shpresence="card"/
-      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " "))
-    || /aria-checked="false"[^>]*data-shpresence="card"/
-      .test(ctx.shadowSettingsHtml().replace(/\s+/g, " ")),
-    "the corner-card switch must read off once it is off");
-  /* the three unbacked ones state nothing they cannot keep */
+  assert.strictEqual(ctx.S.shadowHideSession, false,
+    "the setting must NOT flip the card's hide-for-this-session flag");
+  /* nothing states a value it cannot keep: with an unconfigured payload the
+     hours are "not set" and the rate is "not reported", rather than the
+     mock's 9pm-8am and a 3 that nothing would enforce */
   assert(/not set/.test(sec),
-    "Quiet hours has no store -- it must say so, not print mock hours");
+    "an unset quiet window must say so, not print mock hours");
   assert(sec.indexOf("9pm") === -1 && sec.indexOf("8am") === -1,
     "mock hours were printed as if configured");
-  const inert = sec.slice(sec.indexOf("Quiet hours"));
-  assert(!/data-sh[a-z]+="(?!quiet)/.test(inert.slice(0, inert.indexOf("Hide for"))),
-    "an unbacked Presence control carries an action hook");
+  /* QUIET HOURS IS NO LONGER INERT, and this block used to say the opposite.
+     What used to be here, recorded rather than deleted: an assertion that no
+     data-sh hook appeared between "Quiet hours" and "Hide for this app",
+     under the rule that an unbacked control must not carry an action. That
+     rule has not changed -- the row has simply stopped being unbacked. It now
+     has a store (presence.json), a route
+     (POST /api/shadow/settings/quiet-hours) and a clock, so the honest claim
+     inverts: it must OFFER the way to change it.
+
+     "not set" survives alongside it, and that pairing is the point. The row
+     states what it truly has, which is no window, AND gives the founder the
+     control to set one -- which is exactly what it could not do before. */
+  assert(/data-shquietopen/.test(sec),
+    "quiet hours has a store now: the row must offer the way to set it");
+  assert(!/data-shquietclear/.test(sec),
+    "there is no window to clear, so no clear control may be drawn");
+  assert(!/quiet now/.test(sec),
+    "an unset window is never quiet now");
+  assert(/no app open/.test(sec),
+    "with no app open the hide row must say so");
   console.log("ok 22f presence: reference layout, real flags wired, rest inert");
 }
+
+/* 22f4. "HIDE FOR THIS APP" IS PER APP, AND HAS A SUBJECT OR SAYS IT DOES
+   NOT. The write itself, the dot going, and the independence from quiet are
+   asserted in test_shadow_presence.js, where the overlay is loaded and a
+   round-trip can be awaited. What belongs HERE is the row: which app it is
+   about, and what it does when there is no app to be about.
+
+   THE SUBJECT IS S.modSel -- the open app id the Apps screen already owns.
+   If this ever starts reading something else, "this app" has quietly become
+   a second notion of the current app. */
+{
+  const ctx = fresh();
+  ctx.modSelected = (s) => ({ id: s.modSel, name: "Photo Gallery" });
+  const d = JSON.parse(JSON.stringify(SET));
+  /* MERGED, not replaced: the fixture's presence block carries the other
+     Presence rows' values too, and dropping them here would quietly change
+     what the rest of the section renders while this block is looking at one
+     row of it. */
+  d.presence = Object.assign({}, d.presence, { hidden_apps: [] });
+  ctx.S.shadowSettings = d;
+
+  const rowOf = () => {
+    const h = ctx.shadowSettingsHtml();
+    const i = h.indexOf("Hide for this app");
+    return h.slice(i, h.indexOf("</div>", i)).replace(/\s+/g, " ");
+  };
+
+  /* no app open: no switch, and nothing to click */
+  assert(/no app open/.test(rowOf()), "no subject must be stated: " + rowOf());
+  assert(!/data-shpresence="app"/.test(rowOf()),
+    "a switch with a null subject must not be drawn");
+
+  /* an app open: a real switch, naming the app */
+  ctx.S.modSel = "photo-gallery";
+  assert(/data-shpresence="app"/.test(rowOf()), "the switch must appear");
+  assert(/Photo Gallery/.test(rowOf()),
+    "the row must name the app it is about: " + rowOf());
+  assert(/aria-checked="false"/.test(rowOf()), "and read off: " + rowOf());
+
+  /* hidden for THAT app reads on; another app is unaffected */
+  d.presence.hidden_apps = ["photo-gallery"];
+  assert(/aria-checked="true"/.test(rowOf()), "a hidden app reads on: " + rowOf());
+  ctx.S.modSel = "recipe-box";
+  assert(/aria-checked="false"/.test(rowOf()),
+    "a hide on one app must not read as on for another: " + rowOf());
+  console.log("ok 22f4 hide-for-this-app is about the open app, or says none");
+}
+
+/* 22f2. THE CORNER CARD IS A STORED SETTING NOW, so it is asserted the way
+   the steppers are: one write, to its own route, carrying a boolean, and the
+   row repaints from the SERVER's answer.
+
+   The claim that matters most is the negative one -- the session flag does
+   not move. Those two meanings shared a flag before this, which is precisely
+   why the founder's choice died at reload. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.scheduleRender = () => {}; ctx.showNudge = () => {};
+  ctx.loadShadowSettings = () => {}; ctx.loadShadowHome = () => {};
+  ctx.fetch = () => Promise.resolve({ ok: true,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ corner_card: body.corner_card }) }); };
+  ctx.S.shadowSettings = { presence: { corner_card: true } };
+  ctx.S.shadowCardEvery = true;
+  ctx.S.shadowHideSession = false;
+
+  await ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/presence",
+    "the write goes to the presence settings route");
+  assert.strictEqual(posts[0].body.corner_card, false,
+    "the value is sent as a BOOLEAN destination, not a toggle instruction");
+  assert.strictEqual(ctx.S.shadowCardEvery, false, "the durable flag moved");
+  assert.strictEqual(ctx.S.shadowHideSession, false,
+    "the setting must NOT move the card's hide-for-this-session flag -- "
+    + "that conflation is the contract this replaced");
+  assert.strictEqual(ctx.S.shadowSettings.presence.corner_card, false,
+    "the row repaints from the server's answer, not the optimistic value");
+  assert(/aria-checked="false"[^>]*data-shpresence="card"/
+    .test(ctx.shadowSettingsHtml().replace(/\s+/g, " ")),
+    "the corner-card switch must read off once it is off");
+
+  await ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
+  assert.strictEqual(posts[1].body.corner_card, true,
+    "it is a switch, not a one-way door");
+  assert.strictEqual(ctx.S.shadowCardEvery, true, "and the flag comes back");
+  console.log("ok 22f2 the corner card writes to its own route, and is not "
+    + "the session flag");
+
+  /* a write that did not land may not leave the switch claiming it did */
+  const c2 = fresh();
+  c2.scheduleRender = () => {}; c2.showNudge = () => {};
+  c2.loadShadowSettings = () => {}; c2.loadShadowHome = () => {};
+  c2.fetch = () => Promise.resolve({ ok: true,
+    json: () => Promise.resolve({}) });
+  c2.shadowPost = () => Promise.resolve({ ok: false, status: 500,
+    json: () => Promise.reject(new Error("no body")) });
+  c2.S.shadowCardEvery = true;
+  await c2.listeners.click({ target: { dataset: { shpresence: "card" } } });
+  assert.strictEqual(c2.S.shadowCardEvery, true,
+    "a refused write must put the flag BACK -- a switch reading off over a "
+    + "disk that says on is the exact failure this feature removes");
+  console.log("ok 22f3 a refused write reverts rather than lying");
+})().catch(e => { console.error("FAIL 22f2:", e.message); process.exit(1); });
+
+/* 22f5. NUDGES PER HOUR IS THE FOUNDER'S NUMBER.
+
+   The row drew a stepper with both buttons aria-disabled and no action hook,
+   printing the JS constant SH_PILLS_PER_HOUR. Three things had to become true
+   for it to be a setting, and they are what this asserts: it is drawn from
+   the SERVER's payload, it WRITES, and it repaints from the stored answer
+   rather than the optimistic one. */
+(async () => {
+  const ctx = fresh();
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  const sec = (c) => { const h = c.shadowSettingsHtml();
+    return h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<")); };
+  let s = sec(ctx);
+  assert(/<span class="val">3<\/span>/.test(s),
+    "the stepper must show the payload's rate: " + s.slice(0, 400));
+  assert(/data-shnudges="2"/.test(s) && /data-shnudges="4"/.test(s),
+    "each button must carry its own already-clamped destination: " + s);
+
+  /* NO NUMBER, NO CLAIM. The browser keeps no default of its own now, so a
+     payload without the field must say so rather than print a 3 that nothing
+     enforces -- the exact defect this row shipped with. */
+  const bare = fresh();
+  bare.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  delete bare.S.shadowSettings.presence.nudges_per_hour;
+  const bsec = sec(bare);
+  const nrow = bsec.slice(bsec.indexOf("Nudges per hour"),
+                          bsec.indexOf("Hide for this app"));
+  assert(/not reported/.test(nrow) && !/data-shnudges/.test(nrow),
+    "with no rate in the payload the row must state nothing: " + nrow);
+
+  /* the ends stop at the server's band */
+  const edge = fresh();
+  edge.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  edge.S.shadowSettings.presence.nudges_per_hour = 0;
+  let es = sec(edge);
+  assert(/data-shnudges="0"/.test(es) && /data-shnudges="1"/.test(es),
+    "at the floor, fewer must stop at the floor: " + es);
+  assert(/never unasked/.test(es),
+    "a rate of 0 must say what it means, not read as a broken stepper");
+  edge.S.shadowSettings.presence.nudges_per_hour = 10;
+  es = sec(edge);
+  assert(/data-shnudges="10"/.test(es) && /data-shnudges="9"/.test(es),
+    "at the ceiling, more must stop at the ceiling: " + es);
+
+  /* IT WRITES, and the row repaints from what the SERVER stored */
+  const posts = [];
+  ctx.scheduleRender = () => {};
+  ctx.loadShadowSettings = () => {};
+  ctx.showNudge = () => {};
+  ctx.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ nudges_per_hour: 1, min: 0, max: 10 }) }); };
+  await ctx.listeners.click({ target: { dataset: { shnudges: "2" } } });
+  assert.strictEqual(posts.length, 1, "the click must write once");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/presence",
+    "the write goes to the presence settings route");
+  /* property-wise, not deepStrictEqual: the body is built inside the vm, so
+     its prototype is that realm's Object and a strict deep compare fails on
+     the prototype rather than on anything anyone cares about */
+  assert.strictEqual(posts[0].body.nudges_per_hour, 2,
+    "the write carries the button's already-clamped destination");
+  assert.deepStrictEqual(Object.keys(posts[0].body), ["nudges_per_hour"],
+    "one write moves one field");
+  assert.strictEqual(ctx.S.shadowSettings.presence.nudges_per_hour, 1,
+    "the row must fold the SERVER's answer, not the value it sent");
+  assert.strictEqual(ctx.S.shadowNudgeRate, 1,
+    "the flag pillAllowed reads must move too, or the setting is right on "
+    + "this screen and stale everywhere it is actually enforced");
+  s = sec(ctx);
+  assert(/<span class="val">1<\/span>/.test(s),
+    "the stepper must repaint at the stored value: " + s.slice(0, 400));
+
+  /* a refused write stores nothing, moves nothing, and says so */
+  const bad = fresh();
+  bad.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  bad.S.shadowNudgeRate = 3;
+  bad.scheduleRender = () => {};
+  bad.loadShadowSettings = () => {};
+  const said = [];
+  bad.showNudge = (t) => { said.push(t); return null; };
+  bad.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  bad.shadowPost = () => Promise.resolve({ ok: false, status: 500,
+    json: () => Promise.resolve({}) });
+  await bad.listeners.click({ target: { dataset: { shnudges: "7" } } });
+  assert.strictEqual(bad.S.shadowSettings.presence.nudges_per_hour, 3,
+    "a refused write must not look stored");
+  assert.strictEqual(bad.S.shadowNudgeRate, 3,
+    "and must not move the flag the pill reads");
+  assert(said.some(t => /did not stick/.test(t)),
+    "a refused write must say so: " + JSON.stringify(said));
+  console.log("ok 22f5 nudges per hour: the server's number, written and "
+    + "repainted from the answer");
+})().catch(e => { console.error("FAIL 22f5:", e.message); process.exit(1); });
+
+/* 22f6. QUIET HOURS, THE CLOCK -- the JS half of a rule written twice.
+
+   THE TABLE IS NOT WRITTEN HERE. It is read from test_quiet_hours_cases.json,
+   the same file test_shadow_quiet_hours.py drives shadow_presence.window_active
+   from, so the Python and JS copies of the wrap-around rule cannot drift apart
+   without one of the two lanes going red. Adding a case to that file adds it
+   to both lanes at once -- which is the reason not to inline "just one more"
+   case here. */
+{
+  const QCASES = JSON.parse(fs.readFileSync(
+    path.join(__dirname, "test_quiet_hours_cases.json"), "utf8"));
+  const ctx = fresh();
+  assert(typeof ctx.shadowQuietWindowNow === "function",
+    "the overlay must export the window predicate the home row also uses");
+  assert(QCASES.active.length > 0, "the shared table is empty");
+  for (const c of QCASES.active){
+    const win = QCASES.windows[c.window];
+    const [h, m] = c.at.split(":").map(Number);
+    /* a fixed date, deliberately not today: the rule reads hours and minutes
+       only, and pinning the date is what keeps this lane from changing its
+       verdict with the hour it happens to be run at */
+    const at = new Date(2026, 2, 17, h, m);
+    assert.strictEqual(ctx.shadowQuietWindowNow(win, at), c.quiet,
+      `${c.window} @ ${c.at}: ${c.why}`);
+  }
+  /* the same four the Python lane pins, so neither table can be quietly
+     hollowed out instead of the code being fixed */
+  const ats = new Set(QCASES.active.filter(c => c.window === "wrap")
+    .map(c => c.at));
+  for (const need of ["21:00", "00:00", "07:59", "08:00"])
+    assert(ats.has(need), "the shared table lost the " + need + " case");
+  /* a junk window is not quiet, and above all does not THROW -- this runs
+     inside showPill, so an exception here would take the pill down with it */
+  for (const junk of [null, undefined, {}, { start: "9pm", end: "x" },
+                      { start: "10:00", end: "10:00" }, "21:00-08:00", 7])
+    assert.strictEqual(ctx.shadowQuietWindowNow(junk, new Date(2026, 2, 17, 3, 0)),
+      false, "a junk window must read as not quiet: " + JSON.stringify(junk));
+  console.log("ok 22f6 quiet hours: the wrap-around rule, from the shared "
+    + "case table (" + QCASES.active.length + " cases)");
+}
+
+/* 22f7. QUIET HOURS, THE GATE -- it silences through the gate that already
+   existed, not a second one beside it. */
+{
+  const ctx = fresh();
+  ctx.S.shadowQuiet = false;
+  ctx.S.shadowQuietHours = null;
+  /* a rate must be known or pillAllowed silences on its own account, which
+     would make every assertion below pass for the wrong reason */
+  ctx.S.shadowNudgeRate = 3;
+  /* showPill needs a real-ish element back to prove it was NOT silenced */
+  ctx.document.createElement = () => ({ setAttribute(){}, remove(){},
+    dataset: {}, className: "", textContent: "" });
+  const src15 = fs.readFileSync(
+    path.join(__dirname, "static", "js", "15-shadow-overlay.js"), "utf8");
+  const body = src15.slice(src15.indexOf("function showPill"));
+  /* the gate is everything before the rate-limit branch, with comments
+     stripped -- a claim about what the CODE does must not be satisfiable by
+     prose that merely mentions the function, and slicing to a landmark rather
+     than a character count keeps this from breaking when a comment grows */
+  const gate = body.slice(0, body.indexOf("const isNudge"))
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  assert(/shadowQuietNow\(\)/.test(gate),
+    "showPill must gate on the one quiet resolver, got: " + gate);
+  assert(!/if \(S\.shadowQuiet\)/.test(gate),
+    "the old single-flag check must be REPLACED, not joined by a second gate");
+
+  /* no window, switch off: a pill gets through */
+  assert(ctx.showPill("hello") !== null, "nothing is quiet yet");
+  /* the manual switch alone still silences (the behaviour that existed) */
+  ctx.S.shadowQuiet = true;
+  assert.strictEqual(ctx.showPill("psst"), null, "the quiet switch still works");
+  ctx.S.shadowQuiet = false;
+  /* and now the CLOCK alone silences, with the switch off. The window is set
+     to the hour the test is actually running in, so this asserts the gate
+     reads the live clock rather than a boolean somebody seeded. */
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const nextH = String((now.getHours() + 2) % 24).padStart(2, "0");
+  ctx.S.shadowQuietHours = { start: hh + ":00", end: nextH + ":00" };
+  if (ctx.S.shadowQuietHours.start !== ctx.S.shadowQuietHours.end){
+    assert.strictEqual(ctx.showPill("psst"), null,
+      "inside the window the pill must be silenced by the clock alone");
+  }
+  /* a nudge-flagged pill buys past the RATE LIMIT, never past quiet */
+  assert.strictEqual(ctx.showPill("urgent", { nudge: true }), null,
+    "opts.nudge must not buy past quiet hours");
+  /* outside the window it speaks again */
+  const backH = String((now.getHours() + 3) % 24).padStart(2, "0");
+  const backE = String((now.getHours() + 4) % 24).padStart(2, "0");
+  ctx.S.shadowQuietHours = { start: backH + ":00", end: backE + ":00" };
+  assert(ctx.showPill("hello again") !== null,
+    "outside the window the pill speaks again");
+  console.log("ok 22f7 quiet hours gate showPill through the existing quiet "
+    + "check, and a nudge cannot buy past them");
+}
+
+/* 22f8. QUIET STANDS THE ALARM DOWN, IT DOES NOT HIDE THE NEWS. */
+{
+  const ctx = fresh();
+  const mk = () => { const d = { className: "", innerHTML: "", attrs: {},
+    setAttribute(k, v){ this.attrs[k] = v; } }; return d; };
+  ctx.S.shadowQuiet = false; ctx.S.shadowQuietHours = null;
+  const loud = mk();
+  ctx.applyDotState(loud, { watching: true, alerts: 2 });
+  assert(/shdot-alert/.test(loud.className), "alerts ring when not quiet");
+  assert(/need you/.test(loud.attrs["aria-label"] || ""), "and say so");
+  assert(/shbadge">2</.test(loud.innerHTML), "the count is shown");
+
+  ctx.S.shadowQuiet = true;
+  const hushed = mk();
+  ctx.applyDotState(hushed, { watching: true, alerts: 2 });
+  assert(!/shdot-alert/.test(hushed.className),
+    "quiet must stand the alarm ring down");
+  assert(!/need you/.test(hushed.attrs["aria-label"] || ""),
+    "and drop the shoulder-tap phrasing");
+  assert(/shbadge">2</.test(hushed.innerHTML),
+    "but the COUNT stays -- being quiet is Shadow not speaking first, not "
+    + "Shadow hiding what is waiting for the founder who looks");
+  assert(/shdot-live/.test(hushed.className),
+    "and the dot keeps its state colour, so it is still reachable");
+  console.log("ok 22f8 quiet drops the alert ring, never the badge count");
+}
+
+/* 22f9. THE ROW: three states, and the writer behind them. */
+(async () => {
+  /* a set window renders its hours and offers both change and clear */
+  const ctx = fresh();
+  /* the writers guard on fetch existing before they do anything -- without it
+     every click below would return early and the assertions would pass or
+     fail for a reason that has nothing to do with quiet hours */
+  ctx.fetch = () => Promise.resolve({ ok: true,
+    json: () => Promise.resolve({}) });
+  ctx.S.shadowSettings = { presence: {
+    corner_card: true, hidden_apps: [], nudges_per_hour: 3,
+    quiet_hours: { start: "21:00", end: "08:00" }, quiet_now: false } };
+  ctx.S.shadowQuietHours = { start: "21:00", end: "08:00" };
+  const h = ctx.shadowSettingsHtml();
+  const sec = h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<"));
+  assert(/21:00/.test(sec) && /08:00/.test(sec),
+    "a set window must state its hours: " + sec.slice(0, 300));
+  assert(/data-shquietopen/.test(sec), "the value opens for editing");
+  assert(/data-shquietclear/.test(sec), "and a set window can be cleared");
+
+  /* EDITING: two time fields, behind the offers input's own pattern */
+  ctx.S.shadowQuietEditing = true;
+  ctx.S.shadowQuietDraft = { start: "22:00", end: "07:00" };
+  const ed = ctx.shadowSettingsHtml();
+  assert(/type="time"[^>]*data-shquietstart/.test(ed.replace(/\s+/g, " "))
+      || /data-shquietstart[^>]*type="time"/.test(ed.replace(/\s+/g, " ")),
+    "the start is a native time field");
+  assert(/data-shquietend/.test(ed), "and so is the end");
+  assert(/class="chipin shquietin"/.test(ed),
+    "the editor reuses the offers input's bar rather than inventing one");
+  assert(/value="22:00"/.test(ed) && /value="07:00"/.test(ed),
+    "the draft is rendered back into the fields");
+  assert(/data-shquietsave/.test(ed), "save is reachable");
+  assert(/data-shquietcancel/.test(ed), "and so is abandoning the edit");
+
+  /* the draft survives a keystroke WITHOUT a re-render (the caret rule) */
+  let renders = 0;
+  ctx.scheduleRender = () => { renders += 1; };
+  ctx.listeners.input({ target: { dataset: { shquietstart: "1" },
+                                  value: "23:15" } });
+  assert.strictEqual(ctx.S.shadowQuietDraft.start, "23:15", "the draft moved");
+  assert.strictEqual(renders, 0,
+    "typing must not re-render -- that is the caret rule this file already "
+    + "follows for the offer name");
+
+  /* SAVE: one POST, carrying the window, to its own route */
+  const posts = [];
+  const said = [];
+  ctx.showNudge = (t) => said.push(t);
+  ctx.shadowPost = (url, b) => { posts.push({ url, body: b });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ quiet_hours: b.quiet_hours,
+                                    quiet_now: true }) }); };
+  await ctx.listeners.click({ target: { dataset: { shquietsave: "1" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/quiet-hours",
+    "quiet hours has its own single-purpose route");
+  /* compared as VALUES, not with deepStrictEqual: these objects are built
+     inside the vm context and carry its Object.prototype, which a strict deep
+     compare counts as a difference */
+  assert.strictEqual(JSON.stringify(posts[0].body),
+    JSON.stringify({ quiet_hours: { start: "23:15", end: "07:00" } }),
+    "the window is sent whole: " + JSON.stringify(posts[0].body));
+  assert.strictEqual(JSON.stringify(ctx.S.shadowQuietHours),
+    JSON.stringify({ start: "23:15", end: "07:00" }),
+    "the GATE's window is seeded from the stored answer");
+  assert.strictEqual(JSON.stringify(ctx.S.shadowSettings.presence.quiet_hours),
+    JSON.stringify({ start: "23:15", end: "07:00" }),
+    "and so is the page's copy");
+  assert.strictEqual(ctx.S.shadowQuietEditing, false, "the editor closes");
+
+  /* CLEAR sends an explicit null -- the one shape the store deletes for */
+  await ctx.listeners.click({ target: { dataset: { shquietclear: "1" } } });
+  assert.strictEqual(posts.length, 2, "clear is a write too");
+  assert.strictEqual(posts[1].body.quiet_hours, null,
+    "clear must send an explicit null, not {} and not an absent key");
+  assert.strictEqual(ctx.S.shadowQuietHours, null, "and the gate forgets it");
+
+  /* AN INCOMPLETE WINDOW NEVER LEAVES THE BROWSER */
+  const c2 = fresh();
+  c2.scheduleRender = () => {};
+  c2.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  const p2 = [];
+  c2.shadowPost = (u, b) => { p2.push({ u, b });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ quiet_hours: null }) }); };
+  c2.S.shadowQuietEditing = true;
+  c2.S.shadowQuietDraft = { start: "21:00", end: "" };
+  await c2.listeners.click({ target: { dataset: { shquietsave: "1" } } });
+  assert.strictEqual(p2.length, 0, "a half window must not be sent");
+  assert(/both a start and an end/.test(c2.S.shadowQuietErr || ""),
+    "and the row must say what is missing: " + c2.S.shadowQuietErr);
+  assert.strictEqual(c2.S.shadowQuietEditing, true,
+    "the editor stays open on the field still to fill");
+  c2.S.shadowQuietDraft = { start: "21:00", end: "21:00" };
+  await c2.listeners.click({ target: { dataset: { shquietsave: "1" } } });
+  assert.strictEqual(p2.length, 0, "start == end must not be sent either");
+  assert(/differ/.test(c2.S.shadowQuietErr || ""),
+    "and must say why: " + c2.S.shadowQuietErr);
+
+  /* A REFUSED WRITE MUST NOT LOOK STORED. Nothing here is optimistic, so the
+     claim is that the window did not move at all. */
+  const c3 = fresh();
+  c3.scheduleRender = () => {}; c3.showNudge = () => {};
+  c3.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  c3.shadowPost = () => Promise.resolve({ ok: false, status: 400,
+    json: () => Promise.reject(new Error("no body")) });
+  c3.S.shadowQuietHours = { start: "21:00", end: "08:00" };
+  c3.S.shadowQuietEditing = true;
+  c3.S.shadowQuietDraft = { start: "01:00", end: "02:00" };
+  await c3.listeners.click({ target: { dataset: { shquietsave: "1" } } });
+  assert.strictEqual(JSON.stringify(c3.S.shadowQuietHours),
+    JSON.stringify({ start: "21:00", end: "08:00" }),
+    "a refused write must leave the window exactly as it was");
+  assert(/refused/.test(c3.S.shadowQuietErr || ""),
+    "and must say so on the row: " + c3.S.shadowQuietErr);
+  console.log("ok 22f9 quiet hours: three states, one route, and a refusal "
+    + "that does not lie");
+})().catch(e => { console.error("FAIL 22f9:", e.message); process.exit(1); });
 
 /* 22c. the read can fail, and the page says so instead of rendering empty */
 {
@@ -2190,7 +3258,299 @@ const SET = { engage: ["outcome first"],
   assert(/shtpill-/.test(live), "the state pill must survive");
   assert(/done when/.test(live), "the done-when row must survive");
   assert(/where it runs/.test(live), "the acts-in row must survive");
+  /* ── 34b. THE ROW SHOWS THE TURN THE WORKER IS ON ──────────────────────
+     turns_used counts turns that FINISHED. Between Shadow's instruction and
+     the worker's last word the card read "5 of 20" while turn 6 was the one
+     being worked, and across a restart that fact was recorded nowhere. The
+     engine now stamps `turn_open` for exactly that span. */
+  const now = ctx.shadowTurnNow;
+  assert.strictEqual(typeof now, "function", "shadowTurnNow must exist");
+  assert.strictEqual(now({ turns_used: 5, turn_open: 6 }), 6,
+    "an open turn is the one the founder is watching");
+  assert.strictEqual(now({ turns_used: 5, turn_open: null }), 5,
+    "a settled mission reads exactly as it always did");
+  assert.strictEqual(now({ turns_used: 5 }), 5,
+    "and so does a mission from before the field existed");
+  assert.strictEqual(now({ turns_used: 5, turn_open: 3 }), 5,
+    "a stale open turn can never DROP the count backwards");
+  assert.strictEqual(now({}), 0, "an empty record is zero, not NaN");
+  const inflight = card({ turns_used: 5, turn_open: 6, max_turns: 20 });
+  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">6 of 20/.test(inflight),
+    "the card must print the in-flight turn");
+  /* THE BUDGET IS DELIBERATELY NOT MOVED: max_turns is compared against
+     turns_used in the engine, and a meter disagreeing with the thing that
+     ends the mission would be the worse of the two bugs. */
+  assert.strictEqual(pct({ turns_used: 5, turn_open: 6, max_turns: 20 }),
+    pct({ turns_used: 5, max_turns: 20 }),
+    "an open turn must not move the budget meter");
   console.log("ok 34 the TURN row is the count; the meter itself is unchanged");
+}
+
+/* 35. A QUEUED CARD SAYS WHAT IT IS WAITING FOR, and names the limit.
+
+   The pill says the state; the founder needs the CAUSE, and there is only
+   one -- every slot the run limit allows is in use. Found in the live app:
+   a task sat on QUEUED with a Drop button and nothing saying why, which
+   reads as a task that failed to start. */
+{
+  const ctx = fresh();
+  const card = (m, cap) => {
+    ctx.S.shadowSettings = cap === undefined ? undefined
+      : { tasks: { running_at_once: cap } };
+    return ctx.shadowTaskCardHtml(Object.assign(
+      { id: "m-q", objective: "waits", template: "fix", max_turns: 20 }, m));
+  };
+
+  const queued = card({ state: "queued" }, 2);
+  assert(/waiting for/.test(queued), "the queued card states the wait");
+  assert(/a free slot/.test(queued), "…in the founder's words");
+  assert(/Running at once is 2/.test(queued),
+    "…and names the limit that is holding it, from the settings the page "
+    + "already loaded");
+  assert(/starts on its own/.test(queued),
+    "…and that no click is owed: promotion is automatic");
+
+  /* the cap is not known yet: say less, never guess a number */
+  const early = card({ state: "queued" }, undefined);
+  assert(/waiting for/.test(early) && /a free slot/.test(early),
+    "the sentence stands without the settings");
+  assert(!/Running at once is/.test(early),
+    "a card that has not been told the cap must not invent one");
+
+  /* and it belongs to `queued` alone -- a running task is not waiting */
+  for (const st of ["running", "paused", "blocked", "done", "brief_confirm"])
+    assert(!/waiting for/.test(card({ state: st }, 2)),
+      st + " is not waiting for a slot");
+  console.log("ok 35 a queued card says why it is waiting");
+}
+
+/* 36. THE WATCHING SCREEN RENDERS THE TAB THE FOUNDER PRESSED.
+
+   It passed the literal "watching", so the plane's Working and Goals tabs
+   were buttons that changed nothing -- and since the task card deliberately
+   does not draw Stop or Resume ("the same two buttons still render in
+   shadowPlaneHtml"), there was no reachable way to STOP a running task at
+   all. Measured in the live app, 2026-09-16. */
+{
+  const ctx = fresh();
+  ctx.S.shadowWatching = [];
+  ctx.S.shadowMissions = MISSIONS;
+
+  const def = ctx.SCREENS.shadowwatching();
+  assert(/data-shtab="watching"/.test(def),
+    "the three tabs are still drawn");
+  assert(!/data-shact="stop"/.test(def),
+    "watching is still the default a page starts on");
+
+  ctx.S.shadowTab = "working";
+  const working = ctx.SCREENS.shadowwatching();
+  assert(/data-shact="stop" data-shmid="m-1"/.test(working),
+    "pressing Working must actually reach the rows that carry Stop");
+  assert(/Waiting for a free\s+slot/.test(working),
+    "…and the queued row's reason with them");
+  console.log("ok 36 the watching screen honours the tab that was pressed");
+}
+
+/* ── "DELEGATE OFFERS" IS A REAL CONTROL ──────────────────────────────────
+   22g1-22g6. The chips were drawn dead beside a list the page had compiled
+   into it: SH_KINDS, four names in a const, with no way to keep a fifth.
+   They write now, and these are the things that has to mean.
+
+   22g1  the list is the SERVER's, and one list feeds both surfaces
+   22g2  the floor is honoured, and said rather than hidden
+   22g3  one click removes, with the NAME and one POST
+   22g4  add is two steps, and repaints from the server's answer
+   22g5  a refusal is shown on the row, in the server's own words
+   22g6  a draft sitting on a removed kind cannot post a dead kind */
+
+/* 22g1. the founder's list, not the page's constant -- and the Delegate form
+   and the Settings chips read the same one, so they cannot drift. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.offers = ["fix", "review", "spike"];
+  d.tasks.turn_budget = { fix: 20, review: 20, spike: 7 };
+  d.tasks.turn_budget_kinds = ["fix", "review", "spike"];
+  ctx.S.shadowSettings = d;
+  const sec = (h => h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<")))(
+    ctx.shadowSettingsHtml());
+  ["fix", "review", "spike"].forEach(k => assert(
+    new RegExp('class="chip"[^>]*>' + k + '<button class="cx"').test(sec),
+    "a founder-set kind is missing its chip: " + k));
+  assert(!/>feature</.test(sec) && !/>watch</.test(sec),
+    "a kind the founder does not offer must not be stated");
+  /* the chip quotes the budget the server sent for that kind */
+  assert(/class="chip" title="7 turns">spike</.test(sec),
+    "a minted kind's chip must state its own budget");
+  /* and the Delegate form offers exactly the same three */
+  const kinds = (ctx.shadowDelegatePanelHtml().match(
+    /data-shnewkind="([a-z0-9-]+)"/g) || []).map(m => m.split('"')[1]);
+  assert.deepStrictEqual(kinds, ["fix", "review", "spike"],
+    "the Delegate form and Settings must read one list");
+  /* with no offers reported, the fallback renders rather than nothing --
+     the page must be usable before the first settings read lands */
+  const bare = fresh();
+  assert(/data-shnewkind="fix"/.test(bare.shadowDelegatePanelHtml()),
+    "the Delegate form must fall back, not render empty");
+  console.log("ok 22g1 the offers are the founder's, and one list feeds both");
+}
+
+/* 22g2. the floor: at one offer the x is held down and says why, rather than
+   vanishing. A founder who narrowed to one kind should see the limit, not
+   watch the control disappear. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.offers = ["fix"];
+  ctx.S.shadowSettings = d;
+  const sec = (h => h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<")))(
+    ctx.shadowSettingsHtml());
+  const x = (sec.match(/<button class="cx"[^>]*>/) || [""])[0];
+  assert(x, "the last chip still draws its x");
+  assert(/aria-disabled="true"/.test(x), "at the floor the x must be held down");
+  assert(!/data-shofferdel/.test(x),
+    "a held-down x must not also carry a live hook");
+  assert(/at least 1 kind of work/.test(sec),
+    "the floor must be explained, got: " + x);
+  /* at the ceiling, "+ add" goes down the same way */
+  const c = JSON.parse(JSON.stringify(SET));
+  c.tasks.offers = ["fix", "feature"]; c.tasks.offers_max = 2;
+  ctx.S.shadowSettings = c;
+  const full = ctx.shadowSettingsHtml();
+  assert(/chipadd[^>]*aria-disabled="true"/.test(full),
+    "at the ceiling + add must say it cannot");
+  assert(/At most 2 kinds on offer/.test(full), "…and why");
+  console.log("ok 22g2 the floor and the ceiling are honoured and explained");
+}
+
+/* 22g3. one click removes: the NAME is sent, not a position, and exactly one
+   POST goes out. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({ offers: ["fix", "feature", "research"],
+        min: 1, max: 12,
+        turn_budget: { fix: 20, feature: 30, research: 15 },
+        turn_budget_kinds: ["fix", "feature", "research"] }) }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowSettings = () => {}; ctx.loadShadowHome = () => {};
+  ctx.showNudge = () => {};
+  await ctx.listeners.click({ target: { dataset: { shofferdel: "watch" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].url, "/api/shadow/settings/offers");
+  assert.strictEqual(posts[0].body.remove, "watch",
+    "the NAME is sent, so a re-render cannot shift what is removed");
+  assert(!("add" in posts[0].body), "one verb per write");
+  assert.deepStrictEqual(ctx.S.shadowSettings.tasks.offers,
+    ["fix", "feature", "research"],
+    "the row must repaint from the server's list");
+  assert.strictEqual(ctx.S.shadowSettings.tasks.running_at_once, 5,
+    "the write clobbered an unrelated setting");
+  console.log("ok 22g3 one click removes by name, in one POST");
+})().catch(e => { console.error("FAIL 22g3:", e.message); process.exit(1); });
+
+/* 22g4. add is two steps -- open the namer, then submit -- and the new chip
+   comes back from the SERVER, never painted optimistically. */
+(async () => {
+  const ctx = fresh();
+  const posts = [];
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = (url, body) => { posts.push({ url, body });
+    return Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({
+        offers: ["fix", "feature", "research", "watch", "review"],
+        min: 1, max: 12,
+        turn_budget: { fix: 20, feature: 30, research: 15, watch: 0,
+                       review: 20 },
+        turn_budget_kinds: ["fix", "feature", "research", "review"] }) }); };
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowSettings = () => {}; ctx.loadShadowHome = () => {};
+  const nudges = []; ctx.showNudge = (m) => nudges.push(m);
+
+  /* opening the namer is NOT a write: there is no name to send yet */
+  await ctx.listeners.click({ target: { dataset: { shofferopen: "1" } } });
+  assert.strictEqual(posts.length, 0, "opening the box must not post");
+  const open = ctx.shadowSettingsHtml();
+  assert(/data-shoffername="1"/.test(open), "the namer must render");
+  assert(!/class="chipadd"/.test(open),
+    "the pill and the box must not both offer to add");
+
+  /* typing is stored without a re-render, like every other field here */
+  ctx.listeners.input({ target: { dataset: { shoffername: "1" },
+                                  value: "review" } });
+  assert.strictEqual(ctx.S.shadowOfferDraft, "review");
+
+  await ctx.listeners.click({ target: { dataset: { shofferadd: "1" } } });
+  assert.strictEqual(posts.length, 1, "exactly one write is sent");
+  assert.strictEqual(posts[0].body.add, "review");
+  assert(ctx.S.shadowSettings.tasks.offers.indexOf("review") > -1,
+    "the new kind must arrive from the server's answer");
+  assert.strictEqual(ctx.S.shadowSettings.tasks.turn_budget.review, 20,
+    "…with the budget the server minted it at, so the chip can state it");
+  assert(!ctx.S.shadowOfferAdding, "the namer must close on success");
+  assert(nudges.length === 1, "the founder is told once");
+  console.log("ok 22g4 add is two steps and repaints from the server");
+})().catch(e => { console.error("FAIL 22g4:", e.message); process.exit(1); });
+
+/* 22g5. a refusal is SHOWN, in the server's own words. "at least 1 delegate
+   offer" tells the founder what happened; "did not stick" does not. */
+(async () => {
+  const ctx = fresh();
+  ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  ctx.shadowPost = () => Promise.resolve({ ok: false, status: 400,
+    json: () => Promise.resolve({ detail: "'Code Review!' is not a usable "
+      + "kind name" }) });
+  ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  ctx.loadShadowSettings = () => {}; ctx.loadShadowHome = () => {};
+  ctx.showNudge = () => {};
+  ctx.S.shadowOfferAdding = true; ctx.S.shadowOfferDraft = "Code Review!";
+  await ctx.listeners.click({ target: { dataset: { shofferadd: "1" } } });
+  assert(/not a usable kind name/.test(ctx.S.shadowOfferErr || ""),
+    "the server's reason must be kept, got: " + ctx.S.shadowOfferErr);
+  const sec = ctx.shadowSettingsHtml();
+  assert(/not a usable kind name/.test(sec),
+    "the reason must reach the row, not only a nudge");
+  assert(ctx.S.shadowOfferAdding,
+    "a refused add must keep the box open so the name can be fixed");
+  assert.deepStrictEqual(ctx.S.shadowSettings.tasks.offers, SET.tasks.offers,
+    "a refused write must not move the list");
+  /* an empty name is refused without a round-trip */
+  const c2 = fresh();
+  let sent = 0;
+  c2.fetch = () => Promise.resolve({ ok: true, status: 200,
+    json: () => Promise.resolve({}) });
+  c2.shadowPost = () => { sent++; return Promise.resolve({ ok: true,
+    status: 200, json: () => Promise.resolve({}) }); };
+  c2.S.shadowSettings = JSON.parse(JSON.stringify(SET));
+  c2.S.shadowOfferAdding = true; c2.S.shadowOfferDraft = "   ";
+  await c2.listeners.click({ target: { dataset: { shofferadd: "1" } } });
+  assert.strictEqual(sent, 0, "an empty name must not reach the server");
+  assert(/Name the kind of work first/.test(c2.S.shadowOfferErr || ""));
+  console.log("ok 22g5 a refusal is shown on the row, in the server's words");
+})().catch(e => { console.error("FAIL 22g5:", e.message); process.exit(1); });
+
+/* 22g6. a draft sitting on a kind the founder just removed must not post a
+   dead kind -- the create path and the form must agree on the coercion. */
+{
+  const ctx = fresh();
+  const d = JSON.parse(JSON.stringify(SET));
+  d.tasks.offers = ["research", "feature"];
+  ctx.S.shadowSettings = d;
+  ctx.S.shadowNew = { objective: "x", done: "", kind: "watch" };
+  const panel = ctx.shadowDelegatePanelHtml();
+  assert(!/data-shnewkind="watch"/.test(panel),
+    "a retired kind must not be offered");
+  assert.strictEqual(ctx.shadowNewDraft().kind, "research",
+    "the draft must fall back to the first kind actually on offer");
+  assert(/class="shkind on" type="button"\s+data-shnewkind="research"/
+    .test(panel), "…and the form must show that as the selected one");
+  console.log("ok 22g6 a draft cannot sit on a kind that is no longer offered");
 }
 
 console.log("test_shadow_home.js: all green");

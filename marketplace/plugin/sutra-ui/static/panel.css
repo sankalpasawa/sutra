@@ -2163,6 +2163,9 @@
   border:1px solid var(--line); border-radius:8px; padding:6px 8px;
   font-size:12px; }
 .shrowacts{ display:flex; gap:6px; }
+/* a queued row states WHY it is waiting, where its actions would be: the
+   only thing holding it is the run limit, and there is no button for that */
+.shrowwait{ color:var(--muted); font-size:11.5px; align-self:center; }
 .shmemory{ display:flex; flex-direction:column; gap:6px; }
 .shmem{ display:flex; align-items:center; gap:8px; font-size:12px;
   border:1px solid var(--line-soft, var(--line)); border-radius:8px;
@@ -2334,14 +2337,128 @@
   text-transform:uppercase;color:var(--acc);background:var(--acc-bg);
   border:1px solid var(--acc-bg);border-radius:99px;padding:1px 6px;
   flex:none;margin-left:8px}
+/* the kind the budget row is editing, in its own label. Dimmer than the label
+   it qualifies: "Budget per task" is the control, "· feature" is the target. */
+.kdim{color:var(--muted);font-weight:400}
+/* every kind's effective budget, under the control. A SET value is accented
+   and a template fallback is muted, so a founder can see at a glance which
+   kinds they have actually touched and which are still falling through. */
+/* A READOUT, NOT A CONTROL STRIP (founder, 2026-09-16).
+
+   These were pills: border-radius 99px, 1px line-soft border, --bg fill,
+   3px 9px padding -- which is .chip's geometry to within a pixel. Two
+   pill rows of the same four kind names, stacked, the upper one inside
+   Budget: the founder read THIS row as the Delegate offers control and
+   reported the chips as rendering under the wrong heading. They were not;
+   these were indistinguishable from them.
+
+   So the fix is geometric, not structural. Square, flat, monospaced,
+   divider-separated: the vocabulary of a numeric readout rather than of
+   something you click. The row still shows every kind at a glance, which
+   is what it is for and what the mission that added it argued for -- it
+   simply no longer borrows the shape of the control one section down.
+   `cursor:default` because none of it was ever clickable. */
+.budall{gap:0;flex-wrap:wrap;align-items:baseline;margin-top:-2px}
+.budk{display:inline-flex;align-items:baseline;gap:5px;cursor:default;
+  font:11px/1.7 var(--mono);color:var(--faint);
+  background:none;border:0;border-radius:0;
+  padding:0 9px 0 0;margin-right:9px;
+  border-right:1px solid var(--line-soft)}
+.budk b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted)}
+.budk.on{color:var(--acc);background:none}
+.budk.on b{color:var(--acc)}
+/* the legend the row is subordinate to: no divider before it, and it keeps
+   the muted caption voice so the numbers read as its data */
+.budk:last-of-type{border-right:0}
+.budlg{font:600 8.5px/1.6 var(--mono);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint)}
+/* "set by you" -- the same pill geometry as .auto, MUTED rather than accent,
+   so auto stays the visually quiet default and an override reads as the
+   deviation it is. It is a <button> because it is also how a founder gets
+   back to auto, so it needs the button reset .auto never needed. */
+.auto.set{color:var(--muted);background:var(--bg);
+  border-color:var(--line-soft);cursor:pointer}
+.auto.set:hover{color:var(--ink);border-color:var(--faint)}
+.auto.set[aria-disabled="true"]{opacity:.5;cursor:default}
+/* the budget row's kind picker: .seg's look without its full-width stretch,
+   because this one sits inline beside a stepper rather than filling a row */
+.seg.segmini{display:inline-flex;flex:none;gap:3px;padding:3px;
+  margin-right:9px;vertical-align:middle}
+.seg.segmini button{flex:none;padding:4px 9px;font-size:11px}
 .shset .chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .shset .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
   color:var(--muted);border:1px solid var(--line-soft);background:var(--bg);
   border-radius:99px;padding:5px 11px}
 .shset .chip .cx{color:var(--faint);font-size:13px;line-height:1}
+.shset .chip .cx{cursor:pointer;background:none;border:0;padding:0 0 0 2px;
+  border-radius:99px;transition:color .15s}
+.shset .chip .cx:hover{color:var(--block)}
+.shset .chip .cx[aria-disabled="true"]{cursor:default;opacity:.45}
+/* THE ONE PLACE KINDS ARE ADDED AND REMOVED, and it must not be possible to
+   mistake a readout elsewhere for it. Selected by :has(.chips) rather than by
+   a new class, so the shared section renderer stays untouched -- the section
+   that contains offer chips IS the offers section, by construction.
+
+   The heading earns a little more air above it and carries a badge naming
+   what it is for, because the complaint was never "I cannot see the chips",
+   it was "I cannot tell which row is the control". */
+/* THE HEADING AND ITS CHIPS ARE ONE GROUP, and the bug that made this rule
+   necessary was mine. The lead-in .ssnote is a <div>, so it -- not the chips
+   row -- became :first-of-type, and `.shset .srow:first-of-type{border-top:0}`
+   stopped applying to the chips. They drew a full-width rule between
+   themselves and the heading they belong to, which reads as a boundary: the
+   chips grouped DOWNWARD, away from "Delegate offers". Exactly the misread
+   that was reported, caused by the note I added to prevent a misread.
+
+   Zero the internal rule and tighten the note so the three read as one
+   block. No :has() -- .ssoffers is on the section itself now. */
+.shset .ssoffers{padding-top:20px}
+.shset .ssoffers .ssnote{margin:6px 0 0}
+.shset .ssoffers .srow{border-top:0;padding-top:10px}
+.shset .ssoffers .ssh{display:flex;align-items:baseline;gap:9px}
+.shset .ssoffers .ssh::after{content:"add or remove";
+  font:600 8.5px/1.6 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--acc);background:var(--acc-bg);border:1px solid var(--acc-bg);
+  border-radius:99px;padding:1px 7px}
+/* "+ add" is the affordance, so it reads as one: a solid accent edge and a
+   tinted fill rather than the dashed ghost it was. */
 .chipadd{font:700 11.5px/1 var(--sans);color:var(--acc);
-  border:1px dashed var(--faint);border-radius:99px;padding:5px 11px;
-  background:transparent}
+  border:1px solid var(--acc);border-radius:99px;padding:5px 12px;
+  background:var(--acc-bg);cursor:pointer;
+  transition:filter .15s,background .15s}
+.chipadd:hover{filter:brightness(1.06)}
+.chipadd[aria-disabled="true"]{color:var(--faint);border-color:var(--line-soft);
+  background:transparent;cursor:default;filter:none}
+/* naming a new delegate offer: the "+ add" pill's own footprint, so opening
+   the box does not reflow the chip row */
+.shset .chipin{display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--acc);border-radius:99px;padding:2px 3px 2px 11px;
+  background:var(--surface)}
+.shset .chipin input{width:92px;border:0;background:transparent;outline:none;
+  font:11.5px/1 var(--sans);color:var(--ink);padding:0}
+.shset .chipin input::placeholder{color:var(--faint)}
+.shset .chipin .go{width:22px;height:22px;flex:none;border:0;border-radius:99px;
+  background:var(--acc);color:var(--on-acc);font-size:12px;line-height:1;
+  padding:0;cursor:pointer}
+.shset .chipin .go[aria-disabled="true"]{opacity:.5;cursor:default}
+/* quiet hours: the SAME .chipin bar, holding two time fields instead of one
+   name. Only the widths differ -- a time field needs about half what a kind
+   name does, and the native control supplies its own digits, so a 92px box
+   would sit half empty and read as an unfinished input. Everything else
+   (border, radius, the accent go) is inherited on purpose: this is the offers
+   editor holding different contents, not a second editor. */
+.shset .chipin.shquietin{padding-left:8px}
+.shset .chipin.shquietin input[type="time"]{width:58px;
+  font-variant-numeric:tabular-nums}
+.shset .chipin.shquietin input[type="time"]::-webkit-calendar-picker-indicator{
+  display:none}          /* the bar IS the control; a second opener is noise */
+.shset .shquietdash{color:var(--faint);font-size:11.5px;line-height:1}
+/* the clear x beside a set window, sized to the row rather than to a chip */
+.shset .srow .cx{width:18px;height:18px;flex:none;margin-left:6px;border:0;
+  border-radius:99px;background:transparent;color:var(--faint);font-size:12px;
+  line-height:1;padding:0;cursor:pointer}
+.shset .srow .cx:hover{color:var(--ink)}
+.shset .srow .cx[aria-disabled="true"]{opacity:.4;cursor:default}
 /* add a control: one rounded bar, accent dot in, accent square out.
    Ported from the mock's .addbar -- 11px radius, 13px left inset, 28px go. */
 .addset{margin-top:6px}

@@ -209,9 +209,21 @@ class TheNormalPathIsUnchanged(Base):
         self.assertEqual(self.store.load(mid)["turns_used"], 3,
                          "a delivered say still spends its turn")
 
-    def test_a_genuine_no_live_runtime_still_ends_the_mission(self):
+    def test_a_genuine_no_live_runtime_still_ends_the_turn(self):
         """The guard must not swallow a REAL precondition failure -- one that
-        happens with nobody having touched the mission."""
+        happens with nobody having touched the mission.
+
+        WHAT IS PINNED HERE, AND WHAT MOVED (2026-09-16). This test is about
+        the TAKEOVER guard: a mission nobody touched must still go down the
+        precondition path rather than sail on as if the say had landed. That
+        is unchanged, and is what the assertions below check.
+
+        Where that path LANDS is a different question, answered again after
+        mission m-6b177e1cbdf0: a say that never left says nothing about the
+        work, so it parks the mission as NEEDS YOU instead of killing it
+        (mission_engine.INFRA_BLOCK_REASONS). `blocked` is non-terminal, so
+        this still proves the loop stopped driving.
+        """
         mid = self._running()
 
         async def decider(ctx):
@@ -221,9 +233,10 @@ class TheNormalPathIsUnchanged(Base):
             self._engine(decider, say_ok="no_live_runtime").run_mission(mid))
         self.assertEqual(self.says, ["speak"], "the say WAS attempted")
         self.assertEqual(
-            m["state"], "failed",
-            "an untouched mission whose runtime is genuinely gone still ends "
-            "exactly as it always did")
+            m["state"], "blocked",
+            "an untouched mission whose runtime is genuinely gone still "
+            "leaves the loop -- now recoverably")
+        self.assertEqual(m["block_reason"], "no_live_runtime")
 
 
 if __name__ == "__main__":

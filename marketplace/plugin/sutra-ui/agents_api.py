@@ -109,6 +109,7 @@ def _chat_default_choice():
 
 llm.set_hooks(deepseek_key=providers.deepseek_api_key, default_choice=_chat_default_choice)
 _sync_codex_bin()
+llm.load_slot_settings()        # the saved "model calls at once" numbers, if the person set them
 
 
 def _model_info():
@@ -147,7 +148,16 @@ def _guarded(chat_id, run_id, fn):
     """A crash inside the loop lands in the run's own log, never silently in a thread."""
     def wrapped():
         try:
-            fn()
+            # A run in flight gets its own share of the model-call gate (llm._Gate), so three
+            # articles at once each keep one article's speed, up to the app-wide ceiling. The two
+            # hooks are how a usage-limit pause reaches this chat: one status row, and the Stop.
+            with llm.run_slot(chat_id, run_id,
+                              on_note=lambda m: store.emit(chat_id, run_id, "note", label=m),
+                              should_stop=lambda: (store.get_state(chat_id, run_id) or {}).get("status")
+                              in ("stopped", "failed")):
+                fn()
+        except llm.Stopped:
+            pass                # the person pressed Stop; loop.stop has already written the state
         except Exception as e:  # noqa: BLE001 -- the whole point is to catch everything
             store.emit(chat_id, run_id, "step_failed", label="Run",
                        reason=str(e)[:400], detail=traceback.format_exc()[-1500:],
@@ -276,6 +286,48 @@ def api_send(chat_id: str, body: dict = Body(...)):
                                           lambda: loop.resume(chat_id, run_id, answer)))
         return {"run_id": run_id, "answered": True, "state": store.get_state(chat_id, run_id)}
 
+    # A RUN THAT SUTRA'S OWN QUIT STOPPED IS CARRIED ON, NOT STARTED OVER (2026-09-15). At start-up
+    # store.reconcile_stale_runs marks every run that was mid-step as "stopped" (by="restart"), and
+    # the chat tells the person "Send a message to continue". A message used to make a NEW run, with
+    # an empty artifacts folder, so every step the old run had saved (the research caches, the
+    # interviews in curate-partial, the scored cards) was stranded in the old run's folder and bought
+    # again: an hour of work and the DataForSEO spend, lost to closing the app. Nobody chose to stop
+    # that run, so the message continues it and its tools pick up from what is on disk. The
+    # conversation needs nothing mended: loop.step saves an assistant tool call only together with
+    # its results, so a quit mid-step leaves messages.json ending on a complete turn. A Stop the
+    # person pressed (by="user") still starts fresh, as before.
+    # The newest run by when it started. list_runs sorts by folder name, and a run folder is named
+    # r-HHMMSS-..., the time of day with no date, so its last row is not always the newest run.
+    #
+    # A RUN THAT FAILED IS CARRIED ON TOO (2026-09-15). A model call that errors (the Claude usage
+    # limit, a CLI that fell over, a missing key) marks the run "failed", and a message used to throw
+    # its saved steps away exactly as above: three articles lost hours of research and a finished
+    # article plan to one "session limit" reply. Nobody chose that either, so it continues. The test
+    # is the status "failed" on its own, not "failed with recovering=false": every path that fails a
+    # run (loop.step's two model-call handlers, and _guarded around the whole loop) emits its
+    # step_failed with recovering=False, so reading the flag as well would pick out the same runs from
+    # a second place. A tool that errors never fails the run; its error goes back to the model. The
+    # conversation is whole here too: a failed model call returns before anything is appended, so
+    # messages.json ends on the previous turn's saved tool results. _close_open_tool_calls still mends
+    # the one shape that could break a provider (an assistant tool call saved with no results, if the
+    # loop itself crashed at a pause), so the continued run always starts from a valid turn.
+    last = max(runs, key=lambda r: str(r.get("started_at") or "")) if runs else None
+    failed = bool(last) and last.get("status") == "failed"
+    if last and (failed or (last.get("status") == "stopped"
+                            and _stopped_by_restart(chat_id, last["run_id"]))):
+        run_id = last["run_id"]
+        _close_open_tool_calls(chat_id)
+        store.patch_state(chat_id, run_id, error=None)
+        store.emit(chat_id, run_id, "resumed", by="user", answer=text[:200],
+                   note=("carrying on after the last step failed, from the steps already saved"
+                         if failed else
+                         "carrying on after Sutra was closed, from the steps already saved"))
+        _sync_claude_bin()
+        _spawn(chat_id + run_id, _guarded(chat_id, run_id,
+                                          lambda: loop.start(chat_id, run_id, text)))
+        return {"run_id": run_id, "answered": False, "continued": True,
+                "state": store.get_state(chat_id, run_id)}
+
     run_id = store.new_run(chat_id, text[:60])
     store.patch_state(chat_id, run_id, request=text)
     # The chip on the Asset ideas tab carries the idea's id as DATA, not as words in the message.
@@ -300,6 +352,33 @@ def api_send(chat_id: str, body: dict = Body(...)):
     _spawn(chat_id + run_id, _guarded(chat_id, run_id,
                                       lambda: loop.start(chat_id, run_id, text)))
     return {"run_id": run_id, "answered": False, "state": store.get_state(chat_id, run_id)}
+
+
+def _close_open_tool_calls(chat_id):
+    """Give every tool call the conversation left without a result an error result, so the next
+    model turn is valid on every provider. A no-op when the last saved turn is complete."""
+    messages = store.get_messages(chat_id)
+    last = messages[-1] if messages else None
+    if not (last and last.get("role") == "assistant" and isinstance(last.get("content"), list)):
+        return
+    open_ids = [b.get("id") for b in last["content"]
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")]
+    if not open_ids:
+        return
+    messages.append({"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": i,
+        "content": {"error": "This step was interrupted before it returned.",
+                    "hint": "Run it again if it is still needed."}} for i in open_ids]})
+    store.save_messages(chat_id, messages)
+
+
+def _stopped_by_restart(chat_id, run_id):
+    """Was this run's latest stop the start-up sweep (store.reconcile_stale_runs), not a person?"""
+    try:
+        stops = [e for e in store.get_events(chat_id, run_id) if e.get("type") == "stopped"]
+    except Exception:  # noqa: BLE001 -- an unreadable log is not proof of a restart: start fresh
+        return False
+    return bool(stops) and stops[-1].get("by") == "restart"
 
 
 def _named_open_idea(text):
@@ -1159,6 +1238,42 @@ def api_save_model(body: dict = Body(...)):
         _sync_codex_bin()
     store.save_model_choice(pid, model)
     return _model_info()
+
+
+SLOTS_PER_RUN_RANGE = (1, 12)    # model calls at once for one running article
+SLOTS_MAX_RANGE = (1, 24)        # model calls at once across every chat
+
+
+@router.get("/slots")
+def api_slots():
+    """How many model calls run at once: per running article, and across the whole app."""
+    return llm.slot_settings()
+
+
+@router.post("/slots")
+def api_save_slots(body: dict = Body(...)):
+    """Save the two numbers. An empty or missing value puts that number back on its env
+    variable or default. The ceiling is never allowed below the per-run share."""
+    def num(k, lo, hi):
+        v = body.get(k)
+        if v in (None, "", 0, "0"):
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("%s must be a whole number" % k)
+        if not lo <= n <= hi:
+            raise ValueError("%s must be between %d and %d" % (k, lo, hi))
+        return n
+    try:
+        per_run = num("per_run", *SLOTS_PER_RUN_RANGE)
+        cap = num("max", *SLOTS_MAX_RANGE)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if per_run and cap and cap < per_run:
+        return JSONResponse({"error": "max cannot be below per_run"}, status_code=400)
+    store.save_slot_settings(per_run=per_run, max=cap)
+    return llm.load_slot_settings()
 
 
 @router.post("/connections")
@@ -2331,10 +2446,59 @@ def api_library():
 
 @router.get("/library/{item_id}")
 def api_library_item(item_id: str):
+    """One article, with the sections the screen draws a pencil on and whether an edit here
+    would reach the team. Both come from seo_agent/library_edit, which owns the section split
+    and the member rule."""
     if not _ok_id(item_id):
         return _bad("bad id")
     it = store.library_get(item_id)
-    return it or _bad("not found", 404)
+    if not it:
+        return _bad("not found", 404)
+    from seo_agent import library_edit
+    it["sections"] = [{"id": s["id"], "heading": s["heading"], "level": s["level"], "text": s["text"]}
+                      for s in library_edit.sections(it.get("draft") or "")]
+    it["version"] = int(it.get("version") or 0)
+    it["team"] = library_edit.team_status()
+    return it
+
+
+@router.post("/library/{item_id}/ai-section")
+def api_library_ai_section(item_id: str, body: dict = Body(...)):
+    """Rewrite ONE section of a saved article with the model, and show it before anything is kept.
+
+    Nothing is written. The reply carries the proposed section, a diff against what is there, and
+    the whole article with that section swapped in, so the screen can put it in the buffer when the
+    person presses "Use this" and save it through the ordinary save route. `draft` is the buffer as
+    it is on screen (a person may have typed over another section first); absent, the saved one.
+    """
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    section_id = str(body.get("section_id") or "").strip()
+    instruction = (body.get("instruction") or "").strip()
+    if not re.match(r"^s\d{1,3}$", section_id) or not instruction:
+        return _bad("section_id and instruction are needed")
+    draft = body.get("draft") if isinstance(body.get("draft"), str) else None
+    _sync_claude_bin()
+    try:
+        return library_edit.propose(item_id, draft, section_id, instruction)
+    except Exception as e:  # noqa: BLE001 -- BlockDrift, InventedFigure, ValueError all read the same to a person
+        return _bad(str(e)[:400])
+
+
+@router.post("/library/{item_id}/revert")
+def api_library_revert(item_id: str):
+    """Undo the last save. The version before comes back, and the undone one becomes the version
+    before, so pressing it twice is a no-op pair. Goes to the team like any save."""
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    meta = library_edit.revert(item_id)
+    return meta or _bad("There is no earlier version of this article to go back to.", 404)
 
 
 @router.get("/library/{item_id}/artifact/{name}")
@@ -2359,10 +2523,15 @@ def api_library_artifact(item_id: str, name: str):
 
 @router.post("/library/{item_id}/save")
 def api_library_save_edit(item_id: str, body: dict = Body(...)):
-    """Save an edited article back over itself. The person's version is the truth from then on.
+    """Save an edited article back over itself, here and for the team.
 
     A saved article is a document, not a transcript: fixing a sentence should not need a live
     run. Title and body only; status has its own route and the rest is provenance.
+
+    `base_version` is the version the person opened. When a teammate has saved since, the reply
+    is 200 with {"ok": false, "conflict": {...who, when, their version...}} and nothing is written;
+    the screen offers "load theirs" or "overwrite", and overwrite comes back with `force`. Without
+    a base_version the save is last-writer-wins, exactly as it was before versions existed.
     """
     if not _ok_id(item_id):
         return _bad("bad id")
@@ -2373,7 +2542,21 @@ def api_library_save_edit(item_id: str, body: dict = Body(...)):
     if not isinstance(draft, str) or not draft.strip():
         return _bad("an empty article is not a save")
     title = (body.get("title") or it.get("title") or "").strip()[:160]
-    return store.library_update(item_id, draft, title) or _bad("could not save", 500)
+    base = body.get("base_version")
+    try:
+        base = int(base) if base is not None and base != "" else None
+    except (TypeError, ValueError):
+        return _bad("base_version must be a number")
+    from seo_agent import library_edit
+    try:
+        meta = library_edit.save(item_id, draft, title, base_version=base,
+                                 force=bool(body.get("force")))
+    except library_edit.Conflict as c:
+        return {"ok": False, "conflict": c.current}
+    if not meta:
+        return _bad("could not save", 500)
+    meta["ok"] = True
+    return meta
 
 
 @router.post("/library/{item_id}/status")
@@ -2403,9 +2586,12 @@ def _plain_methods(line):
 
 
 def _assets_payload():
+    """Every row on the sheet, dropped and written ones included: the screen filters, this does
+    not. There is no `next` here any more; the card that offered "the idea to write next" is gone
+    from the tab (2026-09-16), and the model's own view of the top open idea comes from
+    build_assets.status() through /health, which is untouched."""
     from seo_agent.assets import _common as acm
     rows = acm.ideas()
-    nxt = acm.next_open(rows)
     # Which methods contributed comes from the merge's own record, not from counting the `method`
     # field on the rows. Counting rows cannot tell a method that RAN AND FOUND NOTHING from one
     # that never ran at all, and those are different facts a person needs: one means the method is
@@ -2431,9 +2617,6 @@ def _assets_payload():
         "methods": states,
         "methods_line": _plain_methods(m.get("line") or ""),
         "methods_blocked": sorted([k for k, v in states.items() if v != "ran"]),
-        "next": ({"id": nxt["id"], "title": nxt.get("title", ""), "angle": nxt.get("angle", ""),
-                  "format": nxt.get("format", ""), "method": nxt.get("method") or [],
-                  "linkability": nxt.get("linkability") or {}} if nxt else None),
         "rows": [{k: r.get(k) for k in
                   ("id", "title", "angle", "format", "method", "brand_fit", "linkability",
                    "beatability", "effort", "rank", "status", "reuse", "built")} for r in rows],
@@ -2457,6 +2640,10 @@ def api_asset(idea_id: str):
 @router.post("/assets/{idea_id}/status")
 def api_asset_status(idea_id: str, body: dict = Body(...)):
     """Drop an idea, or put a dropped one back. The only status a person sets by hand.
+
+    Kept as an API even though the Asset ideas tab no longer has a button for it (the "Not this
+    one" button went with the next-idea card, 2026-09-16): the sheet's status is still data a
+    client may set, and the route is the one guarded way to do it.
 
     `done` is deliberately NOT settable here. An idea is ticked from provenance, when a run that
     started from it reaches the Library, and nowhere else. Letting the screen set it would put a
@@ -2700,6 +2887,7 @@ def api_health():
             "companies": n_companies,
             "model_provider": llm.provider(),
             "model": _model_info(),
+            "slots": llm.slot_settings(),
             "claude_bin": os.environ.get("SEO_AGENT_CLAUDE_BIN") or None,
             "dataforseo": bool((c.get("dataforseo_login") or "").strip()
                                and (c.get("dataforseo_password") or "").strip()),

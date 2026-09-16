@@ -18,8 +18,8 @@ These tests pin the honest shape of that path end to end:
     can tell "nothing to speak through" from "the say was turned down";
   * the HTTP say arm still answers 404, unchanged;
   * the runner returns the blocker id rather than a bare False;
-  * the engine parks a GOAL attempt as `blocked/no_live_runtime` and leaves
-    a STANDALONE mission terminal exactly as it always was;
+  * the engine parks the attempt as `blocked/no_live_runtime` -- a goal's
+    since first flight, a standalone mission's since 2026-09-16 (test 10);
   * the goal survives, keeps its chat, spends nothing, and Resume works.
 """
 import asyncio
@@ -194,8 +194,21 @@ class TestTheEngine(Base):
                          "the say never left, so no turn was consumed")
         self.assertTrue(all(not c.get("met") for c in m["done_when"]))
 
-    def test_10_a_standalone_mission_is_unchanged(self):
-        """The historical contract: no goal, no blocking."""
+    def test_10_a_standalone_mission_parks_the_same_way(self):
+        """SUPERSEDED, 2026-09-16 -- and by the same argument that wrote it.
+
+        The historical contract here was "no goal, no blocking": a standalone
+        mission whose say never left still died `failed`. Everything this
+        file argues about a goal attempt -- nothing was sent, nothing was
+        spent, the chat is untouched -- is equally true without a goal_id,
+        and live mission m-6b177e1cbdf0 is what that cost: the founder
+        confirmed a check, the relaunched loop found no runtime, and the task
+        read FAILED eleven seconds later with the work already on disk.
+
+        So the standalone half now takes the same recoverable exit. See
+        mission_engine.INFRA_BLOCK_REASONS and the regression suite in
+        test_shadow_supervisor_recovery.py.
+        """
         m = self.store.create(objective="x", template="fix",
                               target_mode="existing", target_session=SID)
         self.store.transition(m["id"], "brief_confirm", "b")
@@ -203,8 +216,10 @@ class TestTheEngine(Base):
         eng = self.engine(say_returns="no_live_runtime")
         out = run(
             eng.run_mission(m["id"]))
-        self.assertEqual(out["state"], "failed")
-        self.assertIn(out["state"], mission_engine.TERMINAL)
+        self.assertEqual(out["state"], "blocked")
+        self.assertEqual(out["block_reason"], "no_live_runtime")
+        self.assertNotIn(out["state"], mission_engine.TERMINAL,
+                         "a say that never left is retryable, goal or not")
 
     def test_11_a_real_refusal_still_fails(self):
         gid, mid = self.goal_with_attempt()

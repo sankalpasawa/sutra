@@ -1,9 +1,24 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
-## 2.279.0 (2026-09-16)
+## 2.279.1 (2026-09-16)
 
 - **One sidebar: a 72px icon rail.** The wide sidebar is gone. Each destination is an icon with its name written under it, hover only highlights, the active row and the rail carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot. Tests: nav + panel contracts moved to 72px.
+## 2.278.12 (2026-09-16)
+
+- **Shadow answers to you: how far it may go, how long it may take, what kinds of work it takes on, and when it is allowed to speak.** Four new settings, and a task that survives Shadow's own faults. **Autonomy** sets how far Shadow may act on its own, in four levels — Watch (says nothing), Suggest (every instruction waits for your yes), Draft (it works, but only reads and plans), and Act (it works at your own permission level) — read fresh on every turn, so changing it takes effect at once. "Ask me before the very top tier" adds one confirmation on the first instruction of a task. **Budget per task** sets the turns each kind of work gets, 1 to 100, and applies to the next task rather than re-budgeting one already running. **Delegate offers** is the list of kinds Shadow may propose; it can no longer offer one you have retired. **Presence** decides when the corner dot appears: on every screen or not, hidden inside a chosen app, silent during quiet hours, and capped to a number of nudges an hour — all of it remembered across a reload and a restart. And a fault in Shadow itself no longer reads as failed work: a task whose instruction never left, or whose turn Shadow could not decide, now waits for you instead of dying with the work already on disk. Two copies of Sutra open at once can no longer disturb each other's tasks. Tests: 399 checks across 16 suites, and the release build now runs all 11 Shadow screen suites — it ran none of them before.
+
+## 2.278.11 (2026-09-16)
+
+- **Four SEO Writer changes in one release.** Sources are now checked after the article is written, claim by claim against the page each one cites: a claim the page does not support gets a replacement source (up to 10 hunts), is softened, or is removed, and one line in the chat links to the full report. Each running article gets its own share of model calls (3 at once, 9 across the app; the number is a setting under Connections), so three articles at once each keep one article's speed, and a run that hits your Claude usage limit waits for the reset and carries on instead of failing. The Asset ideas tab shows every idea, dropped ones too, with a Write this button on each row that opens a new chat with the message typed for you. A saved Library article can be edited section by section, by hand or with AI (you see the change before it is kept), keeps a version and an undo, refuses to overwrite a teammate's newer save, and reaches your team's workspace when one is connected. Tests: 39 suites, all green.
+
+## 2.278.10 (2026-09-15)
+
+- **An article that failed on a model error no longer starts over.** If the SEO Writer stopped because Claude's usage limit ran out (or a model call failed some other way), sending a message afterwards started the article from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 3 checks.
+
+## 2.278.9 (2026-09-15)
+
+- **Closing Sutra no longer throws away an article's progress.** If the app was quit while the SEO Writer was mid-step, sending a message afterwards started the article over from nothing and paid for the research again. It now carries on in the same run and reuses every step already saved. Stopping a run yourself still starts fresh. Tests: 2 checks.
 
 ## 2.278.8 (2026-09-15)
 
