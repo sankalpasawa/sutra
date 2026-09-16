@@ -1163,6 +1163,23 @@ test("inline: the terminal clamp treats Focus/Org as no-plane (codex P1)", () =>
   assert.strictEqual(vm.runInContext("clampTermW(1008)", sandbox), 741, "settings: plane reserved");
   T.goDest("now");
 });
+test("2.280.2: the click that opens the flyout does not close it (the re-render detached its target)", () => {
+  /* Opening Focus re-renders the rail, so by the time the SAME click reaches the
+     document-level closer its target is detached and closest(".rail") is null.
+     Without the rail's stamp the flyout closed in the instant it opened
+     (founder, 2026-09-16: "the submenus have gone"). */
+  T.S.ui = T.loadLayout();
+  T.goDest("focus"); T.renderRail();
+  assert.strictEqual(T.S.ui.railOpen, "focus", "entering Focus opens its flyout");
+  const outside = vm.runInContext("railOutsideClick", sandbox);
+  const detached = { closest: () => null };
+  assert.strictEqual(outside({ railHandled: true, target: detached }), false,
+    "the rail's own click must not close what it just opened");
+  assert.strictEqual(T.S.ui.railOpen, "focus");
+  assert.strictEqual(outside({ target: detached }), true, "a click elsewhere still closes it");
+  assert.strictEqual(T.S.ui.railOpen, null);
+  T.goDest("now");
+});
 test("inline: entering Org renders its rows inside the rail with the plane's markup", () => {
   T.S.ui = T.loadLayout();
   T.goDest("org");

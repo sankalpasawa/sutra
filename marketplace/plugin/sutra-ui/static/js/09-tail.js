@@ -766,6 +766,12 @@ railDragInit();
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
    carry data-screen and ride the existing screen delegation unchanged. */
 document.querySelector(".rail").addEventListener("click", e=>{
+  /* 2.280.2: stamp the event before anything else. Opening the flyout re-renders
+     the rail, which DETACHES the clicked button; by the time this same click
+     reaches the document-level closer, closest(".rail") on it is null and the
+     flyout would close in the instant it opened (founder: "the submenus have
+     gone"). The stamp is what says "this click was the rail's own". */
+  e.railHandled = true;
   /* 2.226.0 (codex P1): accordion child rows sit INSIDE the rail and carry
      data-screen; they must reach the #app screen delegation untouched. */
   if (e.target.closest("[data-screen]")){
@@ -795,9 +801,18 @@ function railFlyoutClose(){
   S.ui.railOpen = null;
   saveLayout(); render();
 }
-document.addEventListener("click", e=>{
-  if (S.ui.railOpen && !e.target.closest(".rail")) railFlyoutClose();
-});
+/* Named so test_nav.js can drive it: the harness's document.addEventListener is
+   a stub, so the listener itself is never reachable from a test. Returns true
+   when it closed the flyout. */
+function railOutsideClick(e){
+  if (!S.ui.railOpen) return false;
+  if (e.railHandled) return false;                 /* the rail's own click (2.280.2) */
+  const t = e.target;
+  if (t && typeof t.closest === "function" && t.closest(".rail")) return false;
+  railFlyoutClose();
+  return true;
+}
+document.addEventListener("click", railOutsideClick);
 document.addEventListener("keydown", e=>{
   if (e.key === "Escape") railFlyoutClose();
 });

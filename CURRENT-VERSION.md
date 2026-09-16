@@ -2,7 +2,17 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.280.1 (2026-09-16, HEAD)
+## v2.280.2 (2026-09-16, HEAD)
+
+**The Focus and Old Org submenus are back.** Founder, 2026-09-16: "the submenus have gone".
+2.280.1's document-level closer (`railOutsideClick`) tested `e.target.closest(".rail")`, but the
+click that opens a flyout re-renders the rail (`setHtmlIfChanged` on #railnav) and detaches its own
+target, so the same click reached the closer looking like an outside click and shut the flyout as
+it opened. Fix: the rail's capture handler stamps `e.railHandled = true` first thing and the closer
+returns on it. `railOutsideClick` is a named function so test_nav.js can drive it (the harness
+stubs `document.addEventListener`). Tests: 1 new nav check; nav + panel suites green.
+
+## v2.280.1 (2026-09-16)
 
 **The rail settles down.** Founder, 2026-09-16, four asks on the new rail: (1) the Focus flyout
 "doesn't go away" -> it closes on a pick (deferred one tick past the #app screen delegation), on a

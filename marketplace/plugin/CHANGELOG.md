@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.280.2 (2026-09-16)
+
+- **The Focus and Old Org submenus are back.** 2.280.1's click-outside closer also caught the click that opened the flyout (opening re-renders the rail and detaches the clicked row), so the flyout closed as it opened. The rail now stamps its own clicks and the closer ignores them. Tests: 1 new nav check.
+
 ## 2.280.1 (2026-09-16)
 
 - **The rail settles down.** The Focus and Old Org flyout now closes when you pick a row, click anywhere else, or press Escape. The terminal button left the foot (Settings > Tools > Terminal still opens it) and the hide toggle left the top: the rail is permanent. The foot shows your company's letter in gold over "CEO of <company>". Tests: nav + panel suites green.
