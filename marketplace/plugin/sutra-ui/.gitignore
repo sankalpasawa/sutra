@@ -3,3 +3,12 @@ __pycache__/
 *.pyc
 qa-shell/out/
 qa-shell/artifacts/
+
+# The photo-gallery tool and its suite. A self-contained local CLI (EXIF
+# parsing + a static gallery), unrelated to the panel: nothing shipped
+# imports it, and every other mention of the name in this directory is a
+# sample app id in a Shadow fixture, not a path. Ignored rather than
+# committed so it stops holding the release's clean-tree check hostage; the
+# files stay on disk and still run.
+photo-gallery/
+test_photo_gallery.py

@@ -45,6 +45,20 @@ __pycache__/
 # stay on disk). Safe because nothing reads them from git: every hook that
 # uses one creates it (mkdir -p / touch / >>) and guards for its absence
 # ([ -f ]), so a fresh clone rebuilds them on the first tool call.
+# Per-session and per-machine local state, same class as the markers below.
+# heartbeats/ is one file per session id written by the session hook;
+# placement-mode and settings.local.json are this machine's own choices;
+# .enforcement/placement/ holds the placement engine's per-run ledgers
+# (compliant-turns, gate-log.jsonl, touch-log.jsonl, touch-errors.log) --
+# the last two were already enumerated individually below, and the whole
+# directory is local state, so the directory rule replaces the guesswork.
+# None is read from git: every hook that uses one creates it and guards for
+# its absence, so a fresh clone rebuilds them on the first tool call.
+.claude/heartbeats/
+.claude/placement-mode
+.claude/settings.local.json
+.enforcement/placement/
+
 .claude/depth-registered
 .claude/flow-classified
 .claude/flow-type-resolved

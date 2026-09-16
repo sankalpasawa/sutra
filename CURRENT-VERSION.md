@@ -2,7 +2,38 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.278.11 (2026-09-16, HEAD)
+## v2.278.12 (2026-09-16, HEAD)
+
+**Shadow's four settings become real controls, a Shadow-side fault stops killing live work, and the
+release build finally tests the Shadow screens.** (1) Autonomy ships as four levels
+(`AUTONOMY_LEVELS`, `clamp_autonomy`) read fresh per turn: L0 Watch pauses running tasks, L1 Suggest
+holds every composed instruction for a founder yes, L2 Draft runs the worker read-only, L3 Act runs
+it at the founder's own permission level. `confirm_top_tier` adds one confirmation on a task's first
+instruction at L3 only. A level never lowers the three floors, and a task a level paused resumes
+only when the founder resumes it. (2) Budget per task (`turn_budget`, `turn_budgets`) is clamped in
+the STORE and stamped by `create()`, so a change binds the next task; a goal's continuation
+deliberately carries the previous attempt's ceiling forward (`goal_lifecycle._new_attempt`) because
+a goal's budget is cumulative. `watch` is refused at the route. (3) Delegate offers
+(`offered_kinds`, `default_offer`) reach Shadow through `shadow_session.offers_context()` at boot
+instead of being hardcoded in SHADOW.md; a mission fence naming a retired kind is refused.
+(4) Presence gains a third store under the Shadow home, `shadow_presence.py` (`presence.json`,
+sibling of `task-limits.json` and `delegate-offers.json`): `corner_card`, per-app `hidden_apps`,
+`quiet_hours` and `nudges_per_hour`, each with its own route, durable across reload and restart.
+(5) `INFRA_BLOCK_REASONS` / `_infra_exit`: a say that never left, an undecidable turn and a lost
+runtime now park a mission `blocked` with `failure_class=shadow_infra` rather than `failed` —
+regression suite for live mission m-6b177e1cbdf0, whose work was on disk when the task read FAILED.
+(6) `shadow_home_lock.py`: one recoverer per Shadow home, closing the two boot-time damage paths the
+per-mission `loop_pid` lease cannot reach (`_clear_stale_start_requests` erasing another app's start
+stamp, and boot `drain_queue` double-spawning a delegate through `provision_target`'s pre-await
+check). (7) Release gate 2 closed: the DMG workflow's "Panel tests" step ran three suites and no
+`test_shadow_*.js` at all; all 11 run now. Wiring it surfaced two long-red suites —
+`test_shadow_overlay.js` pinned a 4-step re-read ladder the product replaced with a 16-step
+geometric one (now asserted as a shape, not literals), and `test_shadow_briefing.js` tested the
+one-spine Shadow Home deleted on 2026-09-11 by `43aba037`/`d47b2067` and is retired. Tests: 399
+Python checks across 16 suites; 11 Shadow JS suites green; Panel step simulated under `bash -e`,
+exit 0. No product behaviour changed by (7).
+
+## v2.278.11 (2026-09-16)
 
 **SEO Writer: sources are checked after the body is written; each article gets its own model-call
 slots; a Write this button on every idea; Library articles are edited by section and shared with
