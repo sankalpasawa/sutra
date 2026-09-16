@@ -621,8 +621,16 @@ function missionCardHtml(m){
   /* a start that has been taken reads as queued, never as the state it is
      still technically sitting in */
   const face = shadowMissionStarting(m) ? "queued" : (m.state || "");
+  /* v4: the card speaks founder language, never a raw state (SHADOW-V3
+     section 7b; SH_TASK is the home module's word list, with a mirror here
+     for the screens that load this module alone) */
+  const WORD = { brief_confirm: "READY", queued: "QUEUED", running: "RUNNING",
+    paused: "PAUSED", blocked: "NEEDS YOU", done: "DONE", failed: "FAILED",
+    stopped: "STOPPED", draft: "DRAFT" };
+  const word = (typeof SH_TASK !== "undefined" && SH_TASK[face] && SH_TASK[face].label)
+    || WORD[face] || String(face).replace(/_/g, " ");
   return `<div class="shmission" data-shmission="${escAttr(m.id || "")}">
-    <span class="shstate shstate-${esc(face)}">${esc(face)}</span>
+    <span class="shstate shstate-${esc(face)}">${esc(word)}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
     <span class="shturns">${m.turns_used || 0}/${m.max_turns || "?"}</span>
     ${(m.done_when && m.done_when[0]) ? `<span class="shdone">done when:

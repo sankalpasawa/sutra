@@ -77,6 +77,7 @@ const D = (id, objective) => ({ id, objective, template: "research", state: "bri
     assert.strictEqual((h.match(/data-shstart="m-[abc]"/g) || []).length, 3, "three draft cards");
     assert(/Fix the login bug/.test(h) && /Draft the pricing page/.test(h));
     assert(/data-nystartall="1"/.test(h), "Start all");
+    assert(/>READY</.test(h) && !/>brief_confirm</.test(h), "cards speak founder language, never a raw state");
     assert.strictEqual(ctx.nowChat().text, "", "the box is cleared after a send");
     console.log("ok 2 one message, three drafts, Start all");
   }
