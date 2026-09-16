@@ -1,0 +1,11 @@
+posttool-counter.sh
+dispatcher-posttool.sh
+auto-coverage.sh
+cascade-check.sh
+estimation-enforcement.sh
+artifact-check.sh
+process-fix-check.sh
+context-scope-audit.sh
+placement-touch.sh
+md-standard-gate.sh
+agent-completion-check.sh

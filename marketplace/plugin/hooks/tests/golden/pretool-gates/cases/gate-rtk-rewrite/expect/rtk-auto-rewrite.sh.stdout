@@ -1,0 +1,8 @@
+
+BLOCKED — RTK air-tight gate (Tokens charter, mode A+)
+
+  Command: git status && git log --oneline -50 && git diff
+  Fix:     rtk git status && git log --oneline -50 && git diff
+  Override: RTK_SKIP=1 git status && git log --oneline -50 && git diff
+  Kill-switch: touch ~/.rtk-disabled
+

@@ -1,0 +1,4 @@
+{
+  "decision": "block",
+  "reason": "FLOW layer FIRED (D61).\n\ncore:flow did not fire this turn -- no .claude/flow-classified marker. Per D61 the FULL core:flow spine runs on EVERY input (the way Input Routing fires every turn), including no-tool turns.\n\nWalk it now: invoke core:flow -> classify -> resolve a workflow type -> FOLLOW/CONSTRUCT -> inner engine -> Work-Atom -> close, writing the .claude/flow-* markers as you go. Then end the turn.\n\nIf the omission is intentional: FLOW_ACK=1 FLOW_ACK_REASON='<why>' (or FLOW_DISABLED=1 / touch ~/.flow-disabled)."
+}

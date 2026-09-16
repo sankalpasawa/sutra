@@ -1,0 +1,4 @@
+PROTO-022: subagent response missing STATUS: line.
+  Expected one of: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+  Subagent type: general-purpose
+  (SOFT warning — exit 0; HARD once adoption passes 80%)

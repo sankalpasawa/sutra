@@ -1,0 +1,228 @@
+# Release gate for the Sutra plugin (sutra-runtime W0a, EXECUTION step 14).
+#
+# Every push to main that touches marketplace/plugin/ must clear these checks
+# before the version it carries can be released:
+#
+#   1. tests/run-all.sh --set runtime
+#                              the suite set this runtime work owns and keeps
+#                              green: runtime/tests/* and hooks/tests/*. The
+#                              wider "all" set also discovers long-standing
+#                              suites that are red for reasons unrelated to the
+#                              runtime (workflow propose/approve/register,
+#                              eval-pack, native-schema fixtures). Gating on
+#                              those would make this gate red on its first push
+#                              and its signal would be ignored within a week, so
+#                              "all" is reported (--count, --list) but not gated
+#                              until those suites are green; see the repo TODO.
+#                              Suites that need a live plugin install are
+#                              excluded from both sets — see run-all.sh's header.
+#   2. runtime/spec-check.sh   pipeline.json completeness and order, the
+#                              matcher-semantics declaration, and the sync
+#                              between hooks.json and hooks.json.step3.
+#   3. sutra-turn --selftest   manifest, exec bits, jq probe, the .step3
+#                              snapshot the kill-switch replays.
+#   4. sutra-charcap parity    the golden corpus replayed against BOTH runners
+#                              (legacy and sutra-turn). This is the only proof
+#                              that the runtime is a drop-in replacement, and
+#                              until it was added here the prover gated nothing.
+#                              macOS LEG ONLY: the corpus is recorded on macOS
+#                              and its bytes are BSD-tool bytes, so the ubuntu
+#                              leg would diff on platform, not on parity. Every
+#                              other step still gates on both runners.
+#   5. validate-hook-paths.sh  every registered command exists, is tracked and
+#                              is executable (jq only — no python3).
+#
+# TWO RUNNERS. The hooks target macOS bash 3.2 and BSD tools; the fleet runs on
+# macOS laptops, and a GNU-only assumption (GNU sed, timeout(1), GNU date) is
+# green on ubuntu and dead on the founder's machine. macos-latest is therefore
+# a first-class leg of the matrix, not an optional extra, and fail-fast is off
+# so a macOS-only break is never hidden by the ubuntu leg going red first.
+#
+# The runner floor is the runtime's floor: bash + jq (plus perl and shasum,
+# which sutra-charcap needs for its wall cap and file-effect hashes).
+#
+# TMPDIR IS PART OF THAT FLOOR. The suites build their fixture roots with
+# mktemp -d "${TMPDIR:-/tmp}/...", and hooks/atom-floor.sh deliberately exempts
+# /tmp/* and /private/tmp/* (scratch is not work). macOS sets TMPDIR under
+# /var/folders, ubuntu leaves it unset - so an unset TMPDIR silently disarms the
+# floor the gate is meant to prove. Both run-all steps therefore pin
+# TMPDIR: ${{ runner.temp }}, which is outside /tmp on both runners.
+name: plugin release gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketplace/plugin/**'
+      - '.github/workflows/plugin-release-gate.yml'
+  pull_request:
+    paths:
+      - 'marketplace/plugin/**'
+      - '.github/workflows/plugin-release-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The parity replay is the long pole: 9 families x 2 runners, every case in
+    # its own fresh project root. Locally, under load, one family took minutes;
+    # a CI runner is slower. 120 minutes is the budget for ONE full replay plus
+    # every other suite - which is why the run-all step below sets
+    # SUTRA_CHARCAP_PARITY_SKIP=1 instead of replaying the corpus a second time.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tool floor (bash, jq, perl, shasum)
+        run: |
+          set -euo pipefail
+          if ! command -v jq >/dev/null; then
+            if command -v brew >/dev/null; then brew install jq; else sudo apt-get install -y jq; fi
+          fi
+          command -v jq     >/dev/null || { echo "jq missing on the runner";     exit 1; }
+          command -v perl   >/dev/null || { echo "perl missing on the runner";   exit 1; }
+          command -v shasum >/dev/null || { echo "shasum missing on the runner"; exit 1; }
+          jq --version
+          bash --version | head -1
+
+      - name: Runtime artifacts present
+        run: |
+          set -euo pipefail
+          for f in marketplace/plugin/bin/sutra-turn \
+                   marketplace/plugin/bin/sutra-canary \
+                   marketplace/plugin/bin/sutra-charcap \
+                   marketplace/plugin/runtime/spec-check.sh \
+                   marketplace/plugin/runtime/selftest.sh \
+                   marketplace/plugin/runtime/pipeline.json \
+                   marketplace/plugin/hooks/hooks.json.step3 \
+                   marketplace/plugin/runtime/tests/test-charcap-parity.sh \
+                   marketplace/plugin/tests/run-all.sh; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+
+      - name: hooks.json is registered and fully timed
+        run: |
+          set -euo pipefail
+          H=marketplace/plugin/hooks/hooks.json
+          jq -e . "$H" >/dev/null
+          untimed=$(jq '[.hooks[][].hooks[] | select(.timeout == null)] | length' "$H")
+          [ "$untimed" -eq 0 ] || { echo "$untimed hook entries have no timeout"; exit 1; }
+          echo "entries: $(jq '[.hooks[][].hooks[]] | length' "$H"), untimed: 0"
+
+      - name: Suite discovery
+        run: |
+          set -euo pipefail
+          n=$(bash marketplace/plugin/tests/run-all.sh --set all --count)
+          echo "discovered suites (set: all): $n"
+          [ "$n" -ge 14 ] || { echo "suite discovery collapsed (expected 14 or more)"; exit 1; }
+          r=$(bash marketplace/plugin/tests/run-all.sh --set runtime --count)
+          echo "discovered suites (set: runtime): $r"
+          [ "$r" -ge 13 ] || { echo "runtime suite set collapsed (expected 13 or more)"; exit 1; }
+          bash marketplace/plugin/tests/run-all.sh --set all --list
+          # The gated set is "runtime", so the parity replay must be IN it — if it
+          # is only discoverable under "all" the gate proves nothing about parity.
+          bash marketplace/plugin/tests/run-all.sh --set runtime --list | grep -q 'test-charcap-parity.sh' \
+            || { echo "the charcap parity suite is not in the runtime suite set"; exit 1; }
+
+      - name: spec-check.sh
+        run: bash marketplace/plugin/runtime/spec-check.sh marketplace/plugin/runtime/pipeline.json
+
+      - name: spec-check.sh rejects the red fixture
+        run: |
+          set -uo pipefail
+          if bash marketplace/plugin/runtime/spec-check.sh \
+               marketplace/plugin/runtime/tests/spec-missing.json; then
+            echo "spec-check accepted the red fixture — the completeness check is decoration"
+            exit 1
+          fi
+          echo "red fixture rejected as expected"
+
+      - name: validate-hook-paths.sh
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
+        run: bash marketplace/plugin/scripts/validate-hook-paths.sh
+
+      - name: sutra-turn --selftest
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
+        run: bash marketplace/plugin/bin/sutra-turn --selftest
+
+      # macOS ONLY, and only this step. The corpus is RECORDED on macOS: the
+      # expectations carry BSD tool output, macOS path resolution (/tmp ->
+      # /private/tmp) and the hooks' bash-3.2 behaviour. Replaying those bytes on
+      # ubuntu compares two different platforms and fails for reasons that are
+      # not parity, so the parity claim is gated where it is meaningful. Every
+      # other step still runs on BOTH runners - the ubuntu leg keeps proving the
+      # hooks, the spec and the suites, and nothing here is skipped by identity
+      # (the normaliser is word-bound, so the recording user does not matter).
+      - name: golden parity (sutra-charcap, both runners)
+        if: runner.os == 'macOS'
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
+          # The replayer runs several CASES at once and each case fans its
+          # event's hooks out in parallel, so a shared runner is deliberately
+          # oversubscribed. The per-step budgets are wall-clock caps sized for
+          # a normal session; give them headroom here so scheduler latency
+          # cannot be mistaken for a hung hook (the knob only ever lengthens).
+          SUTRA_STEP_TIMEOUT_SCALE: '400'
+        run: bash marketplace/plugin/runtime/tests/test-charcap-parity.sh
+
+      # The gated set is "runtime" (runtime/tests + hooks/tests). run-all.sh
+      # discovers test-charcap-parity.sh in it (asserted in the discovery step
+      # above). It ran as its own named step already, so it is skipped here -
+      # the suite prints the skip line, so the log still says what happened.
+      - name: tests/run-all.sh --set runtime
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
+          SUTRA_CHARCAP_PARITY_SKIP: '1'
+          # TMPDIR is a CONTRACT of this suite set, not a convenience. Every
+          # suite builds its fixture root with mktemp -d "${TMPDIR:-/tmp}/...",
+          # and hooks/atom-floor.sh exempts /tmp/* and /private/tmp/* from the
+          # atom floor (scratch is not work). ubuntu-latest leaves TMPDIR unset,
+          # so the fixtures land in /tmp, the floor waives itself and
+          # hooks/tests/test-dispatch-gate-runner.sh gets exit 0 where it
+          # asserts exit 2: measured 20/24 checks, run-all exit 1 - a red gate
+          # on its first push. macOS only passes because launchd sets TMPDIR
+          # under /var/folders. runner.temp is outside /tmp on BOTH runners, so
+          # both legs build fixtures where the founder's box builds them.
+          TMPDIR: ${{ runner.temp }}
+          # The two timing suites measure wall clock. A shared CI runner adds
+          # seconds of scheduling latency that are not a regression, so the
+          # gate uses explicit generous bounds; the suites print their measured
+          # numbers either way, so a real slowdown stays visible in the log.
+          SUTRA_CANARY_BUDGET_MS: '900'
+          SUTRA_CONC_TIMEOUT_BUDGET_MS: '8000'
+        run: bash marketplace/plugin/tests/run-all.sh --set runtime
+
+      # Reported, never gating: the wider set carries suites that are red for
+      # reasons unrelated to this runtime (see the header). This step prints the
+      # real tally so the inherited failures stay visible and get worked off,
+      # and it is `continue-on-error` so it can never turn the gate red.
+      - name: tests/run-all.sh --set all (report only, non-gating)
+        continue-on-error: true
+        # A bound of its own: continue-on-error survives a red step but not the
+        # job timeout, so a hung inherited suite must not eat the 120 minutes.
+        timeout-minutes: 30
+        env:
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
+          SUTRA_CHARCAP_PARITY_SKIP: '1'
+          # Same reason as the gated step above: a report whose failures are
+          # TMPDIR artifacts is noise nobody works off.
+          TMPDIR: ${{ runner.temp }}
+        run: bash marketplace/plugin/tests/run-all.sh --set all

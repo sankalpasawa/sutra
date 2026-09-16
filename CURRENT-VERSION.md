@@ -2,7 +2,7 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.279.2 (2026-09-16, HEAD)
+## v2.280.1 (2026-09-16, HEAD)
 
 **The rail settles down.** Founder, 2026-09-16, four asks on the new rail: (1) the Focus flyout
 "doesn't go away" -> it closes on a pick (deferred one tick past the #app screen delegation), on a
@@ -12,7 +12,22 @@ top bar with the hide toggle is gone, `railToggle` is optional, the drag edge an
 the hide/restore path; (4) the foot's mark is the company's first letter, black on gold like the
 old logo mark, over "CEO of <company>" (paintRole paints the letter; paintAvatar keeps the Claude
 account as the hover title only). Built in a clone of main because the checkout was on the Shadow
-session's shadow-v4 lane. Tests: nav + panel suites green.
+session's shadow-v4 lane. Tests: nav + panel suites green. Tagged v2.279.2-desktop on the
+pre-merge commit a6aa7b97, then renumbered 2.280.1 on the merge with origin/main (2.280.0, the
+runtime program); the desktop build to install is v2.280.1-desktop.
+## v2.280.0 (2026-09-16)
+
+**The per-turn pipeline runs as one program (W0a of the Sutra runtime, D73, ADR-040).**
+`hooks/hooks.json` collapses from 92 registrations to 7 (`bin/sutra-turn run --event <E>`
+per event with steps, plus `bin/sutra-canary`); the 92-entry registry ships verbatim as
+`hooks/hooks.json.step3` behind the kill-switch (`~/.sutra-runtime-disabled` or
+`SUTRA_RUNTIME_DISABLED=1`). `runtime/pipeline.json` is the spec (6 events, 92 steps,
+87 scripts), `runtime/spec-check.sh` enforces it, `bin/sutra-charcap` plus
+`hooks/tests/golden` (9 families, 259 cases) prove every hook's stdout, stderr and exit
+byte for byte on both runners; `tests/run-all.sh --set runtime` and the release gate
+workflow guard every push. Nothing changes in day-to-day use. Founder gates open:
+`/reload-plugins` (EXECUTION row 15) and the downgrade drill (row 16). Details:
+`marketplace/plugin/CHANGELOG.md` 2.280.0.
 
 ## v2.279.1 (2026-09-16)
 

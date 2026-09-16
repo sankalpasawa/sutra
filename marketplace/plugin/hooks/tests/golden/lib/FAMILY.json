@@ -1,0 +1,16 @@
+{
+  "family": "lib",
+  "event": "PreToolUse",
+  "scripts": [
+    { "id": "lib__sutra-stderr-capture--update-banner", "path": "hooks/lib/sutra-stderr-capture.sh", "args": ["@PLUGIN@/hooks/update-banner.sh"] },
+    { "id": "lib__sutra-stderr-capture--findings", "path": "hooks/lib/sutra-stderr-capture.sh", "args": ["@PLUGIN@/hooks/findings-banner.sh"] },
+    { "id": "atom-floor.sh", "path": "hooks/atom-floor.sh", "args": [] },
+    { "id": "dispatch-gate.sh", "path": "hooks/dispatch-gate.sh", "args": [] },
+    { "id": "flow-gate.sh", "path": "hooks/flow-gate.sh", "args": [] },
+    { "id": "cascade-check.sh", "path": "hooks/cascade-check.sh", "args": [] },
+    { "id": "new-path-detector.sh", "path": "hooks/new-path-detector.sh", "args": [] },
+    { "id": "policy-coverage-gate.sh", "path": "hooks/policy-coverage-gate.sh", "args": [] },
+    { "id": "codex-review-gate.sh", "path": "hooks/codex-review-gate.sh", "args": [] },
+    { "id": "workflow-floor.sh", "path": "hooks/workflow-floor.sh", "args": [] }
+  ]
+}

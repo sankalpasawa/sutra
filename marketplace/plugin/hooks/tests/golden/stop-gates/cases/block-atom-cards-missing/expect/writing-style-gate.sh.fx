@@ -1,0 +1,1 @@
+583afd5f0f48739cf04a9cb4c6f8b48ed8a24ce603d65af7d9389c4aecd1b9eb  .enforcement/writing-style.jsonl

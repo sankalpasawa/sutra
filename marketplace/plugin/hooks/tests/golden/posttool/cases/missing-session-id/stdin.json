@@ -1,0 +1,14 @@
+{
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/webhook.py",
+    "old_string": "a",
+    "new_string": "b"
+  },
+  "tool_response": {
+    "success": true
+  }
+}

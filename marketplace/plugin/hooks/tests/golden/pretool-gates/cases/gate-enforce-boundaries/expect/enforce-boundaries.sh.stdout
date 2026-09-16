@@ -1,0 +1,2 @@
+BLOCKED: Cannot determine active role (no env, no .claude/active-role, unrecognized repo proj).
+Set: echo 'company-NAME' > .claude/active-role

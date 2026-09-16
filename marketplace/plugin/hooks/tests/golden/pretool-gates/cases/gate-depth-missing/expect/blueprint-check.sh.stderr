@@ -1,0 +1,10 @@
+BLUEPRINT-CHECK: foundational edit — the BLUEPRINT in this turn's response
+  did not validate. This reads the block the USER sees, not a marker file.
+  File: holding/FOUNDER-DIRECTIONS.md
+  Problem: no BLUEPRINT block found in this turn's response text
+  Fix: re-emit the BLUEPRINT with a non-empty 'Doing:', a concrete
+       'Output looks like:', and a 'Verified by:' naming a RUNNABLE check
+       (shell test / typecheck / grep / file-exists / curl) — not 'works'.
+       At D3+, every numbered Step needs an inline 'Verify:'.
+  Format: the core:blueprint skill (SKILL.md) / SUTRA-DEFAULTS.md.
+  Or override: BLUEPRINT_ACK=1 BLUEPRINT_ACK_REASON='<why>' <tool>

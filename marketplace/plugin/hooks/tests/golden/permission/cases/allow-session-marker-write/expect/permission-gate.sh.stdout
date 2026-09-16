@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[{"type":"addRules","rules":[{"toolName":"Write","ruleContent":".claude/sessions/**"}],"behavior":"allow","destination":"localSettings"}]}}}

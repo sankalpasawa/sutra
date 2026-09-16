@@ -1,0 +1,6 @@
+{
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false
+}

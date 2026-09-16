@@ -1,0 +1,6 @@
+flow-stop-check.sh
+per-turn-hard-gate.sh
+writing-style-gate.sh
+placement-stop-check.sh
+atom-cards-stop-check.sh
+creation-stop-check.sh

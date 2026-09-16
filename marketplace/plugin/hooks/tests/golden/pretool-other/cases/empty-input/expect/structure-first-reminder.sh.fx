@@ -1,0 +1,2 @@
+c69a6b723c5c6866894396e7629f0b175ab34e084e45c862719193dbf6512ea7  .claude/sessions/<UUID>/structure-first-active
+c69a6b723c5c6866894396e7629f0b175ab34e084e45c862719193dbf6512ea7  .claude/structure-first-active

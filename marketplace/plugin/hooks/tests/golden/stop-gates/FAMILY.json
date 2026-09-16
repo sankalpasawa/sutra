@@ -1,0 +1,12 @@
+{
+  "family": "stop-gates",
+  "event": "Stop",
+  "scripts": [
+    { "id": "context-budget-check.sh", "path": "hooks/context-budget-check.sh", "args": [] },
+    { "id": "flow-stop-check.sh", "path": "hooks/flow-stop-check.sh", "args": [] },
+    { "id": "per-turn-hard-gate.sh", "path": "hooks/per-turn-hard-gate.sh", "args": [] },
+    { "id": "writing-style-gate.sh", "path": "hooks/writing-style-gate.sh", "args": [] },
+    { "id": "placement-stop-check.sh", "path": "hooks/placement-stop-check.sh", "args": [] },
+    { "id": "atom-cards-stop-check.sh", "path": "hooks/atom-cards-stop-check.sh", "args": [] }
+  ]
+}

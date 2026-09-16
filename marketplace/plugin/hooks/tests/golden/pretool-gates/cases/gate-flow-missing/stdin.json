@@ -1,0 +1,12 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Task",
+  "tool_input": {
+    "description": "spawn a worker",
+    "prompt": "do the thing",
+    "subagent_type": "general-purpose"
+  }
+}

@@ -1,0 +1,15 @@
+[D55 STRUCTURE-FIRST DEFAULT] structure is the default shape of every action.
+  - Tables > prose for >=3 comparable rows.
+  - Numbers > adjectives; progress bars for scores; ranges for estimates.
+  - Decisions in ASCII-boxed callouts (no unicode box-drawing).
+  - Impact + Effort columns on every task list.
+
+[D55 RESTRUCTURE-ON-ADD] when adding ANYTHING new (file, section, direction,
+protocol, hook, skill, dependency), four mandatory steps:
+  1. Survey  — list existing structure the new thing touches.
+  2. Reorg   — fit new + existing into one coherent shape.
+  3. Simplify — dedupe, merge, delete redundancy. Apply ruthlessly.
+  4. Surface — state in turn output: added / restructured / simplified / deleted.
+
+Kill: touch ~/.structure-first-disabled
+Full direction: holding/FOUNDER-DIRECTIONS.md §D55

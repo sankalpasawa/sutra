@@ -1,0 +1,6 @@
+d15068e9d8f99df4267d8c7139363c2fe77d9d7ef05d23f35dde218c0991f84f  .claude/flow-classified
+7ca1c71bb2a6c070d56a792f21c5a30d26881f5e575c17479d378d88a42b979c  .claude/flow-type-resolved
+d15068e9d8f99df4267d8c7139363c2fe77d9d7ef05d23f35dde218c0991f84f  .claude/sessions/pid-<PID>/flow-classified
+7ca1c71bb2a6c070d56a792f21c5a30d26881f5e575c17479d378d88a42b979c  .claude/sessions/pid-<PID>/flow-type-resolved
+dd4901b25c1b563e56402994cd1adf27371c985fdf6ed04f373b72c70909d0ec  .enforcement/flow-gate.jsonl
+95dbbf6c350e7f7001bfc0ad3a6fa96aca7b8a11721c0670a5a8a2cda4e98092  .sutra/h-sutra.jsonl

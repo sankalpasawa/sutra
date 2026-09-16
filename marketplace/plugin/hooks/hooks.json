@@ -1,394 +1,13 @@
 {
-  "description": "Sutra governance hooks — depth-marker gate, estimation logging, version banners, + C3c token-compression bundle. Phase-1 activation adds: session-logger, artifact-check, estimation-enforcement, log-triage, log-skill-feedback, measurement-logger, compliance-tracker. v1.13.0 adds permission-gate (PermissionRequest meta-permission) per PERMISSIONS charter. v2.0.0 adds feedback-auto-override (privacy v2 signals-only capture; codex-reviewed DIRECTIVE-ID 1777036275).",
+  "description": "Sutra governance hooks — collapsed to the sutra-turn runtime (W0a). One `sutra-turn run --event <E>` registration per event the pipeline declares with at least one step (six today) plus the bare sutra-canary at UserPromptSubmit — seven entries; the pre-collapse registry is kept verbatim at hooks/hooks.json.step3 and is what runtime/pipeline.json is derived from and judged against. NO EMPTY EVENTS ARE REGISTERED: UserPromptExpansion was registered here while the pipeline declared zero steps for it and hooks.json.step3 carried no such registration at all, i.e. the fleet fires nothing on that path today; every prompt expansion would have forked sutra-turn only to select no step, write an orphan_turn + stage_digest row and exit — pure overhead and a new failure surface on a path that has none. It is dropped from this registry AND from the pipeline; runtime/spec-check.sh check 13 now fails the release gate, naming the event, if an event is declared with zero steps or if a `sutra-turn run --event <E>` registration exists for an event the pipeline does not declare with at least one step. TIMEOUTS ARE DERIVED, NOT CHOSEN: the timeout on each registration is ceil(max(pipeline.events[<E>][].timeout_ms)/1000) + 5 s of runtime margin. Before the collapse each slow hook carried its own host timeout, so only that hook was killed; under one registration per event the host SIGKILLs sutra-turn at the event cap and the whole event is lost (no step rows, no emit, no stage_digest — only the orphan_turn row). runtime/spec-check.sh check 12 asserts, per event, that this timeout*1000 is >= the largest step timeout_ms in the pipeline and that budgets.event_wall_ms is too, so a step budget can never again be raised past its host cap unnoticed.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-update.sh",
-            "timeout": 20
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/findings-banner.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/registry-shrink-banner.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/update-banner.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-auto-activate.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart-privacy-notice.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-sweep.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/inbox-display.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-start-rotate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/csm-sessionstart-banner.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/session-token-snapshot.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/lib/sutra-stderr-capture.sh ${CLAUDE_PLUGIN_ROOT}/hooks/governance-live-banner.sh",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/usage-guard.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-override.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structure-first-reminder.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loop-budget-guard.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/depth-marker-pretool.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/operationalization-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/creation-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-channel-guard.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/rtk-auto-rewrite.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bash-summary-pretool.sh",
-            "timeout": 6
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/structural-move-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pytest-isolation-guard.sh",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-gate.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/keys-in-env-vars.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/enforce-boundaries.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/build-layer-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/self-assess-before-foundational.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/input-classification-gate.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-classification-pretooluse.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-dispatch-brief.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-gate.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-floor.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|Bash|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-gate.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-counter.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatcher-posttool.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-coverage.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/cascade-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-enforcement.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/artifact-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/process-fix-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-touch.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/md-standard-gate.sh",
-            "timeout": 8
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/completion-protocol-check.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/posttool-mcp-compress.sh",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/agent-completion-check.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/onboarding-self-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/narration-not-artifact.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-consult-marker.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-scope-audit.sh",
-            "timeout": 8
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/permission-gate.sh",
-            "timeout": 3
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event SessionStart",
+            "timeout": 25
           }
         ]
       }
@@ -398,43 +17,49 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/reset-turn-markers.sh",
-            "timeout": 3
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event UserPromptSubmit",
+            "timeout": 15
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/loopguard-turn-reset.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-canary",
             "timeout": 3
-          },
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codex-directive-detect.sh",
-            "timeout": 3
-          },
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event PreToolUse",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-routing-rule.sh",
-            "timeout": 3
-          },
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event PostToolUse",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-correction.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-discipline-prompt.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-resolve.sh",
-            "timeout": 10
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event PermissionRequest",
+            "timeout": 8
           }
         ]
       }
@@ -444,127 +69,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/phase-exit-audit.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-stop.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flush-telemetry.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/estimation-collector.sh",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-triage.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-feedback.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/measurement-logger.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/compliance-tracker.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/feedback-auto-abandonment.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/policy-only-sensor.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/output-behavior-lint.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/csm-cap118-lint.sh",
-            "timeout": 3
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/flow-stop-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/per-turn-hard-gate.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/writing-style-gate.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-stop-check.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/placement-lint.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/atom-cards-stop-check.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/creation-stop-check.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/workflow-floor.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/coverage-gate.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/domains-site-refresh.sh",
-            "timeout": 150
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sutra-turn run --event Stop",
+            "timeout": 155
           }
         ]
       }
