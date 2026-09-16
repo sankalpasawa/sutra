@@ -2,7 +2,22 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.280.2 (2026-09-16, HEAD)
+## v2.280.3 (2026-09-16, HEAD)
+
+**The Setup screens are cleaned up.** Founder, 2026-09-16, a list of problems read off the app.
+Every Setup screen now has the same shape: title, one line under it, then rows or cards with aligned
+labels and values and one action on the right; no paragraph runs past two lines. Updates: the
+"Sutra does not manage this one. Update it with <command>" lines are gone; a tool Sutra cannot update
+says "Updates on its own". Usage limits: thin bars in the three theme tones, plain plan pill. AI
+providers: sans rounded status pills in three tones, "Make default" moved off the list rows onto the
+provider page, Gemini CLI removed from the catalogue and every screen. DeepSeek and Codex pages: the
+explainer paragraphs are cut or sit behind Details. Connectors: a state word and one action per row,
+one Re-check on the screen head. Routines and Automation notes are one line each. Files: providers.py,
+usage.py, 04-screens.js, 05-chat.js, 12-connectors.js, panel.css and 12 test files. Tests: 32 of 33
+node suites green (test_goal_control.js fails on main too), 825 pytest passed level with main,
+SEO engine 59 checks, manifest 14 of 14.
+
+## v2.280.2 (2026-09-16)
 
 **The Focus and Old Org submenus are back.** Founder, 2026-09-16: "the submenus have gone".
 2.280.1's document-level closer (`railOutsideClick`) tested `e.target.closest(".rail")`, but the
