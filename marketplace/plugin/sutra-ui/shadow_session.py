@@ -78,6 +78,20 @@ def standing_context():
         out = ("\n\nSTANDING INSTRUCTIONS (global; founder-confirmed; "
                "per-chat rules arrive with the chat they belong to):\n"
                + block)
+        # Shadow v4 (C7): the founder's own words on how Shadow behaves,
+        # from the same task-limits store as the numbers. behaves() never
+        # raises, so a broken limits file costs this block only, never the
+        # standing instructions above it.
+        try:
+            import mission_engine
+            beh = mission_engine.behaves()
+        except Exception:                      # noqa: BLE001
+            beh = ""
+        if beh:
+            out += ("\n\nHOW SHADOW BEHAVES (the founder's own words; they "
+                    "rank below the floors and below what the founder says "
+                    "in a task's own chat, and above the standing "
+                    "instructions):\n" + beh)
         if lines:
             out += ("\n\nRECENT SHADOW ACTIONS (ground undo requests in "
                     "these; if something cannot be undone, say so "

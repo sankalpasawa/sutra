@@ -2046,6 +2046,87 @@ def _publish_delegate_chat(mission):
     return publish
 
 
+#: How a task's own Shadow chat names itself in the Chats rail (V3-3:
+#: agents show in Chats as "Shadow: <task>"). ONE writer of this format.
+SHADOW_TASK_CHAT_TITLE_PREFIX = "Shadow: "
+
+
+def _task_chat_title(mission):
+    task = " ".join(str(mission.get("objective") or "").split()) or "untitled"
+    if len(task) > 60:
+        task = task[:59].rstrip() + "…"
+    return SHADOW_TASK_CHAT_TITLE_PREFIX + task
+
+
+def _publish_task_chat(mission):
+    """(sid) -> sutra_id: a task's Shadow chat becomes a NORMAL Sutra chat.
+
+    Shadow v4 (C1, ADR-043). The mirror of _publish_delegate_chat for the
+    OTHER of the two AIs: same chat_store steps in the same order (session
+    stamped on the mission first, title best-effort, record on disk, then the
+    visible segment, then the durable link), no scheduler admission (starting
+    a task's Shadow chat is not starting the task), and idempotent.
+    """
+    def publish(sid):
+        import shadow_ledger
+        store = _mission_engine.MissionStore()
+
+        def _stamp(**fields):
+            try:
+                m = store.load(mission["id"])
+                if m is None:
+                    return
+                m.update(fields)
+                store.save(m)
+            except Exception:       # noqa: BLE001 -- never fail a spawn
+                pass
+
+        _stamp(task_chat_session=sid)
+        existing = chat_store.resolve("claude", sid)
+        if existing:
+            _stamp(task_chat=existing)
+            return existing
+        title = _task_chat_title(mission)
+        try:
+            sr.append_title(sid, title)
+        except Exception:           # noqa: BLE001
+            pass
+        rec = chat_store.create(cwd=_shadow_workdir(), branch="", title=title)
+        chat_store.begin_segment(rec, "claude", sid)
+        _stamp(task_chat=rec["sutra_id"])
+        shadow_ledger.append("actions", {
+            "mission_id": mission["id"], "kind": "spawn",
+            "summary": "published task chat %s as chat %s (%s)"
+                       % (sid, rec["sutra_id"], title)})
+        return rec["sutra_id"]
+
+    return publish
+
+
+async def _ensure_task_chat(mission):
+    """This task's Shadow chat, alive: the one in memory, else a --resume of
+    the session the record names, else a fresh start. Raises on failure so
+    the caller can fall back (a task never dies for want of its Shadow)."""
+    mid = mission["id"]
+    chat = shadow_task_chat.get(mid)
+    if chat is not None and chat.alive:
+        return chat
+    chat = chat or shadow_task_chat.TaskChat(mid, new_runtime=_shadow_new_runtime)
+    if chat.session_id is None and mission.get("task_chat_session"):
+        chat.session_id = mission["task_chat_session"]
+    if chat.session_id:
+        try:
+            await chat.resume(lambda sid: _shadow_args(session_id=sid),
+                              _shadow_workdir(), register=register_runtime)
+            return chat
+        except Exception:               # noqa: BLE001 -- start fresh below
+            chat.session_id = None
+    await chat.start(_shadow_args, _shadow_workdir(), mission,
+                     register=register_runtime,
+                     publish=_publish_task_chat(mission))
+    return chat
+
+
 async def _delegate_spawn(mission):
     """Spawn ONE worker for `mission`, and record what it was spawned with.
 
@@ -2234,9 +2315,17 @@ async def _shadow_recover():
             # workdir Shadow's own session uses (SHADOW.md-only context,
             # fast turns) -- and deliberately WITHOUT SUTRA_MCP_SHADOW, so
             # the reasoning call has no shadow tools and can only answer.
-            shadow_runner.set_default_decider(
-                shadow_runner.make_decider(_shadow_args, _shadow_workdir(),
-                                           new_runtime=_shadow_new_runtime))
+            #
+            # Shadow v4 (ADR-043): the task's OWN Shadow chat decides when it
+            # is alive; the one-shot below is the fallback, byte-identical to
+            # what ran before v4. Routed per decision by mission_id.
+            _one_shot = shadow_runner.make_decider(
+                _shadow_args, _shadow_workdir(), new_runtime=_shadow_new_runtime)
+
+            async def _routed(context, _fallback=_one_shot):
+                return await shadow_task_chat.route_decision(context, _fallback)
+
+            shadow_runner.set_default_decider(_routed)
         except Exception:
             pass
         try:
@@ -2418,8 +2507,12 @@ async def api_shadow_chat(request: Request):
         gspec["needs_criteria"] = not gspec.get("done_when")
         gspec["needs_target"] = not gspec.get("target_session")
         out["goal_proposal"] = gspec
-    if "mission" in blocks:
-        mspec = blocks["mission"]
+    # Shadow v4 (C3, ADR-043): the Now chat may answer one founder message
+    # with SEVERAL mission fences, one per task. Each becomes its own
+    # brief_confirm draft; `missions` carries them all in reply order and
+    # `mission` stays the first so every existing reader is unchanged.
+    created = []
+    for mspec in blocks.get("missions") or []:
         store = _mission_engine.MissionStore()
         mode = mspec.get("target_mode") or "existing"
         # THE CHAT IN SCOPE IS THE TARGET -- the same rule the goal branch
@@ -2439,9 +2532,12 @@ async def api_shadow_chat(request: Request):
                              done_when=mspec.get("done_when"),
                              manifest=mspec.get("manifest"))
             store.transition(m["id"], "brief_confirm", "proposed in chat")
-            out["mission"] = store.load(m["id"])
+            created.append(store.load(m["id"]))
         except ValueError:
             pass                      # invalid proposal: reply text stands
+    if created:
+        out["missions"] = created
+        out["mission"] = created[0]
     if "remember" in blocks:
         import shadow_ledger
         # the SECOND ledger writer: without this stamp, an instruction
@@ -2478,6 +2574,7 @@ import shadow_precedence
 import shadow_presence
 import shadow_runner
 import shadow_protocol
+import shadow_task_chat
 
 
 @app.get("/api/shadow/instructions")
@@ -2624,6 +2721,9 @@ async def api_shadow_settings():
         # cap honestly -- lowering the cap below what is in flight queues the
         # NEXT task, it does not kill the ones already working, and a bare
         # number cannot say that.
+        # Shadow v4 (C7): the founder's own words, same store as the numbers
+        "behaves": _mission_engine.behaves(),
+        "behaves_max": _mission_engine.BEHAVES_MAX_CHARS,
         "tasks": {
             "running_at_once": _mission_engine.max_running(),
             "running_at_once_min": _mission_engine.MIN_RUNNING,
@@ -2763,6 +2863,31 @@ async def api_shadow_settings_tasks(request: Request):
             "starting": starting,
             # honest about the one thing a lower cap cannot do
             "over_cap": max(0, running_now - value)}
+
+
+@app.post("/api/shadow/settings/behaves")
+async def api_shadow_settings_behaves(request: Request):
+    """Write "How Shadow behaves" -- the founder's own words (Shadow v4 C7).
+
+    One route, one field, like the cap above. The text lands in the task
+    limits store (mission_engine.set_behaves) and binds the NEXT Shadow boot:
+    the Now chat and every task chat read it in standing_context. A running
+    Shadow chat keeps the words it booted with; that is the same rule the
+    standing instructions follow, and the founder restarts Shadow to apply.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    if "behaves" not in body:
+        raise HTTPException(400, "behaves required")
+    try:
+        value = _mission_engine.set_behaves(body["behaves"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "behaves set (%d chars)" % len(value)})
+    return {"behaves": value, "max": _mission_engine.BEHAVES_MAX_CHARS}
 
 
 @app.post("/api/shadow/settings/budget")

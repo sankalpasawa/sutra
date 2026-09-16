@@ -374,6 +374,41 @@ def max_running():
         return MAX_RUNNING                # a hand-edited junk value
 
 
+#: "How Shadow behaves" -- the founder's own words (Shadow v4 C7, ADR-043).
+#: One verbose text, in the SAME task-limits store as the numbers, read at
+#: every Shadow boot (shadow_session.standing_context) and appended under
+#: HOW SHADOW BEHAVES. The ceiling keeps the boot context bounded; it is a
+#: cut, not a refusal, because a founder who writes at length should keep
+#: the first 4000 characters rather than lose the whole text.
+BEHAVES_MAX_CHARS = 4000
+
+
+def behaves():
+    """The founder's behaves text, or "". NEVER RAISES: this rides every
+    Shadow boot, and a corrupt file must cost the text, never the boot."""
+    try:
+        raw = _read_limits().get("behaves")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return ""
+    if not isinstance(raw, str):
+        return ""                         # a hand-edited junk value
+    return raw[:BEHAVES_MAX_CHARS]
+
+
+def set_behaves(text):
+    """Persist the text (trimmed, cut at the ceiling). Returns what was
+    stored. Refuses non-text rather than coercing it: storing "42" when the
+    founder's client sent a number is worse than saying no."""
+    if not isinstance(text, str):
+        raise ValueError("behaves must be text")
+    v = text.strip()[:BEHAVES_MAX_CHARS]
+    import json_store
+    cur = _read_limits()
+    cur["behaves"] = v
+    json_store.write_json(limits_path(), cur)
+    return v
+
+
 def set_max_running(n):
     """Persist the cap. Returns the value actually stored (post-clamp).
 
@@ -2287,6 +2322,10 @@ class MissionEngine:
         Shadow's own turns) stays the verifier's input, not the driver's.
         """
         return {
+            # Shadow v4 (ADR-043): the decider router needs to know WHICH
+            # task is asking, so it can hand the turn to that task's own
+            # Shadow chat. One key, read only by shadow_task_chat.
+            "mission_id": m.get("id"),
             "outcome": m.get("objective") or "",
             "checks": [{"tier": c.get("tier"), "check": c.get("check"),
                         "met": bool(c.get("met"))}

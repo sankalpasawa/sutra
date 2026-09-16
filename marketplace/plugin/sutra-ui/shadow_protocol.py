@@ -221,7 +221,12 @@ def parse_reply(text, kinds=None):
         # never become an invisible side effect.
         if kind == "mission" and isinstance(val, dict) \
                 and val.get("objective") and val.get("template") in allowed:
-            out["mission"] = val
+            # Shadow v4 (C3, ADR-043): ONE REPLY MAY CARRY SEVERAL TASKS. The
+            # Now chat splits one founder message into one fence per task;
+            # every fence lands in `missions` (reply order) and `mission`
+            # stays the FIRST one so every existing reader is unchanged.
+            out.setdefault("missions", []).append(val)
+            out.setdefault("mission", val)
         elif kind == "goal" and isinstance(val, dict) \
                 and str(val.get("outcome") or "").strip():
             # An OUTCOME is the only hard requirement. done_when is kept
