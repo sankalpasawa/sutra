@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.279.2 (2026-09-16)
+
+- **The rail settles down.** The Focus and Old Org flyout now closes when you pick a row, click anywhere else, or press Escape. The terminal button left the foot (Settings > Tools > Terminal still opens it) and the hide toggle left the top: the rail is permanent. The foot shows your company's letter in gold over "CEO of <company>". Tests: nav + panel suites green.
+
 ## 2.279.1 (2026-09-16)
 
 - **One sidebar: a 72px icon rail.** The wide sidebar is gone. Each destination is an icon with its name written under it, hover only highlights, the active row and the rail carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot. Tests: nav + panel contracts moved to 72px.

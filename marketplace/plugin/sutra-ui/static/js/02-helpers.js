@@ -1975,15 +1975,17 @@ function paintAvatar(){
   const el = document.querySelector(".rfoot .av");
   if (!el) return;
   const a = CLAUDE_ACCOUNT;
+  /* 2.279.2 (founder, 2026-09-16: "in the icons, TM, we can always write the CEO
+     of the company, and just add the company symbol there"): the mark shows the
+     COMPANY's letter, painted by the identity footer once the org tree is here
+     (07-loaders paintRole). The Claude account survives as the hover title only. */
   if (a && a.initials){
-    el.textContent = a.initials;
     el.classList.remove("av-unknown");
     /* Full identity on hover: two people with the same initial otherwise have
        no way to tell which account the panel is driving. */
     el.title = [a.display_name, a.email].filter(Boolean).join(" — ")
              || "signed in to Claude";
   } else {
-    el.textContent = "";
     el.classList.add("av-unknown");
     el.title = "Not signed in to Claude on this machine";
   }

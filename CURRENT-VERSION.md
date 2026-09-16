@@ -2,7 +2,19 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.279.1 (2026-09-16, HEAD)
+## v2.279.2 (2026-09-16, HEAD)
+
+**The rail settles down.** Founder, 2026-09-16, four asks on the new rail: (1) the Focus flyout
+"doesn't go away" -> it closes on a pick (deferred one tick past the #app screen delegation), on a
+click outside the rail and on Escape (`railFlyoutClose` in 09-tail.js); (2) the terminal button
+left the foot, `termBtnEl` is null-guarded, Settings > Tools > Terminal still opens it; (3) the
+top bar with the hide toggle is gone, `railToggle` is optional, the drag edge and `railShow` keep
+the hide/restore path; (4) the foot's mark is the company's first letter, black on gold like the
+old logo mark, over "CEO of <company>" (paintRole paints the letter; paintAvatar keeps the Claude
+account as the hover title only). Built in a clone of main because the checkout was on the Shadow
+session's shadow-v4 lane. Tests: nav + panel suites green.
+
+## v2.279.1 (2026-09-16)
 
 **One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
 icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each

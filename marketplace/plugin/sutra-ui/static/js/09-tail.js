@@ -431,8 +431,12 @@ function termToggle(on){
   S.termOpen = on === undefined ? !S.termOpen : !!on;
   termPaneEl.hidden = !S.termOpen;
   applyTermW(S.termW || TERM_DEFAULT);   /* collapses the track to 0px when closed */
-  termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
-  termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
+  /* 2.279.2: the foot's terminal button is gone; the toggle is reached from
+     Settings > Tools > Terminal, so the button is optional here. */
+  if (termBtnEl){
+    termBtnEl.setAttribute("aria-pressed", String(S.termOpen));
+    termBtnEl.setAttribute("aria-label", S.termOpen ? "Hide the terminal" : "Show the terminal");
+  }
   /* Only mount the PTY when the terminal tab is the visible one -- opening the pane
      on the Preview tab must not silently spawn a shell. */
   if (S.termOpen && S.sideTab !== "preview") termMount(false);
@@ -521,7 +525,7 @@ document.getElementById("prevGo").onclick = ()=>previewOpen(document.getElementB
 document.getElementById("prevUrl").onkeydown = e=>{
   if (e.key === "Enter"){ e.preventDefault(); previewOpen(e.target.value); } };
 
-termBtnEl.onclick = ()=>termToggle();
+if (termBtnEl) termBtnEl.onclick = ()=>termToggle();
 document.getElementById("termClose").onclick = ()=>termToggle(false);
 document.getElementById("termReload").onclick = ()=>termMount(true);
 
@@ -751,10 +755,12 @@ function railToggleNow(){
 
 /* One click hides the whole sidebar and the panes take the freed column.
    The toggle lives in the masthead so it stays reachable when the rail is gone. */
+/* 2.279.2: the masthead toggle is gone (the rail is permanent); the drag edge's
+   click and railShow are the remaining ways to hide and restore it. */
 const railToggle = document.getElementById("railToggle");
 const railShow = document.getElementById("railShow");
-if (railShow) railShow.onclick = ()=>{ railToggle.onclick(); };
-railToggle.onclick = railToggleNow;
+if (railShow) railShow.onclick = railToggleNow;
+if (railToggle) railToggle.onclick = railToggleNow;
 railDragInit();
 
 /* v3.3 (PLAN-25 S9): a rail click picks a DESTINATION. The plane's own rows
@@ -762,7 +768,14 @@ railDragInit();
 document.querySelector(".rail").addEventListener("click", e=>{
   /* 2.226.0 (codex P1): accordion child rows sit INSIDE the rail and carry
      data-screen; they must reach the #app screen delegation untouched. */
-  if (e.target.closest("[data-screen]")) return;
+  if (e.target.closest("[data-screen]")){
+    /* 2.279.2 (founder, 2026-09-16: "when I click on it, it doesn't go away"):
+       picking a flyout row closes the flyout. Deferred one tick so the #app
+       delegation reads the click before the rail repaints. */
+    if (e.target.closest("#railnav .sub") && S.ui.railOpen)
+      setTimeout(railFlyoutClose, 0);
+    return;
+  }
   const destBtn = e.target.closest("[data-dest]");
   if (!destBtn) return;
   const d = destBtn.dataset.dest;
@@ -774,6 +787,20 @@ document.querySelector(".rail").addEventListener("click", e=>{
   }
   goDest(d);
 }, true);
+
+/* The flyout (Focus, Old Org) is a popover, so it closes the way popovers do:
+   on a pick (above), on a click anywhere outside the rail, and on Escape. */
+function railFlyoutClose(){
+  if (!S.ui.railOpen) return;
+  S.ui.railOpen = null;
+  saveLayout(); render();
+}
+document.addEventListener("click", e=>{
+  if (S.ui.railOpen && !e.target.closest(".rail")) railFlyoutClose();
+});
+document.addEventListener("keydown", e=>{
+  if (e.key === "Escape") railFlyoutClose();
+});
 
 /* The tenant switcher popover used to be wired here. 5781a2f ("remove tenancy")
    deleted <div id="tenantMenu"> from the markup but left this block behind, so
