@@ -1,0 +1,14 @@
+{
+  "_why": "D74 complete creation: the Desktop app tree has no CHARTER.md of its own, and the placement engine resolves its domain (Desktop) but leaves CHARTER_ID empty because the standing charter is held by the PARENT domain. This row names the charter those files answer to, so a new file under sutra-ui carries all four dimensions without inventing one per creation.",
+  "rules": [
+    {
+      "prefix": "marketplace/plugin/sutra-ui/",
+      "domain": "dref-01e2ca27ff01c416",
+      "domain_name": "Desktop",
+      "charter": "C-caa001c80ac5023b",
+      "charter_title": "Joy Tadanki Charter",
+      "charter_purpose": "Work carried out under Joy Tadanki.",
+      "source": "~/.sutra-native/user-kit: domains/dref-01e2ca27ff01c416.json (name=Desktop, parent_ref=dref-feea2aad0128397f), charters/C-caa001c80ac5023b.json (domain_ref=dref-feea2aad0128397f)"
+    }
+  ]
+}
