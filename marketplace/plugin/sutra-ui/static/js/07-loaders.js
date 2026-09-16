@@ -2467,6 +2467,14 @@ document.getElementById("newSession").onclick = () =>
     if (orgName() && rd() && !live.some(x => x.name === rd())) wr(live[0].name);
     const roleEl = document.getElementById("idRole");
     if (roleEl) roleEl.textContent = current();
+    /* 2.279.2: the foot's mark is the company's letter over "CEO of <company>";
+       before the tree lands it shows the Sutra "s" and the unset label. */
+    const av = document.querySelector(".rfoot .av");
+    if (av){
+      const org = orgName();
+      av.textContent = org ? org.trim().charAt(0).toUpperCase() : "s";
+      av.classList.toggle("av-org", !!org);
+    }
     list.innerHTML = live.map(x=>`
       <li><button type="button" data-role="${x.name}" aria-current="${x.name===current()}">
         ${x.name}<span class="idwho">${x.who}</span></button></li>`).join("");

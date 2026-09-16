@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.280.2 (2026-09-16)
+
+- **The Focus and Old Org submenus are back.** 2.280.1's click-outside closer also caught the click that opened the flyout (opening re-renders the rail and detaches the clicked row), so the flyout closed as it opened. The rail now stamps its own clicks and the closer ignores them. Tests: 1 new nav check.
+
+## 2.280.1 (2026-09-16)
+
+- **The rail settles down.** The Focus and Old Org flyout now closes when you pick a row, click anywhere else, or press Escape. The terminal button left the foot (Settings > Tools > Terminal still opens it) and the hide toggle left the top: the rail is permanent. The foot shows your company's letter in gold over "CEO of <company>". Tests: nav + panel suites green.
+## 2.280.0 (2026-09-16)
+
+- **The per-turn pipeline runs as one program (W0a of the Sutra runtime, D73, ADR-040).** `hooks/hooks.json` collapses from 92 registrations to 7: one `bin/sutra-turn run --event <E>` per event with at least one step plus `bin/sutra-canary` on UserPromptSubmit; the 92-entry registry is kept verbatim as `hooks/hooks.json.step3` and is the legacy path behind the kill-switch (`~/.sutra-runtime-disabled` or `SUTRA_RUNTIME_DISABLED=1`), which says so out loud when the snapshot is missing. `runtime/pipeline.json` is the spec (6 events, 92 steps, 87 scripts, 25 deleted with reasons, `matcher_semantics: anchored-ere`); `runtime/spec-check.sh` enforces it (13 checks), `runtime/selftest.sh` checks the install (`sutra-turn --selftest`). sutra-turn runs an event's steps concurrently like the host, merges JSON output under most-restrictive-wins with a rule for every key any hook emits, passes every step's stderr through, and writes one ledger row per step under `.sutra/turn/<session>/` with a stage digest; `bin/sutra-overhead` reads it. `bin/sutra-charcap` plus `hooks/tests/golden` (9 families, 259 cases) prove that every hook's stdout, stderr and exit code are reproduced byte for byte on both runners, on any machine and at any plugin version (the normaliser is word-bound and version-aware); the merged per-event emit is covered by `runtime/tests/test-turn-merge-roundtrip.sh` over the 18 JSON shapes the corpus records, and recorded-aggregate parity is W1 work. `tests/run-all.sh --set runtime` and `.github/workflows/plugin-release-gate.yml` gate every push (parity on macOS, the rest on both runners). `hooks/sessionstart-auto-update.sh` finally ships executable. Nothing changes in day-to-day use.
+
 ## 2.279.1 (2026-09-16)
 
 - **One sidebar: a 72px icon rail.** The wide sidebar is gone. Each destination is an icon with its name written under it, hover only highlights, the active row and the rail carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot. Tests: nav + panel contracts moved to 72px.

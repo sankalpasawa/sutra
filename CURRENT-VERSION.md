@@ -2,7 +2,44 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.279.1 (2026-09-16, HEAD)
+## v2.280.2 (2026-09-16, HEAD)
+
+**The Focus and Old Org submenus are back.** Founder, 2026-09-16: "the submenus have gone".
+2.280.1's document-level closer (`railOutsideClick`) tested `e.target.closest(".rail")`, but the
+click that opens a flyout re-renders the rail (`setHtmlIfChanged` on #railnav) and detaches its own
+target, so the same click reached the closer looking like an outside click and shut the flyout as
+it opened. Fix: the rail's capture handler stamps `e.railHandled = true` first thing and the closer
+returns on it. `railOutsideClick` is a named function so test_nav.js can drive it (the harness
+stubs `document.addEventListener`). Tests: 1 new nav check; nav + panel suites green.
+
+## v2.280.1 (2026-09-16)
+
+**The rail settles down.** Founder, 2026-09-16, four asks on the new rail: (1) the Focus flyout
+"doesn't go away" -> it closes on a pick (deferred one tick past the #app screen delegation), on a
+click outside the rail and on Escape (`railFlyoutClose` in 09-tail.js); (2) the terminal button
+left the foot, `termBtnEl` is null-guarded, Settings > Tools > Terminal still opens it; (3) the
+top bar with the hide toggle is gone, `railToggle` is optional, the drag edge and `railShow` keep
+the hide/restore path; (4) the foot's mark is the company's first letter, black on gold like the
+old logo mark, over "CEO of <company>" (paintRole paints the letter; paintAvatar keeps the Claude
+account as the hover title only). Built in a clone of main because the checkout was on the Shadow
+session's shadow-v4 lane. Tests: nav + panel suites green. Tagged v2.279.2-desktop on the
+pre-merge commit a6aa7b97, then renumbered 2.280.1 on the merge with origin/main (2.280.0, the
+runtime program); the desktop build to install is v2.280.1-desktop.
+## v2.280.0 (2026-09-16)
+
+**The per-turn pipeline runs as one program (W0a of the Sutra runtime, D73, ADR-040).**
+`hooks/hooks.json` collapses from 92 registrations to 7 (`bin/sutra-turn run --event <E>`
+per event with steps, plus `bin/sutra-canary`); the 92-entry registry ships verbatim as
+`hooks/hooks.json.step3` behind the kill-switch (`~/.sutra-runtime-disabled` or
+`SUTRA_RUNTIME_DISABLED=1`). `runtime/pipeline.json` is the spec (6 events, 92 steps,
+87 scripts), `runtime/spec-check.sh` enforces it, `bin/sutra-charcap` plus
+`hooks/tests/golden` (9 families, 259 cases) prove every hook's stdout, stderr and exit
+byte for byte on both runners; `tests/run-all.sh --set runtime` and the release gate
+workflow guard every push. Nothing changes in day-to-day use. Founder gates open:
+`/reload-plugins` (EXECUTION row 15) and the downgrade drill (row 16). Details:
+`marketplace/plugin/CHANGELOG.md` 2.280.0.
+
+## v2.279.1 (2026-09-16)
 
 **One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
 icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each

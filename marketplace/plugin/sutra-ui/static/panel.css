@@ -214,19 +214,10 @@
      stays the way back. The railcol padding-left is 46px, so it sits clear of the show button. */
   .app.railcol .raildrag{left:0;top:0;bottom:0;width:10px}
   .app.railcol .raildrag .grip{height:46px}
-  /* The head holds the toggle alone, centred (the founder's reference shows exactly
-     that); the wordmark and mark have no room in 72px and the window title says Sutra. */
-  .rtop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0 4px}
-  .rtop b,.rtop .rmark{display:none}
-  /* The logo mark is BLACK on gold in BOTH themes. It does not follow --on-acc, which is
-     white in the light theme: that made the brand mark read white-on-gold in light mode and
-     black-on-gold in dark, i.e. two different logos. A logo is not a themed control. */
-  .rmark{width:19px;height:19px;border-radius:5px;background:var(--acc);color:#0A0908;
-         display:grid;place-items:center;font:700 12px/1 var(--serif);flex:none}
-  .rtop b{font-size:13px;font-weight:600}
-  /* The tenant chip used to carry `margin-left:auto` and push the toggle right.
-     With the chip gone the toggle owns that job, or it collides with the wordmark. */
-  .rtop .railtog{margin:0;width:30px;height:30px;border-radius:9px;border-color:var(--line)}
+  /* 2.279.2: the rail has no head any more (founder: "remove the top bar, which hides
+     this particular plane"). The .rtop / .rmark / .railtog rules went with it; the
+     first row starts a little below the rail's top edge instead. */
+  .rail .rscroll{padding-top:10px}
   /* overflow stays VISIBLE so the accordion flyout can hang beside the rail; an auto
      overflow-y would clip it. Eight fixed rows never need to scroll at desktop heights. */
   .rscroll{overflow:visible;flex:1;min-height:0;padding-bottom:6px}
@@ -282,13 +273,19 @@
   .dot{width:6px;height:6px;border-radius:50%;background:var(--acc);flex:none}
   .dot.run{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
   .dot.held{background:var(--warn)}
-  /* Foot: avatar over the terminal button, stacked; the role text lives in the menu. */
-  .rfoot{border-top:1px solid var(--line-soft);padding:8px 6px;display:flex;flex-direction:column;
+  /* Foot (2.279.2, founder: "write the CEO of the company, and just add the company
+     symbol there"): the company's letter, BLACK on gold in both themes like the old logo
+     mark, over "CEO of <company>". The usage line stays in the menu. */
+  .rfoot{border-top:1px solid var(--line-soft);padding:8px 4px;display:flex;flex-direction:column;
          align-items:center;gap:4px}
-  .rfoot .idbtn{flex:none;padding:4px}
-  .rfoot .idtext,.rfoot .idcaret{display:none}
-  .av{width:28px;height:28px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
-      display:grid;place-items:center;font:700 10px/1 var(--sans);border:1px solid var(--acc);flex:none}
+  .rfoot .idbtn{flex:none;width:100%;flex-direction:column;align-items:center;gap:4px;padding:6px 2px}
+  .rfoot .idcaret,.rfoot .idstat{display:none}
+  .rfoot .idtext{flex:none;display:flex;align-items:center;justify-content:center;min-width:0;width:100%}
+  .rfoot .idrole{font:500 9.5px/1.15 var(--sans);color:var(--muted);text-align:center;
+                 white-space:normal;overflow:visible;text-overflow:clip}
+  .av{width:28px;height:28px;border-radius:8px;background:var(--acc);color:#0A0908;
+      display:grid;place-items:center;font:700 13px/1 var(--serif);border:0;flex:none}
+  .rfoot .av.av-unknown{background:var(--acc);color:#0A0908}
   .rfoot span{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ib{background:none;border:0;padding:3px;border-radius:4px;color:var(--faint);cursor:pointer;display:flex}
   .ib:hover{color:var(--ink);background:var(--acc-bg)}
