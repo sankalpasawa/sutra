@@ -1179,7 +1179,9 @@ function sessMenuHtml(s){
    logic (and its tests) did not move. */
 /* 2.275.0 (founder, 2026-09-14): the earlier Org accordion reads "Old Org";
    the new one-screen Org (19-org2.js) takes the name, behind flags.org2. */
-const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Agent Marketplace",
+/* "Market" in the rail (founder, 2026-09-16: "replace agent marketplace with just
+   market"); the screen keeps its full title (TITLES.agents in 17-agents.js). */
+const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Market",
                      org2:"Org", org:"Old Org", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
                      org2:"dept", org:"dept", team:"team", settings:"gear" };

@@ -317,7 +317,7 @@ function clampTermW(px){
   const planeVisible = !!(app && !navCollapsed && app.classList.contains("threecol")
                           && !app.classList.contains("noplane"));
   const chrome = navCollapsed ? 46 + 9
-               : 224 + (planeVisible ? 240 : 0) + 27 /* 3 grid gaps */;
+               : 72 + (planeVisible ? 240 : 0) + 27 /* rail lane (RAIL_DEF) + 3 grid gaps */;
   const avail = vw - chrome - 320;
   const ceil = Math.max(TERM_MIN, Math.min(Math.round(vw * TERM_MAX_FRAC), avail));
   return Math.min(ceil, want);
@@ -619,8 +619,12 @@ if (typeof setInterval !== "undefined" && typeof document !== "undefined"
    and it has to be right on the first painted frame rather than after a round trip. */
 /* 420 read as 'stretchy'; the rail is a lane you nudge, not a panel you pull across the
    window (owner, 2026-09-10: "there should be a fixed length till which I can drag"). */
-const RAIL_MIN = 176, RAIL_MAX = 300, RAIL_DEF = 224;
-const RAIL_SHUT_AT = 132;      /* dragged narrower than this, it closes instead of getting silly */
+/* 2026-09-16: the rail is ONE 72px icon lane (founder: "you do not need to create the
+   sidebar"). There is nothing left to resize, so the three widths coincide; a stored
+   224 falls outside the range and reads as 72. The drag edge keeps its click (toggle)
+   and its leftward drag (collapse). */
+const RAIL_MIN = 72, RAIL_MAX = 72, RAIL_DEF = 72;
+const RAIL_SHUT_AT = 40;       /* dragged narrower than this, it closes instead of getting silly */
 
 function railW(){
   let w = RAIL_DEF;

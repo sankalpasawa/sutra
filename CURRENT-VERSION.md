@@ -1,8 +1,18 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-15
+**status**: active · **updated**: 2026-09-16
 
-## v2.278.8 (2026-09-15, HEAD)
+## v2.279.0 (2026-09-16, HEAD)
+
+**One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
+icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each
+destination is an icon with its name under it, hover only highlights, the rail and the active row
+carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and
+Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot.
+Codex P2 folded (mobile rail scroll rule re-applied after the desktop overflow rule). Tests: nav
+75, panel 389, agents 251, 0 failed. Real-app capture registered on atom a-6fe5c2b0-02.
+
+## v2.278.8 (2026-09-15)
 
 **The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged
 transcripts; this release covers the ones that change every second. Measured on the founder's Mac

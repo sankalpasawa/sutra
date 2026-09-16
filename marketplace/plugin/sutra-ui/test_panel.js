@@ -1271,11 +1271,11 @@ test("21i. the app is a three-column grid with the rail on the left", () => {
   const app = h.match(/\n\s*\.app\{[\s\S]*?\}/);
   assert.ok(app, ".app rule must exist");
   assert.ok(/display:grid/.test(app[0]), ".app must be display:grid");
-  /* The rail track became var(--railw,224px) in 2.259.0, when the sidebar got a drag edge.
-     224px is still the default INSIDE the var, so a browser with nothing stored lays out
-     exactly as before; the assertion keeps that default pinned rather than dropping it. */
-  assert.ok(/grid-template-columns:\s*var\(--railw,\s*224px\)\s+1fr\s+var\(--termw/.test(app[0]),
-    ".app must lay out rail | panes | terminal, with 224px still the rail default");
+  /* The rail track became var(--railw,224px) in 2.259.0, when the sidebar got a drag edge,
+     and its default became 72px on 2026-09-16 when the sidebar became one icon lane. The
+     assertion keeps that default pinned rather than dropping it. */
+  assert.ok(/grid-template-columns:\s*var\(--railw,\s*72px\)\s+1fr\s+var\(--termw/.test(app[0]),
+    ".app must lay out rail | panes | terminal, with 72px the rail default");
   assert.ok(/position:relative/.test(app[0]),
     ".app is the positioning context for the drag edge; without it the edge resolves against the page");
   const rail = h.match(/\n\s*\.rail\{[\s\S]*?\}/);

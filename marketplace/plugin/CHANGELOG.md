@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-15
+**status**: active · **updated**: 2026-09-16
+## 2.279.0 (2026-09-16)
+
+- **One sidebar: a 72px icon rail.** The wide sidebar is gone. Each destination is an icon with its name written under it, hover only highlights, the active row and the rail carry soft elevation in both themes, and "Agent Marketplace" reads "Market" in the rail. Focus and Old Org open their rows as a flyout beside the rail; the avatar and terminal stack at the foot. Tests: nav + panel contracts moved to 72px.
+
 ## 2.278.8 (2026-09-15)
 
 - **The app stays quick while Shadow is driving a chat.** 2.278.7 stopped re-reading unchanged transcripts; this covers the ones that change every second. A driven chat's title is now read from its new lines only (a 57 MB chat cost 0.22 s per refresh before), the Activity panel opens only agents that are actually running (113 files, 2 live: 550 ms to 2 ms) and waits for one answer before asking again, and a driven chat refreshes the Chats list at most every 5 s instead of on every write. Tests: 8 new checks.
