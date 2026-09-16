@@ -28,6 +28,11 @@ function fresh(opts){
     esc: (x) => String(x == null ? "" : x).replace(/</g, "&lt;"),
     S: {}, listeners: {},
     fetch: opts.fetch,
+    /* the panel's own localStorage helpers (01-state.js), when a test wants
+       the pill counter to outlive the context the way it outlives a reload.
+       ABSENT BY DEFAULT on purpose: every other block here runs without them
+       and must still work, because a partial shell has no lsGet either. */
+    lsGet: opts.lsGet, lsSet: opts.lsSet,
     document: {
       createElement(tag){
         const el = { tagName: tag, className: "", textContent: "",
@@ -72,15 +77,110 @@ assert(/right:\s*\d/.test(dotRule) && /bottom:\s*\d/.test(dotRule),
   console.log("ok 1 snap");
 }
 
-/* 2. S67: three unsolicited pills an hour, nudges exempt */
+/* 2. S67: N unsolicited pills an hour, nudges exempt -- where N is the
+   FOUNDER'S, off presence.json, and no longer a constant in this module.
+
+   THE SEED IS NOW PART OF THE SETUP, deliberately. These three assertions
+   used to pass with no state at all because the rate was compiled in; the
+   rate arrives on the settings GET now, so a test that asserts the old
+   numbers without seeding them would be asserting a fallback -- and the whole
+   point of this change is that there is no fallback. */
 {
   const ctx = fresh();
   const now = Date.now();
+  ctx.S.shadowNudgeRate = 3;
   let [ok] = ctx.pillAllowed([], now);            assert(ok);
   [ok] = ctx.pillAllowed([now-1, now-2, now-3], now); assert(!ok);
   [ok] = ctx.pillAllowed([now - 3700e3, now - 3800e3, now - 3900e3], now);
   assert(ok, "stale history prunes");
   console.log("ok 2 pill rate");
+}
+
+/* 2b. THE SETTING IS THE LIMIT. The founder's number is what bites, at both
+   ends of the band and at the value that means silence. */
+{
+  const ctx = fresh();
+  const now = Date.now();
+
+  /* one an hour: the first is allowed, the second is not */
+  ctx.S.shadowNudgeRate = 1;
+  assert(ctx.pillAllowed([], now)[0], "1/hour must allow the first");
+  assert(!ctx.pillAllowed([now - 1000], now)[0],
+    "1/hour must refuse the second inside the hour");
+  assert(ctx.pillAllowed([now - 3700e3], now)[0],
+    "1/hour must allow again once the hour has rolled past");
+
+  /* zero: never unasked, no matter how empty the history is */
+  ctx.S.shadowNudgeRate = 0;
+  assert(!ctx.pillAllowed([], now)[0],
+    "0 must silence completely -- an empty history is not a licence");
+  assert.strictEqual(ctx.showPill("psst"), null,
+    "0 must silence showPill itself, not merely pillAllowed");
+
+  /* the same number still exempts a nudge: a limit on what Shadow says
+     unasked was never a limit on an answer it was asked for */
+  assert(ctx.showPill("asked for", { nudge: true }),
+    "an exempt nudge must still show at a rate of 0");
+
+  /* NO RATE, NO PILL. This is the case the deleted constant used to hide:
+     nothing has arrived from the server, so there is no number to enforce and
+     the honest answer is silence rather than a 3 nobody set. */
+  const cold = fresh();
+  assert(!cold.pillAllowed([], now)[0],
+    "an unknown rate must suppress, never fall back to a compiled-in number");
+  assert.strictEqual(cold.showPill("hello"), null,
+    "showPill must stay silent until a rate has arrived");
+  assert.strictEqual(typeof cold.SH_PILLS_PER_HOUR, "undefined",
+    "SH_PILLS_PER_HOUR must be GONE -- a fallback is how the setting reverts");
+
+  /* seeding is what turns it on, and only a real number does it */
+  cold.applyShadowPresence({ presence: { nudges_per_hour: 2 } });
+  assert.strictEqual(cold.S.shadowNudgeRate, 2, "the payload seeds the rate");
+  assert(cold.pillAllowed([], now)[0], "and the seeded rate enforces");
+  cold.applyShadowPresence({ presence: {} });
+  assert.strictEqual(cold.S.shadowNudgeRate, 2,
+    "a payload without the field must leave the last known rate standing");
+  cold.applyShadowPresence(null);
+  assert.strictEqual(cold.S.shadowNudgeRate, 2,
+    "a failed settings read must not clear the rate");
+  console.log("ok 2b the founder's rate is the limit, 0 included");
+}
+
+/* 2c. THE ROLLING HOUR SURVIVES THE RELOAD. The counter lives in
+   localStorage, so a reload cannot refund a budget the founder capped. */
+{
+  const store = {};
+  const ls = {
+    lsGet: (k, fb) => (k in store ? store[k] : fb),
+    lsSet: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
+  };
+  const first = fresh(ls);
+  first.S.shadowNudgeRate = 1;
+  assert(first.showPill("the one nudge you allowed"), "the first is allowed");
+  assert.strictEqual(first.showPill("the second"), null, "the second is not");
+  assert(Array.isArray(store["sutra.shadow.pills"])
+         && store["sutra.shadow.pills"].length === 1,
+    "the pill must be recorded in the browser, not only in memory");
+
+  /* the reload: a brand-new context over the SAME localStorage */
+  const after = fresh(ls);
+  after.S.shadowNudgeRate = 1;
+  assert.strictEqual(after.showPill("after the reload"), null,
+    "a reload refunded the hour's budget -- the maximum is not a maximum");
+
+  /* and an hour later the budget is genuinely back */
+  store["sutra.shadow.pills"] = [Date.now() - 3700e3];
+  const later = fresh(ls);
+  later.S.shadowNudgeRate = 1;
+  assert(later.showPill("an hour later"), "a stale hour must not hold the cap");
+
+  /* junk in the store costs the hour's memory, never the enforcement */
+  store["sutra.shadow.pills"] = "not a list";
+  const junk = fresh(ls);
+  junk.S.shadowNudgeRate = 0;
+  assert.strictEqual(junk.showPill("x"), null,
+    "a corrupt counter must not become a licence to speak");
+  console.log("ok 2c the hour survives a reload");
 }
 
 /* 3. S71/S72: chips validate verb+object, cap 3, junk falls to Clarify */
@@ -157,6 +257,7 @@ function part3(){
   assert(ctx.shadowKeyHandler({ key: "Escape" }));
   assert.strictEqual(ctx.S.shadowCardOpen, false, "Esc closes");
   ctx.S.shadowQuiet = true;
+  ctx.S.shadowNudgeRate = 3;   /* the founder's rate, as the settings GET seeds it */
   assert.strictEqual(ctx.showPill("psst"), null, "quiet switch silences");
   ctx.S.shadowQuiet = false;
   const el = ctx.showPill("hello");
@@ -347,13 +448,30 @@ function part3(){
   console.log("ok 15 scope rides the turn");
 }
 /* start_now/retry answer BEFORE the mission moves, so one immediate reload
-   reads READY and the row lies until something else loads. Four bounded
-   re-reads, on those two actions only, each skipped once it has moved.
+   reads READY and the row lies until something else loads. A bounded ladder
+   of re-reads follows, on those two actions only, each skipped once it has
+   moved.
 
-   THE VALUES ARE PART OF THE BEHAVIOUR, which is why they are asserted and
+   THE FIRST VALUE IS PART OF THE BEHAVIOUR, which is why it is asserted and
    not just counted: the chat is published at ~394ms (measured on the live
    server), so a first step of 1000ms meant the row lied for 713ms about a
-   chat that already existed. */
+   chat that already existed.
+
+   THE REST IS ASSERTED AS A SHAPE, not as a list (2026-09-16). This block
+   pinned the literal `[250, 750, 2000, 5000]`, and the product ladder is now
+   geometric out to 90s (SH_START_BACKOFF, 15-shadow-overlay.js) because the
+   old tail gave up long before the slowest measured start finished
+   provisioning. Re-pinning sixteen literals would buy one more release of
+   accuracy and then go stale exactly as the four did; the claims that
+   actually matter -- starts soon, only climbs, reaches the slow tail, and
+   every step is free once the row has landed -- survive a re-tune. The
+   constant is script-scoped inside the vm and cannot be read from here, so
+   the ladder is measured through the timers it schedules.
+
+   WHAT "MOVED" MEANS ALSO CHANGED. The guard waits on the state AND on
+   target_chat now, so a fixture that only flips state keeps the watcher
+   polling -- correctly, because the founder is waiting to see the chat. The
+   fixtures below land both. */
 {
   const ctx = fresh();
   const timers = [];
@@ -367,13 +485,21 @@ function part3(){
 
   ctx.shadowMissionAct("m-fib", "start_now").then(() => {
     assert.strictEqual(homeLoads, 1, "the immediate reload still happens");
-    assert.deepStrictEqual(timers.map(t => t.ms), [250, 750, 2000, 5000],
-      "four bounded re-reads, 250ms/750ms/2s/5s");
+    const ms = timers.map(t => t.ms);
+    assert(ms.length > 1, "a ladder, not a single re-read");
+    assert.strictEqual(ms[0], 250,
+      "the first step still beats the ~394ms chat publish");
+    assert.deepStrictEqual(ms, ms.slice().sort((a, b) => a - b),
+      "the ladder only ever climbs");
+    assert(ms[ms.length - 1] >= 60000,
+      "and it reaches the slow tail a real provisioning start needs");
     timers[0].fn();
     assert.strictEqual(homeLoads, 2, "still brief_confirm -> re-read");
-    /* the mission moved: EVERY remaining timer must cost nothing */
-    ctx.S.shadowMissions = [{ id: "m-fib", state: "running" }];
-    timers[1].fn(); timers[2].fn(); timers[3].fn();
+    /* the mission moved -- state AND chat, which is what the guard waits on.
+       EVERY remaining timer must cost nothing, not merely the next three. */
+    ctx.S.shadowMissions = [{ id: "m-fib", state: "running",
+                              target_chat: "c-fib" }];
+    timers.slice(1).forEach(t => t.fn());
     assert.strictEqual(homeLoads, 2, "no re-read once the mission has moved");
 
     /* every OTHER action is untouched */
@@ -399,13 +525,17 @@ function part3(){
   /* the ORIGINAL is terminal and will never move; the clone has no row yet */
   ctx.S.shadowMissions = [{ id: "m-old", state: "failed" }];
   ctx.shadowMissionAct("m-old", "retry").then(() => {
-    assert.strictEqual(timers.length, 4, "retry re-reads too");
+    assert(timers.length > 1, "retry re-reads too");
     homeLoads = 0;
     timers[0].fn();
     assert.strictEqual(homeLoads, 1,
       "a clone with no row yet is exactly what we are waiting for");
-    ctx.S.shadowMissions.push({ id: "m-clone", state: "running" });
-    timers[1].fn();
+    /* m-old is `failed` and would end the watch immediately if the watcher
+       were reading it -- so a silent remaining ladder proves the id watched
+       is the clone's, which is the whole claim of this block. */
+    ctx.S.shadowMissions.push({ id: "m-clone", state: "running",
+                                target_chat: "c-clone" });
+    timers.slice(1).forEach(t => t.fn());
     assert.strictEqual(homeLoads, 1, "the CLONE's state ends it, not m-old's");
     console.log("ok 17 retry watches the clone the server named");
   });
@@ -457,6 +587,126 @@ function part3(){
     console.log("ok 18 a refusal with a sentence says the sentence");
   });
 }
+
+/* 19. "CORNER CARD ON EVERY SCREEN" -- the durable Presence setting.
+
+   The claim is not "a flag gates the mount"; it is that the founder's SAVED
+   answer decides, and decides BEFORE the card could appear. So every case
+   below boots a context that knows nothing except what the server hands it,
+   which is exactly the state a reload or a relaunched app starts from.
+
+   A FRESH vm CONTEXT IS THE RESTART. Nothing carries across it -- no S, no
+   module state, no closure -- so a context that mounts nothing when the
+   server says false has proven the only thing the client can prove about
+   persistence. That the server still SAYS false after a restart is a
+   different claim, proven where it lives: test_shadow_presence.py reads the
+   store back in a separate interpreter. */
+{
+  /* the two GETs boot now awaits, answered per URL */
+  const serve = (presence, statusOk) => (url) => {
+    if (String(url).indexOf("/api/shadow/settings") === 0)
+      return Promise.resolve({ ok: true,
+        json: () => Promise.resolve(presence === undefined
+          ? {} : { presence: { corner_card: presence } }) });
+    return Promise.resolve({ ok: statusOk !== false,
+      json: () => Promise.resolve({ watching: true }) });
+  };
+
+  const boot = (presence, statusOk) => {
+    const ctx = fresh({ fetch: serve(presence, statusOk) });
+    ctx.bootShadowOverlay();
+    return new Promise(res => setTimeout(() => res(ctx), 20));
+  };
+
+  Promise.all([boot(true), boot(false), boot(undefined), boot(false, false)])
+    .then(([on, off, unset, dark]) => {
+    /* ON: the card is there */
+    assert.strictEqual(on._appended.length, 1,
+      "setting ON must mount the dot");
+    assert.strictEqual(on.S.shadowCardEvery, true,
+      "the saved answer must reach the flag the mount reads");
+
+    /* OFF: nothing mounts, and nothing mounted first and was taken away --
+       _appended records every append that ever happened, so a flash would
+       show up here as a length of 1 even though the dot was later removed */
+    assert.strictEqual(off._appended.length, 0,
+      "setting OFF must mount NOTHING -- not even briefly");
+    assert.strictEqual(off.S.shadowCardEvery, false,
+      "the saved answer must be applied before the mount decision");
+    assert.strictEqual(off.shadowCornerCardOn(), false,
+      "and the gate must agree with it");
+
+    /* an install nobody has configured still has a way to reach Shadow */
+    assert.strictEqual(unset._appended.length, 1,
+      "an absent setting means SHOWN -- the default is not neutral");
+
+    /* the server gate still wins: OFF status mounts nothing regardless */
+    assert.strictEqual(dark._appended.length, 0,
+      "a dark status mounts nothing whatever presence says");
+    console.log("ok 19 corner card: ON mounts, OFF never paints, unset shows");
+
+    /* 20. RESTORED AFTER RESTART. Same saved answer, brand-new context. */
+    return Promise.all([boot(false), boot(false), boot(true)]);
+  }).then(([restart1, restart2, backOn]) => {
+    for (const [n, ctx] of [[1, restart1], [2, restart2]])
+      assert.strictEqual(ctx._appended.length, 0,
+        "restart " + n + ": a saved OFF must survive into a fresh context "
+        + "with no memory of the last one");
+    assert.strictEqual(backOn._appended.length, 1,
+      "and turning it back on is restored the same way");
+    console.log("ok 20 the saved answer survives a restart, both ways");
+
+    /* 21. the setting moves the card WITHOUT a reload, both directions, and
+       is kept apart from the card's own hide control. */
+    const ctx = fresh();
+    let mounted = null;
+    const removed = [];
+    ctx.document.querySelector = (sel) =>
+      sel === ".shdot" ? mounted : null;
+    ctx.document.createElement = (tag) => {
+      const el = { tagName: tag, className: "", textContent: "", dataset: {},
+        _attrs: {}, setAttribute(k, v){ el._attrs[k] = v; },
+        addEventListener(){}, remove(){ removed.push(el); mounted = null; } };
+      return el;
+    };
+    const origAppend = ctx.document.body.appendChild;
+    ctx.document.body.appendChild = (el) => {
+      if (el.className && /shdot/.test(el.className)) mounted = el;
+      return origAppend.call(ctx.document.body, el);
+    };
+    ctx.applyCornerCardPref(true);
+    assert(mounted, "turning it ON must mount without a reload");
+    ctx.applyCornerCardPref(false);
+    assert.strictEqual(removed.length, 1,
+      "turning it OFF must remove the dot without a reload");
+    assert.strictEqual(mounted, null, "and leave nothing behind");
+
+    /* the two flags mean different things and must not be conflated: the
+       setting is the standing choice, hide-for-session is "not right now" */
+    ctx.S.shadowHideSession = true;
+    ctx.applyCornerCardPref(true);
+    assert.strictEqual(ctx.S.shadowHideSession, false,
+      "turning the setting ON clears a session dismissal -- 'on every "
+      + "screen' that leaves the card hidden is not on");
+    ctx.S.shadowCardEvery = true;
+    ctx.S.shadowHideSession = true;
+    assert.strictEqual(ctx.mountShadowOverlay(), undefined,
+      "a session dismissal still suppresses the mount while the setting is ON");
+    console.log("ok 21 the setting moves the card live, and is not the "
+      + "session flag");
+  }).catch(e => {
+    console.error("FAIL 19-21:", e && e.message ? e.message : e);
+    process.exitCode = 1;
+  });
+}
+
+/* the setting is applied before the mount, structurally: pin the await so a
+   later refactor cannot quietly re-introduce the flash by mounting on status
+   and correcting afterwards. */
+assert(/Promise\.all\(\[[\s\S]{0,400}\/api\/shadow\/status[\s\S]{0,400}\/api\/shadow\/settings/
+  .test(src), "boot must await status AND settings together, not in sequence");
+assert(/applyShadowPresence\(settings\);[\s\S]{0,120}mountShadowOverlay\(\)/
+  .test(src), "presence must be applied BEFORE the mount, not after");
 
 /* the no-poller pin, restated for the new timers */
 assert(!/setInterval/.test(src), "the bounded re-read must not become a poller");
