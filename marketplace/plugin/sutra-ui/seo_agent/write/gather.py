@@ -20,6 +20,14 @@ TABLE STAKES ride the same vetting call: they need exactly the same world test, 
 them to decide what an article covers early, so an off-angle topic every competitor happens to share
 would push the article toward being the tenth copy of a page that already ranks. Kept most-missed
 first; that order is used downstream. Capped at MAX_TABLE_STAKES.
+
+FORMAT AND LENGTH COME FROM THE DECISIONS FILE, NOT FROM THE BLUEPRINT OR THE BRIEF (2026-09-16).
+This is the one place they enter the write phase: group_a["format_archetype"] and
+group_a["word_band"] are read here, through write/_common.decisions(ctx), off artifacts/decisions.json
+— the run's one record of what a person decided at the checkpoint. Every later station (select,
+freeze, shape, allocate_words, write_body, blend, wrapper, readable, ...) reads them off the plan
+this step hands forward and never goes back to blueprint.json or research.json for either value, so
+a stale copy there cannot quietly win.
 """
 from .. import llm
 from ..research import render
@@ -80,18 +88,11 @@ def _keyword_set(blueprint, research):
     return ks
 
 
-def _word_band(blueprint, research):
-    for src in ((research or {}).get("build_spec") or {}, blueprint or {}):
-        wb = src.get("word_band") or {}
-        try:
-            lo, hi = int(wb.get("min") or 0), int(wb.get("max") or 0)
-        except (TypeError, ValueError):
-            continue
-        if lo > 0 and hi >= lo:
-            return {"min": lo, "max": hi}
-        if lo > 0:
-            return {"min": lo, "max": round(lo * 1.2)}
-    return {"min": 0, "max": 0}
+def _word_band(ctx):
+    """{min, max} from the decisions file, min == max because it is one person's number, not a
+    measurement. See the module docstring: this is the only place word_band enters the write phase."""
+    n = C.decisions(ctx).get("word_target") or 0
+    return {"min": n, "max": n} if n else {"min": 0, "max": 0}
 
 
 def _signals(research):
@@ -120,7 +121,7 @@ def _menu(blueprint, idx):
     return out
 
 
-def run(blueprint, research, cards, say=lambda *a: None):
+def run(run_ctx, blueprint, research, cards, say=lambda *a: None):
     idx = C.card_index(cards)
     ctx = C.context(blueprint, research)
     brand = C.company()
@@ -146,12 +147,12 @@ def run(blueprint, research, cards, say=lambda *a: None):
         "h1": (blueprint or {}).get("h1") or "",
         "title": ctx["title"], "angle": ctx["angle"],
         "internal_link_pool": list(dict.fromkeys(internal_pool)),
-        "format_archetype": (blueprint or {}).get("format_archetype") or "",
+        "format_archetype": C.decisions(run_ctx).get("format") or "",
         "format_label": str(winners.get("format") or "").strip(),
         "primary_keyword": ks.get("primary", ""),
         "keyword_set": ks,
         "persona": (blueprint or {}).get("persona") or (research or {}).get("persona") or {},
-        "word_band": _word_band(blueprint, research),
+        "word_band": _word_band(run_ctx),
         "search_intent": intent,
         "ai_overview": ai_overview,
         "table_stakes": stakes,

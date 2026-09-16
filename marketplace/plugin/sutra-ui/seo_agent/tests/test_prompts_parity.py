@@ -217,6 +217,9 @@ NOT_PORTED = {
     "extract-word-band.md": "his word band comes from a research-phase file Sutra does not produce",
     "verify-worthy.md": "the planner's verify step is gone (2026-09-16); the after-body source check picks "
                         "what to check in code (write/source_check.classify), so nothing asks a model",
+    "route-archetype.md": "lives in Sutra as prompts/research/format-archetype.md, not a write prompt "
+                          "(2026-09-16): the format is now decided once, at the run_research checkpoint, "
+                          "never re-routed while writing, so the write-phase 'route' step it served is gone",
 }
 
 # Sutra's own standing-rules block. His workflow has no such feature, so it is his-side absent by

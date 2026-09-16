@@ -369,38 +369,55 @@ def _ask_asset_gate(chat_id, run_id, call_id, gate):
 
 
 def _ask_words(chat_id, run_id, call_id, ask):
-    """The one length question, asked once per article, through the ordinary checkpoint.
+    """The run's one checkpoint, asked once per article, right after the winners study and the
+    topic gate: the length, the format, and (for the person to read, never to block on) the
+    on/off-topic verdict.
 
     It sits at the end of the keyword work, once the pages that rank have been measured, and
     BEFORE the research conversation. That ordering is the whole point: the four researchers are
     the longest and most expensive part of a run, so this is the last cheap moment to ask. Saying
     yes here also starts them.
 
-    Why this is the only length question. The length used to be decided twice by two steps that
+    Why this is the only stop in the run. The length used to be decided twice by two steps that
     never spoke: the architect budgeted from the band the ranking pages set, and then readable
     re-decided it from a hardcoded 2,100 that knew nothing about those pages. Competitors at 3,200
     words and competitors at 1,400 both produced an article cut to 2,100. Now one number is
-    settled here, by a person, and every step downstream reads that one.
+    settled here, by a person, and every step downstream reads that one — and so is the format,
+    which used to be re-routed, silently, while the article was being written.
     """
     band = ask.get("band") or {}
+    options = [{"label": "Yes, %s words" % "{:,}".format(int(ask.get("suggested") or 0)),
+               "recommended": True}]
+    options += [{"label": lbl} for lbl in (ask.get("format_options") or []) if lbl != ask.get("format_label")]
     _wait(chat_id, run_id, "question", call_id, {
         "question": ask.get("question", ""),
         "why": ask.get("why", ""),
         "ask_words": True,
         "suggested": ask.get("suggested"),
         "band": band,
-        "options": [{"label": "Yes, %s words" % "{:,}".format(int(ask.get("suggested") or 0))}]},
+        "format": ask.get("format"), "format_label": ask.get("format_label"),
+        "format_why": ask.get("format_why"), "format_options": ask.get("format_options") or [],
+        "topic": ask.get("topic") or {},
+        "options": options},
         stage="research")
 
 
 def _resume_words(chat_id, run_id, waiting, messages, answer):
-    """Take the number, write it where every later step reads it, and carry on into the research.
+    """Take the number and, if they named a different one, the format, write them where every
+    later step reads them, and carry on into the research.
 
     A typed number WINS over the suggestion. Somebody who typed 1,800 when offered 2,700 meant it,
-    and quietly using the suggestion anyway would make the question decorative.
+    and quietly using the suggestion anyway would make the question decorative. Same for the
+    format: naming one of the 8 plain options overrides the router's pick; anything else keeps it.
     """
     call_id = waiting.get("call_id")
     text = (answer.get("text") or "").strip() if isinstance(answer, dict) else str(answer or "")
+    format_choice = None
+    low = text.lower()
+    for lbl in waiting.get("format_options") or []:
+        if lbl.lower() in low:
+            format_choice = lbl
+            break
     picked = None
     m = re.search(r"\b(\d{3,5})\b", text.replace(",", ""))
     if m:
@@ -410,14 +427,16 @@ def _resume_words(chat_id, run_id, waiting, messages, answer):
 
     store.patch_state(chat_id, run_id, word_target=picked)
     store.emit(chat_id, run_id, "resumed", by="user",
-               answer=("%s words" % "{:,}".format(picked)) if picked else "kept the measured band")
+               answer=("%s words" % "{:,}".format(picked)) if picked else "kept the measured band",
+               format=format_choice or "kept the routed format")
 
     step_id = "s%d" % (int(time.time() * 1000) % 100000)
     store.emit(chat_id, run_id, "step_started", id=step_id,
                label=registry.label("run_research"), tool="run_research", stage="research")
     t0 = time.time()
     try:
-        out = _run_tool(chat_id, run_id, "run_research", {"word_target": picked}, step_id=step_id)
+        out = _run_tool(chat_id, run_id, "run_research",
+                        {"word_target": picked, "format_choice": format_choice}, step_id=step_id)
     except Exception as e:  # noqa: BLE001
         out = {"error": str(e)[:600],
                "hint": "The research could not finish. Say so in one line and carry on."}
@@ -932,11 +951,26 @@ def save_to_library(chat_id, run_id, title=None):
     # The archetype goes ONTO the row, beside the keyword, rather than being read back out of the
     # run every time the Library is drawn. A run folder can be deleted and its article kept, and a
     # finished article should still be able to say what shape it was written to. (2026-09-09.)
-    fmt = (bp.get("format_archetype") or rs.get("format_archetype")
+    #
+    # decisions.json is the source (2026-09-16): the checkpoint's pick, and its plain name for the
+    # Library's Format column. A run this old has none, so bp/rs are still the fallback. `words` is
+    # already set by library_finish from the draft itself; measured_band and topic_scope have no
+    # fallback because an old run never measured or judged either the way the checkpoint does.
+    from .prompts import store as pstore
+    from .write import _common as wc
+    dec = store.load_artifact(chat_id, run_id, "decisions.json") or {}
+    fmt = (dec.get("format") or bp.get("format_archetype") or rs.get("format_archetype")
            or (rs.get("build_spec") or {}).get("format") or "").strip()
+    topic_scope = dec.get("topic") or {}
+    if not topic_scope and isinstance(rs.get("topic_gate"), dict):
+        tg = rs["topic_gate"]
+        topic_scope = {"state": "on" if tg.get("relevant", True) else "off", "why": tg.get("why", "")}
     item = store.library_save(chat_id, run_id, title, draft, {
         "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary),
         "format_archetype": fmt,
+        "format_label": pstore.format_title(fmt) if fmt in wc.ARCHETYPES else "",
+        "measured_band": dec.get("measured_band") or {},
+        "topic_scope": topic_scope,
         "idea_id": idea_id})
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
 

@@ -65,3 +65,27 @@ def extract(md):
             "gaps_to_own": _c.strings(got.get("gaps_to_own")),
             "common_h2s": _c.strings(got.get("winners_common_h2s")),
             "drift": _c.strings(got.get("winners_drift"))}
+
+
+def route_format(format_label, title="", angle="", winners_study=""):
+    """The winners' free-text page-format guess -> one of the 8 write-phase archetypes, with a
+    one-line reason. ONE AI call, made ONCE, at the run_research checkpoint right after this study
+    (moved from write/fmt_router.py, deleted 2026-09-16 with the write-phase "route" step it used to
+    be: the archetype is now decided once, by a person, at the checkpoint, never re-routed while
+    writing). Also used, as a fallback only, to settle an old or resumed run's decisions file.
+
+    An unknown reply is a ValueError: the architect cannot shape an article to a format that does
+    not exist, and a silent default here would hide that the model misbehaved.
+    """
+    from ..write import _common as wc     # lazy: write/ does not import research/ back
+    out = llm.json_call(_c.prompt("format-archetype",
+                                  format=(format_label or "").strip() or "(none given)",
+                                  title=(title or "").strip() or "(none given)",
+                                  angle=(angle or "").strip() or "(none given)",
+                                  winners=(winners_study or "").strip() or "(not available)")) or {}
+    arch = str(out.get("archetype") or "").strip()
+    why = str(out.get("why") or "").strip()
+    if arch not in wc.ARCHETYPES:
+        raise ValueError("the format router returned an unknown archetype %r for format %r"
+                         % (arch, format_label))
+    return arch, why

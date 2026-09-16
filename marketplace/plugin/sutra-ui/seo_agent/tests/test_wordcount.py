@@ -190,7 +190,7 @@ ok("consumer 2, the blueprint: it carries the person's number, not the measureme
    bp2.get("word_band") == {"min": TYPED, "max": TYPED}, (bp2.get("word_band"), bpo.get("error")))
 
 cards2 = store.load_artifact(chat, run2, "cards.json") or []
-ga = gather.run(bp2, rs2, cards2, say)["group_a"]
+ga = gather.run(ctx2, bp2, rs2, cards2, say)["group_a"]
 ok("consumer 3, gather: group_a hands the writer the person's number",
    ga["word_band"] == {"min": TYPED, "max": TYPED}, ga["word_band"])
 
@@ -396,6 +396,55 @@ ok("with no band measured at all, the question still has something honest to off
 q, why = run_research._ask_block("cost per hire", {}, 2000)
 ok("and it says plainly that nothing was measured, rather than dressing a default as a fact",
    "could not measure" in q and "starting point" in q, q)
+
+
+# ======================================================================================
+# 8. The decisions file: written once, format and length together, never re-decided
+# ======================================================================================
+print("\nthe decisions file, written once at the checkpoint")
+
+dec2 = store.load_artifact(chat, run2, "decisions.json") or {}
+ok("a typed number is a user-sourced decision", dec2.get("word_target") == TYPED and dec2.get("word_source") == "user", dec2)
+ok("the routed format travels with it", dec2.get("format") in C.ARCHETYPES and dec2.get("format_source") == "serp", dec2)
+ok("the topic verdict is on file too, on by default", dec2.get("topic", {}).get("state") == "on", dec2)
+decided_at_2 = dec2.get("decided_at")
+
+# calling run_research again for the same topic replays every step from cache; the decisions file
+# must not be restamped by the replay.
+run_research.run(ctx2, topic=TOPIC, angle="what changes after")
+dec2b = store.load_artifact(chat, run2, "decisions.json") or {}
+ok("a second pass over the same topic does not rewrite the decisions file",
+   dec2b == dec2 and dec2b.get("decided_at") == decided_at_2, dec2b)
+
+# the "nobody answered" path: the run was asked, and the resume call carries no number at all.
+run4 = store.new_run(chat, "no answer")
+ctx4 = ctx_for(run4)
+run_research.run(ctx4, topic=TOPIC, angle="what changes after")
+row4 = store.load_artifact(chat, run4, "_work/ask-words.json") or {}
+ok("the question was put", row4.get("asked_at"), row4)
+run_research.run(ctx4, topic=TOPIC, angle="what changes after")     # answers nothing: word_target stays unset
+dec4 = store.load_artifact(chat, run4, "decisions.json") or {}
+ok("with no answer at all, the length is the measurement, said honestly as such",
+   dec4.get("word_target") == 1850 and dec4.get("word_source") == "measured", dec4)
+
+# an old run with no decisions file at all still gets one, built from what it already decided
+run5 = store.new_run(chat, "old run")
+ctx5 = ctx_for(run5)
+run_research.run(ctx5, topic=TOPIC, angle="what changes after", word_target=1700)
+import os as _os
+_dec_path = store.artifact_path(chat, run5, "decisions.json")
+if _os.path.exists(_dec_path):
+    _os.remove(_dec_path)
+# decisions() caches in memory too (so a run's many steps read the disk once); dropping the file
+# on disk mid-process, as this test does on purpose, has to drop the cached copy alongside it, or
+# the read below would trust the cache and never touch the fallback this test means to exercise.
+C._DECISIONS_CACHE.pop((chat, run5), None)
+rebuilt = C.decisions(ctx5)
+ok("the fallback rebuilds a full row from what the run already decided",
+   rebuilt.get("word_target") == 1700 and rebuilt.get("format") in C.ARCHETYPES
+   and rebuilt.get("topic", {}).get("state") == "on", rebuilt)
+ok("and writes it back, so it is not rebuilt again on the next read",
+   store.load_artifact(chat, run5, "decisions.json") == rebuilt)
 
 
 # clean up what this suite planted

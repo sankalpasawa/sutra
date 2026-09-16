@@ -437,7 +437,14 @@ ok("keyword_set shape", set(ks) == {"primary", "variations", "secondaries", "in_
    and ks["primary"] not in ks["secondaries"] and ks["in_body"] == ["decision speed"], ks)
 ok("orphan keywords come from the measured pool", all("keyword" in o and "volume" in o for o in bp["orphan_keywords"]))
 ok("persona reused, never re-picked", bp["persona"] == rs["persona"])
-ok("format archetype and the answered length carried", bp["format_archetype"] == "how-to guide" and bp["word_band"] == {"min": 1850, "max": 1850}, bp.get("word_band"))
+ok("format archetype (from decisions.json, routed once at the checkpoint) and the answered length carried",
+   bp["format_archetype"] == "how-to-guide" and bp["word_band"] == {"min": 1850, "max": 1850}, bp.get("word_band"))
+dec = store.load_artifact(chat, run, "decisions.json") or {}
+ok("the decisions file carries the same format, the same length, and says where each came from",
+   dec.get("format") == "how-to-guide" and dec.get("format_source") == "serp"
+   and dec.get("word_target") == 1850 and dec.get("word_source") == "user"
+   and dec.get("measured_band") == {"min": 1500, "max": 2200}
+   and dec.get("topic", {}).get("state") == "on" and dec.get("topic", {}).get("why"), dec)
 ok("angle_filter counts", bp["angle_filter"]["kept"] + bp["angle_filter"]["dropped"] == len(cards2))
 ok("write guidance is present", "note" in bp.get("write_guidance", {}))
 ok("older readers find title and heading/covers", bp.get("title") and all(s.get("heading") and s.get("covers") for s in bp["sections"]))

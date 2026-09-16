@@ -34,11 +34,11 @@ import re
 from .. import store
 from ..editing import links_pass
 from ..write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, enrich,
-                     field, fmt_router, freeze, gather, headings, plan_select, readable, section_keywords,
+                     field, freeze, gather, headings, plan_select, readable, section_keywords,
                      sentence_pass, shape, slop_pass, source_check, wrapper, write_body)
 from . import _shared as sh
 
-STEPS = ["gather", "route", "select", "freeze", "shape", "enrich", "brand_cards", "allocate",
+STEPS = ["gather", "select", "freeze", "shape", "enrich", "brand_cards", "allocate",
          "section_keywords", "headings", "field", "write_body", "source_check", "blend", "wrapper", "coherence",
          "readable", "sentences", "slop", "links", "clean", "assemble"]
 
@@ -129,7 +129,14 @@ def run(ctx, redo=False):
         return out
 
     # ---------------- PLANNER ----------------
-    inputs = step("gather", "Gathering the material", lambda: gather.run(blueprint, research, cards, say))
+    # The format and the length are not decided here. gather.run() reads them off decisions.json
+    # (through write/_common.decisions(ctx)); an unknown archetype on an old or resumed run with no
+    # decisions file raises ValueError out of the fallback builder, caught the same way the old
+    # "route" step's failure used to be.
+    try:
+        inputs = step("gather", "Gathering the material", lambda: gather.run(ctx, blueprint, research, cards, say))
+    except ValueError as e:
+        return {"summary": "Could not decide the article's format.", "error": str(e)}
     # The search picture, saved the moment the lists are clean. It does NOT stop the run: the owner
     # reads it while the article is being written, or afterwards, or never (2026-09-09). Re-saved on a
     # resume too, which is free: gather carries the markdown in its own work file.
@@ -137,15 +144,10 @@ def run(ctx, redo=False):
         store.save_artifact(chat_id, run_id, "search-picture.md", inputs["search_picture"])
         say("The search picture is ready to read",
             "What the search results said, and which questions were kept for this article")
-    try:
-        routed = step("route", "Deciding the article's format", lambda: fmt_router.run(inputs, research, say))
-    except ValueError as e:
-        return {"summary": "Could not decide the article's format.", "error": str(e)}
-    inputs["group_a"]["format_archetype"] = routed["archetype"]
     reports["gather"] = {"sections": len(inputs["group_b"]["sections_menu"]),
                          "table_stakes": inputs["group_a"]["table_stakes"], "word_band": inputs["group_a"]["word_band"],
-                         "paa": len(inputs["group_b"]["paa_pool"]), "related": len(inputs["group_b"]["related_searches"])}
-    reports["route"] = routed
+                         "paa": len(inputs["group_b"]["paa_pool"]), "related": len(inputs["group_b"]["related_searches"]),
+                         "format_archetype": inputs["group_a"]["format_archetype"]}
 
     sel = step("select", "Judging which sections earn their place", lambda: plan_select.run(inputs, ctx_a, say))
     reports["select"] = sel["audit"]["stats"]
