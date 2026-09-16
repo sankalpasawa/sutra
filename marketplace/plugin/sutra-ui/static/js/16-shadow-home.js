@@ -3937,6 +3937,15 @@ if (typeof document !== "undefined" && document.addEventListener){
        path every other Shadow control uses -- no second write surface. After
        either, the chat's row is re-read, so the composer unlocks (take over)
        or the strip disappears (stop) without a reload. */
+    /* v4 (SHADOW-V3 section 2): one click from the working chat to the
+       task's own chat in Focus > Shadow -- the other half of "Open the chat" */
+    if (d.shopentask){
+      if (typeof S !== "undefined") S.shadowTaskSel = d.shopentask;
+      if (typeof shadowRouteDeepLink === "function")
+        shadowRouteDeepLink("sutra://shadow/" + d.shopentask);
+      else if (typeof openScreen === "function") openScreen("shadow");
+      return;
+    }
     if (d.shtakeoverchat || d.shstopchat){
       const mid = d.shtakeoverchat || d.shstopchat;
       const act = d.shtakeoverchat ? "take_over" : "stop";

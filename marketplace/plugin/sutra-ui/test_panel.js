@@ -3796,6 +3796,19 @@ test("33b-1b. the strip carries turn progress and done-when when the server sent
     "the driving task is not named: " + text.slice(0, 300));
 });
 
+test("33b-1c. the strip carries the way back to the task (v4: Shadow, Take over, Stop)", () => {
+  const h = sandbox.sessionPane({ id: "sid-shdrv1c", title: "t", real: true,
+    cwd: "/x", channel: null, turns: [], shadow_driving: true,
+    shadow_task: { mission_id: "m-9", objective: "ship it", state: "running",
+                   turns_used: 3, max_turns: 12, done_when: [] } });
+  const strip = h.match(/<div class="shdrive" role="status">([\s\S]*?)<\/div>/);
+  assert.ok(strip, "no strip");
+  const i = strip[1].indexOf('data-shopentask="m-9"');
+  assert.ok(i !== -1, "the Shadow button is missing from the strip");
+  assert.ok(i < strip[1].indexOf('data-shtakeoverchat="m-9"'), "Shadow comes before Take over");
+  assert.ok(/Shadow ›/.test(strip[1].replace(/<[^>]*>/g, "")), "it reads Shadow ›");
+});
+
 /* 33b-1b2. THE FOUNDER'S MISREADING (2026-09-11), as a standing guard.
    Two chats Shadow drives rendered an identical strip, so a chat still
    running its OWN task looked like a chat some other task had taken over.

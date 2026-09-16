@@ -1000,6 +1000,9 @@ function sessionPane(s){
       <span class="shdrivetxt">Shadow is <b>driving</b>${shName}${shTurns}${shDone}</span>
       ${shTask && shTask.mission_id ? `<span class="shdriveacts">
         <button class="btn" type="button"
+          data-shopentask="${escAttr(shTask.mission_id)}"
+          title="Open this task in Focus › Shadow">Shadow ›</button>
+        <button class="btn" type="button"
           data-shtakeoverchat="${escAttr(shTask.mission_id)}"
           title="End Shadow's turn — you can type here straight after"
           >Take over</button>
