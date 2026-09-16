@@ -399,6 +399,8 @@ class TestEveryDocumentedFenceParses(unittest.TestCase):
         "chips": ["Do the thing"],
         "remember": {"text": "be terse", "precedence": "taste"},
         "module": {"name": "Friday review", "kind": "chat"},
+        # v4: the brief is prose, not json; a json string is still prose
+        "brief": "Objective: \"fix it\". Where: the repo. Done when: tests pass.",
     }
 
     def _documented(self):

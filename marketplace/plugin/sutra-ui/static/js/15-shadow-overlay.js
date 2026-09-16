@@ -621,8 +621,16 @@ function missionCardHtml(m){
   /* a start that has been taken reads as queued, never as the state it is
      still technically sitting in */
   const face = shadowMissionStarting(m) ? "queued" : (m.state || "");
+  /* v4: the card speaks founder language, never a raw state (SHADOW-V3
+     section 7b; SH_TASK is the home module's word list, with a mirror here
+     for the screens that load this module alone) */
+  const WORD = { brief_confirm: "READY", queued: "QUEUED", running: "RUNNING",
+    paused: "PAUSED", blocked: "NEEDS YOU", done: "DONE", failed: "FAILED",
+    stopped: "STOPPED", draft: "DRAFT" };
+  const word = (typeof SH_TASK !== "undefined" && SH_TASK[face] && SH_TASK[face].label)
+    || WORD[face] || String(face).replace(/_/g, " ");
   return `<div class="shmission" data-shmission="${escAttr(m.id || "")}">
-    <span class="shstate shstate-${esc(face)}">${esc(face)}</span>
+    <span class="shstate shstate-${esc(face)}">${esc(word)}</span>
     <span class="shobj">${esc(m.objective || "")}</span>
     ${/* the turn being worked, through the shared reader -- same guard and
          same fallback as the chat strip (06-render.js), because this file
@@ -635,6 +643,75 @@ function missionCardHtml(m){
         data-shstart="${escAttr(m.id || "")}">Start</button>` : ""}
     ${m.result_excerpt ? `<div class="shresult">${esc(m.result_excerpt)}</div>` : ""}
   </div>`;
+}
+
+/* ---- Shadow prose (v4 C6, ADR-043) ------------------------------------
+   THE SHADOW VIEW SHOWS SHADOW'S WORDS AND ITS CARDS, NOTHING ELSE. A Shadow
+   chat is a normal Claude Code session in the founder's repo, so its raw
+   turns carry the governance scaffolding every session emits (the bracket
+   header, INPUT/TYPE/ROUTE runs, the FLOW and BLUEPRINT boxes, the OS trace)
+   and the protocol fences the app turns into cards. All of that stays in the
+   transcript and in Chats; here it is filtered at the presentation boundary
+   and the sentences that remain are rendered as markdown, the way the chat
+   pane renders a reply.
+
+   Three layers, in order: gvBody (05-chat.js, the chat pane's own scrubber)
+   when it is loaded; the protocol fences; then a belt for what a stream can
+   leak past both -- a lone header, a key line, an ASCII box. Nothing is
+   generated: every word shown is Shadow's own. */
+const SH_PROTO_FENCE = /```(?:mission|goal|chips|remember|module|brief)[ \t]*\n[\s\S]*?```/g;
+const SH_GOV_HEADER = /^\s*\[[A-Z0-9-]+\s*·\s*[A-Z0-9-]+[^\]]*\]\s*$/;
+const SH_GOV_KEY = new RegExp("^[\\s>*#\\-]*(" + [
+  "INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION",
+  "TASK", "DEPTH", "EFFORT", "COST", "IMPACT",
+  "TRIAGE", "ESTIMATE", "ACTUAL",
+  "PLACEMENT", "BUILD-LAYER", "ACTIVATION-SCOPE", "TARGET-PATH",
+  "FLOW", "BLUEPRINT", "OS TRACE",
+].join("|") + ")\\s*:");
+/* the trace only as the " > " chain the spec emits; "OS: macOS 14" stays */
+const SH_GOV_TRACE = /^\s*`?OS:\s[^\n]*\s>\s/;
+const SH_BOX_OPEN = /^\s*\+[-=]{2,}/;
+const SH_BOX_ROW = /^\s*[|+]/;
+
+function shadowProseText(text){
+  let t = String(text == null ? "" : text);
+  if (typeof goalStripTag === "function") t = goalStripTag(t);
+  if (typeof gvBody === "function"){
+    try { t = gvBody(t); } catch (e) { /* the belt below still runs */ }
+  }
+  t = t.replace(SH_PROTO_FENCE, "");
+  const out = [];
+  let fenced = false, inBox = false;
+  for (const line of t.split(/\r?\n/)){
+    const trimmed = line.trim();
+    if (/^```/.test(trimmed)){ fenced = !fenced; out.push(line); continue; }
+    if (fenced){ out.push(line); continue; }        /* code is the reply's own */
+    if (inBox){ if (SH_BOX_ROW.test(line)) continue; inBox = false; }
+    if (SH_BOX_OPEN.test(line)){ inBox = true; continue; }
+    if (SH_GOV_HEADER.test(line)) continue;
+    if (SH_GOV_KEY.test(line)) continue;
+    if (SH_GOV_TRACE.test(line)) continue;
+    out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function shadowProseHtml(text){
+  const body = shadowProseText(text);
+  if (!body) return "";
+  if (typeof mdHtml === "function"){
+    try { return mdHtml(body); } catch (e) { /* fall through to plain */ }
+  }
+  return esc(body).replace(/\n/g, "<br>");
+}
+
+/* one message row of a Shadow thread: the founder's words verbatim (escaped),
+   Shadow's words as prose */
+function shadowMsgHtml(t){
+  const mine = t && t.who === "founder";
+  return `
+    <div class="shmsg ${mine ? "shmine" : "shshadow"}">
+      ${mine ? esc((t && t.text) || "") : shadowProseHtml((t && t.text) || "")}</div>`;
 }
 
 /* the card: compact view of the ONE thread + chips + free text always */
@@ -651,9 +728,7 @@ function shadowCardHtml(){
     ? missionCardHtml(t.mission)
     : (t.goalProposal && typeof goalProposalHtml === "function"
       ? goalProposalHtml(t.goalProposal)
-      : `
-    <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
-      ${esc(t.text || "")}</div>`)).join("");
+      : shadowMsgHtml(t))).join("");
   const chips = validChips((typeof S !== "undefined" && S.shadowChips) || []);
   const chipHtml = chips.length
     ? chips.map(c => `<button class="btn shchip" type="button"

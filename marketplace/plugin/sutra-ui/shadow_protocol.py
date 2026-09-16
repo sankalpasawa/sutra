@@ -17,6 +17,9 @@ Shadow's replies may carry fenced blocks the app parses DETERMINISTICALLY:
     ```module
     {"name": "...", "kind": "chat"}
     ```
+    ```brief
+    <the worker's opening brief, in prose; a task chat's answer, v4>
+    ```
 
 Blocks are stripped from the displayed reply. remember rows land UNCONFIRMED
 (inert until the founder taps Confirm). SHADOW.md documents the same protocol
@@ -41,7 +44,7 @@ kept handling `blocks["goal"]`). Both fences are load-bearing; keep both.
 import json
 import re
 
-_BLOCK = re.compile(r"```(mission|goal|chips|remember|module)\s*\n(.*?)```", re.S)
+_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief)\s*\n(.*?)```", re.S)
 
 # A `module` fence creates a module (Org > Modules). Kinds mirror
 # modules_api.KINDS; kept literal here so the parser stays import-free.
@@ -212,6 +215,15 @@ def parse_reply(text, kinds=None):
 
     def _eat(match):
         kind, body = match.group(1), match.group(2)
+        # Shadow v4 (ADR-043): the brief is PROSE, not json -- the task chat's
+        # answer to "write the opening brief". Kept off the display and handed
+        # back whole; shadow_task_chat.brief reads the same fence.
+        if kind == "brief":
+            text = body.strip()
+            if not text:
+                return match.group(0)
+            out["brief"] = text
+            return ""
         try:
             val = json.loads(body)
         except ValueError:
@@ -221,7 +233,12 @@ def parse_reply(text, kinds=None):
         # never become an invisible side effect.
         if kind == "mission" and isinstance(val, dict) \
                 and val.get("objective") and val.get("template") in allowed:
-            out["mission"] = val
+            # Shadow v4 (C3, ADR-043): ONE REPLY MAY CARRY SEVERAL TASKS. The
+            # Now chat splits one founder message into one fence per task;
+            # every fence lands in `missions` (reply order) and `mission`
+            # stays the FIRST one so every existing reader is unchanged.
+            out.setdefault("missions", []).append(val)
+            out.setdefault("mission", val)
         elif kind == "goal" and isinstance(val, dict) \
                 and str(val.get("outcome") or "").strip():
             # An OUTCOME is the only hard requirement. done_when is kept

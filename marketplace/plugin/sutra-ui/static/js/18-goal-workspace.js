@@ -454,10 +454,18 @@ function goalTranscriptHtml(messages, d){
                            : "gwturn gwturn-chat");
     const who = mine ? "Shadow · mission"
       : (m.role === "user" ? "you" : "chat");
+    /* v4 C6: the founder's own words verbatim; Shadow's and the chat's as
+       prose (governance scaffolding and protocol fences filtered, markdown
+       rendered) -- the raw turn is one click away in Chats */
+    const founder = m.role === "user" && !mine;
+    const body = founder
+      ? esc(m.text || "")
+      : (typeof shadowProseHtml === "function"
+          ? shadowProseHtml(mine ? goalStripTag(m.text) : (m.text || ""))
+          : esc(mine ? goalStripTag(m.text) : (m.text || "")));
     return `<div class="${cls}">
       <span class="gwwho">${esc(who)}</span>
-      <span class="gwturntext">${esc(mine ? goalStripTag(m.text)
-                                          : (m.text || ""))}</span>
+      <span class="gwturntext">${body}</span>
     </div>`;
   }).join("");
   /* the stop explanation belongs where the work ended, not only in a side

@@ -728,6 +728,58 @@ def create_module(spec, created_by, session_id=None):
     return _read(mid, reg)
 
 
+#: Shadow v4 (C8, ADR-043): the two Shadow apps, INSTANCE-LOCAL by construction.
+#: Shadow is deliberately not a system seed (D-M4, above). This runs only when
+#: the operator's instance already holds the on-disk `shadow` link module, so a
+#: fleet install without one gets nothing new; where it exists, the app is
+#: assigned to the live department named Shadow and a sibling link app opens
+#: the sheet "What Shadow knows". Never raises: a boot must not fail on an app.
+SHADOW_APP_ID = "shadow"
+SHADOW_BEHAVES_APP = {
+    "id": "shadow-behaves", "name": "How Shadow behaves",
+    "tagline": "your own words on how it acts · the rules it lives by",
+    "kind": "link", "screen": "shadowsettings",
+}
+
+
+def _shadow_department_ref(reg):
+    """The live department named Shadow, else the registry root, else None."""
+    for ref in sorted(reg.live):
+        try:
+            if str(reg.row(ref).get("name") or "").strip().lower() == "shadow":
+                return ref
+        except Exception:                          # noqa: BLE001
+            continue
+    return reg.root
+
+
+def ensure_shadow_apps():
+    """Returns {"present": bool, "assigned": ref|None, "created": id|None}."""
+    out = {"present": False, "assigned": None, "created": None}
+    try:
+        shadow_json = os.path.join(_dir(SHADOW_APP_ID), "module.json")
+        if not os.path.isfile(shadow_json):
+            return out
+        out["present"] = True
+        reg = _Registry()
+        ref = _shadow_department_ref(reg)
+        raw = read_json(shadow_json, {}) or {}
+        dept = raw.get("department") if isinstance(raw.get("department"), dict) else {}
+        if ref and (dept.get("ref") not in reg.live):
+            apply_action(SHADOW_APP_ID, "assign", {"department_ref": ref})
+            out["assigned"] = ref
+        sibling = os.path.join(_dir(SHADOW_BEHAVES_APP["id"]), "module.json")
+        if not os.path.isfile(sibling):
+            spec = dict(SHADOW_BEHAVES_APP)
+            if ref:
+                spec["department"] = ref
+            create_module(spec, created_by="system")
+            out["created"] = SHADOW_BEHAVES_APP["id"]
+    except Exception:                              # noqa: BLE001 -- never a boot failure
+        pass
+    return out
+
+
 def _adopt_kit(mid, path, fpath, raw, kind, actor):
     """ADOPTION (D75, amended 2026-09-12: "whenever a task is given, a framework
     should be there ... if not, then a framework should be created"). An app

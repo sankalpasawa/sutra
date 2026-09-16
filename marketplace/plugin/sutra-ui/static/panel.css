@@ -2275,6 +2275,17 @@
 .shset .srow .v{color:var(--ink);font-weight:600}
 .ssempty{color:var(--faint);font-size:12.5px;line-height:1.5}
 .ssnote{color:var(--faint);font-size:11.5px;line-height:1.5;margin:9px 0 0}
+/* v4: How Shadow behaves -- the founder's own words, one text, first on the
+   sheet. Same tokens as the composer: system sans, hairline, 10px radius. */
+.ssbehaves{display:flex;flex-direction:column;gap:2px}
+.ssbehaves-text{width:100%;min-height:96px;resize:vertical;box-sizing:border-box;
+  padding:10px 12px;font:inherit;font-size:13.5px;line-height:1.5;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.ssbehaves-text:focus{outline:none;border-color:var(--acc)}
+.ssbehaves-note{min-height:16px;margin-top:6px}
+/* v4: the task chat that opens on + Delegate -- one thread, one composer */
+.shnewchat{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0}
+.shnewchat .shthread{flex:0 1 auto}
 /* autonomy: four equal levels in one rounded well, the selected one filled
    with the accent. Ported from the mock's .seg -- same 11px well, 5px inset,
    8px inner radius, 12px label over an 8.5px tracked level tag. */

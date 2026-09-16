@@ -559,14 +559,12 @@ class TheAnswerReachesTheDecider(unittest.TestCase):
         """The substitution dict must not KeyError on an old-shaped context."""
         ctx = {"outcome": "x", "checks": [], "turns_used": 1, "max_turns": 20,
                "last_instruction": "go", "last_response": "ok"}
-        rendered = shadow_runner._DECIDE_PROMPT % {
-            "outcome": ctx["outcome"], "checks": "- (none)",
-            "turns_used": 1, "max_turns": 20,
-            "last_instruction": "go", "last_response": "ok",
-            "founder_response": shadow_runner._founder_answer_text(
-                ctx.get("founder_response")),
-        }
+        # Through the ONE renderer (v4: render_decide_prompt is what both the
+        # one-shot decider and a task chat send), so a slot added to the
+        # template later can never KeyError this test again.
+        rendered = shadow_runner.render_decide_prompt(ctx)
         self.assertIn("(none)", rendered)
+        self.assertIn("WHAT THE FOUNDER TOLD YOU", rendered)
 
 
 if __name__ == "__main__":

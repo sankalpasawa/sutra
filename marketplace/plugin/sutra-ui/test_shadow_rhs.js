@@ -1318,6 +1318,8 @@ function stream(msgs, says, turns){
   ctx2.S.shadowMissions = [M({ state: "running" })];
   ctx2.S.shadowTaskSel = "m-1";
   ctx2.S.shadowNewOpen = true;
+  /* v4: the form is the opt-in path (flags.shadow_form) */
+  ctx2.SETTINGS = { flags: { shadow_form: true } };
   const nt = ctx2.shadowHomeHtml();
   assert(!/What should I take on/.test(nt),
     "the ask heading still draws behind the New Task form");

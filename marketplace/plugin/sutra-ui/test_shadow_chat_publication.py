@@ -385,7 +385,11 @@ class TestCompletion(Base):
         m = self._mission()
         sid = self._spawn(m)
         sutra_id = chat_store.resolve("claude", sid)
-        self.store.transition(m["id"], "running", "admitted")
+        # the publish step admits the mission itself when a slot is free
+        # (early admit, 2.278.x), so a second admission here was an illegal
+        # running -> running hop; admit only when the publisher did not
+        if self.store.load(m["id"])["state"] != "running":
+            self.store.transition(m["id"], "running", "admitted")
         self.store.transition(m["id"], "done", "done_when met")
         shadow_runner.release_delegate(sid)
 

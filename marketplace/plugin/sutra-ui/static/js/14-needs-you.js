@@ -132,6 +132,94 @@ function loadNeedsYou(){
     S.needsYou = S.needsYou || []; });
 }
 
+/* ── v4: THE BOX (SHADOW-V3 v3.3, ADR-043) ─────────────────────────────
+   "What do you have in mind?" is Shadow's one way in on Now. One message
+   goes to the Now chat (POST /api/shadow/chat); the reply is Shadow's prose
+   and one draft card per task it split out (`missions`, one fence per
+   task). Start each card, or Start all. The cards above stay render-only;
+   nothing here decides anything -- the drafts are the server's records. */
+function nowChat(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  if (!S_.nowChat)
+    S_.nowChat = { text: "", busy: false, err: null, reply: "", missions: [] };
+  return S_.nowChat;
+}
+
+function nowAskHtml(){
+  const c = nowChat();
+  const cards = (c.missions || []).map(m =>
+    (typeof missionCardHtml === "function") ? missionCardHtml(m) : "").join("");
+  const reply = c.reply
+    ? ((typeof shadowProseHtml === "function") ? shadowProseHtml(c.reply) : esc(c.reply))
+    : "";
+  return `<div class="nyask" data-nyask="1">
+    <div class="shcompwrap">
+      <textarea class="shcompose" data-nycomp="1" rows="2"
+        placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
+      <button class="btn shsend" type="button" data-nysend="1"
+        aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
+    </div>
+    ${reply ? `<div class="shmsg shshadow nyreply">${reply}</div>` : ""}
+    ${cards ? `<div class="nydrafts">${cards}</div>` : ""}
+    ${(c.missions || []).length > 1 ? `<div class="nydraftacts">
+      <button class="btn pri" type="button" data-nystartall="1"${
+        c.busy ? " disabled" : ""}>Start all</button></div>` : ""}
+    ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
+  </div>`;
+}
+
+async function nowSend(){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  const c = nowChat();
+  const text = String(c.text || "").trim();
+  if (!text || c.busy) return null;
+  c.busy = true; c.err = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  /* intake: the box opens tasks; the server prefixes the line so Shadow
+     answers with drafts, not with an answer */
+  try { r = await shadowPost("/api/shadow/chat", { message: text, intake: true }); }
+  catch (e){ r = null; }
+  let body = null;
+  try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
+  c.busy = false;
+  if (!body){
+    c.err = r ? "Shadow could not take that (" + r.status + ")."
+              : "Could not reach Shadow.";
+  } else {
+    c.text = "";
+    c.reply = body.reply || "";
+    c.missions = Array.isArray(body.missions) ? body.missions
+               : (body.mission ? [body.mission] : []);
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return body;
+}
+
+async function nowStartAll(){
+  const c = nowChat();
+  if (c.busy || !(c.missions || []).length
+      || typeof shadowMissionAct !== "function") return 0;
+  c.busy = true;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let n = 0;
+  const total = c.missions.length;
+  const left = [];
+  for (const m of c.missions){
+    let ok = null;
+    try { ok = await shadowMissionAct(m.id, "start_now"); } catch (e) { ok = null; }
+    if (ok) n++; else left.push(m);
+  }
+  /* a draft that did not start stays on the page with its own Start, and the
+     count says so (DeepSeek P2: "Started N" must never overstate) */
+  c.busy = false; c.missions = left; if (!left.length) c.reply = "";
+  if (typeof showNudge === "function")
+    showNudge((n === total ? "Started " + n : "Started " + n + " of " + total)
+              + (n === 1 ? " task" : " tasks") + " — in Focus › Shadow.");
+  if (typeof scheduleRender === "function") scheduleRender();
+  return n;
+}
+
 /* Override the placeholder registered in 05-chat.js: same empty state when
    the feed is dark or empty, cards when it speaks.
 
@@ -197,23 +285,57 @@ if (typeof SCREENS !== "undefined"){
                                          : "Good evening";
       return `<div class="nygreet">${g}.</div>
         <div class="nysub"><b>${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you.</b>
-        Everything else is handled.</div>` + needsYouHtml(items);
+        Everything else is handled.</div>` + needsYouHtml(items) + nowAskHtml();
     }
+    /* v4: when nothing needs you, the box is the page (the door to Shadow
+       stays for anyone who used it) */
     return `
   <div class="zero"><h4>Now</h4>
     <p>Nothing needs you right now.</p>
     <p><button class="btn pri" type="button" data-nystart="1">Talk to
     Shadow</button></p>
-  </div>`;
+  </div>` + nowAskHtml();
   };
 }
 
 if (typeof document !== "undefined" && document.addEventListener){
+  /* v4: the box -- Enter sends (Shift+Enter is a newline), the text is kept
+     across the background re-renders, and a draft started on its own card
+     leaves the box's list (the start itself is the overlay's existing hook) */
+  document.addEventListener("keydown", (ev) => {
+    const d = (ev.target && ev.target.dataset) || {};
+    if (ev.key === "Enter" && !ev.shiftKey && d.nycomp){
+      ev.preventDefault && ev.preventDefault();
+      nowChat().text = ev.target.value;
+      nowSend();
+    }
+  });
+  document.addEventListener("input", (ev) => {
+    const d = (ev.target && ev.target.dataset) || {};
+    if (d.nycomp) nowChat().text = ev.target.value;
+  });
   document.addEventListener("click", (ev) => {
     const t = ev.target;
     if (t && t.dataset && t.dataset.nystart){
       openNeedsYouItem("sutra://shadow/home");
       return;
+    }
+    if (t && t.dataset && t.dataset.nysend){ nowSend(); return; }
+    if (t && t.dataset && t.dataset.nystartall){ nowStartAll(); return; }
+    if (t && t.dataset && t.dataset.shstart){
+      const c = nowChat();
+      const mine = (c.missions || []).some(m => m.id === t.dataset.shstart);
+      if (mine){
+        /* a draft the box drew: this module starts it (the same existing
+           action every Start uses) and stops the other document listeners
+           from starting it a second time */
+        c.missions = c.missions.filter(m => m.id !== t.dataset.shstart);
+        if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        if (typeof shadowMissionAct === "function")
+          shadowMissionAct(t.dataset.shstart, "start_now");
+        if (typeof scheduleRender === "function") scheduleRender();
+        return;
+      }
     }
     /* the ACTION BUTTON routes too (founder's dead Open, root-caused
        2026-08-26: this branch excluded data-nyact and nothing else ever

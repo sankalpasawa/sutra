@@ -1808,6 +1808,47 @@ def _founder_answer_text(answer):
     return "\n".join([head] + lines)
 
 
+def render_decide_prompt(context):
+    """The steering prompt for one turn, from a _decision_context dict.
+
+    ONE RENDERER, TWO SPEAKERS (Shadow v4, ADR-043): the one-shot decider
+    below sends it to a fresh process; a task's Shadow chat
+    (shadow_task_chat.TaskChat.decide) sends the same text into its own
+    conversation. Lifted verbatim out of make_decider so the two can never
+    drift.
+    """
+    return _DECIDE_PROMPT % {
+        "outcome": context.get("outcome") or "(none)",
+        # THE INDEX IS PART OF THE PROMPT (founder, 2026-09-15). A check
+        # rendered without one cannot be CITED: `confirms_check.index`
+        # has to be the real done_when position, and a decider that has
+        # to count them will eventually miscount. The list is already in
+        # done_when order -- _decision_context builds it straight off the
+        # record -- so the position IS the index; it just was not shown.
+        "checks": "\n".join(
+            "- #%d [%s] (%s) %s" % (i, "x" if c.get("met") else " ",
+                                    c.get("tier"), c.get("check"))
+            for i, c in enumerate(context.get("checks") or []))
+        or "- (none)",
+        "turns_used": context.get("turns_used"),
+        "max_turns": context.get("max_turns"),
+        "last_instruction": context.get("last_instruction") or "(none)",
+        "last_response": context.get("last_response") or "(nothing yet)",
+        # .get() like every key above, so a mission that was never asked
+        # anything cannot KeyError here -- and _decision_context keeps
+        # omitting the key entirely for those, exactly as before.
+        "founder_response": _founder_answer_text(
+            context.get("founder_response")),
+        "founder_says": _founder_says_text(context.get("founder_says")),
+        # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
+        # it does not, and _decision_context already carries them. Empty
+        # -> Shadow is asked to write them; otherwise this renders to the
+        # empty string and the prompt is exactly what it was before.
+        "criteria_ask": ("" if (context.get("checks") or [])
+                         else _CRITERIA_ASK),
+    }
+
+
 def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     """Shadow's reasoning step as ONE bounded call per mission turn.
 
@@ -1833,36 +1874,7 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     """
     async def decide(context):
         import session_runtime as srt
-        prompt = _DECIDE_PROMPT % {
-            "outcome": context.get("outcome") or "(none)",
-            # THE INDEX IS PART OF THE PROMPT (founder, 2026-09-15). A check
-            # rendered without one cannot be CITED: `confirms_check.index`
-            # has to be the real done_when position, and a decider that has
-            # to count them will eventually miscount. The list is already in
-            # done_when order -- _decision_context builds it straight off the
-            # record -- so the position IS the index; it just was not shown.
-            "checks": "\n".join(
-                "- #%d [%s] (%s) %s" % (i, "x" if c.get("met") else " ",
-                                        c.get("tier"), c.get("check"))
-                for i, c in enumerate(context.get("checks") or []))
-            or "- (none)",
-            "turns_used": context.get("turns_used"),
-            "max_turns": context.get("max_turns"),
-            "last_instruction": context.get("last_instruction") or "(none)",
-            "last_response": context.get("last_response") or "(nothing yet)",
-            # .get() like every key above, so a mission that was never asked
-            # anything cannot KeyError here -- and _decision_context keeps
-            # omitting the key entirely for those, exactly as before.
-            "founder_response": _founder_answer_text(
-                context.get("founder_response")),
-            "founder_says": _founder_says_text(context.get("founder_says")),
-            # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
-            # it does not, and _decision_context already carries them. Empty
-            # -> Shadow is asked to write them; otherwise this renders to the
-            # empty string and the prompt is exactly what it was before.
-            "criteria_ask": ("" if (context.get("checks") or [])
-                             else _CRITERIA_ASK),
-        }
+        prompt = render_decide_prompt(context)
         # THE SAME RUNTIME FACTORY THE CHAT PANES USE, injected the way
         # build_args, register and publish already are -- this module must not
         # import app, and the provider gate (SHADOW_PROVIDERS) belongs on
