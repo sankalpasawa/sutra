@@ -270,9 +270,17 @@ class TheLivePathWritesCriteriaAndFinishes(CriteriaBase):
         eng.decider = decider
         # NOTHING BOUNDS THIS BUT THE BUDGET. The stub decider always says
         # `continue` and the founder_confirm check is never signed off, so the
-        # loop runs to max_turns and ends `failed`. That is the point: the
-        # criteria are written on the FIRST decision turn and everything
-        # asserted below is true long before the budget runs out.
+        # loop runs to max_turns. That is the point: the criteria are written
+        # on the FIRST decision turn and everything asserted below is true
+        # long before the budget runs out.
+        #
+        # WHERE IT LANDS CHANGED, AND THIS TEST NEVER CARED (2026-09-16).
+        # It used to end `failed`; an all-founder_confirm mission that has
+        # been driven now ends in the founder-confirm waiting room instead
+        # (mission_engine.confirmation_reachable), because "only your
+        # signature is outstanding" was never a failure. The property under
+        # test is what happens at the START -- Shadow writes the criteria
+        # rather than asking for them -- and it is untouched.
         return eng
 
     def _mission(self):
@@ -323,7 +331,12 @@ class TheLivePathWritesCriteriaAndFinishes(CriteriaBase):
                          "an empty Done when must never block on the founder")
         self.assertIsNone(m.get("block_reason"))
         self.assertIsNone(m.get("intervention"))
-        self.assertEqual(self.store.load(mid).get("pause_reason"), None)
+        # ...and the pause it eventually reaches is the END of the road
+        # asking for a SIGNATURE, never the start asking for a bar.
+        self.assertNotIn(self.store.load(mid).get("pause_reason"),
+                         ("needs_criteria", "floor_confirm"))
+        self.assertEqual(self.asked[0]["checks"], [],
+                         "the criteria ask happened before any pause")
         # 4. the prompt Shadow actually saw carried the ask
         self.assertTrue(self.asked, "the decider must have been consulted")
         self.assertEqual(self.asked[0]["outcome"], self.OBJECTIVE)

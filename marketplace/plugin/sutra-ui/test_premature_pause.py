@@ -88,9 +88,26 @@ class TestTheConfirmationBoundary(Base):
     def test_01_all_founder_confirm_does_NOT_pause_immediately(self):
         """THE BUG. Four founder_confirm checks, nothing machine-checkable.
 
-        The old predicate paused on the first evaluation with turns_used == 1.
-        Shadow must keep driving instead: the founder can confirm whenever
-        they are ready, and absence of machine checks is not evidence.
+        The old predicate paused on the first evaluation with turns_used == 1
+        AND NOT ONE INSTRUCTION SENT. Shadow must supervise first: the
+        founder can confirm whenever they are ready, and absence of machine
+        checks is not evidence.
+
+        THE EXIT NAME IS NO LONGER THE EVIDENCE (2026-09-16). This asserted
+        `stopped` plus a ping-pong note, and the comment said why: "any exit
+        other than the turn-1 handback means Shadow supervised instead of
+        delegating back to the founder". `stopped` was how that was spelled
+        when it was the ONLY other ending this shape could reach. It is not
+        any more -- an all-founder_confirm mission that has actually been
+        driven now ends in the founder-confirm waiting room
+        (mission_engine.confirmation_reachable), because "only your signature
+        is outstanding" was never a failure. So the proxy names an exit that
+        no longer exists here.
+
+        The property is therefore asserted DIRECTLY: turns driven, and
+        instructions that actually left the engine. That is what the exit
+        name was standing in for, and neither line can be satisfied by the
+        turn-1 vacuous handback this module exists to forbid.
         """
         mid = self.mission([
             {"tier": "founder_confirm", "check": "expense_tracker.py runs."},
@@ -99,18 +116,27 @@ class TestTheConfirmationBoundary(Base):
             {"tier": "founder_confirm", "check": "Bad amounts don't crash."},
         ], max_turns=4)
         m = run(self.engine().run_mission(mid))
-        self.assertNotEqual(
-            (m["state"], m.get("pause_reason")), ("paused", "founder_confirm"),
-            "an all-founder_confirm mission must not pause on turn 1")
+        # 1. IT DROVE, and both halves are asserted because a turn that sent
+        #    nothing is not supervision: turns_used counts loop iterations,
+        #    self.says counts instructions that actually reached the worker.
         self.assertGreater(m["turns_used"], 1,
                            "Shadow kept driving instead of handing back")
-        # It ends on ping-pong, not on the confirmation boundary: with no
-        # decider injected _next_say repeats itself once the unmet set stops
-        # changing, and that guard is what stops it. The point of this test is
-        # WHICH exit was taken -- any exit other than the turn-1 handback
-        # means Shadow supervised instead of delegating back to the founder.
-        self.assertEqual(m["state"], "stopped")
-        self.assertIn("ping-pong", " ".join(self._notes(mid)))
+        self.assertGreater(len(self.says), 1,
+                           "real instructions reached the worker before "
+                           "the founder was asked for anything")
+        # 2. ...AND ONLY THEN handed back. Where it lands after driving is
+        #    the END of the road asking for a SIGNATURE -- the one thing
+        #    nothing in the engine can supply -- never the start asking for
+        #    a bar. The note says so in the founder's words, and the
+        #    machine's own reason for running out of road is NOT what they
+        #    are shown.
+        self.assertEqual((m["state"], m.get("pause_reason")),
+                         ("paused", "founder_confirm"))
+        notes = " ".join(self._notes(mid))
+        self.assertIn("awaiting founder confirmation", notes)
+        self.assertNotIn("ping-pong", notes,
+                         "the machine running out of road is not the "
+                         "sentence the founder gets")
 
     def test_02_mixed_machine_check_MET_still_pauses(self):
         """PRESERVED. A real machine check passed, a founder check is
