@@ -4190,6 +4190,33 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # confirmation the same way or one of them is a dead end again
             settled = shadow_runner.settle_confirmation(mid, _shadow_verifier)
             return settled or store.load(mid)
+        if action == "approve":
+            # Shadow v4 (C9, ADR-043): the founder approves ONE held say by
+            # its one-use approval id. The engine validates the object and
+            # stamps the exact string; the loop sends it once and composes
+            # nothing for it. Same cap rule as resume: approving is running.
+            try:
+                m = _mission_engine.approve_held_say(
+                    store, mid, body.get("approval_id"))
+            except ValueError as exc:
+                raise HTTPException(409, str(exc))
+            running_n = len(store.list(states=("running",)))
+            cap = _mission_engine.max_running()
+            if running_n >= cap:
+                raise HTTPException(409, {
+                    "detail": "Shadow is already running %d of %d tasks. "
+                              "Stop one, or raise Running at once."
+                              % (running_n, cap),
+                    "at_capacity": True,
+                    "running_now": running_n,
+                    "running_at_once": cap})
+            if m.get("pause_reason") == "autonomy_top_tier":
+                m["top_tier_confirmed"] = True
+                store.save(m)
+            m = store.transition(mid, "running",
+                                 "approved say %s" % body.get("approval_id"))
+            shadow_runner._launch(mid, _validated_say, _shadow_verifier)
+            return m
         if action == "resume":
             # THE CAP IS A CAP ON RUNNING WORK, however the work got there.
             # Resume was the one door into `running` with no admission check
@@ -4520,7 +4547,11 @@ def _validated_say(sid, mission_id, msg, dedupe_key=None):
     # Ordinary missions never reach here floored: the loop floors the same
     # text with the same patterns and pauses first.
     tripped = shadow_egress.floor_check(msg)
-    if tripped:
+    # THE ONE-USE APPROVED-FLOOR EXCEPTION (v4 C9, the step 2 this comment
+    # promised): only the exact string the founder approved, only while the
+    # record still carries it -- the loop clears `approved_say` as it leaves.
+    approved = m.get("approved_say")
+    if tripped and not (approved and approved == msg):
         raise HTTPException(403, "floor: %s" % ", ".join(tripped))
     clean, redactions = shadow_egress.scrub(msg)
     # same wire format as before, from the one writer of it -- evidence

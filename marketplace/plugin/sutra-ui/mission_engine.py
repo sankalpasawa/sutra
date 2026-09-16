@@ -11,6 +11,7 @@ Flag-gated at every entry: engine methods refuse when shadow_enabled() is
 False -- the flag going dark mid-mission stops the loop at the next check.
 """
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -1710,7 +1711,16 @@ class MissionEngine:
             # mission never carries the flag and is byte-identical to before.
             briefed = (m["turns_used"] == 0
                        and bool(m.get("manifest_delivered")))
-            if briefed:
+            # Shadow v4 (C9, ADR-043): A SAY THE FOUNDER APPROVED IS SENT AS
+            # IT WAS SHOWN. approve_held_say stamps `approved_say` (the exact
+            # string, hash-checked against the one-use approval); this turn
+            # sends THAT string, composes nothing, and skips the floor and
+            # the autonomy hold that held it -- the founder's yes is the
+            # authority for this one say. It is cleared the moment it leaves.
+            approved = bool(m.get("approved_say"))
+            if approved:
+                say_text, decision = m["approved_say"], None
+            elif briefed:
                 say_text, decision = self._next_say(m), None
                 # THE COMPLETION BAR CANNOT WAIT FOR TURN 1 (founder dogfood,
                 # 2026-09-15).
@@ -1796,7 +1806,7 @@ class MissionEngine:
                 # complete. Say honestly that the driver could not decide.
                 return self._out_of_road(
                     m, "failed", "shadow_undecided", decision["reason"])
-            if briefed:
+            if briefed and not approved:
                 # Nothing is sent and nothing is waited on -- the turn this
                 # would have produced already happened, inside the spawn.
                 # last_say is still set, so a decider that answers turn 1 with
@@ -1809,16 +1819,16 @@ class MissionEngine:
                     return self._out_of_road(
                         m, "stopped", "ping_pong",
                         "ping-pong detected (identical consecutive says)")
-                floors = shadow_egress.floor_check(say_text)
+                floors = ([] if approved
+                          else shadow_egress.floor_check(say_text))
                 if floors:
                     # S52: the say never leaves the engine; the founder decides
-                    m = self.store.transition(
-                        mid, "paused", "floor requires confirmation: %s"
-                        % ", ".join(floors))
-                    m["pause_reason"] = "floor_confirm"
-                    m["pending_floor_say"] = say_text[:1000]
-                    self.store.save(m)
-                    return m
+                    # -- through a one-use approval bound to this exact string
+                    # (v4 C9), never a bare Resume that recomposes.
+                    return self._hold_say(
+                        m, "floor_confirm",
+                        "floor requires confirmation: %s" % ", ".join(floors),
+                        say_text)
                 # AUTONOMY COMES AFTER THE FLOOR, AND THAT ORDER IS THE
                 # PRECEDENCE RULE ITSELF (SHADOW.md section 3: floors are rank
                 # 1, above this session's founder words). A say can trip both
@@ -1833,7 +1843,7 @@ class MissionEngine:
                 # So no autonomy level, L3 included, can route around it --
                 # which is the property test_shadow_autonomy pins directly
                 # rather than leaving to inspection of this comment.
-                hold = self._autonomy_hold(m, say_text)
+                hold = None if approved else self._autonomy_hold(m, say_text)
                 if hold is not None:
                     return hold
                 # THE LAST LOOK BEFORE SPEAKING, and the takeover window it
@@ -1899,6 +1909,14 @@ class MissionEngine:
                 if not ok:
                     return self.store.transition(mid, "failed", "say refused")
                 last_say = say_text
+                if approved:
+                    # ONE USE: the approved string has left; nothing below can
+                    # send it again without a fresh approval
+                    m["approved_say"] = None
+                    m["pending_say"] = None
+                    m["pending_floor_say"] = None
+                    m["pending_autonomy_say"] = None
+                    approved = False
                 # remembered on the record, so a resumed attempt and the ledger
                 # both know what Shadow last asked for
                 m["last_instruction"] = say_text[:DECISION_INSTRUCTION_MAX]
@@ -2119,23 +2137,32 @@ class MissionEngine:
         """
         level = autonomy()
         if level == "L1":
-            held = self.store.transition(
-                m["id"], "paused",
-                "autonomy is L1 Suggest -- waiting for your yes")
-            held["pause_reason"] = "autonomy_suggest"
-            held["pending_autonomy_say"] = say_text[:1000]
-            self.store.save(held)
-            return held
+            return self._hold_say(
+                m, "autonomy_suggest",
+                "autonomy is L1 Suggest -- waiting for your yes", say_text)
         if level == "L3" and confirm_top_tier() \
                 and not m.get("top_tier_confirmed"):
-            held = self.store.transition(
-                m["id"], "paused",
-                "autonomy is L3 Act -- confirm before the top tier")
-            held["pause_reason"] = "autonomy_top_tier"
-            held["pending_autonomy_say"] = say_text[:1000]
-            self.store.save(held)
-            return held
+            return self._hold_say(
+                m, "autonomy_top_tier",
+                "autonomy is L3 Act -- confirm before the top tier", say_text)
         return None
+
+    def _hold_say(self, m, reason, note, say_text):
+        """Park a say for the founder, with a ONE-USE APPROVAL bound to it
+        (Shadow v4 C9, ADR-043; the mechanism _autonomy_hold's docstring
+        deferred). One shape for the three holds: floor_confirm,
+        autonomy_suggest, autonomy_top_tier. The legacy pending_* keys are
+        kept so every existing reader of them is unchanged; `pending_say`
+        carries the full string the approval hashes."""
+        held = self.store.transition(m["id"], "paused", note)
+        held["pause_reason"] = reason
+        key = ("pending_floor_say" if reason == "floor_confirm"
+               else "pending_autonomy_say")
+        held[key] = say_text[:1000]
+        held["pending_say"] = say_text
+        held["approval"] = mint_approval(held, reason, say_text)
+        self.store.save(held)
+        return held
 
     def _infra_exit(self, m, block_reason, note):
         """SHADOW BROKE. ASK THE WORK FIRST, THEN PARK -- NEVER FAIL.
@@ -2586,6 +2613,58 @@ class MissionScheduler:
                             "reason": m["pause_reason"],
                             "version": m["version"]})
         return out
+
+
+def mint_approval(m, reason, say_text):
+    """A one-use approval object for ONE held say: bound to the task, its
+    version, its turn and the sha256 of the exact string. Approving it
+    releases that string and nothing else; a Retry, an amend or a new turn
+    makes it stale by construction."""
+    return {
+        "id": "ap-" + uuid.uuid4().hex[:12],
+        "reason": reason,
+        "version": m.get("version"),
+        "turn": m.get("turns_used"),
+        "say_sha256": hashlib.sha256((say_text or "").encode("utf-8")).hexdigest(),
+        "used": False,
+        "created_at": _now(),
+    }
+
+
+def approve_held_say(store, mid, approval_id):
+    """The founder approves the held say named by `approval_id`.
+
+    Every refusal is a ValueError with the reason: nothing waiting, wrong
+    id, already used, stale version, hash mismatch. On success the approval
+    is marked used and `approved_say` carries the exact string for the loop
+    to send once (run_mission clears it as it leaves). The state is NOT
+    moved here: the route owns the cap check and the launch."""
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    ap = m.get("approval")
+    if not ap or not m.get("pending_say"):
+        raise ValueError("nothing is waiting for approval")
+    if m["state"] != "paused":
+        raise ValueError("task is %s, not waiting" % m["state"])
+    if not approval_id or approval_id != ap.get("id"):
+        raise ValueError("approval id does not match")
+    if ap.get("used"):
+        raise ValueError("approval already used")
+    if ap.get("version") != m.get("version"):
+        raise ValueError("approval is stale: the task changed since it asked")
+    digest = hashlib.sha256(m["pending_say"].encode("utf-8")).hexdigest()
+    if digest != ap.get("say_sha256"):
+        raise ValueError("approval does not match the pending say")
+    ap["used"] = True
+    ap["used_at"] = _now()
+    m["approved_say"] = m["pending_say"]
+    store.save(m)
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": "approval",
+        "summary": "approved %s (%s) at turn %s"
+                   % (ap["id"], ap.get("reason"), ap.get("turn"))})
+    return m
 
 
 def emit_mission_feed(mission, kind, why_now):
