@@ -39,6 +39,9 @@ OUR USUAL MAPPING TABLE (reference only):
 - framework / methodology -> common-spine
 - other / editorial -> common-spine
 
+Standing rules from the user (they may narrow how a shape is chosen):
+{{MEMORY}}
+
 THE ARTICLE:
 - Queue format label: {{FORMAT}}
 - Title: {{TITLE}}
