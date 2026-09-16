@@ -46,6 +46,18 @@ CHECKLIST="$UI/release-checklist.md"
 #: shippable (release-checklist.md check 3).
 REQUIRED_ASSETS="Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
 
+#: WHAT A DESKTOP RELEASE MAY CARRY. `release` can start from a dirty tree --
+#: that is the normal release-prep state -- but only for paths a desktop
+#: release legitimately touches. Anything else is an UNEXPECTED change and
+#: blocks, named, rather than being swept into a release commit. This is the
+#: protection check 1 used to give by demanding a clean tree; the tree may now
+#: be dirty, and what may be in it is enumerated instead.
+RELEASE_SCOPE="marketplace/plugin/ .github/workflows/release-dmg.yml CURRENT-VERSION.md .claude-plugin/marketplace.json scripts/"
+
+#: NEVER, whatever the scope says. Machine state churns on every tool call and
+#: signing material IS the identity -- neither belongs in a release commit, and
+#: a path matching one of these blocks even when it sits inside the scope above.
+RELEASE_NEVER=".enforcement/ .claude/sessions/ .claude/heartbeats/ .sutra/ holding/state/ .p12 .p8 .certSigningRequest .env"
 #: How many times check 6 wants test_panel.js run. Five, because the flake
 #: class it guards is intermittent: four green and one red still means racing.
 PANEL_RUNS=5
@@ -143,6 +155,70 @@ missing_assets() {
   printf '%s' "${miss# }"
 }
 
+# Does this path sit inside the desktop release scope? Prefix match, because
+# the scope is expressed as directories and exact files.
+in_release_scope() {
+  local path="${1:-}" pre
+  [ -n "$path" ] || return 1
+  for pre in $RELEASE_SCOPE; do
+    case "$path" in "$pre"*) return 0 ;; esac
+  done
+  return 1
+}
+
+# Machine state or signing material: never committed, scope notwithstanding.
+# Matched anywhere in the path, so a nested .enforcement/ is caught too.
+is_never_commit() {
+  local path="${1:-}" pat
+  [ -n "$path" ] || return 1
+  for pat in $RELEASE_NEVER; do
+    case "$path" in *"$pat"*) return 0 ;; esac
+  done
+  return 1
+}
+
+# Split `git status --porcelain` into what a release may carry and what it may
+# not. Prints one line per path, prefixed `include ` or `block `, so the caller
+# can show the founder exactly what is about to be committed and why anything
+# else stopped the release. Pure: it reads the text it is given, not the tree.
+classify_dirty() {
+  local porcelain="${1:-}" line path
+  [ -n "$porcelain" ] || return 0
+  # `printf %s`, not `printf '%s\n'`, DROPS THE LAST LINE: `read` needs the
+  # terminator, so a one-path tree classified to nothing and the final path of
+  # any tree was silently unjudged -- an unexpected change could have ridden
+  # into a release commit precisely because it was last. Caught by the unit
+  # tests, which is what they are for.
+  printf '%s\n' "$porcelain" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path="$(printf %s "$line" | cut -c4-)"
+    path="${path##* -> }"          # a rename reports "old -> new"; judge the new
+    if is_never_commit "$path"; then printf "block %s\n" "$path"
+    elif in_release_scope "$path"; then printf "include %s\n" "$path"
+    else printf "block %s\n" "$path"; fi
+  done
+}
+
+# THE RELEASE ENTRY, BUILT FROM WHAT THE RANGE ACTUALLY CONTAINS. Every bullet
+# is a commit subject, verbatim -- text a human wrote about a change that is in
+# the diff by construction. Nothing here reads a diff and decides what it
+# MEANS: a generated summary of code it cannot understand is how a changelog
+# starts claiming features that were never built. The footer is arithmetic.
+#
+# notes_body <range-label> <subjects, one per line> <diffstat-line> <new-tests>
+notes_body() {
+  local range="${1:-}" subjects="${2:-}" stat="${3:-}" tests="${4:-}"
+  local n; n="$(printf '%s\n' "$subjects" | grep -c . || true)"
+  printf -- "- Released from %s: %s commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.\n" \
+    "$range" "${n:-0}"
+  printf '%s\n' "$subjects" | while IFS= read -r line; do   # see classify_dirty
+    [ -n "$line" ] || continue
+    printf -- "  - %s\n" "$line"
+  done
+  [ -n "$stat" ] && printf -- "- Changed: %s\n" "$stat"
+  [ -n "$tests" ] && printf -- "- New test suites: %s\n" "$tests"
+  return 0
+}
 # =============================================================================
 # REPORTING
 # =============================================================================
@@ -158,11 +234,26 @@ die()  { printf '\033[31merror:\033[0m %s\n' "$1" >&2; exit 2; }
 # =============================================================================
 
 gate_tree_clean() {                       # check 1
+  # CHECK 1 SAYS "commit or revert each before tagging", and that is what this
+  # enforces -- but `release` is now the thing that commits them, so a dirty
+  # tree is not automatically a failure. What matters is whether every dirty
+  # path is one a desktop release may carry. An UNEXPECTED path still blocks,
+  # by name, which is the protection check 1 actually exists to give: nothing
+  # reaches a release commit that nobody looked at.
   local dirty; dirty="$(git status --porcelain)"
-  if [ -z "$dirty" ]; then ok "check 1: working tree clean"
-  else
-    bad "check 1: working tree is not clean -- the pipeline builds the TAG, so anything uncommitted is absent from the DMG"
-    printf '%s\n' "$dirty" | sed 's/^/        /'
+  if [ -z "$dirty" ]; then ok "check 1: working tree clean"; return; fi
+  local classified blocked included
+  classified="$(classify_dirty "$dirty")"
+  blocked="$(printf '%s\n' "$classified" | grep '^block ' | sed 's/^block //')"
+  included="$(printf '%s\n' "$classified" | grep '^include ' | sed 's/^include //')"
+  if [ -n "$blocked" ]; then
+    bad "check 1: the tree carries change a desktop release must not sweep in"
+    printf '%s\n' "$blocked" | sed 's/^/        out of scope: /'
+    note "commit, revert or stash these yourself -- release will not decide for you"
+  fi
+  if [ -n "$included" ]; then
+    ok "check 1: $(printf '%s\n' "$included" | grep -c .) in-scope change(s), which release will commit"
+    printf '%s\n' "$included" | sed 's/^/        /'
   fi
 }
 
@@ -384,20 +475,82 @@ apply_version() {
   python3 "$LIBDIR/_release_edit.py" current "$CURRENT_VERSION" "$from" "$to" "$today" \
     || die "could not update $CURRENT_VERSION"
 }
+# The release entry, from the range about to be released. Writes a notes file
+# and prints its path. IMPURE by necessity (it reads git); the FORMATTING is
+# notes_body, which is pure and unit-tested.
+#
+# THE RANGE IS THE LAST DESKTOP TAG TO HEAD, because that is exactly what this
+# release adds to the app: plugin versions that never carried a desktop tag
+# are still in it, and dating the range from the last CHANGELOG entry would
+# silently drop them.
+generate_notes() {
+  local out="$1" last range subjects stat tests files ins del
+  last="$(git tag --sort=-v:refname | grep -- "-desktop$" | head -1)"
+  if [ -n "$last" ]; then range="$last..HEAD"; else range="HEAD"; fi
+  subjects="$(git log --no-merges --format=%s "$range" 2>/dev/null)"
+  if [ -z "$subjects" ]; then
+    # Nothing to describe. Say that, rather than inventing a reason to ship.
+    printf -- "- No commits since %s; released to rebuild the app from the same tree.\n" \
+      "${last:-the start of history}" > "$out"
+    return 0
+  fi
+  files="$(git diff --name-only "$range" 2>/dev/null | grep -c . || true)"
+  ins="$(git diff --shortstat "$range" 2>/dev/null | grep -oE "[0-9]+ insertion" | grep -oE "[0-9]+" || true)"
+  del="$(git diff --shortstat "$range" 2>/dev/null | grep -oE "[0-9]+ deletion" | grep -oE "[0-9]+" || true)"
+  stat="$(printf "%s file(s), +%s/-%s" "${files:-0}" "${ins:-0}" "${del:-0}")"
+  tests="$(git diff --diff-filter=A --name-only "$range" 2>/dev/null \
+    | grep -E "/test_[a-zA-Z0-9_]+\.(js|py)$" | xargs -n1 basename 2>/dev/null | sort | tr "\n" " " | sed "s/ $//")"
+  notes_body "${last:-the start of history}..HEAD" "$subjects" "$stat" "$tests" > "$out"
+  return 0
+}
 cmd_release() {
   [ "${FAST:-0}" = 1 ] && die "FAST=1 skips gates; it is for 'check' only, never for a release"
   read_state
-  if [ "$NEEDS_COMMIT" = yes ] && [ -z "$NOTES" ] && ! grep -qE "^## ${TARGET//./\\.} " "$CHANGELOG"; then
-    die "no CHANGELOG entry for $TARGET and no --notes FILE. This script will not invent release prose."
-  fi
+  # THE ENTRY IS NO LONGER SOMETHING YOU MUST HAVE WRITTEN FIRST. Requiring it
+  # made `release` a two-command workflow whose first command was "go and write
+  # prose", which is the thing this script exists to remove. Without --notes and
+  # without an existing entry, the entry is BUILT from the range being released
+  # (generate_notes below) -- commit subjects, quoted, plus arithmetic. --notes
+  # still wins when it is given, for a release that deserves written prose.
   printf 'Releasing %s as %s\n' "$TARGET" "$TAG"
   if [ "${ASSUME_YES:-0}" != 1 ]; then
     printf 'Proceed? [y/N] '; read -r a; [ "$a" = y ] || die "aborted"
   fi
 
+  # STEP 0: the release-prep state. Everything dirty is classified; anything a
+  # desktop release may not carry stops the release by name. The rest is shown
+  # and committed as its own commit, before the version moves, so the release
+  # commit stays exactly the four version surfaces.
+  local dirty; dirty="$(git status --porcelain)"
+  if [ -n "$dirty" ]; then
+    head_ "0. release-prep changes"
+    local classified blocked included
+    classified="$(classify_dirty "$dirty")"
+    blocked="$(printf '%s\n' "$classified" | grep '^block ' | sed 's/^block //')"
+    included="$(printf '%s\n' "$classified" | grep '^include ' | sed 's/^include //')"
+    if [ -n "$blocked" ]; then
+      printf '%s\n' "$blocked" | sed 's/^/  out of scope: /'
+      die "the tree carries change a desktop release must not sweep in -- commit, revert or stash it yourself"
+    fi
+    printf '%s\n' "$included" | sed 's/^/  including: /'
+    if [ "${ASSUME_YES:-0}" != 1 ]; then
+      printf 'Commit these as release prep? [y/N] '; read -r a; [ "$a" = y ] || die "aborted"
+    fi
+    printf '%s\n' "$included" | while IFS= read -r f; do [ -n "$f" ] && git add -- "$f"; done
+    git commit -m "release prep for $TAG" -- $(printf '%s ' $included) || die "release-prep commit failed"
+    ok "release prep committed as $(git rev-parse --short HEAD)"
+  fi
+
   if [ "$NEEDS_COMMIT" = yes ]; then
     head_ "1. version"
-    apply_version "$CUR" "$TARGET" "$NOTES"
+    local notes="$NOTES"
+    if [ -z "$notes" ] && ! grep -qE "^## ${TARGET//./\\.} " "$CHANGELOG"; then
+      notes="$(mktemp)"; generate_notes "$notes"
+      note "entry generated from the release range:"
+      sed 's/^/        /' "$notes"
+    fi
+    apply_version "$CUR" "$TARGET" "$notes"
+    [ -z "$NOTES" ] && [ -n "$notes" ] && rm -f "$notes"
     git --no-pager diff --stat
     head_ "2. gates, after the bump"
     _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_shadow_wiring

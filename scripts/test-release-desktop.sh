@@ -106,6 +106,87 @@ is "current: exactly one HEAD marker"        "$(grep -c 'HEAD)' "$TMP/CV.md")" "
 python3 "$HERE/_release_edit.py" current "$TMP/CV.md" 2.282.3 2.282.4 2026-09-17
 is "current: idempotent"                     "$(grep -c '^## v2.282.4' "$TMP/CV.md")" "1"
 
+# ---- 9. what a desktop release may and may not carry ----------------------
+# `release` starts from the dirty release-prep state, so the protection moved
+# from "the tree must be clean" to "everything in it must be something a
+# desktop release carries". These pin both halves.
+yes_ in_release_scope "marketplace/plugin/sutra-ui/app.py"
+yes_ in_release_scope "marketplace/plugin/.claude-plugin/plugin.json"
+yes_ in_release_scope ".github/workflows/release-dmg.yml"
+yes_ in_release_scope "CURRENT-VERSION.md"
+yes_ in_release_scope ".claude-plugin/marketplace.json"
+yes_ in_release_scope "scripts/release-desktop.sh"
+no_  in_release_scope "holding/FOUNDER-DIRECTIONS.md"
+no_  in_release_scope ".github/workflows/plugin-release-gate.yml"   # a different contract
+no_  in_release_scope "README.md"
+no_  in_release_scope ""
+
+# Machine state and signing material, whatever the scope says.
+yes_ is_never_commit ".enforcement/md-standard.jsonl"
+yes_ is_never_commit "marketplace/plugin/sutra-ui/.enforcement/completion-protocol.jsonl"
+yes_ is_never_commit ".claude/sessions/abc/placement-registered"
+yes_ is_never_commit "certs/developer-id.p12"
+yes_ is_never_commit "notary.p8"
+no_  is_never_commit "marketplace/plugin/sutra-ui/app.py"
+no_  is_never_commit ""
+
+# ---- 10. the dirty tree, classified ---------------------------------------
+PORC="$(printf ' M marketplace/plugin/sutra-ui/app.py\n?? scripts/x.sh\n M holding/notes.md\n M .enforcement/a.jsonl')"
+CLS="$(classify_dirty "$PORC")"
+is "in-scope modification included" "$(printf '%s\n' "$CLS" | grep -c '^include marketplace/plugin/sutra-ui/app.py$')" "1"
+is "in-scope untracked included"    "$(printf '%s\n' "$CLS" | grep -c '^include scripts/x.sh$')" "1"
+is "out-of-scope path blocked"      "$(printf '%s\n' "$CLS" | grep -c '^block holding/notes.md$')" "1"
+is "machine state blocked"          "$(printf '%s\n' "$CLS" | grep -c '^block .enforcement/a.jsonl$')" "1"
+is "every line classified"          "$(printf '%s\n' "$CLS" | grep -c .)" "4"
+is "empty tree classifies to nothing" "$(classify_dirty "" | grep -c . || true)" "0"
+# a rename reports "old -> new"; the NEW path is what gets committed
+is "rename judged on its new path" \
+   "$(classify_dirty "$(printf 'R  holding/old.md -> marketplace/plugin/new.md')")" \
+   "include marketplace/plugin/new.md"
+# scope does not rescue a denied path that sits inside it
+is "denylist beats scope" \
+   "$(classify_dirty "$(printf ' M marketplace/plugin/sutra-ui/.enforcement/x.jsonl')")" \
+   "block marketplace/plugin/sutra-ui/.enforcement/x.jsonl"
+
+# ---- 11. the generated entry ----------------------------------------------
+# The contract: every bullet is a commit subject, verbatim. Nothing here reads
+# a diff and decides what it MEANS -- that is how a changelog starts claiming
+# features nobody built.
+SUBJ="$(printf 'Shadow: talk to a task\nrelease prep: wire the suites')"
+BODY="$(notes_body "v1.2.3-desktop..HEAD" "$SUBJ" "18 file(s), +1874/-27" "test_a.js test_b.py")"
+is "entry names the range"        "$(printf '%s\n' "$BODY" | grep -c 'v1.2.3-desktop..HEAD')" "1"
+is "entry counts the commits"     "$(printf '%s\n' "$BODY" | grep -c '2 commit(s)')" "1"
+is "entry says the lines are quoted, not summarised" \
+   "$(printf '%s\n' "$BODY" | grep -c 'quoted, not a summary')" "1"
+is "subject 1 verbatim"           "$(printf '%s\n' "$BODY" | grep -c '^  - Shadow: talk to a task$')" "1"
+is "subject 2 verbatim"           "$(printf '%s\n' "$BODY" | grep -c '^  - release prep: wire the suites$')" "1"
+is "diffstat is arithmetic"       "$(printf '%s\n' "$BODY" | grep -c '18 file(s), +1874/-27')" "1"
+is "new suites listed"            "$(printf '%s\n' "$BODY" | grep -c 'test_a.js test_b.py')" "1"
+# one bullet per subject, plus the header, the stat and the tests line
+is "no bullet beyond what it was given" "$(printf '%s\n' "$BODY" | grep -c '^  - ')" "2"
+# optional fields stay absent rather than being filled with a guess
+B2="$(notes_body "r" "$(printf 'only one')" "" "")"
+is "no diffstat line when unknown"  "$(printf '%s\n' "$B2" | grep -c '^- Changed:')" "0"
+is "no test line when none added"   "$(printf '%s\n' "$B2" | grep -c '^- New test suites:')" "0"
+is "single subject still quoted"    "$(printf '%s\n' "$B2" | grep -c '^  - only one$')" "1"
+
+# ---- 12. the entry is markdown the CHANGELOG accepts ----------------------
+printf '# Changelog\n\n**status**: active\n## 9.9.9 (2026-01-01)\n\n- old\n' > "$TMP/CH2.md"
+printf '%s\n' "$BODY" > "$TMP/gen.txt"
+python3 "$HERE/_release_edit.py" changelog "$TMP/CH2.md" 9.9.10 2026-09-17 "$TMP/gen.txt"
+is "generated entry lands first"   "$(grep -m1 -oE '^## [0-9.]+' "$TMP/CH2.md")" "## 9.9.10"
+is "generated entry keeps bullets" "$(grep -c '^  - Shadow: talk to a task$' "$TMP/CH2.md")" "1"
+is "older entry survives"          "$(grep -c '^## 9.9.9' "$TMP/CH2.md")" "1"
+# The edit is NARROW: it moves the marker off the version it was told about
+# and touches nothing else. CURRENT-VERSION.md in this repo already carries a
+# second, stale HEAD marker on v2.257.0 from some earlier release; going
+# hunting for it would mean rewriting history this release was not asked
+# about, so the function leaves it exactly where it is.
+printf '# C\n\n## v1.0.2 (2026-01-02, HEAD)\n\nbody\n\n## v0.9.0 (2025-01-01, HEAD)\n' > "$TMP/CV2.md"
+python3 "$HERE/_release_edit.py" current "$TMP/CV2.md" 1.0.2 1.0.3 2026-09-17
+is "stale marker elsewhere is left alone" "$(grep -c '^## v0.9.0 (2025-01-01, HEAD)$' "$TMP/CV2.md")" "1"
+is "the named version loses its marker"   "$(grep -c '^## v1.0.2 (2026-01-02)$' "$TMP/CV2.md")" "1"
+is "the new version gains one"            "$(grep -c '^## v1.0.3 (2026-09-17, HEAD)$' "$TMP/CV2.md")" "1"
 # ---- 8. the constants the release contract depends on ---------------------
 is "five panel runs (check 6)" "$PANEL_RUNS" "5"
 is "four required assets"      "$(printf '%s' "$REQUIRED_ASSETS" | wc -w | tr -d ' ')" "4"
