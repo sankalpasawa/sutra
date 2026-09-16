@@ -547,7 +547,9 @@ elif [ ${#NARGS[@]} -eq 0 ]; then
 else
   echo "  submitting to Apple (this takes a few minutes)"
   if xcrun notarytool submit "$DMG" "${NARGS[@]}" --wait; then
-    xcrun stapler staple "$DMG" && NOTARIZED=1 || note "notarized, but stapling failed"
+    xcrun stapler staple "$DMG" || die "notarization succeeded, but DMG stapling failed"
+    xcrun stapler validate "$DMG" || die "DMG stapling validation failed"
+    NOTARIZED=1
   else
     note "notarytool rejected the submission -- see the log above.
     Diagnose with:  xcrun notarytool log <submission-id>"
