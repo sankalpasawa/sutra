@@ -2332,6 +2332,19 @@ async def _mend_runs_left_running():
 
 
 @app.on_event("startup")
+async def _shadow_apps():
+    """Shadow v4 (C8): the two Shadow apps, only where the on-disk `shadow`
+    link module already exists (instance-local, never a fleet seed). HERE AND
+    NOT AT IMPORT, like every hook above: the suites import app in-process."""
+    if not providers.shadow_enabled():
+        return
+    try:
+        modules_api.ensure_shadow_apps()
+    except Exception:                   # noqa: BLE001 -- never a boot failure
+        pass
+
+
+@app.on_event("startup")
 async def _shadow_recover():
     if providers.shadow_enabled():
         # ONE RECOVERER PER HOME (founder, 2026-09-16). Everything below
