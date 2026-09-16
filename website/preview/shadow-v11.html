@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now on Sutra Desktop — design v11</title>
+<!-- v11 (2026-09-16): the Now screen only. Founder: "some animation and some simplistic UI,
+     where I just type something and it starts." One box; needs-you cards above it; Enter turns
+     the line into a card that reads, starts and leaves. Same app css as v10 (shadow-assets/ are
+     byte copies of what the app serves) and the same class names 14-needs-you.js renders
+     (.nyfeed .nycard .nyhead .nyprod .nykind .nytitle .nywhy .nyact .nyask .shcompwrap .shcompose
+     .shsend .shtpill). The v10.1 polish layer is kept; everything under "v11" is what a builder
+     ports into panel.css. Codex consult 2026-09-16 folded: no long shimmer (a dimmed card and a
+     hairline, then one word after 2 s), auto-start kept, the card resolves in place and the rail
+     shows where it went. Design of record: holding/plans/shadow/SHADOW-V3.md v3.5 (pending). -->
+<link rel="stylesheet" href="shadow-assets/panel.css">
+<link rel="stylesheet" href="shadow-assets/workspace.css">
+<link rel="stylesheet" href="shadow-assets/agents.css">
+<style>
+/* mock-only: one app shell on a page */
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 60px}
+.wrap{height:auto;overflow:visible;max-width:1300px;margin:0 auto}
+.cap{font:12.5px/1.5 var(--sans);color:var(--muted);margin:0 0 8px}
+.cap b{color:var(--ink);font-weight:600}
+.app{height:640px;position:relative;margin:0 0 30px;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.app .shdot{position:absolute;right:18px;bottom:84px;z-index:9}
+.shcompwrap{position:relative}
+.mockbadge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;line-height:17px;border-radius:99px;background:var(--acc);color:var(--on-acc);font:700 9px/17px var(--sans);text-align:center;padding:0 4px;box-shadow:0 1px 2px rgba(28,25,23,.2)}
+.hide{display:none !important}
+
+/* ---- polish (v10.1), kept ---- */
+:root{--ease:cubic-bezier(.2,.7,.2,1)}
+.pb{padding:18px 22px}
+.nycard{border-radius:12px;border:1px solid var(--line-soft);background:var(--card);padding:14px 16px 14px 20px;box-shadow:0 1px 2px rgba(28,25,23,.04),0 10px 26px -20px rgba(28,25,23,.25);animation:rise .24s var(--ease) both;position:relative}
+.nycard::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--acc)}
+.nyfeed{gap:10px}
+.nyhead{font:600 9.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);gap:10px}
+.nyprod{color:var(--acc)}
+.nytitle{font-size:14px;font-weight:500;color:var(--ink);margin:6px 0 3px;line-height:1.4}
+.nywhy{font-size:12px;color:var(--muted)}
+.nyact{margin-top:10px}
+.btn{border-radius:8px;transition:transform .14s var(--ease),background .14s,border-color .14s,box-shadow .14s}
+.btn:hover{transform:translateY(-1px)} .btn:active{transform:translateY(0) scale(.98)}
+.btn.pri{box-shadow:0 1px 2px rgba(28,25,23,.18)}
+.shtpill{border-radius:99px;padding:3px 7px;transition:color .2s,border-color .2s,background .2s}
+.app .shdot{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--acc);background:var(--card);box-shadow:0 2px 6px rgba(28,25,23,.12),0 10px 24px -14px rgba(28,25,23,.35);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:20px;color:var(--acc);transition:transform .16s var(--ease),box-shadow .16s}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---- v11: what a builder ports into panel.css ---- */
+/* the page is one column, centred as a block: cards (if any), then the box */
+.nyhome{display:flex;flex-direction:column;justify-content:center;min-height:100%;max-width:560px;margin:0 auto;padding:12px 0}
+.nyfeed:empty{display:none}
+/* the box: a floating surface, so glass is allowed here (G2) */
+.nyask{margin-top:18px}
+.nyfeed:empty+.nyask{margin-top:0}
+.nyask .shcompose{box-sizing:border-box;width:100%;display:block;min-height:72px;border-radius:14px;padding:18px 60px 18px 18px;font-size:15px;line-height:1.45;background:rgba(255,255,255,.66);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);box-shadow:0 1px 2px rgba(28,25,23,.04),0 12px 30px -22px rgba(28,25,23,.35);transition:border-color .16s,box-shadow .16s,transform .16s var(--ease)}
+.nyask .shcompose:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg),0 12px 30px -22px rgba(28,25,23,.35)}
+.nyask .shsend{border-radius:10px;transition:transform .16s var(--ease),background .16s,opacity .16s}
+.nyask .shsend:active{transform:scale(.94)}
+/* a typed line becomes a card: the same card family, no accent bar (nothing needs you yet) */
+.nystart{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.nystart:empty{display:none}
+.nyline{border-radius:12px;border:1px solid var(--line-soft);background:var(--card);padding:12px 16px;box-shadow:0 1px 2px rgba(28,25,23,.04),0 10px 26px -20px rgba(28,25,23,.25);display:flex;align-items:center;gap:12px;animation:rise .24s var(--ease) both;position:relative;overflow:hidden;transition:opacity .16s,transform .26s var(--ease),max-height .26s var(--ease),margin .26s var(--ease),padding .26s var(--ease),border-color .16s}
+.nyline .nyltext{flex:1;font-size:14px;line-height:1.4;color:var(--ink);min-width:0}
+/* reading: dimmed, a hairline of accent along the top; no loop */
+.nyline.reading{opacity:.72}
+.nyline.reading::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--acc);opacity:.7}
+.nyline .nystate{font:600 9.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);flex:none;animation:rise .16s var(--ease) both}
+/* running: back to full weight, one chip; the card resolves in place */
+.nyline.running{opacity:1}
+.nyline.running::before{opacity:0;transition:opacity .16s}
+/* leaving: collapses toward the rail; the Focus item shows where it went */
+.nyline.leaving{opacity:0;transform:translateX(-14px);max-height:0;margin-top:-10px;padding-top:0;padding-bottom:0;border-color:transparent}
+/* failed: outlined in the block colour, one word, one action */
+.nyline.failed{border-color:var(--block-line);background:var(--block-bg)}
+.nyline.failed .nystate{color:var(--block)}
+.nyline .btn{flex:none}
+.nav li.went>button{animation:went .5s var(--ease) both}
+@keyframes went{0%{background:var(--acc-bg)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms !important;transition-duration:1ms !important}.nyline.leaving{transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>Now, v11.</b> Type in the box and press Enter. One line = one task; a line with &ldquo; and &rdquo; splits into two. Start a line with &ldquo;fail&rdquo; to see the failure. Click a card&rsquo;s action to retire it.</p>
+<div class="app" id="app0" style="height:600px">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li id="navfocus"><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Agent Marketplace</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v.5M12 11v5"/></svg>Help</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+    <div class="rfoot identity"><button class="idbtn" type="button"><div class="av av-unknown"></div><span class="idtext"><span class="idrole">CEO of Sutra</span><span class="idstat">&mdash;</span></span></button></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Now</h3></div>
+    <div class="pb">
+      <div class="nyhome">
+        <div class="nyfeed" id="nyfeed">
+          <div class="nycard" data-ny="1"><div class="nyhead"><span class="nyprod">Shadow</span><span class="nykind">needs you</span></div><div class="nytitle">Approve the push to paisa? EMI auto-fix, tests 14/14, PR #212</div><div class="nywhy">the push is a floor</div><button class="btn pri nyact" type="button" data-nyopen="1">Approve</button></div>
+          <div class="nycard" data-ny="2"><div class="nyhead"><span class="nyprod">Shadow</span><span class="nykind">needs you</span></div><div class="nytitle">What did I do in the last 10 days?</div><div class="nywhy">waiting for your answer</div><button class="btn pri nyact" type="button" data-nyopen="2">Open</button></div>
+        </div>
+        <div class="nyask" id="nyask">
+          <div class="shcompwrap"><textarea class="shcompose" id="nycomp" rows="2" placeholder="What do you have in mind?"></textarea><button class="shsend" type="button" aria-label="Send" data-nysend><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+          <div class="nystart" id="nystart"></div>
+        </div>
+      </div>
+    </div>
+  </section></div>
+  <button class="shdot shdot-live" type="button"><b>S</b><span class="mockbadge" id="badge0">2</span></button>
+</div>
+
+<p class="cap">Now v11 &middot; 2026-09-16 &middot; the app&rsquo;s own panel.css and markup plus the v11 rules to port &middot; SHADOW-V3.md v3.5 (pending founder)</p>
+</div>
+
+<script>
+(function(){
+  var q=function(s,r){return (r||document).querySelector(s)}, qa=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  // opening a needs-you card retires it; the badge follows
+  function badge(){var n=qa('#nyfeed .nycard').length;var b=q('#badge0');if(!n){if(b)b.remove();}else if(b)b.textContent=n;}
+  qa('[data-nyopen]').forEach(function(b){b.addEventListener('click',function(){var c=b.closest('.nycard');c.style.transition='opacity .2s';c.style.opacity='0';setTimeout(function(){c.remove();badge();},200);});});
+  // the box: Enter = start. The line becomes a card at once; the box empties and keeps focus.
+  var nc=q('#nycomp'), list=q('#nystart');
+  function line(text){var el=document.createElement('div');el.className='nyline reading';el.innerHTML='<span class="nyltext">'+esc(text)+'</span>';list.appendChild(el);return el;}
+  function state(el,word,cls){var s=q('.nystate',el);if(!s){s=document.createElement('span');s.className='nystate';el.appendChild(s);}s.textContent=word;if(cls)s.className='nystate '+cls;}
+  function running(el){el.classList.remove('reading');el.classList.add('running');var s=q('.nystate',el);if(s)s.remove();var p=document.createElement('span');p.className='shtpill shtpill-running';p.textContent='RUNNING';el.appendChild(p);}
+  function leave(el){el.classList.add('leaving');var f=q('#navfocus');f.classList.remove('went');void f.offsetWidth;f.classList.add('went');setTimeout(function(){el.remove();},reduced?20:280);}
+  function fail(el,text){el.classList.remove('reading');el.classList.add('failed');state(el,'failed');var b=document.createElement('button');b.className='btn';b.type='button';b.textContent='Retry';b.addEventListener('click',function(){el.remove();start(text.replace(/^fail\s*/i,''));});el.appendChild(b);}
+  function start(text){
+    var el=line(text);
+    var t2=setTimeout(function(){if(el.classList.contains('reading'))state(el,'starting');},2000);   // a cold boot says one word after 2 s
+    setTimeout(function(){
+      clearTimeout(t2);
+      if(/^fail\b/i.test(text)){fail(el,text);return;}
+      var parts=text.split(/\s+and\s+|;\s*/).map(function(p){return p.trim();}).filter(Boolean);
+      var cards=[el];
+      if(parts.length>1){q('.nyltext',el).textContent=parts[0];var s=q('.nystate',el);if(s)s.remove();for(var i=1;i<parts.length;i++){var e2=line(parts[i]);e2.classList.remove('reading');cards.push(e2);}el.classList.remove('reading');}
+      cards.forEach(function(c,i){setTimeout(function(){running(c);},i*60);});
+      setTimeout(function(){cards.forEach(function(c,i){setTimeout(function(){leave(c);},i*60);});},1100);
+    },3200);   // the mock's stand-in for Shadow's round trip
+  }
+  function send(){var v=(nc.value||'').trim();if(!v)return;nc.value='';start(v);nc.focus();}
+  nc.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+  q('[data-nysend]').addEventListener('click',send);
+  window.nowDemo=start;   // for the capture harness
+})();
+</script>
+</body>
+</html>
