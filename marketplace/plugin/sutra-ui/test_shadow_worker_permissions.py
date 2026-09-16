@@ -76,6 +76,7 @@ class Base(unittest.TestCase):
         sp = root / "sutra-settings.json"
         sp.write_text(json.dumps({"permission_mode": "plan"}))
         providers.SETTINGS_PATH = sp
+        self.sp = sp
         self.addCleanup(setattr, providers, "SETTINGS_PATH",
                         self._orig_settings)
 
@@ -89,6 +90,40 @@ class Base(unittest.TestCase):
             "runnable": True, "reason": None}
         self.addCleanup(setattr, providers, "active_provider_detail", self._d)
         self.addCleanup(setattr, providers, "provider_by_id", self._b)
+
+        # THE AUTONOMY CEILING IS READ ON EVERY _worker_args CALL, so the home
+        # it reads from has to be this test's, not the founder's. Without
+        # this the argv these tests assert on would depend on whatever level
+        # the machine running them happens to be set to.
+        self._orig_home = os.environ.get("SUTRA_SHADOW_HOME")
+        os.environ["SUTRA_SHADOW_HOME"] = str(root / "shadow")
+        os.makedirs(os.environ["SUTRA_SHADOW_HOME"], exist_ok=True)
+        self.addCleanup(self._restore_home)
+
+    def _restore_home(self):
+        if self._orig_home is None:
+            os.environ.pop("SUTRA_SHADOW_HOME", None)
+        else:
+            os.environ["SUTRA_SHADOW_HOME"] = self._orig_home
+
+    def set_autonomy(self, level):
+        """The founder's level, for this test only."""
+        import mission_engine
+        mission_engine.set_autonomy(level)
+
+    def settings_file_write(self, mode):
+        """The app-global permission mode Shadow inherits from."""
+        self.sp.write_text(json.dumps({"permission_mode": mode}))
+
+    def unsafe(self, allowed):
+        """The gate that decides whether the write-capable modes resolve at
+        all. Driven by the env var, the out-of-band half that needs no
+        consent phrase (same idiom as test_shadow_permission_inherit)."""
+        if allowed:
+            os.environ[providers.UNSAFE_MODES_ENV] = "1"
+        else:
+            os.environ.pop(providers.UNSAFE_MODES_ENV, None)
+        self.addCleanup(os.environ.pop, providers.UNSAFE_MODES_ENV, None)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -132,13 +167,23 @@ class TestWorkerInheritsProjectPermissions(Base):
 
     def test_06_worker_cwd_is_unchanged(self):
         """The fix must not move the worker. Both halves: the resolver still
-        answers the delegate workdir, and every spawn site still passes it."""
+        answers the delegate workdir, and every spawn site still passes it.
+
+        THE FOUR SITES ARE NOW ONE (2026-09-16). They were four byte-identical
+        copies; folding them into `_delegate_spawn` is what lets the
+        permission-mode stamp be added in one place instead of three plus a
+        forgotten one. Counting call sites was only ever a proxy for "no spawn
+        bypasses the workdir", so that is asserted directly now: exactly one
+        site passes it, and nothing else calls the spawn primitive."""
         self.assertEqual(app._shadow_workdir_for_delegates(),
                          str(self.worker_cwd))
         src = Path(app.__file__).read_text()
         self.assertEqual(
-            src.count("_worker_args, _shadow_workdir_for_delegates(),"), 4,
-            "all four delegate spawns pass the unchanged workdir")
+            src.count("_worker_args, _shadow_workdir_for_delegates(),"), 1,
+            "the one delegate spawn passes the unchanged workdir")
+        self.assertEqual(
+            src.count("shadow_runner.spawn_delegate_session("), 1,
+            "no spawn may bypass _delegate_spawn and its stamp")
         self.assertNotIn("_shadow_args, _shadow_workdir_for_delegates(),", src)
 
 
@@ -219,17 +264,141 @@ class TestNoWideningSnuckIn(Base):
             self.assertNotIn("--allow-dangerously-skip-permissions", joined)
 
     def test_17_no_shadow_specific_permission_mode(self):
-        """The mode still comes from the one shared accessor; this change adds
-        a settings LAYER, not a mode."""
+        """The mode comes from the one shared accessor, THEN the founder's
+        autonomy ceiling lowers it. Still a LAYER, not a second mode.
+
+        REWRITTEN 2026-09-16, not extended. This used to assert the worker's
+        mode equalled the bare accessor, full stop -- which was right while
+        nothing could narrow it. Autonomy can (L0/L1/L2 cap the worker at
+        `plan`), so the old equality would have failed for a founder at L2
+        and, worse, would have been a test DEMANDING that the level be
+        ignored. The invariant it was really protecting is not "the mode
+        equals the accessor", it is "there is no second SOURCE of permission"
+        -- and that is now asserted as: the result is the accessor's answer,
+        clamped, and the clamp only ever narrows (test_17e).
+        """
+        # at L3 the ceiling is not in play, so the historical equality holds
+        # exactly as it always did
+        self.set_autonomy("L3")
         args = app._worker_args()
         self.assertEqual(
             args[args.index("--permission-mode") + 1],
             providers.effective_permission_mode(
-                providers.load_settings()["permission_mode"]))
+                providers.load_settings()["permission_mode"]),
+            "at L3 the worker must get the founder's own resolved mode")
         src = Path(app.__file__).read_text()
+        # THE NAMES THAT WOULD MEAN A SECOND SETTING. `worker_permission_mode`
+        # left this list on 2026-09-16 and the invariant it stood for is
+        # asserted directly instead, in the tests below -- a name ban cannot
+        # tell a new trust domain from a mission REMEMBERING what the
+        # founder's own setting resolved to when its worker was spawned, and
+        # the second is what re-adoption needs to stop silently downgrading a
+        # working delegate to read-only.
         for junk in ("shadow.permission_mode", "shadow_permission_mode",
-                     "SHADOW_PERMISSION_MODE", "worker_permission_mode"):
+                     "SHADOW_PERMISSION_MODE"):
             self.assertNotIn(junk, src)
+
+    def test_17b_the_remembered_mode_IS_the_shared_accessor(self):
+        """Not a second source of truth: the same call, then the ceiling."""
+        self.set_autonomy("L3")
+        self.assertEqual(
+            app.worker_permission_mode(),
+            providers.effective_permission_mode(
+                providers.load_settings()["permission_mode"]))
+
+    def test_17e_the_autonomy_ceiling_ONLY_EVER_NARROWS(self):
+        """THE PROPERTY THAT MAKES THE CEILING SAFE, stated over the whole
+        cross product rather than argued in a docstring.
+
+        For every supported mode, both authorization states and every level,
+        what the worker gets must be either the unclamped answer or `plan` --
+        never something wider, and never a mode outside the supported set. A
+        future edit that lets a level RAISE a mode fails here.
+        """
+        unclamped_seen = set()
+        for mode in providers.PERMISSION_MODES:
+            for allowed in (True, False):
+                for level in ("L0", "L1", "L2", "L3"):
+                    with self.subTest(mode=mode, unsafe=allowed, level=level):
+                        self.settings_file_write(mode)
+                        self.unsafe(allowed)
+                        self.set_autonomy(level)
+                        base = providers.effective_permission_mode(
+                            providers.load_settings()["permission_mode"])
+                        got = app.worker_permission_mode()
+                        unclamped_seen.add(base)
+                        self.assertIn(got, providers.PERMISSION_MODES,
+                                      "the ceiling invented a mode")
+                        if level == "L3":
+                            self.assertEqual(got, base,
+                                             "L3 must not narrow anything")
+                        else:
+                            self.assertEqual(
+                                got, providers.DEFAULT_PERMISSION_MODE,
+                                "a read-only level must cap the worker at "
+                                "plan")
+                        # the one-way rule: an unsafe mode can never come OUT
+                        # of a level that did not have it going in
+                        if base not in providers.UNSAFE_PERMISSION_MODES:
+                            self.assertNotIn(
+                                got, providers.UNSAFE_PERMISSION_MODES,
+                                "the ceiling widened a safe mode")
+        self.assertTrue(unclamped_seen, "the sweep never ran")
+
+    def test_17f_a_read_only_level_caps_the_ARGV_too(self):
+        """Not just the resolver: the flag the CLI actually receives."""
+        self.settings_file_write("acceptEdits")
+        self.unsafe(True)
+        self.set_autonomy("L2")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan",
+                         "L2 Draft must reach the CLI as plan")
+
+    def test_17g_a_remembered_mode_is_re_clamped_by_the_CURRENT_level(self):
+        """RE-ADOPTION. A worker stamped acceptEdits at L3 and resumed after
+        the founder drops to L2 must come back read-only: the LOWER of what
+        it was given and what is allowed now wins. Without this, lowering
+        autonomy would leave every already-running delegate writing."""
+        self.settings_file_write("acceptEdits")
+        self.unsafe(True)
+        self.set_autonomy("L2")
+        args = app._worker_args(permission_mode="acceptEdits")
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan",
+                         "a remembered acceptEdits survived a drop to L2")
+
+    def test_17h_the_ceiling_never_touches_shadows_own_processes(self):
+        """The supervisor and the decider are not acting on the founder's
+        problem, so how much Shadow may DO must not change what it may
+        THINK. test_shadow_permission_inherit pins the equivalence for
+        _shadow_args; this is the same line, asserted from this side."""
+        self.settings_file_write("acceptEdits")
+        self.unsafe(True)
+        self.set_autonomy("L0")
+        sup = app._shadow_args()
+        self.assertEqual(sup[sup.index("--permission-mode") + 1],
+                         "acceptEdits",
+                         "the autonomy ceiling leaked into the supervisor")
+
+    def test_17c_a_remembered_mode_is_STILL_clamped_at_the_point_of_use(self):
+        """The property that makes remembering safe. A stamp taken while
+        unsafe modes were allowed must not survive them being turned off --
+        so the override goes through effective_permission_mode exactly as the
+        stored setting does."""
+        self.assertFalse(providers.unsafe_modes_allowed(),
+                         "this test is meaningless if unsafe modes are on")
+        args = app._worker_args(permission_mode="bypassPermissions")
+        self.assertEqual(args[args.index("--permission-mode") + 1],
+                         providers.DEFAULT_PERMISSION_MODE,
+                         "an unsafe remembered mode must be clamped, not "
+                         "handed to the CLI")
+
+    def test_17d_no_new_settings_key_is_ever_read(self):
+        """A LAYER, not a mode: nothing reads a worker-specific key out of
+        settings.json, so there is no second thing an operator can set."""
+        src = Path(app.__file__).read_text()
+        for key in ('"worker_permission_mode"', "'worker_permission_mode'"):
+            self.assertNotIn("load_settings()[%s]" % key, src)
+            self.assertNotIn("settings.get(%s)" % key, src)
 
     def test_18_mcp_restrictions_are_intact(self):
         args = app._worker_args()
