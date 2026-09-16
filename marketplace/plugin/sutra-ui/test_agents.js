@@ -1633,6 +1633,55 @@ test("the Library says what shape each article was written to", () => {
   assert.ok(!/Listicle/.test(none) && !/undefined/.test(none), "an unrouted row invented one: " + none);
 });
 
+test("a raw format_archetype is tidied into words when format_label has not landed yet", () => {
+  const html = A.agLibraryHtml([{ id: "x", title: "T", status: "ready", words: 100,
+                                  format_archetype: "how-to-guide", created_at: "2026-09-09T10:00:00Z" }]);
+  assert.ok(/How To Guide/.test(html), "tidied to words, not shown as the raw slug: " + html);
+});
+
+test("the card drops the keyword line, and adds the top-pages band and an off-topic pill", () => {
+  const html = A.agLibraryHtml([{ id: "x", title: "Best hiking boots", status: "ready", words: 1802,
+                                  primary_keyword: "hiking boots", format_label: "How To Guide",
+                                  measured_band: { min: 1500, max: 2100 },
+                                  topic_scope: { state: "off", why: "Not about hiring software." },
+                                  created_at: "2026-09-09T10:00:00Z" }]);
+  assert.ok(!/hiking boots</.test(html) && !/>hiking boots</.test(html), "the primary keyword line is gone: " + html);
+  assert.ok(/top pages 1,500 to 2,100/.test(html), "the top ranking pages' own length");
+  assert.ok(/class="pill p-warn" title="Not about hiring software\."[^>]*>Off topic</.test(html),
+            "a quiet amber pill, the reason on its title");
+  /* on topic gets no pill at all -- the default state needs no flag. (The filter tab bar also
+     says the words "Off topic", as its label, so the pill is checked for by its own class.) */
+  const on = A.agLibraryHtml([{ id: "y", title: "On-topic piece", status: "ready", words: 900,
+                                topic_scope: { state: "on", why: "fits" }, created_at: "2026-09-09T10:00:00Z" }]);
+  assert.ok(!/class="pill p-warn"/.test(on), "on topic draws no warning pill: " + on);
+});
+
+test("an old row with none of the new fields still renders, showing nothing rather than a guess", () => {
+  const html = A.agLibraryHtml([{ id: "z", title: "Old row", status: "ready", words: 500,
+                                  created_at: "2026-09-01T10:00:00Z" }]);
+  assert.ok(/Old row/.test(html), "the row itself still draws");
+  assert.ok(!/top pages/.test(html), "no band it was never given");
+  assert.ok(!/class="pill p-warn"/.test(html), "no topic pill it was never given");
+  assert.ok(!/undefined/.test(html) && !/null/.test(html), "nothing invented: " + html);
+});
+
+test("the off-topic filter shows only flagged rows, and All returns everything", () => {
+  const rows = [
+    { id: "a", title: "Stages of hiring", status: "ready", words: 100, topic_scope: { state: "on" }, created_at: "2026-09-09T10:00:00Z" },
+    { id: "b", title: "Hiking boots", status: "ready", words: 100, topic_scope: { state: "off", why: "x" }, created_at: "2026-09-09T10:00:00Z" },
+  ];
+  const all = A.agLibraryHtml(rows, { libFilter: "all" });
+  assert.ok(/Stages of hiring/.test(all) && /Hiking boots/.test(all), "All shows both rows");
+  const off = A.agLibraryHtml(rows, { libFilter: "off" });
+  assert.ok(!/Stages of hiring/.test(off), "the on-topic row is filtered out: " + off);
+  assert.ok(/Hiking boots/.test(off), "the off-topic row stays");
+  assert.ok(/All <span class="ag-libtabn">2/.test(all), "the All tab counts every row");
+  assert.ok(/Off topic <span class="ag-libtabn">1/.test(all), "the Off topic tab counts only the flagged ones");
+  /* nothing to filter to: the tab disables itself instead of opening an empty list */
+  const noneOff = A.agLibraryHtml([rows[0]], { libFilter: "all" });
+  assert.ok(/data-ag="libfilter" data-arg="off" disabled/.test(noneOff), "Off topic disables at zero");
+});
+
 test("the prompt list scrolls in its own box and does not take the screen", () => {
   const flat = CSS.replace(/\s+/g, "");
   const m = flat.match(/\.ag-promptlist\{[^}]*max-height:(\d+)vh/);
@@ -2929,7 +2978,9 @@ test("the pencil opens the text editor on that section only, with its own words 
   A.agAction("libsec", { getAttribute: k => k === "data-arg" ? "s2" : "" });
   assert.ok(a.libSec && a.libSec.id === "s2" && a.libSec.mode === "text");
   const html = A.agPanelHtml(a);
-  assert.ok(/class="ag-sec editing" data-sec="s2"/.test(html), "s2 is the open one");
+  /* NAMED ag-artsec, not ag-sec: the sidebar's own micro-label class collides with ag-sec and
+     that collision was the actual all-caps-article bug (agents.css, ".ag-artsec"). */
+  assert.ok(/class="ag-artsec editing" data-sec="s2"/.test(html), "s2 is the open one");
   assert.ok((html.match(/ag-secbox/g) || []).length === 1, "one editor open");
   assert.ok(/data-aglibsec[^>]*>## Why the standard checklist breaks/.test(html.replace(/&gt;/g, ">")), "the textarea holds the section");
   assert.ok(/data-ag="libsecdone" data-arg="s2"/.test(html) && /data-ag="libseccancel"/.test(html), "Done and Cancel");
@@ -2977,8 +3028,11 @@ test("the AI mode asks for an instruction, and a proposal is shown as a diff wit
                                { type: "add", text: "Better." }, { type: "context", count: 7 }] };
   html = A.agPanelHtml(a);
   assert.ok(/class="ag-diff"/.test(html), "the diff is drawn");
-  assert.ok(/class="del">- Body with 4,700 users and \$12,000\.</.test(html), "what goes");
-  assert.ok(/class="add">\+ Better\.</.test(html), "what comes");
+  /* each line also carries --i (its own order), what agents.css stages the line-by-line landing
+     animation off; [^>]* tolerates that style attribute without pinning its exact value */
+  assert.ok(/class="del"[^>]*>- Body with 4,700 users and \$12,000\.</.test(html), "what goes");
+  assert.ok(/class="add"[^>]*>\+ Better\.</.test(html), "what comes");
+  assert.ok(/style="--i:0"/.test(html), "the first changed line is ordered first");
   assert.ok(/7 unchanged lines/.test(html), "a folded run says how many lines it stands for");
   assert.ok(!/\[object Object\]/.test(html), "the list shape renders as lines, not as objects");
   assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(html) && /data-ag="libsecdrop"/.test(html), "Use this and Discard");
@@ -2987,6 +3041,81 @@ test("the AI mode asks for an instruction, and a proposal is shown as a diff wit
   assert.ok(a.libBuf.dirty && /Better\./.test(A.agSections(a.libBuf.draft)[2].text), "the proposal went into the buffer");
   assert.strictEqual(a.panel.data.text, SEC.md, "and nothing was saved");
 });
+
+test("the rewrite animation classes land on exactly the section being rewritten, and clear once it is not busy", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  A.agAction("libsecmode", { getAttribute: () => "ai" });
+  a.libSec.busy = true;
+  let html = A.agPanelHtml(a);
+  assert.ok(/class="ag-artsec editing rewriting" data-sec="s2"/.test(html),
+            "s2 carries editing AND rewriting while the call is in flight: " + html.slice(0, 300));
+  assert.ok(/<span class="rewritelbl" role="status">Rewriting…<\/span>/.test(html), "the label");
+  const withRewriting = (html.match(/class="ag-artsec[^"]*"/g) || []).filter(c => c.indexOf("rewriting") !== -1);
+  assert.strictEqual(withRewriting.length, 1, "only the one section animates: " + withRewriting.join(", "));
+  a.libSec.busy = false;
+  html = A.agPanelHtml(a);
+  assert.ok(!/rewriting/.test(html), "the class clears the moment it is not busy");
+  assert.ok(!/Rewriting…/.test(html), "and the label goes with it");
+  /* text mode never animates, whatever busy says -- there is no AI call to be mid-flight */
+  A.agAction("libsecmode", { getAttribute: () => "text" });
+  a.libSec.busy = true;
+  assert.ok(!/rewriting/.test(A.agPanelHtml(a)), "hand-editing a section never shows the AI animation");
+});
+
+test("the rewrite sweep, dim and line-by-line landing are gated on prefers-reduced-motion; only the label is not", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+  const labelAt = css.indexOf(".ag-artsec .rewritelbl{");
+  const guardAt = css.indexOf("@media (prefers-reduced-motion:no-preference){\n  .ag-artsec.rewriting{");
+  assert.ok(labelAt !== -1 && guardAt !== -1 && labelAt < guardAt,
+             "the label's own rule is written before (outside) the reduced-motion guard");
+  const guard = css.slice(guardAt, css.indexOf("@keyframes agRewriteSweep"));
+  assert.ok(/\.ag-artsec\.rewriting::before/.test(guard), "the sweep pseudo-element is inside the guard");
+  assert.ok(/opacity:\.55/.test(guard), "the old-text dim is inside the guard");
+  assert.ok(/\.ag-secbox \.ag-diff span\{animation:agLineIn/.test(guard), "the line-by-line landing is inside the guard");
+  assert.ok(guard.indexOf("rewritelbl") === -1, "the label rule itself is not inside the guard, so it always shows");
+});
+
+test("a saved article reads as a document: .ag-doc wraps it, never the sidebar's micro-label class", () => {
+  const a = libPanel(SEC.md);
+  const html = A.agPanelHtml(a);
+  assert.ok(/class="ag-doc"/.test(html), "the reading-document wrapper");
+  /* this vm context never loads mdHtml (02-helpers.js), so headings render through agMd's plain
+     fallback here -- the real <h1>-<h6> markup is what the browser actually gets, verified
+     separately below against the CSS rules that give it real, distinct sizes */
+  assert.ok(!/class="ag-sec /.test(html) && !/class="ag-sec"/.test(html),
+            "never the sidebar's own micro-label class (agents.css .ag-sec is 9.5px, uppercase, --faint)");
+});
+
+test("the reader's CSS gives the app's own serif font, a real measure, and three distinct heading sizes", () => {
+  const css = fs.readFileSync(path.join(__dirname, "static", "agents.css"), "utf8");
+  const doc = css.slice(css.indexOf(".ag-doc{"), css.indexOf(".ag-blk{"));
+  assert.ok(/\.ag-doc\{font-family:var\(--serif\)/.test(doc), "the app's own serif reading font, not the default sans");
+  assert.ok(/max-width:72ch/.test(doc), "a measure of about 65-75 characters");
+  assert.ok(/line-height:1\.7/.test(doc), "a comfortable line height");
+  const h1 = Number((/\.ag-doc h1\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
+  const h2 = Number((/\.ag-doc h2\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
+  const h3 = Number((/\.ag-doc h3\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
+  assert.ok(h1 > h2 && h2 > h3 && h3 > 1, "three real, distinct sizes, largest first: h1=" + h1 + " h2=" + h2 + " h3=" + h3);
+  assert.ok(!/text-transform:\s*uppercase/.test(doc), "nothing in the article's own reading rules shouts");
+  assert.ok(/\.ag-doc \.md-t\{/.test(doc) && /border:1px solid var\(--line-soft\)/.test(doc), "tables get real borders");
+  assert.ok(/\.ag-doc \.md-l\{/.test(doc), "lists get their own spacing");
+});
+
+test("the TL;DR section is marked for its own callout, and no other section is", () => {
+  const md = "# T\n\nIntro.\n\n## TL;DR\n\n- one\n- two\n\n## Body\n\nMore.\n";
+  const a = libPanel(md);
+  const html = A.agPanelHtml(a);
+  const secs = A.agSections(md);
+  const tldr = secs.find(s => /^tl\s*;?\s*dr$/i.test(s.heading));
+  const body = secs.find(s => s.heading === "Body");
+  assert.ok(tldr && body, "the fixture has both a TL;DR and a plain section");
+  assert.ok(new RegExp('class="ag-artsec tldr" data-sec="' + tldr.id + '"').test(html),
+             "the tldr class lands on the TL;DR section: " + html.slice(0, 400));
+  assert.ok(new RegExp('class="ag-artsec" data-sec="' + body.id + '"').test(html),
+             "the plain section carries no extra class");
+});
+
 test("the conflict box names who saved and offers their version or an overwrite", () => {
   const a = libPanel(SEC.md);
   a.libBuf = { draft: SEC.md + "x", title: "Cost per hire", base_version: 3, dirty: true };
@@ -3982,6 +4111,34 @@ async function atest(name, fn){
     assert.strictEqual(a.libMeta.edited_by, "Priya");
     assert.strictEqual(a.libMeta.has_previous, true);
     assert.strictEqual(a.libConflict, null);
+  });
+
+  await atest("Open takes over the whole Library area, and Back to Library returns to the list", async () => {
+    A.S.ag = null;
+    const doc = mktDoc();
+    const prevDoc = A.document, prevGet = A.apiGet;
+    A.document = doc;
+    A.apiGet = async () => ({ id: "lib7", run_id: "r1", title: "Cost per hire", draft: SEC.md, words: 40,
+                              status: "ready", version: 2, team: { configured: true, member: true, why: "" } });
+    try {
+      const a = A.agS();
+      a.screen = "agent"; a.view = "library"; a.library = [{ id: "lib7", title: "Cost per hire", status: "ready", words: 40 }];
+      A.agDraw(true);
+      assert.ok(!doc.els.agRoot.classList.contains("liblarge"), "the list alone: not yet taken over");
+      assert.ok(/Cost per hire/.test(doc.els.agScroll.innerHTML), "the list is what is on screen");
+
+      await A.agAction("libopen", { getAttribute: () => "lib7" });
+      assert.strictEqual(a.panel.libId, "lib7");
+      assert.ok(doc.els.agRoot.classList.contains("liblarge"), "opening a Library article takes over the area");
+      assert.ok(doc.els.agRoot.classList.contains("haspanel"));
+      assert.ok(/Back to Library/.test(doc.els.agPanel.innerHTML), "a clear, named way back");
+
+      await A.agAction("closepanel", { getAttribute: () => "" });
+      assert.strictEqual(a.panel, null, "the back control clears the open article");
+      assert.ok(!doc.els.agRoot.classList.contains("liblarge"), "and the area is handed back to the list");
+      assert.ok(!doc.els.agRoot.classList.contains("haspanel"));
+      assert.ok(/Cost per hire/.test(doc.els.agScroll.innerHTML), "the list is back on screen");
+    } finally { A.document = prevDoc; A.apiGet = prevGet; }
   });
 
   await atest("Save posts the buffer with the version it was opened at, and the reply becomes the new base", async () => {
