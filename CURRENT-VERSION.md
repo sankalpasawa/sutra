@@ -2,7 +2,20 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.281.0 (2026-09-16, HEAD)
+## v2.281.1 (2026-09-16, HEAD)
+
+**Four finished branches land together: Stop, run decisions, and the Library.** Stop now really
+stops — the model call in flight is killed and every paid step checks before starting more work —
+and a message sent after a Stop continues the same run from its saved steps instead of starting
+over. Format and word count are now decided once, about 4 minutes into research, in one
+`decisions.json` per run; nothing downstream re-decides them, and the topic gate no longer blocks a
+run outright. The Library gets new card columns, a full-width reader with fixed typography (the
+all-caps bug was a CSS class collision) and an AI-rewrite animation, plus five tabs (Search picture,
+Research, Architect, Draft, Edits) with a Purpose button, edit versions with Undo and Redo, and a
+one-time backfill so existing rows pick up the new fields. Tests: full seo_agent suite (41 Python
+suites), 40 JS suites, `test_agents_api.py` (60 checks), manifest validation (14/14) — all green.
+
+## v2.281.0 (2026-09-16)
 
 **Shadow v4: two AIs per task, and the Now box starts them.** Founder ruling 2026-09-16 (ADR-043):
 each task runs on its own Shadow chat (a Sutra chat in the backend, the Shadow design in front) plus

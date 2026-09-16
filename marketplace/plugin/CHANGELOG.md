@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.281.1 (2026-09-16)
+
+- **Stop really stops, and the run picks up where it left off.** A Stop now kills the model call in flight, and every paid step checks for a stop before it starts more work. A message sent after a Stop continues the same run from its saved steps instead of restarting it. Fixed a bug where a finished wait could write a malformed turn into the chat.
+- **Format and word count are decided once and never re-decided.** One `decisions.json` per run holds the format, the word target and the measured competitor band, written about 4 minutes into research; every later step reads it instead of guessing again. Off-topic no longer blocks a run outright.
+- **The Library has new card columns and a full-width reader.** Reading typography is fixed (the all-caps bug was a CSS class collision), and there's a new AI-rewrite animation.
+- **The Library gets five tabs: Search picture, Research, Architect, Draft, Edits.** Each stacks as its own overlay, with a Purpose button, three more openable files (the dossier, the source check, voices from the field), and edit versions with Undo and Redo. The three existing Library rows are backfilled once with the new fields.
+
 ## 2.281.0 (2026-09-16)
 
 - **Shadow runs each task as its own chat, and the Now box starts them.** Type one or many things into the Now box; Shadow splits them into tasks, shows a draft card for each, and Start (or Start all) opens a Shadow chat per task that writes the brief, reads the worker and steers every turn. The Shadow view shows Shadow's words and cards only; the raw chat stays in Chats. "How Shadow behaves" on the What Shadow knows sheet (and a Shadow app in its department) shapes Shadow's voice. When Shadow needs a yes, the exact text sits on the task card with a one-use Approve. The old form stays one click away. Tests: 72 Python checks, 33 JS checks, 5 evals.
