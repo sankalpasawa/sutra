@@ -45,15 +45,32 @@ const AG_LIB_STATE = {                        /* status -> [existing pill class,
   ready:     ["p-ok",  "ready to read"],
   published: ["p-acc", "published"],          /* unchanged from before the live Library */
 };
-/* The plain name for each milestone. The server sends `label` already written for a person, so
-   this is only the fallback for a row whose payload predates it, never a second copy in use. */
-const AG_MILE_LABEL = { research: "Researched", picture: "The search picture", plan: "Planned",
-                        draft: "Written", edited: "Edited" };
-/* Which panel each milestone opens in. Every one of these renderers already exists; "edited" has
-   no view of its own, and an empty string falls to agPanelHtml's plain-JSON branch on purpose
-   rather than inventing a screen for a report nobody asked to see prettily. */
+/* The plain name for each milestone -- now the same five names the tab overlay uses, since a
+   milestone dot and its tab are the same idea seen from the row and from inside the overlay.
+   The server sends `label` already written for a person, so this is only the fallback for a row
+   whose payload predates it, never a second copy in use. */
+const AG_MILE_LABEL = { research: "Research", picture: "Search picture", plan: "Architect",
+                        draft: "Draft", edited: "Edits" };
+/* Which panel each milestone opened in, back when a dot opened the old raw-file panel
+   (agOpenLibMilestone). The five dots now open the read-only tab overlay instead (agAction's
+   "libtabsopen"); this map is dead for that path and stays only because agOpenLibMilestone
+   itself is still defined, unused, in case anything is ever pointed at it again. */
 const AG_MILE_VIEW = { research: "research_brief", picture: "article", plan: "blueprint",
                        draft: "article", edited: "" };
+/* THE FIXED TAB ORDER, left to right in the strip and in the overlay's own switcher: Search
+   picture, Research, Architect, Draft, Edits -- regardless of what order the server's `miles`
+   array arrives in (agMileStripHtml re-sorts to this every time). */
+const AG_MILE_ORDER = ["picture", "research", "plan", "draft", "edited"];
+/* A milestone KEY (what the strip and the server both call it) to a TAB id (what the overlay's
+   five panes are called). "plan" is blueprint.json existing, a slightly earlier and coarser
+   signal than the Architect tab's real readiness; clicking it opens the Architect tab, which
+   shows its own "Not written yet." placeholder if the /tabs payload has not caught up. */
+const AG_MILE_TAB = { picture: "picture", research: "research", plan: "architect",
+                      draft: "draft", edited: "edits" };
+/* The plain name for each of the five TABS inside the overlay -- not the same object as
+   AG_MILE_LABEL (different keys: tab ids, not milestone keys), but the same five words. */
+const AG_TAB_LABEL = { picture: "Search picture", research: "Research", architect: "Architect",
+                       draft: "Draft", edits: "Edits" };
 const AG_MAX_SUBS = 8;
 const AG_LINK_WEAK = 0.45;      /* mirrors LINK_WEAK_SCORE in the engine: below this a link is flagged weak */
 const AG_PAGE_LIMIT = 5;        /* rows in the page table, and the step the pager takes; the server defaults to the same */
@@ -211,6 +228,14 @@ function agS(){
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
     picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, dfs: { on: false, open: null, vals: {}, out: {}, busy: "", bal: "", market: {} }, viewBusy: null, facePick: null,
+    /* THE TWO STACKED OVERLAYS the five milestone dots and the "Open" article view now share.
+       libTabs (layer 1): {on, itemId, active, data (the /tabs payload), draft ({title,words,draft}
+       from GET /library/{id}), loading, error, rOpen ({} -- which researcher rows are expanded),
+       secOpen ({} -- which architect sections are expanded), openerSel (a CSS selector back to
+       the control that opened it, for focus return on close)}.
+       libTabs2 (layer 2, painted with a HIGHER z-index): the dossier / voices / source-check /
+       Purpose / what-was-left-out overlay opened from inside layer 1. Same openerSel idea. */
+    libTabs: null, libTabs2: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", scroll: null, stick: true,
     /* the catalogue refresh. `refresh` is GET /knowledge/refresh's job exactly as the server
        sent it -- the engine's lines included -- and `refreshSeen` is the finish whose stale
@@ -1059,6 +1084,7 @@ function agResetCompany(a){
     pages: null, pageQ: "", pageType: "", pageLang: null, map: null, mapOn: false,
     bpEdit: null, artEdit: null, lastEdit: null, compForm: null, coForm: null, memForm: null,
     connForm: null, libOpen: null, libEdit: null, libBuf: null, libSec: null, libMeta: null, libConflict: null,
+    libTabs: null, libTabs2: null,
     detailOpen: {}, fileEdit: null,
     prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
   });
@@ -1961,7 +1987,6 @@ function agPanelHtml(a){
       : p.libId ? `<button class="btn pri" type="button" data-ag="libsavebuf" data-arg="${agEsc(p.libId)}" ${(a.libBuf && a.libBuf.dirty && !a.busy) ? "" : "disabled"}>${a.busy ? "Saving…" : "Save"}</button>
           ${a.libBuf && a.libBuf.dirty ? `<button class="btn" type="button" data-ag="libdiscard">Discard changes</button>` : ""}
           <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
-          ${a.libMeta && a.libMeta.has_previous ? `<button class="btn" type="button" data-ag="librevert" data-arg="${agEsc(p.libId)}" title="Bring back the version before the last save">Undo last save</button>` : ""}
           <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`
       : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
@@ -1973,7 +1998,17 @@ function agPanelHtml(a){
      this same p.libId), so the small X in the corner is no longer enough of a way back -- it
      reads as "close", not "this returns you to the list". A named button says exactly that. Both
      buttons run the same closepanel handler; there is only one way this panel ever shuts. */
-  const backBar = p.libId ? `<div class="ag-back"><button class="btn ag-backbtn" type="button" data-ag="closepanel">${AG_ICON.left}<span>Back to Library</span></button></div>` : "";
+  /* Undo / Redo sit in this same bar, pushed to its right with a flex spacer. Both read their
+     enabled state off a.libMeta.history, which GET /library/{id} carries and agLibOpen re-reads
+     after every undo/redo (agAction "libundo"/"libredo"), so a disabled button always means the
+     server itself has nothing earlier/later to step to -- never a guess made on this side. */
+  const hist = (a.libMeta && a.libMeta.history) || { can_undo: false, can_redo: false };
+  const backBar = p.libId ? `<div class="ag-back">
+      <button class="btn ag-backbtn" type="button" data-ag="closepanel">${AG_ICON.left}<span>Back to Library</span></button>
+      <span class="ag-backsp"></span>
+      <button class="btn ag-backbtn" type="button" data-ag="libundo" data-arg="${agEsc(p.libId)}" ${hist.can_undo ? "" : "disabled"} title="Undo the last change">Undo</button>
+      <button class="btn ag-backbtn" type="button" data-ag="libredo" data-arg="${agEsc(p.libId)}" ${hist.can_redo ? "" : "disabled"} title="Redo the change just undone">Redo</button>
+    </div>` : "";
   return `${backBar}<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
       <button class="ib" type="button" data-ag="closepanel" aria-label="${p.libId ? "Back to the Library" : "Close the panel"}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="ag-pb">${body}</div>
@@ -2471,17 +2506,270 @@ function agMemoryHtml(m, form){
 function agMileStripHtml(id, miles, writing){
   const list = miles || [];
   if (!list.length) return "";
+  /* THE FIXED TAB ORDER, client-side, regardless of what order the server sent: Search picture,
+     Research, Architect, Draft, Edits (AG_MILE_ORDER). Any key this file does not know about
+     rides along at the end, so nothing the server adds later silently vanishes. */
+  const byKey = {}; list.forEach(m => { if (m && m.key) byKey[m.key] = m; });
+  const known = new Set(AG_MILE_ORDER);
+  const ordered = AG_MILE_ORDER.map(k => byKey[k]).filter(Boolean).concat(list.filter(m => !known.has(m && m.key)));
   /* only a row still being written has a "now" step; a stopped run's gaps are gaps, not promises */
-  const nextIdx = writing ? list.findIndex(m => !m.exists) : -1;
-  return `<div class="ag-miles" aria-label="What is made so far">${list.map((m, i) => {
+  const nextIdx = writing ? ordered.findIndex(m => !m.exists) : -1;
+  return `<div class="ag-miles" aria-label="What is made so far">${ordered.map((m, i) => {
     const label = m.label || AG_MILE_LABEL[m.key] || m.key;
     if (!m.exists){
       const cur = i === nextIdx;
       return `<span class="ag-mile ${cur ? "cur" : "todo"}" title="${agEsc(cur ? "being made now" : "not made yet")}"><i aria-hidden="true"></i>${agEsc(label)}</span>`;
     }
-    return `<button class="ag-mile done" type="button" data-ag="libmile" data-arg="${agEsc(id)}" data-name="${agEsc(m.key)}" data-label="${agEsc(label)}"
+    /* opens the read-only tab overlay (agAction "libtabsopen"), not the old raw-file panel */
+    return `<button class="ag-mile done" type="button" data-ag="libtabsopen" data-arg="${agEsc(id)}" data-name="${agEsc(m.key)}" data-label="${agEsc(label)}"
       title="${agEsc((m.note || label) + (m.at ? " · " + agAgo(m.at) : ""))}"><i aria-hidden="true"></i>${agEsc(label)}</button>`;
   }).join("")}</div>`;
+}
+
+/* ── the five read-only tabs (2026-09-16) ──────────────────────────────────────────────────
+   Every milestone dot on a Library row, and the whole-article "Open" view's old raw-JSON
+   panels, are replaced by ONE overlay with five tabs: Search picture, Research, Architect,
+   Draft, Edits. GET /library/{id}/tabs hands back four of the five already assembled
+   (search_picture, research, architect, edits -- any of which can be null, meaning that stage
+   has not been reached); the fifth, Draft, is just the draft/title/words GET /library/{id}
+   already returns, read-only, with no pencils (editing stays behind "Open").
+
+   These renderers make ZERO decisions about content -- everything on screen traces to a named
+   field on the payload the server sent, laid out label-left/value-right in the SAME .ir/.k/.v
+   row the idea panel already uses (agIdeaHtml above), so one visual language covers both. */
+
+/* One label/value row. Takes value as ALREADY-BUILT html (escaped by the caller, since some
+   values are lists or links, not plain text) and renders nothing at all when there is nothing
+   to show -- this is what keeps a field missing on an old row from becoming a broken row. */
+function agIr(label, valueHtml){
+  if (!valueHtml) return "";
+  return `<div class="ir"><span class="k">${agEsc(label)}</span><span class="v">${valueHtml}</span></div>`;
+}
+function agTabUl(items){
+  const list = (items || []).filter(x => x != null && String(x).trim());
+  return list.length ? `<ul class="ag-tabul">${list.map(x => `<li>${agEsc(x)}</li>`).join("")}</ul>` : "";
+}
+/* "keyword — N vol · KD n", each part only when the server sent it (volume and kd both arrive
+   nullable, an old or thin keyword row not yet enriched). */
+function agTabKw(k){
+  if (!k || !k.keyword) return "";
+  return `${agEsc(k.keyword)}${k.volume != null ? ` — ${agEsc(agNum(k.volume))} vol` : ""}${k.kd != null ? ` · KD ${agEsc(String(k.kd))}` : ""}`;
+}
+function agTabKwList(arr){
+  const list = (arr || []).filter(k => k && k.keyword);
+  return list.length ? `<ul class="ag-tabul">${list.map(k => `<li>${agTabKw(k)}</li>`).join("")}</ul>` : "";
+}
+
+/* ── Search picture ─────────────────────────────────────────────────────────────────────── */
+function agTabPictureHtml(sp){
+  if (!sp) return `<p class="ag-tabempty">Not written yet.</p>`;
+  const avgWords = sp.avg_words != null
+    ? `${agEsc(agNum(sp.avg_words))} words${sp.band ? ` (${agEsc(agNum(sp.band.min))} to ${agEsc(agNum(sp.band.max))})` : ""}`
+    : "";
+  /* "one row per result" -- a small table of its own beneath the label, not a second .ir per
+     result, because the label ("Who ranks now") only needs saying once. */
+  const whoRanks = (sp.who_ranks || []).length ? `<table class="ag-tabtable"><tbody>${sp.who_ranks.map(r => `<tr>
+      <td class="n">${r.rank != null ? agEsc(String(r.rank)) : ""}</td>
+      <td><a href="${agEsc(r.url || "")}" target="_blank" rel="noopener">${agEsc(r.title || r.url || "")}</a>
+        <div class="sub">${agEsc(r.domain || "")}</div></td>
+    </tr>`).join("")}</tbody></table>` : "";
+  return `<div class="ag-tabrows">
+    ${agIr("Primary keyword", agTabKw(sp.primary))}
+    ${agIr("Variations", agTabKwList(sp.variations))}
+    ${agIr("Secondaries", agTabKwList(sp.secondary))}
+    ${agIr("In-body terms", (sp.in_body || []).filter(Boolean).map(agEsc).join(", "))}
+    ${agIr("Average word count of top pages", avgWords)}
+    ${agIr("Who ranks now", whoRanks)}
+    ${sp.ai_overview != null ? agIr("Google's own answer", `<p>${agEsc(sp.ai_overview)}</p>`) : ""}
+    ${agIr("Questions people ask", agTabUl(sp.paa))}
+    ${agIr("What they all cover", agTabUl(sp.common))}
+    ${agIr("What none of them cover", agTabUl(sp.gaps))}
+  </div>`;
+}
+
+/* ── Research ────────────────────────────────────────────────────────────────────────────
+   "Who researched it" expands on click to show that researcher's own questions -- no network
+   call, the questions are already in memory on the payload. st (a.libTabs) carries which rows
+   are open (rOpen), keyed by index, so a redraw does not collapse what he just opened. */
+function agTabResearchHtml(r, st){
+  if (!r) return `<p class="ag-tabempty">Not written yet.</p>`;
+  const rOpen = (st && st.rOpen) || {};
+  const researchers = (r.researchers || []).map((x, i) => {
+    const open = !!rOpen[i];
+    return `<div class="ag-tabexp${open ? " open" : ""}">
+      <button type="button" class="ag-tabexpbtn" data-ag="libtabsexp" data-arg="r${i}" aria-expanded="${open}">
+        <span class="ag-tabexpchev">${AG_ICON.chev}</span>
+        <span class="lbl">${agEsc(x.role || "")}${x.focus ? ` — ${agEsc(x.focus)}` : ""}</span>
+      </button>
+      ${open ? `<div class="ag-tabexpbody">${(x.questions || []).map(q => `<p>${agEsc(q)}</p>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+  const haveIt = r.have_it
+    ? `${agEsc(r.have_it.verdict || "")}${r.have_it.why ? ` — ${agEsc(r.have_it.why)}` : ""}${(r.have_it.links || []).length
+        ? `<div>${r.have_it.links.map(l => `<a href="${agEsc(l.url || "")}" target="_blank" rel="noopener">${agEsc(l.title || l.url || "")}</a>`).join("<br>")}</div>` : ""}`
+    : "No";
+  return `<div class="ag-tabrows">
+    ${agIr("The angle", r.angle ? agEsc(r.angle) : "")}
+    ${agIr("The spine", r.spine ? agEsc(r.spine) : "")}
+    ${agIr("What it is about", r.about ? agEsc(r.about) : "")}
+    ${agIr("What it is not about", r.not_about ? agEsc(r.not_about) : "")}
+    ${agIr("Written for", r.persona ? agEsc(r.persona) : "")}
+    ${agIr("Who researched it", researchers)}
+    ${agIr("Do you already have this", haveIt)}
+    ${r.dossier ? agIr("The research dossier", `<button class="btn" type="button" data-ag="libtabs2open" data-arg="dossier">Open the dossier</button>`) : ""}
+    ${r.voices ? agIr("Voices from the field", `<button class="btn" type="button" data-ag="libtabs2open" data-arg="voices">Voices from the field</button>`) : ""}
+  </div>`;
+}
+
+/* ── Architect ───────────────────────────────────────────────────────────────────────────
+   A section row expands to its h3s and its one-line "why" (again, already in memory). Purpose
+   opens the SECOND overlay with just that section's job text; it is a real <button> nested
+   inside the row, so the row itself is a div (not a button) with its own data-ag -- two
+   buttons cannot nest, but a div carrying data-ag delegates exactly the same way a button does
+   (agAction's click listener uses closest("[data-ag]"), which finds the Purpose button first
+   when that is what was actually clicked). */
+function agTabArchitectHtml(ar, st){
+  if (!ar) return `<p class="ag-tabempty">Not written yet.</p>`;
+  const secOpen = (st && st.secOpen) || {};
+  const header = `${agEsc(ar.format || "")} · ${ar.target_words != null ? agEsc(agNum(ar.target_words)) + " target words" : ""} · ${agEsc(agNum(ar.n_sections))} sections · ${agEsc(agNum(ar.n_sub_headings))} sub-headings`;
+  const sections = (ar.sections || []).map((sec, i) => {
+    const open = !!secOpen[i];
+    return `<div class="ag-tabexp${open ? " open" : ""}">
+      <div class="ag-tabexpbtn ag-tabsecrow" data-ag="libtabsexp" data-arg="s${i}" role="button" tabindex="0" aria-expanded="${open}">
+        <span class="ag-tabexpchev">${AG_ICON.chev}</span>
+        <span class="lbl">${agEsc(sec.headline || "")}</span>
+        <button type="button" class="btn" data-ag="libtabs2open" data-arg="purpose:${i}">Purpose</button>
+        <span class="sub">${agEsc(agNum(sec.word_target))} words · ${agEsc(agNum(sec.n_facts))} facts</span>
+      </div>
+      ${open ? `<div class="ag-tabexpbody">
+        ${agTabUl(sec.h3s)}
+        ${sec.why ? `<p class="ag-tabwhy">${agEsc(sec.why)}</p>` : ""}
+      </div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="ag-tabrows">
+    <p class="ag-tabhead">${header}</p>
+    ${agIr("The spine", ar.spine ? agEsc(ar.spine) : "")}
+    ${sections}
+    ${ar.left_out ? `<div class="ag-tableftout"><button class="btn" type="button" data-ag="libtabs2open" data-arg="leftout">What was left out</button>${ar.left_out.note ? ` <span class="sp">${agEsc(ar.left_out.note)}</span>` : ""}</div>` : ""}
+  </div>`;
+}
+
+/* ── Draft ───────────────────────────────────────────────────────────────────────────────
+   The same sections agLibArticleHtml draws for "Open", minus every editing affordance: no
+   pencil, no data-ag anywhere in a section body. Reading only -- editing stays behind Open. */
+function agTabDraftHtml(d){
+  const text = (d && d.draft) || "";
+  const secs = agSections(text);
+  if (!secs.length) return `<p class="ag-tabempty">Not written yet.</p>`;
+  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words · ${secs.length} section${secs.length === 1 ? "" : "s"}</p>
+    <div class="ag-doc ag-doc-ro">${secs.map(s => `<div class="ag-artsec">${agMd(s.text)}</div>`).join("")}</div>`;
+}
+
+/* ── Edits ───────────────────────────────────────────────────────────────────────────────
+   passes is already a list of full, plain-English sentences in run order -- nothing to word
+   here, only to list. */
+function agTabEditsHtml(ed){
+  if (!ed) return `<p class="ag-tabempty">Not written yet.</p>`;
+  const sc = ed.source_check;
+  const scLine = sc
+    ? `Checked ${agEsc(agNum(sc.checked))} · Fine ${agEsc(agNum(sc.fine))} · Corrected ${agEsc(agNum(sc.corrected))} · Softened ${agEsc(agNum(sc.softened))} · Removed ${agEsc(agNum(sc.removed))}${
+        ed.has_source_check_doc ? ` <button class="btn" type="button" data-ag="libtabs2open" data-arg="source-check">Open</button>` : ""}`
+    : "";
+  const wordsLine = (ed.words != null && ed.target_words != null) ? `${agEsc(agNum(ed.words))} words against a target of ${agEsc(agNum(ed.target_words))}` : "";
+  return `<div class="ag-tabrows">
+    ${agIr("What was done", agTabUl(ed.passes))}
+    ${agIr("Source check", scLine)}
+    ${agIr("Words", wordsLine)}
+  </div>`;
+}
+
+/* ── the overlay shells themselves ──────────────────────────────────────────────────────── */
+
+const AG_TAB_ORDER = ["picture", "research", "architect", "draft", "edits"];
+/* Which field on the /tabs payload (or, for draft, on a.libTabs.draft) backs each tab -- the
+   one place that mapping is decided, so the switcher's grey-out and the body both read it the
+   same way. draft is never gated: it comes straight off GET /library/{id}, no /tabs null to
+   check, so it is always offered even before anything else exists. */
+function agTabPayload(id, data, draft){
+  if (id === "draft") return draft || null;
+  if (id === "picture") return (data && data.search_picture) || null;
+  return (data && data[id]) || null;
+}
+
+function agLibTabsHtml(a){
+  const st = a.libTabs;
+  if (!st || !st.on) return "";
+  const data = st.data || {};
+  const tabbar = `<div class="ag-tabsbar" role="tablist" aria-label="Article tabs">${AG_TAB_ORDER.map(id => {
+    const avail = id === "draft" ? true : !!agTabPayload(id, data, st.draft);
+    const label = AG_TAB_LABEL[id];
+    return avail
+      ? `<button class="ag-tabsbtn${st.active === id ? " on" : ""}" type="button" role="tab" aria-selected="${st.active === id}" data-ag="libtabsswitch" data-arg="${id}">${agEsc(label)}</button>`
+      : `<span class="ag-tabsbtn off" role="tab" aria-selected="false" aria-disabled="true" title="Not made yet">${agEsc(label)}</span>`;
+  }).join("")}</div>`;
+  let body;
+  if (st.loading) body = `<div class="zero"><h4>Reading…</h4></div>`;
+  else if (st.error) body = `<div class="ag-err">${agEsc(st.error)}</div>`;
+  else if (st.active === "picture") body = agTabPictureHtml(agTabPayload("picture", data, st.draft));
+  else if (st.active === "research") body = agTabResearchHtml(agTabPayload("research", data, st.draft), st);
+  else if (st.active === "architect") body = agTabArchitectHtml(agTabPayload("architect", data, st.draft), st);
+  else if (st.active === "draft") body = agTabDraftHtml(st.draft);
+  else if (st.active === "edits") body = agTabEditsHtml(agTabPayload("edits", data, st.draft));
+  else body = "";
+  const title = AG_TAB_LABEL[st.active] || "Article";
+  return `<div class="ag-tabsback" data-ag="libtabsclose"></div>
+    <section class="ag-tabs" role="dialog" aria-modal="true" aria-label="${agEsc(title)}">
+      <header class="ag-tabsh">
+        <h2>${agEsc(title)}</h2>
+        <button class="x" type="button" data-ag="libtabsclose" aria-label="Close">${AG_ICON.x || "✕"}</button>
+        ${tabbar}
+      </header>
+      <div class="ag-tabsb">${body}</div>
+    </section>`;
+}
+
+function agLibTabs2Html(a){
+  const st = a.libTabs2;
+  if (!st || !st.on) return "";
+  let body;
+  if (st.loading) body = `<div class="zero"><h4>Reading…</h4></div>`;
+  else if (st.error) body = `<div class="ag-err">${agEsc(st.error)}</div>`;
+  else if (st.kind === "purpose") body = st.body ? `<p>${agEsc(st.body)}</p>` : `<p class="ag-tabempty">Nothing written for this section.</p>`;
+  else if (st.kind === "leftout") body = `<div class="ag-tabrows">
+      ${st.note ? `<p>${agEsc(st.note)}</p>` : ""}
+      ${(st.sections || []).length ? `<h4>Sections</h4>${agTabUl(st.sections)}` : ""}
+      ${(st.faq || []).length ? `<h4>FAQ</h4>${agTabUl(st.faq)}` : ""}
+      ${!(st.note || (st.sections || []).length || (st.faq || []).length) ? `<p class="ag-tabempty">Nothing was left out.</p>` : ""}
+    </div>`;
+  else if (st.kind === "artifact") body = agMd(st.text || "");
+  else body = "";
+  return `<div class="ag-tabs2back" data-ag="libtabs2close"></div>
+    <section class="ag-tabs2" role="dialog" aria-modal="true" aria-label="${agEsc(st.title || "")}">
+      <header class="ag-tabs2h">
+        <h2>${agEsc(st.title || "")}</h2>
+        <button class="x" type="button" data-ag="libtabs2close" aria-label="Close">${AG_ICON.x || "✕"}</button>
+      </header>
+      <div class="ag-tabs2b">${body}</div>
+    </section>`;
+}
+
+/* Closing either overlay, and the focus-return that goes with it, are each decided in exactly
+   ONE place -- agAction's own close cases and the Escape cascade both call these, rather than
+   each repeating "clear the state, remember who to refocus" its own slightly different way. */
+function agLibTabsClose(a){
+  const sel = a.libTabs && a.libTabs.openerSel;
+  a.libTabs = null;
+  return sel || null;
+}
+function agLibTabs2Close(a){
+  const sel = a.libTabs2 && a.libTabs2.openerSel;
+  a.libTabs2 = null;
+  return sel || null;
+}
+function agFocusSel(sel){
+  if (!sel || typeof document === "undefined") return;
+  try { const el = document.querySelector(sel); if (el && el.focus) el.focus(); } catch (e) {}
 }
 
 /* The Library. A row is born the moment a run starts (see AG_LIB_STATE), so this list mixes
@@ -3190,9 +3478,50 @@ function agDrawDfs(a, root){
   if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
 }
 
+/* The two Library tab overlays, painted the same way as the DFS console above (their own node
+   under #agRoot, position:fixed, survives a redraw of the screen underneath). Layer 1 also
+   locks the Library list behind it from scrolling while it is open -- #agScroll is the one
+   scrolling ancestor a milestone dot or "Open" can be clicked from, so toggling its overflow is
+   simpler than anything involving the backdrop. Layer 2 needs no lock of its own: layer 1 is
+   already locked, and layer 2 sits on top of it. */
+function agDrawLibTabs(a, root){
+  if (typeof document === "undefined" || !root) return;
+  const want = agLibTabsHtml(a);
+  let el = document.getElementById("agLibTabs");
+  /* el.__agHtml (truthy only once this overlay has actually painted something) is what decides
+     whether #agScroll is worth looking up at all -- NOT "el exists", because getElementById can
+     return an element that only just came into being for this very call. That keeps an ordinary
+     draw with nothing open from ever touching #agScroll, on a screen that may not even have one
+     (the shelf, a chat). */
+  const wasOpen = !!(el && el.__agHtml);
+  if (!want){
+    if (wasOpen){
+      if (el.remove) el.remove();
+      el.__agHtml = "";
+      const scroll = document.getElementById("agScroll");
+      if (scroll && scroll.style) scroll.style.overflow = "";
+    }
+    return;
+  }
+  if (!el){ el = document.createElement("div"); el.id = "agLibTabs"; root.appendChild(el); }
+  if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
+  const scroll = document.getElementById("agScroll");
+  if (scroll && scroll.style) scroll.style.overflow = "hidden";
+}
+function agDrawLibTabs2(a, root){
+  if (typeof document === "undefined" || !root) return;
+  const want = agLibTabs2Html(a);
+  let el = document.getElementById("agLibTabs2");
+  if (!want){ if (el && el.remove) el.remove(); return; }
+  if (!el){ el = document.createElement("div"); el.id = "agLibTabs2"; root.appendChild(el); }
+  if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
+}
+
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
   agDrawDfs(a, root);
+  agDrawLibTabs(a, root);
+  agDrawLibTabs2(a, root);
   /* The marketplace is one block and has no columns, no panel and no composer, so it leaves
      before any of that machinery runs. */
   if (a.screen !== "agent"){ agSetHtml("agMarket", a.screen === "choose" ? agChooseHtml(a) : agMarketHtml(a)); return; }
@@ -3655,7 +3984,8 @@ async function agLibOpen(itemId){
               subtitle: `${agNum(it.words)} words · ${it.status || "draft"}` };
   a.libBuf = { draft: it.draft || "", title: it.title || "", base_version: Number(it.version || 0), dirty: false };
   a.libMeta = { version: Number(it.version || 0), edited_by: it.edited_by || "", edited_at: it.edited_at || "",
-                team: it.team || null, has_previous: typeof it.previous_draft === "string" && it.previous_draft.length > 0 };
+                team: it.team || null, has_previous: typeof it.previous_draft === "string" && it.previous_draft.length > 0,
+                history: it.history || { can_undo: false, can_redo: false } };
   a.libEdit = null; a.libSec = null; a.libConflict = null;
   return it;
 }
@@ -3693,7 +4023,8 @@ async function agLibSave(a, itemId, draft, title, force){
     }
     a.libBuf = { draft, title: (m && m.title) || title, base_version: Number((m && m.version) || 0), dirty: false };
     a.libMeta = { version: Number((m && m.version) || 0), edited_by: (m && m.edited_by) || "", edited_at: (m && m.edited_at) || "",
-                  team: (m && m.team) || (a.libMeta && a.libMeta.team) || null, has_previous: true };
+                  team: (m && m.team) || (a.libMeta && a.libMeta.team) || null, has_previous: true,
+                  history: (m && m.history) || (a.libMeta && a.libMeta.history) || { can_undo: false, can_redo: false } };
     a.libSec = null; a.libConflict = null;
     agToast(agLibSavedWord(m));
     return true;
@@ -4541,13 +4872,109 @@ async function agAction(act, el){
       catch (e) { agToast("Could not undo: " + agWhy(e)); }
       a.busy = false; agDraw(); break;
     }
-    case "libmile": {
-      const key = el.getAttribute("data-name") || "";
-      /* clicking the one already open shuts it, the same as the transcript's artifact card */
-      if (a.panel && a.panel.name === "lib:" + arg + ":" + key){ a.panel = null; agDraw(); }
-      else await agOpenLibMilestone(arg, key, el.getAttribute("data-label") || "");
+    /* ── Undo / Redo, at the top of the full-width article view ─────────────────────────────
+       Modelled on librevert just above, but with none of its confirm() -- Undo/Redo are the
+       lightweight, reversible-by-design pair any editor has, not the one destructive-sounding
+       action revert still is. Both re-read the whole item through agLibOpen on success, which
+       is the one place a.libMeta.history is ever set, so the buttons' own enabled state always
+       comes back fresh off the server rather than being guessed at here. */
+    case "libundo": case "libredo": {
+      if (a.busy) break;
+      const step = act === "libundo" ? "undo" : "redo";
+      a.busy = true; agDraw();
+      try {
+        await agPostApi(`/library/${encodeURIComponent(arg)}/${step}`, {});
+        await agLibOpen(arg);
+        agToast(step === "undo" ? "Stepped back" : "Stepped forward");
+      } catch (e) {
+        if (e && e.status === 404) agToast(step === "undo" ? "Nothing earlier to undo to." : "Nothing later to redo to.");
+        else agToast("Could not " + step + ": " + agWhy(e));
+      }
+      a.busy = false; agDraw(); break;
+    }
+    /* ── the five-tab overlay (2026-09-16), replacing every milestone dot's old raw-file panel ─
+       libtabsopen: itemId is `arg`, which milestone was clicked is data-name. Clicking the tab
+       that is already open shuts the whole overlay (the same toggle the old libmile case used);
+       clicking a different milestone on an article already open just switches tabs, since the
+       /tabs payload already holds every tab's data at once -- no second fetch. Only a first
+       open, or opening a DIFFERENT article, fetches anything. */
+    case "libtabsopen": {
+      const key = el.getAttribute("data-name") || "picture";
+      const tab = AG_MILE_TAB[key] || "research";
+      const openerSel = `[data-ag="libtabsopen"][data-arg="${arg}"][data-name="${key}"]`;
+      if (a.libTabs && a.libTabs.on && a.libTabs.itemId === arg && a.libTabs.active === tab){
+        agLibTabsClose(a); agDraw(true); break;
+      }
+      if (a.libTabs && a.libTabs.on && a.libTabs.itemId === arg){
+        a.libTabs.active = tab; a.libTabs.openerSel = openerSel; agDraw(true); break;
+      }
+      a.libTabs = { on: true, itemId: arg, active: tab, data: null, draft: null, loading: true, error: null,
+                    rOpen: {}, secOpen: {}, openerSel };
+      a.libTabs2 = null;
+      agDraw(true);
+      try {
+        const tabs = await agApi(`/library/${encodeURIComponent(arg)}/tabs`);
+        const it = await agApi(`/library/${encodeURIComponent(arg)}`);
+        if (!a.libTabs || a.libTabs.itemId !== arg) break;      /* he closed it, or opened another, meanwhile */
+        a.libTabs.data = tabs || {};
+        a.libTabs.draft = { title: it.title || "", words: it.words || 0, draft: it.draft || "" };
+        a.libTabs.loading = false;
+      } catch (e) {
+        if (a.libTabs && a.libTabs.itemId === arg){ a.libTabs.loading = false; a.libTabs.error = "Could not read this article: " + agWhy(e); }
+      }
+      agDraw(true); break;
+    }
+    case "libtabsclose": { const sel = agLibTabsClose(a); agDraw(true); agFocusSel(sel); break; }
+    case "libtabsswitch": { if (a.libTabs) a.libTabs.active = arg; agDraw(true); break; }
+    /* one expand/collapse flag per researcher row ("r0", "r1", …) or architect section row
+       ("s0", "s1", …) -- no network call, the row's own detail is already on the payload. */
+    case "libtabsexp": {
+      if (a.libTabs){
+        const m = /^([rs])(\d+)$/.exec(arg || "");
+        if (m){
+          const bucket = m[1] === "r" ? "rOpen" : "secOpen";
+          a.libTabs[bucket] = a.libTabs[bucket] || {};
+          a.libTabs[bucket][m[2]] = !a.libTabs[bucket][m[2]];
+        }
+      }
+      agDraw(true); break;
+    }
+    /* ── the second, stacked overlay ─────────────────────────────────────────────────────────
+       Three of the five kinds are already in memory on a.libTabs.data (Purpose's job text,
+       and What-was-left-out's two lists) and need no fetch at all. The other three --
+       dossier / voices / source-check -- are real files, read through the SAME artifact route
+       the milestone dots already used (GET /library/{id}/artifact/{key}), just with one of
+       these three new keys instead of one of the five milestone ones. */
+    case "libtabs2open": {
+      const st = a.libTabs; if (!st) break;
+      const openerSel = `[data-ag="libtabs2open"][data-arg="${arg}"]`;
+      if (arg === "dossier" || arg === "voices" || arg === "source-check"){
+        const titles = { dossier: "The research dossier", voices: "Voices from the field", "source-check": "Source check" };
+        a.libTabs2 = { on: true, kind: "artifact", title: titles[arg], text: "", loading: true, error: null, openerSel };
+        agDraw(true);
+        try {
+          const d = await agApi(`/library/${encodeURIComponent(st.itemId)}/artifact/${encodeURIComponent(arg)}`);
+          if (a.libTabs2 && a.libTabs2.openerSel === openerSel){
+            a.libTabs2.text = (d && d.text) || ""; a.libTabs2.title = (d && d.label) || a.libTabs2.title; a.libTabs2.loading = false;
+          }
+        } catch (e) {
+          if (a.libTabs2 && a.libTabs2.openerSel === openerSel){ a.libTabs2.loading = false; a.libTabs2.error = "Could not read this: " + agWhy(e); }
+        }
+        agDraw(true);
+      } else if (arg && arg.indexOf("purpose:") === 0){
+        const i = Number(arg.slice(8));
+        const sec = st.data && st.data.architect && (st.data.architect.sections || [])[i];
+        a.libTabs2 = { on: true, kind: "purpose", title: "Purpose", body: (sec && sec.job) || "", loading: false, error: null, openerSel };
+        agDraw(true);
+      } else if (arg === "leftout"){
+        const lo = st.data && st.data.architect && st.data.architect.left_out;
+        a.libTabs2 = { on: true, kind: "leftout", title: "What was left out", note: (lo && lo.note) || "",
+                       sections: (lo && lo.sections) || [], faq: (lo && lo.faq) || [], loading: false, error: null, openerSel };
+        agDraw(true);
+      }
       break;
     }
+    case "libtabs2close": { const sel = agLibTabs2Close(a); agDraw(true); agFocusSel(sel); break; }
     case "libedit": {
       const p2 = a.panel; if (!p2) break;
       /* starts from the buffer, so a section already changed by hand is not thrown away */
@@ -4989,10 +5416,14 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     agAction(act, el).catch(e => agToast(String(e && e.message || e)));
   });
   document.addEventListener("keydown", (ev) => {
-    /* Escape closes the console, before anything else looks at the key: it is the topmost thing
-       on the screen while it is open, so it is the first thing Escape should mean. */
+    /* Escape closes the topmost overlay first, before anything else looks at the key -- most
+       specific first, each branch closing exactly ONE layer and returning. The tab overlay's
+       own second, stacked layer (dossier / voices / Purpose / …) is more specific than the tab
+       overlay itself, which is more specific than the DFS console. */
     if (ev.key === "Escape"){
       const a0 = agS();
+      if (a0 && a0.libTabs2 && a0.libTabs2.on){ ev.preventDefault(); const sel = agLibTabs2Close(a0); agDraw(true); agFocusSel(sel); return; }
+      if (a0 && a0.libTabs && a0.libTabs.on){ ev.preventDefault(); const sel = agLibTabsClose(a0); agDraw(true); agFocusSel(sel); return; }
       if (a0 && a0.dfs && a0.dfs.on){ ev.preventDefault(); a0.dfs.on = false; agDraw(true); return; }
     }
     const ta = ev.target;

@@ -290,6 +290,30 @@ if agents_api:
        getattr(r, "status_code", None) == 404, r)
 
 
+# ---- 7b. the three extra documents a tab links to ------------------------------------------------
+print("\nthree more files open through the same route, and nothing else does")
+
+store.save_artifact(c1, r1, "dossier.md", "# Dossier\n\nThe research dossier.\n")
+store.save_artifact(c1, r1, "source-check.md", "# Source check\n\nEvery verdict.\n")
+store.save_artifact(c1, r1, "voices-from-the-field.md", "# Voices\n\nWhat the researchers heard.\n")
+store.save_artifact(c1, r1, "cards.json", {"still": "not servable"})
+
+for key, fname, needle in (("dossier", "dossier.md", "research dossier"),
+                           ("source-check", "source-check.md", "Every verdict"),
+                           ("voices", "voices-from-the-field.md", "researchers heard")):
+    row = store.library_artifact(item, key)
+    ok("%s opens by its key" % key, row and row["file"] == fname and needle in row["text"], row)
+    row2 = store.library_artifact(item, fname)
+    ok("%s opens by its filename too" % fname, row2 and row2["text"] == row["text"])
+
+ok("these three do not show up as a sixth milestone",
+   len(store.library_get(item)["milestones"]) == 5)
+ok("still refused: a file that is neither a milestone nor one of the three",
+   store.library_artifact(item, "cards.json") is None)
+ok("still refused: containment, even against a real extra-file NAME with a traversal",
+   store.library_artifact(item, "../cards.json") is None)
+
+
 # ---- 8. the strip on a list is cheap enough to poll --------------------------------------------
 print("\nthe Library screen polls the list, so the strip has to be cheap")
 
@@ -298,6 +322,50 @@ for _ in range(20):
     store.library_list()
 per = (time.time() - t0) / 20
 ok("twenty full list reads take under a tenth of a second each", per < 0.1, "%.4fs" % per)
+
+
+# ---- 9. the three decision fields are backfilled once, from the run, never invented -----------
+print("\nformat_label / measured_band / topic_scope are backfilled once, from the run")
+
+c5, r5 = chat_and_run("old row, no decisions.json")
+store.save_artifact(c5, r5, "research.json", {
+    "format_archetype": "listicle",
+    "build_spec": {"word_band": {"min": 2400, "max": 3000}},
+    "topic_gate": {"relevant": False, "why": "not on brand"},
+})
+old_item = store.library_start(c5, r5, "req")
+ITEMS.append(old_item)
+old_meta = store.library_finish(old_item, "Old row", "# Old row\nbody", chat_id=c5, run_id=r5)
+ok("a row saved before the three fields existed has none of them",
+   not any(k in old_meta for k in ("format_label", "measured_band", "topic_scope")), old_meta)
+
+got = store.library_get(old_item)
+ok("format_label comes from the run's format_archetype", got["format_label"] == "Listicle",
+   got.get("format_label"))
+ok("measured_band comes from build_spec.word_band",
+   got["measured_band"] == {"min": 2400, "max": 3000}, got.get("measured_band"))
+ok("topic_scope comes from topic_gate",
+   got["topic_scope"] == {"state": "off", "why": "not on brand"}, got.get("topic_scope"))
+
+on_disk = store.read_json(os.path.join(store.library_dir(), old_item, "meta.json"))
+ok("it was written back to meta.json, not just handed out this once",
+   on_disk.get("format_label") == "Listicle", on_disk)
+
+# a second read must not recompute: break the run and confirm the saved values survive
+shutil.rmtree(store.run_dir(c5, r5), ignore_errors=True)
+got2 = store.library_get(old_item)
+ok("a second read does not need the run any more, because it was already filled in",
+   got2["format_label"] == "Listicle" and got2["measured_band"] == {"min": 2400, "max": 3000})
+
+# a row whose run is gone BEFORE its very first read: nothing must be invented, ever
+c6, r6 = chat_and_run("run gone before any read")
+gone_item = store.library_start(c6, r6, "req")
+ITEMS.append(gone_item)
+store.library_finish(gone_item, "Gone", "# Gone\nbody", chat_id=c6, run_id=r6)
+shutil.rmtree(store.chat_dir(c6), ignore_errors=True)
+first_read = store.library_get(gone_item)
+ok("a row whose run folder is ALREADY gone is left exactly as it is",
+   not any(k in first_read for k in ("format_label", "measured_band", "topic_scope")), first_read)
 
 
 # ---- clean up -----------------------------------------------------------------------------------

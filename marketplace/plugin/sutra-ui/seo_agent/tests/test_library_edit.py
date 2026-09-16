@@ -285,6 +285,57 @@ ok("undo on an article with nothing before it is None",
 ok("a save on an article that is not there is None", le.save("no-such", MD) is None)
 
 # =====================================================================================================
+print("\nevery save makes a version (last 20), and Undo/Redo step through them")
+
+fresh_mac()
+hitem = store.library_save("c2h", "r2h", "History", "# History\nv0")
+le.save(hitem, "# History\nv1")
+le.save(hitem, "# History\nv2")
+h3 = le.save(hitem, "# History\nv3")
+ok("three edits, three versions kept", len(h3["versions"]) == 3, h3.get("versions"))
+ok("can undo, cannot redo at the tip", store.library_history_flags(h3) == {"can_undo": True, "can_redo": False})
+
+u1 = le.undo(hitem)
+ok("undo steps back one version", store.library_get(hitem)["draft"] == "# History\nv2")
+ok("undo counts as a save and reaches the team status too", u1["version"] == 4 and "team" in u1)
+u2 = le.undo(hitem)
+ok("undo again steps back another", store.library_get(hitem)["draft"] == "# History\nv1")
+d1 = le.redo(hitem)
+ok("redo steps forward", store.library_get(hitem)["draft"] == "# History\nv2")
+d2 = le.redo(hitem)
+ok("redo again reaches the tip", store.library_get(hitem)["draft"] == "# History\nv3")
+ok("nothing left to redo at the tip", store.library_history_flags(store.library_get(hitem))["can_redo"] is False)
+ok("redo past the tip is None", le.redo(hitem) is None)
+
+le.undo(hitem)
+le.undo(hitem)
+ok("back at v1", store.library_get(hitem)["draft"] == "# History\nv1")
+branched = le.save(hitem, "# History\nbranched")
+ok("a fresh edit after undoing drops the redo tail",
+   store.library_history_flags(branched)["can_redo"] is False, branched.get("versions"))
+ok("redo after a fresh edit is None, the tail is really gone", le.redo(hitem) is None)
+ok("undo from the branch still walks the shared history back to v1",
+   le.undo(hitem) and store.library_get(hitem)["draft"] == "# History\nv1")
+ok("undo has nothing further back than the first edit", le.undo(hitem) is None)
+
+ok("undo/redo on an article that is not there is None",
+   le.undo("no-such") is None and le.redo("no-such") is None)
+
+# the 20-cap, exercised through the same route the screen calls
+fresh_mac()
+citem = store.library_save("c2c", "r2c", "Capped", "# Capped\nv0")
+last = None
+for i in range(1, 24):
+    last = le.save(citem, "# Capped\nv%d" % i)
+ok("the kept history never grows past 20", len(last["versions"]) == 20, len(last["versions"]))
+ok("the oldest four were dropped, the newest twenty remain",
+   last["versions"][0]["version"] == 4, last["versions"][0])
+for _ in range(30):
+    le.undo(citem)
+ok("undoing all the way only reaches the oldest KEPT version (v4, since v1-v3 were dropped)",
+   store.library_get(citem)["draft"] == "# Capped\nv4", store.library_get(citem)["draft"])
+
+# =====================================================================================================
 print("\nthe team gets it: a save on Mac A lands on Mac B, versioned, named, undoable")
 
 db = FakeDB()

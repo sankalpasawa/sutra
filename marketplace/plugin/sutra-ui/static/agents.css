@@ -451,6 +451,11 @@
 .ag-back{padding:10px 14px 0}
 .ag-backbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;font-size:11.5px}
 .ag-backbtn svg{flex:none;width:11px;height:11px}
+/* Undo / Redo (17-agents.js, agPanelHtml's backBar) sit in this same flex row, pushed to the
+   right of "Back to Library" by this one spacer rather than a second bar. */
+.ag-backsp{flex:1 1 auto}
+.ag-backbtn:disabled{opacity:.4;cursor:default}
+.ag-backbtn:disabled:hover{background:none;color:var(--faint)}
 .ag-ph{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--line-soft)}
 .ag-ph .pt{min-width:0;flex:1}
 .ag-ph h3{font-family:var(--serif);font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em;color:var(--ink);line-height:1.25}
@@ -826,14 +831,16 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .ag-ideas td:first-child{min-width:160px}
 .ag-ideas td:first-child .pill{margin-top:4px}
 
-/* one idea in the side panel: a label column and its evidence */
+/* one idea in the side panel: a label column and its evidence. .ag-tabrows (the five-tab
+   overlay, further up the file) draws the SAME label/value rows and shares this one rule
+   rather than a second copy of it -- one visual pattern for "label left, value right". */
 .ag-idea{display:flex;flex-direction:column;gap:0}
-.ag-idea .ir{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--line-soft);
+.ag-idea .ir,.ag-tabrows .ir{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--line-soft);
   font-size:12.5px;line-height:1.6}
-.ag-idea .ir:last-child{border-bottom:0}
-.ag-idea .ir .k{flex:0 0 168px;color:var(--muted)}
-.ag-idea .ir .v{flex:1;min-width:0;color:var(--ink);overflow-wrap:anywhere}
-.ag-idea .ir .v a{color:var(--acc)}
+.ag-idea .ir:last-child,.ag-tabrows .ir:last-child{border-bottom:0}
+.ag-idea .ir .k,.ag-tabrows .ir .k{flex:0 0 168px;color:var(--muted)}
+.ag-idea .ir .v,.ag-tabrows .ir .v{flex:1;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+.ag-idea .ir .v a,.ag-tabrows .ir .v a{color:var(--acc)}
 
 /* ── the Prompts tab ─────────────────────────────────────────────────────────
    The owner's own writing rules, changed without a developer. Two pieces: the
@@ -1056,6 +1063,83 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
   background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap}
 .ag-dfsraw{max-height:34vh;overflow:auto;font:400 11px/1.5 var(--mono);color:var(--muted);
   background:var(--inset);border-radius:9px;padding:10px 12px;white-space:pre-wrap;margin-top:8px}
+
+/* ── the five-tab article overlay (2026-09-16) ─────────────────────────────
+   Same mechanism as the DataForSEO console above -- position:fixed, its own dimmed/blurred
+   backdrop, opened/closed through data-ag, Escape-aware -- but CENTERED rather than inset from
+   every edge, since this reads a document rather than running a tool console. Layer 2 (the
+   dossier / voices / source-check / Purpose / what-was-left-out overlay opened from inside
+   layer 1) is the same shape again, smaller, at a higher z-index so it visibly stacks. */
+.ag-tabsback{position:fixed;inset:0;z-index:90;background:var(--scrim);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.ag-tabs{position:fixed;z-index:91;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(720px,calc(100vw - 48px));max-height:min(86vh,900px);
+  display:flex;flex-direction:column;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+.ag-tabsh{position:relative;display:flex;flex-wrap:wrap;gap:10px;padding:14px 40px 12px 18px;
+  border-bottom:1px solid var(--line-soft);flex:none}
+.ag-tabsh h2{margin:0;font-family:var(--serif);font-size:17px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink);flex:none;width:100%}
+.ag-tabsh .x{position:absolute;top:14px;right:16px;flex:none;background:none;border:0;
+  cursor:pointer;color:var(--faint);padding:6px;border-radius:7px;line-height:0}
+.ag-tabsh .x:hover{color:var(--ink);background:var(--inset)}
+.ag-tabsb{flex:1;min-height:0;overflow-y:auto;padding:14px 18px 22px}
+.ag-tabsbar{display:flex;flex-wrap:wrap;gap:5px;width:100%}
+.ag-tabsbtn{font:500 11.5px/1.3 var(--sans);padding:5px 11px;border-radius:20px;
+  border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer}
+.ag-tabsbtn:hover{border-color:var(--acc);color:var(--acc)}
+.ag-tabsbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ag-tabsbtn.on{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+.ag-tabsbtn.off{opacity:.5;cursor:default}
+.ag-tabs2back{position:fixed;inset:0;z-index:95;background:var(--scrim)}
+.ag-tabs2{position:fixed;z-index:96;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(560px,calc(100vw - 48px));max-height:min(76vh,760px);
+  display:flex;flex-direction:column;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.ag-tabs2h{position:relative;display:flex;align-items:center;padding:14px 40px 12px 18px;
+  border-bottom:1px solid var(--line-soft);flex:none}
+.ag-tabs2h h2{margin:0;font-family:var(--serif);font-size:15.5px;font-weight:600;
+  letter-spacing:-.01em;color:var(--ink)}
+.ag-tabs2h .x{position:absolute;top:12px;right:14px;flex:none;background:none;border:0;
+  cursor:pointer;color:var(--faint);padding:6px;border-radius:7px;line-height:0}
+.ag-tabs2h .x:hover{color:var(--ink);background:var(--inset)}
+.ag-tabs2b{flex:1;min-height:0;overflow-y:auto;padding:14px 18px 20px}
+/* the label/value rows every tab uses are .ir/.k/.v -- the SAME visual pattern agIdeaHtml
+   already draws for one idea; see ".ag-idea .ir,.ag-tabrows .ir" further down, which is that
+   one rule extended to cover both, rather than a second copy defined here. */
+.ag-tabrows .ir .v p{margin:0 0 6px}
+.ag-tabrows .ir .v p:last-child{margin-bottom:0}
+.ag-tabempty{color:var(--faint);font-size:12.5px;margin:6px 0}
+.ag-tabhead{font-size:12px;color:var(--muted);margin:0 0 4px}
+.ag-tabwhy{font-size:12px;color:var(--muted);margin:6px 0 0;font-style:italic}
+.ag-tableftout{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px}
+.ag-tableftout .sp{color:var(--faint)}
+/* a plain bullet list inside a .v cell (variations, PAA, common ground, gaps, h3s, …) */
+.ag-tabul{margin:0;padding-left:18px}
+.ag-tabul li{margin:0 0 3px;line-height:1.55}
+.ag-tabul li:last-child{margin-bottom:0}
+/* "who ranks now" -- one row per result, title as a link with its domain underneath */
+.ag-tabtable{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:2px}
+.ag-tabtable td{padding:5px 8px 5px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.ag-tabtable tr:last-child td{border-bottom:0}
+.ag-tabtable td.n{width:22px;color:var(--faint);font-variant-numeric:tabular-nums;text-align:right}
+.ag-tabtable a{color:var(--acc)}
+.ag-tabtable .sub{color:var(--faint);font-size:11px;margin-top:1px}
+/* an expand/collapse row -- a researcher (Research tab) or a section (Architect tab), no
+   network call either way, the detail underneath is already on the payload in memory. */
+.ag-tabexp{border-bottom:1px solid var(--line-soft)}
+.ag-tabexp:last-child{border-bottom:0}
+.ag-tabexpbtn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0;background:none;
+  border:0;cursor:pointer;text-align:left;color:var(--ink);font:500 12.5px/1.4 var(--sans)}
+.ag-tabexpbtn .lbl{flex:1;min-width:0}
+.ag-tabexpbtn .sub{flex:none;font:400 11.5px var(--sans);color:var(--faint)}
+.ag-tabexpchev{flex:none;width:10px;height:10px;color:var(--faint);transition:transform .12s ease}
+.ag-tabexp.open .ag-tabexpchev{transform:rotate(180deg)}
+.ag-tabexpbtn .btn{flex:none}
+.ag-tabexpbody{padding:0 0 10px 18px;font-size:12px;color:var(--muted);line-height:1.6}
+.ag-tabexpbody p{margin:0 0 8px}
+.ag-tabexpbody p:last-child{margin-bottom:0}
+.ag-tabexpbody ul{margin:0 0 8px;padding-left:18px}
 
 /* A message the server never took, left on the transcript instead of a toast that fades. It
    looks like the turn it would have been, so the words are where the person expects them. */

@@ -2513,6 +2513,46 @@ def api_library_revert(item_id: str):
     return meta or _bad("There is no earlier version of this article to go back to.", 404)
 
 
+@router.get("/library/{item_id}/tabs")
+def api_library_tabs(item_id: str):
+    """The four server-assembled tabs (Search picture, Research, Architect, Edits) in one call,
+    each None when that tab is not available yet -- see seo_agent/library_tabs.py. Draft is not
+    here: the screen already has it on GET /library/{item_id}'s own `draft` field."""
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    it = store.library_get(item_id)
+    if not it:
+        return _bad("not found", 404)
+    from seo_agent import library_tabs
+    return library_tabs.all_tabs(it)
+
+
+@router.post("/library/{item_id}/undo")
+def api_library_undo(item_id: str):
+    """Step the Open view back one kept version (up to 20). Refused with a plain sentence when
+    this is already the oldest one on file."""
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    meta = library_edit.undo(item_id)
+    return meta or _bad("There is no earlier version of this article to undo to.", 404)
+
+
+@router.post("/library/{item_id}/redo")
+def api_library_redo(item_id: str):
+    """Step forward one kept version. Refused when nothing was undone, or a fresh edit since
+    dropped the redo tail."""
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    meta = library_edit.redo(item_id)
+    return meta or _bad("There is no later version of this article to redo to.", 404)
+
+
 @router.get("/library/{item_id}/artifact/{name}")
 def api_library_artifact(item_id: str, name: str):
     """One milestone's file, straight out of the run that made it.
