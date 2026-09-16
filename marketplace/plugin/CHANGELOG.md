@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.282.6 (2026-09-17)
+
+- No commits since v2.282.5-desktop; released to rebuild the app from the same tree.
+
 ## 2.282.5 (2026-09-17)
 
 - Released from v2.282.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
