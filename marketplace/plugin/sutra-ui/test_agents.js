@@ -223,7 +223,7 @@ test("a read-only article never offers the per-block editor, and a Library one o
   a.panel.libId = "lib7";
   html = A.agPanelHtml(a);
   assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "a saved article does");
-  assert.ok(/data-ag="copymd"/.test(html), "and can still be copied");
+  assert.ok(!/data-ag="copymd"/.test(html), "Copy markdown is gone from a Library article's footer");
 });
 test("the log groups its rows by stage, one line each, and only the running one is open", () => {
   const evs = [
@@ -1244,7 +1244,7 @@ test("a finished row keeps every button it had, and its strip is all done with n
                                   milestones: all }]);
   assert.ok(!/class="ag-row writing"/.test(html), "no accent edge on finished work");
   assert.ok(/<span class="pill p-ok">ready to read<\/span>/.test(html), "the green pill, and no spinner in it");
-  assert.ok(html.indexOf("<span>1,840 words</span>") !== -1, "the word count is back where the count of pieces was");
+  assert.ok(html.indexOf("<span>1,840 words</span>") === -1, "the word count is gone from the card (spec item 9); the tabs still carry it");
   assert.ok(/data-ag="libopen"/.test(html) && /data-ag="libstatus"/.test(html) && /data-ag="libdel"/.test(html),
             "Open, Back to draft and Delete all still there");
   assert.ok(html.indexOf('class="ag-mile cur"') === -1, "nothing is being made now");
@@ -1258,7 +1258,7 @@ test("a row from the payload the server sent BEFORE milestones renders exactly a
   const html = A.agLibraryHtml(old);
   assert.ok(/<span class="pill p-mut">draft<\/span>/.test(html), "the muted draft pill, word for word as before");
   assert.ok(html.indexOf('class="ag-miles"') === -1, "and no strip at all, rather than an empty or broken one");
-  assert.ok(html.indexOf("<span>1,200 words</span>") !== -1, "the word count, not a count of pieces");
+  assert.ok(html.indexOf("<span>1,200 words</span>") === -1, "the word count is gone from the card (spec item 9)");
   assert.ok(html.indexOf("<span>started ") === -1, "and no start time, because a saved row has no run to start");
   assert.ok(/data-ag="libopen" data-arg="2026-09-01-hiring"/.test(html), "Open");
   assert.ok(/data-ag="libstatus" data-arg="2026-09-01-hiring" data-status="ready">Mark ready</.test(html), "Mark ready");
@@ -1625,36 +1625,32 @@ test("the panel lists the placeholders the agent fills, and says not to lose the
   assert.ok(!/Keep every one of them/.test(rule), "a rulebook is told to keep placeholders it has not got");
 });
 
-test("the Library says what shape each article was written to", () => {
+/* Round 2 (spec item 9): the card's own columns dropped the word count, the format name and the
+   top-pages band -- the tabs (Draft/Architect) still carry that detail, so these three now check
+   the card does NOT draw them, rather than that it does. */
+test("the card no longer names the format, on the row or off it", () => {
   const html = A.agLibraryHtml([{ id: "x", title: "Cost per hire", status: "ready", words: 2400,
                                   format: "listicle", format_label: "Listicle", created_at: "2026-09-09T10:00:00Z" }]);
-  assert.ok(/Listicle/.test(html), "the format is not on the row");
-  /* a row whose run never reached the router shows no format rather than a guess */
+  assert.ok(!/Listicle/.test(html), "the format name is gone from the card");
   const none = A.agLibraryHtml([{ id: "y", title: "Half done", status: "writing", created_at: "2026-09-09T10:00:00Z" }]);
-  assert.ok(!/Listicle/.test(none) && !/undefined/.test(none), "an unrouted row invented one: " + none);
+  assert.ok(!/undefined/.test(none) && !/null/.test(none), "and nothing is invented for a row missing it");
 });
 
-test("a raw format_archetype is tidied into words when format_label has not landed yet", () => {
-  const html = A.agLibraryHtml([{ id: "x", title: "T", status: "ready", words: 100,
-                                  format_archetype: "how-to-guide", created_at: "2026-09-09T10:00:00Z" }]);
-  assert.ok(/How To Guide/.test(html), "tidied to words, not shown as the raw slug: " + html);
-});
-
-test("the card drops the keyword line, and adds the top-pages band and an off-topic pill", () => {
+test("the card drops the keyword line, the top-pages band, and shows the topic tag either way", () => {
   const html = A.agLibraryHtml([{ id: "x", title: "Best hiking boots", status: "ready", words: 1802,
                                   primary_keyword: "hiking boots", format_label: "How To Guide",
                                   measured_band: { min: 1500, max: 2100 },
                                   topic_scope: { state: "off", why: "Not about hiring software." },
                                   created_at: "2026-09-09T10:00:00Z" }]);
   assert.ok(!/hiking boots</.test(html) && !/>hiking boots</.test(html), "the primary keyword line is gone: " + html);
-  assert.ok(/top pages 1,500 to 2,100/.test(html), "the top ranking pages' own length");
+  assert.ok(!/top pages/.test(html), "the top-pages band is gone from the card: " + html);
   assert.ok(/class="pill p-warn" title="Not about hiring software\."[^>]*>Off topic</.test(html),
             "a quiet amber pill, the reason on its title");
-  /* on topic gets no pill at all -- the default state needs no flag. (The filter tab bar also
-     says the words "Off topic", as its label, so the pill is checked for by its own class.) */
+  /* on topic now gets its own tag too (spec item 9/10 -- it used to draw nothing, which is why
+     the backfilled articles looked like the tag was missing) */
   const on = A.agLibraryHtml([{ id: "y", title: "On-topic piece", status: "ready", words: 900,
                                 topic_scope: { state: "on", why: "fits" }, created_at: "2026-09-09T10:00:00Z" }]);
-  assert.ok(!/class="pill p-warn"/.test(on), "on topic draws no warning pill: " + on);
+  assert.ok(/class="pill p-mut" title="fits"[^>]*>On topic</.test(on), "on topic draws its own tag: " + on);
 });
 
 test("an old row with none of the new fields still renders, showing nothing rather than a guess", () => {
@@ -1662,7 +1658,7 @@ test("an old row with none of the new fields still renders, showing nothing rath
                                   created_at: "2026-09-01T10:00:00Z" }]);
   assert.ok(/Old row/.test(html), "the row itself still draws");
   assert.ok(!/top pages/.test(html), "no band it was never given");
-  assert.ok(!/class="pill p-warn"/.test(html), "no topic pill it was never given");
+  assert.ok(!/class="pill p-warn"/.test(html) && !/class="pill p-mut" title=/.test(html), "no topic pill it was never given");
   assert.ok(!/undefined/.test(html) && !/null/.test(html), "nothing invented: " + html);
 });
 
@@ -2969,7 +2965,7 @@ test("a Library article is drawn by sections, a pencil on each, and never the pe
   assert.ok((html.match(/ag-pencil/g) || []).length === secs.length, "one pencil per section, no more");
   assert.ok(/aria-label="Edit Why the standard checklist breaks"/.test(html), "the pencil names its section");
   assert.ok(!/data-ag="artedit"/.test(html), "the run's per-block editor is not offered on a Library article");
-  assert.ok(/5 sections/.test(html), "the count line: " + (html.match(/\d+ sections?/) || [""])[0]);
+  assert.ok(!/\d+ sections?/.test(html), "the old count line is gone (spec item 6)");
   assert.ok(/data-ag="libsavebuf" data-arg="lib7" disabled/.test(html), "Save is there and disabled while nothing changed");
   assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "the whole-article editor is still a way in");
   assert.ok(!/data-ag="librevert"/.test(html), "no Undo until the server says there is a version before");
@@ -3007,6 +3003,33 @@ test("Done puts the typed section in the buffer, marks it unsaved, and touches n
   A.agAction("libdiscard", { getAttribute: () => "" });
   assert.strictEqual(a.libBuf.draft, SEC.md, "discard puts the saved words back");
   assert.strictEqual(a.libBuf.dirty, false);
+});
+
+/* Round 2, spec item 4: the old inline block editor (dropped into the section itself) is gone.
+   Editing now opens a right-hand panel, a sibling of the article body, with its own always-visible
+   close (X), separate from each mode's own Cancel. */
+test("editing a section opens a right-hand panel, not an inline block editor", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  const html = A.agPanelHtml(a);
+  assert.ok(/<aside class="ag-secpanel">/.test(html), "the editor is a separate right-hand panel");
+  assert.ok(/ag-secpanelh/.test(html) && /data-ag="libseccancel"/.test(html.slice(html.indexOf("ag-secpanel"))),
+             "and it has its own close, always visible while editing");
+  /* it is NOT nested inside the section it is editing any more (the old bug: a raw editor
+     dropped inline, between the section's own opening and closing tags) */
+  const secOpen = html.indexOf('data-sec="s2"');
+  const secClose = html.indexOf("</div>", secOpen);
+  assert.ok(html.indexOf("ag-secpanel", secOpen) === -1 || html.indexOf("ag-secpanel", secOpen) > secClose,
+             "the section editor does not live inside the article section any more");
+});
+test("closing the section panel with X returns to the plain article, same as Cancel", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  assert.ok(a.libSec, "editing started");
+  A.agAction("libseccancel", { getAttribute: () => "" });
+  assert.strictEqual(a.libSec, null, "the X (data-ag=libseccancel) closes it, same handler Cancel uses");
+  const html = A.agPanelHtml(a);
+  assert.ok(!/ag-secpanel/.test(html), "the right-hand panel is gone once closed");
 });
 test("a section cannot be emptied from the section editor", () => {
   const a = libPanel(SEC.md);
@@ -3103,6 +3126,32 @@ test("the reader's CSS gives the app's own serif font, a real measure, and three
   assert.ok(/\.ag-doc \.md-l\{/.test(doc), "lists get their own spacing");
 });
 
+test("the five-tab overlay is one fixed size, not a box that shrinks to a short tab's content", () => {
+  /* spec item 1: Search picture, Research and Draft ran long enough to fill the old max-height
+     box; Architect and Edits shrank to fit, so the overlay changed size tab to tab. A real
+     `height` (not just max-height) pins every tab to the same box; .ag-tabsb is what scrolls. */
+  const flat = CSS.replace(/\s+/g, "");
+  const m = flat.match(/\.ag-tabs\{[^}]*\}/);
+  assert.ok(m, ".ag-tabs rule found");
+  assert.ok(/height:min\(86vh,900px\)/.test(m[0]) && !/max-height:/.test(m[0]),
+             "a fixed height, not a max-height that lets short content shrink the box: " + m[0]);
+  assert.ok(/\.ag-tabsb\{[^}]*overflow-y:auto/.test(flat), "the content inside scrolls instead");
+});
+test("undo and redo are brighter than a plain muted button once they are enabled", () => {
+  const flat = CSS.replace(/\s+/g, "");
+  assert.ok(/\.ag-backbtn\[data-ag="libundo"\]:not\(:disabled\),\.ag-backbtn\[data-ag="libredo"\]:not\(:disabled\)\{color:var\(--acc\)/.test(flat),
+             "Undo/Redo pick up the accent colour once enabled, instead of the near-invisible default --muted");
+});
+test("Open is a layer with a margin on every side, not a full-bleed takeover", () => {
+  /* spec item 2: fixed to the viewport (so it also covers the chat pane beside .ag), with an
+     inset margin so that pane still shows at the corners, and a border/shadow rather than full
+     opacity so it reads as a layer above rather than a new screen. */
+  const flat = CSS.replace(/\s+/g, "");
+  const m = flat.match(/\.ag\.liblarge\.ag-panel\{[^}]*\}/);
+  assert.ok(m, ".ag.liblarge .ag-panel rule found");
+  assert.ok(/position:fixed/.test(m[0]) && /inset:28px/.test(m[0]), "fixed to the viewport, margin on every side: " + m[0]);
+  assert.ok(/\.ag\.liblarge::before\{[^}]*position:fixed;inset:0/.test(flat), "a dimmed backdrop behind the layer");
+});
 test("the TL;DR section is marked for its own callout, and no other section is", () => {
   const md = "# T\n\nIntro.\n\n## TL;DR\n\n- one\n- two\n\n## Body\n\nMore.\n";
   const a = libPanel(md);
@@ -3127,19 +3176,19 @@ test("the conflict box names who saved and offers their version or an overwrite"
   assert.ok(/data-ag="liboverwrite" data-arg="lib7"/.test(html), "or overwrite");
   assert.ok(/role="alert"/.test(html));
 });
-test("the meta line says the version, who saved it, and whether the team gets it", () => {
+test("the old meta line (words / sections / shared with the team) is gone, to leave room on the right", () => {
+  /* Round 2, spec item 6: "2,024 words - 11 sections - shared with the team" is deleted outright,
+     not reworded -- the right-hand edit panel needs the space it used to take. */
   const a = libPanel(SEC.md);
   a.libMeta = { version: 3, edited_by: "Devansh", edited_at: new Date(Date.now() - 120000).toISOString(),
                 team: { configured: true, member: true, why: "" }, has_previous: true };
   let html = A.agPanelHtml(a);
-  assert.ok(/version 3/.test(html) && /saved by Devansh 2m ago/.test(html), html.match(/<p class="ag-sub"[^<]*/)[0]);
-  assert.ok(/shared with the team/.test(html));
+  assert.ok(!/version 3/.test(html) && !/saved by Devansh/.test(html) && !/shared with the team/.test(html),
+             "no version / saved-by / team line any more: " + (html.match(/<p class="ag-sub"[^<]*/) || [""])[0]);
+  assert.ok(!/\d+ words? · \d+ sections?/.test(html), "and no word/section count either");
   assert.ok(!/data-ag="librevert"/.test(html), "the old footer Undo is gone -- Undo/Redo now live in the top bar");
   assert.ok(/data-ag="libundo" data-arg="lib7" disabled/.test(html), "Undo, disabled: no history flag was given");
   assert.ok(/data-ag="libredo" data-arg="lib7" disabled/.test(html), "Redo, disabled the same way");
-  a.libMeta.team = { configured: false, member: false, why: "No team workspace is connected, so this stays on this Mac." };
-  html = A.agPanelHtml(a);
-  assert.ok(/on this Mac only/.test(html) && /No team workspace is connected/.test(html), "the server's own sentence explains the local-only state");
 });
 
 /* the save round-trips, so it runs after the synchronous suite and reports with it */

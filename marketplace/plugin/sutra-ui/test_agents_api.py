@@ -564,6 +564,19 @@ class TestAgentsApi(unittest.TestCase):
         self.assertEqual(self.client.post(BASE + "/library/nope/redo", headers=HDR).status_code, 404)
         store.library_delete(item)
 
+    def test_19d_save_reply_itself_carries_history_not_a_stale_value(self):
+        """The bug he hit on 2.281.1: Undo/Redo read their enabled state off THIS call's own
+        reply (agLibSave, 17-agents.js), not a fresh GET. /save used to answer with no "history"
+        key at all, so the buttons fell back to whatever history was at the moment the article was
+        opened and never caught up -- Undo stayed disabled forever, even after two real edits."""
+        item = store.library_save("c19d", "r19d", "Cost per hire", self.MD)
+        r1 = self.client.post(BASE + "/library/%s/save" % item, json={"draft": self.MD + "\nOne.\n"}, headers=HDR).json()
+        self.assertIn("history", r1, "the save reply must carry history, not leave the caller guessing")
+        self.assertEqual(r1["history"], {"can_undo": False, "can_redo": False}, "one kept version: nothing before it yet")
+        r2 = self.client.post(BASE + "/library/%s/save" % item, json={"draft": self.MD + "\nTwo.\n"}, headers=HDR).json()
+        self.assertEqual(r2["history"], {"can_undo": True, "can_redo": False}, "a second kept version: Undo lights up immediately")
+        store.library_delete(item)
+
     # ---- settings ---------------------------------------------------------------------
 
     def test_20_connections_never_echo_secrets_and_refuse_api_keys(self):

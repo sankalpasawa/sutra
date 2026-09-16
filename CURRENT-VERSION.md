@@ -2,7 +2,25 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.281.1 (2026-09-16, HEAD)
+## v2.281.2 (2026-09-16, HEAD)
+
+**Ten fixes to the new Library, from a first real pass over 2.281.1.** The five-tab overlay is one
+fixed size now (Architect and Edits used to shrink to their own short content). Open is a layer over
+the whole window, chat pane included, with a margin on every side instead of a full-bleed takeover.
+The TL;DR callout colour block is gone — plain text like the rest of the article. Section editing is
+reworked: hovering a paragraph tints it and clicking it starts editing, the pencil still offers Edit
+by hand / Edit with AI, and either one opens on the right of the reader instead of a raw block editor
+dropped inline (that inline editor also had a hidden bug — its mode-switch row shared a CSS class
+with the five-tab overlay, so once that overlay became a fixed box it started rendering as a giant
+fixed panel over the middle of the screen). Undo and Redo are fixed — the save route was not
+returning fresh history flags, so the buttons never caught up with a real edit — and are brighter.
+Copy markdown is gone from the Library reader; Edit whole article stays. The Library card now shows
+only the title, the five tab links, the on/off-topic tag, and Open / Back to draft / delete; the
+word count, format name and top-pages range moved fully into the tabs. The on/off-topic tag now
+draws for "on" too, so the three backfilled articles show it. Tests: JS suites (all `test_*.js`,
+Python `test_agents_api.py`, seo_agent's 41 suites, manifest validation 14/14) all green.
+
+## v2.281.1 (2026-09-16)
 
 **Four finished branches land together: Stop, run decisions, and the Library.** Stop now really
 stops — the model call in flight is killed and every paid step checks before starting more work —

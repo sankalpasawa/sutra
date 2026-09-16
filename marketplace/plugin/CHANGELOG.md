@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-16
+## 2.281.2 (2026-09-16)
+
+- **Ten fixes to the Library from a first real pass over 2.281.1.** One fixed size for all five
+  tabs. Open is a margin-bordered layer over the whole window, not a full-bleed takeover. TL;DR
+  loses its colour block. Section editing moves to a right-hand panel (hover-to-edit, and the
+  pencil's "by hand" / "with AI" choice), replacing the inline block editor — which also had a
+  stray CSS class collision making its own mode toggle balloon into a full-screen box. Undo/Redo
+  fixed (the save route was not returning fresh history) and brighter. Copy markdown removed.
+  Library card trimmed to title, the five tabs, the on/off-topic tag, and Open/Back to draft/delete.
+  The on-topic tag now renders, so the three backfilled articles show it.
+
 ## 2.281.1 (2026-09-16)
 
 - **Stop really stops, and the run picks up where it left off.** A Stop now kills the model call in flight, and every paid step checks for a stop before it starts more work. A message sent after a Stop continues the same run from its saved steps instead of restarting it. Fixed a bug where a finished wait could write a malformed turn into the chat.

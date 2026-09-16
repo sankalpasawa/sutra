@@ -1856,7 +1856,13 @@ function agLibConflictHtml(c, libId){
    is shown as a diff first and only "Use this" takes it. */
 function agLibSecEditorHtml(s, ed, libId){
   const mode = ed.mode === "ai" ? "ai" : "text";
-  const tabs = `<div class="row ag-tabs" role="tablist">
+  /* NAMED ag-secmodes, deliberately not ag-tabs: that class name is also the five-tab article
+     overlay (agLibTabsHtml), and it is now position:fixed at a fixed size (spec item 1) -- this
+     small "Edit the text / Edit with AI" toggle row shared the name and, once the overlay class
+     became position:fixed, was rendering as a giant fixed box over the middle of the screen
+     instead of two small buttons in the panel. Likely part of why the old inline editor read as
+     unusable. */
+  const tabs = `<div class="row ag-secmodes" role="tablist">
       <button class="btn ${mode === "text" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "text"}" data-ag="libsecmode" data-arg="text">Edit the text</button>
       <button class="btn ${mode === "ai" ? "on" : ""}" type="button" role="tab" aria-selected="${mode === "ai"}" data-ag="libsecmode" data-arg="ai">Edit with AI</button></div>`;
   if (mode === "text"){
@@ -1887,7 +1893,10 @@ function agLibArticleHtml(p, a){
   if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
   const ed = a.libSec;
   const dirty = !!(a.libBuf && a.libBuf.dirty);
-  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words · ${secs.length} section${secs.length === 1 ? "" : "s"}${agLibMetaLine(a) ? " · " + agLibMetaLine(a) : ""}${dirty ? ` · <b>unsaved changes</b>` : ""}</p>
+  /* No meta line here any more (spec item 6: the word/section/team count is gone, to leave the
+     room the right-hand edit panel needs). "Unsaved changes" still needs to say so somewhere --
+     it moves onto the conflict/notice area instead of being dropped silently. */
+  return `${dirty ? `<p class="ag-sub" style="margin:0 0 10px"><b>unsaved changes</b></p>` : ""}
     ${agLibConflictHtml(a.libConflict, p.libId)}
     <div class="ag-doc">${secs.map(s => {
       const editing = ed && ed.id === s.id;
@@ -1896,12 +1905,16 @@ function agLibArticleHtml(p, a){
          directly, so only the section actually being rewritten ever animates. */
       const rewriting = editing && ed.mode === "ai" && ed.busy;
       /* The one section a reader should see as a callout, not just another heading -- decided
-         once, from the heading text the wrap step itself writes ("## TL;DR", write/assemble.py). */
+         once, from the heading text the wrap step itself writes ("## TL;DR", write/assemble.py).
+         The class still lands (harmless) but agents.css no longer styles it (spec item 3/4). */
       const tldr = /^tl\s*;?\s*dr$/i.test(String(s.heading || "").trim());
-      return `<div class="ag-artsec${editing ? " editing" : ""}${rewriting ? " rewriting" : ""}${tldr ? " tldr" : ""}" data-sec="${agEsc(s.id)}">${agMd(s.text)}
+      /* Clicking anywhere in the section starts editing it, same as the pencil (spec item 4:
+         "hovering a paragraph tints it, clicking it starts editing"). data-ag on the WRAPPER, not
+         a markdown link inside it: the document-level click listener (agAction wiring) skips any
+         click that lands on an <a>, so a link in the article still just navigates. */
+      return `<div class="ag-artsec${editing ? " editing" : ""}${rewriting ? " rewriting" : ""}${tldr ? " tldr" : ""}" data-sec="${agEsc(s.id)}" data-ag="libsec" data-arg="${agEsc(s.id)}">${agMd(s.text)}
         ${rewriting ? `<span class="rewritelbl" role="status">Rewriting…</span>` : ""}
-        ${editing ? "" : `<button class="ib ag-editbtn ag-pencil" type="button" data-ag="libsec" data-arg="${agEsc(s.id)}" aria-label="Edit ${agEsc(s.heading)}" title="Edit this section, by hand or with AI">${AG_ICON.pencil}</button>`}
-        ${editing ? agLibSecEditorHtml(s, ed, p.libId) : ""}</div>`;
+        ${editing ? "" : `<button class="ib ag-editbtn ag-pencil" type="button" data-ag="libsec" data-arg="${agEsc(s.id)}" aria-label="Edit ${agEsc(s.heading)}" title="Edit this section, by hand or with AI">${AG_ICON.pencil}</button>`}</div>`;
     }).join("")}</div>`;
 }
 
@@ -1986,8 +1999,7 @@ function agPanelHtml(a){
     if (p.readOnly) footer = a.libEdit ? ""
       : p.libId ? `<button class="btn pri" type="button" data-ag="libsavebuf" data-arg="${agEsc(p.libId)}" ${(a.libBuf && a.libBuf.dirty && !a.busy) ? "" : "disabled"}>${a.busy ? "Saving…" : "Save"}</button>
           ${a.libBuf && a.libBuf.dirty ? `<button class="btn" type="button" data-ag="libdiscard">Discard changes</button>` : ""}
-          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
-          <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`
+          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>`
       : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
@@ -2009,10 +2021,27 @@ function agPanelHtml(a){
       <button class="btn ag-backbtn" type="button" data-ag="libundo" data-arg="${agEsc(p.libId)}" ${hist.can_undo ? "" : "disabled"} title="Undo the last change">Undo</button>
       <button class="btn ag-backbtn" type="button" data-ag="libredo" data-arg="${agEsc(p.libId)}" ${hist.can_redo ? "" : "disabled"} title="Redo the change just undone">Redo</button>
     </div>` : "";
+  /* THE RIGHT-HAND SECTION EDITOR (spec item 4). Only a Library article (p.libId) has per-section
+     editing, and only while a.libSec names a section that still exists in the current text. It is
+     a sibling of .ag-pb, not nested in it (agents.css .ag-secpanel anchors to .ag-panel itself),
+     so the article keeps scrolling underneath on the left while this overlays the right edge. The
+     ✕ here is the always-visible way out the spec asks for, on top of each mode's own Cancel. */
+  let secPanel = "";
+  if (p.libId && a.libSec){
+    const curSecs = agSections(agLibText(p, a));
+    const targetSec = curSecs.find(x => x.id === a.libSec.id);
+    if (targetSec){
+      secPanel = `<aside class="ag-secpanel">
+        <div class="ag-secpanelh"><h4>Edit this section</h4>
+          <button class="ib" type="button" data-ag="libseccancel" aria-label="Close editing, keep the article as it is">${AG_ICON.x || "✕"}</button></div>
+        ${agLibSecEditorHtml(targetSec, a.libSec, p.libId)}</aside>`;
+    }
+  }
   return `${backBar}<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
       <button class="ib" type="button" data-ag="closepanel" aria-label="${p.libId ? "Back to the Library" : "Close the panel"}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
     <div class="ag-pb">${body}</div>
-    ${footer ? `<div class="ag-pf">${footer}</div>` : ""}`;
+    ${footer ? `<div class="ag-pf">${footer}</div>` : ""}
+    ${secPanel}`;
 }
 
 /* ── settings views ────────────────────────────────────────────────────────── */
@@ -2815,15 +2844,17 @@ function agLibBand(it){
   return `<span title="What the top ranking pages run">top pages ${agEsc(agNum(b.min))} to ${agEsc(agNum(b.max))}</span>`;
 }
 
-/* On topic is the default and gets no pill -- the same "warn, tag, keep going" the chat line
-   already follows (spec item 3). Off topic is the one state worth flagging on the row, in the
-   same quiet amber the rest of the screen already uses for a soft warning (.p-warn). The reason
-   is on the pill's title, the same way agLibFormat and agMileStripHtml already put their own
-   explanation on a title rather than a second line. */
+/* The card shows the on-topic or off-topic tag either way (spec item 9/10) -- it used to draw
+   nothing for "on", so the three articles that already carry topic_scope (the backfill did its
+   job; GET /library returns it) looked exactly like a row where it was never set. Off topic keeps
+   the quiet amber warning (.p-warn) the rest of the screen already uses; on topic is a plain,
+   neutral tag (.p-mut), not a second "looks fine" signal competing with the status pill. The
+   reason is on the pill's title, the same way agLibFormat and agMileStripHtml do it. */
 function agLibTopicPill(it){
   const t = it && it.topic_scope;
-  if (!t || t.state !== "off") return "";
-  return `<span class="pill p-warn" title="${agEsc(t.why || "Flagged off topic")}">Off topic</span>`;
+  if (!t || !t.state) return "";
+  const off = t.state === "off";
+  return `<span class="pill ${off ? "p-warn" : "p-mut"}" title="${agEsc(t.why || (off ? "Flagged off topic" : "On topic"))}">${off ? "Off topic" : "On topic"}</span>`;
 }
 
 function agLibraryHtml(items, a){
@@ -2853,8 +2884,12 @@ function agLibraryHtml(items, a){
          on the row (`request`), so use that: it is the only thing that identifies the article
          before it has a title, and the row renames itself the moment there is one. */
       const name = (writing && it.request) || it.title;
+      /* The card's own columns show only what spec item 9 lists: title, the five tab links
+         (agMileStripHtml), the on/off-topic tag, and Open / Back to draft / delete. Word count,
+         format name and the top-pages range are gone from HERE -- the tabs (agTabDraftHtml etc.)
+         still carry that detail, so nothing is lost, only no longer duplicated on the row. */
       return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span>${agLibTopicPill(it)}</div>
-        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : `<span>${agEsc(agNum(it.words))} words</span>`}${agLibFormat(it)}${agLibBand(it)}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
+        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : ""}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
         ${agMileStripHtml(it.id, miles, writing)}</div>
         <div class="ra">${writing ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
           <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${status === "ready" ? "draft" : "ready"}">${status === "ready" ? "Back to draft" : "Mark ready"}</button>`}
@@ -3533,6 +3568,9 @@ function agDraw(force){
      both hide, the panel goes to 100%. Every other panel (a run's own draft, a brand file, a
      prompt) keeps the 46% side-by-side review it always had -- only p.libId opts in. */
   root.classList.toggle("liblarge", !!(a.panel && a.panel.libId));
+  /* .ag-secpanel (the right-hand section editor) needs the article to leave it room on the right;
+     this is the one flag that turns that padding on, decided in the same place liblarge is. */
+  root.classList.toggle("secediting", !!(a.panel && a.panel.libId && a.libSec));
   agSetHtml("agSide", agSideHtml(a));
   const nearBottom = scroll ? (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60) : true;
   if (a.view === "chat"){
@@ -5412,6 +5450,10 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     const act = el.getAttribute("data-ag");
     if (!act) return;
     if (el.tagName === "A") return;
+    /* A Library section (.ag-artsec) now carries data-ag itself, so clicking IT starts editing
+       (spec item 4) -- but a markdown link inside one has no data-ag of its own, and would
+       otherwise bubble up to the section. A click that lands on a link keeps navigating. */
+    if (ev.target.closest && ev.target.closest("a")) return;
     ev.preventDefault();
     agAction(act, el).catch(e => agToast(String(e && e.message || e)));
   });

@@ -858,6 +858,11 @@ def library_update(item_id, draft_md, title=None, actor="", actor_id=""):
     _stamp_edit(meta, draft_md, title, actor, actor_id, old)
     _record_version(item_id, meta, draft_md)
     write_json(os.path.join(d, "meta.json"), meta)
+    # Undo/Redo read their enabled state off THIS call's reply (agLibSave, 17-agents.js) rather
+    # than a fresh GET, so it must carry the same "history" flags library_get computes -- without
+    # this the buttons stayed on whatever they were when the article was opened and never caught
+    # up with a real edit (the bug he hit on 2.281.1).
+    meta["history"] = library_history_flags(meta)
     return meta
 
 
