@@ -1,0 +1,9 @@
+
+BLOCKED — BUILD-LAYER declaration missing (PROTO-021 HARD on legacy path)
+  File:  holding/FOUNDER-DIRECTIONS.md
+
+  Emit BUILD-LAYER block + write marker before Edit/Write.
+  Spec: sutra/layer2-operating-system/PROTOCOLS.md §PROTO-021
+
+  Override: BUILD_LAYER_ACK=1 BUILD_LAYER_ACK_REASON='<why>' <tool>
+

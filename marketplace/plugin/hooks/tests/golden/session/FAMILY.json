@@ -1,0 +1,18 @@
+{
+  "family": "session",
+  "event": "SessionStart",
+  "scripts": [
+    { "id": "sessionstart-auto-update.sh", "path": "hooks/sessionstart-auto-update.sh", "args": [] },
+    { "id": "findings-banner.sh", "path": "hooks/findings-banner.sh", "args": [] },
+    { "id": "update-banner.sh", "path": "hooks/update-banner.sh", "args": [] },
+    { "id": "sessionstart-auto-activate.sh", "path": "hooks/sessionstart-auto-activate.sh", "args": [] },
+    { "id": "session-logger.sh", "path": "hooks/session-logger.sh", "args": [] },
+    { "id": "sessionstart-privacy-notice.sh", "path": "hooks/sessionstart-privacy-notice.sh", "args": [] },
+    { "id": "codex-directive-sweep.sh", "path": "hooks/codex-directive-sweep.sh", "args": [] },
+    { "id": "inbox-display.sh", "path": "hooks/inbox-display.sh", "args": [] },
+    { "id": "session-start-rotate.sh", "path": "hooks/session-start-rotate.sh", "args": [] },
+    { "id": "csm-sessionstart-banner.sh", "path": "hooks/csm-sessionstart-banner.sh", "args": [] },
+    { "id": "session-token-snapshot.sh", "path": "hooks/session-token-snapshot.sh", "args": [] },
+    { "id": "governance-live-banner.sh", "path": "hooks/governance-live-banner.sh", "args": [] }
+  ]
+}

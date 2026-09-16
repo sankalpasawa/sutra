@@ -1,0 +1,2 @@
+ed8f90ce33cd2289f426b3caad50397605a89b4492261df5d103b6d79fee5238  .claude/sessions/pid-<PID>/structure-first-active
+ed8f90ce33cd2289f426b3caad50397605a89b4492261df5d103b6d79fee5238  .claude/structure-first-active

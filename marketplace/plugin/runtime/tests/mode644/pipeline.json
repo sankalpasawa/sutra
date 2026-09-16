@@ -1,0 +1,26 @@
+{
+  "spec_version": "1.0.0",
+  "contract_version": 1,
+  "generated_from": "runtime/tests/mode644/hooks/hooks.json",
+  "notes": "RED FIXTURE pipeline for runtime/selftest.sh. Two shims; hooks/bad-mode.sh is mode 0644 on purpose. Running `sh runtime/selftest.sh --root runtime/tests/mode644 --spec runtime/tests/mode644/pipeline.json` MUST print fail=1 and exit non-zero.",
+  "events": {
+    "PreToolUse": [
+      {
+        "id": "fixture.good",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/good-mode.sh",
+        "timeout_ms": 5000,
+        "replaces": ["hooks/good-mode.sh"]
+      },
+      {
+        "id": "fixture.bad",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/bad-mode.sh",
+        "timeout_ms": 5000,
+        "replaces": ["hooks/bad-mode.sh"]
+      }
+    ]
+  }
+}

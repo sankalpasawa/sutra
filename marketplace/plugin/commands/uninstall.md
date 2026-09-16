@@ -29,6 +29,32 @@ claude plugin install core@sutra
 /core:start
 ```
 
+## The managed CLAUDE.md block (contract_version)
+
+`/core:start` writes a governance block into `.claude/CLAUDE.md`, between these two markers:
+
+```
+<!-- SUTRA GOVERNANCE (managed by /core:start — do not edit manually) -->
+...
+<!-- /SUTRA GOVERNANCE -->
+```
+
+The block carries a `contract_version` stamp naming the runtime contract it was written for. It matters in three places:
+
+| Situation | What the stamp does |
+|---|---|
+| Plugin updated | SessionStart compares the stamp against the installed runtime; a mismatch prints a `systemMessage` telling you to re-run `/core:start`, so the instructions in the file and the hooks that enforce them never drift apart |
+| Plugin pinned or rolled back | the stamp still names the older contract — re-run `/core:start` after the pin so the block matches the version you actually run |
+| Plugin uninstalled | uninstall does **not** touch `.claude/CLAUDE.md` — the block and its stamp stay in your repo, describing a runtime that is no longer installed |
+
+After uninstalling, delete the block by hand (everything from the begin marker to the end marker, inclusive) if you do not want those instructions in effect. Everything outside the two markers is yours and was never managed by Sutra.
+
+To see the stamp that is in a file right now:
+
+```bash
+grep -n 'contract_version' .claude/CLAUDE.md
+```
+
 ## Reversing the company-OS install (W2/W3 surfaces)
 
 If `/core:start --profile company` installed operating surfaces, reverse them per item:

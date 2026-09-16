@@ -1,0 +1,1 @@
+5837d5c2d07937f41d5847973d09e9f0548d926a99baee8c1347e212875b2f92  .enforcement/completion-protocol.jsonl

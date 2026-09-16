@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[{"type":"addRules","rules":[{"toolName":"mcp__claude_ai_Gmail__send_message","ruleContent":"mcp__claude_ai_Gmail__send_message"}],"behavior":"allow","destination":"localSettings"}]}}}

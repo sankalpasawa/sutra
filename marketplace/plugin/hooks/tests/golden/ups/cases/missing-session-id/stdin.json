@@ -1,0 +1,6 @@
+{
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "add a retry to the lending disbursal webhook"
+}

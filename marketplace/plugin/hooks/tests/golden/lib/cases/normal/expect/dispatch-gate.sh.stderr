@@ -1,0 +1,2 @@
+ATOM FLOOR (WARN): no open Work-Atom for session <UUID> — open one first: sutra-atom open --goal '<observable outcome>' --verify-template <file-exists|grep-count|named-test> --verify-arg <...>
+  Enforcement is WARN in this repo. Promote: echo hard > .claude/dispatch-mode

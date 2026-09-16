@@ -2,7 +2,21 @@
 
 **status**: active · **updated**: 2026-09-16
 
-## v2.279.1 (2026-09-16, HEAD)
+## v2.280.0 (2026-09-16, HEAD)
+
+**The per-turn pipeline runs as one program (W0a of the Sutra runtime, D73, ADR-040).**
+`hooks/hooks.json` collapses from 92 registrations to 7 (`bin/sutra-turn run --event <E>`
+per event with steps, plus `bin/sutra-canary`); the 92-entry registry ships verbatim as
+`hooks/hooks.json.step3` behind the kill-switch (`~/.sutra-runtime-disabled` or
+`SUTRA_RUNTIME_DISABLED=1`). `runtime/pipeline.json` is the spec (6 events, 92 steps,
+87 scripts), `runtime/spec-check.sh` enforces it, `bin/sutra-charcap` plus
+`hooks/tests/golden` (9 families, 259 cases) prove every hook's stdout, stderr and exit
+byte for byte on both runners; `tests/run-all.sh --set runtime` and the release gate
+workflow guard every push. Nothing changes in day-to-day use. Founder gates open:
+`/reload-plugins` (EXECUTION row 15) and the downgrade drill (row 16). Details:
+`marketplace/plugin/CHANGELOG.md` 2.280.0.
+
+## v2.279.1 (2026-09-16)
 
 **One sidebar: a 72px icon rail.** Founder, 2026-09-16: "the icons are there, and below the
 icons, text is written. You do not need to create the sidebar." The wide sidebar is gone; each

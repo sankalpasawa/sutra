@@ -1,0 +1,5 @@
+
+PLACEMENT (warn): this turn has no address. Emit the PLACEMENT block +
+  write .claude/placement-registered. Enforcement promotes to HARD once
+  this repo clears its compliance threshold.
+

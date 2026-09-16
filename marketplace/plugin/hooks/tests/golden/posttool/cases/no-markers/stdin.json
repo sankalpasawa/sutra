@@ -1,0 +1,14 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "holding/plans/new-plan.md",
+    "content": "# Plan\n"
+  },
+  "tool_response": {
+    "success": true
+  }
+}

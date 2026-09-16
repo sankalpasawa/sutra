@@ -1,0 +1,14 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "holding/plans/good.md",
+    "content": "# Disbursal retry plan\n\n**Status**: DRAFT\n**Owner**: CEO of Asawa\n**Updated**: 2026-09-11\n\n<a id=\"scope\"></a>\n## 1. Scope\n\n| # | Item | Impact | Effort |\n|---|---|---|---|\n| 1 | retry | partners | 1d |\n\nDecision: ship the retry.\n\n---\nProvenance: authored 2026-09-11.\n"
+  },
+  "tool_response": {
+    "success": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "family": "pretool-other",
+  "event": "PreToolUse",
+  "scripts": [
+    { "id": "feedback-auto-override.sh", "path": "hooks/feedback-auto-override.sh", "args": [] },
+    { "id": "structure-first-reminder.sh", "path": "hooks/structure-first-reminder.sh", "args": [] },
+    { "id": "bash-summary-pretool.sh", "path": "hooks/bash-summary-pretool.sh", "args": [] },
+    { "id": "self-assess-before-foundational.sh", "path": "hooks/self-assess-before-foundational.sh", "args": [] },
+    { "id": "csm-classification-pretooluse.sh", "path": "hooks/csm-classification-pretooluse.sh", "args": [] },
+    { "id": "subagent-dispatch-brief.sh", "path": "hooks/subagent-dispatch-brief.sh", "args": [] }
+  ]
+}

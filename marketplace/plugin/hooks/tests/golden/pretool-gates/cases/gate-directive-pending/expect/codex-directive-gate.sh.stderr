@@ -1,0 +1,2 @@
+PROTO-019: marker malformed at .claude/codex-directive-pending-<UUID>.
+  Expected: DIRECTIVE-ID + TS + MATCH lines. Delete or fix, then retry.

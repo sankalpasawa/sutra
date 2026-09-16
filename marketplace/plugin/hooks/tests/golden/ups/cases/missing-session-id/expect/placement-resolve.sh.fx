@@ -1,0 +1,2 @@
+41c0ae2c66dee4ed0b70256326bbec0e4dc5fcfbfe311414e95d4c4f58d5524d  .claude/placement-registered
+41c0ae2c66dee4ed0b70256326bbec0e4dc5fcfbfe311414e95d4c4f58d5524d  .claude/sessions/pid-<PID>/placement-registered

@@ -1,0 +1,10 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "@PROJ@/transcript.jsonl",
+  "cwd": "@PROJ@",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "WebSearch",
+  "tool_input": {
+    "query": "lending disbursal retry best practice"
+  }
+}

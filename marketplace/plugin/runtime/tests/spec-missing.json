@@ -1,0 +1,1408 @@
+{
+  "spec_version": "1.0.0",
+  "contract_version": 1,
+  "matcher_semantics": "anchored-ere",
+  "generated_from": "sutra/marketplace/plugin/hooks/hooks.json",
+  "registration_count": 92,
+  "unique_script_count": 87,
+  "notes": "RED FIXTURE for runtime/spec-check.sh. Regenerated from the v1.0.0 spec (same spec_version, same matcher_semantics) with exactly one step removed: the PreToolUse step pre.blueprint-check (hooks/blueprint-check.sh, matcher Edit|Write). spec-check.sh MUST exit 3 on this file: the registration PreToolUse / Edit|Write / blueprint-check.sh is covered by no step, and blueprint-check.sh appears in no replaces[] and in no deleted[] entry. Do not fix this file by hand; regenerate it from pipeline.json whenever the spec changes. Regenerated 2026-09-15 against the host-cap reconciliation and the UserPromptExpansion drop: budgets.event_wall_ms carries the same PermissionRequest 8000 value as the live spec and the dead UserPromptExpansion event is gone from both, so this fixture stays red for its ONE intended reason (the missing pre.blueprint-check step) and never for check 12. EMPTY EVENT DROPPED (2026-09-15): UserPromptExpansion was declared here as an empty step array while the collapsed hooks.json registered `sutra-turn run --event UserPromptExpansion` — a registration hooks.json.step3 never had, so the fleet fires nothing on that path. Every expansion would have forked the runtime to select zero steps, write an orphan_turn + stage_digest row and exit. The event is removed from events, from budgets.event_wall_ms and from budgets.legacy_wall_ms, and from the registry; spec-check check 13 keeps the two sides bound (a declared event must have >= 1 step; a registered runtime event must be declared with >= 1 step), so the pair can never drift back apart. Declaring the event again is a one-line change the day a step exists for it.",
+  "budgets": {
+    "event_wall_ms": {
+      "SessionStart": 90000,
+      "UserPromptSubmit": 40000,
+      "PreToolUse": 170000,
+      "PostToolUse": 120000,
+      "PermissionRequest": 8000,
+      "Stop": 320000
+    },
+    "legacy_wall_ms": {
+      "SessionStart": 78000,
+      "UserPromptSubmit": 31000,
+      "PreToolUse": 153000,
+      "PostToolUse": 105000,
+      "PermissionRequest": 3000,
+      "Stop": 309000
+    },
+    "step_default_ms": 5000,
+    "context": {
+      "render_chars_max": 7000,
+      "cap_chars": 10000,
+      "ledger_max_bytes": 5242880,
+      "ledger_retention_days": 30
+    }
+  },
+  "profiles": {
+    "individual": {
+      "mode": "warn",
+      "llm_slots": false,
+      "dispatch": false
+    },
+    "project": {
+      "mode": "warn",
+      "llm_slots": true,
+      "dispatch": false
+    },
+    "company": {
+      "mode": "hard",
+      "llm_slots": true,
+      "dispatch": true
+    }
+  },
+  "events": {
+    "SessionStart": [
+      {
+        "id": "ss.sessionstart-auto-update",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/sessionstart-auto-update.sh",
+        "timeout_ms": 20000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/sessionstart-auto-update.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.findings-banner",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/findings-banner.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/findings-banner.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ss.registry-shrink-banner",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/registry-shrink-banner.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".registry-shrink-banner-disabled"
+        ],
+        "replaces": [
+          "hooks/registry-shrink-banner.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ss.update-banner",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/update-banner.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/update-banner.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.sessionstart-auto-activate",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/sessionstart-auto-activate.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/sessionstart-auto-activate.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.session-logger",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/session-logger.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/session-logger.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.sessionstart-privacy-notice",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/sessionstart-privacy-notice.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/sessionstart-privacy-notice.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.codex-directive-sweep",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/codex-directive-sweep.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".codex-directive-disabled"
+        ],
+        "replaces": [
+          "hooks/codex-directive-sweep.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.inbox-display",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/inbox-display.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".sutra-inbox-disabled"
+        ],
+        "replaces": [
+          "hooks/inbox-display.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.session-start-rotate",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/session-start-rotate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/session-start-rotate.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.csm-sessionstart-banner",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/csm-sessionstart-banner.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".csm-banner-disabled"
+        ],
+        "replaces": [
+          "hooks/csm-sessionstart-banner.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.session-token-snapshot",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/session-token-snapshot.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/session-token-snapshot.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      },
+      {
+        "id": "ss.governance-live-banner",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/governance-live-banner.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".sutra-live-banner-disabled"
+        ],
+        "replaces": [
+          "hooks/governance-live-banner.sh"
+        ],
+        "on_error": "warn",
+        "wrapper": "hooks/lib/sutra-stderr-capture.sh"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "id": "ups.reset-turn-markers",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/reset-turn-markers.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/reset-turn-markers.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.loopguard-turn-reset",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/loopguard-turn-reset.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".loop-budget-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/loopguard-turn-reset.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.codex-directive-detect",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/codex-directive-detect.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".codex-directive-disabled"
+        ],
+        "replaces": [
+          "hooks/codex-directive-detect.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.feedback-routing-rule",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/feedback-routing-rule.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".feedback-routing-rule-disabled"
+        ],
+        "replaces": [
+          "hooks/feedback-routing-rule.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.feedback-auto-correction",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/feedback-auto-correction.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/feedback-auto-correction.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.per-turn-discipline-prompt",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/per-turn-discipline-prompt.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".per-turn-discipline-disabled",
+          ".sutra-defaults-disabled"
+        ],
+        "replaces": [
+          "hooks/per-turn-discipline-prompt.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.capture-prompt",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/capture-prompt.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".prompt-capture-disabled"
+        ],
+        "replaces": [
+          "hooks/capture-prompt.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "ups.placement-resolve",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/placement-resolve.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-resolve.sh"
+        ],
+        "on_error": "warn"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "id": "pre.usage-guard",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/usage-guard.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".usage-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/usage-guard.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.feedback-auto-override",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/feedback-auto-override.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/feedback-auto-override.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.structure-first-reminder",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/structure-first-reminder.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".structure-first-disabled",
+          ".sutra-defaults-disabled"
+        ],
+        "replaces": [
+          "hooks/structure-first-reminder.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.loop-budget-guard",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/loop-budget-guard.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".loop-budget-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/loop-budget-guard.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.depth-marker-pretool",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/depth-marker-pretool.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/depth-marker-pretool.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.operationalization-check",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/operationalization-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".ops-check-disabled"
+        ],
+        "replaces": [
+          "hooks/operationalization-check.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.flow-gate.edit-write",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/flow-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".flow-disabled"
+        ],
+        "replaces": [
+          "hooks/flow-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.codex-consult-gate",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/codex-consult-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".codex-consult-disabled"
+        ],
+        "replaces": [
+          "hooks/codex-consult-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.placement-gate.edit-write",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/placement-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.creation-guard",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/creation-guard.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".creation-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/creation-guard.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.feedback-channel-guard",
+        "matcher": "Bash",
+        "class": "B",
+        "impl": "shim:hooks/feedback-channel-guard.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".sutra-feedback-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/feedback-channel-guard.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.rtk-auto-rewrite",
+        "matcher": "Bash",
+        "class": "C",
+        "impl": "shim:hooks/rtk-auto-rewrite.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".rtk-disabled"
+        ],
+        "replaces": [
+          "hooks/rtk-auto-rewrite.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.codex-directive-gate.bash",
+        "matcher": "Bash",
+        "class": "B",
+        "impl": "shim:hooks/codex-directive-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".codex-directive-disabled"
+        ],
+        "replaces": [
+          "hooks/codex-directive-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.bash-summary-pretool",
+        "matcher": "Bash",
+        "class": "C",
+        "impl": "shim:hooks/bash-summary-pretool.sh",
+        "timeout_ms": 6000,
+        "killswitch_aliases": [
+          ".sutra-bash-summary-disabled"
+        ],
+        "replaces": [
+          "hooks/bash-summary-pretool.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.structural-move-check",
+        "matcher": "Bash",
+        "class": "B",
+        "impl": "shim:hooks/structural-move-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/structural-move-check.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.pytest-isolation-guard",
+        "matcher": "Bash",
+        "class": "B",
+        "impl": "shim:hooks/pytest-isolation-guard.sh",
+        "timeout_ms": 15000,
+        "killswitch_aliases": [
+          ".pytest-isolation-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/pytest-isolation-guard.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.placement-gate.bash",
+        "matcher": "Bash",
+        "class": "B",
+        "impl": "shim:hooks/placement-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.keys-in-env-vars",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/keys-in-env-vars.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".proto004-disabled"
+        ],
+        "replaces": [
+          "hooks/keys-in-env-vars.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.enforce-boundaries",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/enforce-boundaries.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/enforce-boundaries.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.codex-directive-gate.write-edit-multiedit",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/codex-directive-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".codex-directive-disabled"
+        ],
+        "replaces": [
+          "hooks/codex-directive-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.build-layer-check",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/build-layer-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/build-layer-check.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.self-assess-before-foundational",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/self-assess-before-foundational.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".proto005-disabled"
+        ],
+        "replaces": [
+          "hooks/self-assess-before-foundational.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.input-classification-gate",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/input-classification-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/input-classification-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.csm-classification-pretooluse",
+        "matcher": "Write|Edit|MultiEdit",
+        "class": "B",
+        "impl": "shim:hooks/csm-classification-pretooluse.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".csm-classification-disabled"
+        ],
+        "replaces": [
+          "hooks/csm-classification-pretooluse.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.subagent-dispatch-brief",
+        "matcher": "Task",
+        "class": "A",
+        "impl": "shim:hooks/subagent-dispatch-brief.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".subagent-brief-disabled",
+          ".sutra-defaults-disabled"
+        ],
+        "replaces": [
+          "hooks/subagent-dispatch-brief.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "pre.flow-gate.task",
+        "matcher": "Task",
+        "class": "B",
+        "impl": "shim:hooks/flow-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".flow-disabled"
+        ],
+        "replaces": [
+          "hooks/flow-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "pre.atom-floor",
+        "matcher": "Edit|Write|Bash",
+        "class": "B",
+        "impl": "shim:hooks/atom-floor.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".atom-floor-disabled"
+        ],
+        "replaces": [
+          "hooks/atom-floor.sh"
+        ],
+        "on_error": "block_passthrough",
+        "timeout_source": "pinned: hooks.json entry carries no timeout"
+      },
+      {
+        "id": "pre.dispatch-gate",
+        "matcher": "Edit|Write|Bash|Task",
+        "class": "B",
+        "impl": "shim:hooks/dispatch-gate.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".dispatch-gate-disabled",
+          ".workflow-floor-disabled"
+        ],
+        "replaces": [
+          "hooks/dispatch-gate.sh"
+        ],
+        "on_error": "block_passthrough",
+        "timeout_source": "pinned: hooks.json entry carries no timeout"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "post.posttool-counter",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/posttool-counter.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/posttool-counter.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.dispatcher-posttool",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/dispatcher-posttool.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/dispatcher-posttool.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.auto-coverage",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/auto-coverage.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/auto-coverage.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.cascade-check",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/cascade-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/cascade-check.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "post.estimation-enforcement",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/estimation-enforcement.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/estimation-enforcement.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.artifact-check",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/artifact-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/artifact-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.process-fix-check",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/process-fix-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/process-fix-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.context-scope-audit.edit-write",
+        "matcher": "Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/context-scope-audit.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/context-scope-audit.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.placement-touch",
+        "matcher": "Edit|Write",
+        "class": "A",
+        "impl": "shim:hooks/placement-touch.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-touch.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.md-standard-gate",
+        "matcher": "Edit|Write",
+        "class": "C",
+        "impl": "shim:hooks/md-standard-gate.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".md-standard-disabled"
+        ],
+        "replaces": [
+          "hooks/md-standard-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "post.completion-protocol-check",
+        "matcher": "Task",
+        "class": "B",
+        "impl": "shim:hooks/completion-protocol-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".completion-protocol-disabled"
+        ],
+        "replaces": [
+          "hooks/completion-protocol-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.posttool-mcp-compress",
+        "matcher": "mcp__.*",
+        "class": "C",
+        "impl": "shim:hooks/posttool-mcp-compress.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [
+          ".c3c-disabled"
+        ],
+        "replaces": [
+          "hooks/posttool-mcp-compress.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.agent-completion-check",
+        "matcher": "Bash|Edit|Write",
+        "class": "B",
+        "impl": "shim:hooks/agent-completion-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/agent-completion-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.onboarding-self-check",
+        "matcher": "Write",
+        "class": "B",
+        "impl": "shim:hooks/onboarding-self-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/onboarding-self-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.narration-not-artifact",
+        "matcher": "Write",
+        "class": "C",
+        "impl": "shim:hooks/narration-not-artifact.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".proto009-disabled"
+        ],
+        "replaces": [
+          "hooks/narration-not-artifact.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.codex-consult-marker",
+        "matcher": "Bash",
+        "class": "A",
+        "impl": "shim:hooks/codex-consult-marker.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/codex-consult-marker.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "post.context-scope-audit.read",
+        "matcher": "Read",
+        "class": "B",
+        "impl": "shim:hooks/context-scope-audit.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/context-scope-audit.sh"
+        ],
+        "on_error": "warn"
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "id": "perm.permission-gate",
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*|WebFetch|WebSearch|Task",
+        "class": "B",
+        "impl": "shim:hooks/permission-gate.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".sutra-permissions-disabled"
+        ],
+        "replaces": [
+          "hooks/permission-gate.sh"
+        ],
+        "on_error": "warn"
+      }
+    ],
+    "Stop": [
+      {
+        "id": "stop.phase-exit-audit",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/phase-exit-audit.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".phase-exit-audit-disabled"
+        ],
+        "replaces": [
+          "hooks/phase-exit-audit.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.estimation-stop",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/estimation-stop.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/estimation-stop.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.flush-telemetry",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/flush-telemetry.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/flush-telemetry.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.estimation-collector",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/estimation-collector.sh",
+        "timeout_ms": 15000,
+        "killswitch_aliases": [
+          ".estimation-collector-disabled"
+        ],
+        "replaces": [
+          "hooks/estimation-collector.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.session-logger",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/session-logger.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/session-logger.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.log-triage",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/log-triage.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/log-triage.sh"
+        ],
+        "on_error": "warn",
+        "decommission": "deleted[]: inert as a Stop hook (agent-invoked CLI)"
+      },
+      {
+        "id": "stop.log-skill-feedback",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/log-skill-feedback.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/log-skill-feedback.sh"
+        ],
+        "on_error": "warn",
+        "decommission": "deleted[]: inert as a Stop hook (agent-invoked CLI)"
+      },
+      {
+        "id": "stop.measurement-logger",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/measurement-logger.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/measurement-logger.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.compliance-tracker",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/compliance-tracker.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/compliance-tracker.sh"
+        ],
+        "on_error": "warn",
+        "decommission": "deleted[]: inert as a Stop hook (called by other hooks, not by the event)"
+      },
+      {
+        "id": "stop.feedback-auto-abandonment",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/feedback-auto-abandonment.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/feedback-auto-abandonment.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.policy-only-sensor",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/policy-only-sensor.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/policy-only-sensor.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.context-budget-check",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/context-budget-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/context-budget-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.output-behavior-lint",
+        "matcher": "*",
+        "class": "C",
+        "impl": "shim:hooks/output-behavior-lint.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/output-behavior-lint.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.csm-cap118-lint",
+        "matcher": "*",
+        "class": "C",
+        "impl": "shim:hooks/csm-cap118-lint.sh",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".csm-cap118-lint-disabled"
+        ],
+        "replaces": [
+          "hooks/csm-cap118-lint.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.flow-stop-check",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/flow-stop-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".flow-disabled"
+        ],
+        "replaces": [
+          "hooks/flow-stop-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.per-turn-hard-gate",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/per-turn-hard-gate.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".per-turn-hard-disabled",
+          ".blueprint-disabled"
+        ],
+        "replaces": [
+          "hooks/per-turn-hard-gate.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.writing-style-gate",
+        "matcher": "*",
+        "class": "C",
+        "impl": "shim:hooks/writing-style-gate.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".writing-style-disabled"
+        ],
+        "replaces": [
+          "hooks/writing-style-gate.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "stop.placement-stop-check",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/placement-stop-check.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-stop-check.sh"
+        ],
+        "on_error": "block_passthrough"
+      },
+      {
+        "id": "stop.placement-lint",
+        "matcher": "*",
+        "class": "C",
+        "impl": "shim:hooks/placement-lint.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".placement-disabled"
+        ],
+        "replaces": [
+          "hooks/placement-lint.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.atom-cards-stop-check",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/atom-cards-stop-check.sh",
+        "timeout_ms": 10000,
+        "killswitch_aliases": [
+          ".atom-floor-disabled"
+        ],
+        "replaces": [
+          "hooks/atom-cards-stop-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.creation-stop-check",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/creation-stop-check.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [
+          ".creation-guard-disabled"
+        ],
+        "replaces": [
+          "hooks/creation-stop-check.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.workflow-floor",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/workflow-floor.sh",
+        "timeout_ms": 8000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/workflow-floor.sh"
+        ],
+        "on_error": "warn",
+        "enable_flag": "~/.sutra/workflow-floor-enabled"
+      },
+      {
+        "id": "stop.coverage-gate",
+        "matcher": "*",
+        "class": "B",
+        "impl": "shim:hooks/coverage-gate.sh",
+        "timeout_ms": 5000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/coverage-gate.sh"
+        ],
+        "on_error": "warn"
+      },
+      {
+        "id": "stop.domains-site-refresh",
+        "matcher": "*",
+        "class": "A",
+        "impl": "shim:hooks/domains-site-refresh.sh",
+        "timeout_ms": 150000,
+        "killswitch_aliases": [],
+        "replaces": [
+          "hooks/domains-site-refresh.sh"
+        ],
+        "on_error": "warn"
+      }
+    ]
+  },
+  "deleted": [
+    {
+      "script": "hooks/log-triage.sh",
+      "kind": "inert-stop-cli",
+      "reason": "Registered on Stop but the file is an agent-invoked CLI ('Called by agent after task completion to log depth accuracy'); it reads argv, not the Stop stdin payload, so the registration is a no-op."
+    },
+    {
+      "script": "hooks/log-skill-feedback.sh",
+      "kind": "inert-stop-cli",
+      "reason": "Registered on Stop but the file is an agent-invoked CLI ('Called by agent when a skill/pattern was notably effective'); argv-driven, so the Stop registration never records anything."
+    },
+    {
+      "script": "hooks/compliance-tracker.sh",
+      "kind": "inert-stop-cli",
+      "reason": "Registered on Stop but the file is a helper other hooks call ('Called by SOFT hooks to log pass/warn events for graduation tracking'); argv-driven, so the Stop registration is a no-op."
+    },
+    {
+      "script": "hooks/auto-push.sh",
+      "kind": "orphan-hook",
+      "reason": "Declares 'Event: Stop (session end)' in its header but appears in no hooks.json registration; dead since the unpushed-work warning moved to the session banner."
+    },
+    {
+      "script": "hooks/kpi-tracker.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Stop hook, AUDIT mode' against v1.3.1 KPI baselines; unregistered, so no session has ever measured them."
+    },
+    {
+      "script": "hooks/latency-collector.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Stop hook, advisory' for the Speed Charter W1 latency series; unregistered, superseded by the runtime ledger's own timing rows."
+    },
+    {
+      "script": "hooks/lifecycle-check.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Fires: Stop (session end)' for D3 task-lifecycle coverage; unregistered heuristic sensor with no consumer."
+    },
+    {
+      "script": "hooks/new-path-detector.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Event: PreToolUse on Write'; unregistered, and its PROTO-001 duplication check is covered by placement-gate.sh."
+    },
+    {
+      "script": "hooks/policy-coverage-gate.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Fires as a Claude Code PreToolUse hook on Edit|Write|Bash' for PROTO-017; unregistered, never enforced."
+    },
+    {
+      "script": "hooks/session-checkpoint.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Event: Stop'; unregistered, superseded by holding/checkpoints and the session ledger."
+    },
+    {
+      "script": "hooks/test-in-production-check.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Event: Stop' for D1; unregistered, so the check has never run in any session."
+    },
+    {
+      "script": "hooks/time-allocation-tracker.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Event: Stop' for the D12 70/20/10 split; unregistered, no allocation series exists."
+    },
+    {
+      "script": "hooks/triage-collector.sh",
+      "kind": "orphan-hook",
+      "reason": "Header declares 'Stop event' and parses transcript_path; unregistered, duplicated by estimation-collector.sh which is registered."
+    },
+    {
+      "script": "hooks/marker-lib.sh",
+      "kind": "cli-lib-test",
+      "reason": "Sourced library for session-scoped markers, not a hook; the runtime replaces model-written markers with ledger rows, so it has no runtime step."
+    },
+    {
+      "script": "hooks/resilience.sh",
+      "kind": "cli-lib-test",
+      "reason": "Library called by SOFT hooks after a warn to track consecutive failures; not an event handler."
+    },
+    {
+      "script": "hooks/emit-metric.sh",
+      "kind": "cli-lib-test",
+      "reason": "Layer B metric emitter invoked by other scripts with argv; writes ~/.sutra/metrics-queue.jsonl, not a hook."
+    },
+    {
+      "script": "hooks/log-coverage.sh",
+      "kind": "cli-lib-test",
+      "reason": "Coverage logger invoked by skills and hooks with argv ('Logs a method fire to os/coverage-log.jsonl'); not an event handler."
+    },
+    {
+      "script": "hooks/rotate-logs.sh",
+      "kind": "cli-lib-test",
+      "reason": "Log-rotation utility for Tokens charter C2, called by session-start-rotate.sh; not an event handler."
+    },
+    {
+      "script": "hooks/check-graduation.sh",
+      "kind": "cli-lib-test",
+      "reason": "Operator CLI that reports which SOFT hooks should graduate to HARD; run by hand, never by an event."
+    },
+    {
+      "script": "hooks/hook-health-sensor.sh",
+      "kind": "cli-lib-test",
+      "reason": "Cross-session hook health report CLI (exit 0 always); run on demand, never registered."
+    },
+    {
+      "script": "hooks/codex-review-gate.sh",
+      "kind": "cli-lib-test",
+      "reason": "PROTO-019 external peer-review gate kept as a manual CLI; the registered path is codex-consult-gate.sh plus codex-directive-gate.sh."
+    },
+    {
+      "script": "hooks/tripwire-hook-sizes.sh",
+      "kind": "cli-lib-test",
+      "reason": "Tripwire CLI that watches for hook files being emptied and restores them; run by hand, never registered."
+    },
+    {
+      "script": "hooks/marker-smoke-test.sh",
+      "kind": "cli-lib-test",
+      "reason": "Standalone test proving session-scoped markers isolate concurrent sessions ('bash hooks/marker-smoke-test.sh'); a test, not a hook."
+    },
+    {
+      "script": "hooks/reset-guard-test.sh",
+      "kind": "cli-lib-test",
+      "reason": "Regression test for the per-turn marker reset guards; a test, not a hook."
+    },
+    {
+      "script": "hooks/codex-gate-outofrepo-test.sh",
+      "kind": "cli-lib-test",
+      "reason": "Regression test for the 2026-07-31 memory-scope carve-out in codex-consult-gate.sh; a test, not a hook."
+    }
+  ]
+}
