@@ -281,6 +281,66 @@ def _run_tool(chat_id, run_id, name, args, step_id=None):
     return mod.run(ctx, **(args or {}))
 
 
+# ---- a Stop reaching a tool ----------------------------------------------------------------
+# Seen for real on 2026-09-16 (chat c-f1a6e19c, run r-115458): Stop was pressed at 06:27:08 and
+# the research step ran to its end at 06:28:13, spending model calls and DataForSEO money for a
+# minute after the person had said stop. The state said "stopped" the whole time; nothing that
+# was running ever looked at it. Now loop.stop reaches the work in flight through llm.stop_run,
+# and every tool notices at its next boundary (llm.check_stop). This is what the loop does once
+# the tool has come back with llm.Stopped: the tool call is closed so the saved turn is whole,
+# the step row is ended so the screen stops spinning, and the run stays stopped. Nothing here
+# touches what the tool already wrote to disk: that is what the next message carries on from.
+
+STOP_NOTE = "Nothing new was started. What was already saved is kept."
+STOPPED_TOOL = {"error": "Stopped by the user before this finished.",
+                "hint": "Its saved work is kept. If asked to carry on, run it again: it picks up "
+                        "from what is on disk."}
+NOT_STARTED_TOOL = {"error": "Not started: the user stopped the run first.",
+                    "hint": "If asked to carry on, run it again."}
+
+
+def _stopped(chat_id, run_id):
+    return (store.get_state(chat_id, run_id) or {}).get("status") in ("stopped", "failed")
+
+
+def _tool_stopped(chat_id, run_id, step_id, name, t0):
+    """End the step row for a tool that came back with llm.Stopped, and hand back the result
+    that closes its tool call. `stopped` rides on the event so the screen can tell this from a
+    step that finished."""
+    store.emit(chat_id, run_id, "step_finished", id=step_id, label=registry.label(name),
+               ms=int((time.time() - t0) * 1000), stopped=True,
+               summary="Stopped by you before it finished. What it had already saved is kept.")
+    return dict(STOPPED_TOOL)
+
+
+def _tool_result(call_id, content):
+    """One tool_result BLOCK, for a turn that gathers several into one results list before it
+    is saved (step()'s own tool loop, one call per model turn). Not a message by itself -- see
+    _tool_message for a resume path, which closes a call_id on its own, mid-conversation."""
+    return {"type": "tool_result", "tool_use_id": call_id, "content": content}
+
+
+def _tool_message(call_id, content):
+    """A tool_result as its OWN saved turn: {"role": "user", "content": [...]}. Every _resume_*
+    below answers exactly one call_id outside step()'s own batching, so it saves a whole message,
+    not a bare block -- appending the block alone here would corrupt messages.json with an entry
+    that has no "role", which _resume_words first shipped with (found by test_loop.py's "four
+    questions, ONE tool result" check going from PASS to a silent, un-raised failure: the block
+    was saved, but as a message with no role, so the code that reads it back skipped it too)."""
+    return {"role": "user", "content": [_tool_result(call_id, content)]}
+
+
+def _carry_on(chat_id, run_id, messages):
+    """Save the turn and go back into the loop, unless a Stop landed while the tool ran. Then the
+    run stays stopped, and its saved steps wait for the next message. Every resume path ends
+    here, because "status: running" written after a Stop was how a stopped run came back to life."""
+    store.save_messages(chat_id, messages)
+    if _stopped(chat_id, run_id):
+        return store.get_state(chat_id, run_id)
+    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
+    return step(chat_id, run_id)
+
+
 # Which checkpoints still STOP the run, and which are now just published.
 #
 # The owner's call, 2026-09-09, once every output began landing in the Library as it is made:
@@ -308,6 +368,10 @@ VIEW_LABEL = {"brand_pack": "the brand pack", "research_brief": "the research",
 
 
 def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
+    # A Stop that landed while the tool ran wins over the question it came back with. Writing
+    # "waiting" here would bring the stopped run back to life on the person's screen.
+    if _stopped(chat_id, run_id):
+        return
     fields = {"status": "waiting",
               "waiting_on": dict(payload, kind=kind, call_id=call_id)}
     if stage:
@@ -418,6 +482,9 @@ def _resume_words(chat_id, run_id, waiting, messages, answer):
     t0 = time.time()
     try:
         out = _run_tool(chat_id, run_id, "run_research", {"word_target": picked}, step_id=step_id)
+    except llm.Stopped:
+        messages.append(_tool_message(call_id, _tool_stopped(chat_id, run_id, step_id, "run_research", t0)))
+        return _carry_on(chat_id, run_id, messages)
     except Exception as e:  # noqa: BLE001
         out = {"error": str(e)[:600],
                "hint": "The research could not finish. Say so in one line and carry on."}
@@ -428,11 +495,8 @@ def _resume_words(chat_id, run_id, waiting, messages, answer):
         _ask_words(chat_id, run_id, call_id, out["ask_words"])
         return store.get_state(chat_id, run_id)
 
-    messages.append({"role": "user", "content": [{
-        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
-    store.save_messages(chat_id, messages)
-    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
-    return step(chat_id, run_id)
+    messages.append(_tool_message(call_id, out))
+    return _carry_on(chat_id, run_id, messages)
 
 
 def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
@@ -450,14 +514,11 @@ def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
 
     if declined:
         store.emit(chat_id, run_id, "resumed", by="user", approved=False, answer="Not now")
-        messages.append({"role": "user", "content": [{
-            "type": "tool_result", "tool_use_id": call_id,
-            "content": {"summary": "The asset engine is paused: the %s list was not approved."
-                                   % waiting.get("asset_gate", "proposed"),
-                        "hint": "Say so in one line and carry on. Do not ask again unprompted."}}]})
-        store.save_messages(chat_id, messages)
-        store.patch_state(chat_id, run_id, status="running", waiting_on=None)
-        return step(chat_id, run_id)
+        messages.append(_tool_message(call_id, {
+            "summary": "The asset engine is paused: the %s list was not approved."
+                       % waiting.get("asset_gate", "proposed"),
+            "hint": "Say so in one line and carry on. Do not ask again unprompted."}))
+        return _carry_on(chat_id, run_id, messages)
 
     # An edited list wins over the proposed one. A person who rewrote the list meant it, and
     # taking the proposal anyway would make the gate decorative.
@@ -475,6 +536,9 @@ def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
     t0 = time.time()
     try:
         out = _run_tool(chat_id, run_id, "build_assets", {}, step_id=step_id)
+    except llm.Stopped:
+        messages.append(_tool_message(call_id, _tool_stopped(chat_id, run_id, step_id, "build_assets", t0)))
+        return _carry_on(chat_id, run_id, messages)
     except Exception as e:  # noqa: BLE001
         out = {"error": str(e)[:600],
                "hint": "The asset engine could not finish. Say so in one line and carry on."}
@@ -485,11 +549,8 @@ def _resume_asset_gate(chat_id, run_id, waiting, messages, answer):
         _ask_asset_gate(chat_id, run_id, call_id, out["gate"])
         return store.get_state(chat_id, run_id)
 
-    messages.append({"role": "user", "content": [{
-        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
-    store.save_messages(chat_id, messages)
-    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
-    return step(chat_id, run_id)
+    messages.append(_tool_message(call_id, out))
+    return _carry_on(chat_id, run_id, messages)
 
 
 def _resume_interview(chat_id, run_id, waiting, messages, answer):
@@ -516,6 +577,9 @@ def _resume_interview(chat_id, run_id, waiting, messages, answer):
     t0 = time.time()
     try:
         out = _run_tool(chat_id, run_id, "onboard", {}, step_id=step_id)
+    except llm.Stopped:
+        messages.append(_tool_message(call_id, _tool_stopped(chat_id, run_id, step_id, "onboard", t0)))
+        return _carry_on(chat_id, run_id, messages)
     except Exception as e:  # noqa: BLE001
         out = {"error": str(e)[:600],
                "hint": "The setup questions could not be finished. Say so in one line and carry on."}
@@ -526,11 +590,8 @@ def _resume_interview(chat_id, run_id, waiting, messages, answer):
         _ask_interview(chat_id, run_id, call_id, out["ask"])
         return store.get_state(chat_id, run_id)
 
-    messages.append({"role": "user", "content": [{
-        "type": "tool_result", "tool_use_id": call_id, "content": out}]})
-    store.save_messages(chat_id, messages)
-    store.patch_state(chat_id, run_id, status="running", waiting_on=None)
-    return step(chat_id, run_id)
+    messages.append(_tool_message(call_id, out))
+    return _carry_on(chat_id, run_id, messages)
 
 
 def step(chat_id, run_id):
@@ -611,8 +672,14 @@ def step(chat_id, run_id):
         messages.append({"role": "assistant", "content": blocks})
 
         results = []
+        stopped_now = False   # set once a tool in THIS batch comes back with llm.Stopped: the
+                               # remaining tool calls the model made in the same turn never start.
         for call in reply["tool_calls"]:
             name, args, call_id = call["name"], call["input"] or {}, call["id"]
+
+            if stopped_now:
+                results.append(_tool_result(call_id, dict(NOT_STARTED_TOOL)))
+                continue
 
             # --- the pausing tools -------------------------------------------------------
             if name == "ask_user":
@@ -744,10 +811,13 @@ def step(chat_id, run_id):
                                       credits_spent=s.get("credits_spent", 0) + registry.cost(name))
                 results.append({"type": "tool_result", "tool_use_id": call_id, "content": out})
             except llm.Stopped:
-                # Stop pressed while this tool waited out a usage limit. Close the tool call so
-                # the saved turn is whole; the check at the top of the loop then returns.
-                results.append({"type": "tool_result", "tool_use_id": call_id,
-                                "content": {"error": "Stopped by the user before this finished."}})
+                # Stop pressed while this tool was running (a model call killed mid-answer, a
+                # wait for a slot, a usage-limit pause). Close the step row so the screen stops
+                # spinning on it, close the tool call so the saved turn is whole, and stop
+                # starting anything else in this batch: the check at the top of the loop then
+                # returns once these results are saved.
+                results.append(_tool_result(call_id, _tool_stopped(chat_id, run_id, step_id, name, t0)))
+                stopped_now = True
             except Exception as e:
                 ms = int((time.time() - t0) * 1000)
                 detail = traceback.format_exc(limit=3)
@@ -999,5 +1069,13 @@ def _answer_summary(answer):
 
 
 def stop(chat_id, run_id):
+    """The person pressed Stop. Reach the work in flight FIRST: llm.stop_run kills this run's
+    CLI processes (SIGKILL to their process group) and wakes any thread of its waiting for a
+    model-call slot, so nothing new starts. Only then is the state written, so a check made
+    right after (the top of step(), _wait) already finds "stopped" on disk. What every step
+    already saved on disk survives untouched; a later message continues this same run from it
+    (agents_api.api_send)."""
+    llm.stop_run(chat_id, run_id)
     store.emit(chat_id, run_id, "stopped", by="user")
+    store.emit(chat_id, run_id, "note", label=STOP_NOTE)
     return store.patch_state(chat_id, run_id, status="stopped", waiting_on=None)

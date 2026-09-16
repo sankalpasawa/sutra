@@ -22,6 +22,7 @@ above this file knows which provider answered.
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 import uuid
@@ -371,6 +372,51 @@ def _codex_prompt(system, messages, tools):
     return head + "\n\n---\n\n" + _cli_prompt(messages)
 
 
+def _kill_group(p):
+    """End one CLI process and everything it started. The process was given its own session
+    (start_new_session in _run_process), so one signal to the group reaches its children too,
+    and no `claude` or `codex` helper is left running with nobody to answer to."""
+    try:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            p.kill()
+        except OSError:
+            pass
+
+
+def _run_process(cmd, prompt, limit):
+    """Start one CLI process, feed it the prompt on stdin, wait for it. Returns
+    (returncode, stdout, stderr).
+
+    THE PROCESS IS WATCHED BY THE RUN THIS THREAD WORKS FOR, so stop_run() can kill it while the
+    model is still answering. Until 2026-09-16 a model call was subprocess.run with nothing
+    holding the handle: Stop wrote "stopped" to disk and the call ran on to its end, a minute or
+    more, and only then did anything look at the state. Raises Stopped when the run was stopped
+    before or during the call, subprocess.TimeoutExpired when it outlived `limit`.
+    """
+    run = _GATE.current()
+    if run and run.is_stopped():
+        raise Stopped(STOPPED_BEFORE)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, env=_cli_env(), start_new_session=True)
+    if run:
+        run.watch(p)            # kills at once if the Stop landed between the check and here
+    try:
+        try:
+            out, err = p.communicate(prompt, timeout=limit)
+        except subprocess.TimeoutExpired:
+            _kill_group(p)
+            p.communicate()
+            raise
+    finally:
+        if run:
+            run.unwatch(p)
+    if run and run.is_stopped():
+        raise Stopped(STOPPED_DURING)
+    return p.returncode, out or "", err or ""
+
+
 def _codex_cli_once(binary, system, messages, tools, model, timeout=None):
     import tempfile
     limit = float(timeout or CLI_TIMEOUT)
@@ -385,8 +431,7 @@ def _codex_cli_once(binary, system, messages, tools, model, timeout=None):
             cmd += ["-m", model]
         cmd.append("-")
         try:
-            p = subprocess.run(cmd, input=_codex_prompt(system, messages, tools),
-                               capture_output=True, text=True, timeout=limit, env=_cli_env())
+            _rc, p_out, p_err = _run_process(cmd, _codex_prompt(system, messages, tools), limit)
         except subprocess.TimeoutExpired:
             raise RuntimeError("Codex timed out: no answer within %d seconds." % int(limit))
         except OSError as e:
@@ -399,7 +444,7 @@ def _codex_cli_once(binary, system, messages, tools, model, timeout=None):
     if not raw:
         # codex echoes the whole prompt to stderr, so the last 400 characters are mostly our own
         # prompt. Its real complaint is on the lines that start with ERROR.
-        both = (p.stderr or "") + "\n" + (p.stdout or "")
+        both = p_err + "\n" + p_out
         errors = [ln.strip()[6:].strip() for ln in both.splitlines() if ln.strip().startswith("ERROR:")]
         why = errors[-1] if errors else both.strip()[-300:]
         low = why.lower()
@@ -429,8 +474,7 @@ def _codex_cli_once(binary, system, messages, tools, model, timeout=None):
 def _claude_cli_once(cmd, prompt, binary, timeout=None):
     limit = float(timeout or CLI_TIMEOUT)
     try:
-        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                           timeout=limit, env=_cli_env())
+        rc, p_out, p_err = _run_process(cmd, prompt, limit)
     except subprocess.TimeoutExpired:
         # The wording carries the retry: _transient() reads the message, and "timed out" is one of
         # the keys it looks for. Reword this and the retry above silently stops happening.
@@ -438,13 +482,13 @@ def _claude_cli_once(cmd, prompt, binary, timeout=None):
     except OSError as e:
         raise RuntimeError("Could not start the Claude CLI at %s: %s" % (binary, e))
 
-    out = (p.stdout or "").strip()
+    out = p_out.strip()
     data = _cli_result(out)
     if not isinstance(data, dict):
-        tail = ((p.stderr or "").strip() or out)[-400:]
+        tail = (p_err.strip() or out)[-400:]
         if "not logged in" in tail.lower() or "log in" in tail.lower():
             raise NoKey(NOT_LOGGED_IN)
-        raise RuntimeError("Claude CLI did not return JSON (exit %s): %s" % (p.returncode, tail))
+        raise RuntimeError("Claude CLI did not return JSON (exit %s): %s" % (rc, tail))
 
     result = data.get("result")
     result_text = result if isinstance(result, str) else json.dumps(result or "")
@@ -567,7 +611,19 @@ _local = _threading.local()      # .run = the key of the run this thread works f
 
 
 class Stopped(RuntimeError):
-    """The run was stopped by the person while a call was waiting out a usage limit."""
+    """The run was stopped by the person.
+
+    Raised by check_stop() at the start of any NEW piece of work (a model call, a paid search, a
+    page read, a research or write step), out of a model call whose CLI process stop_run() killed,
+    out of a wait for a slot, and out of a usage-limit pause. A RuntimeError, so a tool's own
+    catch-all sees it; the next boundary raises it again, so a tool that swallows one still ends
+    at its next step and never starts more work.
+    """
+
+
+STOPPED_BEFORE = "Stopped by the user before this started."
+STOPPED_DURING = "Stopped by the user while the model was answering."
+STOP_POLL = 1.0              # how often a thread waiting for a slot looks for a Stop
 
 
 class _Run:
@@ -576,6 +632,44 @@ class _Run:
         self.on_note = on_note          # on_note(text): one status row in that run's chat
         self.should_stop = should_stop  # should_stop() -> True once the person pressed Stop
         self.in_use = 0
+        self._stop = _threading.Event()  # set by stop_run(), or once should_stop() first says so
+        self._procs = set()              # the CLI processes answering for this run right now
+        self._plock = _threading.Lock()
+
+    def is_stopped(self):
+        """Has this run been stopped? The in-memory flag first (stop_run sets it), then the
+        caller's own test (the run's state on disk). A disk-side stop sets the flag too, so the
+        processes are killed and every later check is a memory read."""
+        if self._stop.is_set():
+            return True
+        try:
+            if self.should_stop and self.should_stop():
+                self.stop()
+                return True
+        except Exception:  # noqa: BLE001 -- an unreadable state file is not a Stop
+            pass
+        return False
+
+    def stop(self):
+        """Flag the run stopped and kill every CLI process it has in flight."""
+        self._stop.set()
+        with self._plock:
+            procs = list(self._procs)
+        for p in procs:
+            _kill_group(p)
+
+    def watch(self, proc):
+        """Hold a process so stop() can reach it. A process handed in after the Stop landed is
+        killed here and now, so the two can never miss each other."""
+        with self._plock:
+            self._procs.add(proc)
+            stopped = self._stop.is_set()
+        if stopped:
+            _kill_group(proc)
+
+    def unwatch(self, proc):
+        with self._plock:
+            self._procs.discard(proc)
 
 
 class _Gate:
@@ -609,7 +703,11 @@ class _Gate:
         run = self._runs.get(getattr(_local, "run", None))
         with self._cond:
             while not self._can(run):
-                self._cond.wait()
+                # A call queued behind the run's own slots must not start once the run is
+                # stopped: stop_run() wakes every waiter, and the poll covers a disk-side stop.
+                if run and run.is_stopped():
+                    raise Stopped(STOPPED_BEFORE)
+                self._cond.wait(STOP_POLL)
             self._total += 1
             if run:
                 run.in_use += 1
@@ -642,6 +740,14 @@ class _Gate:
 
     def current(self):
         return self._runs.get(getattr(_local, "run", None))
+
+    def find(self, key):
+        with self._cond:
+            return self._runs.get(key)
+
+    def wake(self):
+        with self._cond:
+            self._cond.notify_all()
 
     def in_flight(self):
         with self._cond:
@@ -676,6 +782,33 @@ def run_slot(chat_id=None, run_id=None, on_note=None, should_stop=None):
     finally:
         _bind(prev)
         _GATE.unregister(run)
+
+
+def check_stop():
+    """Raise Stopped if the run this thread works for has been stopped. Nothing happens outside
+    a run.
+
+    THE ONE BOUNDARY EVERY PIECE OF WORK CROSSES FIRST. call() runs it before a model call,
+    dfs._send before a paid DataForSEO call, web.fetch before a page read, research's cached()
+    and write_article's step() before a step. So a Stop is noticed at the next natural boundary
+    of whatever is running, and nothing new is started past it: what is already on disk stays
+    for the continue to reuse.
+    """
+    run = _GATE.current()
+    if run and run.is_stopped():
+        raise Stopped(STOPPED_BEFORE)
+
+
+def stop_run(chat_id, run_id):
+    """Reach the work a run has in flight: kill its CLI processes, wake its threads waiting for
+    a slot, and flag it so every check_stop() from here raises. True when the run was live in
+    this process. The caller (loop.stop) has already written the state to disk."""
+    run = _GATE.find("%s/%s" % (chat_id, run_id))
+    if not run:
+        return False
+    run.stop()
+    _GATE.wake()
+    return True
 
 
 def pool(max_workers=None):
@@ -909,7 +1042,7 @@ class _Pause:
             run = _GATE.current()
             if run:
                 self._tell(run, seq, message)       # a run that began during the pause hears about it
-                if run.should_stop and run.should_stop():
+                if run.is_stopped():
                     raise Stopped("Stopped while waiting for the usage limit to reset.")
             elif on_retry and not told_loose:
                 told_loose = True
@@ -964,6 +1097,7 @@ LONG_TIMEOUT = 1200.0        # a whole document in one call (a brand file, a ful
 def call(system, messages, tools=None, model=None, on_retry=None, timeout=None, web=False):
     """timeout: seconds for this one call. Whole-document calls pass LONG_TIMEOUT; the
     default CLI_TIMEOUT is for a turn or a section. Per call, never a global swap."""
+    check_stop()                 # a stopped run starts no new model call, whatever the caller
     if _PAUSE.active():
         _PAUSE.wait(on_retry)
     run = _GATE.acquire()
@@ -988,6 +1122,8 @@ def _retrying(once, on_retry=None):
     while True:
         try:
             return once()
+        except Stopped:
+            raise                # a Stop is not weather: never waited out, never tried again
         except RuntimeError as e:
             why = str(e).replace("Claude CLI returned an error: ", "")
             if _usage_limited(why):

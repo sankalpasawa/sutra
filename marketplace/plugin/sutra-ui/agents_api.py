@@ -294,8 +294,7 @@ def api_send(chat_id: str, body: dict = Body(...)):
     # again: an hour of work and the DataForSEO spend, lost to closing the app. Nobody chose to stop
     # that run, so the message continues it and its tools pick up from what is on disk. The
     # conversation needs nothing mended: loop.step saves an assistant tool call only together with
-    # its results, so a quit mid-step leaves messages.json ending on a complete turn. A Stop the
-    # person pressed (by="user") still starts fresh, as before.
+    # its results, so a quit mid-step leaves messages.json ending on a complete turn.
     # The newest run by when it started. list_runs sorts by folder name, and a run folder is named
     # r-HHMMSS-..., the time of day with no date, so its last row is not always the newest run.
     #
@@ -311,16 +310,27 @@ def api_send(chat_id: str, body: dict = Body(...)):
     # messages.json ends on the previous turn's saved tool results. _close_open_tool_calls still mends
     # the one shape that could break a provider (an assistant tool call saved with no results, if the
     # loop itself crashed at a pause), so the continued run always starts from a valid turn.
+    #
+    # A RUN A PERSON STOPPED IS CARRIED ON TOO, NOT STARTED OVER (2026-09-16). Found live in
+    # chat c-f1a6e19c: Stop was pressed at 06:27:08 in run r-115458, the research step (already
+    # reaching llm.check_stop at its own boundaries by then) still finished the work it had in
+    # flight and saved it, and the next message opened a brand-new empty run r-115816, stranding
+    # that finished research. loop.stop already leaves messages.json on a complete turn (see
+    # above), so the same continuation the restart and failure paths use applies here unchanged:
+    # a message after a user Stop is not a new run, it is what makes the stopped one carry on.
+    # "New chat" stays the one deliberate way to start over.
     last = max(runs, key=lambda r: str(r.get("started_at") or "")) if runs else None
     failed = bool(last) and last.get("status") == "failed"
-    if last and (failed or (last.get("status") == "stopped"
-                            and _stopped_by_restart(chat_id, last["run_id"]))):
+    stopped_by = _last_stopped_by(chat_id, last["run_id"]) if last and last.get("status") == "stopped" else ""
+    if last and (failed or stopped_by in ("restart", "user")):
         run_id = last["run_id"]
         _close_open_tool_calls(chat_id)
         store.patch_state(chat_id, run_id, error=None)
         store.emit(chat_id, run_id, "resumed", by="user", answer=text[:200],
                    note=("carrying on after the last step failed, from the steps already saved"
                          if failed else
+                         "carrying on after you stopped it, from the steps already saved"
+                         if stopped_by == "user" else
                          "carrying on after Sutra was closed, from the steps already saved"))
         _sync_claude_bin()
         _spawn(chat_id + run_id, _guarded(chat_id, run_id,
@@ -372,13 +382,15 @@ def _close_open_tool_calls(chat_id):
     store.save_messages(chat_id, messages)
 
 
-def _stopped_by_restart(chat_id, run_id):
-    """Was this run's latest stop the start-up sweep (store.reconcile_stale_runs), not a person?"""
+def _last_stopped_by(chat_id, run_id):
+    """Who ended this run's latest stop: "restart" (store.reconcile_stale_runs' start-up sweep),
+    "user" (someone pressed Stop), or "" when the log cannot say. A message after either of the
+    first two continues the same run; nobody chose to end it, so nothing is stranded."""
     try:
         stops = [e for e in store.get_events(chat_id, run_id) if e.get("type") == "stopped"]
-    except Exception:  # noqa: BLE001 -- an unreadable log is not proof of a restart: start fresh
-        return False
-    return bool(stops) and stops[-1].get("by") == "restart"
+    except Exception:  # noqa: BLE001 -- an unreadable log is not proof of anything: start fresh
+        return ""
+    return stops[-1].get("by") or "" if stops else ""
 
 
 def _named_open_idea(text):

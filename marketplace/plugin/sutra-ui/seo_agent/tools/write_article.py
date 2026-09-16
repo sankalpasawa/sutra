@@ -31,7 +31,7 @@ Section-keyword lookups run only when DataForSEO is connected and funded.
 """
 import re
 
-from .. import store
+from .. import llm, store
 from ..editing import links_pass
 from ..write import (_common as C, allocate_words, assemble, blend, brand_cards, clean, coherence, enrich,
                      field, fmt_router, freeze, gather, headings, plan_select, readable, section_keywords,
@@ -120,6 +120,7 @@ def run(ctx, redo=False):
 
     def step(name, label, fn):
         """Run one step, or reuse its saved output. Every output lands on disk before the next step reads it."""
+        llm.check_stop()      # a stopped run starts no new write-phase station, cached or not
         cached = None if redo else C.load_work(ctx, name)
         if cached is not None:
             say("Reusing: %s" % label, "already done in an earlier run")
@@ -216,6 +217,8 @@ def run(ctx, redo=False):
     def _field():
         try:
             return field.run(st, ctx_a, say)
+        except llm.Stopped:
+            raise                # a Stop is not a field failure: let it end the run, not "skipped"
         except Exception as e:  # noqa: BLE001 — a field failure is reported, never fatal
             return {"markdown": "", "block": "",
                     "report": {"note": "the station failed (%s: %s), so the article was written "
