@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# sutra-steps - print a turn's step ledger as the STEP TRACE table
+# (Sutra Runtime, adherence row 1). The founder's on-demand log of which
+# step ran, the way the atom cards print.
+#
+#   sutra-steps                     latest ledger of the current session
+#   sutra-steps latest              same
+#   sutra-steps <turn-id-prefix>    that turn
+#   sutra-steps --all               every ledger of the session, newest first
+#   options: --sid <sid>  --proj <dir>  --json
+#
+# LAYER=L0
+# SCOPE=fleet
+# TARGET_PATH=sutra/marketplace/plugin/bin/sutra-steps
+
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$HERE/.." && pwd)}"
+. "$ROOT/runtime/lib/artifact.sh"
+. "$ROOT/runtime/lib/steps.sh"
+
+PROJ="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+SID="${CLAUDE_CODE_SESSION_ID:-}"
+WHICH="latest"; AS_JSON=0; ALL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --sid) SID="${2:-}"; shift 2 ;;
+    --proj) PROJ="${2:-}"; shift 2 ;;
+    --json) AS_JSON=1; shift ;;
+    --all) ALL=1; shift ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    *) WHICH="$1"; shift ;;
+  esac
+done
+
+if [ -z "$SID" ]; then
+  SID="$(ls -t "$PROJ"/.sutra/turn/*/*.steps.json 2>/dev/null | head -1 | sed -E 's|.*/\.sutra/turn/([^/]+)/.*|\1|')"
+fi
+DIR="$PROJ/.sutra/turn/$SID"
+[ -d "$DIR" ] || { echo "sutra-steps: no ledgers for session ${SID:-<none>} under $PROJ/.sutra/turn/" >&2; exit 1; }
+
+if [ "$ALL" = "1" ]; then
+  FILES="$(ls -t "$DIR"/*.steps.json 2>/dev/null)"
+elif [ "$WHICH" = "latest" ]; then
+  FILES="$(ls -t "$DIR"/*.steps.json 2>/dev/null | head -1)"
+else
+  FILES="$(ls -t "$DIR"/"$WHICH"*.steps.json 2>/dev/null | head -1)"
+fi
+[ -n "$FILES" ] || { echo "sutra-steps: no ledger matches '$WHICH' in $DIR" >&2; exit 1; }
+
+printf '%s\n' "$FILES" | while IFS= read -r f; do   # one path per line: spaces in paths survive
+  [ -n "$f" ] || continue
+  if [ "$AS_JSON" = "1" ]; then
+    cat "$f"
+  else
+    sutra_steps_render "$f"
+    jq -r 'if ((.mutations // []) | length) > 0 then (.mutations[] | "  \((.decision // "?") | ascii_upcase)  \(.tool // "?")  \(.target // "")\(if ((.missing // []) | length) > 0 then "  missing " + (.missing | join(",")) else "" end)") else empty end' "$f" 2>/dev/null
+    echo
+  fi
+done

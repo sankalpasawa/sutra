@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-16
+**status**: active · **updated**: 2026-09-17
+## 2.283.0 (2026-09-17)
+
+- **Adherence row 1: the runtime keeps a step ledger per turn, prints a STEP TRACE, and refuses a mutation until the turn's lens and cynefin artifacts exist.** Three native steps (`ups.steps_ledger`, `pre.adherence_gate`, `stop.steps_close`) behind the per-box flag `~/.sutra-runtime-adherence` (`on|warn|off`, absent = off, kill `~/.sutra-runtime-adherence-disabled`); `bin/sutra-steps` prints the ledger; typed artifacts at `.sutra/turn/<sid>/<turn>.{lens,cynefin}.json` are checked for turn, session, freshness and shape, and a repeated prompt after Stop rotates them so they must be re-authored. The synthetic-prompt guard moves to `runtime/lib/prompt.sh` and now skips task notifications. Tests: test-adherence.sh 108 checks; golden parity unchanged with the flag absent.
+
 ## 2.282.6 (2026-09-17)
 
 - No commits since v2.282.5-desktop; released to rebuild the app from the same tree.

@@ -26,6 +26,7 @@ main() {
   [ -n "$_mw_root" ] && [ -f "$_mw_root/hooks/marker-lib.sh" ] && . "$_mw_root/hooks/marker-lib.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/ledger.sh" ] && . "$_mw_root/runtime/ledger.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/flags.sh" ] && . "$_mw_root/runtime/flags.sh"
+  [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/prompt.sh" ] && . "$_mw_root/runtime/lib/prompt.sh"
   set -u
 
   # Own tools missing -> nothing this step can safely do. Never crash, never
@@ -60,22 +61,33 @@ main() {
   # guards 1 and 2 (D7). Guard order matches: flag-off is checked first
   # (case 2), synthetic second (case 12) - a synthetic prompt on an ON turn
   # still gets exactly one skip.
+  # The pattern list lives in runtime/lib/prompt.sh since adherence row 1
+  # (two notification shapes were missing here; shared so it cannot drift).
   PROMPT=$(printf '%s' "$STDIN_RAW" | jq -r '.prompt // empty' 2>/dev/null)
-  case "$PROMPT" in
-    "")
+  if command -v sutra_prompt_synthetic >/dev/null 2>&1; then
+    if sutra_prompt_synthetic "$PROMPT"; then
       _mw_row_skip "*" "synthetic"
       return 0
-      ;;
-    *"<system-reminder>"*|\
-    *"PreToolUse:"*"hook additional context"*|\
-    *"was modified, either by the user or by a linter"*|\
-    *"READ-BEFORE-EDIT REMINDER"*|\
-    *"task tools haven't been used recently"*|\
-    *"<local-command-caveat>"*)
-      _mw_row_skip "*" "synthetic"
-      return 0
-      ;;
-  esac
+    fi
+  else
+    case "$PROMPT" in
+      "")
+        _mw_row_skip "*" "synthetic"
+        return 0
+        ;;
+      *"<system-reminder>"*|\
+      *"PreToolUse:"*"hook additional context"*|\
+      *"was modified, either by the user or by a linter"*|\
+      *"READ-BEFORE-EDIT REMINDER"*|\
+      *"task tools haven't been used recently"*|\
+      *"<local-command-caveat>"*|\
+      *"<task-notification>"*|\
+      *"[SYSTEM NOTIFICATION"*)
+        _mw_row_skip "*" "synthetic"
+        return 0
+        ;;
+    esac
+  fi
 
   # -- step 3: session id / marker dir must be establishable. -------------
   _MW_SID="$(_sutra_sid 2>/dev/null)"

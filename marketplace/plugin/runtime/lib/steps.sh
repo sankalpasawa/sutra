@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# steps.sh - the step ledger shared by the three adherence native steps and
+# bin/sutra-steps (Sutra Runtime, adherence row 1). bash 3.2: no associative
+# arrays, no mapfile, no ${var,,}.
+#
+# One ledger per turn at .sutra/turn/<sid>/<turn>.steps.json:
+#   { turn_id, session_id, mode, opened_ts, unit,
+#     steps:[{n,id,producer,status,detail}], mutations:[...], closed:null|{...} }
+#
+# Statuses: done | pending | gated | open | missing
+#
+# LAYER=L0
+# SCOPE=fleet
+# TARGET_PATH=sutra/marketplace/plugin/runtime/lib/steps.sh
+
+sutra_steps_path() {  # <proj> <sid> <turn>
+  printf '%s/.sutra/turn/%s/%s.steps.json' "$1" "$2" "$3"
+}
+sutra_artifact_path() {  # <proj> <sid> <turn> <kind>
+  printf '%s/.sutra/turn/%s/%s.%s.json' "$1" "$2" "$3" "$4"
+}
+sutra_artifact_rel() {  # <sid> <turn> <kind> -> project-relative path
+  printf '.sutra/turn/%s/%s.%s.json' "$1" "$2" "$3"
+}
+
+# sutra_steps_write <path> <json>: atomic replace.
+sutra_steps_write() {
+  _sw_tmp="$1.tmp.$$"
+  if printf '%s\n' "$2" > "$_sw_tmp" 2>/dev/null; then
+    mv -f "$_sw_tmp" "$1" 2>/dev/null
+  fi
+}
+
+# sutra_steps_bash_mutation <command> -> 0 when the command mutates, 1 when
+# it is read-only. The three regexes are hooks/atom-floor.sh's, verbatim
+# (2026-09-16), so the two gates never disagree about what a mutation is.
+sutra_steps_bash_mutation() {
+  # Quote/comment strip, then atom-floor.sh:95's noise pass (N>/dev/null, &>/dev/null,
+  # N>&M) so a diagnostic redirect is not read as a write (workflow review P1, 2026-09-17).
+  _bm_scan="$(printf '%s' "$1" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | sed -E 's/[[:space:]]#.*$//' \
+    | sed -E 's/(^|[[:space:]])[0-9]?>[[:space:]]*\/dev\/null//g; s/(^|[[:space:]])&>[[:space:]]*\/dev\/null//g; s/[0-9]*>&[0-9]+//g')"
+  printf '%s' "$_bm_scan" | grep -qE '(^|[;&|[:space:]])(sh|bash|zsh)[[:space:]]+-[A-Za-z]*c([[:space:]]|$)|(^|[;&|[:space:]])eval[[:space:]]|xargs[[:space:]]+(sh|bash)|<<[^|]*\|[[:space:]]*(sh|bash)([[:space:]]|$)' && return 0
+  printf '%s' "$_bm_scan" | grep -qE 'git[[:space:]]+(push|commit|reset|checkout|clean|restore|stash)([[:space:]]|$)|(npm|pnpm|yarn|bun|pip3?)[[:space:]]+(install|i)([[:space:]]|$)|python3?[[:space:]]+-c([[:space:]]|$)|perl[[:space:]]+-[A-Za-z]*i|node[[:space:]]+(-e|--eval)([[:space:]]|$)|ruby[[:space:]]+-e([[:space:]]|$)|php[[:space:]]+-r([[:space:]]|$)|find[[:space:]][^|;]*-delete' && return 0
+  # Addition over atom-floor: history- and tree-mutating git verbs it omits (workflow review P2).
+  printf '%s' "$_bm_scan" | grep -qE 'git[[:space:]]+(merge|rebase|cherry-pick|apply|am|switch|tag|revert|branch[[:space:]]+-[dDmM])([[:space:]]|$)' && return 0
+  printf '%s' "$_bm_scan" | grep -qE '(^|[;&|`[:space:]])(mv|cp|rm|rmdir|truncate|tee|install|touch|mkdir|ln|chmod|chown|rsync|patch|unzip|tar|dd)[[:space:]]|sed[[:space:]]+-+i|(sed|awk|gawk)[[:space:]][^|;]*--?in-?place|gawk[[:space:]]+-[A-Za-z]*i[[:space:]]+inplace|git[[:space:]]+(add|mv|rm)([[:space:]]|$)|tar[[:space:]]+[^|;]*x|(curl|wget)[[:space:]]([^|;]*[[:space:]])?-(o|O)([[:space:]]|$)|dd[[:space:]][^|;]*of=|(go|cargo)[[:space:]]+build|npx[[:space:]]|python3?[[:space:]]+[^-][^[:space:]]*\.py|sqlite3[[:space:]]|>\||&>|[0-9]?>>?' && return 0
+  return 1
+}
+
+# sutra_steps_exempt_path <path> <sid> -> 0 when a Write/Edit target is exempt
+# (D-A4: the artifact itself, session markers, memory files, enforcement logs).
+sutra_steps_exempt_path() {
+  # "contains" matches, so absolute and project-relative spellings both pass
+  # (DeepSeek round-2 P1-7).
+  case "$1" in
+    *".sutra/turn/$2/"*) return 0 ;;
+    *".claude/sessions/$2/"*) return 0 ;;
+    */.claude/projects/*/memory/*.md) return 0 ;;
+    *".enforcement/"*) return 0 ;;
+  esac
+  return 1
+}
+
+# sutra_steps_exempt_bash <command> <sid> -> 0 when a Bash command is exempt
+# (D-A6: it names the turn's artifact dir, or it IS the governance CLI).
+sutra_steps_exempt_bash() {
+  # Per SEGMENT (split on newline, ;, &&, ||, |): a segment is exempt when its
+  # first word is a governance CLI or it names this turn's artifact dir. The
+  # command is exempt only if EVERY non-empty segment is (workflow review P1:
+  # "git commit -m x\nbash holding/bin/sutra-atom close a-1" must not pass).
+  _eb_any=0
+  while IFS= read -r _eb_seg; do
+    _eb_seg="$(printf '%s' "$_eb_seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$_eb_seg" ] || continue
+    _eb_any=1
+    case "$_eb_seg" in
+      *".sutra/turn/$2/"*) continue ;;
+    esac
+    _eb_first="$(printf '%s' "$_eb_seg" | sed -E 's/^(bash[[:space:]]+)?//' | awk '{print $1}')"
+    case "$_eb_first" in
+      *sutra-atom|*sutra-dispatch|*sutra-marker|*sutra-steps|*sutra-turn) continue ;;
+    esac
+    return 1
+  done <<EOF
+$(printf '%s\n' "$1" | awk '{ gsub(/&&|\|\||;|\|/, "\n"); print }')
+EOF
+  [ "$_eb_any" = "1" ]
+}
+
+# sutra_steps_compute <proj> <sid> <turn> <opened_ts> -> prints the steps
+# array as JSON, reading facts, markers, artifacts, the atom ledger and the
+# tests marker. Never fails; unknown inputs become "missing"/"pending".
+sutra_steps_compute() {
+  _sc_proj="$1"; _sc_sid="$2"; _sc_turn="$3"; _sc_opened="${4:-0}"
+  _sc_facts="$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.facts.json"
+  _sc_mdir="$_sc_proj/.claude/sessions/$_sc_sid"
+
+  # 1-3 from facts
+  _sc_f_classify="missing"; _sc_f_resolve="missing"; _sc_f_depth="missing"
+  _sc_d_classify="no facts file"; _sc_d_resolve=""; _sc_d_depth=""
+  if [ -f "$_sc_facts" ]; then
+    # One TSV row; every field flattened to a single line first (DeepSeek round-2 P1-4),
+    # and each of the three facts judged on its own key (P2-1).
+    _sc_tsv="$(jq -r '
+      def flat: tostring | gsub("[\\t\\n\\r]"; " ");
+      [
+        (((.classify.direction // "?") + " " + (.classify.verb // "?") + " " + (.classify.timing // "?") + " " + (.classify.channel // "?") + " " + (.classify.decision_risk // "?")) | flat),
+        (((.resolve.resolution // "?") + " scope=" + (.resolve.scope // "?") + (if (.resolve.degraded // false) then " (degraded)" else "" end)) | flat),
+        ((((.depth.n // 0) | tostring) + " " + (.depth.rubric // "?")) | flat),
+        (if (.classify | type) == "object" then "1" else "0" end),
+        (if (.resolve | type) == "object" then "1" else "0" end),
+        (if (.depth | type) == "object" then "1" else "0" end)
+      ] | @tsv' "$_sc_facts" 2>/dev/null | head -1)"
+    if [ -n "$_sc_tsv" ]; then
+      IFS=$'\t' read -r _sc_d_classify _sc_d_resolve _sc_d_depth _sc_has_cl _sc_has_re _sc_has_de <<< "$_sc_tsv"
+      [ "$_sc_has_cl" = "1" ] && _sc_f_classify="done" || { _sc_f_classify="missing"; _sc_d_classify="classify.sh failed"; }
+      [ "$_sc_has_re" = "1" ] && _sc_f_resolve="done"  || { _sc_f_resolve="missing";  _sc_d_resolve="no resolve in facts"; }
+      [ "$_sc_has_de" = "1" ] && _sc_f_depth="done"    || { _sc_f_depth="missing";    _sc_d_depth="no depth in facts"; }
+    fi
+  fi
+
+  # 4 placement
+  _sc_f_place="pending"; _sc_d_place="marker placement-registered"
+  if [ -f "$_sc_mdir/placement-registered" ]; then
+    _sc_f_place="done"
+    _sc_d_place="$(sed -n 's/^DOMAIN_REF=//p' "$_sc_mdir/placement-registered" 2>/dev/null | head -1)"
+  fi
+
+  # 5-6 artifacts
+  _sc_f_lens="pending"; _sc_d_lens="-> $(sutra_artifact_rel "$_sc_sid" "$_sc_turn" lens)"
+  _sc_lp="$(sutra_artifact_path "$_sc_proj" "$_sc_sid" "$_sc_turn" lens)"
+  _sc_r="$(sutra_artifact_check "$_sc_lp" lens "$_sc_turn" "$_sc_sid" "$_sc_opened")"
+  if [ "$_sc_r" = "ok" ]; then
+    _sc_f_lens="done"
+    _sc_d_lens="$(jq -r '((.pick // []) | join(",")) + " " + (.direction // "")' "$_sc_lp" 2>/dev/null)"
+  elif [ "$_sc_r" != "missing" ]; then
+    _sc_d_lens="invalid: $_sc_r"
+  fi
+  _sc_f_cyn="pending"; _sc_d_cyn="-> $(sutra_artifact_rel "$_sc_sid" "$_sc_turn" cynefin)"
+  _sc_cp="$(sutra_artifact_path "$_sc_proj" "$_sc_sid" "$_sc_turn" cynefin)"
+  _sc_r="$(sutra_artifact_check "$_sc_cp" cynefin "$_sc_turn" "$_sc_sid" "$_sc_opened")"
+  if [ "$_sc_r" = "ok" ]; then
+    _sc_f_cyn="done"
+    _sc_d_cyn="$(jq -r '(.domain // "") + (if .human_gate then " human-gate" else "" end)' "$_sc_cp" 2>/dev/null)"
+  elif [ "$_sc_r" != "missing" ]; then
+    _sc_d_cyn="invalid: $_sc_r"
+  fi
+
+  # 7 blueprint: text gate, reported only
+  _sc_f_bp="gated"; _sc_d_bp="blueprint-check.sh reads the reply"
+
+  # 8 codex marker
+  _sc_f_codex="pending"; _sc_d_codex="marker codex-consulted"
+  [ -f "$_sc_mdir/codex-consulted" ] && { _sc_f_codex="done"; _sc_d_codex="codex-consulted"; }
+
+  # 9 atom
+  _sc_f_atom="pending"; _sc_d_atom="no open atom"
+  _sc_al="$_sc_proj/.sutra/atom-ledger.jsonl"
+  if [ -f "$_sc_al" ]; then
+    _sc_aid="$(jq -r --arg sid "$_sc_sid" -s '[.[] | select(.sid == $sid)] | group_by(.id) | map(last) | map(select(.status == "open")) | (last // {}) | .id // empty' "$_sc_al" 2>/dev/null)"
+    [ -n "$_sc_aid" ] && { _sc_f_atom="open"; _sc_d_atom="$_sc_aid"; }
+  fi
+
+  # 10 tests marker (either spelling in use)
+  _sc_f_tests="pending"; _sc_d_tests="marker ran-tests"
+  { [ -f "$_sc_mdir/ran-tests" ] || [ -f "$_sc_mdir/tests-ran" ]; } && { _sc_f_tests="done"; _sc_d_tests="ran-tests"; }
+
+  # 11 close
+  _sc_f_close="pending"; _sc_d_close="at Stop"
+
+  jq -nc \
+    --arg s1 "$_sc_f_classify" --arg d1 "$_sc_d_classify" \
+    --arg s2 "$_sc_f_resolve"  --arg d2 "$_sc_d_resolve" \
+    --arg s3 "$_sc_f_depth"    --arg d3 "$_sc_d_depth" \
+    --arg s4 "$_sc_f_place"    --arg d4 "$_sc_d_place" \
+    --arg s5 "$_sc_f_lens"     --arg d5 "$_sc_d_lens" \
+    --arg s6 "$_sc_f_cyn"      --arg d6 "$_sc_d_cyn" \
+    --arg s7 "$_sc_f_bp"       --arg d7 "$_sc_d_bp" \
+    --arg s8 "$_sc_f_codex"    --arg d8 "$_sc_d_codex" \
+    --arg s9 "$_sc_f_atom"     --arg d9 "$_sc_d_atom" \
+    --arg s10 "$_sc_f_tests"   --arg d10 "$_sc_d_tests" \
+    --arg s11 "$_sc_f_close"   --arg d11 "$_sc_d_close" '[
+      {n:1, id:"classify",  producer:"runtime", status:$s1,  detail:$d1},
+      {n:2, id:"resolve",   producer:"runtime", status:$s2,  detail:$d2},
+      {n:3, id:"depth",     producer:"runtime", status:$s3,  detail:$d3},
+      {n:4, id:"placement", producer:"engine",  status:$s4,  detail:$d4},
+      {n:5, id:"lens",      producer:"model",   status:$s5,  detail:$d5},
+      {n:6, id:"cynefin",   producer:"model",   status:$s6,  detail:$d6},
+      {n:7, id:"blueprint", producer:"model",   status:$s7,  detail:$d7},
+      {n:8, id:"codex",     producer:"model",   status:$s8,  detail:$d8},
+      {n:9, id:"atom",      producer:"runtime", status:$s9,  detail:$d9},
+      {n:10, id:"tests",    producer:"runtime", status:$s10, detail:$d10},
+      {n:11, id:"close",    producer:"runtime", status:$s11, detail:$d11}
+    ]' 2>/dev/null
+}
+
+# sutra_steps_render <steps.json> -> the ASCII STEP TRACE table.
+sutra_steps_render() {
+  [ -f "$1" ] || { printf 'STEP TRACE: no ledger\n'; return 0; }
+  jq -r '
+    def pad(n): tostring | . + (" " * ((n - length) | if . < 0 then 0 else . end));
+    "STEP TRACE turn \(((.turn_id // "unknown") | tostring)[0:8]) (adherence=\(.mode // "off"))",
+    ((.steps // [])[] | "  \((.n // 0) | tostring | if length < 2 then " " + . else . end) \((.id // "?") | pad(10)) \((.producer // "?") | pad(8)) \((.status // "?") | pad(8)) \(.detail // "")"),
+    (if ((.mutations // []) | length) > 0 then "  mutations: \((.mutations // []) | map(.decision // "?") | group_by(.) | map("\(.[0])=\(length)") | join(" "))" else empty end),
+    (if .closed != null then "  closed: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted)" else empty end)
+  ' "$1" 2>/dev/null
+}

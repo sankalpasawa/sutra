@@ -352,6 +352,21 @@
         "on_error": "warn",
         "flag": "~/.sutra-runtime-markers",
         "notes": "MVP-1: writes input-routed, depth-registered, flow-classified, flow-type-resolved from computed facts when the per-box flag is on; emits nothing"
+      },
+      {
+        "id": "ups.steps_ledger",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:steps_ledger",
+        "phase": "post",
+        "timeout_ms": 2500,
+        "killswitch_aliases": [
+          ".sutra-runtime-adherence-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-adherence",
+        "notes": "adherence row 1: opens .sutra/turn/<sid>/<turn>.steps.json and emits the STEP TRACE when the per-box flag is on|warn; emits nothing when off"
       }
     ],
     "PreToolUse": [
@@ -753,6 +768,21 @@
         ],
         "on_error": "block_passthrough",
         "timeout_source": "pinned: hooks.json entry carries no timeout"
+      },
+      {
+        "id": "pre.adherence_gate",
+        "matcher": "*",
+        "class": "B",
+        "impl": "native:adherence_gate",
+        "phase": "post",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".sutra-runtime-adherence-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-adherence",
+        "notes": "adherence row 1: refuses a mutation (deny on, systemMessage warn) until the turn lens + cynefin artifacts validate; emits nothing when off"
       }
     ],
     "PostToolUse": [
@@ -1319,6 +1349,21 @@
         "on_error": "warn",
         "flag": "~/.sutra-runtime-markers",
         "notes": "MVP-1b: shadow compare of the model's header/FLOW/Depth against the runtime facts; emits nothing"
+      },
+      {
+        "id": "stop.steps_close",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:steps_close",
+        "phase": "post",
+        "timeout_ms": 3000,
+        "killswitch_aliases": [
+          ".sutra-runtime-adherence-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-adherence",
+        "notes": "adherence row 1: closes the step ledger, records trace_pasted; emits nothing"
       }
     ]
   },
@@ -1448,5 +1493,41 @@
       "kind": "cli-lib-test",
       "reason": "Regression test for the 2026-07-31 memory-scope carve-out in codex-consult-gate.sh; a test, not a hook."
     }
-  ]
+  ],
+  "adherence": {
+    "flag": "~/.sutra-runtime-adherence",
+    "modes": [
+      "on",
+      "warn",
+      "off"
+    ],
+    "ledger": ".sutra/turn/<sid>/<turn>.steps.json",
+    "artifacts": {
+      "lens": ".sutra/turn/<sid>/<turn>.lens.json",
+      "cynefin": ".sutra/turn/<sid>/<turn>.cynefin.json"
+    },
+    "refuse_on": [
+      "lens",
+      "cynefin"
+    ],
+    "exempt_paths": [
+      ".sutra/turn/<sid>/",
+      ".claude/sessions/<sid>/",
+      "**/memory/*.md",
+      ".enforcement/"
+    ],
+    "steps": [
+      "classify",
+      "resolve",
+      "depth",
+      "placement",
+      "lens",
+      "cynefin",
+      "blueprint",
+      "codex",
+      "atom",
+      "tests",
+      "close"
+    ]
+  }
 }

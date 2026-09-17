@@ -11,11 +11,21 @@ or Stop). **Env** (exported by the spawning subshell, D3): `SUTRA_STEP_ID`,
 exported (`SUTRA_LEDGER_CANON`, `SUTRA_LEDGER_FLAT`, ...), `CLAUDE_PROJECT_DIR`,
 `CLAUDE_PLUGIN_ROOT`, `HOME`.
 
-**Outputs**: nothing on stdout, nothing on stderr, in every mode (D12) — a
+**Outputs**: nothing on stdout, nothing on stderr, whenever the step's
+per-box flag resolves `off` (D12, amended by adherence row 1 D-A1: with its
+flag `on` a step may print exactly ONE JSON object, which `bin/sutra-turn`
+merges like any shim's). Golden parity runs under a private HOME, so every
+flag is absent there and the byte-identical requirement is untouched. A
 killed native step is the one exception that DOES print (`bin/sutra-turn`
 itself, not this script, on watchdog timeout). Every diagnostic is a ledger
 row via `sutra_ledger_write` on both `SUTRA_LEDGER_CANON` and `SUTRA_LEDGER_FLAT`
 (D13) — never `sutra_ledger_step`/`sutra_ledger_acc`, those are the parent's.
+
+**Synthetic prompts**: every step that keys on `.prompt` calls
+`sutra_prompt_synthetic` from `runtime/lib/prompt.sh` (the six
+reset-turn-markers.sh guards plus `<task-notification>` and
+`[SYSTEM NOTIFICATION`, added 2026-09-16 after a notification rewrote the
+depth marker).
 
 **Failure**: always exits 0. Each script wraps its logic in `main` called as
 `main "$@" || true; exit 0`, plus an outer `trap 'exit 0' EXIT` — no input

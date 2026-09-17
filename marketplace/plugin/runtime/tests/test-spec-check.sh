@@ -137,9 +137,10 @@ has "and it names the key" "non-canonical key" "$tmp/bogus.log"
 # slow hook being killed any more - the host SIGKILLs sutra-turn itself and the
 # whole event disappears (no step rows, no emit, no stage_digest). Stop is the
 # worst case: stop.domains-site-refresh alone is 150000 ms, and D4 adds the
-# serial phase=post pass on top of that - stop.markers_diff (5000 ms) runs
-# AFTER every parallel step finishes, so the real need is
-# max(non-post) + sum(post) = 150000 + 5000 = 155000 ms, not 150000 alone.
+# serial phase=post pass on top of that - stop.markers_diff (5000 ms) and
+# stop.steps_close (3000 ms, adherence row 1) run AFTER every parallel step
+# finishes, so the real need is
+# max(non-post) + sum(post) = 150000 + 8000 = 158000 ms, not 150000 alone.
 # The collapsed file shipped a 25 s cap either way.
 pcap="$tmp/pcap"; mk9 "$pcap"
 jq '.hooks.Stop = [{"hooks":[{"type":"command",
@@ -148,10 +149,10 @@ jq '.hooks.Stop = [{"hooks":[{"type":"command",
 bash "$pcap/runtime/spec-check.sh" "$pcap/runtime/pipeline.json" > "$tmp/cap.log" 2>&1
 is "a host timeout below the largest step budget is rejected" "$?" 3
 has "and it names the event and the cap" "event Stop: hooks.json timeout 25s" "$tmp/cap.log"
-has "and it names the step budget it cannot cover" "BELOW the largest step budget 155000ms" "$tmp/cap.log"
+has "and it names the step budget it cannot cover" "BELOW the largest step budget 158000ms" "$tmp/cap.log"
 has "and it breaks the budget into max(non-post) + sum(post)" \
-  "max non-post 150000ms (step stop.domains-site-refresh) + post total 5000ms" "$tmp/cap.log"
-has "and it says what to register instead" "register at least 160s" "$tmp/cap.log"
+  "max non-post 150000ms (step stop.domains-site-refresh) + post total 8000ms" "$tmp/cap.log"
+has "and it says what to register instead" "register at least 163s" "$tmp/cap.log"
 
 # a collapsed registration with NO timeout at all leans on the host default,
 # which is invisible in the file and wrong for Stop either way.
