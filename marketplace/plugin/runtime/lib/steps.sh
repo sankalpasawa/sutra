@@ -53,7 +53,8 @@ sutra_steps_exempt_path() {
   # "contains" matches, so absolute and project-relative spellings both pass
   # (DeepSeek round-2 P1-7).
   case "$1" in
-    *".sutra/turn/$2/"*) return 0 ;;
+    *..*) return 1 ;;
+    *".sutra/turn/$2/"*.lens.json|*".sutra/turn/$2/"*.cynefin.json) return 0 ;;   # the two artifacts only, never the lane files
     *".claude/sessions/$2/"*) return 0 ;;
     */.claude/projects/*/memory/*.md) return 0 ;;
     *".enforcement/"*) return 0 ;;
@@ -64,27 +65,62 @@ sutra_steps_exempt_path() {
 # sutra_steps_exempt_bash <command> <sid> -> 0 when a Bash command is exempt
 # (D-A6: it names the turn's artifact dir, or it IS the governance CLI).
 sutra_steps_exempt_bash() {
-  # Per SEGMENT (split on newline, ;, &&, ||, |): a segment is exempt when its
-  # first word is a governance CLI or it names this turn's artifact dir. The
-  # command is exempt only if EVERY non-empty segment is (workflow review P1:
-  # "git commit -m x\nbash holding/bin/sutra-atom close a-1" must not pass).
-  _eb_any=0
+  # Per SEGMENT (split on newline, ;, &&, ||, | - never inside quotes): a
+  # segment is exempt when its first word is a governance CLI or it names
+  # this turn's artifact dir. Row 1.1 semantics (2026-09-17): the command is
+  # exempt when it has at least one MUTATING segment and every mutating
+  # segment is exempt; read-only segments (`| wc -l`, `head`) ride along.
+  # "git commit -m x\nbash holding/bin/sutra-atom close a-1" still fails:
+  # the commit segment mutates and is not exempt.
+  _eb_mut=0
   while IFS= read -r _eb_seg; do
     _eb_seg="$(printf '%s' "$_eb_seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     [ -n "$_eb_seg" ] || continue
-    _eb_any=1
+    sutra_steps_bash_mutation "$_eb_seg" || continue
+    _eb_mut=1
     case "$_eb_seg" in
-      *".sutra/turn/$2/"*) continue ;;
+      *..*) return 1 ;;
+      *".sutra/turn/$2/"*.lens.json*|*".sutra/turn/$2/"*.cynefin.json*) continue ;;   # the two artifacts only
     esac
     _eb_first="$(printf '%s' "$_eb_seg" | sed -E 's/^(bash[[:space:]]+)?//' | awk '{print $1}')"
-    case "$_eb_first" in
-      *sutra-atom|*sutra-dispatch|*sutra-marker|*sutra-steps|*sutra-turn) continue ;;
+    case "$(basename "$_eb_first" 2>/dev/null)" in
+      sutra-atom|sutra-dispatch|sutra-marker|sutra-steps|sutra-turn) continue ;;
     esac
     return 1
   done <<EOF
-$(printf '%s\n' "$1" | awk '{ gsub(/&&|\|\||;|\|/, "\n"); print }')
+$(printf '%s\n' "$1" | awk '
+  { n = length($0); q = ""; out = ""; esc = 0
+    for (i = 1; i <= n; i++) { c = substr($0, i, 1)
+      # shell quoting: no escapes inside single quotes; inside double quotes
+      # only $ ` " \ are escapable; outside quotes any char is escapable
+      if (esc) { esc = 0; if (q != "") c = " " }
+      else if (c == "\\" && q != "\047") { nx = substr($0, i + 1, 1); if (q == "" || nx == "$" || nx == "`" || nx == "\"" || nx == "\\") esc = 1 }
+      else if (q == "") { if (c == "\047" || c == "\"" || c == "`") q = c }
+      else if (c == q) { q = "" }
+      else if (c == ";" || c == "|" || c == "&") { c = " " }
+      out = out c }
+    gsub(/&&|\|\||;|\|/, "\n", out); print out }')
 EOF
-  [ "$_eb_any" = "1" ]
+  [ "$_eb_mut" = "1" ]
+}
+
+# sutra_steps_latest_review <proj> <sid> <now_ts> -> prints the path of the
+# newest done review.json (verdict present, ts within 1800 s of now) for the
+# session, or nothing. Shared with hooks/codex-consult-gate.sh.
+sutra_steps_latest_review() {
+  # Corroborated only (workflow review P1, 2026-09-17): done, a real verdict,
+  # fresh, the verdict repeated in the lane's review.md, a non-empty diff.
+  _lr_dir="$1/.sutra/turn/$2"; _lr_now="${3:-0}"; case "$_lr_now" in ''|*[!0-9]*) _lr_now=0 ;; esac
+  [ -d "$_lr_dir" ] || return 0
+  for _lr_f in $(ls -t "$_lr_dir"/*.review.json 2>/dev/null); do
+    _lr_v="$(jq -r --argjson now "$_lr_now" 'if .status == "done" and ((.verdict // "") | IN("PASS","CHANGES-REQUIRED")) and ($now - ((.ts // 0) | tonumber? // 0)) <= 1800 then .verdict else "" end' "$_lr_f" 2>/dev/null)"
+    [ -n "$_lr_v" ] || continue
+    _lr_t="$(basename "$_lr_f" .review.json)"
+    if grep -qF "VERDICT: $_lr_v" "$_lr_dir/lane-logs/$_lr_t.review.md" 2>/dev/null && [ -s "$_lr_dir/lane-logs/$_lr_t.diff" ]; then
+      printf '%s' "$_lr_f"; return 0
+    fi
+  done
+  return 0
 }
 
 # sutra_steps_compute <proj> <sid> <turn> <opened_ts> -> prints the steps
@@ -149,9 +185,23 @@ sutra_steps_compute() {
   # 7 blueprint: text gate, reported only
   _sc_f_bp="gated"; _sc_d_bp="blueprint-check.sh reads the reply"
 
-  # 8 codex marker
-  _sc_f_codex="pending"; _sc_d_codex="marker codex-consulted"
-  [ -f "$_sc_mdir/codex-consulted" ] && { _sc_f_codex="done"; _sc_d_codex="codex-consulted"; }
+  # 8 review: codex marker, or the runtime-run second lane (row 2) for this
+  # session, or this turn's review.json while it runs
+  _sc_f_codex="pending"; _sc_d_codex="marker codex-consulted or the review lane"
+  if [ -f "$_sc_mdir/codex-consulted" ]; then _sc_f_codex="done"; _sc_d_codex="codex-consulted"
+  elif [ -f "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.review.json" ]; then
+    _sc_rv="$(jq -r '.status // "?"' "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.review.json" 2>/dev/null)"
+    _sc_d_codex="review lane $_sc_rv"; [ "$_sc_rv" = "done" ] && _sc_f_codex="done"
+  else
+    # The lane finishes after its turn's Stop and the next prompt's reset wipes
+    # session markers, so the verdict file is the durable evidence: the newest
+    # done review in this session's turn dir, fresh within 1800 s (the same
+    # window the codex consult ledger uses).
+    _sc_rf="$(sutra_steps_latest_review "$_sc_proj" "$_sc_sid" "$_sc_opened")"
+    if [ -n "$_sc_rf" ]; then
+      _sc_f_codex="done"; _sc_d_codex="review lane $(jq -r '.verdict // "?"' "$_sc_rf" 2>/dev/null) (turn $(basename "$_sc_rf" .review.json | head -c 8))"
+    fi
+  fi
 
   # 9 atom
   _sc_f_atom="pending"; _sc_d_atom="no open atom"
@@ -161,9 +211,14 @@ sutra_steps_compute() {
     [ -n "$_sc_aid" ] && { _sc_f_atom="open"; _sc_d_atom="$_sc_aid"; }
   fi
 
-  # 10 tests marker (either spelling in use)
-  _sc_f_tests="pending"; _sc_d_tests="marker ran-tests"
-  { [ -f "$_sc_mdir/ran-tests" ] || [ -f "$_sc_mdir/tests-ran" ]; } && { _sc_f_tests="done"; _sc_d_tests="ran-tests"; }
+  # 10 tests: the marker (either spelling), or the runtime-run test lane (row 2)
+  _sc_f_tests="pending"; _sc_d_tests="marker ran-tests or the test lane"
+  if [ -f "$_sc_mdir/ran-tests" ] || [ -f "$_sc_mdir/tests-ran" ]; then _sc_f_tests="done"; _sc_d_tests="ran-tests"
+  elif [ -f "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.tests.json" ]; then
+    _sc_tv="$(jq -r '"\(.status // "?") exit=\(.exit // "-")"' "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.tests.json" 2>/dev/null)"
+    _sc_d_tests="test lane $_sc_tv"
+    case "$_sc_tv" in "done exit=0") _sc_f_tests="done" ;; "no-test-command"*) _sc_f_tests="missing"; _sc_d_tests="no test_command declared in .claude/sutra-project.json" ;; esac
+  fi
 
   # 11 close
   _sc_f_close="pending"; _sc_d_close="at Stop"
@@ -204,4 +259,48 @@ sutra_steps_render() {
     (if ((.mutations // []) | length) > 0 then "  mutations: \((.mutations // []) | map(.decision // "?") | group_by(.) | map("\(.[0])=\(length)") | join(" "))" else empty end),
     (if .closed != null then "  closed: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted)" else empty end)
   ' "$1" 2>/dev/null
+}
+
+# sutra_steps_render_stack <facts.json> <placement-marker-file> -> the block
+# stack rendered from computed facts (adherence row 5 = MVP-2 render, W1-FAST-
+# PATH s7): every computed field printed, every judgment field a <<FILL:x>>
+# token. The Stop gates read INPUT:, TYPE: and DEPTH: N/5 at line start, so
+# the compact lines keep those three at column 0. ASCII except the H-Sutra
+# header's U+00B7 separator, which the header grammar requires.
+sutra_steps_render_stack() {
+  _rs_facts="$1"; _rs_pl="$2"
+  [ -f "$_rs_facts" ] || { printf 'RENDERED STACK: no facts file for this turn\n'; return 0; }
+  _rs_pline="unresolved (no-match)"
+  if [ -f "$_rs_pl" ]; then
+    _rs_p1="$(sed -n 's/^PLACEMENT: //p' "$_rs_pl" 2>/dev/null | head -1)"
+    [ -n "$_rs_p1" ] && _rs_pline="$_rs_p1"
+    _rs_dref="$(sed -n 's/^DOMAIN_REF=//p' "$_rs_pl" 2>/dev/null | head -1)"
+    [ -z "$_rs_p1" ] && [ -n "$_rs_dref" ] && [ "$_rs_dref" != "unresolved" ] && _rs_pline="engine match $_rs_dref (compose the D-path from the placement context)"
+  fi
+  jq -r --arg pl "$_rs_pline" '
+    def f(x): (x // "?");
+    (.classify // {}) as $c | (.resolve // {}) as $r | (.depth // {}) as $d
+    | ($c.direction // "INBOUND") as $dir | ($c.verb // "?") as $verb
+    | (if ($c.tense // null) != null then " · TENSE:\($c.tense)" else "" end) as $tense
+    | "RENDERED STACK (paste as your first lines, replace every <<FILL:x>>, keep computed fields as printed)",
+      "[\($dir)·\($verb)\($tense) · TIMING:\(f($c.timing)) · CHANNEL:\(f($c.channel)) · REV:\(f($c.reversibility)) · RISK:\(f($c.decision_risk))]",
+      "INPUT: <<FILL:input>>",
+      "TYPE: \(f(.type)) | HOME: <<FILL:home>> | ROUTE: <<FILL:route>> | FIT: <<FILL:fit>> | ACTION: <<FILL:action>>",
+      "DEPTH: \($d.n // 5)/5 | TASK: \"<<FILL:task>>\" | EFFORT: <<FILL:effort>> | COST: <<FILL:cost>> | IMPACT: <<FILL:impact>>",
+      "FLOW: \(f(.type)) / \($dir).\($verb) | \(f($r.resolution)) scope=\(f($r.scope)) | steps <<FILL:steps>> | lens <<FILL:lens>> | cynefin <<FILL:cynefin>> | close <<FILL:close>>",
+      "PLACEMENT: \($pl)"
+  ' "$_rs_facts" 2>/dev/null
+}
+
+# sutra_steps_prompts <lens-status> <cynefin-status> -> the two judgment
+# prompts, printed only for the steps still pending (adherence row 3 = skill
+# injection: the runtime brings the skill's core to the step, so doing it is
+# not a choice the model makes).
+sutra_steps_prompts() {
+  if [ "$1" != "done" ]; then
+    printf 'LENS (core:lens, do it now, then write the lens artifact): mint 3-6 axes as interrogative x mechanism (who/what/when/where/why/how crossed with the unit'"'"'s parts, flows, states, owners); keep only the axes that change a decision; direction DOWN = decompose the unit along them, UP = generalize to the rule, ACROSS = reframe.\n'
+  fi
+  if [ "$2" != "done" ]; then
+    printf 'CYNEFIN (core:cynefin, do it now, then write the cynefin artifact): clear = known method, fixed sequence, no gate; complicated = expert analysis first, review before commit; complex = parallel probes, small safe steps, human gate mandatory; chaotic = act to stabilize, then escalate. Name the domain, the shape, and whether a human gate is mandatory.\n'
+  fi
 }

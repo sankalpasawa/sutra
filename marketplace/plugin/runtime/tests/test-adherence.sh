@@ -167,6 +167,9 @@ adherence_denied c4 && fail "case4: denied with valid artifacts: $(deny_reason_o
 is "case4: lens done"    "$(jq -r '.steps[4].status' "$L")" done
 is "case4: cynefin done" "$(jq -r '.steps[5].status' "$L")" done
 is "case4: mutation row allow" "$(jq -r '.mutations[-1].decision' "$L")" allow
+sysmsg_of c4 | grep -q 'lens: pending -> done' && pass "case4: live transition line printed for lens" || fail "case4: no live transition line: $(head -c 200 "$WORK/c4.out")"
+sysmsg_of c4 | grep -q 'cynefin: pending -> done' && pass "case4: live transition line printed for cynefin" || fail "case4: no cynefin transition line"
+is "case4: transition row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="adherence_transition"')" 1
 
 # ===================================================================== 5 ====
 echo "== case 5: stale turn_id / ts before open / hollow artifacts -> deny with the exact reason =="
@@ -208,13 +211,20 @@ for c in "printf x > f.txt" "rm -f f.txt" "git commit -m x" "sed -i s/a/b/ f.txt
 bash holding/bin/sutra-atom close a-1" \
          "sutra-marker read depth-registered && rm -rf src" \
          "rm -rf src; sutra-dispatch show" \
-         "echo x > .sutra/turn/sid-c2/other.json && rm -rf src"; do
+         "echo x > .sutra/turn/sid-c2/other.json && rm -rf src" \
+         "echo 'x\\' ; rm -rf src" \
+         "jq -n '{}' > .sutra/turn/sid-c2/x.review.json" \
+         "jq -n '{}' > .sutra/turn/sid-c2/../escape.lens.json" \
+         "/tmp/evil/sutra-atom-x close a-1 && rm -rf src"; do
   do_run c7m "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c2 "$c")"
   adherence_denied c7m && pass "case7: mutation refused: $(printf '%s' "$c" | tr '\n' '|')" || fail "case7: mutation slipped: $(printf '%s' "$c" | tr '\n' '|')"
 done
-for c in "bash holding/bin/sutra-atom close a-1" "bash holding/bin/sutra-atom close a-1 && bash holding/bin/sutra-dispatch show" "sutra-steps latest | head -20"; do
+for c in "bash holding/bin/sutra-atom close a-1" "bash holding/bin/sutra-atom close a-1 && bash holding/bin/sutra-dispatch show" "sutra-steps latest | head -20" \
+         "jq -nc '{a:1}' > .sutra/turn/sid-c2/x.lens.json; ls .sutra/turn/sid-c2/ | wc -l" \
+         "jq -nc '{shape:\"a; b | c\"}' > .sutra/turn/sid-c2/x.cynefin.json" \
+         "cd /somewhere && jq -n '{}' > .sutra/turn/sid-c2/y.lens.json"; do
   do_run c7e "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c2 "$c")"
-  adherence_denied c7e && fail "case7: governance CLI refused: $c" || pass "case7: governance CLI exempt: $c"
+  adherence_denied c7e && fail "case7: exempt command refused: $c" || pass "case7: exempt command allowed: $c"
 done
 do_run c7t "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_task sid-c2)"
 adherence_denied c7t && pass "case7: Task refused without artifacts (D-A7)" || fail "case7: Task allowed without artifacts"
@@ -250,6 +260,9 @@ STEP TRACE turn $(printf '%s' "$TID" | head -c 8) (adherence=on)
 done")"
 is "case10: close done" "$(jq -r '.steps[10].status' "$L")" done
 is "case10: trace_pasted" "$(jq -r '.closed.trace_pasted' "$L")" true
+sysmsg_of c10 | grep -q '^STEP TRACE turn' && pass "case10: the final step prints the whole table at Stop" || fail "case10: no final table at Stop: $(head -c 200 "$WORK/c10.out")"
+sysmsg_of c10 | grep -q 'closed: .*/11 done' && pass "case10: final table carries the closed line" || fail "case10: final table lacks the closed line"
+sysmsg_of c10 | grep -qE '^ *11 close +runtime +done' && pass "case10: row 11 reads done in the final table" || fail "case10: row 11 not done in the final table"
 [ "$(jq -r '.closed.refused' "$L")" -ge 1 ] && pass "case10: refused count kept" || fail "case10: refused count lost"
 is "case10: steps_close row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="steps_close"')" 1
 OUT="$(CLAUDE_PROJECT_DIR="$PJ" CLAUDE_PLUGIN_ROOT="$PLUGIN_MAIN" bash "$PLUGIN_MAIN/bin/sutra-steps" --sid sid-c2 latest 2>&1)"

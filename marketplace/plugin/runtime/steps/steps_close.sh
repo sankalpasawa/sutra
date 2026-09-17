@@ -62,12 +62,15 @@ main() {
   PASTED=false
   _t8="$(printf '%s' "$_CL_TURN" | head -c 8)"
   printf '%s' "$RESPONSE_TEXT" | grep -qF "STEP TRACE turn $_t8" && PASTED=true
+  # Row 5: <<FILL:x>> tokens the model left in its reply (never blocking).
+  FILLS_LEFT="$(printf '%s' "$RESPONSE_TEXT" | grep -o '<<FILL:[A-Za-z0-9_-]*>>' 2>/dev/null | wc -l | tr -d ' ')"
+  case "$FILLS_LEFT" in ''|*[!0-9]*) FILLS_LEFT=0 ;; esac
 
   STEPS_JSON="$(sutra_steps_compute "$_CL_PROJ" "$_CL_SID" "$_CL_TURN" "$OPENED")"
   [ -n "$STEPS_JSON" ] || return 0
   STEPS_JSON="$(printf '%s' "$STEPS_JSON" | jq -c 'map(if .id == "close" then .status = "done" | .detail = "closed at Stop" else . end)' 2>/dev/null)"
 
-  _upd="$(jq -c --argjson steps "$STEPS_JSON" --argjson pasted "$PASTED" --arg ts "$NOW_TS" '
+  _upd="$(jq -c --argjson steps "$STEPS_JSON" --argjson pasted "$PASTED" --arg ts "$NOW_TS" --argjson fills "$FILLS_LEFT" '
     .steps = $steps
     | .closed = {
         ts: ($ts|tonumber),
@@ -75,10 +78,16 @@ main() {
         pending: ([.steps[] | select(.status == "pending" or .status == "missing")] | length),
         refused: ([.mutations[] | select(.decision == "deny")] | length),
         warned: ([.mutations[] | select(.decision == "warn")] | length),
-        trace_pasted: $pasted }' "$_CL_PATH" 2>/dev/null)"
+        trace_pasted: $pasted,
+        fills_left: $fills }' "$_CL_PATH" 2>/dev/null)"
   [ -n "$_upd" ] || return 0
   sutra_steps_write "$_CL_PATH" "$_upd"
   _cl_row close "$(printf '%s' "$_upd" | jq -c '.closed' 2>/dev/null)"
+  # The final step prints EVERYTHING that is done (founder, 2026-09-17): the
+  # whole finished table with every row's end state, shown in the terminal
+  # through systemMessage. Flag on only (D-A9 holds when off).
+  FINAL="$(sutra_steps_render "$_CL_PATH")"
+  [ -n "$FINAL" ] && jq -nc --arg m "$FINAL" '{systemMessage:$m}' 2>/dev/null
   return 0
 }
 

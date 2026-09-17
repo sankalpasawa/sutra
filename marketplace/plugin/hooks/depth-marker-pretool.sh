@@ -99,6 +99,11 @@ if [ -n "$_STDIN_PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
       .claude/codex-directive-pending-*|.claude/heartbeats/*|\
       .enforcement/*|.analytics/*) exit 0 ;;
     esac
+    # adherence artifacts (row 1.1), with the traversal guard the codex gate has
+    case "$_REL" in
+      *..*) : ;;
+      .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json) exit 0 ;;
+    esac
   fi
 fi
 

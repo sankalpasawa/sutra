@@ -64,9 +64,14 @@ main() {
     if [ "$(jq -r 'if .closed == null then "open" else "closed" end' "$_SL_PATH" 2>/dev/null)" = "closed" ]; then
       _rot="$(jq -r '.closed.ts // 0' "$_SL_PATH" 2>/dev/null)"; case "$_rot" in ''|*[!0-9]*) _rot=0 ;; esac
       mv -f "$_SL_PATH" "$_sl_dir/$_SL_TURN.steps.prev$_rot.json" 2>/dev/null
-      for _k in lens cynefin; do
-        _ap="$(sutra_artifact_path "$_SL_PROJ" "$_SL_SID" "$_SL_TURN" "$_k")"
+      for _k in lens cynefin tests review; do
+        _ap="$_sl_dir/$_SL_TURN.$_k.json"
         [ -f "$_ap" ] && mv -f "$_ap" "$_sl_dir/$_SL_TURN.$_k.prev$_rot.json" 2>/dev/null
+      done
+      for _lf in "$_sl_dir/lane-logs/$_SL_TURN".*; do
+        [ -e "$_lf" ] || continue
+        case "$_lf" in *.prev*) continue ;; esac
+        mv -f "$_lf" "$_lf.prev$_rot" 2>/dev/null
       done
       _sl_row rotate "$(jq -nc --arg t "$_rot" '{reason:"repeated-prompt-after-close", prev_closed_ts:$t}')"
     else
@@ -83,7 +88,15 @@ main() {
   LAST=""
   _last_file="$(ls -t "$_sl_dir"/*.steps.json 2>/dev/null | grep -v "/$_SL_TURN.steps.json" | head -1)"
   if [ -n "$_last_file" ]; then
-    LAST="$(jq -r 'if .closed != null then "Last turn: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted)" else "Last turn: not closed" end' "$_last_file" 2>/dev/null)"
+    LAST="$(jq -r 'if .closed != null then "Last turn: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted), fills_left=\(.closed.fills_left // 0)" else "Last turn: not closed" end' "$_last_file" 2>/dev/null)"
+    # Row 2: the runtime lanes finish after that turn's Stop; read their files now.
+    _prev_turn="$(basename "$_last_file" .steps.json)"
+    if [ -f "$_sl_dir/$_prev_turn.review.json" ]; then
+      LAST="$LAST, review=$(jq -r '"\(.status)\(if .verdict != null then ":" + .verdict else "" end)"' "$_sl_dir/$_prev_turn.review.json" 2>/dev/null)"
+    fi
+    if [ -f "$_sl_dir/$_prev_turn.tests.json" ]; then
+      LAST="$LAST, tests=$(jq -r '"\(.status)\(if .exit != null then " exit=" + (.exit|tostring) else "" end)"' "$_sl_dir/$_prev_turn.tests.json" 2>/dev/null)"
+    fi
   fi
 
   # A re-run of the same turn MERGES: mutations and closed{} already recorded
@@ -94,9 +107,13 @@ main() {
       '.mode = $mode | .steps = $steps | .mutations = (.mutations // []) ' "$_SL_PATH" 2>/dev/null)"
   fi
   if [ -z "$LEDGER" ]; then
+    # Row 2 baseline for the turn's diff: a stash commit of the worktree as it
+    # is NOW (nothing is modified), or HEAD when the tree is clean.
+    GIT_BASE="$(git -C "$_SL_PROJ" stash create 2>/dev/null)"
+    [ -n "$GIT_BASE" ] || GIT_BASE="$(git -C "$_SL_PROJ" rev-parse HEAD 2>/dev/null)"
     LEDGER="$(jq -nc --arg turn "$_SL_TURN" --arg sid "$_SL_SID" --arg mode "$SUTRA_ADHERENCE_MODE" \
-      --argjson opened "$OPENED" --arg unit "$UNIT" --argjson steps "$STEPS_JSON" \
-      '{turn_id:$turn, session_id:$sid, mode:$mode, opened_ts:$opened, unit:$unit, steps:$steps, mutations:[], closed:null}' 2>/dev/null)"
+      --argjson opened "$OPENED" --arg unit "$UNIT" --argjson steps "$STEPS_JSON" --arg base "${GIT_BASE:-}" \
+      '{turn_id:$turn, session_id:$sid, mode:$mode, opened_ts:$opened, unit:$unit, git_base:$base, steps:$steps, mutations:[], closed:null}' 2>/dev/null)"
   fi
   [ -n "$LEDGER" ] || return 0
   sutra_steps_write "$_SL_PATH" "$LEDGER"
@@ -108,6 +125,12 @@ main() {
   LENS_REL="$(sutra_artifact_rel "$_SL_SID" "$_SL_TURN" lens)"
   CYN_REL="$(sutra_artifact_rel "$_SL_SID" "$_SL_TURN" cynefin)"
   VERB_MODE="Refused"; [ "$SUTRA_ADHERENCE_MODE" = "warn" ] && VERB_MODE="Warned (not refused)"
+  # Rows 3 + 5 (2026-09-17): the rendered block stack from facts, and the two
+  # judgment prompts for whichever of lens / cynefin is still pending.
+  STACK="$(sutra_steps_render_stack "$_SL_PROJ/.sutra/turn/$_SL_SID/$_SL_TURN.facts.json" "$_SL_PROJ/.claude/sessions/$_SL_SID/placement-registered")"
+  LENS_ST="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "lens") | .status' 2>/dev/null)"
+  CYN_ST="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "cynefin") | .status' 2>/dev/null)"
+  PROMPTS="$(sutra_steps_prompts "${LENS_ST:-pending}" "${CYN_ST:-pending}")"
   TAIL="$VERB_MODE until 5 and 6 exist for this turn (mode=$SUTRA_ADHERENCE_MODE). Write them with the Write tool, turn_id=$_SL_TURN session_id=$_SL_SID ts>=$OPENED:
   $LENS_REL  {turn_id,session_id,producer:\"model\",step:\"lens\",unit(>=10 chars),axes:[>=1 strings],pick:[subset of axes],direction:DOWN|UP|ACROSS,ts}
   $CYN_REL  {turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(>=20 chars),human_gate:bool,ts}
@@ -115,8 +138,28 @@ Paste the STEP TRACE block above verbatim into your reply, after the Depth block
   [ -n "$LAST" ] && TAIL="$TAIL
 $LAST"
 
-  CTX="$TRACE
+  CTX="$STACK
+
+$TRACE
 $TAIL"
+  [ -n "$PROMPTS" ] && CTX="$CTX
+
+$PROMPTS"
+  # Budget (pipeline.json budgets.context.render_chars_max, default 7000):
+  # drop order prompts, then stack, never the trace.
+  _budget="$(jq -r '.budgets.context.render_chars_max // 7000' "$_sl_root/runtime/pipeline.json" 2>/dev/null)"; case "$_budget" in ''|*[!0-9]*) _budget=7000 ;; esac
+  if [ "${#CTX}" -gt "$_budget" ]; then
+    _sl_row drop '{"dropped":"prompts"}'
+    CTX="$STACK
+
+$TRACE
+$TAIL"
+  fi
+  if [ "${#CTX}" -gt "$_budget" ]; then
+    _sl_row drop '{"dropped":"stack"}'
+    CTX="$TRACE
+$TAIL"
+  fi
   jq -nc --arg ev "$_SL_EVENT" --arg ctx "$CTX" '{hookSpecificOutput:{hookEventName:$ev, additionalContext:$ctx}}' 2>/dev/null
   return 0
 }

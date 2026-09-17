@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-17
+## 2.284.0 (2026-09-17)
+
+- **Adherence rows 1.1-5: the runtime renders the block stack, brings the lens and cynefin prompts to the step, runs the test command and a second-lane review itself, and reads one override file.** `ups.steps_ledger` now emits a RENDERED STACK from facts (`<<FILL:x>>` for judgment fields) plus the lens/cynefin prompts while pending; `stop.review_lane` detaches the declared `test_command` and a DeepSeek review of the turn's diff, writing `<turn>.tests.json` / `.review.json` (the codex-consult gate accepts a fresh runtime-written verdict); `~/.sutra-overrides` replaces the per-gate ACK env vars (applied by `sutra-turn` before step 0, audited). Row 1.1: the two legacy gates no longer refuse the adherence artifacts, Bash exemption is quote-aware and judged on mutating segments only, the creation Stop check counts a rule-covered path as placed. Tests: test-adherence 121, test-review-lane 34, test-overrides 15; parity unchanged with the flags absent.
+
 ## 2.283.0 (2026-09-17)
 
 - **Adherence row 1: the runtime keeps a step ledger per turn, prints a STEP TRACE, and refuses a mutation until the turn's lens and cynefin artifacts exist.** Three native steps (`ups.steps_ledger`, `pre.adherence_gate`, `stop.steps_close`) behind the per-box flag `~/.sutra-runtime-adherence` (`on|warn|off`, absent = off, kill `~/.sutra-runtime-adherence-disabled`); `bin/sutra-steps` prints the ledger; typed artifacts at `.sutra/turn/<sid>/<turn>.{lens,cynefin}.json` are checked for turn, session, freshness and shape, and a repeated prompt after Stop rotates them so they must be re-authored. The synthetic-prompt guard moves to `runtime/lib/prompt.sh` and now skips task notifications. Tests: test-adherence.sh 108 checks; golden parity unchanged with the flag absent.

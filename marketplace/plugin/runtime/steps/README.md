@@ -31,6 +31,17 @@ depth marker).
 `main "$@" || true; exit 0`, plus an outer `trap 'exit 0' EXIT` — no input
 shape, missing tool, or internal error can make the step non-zero.
 
+## The adherence family (rows 1-5, 2026-09-17), flag `~/.sutra-runtime-adherence` on|warn|off
+
+| Step | Event | What it does |
+|---|---|---|
+| `steps_ledger.sh` (`ups.steps_ledger`, after markers_write) | UserPromptSubmit | opens `.sutra/turn/<sid>/<turn>.steps.json` (11 steps); emits ONE additionalContext: the RENDERED STACK from facts (row 5, `<<FILL:x>>` for judgment fields), the STEP TRACE, the lens/cynefin prompts while pending (row 3), the previous turn's lane results. Budget `budgets.context.render_chars_max`, drop order prompts, stack, never the trace |
+| `adherence_gate.sh` (`pre.adherence_gate`, class B) | PreToolUse | refuses a mutation (deny on, systemMessage warn) until `<turn>.lens.json` + `<turn>.cynefin.json` validate (`runtime/lib/artifact.sh`); artifact writes, session markers, memory files, `.enforcement/` and the governance CLIs are exempt; Bash is judged per segment (quote-aware), a command is exempt when every MUTATING segment is |
+| `steps_close.sh` (`stop.steps_close`) | Stop | closes the ledger: statuses, `trace_pasted`, `fills_left` |
+| `review_lane.sh` (`stop.review_lane`) | Stop | when the turn mutated repo files: detaches the declared `test_command` and a second-lane review of the diff (`runtime/lib/deepseek-review.sh`, or `$SUTRA_REVIEW_LANE_CMD`), writing `<turn>.tests.json` / `<turn>.review.json` and the session marker `deepseek-consulted` (SOURCE=runtime). `hooks/codex-consult-gate.sh` accepts a fresh (1800 s) done verdict |
+
+Rows: `steps_open` `steps_skip` `steps_rotate` `steps_drop` `steps_close` `adherence_decision` `lane_tests` `lane_review` `lane_skip`. The one override file `~/.sutra-overrides` (row 4) is applied by `bin/sutra-turn` through `runtime/lib/overrides.sh` before step 0 (row `override_file`, audit `.enforcement/overrides.jsonl`). `bin/sutra-steps` prints a turn's ledger.
+
 ## markers_write.sh — `native:markers_write`, UserPromptSubmit, phase post
 
 Computes `input-routed`, `depth-registered`, `flow-classified`,

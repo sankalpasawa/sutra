@@ -1364,6 +1364,21 @@
         "on_error": "warn",
         "flag": "~/.sutra-runtime-adherence",
         "notes": "adherence row 1: closes the step ledger, records trace_pasted; emits nothing"
+      },
+      {
+        "id": "stop.review_lane",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:review_lane",
+        "phase": "post",
+        "timeout_ms": 2000,
+        "killswitch_aliases": [
+          ".sutra-runtime-adherence-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-adherence",
+        "notes": "adherence row 2: when the turn mutated repo files, detaches the declared test command and a second-lane review of the diff; writes <turn>.tests.json / .review.json and the deepseek-consulted marker; emits nothing"
       }
     ]
   },
@@ -1528,6 +1543,12 @@
       "atom",
       "tests",
       "close"
-    ]
+    ],
+    "steps_runtime_lanes": [
+      "tests",
+      "review"
+    ],
+    "overrides_file": "~/.sutra-overrides",
+    "render": "steps_ledger emits the RENDERED STACK from facts plus the lens/cynefin prompts while pending"
   }
 }

@@ -195,6 +195,19 @@ _sutra_per_turn_block() {
 # object on stdout is worse than none, since Claude Code would drop the whole
 # hookSpecificOutput and silently reinstate the original bug.
 _BLOCK_TEXT="$(_sutra_per_turn_block)"
+# Adherence rows 3+5 (2026-09-17): when the runtime renders the block stack
+# itself (~/.sutra-runtime-adherence on|warn), the 45-line rules text is
+# replaced by a 6-line pointer. Flag absent (every golden corpus run) ->
+# byte-identical to before.
+if [ -f "$DEFAULTS_DIR/runtime/flags.sh" ] && [ "${SUTRA_RUNTIME_DISABLED:-}" != "1" ] && [ ! -f "${HOME:-/nonexistent}/.sutra-runtime-disabled" ]; then
+  . "$DEFAULTS_DIR/runtime/flags.sh" 2>/dev/null
+  if command -v sutra_flag_adherence >/dev/null 2>&1; then
+    sutra_flag_adherence
+    if [ "${SUTRA_ADHERENCE_MODE:-off}" != "off" ]; then
+      _BLOCK_TEXT="$(printf '\n[Sutra defaults · D40, runtime-rendered mode] The RENDERED STACK below is your block stack for this turn: paste it as your first lines and replace every <<FILL:x>>; computed fields stay as printed. Then the STEP TRACE, verbatim. BLUEPRINT (Doing / Steps with Verify / Output looks like / Verified by / Scale / Stops if / Switch) is yours to write before any Edit/Write/Bash/Agent. BUILD-LAYER block before edits under sutra/marketplace/plugin/**. Writing style: outcome first, <=40 prose lines, ASCII, tables for 3+ items. Lens and cynefin: do them and write the two artifacts before any mutation; the gate refuses until they exist.\n')"
+    fi
+  fi
+fi
 _JSON_OUT=""
 if command -v jq >/dev/null 2>&1; then
   _JSON_OUT="$(jq -nc --arg ctx "$_BLOCK_TEXT" \

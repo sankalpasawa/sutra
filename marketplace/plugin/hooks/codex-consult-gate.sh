@@ -95,6 +95,15 @@ case "$FILE_PATH" in
   /private/tmp/claude-*/*|/tmp/codex-*|/tmp/deepseek-*)
     log_row "pass" "hook-owned-staging path=${FILE_PATH}"; exit 0 ;;
 esac
+# Adherence row 1.1 (2026-09-17): the turn's own judgment artifacts are the
+# evidence the adherence gate demands BEFORE any edit; gating their Write here
+# deadlocked the two gates while the codex lane was exhausted. They are not
+# repo content; the runtime validates their shape.
+case "$REL_PATH" in
+  *..*) : ;;
+  .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json)
+    log_row "pass" "adherence-artifact path=${FILE_PATH}"; exit 0 ;;
+esac
 
 # -- Session-scoped marker resolution (2026-07-30 marker-race fix) ----------
 # Markers are read via marker-lib: session dir .claude/sessions/<sid>/ first,
@@ -139,6 +148,27 @@ DEPTH_N=""
 
 # -- Already satisfied this turn? (session-scoped; foreign global ignored) --
 _ccg_marker_read codex-consulted >/dev/null 2>&1 && { log_row "pass" "consult-marker-present"; exit 0; }
+# Adherence row 2 (2026-09-17): the runtime's own second lane (stop.review_lane,
+# DeepSeek by default) reviews the turn's diff after Stop. The session marker
+# it also writes is NOT evidence here (a model can Write the same bytes,
+# workflow review P1, 2026-09-17); what counts is the CORROBORATED verdict:
+# the newest done review.json for this session within 1800 s whose verdict is
+# repeated in the lane's own review.md and whose diff file is non-empty. All
+# three live under .sutra/turn/<sid>/, which no PreToolUse gate whitelists.
+_ccg_sid="${CLAUDE_CODE_SESSION_ID:-}"
+if [ -n "$_ccg_sid" ] && [ -d "$REPO_ROOT/.sutra/turn/$_ccg_sid" ] && command -v jq >/dev/null 2>&1; then
+  _ccg_now="$(date +%s 2>/dev/null)"; case "$_ccg_now" in ''|*[!0-9]*) _ccg_now=0 ;; esac
+  _ccg_dir="$REPO_ROOT/.sutra/turn/$_ccg_sid"
+  for _ccg_f in $(ls -t "$_ccg_dir"/*.review.json 2>/dev/null); do
+    _ccg_v="$(jq -r --argjson now "$_ccg_now" 'if .status == "done" and ((.verdict // "") | IN("PASS","CHANGES-REQUIRED")) and ($now - ((.ts // 0) | tonumber? // 0)) <= 1800 then .verdict else "" end' "$_ccg_f" 2>/dev/null)"
+    [ -n "$_ccg_v" ] || continue
+    _ccg_t="$(basename "$_ccg_f" .review.json)"
+    if grep -qF "VERDICT: $_ccg_v" "$_ccg_dir/lane-logs/$_ccg_t.review.md" 2>/dev/null && [ -s "$_ccg_dir/lane-logs/$_ccg_t.diff" ]; then
+      log_row "pass" "review-lane-verdict-corroborated turn=$(printf '%s' "$_ccg_t" | head -c 8) verdict=$_ccg_v"; exit 0
+    fi
+    log_row "note" "review-lane-verdict-unbacked turn=$(printf '%s' "$_ccg_t" | head -c 8)"
+  done
+fi
 
 # -- W1-T13 (d9): persistent consult-ledger fallback ------------------------
 # A consult whose completion raced the turn boundary (background run; marker

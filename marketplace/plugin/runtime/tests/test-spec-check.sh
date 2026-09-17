@@ -149,10 +149,10 @@ jq '.hooks.Stop = [{"hooks":[{"type":"command",
 bash "$pcap/runtime/spec-check.sh" "$pcap/runtime/pipeline.json" > "$tmp/cap.log" 2>&1
 is "a host timeout below the largest step budget is rejected" "$?" 3
 has "and it names the event and the cap" "event Stop: hooks.json timeout 25s" "$tmp/cap.log"
-has "and it names the step budget it cannot cover" "BELOW the largest step budget 158000ms" "$tmp/cap.log"
+has "and it names the step budget it cannot cover" "BELOW the largest step budget 160000ms" "$tmp/cap.log"
 has "and it breaks the budget into max(non-post) + sum(post)" \
-  "max non-post 150000ms (step stop.domains-site-refresh) + post total 8000ms" "$tmp/cap.log"
-has "and it says what to register instead" "register at least 163s" "$tmp/cap.log"
+  "max non-post 150000ms (step stop.domains-site-refresh) + post total 10000ms" "$tmp/cap.log"
+has "and it says what to register instead" "register at least 165s" "$tmp/cap.log"
 
 # a collapsed registration with NO timeout at all leans on the host default,
 # which is invisible in the file and wrong for Stop either way.

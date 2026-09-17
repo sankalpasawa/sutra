@@ -24,6 +24,15 @@ while IFS= read -r p; do
   if [ -r "$SEEN" ] && grep -qxF "$p" "$SEEN" 2>/dev/null; then continue; fi
   [ "$START" -gt 0 ] && [ "$(mt "$ROOT/$p")" -lt "$START" ] && continue   # pre-existing untracked file, not this session's creation
   OUT=$("$(dirname "$0")/creation-guard.sh" --check "$p" 2>&1 >/dev/null); rc=$?
+  # Adherence row 1.1 (2026-09-17): a path a creation-guard rule covers is a
+  # scheduled routine's output; the rule IS its placement. When placement is
+  # the only missing dimension, count it placed and remember it so the same
+  # file is not re-reported on every Stop of a long session.
+  if printf '%s' "$OUT" | grep -q 'is missing: placement$' && [ -r "$ROOT/.claude/creation-guard-rules.json" ] && command -v jq >/dev/null 2>&1; then
+    if jq -e --arg p "$p" '[.rules[]? | (.prefix // "") | select(. != "") | select($p | startswith(.))] | length > 0' "$ROOT/.claude/creation-guard-rules.json" >/dev/null 2>&1; then
+      mkdir -p "$(dirname "$SEEN")" 2>/dev/null; printf '%s\n' "$p" >> "$SEEN" 2>/dev/null; continue
+    fi
+  fi
   if [ $rc -ne 0 ] || printf '%s' "$OUT" | grep -q 'missing:\|NEW KIND'; then N=$((N+1)); BAD="$BAD
   - $p :: $(printf '%s' "$OUT" | head -1 | cut -c1-160)"; fi
 done <<< "$NEW"

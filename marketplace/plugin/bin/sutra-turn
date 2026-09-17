@@ -708,6 +708,15 @@ do_run() {
   [ "$ORPHAN" -eq 1 ] && sutra_ledger_note orphan_turn \
     "no current turn key for session $SESSION_ID; $EVENT ran outside a prompt turn"
 
+  # -- adherence row 4 (2026-09-17): ONE override file, ~/.sutra-overrides,
+  # replaces the dozen per-gate ACK env vars. Applied before step 0 so a
+  # SUTRA_RUNTIME_DISABLED line in it counts too. Absent (every corpus run
+  # has a private HOME) -> nothing happens.
+  if [ -f "$PLUGIN_ROOT/runtime/lib/overrides.sh" ]; then
+    . "$PLUGIN_ROOT/runtime/lib/overrides.sh" 2>/dev/null
+    command -v sutra_overrides_apply >/dev/null 2>&1 && sutra_overrides_apply "$PROJECT_DIR" "$SESSION_ID"
+  fi
+
   # -- step 0: kill-switch, then the jq probe ------------------------------
   if [ "${SUTRA_RUNTIME_DISABLED:-}" = "1" ] || [ -f "${HOME:-/nonexistent}/.sutra-runtime-disabled" ]; then
     sutra_ledger_note killswitch "runtime disabled; legacy hooks executed for $EVENT"
