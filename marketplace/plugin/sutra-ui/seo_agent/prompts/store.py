@@ -57,7 +57,11 @@ _TOKEN = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 # architect, they are what it obeys, and of everything on this screen they are what changes an
 # article the most.
 #
-# Deliberately NOT here: slop, links, clean. The owner named those three as the ones to skip.
+# Deliberately NOT here: links, clean. The owner named slop, links and clean as the three to skip,
+# but slop-rules is back in (WP4C, Aparna's review, 2026-09-17): it is the ban list the polish
+# pass actually checks a draft against, and after a review like hers a content person needs to add
+# a banned phrase to that list without going through a developer and a build. links and clean stay
+# out; nothing in her review asked to tune either of them.
 
 FORMATS = [
     ("write/formats/answer-bait-definitional", "Answer bait and definitions",
@@ -91,6 +95,10 @@ WRITING = [
      "Sentence length and rhythm, so the prose does not march."),
     ("write/wrapper", "The intro, the TL;DR, the FAQ and the close",
      "Everything around the body, written last because it has to match what got written."),
+    ("write/slop-rules", "The AI tells to strip out",
+     "The ban list the polish pass checks a draft against, word by word and pattern by pattern."),
+    ("write/edit-article", "Rewriting an article from feedback",
+     "What Rewrite with AI in the Library follows when a whole article is rewritten from a note."),
 ]
 
 GROUPS = [
