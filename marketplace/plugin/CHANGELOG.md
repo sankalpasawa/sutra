@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-17
+## 2.282.9 (2026-09-17)
+
+- **Fixed: a run on placeholder search numbers never said why the research stopped.** With no DataForSEO login, a run said "no DataForSEO login, so none of these numbers are real" once and then carried on regardless — researching, and often failing the thin-material guard, with DataForSEO never named again. One user's run tried three times over 26 minutes on fake numbers, then sat waiting 17 hours with the real cause never repeated. A run with no DataForSEO login now refuses at the top, the same way an empty balance already does, naming what is missing and both ways out (connect it, or ask for placeholder numbers on purpose). Asking for placeholder numbers still runs exactly as before, and a connected login is unaffected. If a placeholder run still comes back too thin to write from, that message now says why: the numbers were never real.
+
 ## 2.282.8 (2026-09-17)
 
 - **Fixed: articles saved before 2026-09-16 never reached the team.** `loop.save_to_library` only started pushing a `library` row on 2026-09-16, so every article finished before that sat on its own Mac for good — Devansh's own workspace held 3 Library rows and had sent none of them. A new Library backfill (mirroring the existing idea-sheet one) checks each local row against the team's table and sends only what is missing, once, through the same push path a fresh save uses. It never bumps a row's version or touches an editor field — this is a send, not an edit — and runs by itself on every Mac, including teammates', the next time the workspace tab is open.
