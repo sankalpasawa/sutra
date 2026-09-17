@@ -16,6 +16,9 @@ Rules:
 - Read the item through the SPINE. If the item could be read two ways, judge the reading that serves this
   article's argument. Material that belongs to a NOT ABOUT world does not count as coverage, even when it
   uses the item's exact words.
+- When more than one passage could serve as evidence, prefer the higher-tier source: government and
+  official statistics, then peer-reviewed and academic work, then established research institutions,
+  then reputable press and industry bodies, then vendor research last.
 
 "Enough" depends on the item type:
 - gap_we_own   — this is the article's DIFFERENTIATOR, the reason it beats the incumbents. Covered means

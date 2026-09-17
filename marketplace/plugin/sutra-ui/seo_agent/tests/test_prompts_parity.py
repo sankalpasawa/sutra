@@ -168,6 +168,27 @@ EXCLUDED_REGIONS = {
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
     "readable.md": [("REAL PUBLISHED ARTICLES BY", "  · The reader is")],
+    # Aparna's 2026-09-17 Slack review of three shipped articles. These rules were written straight
+    # into Sutra's prompts and have no counterpart in his repo, so each is its own region, dropped
+    # from Sutra's side only (the start marker never matches on his side, so his copy is untouched).
+    "slop-rules.md": [
+        ('### "Not X, not Y" as a rhetorical tic', "### Rhythm and uniformity"),
+        ('- "Not X, not Y" as a rhetorical tic (four or more in one piece)',
+         "- Hashtag stuffing on `linkedin`"),
+    ],
+    "write-body.md": [
+        ("- RANK SOURCES WHEN YOU HAVE A CHOICE", "- Numbers must reconcile."),
+        ("THE TARGET REGISTER, WORKED", "EVERY SENTENCE MUST STAND ON ITS OWN."),
+    ],
+    "inline-links.md": [
+        ("A LINK EARNS ITS PLACE, IT DOES NOT FILL A QUOTA", "SAME TOPIC IS NOT ENOUGH."),
+    ],
+    "wrapper.md": [
+        ("  · THE PRODUCT MENTION FOLLOWS THE INSIGHT", "  · Work the primary keyword"),
+    ],
+    "coherence-edit.md": [
+        ("5. A CAVEAT SAID MORE THAN ONCE", "THE RULE FOR THE HARD CASE"),
+    ],
 }
 
 PORT_EDITS = {
@@ -175,6 +196,13 @@ PORT_EDITS = {
         ("page is pricing,", "his product pages; Sutra serves any company, so the example is generic"),
         ("is the reader who wants the", "same line, his product named"),
         ("sending them to another blog post instead wastes the moment", "reflow from the two lines above"),
+    ],
+    "coherence-edit.md": [
+        # The item count changed (FOUR -> FIVE) when Aparna's "say a caveat once" rule (2026-09-17)
+        # became item 5; the block itself is dropped by EXCLUDED_REGIONS above.
+        ("FIX EXACTLY THESE", "the item count changed from FOUR to FIVE with Aparna's new item 5"),
+        ("breaks-own-rule | own-warning | several-scales | numbers-disagree",
+         "the changes[].kind enum grew a caveat-repeated value for the same new item 5"),
     ],
     "wrapper.md": [
         ("then rank...", "the CTA example links his own product page; the port made it example.com"),

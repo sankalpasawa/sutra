@@ -157,6 +157,10 @@ NEVER BREAK THESE:
   vendor's marketing page, or an unknown site, use the fact with its tag but do NOT name the site in the
   sentence. The source link carries it. (Exception: when the section compares vendors or competitors,
   naming them is the point. Name them as the SUBJECT you discuss, never as the AUTHORITY for a claim.)
+- RANK SOURCES WHEN YOU HAVE A CHOICE: government and official statistics, then peer-reviewed and
+  academic work, then established research institutions, then reputable press and industry bodies,
+  then vendor research last. Use a vendor figure only when nothing above it carries the point, and
+  say whose figure it is.
 - Numbers must reconcile. Before you finish, read back every figure you used and check none contradicts
   another. A share, a cost and a timeline all have to be possible together. Fix the clash or drop one.
 - NO STAT QUOTA. Do not stuff numbers in, and do not force one into every point. A few load-bearing
@@ -187,6 +191,40 @@ sentences, and the plain word.
    Fails:  "Identical job titles are where this bites."
    Passes: "Identical job titles are where this problem usually appears."
 Warmth comes from concrete cases and the second person, never from informality.
+
+THE TARGET REGISTER, WORKED. A real rewrite of a shipped paragraph, and the model to match.
+
+BEFORE (shipped):
+   Dropping Degree Requirements Rarely Changes Who Gets Hired
+   Every dataset so far has measured a job posting, a modeled pool, or a survey of intentions. Only
+   one study asked the question that actually matters. When an employer removes a degree
+   requirement, does the person they hire actually change? The answer is close to no. Employers who
+   dropped the requirement raised non-degree hiring by just 0.14 percentage points, roughly one
+   extra hire in every 700 [4]. That single number settles a question the posting counts and pool
+   multipliers elsewhere in this piece cannot answer on their own.
+
+AFTER (the target):
+   Does Removing a Degree Requirement Improve Hiring?
+   Removing a degree requirement can make a role accessible to more candidates, but that doesn't
+   necessarily mean you'll end up hiring more people without degrees.
+   A Harvard Business School and Burning Glass Institute study looked at more than 11,000 US job
+   postings between 2014 and 2023 to see whether removing degree requirements actually changed
+   hiring outcomes. The study found that non-degree hiring increased by just 0.14 percentage points
+   after employers removed the requirement, which works out to roughly one additional non-degree
+   hire for every 700 hires.
+   In other words, changing the job description alone had a very small effect on who was actually
+   hired. If recruiters and hiring managers continue to rely on degrees when screening or
+   evaluating candidates, removing the requirement from the posting won't necessarily change the
+   final hiring decision.
+   The takeaway for recruiters is simple: removing a degree requirement is a starting point, not
+   the whole shift to skills-based hiring. The rest of the hiring process also needs to evaluate
+   candidates based on relevant skills and what they can actually do.
+
+This encodes four rules:
+  1. The heading is the question a recruiter would type.
+  2. Name the study, its size and its span BEFORE the number.
+  3. Restate the number in plain words ("in other words...").
+  4. End on what the reader should do, not on a flourish.
 
 EVERY SENTENCE MUST STAND ON ITS OWN. Search engines and AI assistants lift single sentences from
 this page and show them with nothing around them. A sentence that only makes sense once the whole

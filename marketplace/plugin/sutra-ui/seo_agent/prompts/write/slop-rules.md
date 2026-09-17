@@ -339,6 +339,22 @@ These slot-fill constructions signal that a sentence was generated, not written.
 - "Let me think step by step," "Breaking this down," "To approach this systematically," "Step 1:," "Here's my thought process," "First, let's consider," "Working through this logically" — these are artifacts of chain-of-thought reasoning leaking into published prose. The reader doesn't need to see the scaffolding. State the conclusion, then the evidence.
 - Also watch for numbered reasoning steps that read like an internal monologue rather than an argument meant for an audience.
 
+### "Not X, not Y" as a rhetorical tic
+- "Not X, not Y" or "It is not X. It is Y." One or two in a piece is a real rhetorical device; four in a piece is a tic, used to sound decisive rather than because the contrast does any work.
+- Fix: rewrite to the plain statement. Say what it is. Do not spend a sentence first on what it isn't.
+
+### Bare significance lines
+- A sentence whose whole job is telling the reader something mattered, with no content of its own: "That gap matters more than it sounds.", "The wall was missing data.", "The pattern holds across the whole funnel." Delete any of these and the reader loses nothing, because nothing was actually said.
+- Fix: say what it was, specifically, or cut the sentence.
+
+### Personifying the evidence
+- "Line the sources up, and they agree on the trend." Sources do not line up or agree with each other. A person read them and drew that conclusion. Personifying the evidence lets the writer skip stating what was actually found, and by whom.
+- Fix: say what the sources show, plainly, and attribute the reading to the writer, not to the data acting on its own.
+
+### Editorial flourish as a conclusion
+- Ending a section or the piece on a clever rhetorical turn instead of the plain point: "a global average dressed up as a country's own headline", "That is the real distance between a posting and a person." These read as the writer performing insight rather than delivering it.
+- Fix: end on what the reader should do or know next, not on a flourish.
+
 ### Rhythm and uniformity
 
 These aren't individual word or phrase problems — they're patterns in how the text flows as a whole. AI text is metronomic; human text has varied rhythm.
@@ -371,6 +387,10 @@ Not all AI-isms are equal. When doing a quick pass or triaging a large document,
 - Chatbot artifacts ("I hope this helps!", "Great question!")
 - Vague attributions without sources ("Experts believe")
 - Significance inflation on routine events
+- "Not X, not Y" as a rhetorical tic (four or more in one piece)
+- Bare significance lines ("That gap matters more than it sounds.")
+- Personifying the evidence ("the sources agree on the trend")
+- Editorial flourish as a conclusion
 - Hashtag stuffing on `linkedin` and `investor-email` posts (severity varies by profile — same rule, lower priority on `blog`/`technical-blog` where a launch post may legitimately stack tags; see the context-profile table below)
 
 ### P1 — Obvious AI smell (fix before publishing)
