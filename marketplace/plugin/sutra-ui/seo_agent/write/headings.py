@@ -200,6 +200,69 @@ def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
     return applied, str(out.get("notes") or "").strip(), log
 
 
+def _rival_stem(domain):
+    """A domain's bare stem: "testgorilla.com" -> "testgorilla". The same trick write_body.py's
+    `_rivals_block` uses, and for the same reason: a company's real name is not spelled out in its
+    domain, so every place that needs to recognise a rival matches on the stem, case-insensitively,
+    rather than guessing at a casing ("TestGorilla") that cannot be derived from the domain alone."""
+    d = str(domain or "").strip().lower()
+    stem = d.split("//")[-1].split("/")[0]
+    if stem.startswith("www."):
+        stem = stem[4:]
+    return stem.split(".")[0]
+
+
+def _find_rival(text, stems):
+    """The first rival stem `text` names as a whole word, case-insensitive; None when it names none.
+    "TestGorilla" and "testgorilla" and "TESTGORILLA" all match the stem "testgorilla"; "Test" alone,
+    or "TestGorillas" (a different word once the plural runs on), does not."""
+    for stem in stems:
+        if stem and re.search(r"\b%s\b" % re.escape(stem), text or "", re.I):
+            return stem
+    return None
+
+
+def guard_rivals(recs, rivals, memory, say=lambda *a: None):
+    """The deterministic backstop, run once every heading's per-section and cross-section pass is
+    done and the heading map is otherwise final.
+
+    Aparna's review, 2026-09-17: a published piece ran about 45% TestGorilla, with TestGorilla named
+    in two of its H2s. write-heading.md and heading-pass.md both now ask the model not to do that,
+    but asking is not enforcing — the whole point of a review like hers is that asking already
+    failed once. This checks every FINAL heading against the rival list on file
+    (knowledge/competitors.json, via tools/_shared.load_competitors) and, for any that still names
+    one, asks for exactly one rewrite. A rewrite that still carries the name is refused and the
+    draft heading stays; either way the decision is logged, never silently.
+    """
+    stems = [s for s in (_rival_stem(r.get("domain") if isinstance(r, dict) else r) for r in (rivals or [])) if s]
+    log = []
+    if not stems:
+        return log
+    for r in recs:
+        head = r.get("heading") or ""
+        stem = _find_rival(head, stems)
+        if not stem:
+            continue
+        try:
+            out = llm.json_call(C.prompt("rival-heading", heading=head, rival=stem, memory=memory)) or {}
+        except Exception as e:      # noqa: BLE001
+            log.append({"n": r.get("n"), "was": head, "kept": True, "rival": stem,
+                        "why": "rewrite call failed (%s); original kept" % str(e)[:80]})
+            continue
+        new = str(out.get("heading") or "").strip()
+        if new and not _find_rival(new, stems):
+            log.append({"n": r.get("n"), "was": head, "heading": new, "rival": stem, "kept": False,
+                        "why": str(out.get("why") or "").strip()})
+            r["heading"], r["changed"] = new, True
+        else:
+            log.append({"n": r.get("n"), "was": head, "kept": True, "rival": stem,
+                        "why": "rewrite still named a rival; original kept"})
+    if log:
+        say("Checked headings for a rival's name", "%d flagged, %d rewritten"
+            % (len(log), sum(1 for l in log if not l["kept"])))
+    return log
+
+
 def _write_h1(ctx, ks, planned_h1, headings, memory, say):
     try:
         out = llm.json_call(C.prompt("write-h1", h1=planned_h1 or "(none)", angle=ctx["angle"] or "(none recorded)",
@@ -232,6 +295,10 @@ def run(st, inputs, ctx, idx, sk_result, planned_h1, say=lambda *a: None):
     say("Reading the headings as a set", "%d headings" % len(recs))
     n_pass, pass_notes, pass_log = pass_all(ctx, ks, secs, recs, memory, say)
 
+    # The heading map is otherwise final at this point (per-section pass, then the cross-section
+    # pass, both done) — the deterministic point Aparna's review calls for (2026-09-17).
+    rival_log = guard_rivals(recs, C.sh.load_competitors(), memory, say)
+
     long_ones = []
     for sec, r in zip(secs, recs):
         sec["headline"] = r["heading"]
@@ -252,7 +319,7 @@ def run(st, inputs, ctx, idx, sk_result, planned_h1, say=lambda *a: None):
     heading_map = {"context": {k: ctx[k] for k in ("title", "angle", "spine")}, "researched_set": ks,
                    "found_per_section": found_by_n, "headings": recs, "h1_planned": planned_h1, "h1_final": h1,
                    "why_h1": why_h1, "cross_section_pass": {"edited": n_pass, "notes": pass_notes, "changes": pass_log},
-                   "over_length": long_ones, "decision": st["keywords"]}
+                   "rival_guard": rival_log, "over_length": long_ones, "decision": st["keywords"]}
     changed = sum(1 for r in recs if r["changed"])
     say("Headings written", "%d of %d rewritten (%d by the cross-section pass), %d carry a keyword"
         % (changed, len(recs), n_pass, len(used)) + ("; H1: %s" % h1 if h1 else ""))

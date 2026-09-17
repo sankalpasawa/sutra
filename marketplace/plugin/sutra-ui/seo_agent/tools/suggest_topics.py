@@ -39,19 +39,10 @@ WANT_TOPICS = 6
 
 def _load_competitors():
     """knowledge/competitors.json is {competitors: [{domain, why, last_used}]}; a bare list or plain
-    strings (older saves) are read too."""
-    raw = store.knowledge("competitors.json") or []
-    if isinstance(raw, dict):
-        raw = raw.get("competitors") or []
-    rows = []
-    for item in raw:
-        if isinstance(item, str) and item.strip():
-            rows.append({"domain": item.strip(), "last_used": None})
-        elif isinstance(item, dict) and item.get("domain"):
-            rows.append({"domain": item["domain"].strip(),
-                         "last_used": item.get("last_used"),
-                         "why": item.get("why", "")})
-    return rows
+    strings (older saves) are read too. The parsing itself now lives in tools/_shared.py
+    (load_competitors), because the write phase reads this same file too (2026-09-17, Aparna's
+    review); this stays a thin wrapper so this module's call sites do not change."""
+    return sh.load_competitors()
 
 
 def _derive_competitors(ctx, say):

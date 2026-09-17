@@ -272,6 +272,46 @@ ok("_holds refuses a reordered or changed word", not headings._holds("Cost of a 
 ok("a named number is not a figure", not headings._has_figure("Step 2 of the Fortune 500 plan"))
 ok("a statistic is a figure", headings._has_figure("The 75% Rejection Rate"))
 
+print("\narchitect: guard_rivals — the deterministic heading guard (Aparna's review, 2026-09-17)")
+# A domain is not a company name a model can match against prose, so the guard matches on the bare
+# stem, case-insensitively, whole word. This is the same trick write_body's _rivals_block uses.
+ok("a domain becomes its bare stem", headings._rival_stem("https://www.TestGorilla.com/pricing") == "testgorilla")
+ok("upper-case and no subdomain reduce the same way", headings._rival_stem("ADAFACE.COM") == "adaface")
+ok("any casing of the stem is found, whole word",
+   headings._find_rival("Why TestGorilla Beats Everyone Else", ["testgorilla"]) == "testgorilla")
+ok("a clean heading names no rival",
+   headings._find_rival("How to Calculate Cost Per Hire", ["testgorilla", "adaface"]) is None)
+ok("a plural does not accidentally match (word boundary both ends)",
+   headings._find_rival("Every TestGorillas Fan Agrees", ["testgorilla"]) is None)
+
+RIVALS = [{"domain": "testgorilla.com"}]
+
+def _rival_reply(p):
+    m = _re.search(r"THE HEADING, as written: (.+)", p)
+    head = (m.group(1).strip() if m else "")
+    if "Pricing" in head:      # this one's proposed rewrite still names the rival — must be refused
+        return {"heading": "Still About Testgorilla Somehow", "why": "bad rewrite"}
+    return {"heading": "Why This Assessment Type Wins", "why": "dropped the rival name"}
+
+OVERRIDES.append((lambda p: "THE RIVAL DOMAIN STEM THAT MUST COME OUT" in p, _rival_reply))
+recs_rv = [{"n": 1, "heading": "Why TestGorilla Beats Everyone Else", "changed": False},
+           {"n": 2, "heading": "How to Calculate Cost Per Hire", "changed": False},
+           {"n": 3, "heading": "Testgorilla Pricing Explained", "changed": False}]
+log_rv = headings.guard_rivals(recs_rv, RIVALS, "(none)", say)
+OVERRIDES.clear()
+ok("the rival's name is rewritten out of the offending heading",
+   recs_rv[0]["heading"] == "Why This Assessment Type Wins" and recs_rv[0]["changed"] is True, recs_rv[0])
+ok("a heading naming no rival is left alone, untouched and unflagged",
+   recs_rv[1]["heading"] == "How to Calculate Cost Per Hire" and recs_rv[1]["changed"] is False, recs_rv[1])
+ok("a rewrite that still names the rival is refused; the draft heading stays",
+   recs_rv[2]["heading"] == "Testgorilla Pricing Explained" and recs_rv[2]["changed"] is False, recs_rv[2])
+ok("only the two offending headings were logged, not the clean one",
+   len(log_rv) == 2 and {l["n"] for l in log_rv} == {1, 3}, log_rv)
+ok("the log says which was kept and which was rewritten",
+   [l["kept"] for l in sorted(log_rv, key=lambda l: l["n"])] == [False, True], log_rv)
+ok("with no rivals on file, the guard is a no-op and calls no model",
+   headings.guard_rivals(copy.deepcopy(recs_rv), [], "(none)", say) == [])
+
 print("\narchitect: section keywords (DataForSEO stubbed)")
 st_sk = {"sections": [{"headline": "The Real Cost", "job": "price it", "lead": {"card_ids": [1]}, "h3s": []},
                       {"headline": "Empty Seats", "job": "time it", "lead": {"card_ids": [3]}, "h3s": []}]}

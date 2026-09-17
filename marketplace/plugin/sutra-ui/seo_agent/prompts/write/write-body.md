@@ -148,6 +148,9 @@ WHEN TO TAG. Each fact has an id like [c412]. Put the tag right after the senten
 - DO NOT tag your own explanation, reasoning, worked examples, or the sentences that carry the argument
   between facts. Tagging those makes the page read like a reference list instead of prose.
 
+RIVALS ON RECORD FOR {{BRAND}}. The rule right below this depends on being able to recognise one:
+{{RIVALS}}
+
 NEVER BREAK THESE:
 - Never invent a fact, number, quote or source.
 - A number with no card behind it does not get written.
@@ -157,8 +160,33 @@ NEVER BREAK THESE:
   vendor's marketing page, or an unknown site, use the fact with its tag but do NOT name the site in the
   sentence. The source link carries it. (Exception: when the section compares vendors or competitors,
   naming them is the point. Name them as the SUBJECT you discuss, never as the AUTHORITY for a claim.)
+- A RIVAL FROM THE LIST ABOVE MAY BE THE SUBJECT OF A SENTENCE. IT MAY NEVER BE THE AUTHORITY FOR A
+  CLAIM. (Aparna's review, 2026-09-17: blog 3 was about 45% TestGorilla, with TestGorilla named in two
+  H2s. A rival had quietly become the article's main character.) "TestGorilla charges $75 a month"
+  states a fact about TestGorilla, the subject, and is fine. "TestGorilla says most skills tests take
+  20 minutes" makes TestGorilla the authority for a claim about the world, and that is banned: find an
+  independent source for the claim, or drop it.
+- A RIVAL'S NAME NEVER APPEARS IN A HEADING, "## " or "### ". A heading is a promise about what this
+  article delivers, and it must never promise a tour of a competitor's product.
+- A RIVAL'S FIGURE IS NEVER THIS ARTICLE'S HEADLINE NUMBER, the one a section or the piece leans on
+  hardest. If the only source you have for a number is a rival, find an independent source for it, or
+  drop the number rather than let a competitor set the article's headline claim.
+- AT MOST ONE PASSING MENTION OF A RIVAL PER SECTION. A second one is not an addition, it is a
+  rewrite: fold it into the first mention, or cut it.
 - Numbers must reconcile. Before you finish, read back every figure you used and check none contradicts
   another. A share, a cost and a timeline all have to be possible together. Fix the clash or drop one.
+- ONE STUDY IS NEVER A VERDICT. A single source can report a finding; on the strength of one paper it
+  can never "settle", "prove", "debunk" or "put to rest" a question, and there is never "no debate" or
+  "the only study that matters" behind it. Say what the study found and let the number do the work; do
+  not claim it closed the case.
+- DO NOT CLAIM AN ABSENCE YOU DID NOT VERIFY. "There is no number at all" and "nobody has measured it"
+  claim a search of the entire world that you did not run. Say what was actually checked instead: "the
+  research reviewed here found no comparable published figure."
+- ATTRIBUTE BEFORE YOU ASSERT. Name the study, its size and the years it covers BEFORE its number, not
+  after. "A Harvard Business School and Burning Glass Institute study of 11,000 US job postings between
+  2014 and 2023 found non-degree hiring rose 0.14 points" — not "non-degree hiring rose 0.14 points,
+  according to a Harvard Business School study." The reader should know who is speaking before they
+  hear the number.
 - NO STAT QUOTA. Do not stuff numbers in, and do not force one into every point. A few load-bearing
   figures beat many impressive-sounding ones. Where a claim is load-bearing and a card carries the
   number, use the number: it turns an assertion into proof. Where the sentence is only carrying the

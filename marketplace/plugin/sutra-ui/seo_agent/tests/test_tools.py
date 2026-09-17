@@ -201,6 +201,45 @@ finally:
     if _saved_index is not None:
         store.save_knowledge("site_index.json", _saved_index)
 
+# _shared.load_competitors is the ONE parser of knowledge/competitors.json now (moved here from
+# suggest_topics.py on 2026-09-17, Aparna's review): the write phase reads it too (write_body's
+# rivals block, headings' rival guard), and it has to read the file the same way suggest_topics
+# always did, in every shape it has ever been saved in.
+print("\ntools._shared.load_competitors — every shape the file has been saved in, and empty")
+from seo_agent.tools import _shared as sh_shared
+_comp_path = os.path.join(store.knowledge_dir(), "competitors.json")
+_saved_competitors = store.knowledge("competitors.json")
+try:
+    if os.path.exists(_comp_path):
+        os.remove(_comp_path)
+    ok("no file on disk at all reads as no rivals", sh_shared.load_competitors() == [])
+
+    store.save_knowledge("competitors.json", {"competitors": []})
+    ok("an explicitly empty list reads as no rivals too", sh_shared.load_competitors() == [])
+
+    store.save_knowledge("competitors.json", ["testgorilla.com", "adaface.com"])
+    rows = sh_shared.load_competitors()
+    ok("shape 1: a bare list of domain strings",
+       [r["domain"] for r in rows] == ["testgorilla.com", "adaface.com"], rows)
+
+    store.save_knowledge("competitors.json", {"competitors": ["testgorilla.com", "adaface.com"]})
+    rows = sh_shared.load_competitors()
+    ok("shape 2: {competitors: [...]} of plain strings",
+       [r["domain"] for r in rows] == ["testgorilla.com", "adaface.com"], rows)
+
+    store.save_knowledge("competitors.json", {"competitors": [
+        {"domain": "testgorilla.com", "why": "same buyers", "last_used": "2026-08-01"},
+        {"domain": "adaface.com"}]})
+    rows = sh_shared.load_competitors()
+    ok("shape 3: {competitors: [...]} of {domain, why, last_used} dicts",
+       rows == [{"domain": "testgorilla.com", "last_used": "2026-08-01", "why": "same buyers"},
+                {"domain": "adaface.com", "last_used": None, "why": ""}], rows)
+finally:
+    if _saved_competitors is not None:
+        store.save_knowledge("competitors.json", _saved_competitors)
+    elif os.path.exists(_comp_path):
+        os.remove(_comp_path)
+
 shutil.rmtree(store.chat_dir(c))
 print("\nStubbed model. Proves plumbing and artifact shapes, not writing quality.")
 if FAILS:
