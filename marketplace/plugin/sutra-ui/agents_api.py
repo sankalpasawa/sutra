@@ -2278,6 +2278,18 @@ def api_workspace(check: int = 0):
         _spawn("workspace-ideas-backfill", lambda: mods["sync"].backfill_ideas())
     except Exception:  # noqa: BLE001
         pass
+    # THE LIBRARY'S FIRST TRIP TO THE TEAM (2026-09-17). loop.save_to_library only started pushing a
+    # `library` row on 2026-09-16, so every article finished before that -- on any Mac -- never
+    # reached the team and never will on its own, because nothing about a finished article changes
+    # again to trigger an ordinary push. Unlike the idea sheet this is not one empty-table gate:
+    # backfill_library checks each local row against the team's table by id and sends only what is
+    # missing, so a team that already has some of a person's articles is not resent them. Same
+    # shape as the ideas backfill above: its own thread, its own rate limit and memory in
+    # sync-state.json, asked on every poll at no real cost.
+    try:
+        _spawn("workspace-library-backfill", lambda: mods["sync"].backfill_library())
+    except Exception:  # noqa: BLE001
+        pass
     checked = _ws_verify(mods) if check else _ws_checked["res"]
     return {
         "installed": True,

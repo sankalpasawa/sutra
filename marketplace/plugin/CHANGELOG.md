@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-17
+## 2.282.8 (2026-09-17)
+
+- **Fixed: articles saved before 2026-09-16 never reached the team.** `loop.save_to_library` only started pushing a `library` row on 2026-09-16, so every article finished before that sat on its own Mac for good — Devansh's own workspace held 3 Library rows and had sent none of them. A new Library backfill (mirroring the existing idea-sheet one) checks each local row against the team's table and sends only what is missing, once, through the same push path a fresh save uses. It never bumps a row's version or touches an editor field — this is a send, not an edit — and runs by itself on every Mac, including teammates', the next time the workspace tab is open.
+
 ## 2.282.7 (2026-09-17)
 
 - **Fixed: every model call dying after an update.** The backend could inherit a working directory an install had already deleted, so `claude`/`codex` calls failed with "the current working directory was deleted". Every CLI launch now gets an explicit, guaranteed-to-exist directory (the SEO agent's own data root), and that specific failure is treated as retryable so a run already in flight survives it.
