@@ -392,6 +392,49 @@ ok("after a failed retry the close keeps its prose and loses the untrusted link"
 ok("a tag the body never had is stripped from the close", "[c9]" not in final["close"] and final["invented_tags_stripped"] == 1)
 OVERRIDES.clear()
 
+print("\nwriter: the FAQ may not restate a heading (Aparna's review, 2026-09-17)")
+ok("normalising is order-invariant: the same words in a different order still match",
+   wrapper._faq_norm("What Is the Real Cost of a Bad Hire?") == wrapper._faq_norm("Of a Bad Hire, What Is the Real Cost?"))
+h_secs = [{"heading": "What Is the Real Cost of a Bad Hire?", "prose": "It runs into thousands of dollars [c1]."}]
+h_norms = {wrapper._faq_norm(h) for h in wrapper.heading_texts(h_secs)}
+ok("a question that restates a heading is caught",
+   wrapper.faq_restates_heading("Of a Bad Hire, What Is the Real Cost?", h_norms))
+ok("a genuinely new question is not",
+   not wrapper.faq_restates_heading("How does interview structure change hiring outcomes?", h_norms))
+
+OVERRIDES.append((lambda p: "Write replacement questions, up to the number that were dropped." in p,
+                  {"faq": [{"question": "How often should a hiring scorecard be reviewed?",
+                            "answer": "Once a quarter is enough for most teams.", "origin": "added"}]}))
+w_faq = {"intro": "Intro here.", "quick_answer": "Short.",
+         "faq": [{"question": "What is the real cost of a bad hire?", "answer": "It runs into the thousands."},
+                 {"question": "How does interview structure change hiring outcomes?",
+                  "answer": "A structured process nearly doubles the odds of a good hire."}],
+         "close_heading": "Where To Go Next",
+         "close": "Start small. Our [tour](https://example.com/programmes) shows how.",
+         "cta_link": "https://example.com/programmes", "touch_ups": []}
+final_faq = wrapper.apply(w_faq, h_secs, "H1", allowed, "- Page: https://example.com/programmes", {"brand": "Example"}, say)
+qs = [f["question"] for f in final_faq["faq"]]
+ok("the restating question is dropped", "What is the real cost of a bad hire?" not in qs, qs)
+ok("the genuinely new question survives", "How does interview structure change hiring outcomes?" in qs, qs)
+ok("the retry's replacement was added on top", "How often should a hiring scorecard be reviewed?" in qs, qs)
+ok("the drop is recorded in the write report",
+   any(d.get("question") == "What is the real cost of a bad hire?" for d in final_faq["dropped_questions"]),
+   final_faq["dropped_questions"])
+OVERRIDES.clear()
+
+print("\nwriter: the FAQ heading guard degrades safely when the retry fails")
+OVERRIDES.append((lambda p: "Write replacement questions, up to the number that were dropped." in p,
+                  lambda p: (_ for _ in ()).throw(ValueError("no CLI"))))
+w_faq2 = {"intro": "Intro here.", "quick_answer": "Short.",
+          "faq": [{"question": "What is the real cost of a bad hire?", "answer": "It runs into the thousands."}],
+          "close_heading": "Where To Go Next",
+          "close": "Start small. Our [tour](https://example.com/programmes) shows how.",
+          "cta_link": "https://example.com/programmes", "touch_ups": []}
+final_faq2 = wrapper.apply(w_faq2, h_secs, "H1", allowed, "- Page: https://example.com/programmes", {"brand": "Example"}, say)
+ok("a failed retry leaves a shorter FAQ rather than crashing the wrapper",
+   final_faq2["faq"] == [] and final_faq2["ok"], final_faq2["faq"])
+OVERRIDES.clear()
+
 print("\nwriter: coherence blocks an invented number")
 before = {"h1": "H", "intro": "Costs run to $4,700 [c1].", "quick_answer": "", "sections": [{"heading": "A", "prose": "Scored 1 to 5 [c2]."}],
           "faq": [{"question": "Q?", "answer": "Yes."}], "close": "Do it.", "close_heading": "Next"}

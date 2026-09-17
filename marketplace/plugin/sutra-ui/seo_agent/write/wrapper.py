@@ -12,8 +12,18 @@ untouched and is reported.
 THE CLOSE'S LINK AND HEADING ARE CHECKED IN CODE, and re-asked once: exactly one link, on the CTA page
 list, declared as cta_link; a heading that is not filler, not a repeat, under 60 characters.
 
-THE FAQ IS MEASURED, NEVER EDITED (_faq_measure): the FAQ is deliberately allowed to answer past the
-article, so an outside figure is expected rather than a fault, and a long answer is something to see.
+THE FAQ'S ANSWERS ARE MEASURED, NEVER EDITED (_faq_measure): the FAQ is deliberately allowed to answer
+past the article, so an outside figure is expected rather than a fault, and a long answer is something
+to see.
+
+THE FAQ'S QUESTIONS ARE CHECKED IN CODE AGAINST THE HEADINGS (faq_restates_heading). wrapper.md already
+asks the model, in words, not to ask what a heading already answers, and it still did (Aparna's review,
+2026-09-17): a question is the same question as a heading whenever they reduce to the same words once
+the punctuation, the question words and the ordinary stop words are stripped. That match is decided by
+CODE, never by a model call, so it never varies between two runs of the same reply. A caught question is
+dropped and ONE retry asks for replacements, passing the final headings and what was dropped; returning
+fewer questions than five is fine, and a replacement that is still a repeat after the retry is dropped
+for good, no second try.
 """
 import re
 
@@ -26,6 +36,20 @@ _CTA_URL = re.compile(r"^- Page:\s*(\S+)", re.M)
 _ANY_URL = re.compile(r"https?://[^\s)\]>\"']+")
 _BANNED_CLOSE = ("conclusion", "final thought", "wrapping up", "in summary",
                  "key takeaway", "bottom line", "closing thought", "summary")
+
+# ---- the FAQ heading guard --------------------------------------------------------------------------
+# The words that carry no meaning of their own: articles, the question words themselves, common
+# auxiliaries. Stripping them and sorting what is left turns "What Is the Real Cost of a Bad Hire?"
+# and "Of a Bad Hire, What Is the Real Cost?" into the same bag of words ("bad cost hire real"), so
+# word order never hides a repeat. This is a word-for-word match, not a meaning match: it catches the
+# same question re-typed or reordered, not a genuine paraphrase built from different words.
+_FAQ_STOP = {
+    "a", "an", "the", "is", "are", "was", "were", "do", "does", "did", "of", "to", "for", "in",
+    "on", "at", "and", "or", "what", "how", "why", "when", "where", "who", "whom", "which",
+    "whose", "can", "could", "should", "would", "will", "shall", "has", "have", "had", "this",
+    "that", "these", "those", "it", "its", "you", "your", "i", "we", "our", "with", "about",
+    "by", "as", "from", "be", "being", "been", "if", "so", "much", "many", "most", "really",
+}
 
 
 def features():
@@ -75,6 +99,29 @@ def cta_check(close, declared, allowed):
     if not declared:
         bad.append('You did not return "cta_link". Return the url you linked to.')
     return bad
+
+
+def _faq_norm(text):
+    """Lowercase, drop punctuation, drop the stop words, sort what is left. Deterministic on
+    purpose: sameness is a string comparison, never a judgment call a model could answer
+    differently on a retry."""
+    words = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return " ".join(sorted(w for w in words if w not in _FAQ_STOP))
+
+
+def heading_texts(secs):
+    """Every H2 (the section heading) and every H3 (inside its prose) in the finished article."""
+    heads = []
+    for s in secs:
+        heads.append(s.get("heading", ""))
+        heads += re.findall(r"^###\s+(.+?)\s*$", s.get("prose") or "", re.M)
+    return [h for h in heads if h.strip()]
+
+
+def faq_restates_heading(question, heading_norms):
+    """Is this question, normalised, the same question as one of the article's own headings?"""
+    norm = _faq_norm(question)
+    return bool(norm) and norm in heading_norms
 
 
 def faq_measure(faq, article_text):
@@ -179,6 +226,40 @@ def apply(out, secs, h1, allowed, pages_text, brand, say=lambda *a: None):
            for f in (out.get("faq") or []) if isinstance(f, dict) and str(f.get("question") or "").strip()
            and str(f.get("answer") or "").strip()]
     dropped = [d for d in (out.get("dropped_questions") or []) if isinstance(d, dict)]
+
+    # THE FAQ HEADING GUARD (Aparna's review, 2026-09-17). wrapper.md already tells the model not to
+    # ask what a heading already answers; it still did. Sameness is decided here, deterministically,
+    # never by asking a model to judge it a second time.
+    heading_norms = {_faq_norm(h) for h in heading_texts(secs)}
+    kept_faq, restated = [], []
+    for f in faq:
+        (restated if faq_restates_heading(f["question"], heading_norms) else kept_faq).append(f)
+    faq = kept_faq
+    if restated:
+        say("The FAQ repeated a heading", "%s restated a heading and was dropped; asking for %s"
+            % (C.sh.plural(len(restated), "question"), "a replacement" if len(restated) == 1 else "replacements"))
+        try:
+            retry = llm.json_call(C.prompt("faq-heading-retry", brand=brand["brand"],
+                                           headings="\n".join("- %s" % h for h in heading_texts(secs)),
+                                           dropped="\n".join("- %s" % f["question"] for f in restated),
+                                           kept="\n".join("- %s" % f["question"] for f in faq) or "  (none)",
+                                           faq_words=C.WRAP_FAQ_WORDS, memory=C.sh.memory_block())) or {}
+        except Exception:       # noqa: BLE001, a retry that fails leaves the FAQ as code already trimmed it
+            retry = {}
+        added = []
+        for f in (retry.get("faq") or []):
+            if not isinstance(f, dict):
+                continue
+            q, a = clean(f.get("question")), clean(f.get("answer"))
+            if not q or not a or faq_restates_heading(q, heading_norms):
+                continue         # still a repeat after the one retry this gets: dropped for good, no second try
+            added.append({"question": q, "answer": a, "origin": f.get("origin") or "added"})
+        faq += added
+        dropped += [{"question": f["question"], "why": "restates a heading already in the article"} for f in restated]
+        say("FAQ questions replaced" if added else "No safe replacement came back",
+            "%s added on the retry" % C.sh.plural(len(added), "question") if added
+            else "the FAQ is shorter; the prompt already says three real beats five padded")
+
     faq = faq_measure(faq, "\n".join(s["prose"] for s in secs))
 
     by_head = {s["heading"]: s for s in secs}
