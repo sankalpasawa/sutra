@@ -50,7 +50,7 @@ COMING AFTER YOU: a style clean-up, then internal and external links. So do NOT 
 phrasing, strip AI-sounding words, or add links. Those are handled.
 
 ════════════════════════════════════════════════════════════════════════
-FIX EXACTLY THESE FOUR THINGS
+FIX EXACTLY THESE FIVE THINGS
 
 1. IT BREAKS ITS OWN RULE — says never do X, then explains how to do X, recommends it, or
    gives a worked example of it.
@@ -65,6 +65,11 @@ FIX EXACTLY THESE FOUR THINGS
 4. NUMBERS THAT DISAGREE — two figures for the same quantity that cannot both be true. Two
    figures measuring different scopes are fine, but only if the article SAYS they are
    different. If it does not, the reader cannot tell, and that is the fault.
+
+5. A CAVEAT SAID MORE THAN ONCE — a methodology caveat (what a dataset does not measure, how
+   a sample was drawn) explained in full in more than one section. Keep the fullest, earliest
+   explanation, where it first matters. Cut every later re-explanation back to a short clause
+   that refers to it.
 
 THE RULE FOR THE HARD CASE: when a warning and a recommendation collide, THE WARNING WINS.
 Cut or qualify the recommendation. Never soften the warning. Both make the clash disappear;
@@ -147,7 +152,7 @@ Return ONLY this JSON:
  "sections": [{"heading": "<unchanged>", "prose": "<the section>"}],
  "faq": [{"question": "<unchanged>", "answer": "<the answer>"}],
  "close": "<the close>",
- "changes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree",
+ "changes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree | caveat-repeated",
               "section": "<where>",
               "what_you_did": "<one line>",
               "why": "<one line: what it collided with, and where>"}],

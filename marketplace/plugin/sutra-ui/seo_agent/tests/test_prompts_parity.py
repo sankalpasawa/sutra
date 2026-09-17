@@ -168,20 +168,34 @@ EXCLUDED_REGIONS = {
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
     "readable.md": [("REAL PUBLISHED ARTICLES BY", "  · The reader is")],
-    # Three blocks Sutra carries that his repo does not, added whole on 2026-09-17 from Aparna's
-    # review (blog 3 was about 45% TestGorilla, with TestGorilla named in two H2s). His workflow has
-    # no competitor list wired to the writer at all, so there is nothing on his side for these rules
-    # to match, and PORT_EDITS' one-substring-per-line would mean re-declaring nearly every line of
-    # three multi-line rules. Excluded as a block instead, same as the readable.md region above.
+    # Aparna's 2026-09-17 Slack review of three shipped articles (blog 3 was about 45% TestGorilla,
+    # with TestGorilla named in two H2s). Every rule below was written straight into Sutra's prompts
+    # and has no counterpart in his repo: his workflow never wires a competitor list to the writer,
+    # and never carried these register rules. Declared as whole blocks rather than PORT_EDITS,
+    # because one-substring-per-line would mean re-declaring nearly every line of them.
     "write-body.md": [
         ("RIVALS ON RECORD FOR {{BRAND}}", "NEVER BREAK THESE:"),
-        ("- A RIVAL FROM THE LIST ABOVE MAY BE THE SUBJECT", "- Numbers must reconcile."),
+        # one region: the source ranking and the four rival rules sit together, in that order
+        ("- RANK SOURCES WHEN YOU HAVE A CHOICE", "- Numbers must reconcile."),
         ("- ONE STUDY IS NEVER A VERDICT.", "- NO STAT QUOTA."),
+        ("THE TARGET REGISTER, WORKED", "EVERY SENTENCE MUST STAND ON ITS OWN."),
     ],
-    # Same review, the one-line version: neither file offers a way to say "never name a rival" on
-    # his side, because his workflow never sees a competitor list at all.
     "write-heading.md": [("- NEVER NAME A RIVAL.", "Return ONLY this JSON")],
     "heading-pass.md": [("- A RIVAL NAMED IN A HEADING.", "Return EVERY heading, in the same order")],
+    "slop-rules.md": [
+        ('### "Not X, not Y" as a rhetorical tic', "### Rhythm and uniformity"),
+        ('- "Not X, not Y" as a rhetorical tic (four or more in one piece)',
+         "- Hashtag stuffing on `linkedin`"),
+    ],
+    "inline-links.md": [
+        ("A LINK EARNS ITS PLACE, IT DOES NOT FILL A QUOTA", "SAME TOPIC IS NOT ENOUGH."),
+    ],
+    "wrapper.md": [
+        ("  · THE PRODUCT MENTION FOLLOWS THE INSIGHT", "  · Work the primary keyword"),
+    ],
+    "coherence-edit.md": [
+        ("5. A CAVEAT SAID MORE THAN ONCE", "THE RULE FOR THE HARD CASE"),
+    ],
 }
 
 PORT_EDITS = {
@@ -189,6 +203,13 @@ PORT_EDITS = {
         ("page is pricing,", "his product pages; Sutra serves any company, so the example is generic"),
         ("is the reader who wants the", "same line, his product named"),
         ("sending them to another blog post instead wastes the moment", "reflow from the two lines above"),
+    ],
+    "coherence-edit.md": [
+        # The item count changed (FOUR -> FIVE) when Aparna's "say a caveat once" rule (2026-09-17)
+        # became item 5; the block itself is dropped by EXCLUDED_REGIONS above.
+        ("FIX EXACTLY THESE", "the item count changed from FOUR to FIVE with Aparna's new item 5"),
+        ("breaks-own-rule | own-warning | several-scales | numbers-disagree",
+         "the changes[].kind enum grew a caveat-repeated value for the same new item 5"),
     ],
     "wrapper.md": [
         ("then rank...", "the CTA example links his own product page; the port made it example.com"),

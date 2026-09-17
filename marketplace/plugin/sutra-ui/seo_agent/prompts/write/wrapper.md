@@ -167,6 +167,9 @@ What {{BRAND}} offers:
   · Ground every claim about {{BRAND}} in that list. Never overclaim. Never imply it solves
     something the article showed to be unsolvable.
   · This is a forward step for the reader, not a recap of what they just read.
+  · THE PRODUCT MENTION FOLLOWS THE INSIGHT, NEVER OPENS IT. Establish what this section proved
+    first, then connect {{BRAND}} to it in one sentence. Banned as an opener: "We built {{BRAND}}
+    around that same rule," "The platform turns...".
   · Work the primary keyword ("{{PRIMARY}}") in where it reads naturally. If it cannot go in without
     sounding bolted on, leave it out and let the close read well.
 
