@@ -29,6 +29,7 @@ and when, and the caller chooses to reload or overwrite. Two saves inside the sa
 still race past this check: the row is an upsert, and the loser's edit is what the winner's
 teammates then see. Small team, seconds apart: accepted, and said here so nobody assumes more.
 """
+import collections
 import importlib
 import os
 import re
@@ -229,6 +230,100 @@ def propose(item_id, draft, section_id, instruction, model=None):
     return {"section_id": section_id, "heading": target["heading"], "was": target["text"],
             "proposed": new_text, "draft": new_draft,
             "diff": make_diff(target["text"], new_text), "checks": checks}
+
+
+# ---- the whole-article AI rewrite (WP4B, Aparna, 2026-09-17) ------------------------------------------
+# She asked for a whole article to be rewritten from a pasted review, not one section at a time. This is
+# the same shape as propose() above -- one model call, nothing written, a diff to approve -- except there
+# is no section to splice: the reply replaces the whole draft, so the guards move from "did every OTHER
+# section survive" to "did every heading and every [c...] tag survive", because a style pass over the
+# whole thing has no untouched sections left to compare against.
+
+ARTICLE_SYSTEM = ("You are a working editor. Reply with the rewritten article and nothing else: "
+                   "no preamble, no sign-off, no notes about what you changed.")
+
+# Every [c1] / [c88, c91] style tag, read as the individual ids inside it, so "[c88, c91]" and
+# "[c88][c91]" count as the same two tags -- a style rewrite is free to regroup them, never to
+# add, drop, or lose one along the way.
+CITE_GROUP = re.compile(r"\[(c\d+(?:\s*,\s*c\d+)*)\]")
+CITE_ID = re.compile(r"c\d+")
+
+
+def citation_ids(text):
+    """Every source-tag id in the text, in order, one entry per id (a grouped tag like
+    "[c88, c91]" counts as two)."""
+    out = []
+    for m in CITE_GROUP.finditer(text or ""):
+        out.extend(CITE_ID.findall(m.group(1)))
+    return out
+
+
+def check_headings_unchanged(new_text, original):
+    """A whole-article style rewrite may not add, drop, reorder or reword a single heading.
+    Headings are decided upstream, researched against real search data; this route only touches
+    the prose underneath them."""
+    def heads(md):
+        return [(s["level"], s["heading"]) for s in sections(md) if s["level"]]
+    was, now = heads(original), heads(new_text)
+    if was != now:
+        raise ValueError("The rewrite changed a heading. Every heading must come back exactly as "
+                         "it was, in the same order -- headings are not this route's to touch.")
+    return True
+
+
+def check_citations_unchanged(new_text, original):
+    """Every [c...] source tag survives a style rewrite, exactly as many times as it was there
+    before. A fact may move to a clearer sentence and its tag moves with it; none may be added
+    or dropped along the way."""
+    was, now = collections.Counter(citation_ids(original)), collections.Counter(citation_ids(new_text))
+    if was != now:
+        lost = sorted((was - now).elements())
+        added = sorted((now - was).elements())
+        bits = []
+        if lost:
+            bits.append("dropped %s" % ", ".join(lost))
+        if added:
+            bits.append("added %s" % ", ".join(added))
+        raise ValueError("The rewrite changed the source tags (%s). Every [c...] tag must stay, "
+                         "attached to the fact it proves." % "; ".join(bits))
+    return True
+
+
+def propose_article(item_id, draft, instruction, model=None):
+    """Ask the model to rewrite the WHOLE article for style against the reader's feedback, and
+    return the proposal. WRITES NOTHING.
+
+    Same contract as propose() above -- nothing is written, the reply comes back as a proposal
+    plus a diff, and the buffer only changes when the screen presses "Use this" -- but over the
+    whole article instead of one section, so there is no splice: `proposed` IS the new draft.
+
+    Returns {"was", "proposed", "draft", "diff", "checks"}. Raises ValueError (bad id, empty
+    instruction, a heading or a source-tag drift) or InventedFigure (a new number that is in
+    neither the article nor its evidence).
+    """
+    meta = store.library_get(item_id)
+    if not meta:
+        raise ValueError("That article is not in the Library.")
+    instruction = (instruction or "").strip()
+    if not instruction:
+        raise ValueError("Say what should change.")
+    draft = draft if isinstance(draft, str) and draft.strip() else (meta.get("draft") or "")
+    if not draft.strip():
+        raise ValueError("There is no article here to rewrite.")
+    prompt = sh.fill(
+        sh.load_prompt("write/edit-article"),
+        title=meta.get("title") or eb._title(draft),
+        article=draft.strip(),
+        instruction=instruction,
+        voice=sh.voice_block(),
+    )
+    raw = (model or llm.text)(prompt, ARTICLE_SYSTEM)
+    new_text = clean_section(raw, draft)
+    check_headings_unchanged(new_text, draft)
+    check_citations_unchanged(new_text, draft)
+    checks = [check_figures(new_text, draft, meta)]
+    return {"was": draft, "proposed": new_text, "draft": new_text,
+            "diff": make_diff(draft, new_text), "checks": checks}
 
 
 # ---- the team ------------------------------------------------------------------------------------------

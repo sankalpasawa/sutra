@@ -1570,10 +1570,12 @@ function promptsPayload(edited){
   };
 }
 
-test("the tab offers the eight format rulebooks and the six writing prompts, and nothing else", () => {
+test("the tab offers the eight format rulebooks and the eight writing prompts, and nothing else", () => {
   const formats = pyNames("FORMATS"), writing = pyNames("WRITING");
   assert.strictEqual(formats.length, 8, "eight archetypes, got " + formats.length + ": " + formats);
-  assert.strictEqual(writing.length, 6, "six writing prompts, got " + writing.length + ": " + writing);
+  /* eight, not six (WP4C, Aparna's review, 2026-09-17): write/slop-rules (the ban list the polish
+     pass checks a draft against) and write/edit-article (what Rewrite with AI follows) joined. */
+  assert.strictEqual(writing.length, 8, "eight writing prompts, got " + writing.length + ": " + writing);
   const html = A.agPromptsHtml(promptsPayload(), A.agS());
   formats.concat(writing).forEach(n => assert.ok(html.indexOf('data-arg="' + n + '"') >= 0, "missing from the tab: " + n));
   /* every one of them is a real file in the bundle, so nothing on this screen opens onto nothing */
@@ -1581,13 +1583,19 @@ test("the tab offers the eight format rulebooks and the six writing prompts, and
     assert.ok(fs.existsSync(path.join(__dirname, "seo_agent", "prompts", n + ".md")), "no such prompt file: " + n));
 });
 
-test("the three he said to skip are not on the tab: slop, links, clean", () => {
-  const all = pyNames("FORMATS").concat(pyNames("WRITING")).join(" ");
-  ["slop", "slop-rules", "inline-links", "external-links", "clean"].forEach(n =>
+test("slop-rules joined the tab (WP4C); slop itself, links and clean are still skipped", () => {
+  const all = pyNames("FORMATS").concat(pyNames("WRITING"));   /* exact names, checked by MEMBERSHIP,
+    never substring: "write/slop-rules" contains "write/slop" and a substring check would false-fail */
+  assert.ok(all.indexOf("write/slop-rules") >= 0, "slop-rules should be on the tab now");
+  assert.ok(all.indexOf("write/edit-article") >= 0, "and so should edit-article");
+  ["write/slop", "write/inline-links", "write/external-links", "write/clean"].forEach(n =>
     assert.ok(all.indexOf(n) < 0, "the tab offers a prompt he told us to skip: " + n));
   const html = A.agPromptsHtml(promptsPayload(), A.agS());
-  ["slop", "inline-links", "external-links", "clean"].forEach(n =>
-    assert.ok(html.indexOf('data-arg="write/' + n + '"') < 0, "the skipped prompt reached the screen: " + n));
+  assert.ok(html.indexOf('data-arg="write/slop-rules"') >= 0, "slop-rules reaches the screen");
+  /* the closing quote in the check is load-bearing: 'data-arg="write/slop"' does not match inside
+     'data-arg="write/slop-rules"', so this is safe from the same substring trap as above */
+  ["write/slop", "write/inline-links", "write/external-links", "write/clean"].forEach(n =>
+    assert.ok(html.indexOf('data-arg="' + n + '"') < 0, "the skipped prompt reached the screen: " + n));
 });
 
 test("the format rules come BEFORE the architect in the flow, and after the planner", () => {
@@ -3010,6 +3018,7 @@ test("a Library article is drawn by sections, a pencil on each, and never the pe
   assert.ok(!/\d+ sections?/.test(html), "the old count line is gone (spec item 6)");
   assert.ok(/data-ag="libsavebuf" data-arg="lib7" disabled/.test(html), "Save is there and disabled while nothing changed");
   assert.ok(/data-ag="libedit" data-arg="lib7"/.test(html), "the whole-article editor is still a way in");
+  assert.ok(/data-ag="libart" data-arg="lib7"/.test(html), "and Rewrite with AI sits beside it (WP4B)");
   assert.ok(!/data-ag="librevert"/.test(html), "no Undo until the server says there is a version before");
 });
 test("the pencil opens the text editor on that section only, with its own words in it", () => {
@@ -3107,6 +3116,89 @@ test("the AI mode asks for an instruction, and a proposal is shown as a diff wit
   assert.ok(a.libBuf.dirty && /Better\./.test(A.agSections(a.libBuf.draft)[2].text), "the proposal went into the buffer");
   assert.strictEqual(a.panel.data.text, SEC.md, "and nothing was saved");
 });
+
+/* ── Rewrite with AI, the whole article (WP4B) ─────────────────────────────────
+   Same right-hand panel the section editor uses, a bigger instruction box because this is
+   where a whole review gets pasted, and the same diff / Use this / Discard shape -- no second
+   diff renderer, no second buffer mechanism (agDiffHtml and agLibTake, reused as-is). */
+test("Rewrite with AI opens the same right-hand panel, with a bigger instruction box", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  assert.ok(a.libArt && a.libArt.instruction === "", "libArt state opened");
+  assert.strictEqual(a.libSec, null, "opening the whole-article rewrite closes any open section editor");
+  const html = A.agPanelHtml(a);
+  assert.ok(/<aside class="ag-secpanel">/.test(html), "the same right-hand panel the section editor uses");
+  assert.ok(/Rewrite the whole article/.test(html));
+  assert.ok(/data-ag="libartcancel"/.test(html), "its own always-visible close");
+  assert.ok(/data-aglibinstr[^>]*rows="10"/.test(html), "the instruction box is bigger than the section one");
+  assert.ok(/data-ag="libartai"/.test(html) && !/data-ag="libartuse"/.test(html), "nothing to use yet");
+});
+test("closing the whole-article rewrite with X returns to the plain article", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  A.agAction("libartcancel", { getAttribute: () => "" });
+  assert.strictEqual(a.libArt, null);
+  assert.ok(!/ag-secpanel/.test(A.agPanelHtml(a)), "the panel is gone once closed");
+});
+test("opening the section editor while the whole-article rewrite is open closes the rewrite, and back", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  A.agAction("libsec", { getAttribute: () => "s2" });
+  assert.strictEqual(a.libArt, null, "libsec closed libArt");
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  assert.strictEqual(a.libSec, null, "and libart closes libsec right back");
+});
+test("the whole-article proposal is shown as a diff, and Use this replaces the WHOLE buffer, not a splice", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  a.libArt.proposal = { proposed: "# A whole new article\n\nEverything is different.\n",
+                        diff: [{ type: "remove", text: "old line" }, { type: "add", text: "new line" },
+                               { type: "context", count: 3 }] };
+  const html = A.agPanelHtml(a);
+  assert.ok(/class="ag-diff"/.test(html), "the diff renders through the same agDiffHtml");
+  assert.ok(/data-ag="libartuse"/.test(html) && /data-ag="libartdrop"/.test(html), "Use this and Discard");
+  A.agAction("libartuse", { getAttribute: () => "" });
+  assert.strictEqual(a.libArt, null, "the editor closes");
+  assert.ok(a.libBuf.dirty && a.libBuf.draft === "# A whole new article\n\nEverything is different.\n",
+            "the whole buffer became the proposal, not a section splice");
+  assert.strictEqual(a.panel.data.text, SEC.md, "and nothing was saved");
+});
+test("Discard on the whole-article rewrite drops the proposal but keeps the instruction box open", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  a.libArt.proposal = { proposed: "x", diff: [{ type: "add", text: "x" }] };
+  A.agAction("libartdrop", { getAttribute: () => "" });
+  assert.ok(a.libArt && a.libArt.proposal === null, "the proposal is gone, the editor is not");
+});
+test("an empty whole-article instruction is refused before any model call", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  let posted = false;
+  const prev = A.apiPost; A.apiPost = async () => { posted = true; return {}; };
+  A.agAction("libartai", { getAttribute: () => "" });
+  A.apiPost = prev;
+  assert.strictEqual(posted, false, "nothing is sent");
+  assert.ok(/Say what should change in the article/.test(a.libArt.error));
+});
+
+/* ── the typing bug (Aparna, 2026-09-17) ────────────────────────────────────────
+   "it only lets me type one letter at a time" in the per-section editor. agDraw restores the
+   caret after it repaints #agPanel, but the list it restored used to name only the two
+   whole-article boxes ([data-aglibbody], [data-aglibtitle]); the section textarea and the AI
+   instruction box were left out, so the poll's own repaint (1s live, 4s idle) stole focus back
+   after every keystroke in either of them. */
+test("the caret-restore list in agDraw covers all four Library boxes, walked once (not four ternaries)", () => {
+  const constBlock = SRC.slice(SRC.indexOf("const AG_LIBCARET_ATTRS"), SRC.indexOf("function agDraw(force)"));
+  ["data-aglibbody", "data-aglibtitle", "data-aglibsec", "data-aglibinstr"].forEach(attr => {
+    assert.ok(constBlock.indexOf('"' + attr + '"') !== -1, attr + " is in AG_LIBCARET_ATTRS");
+  });
+  const body = SRC.slice(SRC.indexOf("function agDraw(force)"), SRC.indexOf("function agDrawComposer"));
+  assert.ok(/for \(const attr of AG_LIBCARET_ATTRS\)/.test(body),
+            "the restore walks the one shared list, so a fifth typed box only has to join it");
+});
+/* The full DOM-driven proof (agDraw actually restoring focus/selection through a real
+   document.querySelector) lives further down, alongside mktDoc/mktEl, as
+   "the caret survives a repaint..." -- those helpers are only defined inside that async block. */
 
 test("the rewrite animation classes land on exactly the section being rewritten, and clear once it is not busy", () => {
   const a = libPanel(SEC.md);
@@ -3705,6 +3797,31 @@ async function atest(name, fn){
       "    raise SystemExit('an invented {{TOKEN}} in a rulebook was ACCEPTED')",
       "except ps.PromptError as e:",
       "    assert 'MADE_UP' in str(e), e",
+      // WP4C: the two prompts the Prompts tab gained for Aparna's review (the slop ban list, and
+      // the whole-article rewrite) go through the same save/reset/refuse cycle as any other.
+      "name2 = 'write/edit-article'",
+      "shipped2 = ps.shipped_text(name2)",
+      "assert '{{ARTICLE}}' in shipped2 and '{{INSTRUCTION}}' in shipped2, 'edit-article lost its own tokens'",
+      "ps.save(name2, shipped2 + '\\nMore.')",
+      "assert sh.load_prompt(name2).strip().endswith('More.'), 'a run would not load his edit-article version'",
+      "ps.reset(name2)",
+      "assert sh.load_prompt(name2).startswith(shipped2[:40])",
+      "try:",
+      "    ps.save(name2, shipped2.replace('{{ARTICLE}}', ''))",
+      "    raise SystemExit('edit-article: a save that dropped {{ARTICLE}} was ACCEPTED')",
+      "except ps.PromptError as e:",
+      "    assert 'ARTICLE' in str(e), e",
+      "name3 = 'write/slop-rules'",
+      "shipped3 = ps.shipped_text(name3)",
+      "assert shipped3.strip(), 'slop-rules has no shipped text'",
+      "ps.save(name3, shipped3 + '\\nExtra banned phrase: foo bar.')",
+      "assert 'foo bar' in sh.load_prompt(name3), 'a run would not load his slop-rules edit'",
+      "ps.reset(name3)",
+      "try:",
+      "    ps.save(name3, shipped3 + '\\nUse {{MADE_UP}} here.')",
+      "    raise SystemExit('slop-rules: an invented {{TOKEN}} was ACCEPTED')",
+      "except ps.PromptError as e:",
+      "    assert 'MADE_UP' in str(e), e",
       "print('PROMPT-STORE-OK')",
     ].join("\n");
     const r = cp.spawnSync(PY, ["-c", script], {
@@ -4242,6 +4359,43 @@ async function atest(name, fn){
     } finally { A.document = prevDoc; A.apiGet = prevGet; }
   });
 
+  /* ── the typing bug, end to end through a real agDraw (Aparna, 2026-09-17) ──────────────────
+     "it only lets me type one letter at a time." A poll tick repaints #agPanel while he is
+     typing in the per-section editor; agDraw is supposed to put the caret straight back. Proven
+     here through an actual agDraw() call and a document.querySelector spy, for all four boxes
+     -- not just the two (data-aglibbody/title) that were ever covered before this fix. */
+  await atest("the caret survives a repaint while typing in any of the four Library boxes", async () => {
+    function mktCaretDoc(activeSel){
+      const els = {};
+      const calls = [];
+      const active = { matches: sel => sel === activeSel, selectionStart: 3, selectionEnd: 5 };
+      return {
+        activeElement: active, calls,
+        getElementById: id => (els[id] || (els[id] = mktEl(id))),
+        querySelector: sel => {
+          if (sel !== activeSel) return null;
+          return { focus: () => calls.push("focus"), setSelectionRange: (f, t) => calls.push(["range", f, t]) };
+        },
+        querySelectorAll: () => [],
+      };
+    }
+    for (const sel of ["[data-aglibbody]", "[data-aglibtitle]", "[data-aglibsec]", "[data-aglibinstr]"]){
+      A.S.ag = null;
+      const a = libPanel(SEC.md);
+      a.screen = "agent"; a.view = "library"; a.library = [];   /* agDraw only draws the panel past screen==="agent" */
+      const doc = mktCaretDoc(sel);
+      const prevDoc = A.document;
+      A.document = doc;
+      try {
+        /* #agPanel is fresh (its __agHtml starts undefined), so this first draw is itself a
+           "repaint" in agSetHtml's terms -- exactly the shape a poll tick's redraw takes. */
+        A.agDraw(true);
+      } finally { A.document = prevDoc; }
+      const restored = doc.calls.some(c => Array.isArray(c) && c[0] === "range" && c[1] === 3 && c[2] === 5);
+      assert.ok(restored, sel + ": the caret was put back at the same selection after the repaint");
+    }
+  });
+
   await atest("Save posts the buffer with the version it was opened at, and the reply becomes the new base", async () => {
     const a = libPanel(SEC.md);
     a.libBuf = { draft: SEC.md + "\n\nAdded.\n", title: "Cost per hire", base_version: 2, dirty: true };
@@ -4309,6 +4463,39 @@ async function atest(name, fn){
     assert.strictEqual(a.libSec.busy, false);
     assert.ok(!a.libBuf || !a.libBuf.dirty, "a proposal is not a change until Use this");
     assert.ok(/data-ag="libsecuse" data-arg="s2"/.test(A.agPanelHtml(a)));
+  });
+
+  await atest("Rewrite with AI (whole article) posts the buffer and the instruction to /ai-article, with no section id", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libart", { getAttribute: () => "lib7" });
+    a.libArt.instruction = "make the tone warmer, from a review I got";
+    let body = null;
+    const prevP = A.apiPost;
+    A.apiPost = async (p, b) => { body = { path: p, b }; return { proposed: SEC.md + "\n\nWarmer.\n",
+                                                                  diff: [{ type: "add", text: "Warmer." }], checks: [{ name: "no_invented_figures", status: "pass" }] }; };
+    await A.agAction("libartai", { getAttribute: () => "" });
+    A.apiPost = prevP;
+    assert.ok(/\/library\/lib7\/ai-article$/.test(body.path), body.path);
+    assert.strictEqual(body.b.section_id, undefined, "no section id -- this is the whole article");
+    assert.strictEqual(body.b.instruction, "make the tone warmer, from a review I got");
+    assert.strictEqual(body.b.draft, SEC.md, "the buffer as it is on screen");
+    assert.ok(a.libArt.proposal && /Warmer\./.test(a.libArt.proposal.proposed));
+    assert.strictEqual(a.libArt.busy, false);
+    assert.ok(!a.libBuf || !a.libBuf.dirty, "a proposal is not a change until Use this");
+    assert.ok(/data-ag="libartuse"/.test(A.agPanelHtml(a)));
+  });
+
+  await atest("a refused whole-article rewrite (a changed heading) lands as the server's sentence beside the button", async () => {
+    const a = libPanel(SEC.md);
+    A.agAction("libart", { getAttribute: () => "lib7" });
+    a.libArt.instruction = "x";
+    const prevP = A.apiPost;
+    A.apiPost = async () => { const e = new Error("The rewrite changed a heading. Every heading must come back exactly as it was, in the same order. (/api/x -> 400)"); e.status = 400; throw e; };
+    await A.agAction("libartai", { getAttribute: () => "" });
+    A.apiPost = prevP;
+    assert.ok(/same order\.$/.test(a.libArt.error), "the debug tail is cut: " + a.libArt.error);
+    assert.strictEqual(a.libArt.proposal, null);
+    assert.ok(/same order/.test(A.agPanelHtml(a)), "and it is on screen");
   });
 
   await atest("a refused rewrite (an invented figure) lands as the server's sentence beside the button", async () => {

@@ -250,6 +250,70 @@ except le.InventedFigure as e:
     ok("a figure from the research is allowed into the article", False, e)
 
 # =====================================================================================================
+print("\nWP4B: the whole-article AI rewrite (propose_article), a style pass with the guards moved to "
+      "headings and source tags since there is no untouched section left to compare against")
+
+AMD = ("# Cost per hire\n\nIntro with 4,700 hires and $12,000 a seat [c2].\n\n"
+      "## What it costs\n\nBody one [c1].\n\n## What to do\n\nBody two [c3].\n")
+aitem = store.library_save("a1", "ar1", "Cost per hire", AMD)
+
+out = le.propose_article(aitem, AMD, "make the tone warmer",
+                         model=lambda p, s: AMD.replace("Body one", "Body one, now warmer"))
+ok("the proposal carries the rewritten article as both 'proposed' and 'draft' (no splice, it IS the new draft)",
+   "warmer" in out["proposed"] and out["draft"] == out["proposed"] and out["was"] == AMD)
+ok("the diff is a list a screen can draw", any(d.get("type") == "add" for d in out["diff"]), out["diff"])
+ok("the figure check passed because nothing new appeared", out["checks"][0]["status"] == "pass")
+ok("a proposal writes NOTHING", store.library_get(aitem)["draft"] == AMD)
+
+seen_prompt = []
+le.propose_article(aitem, AMD, "warmer tone", model=lambda p, s: seen_prompt.append(p) or AMD)
+ok("the model sees the whole article, the instruction and the title",
+   "Cost per hire" in seen_prompt[0] and "warmer tone" in seen_prompt[0]
+   and "Body one" in seen_prompt[0] and "Body two" in seen_prompt[0])
+
+out2 = le.propose_article(aitem, None, "keep it the same", model=lambda p, s: AMD)
+ok("draft=None falls back to the saved article", out2["was"] == AMD)
+
+print("\nthe whole-article guards")
+try:
+    le.propose_article(aitem, AMD, "x", model=lambda p, s: AMD.replace("## What it costs", "## What it will cost you"))
+    ok("a rewrite that changes a heading is refused", False)
+except ValueError as e:
+    ok("a rewrite that changes a heading is refused, by name", "heading" in str(e), str(e))
+try:
+    le.propose_article(aitem, AMD, "x", model=lambda p, s: AMD.replace("Body one [c1].", "Body one."))
+    ok("a rewrite that drops a source tag is refused", False)
+except ValueError as e:
+    ok("a rewrite that drops a source tag is refused, naming the tag", "c1" in str(e) and "dropped" in str(e), str(e))
+try:
+    le.propose_article(aitem, AMD, "x", model=lambda p, s: AMD.replace("Body two [c3].", "Body two [c3][c4]."))
+    ok("a rewrite that adds a source tag is refused", False)
+except ValueError as e:
+    ok("a rewrite that adds a source tag is refused, naming the tag", "c4" in str(e) and "added" in str(e), str(e))
+try:
+    le.propose_article(aitem, AMD, "add a stat", model=lambda p, s: AMD.replace("Body one [c1].", "Now 51% cheaper [c1]."))
+    ok("an invented figure is refused, same guard the section route uses", False)
+except le.InventedFigure as e:
+    ok("an invented figure is refused, same guard the section route uses", "51" in str(e), str(e))
+try:
+    le.propose_article(aitem, AMD, "   ", model=lambda p, s: (_ for _ in ()).throw(AssertionError("model called")))
+    ok("an empty instruction is refused before any model call", False)
+except ValueError:
+    ok("an empty instruction is refused before any model call", True)
+try:
+    le.propose_article("no-such", AMD, "x", model=lambda p, s: AMD)
+    ok("an unknown item id is refused", False)
+except ValueError as e:
+    ok("an unknown item id is refused", "not in the Library" in str(e), str(e))
+
+# regrouping tags is a style choice, not a source change: only the SET of ids must survive
+GMD = "# Cost per hire\n\n## What it costs\n\nBody with two sources [c1, c2].\n"
+gitem = store.library_save("a1g", "ar1g", "Cost per hire", GMD)
+out3 = le.propose_article(gitem, GMD, "x", model=lambda p, s: GMD.replace("[c1, c2]", "[c2][c1]"))
+ok("regrouping citation tags is allowed -- the set of ids survives, not their exact spelling",
+   set(le.citation_ids(out3["proposed"])) == {"c1", "c2"}, out3["proposed"])
+
+# =====================================================================================================
 print("\na save counts, names, keeps the version before, and refuses a stale save")
 
 fresh_mac()
@@ -442,6 +506,54 @@ ok("with a workspace the finished article goes to the team's library table",
    saved["item_id"] in db6.tables.get("library", {}), list(db6.tables.get("library", {})))
 ok("as a whole row: title, body and the archetype meta",
    db6.tables["library"][saved["item_id"]]["body_md"] == MD and db6.tables["library"][saved["item_id"]]["title"] == "Cost per hire")
+
+# =====================================================================================================
+print("\nWP4B: the ai-article route itself (agents_api.api_library_ai_article), same shape as the "
+      "ai-section route: bad id, not found, an empty instruction, and a proposal through")
+
+# agents_api lives at the sutra-ui root, not inside the package -- see test_library_tabs.py's own
+# note on this same import, including why store.set_data_dir has to be reasserted right after it
+# (importing agents_api activates the person's saved company and repins the data dir).
+_data_dir = store.data_dir()
+try:
+    import agents_api
+    store.set_data_dir(_data_dir)
+except Exception as e:                                        # noqa: BLE001
+    agents_api = None
+    print("  SKIP  the route itself (agents_api would not import: %s)" % str(e)[:120])
+
+if agents_api:
+    fresh_mac()
+    ritem = store.library_save("r-a1", "r-ar1", "Cost per hire", AMD)
+
+    for bad_id in ("../etc", "..", "has space"):
+        rb = agents_api.api_library_ai_article(bad_id, {"instruction": "x"})
+        ok("the route refuses a bad id: %r" % bad_id, getattr(rb, "status_code", None) == 400, rb)
+
+    r404 = agents_api.api_library_ai_article("no-such-item", {"instruction": "x"})
+    ok("an item that does not exist is a 404", getattr(r404, "status_code", None) == 404, r404)
+
+    r400 = agents_api.api_library_ai_article(ritem, {"instruction": "   "})
+    ok("an empty instruction is refused with a 400, before any model call", getattr(r400, "status_code", None) == 400, r400)
+
+    real_text = le.llm.text
+    le.llm.text = lambda p, s: AMD.replace("Body one", "Body one, warmer")
+    try:
+        r = agents_api.api_library_ai_article(ritem, {"instruction": "warmer tone", "draft": AMD})
+    finally:
+        le.llm.text = real_text
+    ok("a good instruction returns the proposal, the diff and the checks -- nothing written",
+       isinstance(r, dict) and "warmer" in r["proposed"] and r["draft"] == r["proposed"]
+       and any(d.get("type") == "add" for d in r["diff"]) and r["checks"][0]["status"] == "pass", r)
+    ok("and nothing was saved", store.library_get(ritem)["draft"] == AMD)
+
+    le.llm.text = lambda p, s: AMD.replace("## What it costs", "## What it will cost you")
+    try:
+        rbad = agents_api.api_library_ai_article(ritem, {"instruction": "x"})
+    finally:
+        le.llm.text = real_text
+    ok("a rewrite that breaks a guard comes back as a 400 through the route too, not a 500",
+       getattr(rbad, "status_code", None) == 400, rbad)
 
 # =====================================================================================================
 print()

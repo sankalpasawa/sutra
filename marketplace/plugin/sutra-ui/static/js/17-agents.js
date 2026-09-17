@@ -1950,6 +1950,25 @@ function agLibSecEditorHtml(s, ed, libId){
         <span class="sp">Use this puts it in the article. Save, below, keeps it.</span></div>` : ""}</div>`;
 }
 
+/* The whole-article AI rewrite, same shape as agLibSecEditorHtml just above but with no
+   text/AI toggle (there is nothing to hand-type here, only an instruction) and a bigger box:
+   this is where a whole review -- Aparna's, or anyone's -- gets pasted in one go, not a line
+   asking to change one section. Same [data-aglibinstr] the section editor uses (the caret-
+   restore in agDraw already covers it, AG_LIBCARET_ATTRS), same diff renderer, same Use
+   this / Discard. Nothing is saved until Save, on the article footer below this panel. */
+function agLibArtEditorHtml(ed){
+  const pr = ed.proposal;
+  return `<div class="ag-editbox ag-secbox">
+    <textarea class="tall" data-aglibinstr rows="10" placeholder="Paste the feedback, or say what should change across the whole article. Numbers, source tags and headings are not touched." aria-label="Instruction">${agEsc(ed.instruction || "")}</textarea>
+    <div class="row"><button class="btn pri" type="button" data-ag="libartai" ${ed.busy ? "disabled" : ""}>${ed.busy ? "Rewriting…" : "Rewrite with AI"}</button>
+      <button class="btn" type="button" data-ag="libartcancel">Cancel</button>
+      <span class="sp">${ed.error ? `<span class="ag-err">${agEsc(ed.error)}</span>` : "No new figures, source tags or headings. Only the style moves."}</span></div>
+    ${pr ? `${agDiffHtml(pr.diff)}
+      <div class="row"><button class="btn pri" type="button" data-ag="libartuse">Use this</button>
+        <button class="btn" type="button" data-ag="libartdrop">Discard</button>
+        <span class="sp">Use this puts it in the article. Save, below, keeps it.</span></div>` : ""}</div>`;
+}
+
 /* A saved article, read by sections, a pencil on each. Anyone on the team can open one and change
    it; Save writes it here and to the team's workspace. The buffer (a.libBuf) is what is drawn once
    anything changed, so a redraw between keystrokes cannot lose an edit. */
@@ -2065,7 +2084,8 @@ function agPanelHtml(a){
     if (p.readOnly) footer = a.libEdit ? ""
       : p.libId ? `<button class="btn pri" type="button" data-ag="libsavebuf" data-arg="${agEsc(p.libId)}" ${(a.libBuf && a.libBuf.dirty && !a.busy) ? "" : "disabled"}>${a.busy ? "Saving…" : "Save"}</button>
           ${a.libBuf && a.libBuf.dirty ? `<button class="btn" type="button" data-ag="libdiscard">Discard changes</button>` : ""}
-          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>`
+          <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
+          <button class="btn" type="button" data-ag="libart" data-arg="${agEsc(p.libId)}">Rewrite with AI</button>`
       : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
       <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
@@ -2102,6 +2122,13 @@ function agPanelHtml(a){
           <button class="ib" type="button" data-ag="libseccancel" aria-label="Close editing, keep the article as it is">${AG_ICON.x || "✕"}</button></div>
         ${agLibSecEditorHtml(targetSec, a.libSec, p.libId)}</aside>`;
     }
+  } else if (p.libId && a.libArt){
+    /* Same aside, same guards, same diff -- see agLibArtEditorHtml. The whole-article rewrite has
+       no target section to look up first, so it needs none of the section branch's lookup. */
+    secPanel = `<aside class="ag-secpanel">
+        <div class="ag-secpanelh"><h4>Rewrite the whole article</h4>
+          <button class="ib" type="button" data-ag="libartcancel" aria-label="Close editing, keep the article as it is">${AG_ICON.x || "✕"}</button></div>
+        ${agLibArtEditorHtml(a.libArt)}</aside>`;
   }
   return `${backBar}<div class="ag-ph"><div class="pt"><h3>${agEsc(title)}</h3><div class="ps">${agEsc(sub || (atCheckpoint ? "Edit anything here, then approve, and the agent continues from your version." : p.name))}</div></div>
       <button class="ib" type="button" data-ag="closepanel" aria-label="${p.libId ? "Back to the Library" : "Close the panel"}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
@@ -3619,6 +3646,16 @@ function agDrawLibTabs2(a, root){
   if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
 }
 
+/* Every box in the right-hand Library editor whose caret agDraw must put back after it redraws
+   #agPanel. The whole-article title and body, and the two boxes inside the per-section editor:
+   the hand-edit textarea (data-aglibsec) and the AI instruction box (data-aglibinstr). Aparna's
+   report, 2026-09-17: "it only lets me type one letter at a time", filed against the section and
+   instruction boxes specifically. Only data-aglibbody and data-aglibtitle were ever in this list,
+   so the 1s-live/4s-idle poll repaint stole focus back from the other two after every keystroke;
+   the whole-article boxes never showed the bug because a person types there far less often. One
+   list, walked once, so a box added later only has to join it -- not a fifth ternary. */
+const AG_LIBCARET_ATTRS = ["data-aglibbody", "data-aglibtitle", "data-aglibsec", "data-aglibinstr"];
+
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
   agDrawDfs(a, root);
@@ -3637,7 +3674,7 @@ function agDraw(force){
   root.classList.toggle("liblarge", !!(a.panel && a.panel.libId));
   /* .ag-secpanel (the right-hand section editor) needs the article to leave it room on the right;
      this is the one flag that turns that padding on, decided in the same place liblarge is. */
-  root.classList.toggle("secediting", !!(a.panel && a.panel.libId && a.libSec));
+  root.classList.toggle("secediting", !!(a.panel && a.panel.libId && (a.libSec || a.libArt)));
   agSetHtml("agSide", agSideHtml(a));
   const nearBottom = scroll ? (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60) : true;
   if (a.view === "chat"){
@@ -3695,11 +3732,16 @@ function agDraw(force){
     const comp = document.getElementById("agComposer"); if (comp){ comp.hidden = true; }
   }
   /* the Library editor redraws while he types (the word count is live), so put the caret back
-     exactly where the composer branch above puts its own */
+     exactly where the composer branch above puts its own -- see AG_LIBCARET_ATTRS just above for
+     which boxes this covers and why (Aparna, 2026-09-17). */
   const act = document.activeElement;
-  const typing = act && act.matches && act.matches("[data-aglibbody],[data-aglibtitle]")
-    ? { sel: act.getAttribute("data-aglibbody") != null ? "[data-aglibbody]" : "[data-aglibtitle]",
-        from: act.selectionStart, to: act.selectionEnd } : null;
+  let typing = null;
+  if (act && act.matches){
+    for (const attr of AG_LIBCARET_ATTRS){
+      const sel = "[" + attr + "]";
+      if (act.matches(sel)){ typing = { sel, from: act.selectionStart, to: act.selectionEnd }; break; }
+    }
+  }
   if (agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "") && typing){
     const back = document.querySelector(typing.sel);
     if (back){ try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.from, typing.to); } catch (e) {} }
@@ -4037,7 +4079,7 @@ async function agOpenArtifact(runId, name, view, extra){
   const a = agS();
   a.panel = Object.assign({ run_id: runId, name, view, data: null, loading: true, error: null }, extra || {});
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
-  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
+  a.libBuf = null; a.libSec = null; a.libArt = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -4073,7 +4115,7 @@ async function agOpenLibMilestone(itemId, key, label){
   a.panel = { run_id: null, name, view: AG_MILE_VIEW[key] || "", data: null, loading: true, error: null,
               title: label || AG_MILE_LABEL[key] || key, subtitle: "", readOnly: true, libMile: key };
   a.bpEdit = null; a.artEdit = null; a.lastEdit = null; a.fileEdit = null; a.libEdit = null;
-  a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null;
+  a.libBuf = null; a.libSec = null; a.libArt = null; a.libMeta = null; a.libConflict = null;
   a.trail = []; a.workOpen = null;
   agDraw();
   try {
@@ -4105,7 +4147,7 @@ async function agLibOpen(itemId){
   a.libMeta = { version: Number(it.version || 0), edited_by: it.edited_by || "", edited_at: it.edited_at || "",
                 team: it.team || null, has_previous: typeof it.previous_draft === "string" && it.previous_draft.length > 0,
                 history: it.history || { can_undo: false, can_redo: false } };
-  a.libEdit = null; a.libSec = null; a.libConflict = null;
+  a.libEdit = null; a.libSec = null; a.libArt = null; a.libConflict = null;
   return it;
 }
 
@@ -4144,7 +4186,7 @@ async function agLibSave(a, itemId, draft, title, force){
     a.libMeta = { version: Number((m && m.version) || 0), edited_by: (m && m.edited_by) || "", edited_at: (m && m.edited_at) || "",
                   team: (m && m.team) || (a.libMeta && a.libMeta.team) || null, has_previous: true,
                   history: (m && m.history) || (a.libMeta && a.libMeta.history) || { can_undo: false, can_redo: false } };
-    a.libSec = null; a.libConflict = null;
+    a.libSec = null; a.libArt = null; a.libConflict = null;
     agToast(agLibSavedWord(m));
     return true;
   } catch (e) { return agWhy(e); }
@@ -4673,7 +4715,7 @@ async function agAction(act, el){
     case "closepanel": {
       if (a.libBuf && a.libBuf.dirty && typeof confirm === "function" && !confirm("Close without saving? The changes to this article are lost.")) break;
       a.panel = null; a.fileEdit = null; a.libEdit = null; a.promptEdit = null;
-      a.libBuf = null; a.libSec = null; a.libMeta = null; a.libConflict = null; agDraw(); break;
+      a.libBuf = null; a.libSec = null; a.libArt = null; a.libMeta = null; a.libConflict = null; agDraw(); break;
     }
     case "back": {
       const live = agLiveRun();
@@ -4953,6 +4995,7 @@ async function agAction(act, el){
     /* ── one section of a Library article ──────────────────────────────────── */
     case "libsec": {
       a.libSec = { id: arg, mode: "text", text: null, instruction: "", busy: false, error: "", proposal: null };
+      a.libArt = null;
       agDraw();
       setTimeout(() => { const t = document.querySelector("[data-aglibsec]"); if (t) t.focus(); }, 0);
       break;
@@ -4989,6 +5032,37 @@ async function agAction(act, el){
       a.libSec = null; agToast("Section replaced. Save to keep it."); agDraw(); break;
     }
     case "libsecdrop": { if (a.libSec){ a.libSec.proposal = null; } agDraw(); break; }
+    /* ── the whole article, rewritten from feedback (WP4B) ───────────────────
+       Same shape as the section flow just above: an instruction, one model call, a diff, and
+       "Use this" / "Discard" before anything reaches the buffer. libedit (the whole-article
+       hand-typed editor) and this are mutually exclusive, so opening one closes the other. */
+    case "libart": {
+      a.libArt = { instruction: "", busy: false, error: "", proposal: null };
+      a.libSec = null;
+      agDraw();
+      setTimeout(() => { const t = document.querySelector("[data-aglibinstr]"); if (t) t.focus(); }, 0);
+      break;
+    }
+    case "libartcancel": a.libArt = null; agDraw(); break;
+    case "libartai": {
+      const ed = a.libArt; if (!ed || !a.panel) break;
+      const ta = typeof document !== "undefined" ? document.querySelector("[data-aglibinstr]") : null;
+      const instruction = String((ta && ta.value) || ed.instruction || "").trim();
+      if (!instruction){ ed.error = "Say what should change in the article."; agDraw(); break; }
+      ed.instruction = instruction; ed.busy = true; ed.error = ""; ed.proposal = null; agDraw();
+      try {
+        const r = await agPostApi(`/library/${encodeURIComponent(a.panel.libId)}/ai-article`,
+                                  { draft: agLibText(a.panel, a), instruction });
+        if (a.libArt === ed){ ed.proposal = r; ed.busy = false; }
+      } catch (e) { if (a.libArt === ed){ ed.busy = false; ed.error = agWhy(e); } }
+      agDraw(); break;
+    }
+    case "libartuse": {
+      const ed = a.libArt; if (!ed || !ed.proposal || !a.panel) break;
+      agLibTake(a, ed.proposal.proposed);
+      a.libArt = null; agToast("Article replaced. Save to keep it."); agDraw(); break;
+    }
+    case "libartdrop": { if (a.libArt){ a.libArt.proposal = null; } agDraw(); break; }
     case "libsavebuf": {
       if (!a.libBuf || !a.libBuf.dirty || a.busy) break;
       await agLibSave(a, arg, a.libBuf.draft, a.libBuf.title, false);
@@ -5002,7 +5076,7 @@ async function agAction(act, el){
     case "libdiscard": {
       if (a.libBuf && a.panel){ a.libBuf = { draft: (a.panel.data && a.panel.data.text) || "", title: a.panel.title || "",
                                             base_version: a.libBuf.base_version, dirty: false }; }
-      a.libSec = null; a.libConflict = null; agDraw(); break;
+      a.libSec = null; a.libArt = null; a.libConflict = null; agDraw(); break;
     }
     case "librevert": {
       if (a.busy) break;
@@ -5120,7 +5194,7 @@ async function agAction(act, el){
       const p2 = a.panel; if (!p2) break;
       /* starts from the buffer, so a section already changed by hand is not thrown away */
       a.libEdit = { title: (a.libBuf && a.libBuf.title) || p2.title || "", draft: agLibText(p2, a), busy: false, error: "" };
-      a.libSec = null;
+      a.libSec = null; a.libArt = null;
       agDraw();
       setTimeout(() => { const t = document.querySelector("[data-aglibbody]"); if (t) t.focus(); }, 0);
       break;
@@ -5592,7 +5666,13 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     else if (t.matches("[data-aglibtitle]")){ if (a.libEdit) a.libEdit.title = t.value; }
     else if (t.matches("[data-aglibbody]")){ if (a.libEdit) a.libEdit.draft = t.value; }
     else if (t.matches("[data-aglibsec]")){ if (a.libSec) a.libSec.text = t.value; }
-    else if (t.matches("[data-aglibinstr]")){ if (a.libSec){ a.libSec.instruction = t.value; a.libSec.error = ""; } }
+    else if (t.matches("[data-aglibinstr]")){
+      /* the section editor and the whole-article rewrite share this one box; only one of the
+         two is ever open at a time (libsec/libart each close the other), so this is never a
+         guess about which one owns a keystroke */
+      if (a.libArt){ a.libArt.instruction = t.value; a.libArt.error = ""; }
+      else if (a.libSec){ a.libSec.instruction = t.value; a.libSec.error = ""; }
+    }
     else if (t.matches("[data-agfiletext]")){ if (a.fileEdit) a.fileEdit.text = t.value; }
     else if (t.matches("[data-agprompttext]")){ if (a.promptEdit){ a.promptEdit.text = t.value; a.promptEdit.msg = ""; } }
     else if (t.matches("[data-agdfs]")){
