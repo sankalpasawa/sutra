@@ -454,6 +454,40 @@ r = llm.call("s", [{"role": "user", "content": "hi"}], on_retry=told.append)
 ok("the loose call comes back after the pause", r["text"] == "after the pause", r)
 ok("on_retry heard about the pause exactly once", len(told) == 1 and told[0].startswith("Paused:"), told)
 
+print("\na spend limit stops the run instead of pausing")
+ok("a spend limit is recognised on its own wording",
+   llm._spend_limited("You've hit your monthly spend limit - raise it at claude.ai/settings/usage"))
+ok("'spending limit' is recognised too", llm._spend_limited("Your spending limit was reached."))
+ok("a plain session-limit message is not a spend limit",
+   not llm._spend_limited("You've hit your session limit · resets 1am (Asia/Calcutta)"))
+
+# The real message: a spend cap, but it ALSO names a session reset time, which on its own
+# would match _usage_limited's "session limit" key and pause instead of stopping.
+SPEND_MSG = ("You've hit your monthly spend limit - raise it at claude.ai/settings/usage?from=cc_cli_limit_message "
+             "· your session limit resets 9:40pm (Asia/Calcutta)")
+ok("the real message would ALSO look like a usage limit", llm._usage_limited(SPEND_MSG))
+clock = Clock(now)
+llm._now, llm._sleep = clock.now, clock.sleep
+llm._PAUSE.clear()
+llm._PAUSE.message = ""
+calls = {"n": 0}
+
+
+def spend_once(cmd, prompt, binary, timeout=None):
+    calls["n"] += 1
+    raise llm.ModelError("Claude CLI returned an error: " + SPEND_MSG)
+
+
+llm._claude_cli_once = spend_once
+try:
+    llm.call("s", [{"role": "user", "content": "hi"}])
+    ok("a spend limit raises instead of answering", False, "no raise")
+except llm.ModelError as e:
+    ok("stops after exactly one try, never loops waiting for a reset", calls["n"] == 1, calls)
+    ok("names what to do", "spend limit" in str(e).lower() and "claude.ai/settings/usage" in str(e), str(e))
+ok("it never entered the timed pause", not llm._PAUSE.active())
+ok("no fake time was spent waiting", clock.sleeps == 0, clock.sleeps)
+
 restore()
 print()
 if FAILS:

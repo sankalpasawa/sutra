@@ -175,6 +175,14 @@
 .ag-runhead .ag-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
 .ag-runhead .n{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
 .ag-worked{font-weight:500;color:var(--ink)}
+/* Stop, beside the run's own "Working · 3m 43s" line, not in the composer (2026-09-17: it used
+   to sit where Send sits, and one stray click there killed a run with no confirmation). Quiet
+   until armed, then it reads as the same red as every other destructive control on this screen
+   (--block/--on-block, see .ag-main .pc .send.stop above). */
+.ag-runhead .ag-stopbtn{background:none;border:1px solid var(--line);color:var(--muted);cursor:pointer;
+  font:500 11px/1 var(--sans);padding:3px 8px;border-radius:5px}
+.ag-runhead .ag-stopbtn:hover{border-color:var(--block);color:var(--block)}
+.ag-runhead .ag-stopbtn.confirm{background:var(--block);border-color:var(--block);color:var(--on-block)}
 
 .ag-steps{margin:8px 0 0 7px;padding-left:18px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:11px}
 .ag-steps[hidden]{display:none}

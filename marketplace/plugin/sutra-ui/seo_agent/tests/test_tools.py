@@ -111,11 +111,14 @@ print("\nrun_research")
 from seo_agent.tools import run_research
 try:
     n0 = len(events)
-    out = run_research.run(ctx, topic="executive education for CHROs")
+    # placeholder_numbers=True: this file never stubs a DataForSEO login, and since 2026-09-17
+    # _preflight refuses outright with no login unless placeholder numbers were asked for (see
+    # test_credit_guard.py). This test is about the demo-data PLUMBING downstream, not the guard.
+    out = run_research.run(ctx, topic="executive education for CHROs", placeholder_numbers=True)
     # It stops once to ask how long the article should be. Outside the loop nobody answers, so
     # take the suggestion the way loop._resume_words does and call straight back with it.
     if out.get("ask_words"):
-        out = run_research.run(ctx, word_target=out["ask_words"]["suggested"])
+        out = run_research.run(ctx, word_target=out["ask_words"]["suggested"], placeholder_numbers=True)
     rs = art("research.json") or {}
     ok("writes research.json", bool(rs), out.get("error"))
     ok("has a primary keyword", bool(((rs.get("keywords") or {}).get("primary") or {}).get("keyword")))

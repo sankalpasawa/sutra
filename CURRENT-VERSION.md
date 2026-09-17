@@ -6,6 +6,18 @@
 
 **The runtime now proves the framework ran** (founder, 2026-09-16: "the entire thing is always adhered to while doing it, and we codify those things"). Adherence row 1 adds a step ledger per turn (`.sutra/turn/<sid>/<turn>.steps.json`, 11 steps with producer and status), a STEP TRACE in the prompt context and on demand via `bin/sutra-steps`, and a PreToolUse refusal of any mutation until the turn's lens and cynefin artifacts validate. Per-box flag `~/.sutra-runtime-adherence` (`on|warn|off`); fleet unchanged while absent. Consults: codex + DeepSeek on the brief, DeepSeek + an 11-agent adversarial workflow on the diff (codex round 2 SKIPPED: usage limit until 2026-10-16). Tests: test-adherence.sh 108.
 
+## v2.282.9 (2026-09-17)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.282.8 (2026-09-17)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.282.7 (2026-09-17)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
 ## v2.282.6 (2026-09-17)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.

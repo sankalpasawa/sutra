@@ -202,6 +202,26 @@ def _cli_env():
     return env
 
 
+def _cli_cwd():
+    """A working directory every CLI subprocess is guaranteed to still have.
+
+    The backend can be launched with cwd set to a versioned plugin folder (Electron's
+    main.js uses RUNTIME.appDir). Installing a new version removes that folder; a
+    backend still running from it then hands every subprocess a working directory
+    that no longer exists, and `claude -p` / `codex exec` fail with "the current
+    working directory was deleted" on every call. store.root_dir() (~/.sutra-ui/...,
+    or SEO_AGENT_DATA) survives updates, so use that instead, recomputed on every
+    call so a retry gets a fresh, valid directory too. Falls back to the user's
+    home if even that cannot be created.
+    """
+    try:
+        d = store.root_dir()
+        os.makedirs(d, exist_ok=True)
+        return d
+    except OSError:
+        return os.path.expanduser("~")
+
+
 def _cli_system(system, tools):
     """The system prompt, plus a tools section when there are tools to call."""
     if not tools:
@@ -271,7 +291,11 @@ class ModelError(RuntimeError):
 # right answer is to wait and try again, up to three more times. Tests set this to ().
 CLI_RETRY_SLEEPS = (5, 15, 40)
 _TRANSIENT = ("529", "overloaded", "rate limit", "429", "went to sleep", "503", "502",
-              "timed out", "timeout", "econnreset", "socket hang up", "temporarily")
+              "timed out", "timeout", "econnreset", "socket hang up", "temporarily",
+              # A backend still running from a plugin folder an update just removed
+              # hands the CLI a dead cwd (see _cli_cwd()). Each retry recomputes the
+              # cwd fresh, so a call already in flight survives rather than dying.
+              "working directory was deleted")
 
 
 def _transient(text):
@@ -399,7 +423,7 @@ def _run_process(cmd, prompt, limit):
     if run and run.is_stopped():
         raise Stopped(STOPPED_BEFORE)
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         text=True, env=_cli_env(), start_new_session=True)
+                         text=True, env=_cli_env(), cwd=_cli_cwd(), start_new_session=True)
     if run:
         run.watch(p)            # kills at once if the Stop landed between the check and here
     try:
@@ -857,6 +881,13 @@ LIMIT_POLL = 2.0             # how often a waiting call looks for a Stop
 _LIMIT_KEYS = ("session limit", "usage limit", "hit your limit", "out of extra usage",
                "quota exceeded", "quota has been exhausted")
 
+# A spend limit is a dollar cap the person set in account settings, not a rolling window, so
+# waiting for a clock never fixes it. Checked separately from _LIMIT_KEYS because the CLI's own
+# spend-limit message also names a session reset time ("...your session limit resets 9:40pm"),
+# which would otherwise match "session limit" above and pause instead of stopping. See
+# _spend_limited() and its use in _retrying().
+_SPEND_LIMIT_KEYS = ("spend limit", "spending limit")
+
 # Swappable clock, so a test can run a six-hour pause in milliseconds.
 _now = time.time
 _sleep = time.sleep
@@ -882,11 +913,24 @@ _DATE_DM = _re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+" + _MON + r"\b(?:,?\s*(\
 
 def _usage_limited(text):
     """True for an error that says the account is out of usage until some reset. A bare
-    "rate limit" stays a transient retry unless it names a reset time."""
+    "rate limit" stays a transient retry unless it names a reset time.
+
+    A spend limit is checked separately (_spend_limited, in _retrying) and never reaches
+    here as True-worthy on its own merits: check that one first, because the CLI's spend-
+    limit message also tends to name a session reset time, which would otherwise match
+    "session limit" below."""
     t = (text or "").lower()
     if any(k in t for k in _LIMIT_KEYS):
         return True
     return "rate limit" in t and parse_reset(text) is not None
+
+
+def _spend_limited(text):
+    """True for an account-level monthly spend cap. Unlike a session/usage limit, this is not
+    a rolling window that reopens on its own -- it is a dollar ceiling set in account settings
+    -- so the timed pause (_pause_for) must never fire for it. See _SPEND_LIMIT_KEYS."""
+    t = (text or "").lower()
+    return any(k in t for k in _SPEND_LIMIT_KEYS)
 
 
 def _zone_of(text):
@@ -1126,6 +1170,15 @@ def _retrying(once, on_retry=None):
             raise                # a Stop is not weather: never waited out, never tried again
         except RuntimeError as e:
             why = str(e).replace("Claude CLI returned an error: ", "")
+            if _spend_limited(why):
+                # A dollar cap, not a clock: waiting never helps, so stop the run now instead
+                # of entering the timed pause. Checked before _usage_limited because the same
+                # message often also names a session reset time.
+                label = _PROVIDER_LABEL.get(provider() or "", "The model's")
+                raise ModelError(
+                    "%s account has hit its monthly spend limit. Raise it at "
+                    "claude.ai/settings/usage, or wait for the billing period to reset. "
+                    "Stopping here." % label) from e
             if _usage_limited(why):
                 waited = _pause_for(why, waited, on_retry)    # a pause does not spend an attempt
                 continue

@@ -36,8 +36,12 @@ SCRIPT = [
          "input": {"path": "topics.json", "view": "topic_list",
                    "prompt": "Six ideas. Which one?"}}]},
     {"text": "", "tool_calls": [
+        # placeholder_numbers=True (2026-09-17): this file never gives dfs a login, and since
+        # _preflight now refuses outright with no login unless placeholder numbers were asked for
+        # (test_credit_guard.py), the script has to ask the way a person explicitly would. This
+        # file is about the wiring, not the no-login refusal, which has its own suite.
         {"id": "a4", "name": "run_research",
-         "input": {"topic": "executive education for CHROs"}}]},
+         "input": {"topic": "executive education for CHROs", "placeholder_numbers": True}}]},
     {"text": "", "tool_calls": [
         {"id": "a5", "name": "show_artifact",
          "input": {"path": "research.json", "view": "research_brief",

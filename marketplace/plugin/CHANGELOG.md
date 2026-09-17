@@ -5,6 +5,21 @@
 
 - **Adherence row 1: the runtime keeps a step ledger per turn, prints a STEP TRACE, and refuses a mutation until the turn's lens and cynefin artifacts exist.** Three native steps (`ups.steps_ledger`, `pre.adherence_gate`, `stop.steps_close`) behind the per-box flag `~/.sutra-runtime-adherence` (`on|warn|off`, absent = off, kill `~/.sutra-runtime-adherence-disabled`); `bin/sutra-steps` prints the ledger; typed artifacts at `.sutra/turn/<sid>/<turn>.{lens,cynefin}.json` are checked for turn, session, freshness and shape, and a repeated prompt after Stop rotates them so they must be re-authored. The synthetic-prompt guard moves to `runtime/lib/prompt.sh` and now skips task notifications. Tests: test-adherence.sh 108 checks; golden parity unchanged with the flag absent.
 
+## 2.282.9 (2026-09-17)
+
+- **Fixed: a run on placeholder search numbers never said why the research stopped.** With no DataForSEO login, a run said "no DataForSEO login, so none of these numbers are real" once and then carried on regardless — researching, and often failing the thin-material guard, with DataForSEO never named again. One user's run tried three times over 26 minutes on fake numbers, then sat waiting 17 hours with the real cause never repeated. A run with no DataForSEO login now refuses at the top, the same way an empty balance already does, naming what is missing and both ways out (connect it, or ask for placeholder numbers on purpose). Asking for placeholder numbers still runs exactly as before, and a connected login is unaffected. If a placeholder run still comes back too thin to write from, that message now says why: the numbers were never real.
+
+## 2.282.8 (2026-09-17)
+
+- **Fixed: articles saved before 2026-09-16 never reached the team.** `loop.save_to_library` only started pushing a `library` row on 2026-09-16, so every article finished before that sat on its own Mac for good — Devansh's own workspace held 3 Library rows and had sent none of them. A new Library backfill (mirroring the existing idea-sheet one) checks each local row against the team's table and sends only what is missing, once, through the same push path a fresh save uses. It never bumps a row's version or touches an editor field — this is a send, not an edit — and runs by itself on every Mac, including teammates', the next time the workspace tab is open.
+
+## 2.282.7 (2026-09-17)
+
+- **Fixed: every model call dying after an update.** The backend could inherit a working directory an install had already deleted, so `claude`/`codex` calls failed with "the current working directory was deleted". Every CLI launch now gets an explicit, guaranteed-to-exist directory (the SEO agent's own data root), and that specific failure is treated as retryable so a run already in flight survives it.
+- **Fixed: a monthly spend limit waited instead of stopping.** That message also names a session reset time, so it was read as a normal usage-limit pause. It is now recognised on its own and stops the run immediately with what to do (raise the limit, or wait for the billing period).
+- **Stop moved out of the composer.** While a run was live, the message box was disabled and Send was replaced by a Stop square in the same spot, so one stray click could kill a run that had been running for hours. Stop now lives beside the run's own status line, asks for confirmation past a minute, and the run's duration is no longer shown there. The message box stays usable while a run works — a message typed then is held and delivered the moment the run next asks a question — and a stopped run offers a Continue button.
+- **Two research numbers on the Prompts tab.** Researchers (how many personas interview an expert, default 3) and Gap rounds (how many extra evidence rounds fill in what the first pass missed, default 1) are now visible and changeable, saved the way the model-call slots setting already works.
+
 ## 2.282.6 (2026-09-17)
 
 - No commits since v2.282.5-desktop; released to rebuild the app from the same tree.

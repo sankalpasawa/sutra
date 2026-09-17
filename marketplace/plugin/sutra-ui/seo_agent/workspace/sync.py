@@ -895,6 +895,84 @@ def backfill_ideas(client=None, now=None, rows=None):
         return ""
 
 
+# ---- the Library ------------------------------------------------------------------------------
+#
+# THE ARTICLES A TEAM NEVER SAW (2026-09-17). loop.save_to_library only started pushing a `library`
+# row on 2026-09-16 (see loop.py: "THE ARTICLE GOES TO THE TEAM"), so every article finished before
+# that landed on its own Mac and nowhere else. Devansh's own Mac: 3 Library rows, an empty outbox,
+# 9 `outbox-sent.json` entries and zero of them for `library` -- none of his earlier work had ever
+# reached Supabase. Unlike the idea sheet, this is not "empty team table, send the whole thing
+# once": Library rows arrive one article at a time from possibly many Macs, so a team can already
+# hold SOME of them (everything saved since 2.281.1) while missing others. Each local row is
+# checked against the team's own table by id, and only what is missing is sent.
+
+LIBRARY_BACKFILL_EVERY = 600.0    # same retry gap as the ideas backfill
+
+
+def backfill_library(client=None, now=None, rows=None):
+    """Send every local Library row the team does not already have, each exactly once.
+
+    Reuses the same path a fresh save takes -- sync.push("library", item_id, store.library_get
+    (item_id)) -- so this is a SEND, never an edit: no row's version is bumped, meta.json is never
+    rewritten beyond whatever push's own queue bookkeeping does, and no editor is stamped.
+
+    Retried at most every LIBRARY_BACKFILL_EVERY seconds until it has finished (every missing row
+    queued) or found nothing missing. No workspace configured does nothing, quietly. Never raises.
+    """
+    now = time.time() if now is None else now
+    try:
+        if not configured(client):
+            return ""
+        st = read_state()
+        bf = st.get("library_backfill") or {}
+        if bf.get("done"):
+            return ""
+        if now - float(bf.get("at") or 0) < LIBRARY_BACKFILL_EVERY:
+            return ""
+        if rows is None:
+            rows = store.library_list()
+        rows = [r for r in (rows or []) if isinstance(r, dict) and r.get("id")]
+        if not rows:
+            st["library_backfill"] = {"at": now, "done": True, "sent": 0, "why": "nothing to send"}
+            _save_state(st)
+            return ""
+        allowed, why = _may_push("library", client)
+        if not allowed:
+            st["library_backfill"] = {"at": now, "done": False, "sent": 0, "why": why}
+            _save_state(st)
+            return ""
+        c = _client(client)
+        try:
+            have = {str(r["item_id"]) for r in (c.select("library", columns="item_id") or [])
+                   if r.get("item_id")}
+        except Exception as e:               # noqa: BLE001 — offline: try again later, not fatal
+            st["library_backfill"] = {"at": now, "done": False, "sent": 0, "why": str(e)[:300]}
+            _save_state(st)
+            return ""
+        missing = [r for r in rows if str(r["id"]) not in have]
+        if not missing:
+            st["library_backfill"] = {"at": now, "done": True, "sent": 0,
+                                      "why": "the team already has every row"}
+            _save_state(st)
+            return ""
+        sent, fail_why = 0, ""
+        for r in missing:
+            item_id = str(r["id"])
+            try:
+                full = store.library_get(item_id)
+                if not full:
+                    continue
+                if push("library", item_id, full, client=client) is not None:
+                    sent += 1
+            except Exception as e:           # noqa: BLE001 — one bad row must not stop the rest
+                fail_why = str(e)[:300]
+        st["library_backfill"] = {"at": now, "done": not fail_why, "sent": sent, "why": fail_why}
+        _save_state(st)
+        return "sent" if sent else ""
+    except Exception:                       # noqa: BLE001 — a background nicety must never break a poll
+        return ""
+
+
 def push_delete(kind, key, actor=None, client=None, item_id=None):
     """The thing is gone. The trigger logs it, and it reaches everyone as an ordinary change.
 

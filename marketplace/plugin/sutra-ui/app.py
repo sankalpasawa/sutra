@@ -2291,6 +2291,25 @@ async def _default_delegate_spawner(mission):
 
 
 @app.on_event("startup")
+async def _fix_deleted_cwd():
+    """A backend launched from a versioned plugin folder (main.js sets cwd to
+    RUNTIME.appDir) can start already sitting in a directory an update just removed.
+    Registered first, before any other startup hook does relative-path work.
+    """
+    try:
+        os.getcwd()
+        return
+    except OSError:
+        pass
+    safe = os.path.expanduser("~")
+    try:
+        os.chdir(safe)
+    except OSError:
+        pass
+    print("[app] working directory was gone at startup; switched to %s" % safe, file=sys.stderr)
+
+
+@app.on_event("startup")
 async def _import_projects_as_departments():
     """Onboarding, done by code: every project on this machine becomes a
     department before the operator does anything (founder, 2026-09-08).

@@ -44,7 +44,8 @@ def canned(reply):
     """subprocess.run-shaped: records what it was asked and answers with `reply` as JSON."""
     def run(cmd, **kw):
         CAPTURED.clear()
-        CAPTURED.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"), timeout=kw.get("timeout"))
+        CAPTURED.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"), timeout=kw.get("timeout"),
+                        cwd=kw.get("cwd"))
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(reply), stderr="")
     return run
 
@@ -59,11 +60,12 @@ class _PopenShim:
         self._run_fn = run_fn
         self._cmd = cmd
         self._env = popen_kw.get("env")
+        self._cwd = popen_kw.get("cwd")
         self.pid = 999999999   # never a real pid; nothing here calls kill() in these tests
         self.returncode = 0
 
     def communicate(self, prompt=None, timeout=None):
-        cp = self._run_fn(self._cmd, input=prompt, timeout=timeout, env=self._env)
+        cp = self._run_fn(self._cmd, input=prompt, timeout=timeout, env=self._env, cwd=self._cwd)
         self.returncode = cp.returncode
         return cp.stdout, cp.stderr
 
@@ -142,6 +144,10 @@ ok("nested Claude Code variables are stripped",
    "CLAUDECODE" not in sub_env and "CLAUDE_CODE_SESSION_ID" not in sub_env)
 ok("the API key is stripped so nothing bills the API", "ANTHROPIC_API_KEY" not in sub_env)
 ok("PATH survives", "PATH" in sub_env)
+ok("an explicit cwd is passed, so a deleted plugin folder can't kill the call",
+   bool(CAPTURED.get("cwd")) and os.path.isdir(CAPTURED["cwd"]), CAPTURED.get("cwd"))
+ok("the cwd is the SEO agent's own data root, not whatever launched the backend",
+   CAPTURED["cwd"] == llm._cli_cwd(), CAPTURED.get("cwd"))
 ok("text comes back", reply["text"] == "Reading the site.")
 ok("two tool calls come back", [c["name"] for c in reply["tool_calls"]] == ["log_step", "fake_tool"])
 ok("every call carries a local id", all(re.match(r"^call-[0-9a-f]{8}$", c["id"]) for c in reply["tool_calls"]),
@@ -282,7 +288,7 @@ CODEX = {}
 def codex_run(reply, stderr=""):
     def run(cmd, **kw):
         CODEX.clear()
-        CODEX.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"))
+        CODEX.update(cmd=cmd, input=kw.get("input"), env=kw.get("env"), cwd=kw.get("cwd"))
         schema = cmd[cmd.index("--output-schema") + 1]
         CODEX["schema"] = json.load(open(schema))
         if reply is not None:
@@ -305,6 +311,8 @@ ok("the prompt carries the system prompt, the tools and the conversation",
    "You are the SEO writer." in CODEX["input"] and "fake_tool" in CODEX["input"]
    and "Result of t2" in CODEX["input"], CODEX["input"][:300])
 ok("the API key never reaches codex", "ANTHROPIC_API_KEY" not in (CODEX["env"] or {}))
+ok("codex also gets an explicit, existing cwd (the same helper as the claude-cli path)",
+   bool(CODEX.get("cwd")) and os.path.isdir(CODEX["cwd"]) and CODEX["cwd"] == llm._cli_cwd(), CODEX.get("cwd"))
 ok("a tool input sent as a JSON string comes back as an object",
    r["tool_calls"][0]["name"] == "ask_user" and r["tool_calls"][0]["input"] == {"question": "What's the website?"}, r)
 ok("an unreadable tool input becomes {} rather than a crash", r["tool_calls"][1]["input"] == {}, r)
@@ -381,6 +389,45 @@ except llm.NoKey as e:
 llm.httpx.post = REAL_POST
 store.save_model_choice("", "")
 llm.set_hooks()
+
+print("\na 'working directory was deleted' error is retried, not fatal")
+env(SEO_AGENT_CLAUDE_BIN=sys.executable)
+_cwd_calls = {"n": 0}
+_bad_cwd = canned({"is_error": True, "result":
+    "The current working directory was deleted, so that command didn't work. "
+    "Please cd into a different directory and try again."})
+_recovered = canned({"is_error": False, "result": "", "structured_output": {"text": "recovered"}})
+def _flaky_cwd(*a, **kw):
+    _cwd_calls["n"] += 1
+    return (_bad_cwd if _cwd_calls["n"] == 1 else _recovered)(*a, **kw)
+llm.CLI_RETRY_SLEEPS = (0,)
+llm.subprocess.Popen = as_popen(_flaky_cwd)
+r = llm.call("s", [{"role": "user", "content": "hi"}])
+ok("a deleted-cwd error is retried once and the run survives",
+   r["text"] == "recovered" and _cwd_calls["n"] == 2, (r, _cwd_calls["n"]))
+
+print("\nthe call still works when the process's OWN directory has been deleted")
+llm.subprocess.Popen = REAL_POPEN     # a real subprocess this time, not the canned fixture
+import tempfile
+_start_dir = os.getcwd()
+_gone = tempfile.mkdtemp(prefix="seo-cwd-gone-")
+os.chdir(_gone)
+os.rmdir(_gone)
+try:
+    try:
+        os.getcwd()
+        ok("the test really did delete its own cwd first", False, "os.getcwd() did not raise")
+    except OSError:
+        ok("the test really did delete its own cwd first", True)
+    d = llm._cli_cwd()
+    ok("_cli_cwd() does not depend on the (now-gone) process cwd",
+       os.path.isdir(d), d)
+    real_cmd = [sys.executable, "-c", "import sys; sys.stdout.write(sys.stdin.read())"]
+    rc, out, err = llm._run_process(real_cmd, "hello", 10)
+    ok("a REAL subprocess (not stubbed) still starts and answers with the cwd gone",
+       rc == 0 and out == "hello", (rc, out, err))
+finally:
+    os.chdir(_start_dir)
 
 # --- restore -----------------------------------------------------------------------------
 llm.subprocess.Popen = REAL_POPEN

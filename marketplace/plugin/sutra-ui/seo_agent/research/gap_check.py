@@ -14,7 +14,7 @@ Reads: the article context, the winners lists, the AI Overview text, the cards.
 Writes (via the tool): _work/gap-check.json {items, queries}.
 """
 
-from .. import llm
+from .. import llm, store
 from . import _common as _c
 from . import evidence
 
@@ -73,9 +73,20 @@ def judge(items, meta, cards, say=None):
     return verdicts
 
 
-def triage(verdicts, meta, cards):
-    """At most GAP_MAX_QUERIES research questions. Runs even with zero misses: the triage also reads
-    the dossier for under-researched AREAS (own_find)."""
+def triage(verdicts, meta, cards, max_queries=None):
+    """At most max_queries research questions. Runs even with zero misses: the triage also reads
+    the dossier for under-researched AREAS (own_find).
+
+    max_queries=None reads the person's saved "Gap rounds" setting (store.research_settings),
+    falling back to _c.GAP_ROUNDS_DEFAULT when nothing has been saved -- so an unattended run and a
+    fresh install both spend the engine's own default, not just what the Prompts tab displays.
+    Always clamped to [0, _c.GAP_MAX_QUERIES], whatever is asked for; 0 runs no gap query at all.
+    """
+    if max_queries is None:
+        max_queries = store.research_settings().get("gap_rounds")
+        if max_queries is None:
+            max_queries = _c.GAP_ROUNDS_DEFAULT
+    cap = max(0, min(_c.GAP_MAX_QUERIES, max_queries))
     misses = [v for v in verdicts if v["verdict"] in _c.MISS_VERDICTS]
     lines = (["- [%s] (%s) %s — judge: %s" % (v["verdict"], v["type"], v["item"], v["why"]) for v in misses]
              or ["(none — every checklist item was judged covered)"])
@@ -88,13 +99,14 @@ def triage(verdicts, meta, cards):
     except Exception:  # noqa: BLE001 — no triage means no extra spend, and the report says so
         got = {}
     queries = []
-    for q in ((got.get("queries") if isinstance(got, dict) else None) or []):
-        if isinstance(q, dict) and str(q.get("query") or "").strip():
-            queries.append({"query": str(q["query"]).strip(), "fills": _c.strings(q.get("fills")),
-                            "source": q.get("source") if q.get("source") in ("flagged", "own_find") else "flagged",
-                            "why": str(q.get("why") or "").strip()})
-        if len(queries) >= _c.GAP_MAX_QUERIES:                # hard cap at 3
-            break
+    if cap > 0:
+        for q in ((got.get("queries") if isinstance(got, dict) else None) or []):
+            if isinstance(q, dict) and str(q.get("query") or "").strip():
+                queries.append({"query": str(q["query"]).strip(), "fills": _c.strings(q.get("fills")),
+                                "source": q.get("source") if q.get("source") in ("flagged", "own_find") else "flagged",
+                                "why": str(q.get("why") or "").strip()})
+            if len(queries) >= cap:
+                break
     return queries
 
 

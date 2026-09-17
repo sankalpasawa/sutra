@@ -65,7 +65,11 @@ JUDGED_TYPES = ("gap_we_own",     # competitor-read -> gaps_to_own (THE priority
                 "aio_subtopic")   # SERP extract -> AI Overview "what it covers" (the answer skeleton)
 VALID_VERDICTS = ("covered", "no", "partial")
 MISS_VERDICTS = ("no", "partial")
-GAP_MAX_QUERIES = 3          # hard cap at 3
+GAP_MAX_QUERIES = 3          # hard cap at 3 -- also the top of the Prompts tab's "Gap rounds" range
+# Fewer by default (2026-09-17, the Prompts tab's "Gap rounds" setting): how many gap queries
+# triage() fills when nobody has saved an override. Raising it toward GAP_MAX_QUERIES spends more
+# on evidence for a slower, more thorough run; 0 skips gap-filling entirely.
+GAP_ROUNDS_DEFAULT = 1
 
 # ---- own pages via the Voyage index (02-asset-engine/5-reuse-check + 14/reuse_one.py) -----------
 N_RETRIEVE = 40              # dense candidates before the reranker

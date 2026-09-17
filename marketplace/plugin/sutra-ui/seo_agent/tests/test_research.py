@@ -229,6 +229,11 @@ _c.DOSSIER_MIN_WORDS = 1500
 # ---- the whole run --------------------------------------------------------------------------------
 print("\nrun_research, end to end")
 _fixture.stub_dfs(balance=12.5)
+# Pinned to the hard cap (2026-09-17): gap_check.triage's own DEFAULT is now 1 (the Prompts tab's
+# "Gap rounds" setting), so the "caps at 3" assertion below -- which is about GAP_MAX_QUERIES, the
+# hard cap, not the default -- needs the setting raised to it explicitly. Reset once the assertion
+# that needs it is done; the gap-fill section right after only reads rs, already computed here.
+store.save_research_settings(gap_rounds=3)
 run = store.new_run(chat, "operator education")
 ctx = ctx_for(run)
 out = research(ctx, topic="Operator education (a buyer's guide)", angle="what changes after")
@@ -352,6 +357,7 @@ ok("every trail entry names a file that really exists",
 ok("our own domain is never outside evidence", not any("example.com" in c["source_urls"][0] for c in ev_cards))
 ok("gap check judged the checklist items", len(rs["gap_check"]["items"]) >= 3 and all(i["verdict"] in ("covered", "partial", "no") for i in rs["gap_check"]["items"]))
 ok("gap check caps at 3 questions (the stub asked for 4)", len(rs["gap_check"]["queries"]) == 3, len(rs["gap_check"]["queries"]))
+store.save_research_settings(researchers=None, gap_rounds=None)   # the pin above ends here
 # ---- the gap fill is the real research conversation, not a keyword lookup ------------------
 # His 12-gap-check re-runs STORM ITSELF per gap query, four perspectives and four turns, carrying
 # the article's spine. Sutra answered the same gap with one keyword search, so the holes that

@@ -24,6 +24,13 @@ const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas",
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
+/* Stop lives in the run's status row, not the composer (2026-09-17: a stray click where Send
+   used to be was killing runs that had been going for hours). A run under a minute stops on one
+   click; past that, the first click only arms a "Stop?" confirm, and a second click within
+   AG_STOP_ARM_MS is what actually stops it. Armed and not clicked again, it just goes quiet. */
+const AG_STOP_CONFIRM_AFTER_MS = 60 * 1000;
+const AG_STOP_ARM_MS = 4000;
+
 /* How long a refresh may say nothing before the card says how long it has been quiet. A run that
    has gone silent must never read the same as one that has stopped, and the only honest way to
    tell him is the gap itself: the engine's last line, and how long ago it arrived. */
@@ -228,6 +235,10 @@ function agS(){
     panel: null,                  /* {run_id, name, view, data, loading, error} */
     autoOpened: null,             /* the waiting call_id whose panel already opened itself */
     picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, dfs: { on: false, open: null, vals: {}, out: {}, busy: "", bal: "", market: {} }, viewBusy: null, facePick: null,
+    /* Stop's arm/confirm state ({runId, at}, or null) and a message typed while a run was
+       RUNNING (not yet waiting), held here until the run next asks a question or ends. See
+       AG_STOP_ARM_MS above and agMaybeSendQueued(). */
+    stopArm: null, pendingMsg: null,
     /* THE TWO STACKED OVERLAYS the five milestone dots and the "Open" article view now share.
        libTabs (layer 1): {on, itemId, active, data (the /tabs payload), draft ({title,words,draft}
        from GET /library/{id}), loading, error, rOpen ({} -- which researcher rows are expanded),
@@ -252,6 +263,7 @@ function agS(){
     libBuf: null, libSec: null, libMeta: null, libConflict: null,
     fileEdit: null,
     prompts: null, promptEdit: null,   /* the Prompts tab's payload, and the open editor's draft */
+    researchSettings: null,            /* {researchers, researchers_range, gap_rounds, gap_rounds_range} */
     /* the team workspace. `ws` is GET /workspace exactly as the server sent it -- including the
        running job -- and `wsForm` is the draft in the create/join boxes. The personal access
        token is deliberately NOT in this list and must never be added to it. */
@@ -735,8 +747,12 @@ function agEntryHtml(e, ctx){
         ${e.detail ? `<button class="ag-more" type="button" data-ag="detail" data-arg="${agEsc(e.t)}">${open ? "Hide" : "Show"} the error detail</button>${open ? `<pre class="ag-detail">${agEsc(e.detail)}</pre>` : ""}` : ""}
       </div>`;
     case "stopped":
+      /* CONTINUE, RIGHT HERE (2026-09-17). Typing a message already carried the run on (the
+         server's own /chats/{id}/send: "a message after a user Stop is not a new run"); this
+         button does exactly that, through the same agSend() path, with no typing required. */
       return `<div class="ag-step bad"><span class="ag-glyph" aria-hidden="true">${AG_ICON.x}</span>
-        <div class="ag-title">Stopped</div><div class="ag-body">You stopped this run. Send a message to continue.</div></div>`;
+        <div class="ag-title">Stopped</div><div class="ag-body">You stopped this run. Send a message to continue.
+        <button class="ag-more" type="button" data-ag="continuerun">Continue</button></div></div>`;
     default: return "";
   }
 }
@@ -780,14 +796,33 @@ function agGroupHeadHtml(g, runId, open){
   </button>`;
 }
 
+/* Stop's control, drawn beside the run's own "Working" state line (2026-09-17: it used to sit in
+   the composer, in the exact spot Send occupies once a run finishes, and one click there killed
+   hours of work with no way back). Under AG_STOP_CONFIRM_AFTER_MS it stops on one click, the same
+   as before; past that, the first click only arms "Stop?" (ctx.stopArm), and the second click
+   within AG_STOP_ARM_MS is what actually calls /stop. */
+function agStopBtnHtml(run, sum, ctx){
+  if (!sum.live) return "";
+  const armed = !!(ctx.stopArm && ctx.stopArm.runId === run.run_id
+                   && (ctx.now || Date.now()) - ctx.stopArm.at < AG_STOP_ARM_MS);
+  return `<button class="ag-stopbtn${armed ? " confirm" : ""}" type="button" data-ag="stop" data-arg="${agEsc(run.run_id)}"
+    aria-label="${armed ? "Click again to stop this run" : "Stop this run"}"
+    title="${armed ? "Click again to confirm — this cannot be undone" : "Stop — the run halts after the current step"}"
+    >${armed ? "Stop?" : "Stop"}</button>`;
+}
+
 function agRunHtml(run, events, ctx){
   ctx = ctx || {};
   const sum = agRunSummary(events, run, ctx.now);
   const entries = agStepsFromEvents(events, run);
   const collapsed = !!(ctx.collapsed && ctx.collapsed[run.run_id]);
+  /* NO DURATION ON THIS LINE (owner, 2026-09-17: a clock next to the run made people judge it by
+     how long it had taken rather than by what it was doing). The state word and the steps count
+     stay; agDur(sum.elapsedMs) is gone from here. sum.elapsedMs itself is untouched -- other
+     screens (the Library row, the notifications) still use it. */
   const head = sum.live
-    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting ? "Waiting for you" : "Working"}</b> · ${agEsc(agDur(sum.elapsedMs))}</span>`
-    : `<span class="ag-worked">${run.status === "failed" ? "Stopped with an error" : run.status === "stopped" ? "Stopped" : "Worked"} · ${agEsc(agDur(sum.elapsedMs))}</span>`;
+    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
+    : `<span class="ag-worked">${run.status === "failed" ? "Stopped with an error" : run.status === "stopped" ? "Stopped" : "Worked"}</span>`;
   return `<div class="ag-turn" data-run="${agEsc(run.run_id)}">
     <div class="u">${agEsc(run.request || run.topic || "")}</div>
     <div class="ag-run">
@@ -1078,6 +1113,7 @@ function agResetCompany(a){
   Object.assign(a, {
     chats: null, chatId: null, chat: null, events: {}, cursors: {}, panel: null, autoOpened: null,
     picked: null, collapsed: {}, stageOpen: {}, stepOpen: {}, chatMenu: null, coMenu: null, sendFail: null, dfs: { on: false, open: null, vals: {}, out: {}, busy: "", bal: "", market: {} }, facePick: null,
+    stopArm: null, pendingMsg: null,
     notified: {}, runSeen: {}, trail: [], workOpen: null, draft: "", viewBusy: null,
     refresh: null, refreshSeen: null, refreshPollErr: null, health: null, knowledge: null,
     cta: null, ctaForm: null, memory: null, library: null, conns: null, assets: null,
@@ -1086,7 +1122,7 @@ function agResetCompany(a){
     connForm: null, libOpen: null, libEdit: null, libBuf: null, libSec: null, libMeta: null, libConflict: null,
     libTabs: null, libTabs2: null,
     detailOpen: {}, fileEdit: null,
-    prompts: null, promptEdit: null, ws: null, wsForm: null, guideDive: null,
+    prompts: null, promptEdit: null, researchSettings: null, ws: null, wsForm: null, guideDive: null,
   });
 }
 
@@ -1443,28 +1479,59 @@ function agSlotsHtml(h){
     <div class="rd" style="margin-top:4px">Each chat that is writing gets up to ${per} calls at once; this is the most they can add up to. More is faster with several chats open, and reaches your usage limit sooner. If the limit is hit, a run pauses and carries on after the reset.</div></div>`;
 }
 
+/* THE TWO RESEARCH NUMBERS, on the Prompts tab (Devansh, 2026-09-17): how many personas interview
+   an expert, and how many extra evidence rounds a gap check may spend when the first pass misses
+   something. Same shape as agSlotsHtml above -- a select per number, saved on change, through
+   /research-settings (store.research_settings / save_research_settings) -- but two of them, so
+   each one's change handler sends BOTH current values, never just the one that moved, or the
+   other would be read as "cleared" and silently fall back to its default. */
+function agResearchSettingsHtml(rs){
+  const s = rs || {};
+  const researchers = Number.isFinite(s.researchers) ? s.researchers : 3;
+  const gapRounds = Number.isFinite(s.gap_rounds) ? s.gap_rounds : 1;
+  const rRange = (Array.isArray(s.researchers_range) && s.researchers_range.length === 2) ? s.researchers_range : [1, 6];
+  const gRange = (Array.isArray(s.gap_rounds_range) && s.gap_rounds_range.length === 2) ? s.gap_rounds_range : [0, 3];
+  const span = (lo, hi) => { const out = []; for (let n = lo; n <= hi; n++) out.push(n); return out; };
+  const opts = (choices, cur) => choices.map(n => `<option value="${n}"${n === cur ? " selected" : ""}>${n}</option>`).join("");
+  return `<div class="ag-researchsettings" style="margin:4px 0 18px">
+    <div class="row"><label class="ag-note" style="display:flex;gap:8px;align-items:center">Researchers
+      <select class="ag-model" data-agresearchers aria-label="How many researchers interview an expert">${opts(span(rRange[0], rRange[1]), researchers)}</select></label></div>
+    <div class="rd" style="margin-top:4px">How many personas interview an expert before the article is written. Fewer means a faster run with less evidence behind it.</div>
+    <div class="row" style="margin-top:10px"><label class="ag-note" style="display:flex;gap:8px;align-items:center">Gap rounds
+      <select class="ag-model" data-aggaprounds aria-label="How many extra evidence rounds a gap check may spend">${opts(span(gRange[0], gRange[1]), gapRounds)}</select></label></div>
+    <div class="rd" style="margin-top:4px">How many extra research rounds fill in what the first pass missed. Fewer means a faster run with less evidence behind it.</div>
+  </div>`;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
   const running = live && live.status === "running";
   const waiting = live && live.status === "waiting";
   const w = waiting ? (live.waiting_on || {}) : null;
   const setup = agSetupOf(a.health);
-  const ph = running ? "Working… you can stop it, or wait."
+  /* NEVER DISABLED WHILE RUNNING (2026-09-17). Typing here used to be blocked the whole time a
+     run was live, with Stop as the only thing you could click in this spot -- one stray tap
+     killed a run that had been going for hours. The box now always takes text; agSend() holds it
+     as a.pendingMsg while the run is "running" and delivers it itself the moment the run next
+     asks a question or ends (agMaybeSendQueued). */
+  const queued = a.pendingMsg && a.chatId && a.pendingMsg.chatId === a.chatId;
+  const ph = queued ? "Sent as soon as it asks its next question…"
+    : running ? "Working… type now and it goes in as soon as it asks something, or wait."
     : waiting && w.kind === "approval" ? "Say no with a reason, or use the buttons above"
     : waiting && w.kind === "artifact" ? "Ask for changes, or approve in the panel"
     : waiting ? (w.options && w.options.length ? "Type your answer, or pick an option above" : "Type your answer")
     : a.chat ? "Ask for another article, or give feedback"
     : a.health && !setup.ready ? "Give the website, e.g. example.com" : "Name a topic, or ask for ideas";
   const step = live && live.current_step ? live.current_step.replace(/_/g, " ") : (live ? live.stage : "");
-  const state = running ? `<span class="ag-cstate"><i class="dot run"></i>the agent is working · ${agEsc(step)}</span>`
+  const state = queued ? `<span class="ag-cstate"><i class="dot run"></i>your message will go in as soon as it asks something</span>`
+    : running ? `<span class="ag-cstate"><i class="dot run"></i>the agent is working · ${agEsc(step)}</span>`
     : waiting ? `<span class="ag-cstate"><i class="dot wait"></i>waiting for you</span>` : "";
   /* THE BOX HAS AN EDGE (owner, 2026-09-10: "the chat bar is always supposed to be highlighted,
      so the user knows where the chat bar is"). The textarea and the send button are wrapped in
      one element so the FIELD can carry the border, the hover and the focus ring, rather than
      three loose controls sitting on the page looking like part of it. The wrapper is what
      :focus-within lights up, so clicking anywhere in the box reads as focused -- which is what
-     it actually is. `busy` is the run's own state, so a disabled box looks disabled rather than
-     looking broken. */
+     it actually is. */
   /* THE SAME SHAPE AS THE MAIN CHAT (owner, 2026-09-14: "the agent marketplace chat
      and this chat looks different"). Over there the message box holds the text and
      the send button, and the controls that say what will answer sit on their own
@@ -1472,10 +1539,9 @@ function agComposerHtml(a){
      the two read as different products. Same place, same weight, here too. */
   const under = agModelPickHtml(a.health, running);
   return `${state}
-    <div class="ag-field${running ? " busy" : ""}">
-      <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}" ${running ? "disabled" : ""}></textarea>
-      ${running ? `<button class="send stop" type="button" data-ag="stop" aria-label="Stop this run" title="Stop — the run halts after the current step"><svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></button>`
-               : `<button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>`}
+    <div class="ag-field">
+      <textarea data-agask rows="1" aria-label="Message the SEO Writer" placeholder="${agEsc(ph)}"></textarea>
+      <button class="send" type="button" data-ag="send" aria-label="Send"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>${under ? `<div class="ag-under">${under}</div>` : ""}`;
 }
 
@@ -1497,7 +1563,7 @@ function agTranscriptHtml(a){
     ? agSendFailHtml(a.sendFail) : "";
   if (!a.chat || !(a.chat.runs || []).length)
     return ((agFirstRun(a) === true && !a.introSkip) ? agIntroHtml(a) : agHeroHtml(a.health, a.conns)) + fail;
-  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, stepOpen: a.stepOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now() };
+  const ctx = { collapsed: a.collapsed, stageOpen: a.stageOpen, stepOpen: a.stepOpen, panel: a.panel, detailOpen: a.detailOpen, now: Date.now(), stopArm: a.stopArm };
   return (a.chat.runs || []).map(r => agRunHtml(r, a.events[r.run_id] || [], ctx)).join("") + fail;
 }
 
@@ -2942,6 +3008,7 @@ function agPromptsHtml(d, a){
   const edited = (d && d.edited) || [];
   return `<div class="ag-view"><h2>Prompts</h2>
     <p class="lead">The instructions the agent writes by. Change one and the next article uses your version. Reset puts it back.</p>
+    ${agResearchSettingsHtml(a && a.researchSettings)}
     <h3 class="sec">How an article gets written</h3>
     ${agFlowHtml(d && d.flow)}
     <h3 class="sec">The prompts${edited.length ? ` <small>${agEsc(edited.length)} changed by you</small>` : ""}</h3>
@@ -3822,6 +3889,7 @@ async function agRefresh(){
         const runs = a.chat.runs; const i = runs.findIndex(x => x.run_id === live.run_id);
         if (i >= 0) runs[i] = r.state;
         agMaybeOpenCheckpoint(r.state);
+        agMaybeSendQueued(r.state);
       }
     }
     if (!live || agRefreshN % 4 === 0){
@@ -3950,6 +4018,19 @@ function agMaybeOpenCheckpoint(state){
   if (a.autoOpened === key) return;
   a.autoOpened = key;
   agOpenArtifact(state.run_id, w.artifact, w.view);
+}
+
+/* A message typed while the run was "running" (agSend queued it as a.pendingMsg rather than
+   hit the 409 the server gives a mid-run send). The instant the poll shows this run is no longer
+   "running" -- it is asking a question, or it is done/stopped/failed -- send it for real, through
+   agSend, which already knows the right route (answer while waiting, send otherwise). Still
+   "running" on this tick: keep holding it. */
+function agMaybeSendQueued(state){
+  const a = agS();
+  const p = a.pendingMsg;
+  if (!p || !state || p.chatId !== a.chatId || state.status === "running") return null;
+  a.pendingMsg = null;
+  return agSend(p.text);      // the caller in agRefresh does not await this; a test may
 }
 
 async function agOpenArtifact(runId, name, view, extra){
@@ -4216,6 +4297,17 @@ async function agPollRefresh(){
 async function agSend(text){
   const a = agS(); text = String(text || "").trim(); if (!text) return;
   const sent = text, idea = a.chipIdea || "";
+  /* THE SERVER REFUSES A SEND WHILE A RUN IS "running" (409: "Stop it first, or wait"), so a
+     message typed then is held here, never thrown at the network. agMaybeSendQueued() delivers
+     it itself, through this same function, the moment the run stops being "running" -- asks a
+     question (the /answer path below) or ends. See agComposerHtml's queued placeholder. */
+  const live0 = agLiveRun();
+  if (live0 && live0.status === "running"){
+    a.pendingMsg = { chatId: a.chatId, text: sent };
+    Object.assign(a, { draft: "", chipIdea: null, focusComposer: true });
+    agDraw(true);
+    return;
+  }
   a.busy = true; a.stick = true; a.sendFail = null;
   try {
     if (!a.chatId){ const c = await agPostApi("/chats", { title: text.slice(0, 60) }); a.chatId = c.id; a.chat = { chat: c, runs: [], messages: [] }; }
@@ -4474,7 +4566,10 @@ async function agAction(act, el){
       if (arg === "knowledge"){ a.knowledge = await agApi("/knowledge").catch(() => null); a.health = await agApi("/health").catch(() => a.health); if (a.view === arg){ a.viewBusy = null; agDraw(true); } await agLoadPages(0); a.cta = await agApi("/knowledge/cta").catch(() => a.cta); if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(() => null); } }
       if (arg === "assets") a.assets = await agApi("/assets").catch(() => null);
       if (arg === "memory") a.memory = await agApi("/memory").catch(() => null);
-      if (arg === "prompts"){ a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null; }
+      if (arg === "prompts"){
+        a.prompts = await agApi("/prompts").catch(() => null); a.promptEdit = null;
+        a.researchSettings = await agApi("/research-settings").catch(() => a.researchSettings || null);
+      }
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
@@ -4488,8 +4583,16 @@ async function agAction(act, el){
     case "play": a.view = "chat"; a.guideDive = null; a.draft = el.getAttribute("data-text") || ""; a.focusComposer = true; agDraw(true); break;
     case "send": { const ta = document.querySelector("[data-agask]"); await agSend(ta ? ta.value : a.draft); break; }
     case "stop": { const live = agLiveRun(); if (!live) break;
+      /* ARM, THEN CONFIRM, past a minute (2026-09-17). A run just started is cheap to restart, so
+         one click still stops it outright; past AG_STOP_CONFIRM_AFTER_MS the first click only
+         arms "Stop?" and this same case runs again on the second click to actually stop it. */
+      const sum = agRunSummary(a.events[live.run_id] || [], live, Date.now());
+      const armed = a.stopArm && a.stopArm.runId === live.run_id && Date.now() - a.stopArm.at < AG_STOP_ARM_MS;
+      if (sum.elapsedMs > AG_STOP_CONFIRM_AFTER_MS && !armed){ a.stopArm = { runId: live.run_id, at: Date.now() }; agDraw(); break; }
+      a.stopArm = null;
       await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(live.run_id)}/stop`, {}).catch(e => agToast(String(e.message || e)));
       await agLoadChat(a.chatId, true); break; }
+    case "continuerun": await agSend("Continue"); break;
     case "fold": a.collapsed[arg] = !a.collapsed[arg]; agDraw(); break;
     case "step": a.stepOpen[arg] = !a.stepOpen[arg]; agDraw(); break;
     case "chatmenu": a.chatMenu = arg || null; agDraw(); break;
@@ -5534,6 +5637,18 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
     else if (t.matches("[data-agslots]")){
       agPostApi("/slots", { max: Number(t.value) })
         .then(s => { a.health = Object.assign({}, a.health, { slots: s }); })
+        .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not save that: " + ((e && e.message) || e) }); })
+        .then(() => agDraw(true));
+    }
+    /* BOTH VALUES, EVERY TIME (see agResearchSettingsHtml's own note): whichever select just
+       changed, the OTHER one's current DOM value travels with it, so a change to one number is
+       never read by the server as "the other one was cleared". */
+    else if (t.matches("[data-agresearchers],[data-aggaprounds]")){
+      const rEl = document.querySelector("[data-agresearchers]");
+      const gEl = document.querySelector("[data-aggaprounds]");
+      agPostApi("/research-settings", { researchers: rEl ? Number(rEl.value) : undefined,
+                                        gap_rounds: gEl ? Number(gEl.value) : undefined })
+        .then(s => { a.researchSettings = s; })
         .catch(e => { a.connForm = Object.assign({}, a.connForm, { msg: "Could not save that: " + ((e && e.message) || e) }); })
         .then(() => agDraw(true));
     }

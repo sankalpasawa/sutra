@@ -239,8 +239,30 @@ def _preflight(ctx, redo, placeholder_numbers, say):
     Refusing is the default, not the only answer. A person may want the shape of an article without
     paying for it, so placeholder_numbers=True runs it on demo figures, every one of them flagged.
     That has to be asked for; it is never what happens on its own.
+
+    NO LOGIN REFUSES TOO (2026-09-17), for the same reason as an empty balance and the same owner's
+    words: a run with no DataForSEO login connected used to run anyway, said so once in passing,
+    researched on placeholder numbers, and usually failed the thin-material guard a few steps later
+    with no further mention of DataForSEO -- so the real cause was never named again. placeholder_
+    numbers=True is still the explicit way to run on demo figures with no login, exactly as it is
+    for a low balance.
     """
     if dfs.demo_mode():
+        # NO LOGIN REFUSES TOO, UNLESS ASKED FOR (2026-09-17). Found live: a run said "no
+        # DataForSEO login" once, researched three times over 26 minutes on placeholder numbers,
+        # failed the thin-material guard each time with no further mention of DataForSEO, then sat
+        # waiting 17 hours. The owner's own words above already covered this ("why should it even
+        # go further if there is no DataForSEO?"); only the empty-balance branch below ever acted
+        # on them. dfs.available() and not dfs.demo_mode()'s own DEMO_MODE flag, so a forced demo
+        # with real credentials present (tests) still runs, as it always has.
+        if not dfs.available() and not placeholder_numbers:
+            say("Not enough DataForSEO to start", "No DataForSEO login is connected")
+            return ({"summary": "Research did not start: no DataForSEO login is connected.",
+                     "error": ("No DataForSEO login is connected, so none of these numbers would "
+                               "be real. Say that in one line, then ask: connect DataForSEO in "
+                               "Connections, or go ahead on placeholder numbers marked as not real "
+                               "(call run_research again with placeholder_numbers set to true).")},
+                    False, "")
         say("Using demo search data", "No DataForSEO login, so none of these numbers are real")
         return None, True, "demo data: no DataForSEO login, so no number here is real"
     if not _paid_work_left(ctx, redo):
@@ -582,9 +604,17 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
             say("Stopping: the research is too thin to build on",
                 "%s after a second attempt, and the floor is %s"
                 % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS)))
+            # NAME THE CAUSE WHEN IT WAS PLACEHOLDERS (2026-09-17). Found live, chained to the
+            # _preflight fix above: a run on placeholder numbers (no DataForSEO login, asked for
+            # explicitly) hit exactly this guard, and this message used to say only "the write-up
+            # came back thin" -- never that the search numbers behind it were never real. Checked
+            # here, not read from a credential: dfs.available() is a plain bool, no login value.
+            cause = (" This run was on placeholder search numbers because no DataForSEO login is "
+                     "connected, which is very likely why the material came back this thin."
+                     if demo and not dfs.available() else "")
             return {"summary": "The research did not produce enough material to write from, so the "
                                "run stopped rather than building on it.",
-                    "error": ("The research team ran, and the write-up came back at %s. A real "
+                    "error": (("The research team ran, and the write-up came back at %s. A real "
                               "dossier for a topic like this runs to thousands; anything under %s "
                               "means the research effectively failed even though nothing crashed. I "
                               "tried a second time and got the same result. Everything after this "
@@ -592,7 +622,7 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
                               "a thin one quietly turns into an article with almost nothing behind "
                               "it. Run the research again, or give me a narrower topic with more "
                               "written about it."
-                              % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS))),
+                              % (_plural(words, "word"), "{:,}".format(_c.DOSSIER_MIN_WORDS))) + cause),
                     "artifact": None}
         if dos is not None:
             har, _ = step("dossier-cards", lambda: dossier.harvest(dos, cur.get("pages"), say=say))

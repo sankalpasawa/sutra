@@ -207,16 +207,75 @@ ok("asked for it, the same balance proceeds as a demo run",
    preflight(-0.07, True)[0] is None and preflight(-0.07, True)[1] is True)
 
 
-# ---- 6. no login at all is the demo path, not a refusal ----------------------------------------
-print("\nno DataForSEO login is the demo path, not a refusal")
+# ---- 6. no login at all refuses too, unless placeholders were asked for ------------------------
+# Found live, 2026-09-17 (Devansh): a run said "no DataForSEO login" once, researched three times
+# over 26 minutes on placeholder numbers, failed the thin-material guard each time with no further
+# mention of DataForSEO, then sat waiting 17 hours. This used to be the demo path with no refusal
+# at all -- the exact thing _preflight's own docstring says must not happen ("why should it even go
+# further if there is no DataForSEO?"). Only the empty-balance branch ever acted on those words.
+print("\nno DataForSEO login refuses too, before anything is bought")
 _real_auth = dfs._auth
 dfs._auth = lambda: None
 box6 = counting_balance(12.5)
 r6, demo6, note6 = run_research._preflight(ctx_for(fresh_run("no login")), False, False, SAY)
-dfs._auth = _real_auth
-ok("with no login it does not refuse", r6 is None)
-ok("it says the numbers are demo", demo6 is True and "no number here is real" in note6, note6)
+ok("it refuses", r6 is not None, r6)
+ok("it names what is missing: DataForSEO login", "DataForSEO login" in (r6 or {}).get("error", ""), r6)
+ok("it says none of the numbers would be real", "none of these numbers would be real" in (r6 or {}).get("error", ""), r6)
+ok("way out one: connect it", "connect DataForSEO" in (r6 or {}).get("error", ""), r6)
+ok("way out two: placeholder numbers, on purpose", "placeholder_numbers" in (r6 or {}).get("error", ""), r6)
+ok("no credential value is anywhere in the refusal", "fixture-login" not in str(r6) and "fixture-password" not in str(r6), r6)
+ok("it is not marked demo (it never ran)", demo6 is False, demo6)
 ok("and it never spends an API call reading a balance there is no account for", box6["n"] == 0, box6["n"])
+
+print("\n...and refuses before a single step runs, end to end")
+run6 = fresh_run("no login, end to end")
+out6 = research(ctx_for(run6), topic=TOPIC)
+dfs._auth = _real_auth
+ok("it comes back as a refusal", bool(out6.get("error")), out6)
+ok("nothing was bought, paid or free", _fixture.DFS_CALLS == [], _fixture.DFS_CALLS)
+ok("no brief was written", store.load_artifact(chat, run6, "research.json") is None)
+
+# ---- 7. placeholder_numbers=True still runs with no login, exactly as before -------------------
+print("\nasked for explicitly, no login still runs on placeholders")
+dfs._auth = lambda: None
+box7 = counting_balance(12.5)
+run7a = fresh_run("no login, asked for placeholders")
+r7, demo7, note7 = run_research._preflight(ctx_for(run7a), False, True, SAY)
+ok("it does not refuse", r7 is None, r7)
+ok("it says the numbers are demo", demo7 is True and "no number here is real" in note7, note7)
+ok("still no balance call: there is no account to read one from", box7["n"] == 0, box7["n"])
+run7b = fresh_run("no login, asked, end to end")
+out7 = research(ctx_for(run7b), topic=TOPIC, placeholder_numbers=True)
+dfs._auth = _real_auth
+ok("the run goes ahead", bool(out7.get("summary")) and not out7.get("error"), out7.get("error"))
+rs7 = store.load_artifact(chat, run7b, "research.json") or {}
+ok("and it is on record as demo", rs7.get("demo_data") is True, rs7.get("demo_data"))
+
+# ---- 8. a connected login is unaffected ---------------------------------------------------------
+print("\na connected login runs exactly as before")
+_fixture.stub_dfs(balance=12.5)          # restores a real dfs._auth (fixture-login/fixture-password)
+run8 = fresh_run("connected")
+out8 = research(ctx_for(run8), topic=TOPIC, angle="what changes after")
+ok("no error", bool(out8.get("summary")) and not out8.get("error"), out8.get("error"))
+ok("it bought real numbers", len(paid_calls()) > 0, len(paid_calls()))
+rs8 = store.load_artifact(chat, run8, "research.json") or {}
+ok("and it is not demo data", rs8.get("demo_data") is False, rs8.get("demo_data"))
+
+# ---- 9. the thin-material message names placeholders when the run was on demo data -------------
+# Chained to the live bug: a person on placeholder numbers who then hits the thin-material guard
+# used to be told only "the write-up came back thin", with nothing connecting the two.
+print("\nthe thin-material refusal names placeholders as the likely cause")
+_fixture.stub_dfs(balance=12.5)
+dfs._auth = lambda: None
+_c.DOSSIER_MIN_WORDS = 10 ** 6            # forces the guard, the same way test_research.py does
+run9 = fresh_run("thin on placeholders")
+out9 = research(ctx_for(run9), topic=TOPIC, angle="what changes after", placeholder_numbers=True)
+_c.DOSSIER_MIN_WORDS = 1500
+dfs._auth = _real_auth
+err9 = out9.get("error") or ""
+ok("it still stops on thin material", "did not produce enough material" in (out9.get("summary") or ""), out9)
+ok("and now names the cause: no DataForSEO login",
+   "no DataForSEO login is connected" in err9, err9)
 
 
 # ---- 7. a resume with everything already bought is never refused --------------------------------
