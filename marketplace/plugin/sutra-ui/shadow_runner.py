@@ -253,10 +253,22 @@ _RECENT_CAP = 20000
 DECIDE_PROSE_TAIL = 2000
 
 #: how much of the worker's closing message the completion summary carries.
-#: Long enough to be a real account of what was done, short enough that the
-#: summary stays a summary -- it renders ABOVE the check list, and a block
-#: that pushes the verdicts off the card defeats the pane it sits in.
-OUTCOME_CHARS = 700
+#:
+#: RAISED 700 -> 6000 (founder, 2026-09-17). 700 was sized for the ONE-LINE
+#: gist that renders above the check list, and for that job it was right: a
+#: block that pushes the verdicts off the card defeats the pane it sits in.
+#: The Summary block below the checks has the opposite job -- for a RESEARCH
+#: task the worker's closing message IS the deliverable, and 700 characters
+#: cut it mid-report. Measured against the corpus this module already
+#: records (114 assistant messages across 10 Shadow sessions: median 1008,
+#: p95 10672, p99 13989, max 21060), 700 truncated even the MEDIAN message.
+#:
+#: 6000 is a bound, not an absence of one: ~6x the median, still under p95,
+#: and under DECIDE_RESPONSE_CHARS (16000) which this module already carries
+#: per decision. It is stored per completed mission and returned by
+#: GET /api/shadow/missions, so it is deliberately not unbounded -- the
+#: payload grows with every finished task on the list.
+OUTCOME_CHARS = 6000
 
 #: session_id -> unix ts of the LAST frame of any kind (stall detection)
 _LAST_FRAME_TS = {}
@@ -458,6 +470,40 @@ def evidence_text(session_id):
     return blob + " " + _prose_tail(live)
 
 
+def _outcome_tidy(text):
+    """The worker's own words with the machine noise out AND THE STRUCTURE IN.
+
+    WHAT CHANGED, AND WHY (founder, 2026-09-17). This used to be
+    `" ".join(text.split())` -- every run of whitespace, newlines included,
+    flattened to one space. That was correct while the only consumer was the
+    one-line gist above the check list: a quote carrying raw newlines and
+    tabs read as machine noise, which is what test_42 pinned.
+
+    The Summary block renders THE SAME FIELD as markdown, and markdown is
+    made of line breaks: flattening them turns a heading into prose, a
+    bulleted list into a run-on sentence and a table into rubble. So the
+    NOISE is still removed and the STRUCTURE is now kept -- the same intent
+    test_42 recorded, applied to a field that is now displayed rather than
+    quoted.
+
+    OUT: carriage returns, runs of spaces or tabs INSIDE a line, trailing
+    spaces on a line, and runs of three or more newlines.
+
+    IN: single and double line breaks (markdown's block boundaries) and
+    LEADING indentation, which is what makes a nested list nested and an
+    indented code block code. Interior runs collapse only AFTER a non-space
+    character, which is what leaves indentation alone.
+
+    Composes nothing and judges nothing: every character it returns is the
+    worker's own.
+    """
+    t = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"(?<=\S)[ \t]+", " ", t)    # interior runs; indentation kept
+    t = re.sub(r"[ \t]+\n", "\n", t)         # trailing spaces on a line
+    t = re.sub(r"\n{3,}", "\n\n", t)          # at most one blank line
+    return t.strip()
+
+
 def _outcome_trim(text, limit=OUTCOME_CHARS):
     """`text` capped at `limit`, cut at a SENTENCE if one is near the end.
 
@@ -468,14 +514,19 @@ def _outcome_trim(text, limit=OUTCOME_CHARS):
     left mid-thought; otherwise the cut falls back to a word boundary and
     SAYS it was cut.
     """
-    text = " ".join(str(text or "").split())
+    text = _outcome_tidy(text)
     if len(text) <= limit:
         return text
     head = text[:limit]
-    stop = max(head.rfind(". "), head.rfind("! "), head.rfind("? "))
+    # A LINE BREAK IS A BOUNDARY TOO, now that _outcome_tidy keeps them: a
+    # sentence that ends a paragraph ends ".\n", not ". ", and a cap that
+    # knew only ". " would walk back past the whole paragraph hunting a
+    # space that is not there. Same rule, both spellings.
+    stop = max(head.rfind(". "), head.rfind("! "), head.rfind("? "),
+               head.rfind(".\n"), head.rfind("!\n"), head.rfind("?\n"))
     if stop > limit // 3:
         return head[:stop + 1]
-    cut = head.rfind(" ")
+    cut = max(head.rfind(" "), head.rfind("\n"))
     return (head[:cut] if cut > 0 else head).rstrip() + "…"
 
 
@@ -588,7 +639,7 @@ def last_worker_message(session_id):
     for msg in reversed(evidence_messages(doc)):
         if msg.get("role") != "assistant":
             continue
-        text = " ".join(str(msg.get("text") or "").split())
+        text = _outcome_tidy(msg.get("text"))
         if text:
             return _outcome_trim(text)
     return ""
@@ -1618,8 +1669,60 @@ checks that, taken together, mean the outcome above is genuinely achieved.
 
   * Write a STATE that is true when the work is done ("the EMI check passes"),
     never an instruction to perform ("run the EMI check").
-  * `tier` is `founder_confirm` -- the founder signs it off -- unless a
-    deterministic verifier could settle it, which is `verify`.
+  * `tier` is `founder_confirm` -- the founder signs it off -- unless you can
+    give the check a `probe`, which is the ONLY thing that makes it `verify`.
+    A `verify` with no valid probe is demoted to `founder_confirm`
+    automatically, keeping your wording: Shadow never claims to have checked
+    something it did not look at. So write `verify` when you can say HOW it
+    is checked, and `founder_confirm` for everything else.
+  * A `verify` check about a FILE should carry a `probe`, and then Shadow
+    reads that file itself instead of believing what the chat says about it:
+
+      {"tier": "verify", "check": "shadow-race-test.txt contains exactly
+       shadow-race-pass",
+       "probe": {"kind": "file_equals", "path": "shadow-race-test.txt",
+                 "text": "shadow-race-pass", "allow_trailing_newline": true}}
+
+    `kind` is one of FIVE, and every one is a plain read of one file:
+
+      file_exists     {"kind","path"}
+      file_equals     {"kind","path","text"} + optional
+                      "allow_trailing_newline" -- set it true unless the
+                      founder asked for a file with no newline at the end;
+                      most editors and shells add one
+      line_count      {"kind","path","count"} -- count is a whole number;
+                      a single trailing newline is not counted as a line
+      lines_distinct  {"kind","path"} -- no two non-blank lines are equal
+      file_contains   {"kind","path","text"} + optional "ignore_case" --
+                      a SUBSTRING test, never a pattern
+
+    `path` is RELATIVE to the working directory, never absolute and never
+    containing "..". Write the
+    `check` as the sentence a human would read; the probe is how it is
+    settled, not what it says.
+  * Only attach a probe to something a file genuinely decides. Anything
+    about quality, taste or intent is `founder_confirm` -- a probe answers
+    "is this mechanically true", never "is this what the founder wanted".
+  * SPLIT A CHECK THAT ASKS FOR SEVERAL THINGS. One check holding a
+    mechanical clause AND a judgement clause can only be settled by the
+    founder, so the mechanical half is thrown away with the other. Write
+    them as SEPARATE checks instead: each mechanical clause becomes its own
+    `verify` with its own probe, and only what genuinely needs a human is
+    left as `founder_confirm`.
+
+    "the file has 10 lines, each a distinct line of random text" is three
+    claims. Two are mechanical and one is not:
+
+      {"tier": "verify", "check": "notes.txt has 10 lines",
+       "probe": {"kind": "line_count", "path": "notes.txt", "count": 10}}
+      {"tier": "verify", "check": "no two lines in notes.txt are the same",
+       "probe": {"kind": "lines_distinct", "path": "notes.txt"}}
+      {"tier": "founder_confirm", "check": "the lines read as random text"}
+
+    Shadow settles the first two itself and keeps driving until they hold;
+    the founder is asked only for the third. Splitting is not padding the
+    list -- do it when the clauses are genuinely separable, and keep the set
+    small.
   * Derive them from the OUTCOME above and what the chat has said so far.
     Do not invent scope the founder did not ask for, and keep the set small:
     every check is something a human will have to look at.
@@ -1631,6 +1734,43 @@ checks that, taken together, mean the outcome above is genuinely achieved.
     outcome and the chat, and that is enough to write them.
   * Omit the key only if you truly cannot tell yet, and then CONTINUE
     anyway; you will be asked again next turn. Never stop for it.
+"""
+
+
+_VERIFY_ASK = """
+HOW WILL EACH UNVERIFIED CHECK BE ESTABLISHED?
+The checks marked (unverified) above have no mechanical test behind them, so
+today only the founder can close them. For each one you can settle by LOOKING
+AT A FILE, add it to a `verification` list on THIS decision:
+
+```json
+{"verification": [{"index": 0,
+                   "probe": {"kind": "file_equals", "path": "out.txt",
+                             "text": "ok", "allow_trailing_newline": true}}]}
+```
+
+  * `index` is the #N shown above. It is the ONLY way to name a check here.
+  * You are answering HOW, never WHAT. The check's wording is not yours to
+    send, change or restate -- it is not a field in this shape at all, and
+    whatever the founder or you wrote earlier stands exactly as written.
+  * `kind` is one of FIVE, each a plain read of one file: `file_exists`
+    ({"kind","path"}), `file_equals` ({"kind","path","text"} + optional
+    "allow_trailing_newline"), `line_count` ({"kind","path","count"}),
+    `lines_distinct` ({"kind","path"}), `file_contains`
+    ({"kind","path","text"} + optional "ignore_case", a SUBSTRING test and
+    never a pattern). Set "allow_trailing_newline" true unless the check asks
+    for a file with no newline at the end. `path` is RELATIVE to the working
+    directory, never absolute and never containing "..".
+  * OMIT A CHECK YOU CANNOT SETTLE THIS WAY. Anything about quality, taste,
+    intent, or a condition no file decides belongs to the founder, and leaving
+    it out is the correct and honest answer -- not a failure. Do NOT invent a
+    path, guess at a filename you have not seen, or attach a probe that only
+    approximately tests the check: a probe that tests the wrong thing is worse
+    than no probe, because it would let Shadow claim it verified something it
+    did not.
+  * A check you DO attach a probe to stops needing the founder: Shadow will
+    read that file itself, every turn, and the worker's word about it counts
+    for nothing.
 """
 
 
@@ -1706,7 +1846,7 @@ Decide. Reply with ONE fenced json block and nothing else:
  "standing": ["<every instruction that still governs this task>"]}
 ```
 
-%(criteria_ask)s
+%(criteria_ask)s%(verify_ask)s
 or, if you genuinely cannot make progress and the founder is needed:
 
 ```json
@@ -1886,9 +2026,17 @@ def render_decide_prompt(context):
         # to count them will eventually miscount. The list is already in
         # done_when order -- _decision_context builds it straight off the
         # record -- so the position IS the index; it just was not shown.
+        # (unverified) marks a check with no mechanical test behind it, which
+        # is what _VERIFY_ASK below asks Shadow to fix where it honestly can.
+        # Rendered off `probe`, which _decision_context carries as a boolean.
         "checks": "\n".join(
-            "- #%d [%s] (%s) %s" % (i, "x" if c.get("met") else " ",
-                                    c.get("tier"), c.get("check"))
+            "- #%d [%s] (%s)%s %s" % (i, "x" if c.get("met") else " ",
+                                      c.get("tier"),
+                                      "" if c.get("probe")
+                                      else (" (unverified)"
+                                            if c.get("tier") == "founder_confirm"
+                                            else ""),
+                                      c.get("check"))
             for i, c in enumerate(context.get("checks") or []))
         or "- (none)",
         "turns_used": context.get("turns_used"),
@@ -1907,6 +2055,15 @@ def render_decide_prompt(context):
         # empty string and the prompt is exactly what it was before.
         "criteria_ask": ("" if (context.get("checks") or [])
                          else _CRITERIA_ASK),
+        # DERIVED, exactly like criteria_ask: asked only while some check has
+        # no mechanical test behind it, and rendering to the empty string --
+        # the prompt Shadow saw before this existed -- the moment none does.
+        "verify_ask": (_VERIFY_ASK
+                       if any(c.get("tier") == "founder_confirm"
+                              and not c.get("probe")
+                              and not c.get("met")
+                              for c in (context.get("checks") or []))
+                       else ""),
     }
 
 
@@ -2396,11 +2553,55 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                     and mm.get("target_mode") == "new"
                     and mm.get("target_session")
                     and mm["target_session"] not in DELEGATES)
-                if mm and (mm["state"] in ("brief_confirm", "queued")
-                           or orphaned):
+                # ── A FAULT BEFORE THE WORKER EXISTS IS NOT A FAILURE ────
+                # (founder, 2026-09-17; mission m-b3eefc51a768.)
+                #
+                # A pre-launch fault means NO WORKER WAS EVER SPAWNED --
+                # target_session is still None and turns_used is 0 -- so there
+                # is nothing whose outcome `failed` could be describing. The
+                # live case was a stale write: booting the task's Shadow chat
+                # stamped the record while provisioning held an older copy, and
+                # a bookkeeping collision became a FAILED mission the founder
+                # had to explain to themselves. That is the same principle
+                # _infra_exit was written for: "a fault in Shadow decided a
+                # mission's fate WITHOUT ONCE CONSULTING THE WORK."
+                #
+                # _infra_exit itself cannot be used here: it parks at `blocked`,
+                # and TRANSITIONS lists `blocked` under `running` only -- not
+                # under brief_confirm or queued. Rather than widen the state
+                # machine for a pre-launch fault, the mission is left in the
+                # state it is already in and made STARTABLE again.
+                #
+                # WHICH IS WHY start_requested_at IS CLEARED, and the reason
+                # this is not a return to the bug test_shadow_start_failure.py
+                # pins. That bug was a DEAD ROW: brief_confirm with the stamp
+                # set, which the list draws as QUEUED with no Start button and
+                # no record of why. Clearing the stamp is what makes the row
+                # READY again, and the ledger carries the reason. The founder
+                # gets a task they can start, not a task that died.
+                #
+                # THE ORPHANED-RUNNING ARM IS UNTOUCHED: a worker DID exist and
+                # is gone, so that mission genuinely has no road left and keeps
+                # the terminal state, the note and the behaviour it has always
+                # had.
+                if orphaned:
                     store.transition(mm["id"], "failed",
                                      "provision/admit failed: %s"
                                      % str(exc)[:200])
+                elif mm and mm["state"] in ("brief_confirm", "queued"):
+                    try:
+                        fresh = store.load(mm["id"])
+                        if fresh is not None \
+                                and fresh.get("start_requested_at"):
+                            fresh["start_requested_at"] = None
+                            store.save(fresh)
+                    except Exception:   # noqa: BLE001 -- ledger it regardless
+                        pass
+                    shadow_ledger.append("missions", {
+                        "mission_id": mm["id"], "state": mm["state"],
+                        "note": "provision/admit failed BEFORE any worker "
+                                "existed, so the task is startable again, not "
+                                "failed: %s" % str(exc)[:200]})
             except Exception:
                 pass
 

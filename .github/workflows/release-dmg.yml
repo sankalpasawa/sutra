@@ -192,6 +192,8 @@ jobs:
           node test_shadow_v4_prose.js
           node test_shadow_v4_report.js
           node test_shadow_v4_sheet.js
+          node test_shadow_v4_shell.js
+          node test_shadow_v4_summary.js
           node test_shadow_v4_talk.js
           node test_shadow_v4_taskchat.js
 

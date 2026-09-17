@@ -48,7 +48,7 @@ class Base(unittest.TestCase):
 
     def manifest(self, **over):
         m = {"id": "m-1", "objective": "Ship the thing.",
-             "target_session": None}
+             "target_session": None, "done_when": []}
         m.update(over)
         return app._delegate_manifest(m)
 
@@ -223,6 +223,305 @@ class TheTurnReportProtocolIsStated(Base):
         ordinary output -- the whole transcript is still the worker chat."""
         out = self.manifest()
         self.assertIn("stays in the chat", out)
+
+
+class TheLastMessageIsTheDeliverable(Base):
+    """THE UNIVERSAL RULE (founder, 2026-09-17).
+
+    THE FAILURE, seen across every task type in the live store -- not one
+    of them a research quirk:
+
+        m-5089c1448d05  research  "## Reconciliation first -- my previous
+                                   list was wrong", over a table comparing
+                                   the worker's own earlier claims
+        m-ecdedc5ab394  research  "Both open items closed. Here is the
+                                   artifact." -- meta about the Worker<->
+                                   Shadow exchange, not about Verstappen
+                                   or Hamilton
+        m-e0f2e48460c4  file      a "| Check | Evidence |" table in which
+                                   the worker audits itself
+        m-e51bd967a76a  file      a governance preamble before the finding
+
+    One defect with one shape: THE WORKER REPORTED ON ITSELF DOING THE TASK
+    INSTEAD OF ANSWERING THE TASK. The subject of the text was the worker,
+    not the work.
+
+    WHY THE RULE BELONGS HERE. `completion.outcome` is the worker's last
+    message (shadow_runner.last_worker_message), and the DONE Summary draws
+    it. The agreement already stated exactly this principle for the one-line
+    REPORT -- "the OUTCOME, not the route you took to reach it" -- and then
+    explicitly exempted everything else: "your ordinary output ... stays in
+    the chat, unabridged". That exemption was correct while the last message
+    was chat-only. Since the Summary shipped it is a founder-facing surface,
+    so the SAME principle now covers the whole final message. No new rule was
+    invented; the existing one stopped being scoped to one line.
+
+    AND IT IS STATED UNIVERSALLY. The clause never names a task type, a
+    domain or an example, which is what test_the_rule_is_not_task_type_
+    specific below enforces -- a rule that said "remove reconciliation
+    sections from research" would have fixed one screenshot and nothing else.
+    """
+
+    #: the shapes a mission can take, as objectives. The point is that the
+    #: manifest treats them identically -- see the byte-identity test.
+    SHAPES = {
+        "research": "Pull the very latest information about a public figure.",
+        "coding": "Fix the failing test in the parser and refactor the guard.",
+        "file": "Create a file called notes.txt with today's date in it.",
+        "web": "Find the three cheapest flights to Lisbon next month.",
+        "general": "Decide whether we should move the release to Friday.",
+        "mixed": "Research the options, then write the summary to a file.",
+    }
+
+    def test_the_clause_reaches_every_worker(self):
+        for name, obj in self.SHAPES.items():
+            out = self.manifest(objective=obj)
+            flat = " ".join(out.split())
+            self.assertIn("THE LAST MESSAGE YOU SEND IS THE DELIVERABLE", flat,
+                          "missing for %s" % name)
+            self.assertIn("Do not report on yourself doing the task", flat,
+                          "missing for %s" % name)
+
+    def test_the_rule_is_IDENTICAL_for_every_task_shape(self):
+        """THE ANTI-SPECIAL-CASE TEST. Two manifests for two completely
+        different kinds of work must differ ONLY by the objective. If a
+        future edit branches the agreement on task type, this fails."""
+        outs = {}
+        for name, obj in self.SHAPES.items():
+            outs[name] = self.manifest(objective=obj).replace(obj, "<OBJ>")
+        first = outs["research"]
+        for name, text in outs.items():
+            self.assertEqual(text, first,
+                             "the agreement differs for %s -- it must not "
+                             "branch on the kind of work" % name)
+
+    def test_the_rule_is_not_task_type_specific(self):
+        """The clause may not name a task type, a domain, or the example it
+        was found on. A rule that names its example is a special case wearing
+        a general rule's clothes."""
+        clause = self._clause()
+        for word in ["research", "coding", "reconciliation", "Verstappen",
+                     "Hamilton", "Rossi", "F1", "Formula", "file task",
+                     "web search", "audit bookkeeping"]:
+            self.assertNotIn(word.lower(), clause.lower(),
+                             "the clause names %r -- state the principle, "
+                             "not the case" % word)
+
+    def _clause(self):
+        out = self.manifest()
+        i = out.index("Your last message.")
+        j = out.index("Using subagents.")
+        return out[i:j]
+
+    def test_it_states_the_principle_not_a_list_of_banned_sections(self):
+        c = self._clause()
+        # the general test the worker can apply to anything
+        self.assertIn("would this sentence still be worth writing if the "
+                      "founder had done the work themselves", " ".join(c.split()))
+        # and the axis: subject is the work, not the worker
+        self.assertIn("anything whose subject is YOU rather than the work", c)
+
+    def test_it_says_what_MAY_be_included(self):
+        """The rule must not read as "be terse". A caveat, a limit and an
+        admission of failure are part of an answer."""
+        c = " ".join(self._clause().split())
+        for keep in ["findings and conclusions", "the artifact you were asked",
+                     "the evidence a claim rests on", "sources, dates, figures",
+                     "caveat", "left undone"]:
+            self.assertIn(keep, c, "the rule must permit: %s" % keep)
+        self.assertIn("A caveat is part of the answer", c)
+
+    def test_it_names_process_narration_generally(self):
+        c = " ".join(self._clause().split())
+        for out in ["the steps you took", "tools you called",
+                    "how the answer was produced"]:
+            self.assertIn(out, c)
+
+    def test_self_comparison_is_excluded_as_a_PRINCIPLE(self):
+        """The Verstappen case, generalised: correcting your own earlier
+        drafts is bookkeeping about your process. Stated without naming the
+        task it was found on."""
+        c = " ".join(self._clause().split())
+        self.assertIn("NOT A COMPARISON WITH YOUR OWN PREVIOUS ANSWERS", c)
+        self.assertIn("The correction is not the news; the current answer is",
+                      c)
+
+    def test_it_does_not_ask_for_truncation(self):
+        """A universal rule that shortened every answer would break research
+        as surely as narration did."""
+        c = " ".join(self._clause().split())
+        self.assertIn("LENGTH FOLLOWS THE TASK", c)
+        self.assertIn("Neither pad nor truncate", c)
+
+    def test_nothing_is_LOST_only_relocated(self):
+        """The founder can still read the working; it stays in the chat."""
+        c = " ".join(self._clause().split())
+        self.assertIn("Everything you leave out is still in this chat", c)
+
+    def test_it_does_not_disturb_DONE_CHECK_or_REPORT(self):
+        """Both protocols are preserved verbatim: the clause is additive."""
+        out = self.manifest()
+        self.assertIn("DONE-CHECK: <the check's text", out)
+        self.assertIn("REPORT: <one sentence", out)
+        self.assertIn("That line is the ONLY thing that marks a `verify` "
+                      "check met", out)
+        # ...and it points AT them rather than replacing them
+        self.assertIn("DONE-CHECK already claims those", self._clause())
+
+    def test_the_old_exemption_no_longer_licenses_narration(self):
+        """THE MUTATION THIS FIXES. The agreement used to say the final
+        message was exempt -- "it does not replace your ordinary output".
+        That sentence is what told the worker its last message could be
+        anything. It must not come back."""
+        out = self.manifest()
+        self.assertNotIn("it does not replace your\nordinary output", out)
+        self.assertIn("with one exception, which is the next clause", out)
+
+    def test_it_says_the_answer_LEADS(self):
+        c = " ".join(self._clause().split())
+        self.assertIn("LEAD WITH THE ANSWER", c)
+        self.assertIn("The first line is the thing that was asked for", c)
+
+    def test_a_mission_with_its_own_manifest_still_gets_the_clause(self):
+        """Almost every real mission carries a composed manifest, so a rule
+        that only reached the default would reach nobody."""
+        out = self.manifest(manifest="Do it your way.")
+        self.assertIn("THE LAST MESSAGE YOU SEND IS THE DELIVERABLE", out)
+
+
+class TheWorkerIsShownTheChecksItIsJudgedBy(Base):
+    """THE FOUR-TURN TASK THAT WAS DONE IN ONE (founder, 2026-09-17).
+
+    Mission m-f9bb797db28b: "Create shadow-race-test.txt containing exactly
+    shadow-race-pass." Shadow wrote two verify-tier checks. The worker created
+    the file correctly in turn 1 -- 16 bytes, exact content, verified with
+    `od -c` -- and claimed it the only way it could, by quoting the OBJECTIVE,
+    because the checks were never shown to it. _shadow_verifier compares text;
+    neither string contains the other; both checks read unmet. Shadow, whose
+    prompt forbids it from ever claiming a check satisfied, spent three more
+    turns inventing explanations: the wrong directory, then a trailing newline.
+
+    The fix is to stop the two sides guessing at each other's wording.
+    """
+
+    RACE_CHECKS = [
+        {"tier": "verify",
+         "check": "A file named shadow-race-test.txt exists in the working "
+                  "directory"},
+        {"tier": "verify",
+         "check": "The file's contents are exactly shadow-race-pass, with no "
+                  "extra characters other than an optional single trailing "
+                  "newline"},
+    ]
+
+    def test_the_exact_check_text_is_in_the_manifest(self):
+        out = self.manifest(done_when=list(self.RACE_CHECKS))
+        for c in self.RACE_CHECKS:
+            self.assertIn("DONE-CHECK: %s" % c["check"], out,
+                          "the worker must be given the check VERBATIM")
+
+    def test_it_says_to_copy_them_exactly(self):
+        out = self.manifest(done_when=list(self.RACE_CHECKS))
+        self.assertIn("character for character", out)
+        self.assertIn("copying its line below EXACTLY", out)
+        self.assertIn("do not paraphrase", out)
+        # ...and WHY, which is the lesson of the four-turn task
+        self.assertIn("reads as NOT DONE", out)
+
+    def test_only_verify_tier_checks_are_quoted(self):
+        """founder_confirm is the founder's signature and no DONE-CHECK line
+        can satisfy it; contains_artifact wants its literal in the work's own
+        output. Listing either would invite a claim that does nothing."""
+        out = self.manifest(done_when=[
+            {"tier": "verify", "check": "the suite is green"},
+            {"tier": "founder_confirm", "check": "the founder signs it off"},
+            {"tier": "contains_artifact", "check": "shadow-pass"},
+        ])
+        self.assertIn("DONE-CHECK: the suite is green", out)
+        self.assertNotIn("the founder signs it off", out)
+        self.assertNotIn("DONE-CHECK: shadow-pass", out)
+
+    def test_a_mission_with_no_verify_checks_is_byte_identical(self):
+        """ADDITIVE: every manifest that existed before this is unchanged."""
+        plain = self.manifest()
+        self.assertNotIn("THE CHECKS THIS TASK IS JUDGED BY", plain)
+        confirm_only = self.manifest(done_when=[
+            {"tier": "founder_confirm", "check": "the founder signs it off"}])
+        self.assertNotIn("THE CHECKS THIS TASK IS JUDGED BY", confirm_only)
+        self.assertEqual(plain, confirm_only,
+                         "a founder_confirm-only mission gets the manifest it "
+                         "always got")
+
+    def test_the_block_cannot_satisfy_its_own_checks(self):
+        """THE TAG IS NOW LOAD-BEARING, not belt and braces. The manifest
+        carries real DONE-CHECK lines, so if it ever reached the evidence it
+        WOULD pass them. It cannot: it is a Shadow-authored user turn and
+        evidence assembly drops those."""
+        import shadow_runner
+        out = self.manifest(done_when=list(self.RACE_CHECKS))
+        check = self.RACE_CHECKS[0]["check"]
+        # on the raw text the claim matches -- that is the danger
+        self.assertTrue(app._shadow_verifier(check, out),
+                        "the block does contain a matching claim")
+        # ...and the evidence never contains it
+        doc = {"messages": [{"role": "user", "text": out}]}
+        kept = shadow_runner.evidence_messages(doc)
+        self.assertEqual(kept, [], "the manifest must not be evidence")
+        evidence = "\n".join(m["text"] for m in kept)
+        self.assertFalse(app._shadow_verifier(check, evidence),
+                         "a check must never be satisfied by the briefing "
+                         "that asked for it")
+
+    def test_a_worker_that_copies_them_completes_in_ONE_turn(self):
+        """The whole point, end to end through the real evaluator."""
+        import mission_engine
+        m = {"done_when": list(self.RACE_CHECKS)}
+        worker_said = (
+            "**Done.** shadow-race-test.txt -- 16 bytes, exactly "
+            "shadow-race-pass, no trailing newline. Verified with od -c.\n\n"
+            "DONE-CHECK: %s\n"
+            "DONE-CHECK: %s\n" % (self.RACE_CHECKS[0]["check"],
+                                  self.RACE_CHECKS[1]["check"]))
+        done, results = mission_engine.evaluate_done_when(
+            m, worker_said, app._shadow_verifier)
+        self.assertTrue(done, "one turn must be enough: %r" % (results,))
+        self.assertTrue(all(r["met"] for r in results))
+
+    def test_the_OLD_wording_still_does_not_pass(self):
+        """The verifier is unchanged: quoting the objective instead of the
+        check still reads as unmet. That is what made the four turns, and it
+        is still true -- the fix is that the worker now has the right text,
+        not that the matcher got looser."""
+        import mission_engine
+        m = {"done_when": list(self.RACE_CHECKS)}
+        old = ("**Done.** 16 bytes, exactly shadow-race-pass.\n\n"
+               "DONE-CHECK: Create shadow-race-test.txt containing exactly "
+               "shadow-race-pass\n")
+        done, results = mission_engine.evaluate_done_when(
+            m, old, app._shadow_verifier)
+        self.assertFalse(done, "the objective's wording must not pass a check")
+        self.assertFalse(any(r["met"] for r in results))
+
+    def test_a_check_the_worker_did_NOT_claim_stays_unmet(self):
+        """No false completion: claiming one of two leaves the mission driving."""
+        import mission_engine
+        m = {"done_when": list(self.RACE_CHECKS)}
+        partial = "DONE-CHECK: %s\n" % self.RACE_CHECKS[0]["check"]
+        done, results = mission_engine.evaluate_done_when(
+            m, partial, app._shadow_verifier)
+        self.assertFalse(done)
+        self.assertEqual([r["met"] for r in results], [True, False])
+
+    def test_founder_confirm_is_untouched_by_any_claim(self):
+        """A DONE-CHECK line cannot satisfy the founder's signature, however
+        exactly it is quoted -- confirm_check remains the only writer."""
+        import mission_engine
+        check = "the founder signs this off"
+        m = {"done_when": [{"tier": "founder_confirm", "check": check}]}
+        done, results = mission_engine.evaluate_done_when(
+            m, "DONE-CHECK: %s\n" % check, app._shadow_verifier)
+        self.assertFalse(done, "only the founder may satisfy this tier")
+        self.assertFalse(results[0]["met"])
 
 
 class TheSubagentRuleIsADecisionRule(Base):

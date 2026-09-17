@@ -31,6 +31,19 @@ __pycache__/
 # does not untrack. These rules only stop NEW artifacts from accumulating.
 .claude/sessions/
 .claude/flow-inner
+#
+# Per-turn ledgers written by marketplace/plugin/runtime/ledger.sh on every
+# tool call: <proj>/.sutra/turn/<session>/<turn>.jsonl, its flat twin, and the
+# `current` turn-id pointer (no .jsonl suffix, by design -- ledger.sh:185
+# exempts it from the retention roll-off so the live turn is never swept).
+# Same class as .claude/sessions/ above: per-machine runtime state, rolled off
+# on its own retention, never read from git -- no file under these paths has
+# ever been tracked. The `**/` prefix matters: a nested project dir gets its
+# own .sutra/ (marketplace/plugin/sutra-ui/), so a root-anchored rule misses it
+# -- which is also why creation-stop-check.sh:22, whose input is
+# `git status --porcelain -uall`, kept flagging the nested `current` pointer as
+# an unclassified new artifact. Ignoring it at source settles both.
+**/.sutra/turn/
 **/.enforcement/flow-journal/
 **/.enforcement/atom-gate.jsonl
 **/.enforcement/dispatch-gate.jsonl
@@ -97,3 +110,23 @@ __pycache__/
 # ordinary `**/` form above.
 marketplace/plugin/sutra-ui/.enforcement/completion-protocol.jsonl
 **/.sutra/creation-guard.jsonl
+
+# A LOCAL REPRO FIXTURE, not a shipped file. It drives a real mission into
+# the founder"s own store (--live) to hold a check_met=false window open for
+# inspection, and it writes a `shadow.enabled` settings fixture -- which the
+# accessor lint in test_shadow_flag.py rightly flags on any tracked file that
+# is not named test_*. It stays on disk and still runs; it simply is not part
+# of the release.
+marketplace/plugin/sutra-ui/repro-unmet-is-not-needs-you.py
+
+# SHADOW MISSION OUTPUT, not repo content. The delegate workdir IS
+# marketplace/plugin/sutra-ui, so a task told to "create a file called X"
+# writes X here and it shows up as untracked. These two are artifacts of
+# acceptance missions run on 2026-09-17.
+#
+# IGNORED RATHER THAN DELETED on purpose: mission m-56e8a6ee4f1f is PAUSED
+# with a file_exists probe on "Joy Stefan", so removing the file would make a
+# live mission's check fail the moment it resumes. Ignoring keeps it off the
+# release and leaves the probe answerable.
+marketplace/plugin/sutra-ui/Joy Stefan
+marketplace/plugin/sutra-ui/Joy Tadanki

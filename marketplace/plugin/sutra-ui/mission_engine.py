@@ -22,6 +22,7 @@ import providers
 import shadow_egress
 import shadow_intervention
 import shadow_ledger
+import shadow_probe
 
 STATES = ("draft", "brief_confirm", "running", "queued", "paused",
           "blocked", "done", "failed", "stopped")
@@ -279,10 +280,106 @@ def validate_done_when(raw):
         tier = str(row.get("tier") or "").strip() or "founder_confirm"
         if tier not in DECIDER_TIERS:
             continue
-        out.append({"tier": tier, "check": check[:DECISION_INSTRUCTION_MAX]})
+        # A PROBE IS `verify` ONLY, AND `verify` IS A PROBE ONLY
+        # (resolve_verify_tier). founder_confirm is the founder's signature
+        # on a judgement ("is this what I wanted?") and a filesystem fact
+        # cannot stand in for one, so a probe there is ignored -- a machine
+        # must not sign the founder's name. And a `verify` with no probe
+        # behind it is demoted rather than dropped: the wording survives, the
+        # claim that Shadow checked it does not.
+        tier, probe = resolve_verify_tier(tier, row.get("probe"))
+        row_out = {"tier": tier, "check": check[:DECISION_INSTRUCTION_MAX]}
+        if probe:
+            row_out["probe"] = probe
+        out.append(row_out)
         if len(out) >= MAX_DECIDER_CHECKS:
             break
     return out
+
+
+def resolve_verify_tier(tier, raw_probe):
+    """THE RULE: a `verify` check without a valid probe is not a verify check.
+
+    Returns `(tier, probe_or_None)` after applying it.
+
+    WHY THIS EXISTS (founder, 2026-09-17). `verify` promises the founder
+    "Shadow ran this check and it passed" -- that is HOW_MET's exact wording,
+    stamped onto the completion record. Only a probe makes it true. Without
+    one the tier falls through to `_shadow_verifier`, which asks whether the
+    WORKER emitted a DONE-CHECK line quoting the check: a fact about what was
+    said, never about what is. So a probe-less `verify` let Shadow tell the
+    founder it had verified something it never looked at. That is the
+    loophole this closes, and it is closed deterministically rather than by
+    asking the model nicely -- a prompt cannot be audited and this can.
+
+    DEMOTE, NEVER DROP, and never re-word. The check keeps its exact text and
+    becomes the founder's to sign. Dropping would lose a requirement the
+    founder may need; demoting costs one signature. That is the same choice
+    shadow_protocol.tier_for has made on the PROPOSAL path since before
+    probes existed -- "an unknown tier, `verify`, or a missing tier all
+    resolve deterministically" -> founder_confirm. This is that rule, applied
+    to the one path that had exempted itself.
+
+    VALIDATION TIME ONLY. evaluate_done_when is untouched: a probe-less
+    `verify` already on disk keeps scoring exactly as it did, and nothing
+    re-tiers a persisted mission. The rule binds what is written from here
+    on, which is the same shape every other tier decision in this file has.
+    """
+    if tier != "verify":
+        return tier, None
+    probe = shadow_probe.validate_probe(raw_probe)
+    return ("verify", probe) if probe else ("founder_confirm", None)
+
+
+#: How many verification rows one decision may carry. A mission has at most
+#: MAX_DECIDER_CHECKS checks, so anything beyond that is noise.
+MAX_VERIFICATION = MAX_DECIDER_CHECKS
+
+
+def validate_verification(raw):
+    """Verification metadata a decision may carry: [{index, probe}, ...].
+
+    THE CHECK TEXT IS NOT IN THIS SHAPE, AND THAT IS THE POINT (founder,
+    2026-09-17). Shadow is asked HOW an existing condition can be established,
+    never WHAT the condition is. A row names a check by INDEX and carries a
+    probe; there is no field here through which a model could re-word, replace
+    or drop what the founder wrote, because the wording never makes the round
+    trip.
+
+    Strict, and a bad row costs only itself: an unusable probe or a
+    nonsense index is dropped and the check keeps the tier it already had.
+    That direction is safe -- a check with no probe is judged by the founder,
+    which is strictly harder to satisfy than a probe is to pass.
+    """
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        idx = row.get("index")
+        # bools are ints in python and an index of True is a bug, not a row
+        if isinstance(idx, bool) or not isinstance(idx, int) or idx < 0:
+            continue
+        if idx in seen:
+            continue                  # first answer for an index wins
+        probe = shadow_probe.validate_probe(row.get("probe"))
+        if not probe:
+            continue                  # "I cannot verify this" -- say nothing
+        seen.add(idx)
+        out.append({"index": idx, "probe": probe})
+        if len(out) >= MAX_VERIFICATION:
+            break
+    return out
+
+
+def _carry_verification(out, raw):
+    """ADDITIVE, exactly like `done_when` and `standing`: a decision MAY carry
+    verification metadata for checks that already exist. Absent or unusable
+    leaves `out` byte-identical to what validate_decision returned before."""
+    rows = validate_verification(raw.get("verification"))
+    if rows:
+        out["verification"] = rows
 
 
 def _carry_standing(out, raw):
@@ -326,9 +423,20 @@ def validate_decision(raw):
         checks = validate_done_when(raw.get("done_when"))
         if checks:
             out["done_when"] = checks
+        # ...and HOW to establish checks that already exist, by index. A
+        # separate key from `done_when` because they answer different
+        # questions: that one is WHAT must be true, this one is how Shadow
+        # will find out. Carrying them separately is what lets the second be
+        # accepted for a check the first may not touch.
+        _carry_verification(out, raw)
         _carry_standing(out, raw)
         return out
     out = {"action": action, "reason": reason, "instruction": ""}
+    # VERIFICATION RIDES EITHER SHAPE. Shadow working out how to check
+    # something is not a reason to send the worker a turn, so an
+    # `ask_founder` that also settled a verification question must not lose
+    # it.
+    _carry_verification(out, raw)
     # ...and on THIS shape too: the founder can change what governs the task
     # on a turn Shadow ends by asking them something, and that set must not
     # be lost because the action was not `continue`.
@@ -440,6 +548,15 @@ def max_running():
 #: the first 4000 characters rather than lose the whole text.
 BEHAVES_MAX_CHARS = 4000
 
+#: WHAT SHADOW SHOULD REMEMBER, in the founder's own words (founder,
+#: 2026-09-17). The `global`/`per_chat` rule list below it is what Shadow has
+#: LEARNED and the founder has CONFIRMED -- an append-only record with its own
+#: provenance, and not a thing to hand a text cursor to. This field is the
+#: other half: what the founder simply wants remembered, typed directly, with
+#: no confirmation round-trip. Two different questions, so two different
+#: stores; nothing here rewrites a learned rule.
+MEMORY_MAX_CHARS = 4000
+
 
 def behaves():
     """The founder's behaves text, or "". NEVER RAISES: this rides every
@@ -451,6 +568,32 @@ def behaves():
     if not isinstance(raw, str):
         return ""                         # a hand-edited junk value
     return raw[:BEHAVES_MAX_CHARS]
+
+
+def memory():
+    """The founder's memory text, or "". NEVER RAISES, for the same reason
+    behaves() never raises: it rides every Shadow boot and a corrupt file
+    must cost the text, never the boot."""
+    try:
+        raw = _read_limits().get("memory")
+    except Exception:                     # noqa: BLE001 -- see docstring
+        return ""
+    if not isinstance(raw, str):
+        return ""                         # a hand-edited junk value
+    return raw[:MEMORY_MAX_CHARS]
+
+
+def set_memory(text):
+    """Persist it (trimmed, cut at the ceiling). Returns what was stored.
+    Refuses non-text rather than coercing, exactly as set_behaves does."""
+    if not isinstance(text, str):
+        raise ValueError("memory must be text")
+    v = text.strip()[:MEMORY_MAX_CHARS]
+    import json_store
+    cur = _read_limits()
+    cur["memory"] = v
+    json_store.write_json(limits_path(), cur)
+    return v
 
 
 def set_behaves(text):
@@ -1064,7 +1207,10 @@ class MissionStore:
             "manifest": manifest,
             "goal_id": goal_id,
             "state": "draft",
-            "done_when": done_when or [],
+            # SANITISED AT THE DOOR: this route is reached from the API and
+            # from a `mission` fence a model wrote, and a probe is the one
+            # field on a check that the engine later hands to the filesystem.
+            "done_when": sanitise_probes(done_when or []),
             "turns_used": 0,
             # THE BUDGET IS RESOLVED HERE AND NOWHERE ELSE ON THIS PATH.
             # turn_budget() prefers the founder's setting and falls back to
@@ -1255,7 +1401,10 @@ class MissionStore:
             raise ValueError("cannot amend a terminal mission")
         for k in ("objective", "done_when", "manifest", "max_turns"):
             if k in fields:
-                m[k] = fields[k]
+                # same door, same narrowing as create(): a `mission` fence
+                # amends done_when with whatever the chat wrote
+                m[k] = (sanitise_probes(fields[k]) if k == "done_when"
+                        else fields[k])
         m["version"] += 1
         if m["state"] != "draft":
             if "brief_confirm" not in TRANSITIONS[m["state"]]:
@@ -1269,6 +1418,52 @@ class MissionStore:
             "note": "amended to v%d (budget kept: %d turns used)"
                     % (m["version"], m["turns_used"])})
         return m
+
+
+def sanitise_probes(rows):
+    """Every `probe` on a done_when list, validated -- and nothing else.
+
+    THE CHOKE POINT. validate_done_when guards the DECIDER's path, but three
+    doors write done_when rows raw: the API create route, a `mission` fence
+    from a task's own Shadow chat, and that fence's amend. A probe reaching
+    disk unvalidated would be a model-authored string the engine later hands
+    to the filesystem, so every door is narrowed to one.
+
+    THE PROBE KEY AND THE `verify` TIER, AND NOTHING ELSE. Checks, `met`,
+    `confirmed_by`, `contains_artifact`, `founder_confirm` and every other
+    field pass through byte-identical -- tier semantics on these paths are
+    pre-existing behaviour and not this change's business. The two things
+    this function owns are resolve_verify_tier's rule:
+
+      verify + valid probe    -> verify, probe normalised
+      verify + no/bad probe   -> founder_confirm, wording kept, probe gone
+      any other tier + probe  -> probe dropped; a machine cannot sign for the
+                                 founder, and contains_artifact is a literal
+
+    A row that is neither `verify` nor carrying a probe is appended AS IT
+    CAME IN -- the same object, not a copy -- so nothing this function does
+    not own can be perturbed by it.
+    """
+    if not isinstance(rows, list):
+        return rows
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        if row.get("tier") != "verify" and "probe" not in row:
+            out.append(row)               # nothing here is ours
+            continue
+        clean = dict(row)
+        tier, probe = resolve_verify_tier(row.get("tier"), row.get("probe"))
+        if row.get("tier") == "verify":
+            clean["tier"] = tier          # verify, or demoted
+        if probe:
+            clean["probe"] = probe
+        else:
+            clean.pop("probe", None)
+        out.append(clean)
+    return out
 
 
 def _now():
@@ -1328,13 +1523,33 @@ def _call_verifier(verifier, check_text, evidence):
     return bool(verifier(check_text))
 
 
-def evaluate_done_when(mission, transcript_text, verifier=None):
+def evaluate_done_when(mission, transcript_text, verifier=None,
+                       probe_root=None):
     """Tiered evaluation. founder_confirm NEVER auto-passes: it is met only
-    when its `met` flag was set by an explicit founder action."""
+    when its `met` flag was set by an explicit founder action.
+
+    WORKER CLAIM != DONE (founder, 2026-09-17). A `verify` row that carries a
+    `probe` is settled by shadow_probe reading the real filesystem, and the
+    transcript is NOT CONSULTED AT ALL for that row -- the verifier is not
+    called, the worker's DONE-CHECK line is not read, and a perfect claim
+    over a wrong file is unmet. The claim may stay in the transcript as a
+    report; the filesystem is what answers.
+
+    Rows without a probe keep the behaviour they have always had, so every
+    existing mission, tier and test is unaffected. That is deliberate: this
+    change adds a way to be sure, it does not remove the ways to be told.
+    """
     results = []
     for check in mission.get("done_when", []):
         tier = check.get("tier")
-        if tier == "verify":
+        probe = check.get("probe") if tier == "verify" else None
+        if probe:
+            # NEVER RAISES (shadow_probe.run): an unanswerable probe is
+            # `met=False`, which leaves the check outstanding and takes the
+            # existing escalation path -- another turn, then the ordinary
+            # budget and ping-pong exits. It is not a failed mission.
+            met = shadow_probe.met(probe, probe_root)
+        elif tier == "verify":
             met = (_call_verifier(verifier, check["check"], transcript_text)
                    if verifier else False)
         elif tier == "contains_artifact":
@@ -1603,7 +1818,8 @@ class MissionEngine:
 
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
                  verifier=None, on_evaluated=None, decider=None,
-                 outcome_reader=None, response_reader=None):
+                 outcome_reader=None, response_reader=None,
+                 probe_root=None):
         """`on_evaluated(mission, results, done)` is an OBSERVER of the one
         evaluation this loop already performs -- it is how the goal layer
         keeps per-check progress without a second evaluator. Optional, and
@@ -1622,6 +1838,14 @@ class MissionEngine:
         self.waiter = boundary_waiter
         self.reader = transcript_reader
         self.verifier = verifier
+        # WHERE A PROBE IS ALLOWED TO LOOK -- the delegate's own cwd, which
+        # is where its work lands. Injected for the same reason `verifier`
+        # is: the engine must not reach into app settings itself, and a test
+        # must be able to point it at a tmpdir. None means "ask
+        # shadow_probe.default_root()", which reads the SAME
+        # providers.load_settings()["workdir"] the worker is spawned in, so
+        # no production caller has to thread it and none can drift from it.
+        self.probe_root = probe_root
         self.on_evaluated = on_evaluated
         # async (context) -> decision dict. None keeps the historical
         # template, which is what leaves every standalone mission and every
@@ -1850,6 +2074,12 @@ class MissionEngine:
             else:
                 say_text, decision = await self._instruction(m, last_response)
             self._adopt_criteria(m, decision)
+            # ...and HOW, on the same path and for the same reason: a check
+            # Shadow has just worked out how to establish must stop needing a
+            # signature from the turn it works it out, not from the next
+            # mission. Adopting after the criteria pass means a set written
+            # one line above can be probed on the same decision.
+            self._adopt_verification(m, decision)
             self._adopt_standing(m, decision)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
@@ -2134,7 +2364,8 @@ class MissionEngine:
                     last_response = shaped
             try:
                 done, results = evaluate_done_when(m, transcript,
-                                                   self.verifier)
+                                                   self.verifier,
+                                                   self.probe_root)
             except Exception as exc:      # noqa: BLE001 -- parked, not hidden
                 return self._out_of_road(
                     m, "failed", "shadow_eval_failed",
@@ -2311,7 +2542,8 @@ class MissionEngine:
         """
         try:
             transcript = self.reader(m) if self.reader is not None else ""
-            done, results = evaluate_done_when(m, transcript, self.verifier)
+            done, results = evaluate_done_when(m, transcript, self.verifier,
+                                               self.probe_root)
         except Exception:         # noqa: BLE001 -- unknown, never a verdict
             return "", None, False
         return transcript, results, done
@@ -2478,7 +2710,8 @@ class MissionEngine:
         if not settleable:
             return m            # not a confirmation wait -- untouched
         transcript = self.reader(m) if self.reader is not None else ""
-        done, results = evaluate_done_when(m, transcript, self.verifier)
+        done, results = evaluate_done_when(m, transcript, self.verifier,
+                                           self.probe_root)
         if self.on_evaluated is not None:
             # progress bookkeeping NEVER decides a mission's fate
             try:
@@ -2570,8 +2803,13 @@ class MissionEngine:
             # Shadow chat. One key, read only by shadow_task_chat.
             "mission_id": m.get("id"),
             "outcome": m.get("objective") or "",
+            # `probe` is a BOOLEAN, never the probe itself: Shadow is told
+            # WHICH checks it has already worked out how to establish, so it
+            # does not answer the same question twice -- and is not handed
+            # back a payload it could copy instead of composing.
             "checks": [{"tier": c.get("tier"), "check": c.get("check"),
-                        "met": bool(c.get("met"))}
+                        "met": bool(c.get("met")),
+                        "probe": bool(c.get("probe"))}
                        for c in (m.get("done_when") or [])],
             "turns_used": m.get("turns_used") or 0,
             "max_turns": m.get("max_turns") or 0,
@@ -2647,13 +2885,43 @@ class MissionEngine:
         if was == now:
             return False              # nothing changed; no write, no row
         stamp = _now()
-        m["standing_instructions"] = [{"text": t, "at": stamp} for t in now]
-        self.store.save(m)
+        rows = [{"text": t, "at": stamp} for t in now]
+        m["standing_instructions"] = rows
+        # Same reason as _adopt_criteria: `m` has been held across the decider
+        # call, and anything that stamps the record during it would make this
+        # a stale write. Write the one field onto what is on disk.
+        self._save_field(m, "standing_instructions", rows)
         shadow_ledger.append("actions", {
             "mission_id": m["id"], "kind": "decision",
             "summary": ("standing instructions now %d: %s"
                         % (len(now), " | ".join(now)))[:200]})
         return True
+
+    def _save_field(self, m, field, value, skip_if=None):
+        """Persist ONE field onto the record as it stands on disk.
+
+        The engine loads a mission, awaits something slow (a decider, a
+        spawner) and then writes -- and anything that stamped the record
+        during that await makes the write stale. MissionStore refuses it, by
+        design; this obeys that refusal instead of fighting it by re-reading
+        first and writing only the field the caller owns.
+
+        `skip_if(fresh)` re-checks the caller's own precondition against the
+        fresh record, so a condition that was true before the await but false
+        after it does not get overwritten.
+
+        Falls back to saving the held copy when the mission has vanished --
+        that is the pre-existing behaviour and the caller's error to see.
+        """
+        fresh = self.store.load(m["id"])
+        if fresh is None:
+            self.store.save(m)
+            return
+        if skip_if is not None and skip_if(fresh):
+            return
+        fresh[field] = value
+        self.store.save(fresh)
+        m["seq"] = fresh.get("seq", m.get("seq"))
 
     def _adopt_criteria(self, m, decision):
         """Write the checks Shadow composed, onto an empty set only.
@@ -2667,8 +2935,24 @@ class MissionEngine:
             return False
         if m.get("done_when") or []:
             return False              # the founder said; it is not Shadow's
-        m["done_when"] = [dict(c) for c in decision["done_when"]]
-        self.store.save(m)
+        checks = [dict(c) for c in decision["done_when"]]
+        m["done_when"] = checks
+        # WRITE ONTO WHAT IS ON DISK, NOT ONTO A SNAPSHOT HELD ACROSS AN AWAIT
+        # (founder, 2026-09-17; mission m-b3eefc51a768). `m` was loaded before
+        # the decider was asked, and asking the decider BOOTS THIS TASK'S
+        # SHADOW CHAT -- whose publication stamps `task_chat_session` and
+        # `task_chat` onto the record, two saves, two sequence bumps. Saving
+        # the held copy then hit MissionStore's stale-write guard, the
+        # ValueError left provision_target, and start_mission_async's handler
+        # turned a bookkeeping collision into a FAILED mission that had never
+        # run a worker.
+        #
+        # THE GUARD IS NOT WEAKENED, IT IS OBEYED: re-read, re-check the one
+        # condition this method owns, write only its own field. The in-memory
+        # `m` the caller holds keeps the checks either way, so nothing
+        # downstream of this call changes.
+        self._save_field(m, "done_when", checks,
+                         skip_if=lambda fresh: bool(fresh.get("done_when")))
         shadow_ledger.append("actions", {
             "mission_id": m["id"], "kind": "criteria",
             "summary": "Shadow wrote %d check(s) the founder left open: %s"
@@ -2676,19 +2960,151 @@ class MissionEngine:
                           "; ".join(c["check"] for c in m["done_when"])[:160])})
         return True
 
-    async def _criteria_before_first_contact(self, m):
-        """Decide the bar before the worker hears anything. Idempotent.
+    def _needs_verification(self, m):
+        """Indices of checks Shadow has not yet worked out how to establish.
 
-        ONE GUARD for both first-contact callers -- provision_target (the
-        spawn brief) and run_mission's turn 0 (the said brief) -- so "only
-        when Shadow has a decider and the founder left the box empty" is
-        stated once. A founder who supplied criteria is never consulted and
-        never overwritten; that rule lives in _adopt_criteria and is not
-        duplicated here.
+        A check qualifies when it is `founder_confirm` and carries no probe --
+        which is the shape of "nobody has asked yet", whoever wrote it. A
+        `verify` row already has its probe (resolve_verify_tier guarantees
+        it), and a `contains_artifact` row is a literal the work itself must
+        produce.
         """
-        if self.decider is None or (m.get("done_when") or []):
+        return [i for i, c in enumerate(m.get("done_when") or [])
+                if isinstance(c, dict)
+                and c.get("tier") == "founder_confirm"
+                and not c.get("probe")
+                and not c.get("met")]
+
+    def _adopt_verification(self, m, decision):
+        """Attach HOW to checks that already say WHAT. Returns True if any
+        check changed.
+
+        WHAT THIS MAY DO, AND THE LIST IS THE WHOLE CONTRACT:
+
+          founder_confirm + a valid probe  ->  verify, probe attached
+
+        WHAT IT MAY NEVER DO: change a check's text, drop a check, add one,
+        reorder them, touch `met` or `confirmed_by`, or demote anything. The
+        decision it reads carries no wording (validate_verification), so the
+        first of those is impossible by shape rather than by discipline.
+
+        CREATOR IDENTITY IS NOT CONSULTED (founder, 2026-09-17). There is no
+        branch here on who authored a row, because there is no such field and
+        there must not be one. A condition written by the founder and a
+        condition written by Shadow are the same object: something Shadow is
+        responsible for evaluating. `m-c973ff4adef0` ended at NEEDS YOU with a
+        correct 18-byte file on disk for exactly one reason -- the row had
+        been typed by the founder, so nothing was ever allowed to ask how it
+        might be checked.
+        """
+        rows = (decision or {}).get("verification") or []
+        if not rows:
             return False
-        return await self._first_criteria(m, None)
+        checks = [dict(c) if isinstance(c, dict) else c
+                  for c in (m.get("done_when") or [])]
+        eligible = set(self._needs_verification(m))
+        changed = []
+        for row in rows:
+            i = row["index"]
+            if i not in eligible:
+                continue          # out of range, already probed, or signed
+            tier, probe = resolve_verify_tier("verify", row["probe"])
+            if tier != "verify":
+                continue          # validate_probe refused it; the founder keeps it
+            checks[i]["tier"] = "verify"
+            checks[i]["probe"] = probe
+            changed.append(i)
+        if not changed:
+            return False
+        m["done_when"] = checks
+        # Same stale-write discipline as _adopt_criteria: the decider was
+        # awaited, the record may have moved, so re-read and write one field.
+        # skip_if re-checks THIS method's own precondition -- if the rows it
+        # meant to promote are no longer the rows on disk, it writes nothing
+        # rather than stamping a snapshot over them.
+        want = [(i, checks[i]["check"]) for i in changed]
+        self._save_field(
+            m, "done_when", checks,
+            skip_if=lambda fresh: any(
+                i >= len(fresh.get("done_when") or [])
+                or (fresh["done_when"][i] or {}).get("check") != text
+                for i, text in want))
+        shadow_ledger.append("actions", {
+            "mission_id": m["id"], "kind": "criteria",
+            "summary": "Shadow can verify %d check(s) itself: %s"
+                       % (len(changed),
+                          "; ".join("#%d %s" % (i, checks[i]["probe"]["kind"])
+                                    for i in changed))[:200]})
+        return True
+
+    async def _criteria_before_first_contact(self, m):
+        """Every mission has a Done When, and Shadow has decided how it will
+        check each one, BEFORE the worker hears anything.
+
+        TWO STEPS, AND THE SECOND IS UNIVERSAL (founder, 2026-09-17):
+
+          1. NO CHECKS -> Shadow writes them, and may answer HOW in the same
+             reply. A mission without a Done When does not exist; this is the
+             step that guarantees it.
+          2. CHECKS THAT STILL HAVE NO MECHANICAL TEST -> Shadow is asked how
+             it would establish them, whoever wrote them.
+
+        Step 2 cannot learn who authored a row: there is no such field on a
+        check and there must not be one. The old single step returned the
+        moment the founder had supplied anything, so a founder-typed condition
+        could never acquire a probe however mechanical it was -- and a correct
+        18-byte file on disk still ended at NEEDS YOU (m-c973ff4adef0).
+
+        WHY BEFORE THE BRIEF AND NOT AT TURN 1. app._worker_checks_block puts
+        verify-tier checks into the worker's manifest. Deciding verification
+        after the brief would hand the worker one bar and judge it by another.
+
+        THE COST, STATED: a mission whose checks the founder supplied now
+        spends ONE decider call at first contact that it did not before. It is
+        bounded, it is not a worker turn, and it buys a turn back whenever the
+        worker finishes on the brief.
+
+        ASKED ONCE. Both first-contact callers reach here -- provision_target
+        and run_mission's turn 0 -- and `verification_asked` is what stops the
+        second from paying for the question again.
+        """
+        if self.decider is None:
+            return False
+        wrote = False
+        if not (m.get("done_when") or []):
+            wrote = await self._first_criteria(m, None)
+        fresh = self.store.load(m["id"]) or m
+        if not self._needs_verification(fresh) or fresh.get("verification_asked"):
+            return wrote
+        m["verification_asked"] = True
+        self._save_field(m, "verification_asked", True)
+        return await self._first_verification(m) or wrote
+
+    async def _first_verification(self, m):
+        """Ask the decider HOW, for checks that have no answer yet.
+
+        The same decider, the same context and the same validator the ordinary
+        turn uses -- no second decision path. Its `instruction` is discarded
+        for the reason _first_criteria discards one: the brief is either still
+        to be delivered or was delivered by the spawn, and nothing composed
+        here may reach the worker.
+
+        Never raises. A decider that fails or answers badly leaves every check
+        exactly as it was -- judged by the founder, the safe direction.
+        """
+        fresh = self.store.load(m["id"]) or m
+        try:
+            raw = await self.decider(self._decision_context(fresh, None))
+        except Exception:             # noqa: BLE001 -- the checks stand
+            return False
+        decision = validate_decision(raw)
+        if decision is None:
+            return False
+        if not self._adopt_verification(fresh, decision):
+            return False
+        m["done_when"] = fresh["done_when"]
+        m["seq"] = fresh.get("seq", m.get("seq"))
+        return True
 
     async def _first_criteria(self, m, last_response):
         """Shadow's first decision, consulted for its CRITERIA alone.
@@ -2709,7 +3125,12 @@ class MissionEngine:
             raw = await self.decider(self._decision_context(m, last_response))
         except Exception:             # noqa: BLE001 -- turn 1 will ask again
             return False
-        return self._adopt_criteria(m, validate_decision(raw))
+        decision = validate_decision(raw)
+        wrote = self._adopt_criteria(m, decision)
+        # THE SAME ANSWER, SECOND QUESTION. A decision that wrote the bar may
+        # also say how Shadow would check it, so a set written here can be
+        # probe-backed without step 2 above spending a second call.
+        return self._adopt_verification(m, decision) or wrote
 
     async def _instruction(self, m, last_response):
         """(say_text, decision) for this iteration.

@@ -44,19 +44,35 @@ const settle = () => new Promise(r => setImmediate(() => setImmediate(r)));
     ctx.S.shadowSettings = d;
     const h = ctx.shadowSettingsHtml();
     assert(/<h2 class="sstitle">What Shadow knows<\/h2>/.test(h), "the sheet is What Shadow knows");
-    const iBehaves = h.indexOf("How Shadow behaves");
-    const iAutonomy = h.indexOf(">Autonomy<");
-    assert(iBehaves !== -1 && iAutonomy !== -1 && iBehaves < iAutonomy, "behaves is the first section");
+    /* TWO SECTIONS, AND THE FIRST IS THE FOUNDER'S OWN WORDS (2026-09-17).
+       "How Shadow behaves" is now titled Personality and Autonomy has left
+       this page entirely -- with six other sections -- so the ordering this
+       asserted is now Personality before Memory. The FIELD is unchanged:
+       same `behaves` value, same textarea, same save-on-change. */
+    const iBehaves = h.indexOf(">Personality<");
+    const iMemory = h.indexOf(">Memory<");
+    assert(iBehaves !== -1 && iMemory !== -1 && iBehaves < iMemory,
+      "Personality is the first section, Memory the second");
+    assert(h.indexOf(">Autonomy<") === -1, "Autonomy has left the page");
     assert(/data-shbehaves="1"/.test(h), "the behaves field carries its hook");
     assert(/Check in every 3 turns\. Never say mission\./.test(h), "prefilled from the record");
     assert(/maxlength="4000"/.test(h), "the ceiling comes from the server");
     assert(!/<button[^>]*Save/.test(h), "no Save button: it saves on change");
     assert.strictEqual(ctx.TITLES.shadowsettings[0], "What Shadow knows");
     assert(/<span>What Shadow knows<\/span>/.test(ctx.shadowNavHtml()), "the door is labelled What Shadow knows");
-    /* nothing existing removed: the other sections still render */
-    ["Autonomy", "Memory", "Tasks", "Delegate offers", "Presence", "Attention"]
-      .forEach(s => assert(h.indexOf(">" + s + "<") !== -1, s + " section still there"));
-    console.log("ok 1 the sheet is What Shadow knows, behaves first, everything else kept");
+    /* SIX SECTIONS LEFT THIS PAGE (founder, 2026-09-17). Each was a control
+       the founder had to form an opinion about before Shadow was useful, and
+       for every one of them the answer is a default. The ENGINE keeps them:
+       the routes still answer, the stored values still bind, autonomy()
+       still defaults to L3. What went is the surface. */
+    ["Autonomy", "Tasks", "Delegate offers", "Presence", "Attention",
+     "Add a control"]
+      .forEach(s => assert(h.indexOf(">" + s + "<") === -1,
+        s + " must be off the page"));
+    /* ...and exactly two remain */
+    assert.strictEqual((h.match(/class="ssh"/g) || []).length, 2,
+      "two sections, no more");
+    console.log("ok 1 the sheet is What Shadow knows, two boxes, nothing else");
   }
 
   /* 2. typing keeps a draft across renders and marks it unsaved */

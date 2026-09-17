@@ -211,7 +211,10 @@ class TestTurns(Base):
         prompt = rt.sent[1]
         self.assertEqual(prompt, shadow_runner.render_decide_prompt(ctx))
         self.assertIn("which fruits?", prompt)
-        self.assertIn("#0 [ ] (founder_confirm) a table by usage", prompt)
+        # (unverified) marks a check with no mechanical test behind it --
+        # what _VERIFY_ASK asks Shadow to fix where it honestly can.
+        self.assertIn("#0 [ ] (founder_confirm) (unverified) a table by usage",
+                      prompt)
 
     def test_14_turns_on_a_dead_chat_raise(self):
         c, rt = self.chat(["READY"])

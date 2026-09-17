@@ -87,7 +87,12 @@ function timeline(msgs, over){
   const h = ctx.shadowHomeHtml();
   /* split rather than match a nested shape: a row with no line has one
      fewer closing div, and a regex that assumed two silently read "" */
-  const rows = h.split('<div class="shagent">').slice(1).map(body => ({
+  /* SPLIT ON THE CLASS PREFIX, not the exact tag (2026-09-17). A turn IN
+     FLIGHT now renders as `shagent shagentopen` -- same row, same heading,
+     plus a live dot, an elapsed clock and a sweep bar. Matching the closing
+     quote silently dropped that row and read "0 rows" for a turn the pane
+     was drawing, which is the opposite of what this lane asserts. */
+  const rows = h.split(/<div class="shagent[ "]/).slice(1).map(body => ({
     head: (body.match(/shagenthead">([^<]*)</) || [])[1] || "",
     say: (body.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "",
   }));

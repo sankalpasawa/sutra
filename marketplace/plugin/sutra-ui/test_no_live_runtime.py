@@ -221,22 +221,54 @@ class TestTheEngine(Base):
         self.assertNotIn(out["state"], mission_engine.TERMINAL,
                          "a say that never left is retryable, goal or not")
 
-    def test_11_a_real_refusal_still_fails(self):
+    def test_11_a_real_refusal_escalates_a_goal_attempt(self):
+        """A REFUSAL IS A VERDICT ON THE SAY, NOT ON THE WORK (2026-09-16).
+
+        WHAT THIS PINNED BEFORE. `False` from the sayer wrote `failed` and
+        stopped, and this asserted that generic failure. That exit was the
+        last one that bypassed the work funnel entirely: it never evaluated
+        the checks, never asked the founder, and -- for a GOAL attempt --
+        died without the escalation V5 exists to guarantee.
+
+        WHAT IT IS NOW. The refusal still refuses; what changed is where it
+        lands. _out_of_road routes it through _work_first, and a goal attempt
+        escalates to the founder (`blocked`) instead of dying, carrying the
+        NAMED reason `say_refused`. A STANDALONE mission (no goal_id) still
+        keeps its historical terminal state -- that asymmetry is the whole
+        point of the branch, and test_13 below covers it.
+        """
         gid, mid = self.goal_with_attempt()
         eng = self.engine(say_returns=False)
         m = run(eng.run_mission(mid))
-        self.assertEqual(m["state"], "failed", "False is unchanged")
+        self.assertEqual(m["state"], "blocked",
+                         "a goal attempt escalates rather than dying")
+        self.assertEqual(m["block_reason"], "say_refused",
+                         "and it says WHICH refusal, not a generic failure")
+        self.assertNotIn(m["state"], mission_engine.TERMINAL,
+                         "an escalated attempt is still retryable")
         goal_lifecycle.on_attempt_end(m)   # the funnel the runner calls
-        self.assertEqual(self.goals.load(gid)["block_reason"],
-                         "attempt %s failed" % mid,
-                         "and it still reads as the generic failure it is")
+        self.assertEqual(self.goals.load(gid)["block_reason"], "say_refused",
+                         "and the goal carries the same named reason")
 
-    def test_12_an_empty_string_is_not_a_blocker(self):
-        """Only a NAMED reason parks the attempt; falsy stays a refusal."""
+    def test_12_an_empty_string_is_not_a_blocker_id(self):
+        """THE DISTINCTION MOVED FROM THE STATE TO THE REASON.
+
+        A non-empty STRING from the sayer is a named precondition -- the say
+        never left -- and it becomes the block_reason verbatim (test_10:
+        `no_live_runtime`). An EMPTY string is falsy, means nothing, and must
+        not become a nameless blocker: store.block rightly refuses a
+        reasonless block. So it is treated as the plain refusal it is and
+        carries `say_refused`, exactly as `False` does.
+
+        Both now PARK a goal attempt rather than failing it (see test_11), so
+        what separates them is no longer the state -- it is whether the
+        sayer's own word survives into the reason."""
         _gid, mid = self.goal_with_attempt()
         eng = self.engine(say_returns="")
         m = run(eng.run_mission(mid))
-        self.assertEqual(m["state"], "failed")
+        self.assertEqual(m["state"], "blocked")
+        self.assertEqual(m["block_reason"], "say_refused",
+                         "an empty string never becomes the blocker id")
 
 
 class TestTheGoal(Base):

@@ -997,10 +997,28 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
   assert.strictEqual(work,
     "The checklist now names release safety first and all seven checks are "
     + "concrete.", "a real conclusion is shown, got: " + work);
-  /* the evidence sentence is not VISIBLE text; it may still ride on the
-     title, which is how the untrimmed outcome stays reachable */
-  assert(!/>[^<]*grep -rn x/.test(h),
-    "the evidence sentence must not be rendered as visible text");
+  /* the evidence sentence is not VISIBLE text IN THE PREVIEW; it may still
+     ride on the title, which is how the untrimmed outcome stays reachable.
+
+     SCOPED TO THE PREVIEW ON 2026-09-17, and the scope is the point. This
+     assertion was card-wide when the card had exactly one place the outcome
+     could appear -- the one-line .shdonework preview -- and the 2026-09-15
+     ruling it encodes is about that line: a card whose PRIMARY content was
+     a grep invocation and a permissions listing. The card now also carries a
+     Summary block under the verdicts, whose whole purpose is the accepted
+     result in full, and for a research task that result IS what the founder
+     opened the pane to read. A conclusion followed by its own "Evidence:"
+     sentence is the worker's answer, in the worker's order.
+
+     So the preview still refuses it -- unchanged, asserted above and
+     immediately below -- and the Summary no longer pretends the sentence was
+     never written. What is NOT relaxed: shadowSummaryHtml still draws
+     nothing at all when the outcome is pure working with no conclusion in
+     it (8l), which is the case that ruling was actually about. */
+  const beforeSummary = h.slice(0, h.indexOf('class="shdonesummary"') === -1
+    ? h.length : h.indexOf('class="shdonesummary"'));
+  assert(!/>[^<]*grep -rn x/.test(beforeSummary),
+    "the evidence sentence must not be rendered in the preview");
   /* the untrimmed text is still reachable */
   assert(/shdonework[^>]*title="The checklist now names/.test(h),
     "the full outcome rides on the title");
@@ -1014,11 +1032,19 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
   console.log("ok 8m a real conclusion survives; the working beside it does not");
 }
 
-/* ── 8n. SAY ANYTHING REACHES SHADOW, NOT THE WORKER ─────────────
-   (founder, 2026-09-15.) The composer posted to /api/shadow/chat -- the
-   chief-of-staff conversation, which holds no mission and cannot act on one.
-   With a task in focus it now posts an aside to THAT task, and the decider
-   reads it on its next turn. Nothing here reaches the delegate session. */
+/* ── 8n. THE COMPOSER REACHES SHADOW, NOT THE WORKER ─────────────
+   (founder, 2026-09-15; the destination changed 2026-09-17.) It first posted
+   to /api/shadow/chat -- the chief-of-staff conversation, which holds no
+   mission and cannot act on one. With a task in focus it then posted an aside
+   to THAT task's record, which the decider read but which nothing answered.
+
+   IT NOW POSTS TO THE TASK'S OWN SHADOW CHAT, because that route does both
+   halves: it answers the founder AND records their words to `founder_says`,
+   which is the same operational path the aside took. So the founder no longer
+   has to decide whether a sentence is chat or instruction -- the one thing
+   only Shadow can judge. Everything this lane pinned still holds: one POST,
+   to the task in focus, carrying the founder's words and nothing else, never
+   the worker session and never the chief-of-staff chat. */
 function sayCtx(over){
   const ctx = fresh();
   ctx.posted = [];
@@ -1044,14 +1070,12 @@ const box = () => ({ value: "", dataset: { shhomecompose: "1" } });
   el.value = "Prioritize release safety over code cleanliness.";
   ctx.typeAndSend(el);
   assert.strictEqual(ctx.posted.length, 1, "exactly one POST");
-  assert.strictEqual(ctx.posted[0].path, "/api/shadow/missions/m-1/act",
-    "it must go to the mission that is in focus");
-  assert.strictEqual(ctx.posted[0].body.action, "say",
-    "its own verb -- not intervene, which answers a question");
-  assert.strictEqual(ctx.posted[0].body.text,
+  assert.strictEqual(ctx.posted[0].path, "/api/shadow/tasks/m-1/chat",
+    "it must go to the task in focus -- the route that answers AND records");
+  assert.strictEqual(ctx.posted[0].body.message,
     "Prioritize release safety over code cleanliness.");
-  assert(!ctx.posted[0].body.values && !ctx.posted[0].body.intervention_id,
-    "an aside carries no intervention payload");
+  assert.deepStrictEqual(Object.keys(ctx.posted[0].body), ["message"],
+    "the founder's words and nothing else -- the frontend classifies nothing");
   /* NOT the worker, and NOT the chief-of-staff chat */
   assert.strictEqual(ctx.chatted, undefined,
     "with a task in focus it must not go to /api/shadow/chat");
@@ -1113,10 +1137,13 @@ const asyncChecks = [];
   /* the send's own promise, so the assertion cannot race the restore */
   const typed = el.value;
   el.value = "";                       /* the composer clears optimistically */
-  asyncChecks.push(ctx.shadowSayToShadow("m-1", typed, el).then(() => {
+  ctx.shadowTalk().text = typed;
+  asyncChecks.push(ctx.shadowTalkSend("m-1", el).then(() => {
     assert.strictEqual(el.value, "don't touch that file",
       "the text must come back when the send fails");
-    assert(/still in the box/.test(ctx.nudged || ""),
+    /* the panel that used to carry this message is gone; the refusal now
+       lands on the composer's own error line, which shadowStageHtml draws */
+    assert(/still in the box/.test(ctx.S.shadowScopeErr || ""),
       "and the founder is told, rather than left guessing");
     console.log("ok 8n-4 a failed send hands the text back");
   }));
@@ -1305,12 +1332,12 @@ function stream(msgs, says, turns){
     "the new-task ask must not draw under an active task");
   assert(!/Tell Shadow the outcome you want/.test(h),
     "nor its subtitle");
-  /* the label moved to "Give instruction to Shadow" (founder,
-     2026-09-16): the box is now named for what it DOES -- it deposits
-     a steering line on the record -- beside the new Talk to Shadow
-     panel, which converses. The composer, its hook and its path are
-     unchanged, which is what the count below still pins. */
-  assert(/placeholder="Give instruction to Shadow…"/.test(h),
+  /* ONE BOX, AND IT IS NAMED FOR THE WHOLE INTERACTION (founder,
+     2026-09-17). It was "Say anything", then "Give instruction to Shadow"
+     beside a Talk to Shadow panel -- two doors, and the founder had to pick.
+     The panel is gone and this box talks to Shadow; the count below still
+     pins that there is exactly one of it. */
+  assert(/placeholder="Talk to Shadow…"/.test(h),
     "the active task keeps exactly one composer");
   assert.strictEqual((h.match(/data-shhomecompose/g) || []).length, 1,
     "exactly one composer on the page");
@@ -1347,7 +1374,7 @@ function stream(msgs, says, turns){
   const closed = ctx3.shadowHomeHtml();
   assert.strictEqual((closed.match(/data-shhomecompose/g) || []).length, 1,
     "closing the form must restore exactly one composer");
-  assert(/placeholder="Give instruction to Shadow…"/.test(closed),
+  assert(/placeholder="Talk to Shadow…"/.test(closed),
     "and it is the calm one, unchanged");
   console.log("ok 8p one composer on the workspace; none behind New Task");
 }
@@ -1381,7 +1408,7 @@ function stream(msgs, says, turns){
   const ctx = fresh();
   const h = pane(ctx, M());
   assert(/class="shstage shstage-calm"/.test(h), "the calm composer is missing");
-  assert(/placeholder="Give instruction to Shadow…"/.test(h),
+  assert(/placeholder="Talk to Shadow…"/.test(h),
     "the reference's placeholder is missing");
   /* the SAME surface and the SAME hooks it always had -- nothing new is wired */
   assert(/data-shhomecompose="1"/.test(h), "the composer hook changed");

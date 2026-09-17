@@ -751,12 +751,20 @@ const DONE_WORK = Object.assign({}, DONE, {
   const blank = ctx.shadowCompletionHtml(Object.assign({}, DONE, {
     completion: Object.assign({}, SUMMARY, { outcome: "" }) }));
   assert.strictEqual(blank, before, "an empty account is an absent one");
-  /* and the block is genuinely ADDITIVE: strip it back out of the rendered
-     card and what is left is exactly what rendered before */
+  /* and the blocks are genuinely ADDITIVE: strip them back out of the
+     rendered card and what is left is exactly what rendered before.
+
+     TWO BLOCKS NOW, NOT ONE (2026-09-17). The same field feeds the one-line
+     .shdonework preview above the verdicts and the .shdonesummary block
+     below them -- the account in full, rendered as markdown, which is what a
+     research task's founder opens the pane to read. The claim this pins is
+     unchanged and is the reason it is worth pinning: a card with no account
+     is byte-for-byte the card that shipped before either block existed. */
   const stripped = ctx.shadowCompletionHtml(DONE_WORK)
-    .replace(/<div class="shdonework"[\s\S]*?<\/div>/, "");
+    .replace(/<div class="shdonework"[\s\S]*?<\/div>/, "")
+    .replace(/<div class="shdonesummary">[\s\S]*?\n    <\/div>/, "");
   assert.strictEqual(stripped, before,
-    "the account is the only thing that was added");
+    "the account blocks are the only thing that was added");
   console.log("ok 19 a summary with no account renders as it always did");
 }
 

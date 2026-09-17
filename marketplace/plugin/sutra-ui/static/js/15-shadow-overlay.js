@@ -660,6 +660,18 @@ function missionCardHtml(m){
    leak past both -- a lone header, a key line, an ASCII box. Nothing is
    generated: every word shown is Shadow's own. */
 const SH_PROTO_FENCE = /```(?:mission|goal|chips|remember|module|brief)[ \t]*\n[\s\S]*?```/g;
+/* ...AND THE SAME FENCE WHEN IT NEVER CLOSES (founder, 2026-09-17). The rule
+   above needs a closing ```; a reply that opened ```chips and stopped left the
+   opener on screen, and the line loop below then read it as the start of a
+   code block and kept it. Measured in the founder's own conversation: a bare
+   "```chips" under otherwise good prose.
+
+   SAME VOCABULARY, SAME CONSTANT, applied only at the END of the text -- an
+   unterminated protocol fence can only be the last thing in a reply. An
+   ordinary ``` or ```js is untouched, because the kind list is the protocol's
+   own and nothing else matches it. */
+const SH_PROTO_FENCE_OPEN =
+  /```(?:mission|goal|chips|remember|module|brief)[ \t]*(?:\n[\s\S]*)?$/;
 const SH_GOV_HEADER = /^\s*\[[A-Z0-9-]+\s*·\s*[A-Z0-9-]+[^\]]*\]\s*$/;
 const SH_GOV_KEY = new RegExp("^[\\s>*#\\-]*(" + [
   "INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION",
@@ -679,7 +691,7 @@ function shadowProseText(text){
   if (typeof gvBody === "function"){
     try { t = gvBody(t); } catch (e) { /* the belt below still runs */ }
   }
-  t = t.replace(SH_PROTO_FENCE, "");
+  t = t.replace(SH_PROTO_FENCE, "").replace(SH_PROTO_FENCE_OPEN, "");
   const out = [];
   let fenced = false, inBox = false;
   for (const line of t.split(/\r?\n/)){

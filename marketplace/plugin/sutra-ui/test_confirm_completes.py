@@ -303,7 +303,11 @@ class TestOneCompletionPath(Base):
     def test_15_settle_uses_the_existing_evaluator(self):
         src = Path(__file__).with_name("mission_engine.py").read_text()
         body = src[src.index("def settle"):src.index("def _out_of_road")]
-        self.assertIn("evaluate_done_when(m, transcript, self.verifier)", body)
+        # PREFIX, NOT THE WHOLE CALL: what this pins is that settle reuses
+        # the loop's evaluator on the loop's own evidence and verifier, not
+        # how many arguments that evaluator takes. `probe_root` was threaded
+        # in beside `verifier` without changing either.
+        self.assertIn("evaluate_done_when(m, transcript, self.verifier", body)
         self.assertNotIn("in (transcript", body, "no second matcher")
         self.assertNotIn("self.sayer", body, "and it never says anything")
 
