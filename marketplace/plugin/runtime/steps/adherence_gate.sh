@@ -81,14 +81,26 @@ main() {
   esac
 
   # -- re-check the two artifacts; refresh the ledger's step rows ----------
+  # Live progress (founder, 2026-09-17: "it should also print when each of the
+  # steps is done"): every status that changed since the last look is printed
+  # as one systemMessage line, which the host shows in the terminal.
+  TRANS=""
   STEPS_JSON="$(sutra_steps_compute "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" "$OPENED")"
   if [ -n "$STEPS_JSON" ]; then
+    TRANS="$(jq -r --argjson new "$STEPS_JSON" '
+      [ .steps[] as $o | ($new[] | select(.id == $o.id)) as $n
+        | select($n.status != $o.status)
+        | "\($o.id): \($o.status) -> \($n.status)\(if ($n.detail // "") != "" and $n.status != "pending" then " (" + ($n.detail | .[0:60]) + ")" else "" end)" ]
+      | join("; ")' "$_AG_PATH" 2>/dev/null)"
     _upd="$(jq -c --argjson steps "$STEPS_JSON" '.steps = $steps' "$_AG_PATH" 2>/dev/null)"
     [ -n "$_upd" ] && sutra_steps_write "$_AG_PATH" "$_upd"
   fi
+  _t8="$(printf '%s' "$_AG_TURN" | head -c 8)"
+  [ -n "$TRANS" ] && _ag_row transition "$(jq -nc --arg t "$TRANS" '{transitions:$t}')"
 
   if [ "$KIND" != "mutation" ]; then
     [ "$KIND" = "exempt" ] && _ag_mutation "$TOOL" "$TARGET" exempt '[]'
+    [ -n "$TRANS" ] && jq -nc --arg m "[adherence $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
     return 0
   fi
 
@@ -105,6 +117,7 @@ main() {
 
   if [ -z "$MISSING" ]; then
     _ag_mutation "$TOOL" "$TARGET" allow '[]'
+    [ -n "$TRANS" ] && jq -nc --arg m "[adherence $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
     return 0
   fi
 
@@ -115,13 +128,15 @@ Write each with the Write tool, then retry. turn_id=$_AG_TURN session_id=$_AG_SI
   cynefin {turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(>=20 chars),human_gate:bool,ts}
 Trace: bin/sutra-steps latest. Kill: rm ~/.sutra-runtime-adherence"
 
+  _sm=""; [ -n "$TRANS" ] && _sm="[adherence $_t8] $TRANS
+"
   if [ "$SUTRA_ADHERENCE_MODE" = "on" ]; then
     _ag_mutation "$TOOL" "$TARGET" deny "$MISSING_JSON"
-    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" \
-      '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}}' 2>/dev/null
+    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" --arg sm "${_sm}[adherence $_t8] REFUSED $TOOL: missing $MISSING" \
+      '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}, systemMessage:$sm}' 2>/dev/null
   else
     _ag_mutation "$TOOL" "$TARGET" warn "$MISSING_JSON"
-    jq -nc --arg r "$REASON" '{systemMessage:("[warn] " + $r)}' 2>/dev/null
+    jq -nc --arg r "$REASON" --arg sm "$_sm" '{systemMessage:($sm + "[warn] " + $r)}' 2>/dev/null
   fi
   return 0
 }

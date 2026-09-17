@@ -2,9 +2,13 @@
 
 **status**: active · **updated**: 2026-09-17
 
-## v2.284.0 (2026-09-17, HEAD)
+## v2.285.0 (2026-09-17, HEAD)
 
 **The runtime does the framework's steps it can do, and demands the rest before any edit** (founder, 2026-09-17: "hardcode everything and finish it off"). Rows 1.1-5 of the adherence program: rendered block stack from facts, lens/cynefin prompts injected while pending, a detached test + second-lane review on every mutating turn with runtime-written verdicts, one override file, and the gate fixes the first live turns exposed. Codex round 2 SKIPPED (usage limit until 2026-10-16); lanes: DeepSeek + an adversarial workflow review. The gate and the close print live: one line per step flip during the turn, the whole finished table at Stop. Tests: 170 checks across three suites plus golden parity on both runners.
+
+## v2.284.0 (2026-09-17)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
 
 ## v2.283.0 (2026-09-17)
 

@@ -337,6 +337,100 @@ md = out["markdown"]
 ok("no em dashes in what a person reads", "—" not in md and "—" not in SAY[0][0])
 
 # ======================================================================================
+print("\nthe conflicting-percentages pass (Aparna's review, 2026-09-17)")
+
+
+def is_pct_pairs(p):
+    return '"pairs":' in p
+
+
+def is_pct_fix(p):
+    return '"edit": "a" | "b"' in p
+
+
+PCT_CARDS = [
+    {"id": 1, "gloss": "TestGorilla's 2025 degree-drop report",
+     "verbatim": "TestGorilla's 2025 report of 1,200 employers found 53% have dropped a degree requirement.",
+     "source_urls": ["https://testgorilla.example.com/report"], "tag": "evidence"},
+    {"id": 2, "gloss": "the confidence-worthy adoption figure",
+     "verbatim": "Across the four studies reviewed, the one figure with a real sample behind it is 76%.",
+     "source_urls": ["https://research.example.org/adoption"], "tag": "evidence"},
+]
+PCT_IDX = C.card_index(PCT_CARDS)
+
+ONE_PCT_BODY = {"sections": [{"headline": "Adoption", "job": "", "word_target": 100, "words": 20,
+                              "bad_tags_dropped": 0, "provenance": [],
+                              "prose": "TestGorilla's 2025 report says 53% of employers have ditched degree "
+                                       "rules [c1]. Nothing else here carries a number at all."}]}
+skip = SC.pct_pass(copy.deepcopy(ONE_PCT_BODY), PCT_IDX)
+ok("fewer than two percentages: the pass is skipped outright",
+   skip == {"skipped": True, "total_percentages": 1, "pairs_found": 0, "fixed": [], "rejected": []}, skip)
+
+TWO_PCT_BODY = {"sections": [
+    {"headline": "Adoption", "job": "", "word_target": 100, "words": 40, "bad_tags_dropped": 0, "provenance": [],
+     "prose": "TestGorilla's 2025 report says 53% of employers have ditched degree rules [c1]."},
+    {"headline": "What The Real Number Is", "job": "", "word_target": 100, "words": 40, "bad_tags_dropped": 0,
+     "provenance": [],
+     "prose": "The one adoption figure you can cite with any confidence is 76% [c2]."}]}
+
+
+def pct_pairs_reply(p):
+    return {"pairs": [{"a": 1, "b": 2, "why": "both read as the headline adoption rate"}]}
+
+
+def pct_fix_reply(p):
+    return {"edit": "b", "sentence": "Across the four studies reviewed, the one adoption figure you can cite "
+                                     "with any confidence is 76% [c2]."}
+
+
+REPLIES[:] = [(is_pct_pairs, pct_pairs_reply), (is_pct_fix, pct_fix_reply)]
+SEEN.clear()
+body2 = copy.deepcopy(TWO_PCT_BODY)
+result = SC.pct_pass(body2, PCT_IDX)
+ok("two rival sentences make one flagged pair, fixed with one call each way",
+   result["pairs_found"] == 1 and len(result["fixed"]) == 1 and not result["skipped"], result)
+ok("only ONE pairs call and ONE fix call were made",
+   sum(1 for p in SEEN if is_pct_pairs(p)) == 1 and sum(1 for p in SEEN if is_pct_fix(p)) == 1, len(SEEN))
+weaker = body2["sections"][1]["prose"]
+stronger = body2["sections"][0]["prose"]
+ok("the weaker sentence gets the distinguishing clause, its number and tag both kept",
+   "76%" in weaker and "reviewed" in weaker and "[c2]" in weaker, weaker)
+ok("the stronger sentence is never touched", stronger == TWO_PCT_BODY["sections"][0]["prose"])
+ok("no number anywhere was dropped or changed",
+   "53%" in stronger and "76%" in weaker, (stronger, weaker))
+ok("the summary line carries the count",
+   "1 rival percentage pair clarified" in SC.summary_line({"checked": 0}, result))
+ok("render_md reports the clarified pair and stays free of em dashes",
+   "Clarified" in SC.render_md({"claims_tagged": 0, "checked": 0, "supported": 0, "unreadable": 0, "replaced": 0,
+                                "corrected": 0, "softened": 0, "removed": 0, "hunted": 0, "derived": 0,
+                                "derived_ok": 0, "research_notes": 0, "skipped": 0}, [], [], [], result)
+   and "—" not in SC.render_md({"claims_tagged": 0, "checked": 0, "supported": 0, "unreadable": 0, "replaced": 0,
+                                "corrected": 0, "softened": 0, "removed": 0, "hunted": 0, "derived": 0,
+                                "derived_ok": 0, "research_notes": 0, "skipped": 0}, [], [], [], result))
+
+# a fix call that invents a number the card does not carry: rejected, article left exactly as it was
+def pct_fix_invents(p):
+    return {"edit": "b", "sentence": "A separate 2024 poll of 900 firms puts the real figure at 76% [c2]."}
+
+
+REPLIES[:] = [(is_pct_pairs, pct_pairs_reply), (is_pct_fix, pct_fix_invents)]
+body3 = copy.deepcopy(TWO_PCT_BODY)
+result3 = SC.pct_pass(body3, PCT_IDX)
+ok("an invented number is rejected in code, never applied",
+   not result3["fixed"] and result3["rejected"] and "not on its own source" in result3["rejected"][0]["reason"],
+   result3)
+ok("the article is left exactly as it was", body3 == TWO_PCT_BODY, body3["sections"][1]["prose"])
+
+# a pairs call that fails outright: no pairs, no crash, article untouched
+REPLIES[:] = [(is_pct_pairs, lambda p: (_ for _ in ()).throw(ValueError("no CLI"))), (is_pct_fix, pct_fix_reply)]
+body4 = copy.deepcopy(TWO_PCT_BODY)
+result4 = SC.pct_pass(body4, PCT_IDX)
+ok("a failed pairs call degrades to no pairs found, never a crash",
+   result4 == {"skipped": False, "total_percentages": 2, "pairs_found": 0, "fixed": [], "rejected": []}, result4)
+ok("the article is untouched", body4 == TWO_PCT_BODY)
+REPLIES[:] = []
+
+# ======================================================================================
 print("\nthe code gate: a new digit, an out-of-scope edit, then the fallback")
 BAD = [
     # attempt 1: a figure that is neither in the paragraph nor on the page

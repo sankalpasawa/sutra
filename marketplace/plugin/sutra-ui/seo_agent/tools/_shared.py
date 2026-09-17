@@ -99,6 +99,31 @@ def bullets(items, empty="(nothing on file)"):
 
 # ---- knowledge -------------------------------------------------------------------------
 
+def load_competitors():
+    """knowledge/competitors.json, in any of the three shapes it has been saved in: a bare list of
+    domain strings (the oldest saves), {"competitors": [...]} of strings, or {"competitors": [...]}
+    of {domain, why, last_used} dicts. Returns a list of {"domain": ..., "last_used": ..., "why": ...}.
+
+    Moved here from tools/suggest_topics.py on 2026-09-17 (Aparna's review), which is where this
+    parsing was written and where it stayed the ONLY reader of the file. The write phase never saw
+    the rival list, so nothing stopped a rival becoming the authority for a headline stat or landing
+    in a heading (write/write_body.py `_rivals_block`, write/headings.py `guard_rivals`). Same
+    parsing, one place, so suggest_topics and the writer can never read the file two different ways.
+    """
+    raw = store.knowledge("competitors.json") or []
+    if isinstance(raw, dict):
+        raw = raw.get("competitors") or []
+    rows = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            rows.append({"domain": item.strip(), "last_used": None})
+        elif isinstance(item, dict) and item.get("domain"):
+            rows.append({"domain": item["domain"].strip(),
+                         "last_used": item.get("last_used"),
+                         "why": item.get("why", "")})
+    return rows
+
+
 def brand_voice():
     """The voice profile as a dict: {company, summary, traits, avoid, examples, ...}.
 

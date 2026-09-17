@@ -35,6 +35,14 @@ the 60 to 90 claims the article carries, one page read and one judge call each.
      rejected answer is retried once with the fault named, then the sentence is removed in code.
   e. REPORT. source-check.json and source-check.md carry every verdict, its reason and every
      before/after. The chat gets ONE line.
+  f. RIVAL PERCENTAGES (Aparna's review, 2026-09-17), one pass after the per-claim check. When the
+     body carries at least PCT_MIN_FIGURES literal percentages, ONE model call reads every tagged
+     percentage sentence and flags pairs that would read as rival headline answers to the same
+     question, even though they may be different survey questions, samples or dates. At most
+     PCT_PAIR_CAP flagged pairs each get ONE fix call, which adds a distinguishing clause (what was
+     asked, of whom, when) to whichever sentence is weaker, built only from that sentence's own
+     card. Code rejects any answer that drops or changes a number, invents one the card does not
+     carry, or touches a source tag. Its count rides on the same summary line as the rest.
 """
 import difflib
 import re
@@ -52,6 +60,11 @@ HUNT_PAGES_PER_CLAIM = 4      # candidate pages opened and judged before a claim
 MIN_PAGE_CHARS = enrich.MIN_PAGE_CHARS   # under this a "page" is a wall or an error, not a source
 FIX_RETRIES = 1               # a rejected fix is retried this many times before code removes the sentence
 BRIDGE_RATIO = 0.8            # an unlisted sentence may move this little (connective words) and no more
+PCT_MIN_FIGURES = 2           # fewer literal percentages than this in the whole body and the pass is
+#                               skipped outright (Aparna's review, 2026-09-17): with one number there
+#                               is no rival figure it could be read against, so there is nothing to check
+PCT_PAIR_CAP = 5              # at most this many flagged pairs get a fix call. Her real fault was ONE
+#                               pair in a whole article; a flood past a handful is the detector guessing
 
 # A citation marker the research left inside a card's text: [11], [17]. Never a number of the claim's.
 MARKER = re.compile(r"\[\d{1,3}\]")
@@ -75,6 +88,9 @@ _RESEARCH_NOTE = re.compile(r"\b(no|none of the|not one|neither)\b[^.]{0,60}\b(s
                             r"\b(collected (?:source|material|page|study)s?|the sources collected|"
                             r"in the (?:collected|gathered) material|the research (?:collected|gathered)|"
                             r"text is cut off|not reconcilable)\b", re.I)
+# A literal percentage, for the conflicting-percentages pass. Not every figure() is a percentage
+# (a dollar amount, a day count), and this pass only ever cares about the ones that are.
+_PCT = re.compile(r"\d+(?:\.\d+)?\s?%")
 
 
 # ---- text helpers ---------------------------------------------------------------------------------
@@ -648,6 +664,156 @@ def _after_of(claim, new_units):
     return best.strip(), score
 
 
+# ---- f. the conflicting-percentages pass ------------------------------------------------------------
+#
+# Aparna's review, 2026-09-17: blog 3 said "TestGorilla's 2025 report says 53% of employers have
+# ditched degree rules," and, in a different section, "The one adoption figure you can cite with any
+# confidence is narrower. It's 76%." Both read as the headline answer to the same question, and
+# nothing told the reader the two numbers were not actually rivals: different survey questions,
+# wearing the same headline. This pass looks for that shape, once, after the per-claim check has
+# already run, and fixes it by ADDING what the weaker sentence is missing (what was asked, of whom,
+# when), never by touching a number. It runs on claims_in the same way the filter above does, so the
+# sentence split and the tag read are the one definition every pass in this file shares.
+
+def pct_claims(body):
+    """Every TAGGED sentence in the body, as it stands after the per-claim fix, that carries a
+    literal percentage. A sentence with no [c...] tag is not eligible: without a card behind it
+    there is no source to build the distinguishing clause from, and this pass never invents one."""
+    out = []
+    for si, sec in enumerate(body.get("sections") or []):
+        for c in claims_in(sec.get("prose") or ""):
+            pcts = _PCT.findall(c["clean"])
+            if pcts:
+                out.append(dict(c, section=si, heading=sec.get("headline") or "", percentages=pcts))
+    return out
+
+
+def _pct_prompt_lines(claims):
+    return "\n".join("%d. [%s] %s" % (i + 1, c["heading"], c["clean"]) for i, c in enumerate(claims))
+
+
+def find_pct_pairs(claims):
+    """ONE model call over the WHOLE body: which sentence numbers read as rival headline answers to
+    the same question. A malformed or missing reply is no pairs found, never a crash. Pairs are
+    validated against the real sentence numbers, deduped, and capped at PCT_PAIR_CAP."""
+    if len(claims) < 2:
+        return []
+    try:
+        r = llm.json_call(C.prompt("pct-pairs", sentences=_pct_prompt_lines(claims)),
+                          timeout=C.LONG_CALL_TIMEOUT) or {}
+    except Exception:  # noqa: BLE001, a call that fails found no pairs, it did not crash the check
+        return []
+    n = len(claims)
+    seen, pairs = set(), []
+    for p in (r.get("pairs") or []):
+        if not isinstance(p, dict):
+            continue
+        try:
+            a, b = int(p.get("a")), int(p.get("b"))
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= a <= n and 1 <= b <= n) or a == b:
+            continue
+        key = tuple(sorted((a, b)))
+        if key in seen:
+            continue
+        seen.add(key)
+        pairs.append((claims[a - 1], claims[b - 1], str(p.get("why") or "")))
+        if len(pairs) >= PCT_PAIR_CAP:
+            break
+    return pairs
+
+
+def _pct_fix_fault(old_sentence, new_sentence, card):
+    """The fix's own code gate: no number lost or changed, no number introduced that is not on the
+    card's own text, no source tag added or dropped. "" when the edit is safe to apply."""
+    old_figs, new_figs = _fig_set(old_sentence), _fig_set(new_sentence)
+    if not old_figs <= new_figs:
+        return "it dropped or changed a number that was already there"
+    added = new_figs - old_figs
+    allowed = {_norm_fig(f) for f in figures(_card_text(card))}
+    if not added <= allowed:
+        return "it introduced a number that is not on its own source (%s)" % ", ".join(sorted(added - allowed))
+    if tags.id_set(new_sentence) != tags.id_set(old_sentence):
+        return "it changed the source tag"
+    return ""
+
+
+def fix_pct_pair(a, b, why, idx):
+    """ONE fix call for one flagged pair. The model decides which of the two sentences is weaker and
+    returns only that one, edited. Returns (claim, new sentence, "") on a safe edit, or
+    (None, None, reason) when nothing could be safely applied. The article is left exactly as it
+    was, and the reason is there to report, never to raise."""
+    card_a = idx.get(a["card_ids"][0]) if a["card_ids"] else None
+    card_b = idx.get(b["card_ids"][0]) if b["card_ids"] else None
+    if not card_a or not card_b:
+        return None, None, "one of the two carries no card to build the clause from"
+    try:
+        r = llm.json_call(C.prompt("pct-fix", sentence_a=a["clean"], card_a=_card_text(card_a),
+                                   sentence_b=b["clean"], card_b=_card_text(card_b), why=why),
+                          timeout=C.LONG_CALL_TIMEOUT) or {}
+    except Exception as e:  # noqa: BLE001, a fix call that fails leaves both sentences exactly as written
+        return None, None, "the fix call failed (%s)" % type(e).__name__
+    pick = {"a": (a, card_a), "b": (b, card_b)}.get(str(r.get("edit") or "").strip().lower())
+    if not pick:
+        return None, None, "the model did not say which of the two sentences to edit"
+    claim, card = pick
+    new_sentence = str(r.get("sentence") or "").strip()
+    if not new_sentence:
+        return None, None, "no replacement sentence came back"
+    fault = _pct_fix_fault(claim["sentence"], new_sentence, card)
+    if fault:
+        return None, None, fault
+    return claim, new_sentence, ""
+
+
+def _apply_pct_fix(body, claim, new_sentence):
+    """Swap the one sentence inside its section's prose, found by exact text match, and nothing
+    else. False when the sentence has already moved (a second pair naming the same sentence, or a
+    block that no longer exists). The edit is skipped rather than guessed at."""
+    secs = body.get("sections") or []
+    if claim["section"] >= len(secs):
+        return False
+    sec = secs[claim["section"]]
+    blocks = _blocks(sec.get("prose") or "")
+    if claim["block"] >= len(blocks):
+        return False
+    units, joiner = _units(blocks[claim["block"]])
+    old = claim["sentence"].strip()
+    for i, u in enumerate(units):
+        if u.strip() == old:
+            units[i] = new_sentence
+            blocks[claim["block"]] = joiner.join(units).strip()
+            sec["prose"] = "\n\n".join(bl for bl in blocks if bl.strip()).strip()
+            return True
+    return False
+
+
+def pct_pass(body, idx):
+    """The whole pass: filter, find pairs, fix. Never raises; any failure leaves the body exactly as
+    the per-claim check left it. Returns the counts and details the report and the summary line read."""
+    claims = pct_claims(body)
+    total_figs = sum(len(c["percentages"]) for c in claims)
+    if total_figs < PCT_MIN_FIGURES:
+        return {"skipped": True, "total_percentages": total_figs, "pairs_found": 0, "fixed": [], "rejected": []}
+    pairs = find_pct_pairs(claims)
+    fixed, rejected = [], []
+    for a, b, why in pairs:
+        claim, new_sentence, fault = fix_pct_pair(a, b, why, idx)
+        if fault:
+            rejected.append({"a": a["clean"][:140], "b": b["clean"][:140], "why": why, "reason": fault})
+            continue
+        other = b if claim is a else a
+        if _apply_pct_fix(body, claim, new_sentence):
+            fixed.append({"section": claim["heading"], "before": claim["sentence"], "after": new_sentence,
+                          "other": other["sentence"], "why": why})
+        else:
+            rejected.append({"a": a["clean"][:140], "b": b["clean"][:140], "why": why,
+                             "reason": "the sentence had already changed by the time the fix was applied"})
+    return {"skipped": False, "total_percentages": total_figs, "pairs_found": len(pairs),
+            "fixed": fixed, "rejected": rejected}
+
+
 # ---- provenance, rebuilt ----------------------------------------------------------------------------
 
 def provenance(prose, idx):
@@ -686,25 +852,30 @@ def _counts(claims, hunt_log, changes):
             "skipped": sum(1 for c in claims if c["kind"] == "skip")}
 
 
-def summary_line(n):
-    """The ONE line the chat shows. Zero counts are left out, so it reads as a sentence, not a form."""
+def summary_line(n, pct=None):
+    """The ONE line the chat shows. Zero counts are left out, so it reads as a sentence, not a form.
+    pct is pct_pass's own return value; omitted or a skip adds nothing to the line."""
     if not n["checked"]:
-        return "Checked 0 facts: the body cites no statistic that a page could confirm"
-    parts = ["%d fine" % n["supported"]]
-    if n["unreadable"]:
-        parts.append("%d could not be read (kept)" % n["unreadable"])
-    if n["replaced"]:
-        parts.append(C.sh.plural(n["replaced"], "new source"))
-    if n["corrected"]:
-        parts.append("%d corrected" % n["corrected"])
-    if n["softened"]:
-        parts.append("%d softened" % n["softened"])
-    if n["removed"]:
-        parts.append("%d removed" % n["removed"])
-    return "Checked %s: %s" % (C.sh.plural(n["checked"], "fact"), ", ".join(parts))
+        base = "Checked 0 facts: the body cites no statistic that a page could confirm"
+    else:
+        parts = ["%d fine" % n["supported"]]
+        if n["unreadable"]:
+            parts.append("%d could not be read (kept)" % n["unreadable"])
+        if n["replaced"]:
+            parts.append(C.sh.plural(n["replaced"], "new source"))
+        if n["corrected"]:
+            parts.append("%d corrected" % n["corrected"])
+        if n["softened"]:
+            parts.append("%d softened" % n["softened"])
+        if n["removed"]:
+            parts.append("%d removed" % n["removed"])
+        base = "Checked %s: %s" % (C.sh.plural(n["checked"], "fact"), ", ".join(parts))
+    if pct and pct.get("fixed"):
+        base += "; " + C.sh.plural(len(pct["fixed"]), "rival percentage pair") + " clarified"
+    return base
 
 
-def render_md(n, claims, hunt_log, changes):
+def render_md(n, claims, hunt_log, changes, pct=None):
     L = ["# Source check", "",
          "Every fact the body cites, checked against the page it cites. One verdict per claim; a page "
          "that would not load counts as unchecked and the claim is kept. Nothing here spreads one bad "
@@ -737,6 +908,19 @@ def render_md(n, claims, hunt_log, changes):
         for e in hunt_log:
             L.append("- %s: %s%s" % (e["claim"][:120], e["outcome"], (" -> " + e["new_url"]) if e["new_url"] else ""))
         L.append("")
+    if pct and not pct.get("skipped") and (pct.get("fixed") or pct.get("rejected")):
+        L += ["## Rival percentages", "",
+             "Sentences that carry different percentages but would read as rival answers to the same "
+             "question. The weaker one gets a clause naming what was asked, of whom, and when; no "
+             "number is ever changed.", ""]
+        for x in pct.get("fixed") or []:
+            L += ['**Clarified** in "%s"' % x["section"], "",
+                 "- Before: %s" % strip_markers(x["before"]), "- After: %s" % strip_markers(x["after"]),
+                 "- Read against: %s" % strip_markers(x["other"]), ""]
+        for x in pct.get("rejected") or []:
+            L.append("- Flagged but not fixed: \"%s\" vs \"%s\" (%s)" % (x["a"], x["b"], x["reason"]))
+        if pct.get("rejected"):
+            L.append("")
     L += ["## Every verdict", ""]
     for c in claims:
         if c["kind"] == "check":
@@ -767,12 +951,16 @@ def run(body, idx, say=lambda *a: None):
         failing = [c for c in claims if c["section"] == si and c["kind"] == "check" and c["verdict"] == "not_supported"]
         if failing:
             changes += fix_section(sec, failing)
+    # THE CONFLICTING-PERCENTAGES PASS runs after the per-claim fix, on the body as it now stands, so
+    # it reads a corrected or removed sentence as it now is, never as it was (Aparna's review,
+    # 2026-09-17). See "f. the conflicting-percentages pass" above for what it does and why.
+    pct = pct_pass(body, idx)
     for sec in body["sections"]:
         sec["provenance"] = provenance(sec.get("prose") or "", idx)
     n = _counts(claims, hunt_log, changes)
-    report = {"counts": n, "summary": summary_line(n),
+    report = {"counts": n, "summary": summary_line(n, pct),
               "claims": [{k: v for k, v in c.items() if k not in ("priority",)} for c in claims],
-              "hunt": hunt_log, "changes": changes,
+              "hunt": hunt_log, "changes": changes, "pct_conflicts": pct,
               "corrections": [{"claim_id": x["claim_id"], "after": strip_markers(x["after"]),
                                "evidence": next((c.get("evidence", "") for c in claims if c["id"] == x["claim_id"]), "")}
                               for x in changes if x["action"] == "corrected"]}
@@ -782,4 +970,4 @@ def run(body, idx, say=lambda *a: None):
         say(report["summary"], note, artifact="source-check.md", view="article")
     except TypeError:       # a plain two-argument say, as the step tests hand in
         say(report["summary"], note)
-    return {"body": body, "report": report, "markdown": render_md(n, claims, hunt_log, changes)}
+    return {"body": body, "report": report, "markdown": render_md(n, claims, hunt_log, changes, pct)}

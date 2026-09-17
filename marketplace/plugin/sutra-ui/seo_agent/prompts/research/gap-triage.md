@@ -62,6 +62,9 @@ Do this, in order.
      (b) your own find  — but only where it clears the bar above.
      (c) winner_h2     — table-stakes subtopics every competitor has. A miss makes us look thin.
      (d) aio_subtopic  — answer-level gaps.
+   Where a choice exists, prefer a question likely to surface the higher-tier source: government and
+   official statistics, then peer-reviewed and academic work, then established research institutions,
+   then reputable press and industry bodies, then vendor research last.
 
 4. CLUSTER into AT MOST 3 research questions. Group related misses into one question — never one question
    per item. Each must be a broad, well-formed research topic: it should be answerable from several angles,

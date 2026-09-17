@@ -2561,6 +2561,33 @@ def api_library_ai_section(item_id: str, body: dict = Body(...)):
         return _bad(str(e)[:400])
 
 
+@router.post("/library/{item_id}/ai-article")
+def api_library_ai_article(item_id: str, body: dict = Body(...)):
+    """Rewrite the WHOLE saved article with the model, for style, against a reader's feedback --
+    modelled on api_library_ai_section just above: same auth, same validation shape, same
+    "writes nothing, returns a proposal and a diff" contract, just over the whole draft instead
+    of one section.
+
+    Body: {"instruction": str, "draft": str|None}. `draft` is the buffer as it is on screen
+    (a section may already have been changed by hand); absent, the saved article. An empty
+    instruction is refused the same way the section route refuses one.
+    """
+    if not _ok_id(item_id):
+        return _bad("bad id")
+    from seo_agent import library_edit
+    if not store.library_get(item_id):
+        return _bad("not found", 404)
+    instruction = (body.get("instruction") or "").strip()
+    if not instruction:
+        return _bad("instruction is needed")
+    draft = body.get("draft") if isinstance(body.get("draft"), str) else None
+    _sync_claude_bin()
+    try:
+        return library_edit.propose_article(item_id, draft, instruction)
+    except Exception as e:  # noqa: BLE001 -- BlockDrift, InventedFigure, ValueError all read the same to a person
+        return _bad(str(e)[:400])
+
+
 @router.post("/library/{item_id}/revert")
 def api_library_revert(item_id: str):
     """Undo the last save. The version before comes back, and the undone one becomes the version

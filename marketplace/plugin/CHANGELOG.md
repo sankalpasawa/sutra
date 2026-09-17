@@ -1,9 +1,24 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-17
-## 2.284.0 (2026-09-17)
+## 2.285.0 (2026-09-17)
 
 - **Adherence rows 1.1-5: the runtime renders the block stack, brings the lens and cynefin prompts to the step, runs the test command and a second-lane review itself, and reads one override file.** `ups.steps_ledger` now emits a RENDERED STACK from facts (`<<FILL:x>>` for judgment fields) plus the lens/cynefin prompts while pending; `stop.review_lane` detaches the declared `test_command` and a DeepSeek review of the turn's diff, writing `<turn>.tests.json` / `.review.json` (the codex-consult gate accepts a fresh runtime-written verdict); `~/.sutra-overrides` replaces the per-gate ACK env vars (applied by `sutra-turn` before step 0, audited). Row 1.1: the two legacy gates no longer refuse the adherence artifacts, Bash exemption is quote-aware and judged on mutating segments only, the creation Stop check counts a rule-covered path as placed. Tests: test-adherence 121, test-review-lane 34, test-overrides 15; parity unchanged with the flags absent.
+
+## 2.284.0 (2026-09-17)
+
+- **Fixed: the AI edit box only took one letter at a time.** The Library panel repaints on a timer (every second while a run is live), and the repaint put focus back for the whole-article title and body boxes but not for the two per-section boxes. So every keystroke in "Edit with AI" or the by-hand box threw the caret out and you had to click back in. All four boxes now keep the caret. Reported by Aparna, 2026-09-17.
+- **New: rewrite a whole article from feedback.** Editing with AI worked one section at a time, which is no use when the problem is the writing across the whole piece. An opened article now has "Rewrite with AI" beside "Edit whole article": paste a review, get the rewrite as a diff, keep it or discard it. It may not add, drop or change a number, a source tag or a heading, and nothing is saved until Save.
+- **The writer now knows who the competitors are.** `knowledge/competitors.json` was only ever read when suggesting topics, so the writing pipeline never saw it. One shipped article was about 45% a competitor, with the competitor's name in two headings and its survey as the headline statistic. The writer is now given that list, and a competitor may be the subject of a sentence but never the authority for a claim, never appear in a heading, never supply the article's headline number, and never be mentioned twice in one section. A heading that still names one is caught and rewritten before the article is assembled.
+- **One study is no longer written as a verdict.** Articles were claiming a single paper "settles" a question, or that "there is no number at all" anywhere. Both are now banned: the writer says what the study found, names it with its size and years before quoting its number, and says what was actually checked rather than claiming the whole world was searched.
+- **Sources are ranked.** Government and official statistics first, then peer-reviewed work, then research institutions, then reputable press, and vendor research last and named as such. The research steps prefer the higher tier too when they have a choice.
+- **Four more AI tells are stripped out.** The "not X, not Y" tic, the bare significance line ("that gap matters more than it sounds"), personifying the evidence ("line the sources up and they agree"), and the clever flourish used as a conclusion. All four are now credibility-level faults, with the real examples in the rules.
+- **The target register has a worked example.** The writing prompt now carries a real before-and-after of a shipped paragraph, so the model matches a written rewrite rather than a description of one.
+- **The FAQ cannot repeat the article.** Questions that restate a heading are dropped and replaced once, checked in code rather than asked for in the prompt.
+- **Percentages that read as rival headline figures get their difference stated.** Two survey numbers answering different questions were printed as if they competed. Pairs like that are now found after the body is written and the distinguishing clause (what was asked, of whom, when) is added, with no number changed.
+- **A caveat is made once**, in full, where it first matters, instead of being re-explained in every later section.
+- **Internal links and the product mention both have to earn their place.** A link only stays if a reader stuck at that sentence would click it, and the product follows the insight instead of opening the thought.
+- **The Prompts tab gained two:** the AI-tells ban list, so a content reviewer can add banned phrases without a developer, and the rules for rewriting an article from feedback.
 
 ## 2.283.0 (2026-09-17)
 

@@ -22,6 +22,11 @@ gives a genuinely deeper or more practical treatment of the exact thing those wo
 The link is a promise ("more on this here"); a link that breaks that promise teaches the reader to
 stop clicking. When in doubt, do not link.
 
+A LINK EARNS ITS PLACE, IT DOES NOT FILL A QUOTA. Ask: would a reader stuck at that exact sentence,
+right then, want to click this? If the anchor had to be bent, stretched or generalised to make a
+link land there, the link does not belong at that sentence. Prefer fewer links placed to more links
+forced.
+
 SAME TOPIC IS NOT ENOUGH. Before accepting any page, run these three checks. Each one has failed a
 real article, and "it is broadly about the same subject" is exactly how each slipped through.
 - SAME ACTIVITY, not merely the same idea. A section teaching rubric anchors for a HACKATHON was
