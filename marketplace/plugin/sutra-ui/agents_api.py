@@ -1288,6 +1288,55 @@ def api_save_slots(body: dict = Body(...)):
     return llm.load_slot_settings()
 
 
+# ---- research settings (the Prompts tab's two numbers) ------------------------------------------
+# How many personas interview an expert, and how many extra evidence rounds a gap check may spend.
+# Same pattern as /slots above: a small JSON at the agent data root (store.research_settings /
+# save_research_settings), read fresh by the engine on every run (research/curate.pick_team,
+# research/gap_check.triage) -- there is no "live gate" to update here, unlike slots, because these
+# only take effect at the start of a run.
+RESEARCHERS_RANGE = (1, 6)
+GAP_ROUNDS_RANGE = (0, 3)
+
+
+@router.get("/research-settings")
+def api_research_settings():
+    """The two numbers in force -- the saved value, or the engine's own default when unset. Reads
+    the SAME constants the engine reads (research/curate.RESEARCHERS, research/_common's
+    GAP_ROUNDS_DEFAULT), so the screen can never show a number the engine would not actually use."""
+    from seo_agent.research import _common as _rc
+    from seo_agent.research import curate as _curate
+    s = store.research_settings()
+    return {"researchers": s["researchers"] if s["researchers"] is not None else _curate.RESEARCHERS,
+            "researchers_range": list(RESEARCHERS_RANGE),
+            "gap_rounds": s["gap_rounds"] if s["gap_rounds"] is not None else _rc.GAP_ROUNDS_DEFAULT,
+            "gap_rounds_range": list(GAP_ROUNDS_RANGE)}
+
+
+@router.post("/research-settings")
+def api_save_research_settings(body: dict = Body(...)):
+    """Save the two numbers. An empty or missing value puts that one back on the engine's default.
+    Unlike /slots, 0 is a real value for gap_rounds (skip gap-filling entirely), so only a missing
+    key or an empty string clears a field -- never 0 itself."""
+    def num(k, lo, hi):
+        v = body.get(k)
+        if v in (None, ""):
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("%s must be a whole number" % k)
+        if not lo <= n <= hi:
+            raise ValueError("%s must be between %d and %d" % (k, lo, hi))
+        return n
+    try:
+        researchers = num("researchers", *RESEARCHERS_RANGE)
+        gap_rounds = num("gap_rounds", *GAP_ROUNDS_RANGE)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    store.save_research_settings(researchers=researchers, gap_rounds=gap_rounds)
+    return api_research_settings()
+
+
 @router.post("/connections")
 def api_save_connections(body: dict = Body(...)):
     c = store.connections()

@@ -186,6 +186,11 @@ ok("and it stopped asking soon, rather than running every turn against a dead se
 
 
 print("\ncurate: the work is kept, and a resume does not buy it twice")
+# Pinned to the historical team of 4 for this whole section (through the "round died" block below):
+# the stub always offers Builder/Sceptic/Evidence One/Practitioner, in that order (_fixture.stub_json),
+# and the two sections compare team sizes against each other, so both must use the same one --
+# regardless of curate.RESEARCHERS' own default. Reset once, at the end of the section.
+store.save_research_settings(researchers=4)
 searches()
 kept = []
 full = curate.run("Cost per hire", "the angle", SPINE, COMPANY, keep=lambda s: kept.append(s))
@@ -201,7 +206,7 @@ ok("and gives the same conversation back", len(again["turns"]) == len(full["turn
    len(again["pages"]) == len(full["pages"]), (len(again["turns"]), len(full["turns"])))
 
 # A round that dies part way: one researcher's second question throws. The others finish and are
-# saved; the resume runs only what is left.
+# saved; the resume runs only what is left. Still under the researchers=4 pin set above.
 searches()
 _real_ask = curate._ask
 def _dies(topic, article, persona, turns):
@@ -227,6 +232,7 @@ resumed = curate.run("Cost per hire", "the angle", SPINE, COMPANY, resume=state)
 ok("the resume searches only for the turns the Sceptic has left",
    len(SEARCHES) == (curate.TURNS - 1) * curate.QUERIES_PER_TURN, (len(SEARCHES), bought))
 ok("and the round comes back whole", len(resumed["turns"]) == len(full["turns"]), len(resumed["turns"]))
+store.save_research_settings(researchers=None, gap_rounds=None)   # the pin above ends here
 
 
 print("\nrun_research: the saved round belongs to its topic")

@@ -1,6 +1,13 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-16
+**status**: active · **updated**: 2026-09-17
+## 2.282.7 (2026-09-17)
+
+- **Fixed: every model call dying after an update.** The backend could inherit a working directory an install had already deleted, so `claude`/`codex` calls failed with "the current working directory was deleted". Every CLI launch now gets an explicit, guaranteed-to-exist directory (the SEO agent's own data root), and that specific failure is treated as retryable so a run already in flight survives it.
+- **Fixed: a monthly spend limit waited instead of stopping.** That message also names a session reset time, so it was read as a normal usage-limit pause. It is now recognised on its own and stops the run immediately with what to do (raise the limit, or wait for the billing period).
+- **Stop moved out of the composer.** While a run was live, the message box was disabled and Send was replaced by a Stop square in the same spot, so one stray click could kill a run that had been running for hours. Stop now lives beside the run's own status line, asks for confirmation past a minute, and the run's duration is no longer shown there. The message box stays usable while a run works — a message typed then is held and delivered the moment the run next asks a question — and a stopped run offers a Continue button.
+- **Two research numbers on the Prompts tab.** Researchers (how many personas interview an expert, default 3) and Gap rounds (how many extra evidence rounds fill in what the first pass missed, default 1) are now visible and changeable, saved the way the model-call slots setting already works.
+
 ## 2.282.6 (2026-09-17)
 
 - No commits since v2.282.5-desktop; released to rebuild the app from the same tree.

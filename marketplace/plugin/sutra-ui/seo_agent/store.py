@@ -484,6 +484,31 @@ def save_slot_settings(per_run=None, max=None):  # noqa: A002 -- the key is call
     return slot_settings()
 
 
+def research_settings():
+    """{"researchers": n|None, "gap_rounds": n|None}: the person's saved overrides for the Prompts
+    tab's two research numbers -- how many personas interview an expert, and how many extra
+    evidence rounds a gap check may spend. None means "not set here"; the engine then uses its own
+    default (research/curate.RESEARCHERS, research/_common.GAP_ROUNDS_DEFAULT). Unlike slot_settings,
+    0 is a real, valid gap_rounds value (skip gap-filling entirely) and must not collapse to None.
+    """
+    c = read_json(os.path.join(root_dir(), "research_settings.json"), {}) or {}
+
+    def num(v):
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    return {"researchers": num(c.get("researchers")), "gap_rounds": num(c.get("gap_rounds"))}
+
+
+def save_research_settings(researchers=None, gap_rounds=None):
+    write_json(os.path.join(root_dir(), "research_settings.json"),
+               {"researchers": researchers, "gap_rounds": gap_rounds})
+    return research_settings()
+
+
 def _person_connections_file():
     return os.path.join(root_dir(), "connections.json")
 

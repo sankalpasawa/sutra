@@ -167,6 +167,22 @@ test("the run header says Working while live and Worked when done, with the step
   assert.ok(/Worked/.test(doneHtml));
   assert.ok(/<span class="n">1<\/span>/.test(doneHtml), "one step_started in the fixture");
 });
+/* NO DURATION ON THE STATE LINE (owner, via Devansh, 2026-09-17: "Working · 3m 43s" made people
+   judge a run by its clock). The word and the steps count stay; agDur's own output is gone from
+   this line specifically -- agDur itself, and elapsedMs, are untouched for whoever else uses them. */
+test("the run header carries no duration, live or finished", () => {
+  const evs = EV.events;
+  const start = EV.state.started_at;
+  const farNow = new Date(Date.parse(start) + 400000).toISOString();   // agDur(400000) = "6m 40s"
+  const liveHtml = A.agRunHtml(Object.assign({}, EV.state, { status: "running" }), evs, { now: Date.parse(farNow) });
+  assert.ok(/Working/.test(liveHtml), liveHtml);
+  assert.ok(!/6m 40s/.test(liveHtml) && !/Working\s*·/.test(liveHtml),
+             "no elapsed time next to Working: " + liveHtml);
+  const doneHtml = A.agRunHtml(Object.assign({}, EV.state, { status: "done", finished_at: farNow }), evs, {});
+  assert.ok(/Worked/.test(doneHtml) && !/Worked\s*·/.test(doneHtml) && !/6m 40s/.test(doneHtml),
+             "no elapsed time next to Worked either: " + doneHtml);
+  assert.ok(/<span class="n">1<\/span>/.test(doneHtml), "the steps count is still there");
+});
 test("a live approval card renders Go ahead / Not now; an answered one renders the decision", () => {
   const live = A.agEntryHtml({ kind: "approval", live: true, tool: "run_research", question: "Research will take a while. Go ahead?", mins: 12, options: [] }, {});
   assert.ok(/data-ag="approve" data-arg="yes"/.test(live) && /Not now/.test(live));
@@ -2227,6 +2243,32 @@ test("agSend does not throw the typed text away before the server has taken it",
             "a stale chat is re-read, so the composer stops looking ready when it is not");
 });
 
+/* STOP MOVED OUT OF THE COMPOSER (owner, via Devansh, 2026-09-17): while a run was live the
+   textarea was disabled and Send was REPLACED by a Stop square in the exact same spot, with no
+   confirmation -- one stray click where Send used to be killed a run that had been going for
+   hours. Stop now lives in the run's own status row, a message typed mid-run is queued and
+   delivered rather than blocked, and a stopped run offers a Continue button. */
+test("the composer is never disabled while a run is live, and Stop is not drawn in it", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "running", started_at: new Date().toISOString() }] };
+  const html = A.agComposerHtml(a);
+  assert.ok(!/<textarea[^>]*\bdisabled\b/.test(html), "the box still takes text while the run works: " + html);
+  assert.ok(!/data-ag="stop"/.test(html), "Stop is gone from the composer");
+  assert.ok(/data-ag="send"/.test(html), "Send is always there, in its usual place");
+});
+
+test("Stop lives in the run's own status row", () => {
+  const run = { run_id: "r1", status: "running", started_at: new Date(Date.now() - 5000).toISOString() };
+  const html = A.agRunHtml(run, [], { now: Date.now() });
+  assert.ok(/class="runstrip live"/.test(html), "the state line is there");
+  assert.ok(/data-ag="stop"[^>]*data-arg="r1"[^>]*>\s*Stop\s*</.test(html),
+             "and Stop sits beside it, plain (not armed) for a run this young: " + html);
+});
+
+/* the three tests below need agAction/agSend to really run and settle before their asserts, so
+   they are async and live in the atest() sweep near the end of this file, with the same title. */
+
 /* Deleting a whole company (owner, 2026-09-12: "there should be a 3 dot option... delete
    everything about that particular brand completely"). */
 test("a company card carries a 3-dot delete, and it asks before it wipes a brand", () => {
@@ -4283,6 +4325,83 @@ async function atest(name, fn){
     assert.ok(/never had: 51%/.test(A.agPanelHtml(a)), "and it is on screen");
   });
 
+  /* STOP MOVED OUT OF THE COMPOSER, THE CONFIRM, AND THE QUEUED MID-RUN MESSAGE
+     (owner, via Devansh, 2026-09-17). These three need agAction()/agSend()/agMaybeSendQueued()
+     to actually settle before the asserts run, so they are here, not in the plain test() sweep. */
+  await atest("past a minute, Stop arms 'Stop?' on the first click and a second click confirms it", async () => {
+    const a = agReset();
+    a.chatId = "c1";
+    const startedAt = new Date(Date.now() - 90 * 1000).toISOString();   // well past the one-minute line
+    a.chat = { runs: [{ run_id: "r1", status: "running", started_at: startedAt }] };
+    a.events = { r1: [] };
+    const posts = [];
+    const prevPost = A.apiPost, prevLoad = A.agLoadChat;
+    A.apiPost = async (path, body) => { posts.push([path, body]); return {}; };
+    A.agLoadChat = async () => {};
+    try {
+      await A.agAction("stop", { getAttribute: () => "" });
+      assert.strictEqual(posts.length, 0, "the first click only arms it; nothing is sent yet");
+      assert.ok(a.stopArm && a.stopArm.runId === "r1", "the run is now armed");
+      const armedHtml = A.agRunHtml(a.chat.runs[0], [], { now: Date.now(), stopArm: a.stopArm });
+      assert.ok(/Stop\?/.test(armedHtml), "and the button reads Stop? while armed: " + armedHtml);
+      await A.agAction("stop", { getAttribute: () => "" });
+      assert.strictEqual(posts.length, 1, "the second click is the one that actually stops it");
+      assert.ok(/\/runs\/c1\/r1\/stop$/.test(posts[0][0]), "through the stop route: " + posts[0][0]);
+      assert.strictEqual(a.stopArm, null, "and the arm clears once it fires");
+    } finally { A.apiPost = prevPost; A.agLoadChat = prevLoad; }
+  });
+
+  await atest("a message typed while a run is RUNNING is queued, then delivered the moment it asks a question", async () => {
+    const a = agReset();
+    a.chatId = "c1";
+    a.chat = { runs: [{ run_id: "r1", status: "running", started_at: new Date().toISOString() }] };
+    a.events = { r1: [] };
+    const posts = [];
+    const prevPost = A.apiPost, prevLoad = A.agLoadChat;
+    A.apiPost = async (path, body) => { posts.push([path, body]); return {}; };
+    A.agLoadChat = async () => {};
+    try {
+      await A.agSend("what about pricing?");
+      assert.strictEqual(posts.length, 0, "nothing goes to the network while the run is still running");
+      assert.ok(a.pendingMsg && a.pendingMsg.chatId === "c1" && a.pendingMsg.text === "what about pricing?",
+                 "the message is held, not thrown away");
+      assert.strictEqual(a.draft, "", "the box clears as if it had gone out");
+      const queuedHtml = A.agComposerHtml(a);
+      assert.ok(!/<textarea[^>]*\bdisabled\b/.test(queuedHtml), "still not disabled while it waits to be sent");
+      // The poll's own next tick: the run now asks a question. agRefresh updates a.chat.runs to the
+      // new state before it calls agMaybeSendQueued -- this reproduces that exactly.
+      a.chat.runs[0] = { run_id: "r1", status: "waiting", waiting_on: { kind: "text" } };
+      await A.agMaybeSendQueued(a.chat.runs[0]);
+      assert.strictEqual(a.pendingMsg, null, "the queue is cleared once it is sent");
+      assert.strictEqual(posts.length, 1, "and it now actually reaches the server: " + JSON.stringify(posts));
+      assert.ok(/\/runs\/c1\/r1\/answer$/.test(posts[0][0]), "through the existing answer route: " + posts[0][0]);
+      /* JSON, not deepStrictEqual: the object was built inside the vm realm (another Object
+         prototype), so only the wire shape is comparable -- see the wire() note elsewhere here. */
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(posts[0][1])), { answer: { text: "what about pricing?" } });
+    } finally { A.apiPost = prevPost; A.agLoadChat = prevLoad; }
+  });
+
+  await atest("Continue, on a stopped run, sends through the same route a typed message would", async () => {
+    const html = A.agEntryHtml({ kind: "stopped" }, {});
+    assert.ok(/You stopped this run/.test(html) && /data-ag="continuerun"/.test(html) && /Continue/.test(html),
+               "the stopped row offers a Continue button: " + html);
+    const a = agReset();
+    a.chatId = "c1";
+    a.chat = { runs: [{ run_id: "r1", status: "stopped", started_at: new Date(Date.now() - 30000).toISOString() }] };
+    a.events = { r1: [] };
+    const posts = [];
+    const prevPost = A.apiPost, prevLoad = A.agLoadChat;
+    A.apiPost = async (path, body) => { posts.push([path, body]); return {}; };
+    A.agLoadChat = async () => {};
+    try {
+      await A.agAction("continuerun", { getAttribute: () => "" });
+      assert.strictEqual(posts.length, 1, "one call went out: " + JSON.stringify(posts));
+      assert.strictEqual(posts[0][0], "/api/agents/seo/chats/c1/send",
+                         "the same send route a typed message uses -- the server carries r1 on, per api_send's own stopped-run rule");
+      assert.strictEqual(posts[0][1].text, "Continue");
+    } finally { A.apiPost = prevPost; A.agLoadChat = prevLoad; }
+  });
+
   console.log("\n" + "-".repeat(60));
   console.log("agents screen: " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
@@ -4410,4 +4529,35 @@ test("the composer carries the model picker", () => {
   a.health = { model_provider: "claude-cli", model: { provider: "claude", model: "", running: "claude-cli",
     options: [{ id: "claude", name: "Claude Code", runnable: true, models: [{ id: "", name: "CLI default" }] }] } };
   assert.ok(/data-agmodel/.test(A.agComposerHtml(a)));
+});
+
+/* THE PROMPTS TAB'S TWO RESEARCH NUMBERS (Devansh, 2026-09-17): Researchers and Gap rounds, saved
+   through /research-settings the way the model-call slots setting already works. */
+test("the Prompts tab shows Researchers and Gap rounds, defaulting to what the server sends", () => {
+  const withData = A.agResearchSettingsHtml({ researchers: 5, researchers_range: [1, 6],
+                                              gap_rounds: 2, gap_rounds_range: [0, 3] });
+  assert.ok(/data-agresearchers/.test(withData) && /data-aggaprounds/.test(withData));
+  assert.ok(/<option value="5" selected>5<\/option>/.test(withData), "researchers=5 is the selected option: " + withData);
+  assert.ok(/<option value="2" selected>2<\/option>/.test(withData), "gap_rounds=2 is the selected option: " + withData);
+  assert.ok(/1 to 6|How many personas/.test(withData), "and each carries its cost, in plain words");
+
+  /* NOT JUST WHAT THE SCREEN DISPLAYS: before the server has answered (a.researchSettings is
+     still null on first paint), the box must not show a blank or a wrong number -- it shows the
+     same defaults the engine itself falls back to (curate.RESEARCHERS=3, GAP_ROUNDS_DEFAULT=1). */
+  const withNothing = A.agResearchSettingsHtml(null);
+  assert.ok(/<option value="3" selected>3<\/option>/.test(withNothing), "researchers defaults to 3: " + withNothing);
+  assert.ok(/<option value="1" selected>1<\/option>/.test(withNothing), "gap_rounds defaults to 1: " + withNothing);
+
+  const html = A.agPromptsHtml({ groups: [] }, { researchSettings: null });
+  assert.ok(/data-agresearchers/.test(html), "and it is drawn at the top of the Prompts tab itself");
+});
+
+test("changing one research number sends BOTH current values, so the other is never read as cleared", () => {
+  const i = SRC.indexOf('t.matches("[data-agresearchers],[data-aggaprounds]")');
+  assert.ok(i !== -1, "the change handler exists");
+  const body = SRC.slice(i, SRC.indexOf("\n    }", i));
+  assert.ok(/data-agresearchers/.test(body) && /data-aggaprounds/.test(body),
+             "it reads BOTH select elements, not just the one that fired: " + body);
+  assert.ok(/researchers:/.test(body) && /gap_rounds:/.test(body),
+             "and posts both keys in the same call: " + body);
 });

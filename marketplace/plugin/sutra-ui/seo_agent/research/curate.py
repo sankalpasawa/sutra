@@ -49,12 +49,17 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from .. import llm
+from .. import llm, store
 from ..tools import dfs
 from . import _common as _c
 from . import web
 
-RESEARCHERS = 4           # the four jobs the picker prompt names; never four people who agree
+# Fewer by default (2026-09-17, the Prompts tab's "Researchers" setting): the picker prompt still
+# names four jobs (the builder, the sceptic, the evidence one, the practitioner) and combines them
+# onto fewer people when N is smaller, or goes deeper on one when N is larger -- see
+# pick-researchers.md. RESEARCHERS_RANGE is the Prompts tab's slider; pick_team clamps to it.
+RESEARCHERS = 3
+RESEARCHERS_RANGE = (1, 6)
 TURNS = 4                 # --turns 4, the original's run flag
 QUERIES_PER_TURN = 3      # max_search_queries_per_turn
 SEARCH_TOP_K = 5          # --topk 5
@@ -95,8 +100,19 @@ def _article_block(topic, angle, spine_ctx):
     ])
 
 
-def pick_team(topic, angle, spine_ctx, company, n=RESEARCHERS):
-    """The research team. Mixed by construction: builder, sceptic, evidence, practitioner."""
+def pick_team(topic, angle, spine_ctx, company, n=None):
+    """The research team. Mixed by construction: builder, sceptic, evidence, practitioner.
+
+    n=None reads the person's saved "Researchers" setting (store.research_settings), falling back
+    to RESEARCHERS when nothing has been saved -- so an unattended run and a fresh install both get
+    the engine's own default, not just what the Prompts tab happens to display. Always clamped to
+    RESEARCHERS_RANGE, whatever is asked for.
+    """
+    if n is None:
+        n = store.research_settings().get("researchers")
+        if n is None:
+            n = RESEARCHERS
+    n = max(RESEARCHERS_RANGE[0], min(RESEARCHERS_RANGE[1], n))
     tok = _c.company_tokens(company)
     p = _c.prompt("pick-researchers", TITLE=topic, ANGLE=angle or "(none given yet)",
                   SPINE=(spine_ctx or {}).get("spine") or "(not written yet)",
