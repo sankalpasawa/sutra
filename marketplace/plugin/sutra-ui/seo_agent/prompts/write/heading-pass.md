@@ -134,6 +134,8 @@ SECOND DUTY — improve any heading that is weak on its own:
   one heading is three times the length of its neighbours; even those out.
 - LEAVE A GOOD HEADING ALONE. Most of them will already be right. Changing a heading that works is a
   cost with no gain, and it buries the changes that matter. Return it unchanged and say so.
+- A RIVAL NAMED IN A HEADING. Take the name out and rewrite around the section's own subject, even if
+  it costs a LOCKED keyword; a heading naming a competitor is worse than one missing a keyword.
 
 ────────────────────────────────────────────────────────────────────────
 Return EVERY heading, in the same order, changed or not.

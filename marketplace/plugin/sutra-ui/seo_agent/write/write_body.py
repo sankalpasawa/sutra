@@ -32,6 +32,42 @@ def _brief():
     return b or "(no writer-brief.md for this company yet; write plainly, name no capability you cannot see)"
 
 
+def _rivals_block():
+    """The rivals on file, turned into prompt text for the {{RIVALS}} token.
+
+    Aparna's review, 2026-09-17: blog 3 was about 45% TestGorilla, with TestGorilla named in two
+    H2s. knowledge/competitors.json already held the rival list; only tools/suggest_topics.py ever
+    read it, and the brand pack's own "never cite" list names ATS vendors, not TestGorilla. So
+    nothing here stopped the writer treating a rival as the authority for a headline stat. This is
+    the fix: the same list, read the same way (tools/_shared.py load_competitors), reaching the
+    section writer for the first time.
+
+    A domain is not a company name a model can match against running prose: "testgorilla.com" does
+    not spell "TestGorilla", and guessing the casing would be wrong as often as right. So each row
+    carries the domain AND its bare stem, and the instruction below says to treat any casing of the
+    stem as naming the company. That is also what write/headings.py `guard_rivals` matches on, so
+    the writer's rule and the deterministic backstop agree on what counts as "naming a rival".
+    """
+    rows = C.sh.load_competitors()
+    lines = []
+    for r in rows:
+        domain = (r.get("domain") or "").strip()
+        if not domain:
+            continue
+        stem = domain.split("//")[-1].split("/")[0]
+        if stem.startswith("www."):
+            stem = stem[4:]
+        stem = stem.split(".")[0]
+        if stem:
+            lines.append("- %s (stem: %s)" % (domain, stem))
+    if not lines:
+        return "(none recorded)"
+    return ("\n".join(lines) +
+            "\nA company's name is not spelled out in its domain, so match on the STEM: treat any "
+            "casing or spacing of it as naming that company (testgorilla -> TestGorilla, Testgorilla, "
+            "Test Gorilla all count).")
+
+
 def _plan_block(sections, cur):
     lines = []
     for i, s in enumerate(sections, 1):
@@ -183,6 +219,7 @@ def run(st, idx, ctx, say=lambda *a: None):
     sections = st["sections"]
     brand = C.company()
     brief, persona, memory = _brief(), ctx["persona"], C.sh.memory_block()
+    rivals = _rivals_block()
     fields = [str(f).strip() for f in (st.get("item_fields") or []) if str(f).strip()]
     contract = ("\nTHIS ARTICLE'S PER-ITEM CONTRACT — your section IS one of the list's items, so it MUST end\n"
                 "with exactly these labelled parts, in this order:\n"
@@ -222,7 +259,8 @@ def run(st, idx, ctx, say=lambda *a: None):
                      item_contract=contract if sec.get("is_item") else supporting,
                      table=_table_instruction(sec), list=_list_instruction(sec),
                      thin=_thin_note(sec, failures), shape=render_shape(sec, idx),
-                     product_rule=rule, brief=brief, field=st.get("field_block") or "", memory=memory)
+                     product_rule=rule, brief=brief, field=st.get("field_block") or "", memory=memory,
+                     rivals=rivals)
         prose = _strip_h2(llm.text(p, SYSTEM), head)
         prose, prov, dropped = provenance(prose, sec, idx)
         return {"headline": head, "job": sec.get("job", ""), "word_target": sec.get("word_target"),

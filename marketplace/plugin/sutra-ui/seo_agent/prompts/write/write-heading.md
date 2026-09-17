@@ -105,6 +105,10 @@ THE RULES for whatever you write:
 
 - SAY WHAT THE SECTION DELIVERS. After your edit it must still match its job and its evidence.
 
+- NEVER NAME A RIVAL. However well a competitor's name fits, a heading is not a comparison ad for
+  them; keep the rival out and let the body name it where the section is genuinely about comparing
+  options (Aparna's review, 2026-09-17: a published piece had a rival's name in two of its H2s).
+
 ════════════════════════════════════════════════════════════════════════
 THE USER'S STANDING RULES. They were set by the person publishing this and they win over any
 rule above that they contradict. "(none)" means there are none.

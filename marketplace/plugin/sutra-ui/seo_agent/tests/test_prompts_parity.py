@@ -168,6 +168,20 @@ EXCLUDED_REGIONS = {
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
     "readable.md": [("REAL PUBLISHED ARTICLES BY", "  · The reader is")],
+    # Three blocks Sutra carries that his repo does not, added whole on 2026-09-17 from Aparna's
+    # review (blog 3 was about 45% TestGorilla, with TestGorilla named in two H2s). His workflow has
+    # no competitor list wired to the writer at all, so there is nothing on his side for these rules
+    # to match, and PORT_EDITS' one-substring-per-line would mean re-declaring nearly every line of
+    # three multi-line rules. Excluded as a block instead, same as the readable.md region above.
+    "write-body.md": [
+        ("RIVALS ON RECORD FOR {{BRAND}}", "NEVER BREAK THESE:"),
+        ("- A RIVAL FROM THE LIST ABOVE MAY BE THE SUBJECT", "- Numbers must reconcile."),
+        ("- ONE STUDY IS NEVER A VERDICT.", "- NO STAT QUOTA."),
+    ],
+    # Same review, the one-line version: neither file offers a way to say "never name a rival" on
+    # his side, because his workflow never sees a competitor list at all.
+    "write-heading.md": [("- NEVER NAME A RIVAL.", "Return ONLY this JSON")],
+    "heading-pass.md": [("- A RIVAL NAMED IN A HEADING.", "Return EVERY heading, in the same order")],
 }
 
 PORT_EDITS = {
@@ -291,7 +305,7 @@ for rel, gone in sorted(MUST_NOT_APPEAR.items()):
 TOKENS_THE_CODE_FILLS = {
     "readable.md": ["{{WRITING_EXAMPLES}}", "{{BRAND}}", "{{FORMAT_RULE}}", "{{ARTICLE}}"],
     "wrapper.md": ["{{BRAND}}", "{{VOICE}}", "{{FAQ_WORDS}}", "{{MEMORY}}"],
-    "write-body.md": ["{{BRIEF}}", "{{FIELD}}", "{{MEMORY}}"],
+    "write-body.md": ["{{BRIEF}}", "{{FIELD}}", "{{MEMORY}}", "{{RIVALS}}"],
     "sentence-pass.md": ["{{READER}}", "{{TEXT}}", "{{MEMORY}}"],
 }
 for rel, tokens in sorted(TOKENS_THE_CODE_FILLS.items()):
