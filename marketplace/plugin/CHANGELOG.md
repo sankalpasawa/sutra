@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-18
+## 2.285.2 (2026-09-18)
+
+- **Fixed: the Prompts tab editor took one letter at a time.** The same repaint bug fixed in 2.284.0 for the Library boxes, in a box that fix did not name. The caret restore is now general: any text box that had focus keeps its focus, selection and scroll position through the timed repaint. This also fixes the Memory, Connections and competitor forms.
+- **Team Library: an article reaches the team once it has a draft, and not before.** Empty rows made at the start of a run ("Writing…", 0 words) are never sent. One teammate's update had filled everybody's Library with nine of them.
+- **The first draft is shared the moment it exists**, as a draft, without anyone having to mark it ready. Marking it ready or back to draft now reaches the team too.
+- **Only the person who created an article can delete it**, and the delete removes it for everyone. Everyone can still open, edit and mark any article. A teammate's card says whose it is and has no bin.
+- **A row whose run has stopped says "stopped"** instead of spinning for ever.
+- **Tests can no longer touch a real install.** The test fixture picks a throwaway folder the moment it loads and refuses a data folder inside ~/.sutra-ui.
+
 ## 2.285.1 (2026-09-18)
 
 - **Two holes closed in the adherence gate, and the prints made readable.** An adversarial review of 2.285.0 found that one Write to `~/.sutra-overrides` or a flag file switched the gate off, and that `bash x.sh`, `./x`, `source`, `make` and heredoc interpreters were classed as reads. Now the runtime's own files are runtime-owned (no tool call may name them in a path, a command or written content; the runtime flags are no longer override keys; an override file modified inside a session is ignored until the next one), every Bash segment is classed by its first word and fails closed (shells and interpreters with an argument, unknown programs and relative script paths are mutations; a version or help flag alone is a read), scripts and shebang content under exempt directories are not exempt. The live line is now `[sutra <turn>] lens done (evidence DOWN)  |  cynefin done (clear)` and the Stop print is a checkbox table with one count line. Tests: test-adherence 168, test-overrides 25; parity unchanged with the flags absent.

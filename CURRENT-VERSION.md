@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-18
 
-## v2.285.1 (2026-09-18, HEAD)
+## v2.285.2 (2026-09-18, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.285.1 (2026-09-18)
 
 **The adherence gate can no longer be switched off or walked around from inside a session** (founder 2026-09-18: "fix them"). Runtime-owned paths (override file, flag files, seal dir, session stamp) are refused to every tool call; Bash is classed by shape and fails closed; scripts under exempt directories are not exempt. The live step line and the Stop table are now short and human-readable. Reviews: DeepSeek on the diff (3 P1 folded); codex SKIPPED until 2026-10-16. Tests: 168 + 25 checks, golden parity on both runners.
 
