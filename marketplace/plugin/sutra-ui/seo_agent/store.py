@@ -728,7 +728,7 @@ def _write_text(path, text):
         raise
 
 
-def library_start(chat_id, run_id, request_text=""):
+def library_start(chat_id, run_id, request_text="", owner="", owner_id=""):
     """Put the row on the Library screen NOW, at the top of the run, and return its id.
 
     The row is born with the only two things that are true this early: a placeholder name
@@ -749,11 +749,17 @@ def library_start(chat_id, run_id, request_text=""):
             "chat_id": chat_id, "run_id": run_id,
             "request": (request_text or "").strip()[:400],
             "words": 0, "created_at": now(), "started_at": now()}
+    # WHO MADE IT, stamped once at birth and never rewritten (2026-09-18). Only the person who
+    # created an article may delete it for the team, and every teammate's card says whose it is.
+    # `edited_by` cannot do this job: it is the LAST person to save, not the first.
+    if owner or owner_id:
+        meta["owner"], meta["owner_id"] = owner or "", owner_id or ""
     write_json(p, meta)
     return item_id
 
 
-def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_id=None):
+def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_id=None,
+                   status="ready"):
     """Give the row its real name, mark it ready, and write the article into it. Returns the meta.
 
     The rename is a rename and nothing else: the id the row was born with is the id it keeps, or
@@ -784,7 +790,7 @@ def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_
             "id": item_id, "chat_id": chat_id, "run_id": run_id, "created_at": now()}
     meta["id"] = item_id                      # never re-minted: the row keeps the id it was born with
     meta["title"] = title
-    meta["status"] = "ready"
+    meta["status"] = status or "ready"
     meta["words"] = len((draft_md or "").split())
     meta["finished_at"] = now()
     # the row already knows its run when it was started; a finish that names one wins, a finish
@@ -795,6 +801,10 @@ def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_
         meta["run_id"] = run_id
     extra.pop("chat_id", None)
     extra.pop("run_id", None)
+    # the owner is set once; a later save (or a teammate's copy arriving) never renames it
+    if meta.get("owner_id") or meta.get("owner"):
+        extra.pop("owner", None)
+        extra.pop("owner_id", None)
     # THE PREVIOUS BODY IS A FILE, NEVER A META FIELD. A teammate's edit arrives through the
     # workspace with `previous_draft` inside its meta so an undo works on every Mac, but meta.json
     # is what library_list reads on every poll of the Library screen, and a second whole article
@@ -815,11 +825,11 @@ def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_
     return meta
 
 
-def library_save(chat_id, run_id, title, draft_md, meta_extra=None):
+def library_save(chat_id, run_id, title, draft_md, meta_extra=None, status="ready"):
     """The old one-shot save, kept because callers and tests still say it. It is now a thin call
     onto `library_finish`, so a run that already has a live row is UPDATED and never doubled."""
     meta = library_finish(library_item_id(chat_id, run_id), title, draft_md, meta_extra,
-                          chat_id=chat_id, run_id=run_id)
+                          chat_id=chat_id, run_id=run_id, status=status)
     return meta["id"]
 
 
@@ -1101,6 +1111,35 @@ def _backfill_decision_fields(item_id, meta):
     return meta
 
 
+# A "writing" row whose run is not going any more. The spinner on that row was a lie: the run had
+# failed, been stopped, or its chat was deleted, and the row sat on "writing" for ever. Seen
+# 2026-09-18 on nine rows at once. "waiting" (the run asked a question) is not stalled.
+LIBRARY_DEAD_RUN = ("failed", "stopped", "done")
+
+
+def _library_stalled(m):
+    if m.get("status") != "writing":
+        return False
+    st = get_state(m.get("chat_id"), m.get("run_id")) if m.get("chat_id") and m.get("run_id") else None
+    return not st or st.get("status") in LIBRARY_DEAD_RUN
+
+
+def library_is_mine(meta, my_id=""):
+    """May this person delete this article for the whole team? Only whoever created it.
+
+    With an owner on the row, the ids must match. A row from before owners were stamped
+    (2026-09-18) has none, so it belongs to the Mac whose chat made it: that chat folder exists
+    only on the creator's Mac. With no workspace at all (my_id empty) every row is local and mine.
+    """
+    meta = meta or {}
+    if not my_id:
+        return True
+    if meta.get("owner_id"):
+        return str(meta["owner_id"]) == str(my_id)
+    chat = meta.get("chat_id")
+    return bool(chat) and os.path.isdir(os.path.join(chats_dir(), chat))
+
+
 def library_list():
     """Every row, newest first, each carrying its own progress strip.
 
@@ -1116,6 +1155,7 @@ def library_list():
             if m:
                 m.setdefault("status", "draft")
                 m["milestones"] = milestones(m.get("chat_id"), m.get("run_id"))
+                m["stalled"] = _library_stalled(m)
                 m = _backfill_decision_fields(name, m)
                 out.append(m)
     return sorted(out, key=lambda m: m.get("created_at", ""), reverse=True)

@@ -18,6 +18,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# IMPORTING THIS MODULE IS WHAT MAKES A SUITE SAFE, SO IT MUST DO IT AT IMPORT (2026-09-18).
+# Until today the throwaway folder was only chosen inside setup(), and a suite that imported this
+# file for its "(throwaway SEO_AGENT_DATA)" but never called setup() ran against the real install
+# whenever it was started on its own instead of through run_all.sh. One did, and its reset step
+# deleted the owner's live chats and Library. Now the folder is chosen here, before any suite code
+# runs, and a data dir inside a real install is refused outright rather than trusted.
+if not os.environ.get("SEO_AGENT_DATA", "").strip():
+    os.environ["SEO_AGENT_DATA"] = tempfile.mkdtemp(prefix="seo-agent-tests-")
+_LIVE = os.path.realpath(os.path.expanduser("~/.sutra-ui"))
+if os.path.realpath(os.environ["SEO_AGENT_DATA"]).startswith(_LIVE + os.sep):
+    raise SystemExit("REFUSING TO RUN: SEO_AGENT_DATA points inside the real install (%s). Tests "
+                     "only ever run against a throwaway folder." % os.environ["SEO_AGENT_DATA"])
+
 # Four pages, shaped like index_site writes them. Enough text that learn_voice has prose
 # to sample, and real-looking URLs so link candidates and the link checks have targets.
 _PROSE = ("We build programmes for people who already run things. Every cohort is taught by "

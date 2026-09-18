@@ -343,6 +343,39 @@ def actor(client=None):
         return os.environ.get("USER", "").strip() or "unknown"
 
 
+def owner_fields(client=None):
+    """{"owner", "owner_id"} for a row this person is creating now. Blank without a workspace."""
+    return {"owner": actor(client) if actor_id(client) else "", "owner_id": actor_id(client)}
+
+
+def push_status(item_id, client=None):
+    """A status change (draft, ready, published) goes to the team like any other save."""
+    return _push(item_id, team_status(client), actor(client), client)
+
+
+def delete(item_id, client=None):
+    """Delete an article for everyone, or refuse. {"ok", "error"?}.
+
+    Only the person who created it may delete it (2026-09-18). Everyone may still edit it and move
+    it between draft and ready: the workspace rule is "everyone can do everything", and deleting
+    someone else's work is the one exception to it.
+    """
+    meta = store.library_get(item_id)
+    if not meta:
+        return {"ok": False, "error": "That article is not here any more."}
+    if not store.library_is_mine(meta, actor_id(client)):
+        who = meta.get("owner") or meta.get("edited_by") or "the teammate who wrote it"
+        return {"ok": False, "error": "Only %s can delete this article." % who}
+    team = team_status(client)
+    if team["member"]:
+        try:
+            from .workspace import sync
+            sync.push_delete("library", item_id, actor=actor(client), client=client)
+        except Exception:                   # noqa: BLE001 -- queued or not, the local delete stands
+            pass
+    return {"ok": store.library_delete(item_id)}
+
+
 def actor_id(client=None):
     try:
         return str(_client(client).settings().get("member_id") or "").strip()

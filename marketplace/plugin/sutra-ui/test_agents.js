@@ -1267,6 +1267,33 @@ test("a finished row keeps every button it had, and its strip is all done with n
   assert.ok((html.match(/class="ag-mile done"/g) || []).length === 5, "all five open the panel, which is how you reach a finished plan");
 });
 
+/* ── the team Library (2026-09-18) ──────────────────────────────────────────────────────────
+   A teammate's article says whose it is and has no bin: only the person who made an article may
+   delete it for everyone. A "writing" row whose run is dead says "stopped", with no spinner. */
+test("a teammate's article says whose it is, and only your own has a bin", () => {
+  const html = A.agLibraryHtml([
+    { id: "run-a", title: "Theirs", status: "draft", created_at: "2026-09-18T07:00:00Z", milestones: [],
+      mine: false, owner_name: "Aparna" },
+    { id: "run-b", title: "Mine", status: "ready", created_at: "2026-09-18T07:00:00Z", milestones: [], mine: true }]);
+  const rows = html.split('<div class="ag-row');
+  const theirs = rows.find(r => r.indexOf("Theirs") !== -1), mine = rows.find(r => r.indexOf("Mine") !== -1);
+  assert.ok(/<span>by Aparna<\/span>/.test(theirs), "the teammate's card names her");
+  assert.ok(!/data-ag="libdel"/.test(theirs), "and has no bin");
+  assert.ok(/data-ag="libopen"/.test(theirs) && /data-ag="libstatus"/.test(theirs), "but can still be opened and marked");
+  assert.ok(/data-ag="libdel"/.test(mine), "my own card keeps its bin");
+  assert.ok(mine.indexOf("by ") === -1, "and does not name me to myself");
+});
+
+test("a writing row whose run is dead says stopped, with no spinner, and does not keep the fast poll alive", () => {
+  const it = { id: "run-s", title: "Writing…", request: "continue", status: "writing", stalled: true,
+               created_at: "2026-09-16T07:00:00Z", milestones: [] };
+  const html = A.agLibraryHtml([it]);
+  assert.ok(/<span class="pill p-mut">stopped<\/span>/.test(html), "the muted stopped pill");
+  assert.ok(html.indexOf('class="spin"') === -1, "no spinner");
+  assert.ok(!/class="ag-row writing"/.test(html), "no working accent");
+  assert.strictEqual(A.agLibWriting({ library: [it] }), false, "a stopped row is not something to watch");
+});
+
 test("a row from the payload the server sent BEFORE milestones renders exactly as it did", () => {
   /* no status, no milestones: the shape library_list returned until 2026-09-09 */
   const old = [{ id: "2026-09-01-hiring", title: "Hiring", words: 1200, primary_keyword: "hiring",
@@ -3187,14 +3214,13 @@ test("an empty whole-article instruction is refused before any model call", () =
    whole-article boxes ([data-aglibbody], [data-aglibtitle]); the section textarea and the AI
    instruction box were left out, so the poll's own repaint (1s live, 4s idle) stole focus back
    after every keystroke in either of them. */
-test("the caret-restore list in agDraw covers all four Library boxes, walked once (not four ternaries)", () => {
-  const constBlock = SRC.slice(SRC.indexOf("const AG_LIBCARET_ATTRS"), SRC.indexOf("function agDraw(force)"));
-  ["data-aglibbody", "data-aglibtitle", "data-aglibsec", "data-aglibinstr"].forEach(attr => {
-    assert.ok(constBlock.indexOf('"' + attr + '"') !== -1, attr + " is in AG_LIBCARET_ATTRS");
-  });
+test("the caret restore is general: agDraw grabs and puts back whatever box had focus, in both regions", () => {
+  /* Aparna again, 2026-09-18: the Prompts tab editor (data-agprompttext) had the same bug the
+     day after the Library boxes were fixed by name. No per-box list any more. */
+  assert.strictEqual(SRC.indexOf("AG_LIBCARET_ATTRS"), -1, "no list of box names to fall behind");
   const body = SRC.slice(SRC.indexOf("function agDraw(force)"), SRC.indexOf("function agDrawComposer"));
-  assert.ok(/for \(const attr of AG_LIBCARET_ATTRS\)/.test(body),
-            "the restore walks the one shared list, so a fifth typed box only has to join it");
+  assert.ok(/agCaretGrab\("agScroll"\)/.test(body), "the settings views keep the caret");
+  assert.ok(/agCaretGrab\("agPanel"\)/.test(body), "the panel keeps the caret");
 });
 /* The full DOM-driven proof (agDraw actually restoring focus/selection through a real
    document.querySelector) lives further down, alongside mktDoc/mktEl, as
@@ -4364,35 +4390,46 @@ async function atest(name, fn){
      typing in the per-section editor; agDraw is supposed to put the caret straight back. Proven
      here through an actual agDraw() call and a document.querySelector spy, for all four boxes
      -- not just the two (data-aglibbody/title) that were ever covered before this fix. */
-  await atest("the caret survives a repaint while typing in any of the four Library boxes", async () => {
-    function mktCaretDoc(activeSel){
-      const els = {};
+  await atest("the caret survives a repaint in every typed box: Library, section, prompt, file, and the settings forms", async () => {
+    function mktCaretDoc(region, attr){
       const calls = [];
-      const active = { matches: sel => sel === activeSel, selectionStart: 3, selectionEnd: 5 };
+      const active = { tagName: "TEXTAREA", attributes: [{ name: attr, value: "" }],
+                       selectionStart: 3, selectionEnd: 5, scrollTop: 120 };
+      const els = {};
+      const regionEl = Object.assign(mktEl(region), {
+        contains: el => el === active,
+        querySelector: sel => sel === "[" + attr + "]" ? {
+          focus: () => calls.push("focus"),
+          setSelectionRange: (f, t) => calls.push(["range", f, t]),
+          set scrollTop(v){ calls.push(["top", v]); } } : null,
+      });
+      els[region] = regionEl;
       return {
         activeElement: active, calls,
         getElementById: id => (els[id] || (els[id] = mktEl(id))),
-        querySelector: sel => {
-          if (sel !== activeSel) return null;
-          return { focus: () => calls.push("focus"), setSelectionRange: (f, t) => calls.push(["range", f, t]) };
-        },
+        querySelector: () => null,
         querySelectorAll: () => [],
       };
     }
-    for (const sel of ["[data-aglibbody]", "[data-aglibtitle]", "[data-aglibsec]", "[data-aglibinstr]"]){
+    const cases = [
+      ["agPanel", "data-aglibbody"], ["agPanel", "data-aglibtitle"], ["agPanel", "data-aglibsec"],
+      ["agPanel", "data-aglibinstr"], ["agPanel", "data-agprompttext"], ["agPanel", "data-agfiletext"],
+      ["agScroll", "data-agmem"],
+    ];
+    for (const [region, attr] of cases){
       A.S.ag = null;
       const a = libPanel(SEC.md);
-      a.screen = "agent"; a.view = "library"; a.library = [];   /* agDraw only draws the panel past screen==="agent" */
-      const doc = mktCaretDoc(sel);
+      a.screen = "agent";
+      if (region === "agScroll"){ a.panel = null; a.view = "memory"; a.memory = []; }
+      else { a.view = "library"; a.library = []; }
+      const doc = mktCaretDoc(region, attr);
       const prevDoc = A.document;
       A.document = doc;
-      try {
-        /* #agPanel is fresh (its __agHtml starts undefined), so this first draw is itself a
-           "repaint" in agSetHtml's terms -- exactly the shape a poll tick's redraw takes. */
-        A.agDraw(true);
-      } finally { A.document = prevDoc; }
+      try { A.agDraw(true); } finally { A.document = prevDoc; }
       const restored = doc.calls.some(c => Array.isArray(c) && c[0] === "range" && c[1] === 3 && c[2] === 5);
-      assert.ok(restored, sel + ": the caret was put back at the same selection after the repaint");
+      assert.ok(restored, attr + ": the caret was put back at the same selection after the repaint");
+      assert.ok(doc.calls.some(c => Array.isArray(c) && c[0] === "top" && c[1] === 120),
+                attr + ": a long box keeps its own scroll position too");
     }
   });
 
