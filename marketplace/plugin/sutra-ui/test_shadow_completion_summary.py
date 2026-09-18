@@ -634,19 +634,64 @@ class TestLastWorkerMessage(unittest.TestCase):
         shadow_runner.session_reader.read_session = boom
         self.assertEqual(shadow_runner.last_worker_message("sess-1"), "")
 
-    def test_42_whitespace_is_collapsed(self):
-        """The same reason artifact_context collapses it: a quote with runs
-        of newlines and tabs in it reads as machine noise."""
+    def test_42_noise_is_collapsed_and_structure_is_kept(self):
+        """WHAT THIS PINNED BEFORE, AND WHY IT CHANGED (founder, 2026-09-17).
+
+        This asserted that EVERY run of whitespace, newlines included,
+        flattened to one space -- "a quote with runs of newlines and tabs in
+        it reads as machine noise". That was right for the only consumer it
+        had: the one-line gist above the check list, which quotes this field.
+
+        The DONE card now also renders the same field as MARKDOWN, in the
+        Summary block under the verdicts, and markdown is made of line
+        breaks: flattening them turns a heading into prose, a list into a
+        run-on sentence and a table into rubble. The INTENT recorded here is
+        unchanged -- no machine noise -- and it now applies to a field that
+        is displayed rather than quoted, so noise and structure are
+        separated instead of both being destroyed.
+
+        The gist is unaffected: shadowCompletionHtml flattens this field
+        itself before handing it to shadowResultGist, precisely so this
+        change cannot move that line (16-shadow-home.js, shadowOutcomeFlat).
+        """
         self.doc(self.msg("assistant", "I added\n\n  the loop\tand ran it."))
-        self.assertEqual(shadow_runner.last_worker_message("sess-1"),
-                         "I added the loop and ran it.")
+        out = shadow_runner.last_worker_message("sess-1")
+        # noise out: the tab and the interior run are gone
+        self.assertNotIn("\t", out)
+        self.assertIn("the loop and ran it.", out)
+        # structure in: the paragraph break survives
+        self.assertIn("I added\n\n", out)
+
+    def test_42b_markdown_structure_survives(self):
+        """The case the Summary block exists for: a research answer whose
+        headings, list and table must still be markdown when it lands."""
+        self.doc(self.msg("assistant",
+                          "## Latest\r\n\n\n\n- one   thing\n- two\n\n"
+                          "| a | b |\n|---|---|\n| 1 | 2 |   \n"))
+        out = shadow_runner.last_worker_message("sess-1")
+        self.assertTrue(out.startswith("## Latest"), out[:20])
+        self.assertIn("\n- one thing\n- two", out, "list rows kept")
+        self.assertIn("|---|---|", out, "the table separator is intact")
+        self.assertNotIn("\r", out, "carriage returns are noise")
+        self.assertNotIn("\n\n\n", out, "at most one blank line")
+        self.assertFalse(out.endswith(" "), "trailing space trimmed")
+
+    def test_42c_leading_indentation_is_kept(self):
+        """Indentation is what makes a nested list nested; only INTERIOR
+        runs collapse."""
+        self.doc(self.msg("assistant", "- top\n  - nested   item\n"))
+        out = shadow_runner.last_worker_message("sess-1")
+        self.assertIn("\n  - nested item", out)
 
     def test_43_a_long_message_is_cut_at_a_sentence(self):
         """_prose_tail's lesson at the other end of the string: a cut at
         whatever byte lands on the cap reads as something the worker wrote
         when it is not. A sentence boundary needs no ellipsis, because
         nothing was left mid-thought."""
-        body = ("I rewired the tenant loop and it is green now. " * 30)
+        # sized off the cap, so raising OUTCOME_CHARS cannot quietly turn
+        # this into a test that truncates nothing and asserts nothing
+        one = "I rewired the tenant loop and it is green now. "
+        body = one * ((shadow_runner.OUTCOME_CHARS // len(one)) + 5)
         self.doc(self.msg("assistant", body))
         out = shadow_runner.last_worker_message("sess-1")
         self.assertLessEqual(len(out), shadow_runner.OUTCOME_CHARS)
@@ -655,7 +700,8 @@ class TestLastWorkerMessage(unittest.TestCase):
         self.assertNotIn("…", out, "nothing was left mid-thought")
 
     def test_44_with_no_sentence_near_the_cut_it_says_it_was_cut(self):
-        body = "word " * 500                     # no full stop anywhere
+        # no full stop anywhere, and sized off the cap for the same reason
+        body = "word " * ((shadow_runner.OUTCOME_CHARS // 5) + 50)
         self.doc(self.msg("assistant", body))
         out = shadow_runner.last_worker_message("sess-1")
         self.assertLessEqual(len(out), shadow_runner.OUTCOME_CHARS + 1)

@@ -192,9 +192,17 @@ class NothingElseMoved(unittest.TestCase):
     def test_evaluate_still_receives_the_full_evidence(self):
         src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "mission_engine.py"), encoding="utf-8").read()
-        self.assertIn("evaluate_done_when(m, transcript, self.verifier)", src,
+        # PREFIX, NOT THE WHOLE CALL. What this guards is the FIRST argument
+        # -- `transcript`, the full evidence blob -- never `last_response`,
+        # the decider's shaped view. Pinning the closing paren made it a
+        # guard on the argument COUNT as well, and it broke the moment
+        # `probe_root` was threaded in beside `verifier` without touching the
+        # evidence at all.
+        self.assertIn("evaluate_done_when(m, transcript, self.verifier", src,
                       "verification still reads the evidence blob, not the "
                       "decider's shaped view")
+        self.assertNotIn("evaluate_done_when(m, last_response", src,
+                         "the shaped view is the DECIDER's input only")
 
     def test_the_state_machine_did_not_move(self):
         self.assertEqual(len(mission_engine.STATES), 9)

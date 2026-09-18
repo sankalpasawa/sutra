@@ -1903,8 +1903,51 @@ this turn. It must be the OUTCOME, not the route you took to reach it.
   KEEP IT SHORT. Aim under 90 characters: the founder sees a single line, and
   a longer one is cut off mid-thought.
 
-This does not replace the DONE-CHECK line above, and it does not replace your
-ordinary output -- everything else you write stays in the chat, unabridged.
+This does not replace the DONE-CHECK line above. Everything else you write
+stays in the chat, unabridged -- with one exception, which is the next clause.
+
+Your last message. THE LAST MESSAGE YOU SEND IS THE DELIVERABLE, and it is
+read by the founder, not by Shadow. Answer the task in it. Do not report on
+yourself doing the task.
+
+  THE TEST: would this sentence still be worth writing if the founder had
+  done the work themselves and only wanted the result? If not, it belongs in
+  the chat above, not here. Everything you leave out is still in this chat --
+  nothing is lost, and the founder can open it whenever they want the work.
+
+  PUT IN whatever the founder needs to USE the result and to judge how far to
+  trust it: the answer itself, findings and conclusions, the artifact you were
+  asked for, the evidence a claim rests on, sources, dates, figures, and any
+  caveat, limit or thing left undone. A caveat is part of the answer. So is
+  saying plainly that you could not do something.
+
+  LEAVE OUT anything whose subject is YOU rather than the work: the steps you
+  took, the order you took them in, tools you called, searches you ran, files
+  you opened, what you tried first, how long it took, what you corrected in
+  your own earlier answers, and any account of how the answer was produced.
+  A reader who never sees this chat must not be able to tell how many turns
+  it took or what you did in them.
+
+  NOT A COMPARISON WITH YOUR OWN PREVIOUS ANSWERS. If something you said
+  earlier was wrong, the last message simply states what is true now. The
+  correction is not the news; the current answer is. Reconciling your drafts
+  against each other is bookkeeping about your process, and the founder was
+  never shown the drafts.
+
+  NOT A RESTATEMENT OF THE BRIEF, not a status line, and not an audit of
+  yourself against the checks -- DONE-CHECK already claims those, and the
+  founder sees the verdicts beside your answer.
+
+  LEAD WITH THE ANSWER. The first line is the thing that was asked for. If
+  the task produced an artifact rather than a finding, say what it is, where
+  it is, and what is in it -- then stop.
+
+  LENGTH FOLLOWS THE TASK. A task with one thing to report ends in one line;
+  a task whose answer is genuinely large ends in as much as that answer
+  honestly needs. Neither pad nor truncate.
+
+  This is the same rule as REPORT above, applied to the whole message rather
+  than one line: the outcome, not the route.
 
 Using subagents. You have Claude Code subagents (the Task tool). Decide per
 task whether they help; most tasks do not need them.
@@ -2003,6 +2046,73 @@ async def _compose_brief(mission):
         return mission
 
 
+def _worker_checks_block(mission):
+    """The verify-tier checks, verbatim, as the lines the worker must claim.
+
+    THE FAILURE THIS CLOSES (founder, 2026-09-17; mission m-f9bb797db28b).
+    The worker was told to claim a satisfied check "quoted closely enough to
+    identify it" -- and was never shown the checks. It had only the objective,
+    so it quoted that:
+
+        checks:  "A file named shadow-race-test.txt exists in the working
+                  directory"
+        claimed: "DONE-CHECK: Create shadow-race-test.txt containing exactly
+                  shadow-race-pass"
+
+    _shadow_verifier compares TEXT. Neither string contains the other, so both
+    checks read unmet on a task that was finished in turn 1 -- and Shadow, told
+    the verifier owns completion and it must never claim a check satisfied,
+    could only conclude the work was wrong. It spent three more turns inventing
+    reasons why: the wrong directory, then a trailing newline. The file was
+    correct the whole time.
+
+    So the worker is handed the exact strings. Nothing about the verifier, the
+    tiers or the evaluation changes -- the two sides simply stop guessing at
+    each other's wording.
+
+    VERIFY-TIER ONLY. `founder_confirm` is the founder's signature and a
+    DONE-CHECK line cannot satisfy it (MissionStore.confirm_check is its only
+    writer), so listing one here would invite a claim that does nothing.
+    `contains_artifact` wants its literal in the work's own output, not in a
+    claim line. `verify` is the one tier _shadow_verifier is called for, so it
+    is the one tier quoted here.
+
+    THE BLOCK CANNOT SATISFY ITSELF. The manifest is tagged with
+    shadow_egress.say_tag and evidence assembly drops Shadow's own turns, which
+    is the same reason the agreement's placeholder DONE-CHECK line has never
+    been able to pass a real check.
+
+    THE PROBE IS NEVER IN HERE (founder, 2026-09-17). A check may carry a
+    `probe` -- the filesystem test shadow_probe runs, which settles that check
+    on its own and does not consult this claim at all. Only `check`, the
+    human-readable sentence, is quoted below: the worker is told WHAT is being
+    judged and never HOW, so it cannot write to the thing being measured
+    because it was shown the measurement. For a probed check this block is a
+    reporting convention and nothing more -- copying the line perfectly over a
+    wrong file leaves the check UNMET, which is the whole point of the probe.
+    """
+    rows = [c for c in (mission.get("done_when") or [])
+            if isinstance(c, dict)
+            and c.get("tier") == "verify"
+            and str(c.get("check") or "").strip()]
+    if not rows:
+        return ""
+    lines = "\n".join("    DONE-CHECK: %s" % str(c["check"]).strip()
+                      for c in rows)
+    return (
+        "\n\nTHE CHECKS THIS TASK IS JUDGED BY. These are the exact strings "
+        "Shadow's\nverifier matches, character for character. When one is "
+        "genuinely satisfied,\nclaim it by copying its line below EXACTLY -- "
+        "do not paraphrase it, do not\nshorten it, and do not substitute the "
+        "objective's wording:\n\n"
+        + lines +
+        "\n\nA claim in your own words reads as NOT DONE, and a finished task "
+        "then keeps\nbeing driven. A claim for work you have not done is a "
+        "false report, which is\nworse. Claim only what is true, in the words "
+        "above.\n"
+    )
+
+
 def _delegate_manifest(mission):
     """ONE manifest composer (was three copies). Scoped rules are folded
     in AT SPAWN TIME, never baked into the mission record -- a revoked
@@ -2016,9 +2126,12 @@ def _delegate_manifest(mission):
     # for it. The tag is what keeps it out of the evidence -- which is also
     # what stops the DONE-CHECK line in the agreement below, a placeholder,
     # from ever reading as a claim about a real check.
-    return "%s %s%s%s" % (shadow_egress.say_tag(mission["id"]), base,
-                          _WORKER_AGREEMENT,
-                          _scoped_instructions(mission.get("target_session")))
+    # The checks sit with the DONE-CHECK rule they belong to, between the
+    # agreement and the chat's own scoped rules.
+    return "%s %s%s%s%s" % (shadow_egress.say_tag(mission["id"]), base,
+                            _WORKER_AGREEMENT,
+                            _worker_checks_block(mission),
+                            _scoped_instructions(mission.get("target_session")))
 
 
 #: How a Shadow-started chat names itself in the ordinary Chats rail. ONE
@@ -2894,6 +3007,11 @@ async def api_shadow_settings():
         # Shadow v4 (C7): the founder's own words, same store as the numbers
         "behaves": _mission_engine.behaves(),
         "behaves_max": _mission_engine.BEHAVES_MAX_CHARS,
+        # the founder's own memory text. The learned-rule list ships beside
+        # it under `global`/`per_chat` and is untouched -- two stores, two
+        # questions (see mission_engine.MEMORY_MAX_CHARS).
+        "memory": _mission_engine.memory(),
+        "memory_max": _mission_engine.MEMORY_MAX_CHARS,
         "tasks": {
             "running_at_once": _mission_engine.max_running(),
             "running_at_once_min": _mission_engine.MIN_RUNNING,
@@ -3058,6 +3176,31 @@ async def api_shadow_settings_behaves(request: Request):
         "kind": "setting", "mission_id": None,
         "summary": "behaves set (%d chars)" % len(value)})
     return {"behaves": value, "max": _mission_engine.BEHAVES_MAX_CHARS}
+
+
+@app.post("/api/shadow/settings/memory")
+async def api_shadow_settings_memory(request: Request):
+    """Write "What Shadow should remember" -- the founder's own words.
+
+    THE TWIN OF behaves ABOVE, deliberately: one route, one field, the same
+    limits store, the same boot binding. It does NOT touch the learned-rule
+    list (`global` / `per_chat`) -- that record is append-only with its own
+    confirmation provenance, and a text cursor over it would quietly rewrite
+    what Shadow was told it had learned.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    if "memory" not in body:
+        raise HTTPException(400, "memory required")
+    try:
+        value = _mission_engine.set_memory(body["memory"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "memory set (%d chars)" % len(value)})
+    return {"memory": value, "max": _mission_engine.MEMORY_MAX_CHARS}
 
 
 @app.post("/api/shadow/settings/budget")

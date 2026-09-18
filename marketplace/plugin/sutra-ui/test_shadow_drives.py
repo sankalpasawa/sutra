@@ -72,6 +72,17 @@ class Base(unittest.TestCase):
         self.replies = []       # the target's scripted answers, consumed in order
         self.transcript = ""    # what the verifier reads
 
+    @property
+    def driving_contexts(self):
+        """The contexts that DECIDE A TURN.
+
+        Since 2026-09-17 the decider is also asked one question before first
+        contact -- how it would verify each check that has no mechanical test
+        behind it (_criteria_before_first_contact step 2). That call carries
+        turns_used == 0 and its instruction is discarded, so a test about what
+        the decider sees while DRIVING must not read it by position."""
+        return [c for c in self.contexts if (c.get("turns_used") or 0) >= 1]
+
     def tearDown(self):
         providers.SETTINGS_PATH = self._orig
         os.environ.pop("SUTRA_SHADOW_HOME", None)
@@ -161,18 +172,18 @@ class TestShadowDrivesTheChat(Base):
         m = run(self.engine(self.recorder(script)).run_mission(mid))
 
         # ---- A: the decider ran after the first target response
-        self.assertGreaterEqual(len(self.contexts), 2,
+        self.assertGreaterEqual(len(self.driving_contexts), 2,
                                 "Shadow decided more than once")
         # ---- B: decision N saw response N-1
         self.assertIn("I recommend Postgres",
-                      self.contexts[0]["last_response"],
+                      self.driving_contexts[0]["last_response"],
                       "decision 2 was handed the FIRST response")
         self.assertIn("idempotency keys",
-                      self.contexts[1]["last_response"],
+                      self.driving_contexts[1]["last_response"],
                       "decision 3 was handed the SECOND response")
         # ---- and it knew what it had itself just asked
         self.assertIn("retry and idempotency",
-                      self.contexts[1]["last_instruction"])
+                      self.driving_contexts[1]["last_instruction"])
         # ---- C/D: three DIFFERENT instructions reached the say path
         texts = [t for _sid, t in self.said]
         self.assertEqual(len(texts), 3, "three turns were driven")
@@ -194,7 +205,7 @@ class TestShadowDrivesTheChat(Base):
         self.assertEqual(self.said[0][1],
                          "reach a decision on PostgreSQL vs DynamoDB",
                          "the objective opens the conversation")
-        self.assertEqual(len(self.contexts), 1,
+        self.assertEqual(len(self.driving_contexts), 1,
                          "the decider was consulted once, for turn 1")
 
     def test_03_the_decider_sees_check_state_and_budget(self):
@@ -205,7 +216,7 @@ class TestShadowDrivesTheChat(Base):
         run(self.engine(self.recorder([
             {"action": "continue", "instruction": "try again", "reason": "r"}
         ])).run_mission(mid))
-        ctx = self.contexts[0]
+        ctx = self.driving_contexts[0]
         self.assertEqual(ctx["outcome"],
                          "reach a decision on PostgreSQL vs DynamoDB")
         self.assertEqual([c["check"] for c in ctx["checks"]],
@@ -222,7 +233,7 @@ class TestShadowDrivesTheChat(Base):
         run(self.engine(self.recorder([
             {"action": "continue", "instruction": "go on", "reason": "r"}
         ])).run_mission(mid))
-        self.assertLessEqual(len(self.contexts[0]["last_response"]),
+        self.assertLessEqual(len(self.driving_contexts[0]["last_response"]),
                              mission_engine.DECISION_TAIL,
                              "no blind whole-transcript dump")
 
@@ -573,7 +584,8 @@ class TestGuardsIntact(Base):
         ])).run_mission(mid))
         self.assertEqual(m["state"], "paused")
         self.assertEqual(m["pause_reason"], "founder_confirm")
-        self.assertEqual(self.contexts, [], "no decision was needed at all")
+        self.assertEqual(self.driving_contexts, [],
+                         "no decision was needed to DRIVE this at all")
 
     def test_21_the_last_instruction_is_recorded_on_the_mission(self):
         """16: a mission must be readable as decided -> said -> answered."""

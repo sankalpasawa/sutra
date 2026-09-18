@@ -148,7 +148,8 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
-            "criteria_ask": shadow_runner._CRITERIA_ASK}
+            "criteria_ask": shadow_runner._CRITERIA_ASK,
+            "verify_ask": ""}
         self.assertIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
         self.assertIn('"done_when"', rendered)
 
@@ -158,7 +159,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "turns_used": 1, "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
-            "criteria_ask": ""}
+            "criteria_ask": "", "verify_ask": ""}
         self.assertNotIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
 
     def test_a_decision_may_carry_the_checks_shadow_wrote(self):
@@ -170,8 +171,24 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
                           {"tier": "verify", "check": "The suite is green."}]})
         self.assertEqual([c["check"] for c in d["done_when"]],
                          ["The EMI check passes.", "The suite is green."])
+        # DEMOTED, NOT DROPPED (founder, 2026-09-17). "The suite is green."
+        # carries no probe, and a `verify` with nothing behind it would tell
+        # the founder "Shadow ran this check and it passed" over a string
+        # match on the worker's own words. resolve_verify_tier sends it to
+        # the one party who can actually answer it. The WORDING is untouched,
+        # which is what the assertion above pins.
         self.assertEqual([c["tier"] for c in d["done_when"]],
-                         ["founder_confirm", "verify"])
+                         ["founder_confirm", "founder_confirm"])
+
+    def test_a_decision_keeps_verify_when_it_carries_a_probe(self):
+        d = mission_engine.validate_decision({
+            "action": "continue", "instruction": "Start on it.",
+            "reason": "opening move",
+            "done_when": [{"tier": "verify", "check": "out.txt says hi",
+                           "probe": {"kind": "file_equals",
+                                     "path": "out.txt", "text": "hi"}}]})
+        self.assertEqual(d["done_when"][0]["tier"], "verify")
+        self.assertEqual(d["done_when"][0]["probe"]["kind"], "file_equals")
 
     def test_a_decision_without_criteria_is_unchanged(self):
         d = mission_engine.validate_decision(
@@ -522,18 +539,31 @@ class TheBarExistsBeforeTheWorkerIsSupervised(CriteriaBase):
             self.store.load(mid), "")
         self.assertTrue(done)
 
-    def test_a_founder_who_DID_say_is_never_consulted_about_it(self):
-        """The prompt does not even carry the request, and nothing is
-        overwritten."""
+    def test_a_founder_who_DID_say_is_never_consulted_about_WHAT(self):
+        """WAS "never consulted at all" (founder, 2026-09-17).
+
+        Shadow IS now consulted about a founder-supplied set -- but only
+        about HOW each condition could be established, never about what the
+        conditions are. This decider answers the WHAT question anyway, with a
+        completely different set of checks, which is the adversarial case:
+        the founder's wording must survive it untouched.
+
+        The prompt still carries no criteria REQUEST (_CRITERIA_ASK is
+        rendered only for an empty set), which is what the old name was
+        really protecting.
+        """
         mine = [{"tier": "founder_confirm", "check": "The founder's own."}]
         mid = self._briefed_mission(done_when=mine)
         m = self._run(mid, {"action": "continue", "instruction": "x",
                             "reason": "r", "done_when": self.WROTE})
         self.assertEqual([c["check"] for c in m["done_when"]],
-                         ["The founder's own."])
-        self.assertEqual(self.seen, [],
-                         "a briefed turn 0 WITH criteria must not spend a "
-                         "decider turn at all")
+                         ["The founder's own."],
+                         "a decider that answers WHAT is ignored on WHAT")
+        for ctx in self.seen:
+            self.assertEqual([c["check"] for c in (ctx.get("checks") or [])],
+                             ["The founder's own."],
+                             "and it is shown the founder's wording, not a "
+                             "rewrite of it")
 
     def test_a_failing_decider_costs_nothing(self):
         """Turn 1 asks again; the mission is not harmed."""
@@ -617,16 +647,27 @@ class TheBarExistsBeforeTheWorkerIsSpokenTo(CriteriaBase):
         self.assertEqual([c["check"] for c in row["done_when"]],
                          [c["check"] for c in self.WROTE])
 
-    def test_a_founder_who_supplied_them_is_not_consulted_at_all(self):
+    def test_a_founder_who_supplied_them_keeps_every_word(self):
+        """WAS "is not consulted at all" (founder, 2026-09-17).
+
+        Shadow is consulted -- about HOW, before the brief goes out, exactly
+        as it is for a set it wrote itself. What it may not do is GENERATE.
+        This decider returns a rival `done_when` on every call and none of it
+        lands: the founder's one check is what the worker is briefed with and
+        what is on disk afterwards.
+        """
         mine = [{"tier": "founder_confirm", "check": "The founder's own."}]
         mid = self._provision(done_when=mine)
-        self.assertEqual(self.seen, [], "Shadow must generate nothing")
         self.assertEqual([c["check"] for c in self.at_spawn[0]],
                          ["The founder's own."],
                          "used exactly, and still before the brief")
         self.assertEqual([c["check"] for c in
                           self.store.load(mid)["done_when"]],
                          ["The founder's own."])
+        self.assertNotIn(self.WROTE[0]["check"],
+                         [c["check"] for c in
+                          self.store.load(mid)["done_when"]],
+                         "Shadow must generate nothing")
 
     def test_a_failing_decider_still_spawns_the_worker(self):
         """The bar is worth a decider turn, never the mission."""

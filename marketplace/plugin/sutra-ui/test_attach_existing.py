@@ -24,6 +24,7 @@ import asyncio
 import json
 import os
 import tempfile
+import re
 import unittest
 from pathlib import Path
 
@@ -91,6 +92,31 @@ class FakeRt:
 
     def clear(self):
         self.cleared = True
+
+
+def _fn_body(src, header):
+    """The source of ONE function, and nothing after it.
+
+    THE BUG THIS REPLACES. The slices below ended at the next `\ndef `, which
+    is not where a function ends -- every module-level CONSTANT between two
+    functions was swallowed whole. shadow_runner grew `_CRITERIA_ASK`,
+    `_VERIFY_ASK` and `_DECIDE_PROMPT` between `ensure_runtime` and the next
+    `def`, so "is `done_when` absent from ensure_runtime" was really asking
+    "is `done_when` absent from three prompt templates", which it never is.
+    The invariants were still true; the slice had stopped measuring them.
+
+    A function ends at the next line that starts in column 0, because its
+    body -- and every continuation of its signature -- is indented. That is
+    the whole rule.
+    """
+    i = src.index(header)
+    lines = src[i:].split("\n")
+    out = [lines[0]]
+    for line in lines[1:]:
+        if line and not line[0].isspace():
+            break
+        out.append(line)
+    return "\n".join(out)
 
 
 class Base(unittest.TestCase):
@@ -234,7 +260,7 @@ class TestTeardown(Base):
         self.assertNotIn("ATTACHED[", branch)
         self.assertNotIn("reap_attached", branch)
         j = src.index("def release_delegate(")
-        reaper = src[j:src.index("\ndef ", j + 10)]
+        reaper = _fn_body(src, src[j:src.index("(", j)])
         self.assertIn("DELEGATES.pop(", reaper)
         self.assertIn("kill_group", reaper)
         self.assertNotIn("ATTACHED", reaper,
@@ -264,21 +290,47 @@ class TestNothingElseMoved(Base):
         """INVARIANT 3. Same order, same registry effects, same cleanup."""
         src = Path(__file__).with_name("shadow_runner.py").read_text()
         i = src.index("async def spawn_delegate_session")
-        body = src[i:src.index("\ndef ", i + 10)]
+        body = _fn_body(src, "async def spawn_delegate_session")
         for step in ["srt.SessionRuntime()", "await rt.spawn(",
                      "await rt.send_user_frame(manifest)",
                      "await rt.demux_turn(", "register(sid, rt)",
                      "attach_observer(sid, rt)", "DELEGATES[sid] = rt",
                      "start_pump(rt, sid)"]:
             self.assertIn(step, body, step)
-        order = [body.index(s) for s in
-                 ["await rt.spawn(", "await rt.send_user_frame(manifest)",
-                  "register(sid, rt)", "attach_observer(sid, rt)",
-                  "DELEGATES[sid] = rt", "start_pump(rt, sid)"]]
-        self.assertEqual(order, sorted(order), "call order is unchanged")
+        # OWNERSHIP MOVED FIRST, DELIBERATELY. `DELEGATES[sid] = rt` used to
+        # sit with register/attach/pump at the end; it now runs inside
+        # `_adopt`, at the first moment the CLI announces an id and BEFORE
+        # the manifest is sent. The reason is a single-writer race, not
+        # tidiness: driving() reads DELEGATES and the send guard asks it
+        # before letting a pane take a turn, so a published-but-unowned chat
+        # is one the founder can open AND type into while this turn is still
+        # running -- a second `claude --resume` on the same transcript.
+        #
+        # So this no longer asserts one flat sorted list. It asserts the two
+        # orderings that carry meaning: the claim happens early, and the
+        # registry/observer/pump trio still runs in its own order at the end.
+        at = lambda sub: body.index(sub)
+        self.assertLess(at("await rt.spawn("), at("DELEGATES[sid] = rt"),
+                        "nothing is claimed before there is a process")
+        self.assertLess(at("DELEGATES[sid] = rt"),
+                        at("await rt.send_user_frame(manifest)"),
+                        "ownership is taken BEFORE the first turn is sent")
+        tail = [at(s) for s in ["await rt.send_user_frame(manifest)",
+                                "register(sid, rt)", "attach_observer(sid, rt)",
+                                "start_pump(rt, sid)"]]
+        self.assertEqual(tail, sorted(tail),
+                         "manifest, register, observer, pump keep their order")
         self.assertIn("delegate session failed to boot", body)
         self.assertIn("rt.kill_group()", body, "boot-failure cleanup kept")
-        self.assertNotIn("--resume", body,
+        # CODE, NOT PROSE. The ownership comment inside _adopt names
+        # `claude --resume` to explain the single-writer race it closes --
+        # which is the opposite of the function doing it. Strip comments and
+        # docstrings before asserting, so the invariant reads the argv this
+        # function actually builds.
+        code = "\n".join(l for l in body.split("\n")
+                          if not l.lstrip().startswith("#"))
+        code = re.sub(r'"""[\s\S]*?"""', "", code)
+        self.assertNotIn("--resume", code,
                          "a NEW delegate never resumes anything")
 
     def test_D5b_the_pump_is_one_body_shared_by_both(self):
@@ -442,7 +494,7 @@ class TestTheSessionItself(Base):
         # bounded at the NEXT def, not at reap_attached: settle_confirmation
         # was later inserted between the two, and it legitimately reads
         # evidence_text. This assertion is about ensure_runtime alone.
-        body = src[i:src.index("\ndef ", i)]
+        body = _fn_body(src, src[i:src.index("(", i)])
         self.assertIn("build_args(session_id)", body)
         self.assertEqual(body.count("rt.spawn("), 1, "exactly one spawn")
         self.assertNotIn("send_user_frame", body,
@@ -500,7 +552,7 @@ class TestIntegrityAndHygiene(Base):
         # bounded at the NEXT def, not at reap_attached: settle_confirmation
         # was later inserted between the two, and it legitimately reads
         # evidence_text. This assertion is about ensure_runtime alone.
-        body = src[i:src.index("\ndef ", i)]
+        body = _fn_body(src, src[i:src.index("(", i)])
         for forbidden in ["evidence_text", "evidence_messages", "_RECENT_TEXT",
                           "done_when", "say_tag"]:
             self.assertNotIn(forbidden, body, forbidden)

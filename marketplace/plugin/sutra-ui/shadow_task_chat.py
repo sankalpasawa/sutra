@@ -71,6 +71,17 @@ def task_context(mission):
         "this task in between. A `mission` fence from you amends THIS task's "
         "draft (objective, template, done_when); never propose a second task "
         "here. Answer as Shadow, directly, no governance scaffolding.\n"
+        "\nThe founder talks to you HERE, in one box, and does not sort their "
+        "sentences for you: the same message may be a question, a constraint, "
+        "an instruction, or nothing to do with the work. Answer it as what it "
+        "is. You do not act from this conversation -- when a founder line "
+        "changes what the worker should do, say so plainly and let it change "
+        "the instruction you compose on your NEXT steering turn.\n"
+        "\nNEVER SPEAK FOR THE WORKER. You are asked to decide its next "
+        "instruction at a turn boundary and told what it said back; between "
+        "those you do not know what it is doing. Say what you have asked for "
+        "and what you are waiting on. Do not report a result, a file, a test "
+        "outcome or a completion the worker has not returned to you.\n"
     ) % (mission.get("id"), mission.get("objective"), mission.get("template"),
          where, "\n".join(rows) or "- (none yet; you will write them)")
 

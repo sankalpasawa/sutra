@@ -781,6 +781,164 @@ function shadowResultGist(text){
   return shadowSayGist(shadowSayClean(text), shadowResultEvidence);
 }
 
+/* The field as the ONE-LINE gist has always received it: every run of
+   whitespace, newlines included, flattened to a single space. Nothing else
+   uses this -- see the note at the call site. */
+function shadowOutcomeFlat(text){
+  return String(text == null ? "" : text).replace(/\s+/g, " ").trim();
+}
+
+/* ── THE SUMMARY'S ONE REPRESENTATION (founder, 2026-09-17) ────────────
+   THE BUG THIS EXISTS TO MAKE UNREPEATABLE. The Summary used to decide
+   WHETHER it had a result from one representation of the field and render a
+   DIFFERENT one: the gate read shadowResultGist(shadowOutcomeFlat(outcome)),
+   the body rendered the raw outcome. Flattening collapses the whole message
+   to a single line, and SH_CONTROL_HEAD then matches that ONE line whenever
+   the message merely BEGINS with a governance token -- so a 1686-character
+   report whose first line was "PLACEMENT: …" was judged to contain nothing.
+   Measured on the real store: 2 of 6 completed missions suppressed, both of
+   them holding a perfectly good answer.
+
+   Two representations, one decision, is the defect. So there is ONE now:
+   existence and presentation are the same string, and they cannot disagree.
+
+   WHAT IT REMOVES, and only this: Shadow/Sutra CONTROL-PLANE PREAMBLE, by
+   the rule that already existed. A line matching SH_CONTROL_HEAD goes --
+   the same rule, the same 22 tokens, the same regex every other founder
+   surface already filters on. Nothing new is invented and nothing is
+   task-specific: this is not "strip research headers" or "strip file
+   reports", it is "a control-plane line is not the answer", which is true
+   of every worker on every task.
+
+   FENCES ARE JUDGED BY WHAT IS IN THEM, not by being fences. shadowSayClean
+   drops EVERY fenced block, which is right for a one-line preview and wrong
+   here -- a coding task's diff and a research answer's snippet are the
+   result, not furniture. So a block is dropped only when the MAJORITY of its
+   non-empty lines are themselves control-plane. That is what removes the
+   ```INPUT ROUTING``` / ```TASK … DEPTH … COST``` blocks a governed worker
+   opens with, while leaving an ordinary ```js block untouched.
+
+   WHAT IT PRESERVES: everything else, verbatim. Headings, lists, tables,
+   links, inline code and ordinary fenced code all reach mdHtml exactly as
+   the worker wrote them. This is a filter over lines, never a rewriter of
+   them -- no sentence is composed, shortened or reworded here.
+
+   WHAT IT IS NOT. Not a second evaluator, not a selector: which message this
+   text came from was settled upstream by shadow_runner.last_worker_message
+   (evidence_messages drops Shadow's injected user turns, then a role check
+   keeps only the worker's own). This never sees a transcript and cannot
+   change that provenance.
+
+   A LEGACY RECORD CANNOT BE REPAIRED HERE, and is not pretended otherwise.
+   Missions completed before shadow_runner kept newlines hold a single
+   flattened line on disk; if that line opens with a control head the whole
+   record reads as control-plane and nothing survives. The structure is gone
+   from the stored data, not discarded here, and every mission completed
+   since carries its own line breaks. */
+function shadowOutcomeBody(text){
+  const lines = String(text == null ? "" : text).split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++){
+    if (/^\s*```/.test(lines[i])){
+      /* the block, its opener and (when it has one) its closer */
+      let j = i + 1;
+      const block = [];
+      while (j < lines.length && !/^\s*```/.test(lines[j])) block.push(lines[j++]);
+      const real = block.filter(l => l.trim());
+      const ctl = real.filter(l => SH_CONTROL_HEAD.test(l)).length;
+      /* majority control-plane -> the block is the preamble, and goes.
+         An EMPTY fence carries nothing either way and is kept, because a
+         renderer that silently eats a block the worker wrote is worse than
+         one that draws an empty one. */
+      if (!(real.length && ctl * 2 >= real.length)){
+        out.push(lines[i]);
+        for (const l of block) out.push(l);
+        /* an unterminated fence has no closer to carry; mdHtml closes it */
+        if (j < lines.length) out.push(lines[j]);
+      }
+      i = j;
+      continue;
+    }
+    if (SH_CONTROL_HEAD.test(lines[i])) continue;
+    out.push(lines[i]);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/* ── SUMMARY: THE ANSWER, NOT THE VERDICT (founder, 2026-09-17) ─────────
+   THE GAP THIS CLOSES. A finished research task said "Done — 3 of 3 checks
+   passed", one sentence of gist, and three ticks. All true, and none of it
+   the thing the founder asked for: to read the research they had to open the
+   worker chat and hunt back through the turns for the last message.
+
+   THE FIELD IS THE ONE THAT ALREADY EXISTS. `completion.outcome` is stamped
+   once, by mission_engine._complete, from shadow_runner.last_worker_message
+   -- the worker's own closing message, verbatim. Nothing here selects a
+   message, re-reads a transcript, or asks a model: this renders a string the
+   record already carried and the API already returned.
+
+   AND THE SAFETY PROPERTY RIDES WITH IT. last_worker_message walks
+   evidence_messages, which drops the USER turns Shadow injected, and then
+   keeps only `role == "assistant"`. Two independent guards, both upstream of
+   this function -- so Shadow's own control-plane text (a held say, the next
+   instruction) can never reach this block. Selecting a message in JavaScript
+   would have thrown both away, which is why this does not.
+
+   RENDERED THROUGH THE EXISTING MARKDOWN RENDERER. mdHtml (02-helpers.js)
+   escapes the ENTIRE input first and only then wraps already-inert text in
+   tags it authors itself, with links scheme-checked against http/https -- so
+   a worker message cannot inject markup here. It loads before this file
+   (app.py:496 serves static/js/*.js sorted, and 02 < 16). The typeof guard
+   is for a context that loaded this module alone, the same guard
+   shadowTimelineHtml already uses for shadowProseHtml.
+
+   DONE ONLY. `completion` is stamped in exactly one place -- _complete, the
+   one writer of a done mission -- so `m.completion` already implies done.
+   The state check is stated anyway rather than inferred: it is the rule the
+   founder asked for, and a reader should not have to know the engine to see
+   that it holds. */
+function shadowSummaryHtml(m){
+  const c = m && m.completion;
+  const text = c && c.outcome;
+  if (!text || !m || m.state !== "done") return "";
+  /* ── THE CARD STILL REFUSES EVIDENCE (founder, 2026-09-15; kept) ─────
+     `outcome` is the worker's LAST message, which is not always its
+     conclusion. The case that ruling was written on had a last message that
+     was the WORKING -- file permissions, a grep invocation and a table of
+     hits (the fixture is EVIDENCE_OUTCOME in test_shadow_rhs) -- and the
+     ruling was that the card refuses it: "the working stays behind Open the
+     chat and in Copy result". test_shadow_rhs 8l pins that and it still
+     holds;
+     drawing a raw evidence dump under a big SUMMARY heading would be a
+     louder version of exactly what that ruling removed.
+
+     SO THE ADMISSIBILITY QUESTION IS ASKED WITH THE EXISTING ANSWER, and
+     only the admissibility question: shadowResultGist returns "" when every
+     sentence is filler or evidence-shaped, which is precisely "is there a
+     conclusion in here at all". That verdict gates this block.
+
+     IT DOES NOT PRODUCE THIS BLOCK. What renders is the full body through
+     mdHtml -- never the gist, which is the one-line preview above and stays
+     there. The gist is being used as a filter, not as content.
+
+     AND IT IS ASKED OF THE BODY, which is the whole point of
+     shadowOutcomeBody: the string that decides whether there is a result is
+     the same string that gets drawn. Asking it of a flattened copy is what
+     suppressed a real 1686-character answer, and the composition matters in
+     both directions -- the body alone would have shown the pure-evidence
+     record the 2026-09-15 ruling refuses (204 characters survive the
+     control-plane filter), because a grep dump contains no control-plane
+     lines to remove. Cleaning answers "what is the answer here"; the gist
+     answers "is any of it a conclusion". Both, on one string. */
+  const body = shadowOutcomeBody(text);
+  if (!body || !shadowResultGist(body)) return "";
+  const html = (typeof mdHtml === "function") ? mdHtml(body) : esc(body);
+  return `<div class="shdonesummary">
+      <div class="shdonesumhead">Summary</div>
+      <div class="shdonesumbody md">${html}</div>
+    </div>`;
+}
+
 function shadowCompletionHtml(m){
   const c = m && m.completion;
   if (!c) return "";
@@ -797,14 +955,45 @@ function shadowCompletionHtml(m){
     </div>`;
   }).join("");
   const turns = shadowTurnNow(c) + " of " + (c.max_turns || 0) + " turns";
-  /* one sentence, and only if it is a conclusion rather than the working */
-  const work = shadowResultGist(c.outcome);
+  /* one sentence, and only if it is a conclusion rather than the working.
+     FLATTENED FIRST, AND ONLY FOR THIS LINE (founder, 2026-09-17).
+     `completion.outcome` used to arrive with every newline already collapsed
+     -- shadow_runner.last_worker_message did `" ".join(text.split())` -- so
+     shadowSayClean, which works line by line, only ever saw ONE line and its
+     table/fence/heading rules never fired on this path. The Summary block
+     below needs those newlines to render as markdown, so the backend now
+     keeps them. Handing the raw field to the gist would therefore silently
+     move a line that is NOT in scope: shadowSayClean would start dropping
+     table rows and fences it never used to see. Flattening HERE reproduces
+     exactly the string this call received before, so the gist is
+     byte-identical to what it drew yesterday. */
+  const work = shadowResultGist(shadowOutcomeFlat(c.outcome));
   const S_ = (typeof S !== "undefined") ? S : {};
   /* the copy action's own feedback, and it is per-record: a flag holding
      another mission's id must leave THIS button reading "Copy result". */
   const copied = (S_.shadowResultCopied
     && S_.shadowResultCopied.id === m.id) ? S_.shadowResultCopied : null;
+  /* the worker's account in full, under the verdicts -- see shadowSummaryHtml */
+  const summary = shadowSummaryHtml(m);
   return `<div class="shconfirm shdonesum" data-shdone="${escAttr(m.id)}">
+    ${/* ── THE MOMENT IT LANDS (founder, 2026-09-17) ──────────────
+         A finished task simply appeared, fully formed, indistinguishable
+         from one that had been finished for an hour. This is the one beat
+         that says the work just completed: a check that DRAWS ITSELF, then
+         the verdicts, then the Summary easing in under them.
+
+         CSS ONLY, AND IT RUNS ONCE. No state, no timer, no JS -- the mark
+         animates on mount, which for this pane means when a done card is
+         first rendered. A re-render of an already-done task replays it, and
+         that is the honest cost of having no per-card memory; it is a few
+         hundred milliseconds and it never blocks the content, which is
+         drawn at full opacity underneath from the first frame for anyone
+         with reduced motion on (see .shdoneburst in panel.css). */""}
+    <div class="shdoneburst" aria-hidden="true">
+      <svg viewBox="0 0 32 32" class="shdonetick"><circle cx="16" cy="16"
+        r="14" class="shdonering"/><path d="M10 16.5l4 4 8-8"
+        class="shdonecheck"/></svg>
+    </div>
     <div class="shdonehead">
       <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
       <button class="btn shdonecopy${copied
@@ -826,6 +1015,7 @@ function shadowCompletionHtml(m){
     ${work ? `<div class="shdonework" title="${escAttr(c.outcome || "")}"
       >${esc(work)}</div>` : ""}
     <div class="shchecks">${rows}</div>
+    ${summary}
   </div>`;
 }
 
@@ -1919,6 +2109,64 @@ function shadowSayDropReport(text){
    heading still carries the fact that a turn happened, and the whole turn --
    control plane included -- is behind Open the chat, unabridged. */
 /* ONE ROW OF THE TIMELINE. The worker's own words for one turn, or nothing. */
+/* ── WAITING HAS A FACE (founder, 2026-09-17) ────────────────────
+   THE GAP. Between pressing send and Shadow answering, the pane showed the
+   founder's own sentence and then nothing -- so a reply that was being
+   composed and a reply that was never coming looked identical. The state was
+   already known (shadowTalk().busy, set by shadowTalkSend for exactly the
+   span of the request); it simply was not drawn.
+
+   NOT A SPINNER ON THE WHOLE PANE. It is a row in the stream, in the place
+   the answer will appear, so the answer replaces the waiting rather than
+   arriving somewhere else. It carries no clock: this is a request in flight,
+   usually seconds, and a timer on it would invite the founder to watch it.
+
+   IT IS DERIVED, NEVER STORED. No new state, nothing on the record, and it
+   cannot outlive the request -- busy goes false in the same function that
+   set it, including on the error path. */
+function shadowThinkingHtml(){
+  return `<div class="shsaid shthinking" role="status" aria-live="polite">
+      <div class="shsaidhead">Shadow</div>
+      <div class="shsaidtext shthinkingtext"
+        ><span class="shthinkdot" aria-hidden="true"></span
+        ><span class="shthinkword">thinking</span
+        ><span class="shthinkell" aria-hidden="true"></span></div>
+    </div>`;
+}
+
+/* ── A TURN THAT IS HAPPENING HAS A CLOCK ─────────────────────
+   The open turn already drew its NUMBER and nothing under it -- deliberately,
+   because a turn in flight has not reported yet and previewing its newest
+   sentence reads as the outcome when it is not (see shadowTimelineEvents).
+   That rule stands. What this adds is the one fact a founder watching a long
+   turn actually wants: how long it has been going.
+
+   FROM THE TURN'S OWN STAMP, which the timeline already carries -- the
+   instruction that opened it, or its newest message. No new field, no poll
+   of its own: the pane already re-renders on the existing transcript
+   throttle, and the seconds tick with it. An unstamped turn draws the bar
+   and no number rather than inventing a start. */
+function shadowTurnElapsed(ts){
+  const t = Number(ts);
+  if (!t || isNaN(t)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (secs > 86400) return "";            /* a stale stamp is not an elapsed */
+  const m = Math.floor(secs / 60), sec = secs % 60;
+  return (m < 60) ? (m + ":" + String(sec).padStart(2, "0"))
+                  : (Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0"));
+}
+
+function shadowOpenTurnHtml(n, ts){
+  const el = shadowTurnElapsed(ts);
+  return `<div class="shagent shagentopen">
+    <div class="shagenthead">Worker agent${
+      n > 0 ? " \u00b7 turn " + esc(String(n)) : ""}<span class="shturnlive"
+      aria-hidden="true"></span>${el ? `<span class="shturntimer"
+      >${esc(el)}</span>` : ""}</div>
+    <div class="shturnsweep" aria-hidden="true"><i></i></div>
+  </div>`;
+}
+
 function shadowAgentRowHtml(n, say){
   return `<div class="shagent">
     <div class="shagenthead">Worker agent${
@@ -2067,11 +2315,56 @@ const SH_TALK_SKIP = [
   /^You are Shadow, driving one target chat toward an outcome\./,
 ];
 
+/* THE LIVE LINES ARE KEYED BY MISSION, AND THAT IS THE WHOLE BUG (founder,
+   2026-09-17). `live` was a single flat array. While the floating panel
+   existed that was safe by accident: the panel drew only when its `mid`
+   matched the task on screen, and opening it on another task reset the array.
+   Folding the panel into the workspace composer removed both guards, and
+   nothing replaced them -- so shadowTimelineEvents appended THIS SITTING'S
+   lines to EVERY task's stream. A brand-new task opened showing the previous
+   task's conversation.
+
+   One map, keyed by mission id. Nothing else about the conversation moved:
+   the durable record is still the task chat's own transcript, which was
+   always correctly scoped by `task_chat_session`. */
 function shadowTalk(){
   const S_ = (typeof S !== "undefined") ? S : {};
   if (!S_.shadowTalk)
-    S_.shadowTalk = { mid: null, live: [], text: "", busy: false, err: null };
+    S_.shadowTalk = { live: {}, text: "", busy: false };
+  /* a map from before this fix, or none at all, must not carry an array */
+  if (!S_.shadowTalk.live || Array.isArray(S_.shadowTalk.live))
+    S_.shadowTalk.live = {};
   return S_.shadowTalk;
+}
+
+/* The lines said to ONE mission this sitting. Never shared, never global. */
+/* THE SAME MESSAGE FROM TWO SOURCES IS ONE ROW (founder, 2026-09-17).
+   The persisted transcript keeps Shadow's RAW reply; the route returns the
+   PARSED one, and the two differ:
+
+     persisted  "PLACEMENT: unresolved (no-match) — …\n\nSent worker first
+                 instruction: …"
+     live       "Sent worker first instruction: …"
+
+   The dedupe compared raw text, so it missed -- and shadowProseHtml then
+   normalised both to the same visible prose, drawing what the founder read as
+   the identical answer twice.
+
+   So the key is what the founder will actually SEE: the same shadowProseText
+   the renderer runs, with whitespace collapsed. Nothing is stripped that was
+   not already stripped for display, and the displayed text is untouched --
+   this decides only whether a row is a duplicate. */
+function shadowTalkKey(text){
+  const t = (typeof shadowProseText === "function")
+    ? shadowProseText(text) : String(text == null ? "" : text);
+  return t.replace(/\s+/g, " ").trim();
+}
+
+function shadowTalkLive(mid){
+  const T = shadowTalk();
+  if (!mid) return [];
+  if (!T.live[mid]) T.live[mid] = [];
+  return T.live[mid];
 }
 
 /* THE CONVERSATION AS THE RECORD HAS IT. Read-only, off the same endpoint
@@ -2089,69 +2382,43 @@ function shadowTalkTurns(m){
     const text = String(t.text || "").trim();
     if (t.role === "user"){
       skip = !text || SH_TALK_SKIP.some(re => re.test(text));
-      if (!skip) out.push({ who: "founder", text: text });
+      if (!skip) out.push({ who: "founder", text: text,
+                            ts: Date.parse(t.ts || "") });
       continue;
     }
     /* every reply to a dropped prompt is dropped with it -- one prompt can
        answer across several messages, so this does NOT reset per message */
     if (t.role !== "assistant" || skip || !text) continue;
-    out.push({ who: "shadow", text: text });
+    out.push({ who: "shadow", text: text, ts: Date.parse(t.ts || "") });
   }
   return out;
 }
 
-/* WHAT IS DRAWN: the record, plus anything sent in this sitting that the
-   transcript has not caught up with yet. The moment a live line appears in
-   the transcript it stops being drawn twice, so a reload loses nothing and
-   duplicates nothing. */
-function shadowTalkThread(m){
-  const T = shadowTalk();
-  const past = shadowTalkTurns(m);
-  const seen = {};
-  for (const t of past) seen[t.who + ":" + t.text] = 1;
-  return past.concat(
-    (T.live || []).filter(t => !seen[t.who + ":" + t.text]));
-}
-
-/* The panel. FLOATING, and anchored to the header's own action column, so
-   opening it moves nothing: it is absolutely positioned inside
-   .shwheadacts and overlaps the brief below (panel.css .shtalk). */
-function shadowTalkHtml(m){
-  const T = shadowTalk();
-  if (!m || !m.id || T.mid !== m.id) return "";
-  const rows = shadowTalkThread(m).map(t =>
-    (typeof shadowMsgHtml === "function") ? shadowMsgHtml(t)
-      : `<div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}"
-        >${esc(t.text || "")}</div>`).join("");
-  return `<div class="shtalk" data-shtalkpanel="1">
-    <div class="shtalkhead">
-      <span class="shtalkwho">Shadow · this task</span>
-      <button class="shtalkx" type="button" data-shtalkclose="1"
-        aria-label="Close">×</button>
-    </div>
-    <div class="shthread shtalkthread">${rows || `<div class="shtalkzero"
-      >Ask Shadow about this task. It answers here, and the worker keeps
-      working.</div>`}</div>
-    ${T.err ? `<div class="shnewerr">${esc(T.err)}</div>` : ""}
-    <div class="shcompwrap shtalkcomp">
-      <textarea class="shcompose" data-shtalkbox="${escAttr(m.id)}" rows="2"
-        placeholder="Ask Shadow about this task…"${
-          T.busy ? " disabled" : ""}>${esc(T.text || "")}</textarea>
-      <button class="btn shsend" type="button"
-        data-shtalksend="${escAttr(m.id)}" aria-label="Send"${
-          T.busy ? " disabled" : ""}>↑</button>
-    </div>
-  </div>`;
-}
-
 /* One line to this task's Shadow. The reply is Shadow's own prose, returned
    by the route; nothing here writes to the mission record. */
-async function shadowTalkSend(mid){
+async function shadowTalkSend(mid, el){
   const T = shadowTalk();
   const text = String(T.text || "").trim();
   if (!mid || !text || T.busy) return null;
-  T.live.push({ who: "founder", text: text });
-  T.text = ""; T.busy = true; T.err = null;
+  const live = shadowTalkLive(mid);
+  /* STAMPED AT THE MOMENT IT HAPPENS (founder, 2026-09-17). A live row used
+     to carry no clock at all, and shadowTimelineEvents pushed it as ts: NaN.
+     The comparator falls back to PUSH INDEX whenever either side is
+     unstamped, and worker events are pushed before conversation events -- so
+     an unstamped line sank below every worker turn however early it was sent.
+     Measured on m-194c266205d3: the founder asked at 09:18:18.125Z, turn 1
+     opened at 09:18:19.920Z, and the pane drew the turn ABOVE the question.
+
+     Date.now() here is the real event time: this is the instant the founder
+     pressed send. It is never inherited from a neighbour -- a borrowed stamp
+     would be invented chronology, which is the one thing this stream must
+     not report. */
+  live.push({ who: "founder", text: text, ts: Date.now() });
+  /* THE MISSION ID, NOT `true` (founder, 2026-09-17). The thinking row is
+     drawn from this flag, and a bare boolean would put one task's spinner on
+     every other task's pane. Truthy either way, so `if (T.busy) return` above
+     is unchanged. */
+  T.text = ""; T.busy = mid; T.err = null;
   if (typeof scheduleRender === "function") scheduleRender();
   let r = null, body = null;
   try {
@@ -2162,16 +2429,93 @@ async function shadowTalkSend(mid){
   } catch (e){ body = null; }
   T.busy = false;
   if (!body){
-    /* 409 is the one refusal with a reason worth words, the same way the
-       instruction composer reads its own 409 */
-    T.err = (r && r.status === 409)
-      ? "That task has finished — Shadow is no longer on it."
-      : "Shadow could not answer" + (r ? " (" + r.status + ")" : "") + ".";
+    /* THE REFUSAL HAS TO LAND SOMEWHERE THE FOUNDER LOOKS. It used to be
+       drawn inside the panel; with one composer it goes to that composer's
+       own error line (shadowScopeErr, rendered by shadowStageHtml), which
+       shadowSubmitCompose already clears on the next send. 409 is the one
+       refusal with a reason worth words.
+
+       AND NOTHING TYPED IS LOST. The box is cleared optimistically so it
+       feels instant; a send that does not land hands the text back, the same
+       way the say path always did. */
+    const why = (r && r.status === 409)
+      ? "That task has finished \u2014 Shadow is no longer on it."
+      : "Shadow could not answer" + (r ? " (" + r.status + ")" : "")
+        + " \u2014 your message is still in the box.";
+    if (typeof S !== "undefined") S.shadowScopeErr = why;
+    T.live[mid] = live.filter(x => x.text !== text);
+    if (el) el.value = text;
   } else if (body.reply){
-    T.live.push({ who: "shadow", text: String(body.reply) });
+    /* the instant the answer reached us, for the same reason as above */
+    live.push({ who: "shadow", text: String(body.reply), ts: Date.now() });
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return body;
+}
+
+/* ── A QUESTION AND ITS ANSWER ARE ONE BLOCK (founder, 2026-09-17) ────
+   THE BUG. Chronology alone is not conversation. With real stamps on every
+   row -- which is the fix directly above, and stays -- a worker turn that
+   opened between the founder pressing send and Shadow answering sorts
+   BETWEEN them:
+
+       founder 100 · worker 150 · shadow 200
+
+           YOU → SHADOW   "What are you doing right now?"
+           WORKER TURN 1
+           SHADOW         "Sent worker first instruction…"
+
+   Every stamp there is true and the reading is still wrong: the founder has
+   to step over an unrelated turn to find the reply to their own sentence.
+
+   SO THE EXCHANGE IS THE UNIT OF DISPLAY, not the row. A founder line and
+   the replies that follow it are drawn adjacent, and anything else that
+   happened in between is drawn after them, in its own order, unchanged.
+
+   THIS IS A DISPLAY PASS AND NOTHING ELSE. It runs on the sorted array,
+   moves rows, and touches no `ts` -- every event keeps the stamp the record
+   gave it, the history endpoint is untouched, and no orchestration decision
+   reads this function. What the founder sees changes; what happened does not.
+
+   THE SPAN A QUESTION OWNS ends at the NEXT founder line, so a worker turn
+   between two separate exchanges keeps its place:
+
+       YOU → SHADOW · SHADOW · WORKER TURN 1 · YOU → SHADOW · SHADOW
+
+   AND ONLY UP TO THE LAST REPLY. Rows after the final reply of an exchange
+   are not inside it and do not move -- which is also what makes an
+   unanswered question cost nothing: with no reply in its span, the question
+   is emitted where it sorted and the following turns stay where they are.
+   A reply still in flight therefore never holds the stream back; it joins
+   its question on the render after it lands.
+
+   SPEAKER TEST MIRRORS THE RENDERER. shadowTimelineHtml treats any talk row
+   that is not `who === "shadow"` as the founder's, so this does too -- a row
+   the renderer would head "You → Shadow" is a row this pairs on. */
+function shadowTimelinePair(seq){
+  const isTalk = (e) => !!e && e.kind === "talk";
+  const isReply = (e) => isTalk(e) && e.who === "shadow";
+  const isAsk = (e) => isTalk(e) && !isReply(e);
+  const out = [];
+  let i = 0;
+  while (i < seq.length){
+    const e = seq[i];
+    if (!isAsk(e)){ out.push(e); i++; continue; }
+    /* the span this question owns: up to the next question, or the end */
+    let end = i + 1;
+    while (end < seq.length && !isAsk(seq[end])) end++;
+    /* the last reply inside it -- the exchange closes there */
+    let last = -1;
+    for (let j = i + 1; j < end; j++) if (isReply(seq[j])) last = j;
+    if (last === -1){ out.push(e); i++; continue; }
+    out.push(e);
+    /* the conversation first, in its own order... */
+    for (let j = i + 1; j <= last; j++) if (isTalk(seq[j])) out.push(seq[j]);
+    /* ...then everything it stepped over, in its own order */
+    for (let j = i + 1; j <= last; j++) if (!isTalk(seq[j])) out.push(seq[j]);
+    i = last + 1;
+  }
+  return out;
 }
 
 function shadowTimelineEvents(m){
@@ -2311,13 +2655,53 @@ function shadowTimelineEvents(m){
   const fr = m && m.founder_response;
   if (fr && typeof fr === "object")
     out.push({ kind: "answered", ts: Date.parse(fr.answered_at || "") });
-  /* WHAT THE FOUNDER VOLUNTEERED. Every aside is kept -- these are a list on
-     the record, not a single field, so unlike an answer the older ones are
-     still there and each takes its own place in the order it was sent. */
+  /* ── THE FOUNDER AND SHADOW, IN THE SAME STREAM (founder, 2026-09-17) ──
+     One conversation, drawn where the worker's turns are drawn, because there
+     is one door now and its answers belong beside the work they are about.
+
+     THE SOURCE IS THE TASK CHAT'S OWN TRANSCRIPT, read through the reader
+     that already existed (shadowTalkTurns -> shadowTaskTranscript), with the
+     boot, brief and steering prompts filtered out. That is what makes the
+     conversation survive a reload and a restart: nothing is held here.
+
+     ...PLUS WHAT WAS SAID THIS SITTING and has not reached the transcript
+     yet, deduped on the text so a line is never drawn twice. */
+  const talk = (typeof shadowTalkTurns === "function") ? shadowTalkTurns(m) : [];
+  const spoken = {};
+  for (const t of talk){
+    spoken[shadowTalkKey(t.text)] = 1;
+    out.push({ kind: "talk", who: t.who, text: t.text, ts: t.ts });
+  }
+  /* THIS MISSION'S lines, never another's -- see shadowTalk */
+  const mine = (typeof shadowTalkLive === "function" && m && m.id)
+    ? shadowTalkLive(m.id) : [];
+  for (const t of mine){
+    const text = String((t && t.text) || "").trim();
+    const key = shadowTalkKey(text);
+    if (text && !spoken[key]){
+      spoken[key] = 1;
+      /* its OWN stamp, written by shadowTalkSend when the line was sent or
+         the reply arrived. NaN only for a row from before that existed. */
+      out.push({ kind: "talk", who: t.who, text: text,
+                 ts: Number(t && t.ts) });
+    }
+  }
+  /* WHAT THE FOUNDER VOLUNTEERED THROUGH THE SAY PATH. Every aside is kept --
+     these are a list on the record, not a single field, so unlike an answer
+     the older ones are still there and each takes its own place in the order
+     it was sent.
+
+     ONLY THE ONES THE CONVERSATION DOES NOT ALREADY SHOW. Since 2026-09-17
+     the composer posts to the task chat, which records the same words to
+     `founder_says` -- so every new line is in BOTH, and drawing both would
+     double it. A row with no counterpart in the transcript is a genuine say
+     (a mission from before the unification, or anything still calling the
+     endpoint) and still gets its place. */
   for (const said of (m && m.founder_says) || []){
     const text = String((said && said.text) || "").trim();
-    if (text) out.push({ kind: "said", text: text,
-                         ts: Date.parse((said && said.at) || "") });
+    if (text && !spoken[shadowTalkKey(text)])
+      out.push({ kind: "said", text: text,
+                 ts: Date.parse((said && said.at) || "") });
   }
   /* ── ONE STREAM, SORTED ON REAL STAMPS (founder, 2026-09-15) ──────────
      THE BUG. The founder said something after turn 1 and the pane drew
@@ -2356,24 +2740,58 @@ function shadowTimelineEvents(m){
     const e = spine[i];
     if (!isNaN(e.ts)) carry = e.ts; else if (!isNaN(carry)) e.ts = carry;
   }
-  return seq.sort((a, b) => {
+  const sorted = seq.sort((a, b) => {
     const at = isNaN(a.ts) ? null : a.ts, bt = isNaN(b.ts) ? null : b.ts;
     if (at !== null && bt !== null && at !== bt) return at - bt;
     return a.i - b.i;
   });
+  /* ...AND THEN THE CONVERSATION IS KEPT WHOLE. See shadowTimelinePair: the
+     stamps above stay exactly as they were, this only decides what sits next
+     to what on screen. */
+  return shadowTimelinePair(sorted);
 }
 
 function shadowTimelineHtml(m){
   const events = shadowTimelineEvents(m);
-  if (!events.length) return "";
+  /* the founder has sent and Shadow has not answered yet. Appended rather
+     than folded into shadowTimelineEvents because it is not an EVENT: it has
+     no stamp, nothing records it, and it must never sort against real ones. */
+  const T = (typeof shadowTalk === "function") ? shadowTalk() : null;
+  const waiting = !!(T && T.busy && m && m.id && T.busy === m.id);
+  if (!events.length && !waiting) return "";
   return `<div class="shtimeline">${events.map(e => {
     if (e.kind === "answered") return shadowStoryHtml(m);
-    if (e.kind === "said") return `<div class="shsaid">
-      <div class="shsaidhead">You \u2192 Shadow</div>
-      <div class="shsaidtext">${esc(e.text)}</div>
+    if (e.kind === "said" || e.kind === "talk"){
+      /* THE SAME BLOCK BOTH SIDES SPEAK IN, and the same one the worker's
+         turns use: a head that names the speaker over the line itself. No new
+         class, no new surface -- the head is the only thing that differs. */
+      const mine = !(e.kind === "talk" && e.who === "shadow");
+      const who = mine ? "You \u2192 Shadow" : "Shadow";
+      /* SHADOW'S OWN PROSE GOES THROUGH THE SANITISER, THE FOUNDER'S DOES NOT
+         (founder, 2026-09-17) -- the same split shadowMsgHtml has always
+         made. Shadow's replies can carry the protocol fences the Now chat
+         speaks in (```chips and its five siblings); the panel this stream
+         replaced ran them through shadowProseHtml and this did not, so a
+         bare "```chips" reached the founder. The founder's own words are
+         theirs and are only escaped.
+
+         ONE SANITISER, NOT A SECOND: shadowProseText/-Html in
+         15-shadow-overlay.js is the existing one, and the unterminated-fence
+         case was fixed there rather than here. The guards below keep this
+         renderable in a context that loaded this module alone. */
+      const body = mine ? esc(e.text)
+        : (typeof shadowProseHtml === "function") ? shadowProseHtml(e.text)
+        : (typeof shadowProseText === "function") ? esc(shadowProseText(e.text))
+        : esc(e.text);
+      return `<div class="shsaid">
+      <div class="shsaidhead">${who}</div>
+      <div class="shsaidtext">${body}</div>
     </div>`;
+    }
+    /* a turn with no report yet is the one IN FLIGHT -- it gets the clock */
+    if (e.kind === "worker" && !e.say) return shadowOpenTurnHtml(e.n, e.ts);
     return shadowAgentRowHtml(e.n, e.say);
-  }).join("")}</div>`;
+  }).join("")}${waiting ? shadowThinkingHtml() : ""}</div>`;
 }
 
 /* ── THE STORY: what happened either side of the founder's answer ─────────
@@ -2917,7 +3335,7 @@ function shadowStageHtml(compact){
     <div class="shcompwrap">
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
-        placeholder="${compact ? "Give instruction to Shadow…"
+        placeholder="${compact ? "Talk to Shadow…"
           : "Tell Shadow what outcome you want…"}"></textarea>
       <button class="shsend" type="button" data-shsend="1"
         title="Hand it over (or press Enter)" aria-label="Hand it over">
@@ -3124,22 +3542,14 @@ function shadowHomeHtml(){
                it, so the split between "Shadow's report" (this pane) and
                "the delegate's actual chat" (that button) is the first
                thing the header says. */""}
-          ${/* TWO DOORS, STACKED. "Open the chat" is the WORKER's
-               conversation and is unchanged -- same hook, same
-               target_session. "Talk to Shadow" is the founder's own
-               conversation with this task's Shadow (shadowTalkHtml), and it
-               is offered only while the task can still answer: a terminal
-               mission's Shadow has left the loop, and the route refuses it
-               too. */""}
-          ${!newOpen && sel && sel.target_session ? `<div class="shwheadcol">
-            <button class="btn"
-              type="button" data-shtakeover="${escAttr(sel.target_session)}"
-              >Open the chat</button>
-            ${SH_TERMINAL.indexOf(sel.state) === -1 ? `<button class="btn"
-              type="button" data-shtalk="${escAttr(sel.id)}"
-              >Talk to Shadow</button>` : ""}
-          </div>` : ""}
-          ${newOpen ? "" : shadowTalkHtml(sel)}
+          ${/* ONE DOOR HERE, AND IT IS THE WORKER'S. The floating "Talk to
+               Shadow" panel that sat beside this button is gone (founder,
+               2026-09-17): the founder's conversation with Shadow is the
+               workspace composer and the stream below it, not a second
+               surface to open. Same hook, same target_session, unchanged. */""}
+          ${!newOpen && sel && sel.target_session ? `<button class="btn"
+            type="button" data-shtakeover="${escAttr(sel.target_session)}"
+            >Open the chat</button>` : ""}
         </div>
       </header>
       ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
@@ -3465,6 +3875,53 @@ async function shadowBehavesSave(text){
     S.shadowBehavesSaved = true;
   } else {
     S.shadowBehavesErr = "That did not stick — try again.";
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return body;
+}
+
+/* THE FOUNDER'S OWN MEMORY TEXT, and the twin of shadowSetBehavesHtml in
+   every respect: same textarea, same save-on-change, same note line.
+
+   NOT THE LEARNED-RULE LIST. shadowSetMemoryHtml below still renders
+   `global` / `per_chat` -- what Shadow learned and the founder CONFIRMED,
+   append-only, each row carrying its own provenance. This box is what the
+   founder simply wants remembered, typed directly. Two questions, two
+   stores; typing here cannot rewrite a rule Shadow was told it had learned.
+   The list is no longer on this page, and the record is untouched. */
+function shadowSetMemoryTextHtml(d){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const text = (S_.shadowMemoryDraft != null) ? S_.shadowMemoryDraft
+                                              : ((d && d.memory) || "");
+  const note = S_.shadowMemoryBusy ? "saving"
+    : (S_.shadowMemoryErr ? S_.shadowMemoryErr
+    : (S_.shadowMemorySaved ? "saved" : ""));
+  const max = Number(d && d.memory_max) || 4000;
+  return `<div class="ssbehaves">
+    <textarea class="ssbehaves-text" rows="5" data-shmemory="1" maxlength="${max}"
+      placeholder="What Shadow should carry into every task: who you are, what matters, what to never forget.">${esc(text)}</textarea>
+    <div class="ssnote ssbehaves-note">${esc(note)}</div>
+  </div>`;
+}
+
+async function shadowMemorySave(text){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  S.shadowMemoryBusy = true; S.shadowMemoryErr = null; S.shadowMemorySaved = false;
+  if (typeof scheduleRender === "function") scheduleRender();
+  let r = null;
+  try {
+    r = await shadowPost("/api/shadow/settings/memory",
+                         { memory: String(text == null ? "" : text) });
+  } catch (e){ r = null; }
+  let body = null;
+  try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
+  S.shadowMemoryBusy = false;
+  if (body && body.memory !== undefined){
+    if (S.shadowSettings) S.shadowSettings.memory = body.memory;
+    S.shadowMemoryDraft = null;
+    S.shadowMemorySaved = true;
+  } else {
+    S.shadowMemoryErr = "That did not stick \u2014 try again.";
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return body;
@@ -4046,23 +4503,31 @@ function shadowSettingsHtml(){
       </div></div></div></div>`;
   return `<div class="shset">${head}
     <div class="ssbody"><div class="sswrap">
-      ${shadowSettingsSecHtml("How Shadow behaves", shadowSetBehavesHtml(d))}
-      ${shadowSettingsSecHtml("Autonomy", shadowSetAutonomyHtml(d))}
-      ${shadowSettingsSecHtml("Memory", shadowSetMemoryHtml(d))}
-      ${shadowSettingsSecHtml("Tasks", shadowSetTasksHtml(d))}
+      ${/* ── TWO BOXES (founder, 2026-09-17) ──────────────────────
+           Eight sections became two. Autonomy, Tasks, Delegate offers,
+           Presence, Add a control and Attention are gone from this page --
+           every one of them was a control the founder had to form an opinion
+           about before Shadow could be useful, and the answer to most of
+           them is a default.
+
+           NOTHING WAS DELETED FROM THE ENGINE. The settings still exist,
+           their routes still answer, and their stored values still bind:
+           autonomy() already defaults to L3, max_running and the budgets
+           keep their stored numbers. What went is the SURFACE, not the
+           behaviour -- which also means a value that was stranded ON with no
+           way to change it had to be dealt with explicitly rather than left
+           pinned (confirm_top_tier; see the release note).
+
+           The two that stay are the two that are genuinely the founder's
+           own words, and they are the same shape: a text box. */""}
+      ${shadowSettingsSecHtml("Personality", shadowSetBehavesHtml(d))}
+      ${shadowSettingsSecHtml("Memory", shadowSetMemoryTextHtml(d))}
       ${/* NAMED, NOT INFERRED. This section carried no class of its own and
             the stylesheet reached it with :has(.chips) -- which happened to
             be correct, and was still the wrong way to write it: the rule
             silently depends on what the section CONTAINS, so any future row
             with chips in it inherits the offers treatment. An id and a class
             say which section this is, in the markup that owns it. */""}
-      <section class="ssec ssoffers" id="shadow-delegate-offers"
-        ><h3 class="ssh">Delegate offers</h3>${
-        shadowSetOffersSecHtml(d)}</section>
-      ${shadowSettingsSecHtml("Presence", shadowSetPresenceHtml(d))}
-      <section class="ssec addset"><h3 class="ssh">Add a control</h3>${
-        shadowSetAddHtml()}</section>
-      ${shadowSettingsSecHtml("Attention", shadowSetAttentionHtml(d))}
     </div></div>
   </div>`;
 }
@@ -4360,21 +4825,7 @@ if (typeof document !== "undefined" && document.addEventListener){
        closing is local state only -- no request, nothing paused, and the
        worker is not told. Re-opening reads the record again, so the history
        comes back from the transcript rather than from the browser. */
-    if (d.shtalk){
-      const T = shadowTalk();
-      const same = T.mid === d.shtalk;
-      T.mid = same ? null : d.shtalk;
-      if (!same){ T.live = []; T.text = ""; T.err = null; }
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
-    if (d.shtalkclose){
-      const T = shadowTalk();
-      T.mid = null; T.err = null;
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
-    if (d.shtalksend){ shadowTalkSend(d.shtalksend); return; }
+
     if (d.shformdoor){
       if (typeof S !== "undefined") S.shadowFormWant = true;
       if (typeof scheduleRender === "function") scheduleRender();
@@ -4650,9 +5101,23 @@ if (typeof document !== "undefined" && document.addEventListener){
     const sel = (typeof shadowSelectedTask === "function")
       ? shadowSelectedTask() : null;
     if (sel && sel.id && !S_.shadowNewOpen){
-      const said = text.trim();
+      /* ONE DOOR TO SHADOW (founder, 2026-09-17). This box used to deposit a
+         line on the record through shadowSayToShadow and nothing answered;
+         a second, floating panel was the only surface that talked back. The
+         founder had to decide which of the two a sentence was, which is a
+         classification only Shadow can make -- so there is now one box, and
+         it goes where the answers come from.
+
+         NOTHING ABOUT THE OPERATIONAL PATH MOVED. The route this calls,
+         POST /api/shadow/tasks/{id}/chat, already did BOTH halves: it
+         returns Shadow's reply AND appends the founder's words to
+         `founder_says` (app._record_founder_talk), which is what
+         _decision_context hands the decider, what `seen` consumes once, and
+         what standing_instructions are composed from. The say endpoint is
+         untouched and still serves anything that calls it. */
+      shadowTalk().text = text.trim();
       el.value = "";
-      shadowSayToShadow(sel.id, said, el);
+      shadowTalkSend(sel.id, el);
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
@@ -4675,15 +5140,6 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault && ev.preventDefault();
       shadowNewChat().text = ev.target.value;
       shadowNewTalk();
-      return;
-    }
-    /* step 1: Enter in the Talk to Shadow box sends the line, Shift+Enter is
-       a newline -- the same pair the drafting task chat answers to */
-    if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
-        && ev.target.dataset.shtalkbox){
-      ev.preventDefault && ev.preventDefault();
-      shadowTalk().text = ev.target.value;
-      shadowTalkSend(ev.target.dataset.shtalkbox);
       return;
     }
     /* the offer box submits on Enter and abandons on Escape -- the two keys
@@ -4709,15 +5165,19 @@ if (typeof document !== "undefined" && document.addEventListener){
   document.addEventListener("change", (ev) => {
     const d = (ev.target && ev.target.dataset) || {};
     if (d.shbehaves) shadowBehavesSave(ev.target.value);
+    if (d.shmemory) shadowMemorySave(ev.target.value);
   });
   document.addEventListener("input", (ev) => {
     const t = ev.target, d = (t && t.dataset) || {};
     /* v4: the task chat line and the behaves text, kept across the
        background re-renders like every typed field here */
     if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
-    if (d.shtalkbox){ shadowTalk().text = t.value; return; }
     if (d.shbehaves){
       if (typeof S !== "undefined"){ S.shadowBehavesDraft = t.value; S.shadowBehavesSaved = false; }
+      return;
+    }
+    if (d.shmemory){
+      if (typeof S !== "undefined"){ S.shadowMemoryDraft = t.value; S.shadowMemorySaved = false; }
       return;
     }
     /* the intervention form's typed fields, on the SAME listener the

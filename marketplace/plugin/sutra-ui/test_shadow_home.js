@@ -7,6 +7,51 @@ const path = require("path");
 const vm = require("vm");
 const assert = require("assert");
 
+/* ── THE SETTINGS PAGE AS IT WAS, composed from the renderers ────────
+   WHY THIS EXISTS (founder, 2026-09-17). The page became two text boxes --
+   Personality and Memory -- and six sections left it: Autonomy, Tasks,
+   Delegate offers, Presence, Add a control, Attention.
+
+   EVERY RENDERER THEY USED STILL EXISTS AND STILL WORKS. What changed is
+   which page composes them. The forty-odd blocks below assert those
+   renderers' behaviour -- the autonomy switch, the steppers, the bands, the
+   floor copy, the revoke hooks -- and that behaviour is not what the founder
+   removed. So they keep testing it, through this composer, rather than being
+   deleted along with the page that used to call them. The NEW page has its
+   own block ("the settings page is two boxes") and asserts the removal
+   directly. */
+function legacySettingsHtml(ctx){
+  const d = ctx.S.shadowSettings;
+  /* THE ZERO STATE IS THE PAGE'S, NOT THIS COMPOSER'S. A settings read that
+     failed renders "Could not read the rules just now" with a Retry, and
+     that path is unchanged by the reduction -- so it is asserted against the
+     REAL function rather than reproduced here, where a copy could drift. */
+  if (!d) return ctx.shadowSettingsHtml();
+  const sec = ctx.shadowSettingsSecHtml;
+  /* the REAL header, unchanged by the reduction -- the two-box page still
+     draws exactly this, so the blocks asserting it are asserting the
+     shipped markup, not a fixture. */
+  const head = `<header class="sshead">
+    <button class="ssback" type="button" data-shscreen="shadow"
+      title="Back to Shadow" aria-label="Back to Shadow">\u2190</button>
+    <span class="ssmark" aria-hidden="true"><b>S</b></span>
+    <h2 class="sstitle">What Shadow knows</h2>
+  </header>`;
+  return `<div class="shset">${head}<div class="ssbody"><div class="sswrap">
+      ${sec("How Shadow behaves", ctx.shadowSetBehavesHtml(d))}
+      ${sec("Autonomy", ctx.shadowSetAutonomyHtml(d))}
+      ${sec("Memory", ctx.shadowSetMemoryHtml(d))}
+      ${sec("Tasks", ctx.shadowSetTasksHtml(d))}
+      <section class="ssec ssoffers" id="shadow-delegate-offers"
+        ><h3 class="ssh">Delegate offers</h3>${ctx.shadowSetOffersSecHtml(d)}</section>
+      ${sec("Presence", ctx.shadowSetPresenceHtml(d))}
+      <section class="ssec addset"><h3 class="ssh">Add a control</h3>${
+        ctx.shadowSetAddHtml()}</section>
+      ${sec("Attention", ctx.shadowSetAttentionHtml(d))}
+    </div></div></div>`;
+}
+
+
 const html = fs.readFileSync(path.join(__dirname, "static", "panel.html"), "utf8");
 assert(/16-shadow-home\.js/.test(html), "panel.html loads the home module");
 
@@ -233,7 +278,7 @@ console.log("ok 6 controls wired");
     per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
     attention: { watching: ["a"], off: [], alerts: 2 },
     floors: ["destructive git"] };
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
     "settings shows global and per-chat rules");
   assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
@@ -288,7 +333,7 @@ console.log("ok 6 controls wired");
     per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
     attention: { watching: ["a"], off: [], alerts: 2 },
     floors: ["destructive git"] };
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
     "settings shows global and per-chat rules");
   assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
@@ -343,7 +388,7 @@ console.log("ok 6 controls wired");
     per_chat: { "sess-paisa": [{ id: "i-2", text: "paisa rule" }] },
     attention: { watching: ["a"], off: [], alerts: 2 },
     floors: ["destructive git"] };
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/everywhere rule/.test(h) && /paisa rule/.test(h),
     "settings shows global and per-chat rules");
   assert(/data-shrevoke="i-2"/.test(h), "each rule can be revoked");
@@ -453,9 +498,10 @@ console.log("ok 6 controls wired");
      surface and the same hooks, asserted above, asking for anything rather
      than teaching how to delegate. It is the SHADOW<->FOUNDER channel
      (/api/shadow/chat) either way -- never the worker chat. */
-  /* renamed 2026-09-16 -- same surface, same hooks, same path; the
-     name now says what it does, now that Talk to Shadow converses */
-  assert(/Give instruction to Shadow/.test(h),
+  /* renamed twice: "Say anything" -> "Give instruction to Shadow" (2026-09-16)
+     -> "Talk to Shadow" (2026-09-17), when the separate Talk panel was folded
+     into this box. Same surface, same hooks. */
+  assert(/Talk to Shadow/.test(h),
     "the calm composer placeholder was lost");
   assert(!/Tell Shadow the outcome you want/.test(h),
     "the teaching copy belongs to the un-focused pane, not the task pane");
@@ -503,7 +549,7 @@ console.log("ok 6 controls wired");
      Same string, rendered by the same call, for a focused task and for an
      empty workspace. */
   assert(/data-shhomecompose/.test(h), "the closed workspace lost its composer");
-  assert(/Give instruction to Shadow/.test(h),
+  assert(/Talk to Shadow/.test(h),
     "the closed workspace lost its placeholder");
   assert(/data-shsend="1"/.test(h), "the send arrow was lost");
   assert(!/What should I take on\?/.test(h),
@@ -545,7 +591,7 @@ console.log("ok 6 controls wired");
   assert(!/data-shgoals="1"/.test(h), "goals still listed in the workspace");
   ctx.S.shadowSettings = { engage: [], global: [], per_chat: {},
     attention: { watching: ["a"], off: [], alerts: 0 }, floors: [] };
-  const set = ctx.shadowSettingsHtml();
+  const set = legacySettingsHtml(ctx);
   assert(/data-shgoals="1"/.test(set), "the goals screen became unreachable");
   assert(/Goals · 5/.test(set), "Settings must count LIVE goals (3+2), got "
     + (set.match(/Goals · \d+/) || ["none"])[0]);
@@ -1196,7 +1242,7 @@ const SET = { engage: ["outcome first"],
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
   ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/class="sshead"/.test(h), "no settings header");
   assert(/class="ssback"[\s\S]{0,120}data-shscreen="shadow"/.test(h)
       || /data-shscreen="shadow"[\s\S]{0,120}class="ssback"/.test(h)
@@ -1220,7 +1266,7 @@ const SET = { engage: ["outcome first"],
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
   ctx.S.sessions = [{ id: "sess-paisa", title: "paisa emi" }];
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   /* Autonomy = the floors, locked and said to be locked */
   assert(/class="floorbar"/.test(h), "no floor bar");
   assert(/the push/.test(h) && /external sends/.test(h), "floors not listed");
@@ -1274,7 +1320,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const seg = (h.match(/<div class="seg"[\s\S]*?<\/div>/) || [""])[0];
   assert(seg, "no segmented control");
   [["L0", "Watch"], ["L1", "Suggest"], ["L2", "Draft"], ["L3", "Act"]]
@@ -1331,7 +1377,7 @@ const SET = { engage: ["outcome first"],
                    confirm_top_tier: false, worker_may_write: false,
                    worker_mode: "plan" };
   ctx.S.shadowSettings = set;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const seg = (h.match(/<div class="seg"[\s\S]*?<\/div>/) || [""])[0];
   const btns = seg.split("<button").slice(1);
   assert(btns.length === 4, "four levels, no more");
@@ -1364,7 +1410,7 @@ const SET = { engage: ["outcome first"],
   const set = JSON.parse(JSON.stringify(SET));
   delete set.autonomy;
   ctx.S.shadowSettings = set;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/The autonomy level was not reported/.test(h),
     "a missing autonomy block must be stated, not defaulted");
   assert(!/class="seg"/.test(h),
@@ -1382,7 +1428,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/Floors are confirm-first at every level, Act included/.test(h),
     "the floor note must say the top level does not clear the floors");
   assert(/not editable\s+here/.test(h),
@@ -1395,7 +1441,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   /* the three rows, in the reference's order */
   const rows = ["Running at once", "Budget per task", "Delegate offers"]
@@ -1477,7 +1523,7 @@ const SET = { engage: ["outcome first"],
   /* and when the server sends no limits, none are invented */
   const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
   ctx.S.shadowSettings = d2;
-  const bare = ctx.shadowSettingsHtml();
+  const bare = legacySettingsHtml(ctx);
   assert(/not reported/.test(bare), "a missing limit must be said, not guessed");
   assert(!/class="val">5</.test(bare), "a limit was invented from nowhere");
   console.log("ok 22e tasks: reference layout, engine-enforced numbers");
@@ -1498,7 +1544,7 @@ const SET = { engage: ["outcome first"],
   d.tasks = { running_at_once: 3, running_at_once_min: 1,
               running_at_once_max: 20, turn_budget: SET.tasks.turn_budget };
   ctx.S.shadowSettings = d;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(/data-shrunlimit="2"[^>]*aria-label="fewer"/.test(sec)
       || /aria-label="fewer"[^>]*data-shrunlimit="2"/.test(sec),
@@ -1516,7 +1562,7 @@ const SET = { engage: ["outcome first"],
     d.tasks = { running_at_once: n, running_at_once_min: lo,
                 running_at_once_max: hi, turn_budget: SET.tasks.turn_budget };
     ctx.S.shadowSettings = d;
-    const h = ctx.shadowSettingsHtml();
+    const h = legacySettingsHtml(ctx);
     return h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   };
   const lo = at(1, 1, 6);
@@ -1601,7 +1647,7 @@ const SET = { engage: ["outcome first"],
               running_at_once_max: 20, running_now: 3, queued_now: 0,
               turn_budget: SET.tasks.turn_budget };
   ctx.S.shadowSettings = d;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(/3 are still\s+running/.test(sec),
     "the overflow must be stated: " + sec.slice(0, 500));
@@ -1609,13 +1655,13 @@ const SET = { engage: ["outcome first"],
     "and it must say what the lower cap does NOT do");
   /* no overflow, but a queue -> the waiting count instead */
   d.tasks.running_at_once = 5; d.tasks.queued_now = 2;
-  const sec2 = (() => { const x = ctx.shadowSettingsHtml();
+  const sec2 = (() => { const x = legacySettingsHtml(ctx);
     return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
   assert(/2 waiting for a\s+free slot/.test(sec2),
     "a queue under the cap must be named: " + sec2.slice(0, 400));
   /* nothing to say -> nothing said */
   d.tasks.queued_now = 0; d.tasks.running_now = 1;
-  const sec3 = (() => { const x = ctx.shadowSettingsHtml();
+  const sec3 = (() => { const x = legacySettingsHtml(ctx);
     return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
   assert(!/still\s+running|waiting for a/.test(sec3),
     "a quiet cap must not editorialise");
@@ -1642,7 +1688,7 @@ const SET = { engage: ["outcome first"],
   await ctx.listeners.click({ target: { dataset: { shrunlimit: "4" } } });
   assert.strictEqual(sent, 1, "a second click while one is in flight resent");
   /* and while it is in flight the stepper says it is saving */
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert((sec.match(/Saving…/g) || []).length === 2,
     "both ends must say they are saving: " + sec.slice(0, 400));
@@ -1665,7 +1711,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   /* the fixture's Delegate default is `fix` at 20 */
   assert(/data-shbudget="15"/.test(sec) && /data-shbudget="25"/.test(sec),
@@ -1682,13 +1728,13 @@ const SET = { engage: ["outcome first"],
   const d = JSON.parse(JSON.stringify(SET));
   d.tasks.turn_budget.fix = 1;            // at the floor
   ctx.S.shadowSettings = d;
-  let h = ctx.shadowSettingsHtml();
+  let h = legacySettingsHtml(ctx);
   let sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(/A task gets at least 1 turn/.test(sec),
     "at the floor the minus must say so: " + sec.slice(0, 600));
   assert(!/data-shbudget="0"/.test(sec), "the floor was stepped through");
   d.tasks.turn_budget.fix = 100;          // at the ceiling
-  h = ctx.shadowSettingsHtml();
+  h = legacySettingsHtml(ctx);
   sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(/At most 100 turns for one task/.test(sec),
     "at the ceiling the plus must say so");
@@ -1743,7 +1789,7 @@ const SET = { engage: ["outcome first"],
     "the row must repaint from the server's answer, not the request");
   assert.strictEqual(t.running_at_once, 5,
     "a budget write clobbered the cap beside it");
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(/set by you/.test(sec) && !/class="auto"[^>]*>auto</.test(sec),
     "an overridden kind must read `set by you`, never both pills: "
@@ -1769,7 +1815,7 @@ const SET = { engage: ["outcome first"],
         turn_budget_set: [] }) }); };
   ctx.loadShadowSettings = () => {}; ctx.showNudge = () => {};
   /* the reset control only exists because the kind is overridden */
-  const h0 = ctx.shadowSettingsHtml();
+  const h0 = legacySettingsHtml(ctx);
   assert(/data-shbudget="auto"/.test(
     h0.slice(h0.indexOf(">Tasks<"), h0.indexOf(">Presence<"))),
     "an overridden kind must offer a way back to auto");
@@ -1778,7 +1824,7 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(posts.length, 1, "the reset did not send");
   assert.strictEqual(posts[0].turns, null,
     "reset must send null, got: " + JSON.stringify(posts[0].turns));
-  const sec = (() => { const x = ctx.shadowSettingsHtml();
+  const sec = (() => { const x = legacySettingsHtml(ctx);
     return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
   assert(/class="auto"[^>]*>auto</.test(sec) && !/set by you/.test(sec),
     "after a reset the row must be back to auto");
@@ -1793,7 +1839,7 @@ const SET = { engage: ["outcome first"],
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
   ctx.S.shadowBudgetKind = "watch";
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<"));
   assert(!/data-shbudget="/.test(sec),
     "watch must carry no budget hook: " + sec.slice(0, 700));
@@ -1802,7 +1848,7 @@ const SET = { engage: ["outcome first"],
     "watch still states its real budget");
   /* a write in flight holds the budget stepper down, same as the cap's */
   ctx.S.shadowBudgetKind = "fix"; ctx.S.shadowBudgetBusy = true;
-  const busy = (() => { const x = ctx.shadowSettingsHtml();
+  const busy = (() => { const x = legacySettingsHtml(ctx);
     return x.slice(x.indexOf(">Tasks<"), x.indexOf(">Presence<")); })();
   assert((busy.match(/Saving…/g) || []).length >= 2,
     "both budget ends must say they are saving: " + busy.slice(0, 700));
@@ -1816,7 +1862,7 @@ const SET = { engage: ["outcome first"],
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
   const labelOf = () => {
-    const h = ctx.shadowSettingsHtml();
+    const h = legacySettingsHtml(ctx);
     const sec = h.slice(h.indexOf(">Tasks<"));
     const i = sec.indexOf("Budget per task");
     return sec.slice(i, sec.indexOf("</span>", i))
@@ -1830,7 +1876,7 @@ const SET = { engage: ["outcome first"],
   /* and it must not invent a kind when the server reported no budget */
   const d2 = JSON.parse(JSON.stringify(SET)); delete d2.tasks;
   ctx.S.shadowSettings = d2;
-  const bare = ctx.shadowSettingsHtml();
+  const bare = legacySettingsHtml(ctx);
   assert(/Budget per task<\/span>/.test(bare),
     "with no budget reported the label must stay bare");
   console.log("ok 22e13 the label tracks the picker, and invents nothing");
@@ -1844,7 +1890,7 @@ const SET = { engage: ["outcome first"],
   d.tasks.turn_budget = { feature: 50, fix: 20, research: 15, watch: 0 };
   d.tasks.turn_budget_set = ["feature"];
   ctx.S.shadowSettings = d;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const ro = (h.match(/<div class="srow budall">[\s\S]*?<\/div>/) || [""])[0];
   assert(ro, "the all-kinds readout is missing");
   /* every offered kind, with its EFFECTIVE value */
@@ -1861,7 +1907,7 @@ const SET = { engage: ["outcome first"],
      Deriving `set` by comparing value to default would redraw it as auto and
      silently remove the founder's way back. */
   d.tasks.turn_budget_set = ["feature", "fix"];   // fix is set, to its own 20
-  const ro2 = (ctx.shadowSettingsHtml()
+  const ro2 = (legacySettingsHtml(ctx)
     .match(/<div class="srow budall">[\s\S]*?<\/div>/) || [""])[0];
   assert(/class="budk on"[^>]*>fix <b>20<\/b>/.test(ro2),
     "a kind set to its own default must still read as set: "
@@ -1876,7 +1922,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<"));
   /* the four rows, in the reference's order */
   const rows = ["Corner card on every screen", "Quiet hours",
@@ -1973,7 +2019,7 @@ const SET = { engage: ["outcome first"],
   ctx.S.shadowSettings = d;
 
   const rowOf = () => {
-    const h = ctx.shadowSettingsHtml();
+    const h = legacySettingsHtml(ctx);
     const i = h.indexOf("Hide for this app");
     return h.slice(i, h.indexOf("</div>", i)).replace(/\s+/g, " ");
   };
@@ -2033,7 +2079,7 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(ctx.S.shadowSettings.presence.corner_card, false,
     "the row repaints from the server's answer, not the optimistic value");
   assert(/aria-checked="false"[^>]*data-shpresence="card"/
-    .test(ctx.shadowSettingsHtml().replace(/\s+/g, " ")),
+    .test(legacySettingsHtml(ctx).replace(/\s+/g, " ")),
     "the corner-card switch must read off once it is off");
 
   await ctx.listeners.click({ target: { dataset: { shpresence: "card" } } });
@@ -2069,7 +2115,9 @@ const SET = { engage: ["outcome first"],
 (async () => {
   const ctx = fresh();
   ctx.S.shadowSettings = JSON.parse(JSON.stringify(SET));
-  const sec = (c) => { const h = c.shadowSettingsHtml();
+  /* the Presence section, which the two-box page no longer composes --
+     the renderer and every behaviour below it are unchanged */
+  const sec = (c) => { const h = legacySettingsHtml(c);
     return h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<")); };
   let s = sec(ctx);
   assert(/<span class="val">3<\/span>/.test(s),
@@ -2291,7 +2339,7 @@ const SET = { engage: ["outcome first"],
     corner_card: true, hidden_apps: [], nudges_per_hour: 3,
     quiet_hours: { start: "21:00", end: "08:00" }, quiet_now: false } };
   ctx.S.shadowQuietHours = { start: "21:00", end: "08:00" };
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   const sec = h.slice(h.indexOf(">Presence<"), h.indexOf(">Attention<"));
   assert(/21:00/.test(sec) && /08:00/.test(sec),
     "a set window must state its hours: " + sec.slice(0, 300));
@@ -2301,7 +2349,7 @@ const SET = { engage: ["outcome first"],
   /* EDITING: two time fields, behind the offers input's own pattern */
   ctx.S.shadowQuietEditing = true;
   ctx.S.shadowQuietDraft = { start: "22:00", end: "07:00" };
-  const ed = ctx.shadowSettingsHtml();
+  const ed = legacySettingsHtml(ctx);
   assert(/type="time"[^>]*data-shquietstart/.test(ed.replace(/\s+/g, " "))
       || /data-shquietstart[^>]*type="time"/.test(ed.replace(/\s+/g, " ")),
     "the start is a native time field");
@@ -2402,7 +2450,7 @@ const SET = { engage: ["outcome first"],
 {
   const ctx = fresh();
   ctx.S.shadowSettings = null;
-  const h = ctx.shadowSettingsHtml();
+  const h = legacySettingsHtml(ctx);
   assert(/Could not read the rules/.test(h), "a failed read must be stated");
   assert(/data-shsetreload="1"/.test(h), "and offer the existing retry");
   assert(/data-shscreen="shadow"/.test(h),
@@ -3401,7 +3449,7 @@ const SET = { engage: ["outcome first"],
   d.tasks.turn_budget_kinds = ["fix", "review", "spike"];
   ctx.S.shadowSettings = d;
   const sec = (h => h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<")))(
-    ctx.shadowSettingsHtml());
+    legacySettingsHtml(ctx));
   ["fix", "review", "spike"].forEach(k => assert(
     new RegExp('class="chip"[^>]*>' + k + '<button class="cx"').test(sec),
     "a founder-set kind is missing its chip: " + k));
@@ -3432,7 +3480,7 @@ const SET = { engage: ["outcome first"],
   d.tasks.offers = ["fix"];
   ctx.S.shadowSettings = d;
   const sec = (h => h.slice(h.indexOf(">Tasks<"), h.indexOf(">Presence<")))(
-    ctx.shadowSettingsHtml());
+    legacySettingsHtml(ctx));
   const x = (sec.match(/<button class="cx"[^>]*>/) || [""])[0];
   assert(x, "the last chip still draws its x");
   assert(/aria-disabled="true"/.test(x), "at the floor the x must be held down");
@@ -3444,7 +3492,7 @@ const SET = { engage: ["outcome first"],
   const c = JSON.parse(JSON.stringify(SET));
   c.tasks.offers = ["fix", "feature"]; c.tasks.offers_max = 2;
   ctx.S.shadowSettings = c;
-  const full = ctx.shadowSettingsHtml();
+  const full = legacySettingsHtml(ctx);
   assert(/chipadd[^>]*aria-disabled="true"/.test(full),
     "at the ceiling + add must say it cannot");
   assert(/At most 2 kinds on offer/.test(full), "…and why");
@@ -3503,7 +3551,7 @@ const SET = { engage: ["outcome first"],
   /* opening the namer is NOT a write: there is no name to send yet */
   await ctx.listeners.click({ target: { dataset: { shofferopen: "1" } } });
   assert.strictEqual(posts.length, 0, "opening the box must not post");
-  const open = ctx.shadowSettingsHtml();
+  const open = legacySettingsHtml(ctx);
   assert(/data-shoffername="1"/.test(open), "the namer must render");
   assert(!/class="chipadd"/.test(open),
     "the pill and the box must not both offer to add");
@@ -3541,7 +3589,7 @@ const SET = { engage: ["outcome first"],
   await ctx.listeners.click({ target: { dataset: { shofferadd: "1" } } });
   assert(/not a usable kind name/.test(ctx.S.shadowOfferErr || ""),
     "the server's reason must be kept, got: " + ctx.S.shadowOfferErr);
-  const sec = ctx.shadowSettingsHtml();
+  const sec = legacySettingsHtml(ctx);
   assert(/not a usable kind name/.test(sec),
     "the reason must reach the row, not only a nudge");
   assert(ctx.S.shadowOfferAdding,

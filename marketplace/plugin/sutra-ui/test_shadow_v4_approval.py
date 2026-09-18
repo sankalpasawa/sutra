@@ -83,6 +83,15 @@ class Base(unittest.TestCase):
             return " ".join(self.says)
 
         async def decider(ctx):
+            # THE SCRIPT DRIVES TURNS. Since 2026-09-17 the decider is also
+            # asked ONE question before first contact -- how it would verify
+            # each check that has no mechanical test behind it
+            # (_criteria_before_first_contact step 2). Its instruction is
+            # discarded, so letting it consume a scripted say would spend the
+            # floored string on a turn that never happens.
+            if (ctx.get("turns_used") or 0) < 1:
+                return {"action": "continue", "reason": "r",
+                        "instruction": "(pre-brief: nothing here is a file)"}
             text = script.pop(0) if script else PLAIN
             return {"action": "continue", "instruction": text, "reason": "r"}
 

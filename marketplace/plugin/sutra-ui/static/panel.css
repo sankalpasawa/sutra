@@ -3435,6 +3435,98 @@
   background:var(--sepia);border:1px solid var(--line-soft);
   color:var(--muted);font-size:12.5px;line-height:1.5;font-style:italic;
   white-space:pre-wrap;overflow-wrap:anywhere}
+/* ══ TASK MOTION (founder, 2026-09-17) ════════════════════════
+   Three states the pane knew and never showed: waiting on Shadow, a turn in
+   flight, and the instant a task lands. Each reuses the motion vocabulary
+   already in this sheet rather than inventing one.
+
+   EVERY RULE BELOW IS DECORATION. Remove the whole block and the pane still
+   says the same things in the same order -- the text, the turn number, the
+   verdicts and the Summary are all drawn by the markup, not by the motion.
+   That is also what makes the reduced-motion answer honest: it does not
+   degrade to a lesser design, it degrades to the design without movement. */
+
+/* 1. WAITING ON SHADOW. A dot that breathes and an ellipsis that counts, in
+      the row the answer will replace. */
+.shthinking .shsaidtext{color:var(--muted);font-style:italic}
+.shthinkdot{display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:currentColor;margin-right:7px;vertical-align:baseline;
+  animation:livepulse 1.4s ease-in-out infinite}
+.shthinkell::after{content:"";animation:shEll 1.4s steps(1,end) infinite}
+@keyframes shEll{0%{content:""}25%{content:"."}50%{content:".."}
+  75%,100%{content:"..."}}
+
+/* 2. A TURN IN FLIGHT. A live dot beside the heading, the elapsed clock, and
+      one slow sweep under it -- the sweep is the only thing that says
+      "still going" when the clock has not ticked yet. */
+.shagentopen .shagenthead{display:flex;align-items:center;gap:7px}
+.shturnlive{flex:none;width:5px;height:5px;border-radius:50%;
+  background:var(--ok,currentColor);animation:livepulse 1.6s ease-in-out infinite}
+.shturntimer{margin-left:auto;font:500 11px/1 var(--mono);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+.shturnsweep{position:relative;height:2px;margin-top:7px;border-radius:2px;
+  background:var(--line-soft);overflow:hidden}
+.shturnsweep>i{position:absolute;inset:0 auto 0 0;width:30%;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--muted),transparent);
+  animation:sutraSweep 2.2s ease-in-out infinite}
+
+/* 3. THE MOMENT IT LANDS. The ring fades up, the check draws itself, then the
+      card's own content eases in beneath. Runs once, on mount. */
+.shdoneburst{display:flex;justify-content:center;margin:0 0 8px}
+.shdonetick{width:30px;height:30px;overflow:visible}
+.shdonering{fill:none;stroke:var(--ok-line,currentColor);stroke-width:1.4;
+  opacity:0;animation:shRing .45s ease-out .05s forwards}
+.shdonecheck{fill:none;stroke:var(--ok,currentColor);stroke-width:2.4;
+  stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:22;stroke-dashoffset:22;
+  animation:shDraw .5s cubic-bezier(.65,0,.35,1) .3s forwards}
+@keyframes shRing{from{opacity:0;transform:scale(.7)}
+  to{opacity:.9;transform:scale(1)}}
+@keyframes shDraw{to{stroke-dashoffset:0}}
+.shdonesum .shchecks{animation:shRise .45s ease-out .5s both}
+.shdonesum .shdonesummary{animation:shRise .5s ease-out .72s both}
+@keyframes shRise{from{opacity:0;transform:translateY(6px)}
+  to{opacity:1;transform:none}}
+
+/* MOTION IS NEVER THE MESSAGE. Everything above is removed wholesale here --
+   not slowed, not shortened. The dot, the sweep and the ellipsis stop; the
+   check and the ring are drawn in their finished state; the content is at
+   full opacity from the first frame. The clock keeps ticking because it is a
+   NUMBER, not an animation, and it is the one thing a founder who turned
+   motion off would still want. */
+@media (prefers-reduced-motion:reduce){
+  .shthinkdot,.shturnlive,.shturnsweep>i,.shthinkell::after{animation:none}
+  .shthinkell::after{content:"..."}
+  .shturnsweep{display:none}
+  .shdonering{opacity:.9;animation:none}
+  .shdonecheck{stroke-dashoffset:0;animation:none}
+  .shdonesum .shchecks,.shdonesum .shdonesummary{animation:none}
+}
+
+/* ── SUMMARY: THE ANSWER ITSELF, UNDER THE VERDICTS (founder, 2026-09-17)
+   .shdonework above is the one-line GIST and stays exactly as it was: quoted,
+   italic, muted, pre-wrap. This is the other half -- the worker's closing
+   message in full, and for a research task that message IS the deliverable.
+
+   SET AS DOCUMENT, NOT AS QUOTE. It carries `.md`, so mdHtml's own rules
+   (headings, lists, tables, code, links) apply to it unchanged -- the same
+   rules the transcript uses, so a report reads the same here as it does in
+   the chat it came from. Upright and full-ink rather than italic and muted,
+   because this is the thing being read, not a note about something else.
+
+   A CEILING, NOT A CROP. The field is bounded server-side
+   (shadow_runner.OUTCOME_CHARS), but 6000 characters of markdown is taller
+   than the pane, so the block scrolls in place instead of pushing the checks
+   and the card's actions off the screen. */
+.shdonesummary{margin-top:10px;padding-top:9px;
+  border-top:1px solid var(--line-soft)}
+.shdonesumhead{font-size:11px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.shdonesumbody{font-size:12.5px;line-height:1.55;color:var(--ink);
+  max-height:420px;overflow:auto;overflow-wrap:anywhere}
+.shdonesumbody .md-h{font-size:1.05em}
+.shdonesumbody h1.md-h{font-size:1.15em}
+.shdonesumbody h2.md-h{font-size:1.1em}
 /* Copy result sits ON the headline row, because it acts on the summary the
    headline names and nothing else. Same size as .shcheckdo (the sign-off's
    own Confirm), so the two never read as different weights of control. */
@@ -3556,38 +3648,8 @@
   font-size:13px;line-height:1}
 .shwtitle{font-size:21px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
 .shwheadacts{margin-left:auto;display:flex;align-items:center;gap:9px;
-  flex:none;position:relative}
+  flex:none}
 .shwheadacts .btn{padding:6px 12px;font-size:12px;border-radius:8px}
-/* the two doors, stacked: the worker's chat, then the founder's own
-   conversation with this task's Shadow. A column so the second sits UNDER
-   the first rather than widening a header that already ends at the pane. */
-.shwheadcol{display:flex;flex-direction:column;align-items:stretch;gap:6px}
-
-/* -- Talk to Shadow: a floating conversation, anchored to those buttons ---
-   ABSOLUTE ON PURPOSE. The panel must overlap the brief below it, never
-   push it: opening a conversation is not a layout change, and a founder
-   reading the card should not have it jump. position:relative on
-   .shwheadacts above is the anchor and changes nothing else -- the row is
-   still the same flex row it was.
-   The bubbles, the composer and the send button are the existing
-   .shmsg / .shthread / .shcompose / .shsend, so this adds a container and
-   no new message styling. */
-.shtalk{position:absolute;top:calc(100% + 8px);right:0;z-index:40;
-  width:min(380px,78vw);max-height:min(460px,60vh);
-  display:flex;flex-direction:column;gap:8px;
-  padding:12px 13px;background:var(--card);border:1px solid var(--line);
-  border-radius:12px;box-shadow:0 14px 38px rgba(0,0,0,.18)}
-.shtalkhead{display:flex;align-items:center;gap:8px}
-.shtalkwho{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--faint)}
-.shtalkx{margin-left:auto;width:22px;height:22px;flex:none;line-height:1;
-  background:none;border:0;border-radius:6px;color:var(--faint);
-  font-size:15px;cursor:pointer}
-.shtalkx:hover{background:var(--bubble);color:var(--ink)}
-.shtalkthread{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:2px}
-.shtalkzero{font-size:12px;line-height:1.5;color:var(--faint)}
-.shwright .shtalk .shmsg{padding:9px 12px;font-size:12.5px;margin:6px 0 0}
-.shtalkcomp{flex:none}
 
 /* ── the briefing card: calm, white, and the keys are a mono index column */
 .shwright .shcard2{background:var(--card);border-color:var(--line-soft);

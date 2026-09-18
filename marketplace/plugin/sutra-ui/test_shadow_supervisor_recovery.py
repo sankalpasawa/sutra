@@ -375,9 +375,19 @@ class TheVerifyTierWorks(Base):
              "are queued instead of running.")
 
     def _mission_with(self, tier):
+        """WRITTEN PAST THE DOOR, and deliberately.
+
+        The subject of this class is evaluate_done_when's verify ARM and the
+        _call_verifier shim -- evaluation-time behaviour, which
+        resolve_verify_tier does not touch. The create() door now demotes a
+        `verify` with no probe behind it (founder, 2026-09-17), so minting
+        one there would test the door instead. save() is not a door, so this
+        produces exactly the record a mission written before that rule has
+        on disk -- which is the record these tests are about."""
         m = self.store.create("o", "fix", target_mode="new",
-                              target_session="s",
-                              done_when=[{"tier": tier, "check": self.CHECK}])
+                              target_session="s")
+        m["done_when"] = [{"tier": tier, "check": self.CHECK}]
+        self.store.save(m)
         return self.store.load(m["id"])
 
     def _verifier(self):
