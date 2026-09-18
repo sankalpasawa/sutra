@@ -86,7 +86,9 @@ main() {
   # The final step prints EVERYTHING that is done (founder, 2026-09-17): the
   # whole finished table with every row's end state, shown in the terminal
   # through systemMessage. Flag on only (D-A9 holds when off).
-  FINAL="$(sutra_steps_render "$_CL_PATH")"
+  # 2.285.1: the human-readable form (checkbox rows, one count line); the
+  # fixed-width STEP TRACE stays the model's form in additionalContext.
+  FINAL="$(sutra_steps_render_pretty "$_CL_PATH")"
   [ -n "$FINAL" ] && jq -nc --arg m "$FINAL" '{systemMessage:$m}' 2>/dev/null
   return 0
 }

@@ -167,8 +167,9 @@ adherence_denied c4 && fail "case4: denied with valid artifacts: $(deny_reason_o
 is "case4: lens done"    "$(jq -r '.steps[4].status' "$L")" done
 is "case4: cynefin done" "$(jq -r '.steps[5].status' "$L")" done
 is "case4: mutation row allow" "$(jq -r '.mutations[-1].decision' "$L")" allow
-sysmsg_of c4 | grep -q 'lens: pending -> done' && pass "case4: live transition line printed for lens" || fail "case4: no live transition line: $(head -c 200 "$WORK/c4.out")"
-sysmsg_of c4 | grep -q 'cynefin: pending -> done' && pass "case4: live transition line printed for cynefin" || fail "case4: no cynefin transition line"
+sysmsg_of c4 | grep -q '^\[sutra [0-9a-f]\{8\}\] .*lens done (' && pass "case4: live line printed for lens (2.285.1 form)" || fail "case4: no live line: $(head -c 200 "$WORK/c4.out")"
+sysmsg_of c4 | grep -q 'cynefin done (complicated)' && pass "case4: live line printed for cynefin" || fail "case4: no cynefin live line"
+sysmsg_of c4 | grep -q 'pending ->' && fail "case4: live line still carries the from-state noise" || pass "case4: live line is the compact form"
 is "case4: transition row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="adherence_transition"')" 1
 
 # ===================================================================== 5 ====
@@ -260,9 +261,10 @@ STEP TRACE turn $(printf '%s' "$TID" | head -c 8) (adherence=on)
 done")"
 is "case10: close done" "$(jq -r '.steps[10].status' "$L")" done
 is "case10: trace_pasted" "$(jq -r '.closed.trace_pasted' "$L")" true
-sysmsg_of c10 | grep -q '^STEP TRACE turn' && pass "case10: the final step prints the whole table at Stop" || fail "case10: no final table at Stop: $(head -c 200 "$WORK/c10.out")"
-sysmsg_of c10 | grep -q 'closed: .*/11 done' && pass "case10: final table carries the closed line" || fail "case10: final table lacks the closed line"
-sysmsg_of c10 | grep -qE '^ *11 close +runtime +done' && pass "case10: row 11 reads done in the final table" || fail "case10: row 11 not done in the final table"
+sysmsg_of c10 | grep -q '^sutra turn [0-9a-f]\{8\} .*done [0-9]*/11' && pass "case10: the final step prints the whole table at Stop (2.285.1 form)" || fail "case10: no final table at Stop: $(head -c 200 "$WORK/c10.out")"
+is "case10: final table has one checkbox row per step" "$(sysmsg_of c10 | grep -c '^  \[[x o~!]\] ')" 11
+sysmsg_of c10 | grep -q '^  \[x\] close      closed at Stop' && pass "case10: close row is done" || fail "case10: close row wrong: $(sysmsg_of c10 | grep 'close' | head -1)"
+CLAUDE_PROJECT_DIR="$PJ" CLAUDE_PLUGIN_ROOT="$PLUGIN_MAIN" bash "$PLUGIN_MAIN/bin/sutra-steps" --sid sid-c2 latest 2>/dev/null | grep -qE '^ *11 close +runtime +done' && pass "case10: row 11 reads done in the STEP TRACE form" || fail "case10: row 11 not done in the STEP TRACE form"
 [ "$(jq -r '.closed.refused' "$L")" -ge 1 ] && pass "case10: refused count kept" || fail "case10: refused count lost"
 is "case10: steps_close row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="steps_close"')" 1
 OUT="$(CLAUDE_PROJECT_DIR="$PJ" CLAUDE_PLUGIN_ROOT="$PLUGIN_MAIN" bash "$PLUGIN_MAIN/bin/sutra-steps" --sid sid-c2 latest 2>&1)"
@@ -322,6 +324,80 @@ CLAUDE_PLUGIN_ROOT="$PLUGIN_MAIN" bash "$PLUGIN_MAIN/bin/sutra-turn" --selftest 
 for s in steps_ledger adherence_gate steps_close; do
   [ -x "$PLUGIN_MAIN/runtime/steps/$s.sh" ] && pass "case14: $s.sh executable" || fail "case14: $s.sh not executable"
 done
+
+# ==================================================================== 15 ====
+echo "== case 15: 2.285.1 - runtime-owned paths refused to every tool; Bash classed by shape; scripts under exempt dirs not exempt =="
+stdin_write_c() { jq -nc --arg sid "$1" --arg f "$2" --arg c "$3" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"Write", tool_input:{file_path:$f, content:$c}}'; }
+stdin_read()    { jq -nc --arg sid "$1" --arg f "$2" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"Read", tool_input:{file_path:$f}}'; }
+ro_denied() { deny_reason_of "$1" | grep -q 'RUNTIME-OWNED PATH'; }
+decision_of() { _dv="$(jq -r '.hookSpecificOutput.permissionDecision // "none"' "$WORK/$1.out" 2>/dev/null)"; printf '%s' "${_dv:-none}"; }   # empty stdout = allowed
+PJ="$WORK/c15/proj"; HM="$WORK/c15/home"; mk_proj "$PJ"; set_flags "$HM" on on
+open_turn c15u "$PJ" "$HM" sid-c15
+write_artifacts "$PJ" sid-c15 "$TID" $((OPENED + 1))
+# R9 holds even with both artifacts valid
+do_run c15a "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c15 "$HM/.sutra-overrides")"
+ro_denied c15a && pass "case15: Write to the override file refused" || fail "case15: Write to the override file not refused: $(deny_reason_of c15a | head -1)"
+do_run c15b "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "printf off > $HM/.sutra-runtime-adherence")"
+ro_denied c15b && pass "case15: Bash writing the flag file refused" || fail "case15: Bash writing the flag file not refused"
+do_run c15c "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "cat ~/.sutra-runtime-markers")"
+[ "$(decision_of c15c)" = none ] && pass "case15: a READ of a flag file passes (a mention is not a mutation)" || fail "case15: read of a flag file refused: $(deny_reason_of c15c | head -1)"
+do_run c15c2 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "cat ~/.sutra-runtime/seal.key | base64")"
+ro_denied c15c2 && pass "case15: a READ of the seal dir is refused" || fail "case15: seal read not refused"
+do_run c15c3 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "grep -rn sutra-overrides docs/ | head")"
+[ "$(decision_of c15c3)" = none ] && pass "case15: grep for the name passes" || fail "case15: grep for the name refused"
+do_run c15c4 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/docs/flags.md" "The founder sets ~/.sutra-runtime-adherence in a terminal; see ~/.sutra-overrides for the ACK keys.")"
+[ "$(decision_of c15c4)" = none ] && pass "case15: a doc that mentions the names passes" || fail "case15: doc mention refused: $(deny_reason_of c15c4 | head -1)"
+do_run c15c5 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(jq -nc --arg sid sid-c15 --arg f "$PJ/tools/x.py" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"MultiEdit", tool_input:{file_path:$f, edits:[{old_string:"a", new_string:"open(os.path.expanduser(\"~/.sutra-overrides\"), \"w\").write(\"FLOW_ACK=1\")"}]}}')"
+ro_denied c15c5 && pass "case15: MultiEdit payload writing the file is refused" || fail "case15: MultiEdit payload slipped: $(deny_reason_of c15c5 | head -1)"
+do_run c15d "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/tools/x.sh" "printf off > ~/.sutra-overrides")"
+ro_denied c15d && pass "case15: Write whose CONTENT names the override file refused" || fail "case15: content naming the override file not refused"
+do_run c15e "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "rm $PJ/.sutra/turn/sid-c15/opened")"
+ro_denied c15e && pass "case15: the session stamp is runtime-owned" || fail "case15: session stamp not protected"
+do_run c15f "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_read sid-c15 "$HM/.sutra-runtime/seal.key")"
+ro_denied c15f && pass "case15: Read of the seal dir refused" || fail "case15: Read of the seal dir not refused"
+do_run c15h "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "printf off > ~/.sutra-over\"\"rides")"
+ro_denied c15h && pass "case15: quote-split name still refused" || fail "case15: quote-split name slipped through"
+sysmsg_of c15a | grep -q 'REFUSED Write: runtime-owned' && pass "case15: live line names the refusal" || fail "case15: no live line"
+is "case15: eight runtime-owned decision rows" "$(rows "$PJ/.sutra/turn/sid-c15/$TID.jsonl" '.kind == "adherence_decision" and .reason == "runtime-owned"')" 8
+do_run c15g "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c15 "$PJ/src/ok.txt")"
+[ "$(decision_of c15g)" = none ] && pass "case15: an ordinary Write still passes with artifacts" || fail "case15: ordinary Write refused"
+# warn mode: systemMessage, no deny
+PJW="$WORK/c15w/proj"; HMW="$WORK/c15w/home"; mk_proj "$PJW"; set_flags "$HMW" on warn
+open_turn c15wu "$PJW" "$HMW" sid-c15w
+do_run c15w "$PLUGIN_MAIN" "$PJW" "$HMW" PreToolUse "$(stdin_write sid-c15w "$HMW/.sutra-overrides")"
+[ "$(decision_of c15w)" = none ] && sysmsg_of c15w | grep -q 'RUNTIME-OWNED PATH' && pass "case15: warn mode warns, never denies" || fail "case15: warn mode wrong"
+# shape: a fresh turn WITHOUT artifacts - mutations are refused, reads pass
+PJ2="$WORK/c15s/proj"; HM2="$WORK/c15s/home"; mk_proj "$PJ2"; set_flags "$HM2" on on
+open_turn c15su "$PJ2" "$HM2" sid-c15s
+i=0
+for cmd in "bash .enforcement/x.sh" "./run.sh" "sh scripts/build.sh --all" "source ./env.sh" "make build" "frobnicate --all" "python3 - <<'EOF'
+print(1)
+EOF" "cd $PJ2 && bash tools/run.sh" "node scripts/gen.js" "ENV=1 bash x.sh" "env VAR=1 bash x.sh" "git clone https://example.invalid/r.git" "bash /tmp/x" "x.bash --all" "ls & bash deploy.sh" "find . -name '*.sh' -exec bash {} \\;" "VAR=\$(bash x.sh)" "echo evil.sh | xargs -I{} bash {}" "awk 'BEGIN{system(\"./deploy\")}'" "if true; then bash x.sh; fi"; do
+  i=$((i + 1)); do_run "c15m$i" "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_bash sid-c15s "$cmd")"
+  adherence_denied "c15m$i" && pass "case15: mutation by shape: $(printf '%s' "$cmd" | head -1)" || fail "case15: not classed as mutation: $(printf '%s' "$cmd" | head -1)"
+done
+i=0
+for cmd in "ls -la" "git status --short" "grep -rn x ." "python3 --version" "cat a.txt | head -3" "jq -r .version p.json" "RTK_SKIP=1 git log --oneline -3" "find . -name '*.sh' | wc -l" "docker --version" "/usr/bin/git status" "env" "if [ -f x ]; then ls; fi" "export FOO=1" "for f in a b; do echo \$f; done" "(cd $PJ2 && ls)" "bash -n x.sh" "ls 2>&1 | head -2" "npm ls" "\"$PLUGIN_MAIN/bin/sutra-steps\" --sid sid-c15s latest" "python3 -m json.tool p.json"; do
+  i=$((i + 1)); do_run "c15r$i" "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_bash sid-c15s "$cmd")"
+  [ "$(decision_of "c15r$i")" = none ] && pass "case15: read by shape: $cmd" || fail "case15: read refused: $cmd"
+done
+# scripts under exempt dirs are not exempt; plain logs there still are
+do_run c15x1 "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_write sid-c15s "$PJ2/.enforcement/x.sh")"
+adherence_denied c15x1 && pass "case15: .enforcement/x.sh is not exempt" || fail "case15: .enforcement/x.sh exempt"
+do_run c15x2 "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_write sid-c15s "$PJ2/.claude/sessions/sid-c15s/note.py")"
+adherence_denied c15x2 && pass "case15: session-dir .py is not exempt" || fail "case15: session-dir .py exempt"
+do_run c15x3 "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_write_c sid-c15s "$PJ2/.enforcement/tool" "#!/bin/sh
+rm -rf x")"
+adherence_denied c15x3 && pass "case15: shebang content is never exempt" || fail "case15: shebang content exempt"
+do_run c15x4 "$PLUGIN_MAIN" "$PJ2" "$HM2" PreToolUse "$(stdin_write sid-c15s "$PJ2/.enforcement/log.jsonl")"
+[ "$(decision_of c15x4)" = none ] && pass "case15: .enforcement/log.jsonl still exempt" || fail "case15: log.jsonl refused"
+# the library, called directly, agrees with the gate
+. "$PLUGIN_MAIN/runtime/lib/steps.sh"
+sutra_steps_bash_mutation "ls -la && bash x.sh" && pass "case15: lib: one mutating segment makes the command a mutation" || fail "case15: lib: bash x.sh missed"
+sutra_steps_bash_mutation "ls -la | grep x" && fail "case15: lib: read pipeline classed as mutation" || pass "case15: lib: read pipeline is a read"
+sutra_steps_bash_shape "python3 -V" && fail "case15: lib: python3 -V classed as mutation" || pass "case15: lib: interpreter version flag is a read"
+sutra_steps_exempt_bash "bash holding/bin/sutra-atom close a-1" sid-x && pass "case15: lib: governance CLI still exempt under the shape pass" || fail "case15: lib: governance CLI lost its exemption"
+sutra_steps_runtime_owned "echo .sutra/turn/sid-1/opened-notes" && fail "case15: lib: runtime-owned regex over-matches" || pass "case15: lib: opened-notes is not the stamp"
 
 echo "failed=$failed"
 [ "$failed" -eq 0 ]

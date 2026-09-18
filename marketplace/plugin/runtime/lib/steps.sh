@@ -31,10 +31,11 @@ sutra_steps_write() {
   fi
 }
 
-# sutra_steps_bash_mutation <command> -> 0 when the command mutates, 1 when
-# it is read-only. The three regexes are hooks/atom-floor.sh's, verbatim
-# (2026-09-16), so the two gates never disagree about what a mutation is.
-sutra_steps_bash_mutation() {
+# _sutra_steps_bash_regex <text> -> 0 when a verb regex says it mutates. The
+# three regexes are hooks/atom-floor.sh's, verbatim (2026-09-16). Since
+# 2.285.1 this is the first of two passes: sutra_steps_bash_shape is the
+# second (brief ADHERENCE-ROW6 s3.6, D-A16: class by shape, fail closed).
+_sutra_steps_bash_regex() {
   # Quote/comment strip, then atom-floor.sh:95's noise pass (N>/dev/null, &>/dev/null,
   # N>&M) so a diagnostic redirect is not read as a write (workflow review P1, 2026-09-17).
   _bm_scan="$(printf '%s' "$1" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | sed -E 's/[[:space:]]#.*$//' \
@@ -44,7 +45,125 @@ sutra_steps_bash_mutation() {
   # Addition over atom-floor: history- and tree-mutating git verbs it omits (workflow review P2).
   printf '%s' "$_bm_scan" | grep -qE 'git[[:space:]]+(merge|rebase|cherry-pick|apply|am|switch|tag|revert|branch[[:space:]]+-[dDmM])([[:space:]]|$)' && return 0
   printf '%s' "$_bm_scan" | grep -qE '(^|[;&|`[:space:]])(mv|cp|rm|rmdir|truncate|tee|install|touch|mkdir|ln|chmod|chown|rsync|patch|unzip|tar|dd)[[:space:]]|sed[[:space:]]+-+i|(sed|awk|gawk)[[:space:]][^|;]*--?in-?place|gawk[[:space:]]+-[A-Za-z]*i[[:space:]]+inplace|git[[:space:]]+(add|mv|rm)([[:space:]]|$)|tar[[:space:]]+[^|;]*x|(curl|wget)[[:space:]]([^|;]*[[:space:]])?-(o|O)([[:space:]]|$)|dd[[:space:]][^|;]*of=|(go|cargo)[[:space:]]+build|npx[[:space:]]|python3?[[:space:]]+[^-][^[:space:]]*\.py|sqlite3[[:space:]]|>\||&>|[0-9]?>>?' && return 0
+  # 2.285.1 (workflow wf_1dc20d5c P1-3): read-listed traversal tools that run programs.
+  printf '%s' "$_bm_scan" | grep -qE 'find[[:space:]][^|;]*-(exec|execdir|ok|okdir)([[:space:]]|$)|(^|[;&|[:space:]])(awk|gawk|nawk|mawk)[[:space:]][^|;]*system[[:space:]]*\(|xargs[[:space:]][^|;]*(sh|bash|zsh|python3?|node|perl|ruby|php)([[:space:]]|$)|(^|[;&|[:space:]])sed[[:space:]][^|;]*[/;]e[[:space:]]*$|(^|[;&|[:space:]])sort[[:space:]][^|;]*-o[[:space:]]' && return 0
+  # 2.285.1: remote-state and tree-writing verbs of the CLIs the shape pass names as reads.
+  printf '%s' "$_bm_scan" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+(clone|pull|submodule[[:space:]]+(update|add)|worktree[[:space:]]+(add|remove)|init)([[:space:]]|$)|(^|[;&|[:space:]])gh[[:space:]]+[a-z-]+[[:space:]]+(create|edit|merge|close|delete|comment|review|sync|set|add|remove)([[:space:]]|$)|(^|[;&|[:space:]])claude[[:space:]]+plugin[[:space:]]+(update|install|uninstall|enable|disable)([[:space:]]|$)|(^|[;&|[:space:]])(brew|apt|apt-get|port|gem|cargo|go)[[:space:]]+(install|uninstall|remove|upgrade|get)([[:space:]]|$)' && return 0
   return 1
+}
+
+# sutra_steps_bash_shape <segment> -> 0 mutation, 1 read. Classes ONE segment by
+# its first word (2.285.1, brief s3.6, D-A16): a shell or interpreter with any
+# argument, heredoc or stdin is a mutation (`bash x.sh`, `./x`, `source x`,
+# `make`, `python3 - <<EOF`); a first word on the read list is a read (the verb
+# regexes still decide its redirects and verbs); anything else is a mutation.
+sutra_steps_bash_shape() {
+  # shell grouping and keywords are not programs (workflow wf_1dc20d5c P1-4):
+  # strip leading ( { ! [[ and if/then/else/elif/fi/for/while/until/do/done/
+  # case/esac, and trailing ) } tokens, then peel VAR=value and wrappers.
+  _sh="$(printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]*[)}]+[[:space:]]*$//')"
+  _sh_n=0
+  while [ $_sh_n -lt 10 ]; do
+    _sh_n=$((_sh_n + 1))
+    _sh2="$(printf '%s' "$_sh" | sed -E 's/^[({!]+[[:space:]]*//; s/^\[\[[[:space:]].*//; s/^for[[:space:]]+[A-Za-z_][A-Za-z0-9_]*([[:space:]]+in([[:space:]].*)?)?$//; s/^case[[:space:]]+.*[[:space:]]in$//; s/^(if|then|else|elif|fi|for|while|until|do|done|case|esac|in|select)([[:space:]]+|$)//; s/^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+//; s/^(env|sudo|doas|time|nohup|command|exec|builtin|nice|caffeinate)([[:space:]]+-[^[:space:]]+)*[[:space:]]+//')"
+    [ "$_sh2" = "$_sh" ] && break
+    _sh="$_sh2"
+  done
+  _sh_first="$(printf '%s' "$_sh" | awk '{print $1}' | sed -E "s/^['\"]//; s/['\"]\$//")"
+  _sh_rest="$(printf '%s' "$_sh" | awk '{$1=""; print}' | sed -E 's/^[[:space:]]+//')"
+  [ -n "$_sh_first" ] || return 1
+  # a bare assignment, a builtin, a keyword left alone: reads
+  case "$_sh_first" in
+    [A-Za-z_]*=*|export|set|unset|local|declare|typeset|readonly|shift|:|return|break|continue|wait|true|false|then|do|done|fi|esac|else|read) return 1 ;;
+  esac
+  # awk programs that spawn: the regex pass cannot see inside quotes (case 15)
+  case "$(basename "$_sh_first" 2>/dev/null)" in
+    awk|gawk|nawk|mawk) printf '%s' "$_sh_rest" | grep -qE 'system[[:space:]]*\(|\|[[:space:]]*"?(sh|bash)' && return 0 ;;
+  esac
+  # a version or help flag alone is a read, whatever the program (DeepSeek 2.285.1 s5)
+  case "$_sh_rest" in -V|-v|--version|-version|-h|--help|version|help) return 1 ;; esac
+  # a relative script path IS the program: ./x, ../x (DeepSeek 2.285.1 P1-1);
+  # an absolute path is judged by its basename below (/usr/bin/git is git)
+  case "$_sh_first" in ./*|../*) return 0 ;; esac
+  _sh_base="$(basename "$_sh_first" 2>/dev/null)"
+  case "$_sh_base" in
+    sh|bash|zsh|ksh|dash|fish|python|python2|python3|python3.*|node|nodejs|perl|ruby|php|source|.|make|npm|pnpm|yarn|bun|npx|deno|tsx|ts-node|gradle|mvn|cargo|go|swift|osascript|expect|pip|pip3)
+      [ -z "$_sh_rest" ] && return 1
+      # read-only forms of the interpreters and package tools (workflow P2-4)
+      case "$_sh_base:$_sh_rest" in
+        sh:-n\ *|bash:-n\ *|zsh:-n\ *|python*:-m\ json.tool*|python*:-m\ py_compile*|python*:-m\ pytest*|python*:-m\ unittest*|python*:-m\ pip\ list*|python*:-m\ pip\ show*|python*:-m\ pip\ freeze*|npm:ls*|npm:view*|npm:outdated*|npm:audit|npm:why*|pip*:list*|pip*:show*|pip*:freeze*|cargo:check*|cargo:test*|cargo:clippy*|cargo:tree*|cargo:metadata*|go:vet*|go:test*|go:list*|go:env*|make:-n*|make:--dry-run*) return 1 ;;
+      esac
+      return 0 ;;
+    ls|cat|head|tail|wc|grep|egrep|fgrep|rg|ugrep|ag|find|jq|yq|test|\[|echo|printf|true|false|pwd|cd|date|env|printenv|which|type|command|basename|dirname|realpath|readlink|stat|file|du|df|ps|uptime|sort|uniq|cut|tr|awk|gawk|sed|diff|cmp|comm|md5|md5sum|shasum|sha256sum|less|more|column|paste|seq|expr|bc|sleep|nl|tac|rev|fold|fmt|uname|hostname|whoami|id|open|tree|xxd|od|strings|hexdump|tput|clear|man|say|pbpaste|sw_vers|sysctl|lsof|netstat|ifconfig|ping|dig|nslookup|host|curl|wget|git|gh|claude|codex|rtk|xargs|sutra-steps|sutra-atom|sutra-dispatch|sutra-marker|sutra-turn|sutra-charcap|sutra-native|wdp-evidence|python3-config)
+      return 1 ;;   # named read: the verb regexes decide its redirects and verbs
+  esac
+  return 0        # unknown first word: a mutation until proven otherwise (D-A16)
+}
+
+# sutra_steps_bash_segments <command>: one segment per line. Quotes are honoured
+# by the row-1.1 awk masker (shell quoting rules), then the text is split on
+# newline ; && || |.
+sutra_steps_bash_segments() {
+  # 2.285.1 (workflow wf_1dc20d5c P1-1): a single & (background) separates
+  # segments too, after fd redirects (2>&1, &>) are masked; $( and backticks
+  # open a new segment so `VAR=$(bash x.sh)` shows its inner command.
+  printf '%s\n' "$1" | awk '
+  { n = length($0); q = ""; out = ""; esc = 0
+    for (i = 1; i <= n; i++) { c = substr($0, i, 1)
+      # shell quoting: no escapes inside single quotes; inside double quotes
+      # only $ ` " \ are escapable; outside quotes any char is escapable
+      if (esc) { esc = 0; if (q != "") c = " " }
+      else if (c == "\\" && q != "\047") { nx = substr($0, i + 1, 1); if (q == "" || nx == "$" || nx == "`" || nx == "\"" || nx == "\\") esc = 1 }
+      else if (q == "") { if (c == "\047" || c == "\"") q = c }
+      else if (c == q) { q = "" }
+      else if (c == ";" || c == "|" || c == "&") { c = " " }
+      out = out c }
+    gsub(/[0-9]*>&[0-9]+/, " ", out); gsub(/&>>?/, ">", out)
+    gsub(/&&|\|\||;|\||&|`|\$\(/, "\n", out); print out }'
+}
+
+# sutra_steps_bash_segment_mutation <segment> -> 0 when one segment mutates:
+# the verb regexes first, then the shape.
+sutra_steps_bash_segment_mutation() {
+  _sm_seg="$(printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [ -n "$_sm_seg" ] || return 1
+  _sutra_steps_bash_regex "$_sm_seg" && return 0
+  sutra_steps_bash_shape "$_sm_seg"
+}
+
+# sutra_steps_bash_mutation <command> -> 0 when the command mutates, 1 when
+# every segment is a read. Whole-command regexes first (they span segments:
+# `<<EOF | sh`), then each segment through regex + shape.
+sutra_steps_bash_mutation() {
+  _sutra_steps_bash_regex "$1" && return 0
+  while IFS= read -r _bm_seg; do
+    sutra_steps_bash_segment_mutation "$_bm_seg" && return 0
+  done <<EOF
+$(sutra_steps_bash_segments "$1")
+EOF
+  return 1
+}
+
+# sutra_steps_runtime_owned <text> -> 0 when the text names one of the runtime's
+# own files (D-A15, 2.285.1): the override file, the flag files, the kill
+# files, the seal dir, the session stamp. No tool call may name them.
+sutra_steps_runtime_owned() {
+  # quotes are stripped first, so `.sutra-over""rides` and '.sutra-'"overrides"
+  # still name the file (DeepSeek 2.285.1 P1-2); deeper obfuscation is row 6.
+  printf '%s' "$1" | tr -d '"'"'"'`' | grep -qE '\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra-runtime/|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)'
+}
+
+# sutra_steps_runtime_owned_write <text> -> 0 when some LINE of the text names
+# a runtime-owned file in a WRITE shape (workflow wf_1dc20d5c P1-5: a doc, a
+# test or a grep that merely mentions the name is not a mutation of it): a
+# redirect, a mutating verb, a script write call on the same line - or the
+# seal dir at all, whose contents are secret.
+sutra_steps_runtime_owned_write() {
+  _ow="$(printf '%s' "$1" | tr -d '"'"'"'`')"
+  # the seal dir: any read or copy of it is a hit too (its contents are secret)
+  printf '%s\n' "$_ow" | grep -E '\.sutra-runtime/' | grep -qE '(^|[[:space:]|;&(])(cat|less|more|head|tail|xxd|od|base64|cp|cut|strings|hexdump|python3?|node|perl|ruby|source|\.)[[:space:]]|open[[:space:]]*\(|read[[:space:]]*\(|readFile|read_text|readlink' && return 0
+  printf '%s\n' "$_ow" | grep -E '\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)' \
+    | grep -qE '>|(^|[[:space:]|;&(])(tee|rm|mv|cp|touch|chmod|chown|ln|truncate|install|dd|rsync|unlink|shred)[[:space:]]|sed[[:space:]]+-+i|open[[:space:]]*\([^)]*[[:space:]]*,[[:space:]]*.?[wa]|\.write\(|\.write_text\(|write_text|os\.remove|os\.unlink|shutil\.|unlinkSync|writeFile|copyFile|rename\(|renameSync|Path\(|\.unlink\(|\.touch\(|>>'
 }
 
 # sutra_steps_exempt_path <path> <sid> -> 0 when a Write/Edit target is exempt
@@ -54,6 +173,7 @@ sutra_steps_exempt_path() {
   # (DeepSeek round-2 P1-7).
   case "$1" in
     *..*) return 1 ;;
+    *.sh|*.bash|*.zsh|*.py|*.js|*.mjs|*.ts|*.rb|*.pl|*.php) return 1 ;;   # 2.285.1: a script under an exempt dir is not exempt (brief s3.6)
     *".sutra/turn/$2/"*.lens.json|*".sutra/turn/$2/"*.cynefin.json) return 0 ;;   # the two artifacts only, never the lane files
     *".claude/sessions/$2/"*) return 0 ;;
     */.claude/projects/*/memory/*.md) return 0 ;;
@@ -76,30 +196,19 @@ sutra_steps_exempt_bash() {
   while IFS= read -r _eb_seg; do
     _eb_seg="$(printf '%s' "$_eb_seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     [ -n "$_eb_seg" ] || continue
-    sutra_steps_bash_mutation "$_eb_seg" || continue
+    sutra_steps_bash_segment_mutation "$_eb_seg" || continue
     _eb_mut=1
     case "$_eb_seg" in
       *..*) return 1 ;;
       *".sutra/turn/$2/"*.lens.json*|*".sutra/turn/$2/"*.cynefin.json*) continue ;;   # the two artifacts only
     esac
-    _eb_first="$(printf '%s' "$_eb_seg" | sed -E 's/^(bash[[:space:]]+)?//' | awk '{print $1}')"
+    _eb_first="$(printf '%s' "$_eb_seg" | sed -E 's/^(bash[[:space:]]+)?//' | awk '{print $1}' | sed -E "s/^['\"]//; s/['\"]\$//")"
     case "$(basename "$_eb_first" 2>/dev/null)" in
       sutra-atom|sutra-dispatch|sutra-marker|sutra-steps|sutra-turn) continue ;;
     esac
     return 1
   done <<EOF
-$(printf '%s\n' "$1" | awk '
-  { n = length($0); q = ""; out = ""; esc = 0
-    for (i = 1; i <= n; i++) { c = substr($0, i, 1)
-      # shell quoting: no escapes inside single quotes; inside double quotes
-      # only $ ` " \ are escapable; outside quotes any char is escapable
-      if (esc) { esc = 0; if (q != "") c = " " }
-      else if (c == "\\" && q != "\047") { nx = substr($0, i + 1, 1); if (q == "" || nx == "$" || nx == "`" || nx == "\"" || nx == "\\") esc = 1 }
-      else if (q == "") { if (c == "\047" || c == "\"" || c == "`") q = c }
-      else if (c == q) { q = "" }
-      else if (c == ";" || c == "|" || c == "&") { c = " " }
-      out = out c }
-    gsub(/&&|\|\||;|\|/, "\n", out); print out }')
+$(sutra_steps_bash_segments "$1")
 EOF
   [ "$_eb_mut" = "1" ]
 }
@@ -258,6 +367,25 @@ sutra_steps_render() {
     ((.steps // [])[] | "  \((.n // 0) | tostring | if length < 2 then " " + . else . end) \((.id // "?") | pad(10)) \((.producer // "?") | pad(8)) \((.status // "?") | pad(8)) \(.detail // "")"),
     (if ((.mutations // []) | length) > 0 then "  mutations: \((.mutations // []) | map(.decision // "?") | group_by(.) | map("\(.[0])=\(length)") | join(" "))" else empty end),
     (if .closed != null then "  closed: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted)" else empty end)
+  ' "$1" 2>/dev/null
+}
+
+# sutra_steps_render_pretty <steps.json> -> the human-readable table the Stop
+# step prints (founder, 2026-09-18: "beautiful, concise, but human-readable").
+# One header line with the counts, one row per step with a checkbox glyph:
+# [x] done, [o] open, [~] gated, [ ] pending, [!] missing. ASCII only.
+sutra_steps_render_pretty() {
+  [ -f "$1" ] || { printf 'sutra: no ledger for this turn\n'; return 0; }
+  jq -r '
+    def pad(n): tostring | . + (" " * ((n - length) | if . < 0 then 0 else . end));
+    def glyph: if . == "done" then "[x]" elif . == "open" then "[o]" elif . == "gated" then "[~]" elif . == "missing" then "[!]" else "[ ]" end;
+    def trim(n): tostring | if length > n then .[0:n-3] + "..." else . end;
+    ((.steps // []) | map(select(.status == "done" or .status == "open")) | length) as $done |
+    ((.mutations // []) | map(select(.decision == "deny")) | length) as $refused |
+    ((.mutations // []) | map(select(.decision == "warn")) | length) as $warned |
+    ((.mutations // []) | map(select(.decision == "allow")) | length) as $allowed |
+    "sutra turn \(((.turn_id // "unknown") | tostring)[0:8])   done \($done)/\((.steps // []) | length)   edits \($allowed)   refused \($refused)\(if $warned > 0 then "   warned \($warned)" else "" end)\(if .closed != null and .closed.trace_pasted == false then "   trace not pasted" else "" end)",
+    ((.steps // [])[] | "  \((.status // "") | glyph) \((.id // "?") | pad(10)) \((.detail // "") | trim(64))")
   ' "$1" 2>/dev/null
 }
 

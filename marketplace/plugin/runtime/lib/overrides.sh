@@ -17,7 +17,11 @@
 # SCOPE=fleet
 # TARGET_PATH=sutra/marketplace/plugin/runtime/lib/overrides.sh
 
-SUTRA_OVERRIDE_KEYS="CODEX_CONSULT_ACK CODEX_CONSULT_ACK_REASON BLUEPRINT_ACK BLUEPRINT_ACK_REASON FLOW_ACK FLOW_ACK_REASON PER_TURN_HARD_ACK PER_TURN_HARD_ACK_REASON BUILD_LAYER_ACK BUILD_LAYER_ACK_REASON STRUCTURE_FIRST_ACK STRUCTURE_FIRST_ACK_REASON PROTO005_ACK RTK_SKIP SUTRA_TEST_GATE_ACK SUTRA_RUNTIME_MARKERS SUTRA_RUNTIME_ADHERENCE SUTRA_RUNTIME_DISABLED SUTRA_STEP_TIMEOUT_SCALE DISPATCH_FOUNDER_APPROVAL"
+# 2.285.1 (brief ADHERENCE-ROW6 s3.6, workflow P1-1): the runtime's own switches
+# (SUTRA_RUNTIME_MARKERS, SUTRA_RUNTIME_ADHERENCE, SUTRA_RUNTIME_DISABLED) are NOT
+# override keys. The founder sets them by writing the flag files in a terminal;
+# through this file one Write from inside a session could switch the gate off.
+SUTRA_OVERRIDE_KEYS="CODEX_CONSULT_ACK CODEX_CONSULT_ACK_REASON BLUEPRINT_ACK BLUEPRINT_ACK_REASON FLOW_ACK FLOW_ACK_REASON PER_TURN_HARD_ACK PER_TURN_HARD_ACK_REASON BUILD_LAYER_ACK BUILD_LAYER_ACK_REASON STRUCTURE_FIRST_ACK STRUCTURE_FIRST_ACK_REASON PROTO005_ACK RTK_SKIP SUTRA_TEST_GATE_ACK SUTRA_STEP_TIMEOUT_SCALE DISPATCH_FOUNDER_APPROVAL"
 
 # sutra_overrides_path -> prints the file path, or nothing when HOME is unset.
 sutra_overrides_path() {
@@ -30,7 +34,41 @@ sutra_overrides_path() {
 sutra_overrides_apply() {
   SUTRA_OVERRIDES_APPLIED=""
   _so_file="$(sutra_overrides_path 2>/dev/null)" || return 0
+  # 2.285.1 (brief s3.6, D-A15): the file is honoured only when it predates the
+  # session. The FIRST event of a session stamps <proj>/.sutra/turn/<sid>/opened
+  # whether or not an override file exists yet (workflow wf_1dc20d5c P1-2: a
+  # file that appears mid-session must be newer than the stamp); the stamp is
+  # a runtime-owned path the gate refuses to every tool. A file modified after
+  # the stamp is ignored for the whole session, with a ledger note and an
+  # audit row. Overrides therefore take effect on the NEXT session.
+  _so_stamp=""
+  if [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -d "$1" ]; then
+    _so_dir="$1/.sutra/turn/$2"; _so_stamp="$_so_dir/opened"
+    if [ ! -f "$_so_stamp" ]; then
+      mkdir -p "$_so_dir" 2>/dev/null
+      { date +%s > "$_so_stamp"; } 2>/dev/null
+    fi
+  fi
   [ -f "$_so_file" ] || return 0
+  if [ -n "$_so_stamp" ]; then
+    _so_open="$(cat "$_so_stamp" 2>/dev/null)"; case "$_so_open" in ''|*[!0-9]*) _so_open=0 ;; esac
+    # An unreadable or zero stamp fails closed (DeepSeek 2.285.1 P1-3): it is
+    # re-stamped with now and the file is ignored for this event.
+    if [ "$_so_open" -le 0 ]; then
+      _so_open="$(date +%s 2>/dev/null)"; case "$_so_open" in ''|*[!0-9]*) _so_open=1 ;; esac
+      { printf '%s\n' "$_so_open" > "$_so_stamp"; } 2>/dev/null
+      _so_mt=$((_so_open + 1))
+    else
+      _so_mt="$(stat -f %m "$_so_file" 2>/dev/null || stat -c %Y "$_so_file" 2>/dev/null)"; case "$_so_mt" in ''|*[!0-9]*) _so_mt=$((_so_open + 1)) ;; esac
+    fi
+    if [ "$_so_mt" -gt "$_so_open" ]; then
+      command -v sutra_ledger_note >/dev/null 2>&1 && sutra_ledger_note override_ignored "written inside the session (mtime $_so_mt > opened $_so_open): $_so_file"
+      mkdir -p "$1/.enforcement" 2>/dev/null
+      _so_ts="$(date +%s 2>/dev/null)"; case "$_so_ts" in ''|*[!0-9]*) _so_ts=0 ;; esac
+      { printf '{"ts":%s,"session":"%s","file":"%s","keys":"","ignored":true,"mtime":%s,"opened":%s}\n' "$_so_ts" "$(printf '%s' "$2" | tr -cd 'A-Za-z0-9_-')" "$(printf '%s' "$_so_file" | tr -d '"\\')" "$_so_mt" "$_so_open" >> "$1/.enforcement/overrides.jsonl"; } 2>/dev/null
+      return 0
+    fi
+  fi
   _so_keys=""
   while IFS= read -r _so_line || [ -n "$_so_line" ]; do
     case "$_so_line" in ''|'#'*) continue ;; esac

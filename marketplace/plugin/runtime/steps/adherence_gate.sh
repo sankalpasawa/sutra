@@ -49,6 +49,39 @@ main() {
   TOOL="$(printf '%s' "$STDIN_RAW" | jq -r '.tool_name // empty' 2>/dev/null)"
   FILE_PATH="$(printf '%s' "$STDIN_RAW" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)"
   COMMAND="$(printf '%s' "$STDIN_RAW" | jq -r '.tool_input.command // empty' 2>/dev/null)"
+  # every written payload: Write content, Edit new_string, MultiEdit edits[],
+  # NotebookEdit new_source (workflow wf_1dc20d5c P2-1)
+  CONTENT="$(printf '%s' "$STDIN_RAW" | jq -r '[.tool_input.content, .tool_input.new_string, (.tool_input.edits[]?.new_string), .tool_input.new_source] | map(select(. != null)) | join("\n")' 2>/dev/null)"
+  EXTRA_PATH="$(printf '%s' "$STDIN_RAW" | jq -r '.tool_input.path // .tool_input.pattern // empty' 2>/dev/null)"
+  _t8="$(printf '%s' "$_AG_TURN" | head -c 8)"
+
+  # -- R9: runtime-owned paths (2.285.1, brief ADHERENCE-ROW6 s3.6, D-A15) ----
+  # The override file, the flag and kill files, the seal dir and the session
+  # stamp belong to the runtime. No tool may TARGET them (file_path), WRITE
+  # them from a command or from written content (a redirect or a mutating verb
+  # on the line that names them), or touch the seal dir at all. A doc, a test
+  # or a grep that merely mentions a name is not a mutation of it (workflow
+  # wf_1dc20d5c P1-5). Checked before the orphan/bootstrap returns so a
+  # missing ledger never opens the door.
+  RO_HIT=""
+  { [ -n "$FILE_PATH" ] && sutra_steps_runtime_owned "$FILE_PATH"; } && RO_HIT=1
+  [ -z "$RO_HIT" ] && [ -n "$COMMAND" ] && sutra_steps_runtime_owned_write "$COMMAND" && RO_HIT=1
+  [ -z "$RO_HIT" ] && [ -n "$CONTENT" ] && sutra_steps_runtime_owned_write "$CONTENT" && RO_HIT=1
+  [ -z "$RO_HIT" ] && [ -n "$EXTRA_PATH" ] && printf '%s' "$EXTRA_PATH" | grep -q '\.sutra-runtime/' && RO_HIT=1
+  if [ -n "$RO_HIT" ]; then
+    _ro_target="$FILE_PATH"; [ -n "$_ro_target" ] || _ro_target="$(printf '%s' "$COMMAND" | tr '\n\r\t' '   ' | LC_ALL=C tr -cd ' -~' | head -c 120)"
+    RO_REASON="RUNTIME-OWNED PATH (D-A15, mode $SUTRA_ADHERENCE_MODE): $TOOL names the runtime's own switch, override file, key or session stamp (~/.sutra-overrides, ~/.sutra-runtime-adherence*, ~/.sutra-runtime-markers*, ~/.sutra-runtime-disabled, ~/.sutra-runtime/, .sutra/turn/<sid>/opened). No tool call may read, write or mention them; the founder edits them in a terminal outside Claude, and an override written inside a session is ignored until the next one."
+    if [ "$SUTRA_ADHERENCE_MODE" = "on" ]; then
+      _ag_row decision "$(jq -nc --arg t "$TOOL" --arg x "$_ro_target" '{decision:"deny", reason:"runtime-owned", tool:$t, target:$x}')"
+      [ "$_AG_TURN" != "unknown" ] && [ -f "$(sutra_steps_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN")" ] && _AG_PATH="$(sutra_steps_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN")" && _ag_mutation "$TOOL" "$_ro_target" deny '["runtime-owned"]'
+      jq -nc --arg ev "$_AG_EVENT" --arg r "$RO_REASON" --arg sm "[sutra $_t8] REFUSED $TOOL: runtime-owned path" \
+        '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}, systemMessage:$sm}' 2>/dev/null
+    else
+      _ag_row decision "$(jq -nc --arg t "$TOOL" --arg x "$_ro_target" '{decision:"warn", reason:"runtime-owned", tool:$t, target:$x}')"
+      jq -nc --arg r "$RO_REASON" '{systemMessage:("[warn] " + $r)}' 2>/dev/null
+    fi
+    return 0
+  fi
 
   if [ "$_AG_TURN" = "unknown" ]; then
     _ag_row decision '{"decision":"allow","reason":"orphan-turn"}'
@@ -66,7 +99,9 @@ main() {
   case "$TOOL" in
     Edit|Write|MultiEdit|NotebookEdit)
       TARGET="$FILE_PATH"; KIND=mutation
-      sutra_steps_exempt_path "$FILE_PATH" "$_AG_SID" && KIND=exempt ;;
+      sutra_steps_exempt_path "$FILE_PATH" "$_AG_SID" && KIND=exempt
+      # 2.285.1: a script body (shebang) is never exempt, whatever the path (brief s3.6).
+      case "$CONTENT" in '#!'*) KIND=mutation ;; esac ;;
     Bash)
       # ASCII-only, so a 120-byte cut can never split a multibyte char into
       # invalid UTF-8 for jq (DeepSeek round-2 P1-8).
@@ -90,8 +125,9 @@ main() {
     TRANS="$(jq -r --argjson new "$STEPS_JSON" '
       [ .steps[] as $o | ($new[] | select(.id == $o.id)) as $n
         | select($n.status != $o.status)
-        | "\($o.id): \($o.status) -> \($n.status)\(if ($n.detail // "") != "" and $n.status != "pending" then " (" + ($n.detail | .[0:60]) + ")" else "" end)" ]
-      | join("; ")' "$_AG_PATH" 2>/dev/null)"
+        | (if $n.status == "done" or $n.status == "open" then "\($n.id) \($n.status)" else "\($n.id) \($o.status) -> \($n.status)" end)
+          + (if ($n.detail // "") != "" and $n.status != "pending" then " (" + ($n.detail | tostring | if length > 40 then .[0:37] + "..." else . end) + ")" else "" end) ]
+      | join("  |  ")' "$_AG_PATH" 2>/dev/null)"
     _upd="$(jq -c --argjson steps "$STEPS_JSON" '.steps = $steps' "$_AG_PATH" 2>/dev/null)"
     [ -n "$_upd" ] && sutra_steps_write "$_AG_PATH" "$_upd"
   fi
@@ -100,7 +136,7 @@ main() {
 
   if [ "$KIND" != "mutation" ]; then
     [ "$KIND" = "exempt" ] && _ag_mutation "$TOOL" "$TARGET" exempt '[]'
-    [ -n "$TRANS" ] && jq -nc --arg m "[adherence $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
+    [ -n "$TRANS" ] && jq -nc --arg m "[sutra $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
     return 0
   fi
 
@@ -117,7 +153,7 @@ main() {
 
   if [ -z "$MISSING" ]; then
     _ag_mutation "$TOOL" "$TARGET" allow '[]'
-    [ -n "$TRANS" ] && jq -nc --arg m "[adherence $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
+    [ -n "$TRANS" ] && jq -nc --arg m "[sutra $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
     return 0
   fi
 
@@ -128,11 +164,11 @@ Write each with the Write tool, then retry. turn_id=$_AG_TURN session_id=$_AG_SI
   cynefin {turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(>=20 chars),human_gate:bool,ts}
 Trace: bin/sutra-steps latest. Kill: rm ~/.sutra-runtime-adherence"
 
-  _sm=""; [ -n "$TRANS" ] && _sm="[adherence $_t8] $TRANS
+  _sm=""; [ -n "$TRANS" ] && _sm="[sutra $_t8] $TRANS
 "
   if [ "$SUTRA_ADHERENCE_MODE" = "on" ]; then
     _ag_mutation "$TOOL" "$TARGET" deny "$MISSING_JSON"
-    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" --arg sm "${_sm}[adherence $_t8] REFUSED $TOOL: missing $MISSING" \
+    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" --arg sm "${_sm}[sutra $_t8] REFUSED $TOOL: missing $MISSING" \
       '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}, systemMessage:$sm}' 2>/dev/null
   else
     _ag_mutation "$TOOL" "$TARGET" warn "$MISSING_JSON"

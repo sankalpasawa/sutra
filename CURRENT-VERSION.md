@@ -1,8 +1,12 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-17
+**status**: active · **updated**: 2026-09-18
 
-## v2.285.0 (2026-09-17, HEAD)
+## v2.285.1 (2026-09-18, HEAD)
+
+**The adherence gate can no longer be switched off or walked around from inside a session** (founder 2026-09-18: "fix them"). Runtime-owned paths (override file, flag files, seal dir, session stamp) are refused to every tool call; Bash is classed by shape and fails closed; scripts under exempt directories are not exempt. The live step line and the Stop table are now short and human-readable. Reviews: DeepSeek on the diff (3 P1 folded); codex SKIPPED until 2026-10-16. Tests: 168 + 25 checks, golden parity on both runners.
+
+## v2.285.0 (2026-09-17)
 
 **The runtime does the framework's steps it can do, and demands the rest before any edit** (founder, 2026-09-17: "hardcode everything and finish it off"). Rows 1.1-5 of the adherence program: rendered block stack from facts, lens/cynefin prompts injected while pending, a detached test + second-lane review on every mutating turn with runtime-written verdicts, one override file, and the gate fixes the first live turns exposed. Codex round 2 SKIPPED (usage limit until 2026-10-16); lanes: DeepSeek + an adversarial workflow review. The gate and the close print live: one line per step flip during the turn, the whole finished table at Stop. Tests: 170 checks across three suites plus golden parity on both runners.
 

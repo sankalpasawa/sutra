@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-17
+**status**: active · **updated**: 2026-09-18
+## 2.285.1 (2026-09-18)
+
+- **Two holes closed in the adherence gate, and the prints made readable.** An adversarial review of 2.285.0 found that one Write to `~/.sutra-overrides` or a flag file switched the gate off, and that `bash x.sh`, `./x`, `source`, `make` and heredoc interpreters were classed as reads. Now the runtime's own files are runtime-owned (no tool call may name them in a path, a command or written content; the runtime flags are no longer override keys; an override file modified inside a session is ignored until the next one), every Bash segment is classed by its first word and fails closed (shells and interpreters with an argument, unknown programs and relative script paths are mutations; a version or help flag alone is a read), scripts and shebang content under exempt directories are not exempt. The live line is now `[sutra <turn>] lens done (evidence DOWN)  |  cynefin done (clear)` and the Stop print is a checkbox table with one count line. Tests: test-adherence 168, test-overrides 25; parity unchanged with the flags absent.
+
 ## 2.285.0 (2026-09-17)
 
 - **Adherence rows 1.1-5: the runtime renders the block stack, brings the lens and cynefin prompts to the step, runs the test command and a second-lane review itself, and reads one override file.** `ups.steps_ledger` now emits a RENDERED STACK from facts (`<<FILL:x>>` for judgment fields) plus the lens/cynefin prompts while pending; `stop.review_lane` detaches the declared `test_command` and a DeepSeek review of the turn's diff, writing `<turn>.tests.json` / `.review.json` (the codex-consult gate accepts a fresh runtime-written verdict); `~/.sutra-overrides` replaces the per-gate ACK env vars (applied by `sutra-turn` before step 0, audited). Row 1.1: the two legacy gates no longer refuse the adherence artifacts, Bash exemption is quote-aware and judged on mutating segments only, the creation Stop check counts a rule-covered path as placed. Tests: test-adherence 121, test-review-lane 34, test-overrides 15; parity unchanged with the flags absent.
