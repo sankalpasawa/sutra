@@ -4035,6 +4035,35 @@ const CARD_TURN = (h) =>
   console.log("ok 39e the whole turn sequence reads correctly on both");
 }
 
+/* 39g. THE TOP OF THE RANGE (founder, 2026-09-18). The label names the turn
+   IN FLIGHT, so the last turn of a mission is the one place that number
+   meets the ceiling. It must read "25 of 25" and never "26 of 25" -- the
+   engine refuses to open a turn past the budget (mission_engine.py,
+   `turns_used >= max_turns`), and this is the surface half of that. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  /* the final turn, while it is being worked */
+  const last = TURN_M({ turns_used: 24, turn_open: 25, max_turns: 25 });
+  assert.strictEqual(ctx.shadowTurnNow(last), 25, "the final turn is 25");
+  assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(last)), "25/25",
+    "the overlay must read 25/25 on the last turn");
+  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(last)), "25",
+    "…and the workspace card must agree");
+  /* the same turn once it has landed: the count does not move again */
+  const spent = TURN_M({ turns_used: 25, turn_open: null, max_turns: 25 });
+  assert.strictEqual(ctx.shadowTurnNow(spent), 25,
+    "a spent mission still reads 25, not 26");
+  assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(spent)), "25/25",
+    "the overlay must not run past the ceiling");
+  /* and the meter is still the BUDGET's, measured on finished turns */
+  assert.strictEqual(ctx.shadowBudgetPct(last), 96,
+    "the bar still measures 24 finished turns against 25");
+  assert.strictEqual(ctx.shadowBudgetPct(spent), 100,
+    "…and reads full only when the budget really is spent");
+  console.log("ok 39g the last turn reads 25 of 25 and never past it");
+}
+
 /* 39f. the budget is the mission's own, not a constant */
 {
   const ctx = fresh();

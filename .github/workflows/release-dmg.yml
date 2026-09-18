@@ -176,6 +176,7 @@ jobs:
           node test_nav.js
           node test_charter_filter.js
           node test_shadow_completion_ui.js
+          node test_shadow_compose_focus.js
           node test_shadow_floor_needs_you.js
           node test_shadow_home.js
           node test_shadow_intervention_ui.js
@@ -185,6 +186,7 @@ jobs:
           node test_shadow_presence.js
           node test_shadow_rhs.js
           node test_shadow_task_chat.js
+          node test_shadow_task_spinner.js
           node test_shadow_task_status.js
           node test_shadow_v4_approve.js
           node test_shadow_v4_now.js

@@ -3243,7 +3243,19 @@
    screen, and a column that scrolled independently would put a second
    scrollbar inside the first. Stretching to at least the pane's height is
    what lets the left column pin its footer to the bottom. */
-.shwork{display:flex;gap:0;min-height:100%;align-items:stretch}
+/* ══ THE SHADOW PANE OWNS ITS OWN HEIGHT (founder, 2026-09-18) ════════
+   WHAT THIS CHANGES. `.pb` (#scBody) is the app's screen scroller and it
+   scrolled ALL of Shadow -- so reading back through a long delegation took
+   the objective and the brief card off the top with it. The two things that
+   say what is being worked and how it is judged were the first to go.
+
+   HEIGHT, NOT MIN-HEIGHT, is the whole fix. At exactly the pane's height
+   there is nothing for `.pb` to scroll, so the scroll moves inside without
+   `.pb` being touched -- it is shared by every other screen, and none of
+   them change. `min-height:0` is what lets the flex children below actually
+   shrink instead of pushing the column open; without it an overflow child
+   wins and the pinning silently does nothing. */
+.shwork{display:flex;gap:0;height:100%;min-height:0;align-items:stretch}
 
 /* ── left: delegate + the task list ─────────────────────────────────────── */
 .shwleft{flex:0 0 272px;min-width:0;display:flex;flex-direction:column;
@@ -3289,24 +3301,66 @@
 /* the row paints the hover/selected tint now, so the button must not paint
    it a second time underneath the delete control */
 .shtaskrow .shtask:hover,.shtaskrow .shtask.on{background:none}
+/* ══ THE ROW MUST FIT THE RAIL (2026-09-18) ═══════════════════════════════
+   MEASURED, not reasoned: the selector button carried `width:100%` -- a full
+   272px, the rail's whole content width -- and the 20px delete control was
+   laid out AFTER it. So every row was 292px of content in a 272px box and the
+   x sat at 377-397px, entirely outside the rail's right edge (377px).
+
+   That overhang was harmless for as long as .shtasks overflowed VISIBLY: the
+   x simply painted past the edge and document.elementFromPoint at its centre
+   returned BUTTON.shtaskdel, so it took the click. Making the rail a scroller
+   changed that -- `overflow-y:auto` forces `overflow-x` from visible to auto
+   (CSS Overflow 3, section 3), so the 20px overhang became CLIPPED. The
+   control was still in the DOM and still styled; it was outside the
+   hit-testable box, and elementFromPoint returned ASIDE.shwleft instead.
+   A real click at those coordinates fired no request at all.
+
+   flex:1 1 0 + min-width:0 makes the button take only what is LEFT after the
+   delete control, instead of claiming the full width and pushing it out.
+   min-width:0 is the load-bearing half: a flex item floors at min-content by
+   default, which is what stopped it shrinking on its own. */
+.shtaskrow > .shtask{flex:1 1 0;width:auto;min-width:0}
 /* REMOVE: quiet until the row is pointed at. Destructive and one click, so
    it must never be the thing the eye lands on -- and never the thing a
    stray click finds. */
 .shtaskdel{flex:none;width:20px;height:20px;margin-right:5px;padding:0;
   display:flex;align-items:center;justify-content:center;background:none;
   border:0;border-radius:5px;cursor:pointer;color:var(--faint);
-  font:14px/1 var(--sans);opacity:0;transition:opacity .1s}
-.shtaskrow:hover .shtaskdel,.shtaskdel:focus-visible{opacity:1}
+  font:14px/1 var(--sans);opacity:.4;transition:opacity .1s}
+/* QUIET, BUT PRESENT (2026-09-18). It used to be opacity:0 -- completely
+   invisible until the row was pointed at, which is indistinguishable from
+   "the delete feature is gone" for anyone who does not already know to go
+   hunting for it. .4 against --faint is legible without competing with the
+   task name, and it still lifts to full on hover, so the control the eye
+   lands on is still the row, not the x. */
+.shtaskrow:hover .shtaskdel,.shtaskdel:focus-visible,
+.shtaskrow.on .shtaskdel{opacity:1}
 .shtaskdel:hover{background:var(--block-bg);color:var(--block)}
 .shtaskempty{color:var(--faint);font-size:12px;padding:8px 9px}
 .shwfoot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-soft);
   display:flex;flex-direction:column;gap:2px}
 
 /* status pills -- compact, bordered, never filled */
+/* inline-flex so the pill can hold the running ring beside its word and keep
+   the two on one centre line. As a direct flex child (all three surfaces put
+   it in a flex row) the display was already being blockified to `flex`, so
+   this changes the pill's INSIDE only -- padding, border and `flex:none` are
+   the values they have always been. */
 .shtpill{font:600 8.5px/1 var(--mono);letter-spacing:.06em;padding:3px 6px;
   border-radius:999px;border:1px solid var(--line);color:var(--faint);
-  white-space:nowrap;flex:none}
+  white-space:nowrap;flex:none;
+  display:inline-flex;align-items:center;gap:4px}
 .shtpill-running{border-color:var(--ok-line);color:var(--ok)}
+/* RUNNING IS THE ONLY STATE STILL IN MOTION, and it was the one state with
+   nothing to show for it: a running task and a stopped one differed by a word
+   and a border colour, both of them still. This is the SAME ring the agent
+   roster already spins for a live turn (.trow.run .tstate) -- 1.5px, top edge
+   open, sutraSpin -- taking currentColor so it is the pill's own green rather
+   than a second accent the eye has to reconcile. */
+.shtpillspin{flex:none;width:8px;height:8px;border-radius:50%;
+  border:1.5px solid currentColor;border-top-color:transparent;
+  animation:sutraSpin .7s linear infinite}
 .shtpill-ready{border-color:var(--acc);color:var(--acc)}
 .shtpill-blocked{border-color:var(--warn-line);color:var(--warn)}
 .shtpill-failed{border-color:var(--block-line);color:var(--block)}
@@ -3320,7 +3374,101 @@
 
 /* ── right: the task in focus ───────────────────────────────────────────── */
 .shwright{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;
-  padding:0 0 0 18px}
+  padding:0 0 0 18px;min-height:0;overflow:hidden}
+/* PINNED: the outcome, the composer, the error line. flex-shrink:0 is the
+   load-bearing half -- a flex item defaults to shrinking, so a long objective
+   would give up height to the scroller and creep upward. */
+.shwright>.shwhead,.shwright>.shstage,
+.shwright>.sherr{flex:0 0 auto}
+/* THE BRIEF CARD IS PINNED, NOT UNSHRINKABLE (founder, 2026-09-18) --------
+   THE BUG. Measured in Chrome at three window heights, one NEEDS YOU mission
+   (four done-when checks, six turns on the record):
+
+       window   card    conversation   turns visible
+       900px    330px      195px          3 of 6
+       760px    330px       55px          1 of 6
+       660px    330px        0px          0 of 6   <- the founder's report
+
+   NEEDS YOU is the state that grows this card: shadowCheckRowsHtml puts the
+   sign-off list INSIDE it, so the card goes 192px -> 330px at exactly the
+   moment the founder most needs to read what the delegate did. With
+   flex:0 0 auto the card could not give back a pixel, .shwright clips, and
+   the conversation -- Turn 1, Turn 2, Shadow's replies, the founder's own
+   lines -- was squeezed out of existence with no scrollbar anywhere to reach
+   it.
+
+   flex:0 1 auto + min-height:0 makes the shortfall PROPORTIONAL: card and
+   scroller give up height together instead of the scroller giving up all of
+   it. max-height caps the card's share on a pane tall enough for the question
+   not to arise, and overflow-y:auto is what keeps every Confirm button
+   reachable once the card is shorter than its own content. The card still
+   never scrolls AWAY: still outside .shwscroll, still above it, still the
+   first thing under the outcome. */
+/* THE CAP IS 32% AND THE FLOOR IS 220px (founder, 2026-09-18, second report).
+   With the question pinned below it, the pane funds THREE blocks, and the
+   shrink order decides the split: the scroller carries weight 1000, so it
+   lands on its floor first and the card takes whatever is left up to its cap.
+   At 40%/180px that put 252px of brief above 180px of turns on a 900px window
+   -- more pixels for the summary than for the section the founder said had
+   gone. Raising the floor and lowering the cap together makes the conversation
+   at least the card's equal at every height measured in Chrome (six turns and
+   a four-line conversation on the record):
+
+       window   card   conversation   question
+       1100px   331px      268px       159px
+        900px   224px      220px       113px
+        660px    73px      195px        50px
+        560px    36px      155px        34px
+
+   THE CARD GOES THIN BEFORE THE CONVERSATION DOES, and that is the decision:
+   the objective is already in the pane header and the state is already on the
+   pill, so the card is the one block whose content is echoed elsewhere. It
+   never clips -- it scrolls inside itself, so every done-when row and Confirm
+   button is still reachable at 36px. */
+.shwright>.shcard2{flex:0 1 auto;min-height:0;max-height:32%;
+  overflow-y:auto;overscroll-behavior:contain}
+/* ...AND THE CONVERSATION YIELDS FIRST, DOWN TO A FLOOR. Shrinking is
+   PROPORTIONAL by default, so making the card shrinkable alone had it giving
+   up 20px -- and scrolling inside itself -- on a window with room to spare,
+   purely because the conversation below it was long. That is the wrong order:
+   the brief is short and fixed, the conversation is unbounded, so the
+   conversation is what should absorb the squeeze, and it already has a
+   scrollbar for it.
+
+   THE WEIGHTED SHRINK IS THE MECHANISM. 1000 against the card's 1 makes the
+   scroller take effectively the whole shortfall until it reaches min-height;
+   only then does the card start giving up height. min() keeps the floor from
+   becoming the new bug on a genuinely short pane -- 180px where there is room
+   for it, 40% of the pane where there is not, so head and composer are never
+   pushed out. The flat min-height:0 above stays: it is what allows a scroller
+   SHORTER than its content in every other context, and this overrides it only
+   inside .shwright, where a floor is the point. */
+.shwright>.shwscroll{flex:1 1000 auto;min-height:min(220px,40%)}
+/* THE ONE SCROLLER. flex:1 to take what is left, min-height:0 so it may be
+   SHORTER than its content (the default `auto` refuses, and the column grows
+   instead -- which is exactly the bug this block replaces). The negative
+   margin + matching padding keep the scrollbar off the content edge without
+   moving the content itself. */
+.shwscroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;gap:10px;
+  margin-right:-10px;padding-right:10px;overscroll-behavior:contain}
+/* an empty scroller must not hold open a gap the column then pads around */
+.shwscroll:empty{display:none}
+/* THE LEFT COLUMN SCROLLS ON ITS OWN. It used to grow with the page; with
+   the page no longer growing, a long task list would be cut off instead. */
+.shwleft{min-height:0}
+/* THE SCROLLBAR MUST NOT LAND ON THE DELETE CONTROL. Making this a scroller
+   put a macOS overlay scrollbar at the rail's right edge -- which is exactly
+   where .shtaskdel sits (20px wide, 5px from that edge), and both appear on
+   the same gesture: the bar fades in when the list is pointed at or scrolled,
+   the x fades in on row hover. So the one destructive control the founder
+   reaches for was painted over by the bar, and a click there hit the bar.
+   Same fix, same numbers as .shwscroll below: pull the scroller into the
+   rail's own 16px right padding and give the content that space back, so the
+   bar rides 10px clear of the x and nothing visibly moves. */
+.shwleft>.shtasks{flex:1 1 auto;min-height:0;overflow-y:auto;
+  overscroll-behavior:contain}
+.shwleft>.shwfoot{flex:0 0 auto;margin-top:auto}
 .shwhead{display:flex;align-items:center;gap:9px;
   padding-bottom:10px;border-bottom:1px solid var(--line-soft)}
 .shwseal{font-family:var(--serif);font-size:15px;color:var(--acc);flex:none}
@@ -3496,6 +3644,10 @@
    motion off would still want. */
 @media (prefers-reduced-motion:reduce){
   .shthinkdot,.shturnlive,.shturnsweep>i,.shthinkell::after{animation:none}
+  /* the ring stays -- it is still a mark beside RUNNING -- but it stops and
+     closes: an open top edge that is not turning reads as a broken circle
+     rather than as a spinner someone deliberately held still. */
+  .shtpillspin{animation:none;border-top-color:currentColor;opacity:.7}
   .shthinkell::after{content:"..."}
   .shturnsweep{display:none}
   .shdonering{opacity:.9;animation:none}
@@ -3699,6 +3851,19 @@
 .shwright .shiv{margin-top:14px;padding:16px 19px;background:var(--acc-bg);
   border:1px solid var(--line-soft);border-left:4px solid var(--acc);
   border-radius:0 12px 12px 0}
+/* PINNED, CAPPED, AND IT SCROLLS ITSELF (founder, 2026-09-18). The form left
+   .shwscroll so the conversation could have the scroller's whole floor back --
+   see 16-shadow-home.js. As a direct child of the column it now takes height
+   from the same budget the card and the conversation share, so it gets the
+   card's treatment: shrinkable (flex:0 1 auto + min-height:0), capped at a
+   share of the pane, and scrolling inside itself so every field and the Send
+   button stay reachable once it is shorter than its content. Without the cap a
+   six-field question would squeeze the turns out exactly as the brief card
+   did. margin-top:0 because the column's own 10px gap now spaces it -- the
+   14px above was for a block that sat inside the scroller. Same specificity as
+   the rule above, so it must stay AFTER it. */
+.shwright>.shiv{flex:0 1 auto;min-height:0;max-height:38%;margin-top:0;
+  overflow-y:auto;overscroll-behavior:contain}
 .shwright .shivq{font-size:15px;font-weight:700;line-height:1.35;
   margin-bottom:4px}
 /* WHY SHADOW CANNOT SETTLE IT: kept, because it is the reason the founder is

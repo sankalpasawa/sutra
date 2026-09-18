@@ -1374,9 +1374,21 @@ function _focusedInputSelector(){
      disk was being written dropped focus to <body> mid-word. Valueless
      attributes need no special case: getAttribute returns "" and [data-x=""]
      matches a bare data-x. */
+  /* data-shhomecompose IS THE "Talk to Shadow" BOX (founder, 2026-09-18:
+     "sometimes when you are typing in it, the focus from that field is
+     going"). It was carried across a #scBody rebuild only -- and that
+     snapshot is taken AFTER `panesEl.innerHTML = panesHtml` below, so any
+     render that also rebuilt the panes row (a streaming session pane, a
+     divider drag, invalidatePanesHtml) had already detached the textarea and
+     moved activeElement to <body> before the snapshot ran: focus, caret and
+     the half-typed draft all went. Saved HERE it is captured at the top of
+     render(), before anything is replaced, and restored at the bottom after
+     everything is. The #scBody path below still runs and is now the inner
+     half of the same contract. */
   for (const attr of ["data-sask", "data-ssend", "data-sideask", "data-cwdinput",
                       "data-prf", "data-edta", "data-workdir-input", "data-edfilter",
-                      "data-wssearch", "data-gitfilter", "data-o2q", "data-o2lq"]) {
+                      "data-wssearch", "data-gitfilter", "data-o2q", "data-o2lq",
+                      "data-shhomecompose"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
   return null;
@@ -1798,6 +1810,10 @@ function render(){
      rebuild; guarded so a missing 18-goal-workspace.js cannot break render */
   const priorGoal = (typeof goalScrollState === "function")
     ? goalScrollState() : null;
+  /* Shadow's conversation is one more scroller reborn by this rebuild, and
+     it is read HERE for the same reason as the three above: a reading taken
+     after `panesEl.innerHTML = panesHtml` is a reading of a detached element. */
+  const priorSh = _shScrollState();
 
   renderRail();
   renderOnboarding();
@@ -2037,10 +2053,21 @@ function render(){
       }
     }
   }
+  /* THE "TALK TO SHADOW" BOX GETS ONE MORE PASS, from state rather than from
+     the snapshot above. The snapshot can only restore what was focused when
+     THIS render started; if the textarea was detached in an earlier tick its
+     draft and its caret were already gone before render() looked. The store
+     in 16-shadow-home.js is not on the element, so it survives that -- and it
+     puts the draft back on every pass, focused or not. Guarded so a missing
+     16-shadow-home.js cannot break render(), the same way goalRestoreScroll
+     and _restoreShScroll are. */
+  if (typeof shadowRestoreCompose === "function") shadowRestoreCompose();
   _restoreBrowseScroll(priorScroll);
   _restoreSessScroll(priorSess);
   if (typeof goalRestoreScroll === "function") goalRestoreScroll(priorGoal);
   if (typeof goalBindScroll === "function") goalBindScroll();
+  _restoreShScroll(priorSh);
+  _shBindScroll();
   /* Rendered LAST and outside #panes, so it survives a pane rebuild and cannot
      be what a scroll restore is measuring. */
   {
@@ -2105,6 +2132,114 @@ function _restoreSessScroll(prior){
      a height that grew after the synchronous pass would leave a pinned reader
      short of the tail. */
   requestAnimationFrame(apply);
+}
+
+/* ── THE SHADOW CONVERSATION'S PLACE, ACROSS A REBUILD ────────────────────
+   THE BUG (founder, 2026-09-18): "when I am at the bottom of that scroll,
+   sometimes it goes to the top for no reason", and its other half -- a
+   mid-list position not surviving either.
+
+   `.shwscroll` (the worker turns) is rebuilt with the screen, so every render
+   hands the founder a brand-new element at scrollTop 0. The first version of
+   the restore sat inline around `scBody.innerHTML` and decided pinned-or-
+   parked from ONE measurement taken at that instant. Both failures come from
+   that:
+
+     IT MEASURED A CORPSE. The read happened AFTER
+     `panesEl.innerHTML = panesHtml` had already replaced the panes row, so on
+     any render that rebuilt the panes too -- a streaming session pane, a
+     divider drag -- the element being measured was detached. A detached
+     element is not "at the end", so the founder was restored to a stale
+     offset, or, with no snapshot at all, yanked to the tail. Exactly the flaw
+     _focusedInputSelector() was fixed for on the same day.
+
+     ONE MEASUREMENT CANNOT SEE INTENT. Whether the founder CHOSE to leave the
+     tail is not recoverable from geometry, and a frame that measures oddly --
+     a transcript read that failed and emptied the list, so the scroller is not
+     scrollable at all -- then reads as "at the end" and re-pins somebody who
+     was reading. So intent is RECORDED by a scroll listener and outranks any
+     reading, which is what the session panes (_restoreSessScroll, above) and
+     the goal workspace (18-goal-workspace.js) already do.
+
+   WHAT IS DELIBERATELY NOT HERE: a settle poll. The suspicion was that the
+   height is not final when the pin writes -- `scrollTop = scrollHeight` is
+   clamped to `scrollHeight - clientHeight`, so a scroller that does not
+   overflow YET clamps to zero. Measured instead of assumed, over a live
+   delegation on 127.0.0.1:7681 (CDP, render() wrapped, every rebuild of this
+   element sampled at the write, one animation frame later, and 400ms later):
+   the geometry was IDENTICAL at all three points on every rebuild. The height
+   is final when the pin runs, so nothing needs to chase it, and a 2s re-pin
+   loop would have been a timer bought with a hypothesis. */
+const SH_PIN_SLOP = 24;                    /* px, matching SESS_PIN_SLOP */
+/* The ONE mission the founder has deliberately scrolled up inside, and the
+   offset they chose. A single slot, not a Map: a different task opens at the
+   newest turn by design, so a second entry could never be read back -- and one
+   slot cannot leak.
+   THE OFFSET IS REMEMBERED RATHER THAN RE-READ, and that is the empty-frame
+   defence. A list whose turns have momentarily gone (a transcript read that
+   failed; measured live as scrollHeight == clientHeight == 180, no rows) is not
+   scrollable, so the founder's scrollTop is clamped to 0 by the browser -- and
+   re-reading it there would overwrite their place with the top of an empty
+   list. Their gesture is the only thing that writes this. */
+let _shAwayId = null;
+let _shAwayTop = 0;
+
+function _shScroller(){
+  return (typeof document !== "undefined" && document.querySelector)
+    ? document.querySelector("[data-shscroll]") : null;
+}
+function _shId(el){
+  return (el && el.getAttribute && el.getAttribute("data-shscroll")) || "";
+}
+function _shAtBottom(el){
+  return !el
+    || (el.scrollHeight - el.clientHeight - el.scrollTop) <= SH_PIN_SLOP;
+}
+
+/* captured at the TOP of render(), before any innerHTML has run */
+function _shScrollState(){
+  const el = _shScroller();
+  if (!el) return null;
+  const id = _shId(el);
+  if (_shAwayId === id) return { id: id, top: _shAwayTop, pinned: false };
+  return { id: id, top: el.scrollTop, pinned: _shAtBottom(el) };
+}
+
+/* restored at the BOTTOM, after every rebuild AND after the focus restore --
+   el.focus() scrolls ancestors to reveal the field, so a scroll written before
+   it is written into the past. */
+function _restoreShScroll(prior){
+  const el = _shScroller();
+  if (!el) return;
+  const id = _shId(el);
+  /* A DIFFERENT CONVERSATION IS NOT A POSITION TO KEEP: it opens at the newest
+     turn, and it inherits no scrolled-up intent either. */
+  const same = !!prior && prior.id === id;
+  if (!same) _shAwayId = null;
+  el.__pinning = true;                     /* OUR scroll, not the founder's */
+  el.scrollTop = (same && !prior.pinned)
+    ? Math.min(prior.top, Math.max(0, el.scrollHeight - el.clientHeight))
+    : el.scrollHeight;
+  /* rAF, not setTimeout(0): a scroll event caused by a programmatic write is
+     dispatched in the rendering step BEFORE animation-frame callbacks, so the
+     flag is still up when the listener sees it. The session panes' convention. */
+  if (typeof requestAnimationFrame === "function")
+    requestAnimationFrame(()=>{ el.__pinning = false; });
+  else el.__pinning = false;
+}
+
+/* bound once per element; the listener is the ONLY thing that records intent.
+   Landing back at the bottom clears it, so following resumes naturally. */
+function _shBindScroll(){
+  const el = _shScroller();
+  if (!el || el.__shBound || !el.addEventListener) return;
+  el.__shBound = true;
+  el.addEventListener("scroll", ()=>{
+    if (el.__pinning) return;              /* our write, not a gesture */
+    const id = _shId(el);
+    if (_shAtBottom(el)){ if (_shAwayId === id) _shAwayId = null; }
+    else { _shAwayId = id; _shAwayTop = el.scrollTop; }
+  }, { passive: true });
 }
 
 /* The browse pane's scroller, and the identity of what it is scrolling.

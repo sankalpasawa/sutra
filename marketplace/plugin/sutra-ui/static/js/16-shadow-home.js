@@ -335,6 +335,25 @@ function shadowTaskFaceFor(m){
   return shadowTaskFace(m && m.state);
 }
 
+/* THE PILL IS PRINTED IN THREE PLACES -- the task list row, the task card and
+   the workspace header -- and it was three copies of the same span. A running
+   task has to look alive on ALL of them or the founder learns which surface to
+   distrust, so the markup moved here and the three sites call this.
+
+   THE SPINNER IS DECORATION, NOT THE MESSAGE. The word RUNNING beside it is
+   what carries the state: that is why the ring is aria-hidden, and why the
+   reduced-motion rule is free to simply stop it without losing anything.
+   `running` is read from the FACE, not from m.state, so the two states that
+   are not their own face (a founder-pause, an accepted-but-not-started) keep
+   showing their real face and never spin. */
+function shadowTaskPillHtml(face){
+  const f = face || { label: "", cls: "" };
+  const spin = f.cls === "running"
+    ? `<span class="shtpillspin" aria-hidden="true"></span>` : "";
+  return `<span class="shtpill shtpill-${esc(f.cls)}">`
+       + `${spin}${esc(f.label)}</span>`;
+}
+
 /* THE WORKSPACE IS AN ACTIVE WORK SURFACE, NOT A MISSION DATABASE.
 
    GET /api/shadow/missions returns MissionStore.list() -- every mission file
@@ -621,7 +640,7 @@ function shadowTaskListHtml(){
       type="button" data-shtask="${escAttr(m.id)}">
       <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
       <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
-      <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
+      ${shadowTaskPillHtml(f)}
     </button>
       <button class="shtaskdel" type="button"
         data-shtaskdel="${escAttr(m.id)}"
@@ -2444,7 +2463,10 @@ async function shadowTalkSend(mid, el){
         + " \u2014 your message is still in the box.";
     if (typeof S !== "undefined") S.shadowScopeErr = why;
     T.live[mid] = live.filter(x => x.text !== text);
-    if (el) el.value = text;
+    /* THROUGH THE STORE, not straight onto the node: the box renders from
+       S.shadowComposeDraft now, so a bare `el.value = text` would be undone
+       by the very next repaint -- and this path always causes one. */
+    shadowComposeSet(el, text);
   } else if (body.reply){
     /* the instant the answer reached us, for the same reason as above */
     live.push({ who: "shadow", text: String(body.reply), ts: Date.now() });
@@ -2937,7 +2959,7 @@ function shadowTaskCardHtml(m){
     <div class="shcard2head">
       <span class="shcard2tag">${esc(m.template || "task")}</span>
       <span class="shcard2obj">${esc(m.objective || "")}</span>
-      <span class="shtpill shtpill-${esc(f.cls)}">${esc(f.label)}</span>
+      ${shadowTaskPillHtml(f)}
     </div>
     <div class="shcard2row"><span class="shcard2k">where it runs</span>
       <span class="shcard2v">${acts}</span></div>
@@ -3333,10 +3355,23 @@ function shadowStageHtml(compact){
       </div>
     </div>`}
     <div class="shcompwrap">
+      ${/* THE DRAFT IS RENDERED, not merely carried (founder, 2026-09-18:
+           "sometimes when you are typing in it, the focus from that field is
+           going"). This box used to render EMPTY every time and keep what was
+           typed only in the live DOM node -- so the half-written sentence
+           existed in exactly one place, an element render() replaces, and it
+           survived only if the focus snapshot happened to catch it. Every
+           other typed field in this file already stores its draft in S and
+           renders it back (shnewtalk, shbehaves, shmemory, shoffername,
+           shquiet*); this one was the exception, which is why a repaint could
+           empty it. Stored on input, NEVER re-rendered on keystroke -- a
+           render per character would fight the caret, which is the bug those
+           other text stores exist to avoid. */""}
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
         placeholder="${compact ? "Talk to Shadow…"
-          : "Tell Shadow what outcome you want…"}"></textarea>
+          : "Tell Shadow what outcome you want…"}">${
+        esc(S_.shadowComposeDraft || "")}</textarea>
       <button class="shsend" type="button" data-shsend="1"
         title="Hand it over (or press Enter)" aria-label="Hand it over">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -3534,8 +3569,7 @@ function shadowHomeHtml(){
         <h2 class="shwtitle">${newOpen ? "New task"
           : esc((sel && sel.objective) || "Shadow")}</h2>
         <div class="shwheadacts">
-          ${!newOpen && face ? `<span class="shtpill shtpill-${esc(face.cls)}"
-            >${esc(face.label)}</span>` : ""}
+          ${!newOpen && face ? shadowTaskPillHtml(face) : ""}
           ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
                Same data-shtakeover hook and same target_session it has
                always carried -- it simply sits where the reference puts
@@ -3555,12 +3589,67 @@ function shadowHomeHtml(){
       ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
                                   : shadowNewTaskChatHtml())
                 : (sel ? shadowTaskCardHtml(sel) : "")}
+      ${/* ── ONE SCROLLER, AND IT IS THE CONVERSATION (founder, 2026-09-18)
+           THE PROBLEM. `.pb` (#scBody) scrolls the whole screen, so reading
+           back through a long delegation carried the objective and the brief
+           card off the top with it -- the two things that say WHAT is being
+           worked and HOW it is judged were the first to leave. On a
+           twenty-turn task the founder was scrolling a wall of turns with no
+           header to anchor them.
+
+           SO THE PANE OWNS ITS OWN HEIGHT. `.shwork` is now exactly the
+           pane's height rather than `min-height:100%`, which takes the
+           scroll away from `.pb` without touching `.pb` -- it is shared by
+           every other screen and none of them change.
+
+           THE HEAD AND THE CARD ARE PINNED. The conversation -- worker
+           turns, Shadow's replies, the founder's own lines, an intervention
+           form, a pending-memory row -- scrolls inside this element.
+
+           THE COMPOSER IS PINNED TOO, and that is a decision, not an
+           oversight: it is the founder's half of the conversation, so by the
+           letter it belongs in the scroller. But a composer that scrolls
+           away has to be hunted for before you can type, which is the
+           opposite of what pinning the header was for. It sits below this
+           block, outside it, always reachable. */""}
+      <div class="shwscroll"${sel && !newOpen
+        ? ` data-shscroll="${escAttr(sel.id)}"` : ""}>
       ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
-      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
+      </div>
+      ${/* ── THE QUESTION IS PINNED, THE CONVERSATION SCROLLS (founder,
+           2026-09-18) ───────────────────────────────────────
+           NEEDS YOU is the one state that needs TWO things on screen at once:
+           the question, and the turns that earned it. Inside the scroller they
+           competed for the same pixels -- and the form won every time, because
+           the pane opens at the NEWEST row and on a blocked mission that IS
+           the form. Measured in Chrome, six turns and a four-line conversation
+           on the record, the scroller opened at its newest row:
+
+               window   turn rows visible   conversation lines visible
+               660px           0                       0
+               900px           0                       1
+
+           So the founder, looking at the section that exists to show what the
+           delegate did, saw no turn at all -- which is the report this fixes.
+
+           PINNED BELOW THE SCROLLER it is always on screen without taking the
+           conversation’s height with it, and it sits directly above the
+           composer, next to the other place the founder types. Same markup,
+           same data-shivform hook, same handlers, same submit -- only its
+           parent changed.
+
+           IT YIELDS BEFORE THE CONVERSATION DOES. .shwright>.shiv caps its
+           share of the pane and scrolls itself, so a long form can never do to
+           the turns what the brief card did (see panel.css).
+
+           NO OTHER STATE MOVES: shadowInterventionHtml returns "" unless the
+           mission is carrying a question, so every running, done, failed and
+           stopped mission renders exactly the markup it did before. */""}
+      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${/* THE ASK BLOCK IS THE NEW-TASK COMPOSER (founder, 2026-09-15).
            "What should I take on? / Tell Shadow the outcome you want" is
            how a task is CREATED, and it was drawing under the workspace as
@@ -5068,6 +5157,66 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
     if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
   });
+  /* WHO HAS THE CARET IS STATE TOO (founder, 2026-09-18). render() restores
+     focus from a snapshot of document.activeElement taken at the top of the
+     pass -- which is correct, and is not enough: if ANYTHING detached the
+     textarea in an earlier tick (a repaint from a path that does not go
+     through render(), two renders in a row, an overlay mount) then
+     activeElement is already <body> by the time the snapshot runs, and no
+     later render has any way to know the founder was typing. A flag in S
+     survives that, because it is not stored on the element being replaced.
+
+     THE FLAG IS WHAT FOCUS LANDED ON, not merely "the box was entered". An
+     earlier draft only ever SET it here and left the clearing to focusout --
+     and this sequence then stole focus: type in the box, a repaint detaches
+     it, founder clicks the corner card or any other field, and the next
+     render pulled them straight back out of it. Writing the flag from where
+     focus ARRIVED closes that: a click into anything else is a focusin on
+     that thing, and says so. A detach fires no focusin at all, so the flag
+     stands and the restore below can put the founder back.
+
+     MEASURED IN CHROME 2026-09-18, because the first attempt at the focusout
+     half was written from memory and was wrong. Replacing #scBody's innerHTML
+     under the focused textarea fires, in this order:
+
+         blur     target=TEXTAREA isConnected=true  relatedTarget=null
+         focusout target=TEXTAREA isConnected=true  relatedTarget=null
+
+     -- so a detach is NOT distinguishable from a real click-away at the
+     moment focusout runs. isConnected is still true (the unfocusing steps run
+     before the node is actually removed) and relatedTarget is null for both.
+     Deciding there cleared the flag on every rebuild, which is the exact bug
+     this was supposed to fix: driven live, 7 of 202 characters landed.
+
+     SO THE DECISION IS DEFERRED ONE TICK, where the two cases separate
+     cleanly and without a heuristic: a node removed by a rebuild is
+     disconnected by then, a node the founder merely clicked away from is
+     still in the document. The deferred check only ever CLEARS, never sets,
+     so it cannot fight the focusin above or the restore below. */
+  document.addEventListener("focusin", (ev) => {
+    if (typeof S === "undefined") return;
+    const d = (ev.target && ev.target.dataset) || {};
+    S.shadowComposeFocus = !!d.shhomecompose;
+  });
+  document.addEventListener("focusout", (ev) => {
+    const t = ev.target, d = (t && t.dataset) || {};
+    if (!d.shhomecompose || typeof S === "undefined") return;
+    if (typeof t.selectionStart === "number") S.shadowComposeCaret = t.selectionStart;
+    /* focusout with a relatedTarget is a move to something focusable, and the
+       focusin on THAT has already said so -- nothing left to decide. */
+    if (ev.relatedTarget) return;
+    const settle = () => {
+      if (typeof S === "undefined") return;
+      if (t.isConnected === false) return;       /* a rebuild: still typing */
+      const a = document.activeElement;
+      if (a === t) return;                       /* focus came straight back */
+      if (a && a.dataset && a.dataset.shhomecompose) return;  /* the new node */
+      if (typeof document.hasFocus === "function" && !document.hasFocus()) return;
+      S.shadowComposeFocus = false;              /* clicked onto dead space */
+    };
+    if (typeof setTimeout === "function") setTimeout(settle, 0); else settle();
+  });
+
   /* ONE submit path, two ways to reach it. The design has a send button and
      the composer has always sent on Enter; rather than write the send twice,
      the keydown body moved here verbatim and both callers use it. Nothing
@@ -5116,12 +5265,12 @@ if (typeof document !== "undefined" && document.addEventListener){
          what standing_instructions are composed from. The say endpoint is
          untouched and still serves anything that calls it. */
       shadowTalk().text = text.trim();
-      el.value = "";
+      shadowComposeSet(el, "");
       shadowTalkSend(sel.id, el);
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    el.value = "";
+    shadowComposeSet(el, "");
     sendToShadow(text.trim()).then(() => {
       if (typeof loadShadowHome === "function") loadShadowHome(true);
       if (typeof scheduleRender === "function") scheduleRender();
@@ -5169,6 +5318,17 @@ if (typeof document !== "undefined" && document.addEventListener){
   });
   document.addEventListener("input", (ev) => {
     const t = ev.target, d = (t && t.dataset) || {};
+    /* THE "TALK TO SHADOW" BOX, kept the same way and for the same reason as
+       every field below it. Stored without rendering: shadowStageHtml() reads
+       it back on the NEXT repaint, whatever caused that repaint, so a
+       background render can no longer take a half-typed brief with it. */
+    if (d.shhomecompose){
+      if (typeof S !== "undefined"){
+        S.shadowComposeDraft = t.value;
+        S.shadowComposeCaret = t.selectionStart;
+      }
+      return;
+    }
     /* v4: the task chat line and the behaves text, kept across the
        background re-renders like every typed field here */
     if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
@@ -5209,6 +5369,51 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shnewobj) draft.objective = t.value;
     else draft.done = t.value;
   });
+}
+
+/* THE ONE WRITER of the composer's text. A programmatic `el.value = ...`
+   fires no `input` event, so anything that set the node directly left the
+   store holding something else -- and the store is what the next repaint
+   renders. Three callers: the two sends, which empty it, and the send that
+   did not land, which hands the founder's line back. */
+function shadowComposeSet(el, text){
+  const v = String(text == null ? "" : text);
+  if (typeof S !== "undefined"){
+    S.shadowComposeDraft = v;
+    S.shadowComposeCaret = v.length;
+  }
+  if (el) el.value = v;
+}
+
+/* THE LAST WORD ON THE "TALK TO SHADOW" BOX, called from the end of render()
+   after its own focus restore has run -- see 06-render.js.
+
+   It is a FLOOR, not a replacement. render()'s snapshot path is more precise
+   (it carries the exact caret of the element it saw focused) and wins whenever
+   it fired: this returns immediately if the box already has focus. What it
+   adds is the case that path cannot cover -- focus lost in an earlier tick, so
+   there was nothing to snapshot -- and the draft, which is now restored on
+   EVERY pass whether or not anyone was focused.
+
+   Guarded throughout: the node tests boot this file against a stub document. */
+function shadowRestoreCompose(){
+  if (typeof document === "undefined" || typeof S === "undefined") return;
+  if (!document.querySelector) return;
+  const el = document.querySelector("[data-shhomecompose]");
+  if (!el) return;                         /* another screen; nothing to keep */
+  const draft = S.shadowComposeDraft || "";
+  if (el.value !== draft) el.value = draft;
+  if (!S.shadowComposeFocus) return;       /* never grab focus nobody gave it */
+  if (document.activeElement === el) return;
+  try {
+    el.focus({ preventScroll: true });
+    if (el.setSelectionRange){
+      const n = String(el.value || "").length;
+      const c = (typeof S.shadowComposeCaret === "number")
+        ? Math.max(0, Math.min(S.shadowComposeCaret, n)) : n;
+      el.setSelectionRange(c, c);
+    }
+  } catch (e) {}
 }
 
 /* THE DELEGATION WRITE. One POST, to the endpoint that already exists.

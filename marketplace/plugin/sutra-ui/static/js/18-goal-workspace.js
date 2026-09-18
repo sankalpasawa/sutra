@@ -883,10 +883,23 @@ async function loadGoal(gid){
 async function loadGoalTranscript(sid){
   if (!sid || typeof fetch === "undefined" || typeof S === "undefined") return;
   if (!S.goalTranscript) S.goalTranscript = {};
+  /* A FAILED READ IS NOT AN EMPTY CHAT (founder, 2026-09-18). This wrote
+     `null` on any non-ok response or throw, and null is what goalMessages
+     RETURNS to its callers -- so one 404 replaced a conversation that was on
+     screen with nothing. Not hypothetical: /api/sessions/<sid> was observed
+     404ing for every live Shadow delegate on a panel whose session cache had
+     not caught up, while another panel served the same ids 200.
+     So a failure now LEAVES WHAT WE HOLD. `null` still exists and still means
+     "asked, and there is nothing there" -- it is simply only written when we
+     were holding nothing to lose, which is the state the read was for. The
+     throttle in shadowTaskTranscript re-asks either way. */
+  let held = null;
   try {
     const r = await fetch("/api/sessions/" + encodeURIComponent(sid));
-    S.goalTranscript[sid] = r.ok ? ((await r.json()).messages || []) : null;
-  } catch (e){ S.goalTranscript[sid] = null; }
+    if (r.ok) held = (await r.json()).messages || [];
+  } catch (e){ held = null; }
+  if (held) S.goalTranscript[sid] = held;
+  else if (S.goalTranscript[sid] === undefined) S.goalTranscript[sid] = null;
   if (typeof scheduleRender === "function") scheduleRender();
 }
 

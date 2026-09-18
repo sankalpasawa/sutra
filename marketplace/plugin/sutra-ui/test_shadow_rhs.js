@@ -92,7 +92,11 @@ function pane(ctx, m, extra){
   const h = pane(ctx, M());
   assert(/class="shwseal"/.test(h), "the Shadow seal is the pane's identity");
   assert(/class="shwtitle">EMI auto-fix</.test(h), "the task titles the pane");
-  assert(/shtpill-running[^>]*>RUNNING</.test(h),
+  /* the running pill now opens with an empty spinner span, so RUNNING is no
+     longer adjacent to the pill's `>`. The claim being made is "the header
+     carries a running pill that reads RUNNING" -- which is what this matches;
+     the other states' pills are unchanged and still assert adjacency. */
+  assert(/shtpill-running[^>]*>(?:<[^>]*>)*RUNNING</.test(h),
     "the current user-facing status sits in the header");
   assert(/class="shwheadacts"/.test(h), "the header's action group is missing");
   assert(/data-shtakeover="sess-1"[^>]*>Open the chat</.test(h),

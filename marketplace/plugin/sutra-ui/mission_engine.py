@@ -1888,7 +1888,42 @@ class MissionEngine:
         # on the card -> first worker interaction. This is that one step, in
         # the one place that runs before the spawner does.
         await self._criteria_before_first_contact(m)
-        sid = await spawner(m)
+        # THE FIRST TURN IS IN FLIGHT FROM HERE, NOT FROM THE LOOP
+        # (founder, 2026-09-18: "when turn 1 is starting it still shows
+        # turn 0 of 25").
+        #
+        # The spawner's contract is "send the manifest, WAIT OUT THE WHOLE
+        # FIRST AGENTIC TURN, hand back a session id" -- so the worker is
+        # working turn 1 for the entire duration of this one await, which
+        # is the longest single turn of most missions (44s of spawn plus
+        # however long the work takes). run_mission only reaches its own
+        # `turn_open` stamp AFTER that, and for this very turn it never
+        # reaches it at all: the `briefed` branch deliberately skips the
+        # say-and-wait block that carries it. So nothing named turn 1
+        # while turn 1 was the turn being worked, and every card, strip
+        # and overlay fell back to turns_used -- which is 0 until the
+        # boundary lands. "turn 0 of 25", for the whole of turn 1.
+        #
+        # This is the SAME field with the SAME meaning, stamped at the one
+        # other place a turn starts. Cleared by the same increment at the
+        # bottom of run_mission's iteration (`turn_open = None`), because
+        # the briefed iteration converges on that code like any other.
+        #
+        # NOT A BUDGET. max_turns is still compared against turns_used and
+        # nothing else, here as everywhere.
+        m["turn_open"] = (m.get("turns_used") or 0) + 1
+        self.store.save(m)
+        try:
+            sid = await spawner(m)
+        except BaseException:
+            # A SPAWN THAT NEVER HAPPENED LEAVES NO TURN IN FLIGHT. The
+            # record outlives the failure (the founder sees the mission),
+            # so a turn number nobody is working must not outlive it too.
+            failed = self.store.load(mid)
+            if failed is not None and failed.get("turn_open") is not None:
+                failed["turn_open"] = None
+                self.store.save(failed)
+            raise
         m = self.store.load(mid)
         m["target_session"] = sid
         # THE BRIEF HAS NOW BEEN DELIVERED, and this is the only place that

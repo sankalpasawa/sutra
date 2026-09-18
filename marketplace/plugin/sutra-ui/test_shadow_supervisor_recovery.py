@@ -352,6 +352,142 @@ class TheInFlightTurnIsOnTheRecord(Base):
         self.store.save(m)
         self.assertEqual(MissionStore().load(mid).get("turn_open"), 7)
 
+    # ---- THE FIRST TURN, WHICH HAPPENS INSIDE THE SPAWN ----------------
+    # (founder, 2026-09-18: "when turn 1 is starting it still shows turn 0
+    # of 25"). spawn_delegate_session sends the manifest and waits out the
+    # WHOLE first agentic turn, and run_mission's `briefed` branch then
+    # skips the say-and-wait block that carries `turn_open` -- so the one
+    # turn nothing ever named was turn 1, the longest one of the mission.
+
+    def _new_mission(self):
+        m = self.store.create("Ship the thing.", "feature",
+                              target_mode="new")
+        self.store.transition(m["id"], "brief_confirm", "t")
+        self.store.transition(m["id"], "running", "t")
+        return m["id"]
+
+    def test_turn_1_is_named_WHILE_THE_SPAWNER_IS_STILL_WORKING(self):
+        mid = self._new_mission()
+        seen = {}
+
+        async def spawner(m):
+            # read the STORE, not the dict handed in: this is what the card
+            # would render at that instant
+            cur = self.store.load(mid)
+            seen["turn_open"] = cur.get("turn_open")
+            seen["turns_used"] = cur.get("turns_used")
+            return "sess-live"
+
+        eng = mission_engine.MissionEngine(self.store, None, None, None)
+        run(eng.provision_target(mid, spawner))
+        self.assertEqual(seen["turns_used"], 0, "no turn has FINISHED yet")
+        self.assertEqual(seen["turn_open"], 1,
+                         "turn 1 is the turn the worker is being spawned on")
+
+    def test_the_briefed_loop_clears_it_when_that_turn_lands(self):
+        """The spawn stamp and the loop's own stamp are ONE field: the
+        briefed iteration converges on the same increment, so turn 1 ends
+        exactly as every later turn does."""
+        mid = self._new_mission()
+
+        async def spawner(m):
+            return "sess-live"
+
+        run(mission_engine.MissionEngine(
+            self.store, None, None, None).provision_target(mid, spawner))
+        self.assertEqual(self.store.load(mid).get("turn_open"), 1)
+        run(self._engine([
+            {"action": "ask_founder", "reason": "done"},
+        ]).run_mission(mid))
+        m = self.store.load(mid)
+        self.assertIsNone(m.get("turn_open"),
+                          "exactly one field describes a turn at a time")
+        self.assertEqual(m.get("turns_used"), 1,
+                         "the spawn turn is counted once, as it always was")
+
+    def test_a_spawn_that_blows_up_leaves_no_turn_in_flight(self):
+        mid = self._new_mission()
+
+        async def spawner(m):
+            raise RuntimeError("no runtime")
+
+        eng = mission_engine.MissionEngine(self.store, None, None, None)
+        with self.assertRaises(RuntimeError):
+            run(eng.provision_target(mid, spawner))
+        self.assertIsNone(self.store.load(mid).get("turn_open"),
+                          "a turn nobody is working must not outlive the spawn")
+
+    def test_the_spawn_stamp_is_not_a_second_budget(self):
+        """max_turns is compared against turns_used and nothing else.
+
+        A one-turn mission whose turn 1 is open must still GET that turn:
+        if the stamp were counted, the loop would fail on budget before it
+        ever evaluated the work the spawn already did.
+        """
+        mid = self._new_mission()
+        m = self.store.load(mid)
+        m["max_turns"] = 1
+        self.store.save(m)
+
+        async def spawner(m2):
+            return "sess-live"
+
+        run(mission_engine.MissionEngine(
+            self.store, None, None, None).provision_target(mid, spawner))
+        run(self._engine([
+            {"action": "ask_founder", "reason": "q"}]).run_mission(mid))
+        self.assertEqual(self.store.load(mid).get("turns_used"), 1,
+                         "turn 1 ran and was counted -- the open stamp was "
+                         "never a spent turn")
+
+    # ---- THE TOP OF THE RANGE ------------------------------------------
+    # The display names the turn IN FLIGHT, which makes the last turn of a
+    # mission the one place that number and the ceiling meet. "25 of 25" is
+    # right; "26 of 25" would be the fix trading one wrong number for a
+    # worse one, so both ends are pinned here rather than reasoned about.
+
+    def test_the_last_turn_reads_AS_THE_CEILING_not_past_it(self):
+        mid = self._running()
+        m = self.store.load(mid)
+        m["turns_used"], m["max_turns"] = 24, 25
+        self.store.save(m)
+        seen = {}
+
+        async def sayer(mm, text):
+            return True
+
+        async def waiter(mm):
+            # the record as a card would render it mid-turn
+            seen["turn_open"] = self.store.load(mid).get("turn_open")
+            return True
+
+        seq = [{"action": "continue", "instruction": "go", "reason": "r"}]
+
+        async def decider(ctx):
+            return seq.pop(0) if seq else None
+
+        run(mission_engine.MissionEngine(
+            self.store, sayer, waiter, lambda mm: "",
+            decider=decider).run_mission(mid))
+        self.assertEqual(seen["turn_open"], 25,
+                         "the final turn is named 25, and 25 is the ceiling")
+
+    def test_an_EXHAUSTED_budget_never_stamps_a_turn_past_the_ceiling(self):
+        """`turns_used >= max_turns` is checked BEFORE the say, so the turn
+        that would have been 26 is never opened -- the mission goes out of
+        road with the record still reading 25."""
+        mid = self._running()
+        m = self.store.load(mid)
+        m["turns_used"], m["max_turns"], m["turn_open"] = 25, 25, None
+        self.store.save(m)
+        out = run(self._engine([
+            {"action": "continue", "instruction": "go", "reason": "r"}]
+        ).run_mission(mid))
+        self.assertIsNone(out.get("turn_open"),
+                          "a spent mission has no turn in flight")
+        self.assertEqual(out.get("turns_used"), 25,
+                         "and the count it ends on is the ceiling itself")
+
     def test_the_budget_still_counts_FINISHED_turns_only(self):
         """turn_open must never become a second budget: max_turns is compared
         against turns_used and nothing else."""
