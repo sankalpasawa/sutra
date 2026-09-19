@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-18
+## 2.285.4 (2026-09-19)
+
+- Released from v2.285.3-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release prep for v2.285.4-desktop
+- Changed: 32 file(s), +2898/-273
+- New test suites: test_shadow_delegate_focus.js
+
 ## 2.285.3 (2026-09-18)
 
 - **Shadow's workspace keeps its place, its draft and its question.** Six founder reports from 2026-09-18, all of them the same class: a repaint taking away something the founder was in the middle of using.
