@@ -1,8 +1,12 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-18
+**status**: active · **updated**: 2026-09-19
 
-## v2.285.4 (2026-09-19, HEAD)
+## v2.285.5 (2026-09-19, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.285.4 (2026-09-19)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

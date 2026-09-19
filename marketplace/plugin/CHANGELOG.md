@@ -1,6 +1,13 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-18
+**status**: active · **updated**: 2026-09-19
+## 2.285.5 (2026-09-19)
+
+- **Read only is something a person picks, not something a write can leave behind.** The owner's machine opened on Read only again five minutes before the 2.285.4 release that was meant to end it: its settings.json carried `permission_mode: plan` with the `permission_mode_chosen` stamp beside it, written by a POST no log, transcript or UI path identifies.
+- **Naming a mode is no longer the same as choosing one.** `save_settings` stamped whenever a mode was named; an echo of the value already on screen names one too, and the server cannot tell the two apart by comparison alone. The caller now states intent -- `chosen`, defaulting True for direct Python calls and False at the unauthenticated HTTP boundary, with the two controls a human presses sending it explicitly.
+- **An unclaimed write still sets the mode**, it just cannot pin the floor mode past a restart; one that moves the mode drops a stamp left over from the value it replaced. The app opens on Read only only if a person pressed Read only.
+- Tests: six cases in `test_access_options.py`, two at the route in `test_provider_routes.py`; six existing fixtures now send `chosen` because they all mean "the operator picked this".
+
 ## 2.285.4 (2026-09-19)
 
 - Released from v2.285.3-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
