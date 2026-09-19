@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-/* test_shadow_v4_taskchat.js -- Shadow v4 step 13 (C5, ADR-043): + Delegate
-   opens an EMPTY task chat. One line, Enter -> POST /api/shadow/tasks -> the
-   reply and a READY draft card; more lines -> POST /api/shadow/tasks/{id}/chat;
-   Start is the existing action and puts the task in focus. The form is not
-   deleted: it is the opt-in path behind flags.shadow_form.
+/* test_shadow_v4_taskchat.js -- Shadow v5 (founder, 2026-09-18): + Delegate
+   opens ONE box, "What do you have in mind?". The line IS the objective and
+   Enter IS "Create the task": POST /api/shadow/missions with that objective
+   and NO done-when, then the existing start_now -- the panel closes and the
+   running task takes focus. There is no door to a form, no done-when field
+   and no draft to approve. The form is not deleted: it is the opt-in path
+   behind flags.shadow_form, which nothing in the UI turns on.
 
    Run: node test_shadow_v4_taskchat.js */
 "use strict";
@@ -35,10 +37,9 @@ function fresh(){
   return ctx;
 }
 const settle = () => new Promise(r => setImmediate(() => setImmediate(r)));
-const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
-  template: "research", state: "brief_confirm", target_mode: "new",
-  turns_used: 0, max_turns: 12, version: 2,
-  done_when: [{ tier: "founder_confirm", check: "a table by usage" }] };
+const RUNNING = { id: "m-9", objective: "top 10 fruits", template: "fix",
+  state: "working", target_mode: "new", turns_used: 0, max_turns: 12,
+  version: 1, done_when: [] };
 
 (async () => {
   /* 1. + Delegate opens the empty task chat, not the form */
@@ -46,14 +47,25 @@ const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
     const ctx = fresh();
     ctx.S.shadowNewOpen = true;
     const h = ctx.shadowHomeHtml();
-    assert(/data-shnewchat="1"/.test(h), "the task chat is the pane");
-    assert(/What do you have in mind\?/.test(h), "the one guiding line");
-    assert(/data-shnewtalk="1"/.test(h) && /data-shnewsend="1"/.test(h), "composer and send");
+    /* THE SCREEN CARRIES THE HOST, NOT THE PANEL. The compose box is mounted
+       into [data-shnewhost] once and deliberately left out of the screen's
+       markup, so that a background re-render cannot destroy the textarea the
+       founder is typing into -- see test_shadow_delegate_focus.js. What the
+       screen must still prove is that + Delegate opens the box and not the
+       form; what is IN the box is asserted against the mounted markup. */
+    assert(/data-shnewhost="1"/.test(h), "the task chat is the pane");
+    const mounted = ctx.shadowNewTaskChatHtml();
+    assert(/data-shnewchat="1"/.test(mounted), "and the mounted pane is the chat");
+    assert(/What do you have in mind\?/.test(mounted), "the one guiding line");
+    assert(/data-shnewtalk="1"/.test(mounted) && /data-shnewsend="1"/.test(mounted),
+      "composer and send");
     assert(!/data-shnewpanel/.test(h), "no form");
     assert(!/data-shnewkind/.test(h), "no kind chips");
     assert(!/data-shnewdone/.test(h), "no done-when field");
     assert(!/data-shstart/.test(h), "nothing to start yet");
-    console.log("ok 1 Delegate opens an empty task chat");
+    assert(!/data-shformdoor/.test(h), "the form door is gone");
+    assert(!/form instead/.test(h), "the form door is gone");
+    console.log("ok 1 Delegate opens one box and nothing else");
   }
 
   /* 2. the form is the opt-in path */
@@ -67,57 +79,50 @@ const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
     console.log("ok 2 flags.shadow_form brings the form back, untouched");
   }
 
-  /* 3. one line, Enter: the draft opens, the reply and the READY card show */
+  /* 3. one line, Enter: the task is created with that objective and started */
   {
     const ctx = fresh();
     const calls = [];
     ctx.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      return { ok: true, status: 200,
-        json: async () => ({ mission: DRAFT, reply: "Research task. Done when you have a **table** by usage." }) };
+      return { ok: true, status: 200, json: async () => RUNNING };
     };
     ctx.listeners.click({ target: { dataset: { shdelegate: "1" }, closest: () => null } });
     assert.strictEqual(ctx.S.shadowNewOpen, true);
     ctx.listeners.keydown({ key: "Enter", shiftKey: false, preventDefault(){},
       target: { dataset: { shnewtalk: "1" }, value: "top 10 fruits" } });
-    await settle(); await settle();
-    assert.strictEqual(calls.length, 1);
-    assert(/\/api\/shadow\/tasks$/.test(calls[0].url), calls[0].url);
-    assert.deepStrictEqual(calls[0].body, { message: "top 10 fruits" });
-    const h = ctx.shadowHomeHtml();
-    assert(/shmine[\s\S]*top 10 fruits/.test(h), "the founder's line in the thread");
-    assert(/shshadow[\s\S]*Research task\./.test(h), "Shadow's reply in the thread");
-    assert(/data-shstart="m-9"/.test(h), "the draft card with Start");
-    assert(/READY/.test(h), "the card reads READY");
-    assert(/Top 10 fruits in the market, by usage/.test(h), "the card carries the sharpened objective");
-    assert.strictEqual(ctx.reloads, 1, "the list is re-read so the draft row appears");
-    console.log("ok 3 the first line opens the draft and shows the card");
+    await settle(); await settle(); await settle();
+    assert.strictEqual(calls.length, 2, "one create, one start");
+    assert(/\/api\/shadow\/missions$/.test(calls[0].url), calls[0].url);
+    assert.strictEqual(calls[0].body.objective, "top 10 fruits",
+      "the line the founder typed IS the objective");
+    assert.deepStrictEqual(calls[0].body.done_when, [], "no done-when is asked for or sent");
+    assert.strictEqual(calls[0].body.target_mode, "new");
+    assert(/Objective: top 10 fruits/.test(calls[0].body.manifest), "the delegate boots on it");
+    assert(!/done when/i.test(calls[0].body.manifest), "and on nothing else");
+    assert(/\/api\/shadow\/missions\/m-9\/act$/.test(calls[1].url), calls[1].url);
+    assert.strictEqual(calls[1].body.action, "start_now", "Enter starts it");
+    assert.strictEqual(ctx.S.shadowNewOpen, false, "the box closes");
+    assert.strictEqual(ctx.S.shadowTaskSel, "m-9", "the running task takes focus");
+    assert.strictEqual(ctx.S.shadowNewChat, null, "the box is forgotten");
+    console.log("ok 3 one line creates the task and starts it");
   }
 
-  /* 4. the next line talks to THAT task, and Start closes the chat into focus */
+  /* 4. the box never offers a draft to start, and never a second step */
   {
     const ctx = fresh();
-    const calls = [];
-    ctx.fetch = async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body) });
-      return { ok: true, status: 200, json: async () => ({ mission: DRAFT, reply: "Sharper." }) };
-    };
-    const acts = [];
-    ctx.shadowMissionAct = async (id, act) => { acts.push([id, act]); return { id, state: "running" }; };
+    ctx.fetch = async () => ({ ok: true, status: 200, json: async () => RUNNING });
     ctx.S.shadowNewOpen = true;
-    ctx.shadowNewChat().mission = DRAFT;
-    ctx.listeners.input({ target: { dataset: { shnewtalk: "1" }, value: "India only" } });
-    ctx.listeners.click({ target: { dataset: { shnewsend: "1" }, closest: () => null } });
-    await settle(); await settle();
-    assert(/\/api\/shadow\/tasks\/m-9\/chat$/.test(calls[0].url), calls[0].url);
-    assert.deepStrictEqual(calls[0].body, { message: "India only" });
-    ctx.listeners.click({ target: { dataset: { shstart: "m-9" }, closest: () => null } });
+    ctx.shadowNewChat().text = "top 10 fruits";
+    const m = await ctx.shadowNewTalk();
     await settle();
-    assert.deepStrictEqual(acts, [["m-9", "start_now"]], "Start is the existing action");
-    assert.strictEqual(ctx.S.shadowNewOpen, false, "the task chat closes");
-    assert.strictEqual(ctx.S.shadowTaskSel, "m-9", "the task is in focus");
-    assert.strictEqual(ctx.S.shadowNewChat, null);
-    console.log("ok 4 later lines reach the task; Start closes into focus");
+    assert(m && m.id === "m-9", "shadowNewTalk answers with the mission");
+    ctx.S.shadowNewOpen = true;               /* look at the box again */
+    const h = ctx.shadowHomeHtml();
+    assert(!/data-shstart/.test(h), "no draft card to approve");
+    assert(!/data-shnewdone/.test(h), "no done-when field, ever");
+    assert(!/data-shformdoor/.test(h), "no door to the form");
+    console.log("ok 4 there is no second step and no done-when");
   }
 
   /* 5. Shadow unreachable: the line stays in the thread, the error is said, nothing starts */
@@ -128,10 +133,14 @@ const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
     ctx.shadowNewChat().text = "top 10 fruits";
     await ctx.shadowNewTalk();
     const h = ctx.shadowHomeHtml();
-    assert(/top 10 fruits/.test(h), "the founder's line is kept");
-    assert(/could not take that \(503\)/.test(h), "the error is said");
+    /* the thread and the error are inside the MOUNTED panel, not the screen
+       markup -- the screen only carries the host it is mounted into */
+    const mounted = ctx.shadowNewTaskChatHtml();
+    assert(/top 10 fruits/.test(mounted), "the founder's line is kept");
+    assert(/Could not create the task \(503\)/.test(mounted), "the error is said");
     assert(!/data-shstart/.test(h), "no card");
-    console.log("ok 5 a failed open is honest and loses nothing");
+    assert.strictEqual(ctx.S.shadowNewOpen, true, "the box stays open to say so");
+    console.log("ok 5 a failed create is honest and loses nothing");
   }
 
   /* 6. an empty line sends nothing; Shift+Enter is not a send */
@@ -149,18 +158,18 @@ const DRAFT = { id: "m-9", objective: "Top 10 fruits in the market, by usage",
     console.log("ok 6 empty and Shift+Enter send nothing");
   }
 
-  /* 7. the form is one click away (nothing removed): the door under the chat
-        box turns the form on for this open; Cancel turns it back off */
+  /* 7. the door is gone: nothing in the UI turns the form on */
   {
     const ctx = fresh();
     ctx.S.shadowNewOpen = true;
-    assert(/data-shformdoor="1"/.test(ctx.shadowNewTaskChatHtml()), "the door is drawn");
-    assert.strictEqual(ctx.shadowFormOn(), false, "chat first");
+    assert(!/data-shformdoor/.test(ctx.shadowNewTaskChatHtml()), "the door is gone");
+    assert.strictEqual(ctx.shadowFormOn(), false, "the box is the only way in");
     ctx.listeners.click({ target: { dataset: { shformdoor: "1" }, closest: () => null } });
-    assert.strictEqual(ctx.shadowFormOn(), true, "the door opens the form");
-    ctx.listeners.click({ target: { dataset: { shnewcancel: "1" }, closest: () => null } });
-    assert.strictEqual(ctx.shadowFormOn(), false, "Cancel closes it again");
-    console.log("ok 7 the form stays one click away");
+    assert.strictEqual(ctx.shadowFormOn(), false, "and a stale door cannot open it");
+    assert.strictEqual(ctx.S.shadowNewOpen, true, "nor close the box");
+    ctx.SETTINGS = { flags: { shadow_form: true } };
+    assert.strictEqual(ctx.shadowFormOn(), true, "only the founder's own flag does");
+    console.log("ok 7 the form door is removed; only flags.shadow_form remains");
   }
 
   console.log("test_shadow_v4_taskchat: all ok");

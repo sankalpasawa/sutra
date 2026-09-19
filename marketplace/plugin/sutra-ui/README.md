@@ -235,26 +235,56 @@ minted lazily the first time work is placed under it.
 | `SUTRA_REPO_ROOT` | the checkout | where governance-log views read from |
 | `SUTRA_APPS_DIR` | `/Applications` | where the `.app` is installed |
 | `SUTRA_SKIP_ELECTRON` | `0` | `1` forces the script-based bundle |
-| `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES` | `0` | `1` lets `acceptEdits` / `bypassPermissions` be selected |
+| `SUTRA_UI_SAFE_PERM_MODES` | `0` | `1` restores the consent gate: `acceptEdits` / `bypassPermissions` clamp to `plan` until acknowledged |
+| `SUTRA_UI_ALLOW_UNSAFE_PERM_MODES` | `0` | `1` opens the write-capable modes when the gate above is engaged (no-op otherwise) |
 | `SUTRA_UI_ALLOW_EDIT` | `0` | `1` lets the Editor pane SAVE. The `.app` reads `~/.sutra-ui/allow-edit` instead |
 
 ### Permission mode: stored vs effective
 
-`plan` is the default and the only mode settable over the API. `acceptEdits` and
-`bypassPermissions` auto-approve the spawned agent, and the settings endpoint is
-unauthenticated by construction (it is a localhost control plane), so they are
-gated **out of band** — the server must be started with
-`SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` before either can be chosen.
+**Setup → Access and permissions defaults to Full access** (`bypassPermissions`)
+and that is what sessions actually start as. All four choices — Read only,
+Edits, Auto, Full access — are settable over the API, and a deliberate
+narrowing is honoured: choose Read only and every session spawns `plan`.
 
-A mode left on file without that opt-in is **not** honoured: it is clamped to
-`plan` at the point of use. The panel therefore reports two values — the stored
-one and the one that will actually run — and says so out loud when they differ.
-Reading only the stored value is how it came to state "nothing will prompt you
-per edit" while sessions were in fact spawning `plan`.
+The panel still reports two values, the stored mode and the one that will
+actually run, because they can differ. What makes them differ is now narrowing,
+not widening:
+
+| Cause | Effective mode |
+|---|---|
+| nothing on file | `bypassPermissions` — the shipped default |
+| an unreadable/unknown value on file | `plan` — the floor, never the default |
+| Shadow autonomy at L0/L1/L2 | `plan` for the worker; the founder's own chats are untouched |
+| `SUTRA_UI_SAFE_PERM_MODES=1` | `plan` until acknowledged (see below) |
+
+#### Restoring the consent gate
+
+Before 2026-09-18 the default was `plan` and the write-capable modes were gated
+out of band: the server had to be started with
+`SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1` before either could be chosen. That gate
+answered one threat — something reaching the unauthenticated local port raising
+the ceiling without the operator agreeing — and it stopped answering it when the
+default itself became `bypassPermissions`, because a process that can rewrite
+`~/.sutra-ui/settings.json` to widen the mode can instead delete it and inherit
+full access from the default. What it reliably still did was show Full access as
+selected while sessions ran `plan`.
+
+It is preserved in full as an **opt-out** for kiosk, demo and shared machines:
 
 ```bash
-SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1 sutra-ui
+SUTRA_UI_SAFE_PERM_MODES=1 sutra-ui                 # gate back on
+SUTRA_UI_SAFE_PERM_MODES=1 SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1 sutra-ui   # ...and pre-authorised
 ```
+
+With the gate engaged, both original ways through it still work: the env var
+above, or clicking through the panel's confirmation (which records an
+acknowledgement that `POST /api/settings` only writes when the caller sends the
+confirmation phrase).
+
+What is **not** affected by any of this: the origin guard on the unauthenticated
+port, `PERMISSION_MODE_FLOOR` (every narrowing path still lands on `plan`), and
+the Shadow autonomy ceiling — a worker the founder's autonomy level says may not
+write is still capped at `plan`.
 
 ### Editing files
 

@@ -117,13 +117,25 @@ class Base(unittest.TestCase):
 
     def unsafe(self, allowed):
         """The gate that decides whether the write-capable modes resolve at
-        all. Driven by the env var, the out-of-band half that needs no
-        consent phrase (same idiom as test_shadow_permission_inherit)."""
+        all. Driven by the env vars, the out-of-band half that needs no
+        consent phrase (same idiom as test_shadow_permission_inherit).
+
+        TAKES TWO VARS SINCE 2026-09-18, because the gate became an OPT-OUT
+        when Full access became the shipped default. `unsafe(False)` has to
+        ENGAGE the clamp (SUTRA_UI_SAFE_PERM_MODES=1) to mean what it has
+        always meant here -- "the write-capable modes do not resolve". Popping
+        the old opt-in alone would now leave them resolving, and every test
+        that asks for the clamped half of a cross product would quietly assert
+        against the unclamped one.
+        """
         if allowed:
             os.environ[providers.UNSAFE_MODES_ENV] = "1"
+            os.environ.pop(providers.CLAMP_MODES_ENV, None)
         else:
             os.environ.pop(providers.UNSAFE_MODES_ENV, None)
+            os.environ[providers.CLAMP_MODES_ENV] = "1"
         self.addCleanup(os.environ.pop, providers.UNSAFE_MODES_ENV, None)
+        self.addCleanup(os.environ.pop, providers.CLAMP_MODES_ENV, None)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -334,7 +346,7 @@ class TestNoWideningSnuckIn(Base):
                                              "L3 must not narrow anything")
                         else:
                             self.assertEqual(
-                                got, providers.DEFAULT_PERMISSION_MODE,
+                                got, providers.PERMISSION_MODE_FLOOR,
                                 "a read-only level must cap the worker at "
                                 "plan")
                         # the one-way rule: an unsafe mode can never come OUT
@@ -383,12 +395,17 @@ class TestNoWideningSnuckIn(Base):
         """The property that makes remembering safe. A stamp taken while
         unsafe modes were allowed must not survive them being turned off --
         so the override goes through effective_permission_mode exactly as the
-        stored setting does."""
+        stored setting does.
+
+        The clamp is engaged explicitly (self.unsafe(False)) because since
+        2026-09-18 it is an opt-out -- "turned off" is now a posture the test
+        has to ask for rather than the ambient state."""
+        self.unsafe(False)
         self.assertFalse(providers.unsafe_modes_allowed(),
                          "this test is meaningless if unsafe modes are on")
         args = app._worker_args(permission_mode="bypassPermissions")
         self.assertEqual(args[args.index("--permission-mode") + 1],
-                         providers.DEFAULT_PERMISSION_MODE,
+                         providers.PERMISSION_MODE_FLOOR,
                          "an unsafe remembered mode must be clamped, not "
                          "handed to the CLI")
 

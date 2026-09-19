@@ -369,6 +369,28 @@ class TestBuildCodexArgs(unittest.TestCase):
         self.assertNotIn("--sandbox", a)
         self.assertFalse(any("approval_policy" in x for x in a))
 
+    def test_the_shipped_default_hands_codex_the_bypass_flag(self):
+        """THE SHARPEST EDGE of the 2026-09-18 default, stated where someone
+        auditing codex will find it.
+
+        Full access on Claude means "do not ask me". On codex it means
+        --dangerously-bypass-approvals-and-sandbox, which does not just skip
+        approval prompts -- it turns OFF codex's own OS-level sandbox, so a
+        codex turn is no longer confined to the workdir. That is a real
+        widening beyond the Claude-side reading of the same word, and it is
+        now what a machine that has never opened the settings screen gets.
+
+        Asserted through providers.DEFAULT_PERMISSION_MODE rather than the
+        literal, so this test tracks the default instead of having to be
+        remembered when it moves. If Full access should NOT imply
+        no-sandbox on codex, this is the test that has to change, and the fix
+        is a codex-specific mapping -- not a quieter default.
+        """
+        a = app.build_codex_args("codex", providers.DEFAULT_PERMISSION_MODE,
+                                 self.WD)
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", a)
+        self.assertNotIn("--sandbox", a)
+
     def test_an_unhonoured_mode_narrows_and_never_widens(self):
         """permission_mode is stored GLOBALLY, so `dontAsk` chosen while Claude
         was selected reaches a Codex pane. Widening on an unrecognised value is

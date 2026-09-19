@@ -7,10 +7,13 @@ WHY THIS EXISTS, measured rather than assumed:
       -> permission_denials: [{'tool_name': 'mcp__sutra__sutra_routines_list'}]
          the MCP server is never called; the agent sees "Cannot call mcp..."
 
-    The panel's DEFAULT mode is `plan` (providers.py DEFAULT_PERMISSION_MODE,
-    app.py PERM_MODE), so without this the whole tool surface is denied 100% of
-    the time in the shipped configuration -- a feature that looks implemented
-    and never runs. `--allowedTools` does NOT fix it: the permission MODE is
+    The panel's default mode was `plan` when this was written, so without
+    this the whole tool surface was denied 100% of the time in the shipped
+    configuration -- a feature that looks implemented and never runs. The
+    shipped default is now Full access (2026-09-18), but this hook is NOT
+    dead: `plan` is still providers.PERMISSION_MODE_FLOOR, which is where
+    every session lands until the unsafe-mode consent gate is acknowledged,
+    and where the Shadow autonomy ceiling puts a worker that may not write. `--allowedTools` does NOT fix it: the permission MODE is
     evaluated before allow rules.
 
     A PreToolUse hook IS evaluated before the mode, so it is the only mechanism

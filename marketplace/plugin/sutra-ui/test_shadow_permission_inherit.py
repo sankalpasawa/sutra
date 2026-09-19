@@ -62,11 +62,25 @@ class Base(unittest.TestCase):
         """The REAL gate: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1, or a recorded
         `unsafe_modes_acknowledged` in settings.json. Driven by the env var
         here because that is the out-of-band half and needs no consent
-        phrase. (READ_ONLY_ENV gates editing_allowed(), a different thing.)"""
+        phrase. (READ_ONLY_ENV gates editing_allowed(), a different thing.)
+
+        SINCE 2026-09-18 the gate is an OPT-OUT, so `unsafe(False)` must
+        ENGAGE it (SUTRA_UI_SAFE_PERM_MODES=1) rather than merely drop the
+        opt-in -- otherwise "unsafe modes off" silently means "on", and the
+        clamped half of every assertion below tests nothing. Both vars are set
+        explicitly rather than popped, because this class asserts an
+        EQUIVALENCE between Shadow and chat: an ambient value inherited from
+        whatever ran before would move both sides together and pass while
+        measuring the wrong posture.
+        """
         if allowed:
             os.environ[providers.UNSAFE_MODES_ENV] = "1"
+            os.environ.pop(providers.CLAMP_MODES_ENV, None)
         else:
             os.environ.pop(providers.UNSAFE_MODES_ENV, None)
+            os.environ[providers.CLAMP_MODES_ENV] = "1"
+        self.addCleanup(os.environ.pop, providers.UNSAFE_MODES_ENV, None)
+        self.addCleanup(os.environ.pop, providers.CLAMP_MODES_ENV, None)
 
     def shadow_mode(self):
         args = app._shadow_args()

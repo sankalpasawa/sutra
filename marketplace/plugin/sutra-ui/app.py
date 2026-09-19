@@ -207,7 +207,14 @@ WORKDIR = os.path.expanduser(os.environ.get("SUTRA_UI_WORKDIR", "~/sutra-ui-work
 # Module-level default, kept for the env-var contract (SAFETY rule 4 /
 # test_perm_mode_default). The live value ws_chat sends is read per-connect
 # from ~/.sutra-ui/settings.json, which falls back to exactly this env var.
-PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE", "plan")
+# It MIRRORS providers.DEFAULT_PERMISSION_MODE rather than restating a literal,
+# so the shipped default has one home; since 2026-09-18 that is
+# `bypassPermissions` (Full access) per founder direction. SAFETY rule 4's
+# protection now rests on the unsafe-mode consent gate plus
+# providers.PERMISSION_MODE_FLOOR, not on this constant being narrow --
+# see test_perm_mode_default.py.
+PERM_MODE = os.environ.get("SUTRA_UI_PERMISSION_MODE",
+                           providers.DEFAULT_PERMISSION_MODE)
 INIT_CMD = os.environ.get("SUTRA_UI_INIT", "/core:start")          # run every fresh session so Sutra fires
 AUTO_CAVEMAN = os.environ.get("SUTRA_UI_AUTO_CAVEMAN", "1") == "1"  # token-saving default (non-Max friendly)
 INIT_DELAY = float(os.environ.get("SUTRA_UI_INIT_DELAY", "3.5"))    # secs to let the TUI boot before typing
@@ -1731,10 +1738,15 @@ def _autonomy_ceiling(mode):
     store, and L3 returns `mode` untouched -- i.e. a broken settings file
     leaves the historical behaviour in place rather than silently freezing
     every worker into read-only.
+
+    THE FLOOR IS PERMISSION_MODE_FLOOR, NOT DEFAULT_PERMISSION_MODE. Those were
+    the same constant until the shipped default became `bypassPermissions`
+    (2026-09-18); returning the default here would have made a worker the
+    founder's autonomy level says MAY NOT WRITE come back with full access.
     """
     if _mission_engine.worker_may_write():
         return mode
-    return providers.DEFAULT_PERMISSION_MODE       # "plan"
+    return providers.PERMISSION_MODE_FLOOR         # "plan"
 
 
 def worker_permission_mode():
@@ -2377,6 +2389,14 @@ async def _delegate_spawn(mission):
     BEFORE the spawn, because a spawn that dies still leaves a worker session
     on disk that a later boot may re-adopt, and best-effort because losing
     the stamp costs the re-adopted mode, never the spawn.
+
+    `on_first_turn` IS WHERE TURN 1 GETS ITS NUMBER. The spawner waits out the
+    whole first agentic turn and run_mission's `briefed` branch then skips the
+    say-and-wait block that stamps `turn_open`, so turn 1 is the one turn the
+    loop never names -- the card read "turn 0 of 25" for the whole of it while
+    turns 2..n were right. mission_engine.open_first_turn is that missing
+    stamp and this is its ONLY production caller: without the argument the
+    field is never written outside the loop and the bug is exactly as it was.
     """
     try:
         store = _mission_engine.MissionStore()
@@ -2391,10 +2411,23 @@ async def _delegate_spawn(mission):
     # or Now-chat manifest) is sent as it is.
     if not mission.get("manifest"):
         mission = await _compose_brief(mission)
+    mid = mission.get("id")
+
+    def _name_the_first_turn():
+        """Fired from the spawner's adoption hook -- the first frame that
+        carries a session id, which is the instant the worker's turn 1 starts
+        painting. open_first_turn swallows its own trouble and never lowers a
+        count; a mission with no id (a bare fixture) simply has nothing to
+        stamp."""
+        if mid:
+            _mission_engine.open_first_turn(
+                _mission_engine.MissionStore(), mid)
+
     return await shadow_runner.spawn_delegate_session(
         _worker_args, _shadow_workdir_for_delegates(),
         _delegate_manifest(mission), register_runtime,
-        publish=_publish_delegate_chat(mission))
+        publish=_publish_delegate_chat(mission),
+        on_first_turn=_name_the_first_turn)
 
 
 async def _default_delegate_spawner(mission):

@@ -2286,6 +2286,11 @@
 .ssbehaves-text:focus{outline:none;border-color:var(--acc)}
 .ssbehaves-note{min-height:16px;margin-top:6px}
 /* v4: the task chat that opens on + Delegate -- one thread, one composer */
+/* The host + Delegate mounts into. It stands exactly where .shnewchat used
+   to stand as a direct child of .shwright, so it has to carry that child's
+   box: same flex grow, same min-height:0, same column. Anything else and the
+   panel loses the height it used to take directly. */
+.shnewhost{display:flex;flex-direction:column;flex:1;min-height:0}
 .shnewchat{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0}
 .shnewchat .shthread{flex:0 1 auto}
 /* autonomy: four equal levels in one rounded well, the selected one filled
@@ -3500,9 +3505,6 @@
 .shcard2{border:1px solid var(--acc);border-radius:var(--r);
   background:var(--sepia);padding:13px 14px}
 .shcard2head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-.shcard2tag{font:600 9px/1 var(--mono);letter-spacing:.07em;
-  text-transform:uppercase;color:var(--acc);background:var(--acc-bg);
-  border-radius:5px;padding:4px 7px;flex:none}
 .shcard2obj{flex:1;min-width:0;font-size:13.5px;font-weight:600}
 .shcard2row{display:flex;gap:12px;font-size:12.5px;padding:3px 0}
 .shcard2k{flex:0 0 78px;color:var(--muted)}
@@ -3763,7 +3765,6 @@
 /* ── task card: a brief, not a modal ────────────────────────────────────── */
 .shcard2{padding:11px 12px;border-color:var(--line);background:var(--sepia)}
 .shcard2head{gap:8px;margin-bottom:7px}
-.shcard2tag{font-size:8px;padding:3px 6px}
 .shcard2obj{font-size:13px}
 .shcard2row{font-size:12px;padding:2px 0;gap:10px}
 .shcard2stamp{font-size:11px}

@@ -390,6 +390,47 @@ class TestSpawnDelegateSession(unittest.TestCase):
         self.assertNotIn("plan mode", rows[0]["summary"],
                          "the ledger must not claim a mode it no longer sets")
 
+    def test_10b_the_turn_is_named_at_FIRST_CONTACT_not_at_return(self):
+        """`on_first_turn` fires from the adoption hook, not on the way out.
+
+        THE POINT OF THE HOOK (founder, 2026-09-18). The spawn sends the
+        manifest and waits out the WHOLE first agentic turn, so a mission
+        that names turn 1 only when this coroutine returns leaves the card
+        reading "0 of 25" for the longest turn it will ever run -- and one
+        that names it before the spawn claims a turn while no worker exists.
+        The frame that carries the session id is the moment in between: a
+        worker is there and its first turn is painting.
+
+        A HOOK THAT RAISES IS NOT A FAILED SPAWN, asserted in the second
+        half -- every other line in that adoption block is best-effort for
+        the same reason.
+        """
+        build_args = self._build_args(self.fake)
+        order = []
+
+        async def go(hook):
+            sid = await shadow_runner.spawn_delegate_session(
+                build_args, self.tmp, "manifest", self._register,
+                on_first_turn=hook)
+            order.append("spawn_returned")
+            rt = self.registered[-1][1]
+            proc = rt.proc
+            rt.kill_group()
+            await _reap(proc)
+            return sid
+
+        sid = asyncio.run(go(lambda: order.append("first_contact")))
+        self.assertTrue(sid.startswith("delegate-fake-"), sid)
+        self.assertEqual(order, ["first_contact", "spawn_returned"],
+                         "the turn is named while the spawn is still working")
+
+        def boom():
+            raise RuntimeError("the store was unreadable")
+
+        sid2 = asyncio.run(go(boom))
+        self.assertTrue(sid2.startswith("delegate-fake-"),
+                        "a hook that raises must never fail the spawn")
+
     def test_11_a_child_that_never_results_raises_and_leaks_nothing(self):
         build_args = self._build_args(self.dead)
         _RecordingRuntime.procs = []

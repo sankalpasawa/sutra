@@ -2947,17 +2947,47 @@ function shadowTaskCardHtml(m){
      field existed keeps the row it has always had. */
   const finished = !!m.completion;
   /* target_mode + target_session ARE the answer to "where does this run"; no
-     second source and nothing inferred. */
+     second source and nothing inferred.
+
+     EXCEPT THAT "WHEN YOU BEGIN" WAS A LIE FOR THE WHOLE OF PROVISIONING
+     (founder, 2026-09-19: "we're having to hot start the task again, we
+     shouldn't need to do that"). Enter on + Delegate creates AND starts --
+     measured on this machine, every mission since 2026-09-18 carries
+     start_requested_at equal to created_at, so the start is always taken in
+     the same second. What the founder then landed on was this line, which
+     is drawn from target_session alone and therefore said "a new chat Shadow
+     starts WHEN YOU BEGIN" for the entire gap before the delegate exists.
+
+     THAT GAP IS NOT SHORT. m-223632491565: created 02:52:07, criteria
+     written 02:52:27, session spawned and chat published 02:52:52 -- 45
+     seconds of a card instructing the founder to begin a task Shadow had
+     already begun. Told to begin it, they look for the way to begin it.
+
+     shadowMissionStarting() is the EXISTING predicate for exactly this
+     window -- the same one that takes Start away and draws the QUEUED face
+     -- so no new state, no new flag, and nothing is inferred from whether a
+     chat exists. The moment target_session lands, the line below is the
+     chat's name, unchanged. */
+  const starting = (typeof shadowMissionStarting === "function")
+    && shadowMissionStarting(m);
   const acts = m.target_mode === "new"
     ? (m.target_session
         ? `its own chat · ${esc(shadowChatLabel(m.target_session))}`
-        : "a new chat Shadow starts when you begin")
+        : (starting ? "a new chat — Shadow is starting it now"
+                    : "a new chat Shadow starts when you begin"))
     : (m.target_session
         ? esc(shadowChatLabel(m.target_session))
         : "an existing chat");
+  /* THE KIND TAG IS GONE (founder, 2026-09-19). It printed `m.template` --
+     and since the v5 one-box Delegate never asks for a kind, every task the
+     founder creates carries the default offer, so the tag was the same word
+     on every card. A constant is not information; it was nine pixels of
+     mono-caps saying "fix" beside a title that already said what the work
+     was. The FIELD is untouched: create() still stamps a template, the
+     engine still budgets and constrains by it, and Settings still edits it
+     per kind -- only the badge that quoted it here came off. */
   return `<div class="shcard2" data-shtaskcard="${escAttr(m.id)}">
     <div class="shcard2head">
-      <span class="shcard2tag">${esc(m.template || "task")}</span>
       <span class="shcard2obj">${esc(m.objective || "")}</span>
       ${shadowTaskPillHtml(f)}
     </div>
@@ -3159,19 +3189,34 @@ function shadowDelegatePanelHtml(){
   </div>`;
 }
 
-/* ── v4: STARTING A TASK IS A CONVERSATION (SHADOW-V3 v3.4, ADR-043) ──────
-   + Delegate opens an EMPTY task chat: one line from the founder, Enter, and
-   the task's own Shadow chat answers with a draft card (objective, kind,
-   done when; READY). Keep talking and the card follows; Start is the
-   founder's. No form, no kind chips, no done-when field.
+/* ── v5: THE LINE IS THE TASK (founder, 2026-09-18) ───────────────────────
+   + Delegate opens ONE box, "What do you have in mind?", and that is the
+   whole of it. The line the founder types IS the objective -- the same
+   thing the form called "The outcome you want" -- and Enter is the same
+   press "Create the task" always was: one create, one start, the delegate
+   spawns. No second step, nothing to confirm, no draft to approve.
 
-   THE FORM IS NOT DELETED. shadowDelegatePanelHtml and shadowCreateTask are
-   untouched and still the way in when `flags.shadow_form` is true in the
-   founder's settings -- opt-in, off by default. */
+   WHAT WENT, AND WHY (founder, 2026-09-18). The door under the box ("Use
+   the form instead") is gone: one way in cannot drift from itself, and two
+   doors onto two different create paths is how they drift. Done-when is
+   gone with it and is not asked for anywhere on this surface -- a task with
+   no machine checks is exactly what the form produced whenever that
+   optional field was left empty, which is what it nearly always was, and
+   the founder still signs off on the result the same way.
+
+   NOTHING ABOUT CREATING IS RE-IMPLEMENTED. shadowNewTalk hands the line
+   to shadowCreateTask -- the one writer of POST /api/shadow/missions
+   followed by the existing shadowMissionAct(id, "start_now") -- so this box
+   and the (flag-only) form cannot disagree about what a task is or how it
+   starts, and the start keeps every guard it already had.
+
+   THE FORM IS NOT DELETED. shadowDelegatePanelHtml and its Create button
+   are untouched and still the way in when `flags.shadow_form` is true in
+   the founder's settings -- opt-in, off by default, and no longer reachable
+   by a click from this box. */
 function shadowFormOn(){
-  /* the chat is the default; the form stays one click away (the door under
-     the chat box) or on for good with flags.shadow_form -- nothing removed */
-  if (typeof S !== "undefined" && S && S.shadowFormWant) return true;
+  /* the box is the way in; the form is the founder's own settings flag and
+     nothing in the UI turns it on -- the door that used to is removed */
   return typeof SETTINGS !== "undefined" && !!SETTINGS && !!SETTINGS.flags
     && SETTINGS.flags.shadow_form === true;
 }
@@ -3179,8 +3224,189 @@ function shadowFormOn(){
 function shadowNewChat(){
   const S_ = (typeof S !== "undefined") ? S : {};
   if (!S_.shadowNewChat)
-    S_.shadowNewChat = { mission: null, thread: [], busy: false, err: null, text: "" };
+    S_.shadowNewChat = { thread: [], busy: false, err: null, text: "" };
   return S_.shadowNewChat;
+}
+
+/* -- THE + Delegate COMPOSE PANEL IS MOUNTED, NOT RE-RENDERED ------------
+   FOUNDER, 2026-09-18: "when we are typing, it goes out of focus, and you
+   have to put the cursor in again" -- and then, on the fix: it has to live at
+   the re-render source, with no setTimeout, no autoFocus and no programmatic
+   refocus left anywhere in the path that types into this box.
+
+   WHAT WAS DESTROYING IT. render() rebuilds two things wholesale:
+   `panesEl.innerHTML = panesHtml` and `scBody.innerHTML = html`. #scBody is
+   inside #panes, so either one recreates every node on the screen. The
+   textarea the founder was typing into is a NEW node afterwards, and the old
+   one was blurred the instant it left the document -- so the next keystroke
+   goes nowhere.
+
+   WHY IT HAD TO BE THE NODE, not a restore. Measured in Chrome 153: an
+   innerHTML swap, a detach-and-graft-back, and a plain within-document move
+   ALL drop focus to <body>. Only never removing the node keeps the caret
+   without touching it afterwards, which is the requirement.
+
+   HOW. The screen's markup carries an EMPTY host, [data-shnewhost], where the
+   panel used to be inlined. shadowMountNewTalk() builds the panel into that
+   host once. From then on -- while the panel is open, on this screen only --
+   both wholesale swaps are replaced by shadowPatchInto(), which leaves any
+   subtree it did not need to change alone and refuses outright to touch
+   #scBody, the host, or the textarea. The textarea is therefore the SAME
+   NODE for the whole life of the panel, and nothing anywhere re-places the
+   cursor: the browser simply never took it away.
+
+   THE BLAST RADIUS IS ONE SCREEN WITH ONE PANEL OPEN. shadowPanelMounted()
+   is false for every other screen, and false on this one the moment
+   + Delegate is shut, and both call sites fall straight back to the original
+   innerHTML line. */
+
+/* The three nodes the patch may never replace, remove, or write into.
+   #scBody is here because panesHtml renders it EMPTY -- its contents are the
+   screen pass's business, and letting the panes pass see "empty" as a change
+   would delete the screen under the panel. */
+function shadowKeepNode(el){
+  if (!el || el.nodeType !== 1) return false;
+  if (el.id === "scBody") return true;
+  const d = el.dataset || {};
+  return d.shnewhost !== undefined || d.shnewtalk !== undefined;
+}
+
+/* does this subtree CONTAIN something that must be kept? if so it may be
+   recursed into, but never replaced wholesale */
+function shadowHoldsKeep(el){
+  if (!el || el.nodeType !== 1) return false;
+  if (shadowKeepNode(el)) return true;
+  if (!el.querySelector) return false;
+  return !!el.querySelector("#scBody,[data-shnewhost],[data-shnewtalk]");
+}
+
+function shadowSyncAttrs(o, n){
+  const want = {};
+  const na = n.attributes || [];
+  for (let i = 0; i < na.length; i++){
+    want[na[i].name] = 1;
+    if (o.getAttribute(na[i].name) !== na[i].value)
+      o.setAttribute(na[i].name, na[i].value);
+  }
+  const oa = o.attributes || [];
+  for (let i = oa.length - 1; i >= 0; i--)
+    if (!want[oa[i].name]) o.removeAttribute(oa[i].name);
+}
+
+/* THE ONE THING THAT IS ALLOWED TO KILL THE BOX, and it is not churn.
+   Set for the duration of one patch pass by shadowPatchInto: true while the
+   INCOMING markup still asks for a keep node, false when it has stopped --
+   and "it has stopped" is the only honest reading of + Delegate being shut.
+
+   Why it had to become explicit. The first cut used position as the proxy:
+   a slot the new markup no longer had was taken to mean the panel was over,
+   so the subtree in it was removed keep-node and all. But a slot can also go
+   away, or change tag, or shift index, because something ELSE on the screen
+   moved -- a task arriving in the list, an error line appearing, a pill the
+   header grew. Read positionally, every one of those is indistinguishable
+   from a close, and each one would have taken the founder's cursor with it.
+   Read from the markup, none of them is: the html still carries a host, so
+   the panel still exists, so the node stays. */
+let shPatchWantsKeep = true;
+
+function shadowPatchNode(o, n, parent){
+  if (shadowKeepNode(o)) return;              /* never touched, ever */
+  if (o.nodeType !== n.nodeType
+      || (o.nodeType === 1 && o.tagName !== n.tagName)){
+    /* the slot changed SHAPE around something that must not die. Leave the
+       old subtree exactly as it is: one pass of stale markup around a live
+       cursor costs nothing, and the pass after the panel closes replaces it
+       the ordinary way. */
+    if (shPatchWantsKeep && shadowHoldsKeep(o)) return;
+    parent.replaceChild(n.cloneNode(true), o);
+    return;
+  }
+  if (o.nodeType !== 1){
+    if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue;
+    return;
+  }
+  if (o.outerHTML === n.outerHTML) return;    /* unchanged: leave it alone */
+  if (!shadowHoldsKeep(o)){
+    /* exactly what the innerHTML swap did to this subtree, and no more */
+    parent.replaceChild(n.cloneNode(true), o);
+    return;
+  }
+  shadowSyncAttrs(o, n);
+  shadowPatchChildren(o, n);
+}
+
+function shadowPatchChildren(o, n){
+  const a = [], b = [];
+  for (let i = 0; i < o.childNodes.length; i++) a.push(o.childNodes[i]);
+  for (let i = 0; i < n.childNodes.length; i++) b.push(n.childNodes[i]);
+  /* a slot that genuinely went away takes whatever was in it -- but ONLY
+     when the incoming markup has stopped asking for the box (+ Delegate
+     shut). A list that got shorter for any other reason is churn, and churn
+     does not get to remove the node the founder is typing into. */
+  for (let i = a.length - 1; i >= b.length; i--){
+    if (shPatchWantsKeep && shadowHoldsKeep(a[i])) continue;
+    o.removeChild(a[i]);
+  }
+  for (let i = 0; i < b.length; i++){
+    if (i < a.length) shadowPatchNode(a[i], b[i], o);
+    else o.appendChild(b[i].cloneNode(true));
+  }
+}
+
+/* Reconcile host's children against html. Returns true when it handled the
+   write, so the caller can fall back to innerHTML if it did not. */
+function shadowPatchInto(host, html){
+  if (!host || typeof document === "undefined" || !document.createElement)
+    return false;
+  const tpl = document.createElement("div");
+  tpl.innerHTML = html;
+  /* ask the INCOMING markup, once, whether the box still belongs on screen --
+     see shPatchWantsKeep. Nested patches restore the outer answer, so a mount
+     pass inside a screen pass cannot leave the flag wrong for the caller. */
+  const prev = shPatchWantsKeep;
+  shPatchWantsKeep = !!(tpl.querySelector
+    && tpl.querySelector("#scBody,[data-shnewhost],[data-shnewtalk]"));
+  try { shadowPatchChildren(host, tpl); }
+  finally { shPatchWantsKeep = prev; }
+  return true;
+}
+
+/* Is the panel actually in the document right now? The textarea's presence
+   is the test, not S alone: on the render that OPENS + Delegate the host is
+   still empty, so that pass takes the ordinary innerHTML path and the mount
+   below fills it. Nothing is focused yet at that point. */
+function shadowPanelMounted(){
+  if (typeof document === "undefined" || !document.querySelector) return false;
+  if (typeof S === "undefined" || !S || S.screen !== "shadow") return false;
+  if (!S.shadowNewOpen) return false;
+  if (typeof shadowFormOn === "function" && shadowFormOn()) return false;
+  return !!document.querySelector("[data-shnewtalk]");
+}
+
+/* Build once, then update in place. The textarea is a keep-node, so the
+   value, the selection and the focus the browser is holding are never
+   written by a render -- the DOM node is the draft. */
+/* THE HOST THAT ALREADY HOLDS THE BOX WINS. Protecting a subtree whose shape
+   changed (see shPatchWantsKeep) can leave a second, EMPTY host cloned in
+   beside the live one for a pass. Plain document order would then hand the
+   mount whichever came first, and an empty host means "build it" -- a second
+   textarea, and the founder's caret stranded in the first. Asking for the
+   host that contains a box makes that unreachable: while one exists it is the
+   only host this function will ever write to. */
+function shadowNewTalkHost(){
+  if (typeof document === "undefined" || !document.querySelector) return null;
+  const box = document.querySelector("[data-shnewhost] [data-shnewtalk]");
+  const held = (box && box.closest) ? box.closest("[data-shnewhost]") : null;
+  return held || document.querySelector("[data-shnewhost]");
+}
+
+function shadowMountNewTalk(){
+  if (typeof document === "undefined" || !document.querySelector) return;
+  const host = shadowNewTalkHost();
+  if (!host) return;
+  const html = shadowNewTaskChatHtml();
+  if (!host.firstChild){ host.innerHTML = html; return; }   /* mounted once */
+  shadowPatchInto(host, html);
 }
 
 function shadowNewTaskChatHtml(){
@@ -3191,7 +3417,6 @@ function shadowNewTaskChatHtml(){
   ).join("");
   return `<div class="shnewchat" data-shnewchat="1">
     ${rows ? `<div class="shthread">${rows}</div>` : ""}
-    ${c.mission ? shadowTaskCardHtml(c.mission) : ""}
     <div class="shwcomp"><div class="shcompwrap">
       <textarea class="shcompose" data-shnewtalk="1" rows="2"
         placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
@@ -3199,15 +3424,20 @@ function shadowNewTaskChatHtml(){
         aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
     </div></div>
     ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
-    <div class="shnewdoor"><button class="btn" type="button"
-      data-shformdoor="1">Use the form instead</button></div>
   </div>`;
 }
 
-/* One line to the task's Shadow chat. The first line opens the draft
-   (POST /api/shadow/tasks); every later line talks to that task
-   (POST /api/shadow/tasks/{id}/chat). The reply is Shadow's prose; the
-   draft card is the server's record, never a local guess. */
+/* THE ONE LINE, AND WHAT IT DOES. The founder's line becomes the objective
+   of a new task and the task STARTS -- the identical create-then-start
+   shadowCreateTask has always run for the form's button, called here with
+   the draft's default kind and no done-when. Everything that press did the
+   founder still gets: the panel closes, the new task takes focus, and the
+   brief that appears is a brief of work already under way.
+
+   THE LINE IS NEVER LOST. It goes into the thread before the request and
+   stays there if the create fails, with the reason under it -- so a failed
+   create leaves the founder something to read and a box to type into again,
+   never a cleared field and no explanation. */
 async function shadowNewTalk(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return null;
   const c = shadowNewChat();
@@ -3216,26 +3446,26 @@ async function shadowNewTalk(){
   c.thread.push({ who: "founder", ts: Date.now(), text });
   c.text = ""; c.busy = true; c.err = null;
   if (typeof scheduleRender === "function") scheduleRender();
-  let r = null;
-  try {
-    r = c.mission
-      ? await shadowPost("/api/shadow/tasks/" + encodeURIComponent(c.mission.id) + "/chat",
-                         { message: text })
-      : await shadowPost("/api/shadow/tasks", { message: text });
-  } catch (e){ r = null; }
-  let body = null;
-  try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
+  /* the draft IS the form's draft -- same objective field, same kind
+     default, done-when deliberately empty -- so one writer serves both */
+  const d = shadowNewDraft();
+  d.objective = text;
+  d.done = "";
+  let m = null;
+  try { m = (typeof shadowCreateTask === "function") ? await shadowCreateTask() : null; }
+  catch (e){ m = null; }
   c.busy = false;
-  if (!body){
-    c.err = r ? "Shadow could not take that (" + r.status + ")."
-              : "Could not reach Shadow.";
+  if (!m){
+    c.err = S.shadowNewErr || "Could not reach Shadow.";
+    /* the panel must stay open to say so: shadowCreateTask only closes it
+       on a create that landed, but be explicit rather than rely on that */
+    S.shadowNewOpen = true;
   } else {
-    if (body.mission) c.mission = body.mission;
-    if (body.reply) c.thread.push({ who: "shadow", ts: Date.now(), text: body.reply });
-    if (typeof loadShadowHome === "function") loadShadowHome(true);
+    /* it landed, it started, and the task pane has it: this chat is done */
+    S.shadowNewChat = null;
   }
   if (typeof scheduleRender === "function") scheduleRender();
-  return body;
+  return m;
 }
 
 function shadowGoalsBy(state){
@@ -3587,7 +3817,8 @@ function shadowHomeHtml(){
         </div>
       </header>
       ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
-                                  : shadowNewTaskChatHtml())
+                                  : `<div class="shnewhost"
+                                       data-shnewhost="1"></div>`)
                 : (sel ? shadowTaskCardHtml(sel) : "")}
       ${/* ── ONE SCROLLER, AND IT IS THE CONVERSATION (founder, 2026-09-18)
            THE PROBLEM. `.pb` (#scBody) scrolls the whole screen, so reading
@@ -4909,20 +5140,22 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    if (d.shnewsend){ shadowNewTalk(); return; }
+    if (d.shnewsend){
+      /* the arrow and Enter must read and clear the same node -- see the
+         keydown handler for why the node, not the store, is the draft */
+      const box = (typeof document !== "undefined" && document.querySelector)
+        ? document.querySelector("[data-shnewtalk]") : null;
+      if (box){ shadowNewChat().text = box.value; box.value = ""; }
+      shadowNewTalk();
+      return;
+    }
     /* Talk to Shadow: the founder's conversation with THIS task. Opening and
        closing is local state only -- no request, nothing paused, and the
        worker is not told. Re-opening reads the record again, so the history
        comes back from the transcript rather than from the browser. */
 
-    if (d.shformdoor){
-      if (typeof S !== "undefined") S.shadowFormWant = true;
-      if (typeof scheduleRender === "function") scheduleRender();
-      return;
-    }
     if (d.shnewcancel){
-      if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null;
-                                     S.shadowFormWant = false; }
+      if (typeof S !== "undefined"){ S.shadowNewOpen = false; S.shadowNewErr = null; }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
@@ -5142,17 +5375,11 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shact && d.shmid)
       return shadowMissionAct(d.shmid, d.shact,
         d.shact === "approve" && d.shapproval ? { approval_id: d.shapproval } : undefined);
-    if (d.shstart){
-      /* v4: Start on the draft the task chat just wrote closes that chat and
-         puts the task in focus; the start itself is the existing action */
-      const c = (typeof S !== "undefined") ? S.shadowNewChat : null;
-      if (c && c.mission && c.mission.id === d.shstart){
-        S.shadowNewOpen = false;
-        S.shadowTaskSel = d.shstart;
-        S.shadowNewChat = null;
-      }
-      return shadowMissionAct(d.shstart, "start_now");
-    }
+    /* v5: Start is only ever the existing mission action now. The
+       special case that used to sit here closed the task chat when the
+       founder started the draft that chat had written -- and the box no
+       longer writes a draft to start: it creates and starts in one press. */
+    if (d.shstart) return shadowMissionAct(d.shstart, "start_now");
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
     if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
     if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
@@ -5288,6 +5515,11 @@ if (typeof document !== "undefined" && document.addEventListener){
         && ev.target.dataset.shnewtalk){
       ev.preventDefault && ev.preventDefault();
       shadowNewChat().text = ev.target.value;
+      /* THE NODE IS THE DRAFT NOW. It is mounted and no render rewrites it,
+         so emptying the store is not enough -- the send has to empty the box
+         itself, exactly as the founder pressing Enter expects. This places no
+         cursor and moves no focus; it is the submit clearing its own field. */
+      ev.target.value = "";
       shadowNewTalk();
       return;
     }
@@ -5518,6 +5750,39 @@ async function shadowCreateTask(){
   S.shadowNew = { objective: "", done: "", kind: "fix" };
   S.shadowNewOpen = false;
   S.shadowTaskSel = m.id;
+  /* ── THE NEXT VIEW MUST BE THIS TASK, NOT WHICHEVER ONE THE FALLBACK PICKS
+     (founder, 2026-09-19) ────────────────────────────────────────────────
+     S.shadowTaskSel now names a mission the LIST has never heard of: the
+     create answered, but S.shadowMissions is whatever the last read left
+     behind. shadowSelectedTask() looks its pick up in exactly that array,
+     misses, and falls through to its ranking — whose FIRST rule is "the
+     first startable task", i.e. a brief_confirm row with no start stamp.
+     So the view Enter lands on was another task's brief, with another
+     task's "Start the task" button on it, and pressing that is a manual
+     start step in the next view. Measured with the panel driven headless:
+     one running task plus one old unstarted brief, Enter on a new task,
+     and the pane drew the OLD brief with Start.
+
+     SEEDING IS NOT A LOCAL STATE MACHINE. The record put in is the one the
+     server just sent back, unmodified but for the stamp below, and the
+     forced read at the end of this function replaces the whole array with
+     the server's answer. It closes the gap between the two; it does not
+     become a second source of truth.
+
+     THE STAMP GOES ON WITH IT, and that is the point rather than a detail.
+     The record from create is brief_confirm with no start_requested_at,
+     which is precisely the shape that draws "Start the task" — so seeding
+     it raw would put the button the founder is complaining about onto the
+     NEW card too, for the length of the start round-trip. This function is
+     committed to starting it in the same breath, so the row says so; if
+     that start does not land, the stamp comes off below and Start is
+     offered honestly. */
+  const seedRow = Object.assign({}, m,
+    { start_requested_at: m.start_requested_at || new Date().toISOString() });
+  if (!Array.isArray(S.shadowMissions)) S.shadowMissions = [];
+  if (!S.shadowMissions.some(x => x && x.id === m.id))
+    S.shadowMissions = S.shadowMissions.concat([seedRow]);
+  if (typeof scheduleRender === "function") scheduleRender();
   /* THE EXISTING START, on the mission that was just created. Awaited before
      the panel lets go of `busy`, so the create button cannot be pressed a
      second time while the start is still in the air. shadowMissionAct does
@@ -5530,8 +5795,18 @@ async function shadowCreateTask(){
     catch (e){ started = null; }
   }
   S.shadowNewBusy = false;
-  if (!started && typeof showNudge === "function")
-    showNudge("Task created, but it did not start — press Start on the brief.");
+  if (!started){
+    /* the start did NOT land, so the seeded row must stop claiming it did:
+       the nudge sends the founder to a Start button, and that button has to
+       be there. The forced read below normally corrects this on its own --
+       the server never stamped either -- but a read that fails must not
+       leave a row that hides the only action left on it. */
+    S.shadowMissions = (S.shadowMissions || []).map(x =>
+      (x && x.id === m.id) ? Object.assign({}, x, { start_requested_at: null })
+                           : x);
+    if (typeof showNudge === "function")
+      showNudge("Task created, but it did not start — press Start on the brief.");
+  }
   if (typeof loadShadowHome === "function") await loadShadowHome(true);
   if (typeof scheduleRender === "function") scheduleRender();
   return m;

@@ -358,6 +358,15 @@ class TheInFlightTurnIsOnTheRecord(Base):
     # WHOLE first agentic turn, and run_mission's `briefed` branch then
     # skips the say-and-wait block that carries `turn_open` -- so the one
     # turn nothing ever named was turn 1, the longest one of the mission.
+    #
+    # AND THE OTHER EDGE, ruled the same day: the stamp must NOT land before
+    # the worker exists. provision_target once wrote it on the line above
+    # `await spawner(m)`, which put "turn 1 of 25" on the card across the
+    # criteria call and the process boot, while nothing was running. Zero is
+    # the honest reading there. The spawner now names the turn at FIRST
+    # CONTACT, through mission_engine.open_first_turn, and these two tests
+    # are the two halves of that: still zero while the spawn is only
+    # starting, one from the frame the worker actually paints.
 
     def _new_mission(self):
         m = self.store.create("Ship the thing.", "feature",
@@ -366,13 +375,17 @@ class TheInFlightTurnIsOnTheRecord(Base):
         self.store.transition(m["id"], "running", "t")
         return m["id"]
 
-    def test_turn_1_is_named_WHILE_THE_SPAWNER_IS_STILL_WORKING(self):
+    def test_the_card_stays_at_ZERO_until_the_worker_is_there(self):
+        """The engine names NOTHING on the way into the spawn.
+
+        Between admission and first contact there is no worker and nothing
+        painting, and the founder's ruling is that the card reads 0 for that
+        whole stretch. Read from the STORE, which is what a card renders.
+        """
         mid = self._new_mission()
         seen = {}
 
         async def spawner(m):
-            # read the STORE, not the dict handed in: this is what the card
-            # would render at that instant
             cur = self.store.load(mid)
             seen["turn_open"] = cur.get("turn_open")
             seen["turns_used"] = cur.get("turns_used")
@@ -381,8 +394,50 @@ class TheInFlightTurnIsOnTheRecord(Base):
         eng = mission_engine.MissionEngine(self.store, None, None, None)
         run(eng.provision_target(mid, spawner))
         self.assertEqual(seen["turns_used"], 0, "no turn has FINISHED yet")
+        self.assertIsNone(seen["turn_open"],
+                          "no worker exists yet -- the card must read 0")
+
+    def test_FIRST_CONTACT_names_turn_1_while_the_spawn_is_still_working(self):
+        """...and the moment the worker paints, the turn has its number.
+
+        The real hook is shadow_runner.spawn_delegate_session's `_adopt`,
+        which fires on the first frame carrying a session id; here the fake
+        spawner calls the same one-line writer that hook calls.
+        """
+        mid = self._new_mission()
+        seen = {}
+
+        async def spawner(m):
+            mission_engine.open_first_turn(self.store, mid)   # first contact
+            cur = self.store.load(mid)
+            seen["turn_open"] = cur.get("turn_open")
+            seen["turns_used"] = cur.get("turns_used")
+            return "sess-live"
+
+        eng = mission_engine.MissionEngine(self.store, None, None, None)
+        run(eng.provision_target(mid, spawner))
+        self.assertEqual(seen["turns_used"], 0, "still no FINISHED turn")
         self.assertEqual(seen["turn_open"], 1,
-                         "turn 1 is the turn the worker is being spawned on")
+                         "turn 1 is the turn the worker has just begun")
+        self.assertEqual(self.store.load(mid).get("turn_open"), 1,
+                         "and it survives the rest of provision_target")
+
+    def test_open_first_turn_never_lowers_and_never_raises(self):
+        """A re-adopted or retried spawn must not walk the count backwards,
+        and a terminal mission must not acquire a turn at all."""
+        mid = self._new_mission()
+        m = self.store.load(mid)
+        m["turns_used"], m["turn_open"] = 4, 5
+        self.store.save(m)
+        mission_engine.open_first_turn(self.store, mid)
+        self.assertEqual(self.store.load(mid).get("turn_open"), 5,
+                         "a higher open turn stands")
+        self.store.transition(mid, "stopped", "t")
+        mission_engine.open_first_turn(self.store, mid)
+        self.assertEqual(self.store.load(mid).get("turn_open"), 5,
+                         "a terminal mission is left alone")
+        self.assertIsNone(mission_engine.open_first_turn(self.store, "m-nope"),
+                          "an unknown mission is a no-op, not a crash")
 
     def test_the_briefed_loop_clears_it_when_that_turn_lands(self):
         """The spawn stamp and the loop's own stamp are ONE field: the
@@ -391,6 +446,7 @@ class TheInFlightTurnIsOnTheRecord(Base):
         mid = self._new_mission()
 
         async def spawner(m):
+            mission_engine.open_first_turn(self.store, mid)
             return "sess-live"
 
         run(mission_engine.MissionEngine(
@@ -409,6 +465,8 @@ class TheInFlightTurnIsOnTheRecord(Base):
         mid = self._new_mission()
 
         async def spawner(m):
+            # first contact happened -- the boot check is what fails
+            mission_engine.open_first_turn(self.store, mid)
             raise RuntimeError("no runtime")
 
         eng = mission_engine.MissionEngine(self.store, None, None, None)
@@ -430,6 +488,7 @@ class TheInFlightTurnIsOnTheRecord(Base):
         self.store.save(m)
 
         async def spawner(m2):
+            mission_engine.open_first_turn(self.store, mid)
             return "sess-live"
 
         run(mission_engine.MissionEngine(

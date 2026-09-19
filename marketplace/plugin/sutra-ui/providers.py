@@ -350,50 +350,100 @@ SETTINGS_PATH = Path(os.path.expanduser(
 # without that channel `manual` behaves as the CLI's own default handling.
 PERMISSION_MODES = ("plan", "acceptEdits", "bypassPermissions",
                     "auto", "manual", "dontAsk")
-DEFAULT_PERMISSION_MODE = "plan"
+
+# WHAT A MACHINE THAT HAS NEVER CHOSEN GETS. Founder direction 2026-09-18:
+# Setup -> Access and permissions defaults to Full access, not Read only.
+# This is the value the settings screen shows selected on a fresh install and
+# the value a session spawns under when settings.json carries no mode.
+#
+# AND IT RUNS, rather than being stored and then clamped away. The unsafe-mode
+# gate below is an OPT-OUT since the same direction (CLAMP_MODES_ENV): a
+# default that the screen shows as selected while sessions actually start as
+# `plan` is the Read only the founder asked to be rid of, only harder to see.
+# An operator who wants the old posture sets SUTRA_UI_SAFE_PERM_MODES=1 and
+# gets the consent gate back exactly as it was.
+DEFAULT_PERMISSION_MODE = "bypassPermissions"
+
+# THE SAFE FLOOR, AND DELIBERATELY NOT THE DEFAULT ABOVE. Everything that
+# NARROWS a mode lands here: the unsafe-mode clamp, the Shadow autonomy
+# ceiling (app.py _autonomy_ceiling), and an unparseable stored value. These
+# were one constant until the default was widened -- at which point "clamp
+# down to the default" would have clamped full access down to full access,
+# i.e. every one of those guards would have become a no-op in a single line.
+# `plan` is the floor of PERMISSION_MODES, so landing here can never widen.
+PERMISSION_MODE_FLOOR = "plan"
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
 
 # Modes that let the spawned agent act without asking. The panel's settings
 # endpoint is unauthenticated by construction (it is a localhost control
 # plane), so anything that can reach the port could otherwise raise the
 # ceiling to "auto-approve shell commands" and the operator would only learn
-# about it from a status frame. Selecting these requires an explicit
-# server-side opt-in the operator sets when STARTING the server -- i.e. out of
-# band from anything reachable over the socket.
+# about it from a status frame.
+#
+# That reasoning is why the list exists and is still why `warn` is set on the
+# access row these map to. It is NO LONGER why they are gated, because since
+# 2026-09-18 `bypassPermissions` is the shipped default and gating the door
+# into a room with no walls protects nothing -- see unsafe_modes_allowed. The
+# list is now consumed by: the `warn`/`requires_unlock` flags the screen draws,
+# and the CLAMP_MODES_ENV opt-out for operators who want the old gate back.
 UNSAFE_PERMISSION_MODES = ("acceptEdits", "bypassPermissions")
 UNSAFE_MODES_ENV = "SUTRA_UI_ALLOW_UNSAFE_PERM_MODES"
 
 
 UNSAFE_ACK_KEY = "unsafe_modes_acknowledged"
 
+# THE OPT-OUT THAT REPLACED THE OPT-IN (founder direction 2026-09-18). Set to
+# 1 to restore the pre-2026-09-18 posture in full: the write-capable modes are
+# clamped to PERMISSION_MODE_FLOOR until the operator acknowledges them, by
+# env var or by clicking through the UI confirmation. That is the kiosk / demo
+# / shared-machine posture, and the exact analogue of SUTRA_UI_READ_ONLY for
+# the editor. Nothing about the gate's machinery was deleted -- only which way
+# it points when nobody has said anything.
+CLAMP_MODES_ENV = "SUTRA_UI_SAFE_PERM_MODES"
+
 
 def unsafe_modes_allowed(settings=None):
-    """True when the operator has authorised the write-capable modes.
+    """True when the write-capable modes may actually run. Default: True.
 
-    TWO ways in, and both are a DELIBERATE HUMAN ACT:
+    WHY THIS INVERTED, and why it is not the loosening it looks like.
 
-      1. the env var, set when starting the server -- for headless/CI, and the
-         original out-of-band gate
-      2. an acknowledgement recorded in settings.json by someone clicking
-         through the confirmation in the UI
+    The gate was written to answer ONE threat: UNATTENDED ENABLEMENT over the
+    unauthenticated local socket -- something that can reach the port raising
+    the ceiling to "auto-approve shell commands" without the operator ever
+    agreeing. That was a real boundary while DEFAULT_PERMISSION_MODE was
+    `plan`, because the only way to reach a write-capable mode was to ASK for
+    one, and asking is what the gate intercepted.
 
-    (2) was added because (1) alone was unusable as a product: the panel told
-    the operator to "restart the server with SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1",
-    which for a Finder-launched .app means editing a plist or launching from a
-    terminal -- i.e. the setting was effectively unreachable for the people the
-    app is for. A control the UI shows, refuses, and cannot teach you to enable
-    is worse than no control.
+    The moment the shipped default became `bypassPermissions` itself
+    (2026-09-18, founder direction) the boundary stopped holding, for a reason
+    that has nothing to do with how badly anyone wants the feature: a local
+    process that can write settings.json to widen the mode can instead DELETE
+    settings.json and inherit full access from the default on the next read.
+    The gate guards one door in a wall that no longer has any others. What it
+    still reliably produced was a settings screen that said Full access while
+    sessions ran Read only -- a control the product shows and does not honour,
+    which is the same failure the UI acknowledgement path was added to fix.
 
-    The threat this still answers is UNATTENDED ENABLEMENT over the
-    unauthenticated local socket. That is why the acknowledgement is not a
-    plain boolean flip: api_settings_post requires the caller to send the
-    confirmation phrase, so a stray POST from anything else that can reach the
-    port cannot turn it on by accident. It is consent, recorded, not a default.
+    So the gate is now an OPT-OUT (CLAMP_MODES_ENV), not an opt-in. When it is
+    engaged, BOTH original ways in still work unchanged -- the env var for
+    headless/CI, and the recorded acknowledgement that api_settings_post will
+    only write when the caller sends the confirmation phrase.
+
+    WHAT STILL NARROWS, and is untouched by this:
+
+      * PERMISSION_MODE_FLOOR -- every narrowing path still lands on `plan`.
+      * the Shadow autonomy ceiling (app.py _autonomy_ceiling) -- a worker the
+        founder's autonomy level says MAY NOT WRITE is still capped at `plan`,
+        via worker_may_write(), which never consulted this gate.
+      * the origin guard on the unauthenticated port (app.py), which is what
+        actually answers the cross-origin browser threat.
     """
-    if os.environ.get(UNSAFE_MODES_ENV, "") == "1":
-        return True
-    s = settings if settings is not None else _raw_settings()
-    return bool(s.get(UNSAFE_ACK_KEY))
+    if os.environ.get(CLAMP_MODES_ENV, "") == "1":
+        if os.environ.get(UNSAFE_MODES_ENV, "") == "1":
+            return True
+        s = settings if settings is not None else _raw_settings()
+        return bool(s.get(UNSAFE_ACK_KEY))
+    return True
 
 
 # The editor is the FIRST filesystem write path in this app. Everything else reads:
@@ -422,7 +472,12 @@ def editing_allowed():
 
 
 def effective_permission_mode(mode):
-    """Clamp a stored/env mode down to `plan` unless unsafe modes are enabled.
+    """Clamp a stored/env mode down to PERMISSION_MODE_FLOOR (`plan`) unless
+    unsafe modes are enabled.
+
+    NOTE the floor is NOT DEFAULT_PERMISSION_MODE, which since 2026-09-18 is
+    itself an unsafe mode (`bypassPermissions`). Clamping to the default would
+    clamp full access to full access.
 
     Gating only the WRITE path (save_settings) is not enough: a settings.json
     left behind by an older build, edited by hand, or written by another local
@@ -430,8 +485,8 @@ def effective_permission_mode(mode):
     through here at the point of USE, not trust what was persisted.
     """
     if mode in UNSAFE_PERMISSION_MODES and not unsafe_modes_allowed():
-        return DEFAULT_PERMISSION_MODE
-    return mode if mode in PERMISSION_MODES else DEFAULT_PERMISSION_MODE
+        return PERMISSION_MODE_FLOOR
+    return mode if mode in PERMISSION_MODES else PERMISSION_MODE_FLOOR
 
 
 def workdir_allowed(path):
@@ -1289,10 +1344,16 @@ PERMISSION_MODE_NOTES = {
 # disclosure. A choice someone already made must never vanish because a newer
 # screen has a shorter list.
 #
-# CONSENT IS UNCHANGED. `edits` and `full` map to acceptEdits and
-# bypassPermissions, which are UNSAFE_PERMISSION_MODES, so they go through the
-# same unsafe_modes_allowed() gate and the same UNSAFE_ACK_PHRASE. This table
-# renames nothing about that and weakens nothing about it.
+# CONSENT GOES THROUGH THE ONE GATE. `edits` and `full` map to acceptEdits and
+# bypassPermissions, which are UNSAFE_PERMISSION_MODES, so they go through
+# unsafe_modes_allowed() and the same UNSAFE_ACK_PHRASE. This table renames
+# nothing about that and adds no second gate of its own.
+#
+# WHAT THAT GATE ANSWERS CHANGED ON 2026-09-18, and this table did not: it is
+# an opt-out now (CLAMP_MODES_ENV), so in the shipped posture all four are
+# settable and `full` is the default. `warn` is therefore doing more work than
+# it used to -- it is the only thing on the row telling the operator that the
+# option selected for them auto-approves shell commands. Keep it truthful.
 ACCESS_OPTIONS = (
     {"id": "read", "label": "Read only",
      "desc": "Looks and plans. Changes nothing.", "warn": False,
@@ -2695,19 +2756,39 @@ def load_settings():
     otherwise. Always returns all three contract keys (provider,
     permission_mode, workdir) plus metadata explaining how each was reached.
 
-    permission_mode defaults to "plan" (SAFETY rule 4 / test_perm_mode_default);
+    permission_mode defaults to DEFAULT_PERMISSION_MODE -- `bypassPermissions`
+    (Full access) since founder direction 2026-09-18, `plan` before it.
     SUTRA_UI_PERMISSION_MODE still supplies the default when no valid value is
     stored, so existing deployments keep their behaviour.
+
+    THREE OUTCOMES, not two, because "never chose" and "chose something
+    unreadable" must not resolve the same way once the default is the widest
+    mode rather than the narrowest:
+
+        key absent          -> DEFAULT_PERMISSION_MODE   (Full access)
+        key present, valid  -> that value
+        key present, junk   -> PERMISSION_MODE_FLOOR     (`plan`)
     """
     raw = _raw_settings()
     invalid = {}
 
-    mode = _clean_permission_mode(raw.get("permission_mode"))
-    if raw.get("permission_mode") is not None and mode is None:
-        invalid["permission_mode"] = raw.get("permission_mode")
+    stored_mode = raw.get("permission_mode")
+    mode = _clean_permission_mode(stored_mode)
+    # PRESENT-BUT-UNREADABLE IS NOT "NEVER CHOSE", and since the default became
+    # Full access (2026-09-18) the difference decides which way the resolution
+    # falls. A hand-edited or older-build settings.json that says `telepathy`
+    # must not RAISE the ceiling by being wrong, so junk lands on
+    # PERMISSION_MODE_FLOOR; only a genuinely absent key takes the default.
+    # These were one branch while the default WAS the floor.
+    mode_invalid = stored_mode is not None and mode is None
+    if mode_invalid:
+        invalid["permission_mode"] = stored_mode
     if mode is None:
+        # The env var stays ahead of both: setting it is a deliberate operator
+        # act, and it is the documented escape hatch.
         mode = _clean_permission_mode(
-            os.environ.get("SUTRA_UI_PERMISSION_MODE")) or DEFAULT_PERMISSION_MODE
+            os.environ.get("SUTRA_UI_PERMISSION_MODE")) or (
+                PERMISSION_MODE_FLOOR if mode_invalid else DEFAULT_PERMISSION_MODE)
 
     scope = _clean_chat_scope(raw.get("chat_scope"))
     if raw.get("chat_scope") is not None and scope is None:

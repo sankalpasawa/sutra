@@ -147,6 +147,38 @@ function pane(ctx, m, extra){
   console.log("ok 3 the brief is WHERE IT RUNS / DONE WHEN / TURN, and no more");
 }
 
+/* ── 3b. THE KIND TAG IS OFF THE CARD (founder, 2026-09-19) ──────────────
+   The head used to open with a mono-caps badge quoting `m.template`. The v5
+   one-box Delegate never asks for a kind, so every task the founder creates
+   carries the default offer and the badge read the same word on every card.
+
+   ASSERTED ON THE MARKUP, NOT ON THE WORD. The fixture's objective is "EMI
+   auto-fix", so `!/fix/` would fail for a reason that has nothing to do with
+   the tag. The class is the claim.
+
+   AND ON A KIND THAT IS NOT THE DEFAULT, so this cannot pass because the tag
+   happens to be blank for `fix` -- the element is gone for every kind.
+
+   THE FIELD SURVIVES THE BADGE. create() still stamps a template and the
+   engine still budgets by it; only the card stopped quoting it. */
+{
+  const h = pane(fresh(), M());
+  assert(!/shcard2tag/.test(h), "the kind badge must be off the task card");
+  /* the head is now the objective and the state pill, in that order */
+  const head = (h.match(/<div class="shcard2head">[\s\S]*?<\/div>/) || [])[0] || "";
+  assert(/class="shcard2obj">EMI auto-fix</.test(head),
+    "the objective still opens the card head");
+  for (const k of ["research", "watch", "feature"]){
+    const other = pane(fresh(), M({ template: k }));
+    assert(!/shcard2tag/.test(other),
+      "no kind draws the badge, including " + k);
+  }
+  /* and the record is untouched -- the card dropped the label, not the kind */
+  assert(M({ template: "watch" }).template === "watch",
+    "the mission record still carries its template");
+  console.log("ok 3b the card head carries no kind label, for any kind");
+}
+
 /* ── 4. WORKER AGENT: one report of the latest turn, never the transcript ─ */
 {
   const ctx = fresh();

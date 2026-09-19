@@ -1492,6 +1492,9 @@ function onboardingHtml(){
   const active = PROVIDERS.find(p=>p.id===st.provider) || runnable[0] || null;
   const blocked = PROVIDERS.filter(p=>!p.runnable);
   const writes = running !== "plan";
+  /* `wide` is the subset of `writes` that is not confined to the workdir.
+     Read off the mode the server says will RUN, like everything else here. */
+  const wide = running === "bypassPermissions" || running === "dontAsk";
 
   const step = (n, title, body) => `<div class="onb-step">
     <span class="onb-num">${n}</span><div class="onb-b">${title}${body}</div></div>`;
@@ -1519,14 +1522,30 @@ function onboardingHtml(){
            if it does not exist.</p>
          <div class="onb-fact">${esc(st.workdir||"—")}</div>`)}
 
-      ${step(3, `<h3>${writes
-          ? "The assistant can change files"
-          : "The assistant proposes, you approve"}</h3>`,
-        `<p>${writes
-            ? `Sessions run as <code>${esc(running)}</code> — edits under the workdir are applied
-               without prompting you first.`
-            : `Sessions run as <code>${esc(running)}</code>: it reads and plans, and every edit needs
-               your approval. You can widen this in Settings.`}</p>
+      ${/* THREE CASES, NOT TWO (founder direction 2026-09-18). `writes` used
+            to mean acceptEdits, because bypassPermissions could not be the
+            running mode on a first launch -- the consent gate clamped it. It
+            is now the SHIPPED DEFAULT, so this screen became the first and
+            only place a new operator is told so, and the acceptEdits sentence
+            ("edits under the workdir") understates it by a wide margin:
+            bypassPermissions auto-approves shell commands anywhere on the
+            machine, and on codex it also turns that tool's own sandbox off.
+            Saying the narrower thing on a screen headed "worth knowing before
+            you start" is the failure this whole disclosure exists to avoid. */""}
+      ${step(3, `<h3>${wide
+          ? "The assistant can act without asking"
+          : writes
+            ? "The assistant can change files"
+            : "The assistant proposes, you approve"}</h3>`,
+        `<p>${wide
+            ? `Sessions run as <code>${esc(running)}</code> — the widest setting there is. Files,
+               commands and network calls are auto-approved, anywhere this Mac can reach, without
+               prompting you. Narrow it in Settings → Access and permissions.`
+            : writes
+              ? `Sessions run as <code>${esc(running)}</code> — edits under the workdir are applied
+                 without prompting you first.`
+              : `Sessions run as <code>${esc(running)}</code>: it reads and plans, and every edit needs
+                 your approval. You can widen this in Settings.`}</p>
          ${st.permission_mode_clamped?`<div class="onb-fact">note: <code>${esc(st.permission_mode)}</code>
            is on file but is not honoured — sessions run as <code>${esc(running)}</code></div>`:""}`)}
 
@@ -1937,7 +1956,23 @@ function render(){
              Nothing is open. Pick a screen from Home, or a session from Code.</p>` : "");
   if (panesEl && panesEl.__lastPanesHtml !== panesHtml){
     panesEl.__lastPanesHtml = panesHtml;
-    panesEl.innerHTML = panesHtml;
+    /* THE ONE SCREEN THAT OPTS OUT OF THE WHOLESALE SWAP (founder,
+       2026-09-18). #scBody is INSIDE #panes, so this line destroys and
+       recreates every node on the screen -- including the textarea the
+       founder is typing a delegation into -- every time a session pane
+       streams a frame. A destroyed textarea is a blurred textarea, and the
+       founder's rule is that nothing may put the cursor back afterwards.
+
+       So while the + Delegate panel is mounted, and ONLY then, the swap is
+       a patch that leaves unchanged subtrees alone and refuses to touch
+       #scBody at all (panesHtml renders it empty anyway -- its contents
+       belong to the screen pass below, never to this one). Every other
+       screen, and this screen with the panel shut, take the original line
+       byte for byte. */
+    if (!(typeof shadowPanelMounted === "function" && shadowPanelMounted()
+          && typeof shadowPatchInto === "function"
+          && shadowPatchInto(panesEl, panesHtml)))
+      panesEl.innerHTML = panesHtml;
   }
   const scBody = document.getElementById("scBody");
   if (scBody){
@@ -1961,8 +1996,13 @@ function render(){
             start: act.selectionStart, end: act.selectionEnd }
         : null;
       scBody.__lastScreenHtml = html;
-      scBody.innerHTML = html;
-      if (keep && keep.sel){
+      /* the same opt-out, for the same reason and on the same condition --
+         see the panes swap above */
+      const patched = (typeof shadowPanelMounted === "function"
+        && shadowPanelMounted() && typeof shadowPatchInto === "function")
+        ? shadowPatchInto(scBody, html) : false;
+      if (!patched) scBody.innerHTML = html;
+      if (!patched && keep && keep.sel){
         const el = scBody.querySelector(keep.sel);
         if (el){
           if (keep.value) el.value = keep.value;
@@ -1972,6 +2012,14 @@ function render(){
       }
     }
   }
+  /* THE PANEL IS BUILT ONCE AND UPDATED IN PLACE THEREAFTER. On the render
+     that opens + Delegate the screen markup carries an EMPTY host, the swap
+     above runs normally (nothing is focused yet), and this fills it. On every
+     later render the host and the textarea inside it are untouched -- this
+     only refreshes the thread, the error line and the send button around
+     them. Guarded so a missing 16-shadow-home.js cannot break render(). */
+  if (typeof shadowMountNewTalk === "function") shadowMountNewTalk();
+
   /* the shadow home is two columns; widen ONLY its pane (explicit class,
      not :has -- deepseek fold 2026-08-26). Self-cleaning on screen change. */
   if (scBody && scBody.closest){

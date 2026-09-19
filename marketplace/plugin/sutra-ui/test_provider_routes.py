@@ -90,6 +90,17 @@ class Routes(unittest.TestCase):
         except OSError:
             return {}
 
+    def clamped(self):
+        """Engage the unsafe-mode consent gate for this test.
+
+        Since 2026-09-18 the gate is an OPT-OUT: Full access is the shipped
+        default and it runs (providers.unsafe_modes_allowed). A test about what
+        the server REFUSES has to ask for the refusing posture, or it asserts
+        against the permissive one and passes for the wrong reason.
+        """
+        os.environ[providers.CLAMP_MODES_ENV] = "1"
+        self.addCleanup(os.environ.pop, providers.CLAMP_MODES_ENV, None)
+
 
 class SettingsGet(Routes):
 
@@ -141,10 +152,24 @@ class SettingsGet(Routes):
     def test_access_options_carries_settable_before_the_click(self):
         """A control the server will refuse must say so BEFORE it is clicked,
         or the screen reads as broken rather than as gated."""
+        self.clamped()
         by_id = {o["id"]: o for o in self.payload()["access_options"]}
         self.assertFalse(by_id["full"]["settable"])
         self.assertTrue(by_id["full"]["requires_unlock"])
         self.assertTrue(by_id["read"]["settable"])
+
+    def test_in_the_shipped_posture_every_option_is_settable(self):
+        """The other side of the same field. Nothing is refused by default
+        since Full access became the shipped default, so nothing may be drawn
+        as locked -- a `locked` pill over the option the screen also reports as
+        selected is the contradiction this pins shut."""
+        d = self.payload()
+        by_id = {o["id"]: o for o in d["access_options"]}
+        for oid in ("read", "edits", "auto", "full"):
+            self.assertTrue(by_id[oid]["settable"], oid)
+        self.assertTrue(d["unsafe_modes_allowed"])
+        self.assertEqual(d["settings"]["access_effective"], "full")
+        self.assertFalse(d["settings"]["permission_mode_clamped"])
 
     def test_the_settings_block_carries_the_derived_access_id(self):
         self.post("/api/settings", {"permission_mode": "plan"})
@@ -163,9 +188,18 @@ class SettingsPost(Routes):
                          "no new key may be written")
 
     def test_a_gated_access_id_is_a_400_with_the_reason(self):
+        self.clamped()
         r = self.post("/api/settings", {"access": "full"})
         self.assertEqual(r.status_code, 400)
         self.assertIn("auto-approves", r.json()["detail"])
+
+    def test_full_is_a_200_in_the_shipped_posture(self):
+        r = self.post("/api/settings", {"access": "full"})
+        self.assertEqual(r.status_code, 200, r.text[:300])
+        self.assertEqual(r.json()["settings"]["permission_mode"],
+                         "bypassPermissions")
+        self.assertEqual(r.json()["settings"]["permission_mode_effective"],
+                         "bypassPermissions")
 
     def test_auto_on_codex_is_a_400_naming_what_codex_does_offer(self):
         r = self.post("/api/settings",

@@ -456,7 +456,11 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   const iCapture = src.indexOf("const priorSh = _shScrollState();");
   /* the STATEMENT, not the prose about it -- a comment upstream names this
      same line and indexOf would find that first */
-  const iPanes = src.indexOf("\n    panesEl.innerHTML = panesHtml;");
+  /* the statement moved INSIDE an `if` when the Shadow compose box became a
+     mounted node (it is skipped while one is mounted), so its indent is no
+     longer fixed. The semicolon is what distinguishes the statement from the
+     comments that name it, not the leading whitespace. */
+  const iPanes = src.indexOf("panesEl.innerHTML = panesHtml;");
   const iScreen = src.indexOf("scBody.innerHTML = html");
   const iRestore = src.indexOf("_restoreShScroll(priorSh);");
   const iFocus = src.indexOf("      el.focus();");

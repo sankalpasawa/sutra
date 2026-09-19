@@ -167,6 +167,11 @@ class TestApp(unittest.TestCase):
         # to it -- a second writer moves every d-path ordinal.
         env["SUTRA_SKIP_PROJECT_IMPORT"] = "1"
         env.pop("SUTRA_UI_PERMISSION_MODE", None)  # exercise the real default
+        # ...and the real POSTURE. The consent gate is an opt-out since
+        # 2026-09-18, so an operator machine that exports it would put this
+        # server in the clamped posture and make test_41 assert the shipped
+        # default against a configuration that does not ship.
+        env.pop("SUTRA_UI_SAFE_PERM_MODES", None)
         cls.proc = subprocess.Popen(
             [VENV_PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
              "--port", str(cls.port), "--log-level", "warning"],
@@ -766,15 +771,33 @@ class TestApp(unittest.TestCase):
 
     # --------------------------------------------------- static / hygiene --
 
-    def test_21_perm_mode_default_is_not_acceptedits(self):
+    def test_21_perm_mode_tracks_the_one_shipped_default(self):
+        """PERM_MODE must not carry a literal of its own.
+
+        This asserted `"plan"`. The shipped default is Full access since
+        2026-09-18 (founder direction: Setup -> Access and permissions defaults
+        to Full access), and SAFETY rule 4 now rests on the unsafe-mode consent
+        gate + providers.PERMISSION_MODE_FLOOR rather than on this constant
+        being narrow -- see test_perm_mode_default.py, which states that in
+        full. What is still worth pinning here is that there is ONE home for
+        the shipped default and app.py mirrors it.
+        """
         env = dict(os.environ)
         env.pop("SUTRA_UI_PERMISSION_MODE", None)
         out = subprocess.check_output(
-            [VENV_PY, "-c", "import app; print(app.PERM_MODE)"],
+            [VENV_PY, "-c",
+             "import app, providers; print(app.PERM_MODE);"
+             " print(providers.DEFAULT_PERMISSION_MODE);"
+             " print(providers.PERMISSION_MODE_FLOOR)"],
             cwd=HERE, env=env, stderr=subprocess.STDOUT,
-        ).decode("utf-8").strip().splitlines()[-1]
-        self.assertNotEqual(out, "acceptEdits")
-        self.assertEqual(out, "plan")
+        ).decode("utf-8").strip().splitlines()[-3:]
+        perm_mode, default, floor = out
+        self.assertEqual(perm_mode, default,
+                         "app.PERM_MODE has drifted from "
+                         "providers.DEFAULT_PERMISSION_MODE")
+        self.assertEqual(floor, "plan",
+                         "the clamp floor must stay the narrowest mode, "
+                         "whatever the default is")
 
     def test_22_forbidden_calls_are_absent_from_new_files(self):
         # test_forbidden_calls.py already does this correctly (alias-resolved
@@ -1261,14 +1284,39 @@ class TestApp(unittest.TestCase):
 
     # ========================================================= settings ====
 
-    def test_41_settings_shape_and_the_default_is_plan(self):
+    def test_41_settings_shape_and_the_default_is_full_access(self):
+        """The shipped default, and the gate that keeps it honest.
+
+        Was "the default is plan". Founder direction 2026-09-18 moved it to
+        Full access, so what this pins is (a) the default the server reports,
+        (b) that the default is the one flagged `default` in the vocabulary,
+        and (c) that the default RUNS -- stored and effective agree, nothing
+        is reported as clamped. (c) is the half that was missing when the
+        default was merely stored: the screen showed Full access selected
+        while every session started as `plan`.
+
+        SAFETY rule 4 did not disappear; it moved. What now keeps an
+        unintended wide mode out of a spawn is PERMISSION_MODE_FLOOR (every
+        narrowing path still lands on `plan`), the Shadow autonomy ceiling,
+        the origin guard on this unauthenticated port, and the
+        SUTRA_UI_SAFE_PERM_MODES opt-out for operators who want the old
+        consent gate back -- each tested where it lives.
+        """
         status, body = _get("/api/settings")
         self.assertEqual(status, 200)
         st = body["settings"]
         for key in ("provider", "permission_mode", "workdir"):
             self.assertIn(key, st, "%r is part of the contract" % key)
-        self.assertEqual(st["permission_mode"], "plan",
-                         "SAFETY rule 4: the default must not auto-approve edits")
+        self.assertEqual(st["permission_mode"], "bypassPermissions",
+                         "the shipped default is Full access")
+        self.assertTrue(st["unsafe_modes_allowed"],
+                        "the shipped posture is the gate OFF")
+        self.assertEqual(
+            st["permission_mode_effective"], "bypassPermissions",
+            "the default must RUN, not be stored and clamped away")
+        self.assertFalse(st["permission_mode_clamped"],
+                         "nothing is clamped in the shipped posture, so the "
+                         "screen must not show the 'not the one running' note")
         modes = {m["id"]: m for m in body["permission_modes"]}
         # SIX, not three. `claude --help` on the installed binary lists
         # acceptEdits / auto / bypassPermissions / manual / dontAsk / plan; the
@@ -1276,7 +1324,8 @@ class TestApp(unittest.TestCase):
         # UI. Verified against the binary, not assumed.
         self.assertEqual(set(modes), {"plan", "acceptEdits", "bypassPermissions",
                                       "auto", "manual", "dontAsk"})
-        self.assertTrue(modes["plan"]["default"])
+        self.assertTrue(modes["bypassPermissions"]["default"])
+        self.assertFalse(modes["plan"]["default"])
         self.assertFalse(modes["plan"]["writes_files"])
         # the two modes that write files must SAY they write files -- this flag
         # is what the panel renders as the warning badge
@@ -2442,15 +2491,35 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
             json.dump(obj, fh)
 
     def test_unsafe_stored_mode_is_reported_as_clamped(self):
-        """A bypassPermissions on file without the opt-in must be reported as
-        NOT running -- this is the exact state that made the panel lie."""
+        """A bypassPermissions on file WITH THE GATE ENGAGED must be reported
+        as NOT running -- this is the exact state that made the panel lie.
+
+        The gate is engaged explicitly (SUTRA_UI_SAFE_PERM_MODES=1) because
+        since 2026-09-18 it is an opt-out and this stored value is the shipped
+        default; without asking for the clamped posture there is nothing here
+        to clamp, and the test would be asserting the panel lies when it does
+        not. test_the_shipped_default_runs_unclamped is the other half.
+        """
+        import importlib
         self._write({"permission_mode": "bypassPermissions"})
-        s = self.providers.load_settings()
+        os.environ[self.providers.CLAMP_MODES_ENV] = "1"
+        prov = importlib.reload(self.providers)
+        s = prov.load_settings()
         self.assertEqual(s["permission_mode"], "bypassPermissions")
         self.assertEqual(s["permission_mode_effective"], "plan")
         self.assertTrue(s["permission_mode_clamped"])
         self.assertIn("SUTRA_UI_ALLOW_UNSAFE_PERM_MODES",
                       s["permission_mode_clamp_reason"])
+
+    def test_the_shipped_default_runs_unclamped(self):
+        """Founder direction 2026-09-18. With NOTHING on file, Full access is
+        both what the screen shows and what sessions actually start as -- the
+        gap between those two was the Read only the direction was about."""
+        s = self.providers.load_settings()
+        self.assertEqual(s["permission_mode"], "bypassPermissions")
+        self.assertEqual(s["permission_mode_effective"], "bypassPermissions")
+        self.assertFalse(s["permission_mode_clamped"])
+        self.assertIsNone(s["permission_mode_clamp_reason"])
 
     def test_safe_mode_is_never_marked_clamped(self):
         self._write({"permission_mode": "plan"})

@@ -960,6 +960,136 @@ console.log("ok 6 controls wired");
 
 })().catch(e => { console.error("FAIL 17:", e.message); process.exit(1); });
 
+/* 17c. THE VIEW ENTER LANDS ON SHOWS THE TASK IT JUST STARTED, AND SAYS SO.
+
+   FOUNDER, 2026-09-19: "after we hit delegate and enter the outcome, it takes
+   us to the next view -- and we're having to hot start the task again, we
+   shouldn't need to do that, it should start automatically."
+
+   THE START WAS NEVER THE PROBLEM. Every mission on the founder's machine
+   since 2026-09-18 carries start_requested_at equal to created_at -- the
+   auto-start fires in the same second, every time. What failed was the NEXT
+   VIEW, in two ways, and both ended with a "Start the task" button under the
+   founder's cursor:
+
+     1. THE WRONG TASK. shadowCreateTask sets S.shadowTaskSel to a mission id
+        that S.shadowMissions has never heard of -- the list read has not come
+        back yet. shadowSelectedTask() looks its pick up in that array, misses,
+        and falls through to its ranking, whose first rule is "the first
+        STARTABLE task". So the pane drew some older unstarted brief, with
+        that brief's Start button on it.
+
+     2. THE WRONG SENTENCE. "where it runs" is drawn from target_session
+        alone, so for the whole of provisioning -- 45 seconds, measured on
+        m-223632491565: created 02:52:07, chat published 02:52:52 -- the card
+        told the founder a new chat starts "when you begin", about a task that
+        had already begun.
+
+   BLOCK 1 is the founder's own window: the create has answered and the list
+   read has not. BLOCK 2 is the sentence, against the predicate that already
+   governs this window. BLOCK 3 is the honest fallback -- a start that does
+   NOT land must give the Start button back. */
+(async () => {
+  const OLD_READY = { id: "m-old", objective: "a brief nobody started",
+    state: "brief_confirm", turns_used: 0, max_turns: 25,
+    target_mode: "new", target_session: null, done_when: [] };
+
+  /* ---- 1. the pane shows the NEW task, not the fallback's Start ---- */
+  {
+    const ctx = fresh();
+    ctx.S.shadowHomeDark = false;
+    ctx.S.goals = [];
+    ctx.S.shadowMissions = [JSON.parse(JSON.stringify(OLD_READY))];
+    ctx.shadowPost = (url) => Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve(/\/act$/.test(url)
+        ? { accepted: true, mission_id: "m-new" }
+        : { id: "m-new", objective: "ship the referral flow",
+            state: "brief_confirm", turns_used: 0, max_turns: 25,
+            target_mode: "new", target_session: null, done_when: [] }) });
+    /* THE READ NEVER LANDS. That is the founder's window reproduced, not a
+       convenience: everything asserted below has to hold on the panel's own
+       knowledge, because the list read is exactly what has not arrived. */
+    ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({}) });
+    ctx.loadShadowHome = () => Promise.resolve();
+    ctx.renderShadowCard = () => {};
+    ctx.showNudge = () => {};
+    ctx.scheduleRender = () => {};
+    ctx.S.shadowNew = { objective: "ship the referral flow", done: "",
+                        kind: "fix" };
+    await ctx.shadowCreateTask();
+
+    const sel = ctx.shadowSelectedTask();
+    assert(sel, "the pane must not be blank after a create");
+    assert.strictEqual(sel.id, "m-new",
+      "the next view showed " + sel.id + ", not the task Enter just created");
+    const card = ctx.shadowTaskCardHtml(sel);
+    assert(!/data-shstart=/.test(card),
+      "the next view offered a manual start for a task already starting");
+    assert(/Shadow is starting it now/.test(card),
+      "the card must say the start was taken, not ask for one");
+    /* and the OLD brief is untouched -- it is still startable, because it
+       genuinely has not been started */
+    assert(/data-shstart=/.test(ctx.shadowTaskCardHtml(ctx.S.shadowMissions
+      .find(m => m.id === "m-old"))), "an unstarted brief lost its Start");
+    console.log("ok 17c/1 the view after Enter is the new task, already started");
+  }
+
+  /* ---- 2. the sentence follows shadowMissionStarting, nothing else ---- */
+  {
+    const ctx = fresh();
+    const base = { id: "m-x", objective: "o", state: "brief_confirm",
+      turns_used: 0, max_turns: 25, target_mode: "new",
+      target_session: null, done_when: [] };
+    const RUNS = (m) => (/where it runs<\/span>\s*<span class="shcard2v">([^<]*)/
+      .exec(ctx.shadowTaskCardHtml(m)) || [])[1];
+
+    assert(/when you begin/.test(RUNS(base)),
+      "a task nobody has started still says the founder begins it");
+    assert(/Shadow is starting it now/.test(
+      RUNS(Object.assign({}, base, { start_requested_at: "2026-09-19T02:52:07Z" }))),
+      "a start that has been taken must not read as one still to take");
+    /* once the chat exists the line is the chat's name, as it always was --
+       the stamp does not outrank a real session */
+    ctx.shadowChatLabel = () => "Shadow Task — o";
+    assert(/Shadow Task/.test(RUNS(Object.assign({}, base,
+      { start_requested_at: "2026-09-19T02:52:07Z", target_session: "sid-1" }))),
+      "the chat's own name must win once there is a chat");
+    console.log("ok 17c/2 \"where it runs\" stops claiming the founder must begin");
+  }
+
+  /* ---- 3. a start that does not land gives the Start button back ---- */
+  {
+    const ctx = fresh();
+    ctx.S.shadowHomeDark = false;
+    ctx.S.goals = [];
+    ctx.S.shadowMissions = [];
+    ctx.shadowPost = (url) => Promise.resolve(/\/act$/.test(url)
+      ? { ok: false, status: 409, json: () => Promise.resolve({}) }
+      : { ok: true, status: 200,
+          json: () => Promise.resolve({ id: "m-new", objective: "o",
+            state: "brief_confirm", turns_used: 0, max_turns: 25,
+            target_mode: "new", target_session: null, done_when: [] }) });
+    ctx.fetch = () => Promise.resolve({ ok: true, status: 200,
+      json: () => Promise.resolve({}) });
+    ctx.loadShadowHome = () => Promise.resolve();
+    ctx.renderShadowCard = () => {};
+    const said = [];
+    ctx.showNudge = (t) => said.push(t);
+    ctx.scheduleRender = () => {};
+    ctx.S.shadowNew = { objective: "o", done: "", kind: "fix" };
+    await ctx.shadowCreateTask();
+
+    const sel = ctx.shadowSelectedTask();
+    assert.strictEqual(sel && sel.id, "m-new", "the task must still be there");
+    assert(/data-shstart=/.test(ctx.shadowTaskCardHtml(sel)),
+      "a start that failed must leave the founder a Start button");
+    assert(said.some(t => /did not start/.test(t)),
+      "a failed start must say so");
+    console.log("ok 17c/3 a start that fails hands the Start button back");
+  }
+})().catch(e => { console.error("FAIL 17c:", e.message); process.exit(1); });
+
 /* 18. an empty outcome is refused client-side, with no POST */
 {
   const ctx = fresh();
