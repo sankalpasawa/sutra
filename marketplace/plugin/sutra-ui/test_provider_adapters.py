@@ -1009,8 +1009,18 @@ class TestPermQueryParam(unittest.TestCase):
         env["SUTRA_UI_SAFE_PERM_MODES"] = "1"
         # ...and a STORED mode, so "keeps the stored setting" names a real
         # stored value rather than the shipped default seen through the clamp.
+        #
+        # STAMPED SINCE 2026-09-19, and without the stamp this fixture stopped
+        # doing that job: an unstamped floor mode now reads as INHERITED
+        # rather than chosen (providers.ACCESS_CHOSEN_KEY), so it resolved to
+        # bypassPermissions and the clamp above brought it back to `plan`.
+        # Every assertion below still passed -- via exactly the route this
+        # comment was written to rule out.
         with open(env["SUTRA_UI_SETTINGS"], "w") as fh:
-            json.dump({"permission_mode": "plan"}, fh)
+            # literal rather than providers.ACCESS_CHOSEN_KEY: this class
+            # drives a real server in a SUBPROCESS
+            json.dump({"permission_mode": "plan",
+                       "permission_mode_chosen": True}, fh)
         env["SUTRA_UI_CODEX_BIN"] = CODEX_STUB
         env["SUTRA_UI_DEEPSEEK_BIN"] = ACP_STUB
         env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"

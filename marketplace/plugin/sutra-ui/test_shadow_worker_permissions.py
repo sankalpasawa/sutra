@@ -486,5 +486,71 @@ class TestNoWideningSnuckIn(Base):
         self.assertNotIn("permissions", sc)
 
 
+class AnInheritedPlanReachesTheWorkerToo(Base):
+    """THE WORKER HALF of providers.ACCESS_CHOSEN_KEY (added 2026-09-19).
+
+    Base.setUp stamps its mode, because every test above means "the founder
+    chose this" -- so none of them can speak for the unstamped side, and the
+    unstamped side is the one that changed on 2026-09-19. On a machine
+    onboarded before then the delegate's flag moves from `plan` to
+    `bypassPermissions`, which is the most consequential thing this rule does
+    and the one a reader would want pinned by name rather than inferred from
+    providers plus two hops.
+
+    test_access_options.AnInheritedReadOnlyIsNotAChoice pins the resolution;
+    test_shadow_permission_inherit.AnInheritedPlanMovesShadowToo pins the
+    supervisor's argv; this pins the worker's, INCLUDING the part that is not
+    true of the supervisor -- the autonomy ceiling still lands on top.
+    """
+
+    def write_unstamped(self, mode):
+        """A pre-change settings.json: the mode is there, the stamp is not."""
+        self.sp.write_text(json.dumps({"onboarded": True,
+                                       "provider": "claude",
+                                       "permission_mode": mode}))
+
+    def test_an_unstamped_plan_reaches_the_worker_as_full_access(self):
+        self.write_unstamped("plan")
+        self.unsafe(True)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1],
+                         "bypassPermissions")
+
+    def test_a_stamped_plan_keeps_the_worker_read_only(self):
+        """The complement of test_15, and the reason its fixture is stamped:
+        a DELIBERATE Read only must still cap the delegate."""
+        self.settings_file_write("plan")
+        self.unsafe(True)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan")
+
+    def test_the_autonomy_ceiling_still_lands_on_top_of_it(self):
+        """A widened DEFAULT is not a widened CEILING. A founder at L2 whose
+        stored mode was never chosen must still get a read-only delegate --
+        otherwise this rule quietly raised the autonomy floor for every
+        already-onboarded machine, which no direction asked for."""
+        self.write_unstamped("plan")
+        self.unsafe(True)
+        for level in ("L0", "L1", "L2"):
+            with self.subTest(level=level):
+                self.set_autonomy(level)
+                args = app._worker_args()
+                self.assertEqual(
+                    args[args.index("--permission-mode") + 1],
+                    providers.PERMISSION_MODE_FLOOR,
+                    "an inherited default outran the autonomy ceiling")
+
+    def test_the_unsafe_gate_still_lands_on_top_of_it(self):
+        """The other cap. With the clamp engaged the inherited default must
+        resolve to `plan`, not to a live bypassPermissions."""
+        self.write_unstamped("plan")
+        self.unsafe(False)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan")
+
+
 if __name__ == "__main__":
     unittest.main()
