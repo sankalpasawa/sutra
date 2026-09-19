@@ -291,7 +291,7 @@ function agLastRun(){
    the Library is a screen you sit on without a chat open, so this is the second thing that makes a
    poll worth doing quickly. It reads the rows we already have, never the network. */
 function agLibWriting(a){
-  return ((a && a.library) || []).some(it => it && it.status === "writing");
+  return ((a && a.library) || []).some(it => it && it.status === "writing" && !it.stalled);
 }
 
 /* ── projections (pure) ────────────────────────────────────────────────────── */
@@ -1954,7 +1954,7 @@ function agLibSecEditorHtml(s, ed, libId){
    text/AI toggle (there is nothing to hand-type here, only an instruction) and a bigger box:
    this is where a whole review -- Aparna's, or anyone's -- gets pasted in one go, not a line
    asking to change one section. Same [data-aglibinstr] the section editor uses (the caret-
-   restore in agDraw already covers it, AG_LIBCARET_ATTRS), same diff renderer, same Use
+   restore in agDraw already covers it, agCaretGrab), same diff renderer, same Use
    this / Discard. Nothing is saved until Save, on the article footer below this panel. */
 function agLibArtEditorHtml(ed){
   const pr = ed.proposal;
@@ -2968,25 +2968,34 @@ function agLibraryHtml(items, a){
     ${tabs}
     ${list.length ? list.map(it => {
       const status = it.status || "draft";
-      const writing = status === "writing";
+      /* A "writing" row whose run has failed, been stopped or lost its chat (it.stalled, from
+         store._library_stalled) is not being written. It used to spin for ever; nine did at once
+         on 2026-09-18. It says "stopped" now, in the muted pill, with no spinner. */
+      const stalled = status === "writing" && !!it.stalled;
+      const writing = status === "writing" && !stalled;
       const miles = it.milestones || [];
       const done = miles.filter(m => m.exists).length;
-      const state = AG_LIB_STATE[status] || ["p-mut", status];
+      const state = stalled ? ["p-mut", "stopped"] : (AG_LIB_STATE[status] || ["p-mut", status]);
+      /* Whose it is, and whether the bin is yours to press (2026-09-18). Only the person who
+         created an article may delete it for the team; everyone can still open, edit and mark it.
+         `mine` is absent on a backend older than this, so absent means "show the bin". */
+      const theirs = it.mine === false;
+      const by = theirs ? `<span>by ${agEsc(it.owner_name || "a teammate")}</span>` : "";
       /* A row born at run start is called "Writing…" until the real title exists, and the pill
          beside it already says writing, so the name is saying nothing twice. What he asked for is
          on the row (`request`), so use that: it is the only thing that identifies the article
          before it has a title, and the row renames itself the moment there is one. */
-      const name = (writing && it.request) || it.title;
+      const name = ((writing || stalled) && it.request) || it.title;
       /* The card's own columns show only what spec item 9 lists: title, the five tab links
          (agMileStripHtml), the on/off-topic tag, and Open / Back to draft / delete. Word count,
          format name and the top-pages range are gone from HERE -- the tabs (agTabDraftHtml etc.)
          still carry that detail, so nothing is lost, only no longer duplicated on the row. */
       return `<div class="ag-row ${writing ? "writing" : ""}"><div class="ri"><div class="rn">${agEsc(name)} <span class="pill ${state[0]}">${writing ? `<i class="spin" aria-hidden="true"></i>` : ""}${agEsc(state[1])}</span>${agLibTopicPill(it)}</div>
-        <div class="rm">${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : ""}<span>${writing ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
+        <div class="rm">${by}${writing && miles.length ? `<span>${agEsc(done)} of ${agEsc(miles.length)} done</span>` : ""}<span>${writing || stalled ? "started " : ""}${agEsc(agAgo(it.created_at))}</span></div>
         ${agMileStripHtml(it.id, miles, writing)}</div>
-        <div class="ra">${writing ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
+        <div class="ra">${writing || stalled ? "" : `<button class="btn" type="button" data-ag="libopen" data-arg="${agEsc(it.id)}">Open</button>
           <button class="btn" type="button" data-ag="libstatus" data-arg="${agEsc(it.id)}" data-status="${status === "ready" ? "draft" : "ready"}">${status === "ready" ? "Back to draft" : "Mark ready"}</button>`}
-          <button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article">${bin}</button></div></div>`;
+          ${theirs ? "" : `<button class="ib" type="button" data-ag="libdel" data-arg="${agEsc(it.id)}" aria-label="Delete" title="Delete this article">${bin}</button>`}</div></div>`;
     }).join("")
       : all.length ? `<div class="ag-row"><div class="ri"><div class="rn">No off-topic articles</div><div class="rd">Nothing here has been flagged off topic.</div></div></div>`
       : `<div class="ag-row"><div class="ri"><div class="rn">Nothing here yet</div><div class="rd">Ask for an article and its row appears here straight away, filling in as each piece is made.</div></div></div>`}
@@ -3646,15 +3655,41 @@ function agDrawLibTabs2(a, root){
   if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
 }
 
-/* Every box in the right-hand Library editor whose caret agDraw must put back after it redraws
-   #agPanel. The whole-article title and body, and the two boxes inside the per-section editor:
-   the hand-edit textarea (data-aglibsec) and the AI instruction box (data-aglibinstr). Aparna's
-   report, 2026-09-17: "it only lets me type one letter at a time", filed against the section and
-   instruction boxes specifically. Only data-aglibbody and data-aglibtitle were ever in this list,
-   so the 1s-live/4s-idle poll repaint stole focus back from the other two after every keystroke;
-   the whole-article boxes never showed the bug because a person types there far less often. One
-   list, walked once, so a box added later only has to join it -- not a fifth ternary. */
-const AG_LIBCARET_ATTRS = ["data-aglibbody", "data-aglibtitle", "data-aglibsec", "data-aglibinstr"];
+/* THE CARET SURVIVES A REPAINT, IN EVERY BOX. agDraw repaints #agScroll and #agPanel wholesale on
+   the poll (every second while a run is live, every four idle), and a repaint destroys the focused
+   box, so whoever was typing lost the caret after every keystroke. That was fixed box by box: the
+   Library title and body first, then the per-section boxes on 2026-09-17 after Aparna's "it only
+   lets me type one letter at a time". She hit it again the next day in the Prompts tab
+   (data-agprompttext), and the Memory, Connections and competitor forms had the same hole. A list
+   of names is always one box behind, so this is now general: whatever text box had focus inside
+   the region being repainted is found again by its own data-ag* attributes and gets its focus,
+   its selection and its own scroll position back. */
+function agCaretGrab(regionId){
+  try {
+    const act = document.activeElement;
+    if (!act || (act.tagName !== "TEXTAREA" && act.tagName !== "INPUT")) return null;
+    const box = document.getElementById(regionId);
+    if (!box || !box.contains(act)) return null;
+    const attrs = Array.from(act.attributes).filter(x => x.name.indexOf("data-ag") === 0 || x.name === "data-i");
+    if (!attrs.length) return null;
+    const q = v => String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const sel = attrs.map(x => x.value ? `[${x.name}="${q(x.value)}"]` : `[${x.name}]`).join("");
+    let from = null, to = null;
+    try { from = act.selectionStart; to = act.selectionEnd; } catch (e) { /* some input types have none */ }
+    return { region: regionId, sel, from, to, top: act.scrollTop };
+  } catch (e) { return null; }
+}
+function agCaretPut(g){
+  if (!g) return;
+  try {
+    const box = document.getElementById(g.region);
+    const el = box && box.querySelector(g.sel);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    if (g.from != null) el.setSelectionRange(g.from, g.to);
+    el.scrollTop = g.top;
+  } catch (e) { /* the box went away with the repaint: nothing to put back */ }
+}
 
 function agDraw(force){
   const a = agS(); const root = agRoot(); if (!a || !root) return;
@@ -3718,34 +3753,20 @@ function agDraw(force){
       : a.view === "library" ? agLibraryHtml(a.library, a)
       : a.view === "tools" ? agToolsHtml(a.tools)
       : agConnectionsHtml(a.conns, a.health, a.connForm, a.ws, a.wsForm);
-    const searching = document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-agpageq]");
-    const sel = searching ? document.activeElement.selectionStart : null;
+    const caret = agCaretGrab("agScroll");
     /* Every other field on this screen survives the four-second poll because the input handler
        keeps it on S.ag and the renderer prints it back. The personal access token may do
        neither, so the only way it can survive is for the poll not to touch it: while something
        is typed in that one box, this view holds still. Pressing Create clears the box first,
        so the redraw that follows is never blocked by it. */
-    if (!agTokenTyped() && agSetHtml("agScroll", html) && searching){
-      const q = document.querySelector("[data-agpageq]"); if (q){ try { q.focus({ preventScroll: true }); q.setSelectionRange(sel, sel); } catch (e) {} }
-    }
+    if (!agTokenTyped() && agSetHtml("agScroll", html)) agCaretPut(caret);
     if (a.view === "knowledge" && a.mapOn) agDrawMap();
     const comp = document.getElementById("agComposer"); if (comp){ comp.hidden = true; }
   }
-  /* the Library editor redraws while he types (the word count is live), so put the caret back
-     exactly where the composer branch above puts its own -- see AG_LIBCARET_ATTRS just above for
-     which boxes this covers and why (Aparna, 2026-09-17). */
-  const act = document.activeElement;
-  let typing = null;
-  if (act && act.matches){
-    for (const attr of AG_LIBCARET_ATTRS){
-      const sel = "[" + attr + "]";
-      if (act.matches(sel)){ typing = { sel, from: act.selectionStart, to: act.selectionEnd }; break; }
-    }
-  }
-  if (agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "") && typing){
-    const back = document.querySelector(typing.sel);
-    if (back){ try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.from, typing.to); } catch (e) {} }
-  }
+  /* the Library editor, the section editor and the prompt editor all redraw while someone types
+     (the word count is live): agCaretGrab/agCaretPut, above agDraw, put the caret back. */
+  const panelCaret = agCaretGrab("agPanel");
+  if (agSetHtml("agPanel", a.panel ? agPanelHtml(a) : "")) agCaretPut(panelCaret);
   const quiet = document.getElementById("agQuiet");
   if (quiet){ const q = agQuietHtml(a); agSetHtml("agQuiet", q); quiet.hidden = !q; }
   if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
@@ -5217,7 +5238,7 @@ async function agAction(act, el){
       agDraw(); break;
     }
     case "libdel": {
-      if (typeof confirm === "function" && !confirm("Delete this article from the Library? The chat that made it stays.")) break;
+      if (typeof confirm === "function" && !confirm("Delete this article? It goes from the Library for everyone on the team. The chat that made it stays.")) break;
       try { await agPostApi(`/library/${encodeURIComponent(arg)}/delete`, {}); a.library = await agApi("/library"); agToast("Deleted"); }
       catch (e) { agToast("Could not delete: " + (e.message || e)); }
       agDraw(); break;

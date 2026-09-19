@@ -107,8 +107,14 @@ class Base(unittest.TestCase):
             return rt
 
         async def fake_spawn(build_args, cwd, manifest, register, env=None,
-                             publish=None):
-            self.spawned.append({"manifest": manifest, "cwd": cwd})
+                             publish=None, on_first_turn=None):
+            # the REAL spawner fires this from its adoption hook, on the first
+            # frame that carries a session id; a fake that swallowed it would
+            # hide the one wire this test class can see
+            self.spawned.append({"manifest": manifest, "cwd": cwd,
+                                 "on_first_turn": on_first_turn})
+            if on_first_turn is not None:
+                on_first_turn()
             return "worker-1"
 
         app_module._shadow_new_runtime = new_runtime
@@ -182,6 +188,31 @@ class TestBriefAtStart(Base):
         acts = shadow_ledger.read("actions", 10)
         self.assertTrue(any("brief fallback" in a["summary"] for a in acts))
         self.assertIsNone(stc.get(m["id"]), "a failed boot leaves no chat")
+
+    def test_05_the_spawn_names_turn_1_at_first_contact(self):
+        """THE CARD MUST NOT READ "turn 0 of 25" WHILE TURN 1 IS PAINTING.
+
+        mission_engine.open_first_turn existed, shadow_runner accepted the
+        hook, and the engine tests drove it through a fake spawner -- but
+        `_delegate_spawn`, the ONE production spawn, never passed it. So in
+        the running app the field was written only by run_mission's
+        say-and-wait block, which the `briefed` branch skips for turn 1:
+        turns 2..n read right and turn 1 read zero for its whole length.
+
+        Both halves are asserted: the argument reaches the spawner, and the
+        record it writes is the one a card renders.
+        """
+        m = self.mission(manifest="Founder wrote this brief.")
+        self.assertIsNone(self.store.load(m["id"]).get("turn_open"),
+                          "nothing is painting before the spawn")
+        run(app_module._delegate_spawn(m))
+        self.assertIsNotNone(self.spawned[0]["on_first_turn"],
+                             "the hook is PASSED -- not left at its default")
+        on_disk = self.store.load(m["id"])
+        self.assertEqual(on_disk.get("turn_open"), 1,
+                         "turn 1 is named the moment the worker paints")
+        self.assertEqual(on_disk.get("turns_used") or 0, 0,
+                         "...and naming it never counts it as finished")
 
 
 class TestOpeningATask(Base):

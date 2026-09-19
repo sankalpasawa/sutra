@@ -5,6 +5,40 @@
 
 - **Adherence row 6, slice 1: the gate reads a rules table, not the model's markers.** `runtime/rules/gates.json` declares rules R1-R9; `pre.adherence_gate` evaluates them all on every tool call and names every unmet rule in one refusal. Two judgments become validated artifacts: `<turn>.blueprint.json` (steps with verify commands the runtime runs at Stop; a manual verify counts as open, never done) and `<turn>.build_layer.json` (L1 with promotion fields, or L2 with a reason); `placement.json` answers a no-match, `depth.json` may only raise the rubric's number. Lane verdicts are sealed (HMAC with a per-box key) and only a sealed, corroborated verdict of this or the previous turn counts for step 8; the codex marker is no longer evidence. When the mode is exactly `on`, the runtime arms the rules gate per event and the eleven legacy PreToolUse gate scripts still run but their decisions go to `<turn>.truthdiff.jsonl` and are dropped (`sutra-steps truthdiff`); unarmed they decide as before. The turn's facts, ledger and lane files are runtime-owned. `sutra-steps statusline|pretty|truthdiff`. Tests: test-gate-rules 82, test-adherence 187, test-review-lane 38; parity unchanged with the flags absent.
 
+## 2.285.5 (2026-09-19)
+
+- **Read only is something a person picks, not something a write can leave behind.** The owner's machine opened on Read only again five minutes before the 2.285.4 release that was meant to end it: its settings.json carried `permission_mode: plan` with the `permission_mode_chosen` stamp beside it, written by a POST no log, transcript or UI path identifies.
+- **Naming a mode is no longer the same as choosing one.** `save_settings` stamped whenever a mode was named; an echo of the value already on screen names one too, and the server cannot tell the two apart by comparison alone. The caller now states intent -- `chosen`, defaulting True for direct Python calls and False at the unauthenticated HTTP boundary, with the two controls a human presses sending it explicitly.
+- **An unclaimed write still sets the mode**, it just cannot pin the floor mode past a restart; one that moves the mode drops a stamp left over from the value it replaced. The app opens on Read only only if a person pressed Read only.
+- Tests: six cases in `test_access_options.py`, two at the route in `test_provider_routes.py`; six existing fixtures now send `chosen` because they all mean "the operator picked this".
+
+## 2.285.4 (2026-09-19)
+
+- Released from v2.285.3-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release prep for v2.285.4-desktop
+- Changed: 32 file(s), +2898/-273
+- New test suites: test_shadow_delegate_focus.js
+
+## 2.285.3 (2026-09-18)
+
+- **Shadow's workspace keeps its place, its draft and its question.** Six founder reports from 2026-09-18, all of them the same class: a repaint taking away something the founder was in the middle of using.
+- **NEEDS YOU kept the turn list and lost the conversation.** `.shwright>.shcard2` was unshrinkable inside a clipping column, so the sign-off list squeezed the conversation scroller to 0px with no scrollbar to reach it. The card now shrinks (capped at 32%) and scrolls itself, the conversation holds a min(220px, 40%) floor, and the question is pinned between the conversation and the composer rather than competing with it inside the scroller.
+- **The workspace owns its own scroller.** `.shwork` is the pane's height, so the objective and the brief card stay pinned while the conversation scrolls, and the scroll position is snapshotted before `panesEl.innerHTML` replaces the panes row -- the old inline read measured a detached element and yanked the founder to the tail.
+- **"Talk to Shadow" keeps what you typed.** The draft now lives in `S.shadowComposeDraft` and is rendered back, instead of existing only in a DOM node that `render()` replaces; the overlay's card swap snapshots and restores focus and caret the same way `render()` does.
+- **A running task looks alive everywhere:** one `shadowTaskPillHtml` for the list row, the card and the workspace header, with the spinner `aria-hidden` and stopped under reduced-motion.
+- **Turn 1 is turn 1.** `mission_engine` stamps `turn_open` before the spawner awaits the whole first agentic turn, and clears it if the spawn raises, so the first turn no longer reads "turn 0 of 25" for its entire duration.
+- **A failed transcript read leaves what we hold.** `goalMessages` no longer writes null over an on-screen conversation when `/api/sessions/<sid>` 404s.
+- Tests: `test_shadow_compose_focus.js` and `test_shadow_task_spinner.js` are new and wired into release-dmg.yml's Panel step; `test_shadow_v4_shell.js` grows the layout blocks; `test_shadow_supervisor_recovery.py` adds 136 lines. Release gates green: 46 JS suites, 26 Panel commands, 62 Python lanes.
+
+## 2.285.2 (2026-09-18)
+
+- **Fixed: the Prompts tab editor took one letter at a time.** The same repaint bug fixed in 2.284.0 for the Library boxes, in a box that fix did not name. The caret restore is now general: any text box that had focus keeps its focus, selection and scroll position through the timed repaint. This also fixes the Memory, Connections and competitor forms.
+- **Team Library: an article reaches the team once it has a draft, and not before.** Empty rows made at the start of a run ("Writing…", 0 words) are never sent. One teammate's update had filled everybody's Library with nine of them.
+- **The first draft is shared the moment it exists**, as a draft, without anyone having to mark it ready. Marking it ready or back to draft now reaches the team too.
+- **Only the person who created an article can delete it**, and the delete removes it for everyone. Everyone can still open, edit and mark any article. A teammate's card says whose it is and has no bin.
+- **A row whose run has stopped says "stopped"** instead of spinning for ever.
+- **Tests can no longer touch a real install.** The test fixture picks a throwaway folder the moment it loads and refuses a data folder inside ~/.sutra-ui.
+
 ## 2.285.1 (2026-09-18)
 
 - **Two holes closed in the adherence gate, and the prints made readable.** An adversarial review of 2.285.0 found that one Write to `~/.sutra-overrides` or a flag file switched the gate off, and that `bash x.sh`, `./x`, `source`, `make` and heredoc interpreters were classed as reads. Now the runtime's own files are runtime-owned (no tool call may name them in a path, a command or written content; the runtime flags are no longer override keys; an override file modified inside a session is ignored until the next one), every Bash segment is classed by its first word and fails closed (shells and interpreters with an argument, unknown programs and relative script paths are mutations; a version or help flag alone is a read), scripts and shebang content under exempt directories are not exempt. The live line is now `[sutra <turn>] lens done (evidence DOWN)  |  cynefin done (clear)` and the Stop print is a checkbox table with one count line. Tests: test-adherence 168, test-overrides 25; parity unchanged with the flags absent.

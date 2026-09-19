@@ -1938,6 +1938,16 @@ class SettingsRequest(BaseModel):
     #: explicitly because `auto` exists for Claude and for nobody else, so the
     #: answer genuinely depends on who is being configured.
     access_provider: Optional[str] = None
+    #: TRUE ONLY WHEN A HUMAN PICKED THE MODE IN THIS REQUEST. Absent or false
+    #: means the request carries a mode without claiming anyone chose it -- an
+    #: echo of the displayed value, a script, an older client -- and
+    #: providers.save_settings then writes the mode WITHOUT
+    #: providers.ACCESS_CHOSEN_KEY, so an inherited Read only keeps resolving to
+    #: the Full access default instead of being pinned by a write nobody owns.
+    #: Defaulting to false at the boundary is the point: this port is
+    #: unauthenticated, and on 2026-09-19 a POST of exactly this shape pinned
+    #: Read only on the owner's machine with no way to identify the sender.
+    chosen: Optional[bool] = None
     #: {provider_id: {key: true|false}} -- a PATCH over the per-provider
     #: switches. Its own path through save_provider_settings(), which writes
     #: only the new top-level `provider_settings` key.
@@ -2024,6 +2034,7 @@ def api_settings_post(req: SettingsRequest):
                 chat_scope=req.chat_scope,
                 access=req.access,
                 access_provider=req.access_provider,
+                chosen=bool(req.chosen),
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))

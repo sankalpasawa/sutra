@@ -1728,7 +1728,11 @@ async function setPermMode(mode){
 async function applyPermMode(mode, withAck){
   S.permBusy = true; S.permError = null; render();
   try {
-    const body = { permission_mode: mode };
+    /* `chosen` is the CLICK, said out loud. The server no longer infers a
+       choice from a named mode (providers.ACCESS_CHOSEN_KEY), because an echo
+       of the displayed value names one too -- so the two controls a human
+       actually presses are the two places that claim it. */
+    const body = { permission_mode: mode, chosen: true };
     if (withAck) body.unsafe_ack = UNSAFE_ACK_PHRASE;
     await apiPost("/api/settings", body);
     /* Re-read rather than assuming: the server clamps, and the panel must show

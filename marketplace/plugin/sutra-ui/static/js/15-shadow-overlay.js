@@ -374,6 +374,21 @@ function mountShadowOverlay(){
 function renderShadowCard(){
   if (typeof document === "undefined" || typeof S === "undefined") return;
   const existing = document.querySelector && document.querySelector("[data-shcardwrap]");
+  /* THE CARD IS REPLACED WHOLESALE and nothing carried the composer across
+     the swap, so a repaint landing mid-sentence in "Talk to Shadow" took the
+     focus, the caret AND the half-typed draft with it. Four callers repaint
+     from the background while the founder may still be typing:
+     shadowSendAndRefresh's second pass (after the POST answers),
+     shadowMissionAct, goalCancelProposal and syncShadowPresence.
+
+     Same contract render() gives the home composer: snapshot BEFORE the
+     remove, restore AFTER the mount. Guarded throughout -- the node tests
+     boot this file against a stub document with no activeElement. */
+  const act = document.activeElement;
+  const keep = (existing && act && act.dataset && act.dataset.shcompose
+    && existing.contains && existing.contains(act))
+    ? { value: act.value, start: act.selectionStart, end: act.selectionEnd }
+    : null;
   if (existing) existing.remove();
   if (!S.shadowCardOpen) return;
   const wrap = document.createElement("div");
@@ -411,6 +426,22 @@ function renderShadowCard(){
     });
   }
   (document.body || document.documentElement).appendChild(wrap);
+  /* The restore is unconditional, exactly like render()'s (06-render.js).
+     Send is NOT special-cased here: the Enter handler above clears the box
+     before it calls, so keep.value is already "" on that path and writing it
+     back is a no-op against a freshly-rendered textarea that is empty anyway.
+     Nothing about what Enter does changed. */
+  if (keep && wrap.querySelector){
+    const box = wrap.querySelector("[data-shcompose]");
+    if (box){
+      box.value = keep.value;
+      try {
+        box.focus({ preventScroll: true });
+        if (typeof keep.start === "number" && box.setSelectionRange)
+          box.setSelectionRange(keep.start, keep.end);
+      } catch (e) {}
+    }
+  }
   return wrap;
 }
 

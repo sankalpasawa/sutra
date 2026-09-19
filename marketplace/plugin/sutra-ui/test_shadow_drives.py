@@ -663,7 +663,11 @@ class TestTheProductionDecider(unittest.TestCase):
         # the argv builder and the workdir are still the two positionals;
         # 2026-09-15 added the runtime factory as a keyword, so Shadow's
         # reasoning comes from provider_adapters like every chat pane's does
-        self.assertIn("shadow_runner.make_decider(_shadow_args, "
+        # 2026-09-19 replaced the first positional: the reasoning lane is
+        # built by _decide_args (no tools, no settings, no plugins) rather
+        # than by the full-agent _shadow_args. The workdir, the runtime
+        # factory and the single wiring below are unchanged.
+        self.assertIn("shadow_runner.make_decider(_decide_args, "
                       "_shadow_workdir(),", app)
         self.assertIn("new_runtime=_shadow_new_runtime", app)
         self.assertEqual(app.count("set_default_decider("), 1)

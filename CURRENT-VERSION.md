@@ -6,6 +6,22 @@
 
 **Gate rules read the ledger; the model-written markers stop deciding** (adherence row 6 slice 1, brief ADHERENCE-ROW6-BRIEF.md; founder 2026-09-19 "continue" with the four s7 recommendations taken). Rules R1-R9 in `runtime/rules/gates.json`, blueprint and build-layer as validated artifacts with verify commands the runtime runs, sealed lane verdicts, the legacy gates collapsed behind a per-event armed flag with a truth-diff, `sutra-steps statusline`. Reviews: DeepSeek on the diff (3 P1 folded) and an adversarial workflow; codex SKIPPED until 2026-10-16. Deletion of the legacy gates (2.287.0) waits on the truth-diff gate of brief s3.4.
 
+## v2.285.5 (2026-09-19)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.285.4 (2026-09-19)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.285.3 (2026-09-18)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.285.2 (2026-09-18)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
 ## v2.285.1 (2026-09-18)
 
 **The adherence gate can no longer be switched off or walked around from inside a session** (founder 2026-09-18: "fix them"). Runtime-owned paths (override file, flag files, seal dir, session stamp) are refused to every tool call; Bash is classed by shape and fails closed; scripts under exempt directories are not exempt. The live step line and the Stop table are now short and human-readable. Reviews: DeepSeek on the diff (3 P1 folded); codex SKIPPED until 2026-10-16. Tests: 168 + 25 checks, golden parity on both runners.

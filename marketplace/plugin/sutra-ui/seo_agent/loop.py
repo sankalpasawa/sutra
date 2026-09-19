@@ -802,10 +802,19 @@ def step(chat_id, run_id):
                 # makes the row and the others find it.
                 if name in ARTICLE_TOOLS and not (out or {}).get("error"):
                     try:
+                        from . import library_edit as _le
                         store.library_start(chat_id, run_id,
-                                            (store.get_state(chat_id, run_id) or {}).get("request", ""))
+                                            (store.get_state(chat_id, run_id) or {}).get("request", ""),
+                                            **_le.owner_fields())
                     except Exception:   # noqa: BLE001 — a row we cannot open must never lose the run
                         pass
+                # THE DRAFT IS SHARED THE MOMENT IT EXISTS (2026-09-18). It used to wait for the
+                # person to approve it, so a teammate saw nothing until then, and a run that
+                # stopped at the approval question never reached anyone. Saved as a draft, once:
+                # only while the row has no words yet, so this never overwrites a later edit.
+                # Approving it still marks it ready, exactly as before.
+                if name == "write_article" and not (out or {}).get("error"):
+                    _share_first_draft(chat_id, run_id)
                 store.emit(chat_id, run_id, "step_finished", id=step_id,
                            label=registry.label(name), ms=ms,
                            summary=(out or {}).get("summary", ""))
@@ -1000,7 +1009,19 @@ def resume(chat_id, run_id, answer):
     return step(chat_id, run_id)
 
 
-def save_to_library(chat_id, run_id, title=None):
+def _share_first_draft(chat_id, run_id):
+    """Save the run's first draft to the Library as a draft, and so to the team. Never raises."""
+    try:
+        row = store.library_get(store.library_item_id(chat_id, run_id)) or {}
+        if (row.get("draft") or "").strip() or row.get("status") in ("draft", "ready", "published"):
+            return None
+        return save_to_library(chat_id, run_id, status="draft")
+    except Exception as e:  # noqa: BLE001 — sharing is a nicety; the run and its draft are safe
+        store.emit(chat_id, run_id, "note", text="Could not share the draft yet: %s" % str(e)[:160])
+        return None
+
+
+def save_to_library(chat_id, run_id, title=None, status="ready"):
     """Save the run's draft to the Library and say so in the run log. The one place this
     happens: the publish route and the draft approval both call it. Returns
     {"item_id", "title"} or None when there is no draft yet."""
@@ -1035,13 +1056,14 @@ def save_to_library(chat_id, run_id, title=None):
     if not topic_scope and isinstance(rs.get("topic_gate"), dict):
         tg = rs["topic_gate"]
         topic_scope = {"state": "on" if tg.get("relevant", True) else "off", "why": tg.get("why", "")}
-    item = store.library_save(chat_id, run_id, title, draft, {
+    from . import library_edit as _le
+    item = store.library_save(chat_id, run_id, title, draft, dict(_le.owner_fields(), **{
         "primary_keyword": primary.get("keyword", "") if isinstance(primary, dict) else str(primary),
         "format_archetype": fmt,
         "format_label": pstore.format_title(fmt) if fmt in wc.ARCHETYPES else "",
         "measured_band": dec.get("measured_band") or {},
         "topic_scope": topic_scope,
-        "idea_id": idea_id})
+        "idea_id": idea_id}), status=status)
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
 
     # THE ARTICLE GOES TO THE TEAM. Until 2026-09-16 nothing pushed a `library` row: the table,

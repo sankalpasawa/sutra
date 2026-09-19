@@ -2514,6 +2514,13 @@ def api_library():
         # the plain name comes from the prompt store, the same place the Prompts tab gets it, so
         # the two screens can never call the same shape by two different names
         r["format_label"] = prompt_store.format_title(arch) if arch else ""
+    # whose it is, and whether this person may delete it (2026-09-18): the card shows "by Aparna"
+    # on a teammate's article and draws the bin only on your own
+    from seo_agent import library_edit
+    me = library_edit.actor_id()
+    for r in rows:
+        r["mine"] = store.library_is_mine(r, me)
+        r["owner_name"] = "" if r["mine"] else (r.get("owner") or r.get("edited_by") or "a teammate")
     return rows
 
 
@@ -2704,14 +2711,24 @@ def api_library_status(item_id: str, body: dict = Body(...)):
     if not _ok_id(item_id):
         return _bad("bad id")
     status = body.get("status") if body.get("status") in ("draft", "ready", "published") else "draft"
-    return store.library_set_status(item_id, status) or _bad("not found", 404)
+    meta = store.library_set_status(item_id, status)
+    if not meta:
+        return _bad("not found", 404)
+    # the team sees "ready" / "back to draft" too, not only the Mac that clicked it (2026-09-18)
+    from seo_agent import library_edit
+    return dict(meta, team=library_edit.push_status(item_id))
 
 
 @router.post("/library/{item_id}/delete")
 def api_library_delete(item_id: str):
+    """Only the person who created an article may delete it, and then it goes for everyone."""
     if not _ok_id(item_id):
         return _bad("bad id")
-    return {"ok": store.library_delete(item_id)}
+    from seo_agent import library_edit
+    out = library_edit.delete(item_id)
+    if not out.get("ok") and out.get("error", "").startswith("Only "):
+        return JSONResponse(out, status_code=403)
+    return out
 
 
 # ---- asset ideas ---------------------------------------------------------------------------------

@@ -602,6 +602,16 @@ def push(kind, key, payload=None, op="upsert", actor=None, client=None, item_id=
     """
     if kind not in mirror.TABLES:
         raise ValueError("unknown kind %r (known: %s)" % (kind, ", ".join(mirror.KINDS)))
+    # AN ARTICLE REACHES THE TEAM ONCE IT HAS WORDS, AND NOT BEFORE (2026-09-18). A Library row is
+    # born the moment a run starts, titled "Writing…" and empty. The Library backfill sent nine of
+    # those at once from one teammate's Mac, and everybody's Library filled with rows called
+    # "continue" and "Write a1007" that held nothing and never would. This is the one door every
+    # library send goes through (a save, an edit, a status change, the backfill), so the rule
+    # lives here: no draft, no send. Deletes carry no payload and are not affected.
+    if kind == "library" and op == "upsert":
+        body = (payload or {}).get("draft") or (payload or {}).get("draft_md") or ""
+        if not str(body).strip():
+            return None
     allowed, _why = _may_push(kind, client)
     if not allowed:
         # NOT queued, and that is the whole point. See KIND_NEEDS_VERSION: a row this workspace has

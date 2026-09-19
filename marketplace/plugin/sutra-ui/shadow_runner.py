@@ -2333,7 +2333,7 @@ def start_pump(rt, sid):
 
 
 async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
-                                 publish=None):
+                                 publish=None, on_first_turn=None):
     """S53 in production: a NEW claude session Shadow delegates into.
 
     Headless twin of a pane: its own SessionRuntime, registered in the same
@@ -2407,6 +2407,20 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
                 DELEGATE_PIDS[sid] = rt.proc.pid
         except Exception:               # noqa: BLE001 -- never fail a spawn
             pass
+        # THE TURN THE WORKER HAS JUST BEGUN (founder, 2026-09-18). This is
+        # the first instant at which a worker provably exists and its turn is
+        # painting -- the same frame that publishes the chat, ~1s after the
+        # manifest went out. Earlier than this (at admission, or on the line
+        # before the spawn) the card would claim a turn while nothing was
+        # running, which the founder has ruled must read 0; later than this
+        # leaves the card at 0 for the whole of the longest turn of the
+        # mission. Best-effort, like every other line in this hook: naming a
+        # turn is never worth a failed spawn.
+        if on_first_turn is not None:
+            try:
+                on_first_turn()
+            except Exception:           # noqa: BLE001 -- never fail a spawn
+                pass
         # STILL EXACTLY ONE spawn row per delegate -- it simply lands when the
         # session becomes real rather than when its first turn ends.
         shadow_ledger.append("actions", {

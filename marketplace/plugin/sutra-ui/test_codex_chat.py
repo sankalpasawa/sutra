@@ -91,6 +91,24 @@ class _Server(unittest.TestCase):
         env["SUTRA_UI_WORKDIR"] = os.path.join(cls.tmpdir, "workspace")
         env["SUTRA_UI_WORKDIR_ROOT"] = cls.tmpdir
         env["SUTRA_UI_SETTINGS"] = os.path.join(cls.tmpdir, "settings.json")
+        # A PINNED MODE, because the argv assertions below are about FLAG
+        # SHAPE (order, resume placement, -C) and codex expresses the shipped
+        # default differently: `bypassPermissions` passes
+        # --dangerously-bypass-approvals-and-sandbox INSTEAD of --sandbox
+        # (provider_adapters._CODEX_SANDBOX_FOR_MODE), so once Full access
+        # became the default on 2026-09-18 every `--sandbox` lookup here
+        # raised ValueError. Pinning `plan` keeps these tests about the thing
+        # they test; test_codex_runtime's
+        # test_the_shipped_default_hands_codex_the_bypass_flag covers what the
+        # default itself produces.
+        with open(env["SUTRA_UI_SETTINGS"], "w") as fh:
+            # ...and the stamp is what makes the pin hold: since 2026-09-18 a
+            # stored floor mode with no stamp beside it reads as INHERITED
+            # rather than chosen and resolves to the default anyway. Literal
+            # rather than providers.ACCESS_CHOSEN_KEY because this file drives
+            # a real server in a SUBPROCESS and imports none of the app.
+            json.dump({"permission_mode": "plan",
+                       "permission_mode_chosen": True}, fh)
         env["SUTRA_UI_CHATS"] = os.path.join(cls.tmpdir, "chats")
         # Claude refuses to start with this set, and ws_chat refuses the socket.
         env.pop("ANTHROPIC_API_KEY", None)
@@ -286,7 +304,7 @@ class TestCodexChatTurn(_Server):
         self.assertIn("--json", argv)
         self.assertIn("--skip-git-repo-check", argv)
         self.assertIn("-C", argv)
-        # default permission_mode is `plan` (SAFETY rule 4), so read-only
+        # this class pins permission_mode=plan (see setUpClass), so read-only
         self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
         self.assertIn("approval_policy=never", argv)
 

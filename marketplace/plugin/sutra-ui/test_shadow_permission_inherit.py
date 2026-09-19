@@ -56,17 +56,35 @@ class Base(unittest.TestCase):
         self.addCleanup(setattr, providers, "provider_by_id", self._orig_by_id)
 
     def write_mode(self, mode):
-        self.settings.write_text(json.dumps({"permission_mode": mode}))
+        # STAMPED CHOSEN -- see providers.ACCESS_CHOSEN_KEY. This helper's
+        # whole job is "the founder set the global mode to X", and an
+        # unstamped floor mode is read as inherited instead.
+        self.settings.write_text(json.dumps(
+            {"permission_mode": mode, providers.ACCESS_CHOSEN_KEY: True}))
 
     def unsafe(self, allowed):
         """The REAL gate: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1, or a recorded
         `unsafe_modes_acknowledged` in settings.json. Driven by the env var
         here because that is the out-of-band half and needs no consent
-        phrase. (READ_ONLY_ENV gates editing_allowed(), a different thing.)"""
+        phrase. (READ_ONLY_ENV gates editing_allowed(), a different thing.)
+
+        SINCE 2026-09-18 the gate is an OPT-OUT, so `unsafe(False)` must
+        ENGAGE it (SUTRA_UI_SAFE_PERM_MODES=1) rather than merely drop the
+        opt-in -- otherwise "unsafe modes off" silently means "on", and the
+        clamped half of every assertion below tests nothing. Both vars are set
+        explicitly rather than popped, because this class asserts an
+        EQUIVALENCE between Shadow and chat: an ambient value inherited from
+        whatever ran before would move both sides together and pass while
+        measuring the wrong posture.
+        """
         if allowed:
             os.environ[providers.UNSAFE_MODES_ENV] = "1"
+            os.environ.pop(providers.CLAMP_MODES_ENV, None)
         else:
             os.environ.pop(providers.UNSAFE_MODES_ENV, None)
+            os.environ[providers.CLAMP_MODES_ENV] = "1"
+        self.addCleanup(os.environ.pop, providers.UNSAFE_MODES_ENV, None)
+        self.addCleanup(os.environ.pop, providers.CLAMP_MODES_ENV, None)
 
     def shadow_mode(self):
         args = app._shadow_args()
@@ -167,6 +185,62 @@ class TestShadowInheritsTheGlobalMode(Base):
         body = src[i:src.index("\n@app.", i + 10)]
         self.assertIn("effective_permission_mode", body)
         self.assertNotIn('"permission_mode": "plan"', body)
+
+
+class AnInheritedPlanMovesShadowToo(Base):
+    """THE ARGV HALF of providers.ACCESS_CHOSEN_KEY (added 2026-09-19).
+
+    test_access_options.AnInheritedReadOnlyIsNotAChoice pins the RESOLUTION
+    rule: a stored floor mode with no stamp beside it was written by the
+    pre-2026-09-18 default rather than picked, so it reads as "never chose".
+    This class pins the consequence the founder actually sees on a machine
+    onboarded before that date -- the flag the CLI receives moves with it.
+
+    IT EXISTS BECAUSE EVERY OTHER FIXTURE HERE IS STAMPED. `write_mode` means
+    "the founder set this mode", which is what the equivalence tests above are
+    about, so none of them can cover the unstamped side. Without this class
+    that side is pinned in providers alone and nothing would catch a future
+    edit that resolved it correctly and then failed to carry it into the argv.
+    """
+
+    def write_unstamped(self, mode):
+        """A pre-change settings.json, verbatim in shape: the mode is there,
+        the stamp is not."""
+        self.settings.write_text(json.dumps(
+            {"onboarded": True, "provider": "claude",
+             "permission_mode": mode}))
+
+    def test_an_unstamped_plan_reaches_shadow_as_full_access(self):
+        self.write_unstamped("plan")
+        self.unsafe(True)
+        self.assertEqual(self.shadow_mode(), "bypassPermissions")
+        self.assertEqual(self.shadow_mode(), self.chat_mode(),
+                         "Shadow and chat must move together or not at all")
+
+    def test_a_stamped_plan_still_reaches_shadow_as_plan(self):
+        """The other half, and the one that would break if the rule reached
+        past the floor: a DELIBERATE Read only must still arrive as plan."""
+        self.write_mode("plan")
+        self.unsafe(True)
+        self.assertEqual(self.shadow_mode(), "plan")
+        self.assertEqual(self.shadow_mode(), self.chat_mode())
+
+    def test_an_unstamped_NON_floor_mode_is_left_alone_in_the_argv(self):
+        """acceptEdits is someone's setting whether or not it is stamped. The
+        rule may only ever move the floor."""
+        self.write_unstamped("acceptEdits")
+        self.unsafe(True)
+        self.assertEqual(self.shadow_mode(), "acceptEdits")
+        self.assertEqual(self.shadow_mode(), self.chat_mode())
+
+    def test_the_clamp_still_applies_on_top(self):
+        """Resolution runs FIRST, the unsafe gate runs after. With the gate
+        engaged, an inherited floor must not become a live bypassPermissions
+        -- that would be the rule widening past what the operator allows."""
+        self.write_unstamped("plan")
+        self.unsafe(False)
+        self.assertEqual(self.shadow_mode(), "plan")
+        self.assertEqual(self.shadow_mode(), self.chat_mode())
 
 
 if __name__ == "__main__":

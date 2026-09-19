@@ -1813,6 +1813,39 @@ def completion_text(completion):
     return "\n".join(head) + (("\n\n" + "\n".join(rows)) if rows else "")
 
 
+def open_first_turn(store, mid):
+    """Name the turn a worker has JUST BEGUN. Called at first contact.
+
+    The only writer of `turn_open` outside run_mission, and deliberately the
+    same expression the loop uses: the turn in flight is the one after the
+    last turn that FINISHED. shadow_runner.spawn_delegate_session calls this
+    (through app._delegate_spawn's `on_first_turn`) from the first frame the
+    worker emits, so the field is stamped when the turn starts painting and
+    not when the app merely decided to spawn something.
+
+    NEVER LOWERS, NEVER RAISES. A record that already names a turn keeps it,
+    so a re-adopted or retried spawn cannot walk the count backwards; a
+    terminal mission is left alone; and any store trouble leaves the record
+    exactly as it was. A turn LABEL is never worth failing a spawn over --
+    the same rule every other book-keeping line in that hook follows.
+
+    NOT A BUDGET. max_turns is compared against turns_used and nothing else,
+    here as everywhere.
+    """
+    try:
+        m = store.load(mid)
+        if m is None or m.get("state") in TERMINAL:
+            return None
+        want = (m.get("turns_used") or 0) + 1
+        if (m.get("turn_open") or 0) >= want:
+            return m
+        m["turn_open"] = want
+        store.save(m)
+        return m
+    except Exception:                   # noqa: BLE001 -- see docstring
+        return None
+
+
 class MissionEngine:
     """Drives ONE mission's loop. sayer/waiter/reader are injected."""
 
@@ -1888,7 +1921,47 @@ class MissionEngine:
         # on the card -> first worker interaction. This is that one step, in
         # the one place that runs before the spawner does.
         await self._criteria_before_first_contact(m)
-        sid = await spawner(m)
+        # THE FIRST TURN IS NAMED WHEN IT STARTS -- NOT ONE MOMENT EARLIER
+        # (founder, 2026-09-18, second ruling).
+        #
+        # The spawner's contract is "send the manifest, WAIT OUT THE WHOLE
+        # FIRST AGENTIC TURN, hand back a session id", so turn 1 really is
+        # in flight across this await and run_mission never names it: the
+        # `briefed` branch skips the say-and-wait block that carries the
+        # stamp. That is why every card read "turn 0 of 25" for the whole
+        # of turn 1.
+        #
+        # The first fix stamped `turn_open` HERE, on the line above this
+        # await. That was too early by one window: at this point no worker
+        # process exists and no frame has been painted, and the founder's
+        # ruling is that ZERO is the correct reading for exactly that
+        # stretch -- while Shadow is still setting the bar and nothing has
+        # been said to anyone. A card reading "turn 1 of 25" over a window
+        # in which nothing is happening is the same lie in the other
+        # direction.
+        #
+        # So the stamp moved INTO the spawn, to first contact:
+        # shadow_runner.spawn_delegate_session fires `on_first_turn` from
+        # its `_adopt` hook -- the first frame that carries a session id,
+        # which is the same instant the chat is published and the worker's
+        # turn 1 begins painting. app._delegate_spawn passes
+        # `open_first_turn` (this module) as that callback, so the writer of
+        # the field is still this module and it keeps one meaning.
+        #
+        # THE CLEANUP BELOW MATTERS MORE NOW, not less: the spawner can
+        # stamp at first contact and THEN fail its boot check, and a turn
+        # nobody is working must not outlive the spawn.
+        try:
+            sid = await spawner(m)
+        except BaseException:
+            # A SPAWN THAT NEVER HAPPENED LEAVES NO TURN IN FLIGHT. The
+            # record outlives the failure (the founder sees the mission),
+            # so a turn number nobody is working must not outlive it too.
+            failed = self.store.load(mid)
+            if failed is not None and failed.get("turn_open") is not None:
+                failed["turn_open"] = None
+                self.store.save(failed)
+            raise
         m = self.store.load(mid)
         m["target_session"] = sid
         # THE BRIEF HAS NOW BEEN DELIVERED, and this is the only place that

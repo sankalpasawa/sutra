@@ -996,10 +996,31 @@ class TestPermQueryParam(unittest.TestCase):
         env["SUTRA_UI_SETTINGS"] = os.path.join(cls.tmpdir, "settings.json")
         env["SUTRA_UI_CHATS"] = os.path.join(cls.tmpdir, "chats")
         env.pop("ANTHROPIC_API_KEY", None)
-        # NOT set: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES. The consent gate being OFF
-        # is what the clamp test needs, and it is also the default an operator
-        # who has never typed the phrase is in.
+        # THE CONSENT GATE, ENGAGED ON PURPOSE. This class is about what the
+        # per-connection `perm=` param does when a mode is NOT consented to,
+        # so the gate has to be on for the clamp cases to mean anything.
+        #
+        # It used to be enough to pop the opt-in, because the gate was the
+        # shipped default. Since 2026-09-18 it is an opt-out (Full access is
+        # the default and it runs -- providers.unsafe_modes_allowed), so the
+        # clamped posture must be ASKED for or every clamp assertion below
+        # silently tests the open one.
         env.pop("SUTRA_UI_ALLOW_UNSAFE_PERM_MODES", None)
+        env["SUTRA_UI_SAFE_PERM_MODES"] = "1"
+        # ...and a STORED mode, so "keeps the stored setting" names a real
+        # stored value rather than the shipped default seen through the clamp.
+        #
+        # STAMPED SINCE 2026-09-19, and without the stamp this fixture stopped
+        # doing that job: an unstamped floor mode now reads as INHERITED
+        # rather than chosen (providers.ACCESS_CHOSEN_KEY), so it resolved to
+        # bypassPermissions and the clamp above brought it back to `plan`.
+        # Every assertion below still passed -- via exactly the route this
+        # comment was written to rule out.
+        with open(env["SUTRA_UI_SETTINGS"], "w") as fh:
+            # literal rather than providers.ACCESS_CHOSEN_KEY: this class
+            # drives a real server in a SUBPROCESS
+            json.dump({"permission_mode": "plan",
+                       "permission_mode_chosen": True}, fh)
         env["SUTRA_UI_CODEX_BIN"] = CODEX_STUB
         env["SUTRA_UI_DEEPSEEK_BIN"] = ACP_STUB
         env["SUTRA_UI_DEEPSEEK_API_KEY"] = "sk-fake-not-a-real-key"
@@ -1064,14 +1085,26 @@ class TestPermQueryParam(unittest.TestCase):
         self.assertEqual(f["permission_mode"], "plan")
         self.assertEqual(f["permission_requested"], "plan")
 
-    def test_it_does_not_write_the_setting(self):
-        """PER CONNECTION ONLY. If this leaked into settings.json, one pane
-        would silently re-arm every other pane and every routine."""
-        self._first_frame(perm="plan")
+    def _stored_mode(self):
         with urllib.request.urlopen(
                 "http://127.0.0.1:%d/api/settings" % self.port, timeout=5) as r:
-            payload = json.loads(r.read())
-        self.assertEqual(payload["settings"]["permission_mode"], "plan")
+            return json.loads(r.read())
+
+    def test_it_does_not_write_the_setting(self):
+        """PER CONNECTION ONLY. If this leaked into settings.json, one pane
+        would silently re-arm every other pane and every routine.
+
+        BEFORE vs AFTER, not before vs a literal. This asserted `"plan"`, which
+        held only because plan was also the shipped default -- so once the
+        default moved (2026-09-18) the test failed while the behaviour it
+        guards was untouched. Comparing the two reads says what it means and
+        cannot go stale again.
+        """
+        before = self._stored_mode()["settings"]["permission_mode"]
+        self._first_frame(perm="plan")
+        payload = self._stored_mode()
+        self.assertEqual(payload["settings"]["permission_mode"], before,
+                         "a per-connection perm= leaked into the setting")
         path = payload["settings"]["settings_path"]
         try:
             with open(path) as fh:

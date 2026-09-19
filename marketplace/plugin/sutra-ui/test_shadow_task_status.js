@@ -61,7 +61,14 @@ const LIVE = M({ id: "m-live", state: "running", turns_used: 3,
   target_session: "sid-1", target_chat: "c-1",
   start_requested_at: "2026-09-14T12:37:21Z" });
 
-const pill = (h) => (h.match(/shtpill-[a-z]*"?\s*>([^<]*)</) || [])[1];
+/* A RUNNING PILL LEADS WITH ITS SPINNER, so the label is no longer the first
+   thing after the pill's opening tag. The spinner is an empty, aria-hidden
+   span -- decoration the founder is never meant to READ -- so it comes off
+   before any reader here looks for the word. Every other state is untouched
+   by this, because only `running` carries the ring. */
+const unspin = (h) =>
+  String(h).replace(/<span class="shtpillspin"[^>]*><\/span>/g, "");
+const pill = (h) => (unspin(h).match(/shtpill-[a-z]*"?\s*>([^<]*)</) || [])[1];
 /* the row is `TURN | 10 of 12` now -- the key says "turn", so the value no
    longer repeats it. Read the value span. */
 const turn = (h) => (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">([^<]*)</) || [])[1];
@@ -179,6 +186,7 @@ function grouped(list){
   let head = null;
   const re = /class="shwsec[^"]*"\s*>([^<]*)<|shtpill-[a-z]*"?\s*>([^<]*)</g;
   let m;
+  list = unspin(list);
   while ((m = re.exec(list))){
     if (m[1] !== undefined) head = m[1];
     else out.push([head, m[2]]);

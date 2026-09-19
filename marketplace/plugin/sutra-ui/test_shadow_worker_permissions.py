@@ -74,7 +74,13 @@ class Base(unittest.TestCase):
         # a resolvable claude, and a settings.json Shadow can read a mode from
         self._orig_settings = providers.SETTINGS_PATH
         sp = root / "sutra-settings.json"
-        sp.write_text(json.dumps({"permission_mode": "plan"}))
+        # STAMPED, because every test below means "the founder chose this
+        # mode". Since 2026-09-18 an unstamped floor mode is read as inherited
+        # rather than chosen (providers.ACCESS_CHOSEN_KEY), and would resolve
+        # to the default -- which would make these argv assertions depend on
+        # a rule they are not about.
+        sp.write_text(json.dumps({"permission_mode": "plan",
+                                  providers.ACCESS_CHOSEN_KEY: True}))
         providers.SETTINGS_PATH = sp
         self.sp = sp
         self.addCleanup(setattr, providers, "SETTINGS_PATH",
@@ -113,17 +119,30 @@ class Base(unittest.TestCase):
 
     def settings_file_write(self, mode):
         """The app-global permission mode Shadow inherits from."""
-        self.sp.write_text(json.dumps({"permission_mode": mode}))
+        self.sp.write_text(json.dumps({"permission_mode": mode,
+                                       providers.ACCESS_CHOSEN_KEY: True}))
 
     def unsafe(self, allowed):
         """The gate that decides whether the write-capable modes resolve at
-        all. Driven by the env var, the out-of-band half that needs no
-        consent phrase (same idiom as test_shadow_permission_inherit)."""
+        all. Driven by the env vars, the out-of-band half that needs no
+        consent phrase (same idiom as test_shadow_permission_inherit).
+
+        TAKES TWO VARS SINCE 2026-09-18, because the gate became an OPT-OUT
+        when Full access became the shipped default. `unsafe(False)` has to
+        ENGAGE the clamp (SUTRA_UI_SAFE_PERM_MODES=1) to mean what it has
+        always meant here -- "the write-capable modes do not resolve". Popping
+        the old opt-in alone would now leave them resolving, and every test
+        that asks for the clamped half of a cross product would quietly assert
+        against the unclamped one.
+        """
         if allowed:
             os.environ[providers.UNSAFE_MODES_ENV] = "1"
+            os.environ.pop(providers.CLAMP_MODES_ENV, None)
         else:
             os.environ.pop(providers.UNSAFE_MODES_ENV, None)
+            os.environ[providers.CLAMP_MODES_ENV] = "1"
         self.addCleanup(os.environ.pop, providers.UNSAFE_MODES_ENV, None)
+        self.addCleanup(os.environ.pop, providers.CLAMP_MODES_ENV, None)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -197,16 +216,28 @@ class TestShadowItselfStaysIsolated(Base):
                          "Shadow's own session must not gain repo authority")
 
     def test_08_decider_does_NOT_receive_repo_permissions(self):
-        """The decider is spawned from the same _shadow_args callable."""
-        cfg = settings_of(app._shadow_args())
-        self.assertNotIn("permissions", cfg)
+        """The decider is spawned from its OWN builder, which carries no
+        authority of any kind.
+
+        STRONGER THAN IT WAS, not weaker. Until 2026-09-19 this asserted
+        that the decider came from `_shadow_args` (no repo permissions
+        injected) rather than `_worker_args` (repo permissions injected).
+        The reasoning lane now has its own builder that passes no --settings
+        at all, no tools, and `plan` -- so "no repo authority" is no longer
+        a property of what we decline to inject, it is a property of what
+        the process is able to do.
+        """
+        args = app._decide_args()
+        self.assertNotIn("--settings", args,
+                         "the reasoning lane injects no settings to inherit")
+        self.assertIn("--tools", args)
+        self.assertEqual("", args[args.index("--tools") + 1],
+                         "no tool is reachable from the reasoning lane")
+        self.assertEqual("plan",
+                         args[args.index("--permission-mode") + 1],
+                         "a process that cannot act takes the narrowest mode")
         src = Path(app.__file__).read_text()
-        # WHICH BUILDER, not which signature. This used to pin the whole
-        # call including its closing paren, so 42f2d0f2 adding the runtime
-        # factory (`new_runtime=`) broke it while the property it guards --
-        # the decider is built from _shadow_args, never _worker_args -- was
-        # never in question. Pin the property.
-        self.assertIn("make_decider(_shadow_args, _shadow_workdir(),", src)
+        self.assertIn("make_decider(_decide_args, _shadow_workdir(),", src)
         self.assertNotIn("make_decider(_worker_args", src,
                          "the decider must never get repo authority")
 
@@ -334,7 +365,7 @@ class TestNoWideningSnuckIn(Base):
                                              "L3 must not narrow anything")
                         else:
                             self.assertEqual(
-                                got, providers.DEFAULT_PERMISSION_MODE,
+                                got, providers.PERMISSION_MODE_FLOOR,
                                 "a read-only level must cap the worker at "
                                 "plan")
                         # the one-way rule: an unsafe mode can never come OUT
@@ -383,12 +414,17 @@ class TestNoWideningSnuckIn(Base):
         """The property that makes remembering safe. A stamp taken while
         unsafe modes were allowed must not survive them being turned off --
         so the override goes through effective_permission_mode exactly as the
-        stored setting does."""
+        stored setting does.
+
+        The clamp is engaged explicitly (self.unsafe(False)) because since
+        2026-09-18 it is an opt-out -- "turned off" is now a posture the test
+        has to ask for rather than the ambient state."""
+        self.unsafe(False)
         self.assertFalse(providers.unsafe_modes_allowed(),
                          "this test is meaningless if unsafe modes are on")
         args = app._worker_args(permission_mode="bypassPermissions")
         self.assertEqual(args[args.index("--permission-mode") + 1],
-                         providers.DEFAULT_PERMISSION_MODE,
+                         providers.PERMISSION_MODE_FLOOR,
                          "an unsafe remembered mode must be clamped, not "
                          "handed to the CLI")
 
@@ -426,8 +462,19 @@ class TestNoWideningSnuckIn(Base):
 
     def test_20_worker_and_shadow_argv_differ_ONLY_by_permissions(self):
         """The strongest statement of the split: identical argv except the
-        one key the worker is meant to gain."""
+        one key the worker is meant to gain.
+
+        ...and, since 2026-09-19, the worker's compaction window, which is
+        NOT an authority: `--autocompact` bounds how much context the CLI
+        carries, it grants nothing and reaches nothing. It is stripped here
+        so the claim this test makes -- no widening sneaked in -- keeps
+        being about authority and only authority. test_14 in
+        test_shadow_lean_lanes.py pins that the supervisor never gets one.
+        """
         w, s = app._worker_args(), app._shadow_args()
+        ai = w.index("--autocompact")
+        self.assertEqual(app.worker_autocompact(), w[ai + 1])
+        w = w[:ai] + w[ai + 2:]
         self.assertEqual(len(w), len(s))
         wi, si = w.index("--settings"), s.index("--settings")
         self.assertEqual(wi, si, "same position")
@@ -437,6 +484,72 @@ class TestNoWideningSnuckIn(Base):
         self.assertEqual(wc["hooks"], sc["hooks"])
         self.assertIn("permissions", wc)
         self.assertNotIn("permissions", sc)
+
+
+class AnInheritedPlanReachesTheWorkerToo(Base):
+    """THE WORKER HALF of providers.ACCESS_CHOSEN_KEY (added 2026-09-19).
+
+    Base.setUp stamps its mode, because every test above means "the founder
+    chose this" -- so none of them can speak for the unstamped side, and the
+    unstamped side is the one that changed on 2026-09-19. On a machine
+    onboarded before then the delegate's flag moves from `plan` to
+    `bypassPermissions`, which is the most consequential thing this rule does
+    and the one a reader would want pinned by name rather than inferred from
+    providers plus two hops.
+
+    test_access_options.AnInheritedReadOnlyIsNotAChoice pins the resolution;
+    test_shadow_permission_inherit.AnInheritedPlanMovesShadowToo pins the
+    supervisor's argv; this pins the worker's, INCLUDING the part that is not
+    true of the supervisor -- the autonomy ceiling still lands on top.
+    """
+
+    def write_unstamped(self, mode):
+        """A pre-change settings.json: the mode is there, the stamp is not."""
+        self.sp.write_text(json.dumps({"onboarded": True,
+                                       "provider": "claude",
+                                       "permission_mode": mode}))
+
+    def test_an_unstamped_plan_reaches_the_worker_as_full_access(self):
+        self.write_unstamped("plan")
+        self.unsafe(True)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1],
+                         "bypassPermissions")
+
+    def test_a_stamped_plan_keeps_the_worker_read_only(self):
+        """The complement of test_15, and the reason its fixture is stamped:
+        a DELIBERATE Read only must still cap the delegate."""
+        self.settings_file_write("plan")
+        self.unsafe(True)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan")
+
+    def test_the_autonomy_ceiling_still_lands_on_top_of_it(self):
+        """A widened DEFAULT is not a widened CEILING. A founder at L2 whose
+        stored mode was never chosen must still get a read-only delegate --
+        otherwise this rule quietly raised the autonomy floor for every
+        already-onboarded machine, which no direction asked for."""
+        self.write_unstamped("plan")
+        self.unsafe(True)
+        for level in ("L0", "L1", "L2"):
+            with self.subTest(level=level):
+                self.set_autonomy(level)
+                args = app._worker_args()
+                self.assertEqual(
+                    args[args.index("--permission-mode") + 1],
+                    providers.PERMISSION_MODE_FLOOR,
+                    "an inherited default outran the autonomy ceiling")
+
+    def test_the_unsafe_gate_still_lands_on_top_of_it(self):
+        """The other cap. With the clamp engaged the inherited default must
+        resolve to `plan`, not to a live bypassPermissions."""
+        self.write_unstamped("plan")
+        self.unsafe(False)
+        self.set_autonomy("L3")
+        args = app._worker_args()
+        self.assertEqual(args[args.index("--permission-mode") + 1], "plan")
 
 
 if __name__ == "__main__":
